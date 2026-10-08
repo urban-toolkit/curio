@@ -1,12 +1,14 @@
 /**
- * An Autark node destroys a map once nobody will see it again
- * (adapters/node/autkGrammarBehavior): the map its next run replaces, and its
- * map when the node leaves the page (a deleted node, a closed dataflow), even
- * one its run made after it left. The node keeps working: its new map draws.
+ * An Autark node draws its maps on demand and destroys a map once nobody will
+ * see it again (adapters/node/autkGrammarBehavior): the map its next run
+ * replaces, and its map when the node leaves the page (a deleted node, a
+ * closed dataflow), even one its run made after it left. The node keeps
+ * working: its new map draws.
  *
  * The grammar is a stand-in that draws one real autk-map map on the node's
- * canvas, as autk-grammar does (`new AutkMap(canvas)`, then `draw()`). jsdom
- * has no WebGPU, so the map's frames are counted instead of rendered.
+ * canvas, as autk-grammar does (`new AutkMap(canvas)`, then `draw()`, every
+ * frame). jsdom has no WebGPU, so the map's frames are counted instead of
+ * rendered.
  */
 import React from 'react';
 import * as path from 'path';
@@ -136,6 +138,22 @@ afterEach(() => {
   Object.defineProperty(navigator, 'gpu', { configurable: true, value: undefined });
 });
 
+test('a map the node draws draws its frame, then only when something asks for one', async () => {
+  const node = mountNode();
+  await node.run();
+  const [drawn] = mockDrawn;
+  await frames();
+  // The grammar started it drawing every frame; the node switched it to on demand.
+  expect(drawn.frames).toBeGreaterThanOrEqual(1);
+  const settled = drawn.frames;
+  await frames();
+  expect(drawn.frames).toBe(settled);
+
+  drawn.map.requestRender();
+  await frames();
+  expect(drawn.frames).toBe(settled + 1);
+});
+
 test('a re-run destroys the map it replaces, and the new map draws', async () => {
   const node = mountNode();
   await node.run();
@@ -153,10 +171,10 @@ test('a re-run destroys the map it replaces, and the new map draws', async () =>
   expect(node.canvases()[0]).toBe(second.map.canvas);
   expect(node.lastOutput()).toMatchObject({ code: 'success' });
 
-  const before = { first: first.frames, second: second.frames };
+  const replaced = first.frames;
   await frames();
-  expect(first.frames).toBe(before.first);
-  expect(second.frames).toBeGreaterThan(before.second);
+  expect(first.frames).toBe(replaced);
+  expect(second.frames).toBeGreaterThanOrEqual(1);
 });
 
 test('a node that leaves the page destroys its map', async () => {

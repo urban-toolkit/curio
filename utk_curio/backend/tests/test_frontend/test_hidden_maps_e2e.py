@@ -1,29 +1,31 @@
-"""Playwright E2E: an Autark map draws only while its canvas has a layout box,
-and a map nobody will see again is destroyed.
+"""Playwright E2E: an Autark map draws on demand, and a map nobody will see
+again is destroyed.
 
-autk-map draws a map on every animation frame from the moment autk-grammar
-starts it, and every map of the page draws with the same GPU. A map hidden by
-``display: none`` must draw nothing: one in a collapsed scenario, behind its
-node's grammar tab or on a minimized node. A map merely out of the window
-keeps drawing and stays drawn. A map nobody will see again, the one a re-run
-replaced, a deleted node's and a closed dataflow's, must be destroyed:
-autk-map's ``destroy()`` unconfigures its canvas's WebGPU context and drops
-its window listeners, so a window resize configures no canvas that has left
-the page.
+autk-grammar starts each map drawing on every animation frame, and every map
+of the page draws with the same GPU. Curio switches each map to autk-map's
+on-demand rendering: once it has settled, a map that nothing changes draws
+nothing, whether it shows, sits out of the window, is behind its node's
+grammar tab, on a minimized node or in a collapsed scenario, and a map that
+shows still reads as drawn. A change draws: a map shown again, and the R key,
+which frames the map through Curio's ``frameMaps``. A map nobody will see
+again, the one a re-run replaced, a deleted node's and a closed dataflow's, is
+destroyed: autk-map's ``destroy()`` unconfigures its canvas's WebGPU context
+and drops its window listeners, so a window resize configures no canvas that
+has left the page.
 
 An init script counts, for each map canvas, the animation frames in which it
 asked WebGPU for a texture to draw into, at most one a frame callback, so a
 resize, which asks outside any frame, is not a frame drawn; and it records each
-canvas's context being configured and unconfigured. Each frame check counts
-while the page draws ``RULER_FRAMES`` frames of its own: it holds over frames
-the page drew, not over seconds a loaded runner may spend drawing none (#808).
-The map, once it can be seen again, must draw under the same count, and after a
-re-run its new map must take a window resize, so a count of none is not a
-counter that sees nothing.
+canvas's context being configured and unconfigured. A map has settled once it
+has drawn nothing for ``QUIET_FRAMES`` frames of the page in a row; each check
+then counts while the page draws ``RULER_FRAMES`` frames of its own, so it holds
+over frames the page drew, not over seconds a loaded runner may spend drawing
+none (#808). The changes a map must draw are checked under the same counter, so
+a count of none is not a counter that sees nothing.
 
 The checks are gathered and asserted together at the end, so a failure names
-every way a hidden map still drew, a dead one was kept or a laid-out one
-stopped.
+every way an idle map still drew, a shown one lost its picture, a change drew
+nothing or a dead map was kept.
 
 It runs Autark nodes, which need WebGPU: without an adapter it skips, unless
 ``CURIO_REQUIRE_HARDWARE_WEBGPU=1`` (CI's GPU job), where it fails.
@@ -67,10 +69,16 @@ SCENARIO = "hm-scenario"
 
 #: The page's own frames each check counts over.
 RULER_FRAMES = 60
-#: Frames the page gets to take in what changed before a check counts.
+#: Frames of the page in a row with nothing drawn, for a map to have settled.
+QUIET_FRAMES = 30
+#: The longest a map gets to settle.
+SETTLE_TIMEOUT_MS = 10000
+#: Frames the page gets to take in a change before a count starts.
 GRACE_FRAMES = 10
 #: The longest a check waits for the page to draw its frames.
 RULER_TIMEOUT_MS = 90000
+#: The longest a change gets to be drawn.
+CHANGE_TIMEOUT_MS = 15000
 
 # A 10 x 10 grid of cells over Chicago, each with its own value, so the map
 # draws many colours (``assert_autark_map_drawn`` wants more than 8).
@@ -183,6 +191,26 @@ _PAGE_FRAMES_JS = """([frames, timeout]) => new Promise((resolve) => {
     requestAnimationFrame(tick);
 })"""
 
+# Resolves once the map and every canvas out of the page have drawn nothing for
+# *quiet* frames of the page in a row, or *timeout* ms have gone; a page that
+# draws no frame for a second does not hold the wait past its time.
+_SETTLE_JS = """async ([id, quiet, timeout]) => {
+    const start = performance.now();
+    const frame = () => new Promise((resolve) => {
+        const timer = setTimeout(() => resolve(false), 1000);
+        requestAnimationFrame(() => { clearTimeout(timer); resolve(true); });
+    });
+    const read = () => `${window.__curio_mapFrames(id)} ${window.__curio_detachedMapFrames()}`;
+    let last = read(), still = 0;
+    while (still < quiet && performance.now() - start < timeout) {
+        if (!(await frame())) continue;
+        const now = read();
+        still = now === last ? still + 1 : 0;
+        last = now;
+    }
+    return still >= quiet;
+}"""
+
 # What each map in *ids*, and every canvas out of the page, drew while the page
 # drew *frames* frames.
 _COUNT_FRAMES_JS = """async ([ids, frames, timeout]) => {
@@ -287,7 +315,7 @@ def _assert_map_ran(page, when: str) -> None:
 
 def _count_frames(page) -> dict:
     """What the map, and every map canvas out of the page, drew while the page
-    drew ``RULER_FRAMES`` frames, once it had ``GRACE_FRAMES`` to settle."""
+    drew ``RULER_FRAMES`` frames, once it had ``GRACE_FRAMES`` to take in a change."""
     page.evaluate(_PAGE_FRAMES_JS, [GRACE_FRAMES, RULER_TIMEOUT_MS])
     counted = page.evaluate(_COUNT_FRAMES_JS, [[MAP], RULER_FRAMES, RULER_TIMEOUT_MS])
     assert counted["pageFrames"] >= RULER_FRAMES, (
@@ -296,35 +324,41 @@ def _count_frames(page) -> dict:
     return counted
 
 
-def _assert_map_draws(page, when: str) -> None:
-    """The map, in the window, draws frames, and its canvas holds a map."""
-    frame_nodes(page, [MAP])
-    counted = _count_frames(page)
-    assert counted["maps"][MAP], (
-        f"the map drew no frame {when}, in the window, while the page drew {RULER_FRAMES}: {counted}"
-    )
-    assert_autark_map_drawn(page, MAP, timeout=60000)
+def _settle(page) -> bool:
+    """Wait for the map, and every canvas out of the page, to draw nothing for
+    ``QUIET_FRAMES`` frames in a row; whether they did within the wait."""
+    return bool(page.evaluate(_SETTLE_JS, [MAP, QUIET_FRAMES, SETTLE_TIMEOUT_MS]))
 
 
-def _check_hidden_map(page, why: str, problems: list[str]) -> None:
-    """The map, in the page but hidden by ``display: none``, draws no frame."""
+def _check_idle(page, why: str, problems: list[str], *, shown: bool) -> None:
+    """The map, once nothing changes it, draws no frame; one that *shown* still
+    reads as a drawn map, as screenshots and drawing checks read it."""
+    settled = _settle(page)
     frames = _count_frames(page)["maps"][MAP]
     assert frames is not None, f"{why}: the map has no canvas in the page"
     if frames:
-        problems.append(f"{why} drew {frames} frames while the page drew {RULER_FRAMES}")
+        problems.append(
+            f"{why} drew {frames} frames while the page drew {RULER_FRAMES}"
+            + ("" if settled else f", and drew in every stretch of {QUIET_FRAMES} frames for {SETTLE_TIMEOUT_MS} ms")
+        )
+    if shown:
+        try:
+            assert_autark_map_drawn(page, MAP, timeout=10000)
+        except AssertionError as error:
+            problems.append(f"{why} lost its picture: {error}")
 
 
-def _check_still_drawing(page, why: str, problems: list[str]) -> None:
-    """The map, laid out though nobody sees it, keeps drawing, and its canvas
-    reads as a drawn map, as screenshots and drawing checks read it."""
-    frames = _count_frames(page)["maps"][MAP]
-    assert frames is not None, f"{why}: the map has no canvas in the page"
-    if not frames:
-        problems.append(f"{why} stopped drawing: no frame while the page drew {RULER_FRAMES}")
+def _draws(page, why: str, change, problems: list[str]) -> None:
+    """*change* makes the map draw."""
+    before = page.evaluate("(id) => window.__curio_mapFrames(id)", MAP)
+    change()
     try:
-        assert_autark_map_drawn(page, MAP, timeout=10000)
-    except AssertionError as error:
-        problems.append(f"{why} lost its picture: {error}")
+        page.wait_for_function(
+            "([id, before]) => { const now = window.__curio_mapFrames(id); return now !== null && now > (before ?? 0); }",
+            arg=[MAP, before], timeout=CHANGE_TIMEOUT_MS, polling=100,
+        )
+    except PlaywrightTimeoutError:
+        problems.append(f"{why} drew nothing within {CHANGE_TIMEOUT_MS} ms")
 
 
 def _keep_canvas(page, name: str) -> None:
@@ -368,7 +402,7 @@ def _check_resize(page, problems: list[str], *, live_map: bool) -> None:
 
 
 def _assert_no_problems(problems: list[str]) -> None:
-    assert not problems, "maps drew while hidden, were kept once dead, or stopped while laid out:\n- " + (
+    assert not problems, "maps drew when idle, lost their picture, missed a change or were kept once dead:\n- " + (
         "\n- ".join(problems)
     )
 
@@ -395,34 +429,41 @@ def test_a_map_in_a_collapsed_scenario_draws_nothing_until_it_is_expanded(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     _open_dataflow(page, app_frontend, current_server, username="hidden_maps_scenario", scenario=True)
-    _assert_map_draws(page, "shown")
+    problems: list[str] = []
+    frame_nodes(page, [MAP])
+    _check_idle(page, "the map, shown and idle", problems, shown=True)
     page.get_by_role("button", name="View menu").click()
     page.get_by_role("button", name="Show scenarios", exact=True).click()
     _scenario_card(page).wait_for(state="visible", timeout=10000)
-    problems: list[str] = []
 
     # Collapsed, its map is hidden in the box: it draws nothing.
     _scenario_card(page).get_by_role("button", name="Collapse", exact=True).click()
     node_locator(page, MAP).wait_for(state="hidden", timeout=10000)
-    _check_hidden_map(page, "the map of a collapsed scenario", problems)
+    _check_idle(page, "the map of a collapsed scenario", problems, shown=False)
 
-    # Expanded, it draws again.
-    _scenario_card(page).get_by_role("button", name="Expand", exact=True).click()
-    node_locator(page, MAP).wait_for(state="visible", timeout=10000)
-    _assert_map_draws(page, "expanded")
+    # Expanded, it draws again, then rests.
+    _draws(page, "expanding the scenario", lambda: (
+        _scenario_card(page).get_by_role("button", name="Expand", exact=True).click(),
+        node_locator(page, MAP).wait_for(state="visible", timeout=10000),
+    ), problems)
+    frame_nodes(page, [MAP])
+    _check_idle(page, "the map expanded", problems, shown=True)
 
-    # Run inside the collapsed box, the new map draws nothing and the one it
-    # replaced is destroyed; expanded, the new one draws (#711).
+    # Run inside the collapsed box, the new map draws nothing once it settles,
+    # and the one it replaced is destroyed; expanded, the new one draws (#711).
     _scenario_card(page).get_by_role("button", name="Collapse", exact=True).click()
     node_locator(page, MAP).wait_for(state="hidden", timeout=10000)
     _keep_canvas(page, "replaced")
     run_all_and_wait(page, timeout_ms=240000)
     _assert_map_ran(page, "inside the collapsed box")
     _check_dead_map(page, "replaced", "the map Run All replaced inside the collapsed box", problems)
-    _check_hidden_map(page, "a map run inside a collapsed scenario", problems)
-    _scenario_card(page).get_by_role("button", name="Expand", exact=True).click()
-    node_locator(page, MAP).wait_for(state="visible", timeout=10000)
-    _assert_map_draws(page, "run collapsed, then expanded")
+    _check_idle(page, "a map run inside a collapsed scenario", problems, shown=False)
+    _draws(page, "expanding the scenario after a run inside it", lambda: (
+        _scenario_card(page).get_by_role("button", name="Expand", exact=True).click(),
+        node_locator(page, MAP).wait_for(state="visible", timeout=10000),
+    ), problems)
+    frame_nodes(page, [MAP])
+    _check_idle(page, "the map run collapsed, then expanded", problems, shown=True)
 
     # Leaving the dataflow, in the app, closes it: its map is destroyed.
     _keep_canvas(page, "closed")
@@ -437,28 +478,36 @@ def test_a_map_hidden_in_its_node_draws_nothing_and_a_dead_one_is_destroyed(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     _open_dataflow(page, app_frontend, current_server, username="hidden_maps_in_node", scenario=False)
-    _assert_map_draws(page, "shown")
-    node = node_locator(page, MAP)
     problems: list[str] = []
+    frame_nodes(page, [MAP])
+    _check_idle(page, "the map, shown and idle", problems, shown=True)
+    node = node_locator(page, MAP)
+    canvas = node.locator(f"#autk-grammar-map-{MAP}")
 
-    # Behind its grammar tab, the output pane that holds the map is hidden.
+    # Behind its grammar tab, the output pane that holds the map is hidden;
+    # shown again, the map draws.
     node.locator('.nav-link[data-rr-ui-event-key="grammar"]').first.dispatch_event("click")
-    node.locator(f"#autk-grammar-map-{MAP}").wait_for(state="hidden", timeout=10000)
-    _check_hidden_map(page, "a map behind its node's grammar tab", problems)
-    node.locator('.nav-link[data-rr-ui-event-key="output"]').first.dispatch_event("click")
-    node.locator(f"#autk-grammar-map-{MAP}").wait_for(state="visible", timeout=10000)
-    _assert_map_draws(page, "back on its output tab")
+    canvas.wait_for(state="hidden", timeout=10000)
+    _check_idle(page, "a map behind its node's grammar tab", problems, shown=False)
+    _draws(page, "showing the map's output tab again", lambda: (
+        node.locator('.nav-link[data-rr-ui-event-key="output"]').first.dispatch_event("click"),
+        canvas.wait_for(state="visible", timeout=10000),
+    ), problems)
+    _check_idle(page, "the map back on its output tab", problems, shown=True)
 
-    # Minimized, the node is a chip; a click opens it again.
+    # Minimized, the node is a chip; a click opens it again, and the map draws.
     activate_header_icon(page.locator(f'[id="{MAP}resizable"] .curio-node-tools [title="Minimize"]'))
     page.locator(f'[id="{MAP}resizable"]').wait_for(state="hidden", timeout=10000)
-    _check_hidden_map(page, "a minimized node's map", problems)
-    node.click()
-    page.locator(f'[id="{MAP}resizable"]').wait_for(state="visible", timeout=10000)
-    _assert_map_draws(page, "opened again from its chip")
+    _check_idle(page, "a minimized node's map", problems, shown=False)
+    _draws(page, "opening the node from its chip", lambda: (
+        node.click(),
+        page.locator(f'[id="{MAP}resizable"]').wait_for(state="visible", timeout=10000),
+    ), problems)
+    frame_nodes(page, [MAP])
+    _check_idle(page, "the map opened again", problems, shown=True)
 
-    # Out of the window, the map is still laid out: it keeps drawing. The
-    # loader framed alone leaves it far below.
+    # Out of the window it draws nothing, and its canvas still holds the map:
+    # the loader framed alone leaves it far below.
     frame_nodes(page, [LOADER])
     assert not page.evaluate(
         """(id) => {
@@ -467,8 +516,13 @@ def test_a_map_hidden_in_its_node_draws_nothing_and_a_dead_one_is_destroyed(
         }""",
         MAP,
     ), "framing the loader alone left the map in the window"
-    _check_still_drawing(page, "a map out of the window", problems)
-    _assert_map_draws(page, "framed again")
+    _check_idle(page, "a map out of the window", problems, shown=True)
+
+    # The R key frames the map again, through Curio's frameMaps: it draws.
+    frame_nodes(page, [MAP])
+    _settle(page)
+    _draws(page, "the R key, framing the map", lambda: canvas.press("r"), problems)
+    _check_idle(page, "the map framed with R", problems, shown=True)
 
     # A re-run replaces the map's canvas: the map that drew on it is destroyed,
     # and the node keeps working: its new map draws and takes a window resize.
@@ -484,7 +538,8 @@ def test_a_map_hidden_in_its_node_draws_nothing_and_a_dead_one_is_destroyed(
     )
     _assert_map_ran(page, "on a re-run")
     _check_dead_map(page, "replaced", "the map a re-run replaced", problems)
-    _assert_map_draws(page, "re-run")
+    frame_nodes(page, [MAP])
+    _check_idle(page, "the re-run's map", problems, shown=True)
     _check_resize(page, problems, live_map=True)
 
     # A deleted node's map is destroyed.
