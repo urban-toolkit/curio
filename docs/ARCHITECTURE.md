@@ -1803,7 +1803,11 @@ source of truth:
 Rows are keyed on `user_key`, deliberately **not** a foreign key to `user.id`:
 the literal `"guest"` is a valid key. Writes go through on every install path
 (`install/installer.py`, `install/bundle.py`) and rows are dropped on delete.
-Reads hydrate in `repositories/user_store.py` and `repositories/installed.py`.
+One user's writes, reconciles included, run one at a time: each holds that
+user's lock (`keyed_thread_lock` in `common/file_locks.py`, per process) from
+reading the rows to committing, so two listings that reconcile at once add a
+missing row once. Reads hydrate in `repositories/user_store.py` and
+`repositories/installed.py`.
 
 `application/listing.py::resolve_execution_paths` uses the index as a fast path
 for turning dataset ids into filesystem paths at execution time, falling back to

@@ -6,7 +6,7 @@ every ``manifest.json``. It is a **derived cache**: :func:`reconcile` refreshes 
 from disk, and every caller falls back to reading the manifest when a store dir
 has no row, so a stale or missing row can never hide a dataset.
 
-Two rules hold everywhere in this module:
+Three rules hold everywhere in this module:
 
 * **Never raise into a caller.** Indexing is an accelerator; a DB failure must
   degrade to "no row" and let the filesystem path serve the request. Callers use
@@ -15,6 +15,12 @@ Two rules hold everywhere in this module:
 * **A dir whose manifest fails validation gets no row** — identical to the
   listing's own behaviour (``ManifestError``/``OSError``/``ValueError`` → skip),
   so the index can't resurrect a dataset the catalog considers unreadable.
+* **One user's rows change one writer at a time.** Every write reads rows and
+  then adds, updates or deletes what they lack, so each holds the user's lock
+  (:func:`_holding_the_index`) from the read to the commit. Without it two
+  listings that reconcile at once both find a dir with no row and both insert
+  one, and an install that lands during a listing races it the same way. The
+  lock is per process, which is where the server's request threads are.
 """
 
 from __future__ import annotations
@@ -25,6 +31,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from utk_curio.backend.extensions import db
+from utk_curio.backend.app.common.file_locks import keyed_thread_lock
 from utk_curio.backend.app.datasets.domain.manifest import (
     DatasetManifest,
     ManifestError,
@@ -43,6 +50,15 @@ logger = logging.getLogger(__name__)
 # prefix (a hub copy installed under its own id, say) is not an account-level
 # asset and is left to the scan.
 _ORIGIN_BY_PREFIX = {"imported.": "imported", "computed.": "computed"}
+
+
+def _holding_the_index(user_key: str):
+    """The lock a write to *user_key*'s rows holds from its read to its commit.
+
+    Not re-entrant: nothing called while it is held may call another write in
+    this module.
+    """
+    return keyed_thread_lock("dataset-index", user_key)
 
 
 def origin_for_dir(dir_name: str) -> Optional[str]:
@@ -232,37 +248,40 @@ def upsert_from_dir(user_key: str, dataset_root: Path) -> Optional[DatasetIndexE
         return None
 
     mtime_ns, size = _manifest_stat(dataset_root)
-    # Match on dir_name: a dir keeps its identity across a manifest rewrite that
-    # changes the id (the legacy computed-id migration does exactly that, and
-    # calls forget() for the old dir itself).
-    row = get_by_dir(user_key, dir_name)
-    if row is None:
-        row = DatasetIndexEntry(user_key=user_key)
-        db.session.add(row)
-    _apply_manifest(
-        row, manifest, dir_name=dir_name, origin=origin, mtime_ns=mtime_ns, size=size
-    )
-    db.session.commit()
+    with _holding_the_index(user_key):
+        # Match on dir_name: a dir keeps its identity across a manifest rewrite
+        # that changes the id (the legacy computed-id migration does exactly
+        # that, and calls forget() for the old dir itself).
+        row = get_by_dir(user_key, dir_name)
+        if row is None:
+            row = DatasetIndexEntry(user_key=user_key)
+            db.session.add(row)
+        _apply_manifest(
+            row, manifest, dir_name=dir_name, origin=origin, mtime_ns=mtime_ns, size=size
+        )
+        db.session.commit()
     return row
 
 
 def forget(user_key: str, dir_name: str) -> bool:
     """Drop the row for a store dir that no longer exists. Idempotent."""
-    row = get_by_dir(user_key, dir_name)
-    if row is None:
-        return False
-    db.session.delete(row)
-    db.session.commit()
+    with _holding_the_index(user_key):
+        row = get_by_dir(user_key, dir_name)
+        if row is None:
+            return False
+        db.session.delete(row)
+        db.session.commit()
     return True
 
 
 def forget_dataset(user_key: str, dataset_id: str) -> bool:
     """Drop the row for a dataset id, whatever dir it points at. Idempotent."""
-    row = get(user_key, dataset_id)
-    if row is None:
-        return False
-    db.session.delete(row)
-    db.session.commit()
+    with _holding_the_index(user_key):
+        row = get(user_key, dataset_id)
+        if row is None:
+            return False
+        db.session.delete(row)
+        db.session.commit()
     return True
 
 
@@ -272,8 +291,9 @@ def reconcile_and_rows(user_key: str) -> dict[str, DatasetIndexEntry]:
     The read path needs both, and reconcile already loads every row to do its
     comparison — returning that map saves a second identical query per listing.
     """
-    rows = _rows_by_dir(user_key)
-    _reconcile_into(user_key, rows)
+    with _holding_the_index(user_key):
+        rows = _rows_by_dir(user_key)
+        _reconcile_into(user_key, rows)
     return rows
 
 
@@ -288,11 +308,14 @@ def reconcile(user_key: str) -> dict[str, int]:
     (mtime_ns, size) differs from the indexed one, so an unchanged store costs
     one readdir plus a stat per dir and **zero** JSON parses. It also commits only
     when something actually changed, which keeps concurrent listings on the
-    threaded dev server from contending on SQLite writes.
+    threaded dev server from contending on SQLite writes. Two listings for one
+    user reconcile one after the other: the second reads the rows the first
+    wrote.
 
     Returns ``{"added", "updated", "removed"}`` counts (for tests and logging).
     """
-    return _reconcile_into(user_key, _rows_by_dir(user_key))
+    with _holding_the_index(user_key):
+        return _reconcile_into(user_key, _rows_by_dir(user_key))
 
 
 def _rows_by_dir(user_key: str) -> dict[str, DatasetIndexEntry]:
