@@ -256,12 +256,15 @@ const FlowProvider = ({
     const collabRef = useRef(collab);
     collabRef.current = collab;
 
+    // The ref is written now, not when React renders: a save reads the outputs
+    // from it, and the save a run's end flushes runs in the tick the run's last
+    // output lands. Written in the state updater, the ref did not hold that
+    // output yet whenever another update to this provider was pending, so the
+    // save left it out and took it out of the dataflow's saved outputs.
     const setOutputs = useCallback((fnOrValue: ((prev: IOutput[]) => IOutput[]) | IOutput[]) => {
-        _setOutputs((prev) => {
-            const next = typeof fnOrValue === "function" ? fnOrValue(prev) : fnOrValue;
-            outputsRef.current = next;
-            return next;
-        });
+        const next = typeof fnOrValue === "function" ? fnOrValue(outputsRef.current) : fnOrValue;
+        outputsRef.current = next;
+        _setOutputs(next);
     }, []);
     const [interactions, setInteractions] = useState<IInteraction[]>([]);
 

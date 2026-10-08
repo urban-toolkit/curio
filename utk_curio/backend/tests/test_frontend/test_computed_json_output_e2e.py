@@ -32,6 +32,10 @@ This test pins the chain from the only place it is observable end to end:
     are written zlib-compressed, and an install that hard-linked them served a
     compressed body under a ``.json`` name that no client could parse.
 
+``test_a_reload_restores_the_output_each_run_recorded`` runs the same two nodes
+and reloads: the dataflow's saved outputs restore both, and the save each run
+ended with named the node it had just run.
+
 Covered more cheaply elsewhere and not re-asserted here: the palette drag and
 Monaco's ``setValue`` path (``test_canvas_authoring_e2e.py``); the installer's
 format resolution and the warning payload
@@ -602,3 +606,126 @@ def _open_computed_tab(page, dataset_ids) -> None:
             shown, list(dataset_ids)
         )
     )
+
+
+def _project_traffic(page, project_id: str) -> list:
+    """Record, in the order they are sent, each run start and each save of
+    *project_id*, as ``(kind, request)``."""
+    log: list = []
+    runs_path = "/api/projects/{}/runs".format(project_id)
+    project_path = "/api/projects/{}".format(project_id)
+
+    def _on_request(request) -> None:
+        path = request.url.split("?", 1)[0]
+        if request.method == "POST" and path.endswith(runs_path):
+            log.append(("run", request))
+        elif request.method == "PUT" and path.endswith(project_path):
+            log.append(("save", request))
+
+    page.on("request", _on_request)
+    return log
+
+
+def _save_ending_the_run(page, traffic: list, since: int, node_id: str) -> list:
+    """The node ids named by the save the canvas makes as *node_id*'s run
+    ends: the first save sent after the run was started, once it has answered.
+
+    By order, not by what it carries: the save before the run is sent before
+    the start, and the one the run's end flushes is the next.
+    """
+    deadline = time.monotonic() + 60
+    while True:
+        entries = traffic[since:]
+        kinds = [kind for kind, _request in entries]
+        if "run" in kinds:
+            save = next(
+                (request for kind, request in entries[kinds.index("run") + 1:] if kind == "save"),
+                None,
+            )
+            if save is not None:
+                break
+        assert time.monotonic() < deadline, (
+            "no save followed the start of {}'s run: {}".format(node_id, kinds)
+        )
+        page.wait_for_timeout(250)
+    response = save.response()
+    assert response is not None and response.ok, "the save that ended {}'s run failed: {}".format(
+        node_id, response.status if response is not None else "no response"
+    )
+    body = json.loads(save.post_data or "{}")
+    return sorted(ref.get("node_id") for ref in (body.get("outputs") or []))
+
+
+def test_a_reload_restores_the_output_each_run_recorded(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+    delete_computed_datasets,
+):
+    """Both nodes run on the server, then the page reloads: both outputs are
+    restored from the dataflow's saved outputs.
+
+    Each run records its node's output in the dataflow
+    (``record_node_outputs``), and the canvas saves as the run ends, naming the
+    outputs it holds. That save read them before the node's new output had
+    reached them, so it named every output but the one just made, and a save's
+    outputs replace the dataflow's (``_merge_outputs``): the output went back
+    out. Read off the load's own response: the owner's canvas also shows the
+    last run's outputs from the run itself (``attachLatestRun``), which hid it
+    there, but a shared link, a duplicate and the dashboard read only the saved
+    outputs.
+    """
+    require_project_page()
+    require_user_auth()
+
+    page.emulate_media(reduced_motion="reduce")
+    session = stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Json Reopen",
+        username="json_reopen",
+        project_name="Computed JSON Reopen",
+        project_spec=_spec(),
+    )
+    require_owner_view(page)
+    token = session["token"]
+    project_id = session["project"]["id"]
+
+    page.wait_for_selector(".react-flow__node", timeout=45000)
+    _wait_for_reactflow_ready(page)
+    dict_node = _author_analysis_node(page, DICT_NODE, DICT_CODE)
+    scalar_node = _author_analysis_node(page, SCALAR_NODE, SCALAR_CODE)
+    _wait_for_reactflow_ready(page)
+    both = sorted([dict_node, scalar_node])
+    for node_id in both:
+        delete_computed_datasets(token, _computed_id(node_id, project_id))
+
+    traffic = _project_traffic(page, project_id)
+    named_at_end = {}
+    for node_id in (dict_node, scalar_node):
+        since = len(traffic)
+        run_node_and_wait(page, node_id, node_type=ANALYSIS_TYPE)
+        named_at_end[node_id] = _save_ending_the_run(page, traffic, since, node_id)
+
+    # At once: a later save, the next run's own among them, names both.
+    with page.expect_response(
+        lambda r: r.request.method == "GET"
+        and r.url.split("?", 1)[0].endswith("/api/projects/{}".format(project_id)),
+        timeout=120000,
+    ) as load_info:
+        page.reload()
+    restored = sorted(o["node_id"] for o in (load_info.value.json().get("outputs") or []))
+    assert restored == both, (
+        "the reloaded dataflow restores the saved outputs of {}, not of both nodes; "
+        "the save each run ended with named {}".format(restored, named_at_end)
+    )
+    assert named_at_end == {dict_node: [dict_node], scalar_node: both}, (
+        "the save each run ended with left out the node it had just run: {}".format(named_at_end)
+    )
+
+    require_owner_view(page)
+    for node_id in both:
+        status = node_locator(page, node_id).locator("[data-curio-node-status]").first
+        expect(status).to_have_attribute("data-curio-node-status", "done", timeout=45000)
+        _catalog_item(current_server, token, project_id, _computed_id(node_id, project_id))
