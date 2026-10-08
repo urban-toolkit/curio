@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import shutil
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -448,6 +449,12 @@ def _seed_under_readers(read, *, readers_start_late: bool) -> _StressReport:
     failure. A read overlapped a seed pass when a pass started before the read
     ended and had not finished when it began.
 
+    Each seeder makes its passes and then keeps going until every reader has
+    made a complete read that overlapped one, or the deadline passes; the
+    readers read until the last seeder stops. So how the runner schedules the
+    threads decides how long the test takes, never whether the readers saw
+    the seeding.
+
     ``readers_start_late`` starts the readers only once one seeder has made
     all its passes: the order a loaded runner can give the threads, since the
     seeders are started first.
@@ -458,6 +465,8 @@ def _seed_under_readers(read, *, readers_start_late: bool) -> _StressReport:
     outcomes = {"complete": 0, "absent": 0}
     complete_while_seeding = [0] * _STRESS_READERS
     a_seeder_made_its_passes = threading.Event()
+    seeding_done = threading.Event()
+    deadline = time.monotonic() + _STRESS_DEADLINE_S
 
     def one_pass():
         with lock:
@@ -483,18 +492,28 @@ def _seed_under_readers(read, *, readers_start_late: bool) -> _StressReport:
             if outcome == "complete" and passes["started"] > finished_before:
                 complete_while_seeding[index] += 1
 
+    def every_reader_saw_the_seeding():
+        with lock:
+            return min(complete_while_seeding) > 0
+
     def seeder():
+        made = 0
         try:
-            for _ in range(_STRESS_PASSES):
+            while True:
+                if made >= _STRESS_PASSES:
+                    a_seeder_made_its_passes.set()
+                    if every_reader_saw_the_seeding() or time.monotonic() > deadline:
+                        return
                 one_pass()
+                made += 1
         except Exception as exc:  # noqa: BLE001 - recorded, not raised, in a thread
             failures.append(f"seeder raised {exc!r}")
         finally:
             a_seeder_made_its_passes.set()
 
     def reader(index):
-        # The readers stop once one seeder has made its passes.
-        while not a_seeder_made_its_passes.is_set():
+        # The readers stop once the last seeder has stopped.
+        while not seeding_done.is_set():
             read_once(index)
 
     seeders = [
@@ -512,6 +531,7 @@ def _seed_under_readers(read, *, readers_start_late: bool) -> _StressReport:
         t.start()
     for t in seeders:
         t.join(timeout=_STRESS_DEADLINE_S + 60)
+    seeding_done.set()
     for t in readers:
         t.join(timeout=60)
     return _StressReport(
