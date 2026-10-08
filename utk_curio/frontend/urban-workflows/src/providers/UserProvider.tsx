@@ -16,6 +16,7 @@ import { UserContext } from "./userContext";
 import { Loading } from "../components/login/Loading";
 import { isShareLinkPath } from "../utils/shareLinks";
 import { isStandaloneDashboard } from "../standalone/dashboardPayload";
+import { mayEditServedDashboard } from "../standalone/servedDashboardAccess";
 
 /**
  * Who is looking at a page that was served complete.
@@ -66,16 +67,18 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
     const bootstrap = async () => {
       setLoading(true);
       try {
-        // A standalone dashboard is a document, not a session. There is nobody
-        // to sign in, no token to carry, and nothing a server could tell us
-        // that the page is not already holding.
+        // A standalone dashboard is a document, not a session. It still needs
+        // a user, because `RequireAuth` shows a sign-in form to anyone without
+        // one, and a page served complete must never ask a viewer to log in to
+        // read it. So it gets the viewer it actually is: a guest with no
+        // account, which is also what puts the page in its read-only
+        // presentation.
         //
-        // It still needs a user, because `RequireAuth` shows a sign-in form to
-        // anyone without one, and a page served complete must never ask a
-        // viewer to log in to read it. So it gets the viewer it actually is: a
-        // guest with no account, which is also what puts the page in its
-        // read-only presentation.
-        if (isStandaloneDashboard()) {
+        // Unless this browser's session may edit the dashboard's layout, which
+        // a session asks once (`mayEditServedDashboard`): then the page learns
+        // who is signed in the way any page does, below, and ProjectLoader
+        // loads it as its owner's.
+        if (isStandaloneDashboard() && !(await mayEditServedDashboard())) {
           if (!cancelled) {
             setEnableUserAuth(false);
             setSkipProjectPage(false);

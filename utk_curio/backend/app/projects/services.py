@@ -812,9 +812,28 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
                       categories=_categories(user, project_id, effective_spec))
 
 
-def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
+def _project_to_save(user, project_id: str):
+    """The project *user* may save, or the refusal a save gets: a guest other
+    than the shared one cannot save (403), and a project is saved by its owner
+    alone (``NotFoundError`` for anyone else)."""
     _assert_guest_can_save(user)
-    project = repo.get_for_user(project_id, user.id)
+    return repo.get_for_user(project_id, user.id)
+
+
+def may_save(user, project_id: str) -> bool:
+    """Whether *user* may save *project_id*, by the gate :func:`update_project`
+    applies first. Yes or no, and nothing about the project besides: a
+    dashboard page served with its data asks it before it offers the layout
+    controls, whose Save layout is that save."""
+    try:
+        _project_to_save(user, project_id)
+    except (ProjectError, repo.NotFoundError):
+        return False
+    return True
+
+
+def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
+    project = _project_to_save(user, project_id)
     ukey = _user_dir_key(user)
     existing_spec = storage.read_spec(ukey, project_id)
 

@@ -1116,17 +1116,17 @@ running anything.
   copies either link.
 - **Save the dataflow** after changing anything else the page shows, such as a chart's
   spec: the page shows what is on disk.
-- **Edit layout** (owner only) unlocks the tiles to drag by their title band and resize,
-  and **Save layout** records where they sit, without touching the canvas positions. It
-  is offered on a page that loads its data from the server, as under `--dev`.
+- **Edit layout** (the owner, signed in on this browser) unlocks the tiles to drag by
+  their title band and resize, and **Save layout** records where they sit, without
+  touching the canvas positions.
 - **Scenarios** each get a column, framed under a header in the scenario's color. The
   tiles they share (their fixed context, and pinned Parameter nodes outside them) come
   first, and tiles that read their outcomes, such as a comparison, come last. Tiles
   without a saved place are laid out this way when the page opens; while editing the
   layout, **Arrange by scenario** puts every tile back in its column.
 - **Sharing**: the page is served with its data inside it, whether `--backend-url` is an
-  address or a path such as `/api`, so a viewer needs no account, the dashboard keeps
-  working if the server is unreachable, and the page is read-only for everyone.
+  address or a path such as `/api`, so a viewer needs no account and the dashboard keeps
+  working if the server is unreachable. It is read-only for everyone but its owner.
 
 Two dashboards cannot be served this way: one whose data is too large to travel with the
 page (25 MB), and one with a pinned Autark tile that loads its own data. Opening either

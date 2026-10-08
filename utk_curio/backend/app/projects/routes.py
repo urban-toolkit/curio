@@ -218,6 +218,24 @@ def get_dashboard_payload(project_id: str):
 
 
 # ---------------------------------------------------------------------------
+# GET /api/projects/:id/dashboard/can-edit - may this session edit the layout
+# ---------------------------------------------------------------------------
+@projects_bp.route("/<project_id>/dashboard/can-edit", methods=["GET"])
+@require_auth
+def can_edit_dashboard(project_id: str):
+    """Whether this session may edit the dashboard's layout: yes or no.
+
+    A dashboard page served with its data has no session of its own, and names
+    no account. A browser that holds a session asks here, and the page offers
+    Edit layout, Save layout and Arrange on a yes. The answer is the gate a
+    save of the layout passes (``services.may_save``), so the controls appear
+    exactly where Save layout would be accepted, and it says nothing else about
+    the dataflow: an unknown one is a no.
+    """
+    return jsonify({"canEdit": services.may_save(g.user, project_id)}), 200
+
+
+# ---------------------------------------------------------------------------
 # DELETE /api/projects/:id
 # ---------------------------------------------------------------------------
 @projects_bp.route("/<project_id>", methods=["DELETE"])
