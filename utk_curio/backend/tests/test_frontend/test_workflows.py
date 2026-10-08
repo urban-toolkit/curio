@@ -375,6 +375,50 @@ def test_interaction_table_matches_the_dataflows():
                     f"{where}: {step.source} has no interval selection or plot brush")
 
 
+#: How long test_bar_hover_taken_back_when_the_map_draws_late holds the target
+#: map's drawing, from just before the double-click that takes the hover back.
+MAP_DRAWING_HELD_MS = 30000
+
+# Holds the drawing of one map canvas: while held, its WebGPU context refuses
+# to hand out its texture, so autk-map's frame for that map stops before it
+# draws (autk-map catches the refusal) and the layer's changes stay pending.
+# The hold ends at the first frame the map asks for once `ms` have passed, so
+# it needs no timer. The record of the hold is kept on window.
+_HOLD_MAP_DRAWING_JS = """({ canvas, ms }) => {
+    const proto = GPUCanvasContext.prototype;
+    if (!proto.__curioTakeTexture) {
+        proto.__curioTakeTexture = proto.getCurrentTexture;
+        proto.getCurrentTexture = function (...args) {
+            const hold = window.__curioMapDrawingHold;
+            if (hold && !hold.released && this.canvas && this.canvas.id === hold.canvas) {
+                if (performance.now() - hold.started < hold.ms) {
+                    hold.refused += 1;
+                    throw new DOMException('drawing held by the test', 'InvalidStateError');
+                }
+                hold.released = true;
+                hold.heldFor = Math.round(performance.now() - hold.started);
+            }
+            return proto.__curioTakeTexture.apply(this, args);
+        };
+    }
+    window.__curioMapDrawingHold = { canvas, ms, started: performance.now(), refused: 0, released: false };
+}"""
+
+_MAP_DRAWING_HOLD_JS = """() => {
+    const hold = window.__curioMapDrawingHold;
+    return hold && { ...hold, elapsed: Math.round(performance.now() - hold.started) };
+}"""
+
+_UNHOLD_MAP_DRAWING_JS = """() => {
+    const proto = GPUCanvasContext.prototype;
+    if (proto.__curioTakeTexture) {
+        proto.getCurrentTexture = proto.__curioTakeTexture;
+        delete proto.__curioTakeTexture;
+    }
+    window.__curioMapDrawingHold = null;
+}"""
+
+
 class TestWorkflowCanvas:
     """End-to-end checks for each workflow loaded into the ReactFlow canvas.
 
@@ -1305,6 +1349,11 @@ class TestWorkflowCanvas:
         elif "map" in json.loads(node.content or "{}"):
             assert_autark_map_drawn(self.page, node_id)
 
+    def _wait_for_target(self, step: Interaction, done):
+        """Capture *step*'s target until ``done(capture)`` holds: what a gesture,
+        or taking it back, shows on the target. Returns ``(capture, held)``."""
+        return wait_for_node_capture(self.page, step.target, done)
+
     def _interact(self, step: Interaction, test_name: str) -> None:
         page = self.page
         where = f"{step.slug}: a {step.gesture} on {step.source}"
@@ -1362,10 +1411,8 @@ class TestWorkflowCanvas:
             # A pick or a brush stays, so the pair can be framed again, as it was.
             frame_nodes(page, [step.source, step.target])
 
-        after, reached = wait_for_node_capture(
-            page, step.target,
-            lambda capture: changed_pixels(before, capture) > INTERACTION_MIN_CHANGED_PIXELS,
-        )
+        after, reached = self._wait_for_target(
+            step, lambda capture: changed_pixels(before, capture) > INTERACTION_MIN_CHANGED_PIXELS)
         # The source's own change says whether the gesture landed at all, and an
         # Autark plot's lit marks whether the selection reached it unseen.
         lit = None if reached else page.evaluate(
@@ -1416,12 +1463,81 @@ class TestWorkflowCanvas:
             reaches_right = max(step.span[0][0], step.span[1][0]) > 0.9
             page.mouse.click(*at_fraction(area, (0.03 if reaches_right else 0.97, 0.5)))
         frame_nodes(page, [step.source, step.target])
-        _, restored = wait_for_node_capture(
-            page, step.target,
-            lambda capture: _compare_images(capture, before, CLOSEUP_PIXEL_THRESHOLD).ratio
-            <= INTERACTION_RESTORED_RATIO,
-        )
+        _, restored = self._wait_for_target(
+            step, lambda capture: _compare_images(capture, before, CLOSEUP_PIXEL_THRESHOLD).ratio
+            <= INTERACTION_RESTORED_RATIO)
         assert restored, f"taking back {where} left {step.target} highlighted"
+
+    @pytest.mark.only_workflows("17-autark-geodataframe-maps.json")
+    def test_bar_hover_taken_back_when_the_map_draws_late(self, loaded_workflow):
+        """Taking the bar hover back shows on the map once the map draws again,
+        however late that is.
+
+        The page clears the map's highlight a fraction of a second after the
+        double-click, and the map shows it in the next frame it draws. On a
+        loaded GPU runner that frame can come long after (#763): in CI run
+        37724810297 the highlight was cleared 0.1 s after the double-click, and
+        reading the target map back waited 20 to 35 s for the frames queued
+        before it.
+        This test holds the target map's drawing from just before the
+        double-click for MAP_DRAWING_HELD_MS: its canvas refuses autk-map its
+        texture, so autk-map draws no frame of it and the canvas keeps showing
+        the hover. The take-back has to show once the hold ends.
+        """
+        page = self.page
+        step = next(s for s in INTERACTIONS[os.path.basename(self.spec.filepath)] if s.slug == "bar-hover")
+        self._execute_all_playable_nodes()
+        viewport = page.viewport_size
+        page.set_viewport_size(INTERACTION_VIEWPORT)
+        try:
+            with canvas_painted_at_shown_zoom(page):
+                dismiss_toasts(page)
+                frame_nodes(page, [step.source, step.target])
+                _wait_for_no_node_running(page)
+                for node_id in (step.source, step.target):
+                    self._assert_drawn(node_id)
+                before = wait_for_node_still(page, step.target)
+                bars = drawing_selector(page, step.source)
+                assert bars, f"{step.source} drew no chart"
+                point = mark_point(page, bars, step.at)
+                assert point, f"no bar near {step.at} of {step.source}'s chart"
+                page.mouse.move(point["x"], point["y"])
+                _, lit = self._wait_for_target(
+                    step, lambda capture: changed_pixels(before, capture) > INTERACTION_MIN_CHANGED_PIXELS)
+                assert lit, f"the bar hover left {step.target} as it was"
+                wait_for_node_still(page, step.target)
+
+                page.evaluate(_HOLD_MAP_DRAWING_JS, {
+                    "canvas": f"autk-grammar-map-{step.target}", "ms": MAP_DRAWING_HELD_MS})
+                box = page.locator(bars).first.bounding_box()
+                page.mouse.dblclick(*assert_in_view(
+                    page, box["x"] + box["width"] - 2, box["y"] + 2,
+                    f"the corner of {step.source}'s chart"))
+                frame_nodes(page, [step.source, step.target])
+                while_held = capture_node(page, step.target)
+                hold = page.evaluate(_MAP_DRAWING_HOLD_JS)
+                _, restored = self._wait_for_target(
+                    step, lambda capture: _compare_images(capture, before, CLOSEUP_PIXEL_THRESHOLD).ratio
+                    <= INTERACTION_RESTORED_RATIO)
+                hold_end = page.evaluate(_MAP_DRAWING_HOLD_JS)
+        finally:
+            page.evaluate(_UNHOLD_MAP_DRAWING_JS)
+            if viewport:
+                page.set_viewport_size(viewport)
+
+        # The hold was real: the map asked for frames and got none, and the
+        # canvas still showed the hover after the double-click.
+        assert not hold["released"] and hold_end["refused"] > 0, (
+            f"the map's drawing was not held while the hover was taken back ({hold_end}), "
+            "so this test proves nothing")
+        assert _compare_images(while_held, before, CLOSEUP_PIXEL_THRESHOLD).ratio > INTERACTION_RESTORED_RATIO, (
+            "the map showed the take-back while its drawing was held, so this test proves nothing")
+        assert restored, (
+            f"taking back the bar hover left {step.target} highlighted: "
+            + (f"the map drew again {hold_end['heldFor']} ms after the hold began, and still showed the hover"
+               if hold_end["released"] else
+               f"the wait gave up {hold_end['elapsed']} ms into the {MAP_DRAWING_HELD_MS} ms hold, "
+               f"before the map drew again ({hold_end['refused']} of its frames refused)"))
 
     @pytest.mark.only_workflows("Interaction_Autark.json")
     def test_plot_brush_started_between_bars(self, loaded_workflow):
