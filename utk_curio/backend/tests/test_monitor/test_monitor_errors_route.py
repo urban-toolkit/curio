@@ -11,6 +11,24 @@ import json
 from utk_curio.backend.app.monitor import errors, routes
 
 
+def _hold_the_clock(monkeypatch, start):
+    """The rate limiter's clock, read from a list the test moves by hand."""
+    clock = [start]
+    monkeypatch.setattr(routes.time, "monotonic", lambda: clock[0])
+    return clock
+
+
+def _post_reports(client, count, first=0, address="127.0.0.1"):
+    """Post *count* browser reports from one address.
+
+    Each has its own message, because identical reports inside a minute
+    collapse into one entry.
+    """
+    for i in range(first, first + count):
+        client.post("/api/monitor/errors/client", json={"message": f"m{i}"},
+                    environ_base={"REMOTE_ADDR": address})
+
+
 class TestErrorsRoute:
     def test_an_empty_instance_returns_an_empty_list(self, client):
         body = client.get("/api/monitor/errors").get_json()
@@ -139,7 +157,8 @@ class TestClientIngest:
         assert body["errors"] == []
         assert body["droppedClient"] == 1
 
-    def test_the_rate_limiter_stops_a_flood(self, client):
+    def test_the_rate_limiter_stops_a_flood(self, client, monkeypatch):
+        _hold_the_clock(monkeypatch, 1000.0)
         for i in range(30):
             client.post("/api/monitor/errors/client", json={"message": f"m{i}"})
 
@@ -147,6 +166,47 @@ class TestClientIngest:
         # Ten per address per minute; the rest are counted, not stored.
         assert len(body["errors"]) == 10
         assert body["droppedClient"] == 20
+
+    def test_a_burst_across_a_minute_boundary_stops_at_the_limit(self, client, monkeypatch):
+        clock = _hold_the_clock(monkeypatch, 59.5)
+        _post_reports(client, 10)
+        clock[0] = 60.5  # one second later, in the next minute
+        _post_reports(client, 10, first=10)
+
+        body = client.get("/api/monitor/errors").get_json()
+        assert len(body["errors"]) == 10
+        assert body["droppedClient"] == 10
+
+    def test_the_allowance_refills_at_ten_a_minute(self, client, monkeypatch):
+        clock = _hold_the_clock(monkeypatch, 1000.0)
+        _post_reports(client, 11)  # ten stored, one dropped
+        clock[0] += 6.5  # six seconds earn one report
+        _post_reports(client, 2, first=11)  # one stored, one dropped
+        clock[0] += 60  # a quiet minute earns all ten back
+        _post_reports(client, 11, first=13)  # ten stored, one dropped
+
+        body = client.get("/api/monitor/errors").get_json()
+        assert len(body["errors"]) == 21
+        assert body["droppedClient"] == 3
+
+    def test_a_looping_browser_leaves_other_addresses_their_allowance(self, client, monkeypatch):
+        """Its refused reports spend nothing from the ceiling all addresses share."""
+        _hold_the_clock(monkeypatch, 1000.0)
+        _post_reports(client, 120)
+        _post_reports(client, 10, first=120, address="10.0.0.2")
+
+        body = client.get("/api/monitor/errors").get_json()
+        assert len(body["errors"]) == 20
+        assert body["droppedClient"] == 110
+
+    def test_the_global_ceiling_stops_a_spread_out_flood(self, client, monkeypatch):
+        _hold_the_clock(monkeypatch, 1000.0)
+        for n in range(11):
+            _post_reports(client, 10, first=10 * n, address=f"10.0.1.{n}")
+
+        body = client.get("/api/monitor/errors").get_json()
+        # A hundred a minute from all addresses together.
+        assert body["droppedClient"] == 10
 
     def test_the_endpoint_never_answers_anything_a_caller_would_retry(self, client):
         """A window.onerror handler must not be able to start a request loop."""
