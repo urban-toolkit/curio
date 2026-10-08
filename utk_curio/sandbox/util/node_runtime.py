@@ -27,6 +27,10 @@ SHIPPED_PACKAGE_FILES = pathlib.PurePosixPath('utk_curio', 'sandbox', 'nodejs')
 #: sandbox's Node.js packages.
 NODEJS_FOLDER = 'nodejs'
 
+#: Curio's copy of DuckDB's extensions, under the folder that holds
+#: ``utk_curio/`` (``MANIFEST.in`` puts it in the pip package at the same path).
+DUCKDB_EXTENSIONS = pathlib.PurePosixPath('vendor', 'duckdb-extensions')
+
 AUTK_DB = '@urban-toolkit/autk-db'
 
 #: What every Overpass request from Curio's Node processes says it is. The
@@ -73,6 +77,12 @@ def nodejs_dir(root=None):
 def node_modules_dir(root=None):
     """The ``node_modules`` the sandbox's Node.js packages are installed in."""
     return nodejs_dir(root) / 'node_modules'
+
+
+def duckdb_extensions_dir():
+    """Curio's copy of DuckDB's extensions: the launcher seeds the sandbox's
+    duckdb-wasm from it, and the backend serves it to the browser's."""
+    return REPO_ROOT / DUCKDB_EXTENSIONS
 
 
 def node_env(base=None, node_modules=None):
