@@ -1382,7 +1382,7 @@ Resolving such a node goes to that Dataset Finder:
 | The user's Data Catalog holds datasets | The first attempt is generated against those rows, and the grounding gate enforces them. |
 | Nothing could ground it, or the attempt was refused for its source anyway | The runtime asks that node's Dataset Finder. The candidates appear in its chat, and the node's Solve result is pending, awaiting a dataset selection, with an **Open Dataset Finder** button. Nothing is generated, run or written. |
 
-**Confirm source for this node** records the selection against the node. The record is what the next Solve reads, so the loader is built from exactly the confirmed source. A catalog row that is not installed yet keeps the node waiting for its reviewed install, and the applied install says how many nodes it unblocked. A row the runtime cannot reach at confirmation time is recorded with that verdict and does not resolve the node.
+**Confirm source for this node** records the selection against the node. Every later Solve reads the record, so the loader is built from exactly the confirmed source; a round whose code misses it is corrected against that source, and discovery does not run again. A catalog row that is not installed yet keeps the node waiting for its reviewed install, and the applied install says how many nodes it unblocked. A row the runtime cannot reach at confirmation time is recorded with that verdict and does not resolve the node.
 
 Every external row also says what the user can do with it, read from the same probe and never from the model's prose:
 
