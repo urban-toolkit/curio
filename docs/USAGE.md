@@ -1126,12 +1126,13 @@ running anything.
   dashboard keeps working if the server is unreachable.
 
 Two dashboards cannot be served this way, and both say so when you open them: one whose
-data is too large to travel with the page, and one with a pinned Autark tile that loads
-its own data. For the second, move the tile's `data` section into its own node upstream
-so its output is saved.
+data is too large to travel with the page (25 MB), and one with a pinned Autark tile that
+loads its own data. For the second, move the tile's `data` section into its own node
+upstream so its output is saved.
 
-An Autark map tile draws in the viewer's browser, so it needs WebGPU there. A code node's
-console output is not restored: no saved dataset carries it.
+An Autark map tile draws in the viewer's browser, so it needs WebGPU there. A map over a
+raster draws too: the raster travels with the page, and its size counts toward the 25 MB.
+A code node's console output is not restored: no saved dataset carries it.
 
 ## Finding a dataflow
 

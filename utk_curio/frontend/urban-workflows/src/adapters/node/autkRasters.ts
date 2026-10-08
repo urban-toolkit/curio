@@ -16,10 +16,10 @@
  * database's `getLayer`, are wrapped.
  *
  * A raster comes as GeoTIFF bytes: a Python node's rasterio dataset is asked
- * of the sandbox by its artifact (`/raster`), and a collection an upstream
- * Autark node handed on is written back to GeoTIFF bytes here. Either way it
- * is loaded at its own size, with `nearest` resampling and its CRS
- * (utils/raster/rasterLoad).
+ * of the sandbox by its artifact (`/raster`; a standalone dashboard carries
+ * that answer, see `fetchRaster`), and a collection an upstream Autark node
+ * handed on is written back to GeoTIFF bytes here. Either way it is loaded at
+ * its own size, with `nearest` resampling and its CRS (utils/raster/rasterLoad).
  */
 import { fetchRaster } from '../../services/api';
 import type { AutkRasterInput } from '../../utils/autkInput';

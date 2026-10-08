@@ -1,6 +1,6 @@
 import { getToken } from "../utils/authApi";
 import { backendUrl } from "../utils/backendUrl";
-import { embeddedArtifact, EmbeddedEnvelope } from "../standalone/dashboardPayload";
+import { embeddedArtifact, EmbeddedEnvelope, embeddedRaster, EmbeddedRaster } from "../standalone/dashboardPayload";
 
 export const ARROW_IPC_MIME = "application/vnd.apache.arrow.stream";
 
@@ -210,17 +210,38 @@ export type FetchedRaster =
     | { ok: true; bytes: ArrayBuffer; meta: any }
     | { ok: false; status: number; meta?: any; message: string };
 
+/** The raster as the network would have answered, from what the page carries. */
+function rasterFromPage(raster: EmbeddedRaster): FetchedRaster {
+    if (raster.status !== 200) {
+        return { ok: false, status: raster.status, meta: raster.meta, message: raster.message ?? `HTTP ${raster.status}` };
+    }
+    if (!raster.meta || typeof raster.geotiff !== "string") {
+        return { ok: false, status: raster.status, message: "the raster came without its description" };
+    }
+    // Fresh bytes for every map: a load can take the buffer it is handed.
+    const binary = atob(raster.geotiff);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return { ok: true, bytes: bytes.buffer, meta: raster.meta };
+}
+
 /**
  * A raster artifact's GeoTIFF bytes, for an Autark node to load, and what the
  * sandbox read of it (size, CRS, transform) in the `X-Curio-Raster` header.
  * `part` picks one raster out of a Python tuple. A raster larger than
  * `maxCells` cells or `maxSide` on a side is not sent at all: the answer is a
  * 413 with its size, so nothing that large is downloaded only to be refused.
+ * A standalone dashboard carries the answer, given when the page was built.
  */
 export async function fetchRaster(
     fileName: string,
     opts: { part?: number; maxCells: number; maxSide: number },
 ): Promise<FetchedRaster> {
+    // Asked before any request, as `fetchData` asks for an embedded artifact.
+    const embedded = embeddedRaster(fileName, opts.part);
+    if (embedded) {
+        return rasterFromPage(embedded);
+    }
     const params = new URLSearchParams({
         fileName,
         maxCells: String(opts.maxCells),
