@@ -23,8 +23,25 @@ from utk_curio.backend.tests.test_datasets.computed_test_helpers import auth_hea
 NODE_TYPE = "curio.builtin/computation-analysis"
 
 
-def _create(client, token, name="Run outputs") -> str:
-    spec = {"dataflow": {"name": name, "nodes": [
+def _node(node_id: str, content: str, **fields) -> dict:
+    """A node as the canvas saves it: ``saveOutputDataset`` is its Save toggle."""
+    return {"id": node_id, "type": NODE_TYPE, "content": content, **fields}
+
+
+def _dataflow(*nodes, edges=(), name="Run outputs") -> dict:
+    return {"dataflow": {"name": name, "nodes": list(nodes), "edges": list(edges)}}
+
+
+def _both_saving() -> dict:
+    """Nodes a and b, each with its Save toggle on."""
+    return _dataflow(
+        _node("a", "return 1", saveOutputDataset=True),
+        _node("b", "return 2", saveOutputDataset=True),
+    )
+
+
+def _create(client, token, name="Run outputs", spec=None) -> str:
+    spec = spec or {"dataflow": {"name": name, "nodes": [
         {"id": "a", "type": NODE_TYPE, "content": "return 1"},
         {"id": "b", "type": NODE_TYPE, "content": "return 2"},
     ], "edges": []}}
@@ -168,6 +185,91 @@ def test_a_save_still_drops_the_outputs_it_leaves_out(app, client, user_and_toke
     assert _save(client, token, project_id, [("a", a)]).status_code == 200
 
     assert _outputs(user, project_id) == {"a": a}
+
+
+def _a_saved_and_b_recorded(client, token, user, spec):
+    """a saved by the canvas, then b recorded by a run the canvas has not
+    taken in yet. Returns the project id and both outputs."""
+    project_id = _create(client, token, spec=spec)
+    a = _artifact(1790000000000, {"v": "a"})
+    assert _save(client, token, project_id, [("a", a)], spec=spec).status_code == 200
+    b = _artifact(1790000000100, {"v": "b"})
+    _record(user, project_id, [("b", b)])
+    return project_id, a, b
+
+
+def test_a_save_keeps_an_output_a_run_recorded_that_it_leaves_out(app, client, user_and_token):
+    """The save that ends a run can be sent before the canvas holds the output
+    the run has just recorded, and a tab that never saw the run holds none.
+    Neither may take it out of the dataflow while b is still there as it was."""
+    user, token = user_and_token
+    spec = _both_saving()
+    project_id, a, b = _a_saved_and_b_recorded(client, token, user, spec)
+    recorded_at = {o["node_id"]: o.get("produced_at") for o in _manifest(user, project_id)["outputs"]}
+
+    saved = _save(client, token, project_id, [("a", a)], spec=spec)
+
+    assert saved.status_code == 200, saved.get_data(as_text=True)
+    assert {o["node_id"]: o["filename"] for o in saved.get_json()["outputs"]} == {"a": a, "b": b}, (
+        "a save that left b out took out the output a run had recorded for it"
+    )
+    assert _outputs(user, project_id) == {"a": a, "b": b}
+    kept = {o["node_id"]: o.get("produced_at") for o in _manifest(user, project_id)["outputs"]}
+    assert kept["b"] == recorded_at["b"]
+    assert _installed(user, project_id, "b") == {"v": "b"}
+
+
+def test_a_save_drops_the_output_of_a_node_it_deleted(app, client, user_and_token):
+    user, token = user_and_token
+    project_id, a, _b = _a_saved_and_b_recorded(client, token, user, _both_saving())
+
+    without_b = _dataflow(_node("a", "return 1", saveOutputDataset=True))
+    assert _save(client, token, project_id, [("a", a)], spec=without_b).status_code == 200
+
+    assert _outputs(user, project_id) == {"a": a}
+
+
+def test_a_save_drops_the_output_of_a_node_whose_save_is_off(app, client, user_and_token):
+    user, token = user_and_token
+    project_id, a, _b = _a_saved_and_b_recorded(client, token, user, _both_saving())
+
+    save_off = _dataflow(
+        _node("a", "return 1", saveOutputDataset=True),
+        _node("b", "return 2", saveOutputDataset=False),
+    )
+    assert _save(client, token, project_id, [("a", a)], spec=save_off).status_code == 200
+
+    assert _outputs(user, project_id) == {"a": a}
+
+
+def test_a_save_drops_the_output_of_a_node_whose_code_changed(app, client, user_and_token):
+    user, token = user_and_token
+    project_id, a, _b = _a_saved_and_b_recorded(client, token, user, _both_saving())
+
+    edited = _dataflow(
+        _node("a", "return 1", saveOutputDataset=True),
+        _node("b", "return 3", saveOutputDataset=True),
+    )
+    assert _save(client, token, project_id, [("a", a)], spec=edited).status_code == 200
+
+    assert _outputs(user, project_id) == {"a": a}
+
+
+def test_a_save_keeps_the_output_a_pinned_tile_reads_whatever_its_toggle(app, client, user_and_token):
+    """A pinned tile's source is recorded with its Save off, by a run and by a
+    save alike (``savedSourceNodeIds``), so a save that leaves it out keeps it."""
+    user, token = user_and_token
+    spec = _dataflow(
+        _node("a", "return 1", saveOutputDataset=True),
+        _node("b", "return 2", saveOutputDataset=False),
+        {"id": "chart", "type": "curio.builtin/vis-vega", "content": "{}", "dashboardPinned": True},
+        edges=[{"id": "b-chart", "source": "b", "target": "chart"}],
+    )
+    project_id, a, b = _a_saved_and_b_recorded(client, token, user, spec)
+
+    assert _save(client, token, project_id, [("a", a)], spec=spec).status_code == 200
+
+    assert _outputs(user, project_id) == {"a": a, "b": b}
 
 
 def test_an_output_recorded_without_a_stamp_counts_as_oldest(app, client, user_and_token):
