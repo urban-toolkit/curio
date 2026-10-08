@@ -1001,6 +1001,15 @@ per-user work directory it is **not** owned by the execution account: it is an
 import path, so node code writing there could shadow a later import. The
 startup audit reports it if it ever becomes writable.
 
+### Where the shipped folders are
+
+The repository keeps the folders Curio ships beside its code next to `utk_curio/`: `datasets/`, `discovery/`, `models/`, `packages/`, `scripts/` and `vendor/`. [`utk_curio/shipped.py`](../utk_curio/shipped.py) `path` says where one is on this machine, and every reader asks it: the four catalogs' roots, the launcher's manifest walk and DuckDB seeding, the `/file/vendor/duckdb-extensions/` route, `workflow_spec`'s scan of the shipped code nodes, `curio test` and the agents' prompt fields.
+
+- A clone, the Docker image and CI: next to `utk_curio/`.
+- A pip install: `utk_curio/_shipped/<folder>/`. `setup.py` maps each folder into the wheel there, so the wheel installs nothing in site-packages but `utk_curio/` and its dist-info, where a `datasets/` of Curio's would mix with Hugging Face's `datasets` package. The sdist keeps the repository's layout, and `MANIFEST.in` says which files ship.
+
+The layout is decided once, by whether `utk_curio/_shipped/` exists, never folder by folder. The `CURIO_CATALOG_ROOT`, `CURIO_DISCOVERY_ROOT`, `CURIO_MODELS_ROOT` and `CURIO_PACKAGES_ROOT` overrides come first.
+
 ### The sandbox's Node.js packages
 
 autk-db runs in Node.js for the sandbox's JS nodes and for OpenStreetMap downloads. [`sandbox/util/node_runtime.py`](../utk_curio/sandbox/util/node_runtime.py) `nodejs_dir` names the folder whose `node_modules` they read and the launcher installs:
@@ -1728,7 +1737,7 @@ A candidate row's `acquirable` flag is set server-side only, by `services.py::_m
 
 The user-facing model is in [MODEL-CATALOG.md](MODEL-CATALOG.md) and the routes are in [Model Catalog Routes](#model-catalog-routes). The backend is `backend/app/model_catalog/`: `domain/manifest.py` (the manifest and its checks), `infrastructure/storage.py` (where models live), `service.py` (listing, details, install, delete, execution resolution) and `routes.py`.
 
-- **Storage.** `models_root()` is `<repo>/models`, or the directory `--models-root` names; `user_models_dir(user_key)` is `.curio/users/<key>/models/`. A model is a folder named `<id>@<major>` with a `manifest.json`. There is no index table: a listing reads the folders, the account's then the shipped ones, and an account holds few models. A shipped model whose entry the pip package leaves out is listed all the same, and `resolve_dir` fetches the entry the first time a node runs it ([Files the pip package leaves out](#files-the-pip-package-leaves-out)).
+- **Storage.** `models_root()` is the shipped `models/` ([Where the shipped folders are](#where-the-shipped-folders-are)), or the directory `--models-root` names; `user_models_dir(user_key)` is `.curio/users/<key>/models/`. A model is a folder named `<id>@<major>` with a `manifest.json`. There is no index table: a listing reads the folders, the account's then the shipped ones, and an account holds few models. A shipped model whose entry the pip package leaves out is listed all the same, and `resolve_dir` fetches the entry the first time a node runs it ([Files the pip package leaves out](#files-the-pip-package-leaves-out)).
 - **The manifest** (`parse_manifest`) takes `runtime` (`onnx` or `transformers`), `task` (`semantic-segmentation`, or `image-to-image` or `node-regression` for a graph its node feeds itself), an `entry` inside the folder (a `.onnx` file for `onnx`), up to `MAX_LABELS` labels (none for `image-to-image` or `node-regression`), and for an `onnx` image model an `input` (size 8 to 8192, `uint8` or `float32`, `NCHW`, or `NHWC` for `image-to-image`, `scale`, three-number `mean` and `std`). A folder whose manifest fails is not listed, and the server's log names it and why.
 - **Install.** `install_downloaded(folder, manifest)` mints `imported.x<hex>@1`, moves the folder to a `.part` folder beside its place in the account's store, writes the manifest, and renames it in with `os.replace`, so a half-written model is never listed. `install_dependencies(id)` installs a Transformers model's `python_deps` through `provision_declared_deps`, the path a package's `dependencies.python` takes: the shared interpreter, or the account's node libraries under isolation. `install_refusal()` is the package rule (`package_install_refusal`).
 - **Delete** removes the folder. A shipped model is refused with 403. Nodes that name it fail on their next run.
@@ -1774,7 +1783,7 @@ The backend is a Flask application in `utk_curio/backend/`. Routes are split acr
 | `/get` | GET | Download an artifact by id (Arrow IPC when the client asks for it). A name the session-tagged store cannot serve falls back to the shared data directory, where a project load hydrates that project's saved outputs, so they are readable by anyone who can load the project |
 | `/get-preview` | GET | First N rows + metadata of an artifact, for DataPool display |
 | `/raster` | GET | A raster artifact (or one `part` of a tuple) as GeoTIFF bytes for an Autark node, described in the `X-Curio-Raster` header; 413 with its size over `maxCells` or `maxSide`. A raster output the session-tagged store cannot serve falls back to its hydrated copy, as `/get` does |
-| `/file/<path>` | GET | Serve a file relative to `CURIO_LAUNCH_CWD` so browser-side nodes can fetch binary assets (PBF, GeoTIFF) by the same relative path Python nodes use. Unauthenticated, so it refuses hidden paths and Curio's own state: the instance folder, the `.curio` state root, the shared data directory, the dataset hub and the SQLite database. `vendor/duckdb-extensions/` comes from the folder that holds `utk_curio/` instead |
+| `/file/<path>` | GET | Serve a file relative to `CURIO_LAUNCH_CWD` so browser-side nodes can fetch binary assets (PBF, GeoTIFF) by the same relative path Python nodes use. Unauthenticated, so it refuses hidden paths and Curio's own state: the instance folder, the `.curio` state root, the shared data directory, the dataset hub and the SQLite database. `vendor/duckdb-extensions/` comes from Curio's own copy instead ([Where the shipped folders are](#where-the-shipped-folders-are)) |
 | `/starters` | GET | Per-template starter source bodies from every installed package |
 | `/spatial_join` | POST | Spatial join of two GeoJSON inputs (see `common/spatial.py`) |
 

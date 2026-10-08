@@ -28,6 +28,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from utk_curio import shipped
 from utk_curio.backend.app.common.safe_paths import (
     PathTraversalError,
     is_within,
@@ -81,8 +82,8 @@ from utk_curio.backend.app.common.user_storage import (
 def catalog_root() -> Path:
     """Return the committed Data Catalog root (hub read + publish target).
 
-    Defaults to ``<repo_root>/datasets/`` (the install source, like
-    ``packages/``). Anchoring on the package dir is fine when the launch CWD is
+    Defaults to the shipped ``datasets/`` (``utk_curio/shipped.py``), the
+    install source, like ``packages/``. That is fine when the launch CWD is
     the repo root, but on a pip install it resolves under ``site-packages``
     (read-only; publish fails) and in Docker it isn't persisted across restarts.
     Set ``CURIO_CATALOG_ROOT`` to relocate the hub/publish target to a writable,
@@ -91,8 +92,7 @@ def catalog_root() -> Path:
     override = os.environ.get("CURIO_CATALOG_ROOT")
     if override and override.strip():
         return Path(override).expanduser().resolve()
-    # storage.py -> infrastructure/ -> datasets/ -> app/ -> backend/ -> utk_curio/ -> repo_root/datasets/
-    return Path(__file__).resolve().parents[5] / "datasets"
+    return shipped.path("datasets")
 
 
 def user_datasets_dir(user_key: str) -> Path:

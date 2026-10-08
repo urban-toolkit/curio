@@ -35,6 +35,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from utk_curio import shipped
 from utk_curio.backend.app.agents.evaluation import export as export_mod
 from utk_curio.backend.app.agents.evaluation import live as live_mod
 from utk_curio.backend.app.agents.evaluation.canonical import TemplateFacts
@@ -58,7 +59,7 @@ def template_index() -> dict:
     exists anywhere (``DEC-062``).
     """
     index: dict = {}
-    for manifest_path in sorted((REPO_ROOT / "packages").glob("*/manifest.json")):
+    for manifest_path in sorted(shipped.path("packages").glob("*/manifest.json")):
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         package_id = str(manifest.get("id") or "")
         for template in manifest.get("templates") or []:
