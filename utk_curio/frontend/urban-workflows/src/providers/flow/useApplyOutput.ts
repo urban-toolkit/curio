@@ -54,9 +54,11 @@ export function useApplyOutput({
     // Refill downstream `data.input` (incl. input circles `in_N`) from the outputs
     // restored by a project load. Live propagation only happens on execution and
     // on new connections, so without this every reload leaves inputs empty until
-    // the user manually reruns each upstream node (dev/64). Deferred one tick so
-    // loadTrill's nodes/edges are committed to the React Flow store first. No
-    // exec bookkeeping (signalNodeExecDone / install sync) — nothing executed.
+    // the user manually reruns each upstream node (dev/64). It is the one place a
+    // restored output goes down, once: the load's edge replay hands none over
+    // (`onConnect`'s `sourceAddedByLoad`). Deferred one tick so loadTrill's
+    // nodes/edges are committed to the React Flow store first. No exec
+    // bookkeeping (signalNodeExecDone / install sync): nothing executed.
     const hydrateRestoredOutputs = (restored: IOutput[], edges?: readonly any[]) => {
         setTimeout(() => {
             for (const o of restored) {

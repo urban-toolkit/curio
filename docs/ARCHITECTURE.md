@@ -206,6 +206,8 @@ focus in the URL (`settingsPath`, read back by `focusFromSearch`).
 
 When a node produces output, it calls `outputCallback(nodeId, output)`, which updates `outputs`. React re-renders cause downstream nodes (those connected by an edge from the node that just executed) to detect the new input and request the data from the backend.
 
+Opening a dataflow (`ProjectLoader`) and dropping a scenario restore saved outputs: they go into `outputs`, and `hydrateRestoredOutputs` (`providers/flow/useApplyOutput.ts`) hands each one to the nodes below its producer, once, along the edges the load built. The load's replay of its saved edges through `onConnect` hands over no output of a node the load added; an edge from a node already on the canvas (Duplicate selection wiring a copy) hands over that node's output, as a new connection does.
+
 ### The notebook view
 
 The notebook view shows the canvas's own nodes and edges as a column of cells, with

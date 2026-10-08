@@ -35,8 +35,12 @@ export function useConnect({
     outputsRef: React.MutableRefObject<IOutput[]>;
     propagateDownstreamInputs: ReturnType<typeof useGraphEdits>["propagateDownstreamInputs"];
 }) {
+    // *sourceAddedByLoad*: a saved edge that `loadParsedTrill` replays, from a
+    // node that load added. Any output that node holds is one the load
+    // restored, and `hydrateRestoredOutputs` passes it down, so the edge does
+    // not hand it over too.
     const onConnect = useCallback(
-        (connection: Connection, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean, skipValidation?: boolean) => {
+        (connection: Connection, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean, skipValidation?: boolean, sourceAddedByLoad?: boolean) => {
             console.log(
                 "onConnect triggered:",
                 connection.source,
@@ -219,14 +223,23 @@ export function useConnect({
 
                 if (allowConnection) {
                     const conn = growing ? resolvedConnection : connection;
+                    const sourceId = conn.source as string;
+                    // A restored output reaches the target from
+                    // hydrateRestoredOutputs alone, its circle or port included.
+                    // A source with nothing to give still sets up the target's
+                    // circle or port here, as any new edge does.
+                    const held = outputsRef.current.find((o) => o.nodeId === sourceId)?.output;
+                    const restoredByLoad = !!sourceAddedByLoad && held != null && held !== "";
                     markNodeStaleRef.current(conn.target as string);
-                    applyOutput(
-                        inNodeType as NodeType,
-                        conn.target as string,
-                        conn.source as string,
-                        conn.sourceHandle as string,
-                        conn.targetHandle as string
-                    );
+                    if (!restoredByLoad) {
+                        applyOutput(
+                            inNodeType as NodeType,
+                            conn.target as string,
+                            sourceId,
+                            conn.sourceHandle as string,
+                            conn.targetHandle as string
+                        );
+                    }
 
                     setEdges((eds) => {
                         let customConnection: any = {
@@ -276,10 +289,9 @@ export function useConnect({
                         });
 
                         const nextEdges = addEdge(customConnection, eds);
-                        const sourceId = conn.source as string;
                         const cached = outputsRef.current.find((o) => o.nodeId === sourceId);
-                        if (cached?.output != null && cached.output !== "") {
-                            // Edge is in the graph now — fan out to all downstream nodes
+                        if (!restoredByLoad && cached?.output != null && cached.output !== "") {
+                            // Edge is in the graph now: fan out to all downstream nodes
                             // (input circles, multiple pools) using the live edge list.
                             queueMicrotask(() => {
                                 propagateDownstreamInputs(sourceId, cached.output);

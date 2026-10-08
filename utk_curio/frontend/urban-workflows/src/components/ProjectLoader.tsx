@@ -212,8 +212,10 @@ export const ProjectLoader: React.FC<{
         const newOutputs = restoredOutputs(outputs);
         setOutputs((prev: IOutput[]) => withOutputs(prev, newOutputs));
         // Refill downstream data.input (incl. input circles) from the restored
-        // outputs — otherwise every reload requires rerunning each upstream
+        // outputs: otherwise every reload requires rerunning each upstream
         // node before downstream nodes and pools receive anything (dev/64).
+        // Only from here: the load's edge replay hands none of them over, so
+        // each node below a restored output gets it once.
         //
         // Against the edges the load just built, not React Flow's store: the
         // store is written from an effect and still reports nothing at this
