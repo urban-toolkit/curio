@@ -140,6 +140,24 @@ class _Harness:
             headers=_auth(self.token),
         ).get_json()["turns"]
 
+    def record_selection(self, url):
+        """Record the user's pick of the external row *url* the way the
+        selection endpoint does (commit 6)."""
+        finder_id = self.finder_attachment_id()
+        spec = self.spec()
+        part = next(
+            p for t in self.session_turns(finder_id) for p in (t.get("content") or [])
+            if p.get("type") == "datasetCandidates"
+        )
+        rows = dr.resolve_picks(part, [{"lane": "external", "key": url}])
+        dr.record_selection(spec, finder_id, rows)
+        projects_storage.write_spec(self.ukey, self.pid, spec)
+
+    def recorded_urls(self):
+        """The node's recorded source state and the URLs of its picks."""
+        record = dr.source_record(self.spec(), self.load) or {}
+        return record.get("status"), [p.get("url") for p in record.get("picks") or []]
+
 
 class TestDiscoveryIsInitiated:
     def test_a_loader_the_project_cannot_ground_ends_awaiting_the_selection(
@@ -255,25 +273,51 @@ class TestConfirmedSourceReachesTheBuilder:
             ],
         )
         assert h.solve()["results"][h.load]["status"] == "pending"
-        finder_id = h.finder_attachment_id()
-        # Record the selection the way the endpoint will (commit 6).
-        spec = h.spec()
-        part = next(
-            p for t in h.session_turns(finder_id) for p in (t.get("content") or [])
-            if p.get("type") == "datasetCandidates"
-        )
-        rows = dr.resolve_picks(part, [
-            {"lane": "external", "key": "https://data.example.org/areas.geojson"},
-        ])
-        dr.record_selection(spec, finder_id, rows)
-        projects_storage.write_spec(h.ukey, h.pid, spec)
+        h.record_selection("https://data.example.org/areas.geojson")
         body = h.solve(node_ids=[h.load])
-        assert body["results"][h.load]["status"] == "solved"
+        load = body["results"][h.load]
+        assert load["status"] == "solved", load
         # The confirmed source was HANDED to the content child.
         frame = h.dl_calls[-1]
         assert "confirmedSource" in frame
         assert "https://data.example.org/areas.geojson" in frame
         assert len(h.discover_calls) == 1  # resolved: no second discovery
+        # And the selection is still the node's source after the Solve that used it.
+        assert h.recorded_urls() == (
+            dr.STATE_RESOLVED, ["https://data.example.org/areas.geojson"]
+        )
+
+    def test_rounds_that_miss_the_confirmed_source_keep_the_selection(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The Solve after the selection starts with rounds whose code does not
+        load the confirmed source: on a loaded runner the old one-second session
+        cut the first Solve short, so the second read an ungrounded reply. Those
+        rounds fail at the gate, the node keeps its selection instead of being
+        sent back to discovery, and the session's next pass builds the loader
+        from the same source."""
+        user, token = user_and_token
+        url = "https://data.example.org/areas.geojson"
+        invented = 'import pandas as pd\nreturn pd.read_csv("invented.csv")'
+        # Three ungrounded attempts in the first Solve, three more in the first
+        # pass after the selection, then the code that loads the confirmed URL.
+        h = _Harness(
+            client, user, token, monkeypatch,
+            dl_replies=[invented] * 6 + [f'import pandas as pd\nreturn pd.read_json("{url}")'],
+        )
+        assert h.solve()["results"][h.load]["status"] == "pending"
+        h.record_selection(url)
+        body = h.solve(node_ids=[h.load])
+        load = body["results"][h.load]
+        assert load["status"] == "solved", load
+        assert [a["kind"] for a in load["attempts"][:3]] == ["ungrounded-source"] * 3
+        # Every round after the selection was handed the confirmed source.
+        assert len(h.dl_calls) > 3
+        for frame in h.dl_calls[3:]:
+            assert "confirmedSource" in frame
+            assert url in frame
+        assert len(h.discover_calls) == 1  # no second discovery, no second card
+        assert h.recorded_urls() == (dr.STATE_RESOLVED, [url])
 
 
 class TestSelectionEndpoint:
