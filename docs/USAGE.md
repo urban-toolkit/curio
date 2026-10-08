@@ -1125,10 +1125,10 @@ running anything.
   The page is served with its data inside it, so a viewer needs no account and the
   dashboard keeps working if the server is unreachable.
 
-Two dashboards cannot be served this way, and both say so when you open them: one whose
-data is too large to travel with the page (25 MB), and one with a pinned Autark tile that
-loads its own data. For the second, move the tile's `data` section into its own node
-upstream so its output is saved.
+Two dashboards cannot be served this way: one whose data is too large to travel with the
+page (25 MB), and one with a pinned Autark tile that loads its own data. Opening either
+shows why, naming the nodes to change, and draws nothing. For the second, move the tile's
+`data` section into its own node upstream so its output is saved.
 
 An Autark map tile draws in the viewer's browser, so it needs WebGPU there. A map over a
 raster draws too: the raster travels with the page, and its size counts toward the 25 MB.

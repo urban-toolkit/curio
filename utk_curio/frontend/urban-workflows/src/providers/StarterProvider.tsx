@@ -56,9 +56,11 @@ const StarterProvider = ({ children }: { children: ReactNode }) => {
         // A standalone dashboard was served with these. They are what a package
         // template's declared `source` is filled from, so a page without them
         // would render a package tile with an empty body rather than its code.
+        // A page that carries none, such as one the server refused to build,
+        // has none: it never asks the server.
         const embedded = getEmbeddedDashboard();
-        if (embedded?.registry?.starters) {
-            setDefaultStarters(embedded.registry.starters as Starter[]);
+        if (embedded) {
+            setDefaultStarters((embedded.registry?.starters ?? []) as Starter[]);
             return;
         }
         try {
