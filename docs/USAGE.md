@@ -938,7 +938,8 @@ no `data` entry for its input; it names the tables the input provides.
 - A `GeoDataFrame` whose `metadata` names one of Autark's layer types loads as
   that layer: `gdf.metadata = {"layerType": "buildings"}` draws its rows as
   buildings, raised to their height. A building's height comes from `height`,
-  else `building:levels` (3.4 m a level); one with neither stands 6 m high. The
+  else `building:height`, else `building:levels` (3.4 m a level); one with none
+  of them stands 6 m high. The
   loader of an OpenStreetMap layer downloaded from the Discovery Catalog sets it.
 - Coordinates are read in the CRS the frame declares. A frame with no CRS is
   read as EPSG:4326 when its coordinates look like longitude and latitude, and
