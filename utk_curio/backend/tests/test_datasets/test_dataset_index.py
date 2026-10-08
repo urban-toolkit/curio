@@ -379,7 +379,31 @@ def test_upsert_is_idempotent_and_updates_in_place(store):
 
 # ── concurrency ─────────────────────────────────────────────────────────────
 
-def test_concurrent_reconciles_converge_without_duplicating_rows(store, app, monkeypatch):
+@pytest.fixture()
+def file_db_app(store, tmp_path):
+    """The app on a SQLite file, so each thread gets its own connection.
+
+    A server opens one connection per thread. The in-memory engine the other
+    tests use hands every thread the same connection, which SQLite does not let
+    two threads use at once.
+    """
+    from utk_curio.backend.app import create_app
+    from utk_curio.backend.extensions import db
+    from utk_curio.backend.tests._unit_fixtures import TestConfig
+
+    class FileTestConfig(TestConfig):
+        SQLALCHEMY_DATABASE_URI = f"sqlite:///{tmp_path / 'index.db'}"
+
+    application = create_app(FileTestConfig)
+    with application.app_context():
+        db.create_all()
+        yield application
+        db.session.remove()
+        db.drop_all()
+        db.engine.dispose()
+
+
+def test_concurrent_reconciles_converge_without_duplicating_rows(file_db_app, monkeypatch):
     """Two threads reconciling one user must not race into duplicate rows.
 
     The dev server is threaded, so two catalog listings for the same user can
@@ -388,7 +412,7 @@ def test_concurrent_reconciles_converge_without_duplicating_rows(store, app, mon
     and each one, after reading the rows, waits for the other to read them
     too: two reconciles that both read before either writes add every row
     twice. If the other one never gets there, the wait gives up after a few
-    seconds.
+    seconds. The database is a file, as on a server (``file_db_app``).
     """
     import threading
 
@@ -417,7 +441,7 @@ def test_concurrent_reconciles_converge_without_duplicating_rows(store, app, mon
     def worker():
         try:
             barrier.wait(timeout=5)
-            with app.app_context():
+            with file_db_app.app_context():
                 index_repo.reconcile("1")
         except BaseException as exc:  # noqa: BLE001 - reported below
             errors.append(exc)
