@@ -15,10 +15,8 @@ import {
   groupDatasetsForPalette,
   isInThisDataflow,
   isUserInstalledDataset,
-  sortDatasetPaletteEntries,
   useDatasetCatalog,
   prefetchDatasetCatalog,
-  type DatasetPaletteSortKey,
 } from "../../../../services/datasetCatalog";
 import { TOOLS_PALETTE_DROPDOWN_ATTR, TOOLS_PALETTE_PANEL_ATTR } from "../toolsPaletteDismiss";
 import { buildSaveableLiveOutputs } from "../../../../utils/saveOutputDataset";
@@ -91,22 +89,12 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown({
 
   // Fold multilayer OSM PBF imports (layers sharing a groupId) into collapsible
   // groups; every other dataset stays a single row. Each layer remains an
-  // ordinary, individually draggable DatasetRow inside its group.
+  // ordinary, individually draggable DatasetRow inside its group. The palette
+  // keeps the listing's order, the catalog's Recent activity (`sort: "recent"`
+  // above), and a group sits where its first layer is listed.
   const paletteEntries = useMemo(
     () => groupDatasetsForPalette(installedRows),
     [installedRows],
-  );
-
-  // Palette sort key. Backed entirely by persisted dataset metadata (import
-  // ``createdAt`` / install ``installedAt``), never UI-only state, so the order
-  // is stable across reopens. Groups sort as a unit by their representative time.
-  // Fixed, now that the toggle is gone: import time is the stable one - it is
-  // set once when the file is registered and never moves, so reopening the
-  // palette shows the same order.
-  const sortKey: DatasetPaletteSortKey = "importedAt";
-  const sortedEntries = useMemo(
-    () => sortDatasetPaletteEntries(paletteEntries, sortKey),
-    [paletteEntries],
   );
 
   // Outputs this dataflow's nodes saved to the account (#217). They are not in
@@ -253,7 +241,7 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown({
                 <DatasetInstallingRow key={`pending:${pending.key}`} pending={pending} />
               ))}
               {installedRows.length > 0 ? (
-                sortedEntries.map((entry) =>
+                paletteEntries.map((entry) =>
                   entry.kind === "group" ? (
                     <DatasetGroupRow key={`group:${entry.groupId}`} group={entry} />
                   ) : (

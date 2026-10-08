@@ -6,6 +6,7 @@ export * from "./datasetCatalogTypes";
 export * from "./datasetLoaderSnippets";
 export * from "./useDatasetImport";
 export * from "./datasetPaletteGrouping";
+export * from "./catalogDates";
 export * from "./pendingInstallView";
 export * from "./producerLinkage";
 export * from "./datasetReference";
