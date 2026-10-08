@@ -145,7 +145,7 @@ env:
 #   * CPU jobs: GitHub-hosted ubuntu-latest while the organization's hosted
 #     runners have room, the self-hosted arcade runners ([self-hosted, cpu],
 #     40 of them) for the rest.
-#   * test-gpu: an arcade GPU runner (arcade-gpu-01..06, [self-hosted, gpu,
+#   * test-gpu: an arcade GPU runner (arcade-gpu-01..04, [self-hosted, gpu,
 #     h100]) while one is free, utk-gpu ([self-hosted, gpu, curio]) otherwise.
 #   * test-desktop-stress, unit (sandbox) and preview-runner: always
 #     ubuntu-latest. The first two measure a 4-core, 16 GB laptop.
@@ -1193,6 +1193,10 @@ jobs:
               mkdir -p "$release/$folder"
               cp -R "$folder/." "$release/$folder/"
             done
+            # A pip install's sandbox Node.js packages (node_runtime.nodejs_dir),
+            # which the boot's hardening closes too.
+            mkdir -p .curio/nodejs/node_modules
+            cp package.json package-lock.json .curio/nodejs/
 
       - name: 🐍 Set up Python
         uses: actions/setup-python@v6
