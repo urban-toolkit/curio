@@ -103,6 +103,21 @@ class TestNodeSourceState:
         assert attachments.get_attachment(spec, "att-df")["revision"] == rev
         assert dr.mark_candidates_pending(spec, "ghost", count=1) is None
 
+    def test_a_skip_never_replaces_a_confirmed_selection(self):
+        # Every Solve that resolves a node records why discovery was not
+        # needed, and the project's Data Catalog is such a reason. The user's
+        # confirmed pick is the node's source: the note must not erase it, or
+        # the next round that misses it starts discovery all over again.
+        picks = [{"lane": "external", "name": "Portal", "url": "https://x/y.json"}]
+        spec = _spec_with_finder(status=dr.STATE_RESOLVED, picks=picks)
+        rev = attachments.get_attachment(spec, "att-df")["revision"]
+        literal = "the project's Data Catalog (3 dataset(s))"
+        assert dr.mark_skipped(spec, "att-df", literal=literal) is None
+        record = dr.source_record(spec, "n1")
+        assert (record["status"], record["picks"]) == (dr.STATE_RESOLVED, picks)
+        assert attachments.get_attachment(spec, "att-df")["revision"] == rev
+        assert dr.confirmed_source(spec, "n1")["picks"][0]["url"] == "https://x/y.json"
+
 
 class TestResolvePicks:
     def test_keys_resolve_to_the_runtime_rows(self):

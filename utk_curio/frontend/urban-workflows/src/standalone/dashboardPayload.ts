@@ -24,11 +24,30 @@ export interface EmbeddedEnvelope {
   [key: string]: unknown;
 }
 
+/**
+ * What `/raster` answered, when the page was built, for one raster an Autark
+ * map on it reads: its GeoTIFF and `X-Curio-Raster` description, or why not.
+ */
+export interface EmbeddedRaster {
+  /** The output's manifest filename, as `outputs` is keyed. */
+  filename: string;
+  /** Its place in a Python tuple; null for the whole output. */
+  part: number | null;
+  status: number;
+  meta?: any;
+  /** The GeoTIFF, base64, when the status is 200. */
+  geotiff?: string;
+  /** Why it was not served, for any other status. */
+  message?: string;
+}
+
 export interface EmbeddedDashboard {
   meta: { projectId?: string; name?: string | null; generatedAt?: string };
   spec: any;
   /** Keyed by the manifest filename a tile looks up, exactly as `/get` is. */
   outputs: Record<string, EmbeddedEnvelope>;
+  /** The rasters its Autark maps read, by filename and part. */
+  rasters?: EmbeddedRaster[];
   /**
    * The same outputs as the project load hands the page, by node, narrowed to
    * what actually travelled. The loader restores a node's output by id; the map
@@ -95,6 +114,17 @@ export function embeddedArtifact(fileName: string): EmbeddedEnvelope | null {
   if (!payload) return null;
   const hit = payload.outputs[fileName];
   return hit === undefined ? null : hit;
+}
+
+/**
+ * What the page carries for one raster (`part` its place in a tuple), or null
+ * when the page has no payload or does not carry it, as `embeddedArtifact`.
+ */
+export function embeddedRaster(fileName: string, part?: number | null): EmbeddedRaster | null {
+  const rasters = getEmbeddedDashboard()?.rasters;
+  if (!Array.isArray(rasters)) return null;
+  const wanted = part ?? null;
+  return rasters.find((raster) => raster?.filename === fileName && (raster.part ?? null) === wanted) ?? null;
 }
 
 /** Test seam: forget what was read, so a test can install a different payload. */

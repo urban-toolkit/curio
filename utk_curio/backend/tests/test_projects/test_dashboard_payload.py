@@ -14,7 +14,9 @@ How many: the limit is a refusal. A page that silently falls back to fetching
 what would not fit is a page that looks standalone and is not, and the owner
 finds out when somebody opens it somewhere the server cannot be reached.
 """
+import base64
 import json
+import re
 
 import pytest
 
@@ -335,6 +337,191 @@ class TestATileThatFetchesItsOwnData:
         assert set(payload.outputs) == {"l.parquet"}
 
 
+# ---------------------------------------------------------------------------
+# A raster behind a pinned map
+# ---------------------------------------------------------------------------
+
+#: What ``/get`` answers for a Python node's raster: the path of its file.
+RASTER_ENVELOPE = {"dataType": "raster", "data": "/srv/curio/data/r.tif"}
+
+#: A raster's description, as the sandbox's ``X-Curio-Raster`` header carries it.
+RASTER_META = {
+    "width": 40, "height": 30, "count": 1, "crs": "EPSG:32616", "crsWkt": None,
+    "transform": [100.0, 0.0, 447000.0, 0.0, -100.0, 4637000.0],
+    "nodata": None, "dtype": "float32",
+}
+
+GEOTIFF = b"II*\x00" + bytes(range(256)) * 4
+
+
+def served(geotiff=GEOTIFF):
+    """What the raster reader hands back for a raster ``/raster`` served."""
+    return {"status": 200, "meta": RASTER_META, "geotiff": geotiff}
+
+
+def raster_map_spec():
+    return spec_of(
+        [
+            node("py", "curio.builtin/computation-analysis"),
+            node("map", "curio.builtin/autk-grammar", code=RENDER_SPEC, dashboardPinned=True),
+        ],
+        [edge("py", "map")],
+    )
+
+
+def raster_refs(filename="r_output", data_type="raster"):
+    return [OutputRef(node_id="py", filename=filename, data_type=data_type)]
+
+
+class TestARasterBehindAPinnedMap:
+    """An Autark map loads a Python node's raster as the GeoTIFF ``/raster``
+    serves, which a page that needs no server cannot ask for. So the page
+    carries what ``/raster`` answered when it was built, beside the envelope
+    ``/get`` answered, and the map reads it there."""
+
+    def test_the_geotiff_travels_with_its_description(self):
+        asked = []
+
+        def fetch_raster(filename, part):
+            asked.append((filename, part))
+            return served()
+
+        payload = build_dashboard_payload(
+            spec=raster_map_spec(),
+            output_refs=raster_refs(),
+            fetch_envelope=lambda name: RASTER_ENVELOPE,
+            fetch_raster=fetch_raster,
+        )
+        body = payload.to_dict()
+
+        assert asked == [("r_output", None)]
+        # The envelope still travels as /get answered it.
+        assert body["outputs"] == {"r_output": RASTER_ENVELOPE}
+        [raster] = body["rasters"]
+        assert (raster["filename"], raster["part"], raster["status"]) == ("r_output", None, 200)
+        assert raster["meta"] == RASTER_META
+        assert base64.b64decode(raster["geotiff"]) == GEOTIFF
+        # The page carries it as JSON.
+        assert json.loads(json.dumps(body))["rasters"] == [raster]
+
+    def test_each_raster_of_a_tuple_travels_under_its_place_in_it(self):
+        # A tuple's raster is asked for by its part, as the map asks for it.
+        envelope = {"dataType": "outputs", "data": [
+            {"dataType": "dataframe", "data": {"a": [1]}},
+            {"dataType": "raster", "data": "/srv/a.tif"},
+            {"dataType": "raster", "data": "/srv/b.tif"},
+        ]}
+        asked = []
+
+        def fetch_raster(filename, part):
+            asked.append((filename, part))
+            return served(GEOTIFF + bytes([part]))
+
+        payload = build_dashboard_payload(
+            spec=raster_map_spec(),
+            output_refs=raster_refs("t_output", "outputs"),
+            fetch_envelope=lambda name: envelope,
+            fetch_raster=fetch_raster,
+        )
+        rasters = payload.to_dict()["rasters"]
+
+        assert asked == [("t_output", 1), ("t_output", 2)]
+        assert [(r["filename"], r["part"]) for r in rasters] == [("t_output", 1), ("t_output", 2)]
+        assert [base64.b64decode(r["geotiff"])[-1] for r in rasters] == [1, 2]
+
+    def test_a_raster_that_travels_as_its_collection_needs_nothing_more(self):
+        # A raster an Autark node handed on is its collection, inside the
+        # envelope /get answered, which travels anyway.
+        handed_on = {"dataType": "raster", "data": {"type": "FeatureCollection", "features": [], "grid": {}}}
+        envelope = {"dataType": "outputs", "data": [handed_on]}
+
+        def fetch_raster(filename, part):
+            raise AssertionError("asked /raster for a raster the envelope already holds")
+
+        payload = build_dashboard_payload(
+            spec=raster_map_spec(),
+            output_refs=raster_refs(data_type="outputs"),
+            fetch_envelope=lambda name: envelope,
+            fetch_raster=fetch_raster,
+        )
+
+        assert payload.to_dict()["rasters"] == []
+
+    def test_an_output_saved_as_a_raster_is_asked_for_whole(self):
+        # The map asks /raster for it by name whatever its envelope holds, so
+        # the page carries that answer, here the sandbox's refusal.
+        refusal = {"status": 422, "meta": None, "message": "artifact r_output is not a raster"}
+        asked = []
+
+        def fetch_raster(filename, part):
+            asked.append((filename, part))
+            return refusal
+
+        payload = build_dashboard_payload(
+            spec=raster_map_spec(),
+            output_refs=raster_refs(),
+            fetch_envelope=lambda name: {"dataType": "dict", "data": {"a": 1}},
+            fetch_raster=fetch_raster,
+        )
+
+        assert asked == [("r_output", None)]
+        assert payload.to_dict()["rasters"] == [{"filename": "r_output", "part": None, **refusal}]
+
+    def test_a_refused_raster_travels_as_the_refusal(self):
+        # The page then shows what the editor shows for it, here the raster's
+        # size against what a map loads, and asks no server.
+        refusal = {
+            "status": 413,
+            "meta": {**RASTER_META, "width": 5000, "height": 5000},
+            "message": "the raster is 5000 by 5000 cells",
+        }
+
+        payload = build_dashboard_payload(
+            spec=raster_map_spec(),
+            output_refs=raster_refs(),
+            fetch_envelope=lambda name: RASTER_ENVELOPE,
+            fetch_raster=lambda filename, part: refusal,
+        )
+
+        assert payload.to_dict()["rasters"] == [{"filename": "r_output", "part": None, **refusal}]
+
+    def test_a_raster_the_sandbox_cannot_be_asked_for_is_left_out(self):
+        # As an envelope that cannot be read is.
+        def unreachable(filename, part):
+            raise KeyError(filename)
+
+        payload = build_dashboard_payload(
+            spec=raster_map_spec(),
+            output_refs=raster_refs(),
+            fetch_envelope=lambda name: RASTER_ENVELOPE,
+            fetch_raster=unreachable,
+        )
+        body = payload.to_dict()
+
+        assert body["rasters"] == []
+        assert body["outputs"] == {"r_output": RASTER_ENVELOPE}
+
+    def test_it_asks_for_no_more_than_the_editors_map_loads(self):
+        # The page's map refuses a larger raster with the editor's sentence; the
+        # reader asks /raster with the same limits (rasterLoad.ts), so such a
+        # raster travels as that refusal and is never written out whole.
+        from utk_curio.backend.app.projects.dashboard_payload import (
+            RASTER_MAX_CELLS,
+            RASTER_MAX_SIDE,
+        )
+        from utk_curio.backend.app.projects.seed import _repo_root
+
+        source = (
+            _repo_root() / "utk_curio" / "frontend" / "urban-workflows" / "src"
+            / "utils" / "raster" / "rasterLoad.ts"
+        ).read_text(encoding="utf-8")
+        cells = re.search(r"export const RASTER_MAX_CELLS = (\d+) \* (\d+);", source)
+        side = re.search(r"export const RASTER_MAX_SIDE = (\d+);", source)
+        assert cells and side, "rasterLoad.ts no longer declares its limits the way this test reads them"
+        assert RASTER_MAX_CELLS == int(cells[1]) * int(cells[2])
+        assert RASTER_MAX_SIDE == int(side[1])
+
+
 class TestSizeLimit:
     def _spec(self):
         return spec_of(
@@ -389,6 +576,34 @@ class TestSizeLimit:
 
         assert caught.value.weights[0].node_id == "heavy"
         assert "heavy" in caught.value.describe()
+
+    def test_a_rasters_geotiff_counts_toward_the_budget(self):
+        # Its envelope is a path, a few bytes; the page carries the GeoTIFF.
+        payload = build_dashboard_payload(
+            spec=raster_map_spec(),
+            output_refs=raster_refs(),
+            fetch_envelope=lambda name: RASTER_ENVELOPE,
+            fetch_raster=lambda filename, part: served(b"\x00" * 3000),
+            limit_bytes=1_000_000,
+        )
+
+        assert payload.total_bytes > len(base64.b64encode(b"\x00" * 3000))
+
+    def test_a_raster_over_the_budget_is_refused_in_the_caps_own_words(self):
+        with pytest.raises(DashboardTooLargeError) as caught:
+            build_dashboard_payload(
+                spec=raster_map_spec(),
+                output_refs=raster_refs(),
+                fetch_envelope=lambda name: RASTER_ENVELOPE,
+                fetch_raster=lambda filename, part: served(b"\x00" * 3000),
+                limit_bytes=2048,
+            )
+
+        heaviest = caught.value.weights[0]
+        assert (heaviest.node_id, heaviest.data_type) == ("py", "raster")
+        message = caught.value.describe()
+        assert "over the 2 KB limit" in message
+        assert "py" in message and "raster" in message
 
     def test_an_output_no_tile_reads_does_not_count_against_the_budget(self):
         spec = spec_of(

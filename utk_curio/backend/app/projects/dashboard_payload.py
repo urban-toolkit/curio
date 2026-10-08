@@ -20,6 +20,15 @@ Two separate things go into the page and they come from different places:
     through the same code path that reads a fetched artifact. The key is the
     manifest ``filename`` because that is the key the tiles look up.
 
+``rasters``
+    What ``/raster`` answered for each raster an Autark map on the page asks it
+    for: a Python node's raster, whose envelope holds only its file's path, by
+    the output's filename and its place in a tuple (``part``). A served raster
+    is its GeoTIFF in base64 with the ``X-Curio-Raster`` description; a refused
+    one is the status, description and message the editor's map would get. The
+    page answers ``fetchRaster`` from these as it answers ``fetchData`` from
+    ``outputs``.
+
 Only the outputs a tile actually needs are embedded. A dataflow saved under
 ``--save-node-outputs`` has an output for every node, and a dashboard has no
 business shipping rows from nodes it does not show: that is somebody's data
@@ -31,6 +40,7 @@ looks standalone and silently is not, or one so large a browser cannot open it.
 """
 from __future__ import annotations
 
+import base64
 import json
 from collections import deque
 from dataclasses import dataclass, field
@@ -63,6 +73,13 @@ _SELF_DRAWN_KINDS = frozenset({"compare-scenarios"})
 #: or an unaggregated geodataframe blows past it, which is the case the refusal
 #: exists for.
 DEFAULT_PAYLOAD_LIMIT_BYTES = 25 * 1024 * 1024
+
+#: The most an Autark map loads from one raster (``RASTER_MAX_CELLS`` and
+#: ``RASTER_MAX_SIDE`` in ``utils/raster/rasterLoad.ts``). The page's rasters
+#: are asked of ``/raster`` with these, as the editor's map asks, so a larger
+#: one travels as the refusal the editor gets and is never written out whole.
+RASTER_MAX_CELLS = 2048 * 2048
+RASTER_MAX_SIDE = 8192
 
 
 @dataclass(frozen=True)
@@ -275,6 +292,78 @@ def _refuse_tiles_that_fetch_their_own_data(spec: dict) -> None:
         raise DashboardCannotBeStandaloneError(offenders)
 
 
+#: The envelope kinds of a frame, which hold rows rather than other envelopes.
+_FRAME_KINDS = frozenset({"dataframe", "geodataframe"})
+
+
+def _is_envelope(value: object) -> bool:
+    return isinstance(value, dict) and isinstance(value.get("dataType"), str) and "data" in value
+
+
+def _is_raster_by_path(value: object) -> bool:
+    """A Python node's raster as ``/get`` answers it: the path of its file."""
+    return _is_envelope(value) and value["dataType"] == "raster" and isinstance(value["data"], str)
+
+
+def _keyed_frames_as_outputs(value: object) -> Optional[dict]:
+    """A dict of frames read as a tuple of them (``keyedFramesAsOutputs``)."""
+    if not isinstance(value, dict) or not value or _is_envelope(value):
+        return None
+    items = list(value.values())
+    if not all(_is_envelope(item) for item in items):
+        return None
+    if not any(item["dataType"] in _FRAME_KINDS for item in items):
+        return None
+    return {"dataType": "outputs", "data": items}
+
+
+def raster_places(envelope: object, data_type: Optional[str]) -> List[Optional[int]]:
+    """The rasters an Autark map asks ``/raster`` for in one saved output.
+
+    An output saved as a raster is asked for whole (``None``), whatever its
+    envelope holds, as ``readGrammarInput`` does. Otherwise its envelope is
+    read by ``framesFromPayload``'s rules (``utils/grammarInput.ts``): value
+    envelopes are peeled, a dict of frames reads as a tuple of them, a raster
+    by path is the output itself, and one in a tuple is the part at its place.
+    A raster that travels as its collection is in the envelope already.
+    """
+    if data_type == "raster":
+        return [None]
+    value = envelope
+    while (
+        _is_envelope(value)
+        and value["dataType"] not in ("outputs", "raster")
+        and value["dataType"] not in _FRAME_KINDS
+    ):
+        value = value["data"]
+    value = _keyed_frames_as_outputs(value) or value
+    if _is_raster_by_path(value):
+        return [None]
+    if _is_envelope(value) and value["dataType"] == "outputs" and isinstance(value["data"], list):
+        return [
+            index
+            for index, item in enumerate(value["data"])
+            if _is_raster_by_path(item) and not (isinstance(item.get("path"), str) and item["path"])
+        ]
+    return []
+
+
+def _raster_record(filename: str, part: Optional[int], answer: dict) -> dict:
+    """What the page carries for one raster: ``/raster``'s answer, by name."""
+    status = int(answer.get("status") or 0)
+    record = {"filename": filename, "part": part, "status": status, "meta": answer.get("meta")}
+    geotiff = answer.get("geotiff")
+    if status == 200 and isinstance(geotiff, (bytes, bytearray)):
+        record["geotiff"] = base64.b64encode(bytes(geotiff)).decode("ascii")
+    else:
+        record["message"] = str(answer.get("message") or f"HTTP {status}")
+    return record
+
+
+def _json_bytes(value: object) -> int:
+    return len(json.dumps(value, default=str).encode("utf-8"))
+
+
 @dataclass
 class DashboardPayload:
     """What gets inlined into the page."""
@@ -283,6 +372,7 @@ class DashboardPayload:
     outputs: Dict[str, dict]
     meta: dict
     weights: List[TileWeight] = field(default_factory=list)
+    rasters: List[dict] = field(default_factory=list)
 
     @property
     def total_bytes(self) -> int:
@@ -306,6 +396,7 @@ class DashboardPayload:
                 }
                 for weight in self.weights
             ],
+            "rasters": self.rasters,
         }
 
 
@@ -314,6 +405,7 @@ def build_dashboard_payload(
     spec: dict,
     output_refs: Iterable,
     fetch_envelope: Callable[[str], dict],
+    fetch_raster: Optional[Callable[[str, Optional[int]], dict]] = None,
     meta: Optional[dict] = None,
     limit_bytes: int = DEFAULT_PAYLOAD_LIMIT_BYTES,
 ) -> DashboardPayload:
@@ -328,10 +420,18 @@ def build_dashboard_payload(
     so the assembly can be tested without a sandbox, and so the caller decides
     whether it reads over HTTP or off the disk.
 
+    *fetch_raster* is handed a filename and a ``part`` (``None`` for the whole
+    output) for each raster an Autark map asks ``/raster`` for in an output
+    (:func:`raster_places`), and returns what ``/raster`` answered:
+    ``{"status": 200, "meta", "geotiff": bytes}``, or ``{"status", "meta",
+    "message"}`` for a refusal. Its GeoTIFF counts toward *limit_bytes* with
+    the output's rows.
+
     An output whose envelope cannot be read is skipped rather than fatal: the
     tile it feeds shows its own empty state, which is the same thing that
-    happens today when an artifact has gone. A dashboard over *limit_bytes*
-    raises :class:`DashboardTooLargeError`.
+    happens today when an artifact has gone. So is a raster the sandbox could
+    not be asked for. A dashboard over *limit_bytes* raises
+    :class:`DashboardTooLargeError`.
     """
     _refuse_tiles_that_fetch_their_own_data(spec)
 
@@ -339,6 +439,7 @@ def build_dashboard_payload(
 
     outputs: Dict[str, dict] = {}
     weights: List[TileWeight] = []
+    rasters: List[dict] = []
     for ref in output_refs:
         node_id = _ref_field(ref, "node_id")
         filename = _ref_field(ref, "filename")
@@ -358,12 +459,23 @@ def build_dashboard_payload(
         if envelope is None:
             continue
         outputs[filename] = envelope
+        size = _json_bytes(envelope)
+        for part in raster_places(envelope, data_type) if fetch_raster else []:
+            try:
+                answer = fetch_raster(filename, part)
+            except Exception:
+                continue
+            if not isinstance(answer, dict):
+                continue
+            record = _raster_record(filename, part, answer)
+            rasters.append(record)
+            size += _json_bytes(record)
         weights.append(
             TileWeight(
                 node_id=node_id,
                 filename=filename,
                 data_type=data_type,
-                bytes=len(json.dumps(envelope, default=str).encode("utf-8")),
+                bytes=size,
             )
         )
 
@@ -376,6 +488,7 @@ def build_dashboard_payload(
         outputs=outputs,
         meta=dict(meta or {}),
         weights=weights,
+        rasters=rasters,
     )
 
 

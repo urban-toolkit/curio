@@ -9,9 +9,11 @@ from extensions.duckdb.org.
 The release builds the sdist, then the wheel from the sdist
 (``publish-pip-to-pypi.yml``). The tests run those two steps through
 setuptools' build backend on a small project: Curio's build files,
-``utk_curio/__init__.py`` and the vendored extensions. They unpack the wheel as
-pip installs it, into a site-packages that then holds ``utk_curio/``, and start
-Curio from an empty folder of the user's.
+``utk_curio/__init__.py`` and the vendored extensions. The sdist keeps the
+extensions at their repository path, and the wheel carries them inside
+``utk_curio/``. They unpack the wheel as pip installs it, into a site-packages
+that then holds ``utk_curio/``, and start Curio from an empty folder of the
+user's.
 
 No test opens a socket, and the build downloads nothing.
 """
@@ -31,8 +33,11 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[4]
 VENDORED = REPO / "vendor" / "duckdb-extensions"
+#: Their path in the repository and in the sdist, and in the URL the backend
+#: serves them at.
+IN_THE_REPOSITORY = PurePosixPath("vendor", "duckdb-extensions")
 #: Where the wheel carries them, under the folder that holds ``utk_curio/``.
-IN_THE_PACKAGE = PurePosixPath("vendor", "duckdb-extensions")
+IN_THE_WHEEL = PurePosixPath("utk_curio", "_shipped", "vendor", "duckdb-extensions")
 #: Curio's files the build reads. pyproject.toml also names README.md and
 #: LICENSE, which the CI image does not hold; the project gets stand-ins.
 BUILD_FILES = ("pyproject.toml", "setup.py", "MANIFEST.in", "package.json", "package-lock.json")
@@ -95,7 +100,7 @@ def release(tmp_path_factory):
     (project / "README.md").write_text("Curio\n", encoding="utf-8")
     (project / "LICENSE").write_text("MIT License\n", encoding="utf-8")
     shutil.copy2(REPO / "utk_curio" / "__init__.py", project / "utk_curio" / "__init__.py")
-    shutil.copytree(VENDORED, project / IN_THE_PACKAGE)
+    shutil.copytree(VENDORED, project / IN_THE_REPOSITORY)
 
     out = root / "dist"
     out.mkdir()
@@ -135,17 +140,17 @@ def pip_install(release, tmp_path, monkeypatch):
 
 
 def test_the_sdist_and_the_wheel_carry_every_vendored_extension(release):
-    """Every extension Curio serves, byte for byte, in the sdist and in the
-    wheel, both at ``vendor/duckdb-extensions/``."""
+    """Every extension Curio serves, byte for byte, in the sdist at
+    ``vendor/duckdb-extensions/`` and in the wheel inside ``utk_curio/``."""
     vendored = _vendored()
-    in_sdist = _under(release.sdist_files, IN_THE_PACKAGE)
-    in_wheel = _under(release.wheel_files, IN_THE_PACKAGE)
+    in_sdist = _under(release.sdist_files, IN_THE_REPOSITORY)
+    in_wheel = _under(release.wheel_files, IN_THE_WHEEL)
     assert in_sdist == vendored, (
         f"the sdist carries {sorted(in_sdist)} of the DuckDB extensions Curio serves, "
         f"{sorted(vendored)}, and the release builds the wheel from the sdist"
     )
     assert in_wheel == vendored, (
-        f"the wheel carries {sorted(in_wheel)} at {IN_THE_PACKAGE}/ of the DuckDB extensions "
+        f"the wheel carries {sorted(in_wheel)} at {IN_THE_WHEEL}/ of the DuckDB extensions "
         f"Curio serves, {sorted(vendored)}"
     )
 
@@ -157,7 +162,7 @@ def test_a_pip_install_serves_the_browser_the_extensions_its_wheel_carries(app, 
     vendored = _vendored()
     client = app.test_client()
     for name, sha256 in vendored.items():
-        url = f"/file/{IN_THE_PACKAGE}/{name}"
+        url = f"/file/{IN_THE_REPOSITORY}/{name}"
         resp = client.get(url, buffered=True)
         assert resp.status_code == 200, (
             f"{url} answered {resp.status_code} on a pip install, so the browser's duckdb worker "
@@ -172,9 +177,9 @@ def test_a_pip_install_seeds_the_sandbox_with_the_extensions_its_wheel_carries(p
     from utk_curio.cli import dependencies
 
     vendored = _vendored()
-    shipped = _on_disk(pip_install.site / IN_THE_PACKAGE)
+    shipped = _on_disk(pip_install.site / IN_THE_WHEEL)
     assert shipped == vendored, (
-        f"a pip install's site-packages holds {sorted(shipped)} at {IN_THE_PACKAGE}/ of the DuckDB "
+        f"a pip install's site-packages holds {sorted(shipped)} at {IN_THE_WHEEL}/ of the DuckDB "
         f"extensions Curio serves, {sorted(vendored)}, so the sandbox's duckdb-wasm downloads "
         f"the rest from extensions.duckdb.org"
     )

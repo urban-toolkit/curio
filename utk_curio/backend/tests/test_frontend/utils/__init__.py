@@ -79,6 +79,7 @@ from .interactions import (  # noqa: F401
     INTERACTION_MIN_CHANGED_PIXELS,
     INTERACTION_VIEWPORT,
     INTERACTION_RESTORED_RATIO,
+    INTERACTION_SHOWN_TIMEOUT_MS,
     drawing_selector,
     keep_drawing,
     drawing_kept,

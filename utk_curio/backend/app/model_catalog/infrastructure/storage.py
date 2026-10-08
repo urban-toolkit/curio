@@ -21,6 +21,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from utk_curio import shipped
 from utk_curio.backend.app.common.safe_paths import PathTraversalError, is_within
 from utk_curio.backend.app.common.user_storage import user_key_segment, users_base
 from utk_curio.backend.app.datasets.infrastructure.storage import DATASET_DIR_RE
@@ -32,12 +33,12 @@ ENV_ROOT = "CURIO_MODELS_ROOT"
 
 
 def models_root() -> Path:
-    """The shipped models: ``<repo_root>/models``, or ``CURIO_MODELS_ROOT``."""
+    """The shipped models: ``models/`` (``utk_curio/shipped.py``), or
+    ``CURIO_MODELS_ROOT``."""
     override = os.environ.get(ENV_ROOT)
     if override and override.strip():
         return Path(override).expanduser().resolve()
-    # storage.py -> infrastructure/ -> model_catalog/ -> app/ -> backend/ -> utk_curio/ -> repo_root/
-    return Path(__file__).resolve().parents[5] / "models"
+    return shipped.path("models")
 
 
 def user_models_dir(user_key: str) -> Path:

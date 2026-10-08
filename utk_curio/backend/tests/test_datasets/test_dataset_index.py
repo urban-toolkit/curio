@@ -379,18 +379,61 @@ def test_upsert_is_idempotent_and_updates_in_place(store):
 
 # ── concurrency ─────────────────────────────────────────────────────────────
 
-def test_concurrent_reconciles_converge_without_duplicating_rows(store, app):
+@pytest.fixture()
+def file_db_app(store, tmp_path):
+    """The app on a SQLite file, so each thread gets its own connection.
+
+    A server opens one connection per thread. The in-memory engine the other
+    tests use hands every thread the same connection, which SQLite does not let
+    two threads use at once.
+    """
+    from utk_curio.backend.app import create_app
+    from utk_curio.backend.extensions import db
+    from utk_curio.backend.tests._unit_fixtures import TestConfig
+
+    class FileTestConfig(TestConfig):
+        SQLALCHEMY_DATABASE_URI = f"sqlite:///{tmp_path / 'index.db'}"
+
+    application = create_app(FileTestConfig)
+    with application.app_context():
+        db.create_all()
+        yield application
+        db.session.remove()
+        db.drop_all()
+        db.engine.dispose()
+
+
+def test_concurrent_reconciles_converge_without_duplicating_rows(file_db_app, monkeypatch):
     """Two threads reconciling one user must not race into duplicate rows.
 
     The dev server is threaded, so two catalog listings for the same user can
-    reconcile at once. ``upsert_from_dir`` matches on dir_name and the unique
-    constraints are the backstop; a lost race would surface as an
-    IntegrityError bubbling into a listing rather than a quiet retry.
+    reconcile at once. Neither store dir has a row here (a write-through that
+    failed, or a dir copied in by hand), so each reconcile has rows to add,
+    and each one, after reading the rows, waits for the other to read them
+    too: two reconciles that both read before either writes add every row
+    twice. If the other one never gets there, the wait gives up after a few
+    seconds. The database is a file, as on a server (``file_db_app``).
     """
     import threading
 
-    _install_imported(name="a.csv")
-    _install_imported(name="b.csv")
+    a = _install_imported(name="a.csv")
+    b = _install_imported(name="b.csv")
+    index_repo.forget("1", a.manifest.dir_name)
+    index_repo.forget("1", b.manifest.dir_name)
+
+    both_have_read = threading.Barrier(2)
+    real_list_user_datasets = index_repo.list_user_datasets
+
+    def list_once_both_have_read(user_key):
+        # Reconcile reads the rows, then lists the store dirs to add what the
+        # rows lack.
+        try:
+            both_have_read.wait(timeout=3)
+        except threading.BrokenBarrierError:
+            pass
+        return real_list_user_datasets(user_key)
+
+    monkeypatch.setattr(index_repo, "list_user_datasets", list_once_both_have_read)
 
     errors: list[BaseException] = []
     barrier = threading.Barrier(2)
@@ -398,7 +441,7 @@ def test_concurrent_reconciles_converge_without_duplicating_rows(store, app):
     def worker():
         try:
             barrier.wait(timeout=5)
-            with app.app_context():
+            with file_db_app.app_context():
                 index_repo.reconcile("1")
         except BaseException as exc:  # noqa: BLE001 - reported below
             errors.append(exc)
@@ -409,6 +452,7 @@ def test_concurrent_reconciles_converge_without_duplicating_rows(store, app):
     for t in threads:
         t.join(timeout=10)
 
+    assert not any(t.is_alive() for t in threads), "a reconcile never finished"
     assert not errors, f"reconcile raced: {errors!r}"
     rows = index_repo.list_for_user("1")
     assert len(rows) == 2
