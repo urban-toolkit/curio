@@ -89,6 +89,42 @@ export function requestedLayerTables(dataSources: any[]): string[] {
     return Array.from(new Set(names));
 }
 
+// A table's rows as Curio hands them to autk-db, which refuses a row whose
+// geometry is missing and reads a layer's kind off its first row. A row with no
+// geometry gets an empty one, a GeometryCollection with none in it: it loads,
+// a map draws nothing for it and a plot still counts it. When the first row has
+// no geometry, it trades places with the first row that has one; `order` then
+// lists, for each row handed on, the row it was (null when no row moved).
+// Every path that loads a table into autk-db goes through this one function: a
+// node's inputs (`loadableSource`), and a data section's GeoJSON sources in the
+// sandbox (compileDataSpecToAutkDbJs embeds this function's own source) and in
+// the browser (loadSpecLayers). So that embedded source runs as it is, the body
+// avoids syntax the build compiles to a shared helper (spread, destructuring,
+// for...of, optional chaining).
+export function loadableFeatures(features: any[]): { features: any[]; order: number[] | null } {
+    const has = function (feature: any) { return feature != null && feature.geometry != null; };
+    let order: number[] | null = null;
+    if (features.length > 0 && !has(features[0])) {
+        const first = features.findIndex(has);
+        if (first > 0) {
+            order = features.map(function (_feature: any, i: number) { return i; });
+            order[0] = first;
+            order[first] = 0;
+        }
+    }
+    const rows: number[] = order || features.map(function (_feature: any, i: number) { return i; });
+    let filled = false;
+    const out = rows.map(function (i: number) {
+        const feature = features[i];
+        if (has(feature)) return feature;
+        filled = true;
+        return Object.assign({ type: 'Feature', properties: {} }, feature, {
+            geometry: { type: 'GeometryCollection', geometries: [] },
+        });
+    });
+    return { features: order || filled ? out : features, order: order };
+}
+
 // Compile a grammar `data` section into autk-db JavaScript to run in the backend
 // Node.js sandbox. The single top-level `import` is rewritten to `await import()`
 // by execute_js_code; the rest is the body of the async function the sandbox
@@ -105,13 +141,24 @@ const __expectedTables = ${JSON.stringify(requestedLayerTables(dataSources))};
 const __loadErrors = [];
 // Mirrors joinFailureMessage() host-side; see the throw after the contract check.
 const __joinErrors = [];
+// loadableFeatures, as the host defines it (autkDataCompile.ts).
+const __loadableFeatures = ${loadableFeatures.toString()};
+// A GeoJSON source as autk-db loads it: its rows through __loadableFeatures,
+// fetched first when the source names a file, as the grammar's own adapter does.
+const __loadableGeojson = async (source) => {
+  let fc = source.geojsonObject;
+  if (fc == null && source.geojsonFileUrl) fc = await (await fetch(source.geojsonFileUrl)).json();
+  if (fc == null || !Array.isArray(fc.features)) return source;
+  const { geojsonFileUrl: _url, ...rest } = source;
+  return { ...rest, geojsonObject: { ...fc, features: __loadableFeatures(fc.features).features } };
+};
 const db = new AutkDb();
 await db.init();
 for (const source of __sources) {
   const { type, ...rest } = source ?? {};
   try {
     if (type === 'osm') await db.loadOsm(rest);
-    else if (type === 'geojson') await db.loadGeojson(rest);
+    else if (type === 'geojson') await db.loadGeojson(await __loadableGeojson(rest));
     else if (type === 'csv') await db.loadCsv(rest);
     else if (type === 'json') await db.loadJson(rest);
     // In-grammar spatial join between already-loaded tables (sources run in
@@ -195,7 +242,7 @@ const __buildingHeight = (props) => {
   // the part would be culled, return a height that clears the base by a visible
   // amount; otherwise return null to leave the real tags untouched.
   const base = num(p.min_height) || L * num(p.min_level) || L * num(p['building:min_level']);
-  let top = num(p.height) || L * num(p.levels) || L * num(p['building:levels']);
+  let top = num(p.height) || num(p['building:height']) || L * num(p.levels) || L * num(p['building:levels']);
   if (top === 0 && Array.isArray(p.parts)) {
     for (const q of p.parts) { const h = num(q && q.height) || L * num(q && q.levels); if (h > top) top = h; }
   }
@@ -206,18 +253,23 @@ for (const t of __tables) {
   const geojson = await db.getLayer(t.name);
   let type = t.type ?? 'polygons';
   if (type === 'buildings' && Array.isArray(geojson?.features)) {
-    // autk-db's 3D building model (per-part polygons keyed by building_id, each with
-    // its own height) is a loadOsm construct that loadGeojson cannot rebuild from a
-    // grouped GeometryCollection. Explode each building back into one footprint
-    // feature per part (carrying that part's height), so autk-map extrudes each part
-    // by its own height instead of collapsing the whole building into a single box.
-    // The downstream loadGeojson('buildings') numbers every row as its own building,
-    // so each part also carries, as a property, the building_id it came from.
+    // autk-db keeps a building as one GeometryCollection, each part's tags in
+    // properties.parts naming its geometry by geometryIndex. Explode each building
+    // into one footprint feature per part, carrying that part's tags and height, as
+    // explodeBuildingParts does in the browser (autkLayerMaterialize.ts). The
+    // downstream loadGeojson('buildings') makes every row a building of its own, so
+    // each part also carries, as a property, the building_id it came from. A part's
+    // id and geometryIndex are autk-db's bookkeeping and are left out.
     const __exploded = [];
     for (const f of geojson.features) {
       const geom = f && f.geometry;
       const props = (f && f.properties) || {};
-      const partMeta = Array.isArray(props.parts) ? props.parts : null;
+      const partMeta = new Map();
+      for (const part of Array.isArray(props.parts) ? props.parts : []) {
+        if (!part || typeof part !== 'object') continue;
+        const { id: _id, geometryIndex, ...tags } = part;
+        partMeta.set(geometryIndex, tags);
+      }
       const pushPart = (g, meta) => {
         if (!g) return;
         const gg = g.type === 'GeometryCollection' ? __flattenToMultiPolygon(g) : g;
@@ -228,7 +280,7 @@ for (const t of __tables) {
         __exploded.push({ type: 'Feature', geometry: gg, properties: p });
       };
       if (geom && geom.type === 'GeometryCollection' && Array.isArray(geom.geometries)) {
-        geom.geometries.forEach((g, i) => pushPart(g, partMeta && partMeta[i] ? partMeta[i] : props));
+        geom.geometries.forEach((g, i) => pushPart(g, partMeta.has(i) ? partMeta.get(i) : props));
       } else if (geom) {
         pushPart(geom, props);
       }

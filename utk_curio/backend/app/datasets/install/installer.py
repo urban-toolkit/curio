@@ -5,10 +5,10 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 import shutil
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 
 from utk_curio.backend.app.datasets.domain.manifest import (
@@ -17,6 +17,7 @@ from utk_curio.backend.app.datasets.domain.manifest import (
     load_dataset_manifest,
     write_manifest,
 )
+from utk_curio.backend.app.common.record_clock import utc_now
 from utk_curio.backend.app.common.safe_paths import PathTraversalError, validate_component
 from utk_curio.backend.app.datasets.domain.constants import NETCDF_SIGNATURES, TIFF_SIGNATURES
 from utk_curio.backend.app.datasets.domain.onnx_model import is_onnx_model
@@ -292,6 +293,51 @@ def copy_decode_sidecar(source: Path, dest: Path, *, copy=shutil.copy2) -> None:
         copy(sidecar, dest.with_name(dest.name + PARQUET_DECODE_SIDECAR_SUFFIX))
 
 
+# A sandbox artifact id, and the dataset file a node run writes beside it: the
+# millisecond it was made and a random part. Neither is ever written again, so
+# a data file named after one holds one output for good.
+_ONE_OUTPUT_NAME = re.compile(r"^\d{13}_[0-9a-f]{8}(?:[._]|$)")
+
+
+def _names_one_output(name: str | None) -> bool:
+    """Whether *name* is an artifact id or a node run's dataset file name."""
+    return bool(name and _ONE_OUTPUT_NAME.match(name))
+
+
+def _dated_now() -> str:
+    """Now on the record clock, to the millisecond: how a computed dataset is dated.
+
+    To the millisecond, because a Run All writes several outputs in one second
+    and the catalog's "Recent activity" lists them in the order they were made.
+    """
+    return utc_now().isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _held_manifest(dest: Path) -> DatasetManifest | None:
+    """The manifest a dataset folder holds before it is written again, if any."""
+    if not dest.is_dir():
+        return None
+    try:
+        return load_dataset_manifest(dest)
+    except (ManifestError, OSError, ValueError):
+        return None
+
+
+def _computed_dates(held: DatasetManifest | None, *, same_output: bool) -> tuple[str, str]:
+    """``(created_at, updated_at)`` for a computed dataset being written.
+
+    Writing again the output the dataset already holds keeps its dates. A save
+    sends the output of every node the dataflow keeps, and a run records the
+    output its play has just installed, so one output is written many times;
+    dating every write put an output computed earlier ahead of one computed
+    since. A new output is dated now.
+    """
+    if same_output and held is not None and held.updated_at:
+        return held.created_at or held.updated_at, held.updated_at
+    now = _dated_now()
+    return now, now
+
+
 def install_computed_file_for_node(
     user_key: str,
     file_bytes: bytes | None,
@@ -313,7 +359,8 @@ def install_computed_file_for_node(
     so re-executing the same node always replaces the same dataset folder,
     keeping a stable dataset identity across multiple executions.  The
     destination is always (re-)written — no fast-path skip — so that the latest
-    execution's file is always reflected.
+    execution's file is always reflected. Writing again the output the folder
+    already holds keeps the dataset's dates (:func:`_computed_dates`).
 
     The producer/upstream arguments are persisted as lineage on the manifest so
     the account-level dataset stays connected to its workflow, source node, and
@@ -336,6 +383,7 @@ def install_computed_file_for_node(
     dir_name = f"{dataset_id}@1"
 
     dest = dataset_dir(user_key, dir_name)
+    held = _held_manifest(dest)
 
     # Always replace so the folder reflects the latest execution.
     if dest.exists():
@@ -353,7 +401,15 @@ def install_computed_file_for_node(
     else:
         raise InstallerError("install_computed_file_for_node requires file_bytes or source_path")
 
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    data_file = f"data/{safe_filename}"
+    created_at, updated_at = _computed_dates(
+        held,
+        same_output=(
+            held is not None
+            and held.data_file == data_file
+            and _names_one_output(safe_filename)
+        ),
+    )
     display_title = title or title_from_filename(safe_filename)
     manifest_obj = DatasetManifest(
         id=dataset_id,
@@ -364,11 +420,11 @@ def install_computed_file_for_node(
         publisher="User",
         license="",
         tags=[fmt, "computed"],
-        data_file=f"data/{safe_filename}",
+        data_file=data_file,
         major=1,
         source_label="Computed",
-        created_at=now,
-        updated_at=now,
+        created_at=created_at,
+        updated_at=updated_at,
         row_count=None,
         feature_count=None,
         schema=None,
@@ -440,7 +496,7 @@ def install_computed_file(
     data_path = dest / "data" / safe_filename
     data_path.write_bytes(file_bytes)
 
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now = _dated_now()
     display_title = title or title_from_filename(safe_filename)
     manifest_obj = DatasetManifest(
         id=dataset_id,
@@ -623,7 +679,7 @@ def _install_imported(
         shutil.rmtree(dest, ignore_errors=True)
         raise
 
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
     display_title = title or title_from_filename(safe_filename)
     manifest_obj = DatasetManifest(
         id=dataset_id,

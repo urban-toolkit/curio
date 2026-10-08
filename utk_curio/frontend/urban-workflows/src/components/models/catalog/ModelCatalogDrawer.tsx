@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useRef } from "react";
 import { DrawerHeader } from "../../packages/publishing/DrawerHeader";
 import { PackageSearchRow } from "../../packages/publishing/PackageSearchRow";
 import shell from "../../packages/publishing/CatalogDrawerShell.module.css";
+import { useDrawerDragThrough } from "../../packages/publishing/useDrawerDragThrough";
 import ConfirmDialog from "../../ConfirmDialog";
 import { modalStackDepth } from "../../ModalShell";
 import { useFlowContext } from "../../../providers/FlowProvider";
@@ -54,6 +55,7 @@ export const ModelCatalogDrawer: React.FC<ModelCatalogDrawerProps> = ({
     openModelDetails,
     closeModelDetails,
   } = useModelCatalogDrawer(presented);
+  const dragThrough = useDrawerDragThrough();
 
   // Escape dismisses this drawer, as it does its peers: a modal on top (the
   // delete confirmation, a model's details) owns Escape while it is open, and
@@ -86,6 +88,7 @@ export const ModelCatalogDrawer: React.FC<ModelCatalogDrawerProps> = ({
         }`}
         data-curio-model-catalog-drawer="true"
         aria-hidden={!presented}
+        {...dragThrough}
       >
         <button
           type="button"

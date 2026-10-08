@@ -3,6 +3,8 @@
  * display all attempts to fix in the chat transcript", with "the code it
  * attempted to execute alongside the error message".
  */
+import fs from "fs";
+import path from "path";
 import React from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
@@ -11,6 +13,13 @@ import {
   stoppedByPhrase,
 } from "../../components/agents/content/AgentSolveAttemptsCard";
 import type { AgentSolveAttemptsPart } from "../../services/agents";
+
+/** The table the server's failure sentences read too. */
+const generatedStopReasons = () =>
+  require("../../generated/solveStopReasons") as {
+    STOP_REASONS: readonly string[];
+    STOPPED_BY_PHRASES: Readonly<Record<string, string>>;
+  };
 
 const part = (over: Partial<AgentSolveAttemptsPart> = {}): AgentSolveAttemptsPart => ({
   type: "solveAttempts",
@@ -77,6 +86,34 @@ describe("AgentSolveAttemptsCard (dev/127)", () => {
     expect(stoppedByPhrase("nonsense")).toBe("");
   });
 
+  it("says every stop in the words of the table the server reads", () => {
+    const { STOP_REASONS, STOPPED_BY_PHRASES } = generatedStopReasons();
+    expect(STOP_REASONS.length).toBeGreaterThan(0);
+    expect(Object.keys(STOPPED_BY_PHRASES).sort()).toEqual([...STOP_REASONS].sort());
+    for (const reason of STOP_REASONS) {
+      expect(stoppedByPhrase(reason)).toBe(STOPPED_BY_PHRASES[reason]);
+    }
+  });
+
+  it("names the session's time budget apart from the node's", () => {
+    const { STOPPED_BY_PHRASES } = generatedStopReasons();
+    expect(STOPPED_BY_PHRASES.session).toBe("this session's time budget was spent");
+    expect(STOPPED_BY_PHRASES.budget).toBe("this node's time budget was spent");
+    render(<AgentSolveAttemptsCard part={part({ stoppedBy: "session" })} />);
+    expect(
+      screen.getByText("3 attempts · this session's time budget was spent"),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps no stop words of its own", () => {
+    const source = fs.readFileSync(
+      path.resolve(__dirname, "../../components/agents/content/AgentSolveAttemptsCard.tsx"),
+      "utf8",
+    );
+    expect(source).toContain('from "../../../generated/solveStopReasons"');
+    expect(source).not.toMatch(/time budget|attempt cap/);
+  });
+
   it("opens the last attempt and leaves the earlier ones collapsed", () => {
     render(<AgentSolveAttemptsCard part={part()} />);
     const rows = document.querySelectorAll("details");
@@ -124,7 +161,7 @@ describe("AgentSolveAttemptsCard (dev/127)", () => {
       screen.getByText("What the builder said instead of writing code"),
     ).toBeInTheDocument();
     expect(document.querySelector("pre")).toBeNull();
-    expect(screen.getByText(/the builder declined — it needs something from you/)).toBeInTheDocument();
+    expect(screen.getByText(/the builder declined: it needs something from you/)).toBeInTheDocument();
   });
 
   it("says when a field or the trail itself was truncated", () => {

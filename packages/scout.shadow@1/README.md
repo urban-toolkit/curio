@@ -116,5 +116,5 @@ are, and with 15 of them removed.
 ## Setup
 
 Curio installs the package's Python libraries with it: `onnxruntime`,
-`rasterio`, `opencv-python-headless`, `pandas` and `pyproj`. It is installed
-for you when Curio starts with `--with-examples`.
+`rasterio`, `numpy`, `opencv-python`, `pandas` and `pyproj`. It is
+installed for you when Curio starts with `--with-examples`.

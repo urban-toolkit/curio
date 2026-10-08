@@ -127,6 +127,11 @@ from .db_stubs import (  # noqa: F401
     stub_db_login,
     stub_login_and_enter_workflow,
 )
+from .catalog_clock import (  # noqa: F401
+    CATALOG_CALENDAR,
+    start_catalog_calendar,
+    stop_catalog_calendar,
+)
 from .palettes import (  # noqa: F401
     open_tools_palette,
     click_package_summary_action,
@@ -147,6 +152,7 @@ from .canvas_authoring import (  # noqa: F401
     assert_header_shows_save,
     frame_node,
     drag_to_canvas,
+    drag_to_canvas_with_the_mouse,
     set_node_code,
     read_node_code,
     connect_nodes,

@@ -1,7 +1,7 @@
 {
   "sha256": {
-    "README.md": "0f81d6cc40a77b5a9a596d166e8a8365bf3c3fd9c4812b0b23f5baac68a3e3cd",
-    "manifest.json": "83766611e1744602b2f501b17eb8abb38edb74e8ced5abaf6c6a933215942e45",
+    "README.md": "99617eb125f7145bc184cb7ea3cdc27c8e5770595d78e66dd19b9802d37d8129",
+    "manifest.json": "27380267036939d9152afc4ef694a6c2d4f4c2c645598e69b992d28c7e14740f",
     "sources/census-load.py": "9789b47d28d30f85389ae2ef46a8a06de1432cb316159c20d4bf90098956a051",
     "sources/census-reproject.py": "2dd6094b2623148f047ec4e89bb148e0e34784e9d0104951730f85de8264d641",
     "sources/gt65-projection.py": "33aa9849db23cc0304d2ee2fac7bf75d9e0287f4ad838f94a179eb934465f3bc",

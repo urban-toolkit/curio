@@ -1,16 +1,19 @@
-"""Install and resolve multi-artifact node outputs (tuple / ``outputs`` kind)."""
+"""Install and resolve multi-artifact node outputs: a tuple (``outputs``), and a
+list or dict holding frames (``list_of_ids``, ``dict_of_ids``)."""
 
 from __future__ import annotations
 
 import json
 import shutil
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from utk_curio.backend.app.datasets.install.installer import (
     InstallerError,
+    _computed_dates,
+    _held_manifest,
+    _names_one_output,
     computed_dataset_id,
     install_computed_file_for_node,
 )  # install_computed_file_for_node used in install_node_output
@@ -45,6 +48,8 @@ class BundlePart:
     # ``metadata`` (its name and Autark layer type) and the object columns
     # encoded for parquet (``value_json``, see ``save_to_duckdb``).
     meta_json: str | None = None
+    # A dict's part: the key it had in the dict, as the store gives it.
+    key: str | None = None
 
 
 FRAME_KINDS = frozenset({"dataframe", "geodataframe"})
@@ -98,6 +103,11 @@ ROW_ONLY_KINDS = frozenset({"int", "float", "bool", "str", "null"})
 # (value_json). Also file-less, but the real data is the children's, so these
 # install as a bundle rather than as a scalar JSON stub (#180).
 ID_CONTAINER_KINDS = frozenset({"list_of_ids", "dict_of_ids"})
+
+#: The container each multi-part row kind holds its parts in. A bundle records
+#: it as its ``container`` (with each dict part's ``key``), and every reader
+#: gives the parts back in it (``catalog_helpers.bundle_container``).
+BUNDLE_CONTAINERS = {"outputs": "tuple", "list_of_ids": "list", "dict_of_ids": "dict"}
 
 def _part_label(index: int, kind: str) -> str:
     names = {
@@ -295,9 +305,27 @@ def resolve_output_bundle_parts(parent_art_id: str) -> list[BundlePart]:
                 label=child_name or _layer_of(meta_json).get("layerName") or _part_label(index, kind),
                 source_path=src,
                 meta_json=meta_json,
+                key=child_name,
             )
         )
     return parts
+
+
+def _bundle_container(parent_art_id: str) -> str:
+    """The container the multi-part output *parent_art_id* holds its parts in,
+    by its row's kind (``BUNDLE_CONTAINERS``)."""
+    parent = sandbox_artifacts.artifact_row(parent_art_id)
+    return BUNDLE_CONTAINERS.get(parent[0] if parent else None, "tuple")
+
+
+def _bundle_parent(dest: Path) -> str | None:
+    """The artifact the bundle in *dest* was written from, or ``None``."""
+    try:
+        spec = json.loads((dest / "data" / "bundle.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    parent = spec.get("parentArtifactId") if isinstance(spec, dict) else None
+    return parent if isinstance(parent, str) and parent else None
 
 
 def install_computed_bundle_for_node(
@@ -311,8 +339,14 @@ def install_computed_bundle_for_node(
     dataflow_name: str | None = None,
     upstream_inputs: list[dict] | None = None,
     title: str | None = None,
+    container: str = "tuple",
 ) -> Any:
-    """Materialize a tuple output as ``format: bundle`` in the user dataset store.
+    """Materialize a multi-part output as ``format: bundle`` in the user dataset store.
+
+    ``bundle.json`` records *container*, the one the output holds its parts in
+    (``BUNDLE_CONTAINERS``), and a dict part's ``key``. Writing again the output
+    the folder already holds (the same *parent_artifact_id*) keeps the
+    dataset's dates.
 
     A *dataflow_id* is required — see ``install_computed_file_for_node`` (#166).
     """
@@ -329,6 +363,10 @@ def install_computed_bundle_for_node(
     dataset_id = computed_dataset_id(node_id, dataflow_id)
     dir_name = f"{dataset_id}@1"
     dest = dataset_dir(user_key, dir_name)
+    held = _held_manifest(dest)
+    same_output = (
+        _names_one_output(parent_artifact_id) and _bundle_parent(dest) == parent_artifact_id
+    )
 
     if dest.exists():
         shutil.rmtree(dest, ignore_errors=True)
@@ -338,6 +376,7 @@ def install_computed_bundle_for_node(
     bundle_spec: dict[str, Any] = {
         "version": 1,
         "parentArtifactId": parent_artifact_id,
+        "container": container,
         "parts": [],
     }
 
@@ -378,6 +417,7 @@ def install_computed_bundle_for_node(
         rel_file = f"data/parts/{filename}"
         bundle_spec["parts"].append({
             "index": part.index,
+            **({"key": part.key} if part.key is not None else {}),
             "label": part.label,
             "kind": part.kind,
             "format": part.format,
@@ -389,7 +429,7 @@ def install_computed_bundle_for_node(
     bundle_path = dest / "data" / "bundle.json"
     bundle_path.write_text(json.dumps(bundle_spec, indent=2), encoding="utf-8")
 
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    created_at, updated_at = _computed_dates(held, same_output=same_output)
     part_count = len(bundle_spec["parts"])
     display_title = title or f"Node output ({part_count} parts)"
     manifest_obj = DatasetManifest(
@@ -404,8 +444,8 @@ def install_computed_bundle_for_node(
         data_file="data/bundle.json",
         major=1,
         source_label="Computed",
-        created_at=now,
-        updated_at=now,
+        created_at=created_at,
+        updated_at=updated_at,
         row_count=None,
         feature_count=None,
         schema={
@@ -477,6 +517,8 @@ def install_node_output(
             dataflow_name=dataflow_name,
             upstream_inputs=upstream_inputs,
             title=node_name,
+            # By the row's kind: *data_type* is client-supplied.
+            container=_bundle_container(path_ref),
         )
 
     src = resolve_shared_output_path(path_ref, data_type=data_type)
@@ -519,6 +561,7 @@ def install_node_output(
                 dataflow_name=dataflow_name,
                 upstream_inputs=upstream_inputs,
                 title=node_name,
+                container=BUNDLE_CONTAINERS[kind],
             )
         if kind not in ROW_ONLY_KINDS:
             # A row declaring a FILE-backed kind (dataframe, geodataframe,

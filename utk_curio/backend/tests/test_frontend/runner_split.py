@@ -1,7 +1,7 @@
 """Which e2e tests need the utk runner, and how the rest split across runners.
 
 CI runs the e2e suite on two kinds of machine. A self-hosted GPU runner
-(``arcade-gpu-01..06`` or ``utk-gpu``; the share keeps the name ``utk``) has an NVIDIA
+(``arcade-gpu-01..04`` or ``utk-gpu``; the share keeps the name ``utk``) has an NVIDIA
 GPU and is the only place hardware WebGPU exists; it is also one machine, so
 everything on it runs in series. The CPU runners (GitHub-hosted
 ``ubuntu-latest`` or self-hosted ``[self-hosted, cpu]``) have no GPU but come

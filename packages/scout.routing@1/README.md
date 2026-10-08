@@ -97,5 +97,6 @@ in SCOUT's colors, and four Compare Scenarios charts compare them.
 ## Setup
 
 Curio installs the package's Python libraries with it: `osmnx`, `networkx`,
-`netCDF4`, `scipy`, `scikit-learn` and `onnxruntime`. It is installed for you
-when Curio starts with `--with-examples`.
+`netCDF4`, `scipy`, `scikit-learn`, `onnxruntime`, `geopandas`, `numpy`,
+`pandas` and `shapely`. It is installed for you when Curio starts with
+`--with-examples`.

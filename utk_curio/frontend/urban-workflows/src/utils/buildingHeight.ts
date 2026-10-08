@@ -2,10 +2,10 @@
  * A building's height, the way autk-map extrudes it.
  *
  * autk-map (autk-core's `TriangulatorBuildings.computeBuildingHeights`) takes a
- * part's top from the first of `height`, `levels` and `building:levels` the
- * part HAS, whatever its value, and its base from the first of `min_height`,
- * `min_level` and `building:min_level`. A part whose top is not above its base
- * is culled. A table gives every row every column, and autk-db's `loadGeojson`
+ * part's top from the first of `height`, `building:height`, `levels` and
+ * `building:levels` the part HAS, whatever its value, and its base from the
+ * first of `min_height`, `min_level` and `building:min_level`. A part whose top
+ * is not above its base is culled. A table gives every row every column, and autk-db's `loadGeojson`
  * gives every feature every key it found, so a building tagged only with
  * `building:levels` arrives with `height: null` and is culled.
  *
@@ -21,7 +21,8 @@ const num = (v: any) => { const n = parseFloat(String(v)); return Number.isFinit
 function valueHeights(props: any): { base: number; top: number } {
     const LEVEL = METRES_PER_LEVEL;
     const base = num(props?.min_height) || LEVEL * num(props?.min_level) || LEVEL * num(props?.['building:min_level']);
-    let top = num(props?.height) || LEVEL * num(props?.levels) || LEVEL * num(props?.['building:levels']);
+    let top = num(props?.height) || num(props?.['building:height'])
+        || LEVEL * num(props?.levels) || LEVEL * num(props?.['building:levels']);
     if (top === 0 && Array.isArray(props?.parts)) {
         for (const p of props.parts) { const h = num(p?.height) || LEVEL * num(p?.levels); if (h > top) top = h; }
     }
@@ -45,6 +46,7 @@ const autkNum = (v: any) => parseFloat(String(v)) || 0;
 
 function autkTop(p: Record<string, any>): number {
     if ("height" in p) return autkNum(p.height);
+    if ("building:height" in p) return autkNum(p["building:height"]);
     if ("levels" in p) return METRES_PER_LEVEL * autkNum(p.levels);
     if ("building:levels" in p) return METRES_PER_LEVEL * autkNum(p["building:levels"]);
     return 0;
@@ -61,8 +63,10 @@ function autkBase(p: Record<string, any>): number {
  * A building's properties with `height` and `min_height` written where
  * autk-map would read them wrong: a `height` (or `levels`) key with no number
  * in it hides `building:levels`, and a building with no height at all gets the
- * one {@link deriveBuildingHeight} gives it. The same object when autk-map
- * already reads it right.
+ * one {@link deriveBuildingHeight} gives it. A building with no `height` key
+ * gets the height autk-map draws, so a compute that reads `properties.height`
+ * reads it too, whether or not a table handed the building on. The same object
+ * when it already has a height autk-map reads right.
  */
 export function readableBuildingProperties<T extends Record<string, any> | null | undefined>(props: T): T {
     const p: Record<string, any> = props ?? {};
@@ -71,6 +75,6 @@ export function readableBuildingProperties<T extends Record<string, any> | null 
     const out: Record<string, any> = { ...p };
     let changed = false;
     if (autkBase(p) !== base) { out.min_height = base; changed = true; }
-    if (autkTop(p) !== top) { out.height = top; changed = true; }
+    if (autkTop(p) !== top || !("height" in p)) { out.height = top; changed = true; }
     return (changed ? out : props) as T;
 }

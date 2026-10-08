@@ -10,12 +10,21 @@ describe("readableBuildingProperties", () => {
       { height: 12 },
       { height: "12" },
       { height: "40 ft" },
-      { "building:levels": 3 },
-      { levels: 2, min_height: 1 },
       { height: 20, "building:min_level": 2 },
     ]) {
       expect(readableBuildingProperties(props)).toBe(props);
     }
+  });
+
+  test("a building with no height key gets the one autk-map draws, so a compute reads it too (#757)", () => {
+    const levels: Record<string, any> = readableBuildingProperties({ "building:levels": 3 });
+    expect(levels).toEqual({ "building:levels": 3, height: expect.any(Number) });
+    expect(levels.height).toBeCloseTo(3 * 3.4);
+    const based: Record<string, any> = readableBuildingProperties({ levels: 2, min_height: 1 });
+    expect(based).toEqual({ levels: 2, min_height: 1, height: expect.any(Number) });
+    expect(based.height).toBeCloseTo(2 * 3.4);
+    // As a table hands the same building on, with every key and no value.
+    expect(readableBuildingProperties({ height: null, "building:levels": 3 }).height).toBeCloseTo(levels.height);
   });
 
   test("a height key with no number in it no longer hides building:levels", () => {
@@ -38,6 +47,12 @@ describe("readableBuildingProperties", () => {
       .toEqual({ height: 20, min_height: 2 * 3.4, "building:min_level": 2 });
   });
 
+  test("building:height is read after height and before the levels, as autk-map 4 reads it", () => {
+    expect(readableBuildingProperties({ "building:height": 30 })).toEqual({ "building:height": 30, height: 30 });
+    expect(readableBuildingProperties({ height: null, "building:height": "30", "building:levels": 2 }).height).toBe(30);
+    expect(readableBuildingProperties({ height: 12, "building:height": 30 }).height).toBe(12);
+  });
+
   test("the input is never changed", () => {
     const props = { height: null, "building:levels": 3 };
     readableBuildingProperties(props);
@@ -52,5 +67,6 @@ describe("deriveBuildingHeight", () => {
     expect(deriveBuildingHeight({})).toBe(6);
     expect(deriveBuildingHeight({ min_height: 3 })).toBe(9);
     expect(deriveBuildingHeight({ parts: [{ height: 5 }] })).toBeNull();
+    expect(deriveBuildingHeight({ "building:height": 30 })).toBeNull();
   });
 });

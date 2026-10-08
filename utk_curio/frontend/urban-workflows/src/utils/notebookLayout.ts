@@ -98,13 +98,13 @@ export function layoutNotebook(cells: readonly NotebookCell[], pane: NotebookPan
 
 /**
  * What a viewer may change in the graph: nodes are added (dropped from the
- * rail, a catalog or a scenario) and connected on the canvas only. The
- * notebook view edits, runs and deletes cells and removes connections; a
- * shared viewer changes nothing.
+ * rail, a catalog or a scenario), connected and deleted, and connections
+ * removed, on the canvas only. The notebook view edits and runs cells and
+ * changes no graph; a shared viewer changes nothing.
  */
 export function graphEditGates({ notebookOn, sharedView }: { notebookOn: boolean; sharedView: boolean }) {
   const canvasEditor = !notebookOn && !sharedView;
-  return { connect: canvasEditor, drop: canvasEditor };
+  return { connect: canvasEditor, drop: canvasEditor, delete: canvasEditor };
 }
 
 export interface NotebookHandle {
@@ -153,6 +153,14 @@ export function notebookCellMinHeight(handles: readonly NotebookHandle[]): numbe
   const below = outputs.length > 0 ? OUTPUT_INSET + (outputs.length - 1) * DOT_PITCH + DOT_GAP : DOT_GAP;
   // The interaction dot sits halfway, so each half holds one of the stacks.
   return interaction ? 2 * Math.max(above, below) : above + below;
+}
+
+/** A cell's box: the page's cell width, and at least tall enough for its dots. */
+export function notebookCellBox(
+  handles: readonly NotebookHandle[],
+  cellWidth: number,
+): { width: number; minHeight: number } {
+  return { width: cellWidth, minHeight: notebookCellMinHeight(handles) };
 }
 
 // How tall a cell's output is. A chart or a map has no height of its own, so
@@ -279,7 +287,9 @@ export function notebookArcPath(
  * The React Flow settings that turn the canvas into a page: zoom held at 1,
  * no gesture moves the view, and the wheel is left to the page so it scrolls.
  * These hold gestures only; a call that sets the view directly (a fit) is put
- * back by MainCanvas.
+ * back by MainCanvas. The connections are there to be read: none takes the
+ * keyboard's focus (nor a click, MainCanvas.css), since one is selected only
+ * to be deleted, which happens on the canvas.
  */
 export function notebookFlowProps(paneWidth: number, paneHeight: number) {
   return {
@@ -293,5 +303,6 @@ export function notebookFlowProps(paneWidth: number, paneHeight: number) {
     panOnDrag: false,
     preventScrolling: false,
     nodesDraggable: false,
+    edgesFocusable: false,
   };
 }

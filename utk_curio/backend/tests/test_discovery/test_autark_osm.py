@@ -415,6 +415,7 @@ class TestItBecomesDatasets:
             properties = feature["properties"]
             assert feature["geometry"]["type"] in ("Polygon", "MultiPolygon")
             assert "parts" not in properties and "__autk_layer" not in properties
+            assert "id" not in feature
             assert isinstance(properties["building_id"], int)
             tags = expected[(properties["osm_type"], properties["osm_id"])]
             assert {key: properties[key] for key in tags} == {
@@ -506,7 +507,7 @@ class TestItBecomesDatasets:
         job = wait_for(client, auth, acquire(client, auth, OSM, "parks", parameters={"area": NOWHERE})
                        .get_json()["jobId"], timeout=120)
         assert job["status"] == "failed"
-        assert 'No administrative boundary found in OSM for: "Nowhere Land"' in job["error"]
+        assert 'No area boundary found in OSM for: "Nowhere Land"' in job["error"]
 
     def test_an_unrecorded_request_fails_loudly(self, client, auth, live):
         area = {"names": {"geocodeArea": "Illinois", "areas": ["Kenilworth"]}}
@@ -653,7 +654,9 @@ class TestTheLoaderContract:
         service.load(service.manifest.resource("parks"), {"area": GOLF_BOX}, tmp_path, node=node)
         assert json.loads(seen.read_text())["queryArea"] == {"bbox": GOLF_BOX["box"]}
 
-    def test_tags_are_sent_as_one_autk_db_tag_set(self, tmp_path, service):
+    def test_tags_are_sent_as_one_autk_db_tag_set_per_geometry(self, tmp_path, service):
+        """autk-db 4 builds one geometry family per tag set, so the tags go as
+        three sets, points, polylines and polygons, which land as one group."""
         if not ROOT_AUTK_DB.is_dir():
             pytest.skip("the repo-root autk-db is needed to resolve its entry")
         seen = tmp_path / "request.json"
@@ -662,13 +665,19 @@ class TestTheLoaderContract:
         service.load(service.manifest.resource("features-by-tag"), values, tmp_path, node=node)
         request = json.loads(seen.read_text())
         assert request["layers"] == []
+        tags = [{"key": "amenity", "value": "cafe"}, {"key": "shop"}]
         assert request["tagSets"] == [
-            {"name": "tags", "tags": [{"key": "amenity", "value": "cafe"}, {"key": "shop"}]},
+            {"name": "tags_points", "type": "points", "tags": tags},
+            {"name": "tags_polylines", "type": "polylines", "tags": tags},
+            {"name": "tags_polygons", "type": "polygons", "tags": tags},
         ]
         service.load(service.manifest.resource("points-of-interest"), {"area": GOLF_BOX}, tmp_path, node=node)
-        (tag_set,) = json.loads(seen.read_text())["tagSets"]
-        assert [tag["key"] for tag in tag_set["tags"]] == sorted(
-            ["amenity", "shop", "tourism", "leisure", "office", "craft", "healthcare", "historic"])
+        tag_sets = json.loads(seen.read_text())["tagSets"]
+        assert [(tag_set["name"], tag_set["type"]) for tag_set in tag_sets] == [
+            ("tags_points", "points"), ("tags_polylines", "polylines"), ("tags_polygons", "polygons")]
+        for tag_set in tag_sets:
+            assert [tag["key"] for tag in tag_set["tags"]] == sorted(
+                ["amenity", "shop", "tourism", "leisure", "office", "craft", "healthcare", "historic"])
         service.load(service.manifest.resource("parks"), {"area": GOLF_BOX}, tmp_path, node=node)
         assert json.loads(seen.read_text())["tagSets"] == []
 
@@ -788,6 +797,18 @@ class TestTheLayersMoveToWgs84:
         assert kinds == ["Polygon", "LineString"]
         ring = feature["geometry"]["geometries"][0]["coordinates"][0]
         assert len(ring) == 4 and ring[0] == [0.0, 0.0]
+
+    def test_autk_dbs_feature_id_is_left_out(self):
+        """autk-db 4 names each feature by its element, as ``way/301``; the
+        row's ``osm_type`` and ``osm_id`` already do, and a GeoJSON reader would
+        make the name one more column."""
+        moved = to_wgs84({"type": "FeatureCollection", "features": [
+            {"type": "Feature", "id": "way/301", "properties": {"osm_type": "way", "osm_id": 301},
+             "geometry": {"type": "Point", "coordinates": [0, 0]}},
+        ]})
+        (feature,) = moved["features"]
+        assert "id" not in feature
+        assert feature["properties"] == {"osm_type": "way", "osm_id": 301}
 
     def test_a_feature_without_geometry_stays_without(self):
         moved = to_wgs84({"type": "FeatureCollection", "features": [

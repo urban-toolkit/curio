@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef } from "react";
 import { DrawerHeader } from "../packages/publishing/DrawerHeader";
 import shell from "../packages/publishing/CatalogDrawerShell.module.css";
+import { useDrawerDragThrough } from "../packages/publishing/useDrawerDragThrough";
 import { holdModalStack, modalStackDepth } from "../ModalShell";
 import styles from "./HeaderDrawer.module.css";
 
@@ -35,6 +36,7 @@ export const HeaderDrawer: React.FC<HeaderDrawerProps> = ({
   children,
 }) => {
   const drawerRef = useRef<HTMLElement>(null);
+  const dragThrough = useDrawerDragThrough();
 
   useEffect(() => holdModalStack(), []);
 
@@ -62,6 +64,7 @@ export const HeaderDrawer: React.FC<HeaderDrawerProps> = ({
       className={`${shell.overlayRoot} ${styles.overlayRoot} ${presented ? shell.overlayRootPresented : ""}`}
       {...{ [`data-curio-${name}-drawer`]: "true" }}
       aria-hidden={!presented}
+      {...dragThrough}
     >
       <button type="button" className={shell.scrim} aria-label={`Dismiss ${title}`} onClick={onRequestClose} />
       <aside

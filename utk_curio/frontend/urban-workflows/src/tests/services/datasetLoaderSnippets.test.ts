@@ -11,11 +11,19 @@
  * ship `parquet` and `geotiff` datasets, so two formats that previously had no
  * committed data behind them are on the critical path.
  */
+import fs from "fs";
+import path from "path";
 import {
   buildDatasetLoaderCode,
   getDatasetLoaderSnippet,
 } from "../../services/datasetCatalog/datasetLoaderSnippets";
 import type { DatasetFormat } from "../../services/datasetCatalog/datasetCatalogTypes";
+
+/** The backend's generator, whose literal-path bundle loader its tests run. */
+const CATALOG_ITEM_PY = path.resolve(
+  __dirname,
+  "../../../../../backend/app/datasets/domain/catalog_item.py",
+);
 
 /**
  * The call each format's loader makes when the dataset has an id: the sandbox
@@ -134,6 +142,18 @@ describe("snippetForFormat", () => {
     } as never);
     expect(snippet.code).toContain('"/tmp/example-file"');
     expect(snippet.code).not.toContain("curio_");
+  });
+
+  it("reads a bundle from its literal path with the backend generator's code, line for line", () => {
+    // The backend's tests run that code against bundles of each container
+    // (test_dataset_node_loader.py), so the copy here is held to it.
+    const source = fs.readFileSync(CATALOG_ITEM_PY, "utf8");
+    const template = source.match(/_BUNDLE_LOADER_CODE = '''([\s\S]*?)'''/);
+    expect(template).not.toBeNull();
+    const snippet = getDatasetLoaderSnippet({ format: "bundle", path: "/tmp/example-file" } as never);
+    expect(snippet.code).toBe(
+      (template as RegExpMatchArray)[1].replace("{bundle_path_expr}", '"/tmp/example-file"'),
+    );
   });
 
   it("routes osm through the group loader instead of a single-path branch", () => {

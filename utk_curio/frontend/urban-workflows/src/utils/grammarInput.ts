@@ -6,11 +6,12 @@
  * first, JSON as the fallback), the same schema and geometry column. Both take
  * several inputs, one per input circle, which arrive as an `outputs` bundle:
  * each becomes its own frame. An Autark document also takes an input that is
- * itself a bundle of named layers (a tuple, a Data Pool with tabs, an upstream
- * Autark node's tables), and a raster; those are the only things it asks of
- * this module that Vega does not. A raster is not fetched here: its frame says
- * where it is (an artifact, or one part of a tuple) or holds the collection an
- * upstream Autark node handed on, and the Autark node loads it.
+ * itself a bundle of named layers (a tuple, a dict of frames, a Data Pool with
+ * tabs, an upstream Autark node's tables), and a raster; those are the only
+ * things it asks of this module that Vega does not. A raster is not fetched
+ * here: its frame says where it is (an artifact, or one part of a tuple) or
+ * holds the collection an upstream Autark node handed on, and the Autark node
+ * loads it.
  *
  * Never throws for an input problem: a refusal comes back as an `emptyReason`
  * and a `detail` the node shows in its body.
@@ -22,6 +23,7 @@ import { fetchData, fetchPreviewData } from "../services/api";
 import { AUTARK_LAYER_TYPES } from "./autarkLayerTypes";
 import type { NodeEmptyReason } from "./nodeEmptyState";
 import { activeGeometryName } from "./parsing";
+import { keyedFramesAsOutputs } from "./sandboxEnvelope";
 
 export type FrameType = "dataframe" | "geodataframe" | "raster";
 
@@ -224,6 +226,8 @@ export function framesFromPayload(value: any, opts: RasterOptions = {}): {
     arg = arg.data;
   }
   if (arg == null) return { frames, refs, skipped };
+  // A dict of frames is read as a tuple of them is, each named after its key.
+  arg = keyedFramesAsOutputs(arg) ?? arg;
 
   if (isObject(arg) && FRAME_TYPES.has(arg.dataType)) {
     if (arg.data != null) {

@@ -86,10 +86,10 @@
 }
 
 /* A node's tools (the editor's tabs, Save output, the gear, info, pin,
-   comments, delete and, on the canvas, minimize) show while the pointer is over
-   the node, or the node is selected or holds the focus, as a Jupyter cell's
-   toolbar does. Play, the title, the kind and the run status always show. The
-   same on the canvas and in a notebook cell. */
+   comments and, on the canvas, delete and minimize) show while the pointer is
+   over the node, or the node is selected or holds the focus, as a Jupyter
+   cell's toolbar does. Play, the title, the kind and the run status always
+   show. The same on the canvas and in a notebook cell. */
 .curio-node-card .curio-node-tools {
   opacity: 0;
   transition: opacity 120ms ease;

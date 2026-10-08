@@ -6,6 +6,7 @@ import ReactFlow, {
   FitViewOptions,
   NodeChange,
   useReactFlow,
+  useStoreApi,
 } from "reactflow";
 
 import { CURIO_UNIVERSAL_NODE_TYPE, EdgeType } from "../../constants";
@@ -16,7 +17,7 @@ import { Loading } from "../../components/login/Loading";
 import { useProjectLoadState } from "../../components/ProjectLoader";
 import { DashboardScenarioLayers, FRAME_HEADER_ROOM } from "../../components/scenarios/ScenarioLayers";
 import { useFlowContext } from "../../providers/FlowProvider";
-import { fitViewWithMenuOffset } from "../../utils/fitViewWithMenuOffset";
+import { fitViewWithMenuOffsetNow } from "../../utils/fitViewWithMenuOffset";
 import { scenarioDashboard } from "../../utils/scenarios/scenarioDashboard";
 import { dataflowPath } from "../../utils/shareLinks";
 import { useViewportMotionHint } from "../../hook/useViewportMotionHint";
@@ -67,6 +68,7 @@ export const DashboardPage: React.FC = () => {
   const loadState = useProjectLoadState();
   const canEditLayout = useCanEditLayout();
   const reactFlow = useReactFlow();
+  const flowStore = useStoreApi();
   const viewportMotionHint = useViewportMotionHint();
   const canvasRef = useRef<HTMLDivElement>(null);
 
@@ -96,13 +98,15 @@ export const DashboardPage: React.FC = () => {
   // page itself does, whatever padding the caller asks for, so a screenshot
   // shows the dashboard a visitor sees. It is scoped to the visible tiles:
   // handed no nodes, the helper would fall back to all of them and wait on
-  // dimensions the hidden ones never get.
+  // dimensions the hidden ones never get. As on the canvas, it is set at once
+  // and returns the viewport the page then shows (null while a tile is not
+  // measured yet); with nothing pinned, that is the view as it is.
   useEffect(() => {
     (window as any).__curio_reactFlow = reactFlow;
     (window as any).__curio_fitViewWithMenuOffset = (_options?: FitViewOptions) => {
       const tiles = reactFlow.getNodes().filter((node) => node.style?.display !== "none");
-      if (tiles.length === 0) return false;
-      return fitViewWithMenuOffset(reactFlow, { ...DASHBOARD_FIT_OPTIONS, headroom, nodes: tiles });
+      if (tiles.length === 0) return reactFlow.getViewport();
+      return fitViewWithMenuOffsetNow(reactFlow, flowStore, { ...DASHBOARD_FIT_OPTIONS, headroom, nodes: tiles });
     };
     return () => {
       if ((window as any).__curio_reactFlow === reactFlow) {
@@ -110,7 +114,7 @@ export const DashboardPage: React.FC = () => {
         delete (window as any).__curio_fitViewWithMenuOffset;
       }
     };
-  }, [reactFlow, headroom]);
+  }, [reactFlow, flowStore, headroom]);
 
   /**
    * Tile moves, and nothing else.

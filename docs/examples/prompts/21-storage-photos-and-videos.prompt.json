@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/21-storage-photos-and-videos.json",
-    "sha256": "f063e71601d726217828052dc1dcea1bcf3f9cd3a25707504cf787549b5645f2",
+    "sha256": "f738520e10c0ce5f3868c8a3dcd26f6dbf3fb5ad5c04cd8f27747fde57f7b87c",
     "walkthrough": "docs/examples/21-storage-photos-and-videos.md"
   },
   "prompt": "Load the Example street survey collection from the Data Catalog: geotagged photos and a short video from a street survey in the Chicago Loop. Show them as a gallery that plays the video, map where each photo was taken in Vega-Lite, and sample a frame every quarter of a second from the video and show those frames as cards too.",

@@ -11,6 +11,7 @@ from utk_curio.backend.app.datasets.domain.dedup import (
     catalog_facets,
     dedupe_items,
 )
+from utk_curio.backend.app.datasets.domain.catalog_dates import catalog_time
 from utk_curio.backend.app.datasets.domain.catalog_item import loader_snippet
 from utk_curio.backend.app.datasets.infrastructure.catalog_utils import looks_like_generated_filename
 from utk_curio.backend.app.datasets.application.paths import PathResolver
@@ -76,15 +77,16 @@ def _sort_catalog_items(items: list[dict[str, Any]], sort: str) -> None:
     """Order a listing for the catalog's sort menu, the same way every time.
 
     "name": title (case-insensitive), then id. Anything else ("recent"):
-    ``updatedAt`` newest first, then title, then id. Equal keys never fall back
-    to the order the sources listed the items in: the user store lists its
-    folders by name, and a computed dataset's folder name holds the project and
-    node ids, which are new on every run (#764).
+    ``updatedAt`` newest first, read as a time (:func:`catalog_time`), then
+    title, then id. Equal keys never fall back to the order the sources listed
+    the items in: the user store lists its folders by name, and a computed
+    dataset's folder name holds the project and node ids, which are new on
+    every run (#764).
     """
     # Two stable passes: the tie-break ascending, then the time descending.
     items.sort(key=lambda item: ((item.get("title") or "").casefold(), item.get("id") or ""))
     if sort != "name":
-        items.sort(key=lambda item: item.get("updatedAt") or "", reverse=True)
+        items.sort(key=lambda item: catalog_time(item.get("updatedAt")), reverse=True)
 
 
 class CatalogListing:

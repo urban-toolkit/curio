@@ -59,7 +59,7 @@ Under `utk_curio/backend/app/`:
 - `notebooks/`: Jupyter notebook import (`analyzer.py`).
 - `api/routes.py`: sandbox proxies, starters, file serving.
 - `testing/`: test-only routes for Playwright, registered only in dev mode.
-- `common/`: shared helpers (safe paths, file locks, owner-only files, user storage, egress policy, the background job registry).
+- `common/`: shared helpers (safe paths, file locks, owner-only files, user storage, egress policy, the background job registry, `record_clock.py`: the clock catalog records are dated by).
 
 ## Frontend core
 
@@ -88,8 +88,9 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
   - `servers.py`: ports, `e2e_existing_servers`.
   - `auth.py`: UI signup, the projects page, `require_owner_view`.
   - `db_stubs.py`: `stub_db_user`, `stub_db_login`, `stub_login_and_enter_workflow`, `api_json`.
+  - `catalog_clock.py`: `CATALOG_CALENDAR`, the fixed date that tests marked `catalog_calendar` run on (conftest.py).
   - `palettes.py`: tool palettes. `upload.py`: `upload_workflow`. `page.py`: `FrontendPage`.
-  - `canvas_authoring.py`: `drag_to_canvas`, `connect_nodes`, `set_node_code`, `play_node`, `run_node_and_wait`.
+  - `canvas_authoring.py`: `drag_to_canvas`, `drag_to_canvas_with_the_mouse`, `connect_nodes`, `set_node_code`, `play_node`, `run_node_and_wait`.
   - `run_all.py`: Run All state, holding a run open.
   - `node_drawings.py`: `assert_vega_canvas_rendered`, `assert_autark_map_drawn` and the other drawing checks.
   - `scripted_llm.py`: scripted agent turns.
@@ -129,7 +130,7 @@ Other workflows: `autk-schema.yml` (weekly check of the vendored Autark schema),
 - `scripts/generate_contracts.py`: writes `src/generated/` and every `utk_curio/llm-prompts/X.md` that has an `X.template.md`; `--check` lists stale outputs.
 - `scripts/sync_autk_schema.py`: vendors the Autark grammar schema; `--check` compares it with the release.
 - `scripts/validate_trill.py`: validates dataflow JSON against `docs/schemas/trill.v1.json`.
-- Release (`publish-pip-to-pypi.yml`): `scripts/record_left_out_files.py` records the catalog files the pip package leaves out (`utk_curio/backend/app/datasets/infrastructure/left_out_files.json`, fetched on first use by `left_out_files.py`); `scripts/check_dist_sizes.py` fails a wheel or sdist over PyPI's 100 MiB limit.
+- Release (`publish-pip-to-pypi.yml`): `scripts/record_left_out_files.py` records the catalog files the pip package leaves out (`utk_curio/backend/app/datasets/infrastructure/left_out_files.json`, fetched on first use by `left_out_files.py`); `scripts/check_dist_sizes.py` fails a wheel or sdist over PyPI's 100 MiB limit; `setup.py` copies the root `package.json` and `package-lock.json` into the wheel (`utk_curio/sandbox/nodejs/`).
 - Example builders: `scripts/build_example_*.py`. Test fixtures: `scripts/record_discovery_fixtures.py` and the `generate_*_fixture.py` scripts. CI helpers: `scripts/ci_*.py` and the shard balancers `e2e_*.py`, `unit_durations.py`.
 
 ## Big files

@@ -13,11 +13,11 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import time
 import uuid
 from pathlib import Path
 from typing import Any
 
+from utk_curio.backend.app.common.record_clock import utc_now
 from utk_curio.backend.app.model_catalog.domain.manifest import (
     ModelManifest,
     ModelManifestError,
@@ -251,7 +251,7 @@ class ModelCatalogService:
         (#623)."""
         if not self.user_key:
             raise ModelCatalogError("sign in to add a model", 401)
-        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        now = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
         created = now
         if replace is not None:
             model_id = str(replace["id"])

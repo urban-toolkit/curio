@@ -44,7 +44,9 @@ Install the package from the [Node Catalog](../../docs/NODE-CATALOG.md). The dra
 inside the canvas (**Node Catalog → Browse Node Catalog +**) or the **Nodes** tab on
 `/catalog`. Curio installs the declared Python dependencies automatically:
 
+- `geopandas >=1.1.3`
 - `numpy >=1.26`
+- `pandas >=3.0.2`
 - `pythermalcomfort ^3.9`
 - `rasterio >=1.5.0`
 - `rasterstats ^0.20`

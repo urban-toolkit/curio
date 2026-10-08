@@ -1,5 +1,6 @@
-import type { ReactFlowInstance, FitViewOptions, Node } from "reactflow";
+import type { ReactFlowInstance, ReactFlowState, FitViewOptions, Node, Viewport } from "reactflow";
 import { getNodesBounds, getViewportForBounds } from "reactflow";
+import { zoomIdentity } from "d3-zoom";
 import { TOOLS_PALETTE_PANEL_ATTR } from "../components/menus/nodes/toolsPaletteDismiss";
 import { isDrawnHidden } from "./hiddenNodes";
 
@@ -58,12 +59,56 @@ const FALLBACK_MIN_ZOOM = 0.05;
 const FALLBACK_MAX_ZOOM = 2;
 const DEFAULT_PADDING = 0.1;
 
-export function fitViewWithMenuOffset(
+/** `headroom`: room to keep in view above the nodes, in canvas units, for
+ *  what is drawn there (the dashboard's scenario headers, #662). */
+type MenuOffsetFitOptions = FitViewOptions & { headroom?: number };
+
+/** Where a fit puts the viewport, or why it cannot: none of the nodes it
+ *  frames is on the canvas, one of them is not measured yet, or the pane has
+ *  no size to fit against. */
+type FitPlan = Viewport | "no nodes" | "unmeasured" | "no pane";
+
+export function fitViewWithMenuOffset(rf: ReactFlowInstance, options?: MenuOffsetFitOptions): boolean {
+    const plan = planFit(rf, options);
+    // No measurable pane (headless / tests / hidden): fall back to plain fitView so
+    // focusing still works, just without the menu offset.
+    if (plan === "no pane") return rf.fitView(options);
+    if (typeof plan === "string") return false;
+    rf.setViewport(plan, options?.duration ? { duration: options.duration } : undefined);
+    return true;
+}
+
+/** The part of React Flow's store that moves the viewport. */
+type ZoomStore = { getState: () => Pick<ReactFlowState, "d3Zoom" | "d3Selection"> };
+
+/**
+ * `fitViewWithMenuOffset` without a duration, set at once: the fit the e2e
+ * helpers ask for through `window.__curio_fitViewWithMenuOffset`. Returns the
+ * viewport the canvas then shows, which is the current one when none of the
+ * nodes is on the canvas, or null while one of them is not measured yet.
+ *
+ * React Flow 11's `setViewport` moves through a d3 transition even with no
+ * duration, and a transition only advances on an animation frame, so the view
+ * would change a frame or two later; a browser on a loaded GPU runner can go
+ * tens of seconds without one. React Flow's own `fitView` sets a fit without a
+ * duration through d3's zoom at once, and this does the same.
+ */
+export function fitViewWithMenuOffsetNow(
     rf: ReactFlowInstance,
-    /** `headroom`: room to keep in view above the nodes, in canvas units,
-     *  for what is drawn there (the dashboard's scenario headers, #662). */
-    options?: FitViewOptions & { headroom?: number },
-): boolean {
+    store: ZoomStore,
+    options?: MenuOffsetFitOptions,
+): Viewport | null {
+    const plan = planFit(rf, options);
+    if (plan === "no nodes") return rf.getViewport();
+    if (plan === "unmeasured") return null;
+    if (plan === "no pane") return rf.fitView({ ...options, duration: 0 }) ? rf.getViewport() : null;
+    const { d3Zoom, d3Selection } = store.getState();
+    if (!d3Zoom || !d3Selection) return null;
+    d3Zoom.transform(d3Selection, zoomIdentity.translate(plan.x, plan.y).scale(plan.zoom));
+    return plan;
+}
+
+function planFit(rf: ReactFlowInstance, options?: MenuOffsetFitOptions): FitPlan {
     const requestedIds = (options?.nodes ?? [])
         .map((n: any) => n?.id)
         .filter((id: unknown): id is string => typeof id === "string");
@@ -71,7 +116,7 @@ export function fitViewWithMenuOffset(
     const requested = requestedIds.length
         ? allNodes.filter((n) => requestedIds.includes(n.id))
         : allNodes;
-    if (requested.length === 0) return false;
+    if (requested.length === 0) return "no nodes";
     // A node drawn hidden (a collapsed scenario's member, #662) is never
     // measured, so waiting for its size would never end. Fit the others; when
     // every one is hidden, fit where they stand, which is where a collapsed
@@ -90,15 +135,11 @@ export function fitViewWithMenuOffset(
     const measured = (n: Node) =>
         typeof n.width === "number" && n.width > 0 &&
         typeof n.height === "number" && n.height > 0;
-    if (!targetNodes.every(measured)) return false;
+    if (!targetNodes.every(measured)) return "unmeasured";
 
     const container = document.querySelector<HTMLElement>(".react-flow");
     const paneRect = container?.getBoundingClientRect();
-    // No measurable pane (headless / tests / hidden): fall back to plain fitView so
-    // focusing still works, just without the menu offset.
-    if (!paneRect || paneRect.width === 0 || paneRect.height === 0) {
-        return rf.fitView(options);
-    }
+    if (!paneRect || paneRect.width === 0 || paneRect.height === 0) return "no pane";
 
     const padding = typeof options?.padding === "number" ? options.padding : DEFAULT_PADDING;
     const minZoom = options?.minZoom ?? FALLBACK_MIN_ZOOM;
@@ -148,9 +189,5 @@ export function fitViewWithMenuOffset(
     // getViewportForBounds centered the content within the visible box at the
     // origin; shift it right past the dock and down past the bar so it centers
     // in [occluded, paneRect.width] x [occludedTop, paneRect.height].
-    rf.setViewport(
-        { x: x + occluded, y: y + occludedTop, zoom },
-        options?.duration ? { duration: options.duration } : undefined,
-    );
-    return true;
+    return { x: x + occluded, y: y + occludedTop, zoom };
 }

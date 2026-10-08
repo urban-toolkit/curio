@@ -199,6 +199,26 @@ class TestTheCatalog:
         assert service.delete_model(row["id"]) == {"deleted": row["id"]}
         assert not folder.exists()
 
+    def test_a_download_is_dated_by_the_record_clock(self, app, shipped, user_and_token, tmp_path):
+        """An e2e test that photographs catalog ages sets the record clock to its
+        browser's date (``/api/testing/clock``); what it downloads carries it."""
+        from datetime import datetime, timedelta, timezone
+
+        from utk_curio.backend.app.common import record_clock  # main has no record clock
+
+        calendar = datetime(2026, 10, 7, 6, 0, tzinfo=timezone.utc)
+        user, _ = user_and_token
+        incoming = tmp_path / "incoming"
+        (incoming / "files").mkdir(parents=True)
+        (incoming / "files" / "m.onnx").write_bytes(b"onnx")
+        record_clock.set_now(calendar)
+        try:
+            row = ModelCatalogService(user).install_downloaded(incoming, _onnx_manifest())
+        finally:
+            record_clock.set_now(None)
+        created = datetime.fromisoformat(row["createdAt"].replace("Z", "+00:00"))
+        assert calendar <= created < calendar + timedelta(minutes=1), row["createdAt"]
+
     def test_another_persons_download_is_not_theirs(self, app, db, shipped, user_and_token, tmp_path):
         from utk_curio.backend.app.users.models import User
 

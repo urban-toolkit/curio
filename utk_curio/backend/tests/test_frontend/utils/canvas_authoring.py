@@ -466,6 +466,132 @@ def drag_to_canvas(page, source, *, at: tuple[float, float] | None = None,
     return node_id
 
 
+# An element, named for a failure message: its tag, then its aria-label or its
+# first class.
+_NAME_ELEMENT_JS = r"""(el) => {
+    if (!el || !el.tagName) return null;
+    const label = el.getAttribute("aria-label");
+    const cls = typeof el.className === "string" ? el.className.split(" ")[0] : "";
+    return el.tagName.toLowerCase() + (label ? `[aria-label="${label}"]` : cls ? `.${cls}` : "");
+}"""
+
+# What a mouse drag did, recorded on the window in the capture phase so that
+# nothing the app does can hide it: whether it started, which element took the
+# drop (none when no element accepted it), and the drop effect it ended with.
+_WATCH_MOUSE_DRAG_JS = r"""() => {
+    const name = """ + _NAME_ELEMENT_JS + r""";
+    const seen = { started: false, droppedOn: null, onCanvas: false, dropEffect: null };
+    const onStart = () => { seen.started = true; };
+    const onDrop = (event) => {
+        seen.droppedOn = name(event.target);
+        seen.onCanvas = !!(event.target.closest && event.target.closest(".curio-canvas-drop-target"));
+    };
+    const onEnd = (event) => {
+        seen.dropEffect = event.dataTransfer ? event.dataTransfer.dropEffect : null;
+        window.removeEventListener("dragstart", onStart, true);
+        window.removeEventListener("drop", onDrop, true);
+        window.removeEventListener("dragend", onEnd, true);
+    };
+    window.addEventListener("dragstart", onStart, true);
+    window.addEventListener("drop", onDrop, true);
+    window.addEventListener("dragend", onEnd, true);
+    window.__curioMouseDrag = seen;
+}"""
+
+# The element a pointer at a client point reaches, named.
+_ELEMENT_AT_JS = (
+    "([x, y]) => (" + _NAME_ELEMENT_JS + ')(document.elementFromPoint(x, y)) || "nothing"'
+)
+
+# True when a press at the point lands on the grip's draggable element, and not
+# on a control inside it (a button there takes the press as a click).
+_PRESSES_ON_DRAGGABLE_JS = r"""(grip, [x, y]) => {
+    const draggable = grip.closest('[draggable="true"]') || grip.querySelector('[draggable="true"]');
+    const hit = document.elementFromPoint(x, y);
+    return !!draggable && !!hit && draggable.contains(hit)
+        && !hit.closest("button, a, input, select, textarea");
+}"""
+
+
+def drag_to_canvas_with_the_mouse(page, grip, *, at: tuple[float, float],
+                                  timeout: float = 15000) -> str:
+    """Drag with the mouse, as a person does, from *grip* onto the canvas, and
+    return the id of the node the drop created.
+
+    ``drag_to_canvas`` fires its drop on the pane itself, so nothing that lies
+    over the canvas can stop it. A catalog drawer's scrim covers the whole
+    window while the drawer is open, so only a real drag shows whether a card
+    dragged out of the drawer reaches the canvas beneath it. This one presses,
+    moves in steps and releases, and the browser decides where each event goes.
+
+    *grip* is where the press lands: an element of the draggable card or row
+    that is not a control, such as a card's title or a palette row's drag grip.
+    *at* is an offset from the pane's top-left corner, as for
+    ``drag_to_canvas``. Fails with where the drop went when no node arrives.
+    """
+    before = {node["id"] for node in canvas_nodes(page)}
+    grip.wait_for(state="visible", timeout=timeout)
+    grip.scroll_into_view_if_needed()
+    box = grip.bounding_box()
+    pane = page.locator(CANVAS_DROP_TARGET)
+    pane.wait_for(state="visible", timeout=timeout)
+    pane_box = pane.bounding_box()
+    assert box and pane_box, "the grip or the canvas has no layout box"
+    start = (box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    target = (pane_box["x"] + at[0], pane_box["y"] + at[1])
+    width, height = page.evaluate("() => [window.innerWidth, window.innerHeight]")
+    for point, what in ((start, "the press"), (target, "the drop")):
+        assert 0 <= point[0] < width and 0 <= point[1] < height, (
+            f"{what} at ({point[0]:.0f}, {point[1]:.0f}) is outside the {width}x{height} window"
+        )
+    assert grip.evaluate(_PRESSES_ON_DRAGGABLE_JS, list(start)), (
+        f"a press at ({start[0]:.0f}, {start[1]:.0f}) does not land on the grip's draggable "
+        f"element but on {page.evaluate(_ELEMENT_AT_JS, list(start))}"
+    )
+    # What a pointer at the drop point reaches before the drag: the canvas, or
+    # whatever lies over it there.
+    over_the_target = page.evaluate(_ELEMENT_AT_JS, list(target))
+
+    page.evaluate(_WATCH_MOUSE_DRAG_JS)
+    page.mouse.move(*start)
+    page.mouse.down()
+    page.mouse.move(start[0] - 40, start[1] + 10, steps=6)
+    try:
+        page.wait_for_function("() => window.__curioMouseDrag.started", timeout=5000)
+    except PlaywrightTimeoutError:
+        page.mouse.up()
+        raise AssertionError(
+            f"pressing at ({start[0]:.0f}, {start[1]:.0f}) and moving started no drag"
+        ) from None
+    page.mouse.move(*target, steps=12)
+    page.mouse.up()
+
+    try:
+        page.wait_for_function(
+            "(n) => window.__curio_reactFlow.getNodes().length > n",
+            arg=len(before),
+            timeout=timeout,
+        )
+    except PlaywrightTimeoutError:
+        seen = page.evaluate("() => window.__curioMouseDrag")
+        dropped = f"landed on {seen['droppedOn']}" if seen["droppedOn"] else "was taken by no element"
+        raise AssertionError(
+            f"the drag to ({target[0]:.0f}, {target[1]:.0f}) made no node: its drop {dropped} "
+            f"(drop effect {seen['dropEffect']!r}), and before the drag a pointer there "
+            f"reached {over_the_target}"
+        ) from None
+
+    created = [n for n in canvas_nodes(page) if n["id"] not in before]
+    seen = page.evaluate("() => window.__curioMouseDrag")
+    assert (len(created), seen["onCanvas"]) == (1, True), (
+        f"expected one new node from a drop on the canvas, got {created} from a drop on "
+        f"{seen['droppedOn']}"
+    )
+    node_id = created[0]["id"]
+    node_locator(page, node_id).wait_for(state="attached", timeout=timeout)
+    return node_id
+
+
 # Monaco is bundled and pinned on ``window`` by index.tsx, so the editor
 # instance is reachable; it is found by DOM containment because a canvas holds
 # one editor per code node and ``getEditors()`` returns all of them.
@@ -913,6 +1039,42 @@ def run_node_and_wait(page, node_id: str, *, node_type: str = "",
     return read_node_output_text(page, node_id)
 
 
+#: How often ``set_canvas_zoom`` reads the viewport back, in ms: on a timer,
+#: never per animation frame.
+_ZOOM_READ_MS = 100
+
+# One read of set_canvas_zoom's wait. True once React Flow's viewport is the
+# one asked for and the canvas draws it, for *reads* reads in a row. A view
+# that got there and was then moved off is set again.
+_ZOOM_HELD_JS = """({ zoom, reads }) => {
+    const flow = window.__curio_reactFlow;
+    const viewport = document.querySelector(".curio-canvas-drop-target .react-flow__viewport");
+    if (!flow || !viewport) return false;
+    const wait = window.__curio_zoomWait = window.__curio_zoomWait || { held: 0 };
+    const at = flow.getViewport();
+    const drawn = new DOMMatrixReadOnly(getComputedStyle(viewport).transform);
+    const near = (a, b) => Math.abs(a - b) < 1e-4;
+    const there = near(at.x, 0) && near(at.y, 0) && near(at.zoom, zoom)
+        && near(drawn.e, 0) && near(drawn.f, 0) && near(drawn.a, zoom) && near(drawn.d, zoom);
+    if (there) {
+        wait.held += 1;
+        return wait.held >= reads;
+    }
+    if (wait.held > 0) flow.setViewport({ x: 0, y: 0, zoom });
+    wait.held = 0;
+    return false;
+}"""
+
+_ZOOM_STATE_JS = """() => {
+    const flow = window.__curio_reactFlow;
+    const viewport = document.querySelector(".curio-canvas-drop-target .react-flow__viewport");
+    return {
+        viewport: flow ? flow.getViewport() : null,
+        drawn: viewport ? getComputedStyle(viewport).transform : null,
+    };
+}"""
+
+
 def set_canvas_zoom(page, zoom: float, *, timeout: float = 15000) -> None:
     """Pin the ReactFlow viewport so several nodes fit before dropping them.
 
@@ -922,14 +1084,36 @@ def set_canvas_zoom(page, zoom: float, *, timeout: float = 15000) -> None:
     viewport-relative, but each node paints ``525 * zoom`` px wide, so the
     spacing needed to keep facing handles exposed shrinks with it.
 
+    Returns once the canvas shows *zoom* at the origin. React Flow 11's
+    ``setViewport`` moves through a d3 transition even with no duration, and a
+    transition only advances on animation frames, so the view changes a frame
+    or two after the call, or later on a runner short of frames, and a point
+    read before then is read on the old view (``test_set_canvas_zoom_e2e.py``).
+    So the viewport is read back every ``_ZOOM_READ_MS``, on a timer, until
+    React Flow reports it and the page draws it for 3 reads in a row.
+
     Purely a camera change - node positions in flow space are unaffected, and
     ``save_workflow_test_screenshot`` re-pins its own fitView before capturing,
     so this does not influence a baseline.
     """
     page.wait_for_function(
-        "() => !!window.__curio_reactFlow", timeout=timeout
+        "() => !!window.__curio_reactFlow", polling=_ZOOM_READ_MS, timeout=timeout
     )
+    page.evaluate("() => { delete window.__curio_zoomWait; }")
     page.evaluate(
         "(zoom) => window.__curio_reactFlow.setViewport({ x: 0, y: 0, zoom })",
         zoom,
     )
+    try:
+        page.wait_for_function(
+            _ZOOM_HELD_JS,
+            arg={"zoom": zoom, "reads": 3},
+            polling=_ZOOM_READ_MS,
+            timeout=timeout,
+        )
+    except PlaywrightTimeoutError:
+        raise AssertionError(
+            f"the canvas did not show zoom {zoom} at the origin within {timeout:.0f} ms: "
+            f"{page.evaluate(_ZOOM_STATE_JS)}"
+        ) from None
+    page.evaluate("() => { delete window.__curio_zoomWait; }")

@@ -7,6 +7,8 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+from utk_curio.backend.app.common.record_clock import utc_now
+
 
 def title_from_filename(name: str) -> str:
     """Human-friendly display title from a file/artifact name.
@@ -36,7 +38,8 @@ def looks_like_generated_filename(name: str | None) -> bool:
 
 
 def iso_from_timestamp(ts: float | None = None) -> str:
-    dt = datetime.fromtimestamp(ts, timezone.utc) if ts is not None else datetime.now(timezone.utc)
+    """*ts* (epoch seconds) as ISO 8601 UTC; without one, now on the record clock."""
+    dt = datetime.fromtimestamp(ts, timezone.utc) if ts is not None else utc_now()
     return dt.isoformat().replace("+00:00", "Z")
 
 

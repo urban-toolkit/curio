@@ -577,7 +577,8 @@ def test_the_package_declares_the_libraries_it_imports():
     manifest = json.loads((PACKAGE / "manifest.json").read_text(encoding="utf-8"))
     assert (manifest["license"], manifest["publisher"]) == ("MIT", "Curio")
     assert sorted(manifest["dependencies"]["python"]) == [
-        "netCDF4", "networkx", "onnxruntime", "osmnx", "scikit-learn", "scipy"]
+        "geopandas", "netCDF4", "networkx", "numpy", "onnxruntime", "osmnx", "pandas",
+        "scikit-learn", "scipy", "shapely"]
     imported = set()
     for path in (SOURCES / MODULE).glob("*.py"):
         imported |= set(re.findall(r"^(?:import|from) (\w+)", path.read_text(encoding="utf-8"), re.MULTILINE))

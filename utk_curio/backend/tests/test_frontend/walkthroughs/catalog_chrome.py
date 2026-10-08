@@ -34,6 +34,8 @@ from .provenance import PROVENANCE_EXAMPLE
     # A restored 30px gutter is a small number of pixels; the 0.10 default
     # would not notice it going away again.
     max_diff_ratio=0.05,
+    # The package cards and the drawer say how old each package is.
+    catalog_calendar=True,
 )
 def catalog_details_clear_the_version_badge(ctx: Ctx) -> None:
     page = ctx.page

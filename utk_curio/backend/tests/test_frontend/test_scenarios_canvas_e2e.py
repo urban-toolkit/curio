@@ -11,10 +11,11 @@ of the result. This drives the whole path in a browser:
    run, the hidden one included.
 4. Double-click the box: it expands in place and its map is drawn.
 5. Collapse it again, save and reopen: the scenarios, the collapsed state, the
-   box's place and the saved outputs are back. Run scenario runs the copy's
-   lever and reuses the restored loader; the map, mounted inside the hidden
-   box this time, is drawn once the box is expanded. (A reopened canvas Autark
-   map does not draw by itself from its restored input, scenario or not: #711.)
+   box's place and the saved outputs are back. Expanded, the box's map draws
+   from its restored input by itself, with nothing run.
+6. Collapse it once more: Run scenario runs the copy's lever and reuses the
+   restored loader, and the map, run inside the hidden box, is drawn once the
+   box is expanded.
 
 It runs the Autark node, which needs WebGPU: without an adapter it skips,
 unless ``CURIO_REQUIRE_HARDWARE_WEBGPU=1`` (CI's GPU job), where it fails.
@@ -306,10 +307,24 @@ def test_a_branch_duplicated_as_a_scenario_collapses_runs_and_expands(
         )
         assert status == "done", f"{node_id} reads {status!r} after a reopen: its saved output was not restored"
 
-    # A reopened canvas Autark map does not draw from its restored input by
-    # itself, inside a scenario or not (#711), so run the scenario: its levers
-    # run, the restored loader is reused, and the map runs inside the hidden
-    # box, its canvas made there.
+    # Expanded, the map draws from its restored input by itself: nobody runs
+    # anything, and nothing reaches the sandbox.
+    sent = SandboxRuns(page, session["token"], session["project"]["id"])
+    box = _frame_box(page, copy_id, [scale_copy, map_copy])
+    box.dblclick()
+    node_locator(page, map_copy).wait_for(state="visible", timeout=10000)
+    frame_nodes(page, [map_copy])
+    assert_autark_map_drawn(page, map_copy, timeout=90000, attach_as="reopened and expanded, nothing run")
+    status = wait_for_node_settled(page, map_copy, node_type="autk-grammar", timeout_ms=60000)
+    detail = read_node_error_text(node_locator(page, map_copy)) if status == "error" else ""
+    assert status == "done", f"{map_copy} ended {status} after the reopen: {detail}"
+    executed = sent.stop()
+    assert executed == [], f"the reopened map was drawn after {executed} ran, not from its restored input"
+
+    # 6. Collapsed once more, Run scenario runs its levers, the restored loader
+    # is reused, and the map runs inside the hidden box, its canvas made there.
+    page.get_by_test_id(f"scenario-card-{copy_id}").get_by_role("button", name="Collapse").click()
+    _box(page, copy_id).wait_for(state="visible", timeout=10000)
     sent = SandboxRuns(page, session["token"], session["project"]["id"])
     page.get_by_test_id(f"scenario-card-{copy_id}").get_by_role("button", name="Run scenario").click()
     status = wait_for_node_settled(page, map_copy, node_type="autk-grammar", timeout_ms=180000)

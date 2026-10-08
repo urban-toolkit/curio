@@ -165,6 +165,8 @@ Curio's frontend will be available at http://localhost:8080 by default.
 > [!NOTE]
 > The pip installation includes a pre-built frontend and does not support rebuilding it. If you need to modify or rebuild the frontend, please use the manual installation method described below.
 
+Autark data nodes and OpenStreetMap downloads need Node.js 26 and npm (`conda install -c conda-forge nodejs=26`). On every start, `curio start` installs their Node.js packages with `npm install` into `.curio/nodejs/` in the folder you start Curio from.
+
 Five large files are not in the pip package: the data of four Data Catalog datasets (Milan Mean Radiant Temperature, Project Sidewalk Chicago Labels, Chicago Red-Light Violations and Chicago Speed Camera Violations) and the Model Catalog's Deep Umbra model. Curio downloads each one from GitHub the first time something reads it: a preview in the Data Catalog, adding the dataset to a dataflow, or a node that loads it. Downloaded files go to `.curio/fetched/` in the folder you start Curio from.
 
 Offline, reading one of those files fails with a message that gives its address on GitHub and the path to save it to. Download the file from that address on a machine that is online and copy it to that path, or install Curio from git, which holds every file.
@@ -380,10 +382,10 @@ selected: the editor's tabs (code, widgets, spec, provenance, output), the **Sav
 output dataset** toggle, settings, about, pin, comments, delete and **Minimize**.
 Code and specs sit in a gray box, and a code node's output is below its code.
 
-Drag a node's bottom-right corner to resize it; for viewers of a shared dataflow,
-nodes keep their size. A minimized node is a small chip; click it to open the node
-again. Double-click a node where you would drag it, such as its header, to zoom the
-view onto it.
+Drag a node's bottom-right corner to resize it. For viewers of a shared dataflow,
+nodes keep their size and have no delete. A minimized node is a small chip; click it
+to open the node again. Double-click a node where you would drag it, such as its
+header, to zoom the view onto it.
 
 ## Running a dataflow
 
@@ -522,7 +524,9 @@ Python Computation, Data Transformation, JS Computation, Data Pool, Vega-Lite an
 Autark nodes take several input edges, and so does a package node whose input port
 allows more than one. Connect an edge to the node's input circle and a new empty
 circle appears below it; each new edge takes the next circle. Circles are numbered
-from 0, top to bottom. A Data Pool shows each input as a tab.
+from 0, top to bottom. A Data Pool shows each input as a tab, and each frame of
+an input that holds several, a Python tuple or a dict of frames, as a tab too: a
+dict's tab is named after its key.
 
 In code and in a Vega-Lite or Autark spec, each input is a chip:
 
@@ -638,8 +642,9 @@ To make one:
 Then change the copy's levers: a widget value, a line of code. Each copy remembers
 the node it was copied from.
 
-**View → Show scenarios** opens the Scenarios panel. For each scenario it shows
-its fixed context, levers and outcomes, and lets you:
+**View → Show scenarios** opens the Scenarios panel on the right of the canvas,
+under the collaboration panel when collaboration is on and that panel is open.
+For each scenario it shows its fixed context, levers and outcomes, and lets you:
 
 - rename it, recolor it and describe it;
 - **Run scenario**: run its levers, and of its fixed context only the nodes that
@@ -692,7 +697,7 @@ The edit list is saved with the dataflow, and the node's code is written from it
 
 ```python
 return curio_edit_features(input_0, [
-    {"op": "remove", "ids": [119, 136]},
+    {"op": "remove", "ids": [29623484, 29628154]},
     {"op": "set", "ids": [42], "column": "height", "value": 30},
 ], key="building_id", layer="table_osm_buildings")
 ```
@@ -963,8 +968,9 @@ no `data` entry for its input; it names the tables the input provides.
   `DataFrame` with a geometry column. An input chip, `[!! input_1 !!]`, writes
   the name for you. A frame that arrives under its own name (a Data Pool tab, a
   compute step's layer) keeps that name, and `input_<k>` also names it.
-- Several layers keep their own names: a Python tuple, a Data Pool with tabs, or
-  the tables of an upstream Autark node. A layer without a name is named after
+- Several layers keep their own names: a Python tuple, a Python dict of frames
+  (each frame named after its key), a Data Pool with tabs, or the tables of an
+  upstream Autark node. A layer without a name is named after
   its position, `input_0`, `input_1`, and so on. When two inputs bring a layer
   of one name, the name means the first input's layer. The second input's layer
   is still its `input_<k>` when it is the only layer that input brings, and is
@@ -975,7 +981,8 @@ no `data` entry for its input; it names the tables the input provides.
 - A `GeoDataFrame` whose `metadata` names one of Autark's layer types loads as
   that layer: `gdf.metadata = {"layerType": "buildings"}` draws its rows as
   buildings, raised to their height. A building's height comes from `height`,
-  else `building:levels` (3.4 m a level); one with neither stands 6 m high. The
+  else `building:height`, else `building:levels` (3.4 m a level); one with none
+  of them stands 6 m high. The
   loader of an OpenStreetMap layer downloaded from the Discovery Catalog sets it.
 - Coordinates are read in the CRS the frame declares. A frame with no CRS is
   read as EPSG:4326 when its coordinates look like longitude and latitude, and
@@ -1163,10 +1170,10 @@ page scrolls.
 - **Order.** A cell comes after every cell it reads from, in the order **File → Export as
   notebook** writes: each cell is followed by the cells it feeds, the most recently
   connected first, before the next cell that reads from nothing.
-- **Cells** grow with their code and output, and cannot be resized or minimized. A
-  cell's header and buttons are its node's (see [Inside a node](#inside-a-node)). A
-  code cell shows its code with its output below; a Vega-Lite or Autark cell shows
-  its spec above its chart or map. An editor is as tall
+- **Cells** grow with their code and output, and cannot be resized, minimized or
+  deleted. A cell's header and its other buttons are its node's (see
+  [Inside a node](#inside-a-node)). A code cell shows its code with its output below;
+  a Vega-Lite or Autark cell shows its spec above its chart or map. An editor is as tall
   as its lines, from three lines up to 400 pixels for code and 240 for a spec, and
   scrolls inside past that. A chart is 320 pixels tall and an Autark map or plot 400. A
   code output takes its own height up to 320 pixels, a table or a summary up to 360,
@@ -1176,10 +1183,10 @@ page scrolls.
   `[!! input_0 !!]`), its interaction dot halfway down, and its output at the bottom.
   The dots follow their cell as it grows. Hover a dot to see what feeds it. Selecting
   a cell rings it in its kind's color and darkens its connections.
-- **Editing.** Nodes are added and connected on the canvas: the notebook view has no
-  node rail, takes no drop, and its dots do not connect. In it, edit and run a cell's
-  code, delete a cell, or select a connection and press Delete to remove it. **Run
-  all** sits at the top right of the page.
+- **Editing.** Nodes and connections are added and removed on the canvas: the notebook
+  view has no node rail, takes no drop, its dots do not connect, and Delete removes
+  neither a cell nor a connection there. In it, edit and run a cell's code. **Run all**
+  sits at the top right of the page.
 - **Nothing is saved** about the view: the dataflow keeps its canvas layout, and
   **Canvas** shows it as it was. The address carries the view (`?view=notebook`), so a
   reload, or the address copied from the browser, opens it the same way.

@@ -458,6 +458,10 @@ def test_the_template_reads_the_saved_tiles_and_runs_the_onnx_file():
     assert model_ids_in_code(source) == [MODEL_ID]
     assert dataset_ids_in_code(source) == []
     assert not (SOURCES / MODULE / "node_outputs.py").exists()
+    assert _manifest()["dependencies"]["python"] == {
+        "numpy": "", "onnxruntime": ">=1.17", "opencv-python": ">=4.8", "pandas": ">=2.0",
+        "pyproj": ">=3.7.2", "rasterio": ">=1.4",
+    }
 
 
 # ---------------------------------------------------------------------------

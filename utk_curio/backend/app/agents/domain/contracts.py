@@ -108,6 +108,58 @@ def is_document_at_fault(cause: object) -> bool:
     return _AT_FAULT.get(str(cause or ""), True)
 
 
+# --- Solve stop reasons ------------------------------------------------------
+#
+# A node's repair loop (``solve/verified_loop.py``) reports why it stopped as
+# ``stoppedBy``. The failure sentences, the loop's trace, the attempts card and
+# the per-node Solve row all say it with the phrase here.
+
+
+@dataclass(frozen=True)
+class StopReason:
+    """One reason a node's repair loop stopped, and how it reads."""
+
+    key: str
+    #: A clause that continues a sentence: it follows "3 attempts · " on the
+    #: card and sits in the parentheses of "not fixed after 3 attempts (...)".
+    phrase: str
+
+
+#: Every reason a repair loop can stop. New reasons are appended.
+SOLVE_STOP_REASONS: tuple[StopReason, ...] = (
+    StopReason("rounds", "the attempt cap was reached"),
+    # The node's own budget: a node solved on its own.
+    StopReason("budget", "this node's time budget was spent"),
+    # What was left of the session's budget: a node in a Solve session.
+    StopReason("session", "this session's time budget was spent"),
+    StopReason("repeat", "the builder repeated itself"),
+    StopReason("decline", "the builder declined: it needs something from you"),
+    StopReason("generation", "the builder could not run"),
+    # An upstream node with no content, or a slice validation refuses.
+    StopReason("blocker", "something outside its code blocked it"),
+    StopReason("infrastructure", "the sandbox was unreachable"),
+    # A kind the sandbox does not run: its document is checked instead.
+    StopReason("not-executable", "the sandbox cannot run this kind of node"),
+    StopReason("source", "a source you must confirm"),
+    StopReason("passed", "it passed"),
+)
+
+
+def one_phrase_per_reason(reasons: tuple[StopReason, ...]) -> dict[str, str]:
+    """``{key: phrase}`` for *reasons*. A key given twice raises, where a
+    dict literal would keep the last phrase and say nothing."""
+    phrases: dict[str, str] = {}
+    for reason in reasons:
+        if reason.key in phrases:
+            raise ValueError(f"the stop reason {reason.key!r} is given twice")
+        phrases[reason.key] = reason.phrase
+    return phrases
+
+
+#: ``stoppedBy`` -> the words every surface shows for it.
+STOPPED_BY_PHRASES: dict[str, str] = one_phrase_per_reason(SOLVE_STOP_REASONS)
+
+
 # --- Autark grammar ---------------------------------------------------------
 #
 # The grammar is defined upstream: autk-grammar generates a JSON Schema from its
@@ -1311,6 +1363,34 @@ def render_agent_categories_ts() -> str:
     )
 
 
+def _ts_key(name: str) -> str:
+    """*name* as an object key: bare when it is an identifier, else quoted."""
+    return name if re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", name) else _ts_string(name)
+
+
+def render_solve_stop_reasons_ts() -> str:
+    """``src/generated/solveStopReasons.ts``: why a repair loop stopped, in words."""
+    keys = "".join(f"  {_ts_string(reason.key)},\n" for reason in SOLVE_STOP_REASONS)
+    phrases = "".join(
+        f"  {_ts_key(reason.key)}: {_ts_string(reason.phrase)},\n" for reason in SOLVE_STOP_REASONS
+    )
+    return (
+        _ts_header()
+        + "\n"
+        + "/** Every reason a node's repair loop can stop, as its `stoppedBy` names it. */\n"
+        + "export const STOP_REASONS = [\n"
+        + keys
+        + "] as const;\n"
+        + "\n"
+        + "export type StopReason = (typeof STOP_REASONS)[number];\n"
+        + "\n"
+        + "/** What each reason reads as, on the server and in the browser alike. */\n"
+        + "export const STOPPED_BY_PHRASES: Readonly<Record<StopReason, string>> = {\n"
+        + phrases
+        + "};\n"
+    )
+
+
 def _ts_range(count: CountRange) -> dict:
     return {"least": count.least, **({"most": count.most} if count.most is not None else {})}
 
@@ -1418,6 +1498,7 @@ GENERATED_OUTPUTS: dict[str, Callable[[], str]] = {
     "utk_curio/frontend/urban-workflows/src/generated/renderCauses.ts": render_render_causes_ts,
     "utk_curio/frontend/urban-workflows/src/generated/autkGrammar.ts": render_autk_grammar_ts,
     "utk_curio/frontend/urban-workflows/src/generated/agentCategories.ts": render_agent_categories_ts,
+    "utk_curio/frontend/urban-workflows/src/generated/solveStopReasons.ts": render_solve_stop_reasons_ts,
     "utk_curio/frontend/urban-workflows/src/generated/visDefaults.ts": render_vis_defaults_ts,
     **{f"{PROMPTS_DIR}/{stem}.md": partial(render_prompt, stem) for stem in PROMPT_TEMPLATES},
 }

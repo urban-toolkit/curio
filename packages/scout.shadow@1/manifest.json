@@ -9,11 +9,12 @@
     "js": {},
     "packages": {},
     "python": {
+      "numpy": "",
       "onnxruntime": ">=1.17",
       "rasterio": ">=1.4",
-      "opencv-python-headless": ">=4.8",
+      "opencv-python": ">=4.8",
       "pandas": ">=2.0",
-      "pyproj": ">=3.6"
+      "pyproj": ">=3.7.2"
     }
   },
   "description": "SCOUT's Deep Umbra shadow model, ported from SCOUT (urban-toolkit/scout): the Accumulated Shadow node runs SCOUT's run_shadow_model on the zoom-16 height tiles Rasterize Buildings (SCOUT Raster Conversion) saved in the dataflow, keeps SCOUT's shadow tiles in the dataflow, and returns the shadow tiles joined into one raster in minutes, which an Autark map draws, with SCOUT's metrics, which Compare Scenarios charts. The model is the Model Catalog's Deep Umbra, model.scout.deep-umbra@1, its ONNX file run as it is; it ships in the Curio repository but not in the pip package.",

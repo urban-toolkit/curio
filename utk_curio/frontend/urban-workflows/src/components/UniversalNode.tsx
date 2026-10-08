@@ -1,14 +1,8 @@
 import React, { useEffect, useRef, useSyncExternalStore } from 'react';
 import CSS from "csstype";
-import { Handle, Edge, Position, useEdges, useUpdateNodeInternals } from 'reactflow';
+import { useEdges, useUpdateNodeInternals } from 'reactflow';
 import { useNotebookViewContext } from '../providers/flow/notebookViewContext';
-import {
-  notebookCellMinHeight,
-  notebookHandlePlaces,
-  notebookInputLabel,
-  notebookOutputBox,
-} from '../utils/notebookLayout';
-import { resolveNodeDisplayLabel } from '../utils/palettePackageFactoryDraft';
+import { notebookCellBox, notebookOutputBox } from '../utils/notebookLayout';
 import { withInputCircles } from '../adapters/node/handleHelpers';
 import { growsInputCircles, inputCapacity, wiredInputSlots } from '../utils/inputSlots';
 import { NodeContainer } from './styles';
@@ -19,6 +13,7 @@ import { InputIcon } from './edges/InputIcon';
 import { getNodeDescriptor, tryGetNodeDescriptor, subscribeToRegistry } from '../registry/nodeRegistry';
 import { isRegistryReady, subscribeToRegistryReady } from '../registry/registryReadiness';
 import { UnresolvedNode } from './UnresolvedNode';
+import { NodeHandles } from './nodes/NodeHandles';
 import { behaviorDataView } from "../utils/behaviorDataView";
 import { isSelectionEcho } from "../utils/selectionEcho";
 import { detectWebGpuSupport } from "../utils/webgpuSupport";
@@ -33,7 +28,7 @@ import {
   DASHBOARD_TILE_DEFAULT_WIDTH,
 } from '../utils/dashboardLayout';
 import { NodeType } from '../constants';
-import { HandleDef, TIconCardinality } from '../registry/types';
+import { TIconCardinality } from '../registry/types';
 import { useFlowContext } from '../providers/FlowProvider';
 import { NodeAgentBadges } from './agents/attach/NodeAgentBadges';
 import { useCollab } from '../providers/CollaborationProvider';
@@ -354,26 +349,6 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
 
   const allHandles = behavior.handlesOverride
     ?? [...baseHandles, ...(behavior.dynamicHandles ?? [])];
-  const dots = notebookOn ? allHandles.map((h: HandleDef) => ({ id: h.id, type: h.type })) : [];
-  const notebookPlaces = notebookOn ? notebookHandlePlaces(dots) : null;
-
-  /** What a dot in the notebook's bar says on hover: which input it is and what feeds it. */
-  const notebookDotTitle = (h: HandleDef): string => {
-    if (h.id === 'in/out') return 'interaction';
-    if (h.type === 'source') return 'output';
-    const edge = edges.find((e: Edge) => e.target === data.nodeId && (e.targetHandle ?? 'in') === h.id);
-    const source = edge ? (flowNodes ?? []).find((n: any) => n.id === edge.source) : undefined;
-    let name: string | null = null;
-    try {
-      name = source ? resolveNodeDisplayLabel(source.data) || null : null;
-    } catch {
-      name = null;
-    }
-    // A circle is named as code names it (`input_0`); a named port by its name.
-    const label = notebookInputLabel(h.id);
-    const input = /^\d+$/.test(label) ? `input_${label}` : `input ${label}`;
-    return name ? `${input} · ${name}` : input;
-  };
 
   return (
     // ``display: contents`` keeps the wrapper invisible to ReactFlow's
@@ -410,46 +385,17 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
           {(lockInfo?.username || "?").slice(0, 2).toUpperCase()}
         </div>
       )}
-      {!dashboardOn && allHandles.map((h: HandleDef) => {
-        const connectable =
-          h.isConnectableOverride
-            ? h.isConnectableOverride(data, isConnectable, edges)
-            : isConnectable;
-        const style = h.dynamicStyle ? h.dynamicStyle(data, edges) : h.style;
-        if (notebookPlaces) {
-          // Every dot on the right edge, inputs numbered as the chips count
-          // them, each anchored to the top, the middle or the bottom so it
-          // follows the cell as it grows. React Flow measures the dots again
-          // whenever the cell resizes, and the arcs follow them.
-          const label = h.type === 'target' && h.id !== 'in/out' ? notebookInputLabel(h.id) : '';
-          return (
-            <Handle
-              key={h.id}
-              id={h.id}
-              type={h.type}
-              position={Position.Right}
-              isConnectable={connectable}
-              style={{ ...(style ?? {}), ...notebookPlaces.get(h.id) }}
-              title={notebookDotTitle(h)}
-              className="curio-notebook-dot"
-            >
-              {label.length > 0 && label.length <= 2 ? (
-                <span className="curio-notebook-dot-label">{label}</span>
-              ) : null}
-            </Handle>
-          );
-        }
-        return (
-          <Handle
-            key={h.id}
-            id={h.id}
-            type={h.type}
-            position={h.position}
-            isConnectable={connectable}
-            style={style}
-          />
-        );
-      })}
+      {!dashboardOn && (
+        <NodeHandles
+          nodeId={data.nodeId}
+          data={data}
+          handles={allHandles}
+          isConnectable={isConnectable}
+          notebookOn={notebookOn}
+          edges={edges}
+          nodes={flowNodes}
+        />
+      )}
 
       <NodeContainer
         nodeId={data.nodeId}
@@ -481,7 +427,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
         // least enough for its dots, passed on its own: the node's size props
         // stay its canvas size, so the node keeps that size when the canvas
         // comes back, and like a tile a cell never writes its size into the node.
-        cellBox={notebookOn ? { width: notebook.cellWidth, minHeight: notebookCellMinHeight(dots) } : undefined}
+        cellBox={notebookOn ? notebookCellBox(allHandles, notebook.cellWidth) : undefined}
         styles={adapter.container.styles as CSS.Properties<0 | (string & {}), string & {}> | undefined}
         disablePlay={disablePlay}
         output={output}

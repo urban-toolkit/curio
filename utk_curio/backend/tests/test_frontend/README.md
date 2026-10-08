@@ -50,7 +50,7 @@ hardware WebGPU, and a matrix of CPU runners
 each job's runner: GitHub-hosted `ubuntu-latest` while the organization's
 hosted runners have room and the self-hosted arcade runners (`[self-hosted,
 cpu]`) after that, and for the GPU
-share an arcade GPU runner (`arcade-gpu-01` to `arcade-gpu-06`) while one is free and `utk-gpu` otherwise. The GPU share is
+share an arcade GPU runner (`arcade-gpu-01` to `arcade-gpu-04`) while one is free and `utk-gpu` otherwise. The GPU share is
 still called `utk`, after the first GPU runner. A test runs on `utk` when its
 browser runs WebGPU: a `test_workflows.py` case whose dataflow has an Autark node, a
 walkthrough scene whose example or script drives Autark or the GPU, and any
@@ -205,6 +205,7 @@ palette drag and the edge drag.
 | Helper | What it does |
 |---|---|
 | `drag_to_canvas(page, source, *, at=None)` | One synthetic HTML5 drag from any draggable palette source onto `.curio-canvas-drop-target`; returns the new node's id, diffed from the canvas because ids are `uuid4`. |
+| `drag_to_canvas_with_the_mouse(page, grip, *, at)` | The same drag with `page.mouse`: press on *grip* (a card's title, a palette row's grip), move in steps, release over the canvas. The browser routes every event, so it is the only one that meets what lies over the canvas, such as an open drawer's scrim. Fails with the element that took the drop, or none. |
 | `connect_nodes(page, source_id, target_id, *, source_handle="out", target_handle="in")` | Draws an edge with real pointer moves between two `.react-flow__handle`s and returns the derived edge id. |
 | `set_node_code(page, node_id, code)` / `read_node_code(page, node_id)` | Writes / reads a code node's source through that node's own Monaco instance. |
 | `canvas_nodes(page)` / `canvas_node_type(page, node_id)` | `{id, nodeType}` for the canvas, read from `window.__curio_reactFlow`. Projected, because `node.data` holds a `PythonInterpreter` and callbacks that Playwright cannot serialize. |
@@ -571,6 +572,18 @@ Other things that surprise people here:
   by design. Rename the manifest `id` to fork it instead.
 - Card roots carry `data-pkg-dir` / `data-dataset-id` / `data-agent-coord`.
   Prefer them over display copy.
+- **Catalog ages run on a fixed date.** Cards, details panels and palette rows
+  say how long ago each item was made ("2d ago", "Updated 141d ago"), measured
+  against the browser's clock, and shipped items carry fixed dates. A test
+  whose captures show one carries the `catalog_calendar` marker (a walkthrough
+  scene: `catalog_calendar=True`). Its browser then runs on `CATALOG_CALENDAR`
+  (`utils/catalog_clock.py`) through Playwright's clock, and the backend stamps
+  the datasets, packages and models the test makes on the same date
+  (`/api/testing/clock`), so they read "1m ago" beside the shipped ones. Both
+  clocks run on from that date at the real pace.
+  `test_catalog_calendar_e2e.py` fails when a shipped item is dated less than
+  two days before the calendar: move the date past it, then re-mint the frames
+  of the marked tests.
 - **Every catalog confirms an add and a remove, with an in-app dialog** (#196,
   #197). No drawer calls `window.confirm`, so `page.on("dialog", ...)` never
   fires for them - a test written that way clicks the card

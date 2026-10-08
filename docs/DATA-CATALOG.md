@@ -90,7 +90,7 @@ There are three places you work with datasets, and they are **not** interchangea
 
 - **The `/catalog/data` page** is the library view, for your whole account. Reach it from `/projects` and the **Data Catalog** tab. You can browse, filter by status, format and origin, preview, import, publish, open a dataset's details, and add a dataset to all your projects. You **cannot add a dataset to just one dataflow from here**: that is the drawer's job.
 - **The Data Catalog drawer**, inside the canvas, is the working surface. Open it from the **Data Catalog** button in the top bar, or from the left Tools panel's **Data Catalog** dropdown and **Browse Data Catalog +**. Everything scoped to the open dataflow happens here: adding, removing, importing, and deleting. Its tabs are **Browse all** (the default), **In project**, and **Computed**.
-- **The Data palette**, the **Data Catalog** dropdown in the left Tools panel, holds the datasets already added to this dataflow, ready to drag onto the canvas, and under **Saved outputs** the outputs this dataflow's nodes saved. It sits below the built-in nodes and the **Node Catalog** dropdown.
+- **The Data palette**, the **Data Catalog** dropdown in the left Tools panel, holds the datasets already added to this dataflow, ready to drag onto the canvas, and under **Saved outputs** the outputs this dataflow's nodes saved. It lists them in the drawer's **Sort: Recent activity** order. It sits below the built-in nodes and the **Node Catalog** dropdown.
 
 ### Action matrix
 
@@ -143,7 +143,7 @@ The generated Python is one line, `curio_load_data("<datasetId>")` (`curio_load_
 | `geotiff` | An open rasterio dataset → `src` |
 | `onnx` | An onnxruntime `InferenceSession` on the CPU → `session`. onnxruntime comes with the Street Vision package. |
 | `netcdf` | An xarray `Dataset`, read with netCDF4 → `ds` |
-| `bundle` | Every part, as a tuple → `bundle`. `part="<file>"` reads one part. |
+| `bundle` | Every part, in the tuple, list or dict the producing node returned → `bundle`. `part="<file>"` reads one part. |
 | OSM, GeoPackage or GTFS group | A `layers` dict, one `curio_load_data` per layer |
 | NetCDF group | A `layers` dict, one `curio_load_data` per variable |
 | `collection` | `curio_load_collection("<datasetId>")`: the collection's index, one row per file with a readable `path` → `collection` |
@@ -158,7 +158,7 @@ src = curio_load_data("data.utk.elevation", bounds=(-87.64, 41.87, -87.62, 41.89
 
 Bounds that reach past the raster, or hold no cell's centre, stop the node with a message giving the area the raster covers.
 
-For a dataset of several files, a [bundle](#bundles), `part="<file>"` reads one of them: the file its `bundle.json` lists under that file name or label, read as the whole bundle's tuple holds it. With a GeoTIFF part, `bounds` then reads a window of it:
+For a dataset of several files, a [bundle](#bundles), `part="<file>"` reads one of them: the file its `bundle.json` lists under that file name or label, read as the whole bundle holds it. With a GeoTIFF part, `bounds` then reads a window of it:
 
 ```python
 depth = curio_load_data("<datasetId>", part="depth_2050.tif", bounds=(-90.687, 41.416, -90.488, 41.624))
@@ -215,7 +215,7 @@ Every output type a node can declare is saved, not only tables:
 | Raster | `geotiff` |
 | A plain Python value: dict, list, string, number, boolean, or `None` | `json` |
 | A tuple | `bundle`, one part per item (see [Bundles](#bundles)) |
-| A list or dict *containing* DataFrames | `bundle`, one part per element; a dict keeps its keys as part labels |
+| A list or dict *containing* DataFrames | `bundle`, one part per element, which loads as that list or dict; a dict keeps its keys as part labels |
 
 A `json` output is stored as plain, uncompressed JSON, readable with `json.load` and exported as is.
 
@@ -224,7 +224,7 @@ These nodes have no toggle, and nothing is saved for them:
 - **Visualization sinks** (`curio.builtin/vis-vega`, `curio.builtin/vis-simple`), which pass their input straight through.
 - **Dataset-palette nodes**, the loader nodes created by dragging a dataset in.
 
-A node's output appears in the drawer's **Computed** tab as soon as the node runs. Running it again rewrites the same dataset.
+A node's output appears in the drawer's **Computed** tab as soon as the node runs, and with **Sort: Recent activity** the output computed last comes first. Running the node again rewrites the same dataset and brings it to the top.
 
 ### Lineage
 
@@ -244,13 +244,13 @@ When a node returns several values (a Python tuple, say), there is no single fil
 ```
 computed.<dataflowId>.<nodeId>@1/
   manifest.json          # format: "bundle", dataFile: "data/bundle.json"
-  data/bundle.json       # {version, parentArtifactId, parts: [...]}
+  data/bundle.json       # {version, parentArtifactId, container, parts: [...]}
   data/parts/00_dataframe.parquet, 01_json.json, ...
 ```
 
-Scalar parts (numbers, strings, booleans) are stored as `{"value": ...}`. The generated loader reads `bundle.json`, rebuilds each part, and returns a tuple, so a downstream node sees exactly the shape the producing node returned. A table part keeps its `metadata`, the name and Autark layer type the producing node gave it (`gdf.metadata = {"name": "roads", "layerType": "roads"}`), and `bundle.json` lists them as each part's `layerName` and `layerType`. A single saved table keeps its `metadata` the same way.
+Scalar parts (numbers, strings, booleans) are stored as `{"value": ...}`. `bundle.json` records the producing node's container as `container`: `tuple`, `list`, or `dict`, with each part of a dict under its `key`. The generated loader reads `bundle.json`, rebuilds each part, and returns the parts in that container, a dict with its keys in their order, so a downstream node sees exactly the shape the producing node returned. A `bundle.json` that records no `container` loads as a tuple. A table part keeps its `metadata`, the name and Autark layer type the producing node gave it (`gdf.metadata = {"name": "roads", "layerType": "roads"}`), and `bundle.json` lists them as each part's `layerName` and `layerType`. A single saved table keeps its `metadata` the same way.
 
-A dataset you ship can be a bundle too, when several files are one input: its files side by side in `data/`, under their own names, and `data/bundle.json` listing each as `{"index", "label", "kind", "format", "file"}` (`"file": "data/depth_2050.tif"`). A node reads one file of it with `curio_load_data("<datasetId>", part="<file>")`. Only a file inside the dataset's folder is a part.
+A dataset you ship can be a bundle too, when several files are one input: its files side by side in `data/`, under their own names, and `data/bundle.json` listing each as `{"index", "label", "kind", "format", "file"}` (`"file": "data/depth_2050.tif"`). A node reads one file of it with `curio_load_data("<datasetId>", part="<file>")`, or all of them, as a tuple in `index` order, with `curio_load_data("<datasetId>")`. Only a file inside the dataset's folder is a part.
 
 Previewing a bundle gives you a **tab per part**; a part with no rows is labelled *"Scalar or metadata part"*. A bundle **cannot be exported** as a single file, and its Export button is disabled.
 

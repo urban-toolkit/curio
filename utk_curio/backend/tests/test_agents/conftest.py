@@ -15,6 +15,7 @@ from utk_curio.backend.tests._unit_fixtures import (  # noqa: F401
     tmp_curio,
     user_and_token,
 )
+from utk_curio.backend.tests.test_agents._solve_session import _bound_session_by_passes
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -100,18 +101,16 @@ def _pinned_repair_budget(monkeypatch):
     # dev/131: Solve became a SESSION that keeps making passes until the user
     # stops it or fifteen minutes pass. Every test written before it asserts on
     # ONE pass, and a session that waits for a user who is not there would hang
-    # the suite, so the session budget is one second and its inter-pass wait is
-    # one second here. The clock starts when the batch is built, so how many
-    # passes fit in that second depends on the machine (issue #583). That second
-    # is also each node's repair budget, since the batch gives a node what is
-    # left of the session (at least one second), so how many rounds a pass gets
-    # depends on the machine too (issue #729). A test that needs a later pass,
-    # or all of a pass's rounds, bounds its session by pass count with
-    # ``TestVerifiedSolve._bound_session_by_passes`` (test_verified_rounds.py),
-    # which also raises CURIO_SOLVE_SESSION_DEADLINE: patching
-    # ``SolveBatch._session_deadline_passed`` alone leaves that budget at one
-    # second.
-    monkeypatch.setenv("CURIO_SOLVE_SESSION_DEADLINE", "1")
+    # the suite. The session here used to last one second, so how many passes
+    # it made depended on the runner (issue #583), and so did how many rounds a
+    # pass got, because the batch gives each node what is left of the session
+    # as its repair budget (issue #729). So every session is bounded by turns
+    # instead, with a time budget no runner spends: two turns, the first pass
+    # and one more, which finds nothing left, retries what failed, or waits one
+    # second for the user. A test that needs more passes raises the bound with
+    # ``_bound_session_by_passes`` (_solve_session.py). A test about the time
+    # budget itself sets that budget; the batch's check of it is not patched.
+    _bound_session_by_passes(monkeypatch, 2)
     monkeypatch.setenv("CURIO_SOLVE_SESSION_WAIT", "1")
 
 

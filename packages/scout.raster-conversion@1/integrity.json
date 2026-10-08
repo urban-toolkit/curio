@@ -1,7 +1,7 @@
 {
   "sha256": {
-    "README.md": "5cddeb516de943400d388330216366c2f003ce01a3b16735e0d7b2894a4085c5",
-    "manifest.json": "c040344b160a06c59dcb9e9150e7801e51cbf6c9844ded33e1d7571b584fc01b",
+    "README.md": "ff3de55641313667f9fcf96b7d63c91e0d59a0976205ebfedb8b32f8f7aeed58",
+    "manifest.json": "030bff28557ed841095ff8f449decb0dac770ae3ece32e4fb162da7e42327653",
     "sources/mosaic-tiles.py": "ba34e414e8ae076a4ccddc628d804dce5899d0d820a27c5c1318f2766696d697",
     "sources/rasterize-buildings.py": "98f3c1f18de92c6190fd25a287c1c990bf589a32d7483f6a51ba1269c934a757",
     "sources/scout_raster_conversion/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",

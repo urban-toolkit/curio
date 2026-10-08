@@ -3,27 +3,17 @@ import type {
   AgentSolveAttemptRow,
   AgentSolveAttemptsPart,
 } from "../../../services/agents";
+import { STOPPED_BY_PHRASES, type StopReason } from "../../../generated/solveStopReasons";
 import { AgentCodeBlock } from "./AgentCodeBlock";
 import styles from "./AgentSolveAttemptsCard.module.css";
 
-/** dev/127: the bound that ended the loop, in words. Mirrors the server's own
- *  STOPPED_BY_PHRASES so the card and the failure sentence agree. */
-const STOPPED_BY: Record<string, string> = {
-  rounds: "the attempt cap was reached",
-  // dev/129: a document that cannot be run was still checked, and did not pass.
-  document: "the document did not validate",
-  budget: "this node's time budget was spent",
-  repeat: "the builder repeated itself",
-  decline: "the builder declined — it needs something from you",
-  generation: "the builder could not be reached",
-  blocker: "an upstream node blocked it",
-  infrastructure: "the sandbox was unreachable",
-  source: "a source you must confirm",
-  passed: "it passed",
-};
-
+/** dev/127: the bound that ended the loop, in the words the server's failure
+ *  sentences use: both read the generated table. "" for an unknown reason. */
 export function stoppedByPhrase(stoppedBy?: string): string {
-  return STOPPED_BY[stoppedBy ?? ""] ?? "";
+  const reason = stoppedBy ?? "";
+  return Object.prototype.hasOwnProperty.call(STOPPED_BY_PHRASES, reason)
+    ? STOPPED_BY_PHRASES[reason as StopReason]
+    : "";
 }
 
 /** One attempt's summary line: "Round 3 · execution-error · 4.1 s". */

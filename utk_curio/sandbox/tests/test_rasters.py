@@ -174,6 +174,26 @@ class TheEnvelopeTest(unittest.TestCase):
         self.assertIs(parseInput(envelope), envelope)
 
 
+class ClosingDatasetsTest(unittest.TestCase):
+    """``close_datasets`` closes the rasters a value read from a saved output
+    holds, once they are stored by path (``staging.stage_input``)."""
+
+    def test_a_raster_alone_or_in_a_list_a_tuple_or_a_dict_is_closed(self):
+        import rasterio
+
+        for name, wrap in (
+            ("alone", lambda raster: raster),
+            ("list", lambda raster: [raster, "Milan"]),
+            ("tuple", lambda raster: (raster, 42)),
+            ("dict", lambda raster: {"depth": raster, "city": "Milan"}),
+        ):
+            with self.subTest(name):
+                raster = rasterio.open(FIXTURE)
+                self.addCleanup(raster.close)
+                rasters().close_datasets(wrap(raster))
+                self.assertTrue(raster.closed)
+
+
 class APythonNodeReceivesTheRasterTest(StoreTestCase):
     """End to end in the sandbox: an Autark node's envelope, stored as its
     output, is a rasterio dataset in the Python node it feeds."""

@@ -17,6 +17,7 @@ import pytest
 
 from utk_curio.backend.app.agents.application.solve import budgets
 from utk_curio.backend.app.agents.application.solve import rounds
+from utk_curio.backend.tests.test_agents._solve_session import _bound_session_by_passes, _on_a_loaded_runner
 
 TRACEBACK = (
     "Traceback (most recent call last):\n"
@@ -168,17 +169,16 @@ class TestASessionPassCarriesTheErrorForward:
 
         helper = vr.TestVerifiedSolve()
         user, token = user_and_token
-        # The session is bounded by passes here, not by the suite's one-second
-        # clock (conftest). That clock starts when the batch is built, so on a
-        # slow runner pass 1 alone outlived it and pass 2, which this test is
-        # about, never ran (issue #583). The same second is also the node's
-        # repair budget, so on a loaded runner pass 1 lost its third round and
-        # pass 2 ran that round's code as new code, adding repeats past the
-        # bound below (issue #729); the helper raises the session's budget too.
-        # The bound lets pass 1 exhaust its rounds, the weak passes the session
-        # allows, and one turn more, so it is the weak-pass limit and not the
-        # clock that stops the spin below.
-        helper._bound_session_by_passes(monkeypatch, 1 + budgets._MAX_WEAK_PASSES + 1)
+        # The session is bounded by turns, not by a clock (conftest.py). A
+        # one-second clock starts when the batch is built, so on a slow runner
+        # pass 1 alone outlived it and pass 2, which this test is about, never
+        # ran (issue #583). That second was also the node's repair budget, so
+        # on a loaded runner pass 1 lost its third round and pass 2 ran that
+        # round's code as new code, adding repeats past the bound below (issue
+        # #729). The bound here lets pass 1 exhaust its rounds, the weak passes
+        # the session allows, and one turn more, so it is the weak-pass limit
+        # and not the turn bound that stops the spin below.
+        _bound_session_by_passes(monkeypatch, 1 + budgets._MAX_WEAK_PASSES + 1)
         # Every candidate fails at run time: pass 1 exhausts its rounds, and
         # later passes keep attempting — the owner's requirement — rather than
         # ending the session after one pass.
@@ -190,7 +190,7 @@ class TestASessionPassCarriesTheErrorForward:
             ],
             exec_outcomes={"always_bad": "Traceback: NameError: always_bad"},
         )
-        helper._on_a_loaded_runner(monkeypatch, sandbox_run_s)
+        _on_a_loaded_runner(monkeypatch, sandbox_run_s)
         body = helper._solve(client, token, ctx, verify=True)
         load = body["results"][ctx["load"]]
         assert body["passes"] > 1  # the session kept managing the dataflow

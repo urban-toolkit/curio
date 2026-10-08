@@ -7,6 +7,7 @@ import { fetchData } from "../services/api";
 import { sandboxArtifactId } from "../utils/flowOutputRef";
 import { lazyRows } from "../utils/rowSource";
 import { copyForFlags } from "../utils/poolFlagCopy";
+import { keyedFramesAsOutputs } from "../utils/sandboxEnvelope";
 
 const useTableData = ({ data }: { data: INodeData }) => {
   const [tabData, setTabData] = useState<any[]>([]);
@@ -132,7 +133,10 @@ const useTableData = ({ data }: { data: INodeData }) => {
       // has no branch for either → empty table. Normalise both shapes to
       // individual geodataframe entries so the downstream code stays uniform.
       let tabd: any[] = [];
-      for (const x of fetched) {
+      for (const fetchedItem of fetched) {
+        // A dict of frames is drawn as a tuple of them is: a tab per frame,
+        // named after its key.
+        const x = keyedFramesAsOutputs(fetchedItem) ?? fetchedItem;
         if (x == null) continue;
         if (x.dataType === 'outputs' && Array.isArray(x.data)) {
           for (const item of x.data) if (item) tabd.push(item);

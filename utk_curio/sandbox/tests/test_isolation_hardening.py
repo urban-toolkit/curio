@@ -379,6 +379,39 @@ class TestTheChildCanReachItsScratchDirectory(unittest.TestCase):
             )
 
     @posix_only
+    def test_the_sandboxs_nodejs_packages_are_closed_to_node_code(self):
+        """Hardening closes ``.curio/nodejs``, the Node.js packages a pip
+        install's sandbox runs as its own user: the execution account cannot
+        reach a module there, and the sandbox still reads it."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = os.path.join(tmp, ".curio", "nodejs")
+            package = os.path.join(folder, "node_modules", "@urban-toolkit", "autk-db")
+            os.makedirs(package)
+            entry = os.path.join(package, "index.js")
+            with open(entry, "w", encoding="utf-8") as handle:
+                handle.write("export const loaded = true;\n")
+            for directory in (folder, package):
+                os.chmod(directory, 0o777)
+            os.chmod(entry, 0o666)
+
+            result = hardening.harden_paths(tmp)
+
+            self.assertIn(
+                ".curio/nodejs", result["changed"],
+                "hardening left .curio/nodejs as it was: node code running as "
+                "the execution account could change a module the sandbox's "
+                "Node imports",
+            )
+            mode = stat.S_IMODE(os.stat(folder).st_mode)
+            self.assertEqual(mode, hardening.DIRECTORY_MODE)
+            self.assertFalse(self._traversable(mode, 0, 1001))
+            self.assertEqual(stat.S_IMODE(os.stat(entry).st_mode) & 0o022, 0)
+            with open(entry, encoding="utf-8") as handle:
+                self.assertEqual(handle.read(), "export const loaded = true;\n")
+
+    @posix_only
     def test_the_store_directory_is_still_locked(self):
         """Leaving the files alone must not leave the store reachable."""
         import tempfile

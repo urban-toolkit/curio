@@ -7,7 +7,7 @@ import shutil
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
@@ -590,11 +590,50 @@ def _manifest_entries(manifest: Optional[dict]) -> Dict[str, dict]:
     }
 
 
+def _kept_when_unsent(before: Optional[dict], after: Optional[dict]) -> Callable[[str], bool]:
+    """Which recorded outputs a save keeps when it does not name them.
+
+    A save names the outputs its canvas holds, while a run on the server
+    records each output as it makes it: the save that ends a run, or one from
+    a tab that never saw the run, can leave out an output the run has just
+    recorded. That output stays while its node is in the saved dataflow
+    (*after*) with the code it had before the save (*before*), and while the
+    node's output is one the dataflow records
+    (``save_policy.records_output_on_save``: its Save toggle, or a pinned tile
+    or a scenario reading it). The output of a node the save deletes, edits or
+    turns Save off for goes.
+    """
+    from utk_curio.backend.app.execution.runtime_journal import normalized_code_sha256
+    from utk_curio.backend.app.execution.save_policy import (
+        records_output_on_save,
+        saved_source_node_ids,
+    )
+
+    def nodes(spec: Optional[dict]) -> Dict[str, dict]:
+        dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+        listed = dataflow.get("nodes") if isinstance(dataflow, dict) else None
+        return {n["id"]: n for n in listed or [] if isinstance(n, dict) and n.get("id")}
+
+    def code(node: dict) -> str:
+        return normalized_code_sha256(str(node.get("content") or ""))
+
+    now, then = nodes(after), nodes(before)
+    sources = saved_source_node_ids(after)
+
+    def kept(node_id: str) -> bool:
+        node, earlier = now.get(node_id), then.get(node_id)
+        if node is None or earlier is None or code(node) != code(earlier):
+            return False
+        return records_output_on_save(node, None, sources)
+
+    return kept
+
+
 def _merge_outputs(
     incoming: List[OutputRef],
     manifest: Optional[dict],
     *,
-    keep_unsent: bool,
+    keep_unsent: Callable[[str], bool],
 ) -> tuple[List[OutputRef], List[OutputRef], Dict[str, Optional[str]]]:
     """Merge *incoming* output refs into the manifest's, node by node.
 
@@ -602,9 +641,10 @@ def _merge_outputs(
     never saw a run on the server cannot put back the older output it holds.
     Returns the merged refs, the incoming refs that won (the only ones to
     install, so an older output never overwrites a newer installed copy), and
-    each node's ``produced_at``. With *keep_unsent* the manifest's other nodes
-    stay, as when a run records one node; without it they are dropped, as when
-    a save names every output the dataflow keeps.
+    each node's ``produced_at``. The manifest's output for a node *incoming*
+    does not name stays when *keep_unsent* says so for that node: every one
+    when a run records one node, and those :func:`_kept_when_unsent` keeps when
+    a save names the outputs its canvas holds.
     """
     existing = _manifest_entries(manifest)
     merged: List[OutputRef] = []
@@ -630,15 +670,14 @@ def _merge_outputs(
         merged.append(ref)
         to_install.append(ref)
         stamps[ref.node_id] = stamp
-    if keep_unsent:
-        for node_id, prior in existing.items():
-            if node_id in sent:
-                continue
-            merged.append(OutputRef(
-                node_id=node_id, filename=prior["filename"],
-                data_type=prior.get("data_type"),
-            ))
-            stamps[node_id] = prior.get("produced_at")
+    for node_id, prior in existing.items():
+        if node_id in sent or not keep_unsent(node_id):
+            continue
+        merged.append(OutputRef(
+            node_id=node_id, filename=prior["filename"],
+            data_type=prior.get("data_type"),
+        ))
+        stamps[node_id] = prior.get("produced_at")
     return merged, to_install, stamps
 
 
@@ -862,9 +901,12 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
         if data.outputs is not None:
             # A node's newer output already on record (a run on the server
             # while this tab was open) wins over the one sent, and only the
-            # winners are installed.
+            # winners are installed. One on record that the save leaves out
+            # stays unless the save deleted its node, changed its code or
+            # turned its Save off.
             output_refs, refs_to_install, produced_at = _merge_outputs(
-                list(data.outputs), existing_manifest, keep_unsent=False,
+                list(data.outputs), existing_manifest,
+                keep_unsent=_kept_when_unsent(existing_spec, effective_spec),
             )
             # Install into users/<user>/datasets/ and register lean refs in the spec.
             # Do not copy artifacts into project/data/ — that folder is legacy-only.
@@ -965,7 +1007,7 @@ def record_node_outputs(
         spec = storage.read_spec(ukey, project_id)
         manifest = storage.read_manifest(ukey, project_id)
         output_refs, refs_to_install, produced_at = _merge_outputs(
-            list(outputs), manifest, keep_unsent=True,
+            list(outputs), manifest, keep_unsent=lambda _node_id: True,
         )
         _auto_install_computed_outputs(
             ukey, refs_to_install, spec, install_warnings,

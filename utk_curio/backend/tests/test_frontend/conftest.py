@@ -5,7 +5,7 @@ import pytest
 from playwright.sync_api import Browser, BrowserType
 
 from . import comparisons, diagnostics, runner_split
-from .utils import REPO_ROOT
+from .utils import REPO_ROOT, start_catalog_calendar, stop_catalog_calendar
 from .fixtures import _clean_db
 
 
@@ -193,6 +193,28 @@ def e2e_clean_db(request, test_db_paths):
     _clean_db(request, test_db_paths)
 
 
+@pytest.fixture(autouse=True)
+def catalog_calendar(request, e2e_clean_db):
+    """Run a test marked ``catalog_calendar`` on the fixed catalog date.
+
+    Its captures show how long ago catalog items were made, so its browser
+    context runs on ``CATALOG_CALENDAR`` and the backend stamps the records it
+    makes on the same date (utils/catalog_clock.py), for this test only. Set up
+    after ``e2e_clean_db``, whose reset puts the backend's clock back.
+    """
+    if request.node.get_closest_marker("catalog_calendar") is None:
+        yield
+        return
+    backend = request.getfixturevalue("current_server")
+    if "workflow_page" in request.fixturenames:
+        context = request.getfixturevalue("workflow_page").context
+    else:
+        context = request.getfixturevalue("context")
+    start_catalog_calendar(context, backend)
+    yield
+    stop_catalog_calendar(backend)
+
+
 def pytest_generate_tests(metafunc):
     """Parametrize any test / fixture that requests ``loaded_workflow``.
     Ref: https://docs.pytest.org/en/stable/example/parametrize.html#a-quick-port-of-testscenarios
@@ -256,6 +278,11 @@ def pytest_configure(config):
         "markers",
         "only_workflows(*basenames): a test_workflows test deselected for every "
         "other workflow",
+    )
+    config.addinivalue_line(
+        "markers",
+        "catalog_calendar: the test's captures show how long ago catalog items "
+        "were made, so it runs on one fixed date (utils/catalog_clock.py)",
     )
     config.pluginmanager.register(_OnlyWorkflows(), "curio-only-workflows")
 

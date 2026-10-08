@@ -4,10 +4,10 @@ The canvas bar's Canvas | Notebook switch shows the same nodes one under the
 other, in dataflow order, like a Jupyter notebook: each cell across the page
 and as tall as its code and its output, Play at its top left, its other tools
 showing under the pointer. The connections run in a bar to the right of the
-cells, between dots on each cell's right edge. Nodes are added and connected
-on the canvas only: the notebook view has no rail, accepts no drop, and its
-dots do not connect; a cell's code is edited and run there, a cell deleted and
-a connection removed. Nothing about the view is saved: the dataflow keeps its
+cells, between dots on each cell's right edge. The graph is changed on the
+canvas only: the notebook view has no rail, accepts no drop, its dots do not
+connect, and it deletes neither a cell nor a connection; a cell's code is
+edited and run there. Nothing about the view is saved: the dataflow keeps its
 canvas layout, and the view lives in the address (``?view=notebook``).
 
 What each test pins:
@@ -16,17 +16,25 @@ What each test pins:
   spanning the page to the bar and as tall as its content, GAP apart and none
   overlapping, an editor as tall as its lines, one arc per connection in the
   bar, no rail and no (+), a Run all button, no resize handle on any cell, no
-  dot that connects, and the tools hidden until the pointer is over the cell;
+  dot that connects, no Delete node tool in any cell, and the tools hidden
+  until the pointer is over the cell;
 * a run shows a Python cell's code and output, and a Vega-Lite cell's spec and
   chart, together; the output grows its cell, the cells below move down by as
   much, and each arc still runs between its two dots;
 * the wheel scrolls the page over a cell's editor and over its output;
-* dragging between dots in the notebook view connects nothing, select plus
-  Delete removes a connection there, and the canvas connects the two again;
+* in the notebook view a drag between dots connects nothing, an arc takes no
+  click, and select plus Delete removes neither the arc nor a cell, while
+  Delete inside a cell's editor still edits its code; on the canvas the same
+  presses remove the connection and the node, and the two connect again;
 * the notebook view adds no node: a drop on its page adds nothing and
   Duplicate selection is off, while the canvas's rail adds one;
 * back on the canvas every node is where it was and the size it was, a save
-  writes the canvas layout, and a reload keeps the view the address names.
+  writes the canvas layout, and a reload keeps the view the address names;
+* the first save of a new dataflow, which moves the page to the dataflow's
+  own address, keeps the view in it, so a reload opens the notebook view;
+* a node whose package is not installed is a cell like the others: as wide,
+  with its dots on its right edge where theirs are, and its connections in
+  the bar.
 
 The dataflow is built here rather than borrowed from ``docs/examples``: four
 Python and Vega-Lite nodes, no datasets, so a failure is about this feature.
@@ -52,12 +60,15 @@ from .utils import (
     connect_nodes,
     dismiss_toasts,
     drag_to_canvas,
+    frame_nodes,
     node_locator,
     play_node,
     require_owner_view,
     require_project_page,
     require_user_auth,
+    save_dataflow,
     save_workflow_test_screenshot,
+    stub_db_login,
     stub_login_and_enter_workflow,
     wait_for_node_done,
 )
@@ -85,6 +96,12 @@ CANVAS = {
 #: Dataflow order: each node nothing feeds, in the spec's order, followed by
 #: the chain it feeds.
 ORDER = [PRODUCER, TRANSFORM, CHART, EXTRA]
+
+#: A node whose package nothing provides, so it shows the "Missing node
+#: package" card. In its own dataflow PRODUCER feeds it and it feeds TRANSFORM.
+MISSING = "nbv-missing"
+MISSING_TYPE = "curio.nowhere/missing-node"
+MISSING_ORDER = [PRODUCER, MISSING, TRANSFORM]
 
 #: Space between two cells, in pixels, which holds the (+) that adds a cell.
 GAP = 24
@@ -114,8 +131,8 @@ CHART_SPEC = json.dumps({
 }, indent=2)
 
 
-def _node(node_id: str, node_type: str, content: str) -> dict:
-    x, y = CANVAS[node_id]
+def _node(node_id: str, node_type: str, content: str, at: tuple[int, int] | None = None) -> dict:
+    x, y = at if at is not None else CANVAS[node_id]
     return {
         "id": node_id,
         "type": node_type,
@@ -151,12 +168,36 @@ def _spec() -> dict:
     }
 
 
+def _missing_package_spec() -> dict:
+    """PRODUCER feeds MISSING, whose package is not installed anywhere, and
+    MISSING feeds TRANSFORM. The lockfile names no package."""
+    return {
+        "dataflow": {
+            "name": "Notebook view e2e",
+            "task": "",
+            "description": "",
+            "packages": [],
+            "datasets": [],
+            "nodes": [
+                _node(PRODUCER, "curio.builtin/data-loading", PRODUCER_CODE),
+                _node(MISSING, MISSING_TYPE, "", at=(700, 0)),
+                _node(TRANSFORM, "curio.builtin/computation-analysis", TRANSFORM_CODE, at=(1400, 0)),
+            ],
+            "edges": [
+                {"id": f"reactflow__edge-{PRODUCER}out-{MISSING}in", "source": PRODUCER, "target": MISSING},
+                {"id": f"reactflow__edge-{MISSING}out-{TRANSFORM}in", "source": MISSING, "target": TRANSFORM},
+            ],
+        },
+    }
+
+
 # ---------------------------------------------------------------------------
 # Steps shared by the scenarios
 # ---------------------------------------------------------------------------
 
-def _enter(page, app_frontend, current_server, *, prefix: str) -> dict:
-    """Sign in as a fresh owner, on the canvas of a fresh copy of the dataflow."""
+def _enter(page, app_frontend, current_server, *, prefix: str, spec: dict | None = None) -> dict:
+    """Sign in as a fresh owner, on the canvas of a fresh copy of the dataflow
+    (*spec*, by default the four-node one)."""
     session = stub_login_and_enter_workflow(
         page,
         frontend_url=app_frontend.base_url,
@@ -164,7 +205,7 @@ def _enter(page, app_frontend, current_server, *, prefix: str) -> dict:
         name="Notebook Owner",
         username=f"{prefix}_{uuid.uuid4().hex[:8]}",
         project_name="Notebook view e2e",
-        project_spec=_spec(),
+        project_spec=spec if spec is not None else _spec(),
     )
     require_owner_view(page)
     page.wait_for_selector(".react-flow__node", timeout=45000)
@@ -216,8 +257,9 @@ def _settled_boxes(page, *, timeout_ms: int = 15000) -> dict:
     raise AssertionError(f"the nodes kept changing size or place: last read {last}")
 
 
-def _show(page, view: str) -> None:
-    """Pick a view on the bar's switch and wait until the nodes are laid out for it."""
+def _show(page, view: str, *, count: int = len(CANVAS)) -> None:
+    """Pick a view on the bar's switch and wait until the *count* nodes are laid
+    out for it."""
     radio = page.locator(BAR).get_by_role("radio", name=f"{view.capitalize()} view", exact=True)
     radio.click()
     expect(radio).to_have_attribute("aria-checked", "true")
@@ -228,7 +270,7 @@ def _show(page, view: str) -> None:
                 return nodes.length === count
                     && new Set(nodes.map((n) => n.position.x)).size === 1;
             }""",
-            arg=len(CANVAS),
+            arg=count,
             timeout=20000,
         )
     else:
@@ -283,12 +325,80 @@ def _wait_for_column(page, ids: list[str], *, timeout_ms: int = 20000) -> list[d
     return _cells(page, ids)
 
 
-#: How visible a cell's tools (its tabs, Save output, info, pin, comments,
-#: delete) are: the computed opacity of the group holding its Delete button.
+#: How visible a cell's tools (its tabs, Save output, info, pin, comments) are:
+#: the computed opacity of its header's group of tools.
 _TOOLS_OPACITY_JS = """(id) => {
-    const del = document.querySelector(`[id="${id}resizable"] [title="Delete node"]`);
-    const tools = del && del.closest('.curio-node-tools');
+    const tools = document.querySelector(`[id="${id}resizable"] > .curio-node-header > .curio-node-tools`);
     return tools ? Number(getComputedStyle(tools).opacity) : null;
+}"""
+
+#: The empty stretch of a cell's header, between its title and its status or
+#: tools: where a click selects the node and does nothing else. ``onHeader``
+#: says the pointer would land on the header there, not on app chrome over it.
+_HEADER_GAP_JS = """(id) => {
+    const header = document.querySelector(`[id="${id}resizable"] > .curio-node-header`);
+    if (!header) return null;
+    const rects = Array.from(header.children)
+        .map((k) => k.getBoundingClientRect())
+        .filter((r) => r.width > 0)
+        .sort((a, b) => a.left - b.left);
+    let best = null;
+    for (let k = 1; k < rects.length; k++) {
+        const gap = rects[k].left - rects[k - 1].right;
+        if (!best || gap > best.gap) best = {gap, x: (rects[k].left + rects[k - 1].right) / 2};
+    }
+    if (!best || best.gap <= 12) return null;
+    const box = header.getBoundingClientRect();
+    const y = box.top + box.height / 2;
+    const hit = document.elementFromPoint(best.x, y);
+    return {x: best.x, y, onHeader: !!hit && header.contains(hit)};
+}"""
+
+#: Where a connection's path is halfway along, on the screen: on its lane in
+#: the bar in the notebook view (the lane is most of a bracket's length), and
+#: between its two nodes on the canvas. Null when it is not drawn.
+_PATH_MIDPOINT_JS = """(id) => {
+    const path = document.querySelector(
+        `.react-flow__edge[data-testid="rf__edge-${id}"] path.react-flow__edge-path`);
+    if (!path) return null;
+    const p = path.getPointAtLength(path.getTotalLength() / 2);
+    const m = path.getScreenCTM();
+    return {x: p.x * m.a + p.y * m.c + m.e, y: p.x * m.b + p.y * m.d + m.f};
+}"""
+
+#: Whether a click at the point lands on the connection: what the pointer hits
+#: there is part of its edge.
+_HITS_EDGE_JS = """([point, id]) => {
+    const hit = document.elementFromPoint(point.x, point.y);
+    return !!hit && !!hit.closest(`.react-flow__edge[data-testid="rf__edge-${id}"]`);
+}"""
+
+#: Whether React Flow holds the connection as selected.
+_EDGE_SELECTED_JS = """(id) => {
+    const edge = window.__curio_reactFlow.getEdges().find((e) => e.id === id);
+    return !!(edge && edge.selected);
+}"""
+
+#: Put the caret at the start of a cell's code editor through Monaco's own API
+#: (a click lands on Monaco's view-line layer); true once the focus is in it.
+_CARET_AT_START_JS = """(id) => {
+    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+    const el = node && node.querySelector('.monaco-editor');
+    const editors = (window.monaco && window.monaco.editor.getEditors()) || [];
+    const editor = el && editors.find((e) => el.contains(e.getDomNode()));
+    if (!editor) return false;
+    editor.focus();
+    editor.setPosition({lineNumber: 1, column: 1});
+    return el.contains(document.activeElement);
+}"""
+
+#: What a cell's code editor holds.
+_EDITOR_VALUE_JS = """(id) => {
+    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+    const el = node && node.querySelector('.monaco-editor');
+    const editors = (window.monaco && window.monaco.editor.getEditors()) || [];
+    const editor = el && editors.find((e) => el.contains(e.getDomNode()));
+    return editor ? editor.getValue() : null;
 }"""
 
 
@@ -449,11 +559,14 @@ def test_the_switch_shows_the_dataflow_as_a_column_of_cells(
         expect(cell.locator(".react-flow__handle-top")).to_have_count(0)
         expect(page.locator(f'[id="{node_id}resizer"]')).to_have_count(0)
 
-    # Nodes are added and connected on the canvas: no (+) between the cells,
-    # and no dot that starts or takes a connection. Run all stays on the page.
+    # Nodes are added, connected and deleted on the canvas: no (+) between the
+    # cells, no dot that starts or takes a connection, and no cell with a
+    # Delete node tool among its header's tools. Run all stays on the page.
     expect(page.locator("[data-curio-add-after]")).to_have_count(0)
     expect(page.locator(".react-flow__node .react-flow__handle")).not_to_have_count(0)
     expect(page.locator(".react-flow__node .react-flow__handle.connectable")).to_have_count(0)
+    expect(page.locator(".react-flow__node .curio-node-header > .curio-node-tools")).to_have_count(len(ORDER))
+    expect(page.locator('.react-flow__node [title="Delete node"]')).to_have_count(0)
     expect(page.locator("#notebook-run-all").get_by_role("button", name="Run all nodes")).to_be_visible()
 
     # One arc per connection, all of it in the bar right of the cells.
@@ -586,6 +699,28 @@ def _dot(page, node_id: str, handle: str):
     return page.locator(f'.react-flow__node[data-id="{node_id}"] .react-flow__handle[data-handleid="{handle}"]')
 
 
+def _midpoint_in_window(page, edge_id: str, where: str) -> dict:
+    """Where the connection is halfway along, checked to be in the window,
+    below the bar."""
+    point = page.evaluate(_PATH_MIDPOINT_JS, edge_id)
+    assert point, f"the connection {edge_id} has no path {where}"
+    bar = page.locator(BAR).bounding_box()
+    viewport = page.viewport_size
+    assert 0 <= point["x"] < viewport["width"] and bar["y"] + bar["height"] < point["y"] < viewport["height"], (
+        f"the connection's midpoint {point} is not in the window {where}"
+    )
+    return point
+
+
+def _select_by_header(page, node_id: str) -> None:
+    """Click the node's header where it holds no control, as a user selects a
+    node, and wait until React Flow has it selected."""
+    spot = page.evaluate(_HEADER_GAP_JS, node_id)
+    assert spot and spot["onHeader"], f"{node_id}'s header has no free spot under the pointer: {spot}"
+    page.mouse.click(spot["x"], spot["y"])
+    expect(node_locator(page, node_id)).to_have_class(re.compile(r"\bselected\b"), timeout=10000)
+
+
 #: A node tile dropped on the page as the rail's drag would drop it, straight
 #: on the drop target, so it needs no rail to drag from.
 _DROP_TILE_JS = """(nodeType) => {
@@ -602,7 +737,7 @@ _DROP_TILE_JS = """(nodeType) => {
 }"""
 
 
-def test_connections_are_made_on_the_canvas_and_removed_in_the_bar(
+def test_connections_and_cells_are_made_and_removed_on_the_canvas_only(
     app_frontend: "FrontendPage", current_server, page,
 ):
     require_project_page()
@@ -610,6 +745,7 @@ def test_connections_are_made_on_the_canvas_and_removed_in_the_bar(
     _enter(page, app_frontend, current_server, prefix="nbv_connect")
     _show(page, "notebook")
     _wait_for_column(page, ORDER)
+    count = len(_positions(page))
 
     # A drag from PRODUCER's output dot to TRANSFORM's free circle connects
     # nothing: in the notebook view the dots do not connect.
@@ -626,40 +762,80 @@ def test_connections_are_made_on_the_canvas_and_removed_in_the_bar(
     page.wait_for_timeout(1000)
     expect(page.locator(".react-flow__edge")).to_have_count(2)
 
-    # A connection is still removed in the bar: select PRODUCER to TRANSFORM
-    # where it runs along its lane (halfway along the path, since the lane is
-    # most of a bracket's length), then Delete.
+    # Nor is anything removed there. The PRODUCER to TRANSFORM arc takes no
+    # click where it runs along its lane (halfway along its path), so the click
+    # selects nothing; TRANSFORM's cell, selected by a click on its header,
+    # stays selected; and Delete after each removes neither.
     edge_id = page.evaluate(
         "([s, t]) => window.__curio_reactFlow.getEdges().find((e) => e.source === s && e.target === t).id",
         [PRODUCER, TRANSFORM],
     )
     arc = page.locator(f'.react-flow__edge[data-testid="rf__edge-{edge_id}"]')
-    point = page.evaluate(
-        """(id) => {
-            const path = document.querySelector(
-                `.react-flow__edge[data-testid="rf__edge-${id}"] path.react-flow__edge-path`);
-            if (!path) return null;
-            const p = path.getPointAtLength(path.getTotalLength() / 2);
-            const m = path.getScreenCTM();
-            return { x: p.x * m.a + p.y * m.c + m.e, y: p.x * m.b + p.y * m.d + m.f };
-        }""",
-        edge_id,
-    )
-    assert point, "the connection has no path"
-    bar_bottom = page.locator(BAR).bounding_box()["y"] + page.locator(BAR).bounding_box()["height"]
-    viewport = page.viewport_size
-    assert 0 <= point["x"] < viewport["width"] and bar_bottom < point["y"] < viewport["height"], (
-        f"the arc's midpoint {point} is not in the window"
+    point = _midpoint_in_window(page, edge_id, "in the notebook view")
+    takes_click = page.evaluate(_HITS_EDGE_JS, [point, edge_id])
+    page.mouse.click(point["x"], point["y"])
+    # Time for a selection to reach the store, as it does on the canvas.
+    page.wait_for_timeout(500)
+    arc_selected = page.evaluate(_EDGE_SELECTED_JS, edge_id)
+    page.keyboard.press("Delete")
+    _select_by_header(page, TRANSFORM)
+    page.keyboard.press("Delete")
+    page.wait_for_timeout(1000)
+    outcome = {
+        "the arc takes the click": takes_click,
+        "the click selected the arc": arc_selected,
+        "PRODUCER to TRANSFORM arcs": arc.count(),
+        "arcs": page.locator(".react-flow__edge").count(),
+        "cells": len(_positions(page)),
+    }
+    assert outcome == {
+        "the arc takes the click": False,
+        "the click selected the arc": False,
+        "PRODUCER to TRANSFORM arcs": 1,
+        "arcs": 2,
+        "cells": count,
+    }, f"select plus Delete changed the graph in the notebook view: {outcome}"
+
+    # Delete inside a cell's code editor still edits the code, not the graph.
+    before = page.evaluate(_EDITOR_VALUE_JS, TRANSFORM)
+    assert before, f"TRANSFORM's editor holds no code: {before!r}"
+    assert page.evaluate(_CARET_AT_START_JS, TRANSFORM), "could not put the caret in TRANSFORM's code editor"
+    page.keyboard.press("Delete")
+    try:
+        page.wait_for_function(
+            "([id, want]) => (" + _EDITOR_VALUE_JS + ")(id) === want", arg=[TRANSFORM, before[1:]], timeout=10000,
+        )
+    except PlaywrightTimeoutError:
+        raise AssertionError(
+            f"Delete in TRANSFORM's editor did not delete the character after the caret: "
+            f"{before!r} -> {page.evaluate(_EDITOR_VALUE_JS, TRANSFORM)!r}"
+        ) from None
+    assert len(_positions(page)) == count, f"Delete in a cell's editor removed a cell: {_positions(page)}"
+    expect(page.locator(".react-flow__edge")).to_have_count(2)
+
+    # On the canvas the node has its Delete node tool, and the same presses
+    # remove the connection, which takes the click there, then the node with
+    # both its connections, once the two nodes are connected again.
+    _show(page, "canvas")
+    frame_nodes(page, [PRODUCER, TRANSFORM])
+    expect(node_locator(page, TRANSFORM).get_by_title("Delete node")).to_have_count(1)
+    point = _midpoint_in_window(page, edge_id, "on the canvas")
+    assert page.evaluate(_HITS_EDGE_JS, [point, edge_id]), (
+        f"a click at the connection's midpoint {point} on the canvas lands elsewhere"
     )
     page.mouse.click(point["x"], point["y"])
     page.keyboard.press("Delete")
     expect(arc).to_have_count(0, timeout=10000)
     expect(page.locator(".react-flow__edge")).to_have_count(1)
 
-    # On the canvas the two cells' nodes connect again.
-    _show(page, "canvas")
     connect_nodes(page, PRODUCER, TRANSFORM)
     expect(page.locator(".react-flow__edge")).to_have_count(2)
+
+    _select_by_header(page, TRANSFORM)
+    page.keyboard.press("Delete")
+    expect(node_locator(page, TRANSFORM)).to_have_count(0, timeout=10000)
+    expect(page.locator(".react-flow__edge")).to_have_count(0)
+    assert len(_positions(page)) == count - 1, f"Delete on the canvas did not remove TRANSFORM alone: {_positions(page)}"
 
 
 def test_nodes_are_added_on_the_canvas_only(
@@ -766,3 +942,160 @@ def test_back_on_the_canvas_every_node_is_where_it_was(
     page.evaluate("() => window.__curio_fitViewWithMenuOffset({ padding: 0.2 })")
     held = _settled_viewport(page)
     assert (held["x"], held["y"], held["zoom"]) == (0, 0, 1), f"a fit moved the notebook view: {held}"
+
+
+#: Whether the address names the notebook view.
+_VIEW_IN_ADDRESS_JS = "() => new URLSearchParams(location.search).get('view') === 'notebook'"
+
+#: The address a first save gives a dataflow, with the notebook view in it.
+_SAVED_WITH_VIEW_JS = (
+    "() => /\\/dataflow\\/[0-9a-f-]{36}$/.test(location.pathname)"
+    " && new URLSearchParams(location.search).get('view') === 'notebook'"
+)
+
+
+def test_the_first_save_keeps_the_view_in_the_address(
+    app_frontend: "FrontendPage", current_server, page,
+):
+    require_project_page()
+    require_user_auth()
+    stub_db_login(
+        page,
+        app_frontend.base_url,
+        current_server,
+        name="Notebook Owner",
+        username=f"nbv_first_save_{uuid.uuid4().hex[:8]}",
+    )
+    page.goto(f"{app_frontend.base_url}/dataflow/new", timeout=120000)
+    page.locator("#tools-menu").wait_for(state="visible", timeout=45000)
+    require_owner_view(page)
+    dismiss_toasts(page)
+
+    # A dataflow nothing has saved yet, with a node added on the canvas, shown
+    # in the notebook view.
+    node_id = drag_to_canvas(page, page.locator("#tile-data-transformation"))
+    page.wait_for_function(
+        "(id) => !!window.__curio_reactFlow.getNodes().find((n) => n.id === id)", arg=node_id, timeout=10000,
+    )
+    _show(page, "notebook", count=1)
+    page.wait_for_function(_VIEW_IN_ADDRESS_JS, timeout=10000)
+    assert "/dataflow/new" in page.url, f"the dataflow is not the unsaved one: {page.url}"
+
+    # Its first save moves the page to the dataflow's own address, and the
+    # view goes with it.
+    save_dataflow(page)
+    try:
+        page.wait_for_function(_SAVED_WITH_VIEW_JS, timeout=15000)
+    except PlaywrightTimeoutError:
+        raise AssertionError(
+            f"the first save left the notebook view out of the dataflow's address: {page.url}"
+        ) from None
+    radio = page.locator(BAR).get_by_role("radio", name="Notebook view", exact=True)
+    expect(radio).to_have_attribute("aria-checked", "true")
+
+    # So a reload opens the dataflow in the notebook view again.
+    page.reload()
+    page.wait_for_selector(".react-flow__node", timeout=45000)
+    expect(radio).to_have_attribute("aria-checked", "true", timeout=20000)
+
+
+#: A cell as React Flow draws it, read from React Flow's node so it holds for
+#: a cell without a node card too: its left and right edges and its width on
+#: the screen, and each of its dots by handle id: the side React Flow gives
+#: it, its left edge, and its middle's distance from the cell's top and bottom.
+_CELL_DOTS_JS = """(id) => {
+    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+    if (!node) return null;
+    const r = node.getBoundingClientRect();
+    const dots = {};
+    for (const h of node.querySelectorAll('.react-flow__handle')) {
+        const d = h.getBoundingClientRect();
+        const middle = d.top + d.height / 2;
+        dots[h.getAttribute('data-handleid')] = {
+            side: ['left', 'right', 'top', 'bottom'].find((s) => h.classList.contains(`react-flow__handle-${s}`)) || null,
+            x: d.left,
+            fromTop: middle - r.top,
+            fromBottom: r.bottom - middle,
+        };
+    }
+    return {x: r.left, right: r.right, width: r.width, dots};
+}"""
+
+#: The left edge on the screen of each connection to or from *id*, by its path.
+_ARC_LEFTS_JS = """(id) => window.__curio_reactFlow.getEdges()
+    .filter((e) => e.source === id || e.target === id)
+    .map((e) => {
+        const path = document.querySelector(
+            `.react-flow__edge[data-testid="rf__edge-${e.id}"] path.react-flow__edge-path`);
+        return path ? path.getBoundingClientRect().left : null;
+    })"""
+
+#: What MISSING's cell should have: the others' width, its dots only on its
+#: right edge where theirs are, and both its connections in the bar.
+_MISSING_CELL_EXPECTED = {
+    "drawn": True,
+    "as wide as PRODUCER's cell, from the same x": True,
+    "sides of its dots": ["right"],
+    "input dot where TRANSFORM's is": True,
+    "output dot where PRODUCER's is": True,
+    "connections in the bar": [True, True],
+}
+
+
+def _missing_cell_outcome(page) -> tuple[dict, dict]:
+    """MISSING's cell against the cells around it, as an outcome to compare
+    whole with ``_MISSING_CELL_EXPECTED``, and the readings it came from."""
+    cells = {node_id: page.evaluate(_CELL_DOTS_JS, node_id) for node_id in MISSING_ORDER}
+    producer, missing, transform = (cells[node_id] for node_id in MISSING_ORDER)
+    if not (producer and missing and transform):
+        return {"drawn": False}, cells
+
+    def near(a: float, b: float) -> bool:
+        return abs(a - b) <= 1
+
+    dots = missing["dots"]
+    mine_in, mine_out = dots.get("in"), dots.get("out")
+    their_in, their_out = transform["dots"].get("in"), producer["dots"].get("out")
+    lefts = page.evaluate(_ARC_LEFTS_JS, MISSING)
+    cells["connection lefts"] = lefts
+    outcome = {
+        "drawn": True,
+        "as wide as PRODUCER's cell, from the same x": (
+            near(missing["x"], producer["x"]) and near(missing["width"], producer["width"])
+        ),
+        "sides of its dots": sorted({str(d["side"]) for d in dots.values()}),
+        "input dot where TRANSFORM's is": bool(mine_in and their_in) and (
+            near(mine_in["x"], their_in["x"]) and near(mine_in["fromTop"], their_in["fromTop"])
+        ),
+        "output dot where PRODUCER's is": bool(mine_out and their_out) and (
+            near(mine_out["x"], their_out["x"]) and near(mine_out["fromBottom"], their_out["fromBottom"])
+        ),
+        "connections in the bar": [left is not None and left >= producer["right"] - 1 for left in lefts],
+    }
+    return outcome, cells
+
+
+def test_a_node_whose_package_is_missing_is_a_cell_like_the_others(
+    app_frontend: "FrontendPage", current_server, page,
+):
+    require_project_page()
+    require_user_auth()
+    _enter(page, app_frontend, current_server, prefix="nbv_missing", spec=_missing_package_spec())
+    card = node_locator(page, MISSING).get_by_test_id("unresolved-node")
+    card.wait_for(state="visible", timeout=45000)
+
+    _show(page, "notebook", count=len(MISSING_ORDER))
+    expect(card).to_contain_text("Missing node package")
+
+    # React Flow measures the cells and their dots a frame or more after the
+    # switch, so the outcome is read until it holds or the time is up.
+    outcome, cells = _missing_cell_outcome(page)
+    waited = 0
+    while outcome != _MISSING_CELL_EXPECTED and waited < 20000:
+        page.wait_for_timeout(300)
+        waited += 300
+        outcome, cells = _missing_cell_outcome(page)
+    assert outcome == _MISSING_CELL_EXPECTED, (
+        f"the cell of a node whose package is missing is not a cell like the others: {outcome}; "
+        f"read from {cells}"
+    )

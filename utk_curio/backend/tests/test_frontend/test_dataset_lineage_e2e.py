@@ -54,6 +54,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+import pytest
 from playwright.sync_api import expect
 
 from .utils import (
@@ -73,6 +74,9 @@ from .utils import (
 
 if TYPE_CHECKING:
     from .utils import FrontendPage
+
+# The detail panel says how long ago the dataset was updated.
+pytestmark = pytest.mark.catalog_calendar
 
 # The CSV hub dataset, for the same reason test_canvas_authoring_e2e.py picks it:
 # its generated loader only needs pandas. Nothing here runs a node, but keeping

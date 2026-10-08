@@ -19,7 +19,7 @@
  */
 import type { FeatureCollection } from "geojson";
 import { inputTableName } from "../generated/autkGrammar";
-import { requestedLayerTables } from "../adapters/node/autkDataCompile";
+import { loadableFeatures, requestedLayerTables } from "../adapters/node/autkDataCompile";
 import { readableBuildingProperties } from "./buildingHeight";
 import { detectCoordinateFormat } from "./geoCrs";
 import { resolveGeometryField } from "./geometryField";
@@ -179,9 +179,9 @@ function featuresOf(frame: GrammarFrame, name: string): FrameResult {
 }
 
 /**
- * A buildings table whose heights autk-map can read, one feature per row as
- * it came: a feature autk-map would misread gets its `height` written, and
- * every other one is the same object.
+ * A buildings table whose heights autk-map and a compute can read, one feature
+ * per row as it came: a feature autk-map would misread, or one with no
+ * `height`, gets its `height` written, and every other one is the same object.
  */
 function withReadableHeights(fc: FeatureCollection): FeatureCollection {
   const features: any[] = Array.isArray((fc as any)?.features) ? (fc as any).features : [];
@@ -198,34 +198,32 @@ function withReadableHeights(fc: FeatureCollection): FeatureCollection {
 
 /**
  * Which input row each position of a loaded table stands for. `load` is the
- * table as autk-db holds it (what a plot reads and selects in); `map` is what a
- * map draws, which leaves out every feature without a geometry. `null` means
- * positions and input rows agree.
+ * table as Curio hands it to autk-db (what a plot reads and selects in); `map`
+ * is the table as autk-db stores it, which a map draws. `null` means positions
+ * and input rows agree.
  */
 export type LoadOrder = { load: number[] | null; map: number[] | null };
 
 /**
  * The source as autk-db will load it, and the order that lets a pick or a
- * highlight still name the input's rows. autk-db refuses a collection whose
- * first feature has no geometry, so that one trades places with the first that
- * has one; a map then leaves out the features without geometry.
+ * highlight still name the input's rows. The rows go through
+ * `loadableFeatures`: a row with no geometry gets an empty one, and a first row
+ * with none trades places with the first that has one. autk-db then stores the
+ * rows whose geometry is empty before the others, each in the order handed, and
+ * a map draws the table as stored: nothing for such a row, every other row in
+ * its place.
  */
 export function loadableSource(source: AutkSource): { source: AutkSource; order: LoadOrder } {
   const features: any[] = (source.geojsonObject as any)?.features ?? [];
-  let load: number[] | null = null;
-  if (features.length > 0 && !hasGeometry(features[0])) {
-    const j = features.findIndex(hasGeometry);
-    if (j > 0) {
-      load = features.map((_, i) => i);
-      [load[0], load[j]] = [load[j], load[0]];
-    }
-  }
+  const loadable = loadableFeatures(features);
+  const load = loadable.order;
   const rows = load ?? features.map((_, i) => i);
-  const map = features.some((f) => !hasGeometry(f)) ? rows.filter((i) => hasGeometry(features[i])) : load;
+  const empty = rows.filter((i) => !hasGeometry(features[i]));
+  const map = empty.length > 0 ? [...empty, ...rows.filter((i) => hasGeometry(features[i]))] : load;
   return {
-    source: load
-      ? { ...source, geojsonObject: { ...source.geojsonObject, features: load.map((i) => features[i]) } }
-      : source,
+    source: loadable.features === features
+      ? source
+      : { ...source, geojsonObject: { ...source.geojsonObject, features: loadable.features } as FeatureCollection },
     order: { load, map },
   };
 }

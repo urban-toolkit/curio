@@ -56,7 +56,6 @@ import {
     faCircleInfo,
     faTriangleExclamation,
     faChartLine,
-    faXmark,
     faAnglesUp
 } from "@fortawesome/free-solid-svg-icons";
 import {
@@ -95,6 +94,7 @@ import { TrillGenerator } from "TrillGenerator";
 import { ICodeData } from "types";
 import { NodeRunControls } from "./nodes/NodeRunControls";
 import { NodeResizeHandle } from "./nodes/NodeResizeHandle";
+import { NodeDeleteTool } from "./nodes/NodeDeleteTool";
 import { useSharedView } from "../hook/useSharedView";
 import { NodeHeaderSlotContext } from "./editing/nodeHeaderSlot";
 import { resolveSaveOutputDataset, showsSaveOutputToggle } from "../utils/saveOutputDataset";
@@ -654,11 +654,9 @@ export const NodeContainer = ({
             title="Comments"
             onActivate={() => setShowComments(!showComments)}
         />
-        <HeaderIconButton
-            icon={faXmark}
+        <NodeDeleteTool
             style={{ ...headerIconStyle, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
-            title="Delete node"
-            onActivate={onDelete}
+            onDelete={onDelete}
         />
         {updateTemplate != undefined && code != undefined && templateData.id != undefined && templateData.custom && code != templateData.code ? (
             <HeaderIconButton
@@ -1017,11 +1015,9 @@ export const NodeContainer = ({
                                     onActivate={promptDescription}
                                 />
                             ) : null}
-                            <HeaderIconButton
-                                icon={faXmark}
+                            <NodeDeleteTool
                                 style={{ ...headerIconStyle, fontSize: "10px" }}
-                                title="Delete node"
-                                onActivate={onDelete}
+                                onDelete={onDelete}
                             />
                         </div>
                     ) : null}

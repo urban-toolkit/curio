@@ -124,10 +124,12 @@ const KEPT_IN_CODE: ReadonlySet<DatasetFormat> = new Set<DatasetFormat>(["onnx",
 const LOADER_OPTIONS: Partial<Record<DatasetFormat, string>> = { geotiff: ", bounds=None" };
 
 /**
- * Loader body for ``format: bundle`` datasets (multi-output / tuple node
- * results). Reads ``data/bundle.json`` + ``data/parts/*`` and returns the parts
- * as a tuple so the sandbox re-detects the same ``outputs`` envelope the
- * producing node emitted.
+ * Loader body for ``format: bundle`` datasets (multi-output node results: a
+ * tuple, or a list or dict of frames). Reads ``data/bundle.json`` +
+ * ``data/parts/*`` and returns the parts in the container ``bundle.json``
+ * records (a tuple when it records none), as ``curio_load_data`` does. KEEP IN
+ * SYNC with ``_BUNDLE_LOADER_CODE`` in the backend generator, line for line
+ * (``datasetLoaderSnippets.test.ts`` compares them).
  */
 function bundleLoaderCode(locationExpr: string): string {
   return [
@@ -136,8 +138,9 @@ function bundleLoaderCode(locationExpr: string): string {
     "    base = os.path.dirname(os.path.dirname(path))",
     "    with open(path) as f:",
     "        spec = json.load(f)",
+    '    parts = sorted(spec.get("parts", []), key=lambda p: p.get("index", 0))',
     "    items = []",
-    '    for part in sorted(spec.get("parts", []), key=lambda p: p.get("index", 0)):',
+    "    for part in parts:",
     '        fmt, kind = part.get("format"), part.get("kind")',
     '        file_path = os.path.join(base, part["file"]) if part.get("file") else None',
     '        if fmt == "parquet":',
@@ -160,7 +163,14 @@ function bundleLoaderCode(locationExpr: string): string {
     "            else:",
     "                value = loaded",
     "        items.append(value)",
-    "    return tuple(items)",
+    '    container = spec.get("container") or "tuple"',
+    '    if container == "tuple":',
+    "        return tuple(items)",
+    '    if container == "list":',
+    "        return items",
+    '    if container == "dict":',
+    '        return dict(zip([part["key"] for part in parts], items))',
+    '    raise ValueError("A bundle is a tuple, a list or a dict, not " + repr(container))',
     "bundle = _curio_load_bundle(bundle_path)",
   ].join("\n");
 }
@@ -335,11 +345,12 @@ function snippetForFormat(
     };
   }
   if (format === "bundle") {
-    // A bundle is a multi-output (tuple / `outputs`) node result, stored as
-    // `data/bundle.json` + `data/parts/*` under the dataset dir. Rebuild each
-    // part with the reader matching its kind and return them as a tuple, so the
-    // sandbox re-detects an `outputs` envelope identical to the one the
-    // producing node emitted (same parts, order, and types/schema).
+    // A bundle is a multi-output node result (a tuple, or a list or dict of
+    // frames), stored as `data/bundle.json` + `data/parts/*` under the dataset
+    // dir. Rebuild each part with the reader matching its kind and return them
+    // in the container `bundle.json` records, so the node's output is identical
+    // to the one the producing node emitted (same container, parts, order, and
+    // types/schema).
     return {
       language: "python",
       imports: [

@@ -52,8 +52,6 @@ function group(): DatasetPaletteGroup {
     groupId: "osm.x1",
     title: "chicago_loop",
     updatedAt: "2026-07-14T00:00:00Z",
-    importedAt: "2026-07-14T00:00:00Z",
-    installedAt: "2026-07-14T00:00:00Z",
     members: [
       member("loop.points", "chicago_loop (points)"),
       member("loop.lines", "chicago_loop (lines)"),

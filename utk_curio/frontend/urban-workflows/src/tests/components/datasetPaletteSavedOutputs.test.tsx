@@ -61,7 +61,6 @@ jest.mock("../../services/datasetCatalog", () => ({
   groupDatasetsForPalette: (rows: unknown[]) => rows.map((dataset) => ({ kind: "dataset", dataset })),
   isInThisDataflow: (item: { installed?: boolean }) => item.installed === true,
   isUserInstalledDataset: () => false,
-  sortDatasetPaletteEntries: (rows: unknown[]) => rows,
 }));
 jest.mock("../../utils/saveOutputDataset", () => ({ buildSaveableLiveOutputs: () => undefined }));
 

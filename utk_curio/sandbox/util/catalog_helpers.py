@@ -2,7 +2,8 @@
 
 ``curio_load_data("<id>")``
     A Data Catalog dataset, read the way its format is read: a table, a
-    GeoDataFrame, a raster, a JSON document, the parts of a multi-output result,
+    GeoDataFrame, a raster, a JSON document, the parts of a multi-output result
+    in the tuple, list or dict its node returned,
     a collection's index, an onnxruntime session for an ONNX model, or an
     xarray Dataset for a NetCDF file. For a GeoTIFF,
     ``curio_load_data("<id>", bounds=(west, south, east, north))`` reads only
@@ -114,7 +115,7 @@ def _read_json(path: str):
 
 
 def read_bundle_part(file_path: str, part: dict):
-    """One part of a bundle, the value it holds in the bundle's tuple."""
+    """One part of a bundle, the value it holds in the bundle."""
     fmt, kind = _format_of(file_path, part.get("format")), part.get("kind")
     if fmt in ("parquet", "csv", "geojson", "shp", "geotiff", "netcdf", "onnx"):
         return read_dataset(file_path, fmt)
@@ -125,18 +126,42 @@ def read_bundle_part(file_path: str, part: dict):
     return loaded
 
 
+def bundle_container(spec: dict, parts: list[dict]) -> Callable[[list], Any]:
+    """What puts a bundle's values back together: its parts, *parts* in index
+    order, go into the container its ``bundle.json`` (*spec*) records as
+    ``container``: a ``tuple``, a ``list``, or a ``dict`` keyed by each
+    part's ``key``. A ``bundle.json`` that records none is a tuple. Any other
+    container, or a dict part with no key or one another part has, is refused
+    before a part is read."""
+    container = spec.get("container") or "tuple"
+    if container == "tuple":
+        return tuple
+    if container == "list":
+        return list
+    keys = [part.get("key") for part in parts]
+    if container == "dict" and all(isinstance(key, str) for key in keys) and len(set(keys)) == len(keys):
+        return lambda values: dict(zip(keys, values))
+    raise ValueError(
+        f"bundle.json records the container {container!r}"
+        + (f" and the keys {keys}" if container == "dict" else "")
+        + ": a bundle is a tuple, a list, or a dict that gives each part a key of its own."
+    )
+
+
 def _read_bundle(path: str):
-    """A multi-output result: ``data/bundle.json`` and ``data/parts/*``, as a
-    tuple, so the node's output is the same ``outputs`` envelope the producing
-    node emitted."""
+    """A multi-output result: ``data/bundle.json`` and ``data/parts/*``, in
+    the container the producing node returned (:func:`bundle_container`), so
+    the node's output is the same value the producing node emitted."""
     base = os.path.dirname(os.path.dirname(path))
     with open(path, encoding="utf-8") as handle:
         spec = json.load(handle)
+    parts = sorted(spec.get("parts", []), key=lambda p: p.get("index", 0))
+    rebuild = bundle_container(spec, parts)
     items = []
-    for part in sorted(spec.get("parts", []), key=lambda p: p.get("index", 0)):
+    for part in parts:
         file_path = os.path.join(base, part["file"]) if part.get("file") else None
         items.append(read_bundle_part(file_path, part))
-    return tuple(items)
+    return rebuild(items)
 
 
 def listed_bundle_parts(path) -> list[tuple[dict, Path]]:
@@ -205,10 +230,11 @@ def files_read_beside(path) -> list[Path]:
     ]
 
 
-#: Where a project load hydrates a saved output whose dataset is a bundle,
-#: such as a tuple's, in the shared data directory: ``bundles/<output name>/``,
-#: laid out as staging lays out a bundle, ``data/bundle.json`` and each part
-#: it lists at its path under the dataset's folder.
+#: Where a project load hydrates a saved output whose dataset is a bundle (a
+#: tuple, or a list or dict of frames) in the shared data directory:
+#: ``bundles/<output name>/``, laid out as staging lays out a bundle,
+#: ``data/bundle.json`` and each part it lists at its path under the
+#: dataset's folder.
 HYDRATED_BUNDLES = "bundles"
 
 

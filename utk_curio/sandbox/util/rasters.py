@@ -91,8 +91,10 @@ def raster_meta(dataset) -> dict:
 
 
 def close_datasets(value) -> None:
-    """Close the rasterio dataset *value* is, or each one it holds as a list
-    or tuple; anything else is left as it is."""
+    """Close the rasterio dataset *value* is, or each one it holds as a list,
+    a tuple or a dict; anything else is left as it is."""
+    if isinstance(value, dict):
+        value = list(value.values())
     for item in value if isinstance(value, (list, tuple)) else (value,):
         if is_dataset(item):
             item.close()

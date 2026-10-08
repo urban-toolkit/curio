@@ -993,7 +993,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             const detail = await projectsApi.update(existingId, {
                 spec,
                 // Absent, not empty: the backend keeps the stored manifest when
-                // the field is missing and replaces it when it is [].
+                // the field is missing. When it is sent, even as [], an output
+                // on record that it leaves out goes if this save deleted its
+                // node, changed its code or turned its Save off.
                 ...(outputRefs ? { outputs: outputRefs } : {}),
                 name,
                 ...(baseRevisionRef.current !== null
