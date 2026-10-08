@@ -49,10 +49,7 @@ import { buttonStyle } from "./styles";
 import { ToolsMenu, UpMenu } from "components/menus";
 import UniDirectionalEdge from "./edges/UniDirectionalEdge";
 import "./MainCanvas.css";
-import { TrillGenerator } from "../TrillGenerator";
 import VersionBadge from "./VersionBadge";
-
-import FloatingPanel from "./FloatingPanel";
 import { CollaborationSidePanel } from "./collab/CollaborationSidePanel";
 import { CanvasSidePanels } from "./layout/CanvasSidePanels";
 import {
@@ -183,44 +180,6 @@ export function MainCanvas() {
     const collab = useCollab();
     const collabRef = useRef(collab);
     collabRef.current = collab;
-
-    const isDraggingRef = useRef(false);
-    const startPosRef = useRef<any>(null);
-    const [boundingBox, setBoundingBox] = useState<any>(null);
-
-    useEffect(() => {
-        const handleMouseDown = (e: any) => {
-            if (e.shiftKey && e.button === 0) {
-                startPosRef.current = { x: e.clientX, y: e.clientY };
-                isDraggingRef.current = true;
-            }
-        };
-
-        const handleMouseMove = (e: any) => {
-            if (!isDraggingRef.current || !startPosRef.current) return;
-            const currentPos = { x: e.clientX, y: e.clientY };
-            setBoundingBox({
-                start_x: startPosRef.current.x,
-                start_y: startPosRef.current.y,
-                end_x: currentPos.x,
-                end_y: startPosRef.current.y,
-            });
-        };
-
-        const handleMouseUp = () => {
-            isDraggingRef.current = false;
-        };
-
-        document.addEventListener("mousedown", handleMouseDown);
-        document.addEventListener("mousemove", handleMouseMove);
-        document.addEventListener("mouseup", handleMouseUp);
-
-        return () => {
-            document.removeEventListener("mousedown", handleMouseDown);
-            document.removeEventListener("mousemove", handleMouseMove);
-            document.removeEventListener("mouseup", handleMouseUp);
-        };
-    }, []);
 
     const { createCodeNode } = useCode();
 
@@ -369,21 +328,6 @@ export function MainCanvas() {
         if (!isNodeDragRegion(event.target, event.currentTarget)) return;
         frameNodesInView(reactFlow, [node.id]);
     }, [notebookOn, reactFlow]);
-
-    const [isComponentsSelected, setIsComponentsSelected] = useState<boolean>(false);
-
-    const [floatingPanels, setFloatingPanels] = useState<any>({});
-
-    // Selecting boxes to generate explanation
-    const [selectedComponents, setSelectedComponents] = useState<any>({});
-
-    const deleteFloatingPanel = (id: string) => {
-        setFloatingPanels((prev: any) => {
-            const next = { ...prev };
-            delete next[id];
-            return next;
-        });
-    }
 
     // Last dragover point, so a pointer that reports the same coordinate twice
     // (browsers fire dragover on a timer as well as on movement) costs nothing.
@@ -621,8 +565,6 @@ export function MainCanvas() {
     }, [onEdgesDelete, markDirty]);
 
     const handleSelectionChange = useCallback((selection: { nodes: any[]; edges: any[] }) => {
-        setSelectedComponents(selection);
-        setIsComponentsSelected(selection.nodes.length + selection.edges.length > 1);
         const packageKey = selection.nodes
             .map((n) => packageKeyFromCanonicalNodeType(getFlowNodeCanonicalType(n)))
             .find((k): k is string => k != null);
@@ -690,15 +632,6 @@ export function MainCanvas() {
             style={{ width: "100vw", height: "100vh", backgroundColor: "#f0f0f0" }}
             // onWheelCapture={handleWheel}
         >
-            {Object.keys(floatingPanels).map((key, index) => (
-                <FloatingPanel
-                    key={key}
-                    title={floatingPanels[key].title}
-                    imageUrl={floatingPanels[key].imageUrl}
-                    markdownText={floatingPanels[key].markdownText}
-                    onClose={() => {deleteFloatingPanel(key)}}
-                />
-            ))}
             {/* The notebook view adds no nodes, so it has no rail, only the
                 rail's Run all. */}
             {!notebookOn ? <ToolsMenu /> : <NotebookRunAll />}
