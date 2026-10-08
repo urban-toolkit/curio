@@ -80,8 +80,9 @@ def node_modules_dir(root=None):
 
 
 def duckdb_extensions_dir():
-    """Curio's copy of DuckDB's extensions: the launcher seeds the sandbox's
-    duckdb-wasm from it, and the backend serves it to the browser's."""
+    """Curio's copy of DuckDB's extensions: the launcher seeds the duckdb-wasm
+    of the sandbox's and the backend's Node from it, and the backend serves it
+    to the browser's."""
     return REPO_ROOT / DUCKDB_EXTENSIONS
 
 
