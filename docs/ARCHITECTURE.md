@@ -825,6 +825,10 @@ The sandbox runs as a separate Flask process. It:
   the backend in `execution/sandbox_client.py`, and checked in `sandbox/app/auth.py`. An
   instance started with `--deploy` refuses to boot without one.
 - Sends no CORS headers, because no browser calls it directly.
+- Returns the memory its allocators keep free to the system whenever no
+  request is in flight (`sandbox/util/memory_release.py`): every request runs
+  on a thread of its own, and glibc's malloc arenas and pyarrow's pool would
+  otherwise keep the pages each run freed.
 - Caches repeated executions of identical code + input combinations (`sandbox/app/utils/cache.py`).
 
 > [!WARNING]
