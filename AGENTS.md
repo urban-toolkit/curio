@@ -10,7 +10,7 @@ Curio is a framework for urban visual analytics built on dataflows: a React canv
 - `utk_curio/sandbox/`: Flask service that runs node Python and JavaScript and stores results as DuckDB artifacts.
 - `utk_curio/llm-prompts/`: built-in agent prompts, and `examples.md`, the index of shipped dataflows that runs get as worked examples (`agents/application/turns/examples.py`).
 - `utk_curio/common/`: code shared by backend, sandbox and the page server (`redaction.py`, `backend_address.py`).
-- `utk_curio/shipped.py`: where `packages/`, `datasets/`, `discovery/`, `models/`, `scripts/` and `vendor/` are: beside `utk_curio/` in a clone, `utk_curio/_shipped/` in a pip install. Every reader of them asks it.
+- `utk_curio/shipped.py`: where `packages/`, `datasets/`, `discovery/`, `models/`, `scripts/`, `vendor/` and the parts of `docs/` Curio reads are: beside `utk_curio/` in a clone, `utk_curio/_shipped/` in a pip install. Every reader of them asks it.
 - `utk_curio/tools/`: operator tools outside the Flask app (`agent_eval.py`, `preview_runner.py`).
 - `packages/`: shipped Node Catalog, one directory per node package (`manifest.json`, `sources/`, `integrity.json`).
 - `datasets/`: shipped Data Catalog, one directory per dataset (`manifest.json`, `data/`).

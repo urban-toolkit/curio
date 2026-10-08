@@ -27,12 +27,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping
 
-#: ``<repo>/utk_curio/backend/app/agents/evaluation/fixtures.py`` -> ``<repo>``
-_REPO_ROOT = Path(__file__).resolve().parents[5]
+from utk_curio import shipped
 
-FIXTURE_SCHEMA_PATH = _REPO_ROOT / "docs" / "schemas" / "example-prompt-fixture.v1.json"
-FIXTURE_ROOT = _REPO_ROOT / "docs" / "examples" / "prompts"
-EXAMPLES_ROOT = _REPO_ROOT / "docs" / "examples"
+#: Found through ``utk_curio/shipped.py``, like a fixture's example.
+FIXTURE_SCHEMA_PATH = shipped.path("docs/schemas/example-prompt-fixture.v1.json")
+FIXTURE_ROOT = shipped.path("docs/examples/prompts")
+EXAMPLES_ROOT = shipped.path("docs/examples")
 
 #: The curated corpus and the legacy corpus, in the shape the existing suites
 #: enumerate them (``test_examples.py`` and ``test_trill_schema.py``).
@@ -69,7 +69,9 @@ class Fixture:
 
     @property
     def source_path(self) -> Path:
-        return _REPO_ROOT / str(self.data.get("source", {}).get("path") or "")
+        """The example, from ``source.path``: a repository path under
+        ``docs/examples/``. ValueError for one outside the folders Curio ships."""
+        return shipped.path(str(self.data.get("source", {}).get("path") or ""))
 
     @property
     def source_sha256(self) -> str:
@@ -215,7 +217,7 @@ def fixture_id_for_example(path: Path) -> str:
 def digest_matches(fixture: Fixture) -> bool:
     try:
         return sha256_of_file(fixture.source_path) == fixture.source_sha256
-    except OSError:
+    except (OSError, ValueError):
         return False
 
 

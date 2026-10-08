@@ -65,10 +65,6 @@ def instance_root() -> Path:
     return curio_root() / "discovery"
 
 
-def repo_root() -> Path:
-    return Path(__file__).resolve().parents[5]
-
-
 def _scan(root: Path) -> list[Path]:
     if not root.is_dir():
         return []
@@ -155,9 +151,10 @@ def storage_root(manifest) -> Path:
     """A ``folder`` source's root, resolved and checked.
 
     An absolute root is used as written. A relative one is only honoured for a
-    shipped manifest, against the repository, so the example sources travel
-    with a checkout. An instance manifest must name an absolute path, which is
-    what an operator mounting a folder writes anyway.
+    shipped manifest: it is a repository path, found through
+    ``utk_curio/shipped.py``, so the example sources travel with a checkout
+    and a pip install. An instance manifest must name an absolute path, which
+    is what an operator mounting a folder writes anyway.
     """
     raw = manifest.provider.root
     if not raw:
@@ -168,7 +165,12 @@ def storage_root(manifest) -> Path:
             raise StorageRootError(
                 f"{manifest.name}: an instance source's root must be an absolute path"
             )
-        path = repo_root() / path
+        try:
+            path = shipped.path(path.as_posix())
+        except ValueError:
+            raise StorageRootError(
+                f"{manifest.name}: its folder is not available on this machine", path=str(raw)
+            ) from None
     resolved = path.resolve()
     if not resolved.is_dir():
         raise StorageRootError(

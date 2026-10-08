@@ -483,7 +483,8 @@ IMAGE_MATCH_THRESHOLD = 0.6
 PROMPTS_DIR = "utk_curio/llm-prompts"
 #: The built-in node manifest the generated lists read.
 BUILTIN_MANIFEST = "packages/curio.builtin@1/manifest.json"
-#: The Trill schema the preamble's Trill block projects.
+#: The Trill schema the preamble's Trill block projects, by its repository
+#: path (``utk_curio/shipped.py`` finds it).
 TRILL_SCHEMA = "docs/schemas/trill.v1.json"
 #: The Trill fields the preamble shows, per definition: what an agent reads in
 #: a dataflow or writes into one. The rest of the schema is bookkeeping.
@@ -688,7 +689,9 @@ class _Sources:
 
     @cached_property
     def trill(self) -> dict:
-        return json.loads((_repo_root() / TRILL_SCHEMA).read_text(encoding="utf-8"))
+        from utk_curio import shipped
+
+        return json.loads(shipped.path(TRILL_SCHEMA).read_text(encoding="utf-8"))
 
     @cached_property
     def autk(self) -> dict:

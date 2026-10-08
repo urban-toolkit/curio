@@ -40,7 +40,7 @@ class ProjectError(Exception):
 def shipped_dataflow_paths() -> Dict[str, Path]:
     """Every dataflow Curio ships, by its key (``shipped.shipped_dataflows``),
     for a feature that reads the files themselves. Empty when this install
-    ships no ``docs/examples`` (a pip install)."""
+    has no shipped dataflows."""
     return {s.key: s.path for s in shipped_dataflows()}
 
 
