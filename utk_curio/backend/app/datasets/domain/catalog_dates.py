@@ -5,9 +5,9 @@ microsecond, with ``Z`` or an offset. The catalog compares them by when they
 are: the listing's **Recent activity** order (``listing.py::_sort_catalog_items``)
 and the date of a layer group (``layer_group.py::build_layer_group_item``).
 
-The twin of ``services/datasetCatalog/catalogDates.ts``, which the canvas's
-Data palette orders by; ``catalogDates.cases.json`` beside it holds the cases
-both run.
+The twin of ``services/datasetCatalog/catalogDates.ts``, with which the
+canvas's Data palette dates a layer group; ``catalogDates.cases.json`` beside
+it holds the cases both run.
 """
 
 from __future__ import annotations

@@ -29,10 +29,6 @@ export interface DatasetPaletteGroup {
   members: DatasetCatalogItem[];
   /** Most-recent member record-update time — the header's relative time. */
   updatedAt: string | null;
-  /** Most-recent member import/creation time (persisted ``createdAt``). */
-  importedAt: string | null;
-  /** Most-recent member install time (persisted ``installedAt``). */
-  installedAt: string | null;
 }
 
 export interface DatasetPaletteSingle {
@@ -55,18 +51,6 @@ export function osmGroupBaseTitle(
 ): string {
   const raw = members[0]?.title ?? "";
   return raw.replace(LAYER_SUFFIX_RE, "").trim() || groupId;
-}
-
-/** Import/creation timestamp of a dataset for palette sorting: the persisted
- * record-creation time, falling back to the last-updated time. */
-export function datasetImportedAt(dataset: DatasetCatalogItem): string | null {
-  return dataset.createdAt ?? dataset.updatedAt ?? null;
-}
-
-/** Install timestamp of a dataset for palette sorting (persisted; ``null`` when
- * the dataset is not installed in a dataflow). */
-export function datasetInstalledAt(dataset: DatasetCatalogItem): string | null {
-  return dataset.installedAt ?? null;
 }
 
 /** The latest non-empty date ``pick`` gives across members, read as a time
@@ -114,8 +98,6 @@ export function groupDatasetsForPalette(
         title: groupId,
         members,
         updatedAt: null,
-        importedAt: null,
-        installedAt: null,
       });
     }
     members.push(item);
@@ -129,8 +111,6 @@ export function groupDatasetsForPalette(
       title: osmGroupBaseTitle(members, groupId),
       members,
       updatedAt: latest(members, (m) => m.updatedAt),
-      importedAt: latest(members, datasetImportedAt),
-      installedAt: latest(members, datasetInstalledAt),
     };
   }
 
@@ -206,37 +186,4 @@ export function createOsmGroupDragPayload(
     format: layerGroupFormat(group),
     layers: osmGroupLayerRefs(group),
   });
-}
-
-/** Which persisted timestamp the palette sorts entries by. */
-export type DatasetPaletteSortKey = "importedAt" | "installedAt";
-
-/** The sort timestamp for an entry under ``key`` — a group's representative
- * value, or the dataset's own persisted metadata. ``null`` when unknown. */
-export function entrySortValue(
-  entry: DatasetPaletteEntry,
-  key: DatasetPaletteSortKey,
-): string | null {
-  if (entry.kind === "group") return entry[key];
-  return key === "installedAt"
-    ? datasetInstalledAt(entry.dataset)
-    : datasetImportedAt(entry.dataset);
-}
-
-/**
- * Order palette entries by a persisted timestamp, most recent first, read as a
- * time (``compareCatalogDates``). Groups sort as a single unit by their
- * representative value. An entry whose timestamp is missing or unreadable is
- * the oldest. Entries at the same time keep the order they came in, the
- * catalog listing's (``_sort_catalog_items``). Pure: returns a new array and
- * never reads UI state.
- */
-export function sortDatasetPaletteEntries(
-  entries: DatasetPaletteEntry[],
-  key: DatasetPaletteSortKey,
-): DatasetPaletteEntry[] {
-  return entries
-    .map((entry, index) => ({ entry, index, value: entrySortValue(entry, key) }))
-    .sort((a, b) => compareCatalogDates(b.value, a.value) || a.index - b.index)
-    .map((wrapped) => wrapped.entry);
 }
