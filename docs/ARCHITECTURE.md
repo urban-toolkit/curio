@@ -997,6 +997,15 @@ per-user work directory it is **not** owned by the execution account: it is an
 import path, so node code writing there could shadow a later import. The
 startup audit reports it if it ever becomes writable.
 
+### The sandbox's Node.js packages
+
+autk-db runs in Node.js for the sandbox's JS nodes and for OpenStreetMap downloads. [`sandbox/util/node_runtime.py`](../utk_curio/sandbox/util/node_runtime.py) `nodejs_dir` names the folder whose `node_modules` they read and the launcher installs:
+
+- A clone, the Docker image and CI: the folder that holds `utk_curio/` and Curio's `package.json`.
+- A pip install: `nodejs/` in Curio's state directory. `setup.py` copies the repository's `package.json` and `package-lock.json` into the wheel at `utk_curio/sandbox/nodejs/`, and the launcher writes them into that folder.
+
+On every start, `cli/dependencies.py::_ensure_root_node_modules` runs `npm install --prefix <folder>` there, only in a folder that holds Curio's `package.json` and is not a link; otherwise it logs an error and runs no npm. `.curio/nodejs` is in the sandbox's `SENSITIVE_PATHS`.
+
 ### DuckDB extensions come from this instance
 
 autk-db's `init()` runs `INSTALL spatial; LOAD spatial;`, and DuckDB autoloads
@@ -1618,7 +1627,7 @@ A storage source is read through a `StorageProvider` ([`providers/storage_base.p
 
 A service is told where and what, and answers with one download. Its rows are its manifest's resources, with no network ([`providers/autark_osm.py`](../utk_curio/backend/app/discovery/providers/autark_osm.py) `rows()`), so they join a federated search the way storage rows do.
 
-- **OpenStreetMap** (`autark-osm`) runs [`providers/autark_osm.mjs`](../utk_curio/backend/app/discovery/providers/autark_osm.mjs) as `node`, from the backend's process tree, with the request on stdin. The script imports the repo-root autk-db (resolved by [`sandbox/util/node_runtime.py`](../utk_curio/sandbox/util/node_runtime.py), which the sandbox's JS nodes use too) and calls `db.loadOsm` with the area as `{geocodeArea, areas}` or `{bbox}` and the resource's layers. A tag resource (`options.tags`, or a `tags` parameter) sends no layers and three autk-db tag sets instead, `tags_points`, `tags_polylines` and `tags_polygons`, one per geometry autk-db builds, each with the same tags, its entries checked again by `parameters.parse_tag_entry` before Node starts; each set is written as `<set>.geojson`. autk-db's progress phases come back as stage lines, and each layer as autk-db's `getLayer(name, { osmElements: true })` GeoJSON, in its workspace CRS (EPSG:3395): one feature per node, way or relation, with `osm_type`, `osm_id` and, for buildings, `building_id` (autk-db's number for the building the part belongs to). Surface polygons carry none of them.
+- **OpenStreetMap** (`autark-osm`) runs [`providers/autark_osm.mjs`](../utk_curio/backend/app/discovery/providers/autark_osm.mjs) as `node`, from the backend's process tree, with the request on stdin. The script imports the sandbox's autk-db (resolved by [`sandbox/util/node_runtime.py`](../utk_curio/sandbox/util/node_runtime.py), which the sandbox's JS nodes use too; see [The sandbox's Node.js packages](#the-sandboxs-nodejs-packages)) and calls `db.loadOsm` with the area as `{geocodeArea, areas}` or `{bbox}` and the resource's layers. A tag resource (`options.tags`, or a `tags` parameter) sends no layers and three autk-db tag sets instead, `tags_points`, `tags_polylines` and `tags_polygons`, one per geometry autk-db builds, each with the same tags, its entries checked again by `parameters.parse_tag_entry` before Node starts; each set is written as `<set>.geojson`. autk-db's progress phases come back as stage lines, and each layer as autk-db's `getLayer(name, { osmElements: true })` GeoJSON, in its workspace CRS (EPSG:3395): one feature per node, way or relation, with `osm_type`, `osm_id` and, for buildings, `building_id` (autk-db's number for the building the part belongs to). Surface polygons carry none of them.
 - **Ceilings.** `MAX_SECONDS` (15 minutes) and `MAX_OUTPUT_BYTES` (512 MiB), each refused with a message naming it. The child runs in its own process group, so Cancel and the time limit kill everything it started.
 - **Named areas' size.** Before Node starts, `_check_named_areas_size` measures named areas through the place search: `places.named_areas_box` searches each `"<area>, <place>"`, as the named-areas field does, and takes the box around every boundary with exactly that OSM name. `parameters.check_area_size`, the rule a drawn box passes, refuses that box over the area's `maxAreaKm2`. A name the search does not find is left to autk-db, which refuses it by name.
 - **Into the Data Catalog.** [`application/service_acquire.py`](../utk_curio/backend/app/discovery/application/service_acquire.py) moves every position to WGS84 with pyproj (`to_wgs84`), keeping each feature's geometry type and properties and leaving out autk-db's feature id (`way/301`), which `osm_type` and `osm_id` give; [`domain/osm_values.py`](../utk_curio/backend/app/discovery/domain/osm_values.py) (`with_numbers`) writes the tags it lists as numbers in metres, km/h or counts, and a value it cannot read as one number as null. `service_acquire.py` then installs each non-empty layer as GeoJSON through `_install_imported_bytes`: one layer as an ordinary dataset, several under one `osm.x<hex>` group, the group a `.pbf` upload forms. The title names the area (`place_label`). A download counts once against the source's rate limit.
@@ -2171,6 +2180,6 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `cli/environment.py` | `set_environment_variables` (arguments to environment variables) and the isolation decision |
 | `cli/frontend_build.py` | `NODE_MAJOR`, Node and node_modules checks, the frontend build and its stamp |
 | `cli/static_server.py` | `run_spa_static_server`, the static server for the built frontend |
-| `cli/dependencies.py` | pip and manifest dependency installs, the root node_modules, DuckDB extension seeding |
+| `cli/dependencies.py` | pip and manifest dependency installs, the sandbox's Node.js packages, DuckDB extension seeding |
 | `cli/services.py` | `start_frontend`, `start_backend`, `start_sandbox`, the database migration, `_kill_port` |
 | `cli/test_runner.py` | `curio test` and its translation to `scripts/test.sh` flags |

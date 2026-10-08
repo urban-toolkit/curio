@@ -1,6 +1,10 @@
 include README.md
 include pyproject.toml
 include LICENSE
+
+# The sandbox's Node.js package list, which setup.py copies into the wheel.
+include package.json
+include package-lock.json
 recursive-include packages *
 recursive-include datasets *
 recursive-include discovery *

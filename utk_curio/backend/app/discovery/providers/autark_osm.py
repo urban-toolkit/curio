@@ -1,8 +1,9 @@
 """OpenStreetMap through Autark: autk-db's own ``loadOsm``, in a Node child.
 
 Curio writes no Overpass client. ``autark_osm.mjs`` calls the loader an Autark
-map node runs, with the same autk-db build (the repo-root ``node_modules``, as
-the sandbox's JS nodes use), so a download and a map get the same features.
+map node runs, with the same autk-db build (the sandbox's ``node_modules``,
+``node_runtime.node_modules_dir``, as its JS nodes use), so a download and a map
+get the same features.
 Its requests go to autk-db's fixed Overpass endpoint, with the retries, slot
 waits and tiling autk-db does; no value a person types becomes a URL.
 
@@ -112,8 +113,8 @@ class AutarkOsmService:
         """Run autk-db's ``loadOsm`` for *spec*'s layers, or its tags, over the area in *values*."""
         from utk_curio.sandbox.util.node_runtime import (
             OVERPASS_USER_AGENT,
-            ROOT_NODE_MODULES,
             node_env,
+            node_modules_dir,
             resolve_pkg_entry_url,
         )
 
@@ -142,10 +143,12 @@ class AutarkOsmService:
                         for geometry in TAG_GEOMETRIES]
         if "names" in area:
             self._check_named_areas_size(spec, area["names"])
-        autk_db = resolve_pkg_entry_url("@urban-toolkit/autk-db", ROOT_NODE_MODULES)
+        node_modules = node_modules_dir()
+        autk_db = resolve_pkg_entry_url("@urban-toolkit/autk-db", node_modules)
         if autk_db is None:
             raise ProviderError(
-                "autk-db is not installed at the repository root; run npm install there"
+                f"autk-db is not installed in {node_modules}; curio start installs it there "
+                "with npm when it starts the sandbox"
             )
         request = {
             "autkDbUrl": autk_db,

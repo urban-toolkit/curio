@@ -1193,6 +1193,10 @@ jobs:
               mkdir -p "$release/$folder"
               cp -R "$folder/." "$release/$folder/"
             done
+            # A pip install's sandbox Node.js packages (node_runtime.nodejs_dir),
+            # which the boot's hardening closes too.
+            mkdir -p .curio/nodejs/node_modules
+            cp package.json package-lock.json .curio/nodejs/
 
       - name: 🐍 Set up Python
         uses: actions/setup-python@v6

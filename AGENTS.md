@@ -130,7 +130,7 @@ Other workflows: `autk-schema.yml` (weekly check of the vendored Autark schema),
 - `scripts/generate_contracts.py`: writes `src/generated/` and every `utk_curio/llm-prompts/X.md` that has an `X.template.md`; `--check` lists stale outputs.
 - `scripts/sync_autk_schema.py`: vendors the Autark grammar schema; `--check` compares it with the release.
 - `scripts/validate_trill.py`: validates dataflow JSON against `docs/schemas/trill.v1.json`.
-- Release (`publish-pip-to-pypi.yml`): `scripts/record_left_out_files.py` records the catalog files the pip package leaves out (`utk_curio/backend/app/datasets/infrastructure/left_out_files.json`, fetched on first use by `left_out_files.py`); `scripts/check_dist_sizes.py` fails a wheel or sdist over PyPI's 100 MiB limit.
+- Release (`publish-pip-to-pypi.yml`): `scripts/record_left_out_files.py` records the catalog files the pip package leaves out (`utk_curio/backend/app/datasets/infrastructure/left_out_files.json`, fetched on first use by `left_out_files.py`); `scripts/check_dist_sizes.py` fails a wheel or sdist over PyPI's 100 MiB limit; `setup.py` copies the root `package.json` and `package-lock.json` into the wheel (`utk_curio/sandbox/nodejs/`).
 - Example builders: `scripts/build_example_*.py`. Test fixtures: `scripts/record_discovery_fixtures.py` and the `generate_*_fixture.py` scripts. CI helpers: `scripts/ci_*.py` and the shard balancers `e2e_*.py`, `unit_durations.py`.
 
 ## Big files

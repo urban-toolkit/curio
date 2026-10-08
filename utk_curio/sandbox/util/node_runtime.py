@@ -1,28 +1,83 @@
 """How Curio runs autk-db in Node, shared by every caller.
 
-The sandbox's JS nodes (``app/worker.py::execute_js_code``) and the Discovery
+The launcher (``cli/dependencies.py::_ensure_root_node_modules``) installs the
+sandbox's Node.js packages in the folder :func:`nodejs_dir` names, and the
+sandbox's JS nodes (``app/worker.py::execute_js_code``) and the Discovery
 Catalog's OpenStreetMap loader (``backend/app/discovery/providers/autark_osm.py``)
-both run Node against the repo-root ``node_modules``, so they resolve the same
-autk-db build, and both identify themselves to Overpass the same way.
+run Node against that folder's ``node_modules`` and identify themselves to
+Overpass the same way.
 """
 
+import json
 import os
 import pathlib
 
-#: The repository root: ``utk_curio/sandbox/util/`` is three levels below it.
+#: The folder that holds ``utk_curio/``: the repository root in a clone, the
+#: Docker image and CI; site-packages in a pip install.
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 
-#: The ``node_modules`` the root ``package.json`` installs autk-db into.
-ROOT_NODE_MODULES = REPO_ROOT / 'node_modules'
+#: The files that name the Node.js packages the sandbox runs.
+PACKAGE_FILES = ('package.json', 'package-lock.json')
+
+#: Where the pip package carries the repository's ``PACKAGE_FILES`` (``setup.py``
+#: copies them there), under the folder that holds ``utk_curio/``.
+SHIPPED_PACKAGE_FILES = pathlib.PurePosixPath('utk_curio', 'sandbox', 'nodejs')
+
+#: The folder of Curio's state directory where a pip install keeps the
+#: sandbox's Node.js packages.
+NODEJS_FOLDER = 'nodejs'
+
+AUTK_DB = '@urban-toolkit/autk-db'
 
 #: What every Overpass request from Curio's Node processes says it is. The
 #: Overpass usage policy asks a client to identify itself.
 OVERPASS_USER_AGENT = 'Curio (https://curio.urbantk.org) autk-db'
 
 
-def node_env(base=None):
+def is_curio_package_json(path):
+    """Whether *path* is a package.json of Curio's own: named ``curio``, with
+    autk-db among its dependencies."""
+    try:
+        data = json.loads(pathlib.Path(path).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    dependencies = data.get('dependencies')
+    return data.get('name') == 'curio' and isinstance(dependencies, dict) and AUTK_DB in dependencies
+
+
+def state_dir():
+    """Curio's state directory: ``CURIO_STATE_DIR``, or ``.curio`` in the
+    folder Curio was started from (``CURIO_LAUNCH_CWD``)."""
+    override = os.environ.get('CURIO_STATE_DIR')
+    if override:
+        return pathlib.Path(override)
+    return pathlib.Path(os.environ.get('CURIO_LAUNCH_CWD') or os.getcwd()) / '.curio'
+
+
+def nodejs_dir(root=None):
+    """The folder that holds Curio's package.json for the sandbox's Node.js
+    packages, and their ``node_modules``.
+
+    *root* is the folder that holds ``utk_curio/`` (``REPO_ROOT`` when None):
+    that folder when it holds Curio's package.json (a clone, the Docker image,
+    CI), else ``nodejs/`` in Curio's state directory (a pip install).
+    """
+    root = pathlib.Path(REPO_ROOT if root is None else root)
+    if is_curio_package_json(root / 'package.json'):
+        return root
+    return state_dir() / NODEJS_FOLDER
+
+
+def node_modules_dir(root=None):
+    """The ``node_modules`` the sandbox's Node.js packages are installed in."""
+    return nodejs_dir(root) / 'node_modules'
+
+
+def node_env(base=None, node_modules=None):
     """The environment for a Node child: *base* (default ``os.environ``), with
-    ``ROOT_NODE_MODULES`` first on ``NODE_PATH``.
+    *node_modules* (default :func:`node_modules_dir`) first on ``NODE_PATH``.
 
     ``NODE_PATH`` is consulted only by the CommonJS ``require()`` resolver, not
     by ESM, so it does not resolve a top-level autk-db import (callers rewrite
@@ -30,9 +85,10 @@ def node_env(base=None):
     any CJS ``require()`` autk-db's worker threads perform.
     """
     env = dict(os.environ if base is None else base)
-    if ROOT_NODE_MODULES.is_dir():
+    node_modules = pathlib.Path(node_modules) if node_modules is not None else node_modules_dir()
+    if node_modules.is_dir():
         existing = env.get('NODE_PATH', '')
-        env['NODE_PATH'] = str(ROOT_NODE_MODULES) + (os.pathsep + existing if existing else '')
+        env['NODE_PATH'] = str(node_modules) + (os.pathsep + existing if existing else '')
     return env
 
 
