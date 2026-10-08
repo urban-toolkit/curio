@@ -145,7 +145,7 @@ env:
 #   * CPU jobs: GitHub-hosted ubuntu-latest while the organization's hosted
 #     runners have room, the self-hosted arcade runners ([self-hosted, cpu],
 #     40 of them) for the rest.
-#   * test-gpu: an arcade GPU runner (arcade-gpu-01..06, [self-hosted, gpu,
+#   * test-gpu: an arcade GPU runner (arcade-gpu-01..04, [self-hosted, gpu,
 #     h100]) while one is free, utk-gpu ([self-hosted, gpu, curio]) otherwise.
 #   * test-desktop-stress, unit (sandbox) and preview-runner: always
 #     ubuntu-latest. The first two measure a 4-core, 16 GB laptop.
