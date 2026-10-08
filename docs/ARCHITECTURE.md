@@ -1816,7 +1816,10 @@ source of truth:
 Rows are keyed on `user_key`, deliberately **not** a foreign key to `user.id`:
 the literal `"guest"` is a valid key. Writes go through on every install path
 (`install/installer.py`, `install/bundle.py`) and rows are dropped on delete.
-Reads hydrate in `repositories/user_store.py` and `repositories/installed.py`.
+A row is added with `INSERT ... ON CONFLICT DO NOTHING`, so when two listings
+reconcile at once, or an install lands during a listing, the writer that comes
+second keeps the row the first one added. Reads hydrate in
+`repositories/user_store.py` and `repositories/installed.py`.
 
 `application/listing.py::resolve_execution_paths` uses the index as a fast path
 for turning dataset ids into filesystem paths at execution time, falling back to
