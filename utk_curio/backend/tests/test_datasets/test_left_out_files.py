@@ -99,7 +99,9 @@ def test_manifest_in_leaves_out_exactly_the_listed_files_and_the_frontends_sourc
     """``MANIFEST.in`` builds the sdist, and the release builds the wheel from
     the sdist (``publish-pip-to-pypi.yml``). Its rules, applied as setuptools
     applies them, every line in order, to every file under ``datasets/``,
-    ``models/`` and ``packages/``, the list and its record, and a built
+    ``models/`` and ``packages/``, the list and its record, the repository's
+    ``package.json`` and ``package-lock.json`` (the wheel build copies them
+    into the package for the sandbox's Node.js packages), and a built
     frontend: the listed files and the frontend's source maps stay out, and
     nothing else does. A package's own source map ships: ``curio.example-ui@1``
     names it in its ``integrity.json``."""
@@ -113,7 +115,8 @@ def test_manifest_in_leaves_out_exactly_the_listed_files_and_the_frontends_sourc
         if path.is_file()
     )
     shipped_beside_the_code = [f"{INFRASTRUCTURE}/left_out_files.json", f"{INFRASTRUCTURE}/left_out_files.record.json"]
-    everything = set(repository) | set(BUILT) | set(shipped_beside_the_code)
+    node_packages = ["package.json", "package-lock.json"]
+    everything = set(repository) | set(BUILT) | set(shipped_beside_the_code) | set(node_packages)
     files = FileList()
     files.set_allfiles(sorted(everything))
     for line in (REPO / "MANIFEST.in").read_text(encoding="utf-8").splitlines():
