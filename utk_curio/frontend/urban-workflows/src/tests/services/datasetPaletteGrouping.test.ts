@@ -105,6 +105,24 @@ describe("sortDatasetPaletteEntries", () => {
     ]);
   });
 
+  test("orders by when a dataset was made, not by how its date reads as text", () => {
+    // A node's output is dated to the millisecond and an upload to the second.
+    // As text the upload's date comes after the output's; as a time, before.
+    const entries = groupDatasetsForPalette([
+      ds({ id: "upload", createdAt: "2026-10-07T10:00:00Z", updatedAt: "2026-10-07T10:00:00Z" }),
+      ds({
+        id: "output",
+        origin: "computed",
+        createdAt: "2026-10-07T10:00:00.500Z",
+        updatedAt: "2026-10-07T10:00:00.500Z",
+      }),
+    ]);
+    expect(sortDatasetPaletteEntries(entries, "importedAt").map(singleId)).toEqual([
+      "output",
+      "upload",
+    ]);
+  });
+
   test("orders by install time (installedAt), independent of import time", () => {
     const entries = groupDatasetsForPalette([
       ds({ id: "a", createdAt: "2026-07-10T00:00:00Z", installedAt: "2026-07-01T00:00:00Z" }),
