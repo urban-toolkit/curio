@@ -43,7 +43,9 @@ def seed_duckdb_extensions():
     import shutil
     from pathlib import Path
 
-    source_root = Path(__file__).resolve().parent.parent.parent / "vendor" / "duckdb-extensions"
+    from utk_curio.sandbox.util import node_runtime
+
+    source_root = node_runtime.duckdb_extensions_dir()
     if not source_root.is_dir():
         return
     target_root = Path.home() / ".duckdb" / "extensions" / "extensions.duckdb.org"
