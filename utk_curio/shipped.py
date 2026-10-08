@@ -4,9 +4,9 @@ The repository keeps them beside ``utk_curio/``: the Data Catalog's datasets
 (``datasets/``), the Discovery Catalog's sources (``discovery/``), the Model
 Catalog's models (``models/``), the Node Catalog's packages (``packages/``),
 the scripts (``scripts/``) and DuckDB's extensions (``vendor/``), and
-``docs/``, of which Curio reads the dataflows it ships, the Example storage
-source's folder, the agent evaluation's prompt fixtures and two schemas. A
-clone, the Docker image and CI read them there.
+``docs/``, of which Curio reads the dataflows it ships, the example data their
+nodes read, the Example storage source's folder, the agent evaluation's prompt
+fixtures and two schemas. A clone, the Docker image and CI read them there.
 
 The pip package carries them inside ``utk_curio/``, at
 ``utk_curio/_shipped/<folder>/`` (``setup.py`` maps them there), so a pip

@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/Image.json",
-    "sha256": "685cde7b603b4ce94aca2dd3fe1a6c816ebb74cd8787fe34583941b2a6051f9a",
+    "sha256": "a8ffdbfb99322ad24ec648258159e86e75e3027e270d5975668131d05e531b99",
     "walkthrough": null
   },
   "prompt": "Encode a picture as base64 inside a one-row table in a loading step and display it with the simple image view.",

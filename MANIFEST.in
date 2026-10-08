@@ -33,6 +33,17 @@ include docs/schemas/trill.v1.json
 recursive-include docs/examples/data/storage *
 include docs/examples/data/mapillary-ATTRIBUTION.md
 
+# The example data the shipped dataflows read by its path, exactly the paths
+# their nodes spell (test_pip_wheel_layout.py checks it): the Autark examples'
+# OpenStreetMap extracts, which /file/ serves, and the files node code opens.
+include docs/examples/data/back_bay.osm.pbf
+include docs/examples/data/chicago_loop.osm.pbf
+include docs/examples/data/lower_mnt.osm.pbf
+include docs/examples/data/niteroi.osm.pbf
+include docs/examples/data/niteroi_lst_verao_2001_2024.tif
+include docs/examples/data/access_score.geojson
+recursive-include docs/examples/data/ImageTest *
+
 recursive-include utk_curio/backend *
 recursive-include utk_curio/sandbox *
 recursive-include utk_curio/frontend *

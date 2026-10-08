@@ -1,3 +1,5 @@
+from pathlib import PurePosixPath
+
 from flask import request, abort, jsonify, g, Response, current_app
 
 import requests
@@ -150,6 +152,13 @@ def version():
         'isolation_active': isolation_active,
     })
 
+
+#: The example data the shipped dataflows read: the Autark examples' ``.osm.pbf``
+#: extracts, which their grammar fetches through ``/file/``, and the files their
+#: Python nodes open by the same path (``sandbox/util/user_code.py``).
+EXAMPLE_DATA = PurePosixPath('docs', 'examples', 'data')
+
+
 @bp.route('/file/<path:filename>', methods=['GET'])
 def serve_launch_cwd_file(filename: str):
     """Serve a file by its path *relative to CURIO_LAUNCH_CWD* so browser-side
@@ -157,14 +166,10 @@ def serve_launch_cwd_file(filename: str):
     same way Python sandbox nodes read them from disk - one shared root, one
     relative-path convention:
       Python node:   rasterio.open('my-data/file.tif')
-      Grammar spec:  pbfFileUrl: 'docs/examples/data/file.pbf'
+      Grammar spec:  pbfFileUrl: 'my-data/file.pbf'
 
-    The grammar example is the live one: the Autark examples (06/07/08/11) fetch
-    their committed ``.osm.pbf`` extracts this way, because ``.pbf`` is not a
-    Data Catalog format and every ``/api/datasets/*`` route requires auth while
-    this one does not. Shipped *Python* nodes no longer read relative paths at
-    all - they resolve ``curio_data_path("<id>")`` against the catalog - but
-    a user's own node still can, which is why the root convention stands.
+    ``.pbf`` is not a Data Catalog format, and every ``/api/datasets/*``
+    route requires auth while this one does not.
 
     The frontend prepends ``BACKEND_URL`` + ``/file/`` to the relative path at
     run time (see resolveDataSourceUrls in autkGrammarBehavior.tsx).
@@ -177,25 +182,27 @@ def serve_launch_cwd_file(filename: str):
     that is data a node reads by relative path, so :func:`_is_private_path`
     refuses it with the same 404 a missing file gets.
 
-    ``vendor/duckdb-extensions/`` is Curio's own copy of DuckDB's extensions,
-    which the browser's duckdb worker asks for: it is served from where Curio
-    keeps it (``node_runtime.duckdb_extensions_dir``), whatever folder Curio
-    was started from.
+    Two folders are Curio's own, and are served from where Curio keeps them
+    (``utk_curio/shipped.py``), whatever folder Curio was started from:
+    ``vendor/duckdb-extensions/``, its copy of DuckDB's extensions, which the
+    browser's duckdb worker asks for, and ``docs/examples/data/``, the
+    example data the shipped dataflows read (:data:`EXAMPLE_DATA`).
     """
     from flask import send_from_directory
+    from utk_curio import shipped
     from utk_curio.backend.app.common.safe_paths import PathTraversalError, safe_join
     from utk_curio.sandbox.util import node_runtime
 
     parts = [p for p in filename.split('/') if p]
-    extensions = node_runtime.DUCKDB_EXTENSIONS.parts
-    if tuple(parts[:len(extensions)]) == extensions:
-        rest = parts[len(extensions):]
-        if any(part.startswith('.') for part in rest):
-            abort(404)
-        return send_from_directory(node_runtime.duckdb_extensions_dir(), '/'.join(rest))
+    for folder in (node_runtime.DUCKDB_EXTENSIONS, EXAMPLE_DATA):
+        if tuple(parts[:len(folder.parts)]) == folder.parts:
+            rest = parts[len(folder.parts):]
+            if any(part.startswith('.') for part in rest):
+                abort(404)
+            return send_from_directory(shipped.path(folder, node_runtime.REPO_ROOT), '/'.join(rest))
 
     launch_cwd = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
-    # ``filename`` is a multi-segment relative path (e.g. docs/examples/data/x.pbf).
+    # ``filename`` is a multi-segment relative path (e.g. my-data/x.pbf).
     # Use validate=False (like /get) so the containment guard alone runs: real data
     # filenames routinely contain spaces or leading '_'/'-' that the per-segment
     # charset would reject, and is_within already prevents escaping CURIO_LAUNCH_CWD.

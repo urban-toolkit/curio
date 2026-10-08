@@ -22,6 +22,7 @@ not here. Two reasons:
   the zygote itself. There is deliberately no kill path left in this file.
 """
 
+import contextlib
 import json
 import os
 import shutil
@@ -29,7 +30,9 @@ import signal
 import socket
 import sys
 import tempfile
+import uuid
 
+from utk_curio import shipped
 from utk_curio.sandbox.isolation import protocol
 from utk_curio.sandbox.isolation.child import RESULT_FILENAME
 from utk_curio.sandbox.isolation.protocol import ProtocolError
@@ -268,18 +271,20 @@ def prepare_user_overlay_dir(path, *, exec_uid=None):
     return path
 
 
-def prepare_user_work_dir(path, *, exec_uid=None, launch_dir=None):
+def prepare_user_work_dir(path, *, exec_uid=None):
     """Create the user's work directory and make it usable by the child.
 
     0700 and owned by the execution user: it is the one place an isolated node
     may write, and ``confine`` chdirs into it, so relative reads and writes in
     node code both land here.
 
-    A ``docs`` symlink is dropped in when the launch directory has one. The
-    bundled examples read their data relatively
-    (``gpd.read_file("docs/examples/data/x.geojson")``), and with the cwd moved
-    off the launch directory those paths would resolve to nothing. The link is
-    to a root-owned tree, so it reads and does not write.
+    A ``docs`` link to the ``docs/`` Curio ships (``utk_curio/shipped.py``) is
+    dropped in, whatever folder Curio started from. The shipped examples read
+    their data relatively (``gpd.read_file("docs/examples/data/x.geojson")``),
+    and with the cwd moved off the launch directory those paths would resolve
+    to nothing. A link left by another install (a virtual environment rebuilt
+    elsewhere) is pointed at this one's; a ``docs`` of the user's own that is
+    not a link is left alone.
     """
     os.makedirs(path, exist_ok=True)
     if sys.platform == "win32":
@@ -291,15 +296,31 @@ def prepare_user_work_dir(path, *, exec_uid=None, launch_dir=None):
     except OSError:
         pass
 
-    if launch_dir:
-        source = os.path.join(launch_dir, "docs")
-        link = os.path.join(path, "docs")
-        if os.path.isdir(source) and not os.path.lexists(link):
-            try:
-                os.symlink(source, link)
-            except OSError:
-                pass
+    docs = shipped.path("docs")
+    if docs.is_dir():
+        _link(os.path.join(path, "docs"), str(docs))
     return path
+
+
+def _link(link, target):
+    """Make *link* a symlink to *target*, unless something that is not a
+    symlink holds its name. A symlink to elsewhere is replaced in one rename,
+    so a run reading through it never finds it missing."""
+    if not os.path.islink(link):
+        if not os.path.lexists(link):
+            with contextlib.suppress(OSError):
+                os.symlink(target, link)
+        return
+    with contextlib.suppress(OSError):
+        if os.readlink(link) == target:
+            return
+        temporary = f"{link}.{uuid.uuid4().hex}"
+        try:
+            os.symlink(target, temporary)
+            os.replace(temporary, link)
+        finally:
+            if os.path.lexists(temporary):
+                os.unlink(temporary)
 
 
 def make_scratch_dir(shared_data_dir, *, exec_uid=None):

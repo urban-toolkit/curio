@@ -191,9 +191,9 @@ def test_the_manifest_declares_every_library_the_sources_import(package_root: Pa
 def test_sources_do_not_read_the_examples_data_directory(package_root: Path):
     """A shipped node template must not depend on ``docs/``.
 
-    ``MANIFEST.in`` does not include ``docs/``, so a source that reads
-    ``docs/examples/data/...`` works on a repo checkout and silently breaks in
-    every pip install and every isolated sandbox. ``curio.weather@1``'s three
+    ``MANIFEST.in`` ships of ``docs/examples/data/`` only the files the shipped
+    dataflows read, so a source that reads another file there works on a repo
+    checkout and silently breaks in every pip install. ``curio.weather@1``'s three
     loader templates did exactly that until the Data Catalog migration; they now
     resolve their inputs with ``curio_data_path("<id>")``.
 

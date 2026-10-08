@@ -298,6 +298,34 @@ def test_a_node_reads_a_file_by_relative_path(isolated, workspace):
     assert result["output"]["dataType"] == "int"
 
 
+def test_a_node_reads_the_shipped_example_data_from_a_launch_folder_without_docs(isolated, workspace):
+    """A pip install starts from a folder of the user's, which holds no
+    `docs/`, and keeps the `docs/` Curio ships inside `utk_curio/`. The
+    shipped examples read their data by its path all the same: a user's run
+    through the `docs/` its work directory links, and a run without one (an
+    unauthenticated launch) in the launch folder itself.
+    """
+    import hashlib
+
+    from utk_curio import shipped
+
+    raster = "docs/examples/data/niteroi_lst_verao_2001_2024.tif"
+    code = (
+        "    import hashlib\n"
+        f"    with open({raster!r}, 'rb') as f:\n"
+        "        print(hashlib.sha256(f.read()).hexdigest())\n"
+        "    return 1\n"
+    )
+    digest = hashlib.sha256(shipped.path(raster).read_bytes()).hexdigest()
+    assert not (workspace / "docs").exists()
+
+    for user_key in ("7", None):
+        result = run_isolated(isolated, code, launch_dir=str(workspace), user_key=user_key)
+
+        assert result["stderr"] == "", (user_key, result["stderr"])
+        assert digest in result["stdout"], (user_key, result["stdout"])
+
+
 def test_the_scratch_directory_is_still_where_output_lands(isolated, workspace):
     """Moving the cwd must not move where the child writes its result.
 

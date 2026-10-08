@@ -574,6 +574,7 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
     from utk_curio.sandbox.isolation.supervisor import cleanup_scratch
     from utk_curio.sandbox.util.package_modules import importable
     from utk_curio.sandbox.util.parsers import _shared_data_dir, load_artifact
+    from utk_curio.sandbox.util.user_code import compile_user_code
     save_to_duckdb   = _globals_cache['save_to_duckdb']
     detect_kind      = _globals_cache['detect_kind']
     save_dataset_parquet = _globals_cache['save_dataset_parquet']
@@ -639,7 +640,9 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 legacy = input_names.legacy_name_read(code)
                 if legacy:
                     raise RuntimeError(input_names.legacy_input_message(legacy))
-                exec(f"{input_names.user_code_header(code)}\n{code}", ns)
+                # A relative path in docs/ that this folder does not hold reads
+                # the file Curio ships (util/user_code.py).
+                exec(compile_user_code(code, os.getcwd()), ns)
 
                 # Load input from DuckDB.
                 input_data = ''

@@ -2,27 +2,65 @@
 
 ``test_pip_wheel_layout.py`` unpacks the wheel into an empty site-packages and
 runs this source with ``python -c``, with nothing but that site-packages on
-PYTHONPATH, an empty folder to start from and a HOME of its own. It prints,
-after ``MARKER``, a JSON report: where each reader of the folders Curio ships
-beside its code looks, and what it finds there.
+PYTHONPATH, an empty folder to start from and a HOME of its own. Its one
+argument is a JSON list of the repository paths to ask ``/file/`` for. It
+prints, after ``MARKER``, a JSON report: where each reader of the folders Curio
+ships beside its code looks, and what it finds there.
 
 It calls only what Curio had before its wheel kept those folders, and the
 parts of ``docs/`` it reads, inside ``utk_curio/``, and it opens no socket:
-pip is replaced, ``curio test`` runs nothing, and the launcher's DuckDB
-seeding copies files. A reader of ``docs/`` that raises is reported with its
-error, so the others still run.
+pip is replaced, ``curio test`` runs nothing, the launcher's DuckDB seeding
+copies files, and ``/file/`` answers a test client. A reader of ``docs/`` that
+raises is reported with its error, so the others still run.
 """
 
+import builtins
 import contextlib
 import functools
+import hashlib
 import io
 import json
+import os
 import re
 import shutil
 import subprocess
+import sys
+import textwrap
 from pathlib import Path
+from urllib.parse import quote
 
 MARKER = "PIP-INSTALL-PROBE "
+
+#: A path in ``docs/examples/data/`` as a node of a shipped dataflow spells it:
+#: in a Python node's code, or in an Autark node's ``pbfFileUrl``.
+EXAMPLE_DATA_PATH = re.compile(r"docs/examples/data/[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*")
+
+
+def example_data_paths(text):
+    """The paths in ``docs/examples/data/`` that *text* spells."""
+    return {match.group(0).rstrip(".") for match in EXAMPLE_DATA_PATH.finditer(text or "")}
+
+
+def python_nodes_reading_example_data():
+    """Each Python node of a shipped dataflow that spells a path in
+    ``docs/examples/data/``: its dataflow's key and its id, its type, and its
+    code as a run resolves it."""
+    from utk_curio.backend.app.execution import workflow_spec
+    from utk_curio.backend.app.projects.shipped import shipped_dataflows
+
+    python_types = set(workflow_spec.package_code_types())
+    nodes = []
+    for dataflow in shipped_dataflows():
+        spec = workflow_spec.parse_workflow(str(dataflow.path))
+        for node in spec.nodes:
+            python = node.type in workflow_spec.PY_CODE_TYPES or node.raw_type in python_types
+            if python and example_data_paths(node.content):
+                nodes.append({
+                    "key": f"{dataflow.key}/{node.id}",
+                    "type": node.raw_type,
+                    "code": spec.node_code(node, "python"),
+                })
+    return nodes
 
 
 def _names(paths):
@@ -150,6 +188,82 @@ def _seeded_duckdb_extensions():
     return sorted(path.relative_to(target).as_posix() for path in target.rglob("*") if path.is_file())
 
 
+def _file_route(paths):
+    """What ``GET /file/<path>`` answers for each repository path in *paths*:
+    the sha256 of the file it serves, or the status it gives instead."""
+    from flask import Flask
+
+    from utk_curio.backend.app.api import bp
+
+    app = Flask("pip-install-probe", instance_path=str(Path.cwd() / "instance"))
+    app.register_blueprint(bp, url_prefix="")
+    client = app.test_client()
+    answers = {}
+    for path in paths:
+        response = client.get(f"/file/{quote(path)}", buffered=True)
+        answers[path] = hashlib.sha256(response.data).hexdigest() if response.status_code == 200 else response.status_code
+    return answers
+
+
+def _in_process_runs(nodes):
+    """What each node of *nodes* reports when the sandbox runs it in-process
+    (``worker.execute_code``, a launch's default) in the folder Curio started
+    from."""
+    from utk_curio.sandbox.app import worker
+    from utk_curio.sandbox.util.db import init_db
+
+    init_db()
+    worker._worker_init()
+    runs = {}
+    for node in nodes:
+        result = worker.execute_code(
+            textwrap.indent(node["code"], "    "), "", node["type"], "",
+            launch_dir=os.environ["CURIO_LAUNCH_CWD"], session_id="pip-install-probe", save_dataset=False,
+        )
+        runs[node["key"]] = {"stderr": result["stderr"], "dataType": result["output"]["dataType"]}
+    return runs
+
+
+def _isolated_runs(nodes):
+    """What each node of *nodes* reports in an isolated run's work directory,
+    prepared as ``isolation/runner.py`` prepares a user's, entered as
+    ``child.confine`` enters it, and run by ``child.run_node``, the code a
+    forked child runs (the fork and the confinement need Linux); and where the
+    ``docs/`` that directory holds leads."""
+    from utk_curio.sandbox.isolation import child, supervisor
+    from utk_curio.sandbox.util.parsers import _shared_data_dir
+
+    shared = str(_shared_data_dir())
+    work = supervisor.prepare_user_work_dir(supervisor.user_work_dir(shared, "pip-install-probe"))
+    started_in = os.getcwd()
+    runs = {}
+    for node in nodes:
+        request = {
+            "code": textwrap.indent(node["code"], "    "),
+            "node_type": node["type"],
+            "data_type": "",
+            "scratch_dir": supervisor.make_scratch_dir(shared),
+            "input": {"kind": "none"},
+            "dataset_paths": {},
+            "session_imports": [],
+            "limits": {},
+        }
+        os.chdir(work)
+        try:
+            manifest = child.run_node(request, lambda: {"__builtins__": builtins})
+        finally:
+            os.chdir(started_in)
+        runs[node["key"]] = {"ok": manifest["ok"], "stderr": manifest["stderr"]}
+    return {"docs": os.path.realpath(os.path.join(work, "docs")), "runs": runs}
+
+
+def _agent_eval_out():
+    """Where ``agent_eval run`` writes its reports when no ``--out`` is given."""
+    from utk_curio.tools import agent_eval
+
+    return str(agent_eval.build_parser().parse_args(["run"]).out)
+
+
 def main():
     import utk_curio
 
@@ -217,6 +331,15 @@ def main():
         "root": str(catalog_dir.catalog_root()),
         "listed": sorted(package["dirName"] for package in catalog_listing("guest")["packages"]),
     }
+
+    report["file_route"] = _guarded(functools.partial(_file_route, json.loads(sys.argv[1])))
+    report["agent_eval_out"] = _guarded(_agent_eval_out)
+    nodes = _guarded(python_nodes_reading_example_data)
+    if isinstance(nodes, dict):
+        report["in_process_runs"] = report["isolated_runs"] = nodes
+    else:
+        report["in_process_runs"] = _guarded(functools.partial(_in_process_runs, nodes))
+        report["isolated_runs"] = _guarded(functools.partial(_isolated_runs, nodes))
 
     print(MARKER + json.dumps(report))
 
