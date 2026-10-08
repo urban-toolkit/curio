@@ -42,8 +42,11 @@ def _interrupted(seconds):
     raise KeyboardInterrupt
 
 
-def _start(monkeypatch, *, must_build, deploy=True, failing_check=None):
-    """Run ``curio.py start`` with every step recorded instead of done.
+def _start(monkeypatch, *, must_build, deploy=True, failing_check=None, server="all", seed=None):
+    """Run ``curio.py start <server>`` with every step recorded instead of done.
+
+    *seed*, when given, is what the DuckDB extension step also does, so a test
+    can see where the extensions land.
 
     Returns the order of the steps, the servers, and how main() exited.
     """
@@ -51,16 +54,18 @@ def _start(monkeypatch, *, must_build, deploy=True, failing_check=None):
     servers = {name: _Server(name) for name in ("backend", "sandbox", "frontend")}
     flag = threading.Event()
 
-    def step(name, result=None):
+    def step(name, result=None, then=None):
         def run(*args, **kwargs):
             steps.append(name)
             if name == failing_check:
                 raise SystemExit(1)
+            if then is not None:
+                then()
             return result
         return run
 
     # What main() changes outside itself, each put back after the test.
-    monkeypatch.setattr("sys.argv", ["curio.py", "start", *(["--deploy"] if deploy else [])])
+    monkeypatch.setattr("sys.argv", ["curio.py", "start", server, *(["--deploy"] if deploy else [])])
     monkeypatch.setattr(logs, "verbosity", logs.verbosity)
     monkeypatch.setattr(lifecycle, "processes", [])
     monkeypatch.setattr(lifecycle, "shutdown_flag", flag)
@@ -79,7 +84,7 @@ def _start(monkeypatch, *, must_build, deploy=True, failing_check=None):
     monkeypatch.setattr(launcher, "_skip_dep_install", lambda: False)
     monkeypatch.setattr(launcher, "install_framework_requirements", step("framework requirements"))
     monkeypatch.setattr(launcher, "install_manifest_dependencies", step("manifest dependencies"))
-    monkeypatch.setattr(launcher, "seed_duckdb_extensions", step("duckdb extensions"))
+    monkeypatch.setattr(launcher, "seed_duckdb_extensions", step("duckdb extensions", then=seed))
     monkeypatch.setattr(launcher, "start_backend", step("backend", servers["backend"]))
     monkeypatch.setattr(launcher, "start_sandbox", step("sandbox", servers["sandbox"]))
     monkeypatch.setattr(launcher, "start_frontend", step("frontend", servers["frontend"]))
