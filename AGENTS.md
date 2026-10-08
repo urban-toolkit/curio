@@ -10,7 +10,7 @@ Curio is a framework for urban visual analytics built on dataflows: a React canv
 - `utk_curio/sandbox/`: Flask service that runs node Python and JavaScript and stores results as DuckDB artifacts.
 - `utk_curio/llm-prompts/`: built-in agent prompts, and `examples.md`, the index of shipped dataflows that runs get as worked examples (`agents/application/turns/examples.py`).
 - `utk_curio/common/`: code shared by backend and sandbox (`redaction.py`).
-- `utk_curio/shipped.py`: where `packages/`, `datasets/`, `discovery/`, `models/`, `scripts/` and `vendor/` are: beside `utk_curio/` in a clone, `utk_curio/_shipped/` in a pip install. Every reader of them asks it.
+- `utk_curio/shipped.py`: where `packages/`, `datasets/`, `discovery/`, `models/`, `scripts/`, `vendor/` and the parts of `docs/` Curio reads are: beside `utk_curio/` in a clone, `utk_curio/_shipped/` in a pip install. Every reader of them asks it.
 - `utk_curio/tools/`: operator tools outside the Flask app (`agent_eval.py`, `preview_runner.py`).
 - `packages/`: shipped Node Catalog, one directory per node package (`manifest.json`, `sources/`, `integrity.json`).
 - `datasets/`: shipped Data Catalog, one directory per dataset (`manifest.json`, `data/`).
@@ -86,7 +86,7 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
   - `screenshots.py`: `save_workflow_test_screenshot`, `MAX_DIFF_RATIO`, mint and re-mint, `frame_nodes`, `dump_browser_log`.
   - `closeups.py`: `save_node_closeup`, the close-up budgets, viewport hints. `dialogs.py`: `accept_confirm_dialog`, `wait_for_drawer_closed`, `leave_agent_badge`.
   - `interactions.py`: interaction frames, brush and mark probes.
-  - `servers.py`: ports, `e2e_existing_servers`.
+  - `servers.py`: ports, `e2e_existing_servers`, `serve_built_frontend` (the production page server on the built bundle, host-side).
   - `auth.py`: UI signup, the projects page, `require_owner_view`.
   - `db_stubs.py`: `stub_db_user`, `stub_db_login`, `stub_login_and_enter_workflow`, `api_json`.
   - `catalog_clock.py`: `CATALOG_CALENDAR`, the fixed date that tests marked `catalog_calendar` run on (conftest.py).

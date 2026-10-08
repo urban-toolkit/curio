@@ -206,6 +206,8 @@ focus in the URL (`settingsPath`, read back by `focusFromSearch`).
 
 When a node produces output, it calls `outputCallback(nodeId, output)`, which updates `outputs`. React re-renders cause downstream nodes (those connected by an edge from the node that just executed) to detect the new input and request the data from the backend.
 
+Opening a dataflow (`ProjectLoader`) and dropping a scenario restore saved outputs: they go into `outputs`, and `hydrateRestoredOutputs` (`providers/flow/useApplyOutput.ts`) hands each one to the nodes below its producer, once, along the edges the load built. The load's replay of its saved edges through `onConnect` hands over no output of a node the load added; an edge from a node already on the canvas (Duplicate selection wiring a copy) hands over that node's output, as a new connection does.
+
 ### The notebook view
 
 The notebook view shows the canvas's own nodes and edges as a column of cells, with
@@ -1005,10 +1007,10 @@ startup audit reports it if it ever becomes writable.
 
 ### Where the shipped folders are
 
-The repository keeps the folders Curio ships beside its code next to `utk_curio/`: `datasets/`, `discovery/`, `models/`, `packages/`, `scripts/` and `vendor/`. [`utk_curio/shipped.py`](../utk_curio/shipped.py) `path` says where one is on this machine, and every reader asks it: the four catalogs' roots, the launcher's manifest walk and DuckDB seeding, the `/file/vendor/duckdb-extensions/` route, `workflow_spec`'s scan of the shipped code nodes, `curio test` and the agents' prompt fields.
+The repository keeps the folders Curio ships beside its code next to `utk_curio/`: `datasets/`, `discovery/`, `models/`, `packages/`, `scripts/` and `vendor/`, and `docs/`, of which Curio reads the dataflows it ships (`docs/examples/*.json` and `docs/examples/dataflows/*.json`), the Example storage source's folder (`docs/examples/data/storage/`), the prompt fixtures (`docs/examples/prompts/`) and two schemas (`docs/schemas/trill.v1.json` and `example-prompt-fixture.v1.json`). [`utk_curio/shipped.py`](../utk_curio/shipped.py) `path` says where one is on this machine, and every reader asks it: the four catalogs' roots, a shipped folder source's root, the launcher's manifest walk and DuckDB seeding, the `/file/vendor/duckdb-extensions/` route, `workflow_spec`'s scan of the shipped code nodes, `curio test`, the agents' prompt fields, the shipped dataflows (`projects/shipped.py`) with the worked examples' index, and the agent evaluation's fixtures.
 
 - A clone, the Docker image and CI: next to `utk_curio/`.
-- A pip install: `utk_curio/_shipped/<folder>/`. `setup.py` maps each folder into the wheel there, so the wheel installs nothing in site-packages but `utk_curio/` and its dist-info, where a `datasets/` of Curio's would mix with Hugging Face's `datasets` package. The sdist keeps the repository's layout, and `MANIFEST.in` says which files ship.
+- A pip install: `utk_curio/_shipped/<folder>/`. `setup.py` maps each folder into the wheel there, so the wheel installs nothing in site-packages but `utk_curio/` and its dist-info, where a `datasets/` of Curio's would mix with Hugging Face's `datasets` package. The sdist keeps the repository's layout, and `MANIFEST.in` says which files ship: of `docs/`, only the files above and the credits of the Example storage's Mapillary photos.
 
 The layout is decided once, by whether `utk_curio/_shipped/` exists, never folder by folder. The `CURIO_CATALOG_ROOT`, `CURIO_DISCOVERY_ROOT`, `CURIO_MODELS_ROOT` and `CURIO_PACKAGES_ROOT` overrides come first.
 
@@ -1037,9 +1039,12 @@ runtimes read that copy:
   instead. DuckDB's own setting for this (`custom_extension_repository`) is not
   reachable: autk-db installs the extension inside `init()`, before Curio holds
   a connection, and the worker has its own global scope.
-- **Sandbox.** `cli/dependencies.py::seed_duckdb_extensions` copies them into
-  `~/.duckdb/extensions/extensions.duckdb.org/`, which is where duckdb-wasm
-  looks before downloading. Nothing is intercepted there.
+- **Node.** autk-db runs in the sandbox's Node (Autark's data path) and in the
+  backend's (the Discovery Catalog's OpenStreetMap downloads). Each `curio.py
+  start` that runs either one (`all`, `backend` or `sandbox`) calls
+  `cli/dependencies.py::seed_duckdb_extensions`, which copies them into
+  `~/.duckdb/extensions/extensions.duckdb.org/`, where duckdb-wasm looks before
+  downloading. Nothing is intercepted there.
 
 Both fall back to the CDN for a file this checkout does not carry, so a newer
 `@duckdb/duckdb-wasm` keeps working before its extensions are vendored; see

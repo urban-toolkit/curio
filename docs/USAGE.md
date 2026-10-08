@@ -165,7 +165,7 @@ Curio's frontend will be available at http://localhost:8080 by default.
 > [!NOTE]
 > The pip installation includes a pre-built frontend and does not support rebuilding it. If you need to modify or rebuild the frontend, please use the manual installation method described below.
 
-A pip install keeps the datasets, Discovery sources, models and node packages that Curio's catalogs ship, its scripts and DuckDB's extensions in `utk_curio/_shipped/` in site-packages. It puts nothing in site-packages but `utk_curio/` and its metadata.
+A pip install keeps the datasets, Discovery sources, models and node packages that Curio's catalogs ship, its scripts, DuckDB's extensions, and the example dataflows and the Example storage folder from `docs/` in `utk_curio/_shipped/` in site-packages. It puts nothing in site-packages but `utk_curio/` and its metadata.
 
 Autark data nodes and OpenStreetMap downloads need Node.js 26 and npm (`conda install -c conda-forge nodejs=26`). On every start, `curio start` installs their Node.js packages with `npm install` into `.curio/nodejs/` in the folder you start Curio from.
 
@@ -1127,10 +1127,10 @@ running anything.
   The page is served with its data inside it, so a viewer needs no account and the
   dashboard keeps working if the server is unreachable.
 
-Two dashboards cannot be served this way, and both say so when you open them: one whose
-data is too large to travel with the page (25 MB), and one with a pinned Autark tile that
-loads its own data. For the second, move the tile's `data` section into its own node
-upstream so its output is saved.
+Two dashboards cannot be served this way: one whose data is too large to travel with the
+page (25 MB), and one with a pinned Autark tile that loads its own data. Opening either
+shows why, naming the nodes to change, and draws nothing. For the second, move the tile's
+`data` section into its own node upstream so its output is saved.
 
 An Autark map tile draws in the viewer's browser, so it needs WebGPU there. A map over a
 raster draws too: the raster travels with the page, and its size counts toward the 25 MB.

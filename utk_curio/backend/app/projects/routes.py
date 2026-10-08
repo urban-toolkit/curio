@@ -177,6 +177,10 @@ def get_dashboard_payload(project_id: str):
     breakdown, not a truncated payload. Falling back to fetching would produce a
     page that looks standalone and is not, and the owner would only find out
     when somebody opened it where the server is unreachable.
+
+    Both refusals name the dataflow too: the page server carries a refusal in
+    the page instead of the data (``cli/static_server.py``), and the page shows
+    it under the dataflow's name.
     """
     from utk_curio.backend.app.projects.dashboard_payload import (
         DashboardCannotBeStandaloneError,
@@ -191,10 +195,11 @@ def get_dashboard_payload(project_id: str):
         # A tile that loads its own data cannot be published as a page that
         # needs no server. Named here so the owner can move the data upstream,
         # where its output is saved and travels with the page.
-        return jsonify({"error": exc.describe(), "tiles": exc.offenders}), 409
+        return jsonify({"error": exc.describe(), "tiles": exc.offenders, "name": exc.name}), 409
     except DashboardTooLargeError as exc:
         return jsonify({
             "error": exc.describe(),
+            "name": exc.name,
             "totalBytes": exc.total_bytes,
             "limitBytes": exc.limit_bytes,
             "heaviest": [

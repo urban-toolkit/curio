@@ -7,10 +7,15 @@
  * thing that reads that payload; everything that would otherwise fetch asks here
  * first and falls back to the network when the answer is null.
  *
- * Null is a normal answer, not a failure. A dashboard too large to embed, a
- * backend that was down when the page was served, and the webpack dev server
- * (which cannot inject) all produce an ordinary page that fetches for itself.
- * That is the behaviour this feature replaces, so degrading to it is safe.
+ * Null is a normal answer, not a failure. A backend that was down when the page
+ * was served, and the webpack dev server (which cannot inject), produce an
+ * ordinary page that fetches for itself. That is the behaviour this feature
+ * replaces, so degrading to it is safe.
+ *
+ * A dashboard the backend refuses to build as a page of its own, too large to
+ * carry or with a tile that loads its own data, is not null: its page carries
+ * the backend's reason instead of the data (`refused`), says it, and fetches
+ * nothing, since fetching the data instead is what the refusal rules out.
  *
  * Read once and frozen: the payload is a document the page was served with, not
  * state. Re-reading it per call would re-parse megabytes of rows.
@@ -41,9 +46,22 @@ export interface EmbeddedRaster {
   message?: string;
 }
 
+/**
+ * Why the backend would not build the dashboard as a page of its own, carried
+ * in place of its spec and rows (`cli/static_server.py`).
+ */
+export interface DashboardRefusal {
+  /** The backend's answer: 413 over the page's size limit, 409 a tile that loads its own data. */
+  status: number;
+  /** The backend's own words, which name the nodes or tiles to change. */
+  message: string;
+}
+
 export interface EmbeddedDashboard {
   meta: { projectId?: string; name?: string | null; generatedAt?: string };
   spec: any;
+  /** Set, with `meta` and nothing else, when the backend refused to build the page. */
+  refused?: DashboardRefusal;
   /** Keyed by the manifest filename a tile looks up, exactly as `/get` is. */
   outputs: Record<string, EmbeddedEnvelope>;
   /** The rasters its Autark maps read, by filename and part. */
@@ -99,6 +117,12 @@ export function getEmbeddedDashboard(): EmbeddedDashboard | null {
 /** True when this page can render without reaching the network. */
 export function isStandaloneDashboard(): boolean {
   return getEmbeddedDashboard() !== null;
+}
+
+/** Why the backend refused to build this page, when it was served with that instead of its data. */
+export function dashboardRefusal(): DashboardRefusal | null {
+  const refused = getEmbeddedDashboard()?.refused;
+  return refused && typeof refused.message === "string" ? refused : null;
 }
 
 /**

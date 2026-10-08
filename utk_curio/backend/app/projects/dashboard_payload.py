@@ -96,14 +96,22 @@ class DashboardTooLargeError(Exception):
     """Raised when the embedded rows would exceed the page budget.
 
     Carries the per-output breakdown so the caller can tell the owner which
-    tile to aggregate rather than just quoting a number at them.
+    tile to aggregate rather than just quoting a number at them, and the
+    dataflow's *name*, which the page that shows the refusal is titled with.
     """
 
-    def __init__(self, total_bytes: int, limit_bytes: int, weights: Sequence[TileWeight]):
+    def __init__(
+        self,
+        total_bytes: int,
+        limit_bytes: int,
+        weights: Sequence[TileWeight],
+        name: Optional[str] = None,
+    ):
         self.total_bytes = total_bytes
         self.limit_bytes = limit_bytes
         # Heaviest first: the first line of the message is the thing to fix.
         self.weights = sorted(weights, key=lambda w: w.bytes, reverse=True)
+        self.name = name
         super().__init__(self.describe())
 
     def describe(self) -> str:
@@ -173,11 +181,14 @@ class DashboardCannotBeStandaloneError(Exception):
     Same channel as the size refusal, and for the same reason: a page that looks
     standalone and is not is worse than one that refuses to be built. The owner
     finds out here, where they can change the dataflow, rather than from a
-    viewer who opened the link somewhere the server cannot be reached.
+    viewer who opened the link somewhere the server cannot be reached. Carries
+    the dataflow's *name* for the page that shows the refusal, as the size
+    refusal does.
     """
 
-    def __init__(self, offenders: Sequence[str]):
+    def __init__(self, offenders: Sequence[str], name: Optional[str] = None):
         self.offenders = list(offenders)
+        self.name = name
         super().__init__(self.describe())
 
     def describe(self) -> str:
@@ -277,7 +288,7 @@ def dashboard_source_node_ids(spec: dict) -> Set[str]:
     return sources
 
 
-def _refuse_tiles_that_fetch_their_own_data(spec: dict) -> None:
+def _refuse_tiles_that_fetch_their_own_data(spec: dict, name: Optional[str] = None) -> None:
     """Refuse a dashboard whose pinned tiles would still call out to draw."""
     dataflow = (spec or {}).get("dataflow") or {}
     offenders: List[str] = []
@@ -289,7 +300,7 @@ def _refuse_tiles_that_fetch_their_own_data(spec: dict) -> None:
         if _autark_spec_has_data_sources(node):
             offenders.append(str(node.get("id") or "a tile"))
     if offenders:
-        raise DashboardCannotBeStandaloneError(offenders)
+        raise DashboardCannotBeStandaloneError(offenders, name=name)
 
 
 #: The envelope kinds of a frame, which hold rows rather than other envelopes.
@@ -431,9 +442,10 @@ def build_dashboard_payload(
     tile it feeds shows its own empty state, which is the same thing that
     happens today when an artifact has gone. So is a raster the sandbox could
     not be asked for. A dashboard over *limit_bytes* raises
-    :class:`DashboardTooLargeError`.
+    :class:`DashboardTooLargeError`. Both refusals carry *meta*'s ``name``.
     """
-    _refuse_tiles_that_fetch_their_own_data(spec)
+    name = (meta or {}).get("name")
+    _refuse_tiles_that_fetch_their_own_data(spec, name=name)
 
     needed = dashboard_source_node_ids(spec)
 
@@ -481,7 +493,7 @@ def build_dashboard_payload(
 
     total = sum(weight.bytes for weight in weights)
     if total > limit_bytes:
-        raise DashboardTooLargeError(total, limit_bytes, weights)
+        raise DashboardTooLargeError(total, limit_bytes, weights, name=name)
 
     return DashboardPayload(
         spec=spec,

@@ -4,10 +4,10 @@ of the build is in pyproject.toml, and MANIFEST.in says which files ship.
 - Curio's code: ``utk_curio`` and every package in it.
 - The folders the repository keeps beside ``utk_curio/`` (``datasets/``,
   ``discovery/``, ``models/``, ``packages/``, ``scripts/`` and ``vendor/``),
-  at ``utk_curio/_shipped/<folder>/``, where a pip install reads them
-  (``utk_curio/shipped.py``). A pip install then puts nothing in
-  site-packages but ``utk_curio/`` and its dist-info. The sdist keeps them
-  where the repository has them.
+  and the files of ``docs/`` Curio reads, at ``utk_curio/_shipped/<folder>/``,
+  where a pip install reads them (``utk_curio/shipped.py``). A pip install
+  then puts nothing in site-packages but ``utk_curio/`` and its dist-info.
+  The sdist keeps them where the repository has them.
 - The repository's package.json and package-lock.json, at
   ``utk_curio/sandbox/nodejs/``, where a pip install's launcher reads them
   (SHIPPED_PACKAGE_FILES in utk_curio/sandbox/util/node_runtime.py).
@@ -26,7 +26,7 @@ PACKAGE_FILES = ("package.json", "package-lock.json")
 #: The folders the repository keeps beside utk_curio/ (FOLDERS in
 #: utk_curio/shipped.py), and the package that carries them in the wheel
 #: (IN_THE_PACKAGE there).
-SHIPPED_FOLDERS = ("datasets", "discovery", "models", "packages", "scripts", "vendor")
+SHIPPED_FOLDERS = ("datasets", "discovery", "docs", "models", "packages", "scripts", "vendor")
 SHIPPED_PACKAGE = "utk_curio._shipped"
 
 

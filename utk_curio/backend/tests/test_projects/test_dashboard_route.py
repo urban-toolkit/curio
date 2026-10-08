@@ -341,3 +341,70 @@ def test_a_raster_over_the_page_limit_is_refused_in_the_limits_own_words(
     assert body["heaviest"][0]["dataType"] == "raster"
     assert body["totalBytes"] > body["limitBytes"] == 4096
     assert "over the 4 KB limit" in body["error"]
+
+
+# ---------------------------------------------------------------------------
+# A refusal is what the page shows
+# ---------------------------------------------------------------------------
+#
+# The page server carries a refusal in the page instead of the data, and the
+# page shows it (cli/static_server.py). This body is all it has, so it names
+# the dataflow too, for the page's bar.
+
+def test_a_dashboard_too_large_to_embed_is_refused_by_its_dataflows_name(
+    client, user_and_token, tmp_curio, monkeypatch
+):
+    _, token = user_and_token
+    pid = _create(client, token)
+    from utk_curio.backend.app.projects import dashboard_payload
+
+    monkeypatch.setattr(dashboard_payload, "DEFAULT_PAYLOAD_LIMIT_BYTES", 512)
+    monkeypatch.setattr(
+        services,
+        "_dashboard_envelope_reader",
+        lambda: lambda filename: {"dataType": "dataframe", "data": {"a": list(range(500))}, "schema": {}},
+    )
+    monkeypatch.setattr(
+        services,
+        "load_shared_project",
+        lambda project_id: {
+            "project": type("D", (), {"name": "Trips by hour"})(),
+            "spec": _spec_with_pinned_chart(),
+            "outputs": [{"node_id": "py", "filename": "py.parquet", "data_type": "dataframe"}],
+        },
+    )
+
+    resp = client.get(f"/api/projects/{pid}/dashboard")
+
+    assert resp.status_code == 413
+    assert resp.get_json().get("name") == "Trips by hour", (
+        "the refusal does not name its dataflow, so the page that shows it cannot either"
+    )
+
+
+def test_a_tile_that_loads_its_own_data_is_refused_by_name(client, user_and_token, tmp_curio):
+    _, token = user_and_token
+    spec = _spec_with_pinned_chart()
+    spec["dataflow"]["nodes"][1] = {
+        "id": "map",
+        "type": "curio.builtin/autk-grammar",
+        "x": 300,
+        "y": 0,
+        "dashboardPinned": True,
+        "content": json.dumps({
+            "data": [{"id": "parks", "type": "osm"}],
+            "map": {"layerRefs": [{"dataRef": "parks"}]},
+        }),
+    }
+    pid = _create(client, token, spec=spec)
+
+    resp = client.get(f"/api/projects/{pid}/dashboard")
+
+    assert resp.status_code == 409
+    body = resp.get_json()
+    # The tile to change, in the refusal's own words.
+    assert body["tiles"] == ["map"]
+    assert "map" in body["error"]
+    assert body.get("name") == "Dashboard", (
+        "the refusal does not name its dataflow, so the page that shows it cannot either"
+    )

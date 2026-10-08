@@ -108,6 +108,7 @@ from .servers import (  # noqa: F401
     wait_for_port,
     e2e_existing_servers,
     base_url,
+    serve_built_frontend,
 )
 from .auth import (  # noqa: F401
     DEFAULT_TEST_PASSWORD,

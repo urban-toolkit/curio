@@ -770,10 +770,10 @@ def test_an_autark_map_tile_draws_when_webgpu_answers_after_its_rows(
 
     A map asks for WebGPU when its input lands and draws once the answer is
     yes. The Data Pool feeding this map hands its rows on with every fetch
-    that lands, and opening the dashboard delivers the saved output to it
-    twice, so the map gets two inputs. On a GPU that is slow to answer (the
-    arcade runners, which share one GPU; a GPU process still starting) both
-    landed before the answer, both draws ran in one tick, and two ``sendCode``
+    that lands, so the map can get a second input while it waits. On a GPU
+    that is slow to answer (the arcade runners, which share one GPU; a GPU
+    process still starting) both inputs could land before the answer, both
+    draws then ran in one tick, and two ``sendCode``
     calls in one tick cancel each other: the map sat at "running" under "Not
     drawn yet" until the wait below ran out. Here WebGPU takes
     ``WEBGPU_ANSWER_MS`` to answer on every runner.
