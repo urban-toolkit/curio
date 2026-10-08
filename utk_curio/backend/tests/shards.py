@@ -20,9 +20,9 @@ the launcher log. ``CURIO_STATE_DIR`` relocates all of that at once; see
 What deliberately does NOT move:
 
 * ``CURIO_LAUNCH_CWD`` -- it is also the DATA root. ``GET /file/<path>`` serves
-  ``docs/examples/data/*.pbf`` relative to it, and ``safe_paths.is_within``
-  resolves symlinks before checking containment, so a per-shard copy or link
-  farm 403s every autark PBF fetch (issue #248 again). It stays the repo root.
+  files relative to it, and ``safe_paths.is_within`` resolves symlinks before
+  checking containment, so a per-shard copy or link farm 403s every such
+  fetch. It stays the repo root.
 * the frontend -- one webpack build, one dev server. The bundle picks its
   backend at runtime from ``window.__CURIO_BACKEND_URL__``, which the
   ``browser`` fixture injects per context (``src/utils/backendUrl.ts``).

@@ -903,12 +903,14 @@ Five design points worth knowing:
   catalog entry. With an execution account the child's cwd is a per-user work
   directory (`.curio/exec-scratch/users/<key>/`), which is the one place it may
   write: it is `0700` and owned by the execution account, it persists between
-  runs, and a `docs` symlink is dropped in so the bundled examples' relative
-  reads still resolve. A relative write anywhere else fails, since the launch
-  tree is root-owned by then. The child's scratch directory also holds numba's
-  cache (`NUMBA_CACHE_DIR`, `child.point_numba_at_scratch`): numba refuses to
-  import a library that compiles with `cache=True` unless it can write beside
-  the library or under HOME, and the execution account can do neither.
+  runs, and a `docs` symlink to the `docs/` Curio ships ([Where the shipped
+  folders are](#where-the-shipped-folders-are)) is dropped in so the shipped
+  examples' relative reads still resolve. A relative write anywhere else fails,
+  since the launch tree is root-owned by then. The child's scratch directory
+  also holds numba's cache (`NUMBA_CACHE_DIR`, `child.point_numba_at_scratch`):
+  numba refuses to import a library that compiles with `cache=True` unless it
+  can write beside the library or under HOME, and the execution account can do
+  neither.
 - **No pickle in either direction.** A child's manifest carries a kind tag,
   JSON scalars, and flat filenames only. Unpickling a hostile child's output in
   the privileged parent would hand back most of what isolation removed.
@@ -1007,10 +1009,12 @@ startup audit reports it if it ever becomes writable.
 
 ### Where the shipped folders are
 
-The repository keeps the folders Curio ships beside its code next to `utk_curio/`: `datasets/`, `discovery/`, `models/`, `packages/`, `scripts/` and `vendor/`, and `docs/`, of which Curio reads the dataflows it ships (`docs/examples/*.json` and `docs/examples/dataflows/*.json`), the Example storage source's folder (`docs/examples/data/storage/`), the prompt fixtures (`docs/examples/prompts/`) and two schemas (`docs/schemas/trill.v1.json` and `example-prompt-fixture.v1.json`). [`utk_curio/shipped.py`](../utk_curio/shipped.py) `path` says where one is on this machine, and every reader asks it: the four catalogs' roots, a shipped folder source's root, the launcher's manifest walk and DuckDB seeding, the `/file/vendor/duckdb-extensions/` route, `workflow_spec`'s scan of the shipped code nodes, `curio test`, the agents' prompt fields, the shipped dataflows (`projects/shipped.py`) with the worked examples' index, and the agent evaluation's fixtures.
+The repository keeps the folders Curio ships beside its code next to `utk_curio/`: `datasets/`, `discovery/`, `models/`, `packages/`, `scripts/` and `vendor/`, and `docs/`, of which Curio reads the dataflows it ships (`docs/examples/*.json` and `docs/examples/dataflows/*.json`), the example data their nodes read by its path (the files of `docs/examples/data/` they name), the Example storage source's folder (`docs/examples/data/storage/`), the prompt fixtures (`docs/examples/prompts/`) and two schemas (`docs/schemas/trill.v1.json` and `example-prompt-fixture.v1.json`). [`utk_curio/shipped.py`](../utk_curio/shipped.py) `path` says where one is on this machine, and every reader asks it: the four catalogs' roots, a shipped folder source's root, the launcher's manifest walk and DuckDB seeding, the `/file/vendor/duckdb-extensions/` and `/file/docs/examples/data/` routes, an isolated run's `docs` link, node code's relative paths in `docs/`, `workflow_spec`'s scan of the shipped code nodes, `curio test`, the agents' prompt fields, the shipped dataflows (`projects/shipped.py`) with the worked examples' index, and the agent evaluation's fixtures.
 
 - A clone, the Docker image and CI: next to `utk_curio/`.
-- A pip install: `utk_curio/_shipped/<folder>/`. `setup.py` maps each folder into the wheel there, so the wheel installs nothing in site-packages but `utk_curio/` and its dist-info, where a `datasets/` of Curio's would mix with Hugging Face's `datasets` package. The sdist keeps the repository's layout, and `MANIFEST.in` says which files ship: of `docs/`, only the files above and the credits of the Example storage's Mapillary photos.
+- A pip install: `utk_curio/_shipped/<folder>/`. `setup.py` maps each folder into the wheel there, so the wheel installs nothing in site-packages but `utk_curio/` and its dist-info, where a `datasets/` of Curio's would mix with Hugging Face's `datasets` package. The sdist keeps the repository's layout, and `MANIFEST.in` says which files ship: of `docs/`, only the files above and the credits of the Example storage's Mapillary photos. `test_pip_wheel_layout.py` checks that the wheel carries exactly those, the example data as the shipped dataflows' nodes name it.
+
+Node code reads files by a path relative to the folder it runs in: the folder Curio started from, or an isolated run's work directory, whose `docs` link leads to the shipped `docs/`. [`sandbox/util/user_code.py`](../utk_curio/sandbox/util/user_code.py) defines a node's `userCode` for the in-process path and the isolated child: a string literal in the code that is a relative path in `docs/`, which that folder does not hold and Curio ships, becomes the absolute path of the shipped file, and the rest of the code compiles as it is, with its line numbers. A clone, the Docker image and CI run node code in a folder that holds `docs/`, so there nothing is rewritten and nothing is written into the folder Curio started from.
 
 The layout is decided once, by whether `utk_curio/_shipped/` exists, never folder by folder. The `CURIO_CATALOG_ROOT`, `CURIO_DISCOVERY_ROOT`, `CURIO_MODELS_ROOT` and `CURIO_PACKAGES_ROOT` overrides come first.
 
@@ -1505,7 +1509,7 @@ A key must never be a literal in node code: the code is saved into the dataflow,
 
 ### Evaluation
 
-`agents/evaluation/` is an offline library that the reconstruction tests and `utk_curio/tools/agent_eval.py` use to measure whether the Dataflow Builder can rebuild a shipped example from its prompt fixture under [`docs/examples/prompts/`](examples/prompts/README.md). The agent receives the prompt and nothing else. The run is the ordinary product path in a project marked with `dataflow.evaluation` (the Dataflow Builder attached, one message, Apply, then Solve), and deterministic code compares what lands on disk with the example: template ids and roles, topology, dataset and package references, invented names, node intents and Solve's verdicts. A construct the agent contract cannot express is a named capability gap, and a live run writes a report that gates nothing. `agent_eval run` writes `.curio/eval/<runId>/report.json` and `report.md`; `--model` runs on a temporary copy of the Dataflow Builder's configuration with that model and puts the Builder's choice back afterwards.
+`agents/evaluation/` is an offline library that the reconstruction tests and `utk_curio/tools/agent_eval.py` use to measure whether the Dataflow Builder can rebuild a shipped example from its prompt fixture under [`docs/examples/prompts/`](examples/prompts/README.md). The agent receives the prompt and nothing else. The run is the ordinary product path in a project marked with `dataflow.evaluation` (the Dataflow Builder attached, one message, Apply, then Solve), and deterministic code compares what lands on disk with the example: template ids and roles, topology, dataset and package references, invented names, node intents and Solve's verdicts. A construct the agent contract cannot express is a named capability gap, and a live run writes a report that gates nothing. `agent_eval run` writes `eval/<runId>/report.json` and `report.md` in Curio's state directory (`.curio/` in the folder it runs from, or `CURIO_STATE_DIR`), or under `--out`; `--model` runs on a temporary copy of the Dataflow Builder's configuration with that model and puts the Builder's choice back afterwards.
 
 ```bash
 # the deterministic tiers (offline, no stack)
@@ -1790,7 +1794,7 @@ The backend is a Flask application in `utk_curio/backend/`. Routes are split acr
 | `/get` | GET | Download an artifact by id (Arrow IPC when the client asks for it). A name the session-tagged store cannot serve falls back to the shared data directory, where a project load hydrates that project's saved outputs, so they are readable by anyone who can load the project |
 | `/get-preview` | GET | First N rows + metadata of an artifact, for DataPool display |
 | `/raster` | GET | A raster artifact (or one `part` of a tuple) as GeoTIFF bytes for an Autark node, described in the `X-Curio-Raster` header; 413 with its size over `maxCells` or `maxSide`. A raster output the session-tagged store cannot serve falls back to its hydrated copy, as `/get` does |
-| `/file/<path>` | GET | Serve a file relative to `CURIO_LAUNCH_CWD` so browser-side nodes can fetch binary assets (PBF, GeoTIFF) by the same relative path Python nodes use. Unauthenticated, so it refuses hidden paths and Curio's own state: the instance folder, the `.curio` state root, the shared data directory, the dataset hub and the SQLite database. `vendor/duckdb-extensions/` comes from Curio's own copy instead ([Where the shipped folders are](#where-the-shipped-folders-are)) |
+| `/file/<path>` | GET | Serve a file relative to `CURIO_LAUNCH_CWD` so browser-side nodes can fetch binary assets (PBF, GeoTIFF) by the same relative path Python nodes use. Unauthenticated, so it refuses hidden paths and Curio's own state: the instance folder, the `.curio` state root, the shared data directory, the dataset hub and the SQLite database. `vendor/duckdb-extensions/` and `docs/examples/data/` come from the folders Curio ships instead ([Where the shipped folders are](#where-the-shipped-folders-are)) |
 | `/starters` | GET | Per-template starter source bodies from every installed package |
 | `/spatial_join` | POST | Spatial join of two GeoJSON inputs (see `common/spatial.py`) |
 

@@ -372,12 +372,12 @@ _DATA_DIR_REF = re.compile(r"docs/examples/data/([A-Za-z0-9_.<>/-]*)")
 def test_examples_read_their_data_from_the_catalog(basename):
     """Every tabular/raster/vector input resolves by dataset id, not by path.
 
-    A literal ``docs/examples/data/x.csv`` in an example node works on a repo
-    checkout and nowhere else: the path is relative to the folder Curio starts
-    from, which has no such tree in a pip install, and an isolated sandbox
-    cannot reach one. That
-    portability is the whole point of moving these into the Data Catalog, and a
-    single un-migrated node is enough to make an example machine-specific again.
+    A literal ``docs/examples/data/x.csv`` in an example node reads a file the
+    Data Catalog does not know, and outside a repo checkout only if the pip
+    package ships it, which it does only for the files the shipped dataflows
+    read. Portability is the whole point of moving these into the Data
+    Catalog, and a single un-migrated node is enough to make an example
+    machine-specific again.
 
     The ``.md`` is checked alongside the ``.json`` because a stale prose
     reference is invisible to ``test_example_docs_parity`` -- that only compares

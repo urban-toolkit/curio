@@ -26,8 +26,9 @@ export const SANDBOX_BACKEND_URL_TOKEN = '__CURIO_BACKEND_URL__';
 // Resolve relative URLs in data source specs to the Curio backend's /file/
 // route, which serves files by their path *relative to CURIO_LAUNCH_CWD* — the
 // same root and relative-path convention the Python sandbox uses. So users can
-// write the CURIO_LAUNCH_CWD-relative path 'docs/examples/data/file.pbf' (no
-// host/port, no route prefix) exactly as a Python node would read it.
+// write the CURIO_LAUNCH_CWD-relative path 'my-data/file.pbf' (no host/port, no
+// route prefix) exactly as a Python node would read it. The shipped examples'
+// 'docs/examples/data/...' extracts come from where Curio keeps them.
 // Absolute URIs (http://, https://, data:, blob:, …) are passed through unchanged.
 // Applies to all file-URL fields across every data source type.
 //

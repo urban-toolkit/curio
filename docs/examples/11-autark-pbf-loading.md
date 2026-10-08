@@ -35,7 +35,7 @@ named-layer case of Autark's two upstream-referencing mechanisms; see
 ## Step 1: Load the OSM layer stack from a PBF (`pbf-load`)
 
 The `data` block points `pbfFileUrl` at `docs/examples/data/lower_mnt.osm.pbf`, the same
-`CURIO_LAUNCH_CWD`-relative path a Python node would read from disk. The behavior prepends
+path a Python node would read from disk. The behavior prepends
 `BACKEND_URL` + `/file/` at run time, the backend serves the raw bytes from
 `GET /file/docs/examples/data/lower_mnt.osm.pbf`, and DuckDB-WASM parses the PBF in the browser. With no
 `map`/`plot` block, the node emits its five layer tables downstream as a layer array.

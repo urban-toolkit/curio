@@ -217,7 +217,6 @@ def execute_isolated(
         work_dir = supervisor.prepare_user_work_dir(
             supervisor.user_work_dir(str(_shared_data_dir()), user_key),
             exec_uid=config.exec_uid,
-            launch_dir=launch_dir,
         )
         # #332: the libraries this user installed. Prepared rather than merely
         # located, so a user who has installed nothing still gets an empty
