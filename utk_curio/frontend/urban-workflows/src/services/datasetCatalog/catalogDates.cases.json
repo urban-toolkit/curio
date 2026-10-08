@@ -1,5 +1,5 @@
 {
-  "description": "How the catalog reads dataset dates as times: catalogDates.ts and its twin datasets/domain/catalog_dates.py. Each of cases lists its items in the order the catalog's Recent activity lists them; each of groups gives the dates of a layer group's layers and the date the group takes. Read by src/tests/services/catalogDatesCases.test.ts (the canvas's Data palette) and by backend/tests/test_datasets/test_catalog_dates.py (the catalog listing and its layer groups).",
+  "description": "How the catalog orders datasets and reads their dates as times: catalogDates.ts and its twin datasets/domain/catalog_dates.py. Each of cases lists its items in the order the catalog's Recent activity lists them, the order the canvas's Data palette shows them in (a layer group where its first layer is listed). Each of groups gives the dates of a layer group's layers and the date the group takes. Read by src/tests/services/catalogDatesCases.test.tsx (the Data palette and its layer groups) and by backend/tests/test_datasets/test_catalog_dates.py (the catalog listing and its layer groups).",
   "cases": [
     {
       "name": "a millisecond date and a whole second date in one second",
@@ -79,6 +79,16 @@
         {"id": "u14", "title": "m", "updatedAt": "2026-10-07T10:00:00+24:00"},
         {"id": "u15", "title": "n", "updatedAt": "2026-10-07T10:00:00z"}
       ]
+    },
+    {
+      "name": "import and install times do not order the list",
+      "items": [
+        {"id": "newest", "title": "Newest", "updatedAt": "2026-10-07T12:00:00Z", "createdAt": "2026-01-01T00:00:00Z", "installedAt": "2026-01-01T00:00:00Z"},
+        {"id": "roads.lines", "title": "roads (lines)", "groupId": "osm.xroads", "layerName": "lines", "updatedAt": "2026-10-07T11:30:00Z", "createdAt": "2026-02-01T00:00:00Z", "installedAt": "2026-02-01T00:00:00Z"},
+        {"id": "middle", "title": "Middle", "updatedAt": "2026-10-07T11:00:00Z", "createdAt": "2026-05-01T00:00:00Z", "installedAt": "2026-05-01T00:00:00Z"},
+        {"id": "oldest", "title": "Oldest", "updatedAt": "2026-10-07T10:00:00Z", "createdAt": "2026-10-07T10:00:00Z", "installedAt": "2026-10-07T10:00:00Z"},
+        {"id": "roads.points", "title": "roads (points)", "groupId": "osm.xroads", "layerName": "points", "updatedAt": "2026-10-07T09:00:00Z", "createdAt": "2026-12-01T00:00:00Z", "installedAt": "2026-12-01T00:00:00Z"}
+      ]
     }
   ],
   "groups": [
@@ -86,6 +96,11 @@
       "name": "layers dated to the second and to the millisecond in one second",
       "layers": ["2026-10-07T10:00:00Z", "2026-10-07T10:00:00.500Z"],
       "updatedAt": "2026-10-07T10:00:00.500Z"
+    },
+    {
+      "name": "layers dated in one millisecond and a microsecond apart",
+      "layers": ["2026-10-07T10:00:00.500Z", "2026-10-07T10:00:00.500001Z"],
+      "updatedAt": "2026-10-07T10:00:00.500001Z"
     },
     {
       "name": "a layer offset is read",

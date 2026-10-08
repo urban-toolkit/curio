@@ -1,13 +1,13 @@
-"""The catalog reads dataset dates as the canvas's Data palette reads them.
+"""The catalog's **Recent activity** order, and the date of a layer group.
 
 Both sides run the cases in ``catalogDates.cases.json`` beside
 ``services/datasetCatalog/catalogDates.ts``
-(``src/tests/services/catalogDatesCases.test.ts`` is the other half): a date
-to the second, the millisecond or the microsecond, with ``Z`` or an offset,
-compares by when it is, and a missing or unreadable date is the oldest. Here
-the cases run through the listing's **Recent activity** order, which breaks a
-tie by title, then id, and through the date a layer group takes from its
-layers.
+(``src/tests/services/catalogDatesCases.test.tsx`` is the other half: the
+canvas's Data palette shows the listing in its order). Dates read as times: to
+the second, the millisecond or the microsecond, with ``Z`` or an offset, and a
+missing or unreadable date is the oldest. Here the cases run through the
+listing's order (``updatedAt``, then title, then id; never the import or the
+install time) and through the date a layer group takes from its layers.
 """
 from __future__ import annotations
 
