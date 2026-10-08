@@ -59,7 +59,7 @@ Under `utk_curio/backend/app/`:
 - `notebooks/`: Jupyter notebook import (`analyzer.py`).
 - `api/routes.py`: sandbox proxies, starters, file serving.
 - `testing/`: test-only routes for Playwright, registered only in dev mode.
-- `common/`: shared helpers (safe paths, file locks, owner-only files, user storage, egress policy, the background job registry, `record_clock.py`: the clock catalog records are dated by).
+- `common/`: shared helpers (safe paths, file locks, owner-only files, user storage, egress policy, the background job registry, `record_clock.py`: the clock catalog records are dated by, `token_bucket.py`: the token bucket behind the discovery and monitor rate limits).
 
 ## Frontend core
 

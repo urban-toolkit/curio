@@ -208,6 +208,21 @@ class TestClientIngest:
         # A hundred a minute from all addresses together.
         assert body["droppedClient"] == 10
 
+    def test_addresses_quiet_for_a_minute_are_forgotten(self, client, monkeypatch):
+        """The endpoint is public, so the table of addresses must not grow forever."""
+        clock = _hold_the_clock(monkeypatch, 1000.0)
+        for n in range(5):
+            _post_reports(client, 1, first=n, address=f"10.0.2.{n}")
+        clock[0] = 1059.0
+        _post_reports(client, 10, first=5, address="10.0.2.0")
+        clock[0] = 1061.0
+        _post_reports(client, 1, first=15, address="10.0.3.1")
+
+        assert set(routes._client_reports.per_address) == {"10.0.2.0", "10.0.3.1"}
+        # The address kept is still held to its allowance.
+        _post_reports(client, 1, first=16, address="10.0.2.0")
+        assert client.get("/api/monitor/errors").get_json()["droppedClient"] == 1
+
     def test_the_endpoint_never_answers_anything_a_caller_would_retry(self, client):
         """A window.onerror handler must not be able to start a request loop."""
         for payload in ({}, {"message": "ok"}, {"message": "x" * 99999}):
