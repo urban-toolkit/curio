@@ -5,6 +5,7 @@ import type {
   DatasetGroupLayerRef,
   DatasetOrigin,
 } from "./datasetCatalogTypes";
+import { compareCatalogDates } from "./catalogDates";
 import { layerGroupKind } from "./datasetCatalogTypes";
 import { osmGroupLoaderSnippet } from "./datasetLoaderSnippets";
 
@@ -68,7 +69,9 @@ export function datasetInstalledAt(dataset: DatasetCatalogItem): string | null {
   return dataset.installedAt ?? null;
 }
 
-/** Latest (max) non-empty value produced by ``pick`` across members, or null. */
+/** The latest non-empty date ``pick`` gives across members, read as a time
+ * (``compareCatalogDates``), or null. The backend dates a layer group the same
+ * way (``build_layer_group_item``). */
 function latest(
   members: DatasetCatalogItem[],
   pick: (m: DatasetCatalogItem) => string | null | undefined,
@@ -76,7 +79,7 @@ function latest(
   let max: string | null = null;
   for (const m of members) {
     const value = pick(m);
-    if (value && (max === null || value > max)) max = value;
+    if (value && (max === null || compareCatalogDates(value, max) > 0)) max = value;
   }
   return max;
 }
@@ -221,10 +224,12 @@ export function entrySortValue(
 }
 
 /**
- * Order palette entries by a persisted timestamp, most-recent first. Groups sort
- * as a single unit by their representative value. Entries whose timestamp is
- * unknown sort last; ties keep their original (stable) order. Pure — returns a
- * new array and never reads UI state.
+ * Order palette entries by a persisted timestamp, most recent first, read as a
+ * time (``compareCatalogDates``). Groups sort as a single unit by their
+ * representative value. An entry whose timestamp is missing or unreadable is
+ * the oldest. Entries at the same time keep the order they came in, the
+ * catalog listing's (``_sort_catalog_items``). Pure: returns a new array and
+ * never reads UI state.
  */
 export function sortDatasetPaletteEntries(
   entries: DatasetPaletteEntry[],
@@ -232,11 +237,6 @@ export function sortDatasetPaletteEntries(
 ): DatasetPaletteEntry[] {
   return entries
     .map((entry, index) => ({ entry, index, value: entrySortValue(entry, key) }))
-    .sort((a, b) => {
-      if (a.value === b.value) return a.index - b.index;
-      if (a.value === null) return 1;
-      if (b.value === null) return -1;
-      return a.value < b.value ? 1 : -1;
-    })
+    .sort((a, b) => compareCatalogDates(b.value, a.value) || a.index - b.index)
     .map((wrapped) => wrapped.entry);
 }
