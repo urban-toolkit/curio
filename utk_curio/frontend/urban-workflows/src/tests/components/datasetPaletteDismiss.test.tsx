@@ -50,7 +50,6 @@ jest.mock("../../services/datasetCatalog", () => ({
   prefetchDatasetCatalog: jest.fn(),
   groupDatasetsForPalette: () => [],
   isUserInstalledDataset: () => false,
-  sortDatasetPaletteEntries: (rows: unknown[]) => rows,
 }));
 jest.mock("../../utils/saveOutputDataset", () => ({ buildSaveableLiveOutputs: () => [] }));
 jest.mock("../../services/datasetCatalog/pendingInstallView", () => ({

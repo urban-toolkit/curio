@@ -261,6 +261,7 @@ DENIED = (
     ("datasets", "the shared Data Catalog's published files"),
     (".curio/discovery", "the operator's source manifests: each names a folder or host the server reads"),
     (".curio/fetched", "the catalog files a pip install downloaded, which a node reads only as staged links"),
+    (".curio/nodejs", "the Node.js packages a pip install's sandbox runs"),
 )
 
 

@@ -28,6 +28,7 @@ import json
 import re
 from typing import Any
 
+from utk_curio.backend.app.datasets.domain.catalog_dates import catalog_time
 from utk_curio.backend.app.datasets.domain.catalog_item import (
     KEPT_IN_CODE,
     base_item,
@@ -140,7 +141,10 @@ def build_layer_group_item(group_id: str, members: list[dict[str, Any]]) -> dict
     members = sort_group_members(members)
     total_features = sum(m.get("featureCount") or 0 for m in members) or None
     total_size = sum(m.get("sizeBytes") or 0 for m in members) or None
-    updated = max((m.get("updatedAt") or "" for m in members), default="") or iso_from_timestamp()
+    # The latest layer's date, read as a time, as the canvas palette's group
+    # takes it (``datasetPaletteGrouping.ts``).
+    stamps = [m.get("updatedAt") for m in members if m.get("updatedAt")]
+    updated = max(stamps, key=catalog_time, default="") or iso_from_timestamp()
     installed = bool(members) and all(m.get("installed") for m in members)
     bundle_parts = [
         {

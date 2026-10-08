@@ -1,11 +1,20 @@
 include README.md
 include pyproject.toml
 include LICENSE
+
+# The sandbox's Node.js package list, which setup.py copies into the wheel.
+include package.json
+include package-lock.json
 recursive-include packages *
 recursive-include datasets *
 recursive-include discovery *
 recursive-include models *
 recursive-include tests *
+
+# DuckDB's extensions, which the launcher seeds and the backend serves from
+# the folder that holds utk_curio/ (DUCKDB_EXTENSIONS in
+# utk_curio/sandbox/util/node_runtime.py): site-packages in a pip install.
+recursive-include vendor/duckdb-extensions *.wasm
 
 recursive-include utk_curio/backend *
 recursive-include utk_curio/sandbox *

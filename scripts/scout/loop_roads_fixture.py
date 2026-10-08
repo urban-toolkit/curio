@@ -76,10 +76,11 @@ def main():
     from utk_curio.sandbox.app import worker
     from utk_curio.sandbox.util.input_layers import curio_layer
 
-    if args.node_modules:
-        worker.ROOT_NODE_MODULES = str(Path(args.node_modules).resolve())
+    node_modules = Path(args.node_modules).resolve() if args.node_modules else None
     (source,) = autark_document()["data"]
-    result, _logs, errors = worker.run_js_script(code_for(source), None, cwd=str(REPO_ROOT), node_type="AUTK_GRAMMAR")
+    result, _logs, errors = worker.run_js_script(
+        code_for(source), None, cwd=str(REPO_ROOT), node_type="AUTK_GRAMMAR", node_modules=node_modules,
+    )
     payload = json.loads(result) if result else {}
     if not payload.get("success"):
         raise SystemExit(f"the load failed: {payload.get('error') or errors[-10:]}")

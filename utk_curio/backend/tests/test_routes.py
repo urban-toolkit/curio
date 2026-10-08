@@ -279,8 +279,29 @@ def test_file_route_still_serves_vendored_duckdb_extensions(app, launch_at_repo)
     import glob
 
     found = sorted(glob.glob(os.path.join(launch_at_repo, "vendor", "duckdb-extensions", "**", "*.wasm"), recursive=True))
-    if not found:
-        pytest.skip("no vendored duckdb extension in this checkout")
+    assert found, "no vendored duckdb extension in this checkout"
     url_rel = os.path.relpath(found[0], launch_at_repo).replace(os.sep, "/")
     resp = app.test_client().get(f"/file/{url_rel}", buffered=True)
     assert resp.status_code == 200
+
+
+def test_file_route_serves_the_vendored_duckdb_extensions_to_any_launch_folder(app, monkeypatch, tmp_path):
+    """Curio's copy of DuckDB's extensions sits beside ``utk_curio/``, and a
+    pip install starts from a folder of the user's, which holds none: the
+    route still serves every one, byte for byte."""
+    import glob
+    import hashlib
+
+    found = sorted(glob.glob(os.path.join(_REPO_ROOT, "vendor", "duckdb-extensions", "**", "*.wasm"), recursive=True))
+    assert found, "no vendored duckdb extension in this checkout"
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+    client = app.test_client()
+    for path in found:
+        url_rel = os.path.relpath(path, _REPO_ROOT).replace(os.sep, "/")
+        resp = client.get(f"/file/{url_rel}", buffered=True)
+        assert resp.status_code == 200, (
+            f"/file/{url_rel} answered {resp.status_code} with Curio started from a folder without "
+            f"vendor/, so the browser's duckdb worker fetches it from extensions.duckdb.org"
+        )
+        with open(path, "rb") as f:
+            assert hashlib.sha256(resp.data).hexdigest() == hashlib.sha256(f.read()).hexdigest(), url_rel
