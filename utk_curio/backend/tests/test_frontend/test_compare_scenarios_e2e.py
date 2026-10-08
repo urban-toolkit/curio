@@ -308,7 +308,7 @@ def test_two_scenarios_are_stacked_charted_and_compared(
     warning = node_locator(page, COMPARE).locator("[data-compare-warning]")
     warning.first.wait_for(state="attached", timeout=10000)
     assert warning.all_inner_texts() == [
-        "Input 1 (Twice as tall) and input 0 (Baseline) read different context: only input 1 reads Roads 2050."
+        "input_1 (Twice as tall) and input_0 (Baseline) read different context: only input_1 reads Roads 2050."
     ], warning.all_inner_texts()
     _assert_chart_drew(page, COMPARE, "lollipop")
 

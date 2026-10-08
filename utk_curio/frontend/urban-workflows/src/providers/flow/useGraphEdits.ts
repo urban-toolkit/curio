@@ -234,7 +234,15 @@ export function useGraphEdits({
         const code: string = typeof target.data?.code === "string" ? target.data.code : "";
         // A spec's input names sit in its strings, which a Python scan skips.
         const language = getUnversionedFlowNodeType(target) === NodeType.JS_COMPUTATION ? "javascript" : "python";
-        const rewritten = removed.reduce((text, slot) => renumberInputReferences(text, slot, language), code);
+        // Only a deleted circle with a wired circle below it shifts inputs, so
+        // only its references are renumbered and become `[!! input_? !!]`. One
+        // below every wired circle (a node's only input, or its last) moves
+        // nothing: its references stay as written, and the next edge into that
+        // circle is read by them, as `arg` was.
+        const lastWired = Math.max(-1, ...survivors.filter((e) => e.target === target.id).map((e) => inputSlotOf(e.targetHandle)));
+        const rewritten = removed
+            .filter((slot) => slot < lastWired)
+            .reduce((text, slot) => renumberInputReferences(text, slot, language), code);
         let inputSlots: unknown[] = target.data?.inputSlots ?? [];
         let sourceSlots: unknown[] = target.data?.sourceSlots ?? [];
         for (const slot of removed) {

@@ -577,7 +577,9 @@ A node with several inputs runs once every one of them has a value. Deleting an
 edge closes the gap: the circles below it move up one, and their chips in the
 code are renumbered, and so are typed names such as `input_2`. A chip or typed
 name for the deleted input becomes `[!! input_? !!]` and
-stops the run until you replace it. A chip for a circle with no edge, or for a
+stops the run until you replace it. Deleting the edge of a node's only input,
+or of its last, moves no circle, so the code is kept as written, and the next
+edge into that circle is read by it. A chip for a circle with no edge, or for a
 column its input does not have, is drawn in red and stops the run with a message
 naming it.
 

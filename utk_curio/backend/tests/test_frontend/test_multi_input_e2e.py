@@ -13,7 +13,7 @@ This drives the whole path in a browser:
    ``[!! input_1 !!]`` is ``input_1``, and the column chip is the column's name.
 4. Deleting the first producer closes the gap: the second producer's edge moves
    to circle 0, and the code is renumbered, the deleted input's chip becoming
-   ``[!! input ? !!]``. With that line gone, a run reads the one input left as
+   ``[!! input_? !!]``. With that line gone, a run reads the one input left as
    ``input_0``.
 5. Save and reopen: the circles and the chips are back.
 
@@ -79,7 +79,7 @@ T_WITH_CHIPS = (
 )
 # What deleting the first producer leaves: input 1 is now input 0.
 T_RENUMBERED = (
-    "a = [!! input ? !!]\n"
+    "a = [!! input_? !!]\n"
     "b = [!! input_0 !!]\n"
     "col = [!! input_0.population !!]\n"
     "total = int(b[col].sum())\n"
@@ -312,7 +312,7 @@ def test_a_node_reads_several_inputs_through_chips(
     _delete_node(page, a)
     _wait_for_circles(page, t, ["in", "in_1"])
     assert _edge_handles(page, t) == {b: "in"}
-    _wait_for_code(page, t, "[!! input ? !!]")
+    _wait_for_code(page, t, "[!! input_? !!]")
     assert read_node_code(page, t) == T_RENUMBERED, read_node_code(page, t)
     set_node_code(page, t, T_ONE_INPUT)
     run_node_and_wait(page, t, node_type=NODE_TYPE)

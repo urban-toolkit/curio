@@ -326,4 +326,14 @@ describe('deleting an edge closes the gap', () => {
     expect(dataOf('t').code).toBe('x = [!! input_0 !!]');
     expect(mockBroadcastNodeUpdated).not.toHaveBeenCalled();
   });
+
+  test("a node's only edge goes without rewriting the input it names, so the next edge is read by it", async () => {
+    await fanIn('curio.builtin/computation-analysis@1', 'gdf = input_0.copy()\nx = [!! input_0 !!]');
+    await connect('a', 't');
+    await deleteEdges([api.edges.find((e: any) => e.source === 'a')!.id]);
+    expect(dataOf('t').code).toBe('gdf = input_0.copy()\nx = [!! input_0 !!]');
+    await connect('b', 't');
+    expect(handleOf('b')).toBe('in');
+    expect(dataOf('t').code).toBe('gdf = input_0.copy()\nx = [!! input_0 !!]');
+  });
 });
