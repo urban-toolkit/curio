@@ -10,6 +10,7 @@ import { useFlowContext, useNodeActionsContext } from "../../providers/FlowProvi
 import { useToastContext } from "../../providers/ToastProvider";
 import { useUserContext } from "../../providers/UserProvider";
 import { isHostedGuest } from "../../components/apiSettings/useHostedGuest";
+import { dashboardRefusal } from "../../standalone/dashboardPayload";
 import { arrangedTilePositions } from "../../utils/dashboardLayout";
 import { scenarioDashboard } from "../../utils/scenarios/scenarioDashboard";
 import { dataflowPath } from "../../utils/shareLinks";
@@ -77,6 +78,9 @@ export function DashboardTopBar({ id, onArranged }: { id: string; onArranged?: (
     markDirty,
   } = useFlowContext();
   const canEditLayout = useCanEditLayout();
+  // A page the server refused to build carries nothing to open the dataflow
+  // with, so its link loads the dataflow as a page of its own.
+  const refused = dashboardRefusal() !== null;
 
   // Arrange by scenario (#662): offered while a pinned tile is in a scenario.
   const byScenario = useMemo(
@@ -134,6 +138,7 @@ export function DashboardTopBar({ id, onArranged }: { id: string; onArranged?: (
         <Link
           className={headerStyles.barButton}
           to={dataflowPath(id)}
+          reloadDocument={refused}
           data-testid="open-dataflow-link"
           onClick={(event) => {
             if (projectDirty && !dashboardLocked) {

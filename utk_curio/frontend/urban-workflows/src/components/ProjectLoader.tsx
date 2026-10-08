@@ -40,7 +40,7 @@ import {
 import { restoredByNode, restoredOutputs, withOutputs } from "../utils/restoredOutputs";
 
 import { SHARE_UUID_RE as UUID_RE } from "../utils/shareLinks";
-import { getEmbeddedDashboard } from "../standalone/dashboardPayload";
+import { dashboardRefusal, getEmbeddedDashboard } from "../standalone/dashboardPayload";
 
 /** How far the load has got, for a page that has to say which state it is in. */
 export type ProjectLoadState = "idle" | "loading" | "loaded" | "failed";
@@ -97,6 +97,7 @@ export const ProjectLoader: React.FC<{
     projectId,
     attachLatestRun,
     markDirty,
+    setWorkflowName,
   } = useFlowContext();
   // Read when the load answers, not when it started: whether this canvas runs
   // on the server depends on the signed-in user, which can arrive in between.
@@ -226,6 +227,16 @@ export const ProjectLoader: React.FC<{
 
     setLoadState("loading");
     (async () => {
+      // A dashboard the backend would not build as a page of its own: the page
+      // carries the backend's reason instead of its data, and the dashboard
+      // page shows that. Nothing is loaded, from the page or the network:
+      // fetching the data instead is the fallback the refusal rules out.
+      if (dashboardRefusal()) {
+        const name = getEmbeddedDashboard()?.meta?.name;
+        if (name) setWorkflowName(name);
+        setLoadState("failed");
+        return;
+      }
       // Package descriptors register asynchronously at boot. If a user deep-links
       // straight into /dataflow/<id>, ProjectLoader can mount before
       // `refreshPackageRegistry()` resolves, leaving `getNodeDescriptor()` calls in

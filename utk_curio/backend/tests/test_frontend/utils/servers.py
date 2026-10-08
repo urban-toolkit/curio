@@ -85,3 +85,40 @@ def base_url(servers: dict, port_key: str) -> str:
     host = servers.get("_host", "127.0.0.1")
     port = servers[port_key]
     return f"http://{host}:{port}"
+
+
+def serve_built_frontend(backend_url: str) -> str:
+    """Start the production page server on the built bundle, host-side; returns its URL.
+
+    It is the server a deployed Curio runs (``run_spa_static_server``), the one
+    that serves a dashboard's page with its data, which it asks *backend_url*
+    (its ``--backend-url``) for. The CI stack's own page server runs inside its
+    container, where the address it was given does not answer, so its dashboard
+    pages carry nothing; a test that opens one that does serves it here. The
+    server runs in a daemon thread for the rest of the worker's life.
+    """
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    import pytest
+
+    from utk_curio.cli.static_server import run_spa_static_server
+
+    from .environment import REPO_ROOT
+
+    dist = os.path.join(REPO_ROOT, "utk_curio", "frontend", "urban-workflows", "dist")
+    if not os.path.isfile(os.path.join(dist, "index.html")):
+        pytest.fail(
+            "no built frontend at utk_curio/frontend/urban-workflows/dist. Only the "
+            "production page server serves a dashboard with its data, so without a "
+            "build there is no such page to open."
+        )
+    probe = ThreadingHTTPServer(("127.0.0.1", 0), BaseHTTPRequestHandler)
+    port = probe.server_address[1]
+    probe.server_close()
+    threading.Thread(
+        target=run_spa_static_server, args=(dist, port, "", backend_url), daemon=True,
+    ).start()
+    url = f"http://127.0.0.1:{port}"
+    wait_for_http_ready(url, path="/", timeout=15.0)
+    return url

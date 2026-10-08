@@ -3,10 +3,11 @@
  *
  * Everything that would otherwise fetch asks this module first, so the two
  * answers that matter are "here are the rows" and a clean null. Null is not a
- * failure: a dashboard too large to embed, a backend that was down when the page
- * was served, and the dev server (which cannot inject) all produce an ordinary
- * page that fetches for itself. That is the behaviour this replaces, so falling
- * back to it is the safe outcome and a thrown error is not.
+ * failure: a backend that was down when the page was served, and the dev server
+ * (which cannot inject), produce an ordinary page that fetches for itself. That
+ * is the behaviour this replaces, so falling back to it is the safe outcome and
+ * a thrown error is not. (A dashboard the backend refused to build is served
+ * with its reason instead, and fetches nothing: refusedDashboard.test.tsx.)
  */
 import {
   embeddedArtifact,

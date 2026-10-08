@@ -17,6 +17,7 @@ import { Loading } from "../../components/login/Loading";
 import { useProjectLoadState } from "../../components/ProjectLoader";
 import { DashboardScenarioLayers, FRAME_HEADER_ROOM } from "../../components/scenarios/ScenarioLayers";
 import { useFlowContext } from "../../providers/FlowProvider";
+import { dashboardRefusal } from "../../standalone/dashboardPayload";
 import { fitViewWithMenuOffsetNow } from "../../utils/fitViewWithMenuOffset";
 import { scenarioDashboard } from "../../utils/scenarios/scenarioDashboard";
 import { dataflowPath } from "../../utils/shareLinks";
@@ -66,6 +67,9 @@ export const DashboardPage: React.FC = () => {
     scenarios,
   } = useFlowContext();
   const loadState = useProjectLoadState();
+  // Why the backend would not build this dashboard as a page of its own, when
+  // the page was served with that instead of its data.
+  const refusal = dashboardRefusal();
   const canEditLayout = useCanEditLayout();
   const reactFlow = useReactFlow();
   const flowStore = useStoreApi();
@@ -204,7 +208,13 @@ export const DashboardPage: React.FC = () => {
         {loadState === "failed" ? (
           <div className={styles.state} data-testid="dashboard-load-failed">
             <span className={styles.stateTitle}>{LOAD_FAILED_TITLE}</span>
-            <span>{LOAD_FAILED_BODY}</span>
+            {refusal ? (
+              // The backend's own words, which name the nodes or tiles to
+              // change; its lines and indented rows kept as written.
+              <span className={styles.stateReason}>{refusal.message}</span>
+            ) : (
+              <span>{LOAD_FAILED_BODY}</span>
+            )}
           </div>
         ) : null}
         {loadState === "loaded" && pinnedIds.length === 0 ? (
