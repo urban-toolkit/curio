@@ -387,8 +387,8 @@ def test_concurrent_reconciles_converge_without_duplicating_rows(store, app, mon
     failed, or a dir copied in by hand), so each reconcile has rows to add,
     and each one, after reading the rows, waits for the other to read them
     too: two reconciles that both read before either writes add every row
-    twice. A reconcile that cannot read while the other one is reconciling
-    never arrives, and the wait gives up after a few seconds.
+    twice. If the other one never gets there, the wait gives up after a few
+    seconds.
     """
     import threading
 
