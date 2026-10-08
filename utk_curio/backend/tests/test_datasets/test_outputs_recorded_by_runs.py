@@ -1,5 +1,7 @@
 """A run on the server records its outputs without a save, and a save from a
-tab that never saw that run cannot put the older outputs back.
+tab that never saw that run can neither put the older outputs back nor take
+the newer ones out, unless it deleted their node, changed its code or turned
+its Save off.
 
 Each manifest output carries ``produced_at``, taken from the artifact id's own
 millisecond timestamp. When a save and the manifest name different outputs for

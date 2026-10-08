@@ -7,8 +7,7 @@
  * the ancestors `nodesToRunUpTo` says need no new run, read from the
  * provider's `outputs` (`serverRunSteps.reuseFor`). The server runs the target
  * and every ancestor not in `reuse` (`run_engine.plan_run`). The save before
- * it sends the same `outputs` (`buildOutputRefs`), and the manifest keeps the
- * outputs a save names and no others.
+ * it sends the same `outputs` (`buildOutputRefs`), which the manifest records.
  *
  * The dataflow is reopened here as `ProjectLoader` opens it: `loadProject`,
  * then `applyResult`, which loads the spec (`useCode().loadTrill`, then
@@ -312,8 +311,7 @@ describe('reopening a saved dataflow', () => {
 
     await playOnServer(CONSUMER);
 
-    // A save's outputs replace the manifest's, so one sent without the
-    // producer's output takes it out of the dataflow.
+    // A save names the outputs its canvas holds, the restored one among them.
     expect(mockUpdateProject).toHaveBeenCalled();
     const [savedId, saved] = mockUpdateProject.mock.calls[mockUpdateProject.mock.calls.length - 1];
     expect(savedId).toBe(PROJECT_ID);

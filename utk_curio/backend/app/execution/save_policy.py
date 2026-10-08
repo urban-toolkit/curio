@@ -12,7 +12,8 @@ saved dataflow holds them: ``saveOutputDataset`` on the node itself and
 
 ``utils/saveOutputDataset.cases.json`` in the frontend holds the cases both
 sides run. The set of nodes feeding a pinned dashboard tile is an argument,
-as it is in TypeScript.
+as it is in TypeScript; :func:`saved_source_node_ids` reads it off a saved
+dataflow, as ``savedSourceNodeIds`` does on the canvas.
 """
 from __future__ import annotations
 
@@ -54,6 +55,18 @@ def should_save_output_on_run(
     if is_dataset_palette_node(node):
         return False
     return resolve_save_output_dataset(node, default_save) or bool(is_dashboard_source)
+
+
+def saved_source_node_ids(spec: object) -> set[str]:
+    """Every node whose output a save or a run records whatever its own Save
+    toggle says: what a pinned dashboard tile reads, and what a scenario's
+    context and outcomes produce. The twin of ``savedSourceNodeIds``."""
+    from utk_curio.backend.app.projects.dashboard_payload import dashboard_source_node_ids
+    from utk_curio.backend.app.scenario_catalog.domain.parts import scenario_source_node_ids
+
+    if not isinstance(spec, dict):
+        return set()
+    return set(dashboard_source_node_ids(spec)) | scenario_source_node_ids(spec)
 
 
 def records_output_on_save(
