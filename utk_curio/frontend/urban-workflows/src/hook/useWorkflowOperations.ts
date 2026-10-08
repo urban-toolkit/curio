@@ -489,7 +489,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // outputs the caller restores: the caller passes those down itself,
         // once (`hydrateRestoredOutputs`). An edge from a node the canvas
         // already had (Duplicate selection wiring a copy to what fed the
-        // original) hands over that node's output, as any new edge does.
+        // original) hands that node's output to its own target, as any new
+        // edge does.
         const addedIds = new Set(addedNodes.map((n: Node) => n.id));
 
         console.log("loadParsedTrill second");
@@ -506,21 +507,16 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 // skipValidation=true: these edges come from a saved/imported trill and
                 // were validated when created. Re-validating on load races the async
                 // node-descriptor registry and would drop valid edges + toast mid-render.
-                if (merge) {
-                    for (const edge of loaded_edges) {
-                        if (!currentEdgeIds.has(edge.id)) {
-                            onConnect(edge, prevNodes, undefined, workflowName, false, true, addedIds.has(edge.source));
-                        }
-                    }
-                } else {
-                    // Accumulate the spec edges connected so far and hand them to
-                    // onConnect, so input circle resolution sees the earlier edges
-                    // of this load (in_N occupancy) instead of an empty list.
-                    const connectedSoFar: any[] = [];
-                    for (const edge of loaded_edges) {
-                        onConnect(edge, prevNodes, connectedSoFar, workflowName, false, true, addedIds.has(edge.source));
-                        connectedSoFar.push(edge);
-                    }
+                //
+                // onConnect is handed the edges connected so far, the canvas's
+                // first on a merge, so a node's circles (in_N occupancy, and
+                // which of them a hand-over finds wired) are read against this
+                // load's earlier edges, not the store, which does not hold them.
+                const connectedSoFar: any[] = merge ? [...reactFlow.getEdges()] : [];
+                for (const edge of loaded_edges) {
+                    if (merge && currentEdgeIds.has(edge.id)) continue;
+                    onConnect(edge, prevNodes, connectedSoFar, workflowName, false, true, addedIds.has(edge.source));
+                    connectedSoFar.push(edge);
                 }
             } finally {
                 hydratingRef.current = false;

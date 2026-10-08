@@ -330,7 +330,7 @@ const FlowProvider = ({
 
     const { onConnect, isValidConnection } = useConnect({
         markDirtyRef, reactFlow, showToast, markNodeStaleRef, applyOutput, setEdges,
-        workflowNameRef, collabRef, outputsRef, propagateDownstreamInputs,
+        workflowNameRef, collabRef, outputsRef,
     });
 
     const { cancelRun, signalNodeExecDone, playAllNodes, playNodesUpTo, playNodes } = usePlayAll({

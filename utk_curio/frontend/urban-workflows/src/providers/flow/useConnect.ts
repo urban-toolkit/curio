@@ -22,7 +22,7 @@ function uniqueEdgeId(base: string, edges: Edge[]): string {
 
 export function useConnect({
     markDirtyRef, reactFlow, showToast, markNodeStaleRef, applyOutput, setEdges,
-    workflowNameRef, collabRef, outputsRef, propagateDownstreamInputs,
+    workflowNameRef, collabRef, outputsRef,
 }: {
     markDirtyRef: React.MutableRefObject<() => void>;
     reactFlow: ReactFlowInstance;
@@ -33,8 +33,10 @@ export function useConnect({
     workflowNameRef: React.MutableRefObject<string>;
     collabRef: React.MutableRefObject<ReturnType<typeof useCollab>>;
     outputsRef: React.MutableRefObject<IOutput[]>;
-    propagateDownstreamInputs: ReturnType<typeof useGraphEdits>["propagateDownstreamInputs"];
 }) {
+    // A new edge hands what its source holds to its own target alone, once:
+    // the nodes the source already feeds get nothing.
+    //
     // *sourceAddedByLoad*: a saved edge that `loadParsedTrill` replays, from a
     // node that load added. Any output that node holds is one the load
     // restored, and `hydrateRestoredOutputs` passes it down, so the edge does
@@ -237,7 +239,8 @@ export function useConnect({
                             conn.target as string,
                             sourceId,
                             conn.sourceHandle as string,
-                            conn.targetHandle as string
+                            conn.targetHandle as string,
+                            edges,
                         );
                     }
 
@@ -288,16 +291,7 @@ export function useConnect({
                             edge: customConnection,
                         });
 
-                        const nextEdges = addEdge(customConnection, eds);
-                        const cached = outputsRef.current.find((o) => o.nodeId === sourceId);
-                        if (!restoredByLoad && cached?.output != null && cached.output !== "") {
-                            // Edge is in the graph now: fan out to all downstream nodes
-                            // (input circles, multiple pools) using the live edge list.
-                            queueMicrotask(() => {
-                                propagateDownstreamInputs(sourceId, cached.output);
-                            });
-                        }
-                        return nextEdges;
+                        return addEdge(customConnection, eds);
                     });
                 }
             }
