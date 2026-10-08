@@ -19,6 +19,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from .utils import (
     INTERACTION_MIN_CHANGED_PIXELS,
     INTERACTION_RESTORED_RATIO,
+    INTERACTION_SHOWN_TIMEOUT_MS,
     INTERACTION_VIEWPORT,
     CLOSEUP_PIXEL_THRESHOLD,
     _compare_images,
@@ -1353,8 +1354,10 @@ class TestWorkflowCanvas:
 
     def _wait_for_target(self, step: Interaction, done):
         """Capture *step*'s target until ``done(capture)`` holds: what a gesture,
-        or taking it back, shows on the target. Returns ``(capture, held)``."""
-        return wait_for_node_capture(self.page, step.target, done)
+        or taking it back, shows on the target. A map shows it only in a frame
+        drawn after it, so this waits as long as an Autark node may run
+        (``INTERACTION_SHOWN_TIMEOUT_MS``). Returns ``(capture, held)``."""
+        return wait_for_node_capture(self.page, step.target, done, timeout_ms=INTERACTION_SHOWN_TIMEOUT_MS)
 
     def _interact(self, step: Interaction, test_name: str) -> None:
         page = self.page
