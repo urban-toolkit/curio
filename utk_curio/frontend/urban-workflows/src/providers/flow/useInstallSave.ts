@@ -63,8 +63,9 @@ export function useInstallSave({
             label: resolveNodeDisplayLabel(node.data),
         });
 
-        // Debounce: one save covers every producer that landed in this window. The
-        // save fires after outputs have committed, so buildOutputRefs sees them.
+        // Debounce: one save covers every producer that landed in this window.
+        // buildOutputRefs reads outputsRef, which setOutputs writes at once, so
+        // a flush in the tick the output lands sends it too.
         if (installSyncTimerRef.current) clearTimeout(installSyncTimerRef.current);
         installSyncTimerRef.current = setTimeout(() => runInstallSyncNow(), 500);
     };

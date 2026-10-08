@@ -316,19 +316,17 @@ def _run_thread(app, run_id, user_id, token, project_id, plan, spec) -> Iterator
     from utk_curio.backend.app.execution.run_engine import run_events
     from utk_curio.backend.app.execution.save_policy import (
         records_output_on_save,
+        saved_source_node_ids,
         should_save_output_on_run,
     )
-    from utk_curio.backend.app.projects.dashboard_payload import dashboard_source_node_ids
     from utk_curio.backend.app.projects.schemas import OutputRef
     from utk_curio.backend.app.projects.services import record_node_outputs
-    from utk_curio.backend.app.scenario_catalog.domain.parts import scenario_source_node_ids
     from utk_curio.backend.app.users.models import User
 
     default_save = bool(config.CURIO_DEFAULT_SAVE_NODE_OUTPUT)
     # What a pinned tile reads and what a scenario's context and outcomes
-    # produce, saved whatever each node's own toggle says: the canvas's
-    # `savedSourceNodeIds`.
-    sources = dashboard_source_node_ids(spec) | scenario_source_node_ids(spec)
+    # produce, saved whatever each node's own toggle says.
+    sources = saved_source_node_ids(spec)
     cancelled = jobs.cancel_flag(run_id)
 
     def execute(step, code, input_ref):
