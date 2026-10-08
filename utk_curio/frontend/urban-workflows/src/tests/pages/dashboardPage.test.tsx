@@ -455,6 +455,21 @@ describe("the states", () => {
       expect(screen.queryByText(LOAD_FAILED_BODY)).toBeNull();
       expect(screen.queryByText(NOTHING_PINNED_TITLE)).toBeNull();
     });
+
+    test("opens the dataflow as a page of its own, not inside this one", async () => {
+      // The refused page carries nothing to open the dataflow with: routed to
+      // within this document, the canvas would come up empty, as the page's
+      // signed-out viewer. A full load of the link is the dataflow itself.
+      mockLoadState = "failed";
+      mockFlow = flow({ nodes: [], dashboardPins: {} });
+      await renderPage();
+
+      const link = screen.getByTestId("open-dataflow-link");
+      expect(link.getAttribute("href")).toBe(`/dataflow/${ID}`);
+      fireEvent.click(link);
+
+      expect(screen.queryByTestId("canvas")).toBeNull();
+    });
   });
 
   test("the owner gets no read-only notice", async () => {

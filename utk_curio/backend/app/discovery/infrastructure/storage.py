@@ -24,6 +24,7 @@ import os
 import threading
 from pathlib import Path
 
+from utk_curio import shipped
 from utk_curio.backend.app.common.safe_paths import is_within
 from utk_curio.backend.app.discovery.domain.errors import StorageUnavailable
 from utk_curio.backend.app.discovery.domain.source_id import SOURCE_DIR_RE, SourceId
@@ -49,13 +50,12 @@ class StorageRootError(StorageUnavailable):
 
 
 def discovery_root() -> Path:
-    """The shipped catalog root: ``<repo>/discovery`` unless overridden."""
+    """The shipped catalog root: ``discovery/`` (``utk_curio/shipped.py``)
+    unless overridden."""
     override = os.environ.get(ENV_ROOT)
     if override and override.strip():
         return Path(override).expanduser().resolve()
-    # storage.py -> infrastructure/ -> discovery/ -> app/ -> backend/ ->
-    # utk_curio/ -> <repo root>/discovery
-    return Path(__file__).resolve().parents[5] / "discovery"
+    return shipped.path("discovery")
 
 
 def instance_root() -> Path:

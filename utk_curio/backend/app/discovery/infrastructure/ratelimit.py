@@ -17,31 +17,13 @@ from __future__ import annotations
 import threading
 import time
 
+from utk_curio.backend.app.common.token_bucket import TokenBucket
 from utk_curio.backend.app.discovery.domain.errors import RateLimited
 
 #: How many downloads one account may have in flight. Two is enough to keep
 #: working while one large file lands, and low enough that nobody can queue
 #: fifty jobs against a municipal portal.
 MAX_CONCURRENT_DOWNLOADS = 2
-
-
-class TokenBucket:
-    __slots__ = ("capacity", "per_second", "tokens", "updated")
-
-    def __init__(self, capacity: int, per_second: float) -> None:
-        self.capacity = float(capacity)
-        self.per_second = per_second
-        self.tokens = float(capacity)
-        self.updated = time.monotonic()
-
-    def take(self, now: float) -> bool:
-        elapsed = max(0.0, now - self.updated)
-        self.updated = now
-        self.tokens = min(self.capacity, self.tokens + elapsed * self.per_second)
-        if self.tokens < 1.0:
-            return False
-        self.tokens -= 1.0
-        return True
 
 
 class RateLimiter:
@@ -58,7 +40,7 @@ class RateLimiter:
             if bucket is None or bucket.capacity != float(per_minute):
                 # A manifest edit changes the rate; rebuild rather than letting
                 # the old capacity persist for the life of the process.
-                bucket = TokenBucket(per_minute, per_minute / 60.0)
+                bucket = TokenBucket(per_minute, per_minute / 60.0, now)
                 self._buckets[key] = bucket
             if not bucket.take(now):
                 raise RateLimited(

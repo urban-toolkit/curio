@@ -10,6 +10,7 @@ Curio is a framework for urban visual analytics built on dataflows: a React canv
 - `utk_curio/sandbox/`: Flask service that runs node Python and JavaScript and stores results as DuckDB artifacts.
 - `utk_curio/llm-prompts/`: built-in agent prompts, and `examples.md`, the index of shipped dataflows that runs get as worked examples (`agents/application/turns/examples.py`).
 - `utk_curio/common/`: code shared by backend, sandbox and the page server (`redaction.py`, `backend_address.py`).
+- `utk_curio/shipped.py`: where `packages/`, `datasets/`, `discovery/`, `models/`, `scripts/` and `vendor/` are: beside `utk_curio/` in a clone, `utk_curio/_shipped/` in a pip install. Every reader of them asks it.
 - `utk_curio/tools/`: operator tools outside the Flask app (`agent_eval.py`, `preview_runner.py`).
 - `packages/`: shipped Node Catalog, one directory per node package (`manifest.json`, `sources/`, `integrity.json`).
 - `datasets/`: shipped Data Catalog, one directory per dataset (`manifest.json`, `data/`).
@@ -59,7 +60,7 @@ Under `utk_curio/backend/app/`:
 - `notebooks/`: Jupyter notebook import (`analyzer.py`).
 - `api/routes.py`: sandbox proxies, starters, file serving.
 - `testing/`: test-only routes for Playwright, registered only in dev mode.
-- `common/`: shared helpers (safe paths, file locks, owner-only files, user storage, egress policy, the background job registry, `record_clock.py`: the clock catalog records are dated by).
+- `common/`: shared helpers (safe paths, file locks, owner-only files, user storage, egress policy, the background job registry, `record_clock.py`: the clock catalog records are dated by, `token_bucket.py`: the token bucket behind the discovery and monitor rate limits).
 
 ## Frontend core
 
@@ -130,7 +131,7 @@ Other workflows: `autk-schema.yml` (weekly check of the vendored Autark schema),
 - `scripts/generate_contracts.py`: writes `src/generated/` and every `utk_curio/llm-prompts/X.md` that has an `X.template.md`; `--check` lists stale outputs.
 - `scripts/sync_autk_schema.py`: vendors the Autark grammar schema; `--check` compares it with the release.
 - `scripts/validate_trill.py`: validates dataflow JSON against `docs/schemas/trill.v1.json`.
-- Release (`publish-pip-to-pypi.yml`): `scripts/record_left_out_files.py` records the catalog files the pip package leaves out (`utk_curio/backend/app/datasets/infrastructure/left_out_files.json`, fetched on first use by `left_out_files.py`); `scripts/check_dist_sizes.py` fails a wheel or sdist over PyPI's 100 MiB limit; `setup.py` copies the root `package.json` and `package-lock.json` into the wheel (`utk_curio/sandbox/nodejs/`).
+- Release (`publish-pip-to-pypi.yml`): `scripts/record_left_out_files.py` records the catalog files the pip package leaves out (`utk_curio/backend/app/datasets/infrastructure/left_out_files.json`, fetched on first use by `left_out_files.py`); `scripts/check_dist_sizes.py` fails a wheel or sdist over PyPI's 100 MiB limit; `setup.py` lists the wheel's packages, puts the shipped folders in it at `utk_curio/_shipped/` (`utk_curio/shipped.py`), and copies the root `package.json` and `package-lock.json` into it (`utk_curio/sandbox/nodejs/`).
 - Example builders: `scripts/build_example_*.py`. Test fixtures: `scripts/record_discovery_fixtures.py` and the `generate_*_fixture.py` scripts. CI helpers: `scripts/ci_*.py` and the shard balancers `e2e_*.py`, `unit_durations.py`.
 
 ## Big files

@@ -12,6 +12,8 @@ import json
 import os
 import pathlib
 
+from utk_curio import shipped
+
 #: The folder that holds ``utk_curio/``: the repository root in a clone, the
 #: Docker image and CI; site-packages in a pip install.
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
@@ -27,8 +29,9 @@ SHIPPED_PACKAGE_FILES = pathlib.PurePosixPath('utk_curio', 'sandbox', 'nodejs')
 #: sandbox's Node.js packages.
 NODEJS_FOLDER = 'nodejs'
 
-#: Curio's copy of DuckDB's extensions, under the folder that holds
-#: ``utk_curio/`` (``MANIFEST.in`` puts it in the pip package at the same path).
+#: Curio's copy of DuckDB's extensions: its path in the repository, and in the
+#: ``/file/`` URL the backend serves it at. A pip install keeps it in
+#: ``utk_curio/`` (``utk_curio/shipped.py``).
 DUCKDB_EXTENSIONS = pathlib.PurePosixPath('vendor', 'duckdb-extensions')
 
 AUTK_DB = '@urban-toolkit/autk-db'
@@ -82,7 +85,7 @@ def node_modules_dir(root=None):
 def duckdb_extensions_dir():
     """Curio's copy of DuckDB's extensions: the launcher seeds the sandbox's
     duckdb-wasm from it, and the backend serves it to the browser's."""
-    return REPO_ROOT / DUCKDB_EXTENSIONS
+    return shipped.path(DUCKDB_EXTENSIONS, REPO_ROOT)
 
 
 def node_env(base=None, node_modules=None):
