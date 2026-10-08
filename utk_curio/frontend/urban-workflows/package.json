@@ -41,7 +41,6 @@
     "bootstrap": "^5.3.8",
     "d3-zoom": "^3.0.0",
     "dagre": "^0.8.5",
-    "html2canvas": "^1.4.1",
     "js-cookie": "^3.0.5",
     "monaco-editor": "^0.55.1",
     "react": "^18.3.1",
