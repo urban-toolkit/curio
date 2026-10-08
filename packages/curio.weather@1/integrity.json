@@ -1,13 +1,13 @@
 {
   "sha256": {
-    "README.md": "15180cca25f7ba6bfd2f62f135040f9f628063a05b92bc63619bb14e5f25b561",
+    "README.md": "99617eb125f7145bc184cb7ea3cdc27c8e5770595d78e66dd19b9802d37d8129",
     "manifest.json": "27380267036939d9152afc4ef694a6c2d4f4c2c645598e69b992d28c7e14740f",
     "sources/census-load.py": "9789b47d28d30f85389ae2ef46a8a06de1432cb316159c20d4bf90098956a051",
-    "sources/census-reproject.py": "5481bbe60b09feb5a9ebd3147bad71dfaa172fc507623a8973494d7f17fd2b6a",
-    "sources/gt65-projection.py": "447f2163209338169a0e52b814b2e26154476c2e748751e6c1b5eb063ef0aef9",
+    "sources/census-reproject.py": "2dd6094b2623148f047ec4e89bb148e0e34784e9d0104951730f85de8264d641",
+    "sources/gt65-projection.py": "33aa9849db23cc0304d2ee2fac7bf75d9e0287f4ad838f94a179eb934465f3bc",
     "sources/mrt-load.py": "9f97fe568f928c27ea1f9336b11ca3cc2895e2e08085af2402207224523e66f5",
-    "sources/utci-compute.py": "0f18d70eb3fdfaa371b4e55159eef50b76954a92f38dc63421517020b1da8f13",
-    "sources/utci-zonal.py": "66d929f91140fd6e25a56ba91901a757469288d2a648bb5b595dee5f9b283d0e",
+    "sources/utci-compute.py": "d250f7fb6d352b4db79ad2204f142368430ff077dc5f60af32208ddfb0b66fc5",
+    "sources/utci-zonal.py": "d2f01d2c2dd258c1dbf7812b0d6444dd4b011fd7d9e3086374b09a2c0631fdee",
     "sources/weather-load.py": "42d54320f64e2368757694d262bf60bb63ba33baa6736acb7ee35df775bd125a"
   }
 }

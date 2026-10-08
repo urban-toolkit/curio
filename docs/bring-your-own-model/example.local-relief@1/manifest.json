@@ -1,0 +1,55 @@
+{
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
+  "compatibility": {
+    "curioRuntime": ">=0.5.0",
+    "major": 1
+  },
+  "createdAt": "2026-10-07T00:00:00Z",
+  "dependencies": {
+    "js": {},
+    "packages": {},
+    "python": {
+      "onnxruntime": ">=1.17",
+      "rasterio": ">=1.4"
+    }
+  },
+  "description": "The worked example of docs/BRINGING-MODELS.md: the Local Relief node runs the Model Catalog's model.example.local-relief@1, an ONNX model exported from PyTorch, on a raster of building heights.",
+  "id": "example.local-relief",
+  "license": "MIT",
+  "name": "Local Relief (example)",
+  "permissions": [],
+  "publisher": "Curio",
+  "templates": [
+    {
+      "category": "computation",
+      "description": "How many metres each cell of a building-height raster stands above the mean of the 5 by 5 cells around it, from the Model Catalog's Local Relief model. Input: a height raster in metres. Output: a raster on the same grid.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": false,
+      "iconRef": "fa-solid:mountain",
+      "id": "local-relief",
+      "inputPorts": [
+        {
+          "cardinality": "1",
+          "types": [
+            "RASTER"
+          ]
+        }
+      ],
+      "label": "Local Relief",
+      "behavior": "code",
+      "outputPorts": [
+        {
+          "cardinality": "1",
+          "types": [
+            "RASTER"
+          ]
+        }
+      ],
+      "source": "sources/local-relief.py"
+    }
+  ],
+  "version": "1.0.0"
+}

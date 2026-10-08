@@ -21,7 +21,7 @@
         "type": "curio.builtin/computation-analysis",
         "x": 645,
         "y": 215,
-        "content": "import pandas as pd\n\ndf = arg\ndf['Year'] = df['VIOLATION DATE'].dt.year\n\nyr_sum = (df.groupby(['CAMERA ID', 'Year'], observed=True)['VIOLATIONS']\n          .sum()\n          .reset_index()\n          .rename(columns={'VIOLATIONS': 'total_violations'}))\n\ntop_ids = (df.groupby('CAMERA ID', observed=True)['VIOLATIONS']\n             .sum()\n             .sort_values(ascending=False)\n             .head(5)\n             .index\n             .tolist())\n\nyr_sum = yr_sum[yr_sum['CAMERA ID'].isin(top_ids)]\n\ncamera_pos = (df.groupby('CAMERA ID', observed=True)[['LATITUDE', 'LONGITUDE']]\n                .mean()\n                .reset_index())\n\nyr_sum = yr_sum.merge(camera_pos, on='CAMERA ID')\n\nreturn yr_sum\n",
+        "content": "import pandas as pd\n\ndf = input_0\ndf['Year'] = df['VIOLATION DATE'].dt.year\n\nyr_sum = (df.groupby(['CAMERA ID', 'Year'], observed=True)['VIOLATIONS']\n          .sum()\n          .reset_index()\n          .rename(columns={'VIOLATIONS': 'total_violations'}))\n\ntop_ids = (df.groupby('CAMERA ID', observed=True)['VIOLATIONS']\n             .sum()\n             .sort_values(ascending=False)\n             .head(5)\n             .index\n             .tolist())\n\nyr_sum = yr_sum[yr_sum['CAMERA ID'].isin(top_ids)]\n\ncamera_pos = (df.groupby('CAMERA ID', observed=True)[['LATITUDE', 'LONGITUDE']]\n                .mean()\n                .reset_index())\n\nyr_sum = yr_sum.merge(camera_pos, on='CAMERA ID')\n\nreturn yr_sum\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

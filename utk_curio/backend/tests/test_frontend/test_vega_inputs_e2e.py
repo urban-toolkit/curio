@@ -2,7 +2,7 @@
 
 Two loaders feed one Vega-Lite node, the second edge on the circle the first
 one made. The spec layers a bar per zone of the first input under a red point
-per zone of the second, which it reads through the chip ``[!! input 1 !!]``;
+per zone of the second, which it reads through the chip ``[!! input_1 !!]``;
 the bars name their columns through column chips. In the browser the chips are
 ``"input_1"`` and the column names, and each input is the Vega dataset
 ``input_0`` or ``input_1``.
@@ -55,12 +55,12 @@ LAYERED = """{
     {
       "mark": "bar",
       "encoding": {
-        "x": {"field": [!! input 0.zone !!], "type": "nominal"},
-        "y": {"field": [!! input 0.pop !!], "type": "quantitative"}
+        "x": {"field": [!! input_0.zone !!], "type": "nominal"},
+        "y": {"field": [!! input_0.pop !!], "type": "quantitative"}
       }
     },
     {
-      "data": {"name": [!! input 1 !!]},
+      "data": {"name": [!! input_1 !!]},
       "mark": {"type": "point", "filled": true, "size": 400, "color": "#ff0000", "opacity": 1},
       "encoding": {
         "x": {"field": "zone", "type": "nominal"},

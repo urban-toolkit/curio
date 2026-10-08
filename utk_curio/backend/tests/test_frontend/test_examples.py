@@ -89,17 +89,23 @@ EXAMPLE_INVARIANTS = [
     ("23-storage-folder-of-different-files.json", 4, 3,
      {"curio.builtin/data-loading": 2, "curio.builtin/computation-analysis": 1,
       "curio.builtin/vis-vega": 1}, False),
-    ("24-scout-building-rasters.json", 8, 8,
+    ("24-scout-building-rasters.json", 9, 8,
      {"curio.builtin/data-loading": 1, "scout.raster-conversion/rasterize-buildings": 1,
-      "curio.builtin/computation-analysis": 1, "scout.shadow/accumulated-shadow": 1,
-      "curio.builtin/raster-statistics": 1, "curio.builtin/autk-grammar": 3}, False),
+      "scout.raster-conversion/mosaic-tiles": 1,
+      "scout.shadow/accumulated-shadow": 1, "curio.builtin/computation-analysis": 2,
+      "curio.builtin/autk-grammar": 3}, False),
+    ("25-several-inputs.json", 10, 14,
+     {"curio.builtin/data-loading": 3, "curio.builtin/computation-analysis": 2,
+      "curio.builtin/data-transformation": 1, "curio.builtin/js-computation": 1,
+      "curio.builtin/vis-vega": 1, "curio.builtin/autk-grammar": 1,
+      "curio.builtin/data-pool": 1}, False),
 ]
 
 
 #: Examples whose flows meet in one node, and how many nodes take several data
 #: inputs. Each such node reads its inputs in circle order (``in``, ``in_1``,
 #: ...), so its edges must name every circle from the first, once each: a gap or
-#: a repeat changes which input the node's ``[!! input N !!]`` chips read.
+#: a repeat changes which input the node's ``[!! input_N !!]`` chips read.
 FAN_IN_NODES = {
     "04-vega-lite-multi-flow-dashboard.json": 3,
     "06-autark-what-if-shadow-study.json": 2,
@@ -107,7 +113,9 @@ FAN_IN_NODES = {
     "09-heterogeneous-data-linked-views.json": 2,
     "20-storage-folder-of-csv-files.json": 1,
     "23-storage-folder-of-different-files.json": 1,
-    "24-scout-building-rasters.json": 1,
+    # Every kind of node that takes several inputs: Python (three), Data
+    # Transformation, JS Computation, Vega-Lite, Autark and Data Pool.
+    "25-several-inputs.json": 6,
 }
 
 
@@ -223,7 +231,7 @@ def _circle_index(handle) -> int:
 def test_example_flows_meet_on_input_circles(basename, expected_fan_in):
     """Each node that takes several data edges takes them on its circles
     ``in``, ``in_1``, ... ``in_<k-1>``, one edge per circle, with no gap: the
-    same order the canvas draws and the chips ``[!! input N !!]`` read."""
+    same order the canvas draws and the chips ``[!! input_N !!]`` read."""
     with open(os.path.join(EXAMPLES_DIR, basename), "r", encoding="utf-8") as f:
         wf = json.load(f)
     types = {n["id"]: n["type"] for n in wf["dataflow"]["nodes"]}
@@ -318,7 +326,7 @@ def test_example_06_is_three_scenarios_over_one_context():
     assert [(label["scenario"], label["name"], label["color"]) for label in chart["metadata"]["compareScenarios"]["inputs"]] == [
         (s["id"], s["name"], s["color"]) for s in (baseline, twice, towers)
     ]
-    assert '("s-towers", "Two towers removed", [!! input 2 !!]),' in chart["content"]
+    assert '("s-towers", "Two towers removed", [!! input_2 !!]),' in chart["content"]
     third = [e for e in flow["edges"] if e["target"] == "whatif-compare-chart" and e["source"] == "whatif-towers-map"]
     assert [e.get("targetHandle") for e in third] == ["in_2"]
     assert "key" not in nodes["whatif-compare-difference"]["metadata"]["compareScenarios"].get("difference", {})

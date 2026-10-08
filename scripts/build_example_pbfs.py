@@ -97,7 +97,7 @@ def bbox_for(query: str):
     return s, w, n, e
 
 
-def overpass_query(bbox, include_buildings: bool, area_names: list[str]) -> str:
+def overpass_query(bbox, include_buildings: bool, area_names: list[str], roads_only: bool = False) -> str:
     s, w, n, e = bbox
     b = f"{s},{w},{n},{e}"
     # Use the combined node/way/relation selector ``nwr[...]``. NOTE: overpass-api.de
@@ -111,6 +111,8 @@ def overpass_query(bbox, include_buildings: bool, area_names: list[str]) -> str:
         "natural",    # parks / water
         "waterway",   # water
     ]
+    if roads_only:
+        selectors = ["highway"]
     parts = [f"nwr[{k}]({b});" for k in selectors]
     if include_buildings:
         parts += [f"nwr[building]({b});", f'nwr["building:part"]({b});']
@@ -146,6 +148,65 @@ def fetch_osm_xml(query: str) -> bytes:
     raise SystemExit(f"All Overpass endpoints failed. Last: {last}")
 
 
+def crop_roads(pbf_path: str, bbox) -> tuple[int, int, int]:
+    """Cut the roads of *pbf_path* at *bbox* (south, west, north, east), in place.
+
+    Overpass hands on every road that crosses the box whole, out to its far
+    end, so a box's roads reach well beyond it. SCOUT's road graph is cut at
+    its box instead, keeping a road's points inside it and the one just
+    outside next to them (osmnx's ``truncate_by_edge``); this cuts the same
+    way. A road that leaves the box and comes back becomes one road per part,
+    each part after the first under a new id. Other ways (the boundary the
+    clip reads) and boundary relations are kept whole; other relations, such
+    as bus routes, would name roads that are cut, and are left out."""
+    s, w, n, e = bbox
+    inside = lambda loc: loc.valid() and s <= loc.lat <= n and w <= loc.lon <= e
+    ways, keep_nodes, next_id = [], set(), 10 ** 12
+    for obj in osmium.FileProcessor(pbf_path, osmium.osm.NODE | osmium.osm.WAY).with_locations():
+        if not obj.is_way():
+            continue
+        refs = [(nd.ref, inside(nd.location)) for nd in obj.nodes]
+        tags = {t.k: t.v for t in obj.tags}
+        if "highway" not in tags:
+            ways.append((obj.id, tags, [ref for ref, _in in refs]))
+            keep_nodes.update(ref for ref, _in in refs)
+            continue
+        kept = [is_in or (i > 0 and refs[i - 1][1]) or (i + 1 < len(refs) and refs[i + 1][1])
+                for i, (_ref, is_in) in enumerate(refs)]
+        parts, part = [], []
+        for (ref, _in), keep in zip(refs, kept):
+            if keep:
+                part.append(ref)
+            elif part:
+                parts.append(part)
+                part = []
+        if part:
+            parts.append(part)
+        for k, part in enumerate(p for p in parts if len(p) >= 2):
+            way_id = obj.id if k == 0 else next_id
+            next_id += k > 0
+            ways.append((way_id, tags, part))
+            keep_nodes.update(part)
+    relations = [(r.id, {t.k: t.v for t in r.tags}, [(m.type, m.ref, m.role) for m in r.members])
+                 for r in osmium.FileProcessor(pbf_path, osmium.osm.RELATION)
+                 if "boundary" in {t.k for t in r.tags}]
+    nodes = [(nd.id, nd.location, {t.k: t.v for t in nd.tags})
+             for nd in osmium.FileProcessor(pbf_path, osmium.osm.NODE) if nd.id in keep_nodes]
+    out_path = pbf_path[: -len(".osm.pbf")] + ".cropped.osm.pbf"
+    writer = osmium.SimpleWriter(out_path)
+    try:
+        for node_id, location, tags in nodes:
+            writer.add_node(osmium.osm.mutable.Node(id=node_id, location=location, tags=tags))
+        for way_id, tags, refs in ways:
+            writer.add_way(osmium.osm.mutable.Way(id=way_id, nodes=refs, tags=tags))
+        for rel_id, tags, members in relations:
+            writer.add_relation(osmium.osm.mutable.Relation(id=rel_id, members=members, tags=tags))
+    finally:
+        writer.close()
+    os.replace(out_path, pbf_path)
+    return len(nodes), len(ways), len(relations)
+
+
 def xml_to_pbf(xml_bytes: bytes, out_path: str) -> tuple[int, int, int]:
     """Convert OSM XML bytes to a .pbf at out_path. Returns (nodes, ways, rels)."""
     with tempfile.NamedTemporaryFile(suffix=".osm", delete=False) as tmp:
@@ -173,7 +234,11 @@ def xml_to_pbf(xml_bytes: bytes, out_path: str) -> tuple[int, int, int]:
 
 def main() -> None:
     os.makedirs(OUT_DIR, exist_ok=True)
+    # ``build_example_pbfs.py chicago_loop`` builds that extract alone.
+    only = set(sys.argv[1:])
     for key, (query, include_buildings, area_names) in AREAS.items():
+        if only and key not in only:
+            continue
         out_path = os.path.join(OUT_DIR, f"{key}.osm.pbf")
         print(f"\n=== {key}  ({query})  buildings={include_buildings}  "
               f"boundaries={area_names} ===", flush=True)

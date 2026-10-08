@@ -405,6 +405,8 @@ def run_through_node(
             "dataType": data_type,
             # Validation runs never auto-install computed datasets.
             "save_dataset": False,
+            # Which input_k each value of the input is.
+            "input_slots": spec.input_slots(node.id),
         }
         if session_id:
             payload["session_id"] = session_id

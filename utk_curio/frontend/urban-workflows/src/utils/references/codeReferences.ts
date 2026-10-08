@@ -3,10 +3,10 @@
  * above its editor and stored as plain `[!! ... !!]` text.
  *
  * - `[!! season !!]` names one of the node's widgets;
- * - `[!! input 1 !!]` names one of its inputs, by circle, counted from 0;
- * - `[!! input 1.height !!]` names a column of that input;
- * - `[!! input 1:roads !!]` names a layer an input carries (an Autark node's
- *   tables), and `[!! input 1:roads.height !!]` a column of that layer;
+ * - `[!! input_1 !!]` names one of its inputs, by circle, counted from 0;
+ * - `[!! input_1.height !!]` names a column of that input;
+ * - `[!! input_1:roads !!]` names a layer an input carries (an Autark node's
+ *   tables), and `[!! input_1:roads.height !!]` a column of that layer;
  * - `[!! @season !!]` names a shared tag: the widget of the dataflow's
  *   Parameter node named `season`;
  * - `[!! selection picked !!]` names one of the node's selection tags: the ids
@@ -23,16 +23,20 @@
  * it becomes the value's text, escaped for that string, so
  * `"Season: [!! season !!]"` reads `"Season: winter"`. Inside a comment it is
  * the plain text. A column reference is written the same way as a text value:
- * its name. In Python and JavaScript an input reference becomes `arg` when the
- * node has one input and `arg[i]` when it has several, `i` being the input's
- * place in circle order, and a layer reference the call that picks the layer
- * out of it, `curio_layer(arg[i], "roads", 1)` (the sandbox's
- * `util/input_layers.py`, and `js_wrapper.mjs`). In a Vega-Lite or Autark spec
+ * its name. In Python and JavaScript an input reference becomes the name the
+ * code reads that circle's input by, `input_<circle>` (the sandbox binds one
+ * variable per wired circle, `util/input_names.py`), and a layer reference the
+ * call that picks the layer out of it, `curio_layer(input_1, "roads", 1)` (the
+ * sandbox's `util/input_layers.py`, and `js_wrapper.mjs`). An input named by
+ * typing its name, `input_1`, is already that name. In a Vega-Lite or Autark spec
  * an input reference is the name that input is read by, `input_<i>`, and a
  * layer reference the layer's name, written like a text value too. An input
  * of one frame with no layer name is that layer, whatever the reference names,
  * in a spec as in code: there its layer reference is `input_<i>` too. One frame
  * whose value names its layer is found by that name.
+ *
+ * Inputs were once written with a space, `[!! input 1 !!]`; references
+ * written that way still read as before.
  */
 
 import { WIDGET_NAME_RE, effectiveValue, type WidgetDef, type WidgetValue } from "../widgets/widgetModel";
@@ -45,13 +49,29 @@ export type CodeLanguage = "python" | "javascript" | "json";
  * in `code_references.py`. */
 export const REFERENCE_PATTERN = String.raw`\[!!\s*(.*?)\s*!!\]`;
 
-/** What stands inside an input, layer or column reference: `input 1`,
- * `input 1.height`, `input 1:roads`, `input 1:roads.height`, or `input ?`
- * once its edge was deleted. A layer name holds no dot; a column name is all
- * the text after the first one. Kept in sync with `INPUT_REFERENCE_RE` in
+/** What stands inside an input, layer or column reference: `input_1`,
+ * `input_1.height`, `input_1:roads`, `input_1:roads.height`, or `input_?`
+ * once its edge was deleted (`input 1`, with a space, as references were once
+ * written). A layer name holds no dot; a column name is all the text after
+ * the first one. Kept in sync with `INPUT_REFERENCE_RE` in
  * `code_references.py`. */
-export const INPUT_REFERENCE_PATTERN = String.raw`^input\s+(\d+|\?)(?::([^.]+))?(?:\.(.+))?$`;
+export const INPUT_REFERENCE_PATTERN = String.raw`^input(?:_|\s+)(\d+|\?)(?::([^.]+))?(?:\.(.+))?$`;
 const INPUT_REFERENCE_RE = new RegExp(INPUT_REFERENCE_PATTERN);
+
+/** An input named in code by typing its name, `input_1`: a name of its own,
+ * not a member (`x.input_1`) and not part of a longer one. Kept in sync with
+ * `INPUT_NAME_RE` in `code_references.py`. */
+export const INPUT_NAME_PATTERN = String.raw`(?<![\w.$])input_(\d+)(?![\w$])`;
+
+/** The name an input is read by: `input_1`. A widget cannot take it. */
+export function inputName(slot: number | null): string {
+  return `input_${slot === null ? "?" : slot}`;
+}
+
+/** Whether *name* is an input's name, `input_<i>`, which no widget takes. */
+export function isInputName(name: string): boolean {
+  return /^input_\d+$/.test(name);
+}
 
 /** What a shared reference starts with: `[!! @season !!]`. Kept in sync with
  * `SHARED_PREFIX` in `code_references.py`. */
@@ -128,7 +148,7 @@ export interface ReferenceScope {
 
 export type ParsedReference =
   | { kind: "widget"; name: string }
-  /** `slot` is null for `input ?`, the input whose edge was deleted. */
+  /** `slot` is null for `input_?`, the input whose edge was deleted. */
   | { kind: "input"; slot: number | null; layer?: string; column?: string }
   | { kind: "shared"; name: string }
   | { kind: "selection"; name: string };
@@ -158,7 +178,7 @@ export function referenceText(inner: string): string {
  * a column of either. */
 export function inputReferenceInner(slot: number | null, column?: string, layer?: string): string {
   return (
-    `input ${slot === null ? "?" : slot}`
+    inputName(slot)
     + (layer !== undefined ? `:${layer}` : "")
     + (column !== undefined ? `.${column}` : "")
   );
@@ -316,7 +336,7 @@ function escapeFor(text: string, context: ReferenceContext, language: CodeLangua
  * runs. Kept in sync with `missing_layer_message` in `code_references.py`. */
 export function missingLayerMessage(reference: string, slot: number, layer: string, names: string[]): string {
   const has = names.length > 0 ? `Its layers are ${names.join(", ")}.` : "It carries no named layers.";
-  return `${reference}: input ${slot} has no layer ${layer}. ${has}`;
+  return `${reference}: input_${slot} has no layer ${layer}. ${has}`;
 }
 
 /** *text* as a reference standing in *context* writes it. */
@@ -364,7 +384,7 @@ export function referenceProblem(
     }
     const input = scope.inputs.find((i) => i.slot === parsed.slot);
     if (input === undefined) {
-      return `${reference}: input ${parsed.slot} has no edge. Connect one to that circle, or drag one of this node's input chips here.`;
+      return `${reference}: input_${parsed.slot} has no edge. Connect one to that circle, or drag one of this node's input chips here.`;
     }
     if (parsed.layer !== undefined) {
       const layers = knownLayers(input);
@@ -376,7 +396,7 @@ export function referenceProblem(
       // are the frame's.
       const columns = layer ? layer.columns : layers === null ? input.columns : undefined;
       if (parsed.column !== undefined && Array.isArray(columns) && !columns.includes(parsed.column)) {
-        return `${reference}: layer ${parsed.layer} of input ${parsed.slot} has no column ${parsed.column}.`;
+        return `${reference}: layer ${parsed.layer} of input_${parsed.slot} has no column ${parsed.column}.`;
       }
       if (parsed.column === undefined && language !== "json" && context.kind !== "code") {
         return `${reference} is an input, not text. Use it outside quotes and comments.`;
@@ -387,7 +407,7 @@ export function referenceProblem(
       if (language === "json") {
         if (Array.isArray(input.layers) && input.layers.length > 1) {
           const names = input.layers.map((l) => l.name).join(", ");
-          return `${reference}: input ${parsed.slot} carries several layers (${names}). Drag one of its layer chips here.`;
+          return `${reference}: input_${parsed.slot} carries several layers (${names}). Drag one of its layer chips here.`;
         }
         return null;
       }
@@ -397,7 +417,7 @@ export function referenceProblem(
       return null;
     }
     if (Array.isArray(input.columns) && !input.columns.includes(parsed.column)) {
-      return `${reference}: input ${parsed.slot} has no column ${parsed.column}.`;
+      return `${reference}: input_${parsed.slot} has no column ${parsed.column}.`;
     }
     return null;
   }
@@ -449,7 +469,7 @@ function resolvedText(inner: string, scope: ReferenceScope, context: ReferenceCo
       const layer = isOneFrameInput(scope.inputs[position]) ? undefined : parsed.layer;
       return writeText(layer ?? inputTableName(position), context, language);
     }
-    const value = scope.inputs.length === 1 ? "arg" : `arg[${position}]`;
+    const value = inputName(parsed.slot);
     if (parsed.layer !== undefined) {
       return `${LAYER_HELPER}(${value}, ${widgetLiteral(parsed.layer, language)}, ${parsed.slot})`;
     }
@@ -464,6 +484,26 @@ function resolvedText(inner: string, scope: ReferenceScope, context: ReferenceCo
   return context.kind === "code" ? widgetLiteral(value, language) : escapeFor(textOf(value, language), context, language);
 }
 
+/** Where Python or JavaScript *code* names an input by typing its name,
+ * `input_1`: outside strings, comments and references. */
+export function inputNamesIn(code: string, language: CodeLanguage): { start: number; end: number; slot: number }[] {
+  if (language === "json") return [];
+  const refs = findReferences(code);
+  const found: CodeReference[] = [];
+  const re = new RegExp(INPUT_NAME_PATTERN, "g");
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(code)) !== null) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (refs.some((r) => start < r.end && end > r.start)) continue;
+    found.push({ start, end, inner: match[1] });
+  }
+  const contexts = referenceContexts(code, found, language);
+  return found
+    .filter((_, index) => contexts[index].kind === "code")
+    .map((f) => ({ start: f.start, end: f.end, slot: Number(f.inner) }));
+}
+
 /** *code* with every reference replaced, and what could not be replaced. A
  * reference with a problem is left as written. */
 export function resolveReferences(
@@ -471,9 +511,17 @@ export function resolveReferences(
   scope: ReferenceScope,
   language: CodeLanguage,
 ): { code: string; problems: ReferenceProblem[] } {
+  const ordered: ReferenceScope = { ...scope, inputs: [...scope.inputs].sort((a, b) => a.slot - b.slot) };
+  return resolveChips(code, ordered, language);
+}
+
+function resolveChips(
+  code: string,
+  ordered: ReferenceScope,
+  language: CodeLanguage,
+): { code: string; problems: ReferenceProblem[] } {
   const refs = findReferences(code);
   if (refs.length === 0) return { code, problems: [] };
-  const ordered: ReferenceScope = { ...scope, inputs: [...scope.inputs].sort((a, b) => a.slot - b.slot) };
   const contexts = referenceContexts(code, refs, language);
   const problems: ReferenceProblem[] = [];
   let out = "";
@@ -505,26 +553,54 @@ export function describeEmptyInputs(slots: number[], inputs: InputScope[]): stri
   return slots
     .map((slot) => {
       const label = inputs.find((i) => i.slot === slot)?.label;
-      return `Input ${slot}${label ? ` (from ${label})` : ""} has no value yet. Run the node that feeds it.`;
+      return `input_${slot}${label ? ` (from ${label})` : ""} has no value yet. Run the node that feeds it.`;
     })
     .join("\n");
 }
 
 /**
  * *code* after circle *removedSlot* lost its edge and the circles below it
- * moved up one: references to later inputs count one less, and references to
- * the removed input become `[!! input ? !!]`, which reports itself. Other
- * references, and the text around them, are kept as written.
+ * moved up one: references and typed input names (in *language*) to later
+ * inputs count one less, and those to the removed input become
+ * `[!! input_? !!]`, which reports itself. Other references, and the text
+ * around them, are kept as written.
  */
-export function renumberInputReferences(code: string, removedSlot: number): string {
-  const refs = findReferences(code);
-  let out = "";
-  let last = 0;
-  for (const ref of refs) {
+export function renumberInputReferences(code: string, removedSlot: number, language: CodeLanguage = "python"): string {
+  const edits: { start: number; end: number; text: string }[] = [];
+  for (const ref of findReferences(code)) {
     const parsed = parseReference(ref.inner);
     if (parsed.kind !== "input" || parsed.slot === null || parsed.slot < removedSlot) continue;
     const slot = parsed.slot === removedSlot ? null : parsed.slot - 1;
-    out += code.slice(last, ref.start) + referenceText(inputReferenceInner(slot, parsed.column, parsed.layer));
+    edits.push({ start: ref.start, end: ref.end, text: referenceText(inputReferenceInner(slot, parsed.column, parsed.layer)) });
+  }
+  for (const name of inputNamesIn(code, language)) {
+    if (name.slot < removedSlot) continue;
+    const text = name.slot === removedSlot ? referenceText(inputName(null)) : inputName(name.slot - 1);
+    edits.push({ start: name.start, end: name.end, text });
+  }
+  edits.sort((a, b) => a.start - b.start);
+  let out = "";
+  let last = 0;
+  for (const edit of edits) {
+    out += code.slice(last, edit.start) + edit.text;
+    last = edit.end;
+  }
+  return last === 0 ? code : out + code.slice(last);
+}
+
+/** *code* with each input reference written the old way, `[!! input 1 !!]`,
+ * written as a chip writes it now, `[!! input_1 !!]`, so its chip reads as
+ * its tag does. It runs the same. Other references, and the text around
+ * them, are kept as written. Kept in sync with `normalize_input_references`
+ * in `code_references.py`. */
+export function normalizeInputReferences(code: string): string {
+  let out = "";
+  let last = 0;
+  for (const ref of findReferences(code)) {
+    if (!/^input\s/.test(ref.inner)) continue;
+    const parsed = parseReference(ref.inner);
+    if (parsed.kind !== "input") continue;
+    out += code.slice(last, ref.start) + referenceText(inputReferenceInner(parsed.slot, parsed.column, parsed.layer));
     last = ref.end;
   }
   return last === 0 ? code : out + code.slice(last);

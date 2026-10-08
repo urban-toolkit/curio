@@ -81,7 +81,7 @@ NODE_CODE = (
     f'print("{MARKER}", result)\n'
     "return [result]\n"
 )
-assert "arg" not in NODE_CODE, "worker.py refuses code containing 'arg' with no input"
+assert "arg" not in NODE_CODE, "worker.py refuses code containing 'input_0' with no input"
 
 _NET_FAIL_RE = re.compile(
     r"Could not find a version|Temporary failure in name resolution|ProxyError|"

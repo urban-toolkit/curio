@@ -204,6 +204,19 @@ def bundle_part(path: str, part: str, dataset_id: str) -> tuple[str, dict]:
     raise ValueError(f"{dataset_id} has no file {wanted!r}; its files are {names}.")
 
 
+def bundle_part_path(path: str, part: str, dataset_id: str) -> str:
+    """``curio_data_path("<id>", part="<file>")``: the path of the part of the
+    bundle at *path* that *part* names (:func:`bundle_part`), for code that
+    opens a file itself, such as a NetCDF file with netCDF4. A dataset of one
+    file has no parts."""
+    if os.path.basename(str(path)) != "bundle.json":
+        raise ValueError(
+            f"part names one file of a dataset of several, and {dataset_id} is one file: "
+            f'curio_data_path("{dataset_id}") gives its path.'
+        )
+    return bundle_part(path, part, dataset_id)[0]
+
+
 def files_read_beside(path) -> list[Path]:
     """The files read beside the file at *path*: those named after it
     (``labels.parquet.decode.json``, a raster's ``.aux.xml``) or after its
@@ -314,6 +327,19 @@ class CurioModel:
         self._session = None
 
     @property
+    def entry(self) -> str:
+        """The path of the model's file, the manifest's ``entry`` in its
+        folder: what a node hands its own runtime, such as an
+        ``onnxruntime.InferenceSession``."""
+        entry = self.manifest.get("entry")
+        if not isinstance(entry, str) or not entry:
+            raise RuntimeError(f"Model '{self.id}' names no entry file in its manifest.")
+        path = os.path.realpath(os.path.join(self.folder, entry))
+        if os.path.commonpath([path, os.path.realpath(self.folder)]) != os.path.realpath(self.folder):
+            raise RuntimeError(f"Model '{self.id}' names an entry outside its folder.")
+        return path
+
+    @property
     def runner(self):
         if self._runner is None:
             from utk_curio.sandbox.util.vision import load_runner
@@ -371,16 +397,22 @@ def install_catalog_helpers(
     models: dict | None,
     model_base: str | None = None,
     output_dir: str | None = None,
-) -> None:
+    computed: dict | None = None,
+    saved_root: str | None = None,
+) -> list:
     """Put the catalog helpers into one execution's *namespace*.
 
     *data_path* resolves a dataset id to its file (absolute in process, a
     staged copy under isolation). *formats* is ``{id: {"format", "layerType"}}``
     as the backend resolved it. *models* is ``{id: folder}``, relative to
-    *model_base* when staged.
+    *model_base* when staged. *computed* is what the backend sent for the
+    saved-file helpers (``util/saved_files.py``), and *saved_root* where this
+    run's saved files are written. Returns the list the saved-file helpers
+    fill with what the run saved.
     """
     from utk_curio.sandbox.util.collections import make_collection_helpers
     from utk_curio.sandbox.util.models import make_model_folder
+    from utk_curio.sandbox.util.saved_files import make_saved_helpers
     from utk_curio.sandbox.util.vision import make_curio_segment
 
     known_formats = {str(k): dict(v) for k, v in (formats or {}).items() if isinstance(v, dict)}
@@ -462,6 +494,8 @@ def install_catalog_helpers(
     namespace["curio_raster_calculate"] = curio_raster_calculate
     namespace["curio_raster_statistics"] = curio_raster_statistics
     namespace.update(collection_helpers)
+    saved_helpers, saved = make_saved_helpers(saved_root, data_path, computed)
+    namespace.update(saved_helpers)
     namespace["curio_load_model"] = curio_load_model
     namespace["curio_segment"] = make_curio_segment(collection_helpers["curio_derived_file"])
     namespace["curio_dataset_path"] = _renamed(
@@ -470,3 +504,4 @@ def install_catalog_helpers(
     )
     namespace["curio_collection"] = _renamed("curio_collection", 'curio_load_collection("<id>")')
     namespace["curio_model"] = _renamed("curio_model", 'curio_load_model("<id>")')
+    return saved

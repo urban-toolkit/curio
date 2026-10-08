@@ -200,9 +200,9 @@ class APythonNodeReceivesTheRasterTest(StoreTestCase):
 
     CHECK = (
         "    import rasterio\n"
-        "    assert isinstance(arg, rasterio.io.DatasetReader), type(arg)\n"
-        "    band = arg.read(1)\n"
-        "    return f'{arg.crs.to_epsg()}|{arg.width}x{arg.height}|{tuple(arg.transform)[:6]}|{float(band[2, 0])}'\n"
+        "    assert isinstance(input_0, rasterio.io.DatasetReader), type(input_0)\n"
+        "    band = input_0.read(1)\n"
+        "    return f'{input_0.crs.to_epsg()}|{input_0.width}x{input_0.height}|{tuple(input_0.transform)[:6]}|{float(band[2, 0])}'\n"
     )
 
     def test_in_process(self):
@@ -232,7 +232,7 @@ class APythonNodeReceivesTheRasterTest(StoreTestCase):
         _worker_init()
         case = cases()[0]
         art_id = save_to_duckdb(case["envelope"], "autark-node")
-        result = execute_code("    return arg\n", art_id, "curio.builtin/computation-analysis", "dict",
+        result = execute_code("    return input_0\n", art_id, "curio.builtin/computation-analysis", "dict",
                               save_dataset=False)
         self.assertEqual(result["stderr"], "")
         self.assertEqual(result["output"]["dataType"], "raster")

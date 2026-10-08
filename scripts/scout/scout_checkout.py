@@ -4,9 +4,9 @@ SCOUT is https://github.com/urban-toolkit/scout. Each script checks that the
 checkout it is given holds the files it reads exactly as committed at
 SCOUT_COMMIT (``BLOBS``, git blob ids), so a rerun reads the same bytes.
 
-The scripts write SCOUT's weather into the Data Catalog
-(``<repo>/datasets/<id>@1/``, ``DATASETS``), each dataset with its manifest
-(``write_manifest``), and its weather GNN into the Model Catalog
+The scripts write SCOUT's weather into the Data Catalog as one bundle dataset
+(``<repo>/datasets/<WEATHER_ID>@1/``, ``weather_file``), with its manifest
+(``write_manifest``) and its ``bundle.json`` (``write_weather_bundle``), and its weather GNN into the Model Catalog
 (``<repo>/models/<id>@1/``, ``write_model_manifest``). SCOUT's data is
 published by SCOUT and used with the permission of SCOUT's authors, so a
 dataset manifest names SCOUT as publisher and no license, and the model's
@@ -59,11 +59,10 @@ MODELS = REPO_ROOT / "models"
 #: The scout.routing proof's fixtures.
 FIXTURES = REPO_ROOT / "utk_curio" / "backend" / "tests" / "test_packages" / "fixtures" / "scout_routing"
 
-#: The WRF variables' NetCDF group, and each variable's dataset id.
-WEATHER_GROUP = "netcdf.scout-wrf"
-WEATHER_IDS = {name: f"data.scout.wrf-{name.lower()}" for name in WEATHER_VARIABLES}
-#: Each dataset's data file, under ``<catalog>/<id>@1/``.
-DATASETS = {dataset_id: f"data/{name}.nc" for name, dataset_id in WEATHER_IDS.items()}
+#: The WRF forecast's dataset id: one bundle, a NetCDF file per variable,
+#: ``data/<variable>.nc`` under ``<catalog>/<id>@1/``.
+WEATHER_ID = "data.scout.chicago-weather-2025-07-06"
+WEATHER_INDEX = "data/bundle.json"
 #: The weather GNN's Model Catalog id, and its ONNX file under ``<models>/<id>@1/``.
 WEATHER_GNN = "model.scout.weather-gnn"
 WEATHER_GNN_ENTRY = "files/weather_gnn.onnx"
@@ -106,22 +105,32 @@ def blob_ids(paths):
     return {rel: BLOBS[rel] for rel in paths}
 
 
-def data_file(catalog, dataset_id):
-    """Where *dataset_id*'s data file lives under *catalog*."""
-    return Path(catalog) / f"{dataset_id}@1" / DATASETS[dataset_id]
+def weather_file(catalog, name):
+    """Where WRF variable *name*'s NetCDF file lives under *catalog*."""
+    return Path(catalog) / f"{WEATHER_ID}@1" / "data" / f"{name}.nc"
 
 
-def write_manifest(catalog, dataset_id, *, name, fmt, description, tags,
-                   row_count=None, group_id=None, layer_name=None):
+def write_weather_bundle(catalog, labels):
+    """The weather dataset's ``bundle.json``: one part per variable, its file
+    and its label (*labels*, by variable), in WEATHER_VARIABLES' order."""
+    parts = [{"index": i, "label": labels[name], "kind": "netcdf", "format": "netcdf", "file": f"data/{name}.nc"}
+             for i, name in enumerate(WEATHER_VARIABLES)]
+    path = Path(catalog) / f"{WEATHER_ID}@1" / WEATHER_INDEX
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"version": 1, "parts": parts}, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def write_manifest(catalog, dataset_id, *, name, fmt, data_file, description, tags, row_count=None):
     """*dataset_id*'s manifest, with every field the catalog writes, in its order
     (``build_manifest_dict`` in ``utk_curio/backend/app/datasets/domain/manifest.py``)."""
     manifest = {
         "id": dataset_id, "name": name, "version": "1.0.0", "format": fmt,
         "description": description, "publisher": PUBLISHER, "license": "", "tags": list(tags),
-        "dataFile": DATASETS[dataset_id], "compatibility": {"major": 1}, "sourceLabel": SOURCE_LABEL,
+        "dataFile": data_file, "compatibility": {"major": 1}, "sourceLabel": SOURCE_LABEL,
         "rowCount": row_count, "featureCount": None, "schema": None,
         "createdAt": STAMP, "updatedAt": STAMP, "sourceUpdatedAt": None, "sourceEncoding": None,
-        "groupId": group_id, "layerName": layer_name,
+        "groupId": None, "layerName": None,
         "producerNodeId": None, "producerNodeType": None, "producerDataflowId": None,
         "producerDataflowName": None, "upstreamInputs": None, "discoverySource": None, "collection": None,
     }

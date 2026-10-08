@@ -36,7 +36,7 @@ To pass data forward from a node controllable through python code it is necessar
     return variable1
 ```
 
-To use incoming data in a node controllable through python code, read each input through its input chip: `{{inputs.chip:0}}` is the input on circle 0, `{{inputs.chip:1}}` the one on circle 1, and so on. A chip becomes the input's value when the node runs, so a node with two inputs can combine them like:
+To use incoming data in a node controllable through python code, read each input through its input chip: `{{inputs.chip:0}}` is the input on circle 0, `{{inputs.chip:1}}` the one on circle 1, and so on. Each input circle is its own variable, `input_0`, `input_1`, ..., and a chip runs as that name, so a node with two inputs can combine them like:
 
 ```python
     combining_previous_inputs = {{inputs.chip:0}} + {{inputs.chip:1}}
@@ -44,13 +44,15 @@ To use incoming data in a node controllable through python code, read each input
     return combining_previous_inputs
 ```
 
-Where a column name is written, a column chip such as `{{inputs.chip:0.population}}` becomes the quoted name of that column of input 0. A chip is code, never text: do not put an input chip inside a string or a comment. If the previous box outputs a tuple, its input is that tuple and can be indexed like any tuple.
+Where a column name is written, a column chip such as `{{inputs.chip:0.population}}` becomes the quoted name of that column of input 0. A chip is code, never text: do not put an input chip inside a string or a comment. If the previous box outputs a tuple, its input is that tuple and can be indexed like any tuple: `{{inputs.chip:1}}[0]` is the first item of the tuple on input 1.
 
-But if the previous node outputs a single data like, but not limited to, a dataframe or number or text, 'arg' will contain that value not a indexable list.
+If the previous node outputs a single data like, but not limited to, a dataframe or number or text, its circle's input is that value, not an indexable list:
 
 ```python
-    return arg
+    return {{inputs.chip:0}}
 ```
+
+There is no variable named `input` or `arg`: code that reads one fails.
 
 Every data recieved from a node controllable through grammar is automatically passed foward to its output connection. 
 

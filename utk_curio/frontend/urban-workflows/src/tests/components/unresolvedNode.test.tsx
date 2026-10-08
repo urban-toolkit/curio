@@ -300,7 +300,7 @@ describe("UnresolvedNode in the notebook view", () => {
       <UnresolvedNode nodeId="n1" nodeType={STREETVISION} registryReady />,
     );
     expect(container.querySelector('[data-handleid="in"]')).toHaveTextContent("0");
-    expect(container.querySelector('[data-handleid="in"]')).toHaveAttribute("title", "input 0 · Load roads");
+    expect(container.querySelector('[data-handleid="in"]')).toHaveAttribute("title", "input_0 · Load roads");
     expect(container.querySelector('[data-handleid="out"]')).toHaveAttribute("title", "output");
   });
 });

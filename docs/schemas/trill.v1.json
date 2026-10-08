@@ -434,7 +434,7 @@
                 "preset": { "type": "string", "enum": ["bar", "grouped-bar", "line", "scatter", "pie", "lollipop", "table"] },
                 "x": { "type": "string", "minLength": 1 },
                 "y": { "type": "string", "minLength": 1 },
-                "aggregate": { "type": "string", "enum": ["mean", "sum", "median", "min", "max", "count"] }
+                "aggregate": { "type": "string", "enum": ["mean", "sum", "median", "min", "max", "count", "none"] }
               }
             },
             "mode": { "type": "string", "enum": ["chart", "difference"] },
@@ -443,7 +443,9 @@
               "additionalProperties": false,
               "properties": {
                 "key": { "type": "string", "minLength": 1 },
-                "value": { "type": "string", "minLength": 1 }
+                "value": { "type": "string", "minLength": 1 },
+                "colors": { "type": "string", "enum": ["interpolateViridis", "interpolateRdBu", "interpolateReds", "interpolateBlues", "interpolateGreens", "interpolateOranges", "interpolatePurples"] },
+                "absolute": { "type": "boolean" }
               }
             },
             "layer": { "type": "string", "minLength": 1 }

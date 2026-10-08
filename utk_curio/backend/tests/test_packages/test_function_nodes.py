@@ -276,7 +276,7 @@ class TestTheTemplateCode:
             "from fn_scale.ops import scale\n"
             "\n"
             "return scale(\n"
-            "    value=[!! input 0 !!],\n"
+            "    value=[!! input_0 !!],\n"
             "    factor=[!! factor !!],\n"
             "    label='scaled',\n"
             ")\n"
@@ -300,7 +300,7 @@ class TestTheTemplateCode:
             "a": {"use": "input", "slot": 0},
             "b": {"use": "default"},
             "c": {"use": "fixed", "value": "5"},
-        }) == "from m import f\n\nreturn f(\n    [!! input 0 !!],\n    c=5,\n)\n"
+        }) == "from m import f\n\nreturn f(\n    [!! input_0 !!],\n    c=5,\n)\n"
         # A skipped positional-only parameter before a given one is written out.
         source = "def f(a=3, b=0, /):\n    pass\n"
         fn = read_function(source, "m", "f")
@@ -346,12 +346,17 @@ class TestTheTemplateCode:
                 "value": {"use": "default"}, "factor": {"use": "default"}, "label": {"use": "default"},
             })
 
-    def test_a_function_named_arg_does_not_hide_the_input(self):
+    def test_a_function_named_like_an_input_does_not_hide_it(self):
         from utk_curio.backend.app.packages.domain.function_nodes import read_function, template_code
 
+        fn = read_function("def input_0(x):\n    return x\n", "m", "input_0")
+        assert template_code("m", fn, {"x": {"use": "input", "slot": 0}}) == (
+            "from m import input_0 as input_0_function\n\nreturn input_0_function(x=[!! input_0 !!])\n"
+        )
+        # `arg`, a name the input once had, is an ordinary name now.
         fn = read_function("def arg(x):\n    return x\n", "m", "arg")
         assert template_code("m", fn, {"x": {"use": "input", "slot": 0}}) == (
-            "from m import arg as arg_function\n\nreturn arg_function(x=[!! input 0 !!])\n"
+            "from m import arg\n\nreturn arg(x=[!! input_0 !!])\n"
         )
 
     def test_the_code_is_a_node_body_once_its_references_resolve(self):
@@ -369,8 +374,8 @@ class TestTheTemplateCode:
         resolved = resolve_code_references(
             code, [{"name": "factor", "type": "number", "default": 2, "value": 3}], "python", input_slots=[0],
         )
-        assert "factor=3" in resolved and "value=arg" in resolved
-        ast.parse("def node(arg):\n" + textwrap.indent(resolved, "    "))
+        assert "factor=3" in resolved and "value=input" in resolved
+        ast.parse("def node(input):\n" + textwrap.indent(resolved, "    "))
 
 
 # ---------------------------------------------------------------------------
@@ -423,7 +428,7 @@ class TestTheListingAndTheWrittenTemplate:
         assert template["widgets"] == [{"name": "factor", "type": "slider", "label": "Factor", "default": 2,
                                         "options": {"min": 1, "max": 5}}]
         assert written["source"] == {"filename": "scale-it.py", "code": (
-            "from fn_scale.ops import scale\n\nreturn scale(\n    value=[!! input 0 !!],\n"
+            "from fn_scale.ops import scale\n\nreturn scale(\n    value=[!! input_0 !!],\n"
             "    factor=[!! factor !!],\n    label='scaled',\n)\n"
         )}
         assert written["package"] == {"dirName": f"{SOURCE_ID}@1", "packageId": SOURCE_ID, "major": 1,
@@ -493,7 +498,7 @@ class TestTheListingAndTheWrittenTemplate:
         written = client.post("/api/packages/factory/function-template", headers=headers, json=body)
         assert written.status_code == 200, written.get_data(as_text=True)
         assert written.get_json()["source"]["code"] == (
-            "from fn_scale.ops import scale\n\nreturn scale(value=[!! input 0 !!])\n"
+            "from fn_scale.ops import scale\n\nreturn scale(value=[!! input_0 !!])\n"
         )
         for bad, words in (
             ({**body, "module": "../etc"}, "dotted module name"),

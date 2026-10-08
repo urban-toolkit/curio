@@ -83,6 +83,12 @@ class TestSubtractEnvelopes:
         assert _cells(algebra().subtract_envelopes(a, b)) == [5, 3, 1, -1, -3, -5]
         assert _cells(algebra().subtract_envelopes(b, a)) == [-5, -3, -1, 1, 3, 5]
 
+    def test_an_absolute_difference_is_each_cells_size_of_change_whichever_is_higher(self):
+        a = ("A", _envelope({"band_1": [1, 2, 3, 4, 5, 6]}))
+        b = ("B", _envelope({"band_1": [6, 5, 4, 4, 2, 1]}))
+        assert _cells(algebra().subtract_envelopes(a, b, absolute=True)) == [5, 3, 1, 0, 3, 5]
+        assert _cells(algebra().subtract_envelopes(b, a, absolute=True)) == [5, 3, 1, 0, 3, 5]
+
     def test_a_nodata_cell_on_either_side_is_nodata_in_the_result(self):
         result = algebra().subtract_envelopes(
             ("A", _envelope({"band_1": [None, 2, 3, 4, 5, 6]})),
@@ -297,16 +303,16 @@ class TestCalculate:
         with pytest.raises(algebra().RasterAlgebraError) as refused:
             algebra().calculate("subtract", [a, b], output_file=out)
         assert str(refused.value) == (
-            "subtract of input 0, input 1 cannot be computed: their grids differ in origin. "
-            "input 0 is 2 by 1 cells of 30 by 30 in EPSG:32616 from (447000, 4637000); "
-            "input 1 is 2 by 1 cells of 30 by 30 in EPSG:32616 from (447030, 4637000). Put both on one grid first."
+            "subtract of input_0, input_1 cannot be computed: their grids differ in origin. "
+            "input_0 is 2 by 1 cells of 30 by 30 in EPSG:32616 from (447000, 4637000); "
+            "input_1 is 2 by 1 cells of 30 by 30 in EPSG:32616 from (447030, 4637000). Put both on one grid first."
         )
 
     @pytest.mark.parametrize("operation,count,codes,sentence", [
         ("power", 2, None, "The Raster Calculator has no operation 'power'. Its operations: add, subtract, multiply, divide, choose."),
         ("add", 3, None, "add reads 2 rasters, and the Raster Calculator has 3: connect one to each input circle."),
         ("choose", 2, [1], "choose reads 3 rasters, and the Raster Calculator has 2: connect one to each input circle."),
-        ("choose", 3, None, "choose takes input 1 where input 0's class is one of codes, and input 2 elsewhere"),
+        ("choose", 3, None, "choose takes input_1 where input_0's class is one of codes, and input_2 elsewhere"),
         ("subtract", 2, [1], "Only choose reads codes; subtract takes none."),
         ("choose", 3, ["a"], "codes are numbers, such as [21, 31], not ['a']."),
     ])
@@ -320,13 +326,13 @@ class TestCalculate:
         import pandas as pd
 
         a = _raster(tmp_path / "a.tif", [[1.0, 2.0]])
-        with pytest.raises(algebra().RasterAlgebraError, match="input 1 is not a raster"):
+        with pytest.raises(algebra().RasterAlgebraError, match="input_1 is not a raster"):
             algebra().calculate("add", [a, pd.DataFrame({"x": [1]})], output_file=out)
 
     def test_bands_that_differ_are_refused(self, tmp_path, out):
         a = _raster(tmp_path / "a.tif", [[[1.0]], [[2.0]]])
         b = _raster(tmp_path / "b.tif", [[1.0]])
-        with pytest.raises(algebra().RasterAlgebraError, match="their bands differ. input 0 has 2; input 1 has 1"):
+        with pytest.raises(algebra().RasterAlgebraError, match="their bands differ. input_0 has 2; input_1 has 1"):
             algebra().calculate("add", [a, b], output_file=out)
 
 
@@ -356,7 +362,7 @@ class TestStatistics:
         mask = _raster(tmp_path / "mask.tif", [[0, 0, 5, 255]], dtype="uint8", nodata=255)
         row = algebra().statistics(a, mask=mask, mask_values=[0]).iloc[0]
         assert (row["mean"], row["count"]) == (1.5, 2)
-        # The mask may come on input 1, as the node's arg brings it.
+        # The mask may come on input_1, as the node's input_1 brings it.
         row = algebra().statistics([a, mask], mask_values=[0, 5]).iloc[0]
         assert (row["mean"], row["count"]) == (2.0, 3)
 
@@ -402,12 +408,12 @@ class TestStatistics:
         cases = [
             (dict(raster=a, mask=mask), "give one of them, for example mask_values=[0] or where=lambda value"),
             (dict(raster=a, mask=mask, mask_values=[0], where=lambda v: v > 0), "give one of them"),
-            (dict(raster=a, mask_values=[0]), "mask_values pick the cells of a mask raster on input 1, and there is none"),
+            (dict(raster=a, mask_values=[0]), "mask_values pick the cells of a mask raster on input_1, and there is none"),
             (dict(raster=a, where=0.5), "where is a condition such as lambda value: value < 1.08, not 0.5"),
             (dict(raster=a, where=lambda v: True), "where must give one answer per cell"),
             (dict(raster=a, mask=moved, mask_values=[0]), "their grids differ in origin"),
-            (dict(raster=a, band=3), "input 0 has bands 1 to 1, so it has no band 3"),
-            (dict(raster=[a, mask, mask]), "Raster Statistics reads one raster, and a mask on input 1, and it has 3"),
+            (dict(raster=a, band=3), "input_0 has bands 1 to 1, so it has no band 3"),
+            (dict(raster=[a, mask, mask]), "Raster Statistics reads one raster, and a mask on input_1, and it has 3"),
         ]
         for kwargs, sentence in cases:
             with pytest.raises(algebra().RasterAlgebraError) as refused:
@@ -561,25 +567,6 @@ class TestTileMosaic:
         assert (west, north) == to_3395.transform(lon_w, lat_n)
         assert (east, south) == to_3395.transform(lon_e, lat_s)
         assert rasters().tile_bounds(16814, 24355, 16, "EPSG:4326") == pytest.approx((lon_w, lat_s, lon_e, lat_n))
-
-    def test_web_tiles_lie_side_by_side_on_their_own_grid(self, tmp_path):
-        import rasterio
-
-        tiles = {(10, 20): np.full((4, 4), 1.0, dtype="float32"), (11, 21): np.full((4, 4), 2.0, dtype="float32")}
-        path = rasters().mosaic_web_tiles(tiles, 5, str(tmp_path / "m.tif"), crs="EPSG:3395", tile_size=4,
-                                          band_descriptions=["height (m)"], tags={"zoom": 5})
-        with rasterio.open(path) as mosaic:
-            cells = mosaic.read(1)
-            assert cells.shape == (8, 8)
-            assert cells[:4, :4].tolist() == [[1.0] * 4] * 4
-            assert cells[4:, 4:].tolist() == [[2.0] * 4] * 4
-            # A tile missing inside the span is 0.
-            assert cells[:4, 4:].tolist() == [[0.0] * 4] * 4
-            west, _, east, north = rasters().tile_bounds(10, 20, 5)
-            assert mosaic.transform.c == west and mosaic.transform.f == north
-            assert mosaic.transform.a == (east - west) / 4
-            assert mosaic.descriptions == ("height (m)",)
-            assert mosaic.tags()["zoom"] == "5"
 
     def test_files_are_laid_side_by_side_in_a_vrt_that_points_at_them(self, tmp_path):
         import rasterio

@@ -147,7 +147,7 @@ class FormatPlan:
     loader_suffix: str | None = None
 
 
-_CSV_TRANSFORM = '''df = arg
+_CSV_TRANSFORM = '''df = input_0
 print("CURIO_E2E_ROWS=%d;" % len(df))
 print("CURIO_E2E_COLS=%s;" % ",".join(map(str, df.columns)))
 return df
@@ -171,7 +171,7 @@ def _csv_expectations(data_file: Path) -> dict[str, str]:
 # the coordinates.
 _GEOJSON_TRANSFORM = '''import pandas as pd
 
-gdf = arg
+gdf = input_0
 bounds = gdf.geometry.bounds
 widths = (bounds["maxx"] - bounds["minx"]).tolist()
 print("CURIO_E2E_FEATURES=%d;" % len(gdf))
@@ -232,7 +232,7 @@ def _geojson_expectations(data_file: Path) -> dict[str, str]:
 # actually decoding the columns.
 _PARQUET_TRANSFORM = '''import pandas as pd
 
-df = arg
+df = input_0
 cols = [str(c) for c in df.columns]
 head = cols[:8]
 print("CURIO_E2E_ROWS=%d;" % len(df))
@@ -315,7 +315,7 @@ def _parquet_expectations(data_file: Path) -> dict[str, str]:
 _GEOTIFF_TRANSFORM = '''import numpy as np
 import pandas as pd
 
-src = arg
+src = input_0
 bands = list(range(1, src.count + 1))
 valid = []
 for band in bands:
@@ -397,7 +397,7 @@ def _geotiff_expectations(data_file: Path) -> dict[str, str]:
 # the index.
 _COLLECTION_TRANSFORM = '''import os
 
-media = arg
+media = input_0
 print("CURIO_E2E_ROWS=%d;" % len(media))
 print("CURIO_E2E_KINDS=%s;" % ",".join(sorted(set(media["kind"]))))
 print("CURIO_E2E_READABLE=%d;" % sum(1 for p in media["path"] if p and os.path.isfile(p)))
@@ -436,7 +436,7 @@ return pd.DataFrame({
 })
 '''
 
-_NETCDF_TRANSFORM = '''df = arg
+_NETCDF_TRANSFORM = '''df = input_0
 print("CURIO_E2E_VARIABLES=%s;" % ",".join(v + ":" + s for v, s in zip(df["variable"], df["shape"])))
 print("CURIO_E2E_DIMS=%s;" % ",".join(df["dims"]))
 print("CURIO_E2E_FINITE=%d;" % int(df["finite"].sum()))
@@ -463,6 +463,67 @@ def _netcdf_expectations(data_file: Path) -> dict[str, str]:
     return {
         "CURIO_E2E_VARIABLES": ",".join(v + ":" + s for v, s in zip(table["variable"], table["shape"])),
         "CURIO_E2E_DIMS": ",".join(table["dims"]),
+        "CURIO_E2E_FINITE": str(int(table["finite"].sum())),
+    }
+
+
+# A bundle is a node's several outputs kept as one dataset: ``curio_load_data``
+# gives them back in the container ``bundle.json`` records, here a tuple of
+# rasters (``data.scout.quad-cities-flood``) or of NetCDF datasets
+# (``data.scout.chicago-weather-2025-07-06``). An xarray Dataset cannot cross an
+# edge, so the loader describes each part, in order: its kind, its shape and how
+# many of its values are finite, proof that the values were read.
+_BUNDLE_LOADER_SUFFIX = '''import numpy as np
+import pandas as pd
+
+def describe(value):
+    if hasattr(value, "data_vars"):
+        names = list(value.data_vars)
+        shape = "x".join(str(n) for n in value[names[0]].shape)
+        return "netcdf", shape, sum(int(np.isfinite(value[name].values).sum()) for name in names)
+    band = np.ma.filled(value.read(1, masked=True).astype("float32"), np.nan)
+    return "raster", "%dx%d" % (value.width, value.height), int(np.isfinite(band).sum())
+
+parts = list(bundle.values()) if isinstance(bundle, dict) else list(bundle)
+rows = [describe(part) for part in parts]
+return pd.DataFrame({
+    "kind": [row[0] for row in rows],
+    "shape": [row[1] for row in rows],
+    "finite": [row[2] for row in rows],
+})
+'''
+
+_BUNDLE_TRANSFORM = '''df = input_0
+print("CURIO_E2E_PARTS=%d;" % len(df))
+print("CURIO_E2E_KINDS=%s;" % ",".join(df["kind"]))
+print("CURIO_E2E_SHAPES=%s;" % ",".join(df["shape"]))
+print("CURIO_E2E_FINITE=%d;" % int(df["finite"].sum()))
+return df
+'''
+
+
+def _bundle_expectations(data_file: Path) -> dict[str, str]:
+    """Read the committed bundle as ``curio_load_data`` reads it and describe
+    it the way the loader suffix does."""
+    import textwrap
+
+    from utk_curio.sandbox.util.catalog_helpers import read_dataset
+
+    namespace: dict = {}
+    exec("def describe_bundle(bundle):\n" + textwrap.indent(_BUNDLE_LOADER_SUFFIX, "    "), namespace)
+    bundle = read_dataset(str(data_file), "bundle")
+    parts = list(bundle.values()) if isinstance(bundle, dict) else list(bundle)
+    try:
+        table = namespace["describe_bundle"](bundle)
+    finally:
+        for part in parts:
+            part.close()
+    assert len(table), f"{data_file} lists no part"
+    assert int(table["finite"].sum()) > 0, f"{data_file} holds no finite value"
+    return {
+        "CURIO_E2E_PARTS": str(len(table)),
+        "CURIO_E2E_KINDS": ",".join(table["kind"]),
+        "CURIO_E2E_SHAPES": ",".join(table["shape"]),
         "CURIO_E2E_FINITE": str(int(table["finite"].sum())),
     }
 
@@ -506,6 +567,13 @@ FORMAT_PLANS: dict[str, FormatPlan] = {
         vega_spec=None,
         expectations=_netcdf_expectations,
         loader_suffix=_NETCDF_LOADER_SUFFIX,
+    ),
+    "bundle": FormatPlan(
+        loader_marker="bundle = curio_load_data(",
+        transform_code=_BUNDLE_TRANSFORM,
+        vega_spec=None,
+        expectations=_bundle_expectations,
+        loader_suffix=_BUNDLE_LOADER_SUFFIX,
     ),
 }
 

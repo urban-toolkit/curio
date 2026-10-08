@@ -21,8 +21,8 @@ import numpy as np
 from pythermalcomfort import models
 from rasterio.warp import Resampling
 
-src = [!! input 0 !!]
-sensor = [!! input 1 !!]
+src = [!! input_0 !!]
+sensor = [!! input_1 !!]
 timestamp = 12
 
 upscale_factor = 1.0

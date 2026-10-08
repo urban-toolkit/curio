@@ -50,6 +50,31 @@ describe('PythonInterpreter', () => {
         jest.clearAllMocks();
     });
 
+    test('posts the wired circles as inputSlots, which input_k each value is', async () => {
+        (global.fetch as jest.Mock).mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({ stdout: [], stderr: '', output: { path: 'abc', dataType: 'int' } }),
+        });
+        interpreter.interpretCode(
+            'return input_2', 'return input_2', '', [], jest.fn(), NodeType.COMPUTATION_ANALYSIS,
+            'node-1', 'workflow-1', mockNodeExecProv, null, false, undefined, [0, 2],
+        );
+        await flushPromises();
+        const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+        expect(body.inputSlots).toEqual([0, 2]);
+    });
+
+    test('sends no inputSlots for a node with no wired circle', async () => {
+        (global.fetch as jest.Mock).mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({ stdout: [], stderr: '', output: { path: 'abc', dataType: 'int' } }),
+        });
+        run(jest.fn());
+        await flushPromises();
+        const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+        expect(body).not.toHaveProperty('inputSlots');
+    });
+
     test('calls /processPythonCode and attaches the bearer token', async () => {
         (global.fetch as jest.Mock).mockResolvedValueOnce({
             ok: true,
@@ -71,7 +96,7 @@ describe('PythonInterpreter', () => {
         expect(options.headers.Authorization).toBe('Bearer test-token');
     });
 
-    test('indents the user code so it lands inside def userCode(arg)', async () => {
+    test('indents the user code so it lands inside def userCode(input, arg)', async () => {
         (global.fetch as jest.Mock).mockResolvedValueOnce({
             ok: true,
             json: async () => ({
@@ -97,7 +122,7 @@ describe('PythonInterpreter', () => {
 
         const [, options] = (global.fetch as jest.Mock).mock.calls[0];
         const body = JSON.parse(options.body);
-        // The sandbox wraps this as `def userCode(arg):\n<code>`, so every
+        // The sandbox wraps this as `def userCode(input, arg):\n<code>`, so every
         // line has to arrive already indented.
         expect(body.code).toBe('    x = 1\n    return x\n');
     });

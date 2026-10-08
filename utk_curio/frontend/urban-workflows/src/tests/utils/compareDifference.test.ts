@@ -5,6 +5,9 @@
  * Vega-Lite table that shows a table's.
  */
 import {
+  DIFFERENCE_INTERPOLATOR,
+  differenceColorOptions,
+  differenceColors,
   CHANGES,
   CHANGE_COLORS,
   differenceMapDoc,
@@ -119,6 +122,35 @@ describe("the Autark document that draws it", () => {
         }],
       },
     });
+  });
+
+  test("a map of numbers takes the color scale the node picks, and Viridis for one it does not know", () => {
+    const [sunlight] = differenceValues("layer", LAYER);
+    const scale = (doc: any) => doc.map.layerRefs[0].colorMapInterpolator;
+    expect(scale(differenceMapDoc(sunlight, "interpolateReds"))).toBe("interpolateReds");
+    expect(scale(differenceMapDoc(sunlight, "interpolateNope"))).toBe("interpolateViridis");
+    expect(differenceColors(undefined).value).toBe(DIFFERENCE_INTERPOLATOR);
+  });
+
+  test("an absolute difference's legend says so", () => {
+    const band = { value: "band_1", text: "band_1", categorical: false };
+    const doc: any = differenceMapDoc(band, "interpolateReds", "raster", true);
+    expect(doc.map.layerRefs[0].legendTitle).toBe("band_1 absolute change");
+    expect((differenceMapDoc(band) as any).map.layerRefs[0].legendTitle).toBe("band_1 change");
+  });
+
+  test("blue, white, red centers a raster's difference on no change, red the more; a layer's cannot take it", () => {
+    const band = { value: "band_1", text: "band_1", categorical: false };
+    const ref = (doc: any) => doc.map.layerRefs[0];
+    expect(ref(differenceMapDoc(band, "interpolateRdBu", "raster"))).toMatchObject({
+      colorMapInterpolator: "interpolateRdBu", colorMapCenter: 0, colorMapReverse: true,
+    });
+    const [sunlight] = differenceValues("layer", LAYER);
+    const layer = ref(differenceMapDoc(sunlight, "interpolateRdBu", "layer"));
+    expect(layer.colorMapInterpolator).toBe("interpolateViridis");
+    expect(layer.colorMapCenter).toBeUndefined();
+    expect(differenceColorOptions("layer").map((o) => o.value)).not.toContain("interpolateRdBu");
+    expect(differenceColors("interpolateRdBu", "raster").note).toBe("White is no change, red more and blue less, the deeper the more.");
   });
 
   test("a layer, by its change, one color for each", () => {

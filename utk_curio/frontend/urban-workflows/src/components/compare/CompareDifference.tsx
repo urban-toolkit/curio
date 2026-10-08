@@ -11,6 +11,9 @@ import { readGrammarInput, type GrammarInput } from "../../utils/grammarInput";
 import { toRows } from "../../utils/rowSource";
 import { classifyColumns, type ClassifiedColumn } from "../../utils/starterSpec";
 import {
+  differenceColorOptions,
+  DIFFERENCE_INTERPOLATOR,
+  differenceColors,
   differenceMapDoc,
   differenceTableSpec,
   differenceValues,
@@ -203,6 +206,7 @@ export function CompareDifference({
   const kind = drawn?.kind ?? null;
   const values = kind === "raster" || kind === "layer" ? differenceValues(kind, drawn!, settings?.key) : [];
   const value = resolveValue(settings?.value, values);
+  const colors = differenceColors(settings?.colors, kind);
 
   const set = (patch: Partial<DifferenceSettings>) => {
     const next: DifferenceSettings = { ...(settings ?? {}), ...patch };
@@ -225,9 +229,9 @@ export function CompareDifference({
       </p>
     );
   } else if (!connected) {
-    stage = <NodeEmptyState reason="disconnected" hint="Connect two scenarios' outcomes: input 0 is the reference, input 1 the comparison." />;
+    stage = <NodeEmptyState reason="disconnected" hint="Connect two scenarios' outcomes: input_0 is the reference, input_1 the comparison." />;
   } else if (!output) {
-    stage = <NodeEmptyState reason="not-run" hint="Run this node to subtract input 0 from input 1." />;
+    stage = <NodeEmptyState reason="not-run" hint="Run this node to subtract input_0 from input_1." />;
   } else if (!read) {
     stage = <NodeEmptyState reason="not-run" hint="Reading the difference." />;
   } else if (!drawn) {
@@ -235,7 +239,7 @@ export function CompareDifference({
   } else if (drawn.kind === "table") {
     stage = <CompareChart nodeData={nodeData} stacked={drawn.ref} specText={JSON.stringify(differenceTableSpec(drawn.names))} />;
   } else {
-    const docText = JSON.stringify(differenceMapDoc(value));
+    const docText = JSON.stringify(differenceMapDoc(value, settings?.colors, drawn.kind, settings?.absolute === true));
     stage = (
       <Suspense fallback={<NodeEmptyState reason="not-run" hint="Loading the map." />}>
         <CompareMap nodeId={nodeData.nodeId} difference={drawn.ref} docText={docText} />
@@ -265,12 +269,33 @@ export function CompareDifference({
               onChange={(next) => set({ value: next })}
             />
           ) : null}
+          {value && !value.categorical ? (
+            <Select
+              label="Change"
+              value={settings?.absolute ? "absolute" : "signed"}
+              disabled={!editable}
+              options={[
+                { value: "signed", text: "input_1 minus input_0" },
+                { value: "absolute", text: "Absolute, from 0" },
+              ]}
+              onChange={(next) => set({ absolute: next === "absolute" })}
+            />
+          ) : null}
+          {value && !value.categorical ? (
+            <Select
+              label="Colors"
+              value={colors.value}
+              disabled={!editable}
+              options={differenceColorOptions(kind).map((option) => ({ value: option.value, text: option.text }))}
+              onChange={(next) => set({ colors: next === DIFFERENCE_INTERPOLATOR ? undefined : next })}
+            />
+          ) : null}
         </div>
       ) : null}
       <div className={styles.mapCanvas}>{stage}</div>
       {drawn && drawn.kind !== "table" && value && !value.categorical ? (
         <p className={styles.note} data-compare-difference-note="true">
-          Dark purple is the lowest difference and yellow the highest.
+          {colors.note}
         </p>
       ) : null}
     </div>

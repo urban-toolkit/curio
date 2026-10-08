@@ -110,10 +110,10 @@ function wireCode(
   let out = code;
   const sources = incomingSources.get(cellIdx) ?? [];
   if (sources.length === 1) {
-    const srcVar = lastVars[sources[0]] ?? "arg";
-    out = `${srcVar} = arg\n${out}`;
+    const srcVar = lastVars[sources[0]] ?? "input_0";
+    out = srcVar === "input_0" ? out : `${srcVar} = input_0\n${out}`;
   } else if (sources.length > 1) {
-    out = `# multiple inputs available via arg\n${out}`;
+    out = `# inputs available as ${sources.map((_, i) => `input_${i}`).join(", ")}\n${out}`;
   }
   const lv = lastVars[cellIdx];
   if (hasOutgoing.has(cellIdx) && lv) {
@@ -216,7 +216,7 @@ export async function notebookToTrill(
   let importOnly: boolean[] = [];
   // Whether the analyzer actually answered. Distinct from "returned no edges":
   // a notebook of genuinely independent cells has none, and fabricating a
-  // chain for it would wire `arg` between cells the AST proved unrelated - and
+  // chain for it would wire `input_0` between cells the AST proved unrelated - and
   // stretch the layout 700px per cell for dependencies that do not exist.
   let analyzed = false;
   try {
@@ -362,7 +362,7 @@ function outputVarName(node: TrillNode): string {
   return `result_${safe}`;
 }
 
-/** Templates whose ``content`` is a Python function body, run as ``userCode(arg)``. */
+/** Templates whose ``content`` is a Python function body, run as ``userCode(input_0, ...)``. */
 const PYTHON_BODY_TYPES = new Set<string>([
   NodeType.DATA_LOADING,
   NodeType.DATA_TRANSFORMATION,
@@ -394,16 +394,12 @@ function markdownCell(source: string): NotebookCell {
   };
 }
 
-/** How a node names the value it received, mirroring the sandbox's ``arg``.
- *
- * ``worker.py`` hands a node a *tuple* of its upstream outputs, so several
- * inputs become a tuple here too. No inputs means the body is a source and gets
- * ``None``.
- */
-function argExpression(inputNodes: TrillNode[]): string {
-  if (inputNodes.length === 0) return "None";
-  if (inputNodes.length === 1) return outputVarName(inputNodes[0]);
-  return `(${inputNodes.map(outputVarName).join(", ")})`;
+/** The circles a node's code reads, as the sandbox binds them: each wired
+ * circle k, and each `input_k` the code names, is a parameter `input_k`
+ * (`utk_curio/sandbox/util/input_names.py`). */
+function inputParams(content: string, slots: number[]): number[] {
+  const read = Array.from(content.matchAll(/(?<![\w.$])input_(\d+)(?![\w$])/g), (m) => Number(m[1]));
+  return Array.from(new Set([...slots, ...read])).sort((a, b) => a - b);
 }
 
 function indent(text: string): string {
@@ -458,16 +454,20 @@ function generateCells(
   const heading = markdownCell(nodeHeading(node, inputNodes));
 
   if (PYTHON_BODY_TYPES.has(nodeType)) {
-    // A node's content is the body of `def userCode(arg):` - PythonInterpreter
-    // indents it by four spaces and the sandbox execs it under exactly that
-    // signature. Reproducing the function is the only faithful inversion:
-    // emitting the body flat would leave a top-level `return` (a SyntaxError)
-    // and an unbound `arg`, which is what shipped.
+    // A node's content is the body of a function whose parameters are its
+    // inputs, `def userCode(input_0=None, input_1=None, ...)`: PythonInterpreter
+    // indents it by four spaces and the sandbox execs it under that signature.
+    // Reproducing the function is the only faithful inversion: emitting the
+    // body flat would leave a top-level `return` (a SyntaxError) and unbound
+    // inputs. Each upstream's value is passed as its circle's input.
     const fn = `node_${sanitizeId(node.id)}`;
     const body = content.trim() === "" ? "    pass" : indent(content);
+    const slots = inputSlots.length === inputNodes.length ? inputSlots : inputNodes.map((_, i) => i);
+    const params = inputParams(content, slots).map((k) => `input_${k}=None`).join(", ");
+    const args = inputNodes.map((n, i) => `input_${slots[i]}=${outputVarName(n)}`).join(", ");
     return [
       heading,
-      codeCell(`def ${fn}(arg):\n${body}\n\n\n${outVar} = ${fn}(${argExpression(inputNodes)})`),
+      codeCell(`def ${fn}(${params}):\n${body}\n\n\n${outVar} = ${fn}(${args})`),
     ];
   }
 
@@ -555,7 +555,7 @@ export function trillToNotebook(spec: TrillSpec): Notebook {
   const nodes = spec.dataflow?.nodes ?? [];
   const edges = spec.dataflow?.edges ?? [];
 
-  // A node's inputs in circle order: the order the canvas builds `arg` in.
+  // A node's inputs in circle order: input_0, input_1, ... as the canvas names them.
   const inputsOf = new Map<string, { source: string; slot: number }[]>(nodes.map((n) => [n.id, []]));
   for (const edge of edges) {
     if (edge.type !== "Interaction") {

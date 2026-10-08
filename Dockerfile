@@ -50,6 +50,11 @@ COPY discovery/ discovery/
 COPY models/ models/
 COPY docs/examples/ docs/examples/
 COPY docs/schemas/ docs/schemas/
+# The bring-your-own-model guide and its worked example: Curio does not read
+# them, but test_bring_your_own_model.py checks the guide against them, and the
+# unit tests run in this image.
+COPY docs/BRINGING-MODELS.md docs/BRINGING-MODELS.md
+COPY docs/bring-your-own-model/ docs/bring-your-own-model/
 COPY utk_curio/ utk_curio/
 # DuckDB's spatial and json extensions, which the backend seeds into
 # ~/.duckdb for node runs and serves to the browser worker (#318). Without

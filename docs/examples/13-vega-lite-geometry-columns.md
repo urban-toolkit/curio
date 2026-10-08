@@ -40,7 +40,7 @@ anywhere without editing paths.
 ## Any name works
 
 ```python
-gdf = arg
+gdf = input_0
 
 # The active geometry is now called `geom`, and a plain string column takes the
 # name `geometry`. Neither may shadow the other.
@@ -57,7 +57,7 @@ string column. Nothing needs renaming to fit a convention.
 ## Several at once
 
 ```python
-gdf = arg
+gdf = input_0
 
 gdf["centroid"] = gdf.to_crs(3395).geometry.centroid.to_crs(4326)
 gdf["bbox"] = gdf.geometry.envelope
@@ -72,7 +72,7 @@ column can be partly null, and those rows are simply skipped.
 ## Geometry without a GeoDataFrame
 
 ```python
-gdf = arg
+gdf = input_0
 
 # `pd.DataFrame(gdf)` keeps the shapely objects but loses the GeoDataFrame type,
 # so nothing declares which column is geometry.

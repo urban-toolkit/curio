@@ -6,13 +6,13 @@ import { useRasterCalculatorBehavior, useRasterStatisticsBehavior } from "../../
 import { RASTER_CALCULATOR_CODE, RASTER_STATISTICS_CODE } from "../../../utils/raster/rasterNodeCode";
 
 const fresh = { nodeId: "n1" } as never;
-const saved = { nodeId: "n1", defaultCode: "return curio_raster_calculate(\"add\", arg)" } as never;
+const saved = { nodeId: "n1", defaultCode: "return curio_raster_calculate(\"add\", input)" } as never;
 const state = {} as never;
 
 describe("raster node behaviors", () => {
   it.each([
-    ["Raster Calculator", useRasterCalculatorBehavior, RASTER_CALCULATOR_CODE, 'curio_raster_calculate("subtract", arg)'],
-    ["Raster Statistics", useRasterStatisticsBehavior, RASTER_STATISTICS_CODE, "curio_raster_statistics(arg)"],
+    ["Raster Calculator", useRasterCalculatorBehavior, RASTER_CALCULATOR_CODE, 'curio_raster_calculate("subtract", [input_0, input_1])'],
+    ["Raster Statistics", useRasterStatisticsBehavior, RASTER_STATISTICS_CODE, "curio_raster_statistics(input_0, mask=input_1)"],
   ])("a dropped %s starts with its call", (_name, behavior, code, call) => {
     expect(behavior(fresh, state)).toEqual({ defaultValueOverride: code });
     expect(code).toContain(`return ${call}`);

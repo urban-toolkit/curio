@@ -81,6 +81,10 @@ import {
     applyModelToNodeData,
     canApplyModelToNode,
     hasModelDrag,
+    MODEL_TASK_LABEL,
+    modelCatalogKey,
+    modelTaskConflict,
+    peekModelCatalogCache,
     readModelDragPayload,
 } from "../services/modelCatalog";
 import "./styles.css";
@@ -527,6 +531,17 @@ export const NodeContainer = ({
         const live = { ...data, code: code ?? data.code ?? data.defaultCode };
         if (!canApplyModelToNode(live)) {
             showToast("This node does not run a model", "warning");
+            return;
+        }
+        // The listing the Models palette fetched with the rail.
+        const rows = peekModelCatalogCache(modelCatalogKey({}))?.items ?? [];
+        const conflict = modelTaskConflict(live, model, (id) => rows.find((row) => row.id === id)?.task);
+        if (conflict) {
+            showToast(
+                `This node runs ${MODEL_TASK_LABEL[conflict].toLowerCase()} models, not ${model.name}. ` +
+                    `Drop it on the canvas to get the node that runs it.`,
+                "warning",
+            );
             return;
         }
         const applied = applyModelToNodeData(live, model);

@@ -143,10 +143,10 @@ class VerifiedRounds:
         self.secrets = None
         self._seed_from_recorded_failure()
         self._seed_from_carry_forward()
-        # dev/128: what ``arg`` IS for this node — a fact of the graph, computed
-        # once (it cannot change mid-loop), handed to the child as an input, and
-        # enforced before the sandbox. The owner's report: a node with several
-        # inputs received ``arg`` and treated it as a frame.
+        # dev/128: what each ``input_k`` IS for this node — a fact of the graph,
+        # computed once (it cannot change mid-loop), handed to the child as an
+        # input, and enforced before the sandbox. The owner's report: a node
+        # whose input was a list of several treated it as a frame.
         self.arg_contract = input_contract.arg_shape(spec, self.node_id)
         if (extra_inputs or {}).get("upstreamOutputs"):
             self.arg_contract = input_contract.with_schemas(
@@ -326,8 +326,8 @@ class VerifiedRounds:
                 # handed over, not inferred from what was verified once.
                 inputs["sourceGrounding"]["confirmedSource"] = self.confirmed_source
         if self.arg_contract.get("kind") != input_contract.KIND_NONE:
-            # dev/128 (DEC-063, ninth application): the shape of `arg`, per
-            # node, on the first generation and on every correction.
+            # dev/128 (DEC-063, ninth application): the shape of the node's
+            # inputs, on the first generation and on every correction.
             inputs["inputContract"] = self.arg_contract
         if self.extra_inputs:
             inputs.update({k: v for k, v in self.extra_inputs.items() if k not in inputs})
@@ -425,7 +425,7 @@ class VerifiedRounds:
 
     def _input_contract_gate(self):
         """dev/128: the shape gate, beside the DEC-072 source gate and before
-        the sandbox. A list-shaped `arg` used as a frame is provably wrong —
+        the sandbox. A list-shaped `input_k` used as a frame is provably wrong —
         a list has no such attribute — so the round fails HERE, for free,
         with the slot table as its correction instead of a library's
         AttributeError three minutes later."""

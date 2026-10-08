@@ -529,48 +529,9 @@ def serialize_output(value, scratch_dir, *, slot="out"):
 # Running the node
 # ---------------------------------------------------------------------------
 
-# What a node that reads `arg` with no input delivered fails with: the same
-# text as ``worker.NO_INPUT_MESSAGE``, kept here for the reason
-# ``_code_reads_arg`` below is.
-NO_INPUT_MESSAGE = (
-    "This node received no input but its code references `arg`. "
-    "An upstream node has not run yet, failed, or is not wired "
-    "to this node's input handle. Check the nodes feeding this "
-    "one: fix any that show an error, run them until each shows "
-    "'Done', then run this node again."
-)
-
-
-def _code_reads_arg(code):
-    """Whether the node's code actually *reads* the ``arg`` parameter.
-
-    Mirrors ``worker._code_reads_arg`` for the same reason
-    ``_hoisted_import_statements`` mirrors ``worker._hoist_user_imports``: the
-    child is a forked process and keeps its own copy rather than importing the
-    in-process module.
-
-    The tripwire below used to ask ``'arg' in code``, a substring test over the
-    whole source. That fires on any occurrence of those three letters - a word
-    in a comment, a URL query string, or an identifier such as ``target``,
-    ``large``, ``margin`` or ``args`` - so a deliberately input-free loader like
-    ``gpd.read_file(<url>)`` was refused for referencing an input it never
-    mentions (#273). The in-process path was fixed; this one was not, so the
-    original bug survived on exactly the deployments that run isolated.
-    """
-    import ast
-
-    try:
-        tree = ast.parse("def userCode(arg):" + chr(10) + code)
-    except SyntaxError:
-        # Unreachable in practice; fall back to the old test rather than
-        # deciding that a node we cannot parse is input-free.
-        return "arg" in code
-    return any(
-        isinstance(node, ast.Name)
-        and node.id == "arg"
-        and isinstance(node.ctx, ast.Load)
-        for node in ast.walk(tree)
-    )
+# A node's code is the body of a function whose parameters are the inputs it
+# reads, input_0, input_1, ...: ``util/input_names.py``, which the in-process
+# worker binds them through too, so the two paths agree on every name.
 
 
 def _hoisted_import_statements(code, skip=()):
@@ -678,6 +639,10 @@ def run_node(request, namespace_factory):
                 # A file a node returns must sit in scratch, flat-named: the
                 # parent moves it into the artifact store from there.
                 output_dir=scratch_dir,
+                # Saved files too, under <scratch>/saved, which the parent
+                # copies out (util/saved_files.collect_saved).
+                computed=request.get("computed") or {},
+                saved_root=os.path.join(scratch_dir, "saved"),
             )
 
             # Replay this session's earlier imports so an upstream node's
@@ -706,7 +671,14 @@ def run_node(request, namespace_factory):
                 except Exception:
                     continue
 
-            exec(f"def userCode(arg):\n{code}", namespace)
+            from utk_curio.sandbox.util import input_names
+
+            # Code that still reads `input` / `arg` would otherwise reach
+            # Python's built-in input() and fail somewhere unhelpful.
+            legacy = input_names.legacy_name_read(code)
+            if legacy:
+                raise RuntimeError(input_names.legacy_input_message(legacy))
+            exec(f"{input_names.user_code_header(code)}\n{code}", namespace)
 
             argument = rebuild_input(request.get("input") or {"kind": "none"},
                                      scratch_dir)
@@ -717,13 +689,16 @@ def run_node(request, namespace_factory):
 
             argument = rasters_for_python(argument, scratch_dir)
 
-            # Same tripwire as the in-process path, and the same AST walk: a
-            # node that never reads an input is not refused for merely
-            # containing the letters "arg" (#273).
-            if argument is None and _code_reads_arg(code):
-                raise RuntimeError(NO_INPUT_MESSAGE)
+            # Each wired circle k is the code's input_k, as in process.
+            inputs = input_names.split_inputs(
+                argument, input_names.parse_slots(request.get("input_slots")),
+                request.get("data_type") or "",
+            )
+            missing = input_names.missing_input(code, inputs)
+            if missing:
+                raise RuntimeError(missing)
 
-            result = namespace["userCode"](argument)
+            result = namespace["userCode"](**inputs)
             output_descriptor = serialize_output(result, scratch_dir)
             ok = True
     except BaseException:  # noqa: BLE001 - mirrors execute_code's catch-all
@@ -755,14 +730,20 @@ def _make_dataset_path_resolver(staged, scratch_dir):
     """
     mapping = dict(staged)
 
-    def curio_data_path(dataset_id):
+    def curio_data_path(dataset_id, part=None):
         name = mapping.get(str(dataset_id))
         if name is None:
             raise RuntimeError(
                 f"Dataset '{dataset_id}' is not available in this environment - "
                 "install it from the Data Catalog drawer."
             )
-        return os.path.join(scratch_dir, name)
+        path = os.path.join(scratch_dir, name)
+        if part is not None:
+            # One file of a bundle, staged beside its bundle.json.
+            from utk_curio.sandbox.util.catalog_helpers import bundle_part_path
+
+            return bundle_part_path(path, part, str(dataset_id))
+        return path
 
     return curio_data_path
 

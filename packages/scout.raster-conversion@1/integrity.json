@@ -1,10 +1,11 @@
 {
   "sha256": {
-    "README.md": "717f0e1841e05efcd74497239c57bb7e7a8cb572c89e23fc1653aa1f7230185e",
-    "manifest.json": "96df91f52a92ed59f83a59e1c1092ed8e243449a8eb8c66d6b1780ba9c1b2451",
-    "sources/rasterize-buildings.py": "c073be14e078792cf64f455864dc3717681da37241fca07a31224a233830c7a1",
-    "sources/scout_raster_conversion/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "sources/scout_raster_conversion/convert_to_raster.py": "9e5e844214f628735e362d23004b375e2ea825e55c7321bf026ad7fdcdd577ff",
-    "sources/scout_raster_conversion/node_outputs.py": "da13cee842fd0dcea13bd457456247a673d8ef284c1ba960b3f81a19405b7f30"
+    "README.md": "ff3de55641313667f9fcf96b7d63c91e0d59a0976205ebfedb8b32f8f7aeed58",
+    "manifest.json": "030bff28557ed841095ff8f449decb0dac770ae3ece32e4fb162da7e42327653",
+    "sources/mosaic-tiles.py": "ba34e414e8ae076a4ccddc628d804dce5899d0d820a27c5c1318f2766696d697",
+    "sources/rasterize-buildings.py": "98f3c1f18de92c6190fd25a287c1c990bf589a32d7483f6a51ba1269c934a757",
+    "sources/scout_raster_conversion/__init__.py": "a7b2a848bce72dd4dbcaf67b0fc759c19b7ab236e2fb09d318f147ed323d654a",
+    "sources/scout_raster_conversion/convert_to_raster.py": "218c3bc5178ee3daf8039f0d48e55e9b5d707eaa699b53366e904be016c99e82",
+    "sources/scout_raster_conversion/mosaic.py": "f70fb14776aec6d890e72863a1d4deff81443fff883edbd719ab6522f6196ba0"
   }
 }

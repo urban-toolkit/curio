@@ -160,8 +160,9 @@ class TestRunThroughNode:
             report["nodes"]["a"]["output"]["path"],
             report["nodes"]["b"]["output"]["path"],
         ], c_payload["file_path"]
-        # The chip names circle 1, which is b's: arg[1] in the sent code.
-        assert "return arg[1]" in c_payload["code"] and "[!!" not in c_payload["code"]
+        # The chip names circle 1, which is b's: input_1 in the sent code.
+        assert "return input_1" in c_payload["code"] and "[!!" not in c_payload["code"]
+        assert c_payload["input_slots"] == [0, 1]
 
     def test_a_pass_through_node_with_several_inputs_forwards_them_in_circle_order(self, tmp_curio):
         """A Data Pool (or a Vega-Lite chart) takes any number of inputs and runs

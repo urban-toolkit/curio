@@ -1,8 +1,8 @@
 /**
  * Input chips on a run (#662). A node without a Widgets tab (JS Computation,
  * Data Summary) used to forward its code untouched; it now resolves its
- * references with the same table as every other node, so `[!! input 1 !!]`
- * reaches the sandbox as `arg[1]`. A node with several inputs waits until each
+ * references with the same table as every other node, so `[!! input_1 !!]`
+ * reaches the sandbox as `input[1]`. A node with several inputs waits until each
  * one holds a value.
  *
  * CodeEditor and GrammarEditor are stubbed to show the code or spec they would
@@ -119,24 +119,24 @@ function renderAutarkNode(inputSlots: unknown[], setOutputCallback = jest.fn()) 
 
 beforeEach(() => setFlow());
 
-test("a node without a Widgets tab runs its input chips as arg indexed", () => {
+test("a node without a Widgets tab runs its input chips as their circles' names", () => {
   const { play } = renderJsNode([{ path: "a" }, { path: "b" }]);
-  play("return [!! input 1 !!].length;");
-  expect(screen.getByTestId("replaced").textContent).toBe("return arg[1].length;");
+  play("return [!! input_1 !!].length;");
+  expect(screen.getByTestId("replaced").textContent).toBe("return input_1.length;");
 });
 
 test("a JavaScript node runs a layer chip as the call that picks the layer out of its input", () => {
   const { play, setOutputCallback } = renderJsNode([{ path: "a" }, { path: "b" }]);
-  play("return [!! input 1:table_osm_roads !!].features.length;");
-  expect(screen.getByTestId("replaced").textContent).toBe('return curio_layer(arg[1], "table_osm_roads", 1).features.length;');
+  play("return [!! input_1:table_osm_roads !!].features.length;");
+  expect(screen.getByTestId("replaced").textContent).toBe('return curio_layer(input_1, "table_osm_roads", 1).features.length;');
   expect(setOutputCallback).not.toHaveBeenCalledWith(expect.objectContaining({ code: "error" }));
 });
 
 test("a Python node runs a layer chip as the call that picks the layer out of its input", () => {
   const { play, setOutputCallback } = renderPythonNode([{ path: "a" }, { path: "b" }]);
-  play("roads = [!! input 0:table_osm_roads !!]\nreturn roads[[!! input 0:table_osm_roads.highway !!]]");
+  play("roads = [!! input_0:table_osm_roads !!]\nreturn roads[[!! input_0:table_osm_roads.highway !!]]");
   expect(screen.getByTestId("replaced").textContent)
-    .toBe('roads = curio_layer(arg[0], "table_osm_roads", 0)\nreturn roads["highway"]');
+    .toBe('roads = curio_layer(input_0, "table_osm_roads", 0)\nreturn roads["highway"]');
   expect(setOutputCallback).not.toHaveBeenCalledWith(expect.objectContaining({ code: "error" }));
 });
 
@@ -148,7 +148,7 @@ test("an Autark node runs a layer chip on an input of one frame as the table tha
     { path: "a", dataType: "geodataframe" },
     { path: "b", dataType: "outputs" },
   ]);
-  play('{"map": {"layerRefs": [{"dataRef": [!! input 0:roads !!]}, {"dataRef": [!! input 1:table_osm_parks !!]}]}}');
+  play('{"map": {"layerRefs": [{"dataRef": [!! input_0:roads !!]}, {"dataRef": [!! input_1:table_osm_parks !!]}]}}');
   expect(screen.getByTestId("replaced").textContent)
     .toBe('{"map": {"layerRefs": [{"dataRef": "input_0"}, {"dataRef": "table_osm_parks"}]}}');
   expect(setOutputCallback).not.toHaveBeenCalledWith(expect.objectContaining({ code: "error" }));
@@ -161,32 +161,32 @@ test("the strip above JavaScript code offers the inputs, named after their nodes
 
 test("a chip for an input with no edge ends the run with the problem", () => {
   const { play, setOutputCallback } = renderJsNode([{ path: "a" }, { path: "b" }]);
-  play("return [!! input 4 !!];");
+  play("return [!! input_4 !!];");
   expect(setOutputCallback).toHaveBeenCalledWith({
     code: "error",
-    content: expect.stringContaining("input 4 has no edge"),
+    content: expect.stringContaining("input_4 has no edge"),
   });
   expect(screen.getByTestId("replaced").textContent).toBe("");
 });
 
 test("a node with several inputs waits until each holds a value", () => {
   const { play, setOutputCallback } = renderJsNode([{ path: "a" }, undefined]);
-  play("return [!! input 0 !!];");
+  play("return [!! input_0 !!];");
   expect(setOutputCallback).toHaveBeenCalledWith({
     code: "error",
-    content: "Input 1 (from Parcels) has no value yet. Run the node that feeds it.",
+    content: "input_1 (from Parcels) has no value yet. Run the node that feeds it.",
   });
 });
 
 test("a Python node with an empty wired circle runs nothing and names the input it waits for", () => {
-  // Circle 0 empty, circle 1 filled: the run must not go ahead with input 1
+  // Circle 0 empty, circle 1 filled: the run must not go ahead with input_1
   // alone, and must say which input is missing.
   const { play, setOutputCallback } = renderPythonNode([undefined, { path: "b" }]);
-  play("return [!! input 1 !!]");
+  play("return [!! input_1 !!]");
   expect(setOutputCallback).toHaveBeenCalledTimes(1);
   expect(setOutputCallback).toHaveBeenCalledWith({
     code: "error",
-    content: "Input 0 (from Roads) has no value yet. Run the node that feeds it.",
+    content: "input_0 (from Roads) has no value yet. Run the node that feeds it.",
   });
   expect(screen.getByTestId("replaced").textContent).toBe("");
 });

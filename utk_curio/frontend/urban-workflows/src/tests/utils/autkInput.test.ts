@@ -181,16 +181,16 @@ describe("autkSourcesFrom", () => {
       expect(prepared.tables).toEqual(["roads"]);
       expect(prepared.rowsIn).toBe(1);
       expect(prepared.inputProblem).toBe(
-        "Inputs 0 and 1 both bring a layer named roads: roads means the one from input 0, "
-        + "and input_1 means the one from input 1.",
+        "input_0 and input_1 both bring a layer named roads: roads means the one from input_0, "
+        + "and input_1 means the one from input_1.",
       );
     });
 
     test("the second layer of a taken name is left out when it is not its input's `input_<k>`, and the problem says so", () => {
       // An input of several layers has no `input_<k>` for one of them, and a
       // compute step passes layers on under their own names only.
-      const left = "Inputs 0 and 1 both bring a layer named roads: roads means the one from input 0, "
-        + "and the one from input 1 is left out. Rename one of them.";
+      const left = "input_0 and input_1 both bring a layer named roads: roads means the one from input_0, "
+        + "and the one from input_1 is left out. Rename one of them.";
       const several = autkSourcesFrom(
         read(on(0, { name: "roads" }), on(1, { name: "roads" }), on(1, { name: "parks" })),
         MAP_ON("roads", "parks", "input_1"),
@@ -223,8 +223,8 @@ describe("autkSourcesFrom", () => {
       expect([...prepared.tables].sort()).toEqual(["input_0", "input_1", "input_2", "routes"]);
       expect(prepared.rowsIn).toBe(4);
       expect(prepared.inputProblem).toBe(
-        "Inputs 1 and 2 both bring a layer named routes: routes means the one from input 1, "
-        + "and input_2 means the one from input 2.",
+        "input_1 and input_2 both bring a layer named routes: routes means the one from input_1, "
+        + "and input_2 means the one from input_2.",
       );
     });
 
@@ -456,7 +456,7 @@ describe("a layer chip in the document reads the frame its input carries (#662)"
     const grid = fc([point(1, 1), point(2, 2)]);
     mockFetchData.mockResolvedValue({ dataType: "geodataframe", data: grid });
     const input = { path: "art-grid", dataType: "geodataframe" };
-    const spec = resolvedSpec('{"map": {"layerRefs": [{"dataRef": [!! input 0:anything !!]}]}}', [input]);
+    const spec = resolvedSpec('{"map": {"layerRefs": [{"dataRef": [!! input_0:anything !!]}]}}', [input]);
     const loaded = tables(await prepareAutkInput(input, spec));
     expect(Object.keys(loaded)).toContain(spec.map.layerRefs[0].dataRef);
     expect(loaded[spec.map.layerRefs[0].dataRef]).toEqual(grid);
@@ -471,7 +471,7 @@ describe("a layer chip in the document reads the frame its input carries (#662)"
     }));
     const slots = [{ path: "art-parks", dataType: "geodataframe" }, { path: "art-roads", dataType: "geodataframe" }];
     const spec = resolvedSpec(
-      '{"map": {"layerRefs": [{"dataRef": [!! input 1:roads !!]}, {"dataRef": [!! input 0:parks !!]}]}}',
+      '{"map": {"layerRefs": [{"dataRef": [!! input_1:roads !!]}, {"dataRef": [!! input_0:parks !!]}]}}',
       slots,
     );
     const loaded = tables(await prepareAutkInput({ dataType: "outputs", data: slots }, spec));
@@ -485,12 +485,12 @@ describe("a layer chip in the document reads the frame its input carries (#662)"
     // What a Data Pool hands on after a selection: the layer it holds, inline.
     const roads = fc([point(1, 1)]);
     const input = { dataType: "geodataframe", data: roads, layerName: "table_osm_roads" };
-    const spec = resolvedSpec('{"map": {"layerRefs": [{"dataRef": [!! input 0:table_osm_roads !!]}]}}', [input]);
+    const spec = resolvedSpec('{"map": {"layerRefs": [{"dataRef": [!! input_0:table_osm_roads !!]}]}}', [input]);
     expect(tables(await prepareAutkInput(input, spec))[spec.map.layerRefs[0].dataRef]).toEqual(roads);
 
-    const other = resolveReferences('{"map": {"layerRefs": [{"dataRef": [!! input 0:parks !!]}]}}', scopeOf([input]), "json");
+    const other = resolveReferences('{"map": {"layerRefs": [{"dataRef": [!! input_0:parks !!]}]}}', scopeOf([input]), "json");
     expect(other.problems.map((p) => p.message)).toEqual([
-      "[!! input 0:parks !!]: input 0 has no layer parks. Its layers are table_osm_roads.",
+      "[!! input_0:parks !!]: input_0 has no layer parks. Its layers are table_osm_roads.",
     ]);
   });
 
@@ -504,7 +504,7 @@ describe("a layer chip in the document reads the frame its input carries (#662)"
       ],
     });
     const input = { path: "art-osm", dataType: "outputs" };
-    const spec = resolvedSpec('{"map": {"layerRefs": [{"dataRef": [!! input 0:table_osm_roads !!]}]}}', [input]);
+    const spec = resolvedSpec('{"map": {"layerRefs": [{"dataRef": [!! input_0:table_osm_roads !!]}]}}', [input]);
     expect(spec.map.layerRefs[0].dataRef).toBe("table_osm_roads");
     expect(tables(await prepareAutkInput(input, spec)).table_osm_roads).toEqual(roads);
   });

@@ -28,6 +28,9 @@ PACKAGE_FILES = ("package.json", "package-lock.json")
 #: (IN_THE_PACKAGE there).
 SHIPPED_FOLDERS = ("datasets", "discovery", "docs", "models", "packages", "scripts", "vendor")
 SHIPPED_PACKAGE = "utk_curio._shipped"
+#: Folders of a shipped folder that hold Python Curio does not read: the
+#: bring-your-own-model guide's worked example (docs/BRINGING-MODELS.md).
+NOT_SHIPPED = {"docs": ["bring-your-own-model", "bring-your-own-model.*"]}
 
 
 def packages_and_dirs(root=ROOT):
@@ -42,7 +45,8 @@ def packages_and_dirs(root=ROOT):
         name = f"{SHIPPED_PACKAGE}.{folder}"
         package_dir[name] = folder
         packages.append(name)
-        packages += [f"{name}.{inner}" for inner in find_namespace_packages(where=str(Path(root) / folder))]
+        inner_packages = find_namespace_packages(where=str(Path(root) / folder), exclude=NOT_SHIPPED.get(folder, ()))
+        packages += [f"{name}.{inner}" for inner in inner_packages]
     return packages, package_dir
 
 

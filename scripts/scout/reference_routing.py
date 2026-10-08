@@ -79,7 +79,7 @@ import traceback
 from pathlib import Path
 
 from scout_checkout import (BLOBS, CATALOG, FIXTURES, ROAD_EDGES_FILE, ROAD_NODES_FILE, ROUTING, SCOUT_COMMIT,
-                            WEATHER_IDS, WEATHER_VARIABLES, blob_ids, check_scout_checkout, data_file, git_blob_id,
+                            WEATHER_ID, WEATHER_VARIABLES, blob_ids, check_scout_checkout, git_blob_id, weather_file,
                             sha256)
 
 MODULES = ("__init__.py", "weather_routing.py", "weight_calculation.py", "load_static.py",
@@ -537,7 +537,7 @@ def main():
     scout_roads_layer(args.scout, roi, roads_layer)
     fixtures = Path(args.fixtures)
     graph = read_road_graph(fixtures / ROAD_NODES_FILE, fixtures / ROAD_EDGES_FILE)
-    cut_weather = {name: data_file(catalog, WEATHER_IDS[name]) for name in WEATHER_VARIABLES}
+    cut_weather = {name: weather_file(catalog, name) for name in WEATHER_VARIABLES}
     lay_out(args.scout, work / "crop", cut_weather, graph, roi, roads_layer)
     if args.full:
         whole_weather = {name: Path(args.scout) / ROUTING / "weather_data" / f"{name}.nc" for name in WEATHER_VARIABLES}
@@ -602,7 +602,7 @@ def main():
         "scout_commit": SCOUT_COMMIT, "scout_files": blob_ids(paths), "made_with": report["made_with"],
         # The Data Catalog files SCOUT's run read, by dataset id, and the road
         # graph's, by their name in the proof's fixture folder.
-        "datasets": {dataset_id: sha256(data_file(catalog, dataset_id)) for dataset_id in WEATHER_IDS.values()},
+        "datasets": {f"{WEATHER_ID}/{name}.nc": sha256(weather_file(catalog, name)) for name in WEATHER_VARIABLES},
         "road_graph": {name: sha256(fixtures / name) for name in (ROAD_NODES_FILE, ROAD_EDGES_FILE)},
         "example": {"arguments": example, "data_layer_roi": roi},
         "routing_box": results[names[0]][0]["roads_layer_bounds"],

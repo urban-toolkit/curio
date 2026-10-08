@@ -42,7 +42,9 @@ import {
     isCurioRasterSource, newAutkDb, recolorRasters, resolveRasterInputs, withRasterSources, type CurioRasterSource,
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
+import type { Scenario } from '../../utils/scenarios/scenarioModel';
 import { titleLegends } from './autkLegendTitles';
+import { colorScenarioLayers } from './autkScenarioLayers';
 import { frameMaps } from './autkMapView';
 import { drawMapsOnDemand } from './autkMapDrawing';
 
@@ -156,7 +158,21 @@ export const useAutkGrammarBehavior = (
     // node asks (hook/useGrammarInputState).
     const { connected, upstreamErrored } = useGrammarInputState(data.nodeId);
     // A failed node says so to the nodes it feeds, as a failed code node does.
-    const { markNodeErrored } = useFlowContext() as { markNodeErrored?: (nodeId: string) => void };
+    const { markNodeErrored, scenarios } = useFlowContext() as {
+        markNodeErrored?: (nodeId: string) => void;
+        scenarios?: Scenario[];
+    };
+    // Read when a run draws, so a layer naming a scenario wears its color.
+    const scenariosRef = useRef<Scenario[]>([]);
+    scenariosRef.current = scenarios ?? [];
+    // A scenario recolored or renamed after the map was drawn: the map follows,
+    // as Compare Scenarios' charts do, without a run.
+    const scenarioLook = JSON.stringify((scenarios ?? []).map((s) => [s.id, s.name, s.color]));
+    useEffect(() => {
+        if (grammarRef.current && specRef.current) {
+            colorScenarioLayers(grammarRef.current, specRef.current, scenariosRef.current);
+        }
+    }, [scenarioLook]);
     // Whether a run has been tried, whether one is under way, and what the last
     // one could not read from its input: the pre-run notice reads these.
     const hasRunRef = useRef(false);
@@ -647,6 +663,7 @@ export const useAutkGrammarBehavior = (
                 destroyMapsRef.current = drawMapsOnDemand(grammar);
                 recolorRasters(grammar, spec);
                 titleLegends(grammar, spec);
+                colorScenarioLayers(grammar, spec, scenariosRef.current);
                 frameMaps(grammar);
                 // A node that left the page while they were made destroys them now.
                 if (!mountedRef.current) destroyLastMaps();

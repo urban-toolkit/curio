@@ -34,6 +34,7 @@ import { NodeAgentBadges } from './agents/attach/NodeAgentBadges';
 import { useCollab } from '../providers/CollaborationProvider';
 import ErrorBoundary from "./ErrorBoundary";
 import { NodeOutcomeStrip } from './nodes/NodeOutcomeStrip';
+import { normalizeInputReferences } from '../utils/references/codeReferences';
 import './Node.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
@@ -342,10 +343,15 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   // the locally-cached templateData.code which is only initialised once when templateId
   // first appears and never re-synced.  This ensures that programmatic code updates
   // (e.g. dataset drag-and-drop, AI suggestions) are reflected in the Monaco editor.
-  const defaultValue =
+  //
+  // An input chip written the old way, `[!! input 1 !!]` (a package installed
+  // before chips were `input_1`, say), is written as its tag reads. It runs
+  // the same.
+  const startingValue =
     behavior.defaultValueOverride ??
     data.defaultCode ??
     nodeState.templateData.code;
+  const defaultValue = typeof startingValue === "string" ? normalizeInputReferences(startingValue) : startingValue;
   const readOnly =
     nodeState.templateData.custom != undefined && nodeState.templateData.custom === false;
 

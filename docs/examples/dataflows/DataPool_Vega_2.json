@@ -32,7 +32,7 @@
         "type": "curio.builtin/data-transformation",
         "x": 1796.9237776095802,
         "y": 318.7250241808757,
-        "content": "import geopandas as gpd\r\n\r\njoined = arg\r\n\r\n# filter out the top 10 zip codes from the joined dataframe on 'zip' by square feet\r\ntop_10_largest = joined.groupby('zip')['VEGETATED_SQFT'].sum().reset_index().sort_values(by='VEGETATED_SQFT', ascending=False).head(10)\r\n\r\nreturn top_10_largest",
+        "content": "import geopandas as gpd\r\n\r\njoined = input_0\r\n\r\n# filter out the top 10 zip codes from the joined dataframe on 'zip' by square feet\r\ntop_10_largest = joined.groupby('zip')['VEGETATED_SQFT'].sum().reset_index().sort_values(by='VEGETATED_SQFT', ascending=False).head(10)\r\n\r\nreturn top_10_largest",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

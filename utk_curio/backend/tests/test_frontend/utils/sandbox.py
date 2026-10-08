@@ -4,6 +4,7 @@ back, and running a dataflow's code nodes without a browser.
 
 import os
 import json
+import re
 import textwrap
 from pathlib import Path
 # import zlib
@@ -245,6 +246,10 @@ def _catalog_resolution(code: str, username: str | None = None, node_type: str |
     }
 
 
+#: A call to one of the sandbox's saved-file helpers (``util/saved_files.py``).
+_SAVED_FILE_CALL = re.compile(r"\bcurio_(?:save_file|save_folder|computed_path)\s*\(")
+
+
 def execute_workflow_programmatically(
     spec, seed: int = 42, username: str | None = None
 ) -> dict[str, str]:
@@ -295,6 +300,16 @@ def execute_workflow_programmatically(
             browser_only.add(node.id)
             continue
 
+        # A node that saves files (curio_save_file, curio_save_folder) or reads
+        # what another saved (curio_computed_path) needs the backend: it keeps
+        # them as the dataflow's computed datasets and stages them for the next
+        # run (node_exec.resolve_computed). This runner bypasses the backend,
+        # so such a node, like an Autark step, is checked in the browser run
+        # only (example 24's Rasterize Buildings and Accumulated Shadow).
+        if _SAVED_FILE_CALL.search(spec.node_code(node, "python")):
+            browser_only.add(node.id)
+            continue
+
         # Resolve input as the backend does (node_exec.parse_input_ref): a fan-in
         # is a list of refs, passed as a stringified list that worker.py eval()s
         # back; one upstream whose node returned several values is its outputs
@@ -325,6 +340,8 @@ def execute_workflow_programmatically(
                 # lines with it (no type dispatch happens on it — dev/120).
                 "nodeType": node.raw_type,
                 "dataType": data_type,
+                # Which input_k each value of the input is, as Play sends it.
+                "input_slots": spec.input_slots(node.id),
                 # The backend resolves these for the browser path; this runner
                 # bypasses the backend, so it resolves them itself.
                 "dataset_paths": resolution["paths"],

@@ -99,7 +99,8 @@ WORKFLOW_FILES = [
 
     "docs/examples/dataflows/Regression.json",
 
-    # A NetCDF group from the Data Catalog, read whole by one loader; the
+    # SCOUT's WRF forecast from the Data Catalog, one bundle of NetCDF files
+    # read part by part by one loader; the
     # isolated stack runs it too (ISOLATED_WORKFLOWS in docker-compose.yml).
     "docs/examples/dataflows/NetCDF.json",
 
@@ -136,6 +137,8 @@ WORKFLOW_FILES = [
     # Package nodes: the stack installs scout.raster-conversion@1 and
     # scout.shadow@1 because the dataflow declares them (--with-examples).
     "docs/examples/24-scout-building-rasters.json",
+    # One node fed by several others, in every kind that takes several inputs.
+    "docs/examples/25-several-inputs.json",
 ]
 
 

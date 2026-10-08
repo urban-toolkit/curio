@@ -205,7 +205,7 @@ A node's "type" is the id of the template it was made from. A run that can place
 - Data Pool: The Data Pool is responsible for storing data that can be interacted by all connected visualizations. Interactions can also be propagated to other Data Pools.
 - Python Computation: The Computation Analysis box is the generic box responsible for performing any kinds of computations.
 - Data Summary: The Data Summary node computes descriptive statistics and schema information (shape, dtypes, missing values, describe) for a DataFrame.
-- JS Computation: Run JavaScript via Node.js. Input from the previous node is available as `arg`. Use `return` to pass output downstream.
+- JS Computation: Run JavaScript via Node.js. What the edge on each input circle delivers is `input_0`, `input_1`, and so on. Use `return` to pass output downstream.
 - Vega-Lite: The Vega box is responsible for visualizing 2D plots.
 - Simple View: Displays incoming data: a table for DataFrames and GeoDataFrames, or a card per row when the frame carries an image column, showing the image beside that row's values. Other values pass through.
 - Autark: Grammar-driven urban analytics. Write an UrbanSpec (JSON) covering data loading (OSM, CSV, GeoJSON), GPU compute, map rendering of layers and rasters, and/or plot rendering in one declarative spec.
@@ -253,21 +253,23 @@ To pass data forward from a node controllable through python code it is necessar
     return variable1
 ```
 
-To use incoming data in a node controllable through python code, read each input through its input chip: `[!! input 0 !!]` is the input on circle 0, `[!! input 1 !!]` the one on circle 1, and so on. A chip becomes the input's value when the node runs, so a node with two inputs can combine them like:
+To use incoming data in a node controllable through python code, read each input through its input chip: `[!! input_0 !!]` is the input on circle 0, `[!! input_1 !!]` the one on circle 1, and so on. Each input circle is its own variable, `input_0`, `input_1`, ..., and a chip runs as that name, so a node with two inputs can combine them like:
 
 ```python
-    combining_previous_inputs = [!! input 0 !!] + [!! input 1 !!]
+    combining_previous_inputs = [!! input_0 !!] + [!! input_1 !!]
 
     return combining_previous_inputs
 ```
 
-Where a column name is written, a column chip such as `[!! input 0.population !!]` becomes the quoted name of that column of input 0. A chip is code, never text: do not put an input chip inside a string or a comment. If the previous box outputs a tuple, its input is that tuple and can be indexed like any tuple.
+Where a column name is written, a column chip such as `[!! input_0.population !!]` becomes the quoted name of that column of input 0. A chip is code, never text: do not put an input chip inside a string or a comment. If the previous box outputs a tuple, its input is that tuple and can be indexed like any tuple: `[!! input_1 !!][0]` is the first item of the tuple on input 1.
 
-But if the previous node outputs a single data like, but not limited to, a dataframe or number or text, 'arg' will contain that value not a indexable list.
+If the previous node outputs a single data like, but not limited to, a dataframe or number or text, its circle's input is that value, not an indexable list:
 
 ```python
-    return arg
+    return [!! input_0 !!]
 ```
+
+There is no variable named `input` or `arg`: code that reads one fails.
 
 Every data recieved from a node controllable through grammar is automatically passed foward to its output connection. 
 
@@ -373,7 +375,7 @@ Output supported:
 
 Make sure to pay attention to the compatibility between output and input of the nodes.
 
-Number of connections each node accepts into its inputs. A node that accepts more than one takes each connection on its own input circle, and its code reads each through its input chip (`[!! input 0 !!]`, `[!! input 1 !!]`, ...). To give a node that accepts 1 more than one data unit, output a tuple with multiple values from the previous node:
+Number of connections each node accepts into its inputs. A node that accepts more than one takes each connection on its own input circle, and its code reads each through its input chip (`[!! input_0 !!]`, `[!! input_1 !!]`, ...). To give a node that accepts 1 more than one data unit, output a tuple with multiple values from the previous node:
 
 - Data Export: 1
 - Data Transformation: any number

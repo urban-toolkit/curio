@@ -42,6 +42,7 @@ export const AGGREGATE_LABELS: Record<CompareAggregate, string> = {
   min: "Minimum",
   max: "Maximum",
   count: "Count of rows",
+  none: "None",
 };
 
 /**
@@ -140,8 +141,10 @@ export function scenarioScale(labels: readonly CompareInputLabel[]): { domain: s
 
 function measure(y: string, aggregate: CompareAggregate | null, type = "quantitative"): Record<string, unknown> {
   if (aggregate === "count") return { aggregate: "count", type, title: "Rows" };
-  const title = aggregate ? `${aggregate} of ${y}` : y;
-  return { field: vegaField(y), type, ...(aggregate ? { aggregate } : {}), title };
+  // "none" plots the values as they are: one bar per row, titled by the column.
+  const combine = aggregate === "none" ? null : aggregate;
+  const title = combine ? `${combine} of ${y}` : y;
+  return { field: vegaField(y), type, ...(combine ? { aggregate: combine } : {}), title };
 }
 
 function columnType(name: string, columns: readonly ClassifiedColumn[]): string {
@@ -219,14 +222,28 @@ export function compareChartSpec(
           },
         },
       };
-    case "pie":
+    case "pie": {
+      // Each slice, and its value written inside it: the text stacks by the
+      // same scenario as the arcs, so it sits on its own slice.
+      const value = measure(y, chart.aggregate);
       return {
         spec: {
           ...base,
-          mark: { type: "arc", tooltip: true },
-          encoding: { theta: measure(y, chart.aggregate), color },
+          encoding: { theta: { ...value, stack: true }, color },
+          layer: [
+            { mark: { type: "arc", tooltip: true } },
+            {
+              mark: { type: "text", radius: { expr: "min(width, height) / 3" }, fontWeight: "bold" },
+              encoding: {
+                text: { ...value, format: ",.3~f" },
+                color: { value: "white" },
+                detail: { field: SCENARIO_NAME_FIELD, type: "nominal" },
+              },
+            },
+          ],
         },
       };
+    }
     case "lollipop": {
       // A stem from zero to the value, and a dot on its end.
       const value = measure(y, chart.aggregate);

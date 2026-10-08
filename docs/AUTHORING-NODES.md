@@ -72,8 +72,10 @@ built-in nodes, with nothing extra to declare.
 ### From the canvas
 
 1. Drop a **Data Transformation** node on the canvas and write your Python in
-   the **Code** view. `arg` is the upstream node's output; whatever you `return`
-   becomes this node's output. Run it until it does what you want.
+   the **Code** view. What the edge on input circle 0 delivers is `input_0`, on
+   circle 1 `input_1`, and so on (see [Input names](USAGE.md#input-names)).
+   Whatever you `return` becomes
+   this node's output. Run it until it does what you want.
 2. Click the **cog** on the node header to open **Node settings**. Set the label,
    the port types, and the editor mode.
 3. Click **Save as package node…**, then **New package…**. Give it a package id
@@ -127,7 +129,7 @@ place each one in the source as `[!! name !!]`:
 ```
 
 ```python
-return arg.rolling([!! window !!]).agg([!! method !!])
+return input_0.rolling([!! window !!]).agg([!! method !!])
 ```
 
 A node dropped from the palette starts with these widgets and their defaults.
@@ -141,13 +143,13 @@ A template does not declare selection tags: each names a view of one dataflow,
 so it is added on the canvas, in the node's **Widgets** tab.
 
 The source can also read its input through input chips
-([Several inputs](USAGE.md#several-inputs)): `[!! input 0 !!]` is the input,
-`[!! input 0.height !!]` a column's name, and `[!! input 0:table_osm_roads !!]`
+([Several inputs](USAGE.md#several-inputs)): `[!! input_0 !!]` is the input,
+`[!! input_0.height !!]` a column's name, and `[!! input_0:table_osm_roads !!]`
 one layer of the several an Autark node hands on, as a GeoDataFrame in Python
 and a FeatureCollection in JavaScript:
 
 ```python
-roads = [!! input 0:table_osm_roads !!]
+roads = [!! input_0:table_osm_roads !!]
 return roads[roads["highway"] == "primary"]
 ```
 
@@ -174,7 +176,7 @@ packages/me.heights@1/
 ```python
 from building_height.convert_to_raster import convert_raster
 
-return convert_raster(arg, zoom=[!! zoom !!])
+return convert_raster(input_0, zoom=[!! zoom !!])
 ```
 
 - A module is a `.py` file, or a folder of `.py` files, directly in `sources/`,
@@ -196,6 +198,28 @@ return convert_raster(arg, zoom=[!! zoom !!])
   is refused when the node runs.
 - Imports inside your modules are not detected: list the libraries they need in
   `manifest.dependencies.python`.
+
+### Files your library writes
+
+A library that writes files instead of returning values, such as SCOUT's
+rasterizer writing map tiles into a folder, writes them where
+`curio_save_folder("<name>")` (or `curio_save_file("<name>.<ext>")`) says.
+They are kept as a computed dataset of the dataflow, and a node of the same
+dataflow reads them back with `curio_computed_path("<name>")`
+([Files a node saves from its code](DATA-CATALOG.md#files-a-node-saves-from-its-code)).
+Two nodes of one dataflow that save one name replace each other's files, so
+when a dataflow may hold your node twice, as two scenarios do, take the name
+from a widget:
+
+```python
+tiles = curio_save_folder([!! tiles !!])
+convert_raster(input_0, [!! attribute !!], int([!! zoom !!]), tiles)
+return tile_table(tiles, int([!! zoom !!]))
+```
+
+`scout.raster-conversion@1` does this: Rasterize Buildings saves the tiles and
+returns a table of them, and Mosaic Tiles, connected to it, reads them back
+under the same widget's name.
 
 ---
 
@@ -463,6 +487,8 @@ archive whose `<packageId>@<major>` you already have is refused.
 
 ## Where to go next
 
+- [BRINGING-MODELS.md](BRINGING-MODELS.md): a node that runs a model you
+  trained, exported to ONNX and added to the Model Catalog.
 - [NODE-CATALOG.md](NODE-CATALOG.md): how packages are stored, installed,
   versioned, forked, published and shared.
 - [EXTENDING.md](EXTENDING.md): the reference for backend blueprints, calling

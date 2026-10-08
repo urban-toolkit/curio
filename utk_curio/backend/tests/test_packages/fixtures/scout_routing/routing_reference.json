@@ -36,11 +36,11 @@
   "scikit-learn": "1.6.1"
  },
  "datasets": {
-  "data.scout.wrf-rain": "01d5ace79519a033508595d7762843d10da0b7c81a0fea58a78da78a4c99f983",
-  "data.scout.wrf-t2": "7b6973b6c3b0c949b4cff2770f6d02f8e89722834e99ead5b936c75c4a755791",
-  "data.scout.wrf-rh2": "1e61f4705c6f9e9cab238bf3b731a6cf531550a7d50641ac8af946f9fb9bb299",
-  "data.scout.wrf-wspd10": "10a73556dc2993000943c9070ffd0ad3f796ee1319550c29bd7c6a066e7630da",
-  "data.scout.wrf-wdir10": "8641d562a13a67760447b569eb70fb6cbd80b50a0dc80862df7df75635de2369"
+  "data.scout.chicago-weather-2025-07-06/RAIN.nc": "01d5ace79519a033508595d7762843d10da0b7c81a0fea58a78da78a4c99f983",
+  "data.scout.chicago-weather-2025-07-06/T2.nc": "7b6973b6c3b0c949b4cff2770f6d02f8e89722834e99ead5b936c75c4a755791",
+  "data.scout.chicago-weather-2025-07-06/RH2.nc": "1e61f4705c6f9e9cab238bf3b731a6cf531550a7d50641ac8af946f9fb9bb299",
+  "data.scout.chicago-weather-2025-07-06/WSPD10.nc": "10a73556dc2993000943c9070ffd0ad3f796ee1319550c29bd7c6a066e7630da",
+  "data.scout.chicago-weather-2025-07-06/WDIR10.nc": "8641d562a13a67760447b569eb70fb6cbd80b50a0dc80862df7df75635de2369"
  },
  "road_graph": {
   "roads_nodes.parquet": "2b442dc7449adab3f8e2c40a89378df38c4867e138cd6c62ca6f61ccd33944e0",

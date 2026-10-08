@@ -100,7 +100,7 @@ class TestPlayShapesEachNode:
             {"path": "art-b", "dataType": "dataframe"},
             {"path": "art-a", "dataType": "dataframe"},
         ]}
-        assert recorder.calls["c"]["code"] == "    return arg[0], arg[1]\n"
+        assert recorder.calls["c"]["code"] == "    return input_0, input_1\n"
 
     def test_a_widget_reference_is_resolved_before_the_run(self):
         recorder, _, _ = run(spec([node(

@@ -32,6 +32,7 @@ import {
 import { usePackageBackendRun } from "../../hook/usePackageBackendRun";
 import { useGrammarInputState } from "../../hook/useGrammarInputState";
 import { upstreamErroredMessage } from "../../utils/nodeEmptyState";
+import { wiredInputSlots } from "../../utils/inputSlots";
 import { ICodeData } from "../../types";
 import { ReferenceStrip } from "./widgets/WidgetTag";
 import { insertReference, useCodeReferences } from "./widgets/monacoCodeReferences";
@@ -148,8 +149,13 @@ function CodeEditor({
         isDashboardSource,
         playNodesUpTo,
         nodes,
+        edges,
         dashboardOn,
     } = useFlowContext();
+    // The wired circles, which input_k each value of data.input is. A ref:
+    // the run effect below is keyed on the resolved code alone.
+    const wiredSlotsRef = useRef<number[]>([]);
+    wiredSlotsRef.current = wiredInputSlots(edges ?? [], data.nodeId);
     // The code in a plain gray box over its output, as in a notebook, except
     // on a dashboard tile.
     const look = nodeEditorLook(!!dashboardOn);
@@ -432,6 +438,7 @@ function CodeEditor({
                 data, defaultSaveOutputDataset, isDashboardSource(data.nodeId),
             ),
             resolveNodeDisplayLabel(data),
+            wiredSlotsRef.current,
         );
     }, [replacedCodeDirty]);
 

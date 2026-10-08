@@ -80,8 +80,8 @@ def run_in_process(code, inputs, node_type, workspace):
 
 
 def test_the_starters_call_curios_raster_algebra():
-    assert 'return curio_raster_calculate("subtract", arg)' in starter("RASTER_CALCULATOR_CODE")
-    assert "return curio_raster_statistics(arg)" in starter("RASTER_STATISTICS_CODE")
+    assert 'return curio_raster_calculate("subtract", [input_0, input_1])' in starter("RASTER_CALCULATOR_CODE")
+    assert "return curio_raster_statistics(input_0, mask=input_1)" in starter("RASTER_STATISTICS_CODE")
 
 
 def test_a_raster_calculator_runs_its_starter_on_two_inputs(workspace):
@@ -104,7 +104,8 @@ def test_a_raster_calculator_chooses_by_class(workspace):
     nbs = _raster(workspace / "nbs.tif", [[1.0, 2.0, 3.0]])
     no_nbs = _raster(workspace / "no_nbs.tif", [[10.0, 20.0, 30.0]])
     code = starter("RASTER_CALCULATOR_CODE").replace(
-        'curio_raster_calculate("subtract", arg)', 'curio_raster_calculate("choose", arg, codes=[21, 31])'
+        'curio_raster_calculate("subtract", [input_0, input_1])',
+        'curio_raster_calculate("choose", [input_0, input_1, input_2], codes=[21, 31])',
     )
     _output, result = run_in_process(code, (classes, nbs, no_nbs), CALCULATOR, workspace)
     try:
@@ -152,7 +153,7 @@ def test_the_steps_run_in_an_isolated_child(tmp_path):
         assert written.read(1).tolist() == [[4.0, 5.0]]
 
     stats_code = starter("RASTER_STATISTICS_CODE").replace(
-        "curio_raster_statistics(arg)", "curio_raster_statistics(arg[0], where=lambda value: value > 6)"
+        "curio_raster_statistics(input_0, mask=input_1)", "curio_raster_statistics(input_0, where=lambda value: value > 6)"
     )
     counted = run(stats_code, STATISTICS)
     child.write_result(counted, str(scratch))

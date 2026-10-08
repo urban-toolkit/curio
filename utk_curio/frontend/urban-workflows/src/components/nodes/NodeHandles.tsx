@@ -26,7 +26,9 @@ function notebookDotTitle(
   } catch {
     name = null;
   }
-  const input = `input ${notebookInputLabel(handle.id)}`;
+  // A circle is named as code names it (`input_0`); a named port by its name.
+  const label = notebookInputLabel(handle.id);
+  const input = /^\d+$/.test(label) ? `input_${label}` : `input ${label}`;
   return name ? `${input} · ${name}` : input;
 }
 

@@ -520,36 +520,6 @@ def _write_mosaic_geotiff(tiles, path, grid, *, crs, dtype, bands, nodata, fill,
     return path
 
 
-def mosaic_web_tiles(tiles, zoom, path, *, crs="EPSG:3395", tile_size=256, dtype="float32", fill=0,
-                     band_descriptions=None, tags=None):
-    """Web map tiles side by side in one GeoTIFF at *path* (:func:`mosaic_rasters`).
-
-    *tiles* maps ``(x, y)`` to the tile's cells, *tile_size* square, rows from
-    north to south. Columns of tiles run west to east with x and rows north to
-    south with y; a tile *tiles* lacks inside their span holds *fill*. The grid
-    is the tiles' own in *crs*: it starts at the north-west tile's corner, its
-    cells are a tile's width over *tile_size* wide, and its rows split the span
-    from the top row's north edge to the bottom row's south edge, so each tile
-    sits in its slot within a small fraction of a cell (in a cylindrical
-    projection, rows differ in height by a few millionths).
-    """
-    xs = range(min(x for x, _ in tiles), max(x for x, _ in tiles) + 1)
-    ys = range(min(y for _, y in tiles), max(y for _, y in tiles) + 1)
-    west, _, east, north = tile_bounds(xs[0], ys[0], zoom, crs)
-    _, south, _, _ = tile_bounds(xs[0], ys[-1], zoom, crs)
-    x_res, y_res = (east - west) / tile_size, -(north - south) / (tile_size * len(ys))
-    pieces = [
-        {
-            "transform": (x_res, 0.0, west + (x - xs[0]) * tile_size * x_res, 0.0, y_res,
-                          north + (y - ys[0]) * tile_size * y_res),
-            "width": tile_size, "height": tile_size, "cells": cells,
-        }
-        for (x, y), cells in tiles.items()
-    ]
-    return mosaic_rasters(pieces, path, crs=crs, dtype=dtype, resolution=(x_res, y_res), fill=fill,
-                          band_descriptions=band_descriptions, tags=tags)
-
-
 def mosaic_collection(tiles, output_file):
     """Mosaic Rasters' step (``curio.media@1``): a raster collection's rows, as
     ``curio_load_collection`` gives them, side by side in one GDAL VRT

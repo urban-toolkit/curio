@@ -42,7 +42,7 @@ A trivial cleanup pass so the histogram in Step 3 is not skewed by `NaN` rows. P
 ```python
 import pandas as pd
 
-df = arg
+df = input_0
 numeric_cols = df.select_dtypes(include='number').columns
 df = df.copy()
 df[numeric_cols] = df[numeric_cols].fillna(0)
@@ -188,7 +188,7 @@ Each circle is one rooftop, sized by vegetated area, plotted in lat/lon with bou
 The third branch off the pool reduces the joined table down to the ten zip codes with the most vegetated rooftop area.
 
 ```python
-joined = arg
+joined = input_0
 
 top_10_largest = (joined.groupby('zip')['VEGETATED_SQFT']
     .sum()

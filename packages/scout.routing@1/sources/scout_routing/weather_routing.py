@@ -11,8 +11,8 @@ CSV files.
 What Curio does instead of SCOUT:
 
 - The roads are a Curio roads layer (road_graph.py), not SCOUT's pickled
-  Chicago graph, and the weather is the Data Catalog's SCOUT WRF group, a
-  NetCDF file per variable. SCOUT's ``load_static.DataLoader`` is not ported:
+  Chicago graph, and the weather is the Data Catalog's SCOUT WRF forecast,
+  one dataset of a NetCDF file per variable. SCOUT's ``load_static.DataLoader`` is not ported:
   ``cut_graph`` is its graph cut, and its masked weather slices fed only the
   training SCOUT runs when its model file is missing.
 - The routes are a GeoDataFrame an Autark map draws, and their metrics a table

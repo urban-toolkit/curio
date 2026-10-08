@@ -467,7 +467,8 @@ for, or a marker in the older `[!! name$TYPE$default !!]` form, stops the run
 with a message naming it; the **Widgets** tab lists them too.
 
 Widgets are not connections: a value you set is not data from another node. Data
-from the node's inputs reaches its code as `arg`, or through input chips (see
+from the node's inputs reaches its code as `input_0`, `input_1`, and so on, one
+variable per input circle, or through input chips (see
 [Several inputs](#several-inputs)).
 
 ### Shared values: the Parameter node
@@ -510,7 +511,7 @@ The reference becomes the list of the selected rows' ids, each once:
 
 ```python
 picked = [!! selection buildings !!]
-return arg[arg["osm_id"].isin(picked)]
+return input_0[input_0["osm_id"].isin(picked)]
 ```
 
 runs as `picked = [101, 104]` when two buildings are selected, and as
@@ -531,25 +532,26 @@ dict's tab is named after its key.
 
 In code and in a Vega-Lite or Autark spec, each input is a chip:
 
-1. The strip above the code shows a tag for each input: **input 0**,
-   **input 1**, and so on. Hover one to see which node feeds it.
+1. The strip above the code shows a tag for each input: **input_0**,
+   **input_1**, and so on. Hover one to see which node feeds it.
 2. Drag a tag into the code, or click it to insert it at the cursor. It appears
-   as a green chip, written `[!! input 1 !!]`.
+   as a green chip, written `[!! input_1 !!]`.
 3. Click the arrow beside an input's tag to list its columns, once the node that
    feeds it has run. Drag a column's tag where a column name goes; it is written
-   `[!! input 1.population !!]`.
+   `[!! input_1.population !!]`.
 4. An input that carries several layers (an upstream Autark node's tables)
-   lists a tag for each layer, `[!! input 1:table_osm_roads !!]`, followed by
-   that layer's columns, `[!! input 1:table_osm_roads.lanes !!]`. A layer is
+   lists a tag for each layer, `[!! input_1:table_osm_roads !!]`, followed by
+   that layer's columns, `[!! input_1:table_osm_roads.lanes !!]`. A layer is
    named as the Autark node names its table.
 
 When the node runs:
 
-- In Python and JavaScript, an input chip becomes the input: `arg` when the node
-  has one input, and `arg[1]` when it has several, counted in circle order.
+- In Python and JavaScript, an input chip becomes the variable that holds that
+  circle's input: `[!! input_1 !!]` runs as `input_1` (see
+  [Input names](#input-names)).
 - In Python and JavaScript, a layer chip becomes that layer of the input:
-  `roads = [!! input 0:table_osm_roads !!]` runs as
-  `roads = curio_layer(arg, "table_osm_roads", 0)`, which gives a GeoDataFrame
+  `roads = [!! input_0:table_osm_roads !!]` runs as
+  `roads = curio_layer(input_0, "table_osm_roads", 0)`, which gives a GeoDataFrame
   in Python and a GeoJSON FeatureCollection in JavaScript. An input that is one
   frame with no layer name, such as a GeoDataFrame a Python node returns, is
   that layer. An input with several frames needs one of that name; if it has
@@ -559,19 +561,57 @@ When the node runs:
   [Vega-Lite node](#vega-lite-node) and [Autark node](#autark-node)). A layer
   chip becomes the layer's name. On an input that is one frame with no layer
   name, such as a GeoDataFrame a Python node returns, it is that frame, as in
-  code: `"dataRef": [!! input 0:roads !!]` becomes `"dataRef": "input_0"`. A
+  code: `"dataRef": [!! input_0:roads !!]` becomes `"dataRef": "input_0"`. A
   GeoDataFrame that names its layer only in `gdf.metadata` is that frame too,
   whatever the chip names.
-- A column chip becomes the column's name: `df[[!! input 0.population !!]]` runs
-  as `df["population"]`, `"field": [!! input 0.population !!]` as
+- A column chip becomes the column's name: `df[[!! input_0.population !!]]` runs
+  as `df["population"]`, `"field": [!! input_0.population !!]` as
   `"field": "population"`, and inside a quoted text it is the plain name.
+- In Python and JavaScript you can also type an input's name instead of
+  dragging its chip: `input_0`, `input_1`, and so on, the names a Vega-Lite or
+  Autark spec reads its inputs by too. `roads = input_1.to_crs(3857)` reads
+  input 1. Because `input_0` names an input, no widget can take that name.
+  Chips saved as `[!! input 0 !!]`, with a space, still run.
 
 A node with several inputs runs once every one of them has a value. Deleting an
 edge closes the gap: the circles below it move up one, and their chips in the
-code are renumbered. A chip for the deleted input becomes `[!! input ? !!]` and
-stops the run until you replace it. A chip for a circle with no edge, or for a
+code are renumbered, and so are typed names such as `input_2`. A chip or typed
+name for the deleted input becomes `[!! input_? !!]` and
+stops the run until you replace it. Deleting the edge of a node's only input,
+or of its last, moves no circle, so the code is kept as written, and the next
+edge into that circle is read by it. A chip for a circle with no edge, or for a
 column its input does not have, is drawn in red and stops the run with a message
 naming it.
+
+### Input names
+
+In Python and JavaScript, each input circle is its own variable, named after the
+circle:
+
+| Circle | Variable | Holds |
+|---|---|---|
+| 0 (`in`) | `input_0` | what the edge on circle 0 delivers |
+| 1 (`in_1`) | `input_1` | what the edge on circle 1 delivers |
+| k (`in_k`) | `input_k` | and so on |
+
+A circle's variable does not change when another edge is connected, so code
+that reads `input_0.crs` keeps working beside a second input. A circle with no
+edge is `None`, which lets a node take an optional input, such as the mask on a
+Raster Statistics node's input 1. Code that reads its inputs when none has
+arrived stops with a message naming the circle.
+
+A tuple a Python node returns leaves by its one output circle, so it is one
+input: on circle 1 it is `input_1`, and `input_1[0]` is its first item. In
+Vega-Lite and Autark, a tuple on the node's only input is a dataset or table per
+item, `input_0`, `input_1`, and so on; a Vega-Lite node refuses a tuple next to
+other inputs.
+
+A node's inputs were once one variable, `input` (and before that `arg`), the
+input itself or a list of them. Neither exists now: code that reads one stops
+with a message telling you to use `input_0`, `input_1`, and so on instead.
+
+[Example 25](examples/25-several-inputs.md) wires several inputs into each of
+these node kinds, with a tuple on one of them.
 
 ## Scenarios
 
@@ -660,7 +700,7 @@ reported in the node's output, and the run goes on.
 The edit list is saved with the dataflow, and the node's code is written from it:
 
 ```python
-return curio_edit_features(arg, [
+return curio_edit_features(input_0, [
     {"op": "remove", "ids": [29623484, 29628154]},
     {"op": "set", "ids": [42], "column": "height", "value": 30},
 ], key="building_id", layer="table_osm_buildings")
@@ -734,7 +774,10 @@ The node has two tabs:
 - **Chart** draws the stacked table in the scenarios' colors, as **Bars**, **Grouped
   bars**, **Lines**, **Points**, a **Pie**, **Lollipops** or a **Table**. Pick the
   columns it reads (**X**, **Y**) and how the Y values of a group are combined
-  (**Combine**: mean, sum, median, minimum, maximum, or a count of rows).
+  (**Combine**: mean, sum, median, minimum, maximum, a count of rows, or none).
+  **None** plots each row's value as it is, with the Y column as the axis title:
+  for a table of one row per scenario, such as SCOUT's shadow metrics. A
+  scenario with several rows stacks them in one bar.
 - **Difference**, in its place in Difference, maps a raster's or a layer's
   difference, colored by a band or a number column, or by `change` (**Color by**).
   The legend is titled with what it shows: `sunlight change` for the column
@@ -794,7 +837,7 @@ a lookup draws another input by naming it, written with that input's chip:
 {
   "layer": [
     {"mark": "bar", "encoding": {"x": {"field": "month"}, "y": {"field": "rain", "type": "quantitative"}}},
-    {"data": {"name": [!! input 1 !!]}, "mark": "rule",
+    {"data": {"name": [!! input_1 !!]}, "mark": "rule",
      "encoding": {"y": {"field": "normal", "type": "quantitative"}}}
   ]
 }
@@ -926,7 +969,7 @@ no `data` entry for its input; it names the tables the input provides.
 
 - Each input is the table `input_0`, `input_1`, and so on, in the order of the
   node's input circles: a `GeoDataFrame`, a GeoJSON FeatureCollection, or a
-  `DataFrame` with a geometry column. An input chip, `[!! input 1 !!]`, writes
+  `DataFrame` with a geometry column. An input chip, `[!! input_1 !!]`, writes
   the name for you. A frame that arrives under its own name (a Data Pool tab, a
   compute step's layer) keeps that name, and `input_<k>` also names it.
 - Several layers keep their own names: a Python tuple, a Python dict of frames
@@ -1013,6 +1056,55 @@ key, not the Autark grammar's.
 }
 ```
 
+A layer colored by a value always gets a legend, and the grammar has no fixed
+color, so a layer colored only to tell it apart from the others (one route of
+several) would show a scale nobody reads. `"legend": false` on its `layerRef`
+keeps its colors and hides its legend. It is Curio's own key too.
+
+A raster whose values run both ways from a point, such as a change or a
+height above the surroundings, is read best on a diverging scheme centered on
+that point. `"colorMapCenter": 0` on a raster's `layerRef` colors it over a
+domain from the farthest value below 0 to as far above it, so the scheme's
+middle color is 0 whatever the values' own range, and
+`"colorMapReverse": true` turns the scheme around, so on `interpolateRdBu`
+red is above and blue below. The legend shows the three values. Curio's own
+keys, for a raster layer only: a layer of features is drawn without them.
+
+```json
+{ "dataRef": "[!! input_0 !!]", "getFnv": "band_1", "colorMapInterpolator": "interpolateRdBu",
+  "colorMapCenter": 0, "colorMapReverse": true, "legendTitle": "Local relief (m)" }
+```
+
+A `layerRef`'s `scenario`, a scenario's id, draws the layer in that
+scenario's color, the one its frame and Compare Scenarios' charts use, and
+gives the map one discrete legend naming each scenario it draws. The color
+follows the scenario: recolor or rename it and the map changes too. Another
+of Curio's own keys; leave out `getFnv` on such a layer.
+
+```json
+{
+  "map": {
+    "layerRefs": [
+      { "dataRef": "[!! input_0 !!]" },
+      { "dataRef": "[!! input_1 !!]", "scenario": "avoid-rain" },
+      { "dataRef": "[!! input_2 !!]", "scenario": "avoid-wind" }
+    ]
+  }
+}
+```
+
+A layer can also wear a fixed color of its own, with no scenario: `color`, an
+outline `stroke` (else a darker shade of the color) and the legend's `label`
+(else its dataRef), Curio's own keys too. A layer drawn in a scenario's color
+gets a darker outline as well. Autark outlines polygons only, so a route
+outlined this way is a band, such as a line buffered by a few metres, a light
+fill and a darker casing as on a web map (the
+[WeatherRouting](examples/dataflows/WeatherRouting.json) dataflow's routes):
+
+```json
+{ "dataRef": "[!! input_1 !!]", "color": "#90CAF9", "stroke": "#42A5F5", "label": "Fastest route (C)" }
+```
+
 ### The starter document
 
 A newly dropped `Autark` node opens **empty**, like a `Vega-Lite` node, and
@@ -1043,11 +1135,11 @@ cell. Connect the rasters to its input circles, in order:
 
 | operation | result |
 |---|---|
-| `curio_raster_calculate("add", arg)` | input 0 plus input 1 |
-| `curio_raster_calculate("subtract", arg)` | input 0 minus input 1 |
-| `curio_raster_calculate("multiply", arg)` | input 0 times input 1 |
-| `curio_raster_calculate("divide", arg)` | input 0 over input 1; a cell divided by 0 has no value |
-| `curio_raster_calculate("choose", arg, codes=[21, 31])` | input 1 where input 0's class is one of the codes, input 2 elsewhere |
+| `curio_raster_calculate("add", [input_0, input_1])` | input 0 plus input 1 |
+| `curio_raster_calculate("subtract", [input_0, input_1])` | input 0 minus input 1 |
+| `curio_raster_calculate("multiply", [input_0, input_1])` | input 0 times input 1 |
+| `curio_raster_calculate("divide", [input_0, input_1])` | input 0 over input 1; a cell divided by 0 has no value |
+| `curio_raster_calculate("choose", [input_0, input_1, input_2], codes=[21, 31])` | input 1 where input 0's class is one of the codes, input 2 elsewhere |
 
 - A cell with no value (the raster's nodata, or a number that is not finite) in
   an input the operation reads there has no value in the result. In `choose`, a
@@ -1060,15 +1152,15 @@ cell. Connect the rasters to its input circles, in order:
 
 **Raster Statistics** gives a raster's `mean`, `median`, `min`, `max` and
 `count` over its cells with a value, as a table of one row, for example for
-**Compare Scenarios** to chart. `curio_raster_statistics(arg, band=2)` reads
+**Compare Scenarios** to chart. `curio_raster_statistics(input_0, band=2)` reads
 another band. A condition keeps only some cells:
 
 | call | counts |
 |---|---|
-| `curio_raster_statistics(arg, where=lambda value: value < 1.08)` | the cells whose value is under 1.08 |
-| `curio_raster_statistics(arg, where=lambda value: (value >= 2) & (value < 5))` | the cells from 2 up to 5 |
-| `curio_raster_statistics(arg, mask_values=[0])` | with a second raster on input 1, on the same grid: the cells where its value is 0 |
-| `curio_raster_statistics(arg, where=lambda height: height < 1.08)` | with a second raster on input 1: the cells where its value is under 1.08 |
+| `curio_raster_statistics(input_0, where=lambda value: value < 1.08)` | the cells whose value is under 1.08 |
+| `curio_raster_statistics(input_0, where=lambda value: (value >= 2) & (value < 5))` | the cells from 2 up to 5 |
+| `curio_raster_statistics(input_0, mask=input_1, mask_values=[0])` | with a second raster on input 1, on the same grid: the cells where its value is 0 |
+| `curio_raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)` | with a second raster on input 1: the cells where its value is under 1.08 |
 
 `where` receives the values as an array, with NaN for a cell with no value, and
 a cell with no value is never counted.
@@ -1092,7 +1184,7 @@ page scrolls.
   and scrolls inside past it.
 - **Connections** run in the bar to the right of the cells. Each cell has its dots on its
   right edge: its inputs at the top, numbered as their chips are (dot 0 is
-  `[!! input 0 !!]`), its interaction dot halfway down, and its output at the bottom.
+  `[!! input_0 !!]`), its interaction dot halfway down, and its output at the bottom.
   The dots follow their cell as it grows. Hover a dot to see what feeds it. Selecting
   a cell rings it in its kind's color and darkens its connections.
 - **Editing.** Nodes and connections are added and removed on the canvas: the notebook
@@ -1171,6 +1263,24 @@ Three surfaces manage datasets:
 - The **`/catalog/data`** page, the library view for your whole account, reached from `/projects` and the **Data Catalog** tab. **Add to all projects** there adds a dataset to every dataflow you have.
 
 A node can also save its output as a **computed dataset** in your account (the database toggle among the buttons in its header), so its result can be reused as an input elsewhere.
+
+### Saving files from code
+
+A node's code can keep files of its own in the dataflow and another node of the dataflow can read them, by a name:
+
+```python
+# One node: a table, and a folder of files.
+means.to_csv(curio_save_file("daily-means.csv"), index=False)
+convert_raster(input_0, "height", 16, curio_save_folder("tiles"))
+```
+
+```python
+# Another node of the same dataflow.
+means = pd.read_csv(curio_computed_path("daily-means"))
+tiles = curio_computed_path("tiles")
+```
+
+What a node saves becomes a computed dataset of the dataflow, `computed.<dataflowId>.files.<name>`, listed in the drawer's **Computed** tab once the node has run; nodes of other dataflows cannot read it, and deleting the dataflow deletes it. A node reading a name runs after the node saving it in **Run All**, though no edge joins them. The dataflow must have been saved once. See [Files a node saves from its code](DATA-CATALOG.md#files-a-node-saves-from-its-code) for the formats, the name rules and the rest; [example 24](examples/24-scout-building-rasters.md) passes SCOUT's map tiles from Rasterize Buildings to Mosaic Tiles this way.
 
 The shared catalog root defaults to the `datasets/` folder Curio ships, which a pip install keeps inside `site-packages`, so pip installs should set **`CURIO_CATALOG_ROOT`** (or `--catalog-root`) to a writable, persistent path.
 

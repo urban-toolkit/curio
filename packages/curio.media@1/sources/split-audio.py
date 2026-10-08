@@ -65,7 +65,7 @@ def windows(path):
             yield rate, start, np.concatenate(pending)
 
 
-media = arg
+media = input_0
 recordings = media[media["kind"] == "audio"]
 rows = []
 for _, recording in recordings.iterrows():

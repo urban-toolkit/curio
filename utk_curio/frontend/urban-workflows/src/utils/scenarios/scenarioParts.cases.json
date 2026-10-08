@@ -5,8 +5,8 @@
       "name": "a branch reads a loader outside it, and its last node is the outcome",
       "nodes": [
         {"id": "load", "type": "curio.builtin/data-loading@1", "content": "return 1"},
-        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return arg"},
-        {"id": "b", "type": "curio.builtin/computation-analysis@1", "content": "return arg"}
+        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return input"},
+        {"id": "b", "type": "curio.builtin/computation-analysis@1", "content": "return input"}
       ],
       "edges": [
         {"source": "load", "target": "a"},
@@ -20,7 +20,7 @@
       "name": "a whole-project scenario has no context",
       "nodes": [
         {"id": "load", "type": "curio.builtin/data-loading@1", "content": "return 1"},
-        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return arg"}
+        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return input"}
       ],
       "edges": [{"source": "load", "target": "a"}],
       "scenario": ["load", "a"],
@@ -31,8 +31,8 @@
       "name": "a lever read outside the scenario is an outcome even when a lever reads it too",
       "nodes": [
         {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return 1"},
-        {"id": "b", "type": "curio.builtin/computation-analysis@1", "content": "return arg"},
-        {"id": "outside", "type": "curio.builtin/computation-analysis@1", "content": "return arg"}
+        {"id": "b", "type": "curio.builtin/computation-analysis@1", "content": "return input"},
+        {"id": "outside", "type": "curio.builtin/computation-analysis@1", "content": "return input"}
       ],
       "edges": [
         {"source": "a", "target": "b"},
@@ -70,8 +70,8 @@
       "nodes": [
         {"id": "x", "type": "curio.builtin/data-loading@1", "content": "return 1"},
         {"id": "y", "type": "curio.builtin/data-loading@1", "content": "return 2"},
-        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return arg"},
-        {"id": "b", "type": "curio.builtin/computation-analysis@1", "content": "return arg"}
+        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return input"},
+        {"id": "b", "type": "curio.builtin/computation-analysis@1", "content": "return input"}
       ],
       "edges": [
         {"source": "y", "target": "a", "targetHandle": "in"},
@@ -100,7 +100,7 @@
       "name": "a chart or a Data Pool stands for the nodes feeding it",
       "nodes": [
         {"id": "load", "type": "curio.builtin/data-loading@1", "content": "return 1"},
-        {"id": "calc", "type": "curio.builtin/computation-analysis@1", "content": "return arg"},
+        {"id": "calc", "type": "curio.builtin/computation-analysis@1", "content": "return input"},
         {"id": "pool", "type": "curio.builtin/data-pool@1", "content": ""},
         {"id": "chart", "type": "curio.builtin/vis-vega@1", "content": "{}"}
       ],

@@ -4,24 +4,18 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/WeatherRouting.json",
-    "sha256": "221d6e47318ca85a21b0f10cde304ae4055f489f2468bc4955bfdfb3ba7b2d50",
+    "sha256": "0e0c4601b57c1ca9227dbeb49220cdaab55ac5691fd7833a3eaf0d54db1728a2",
     "walkthrough": null
   },
-  "prompt": "Compare two weather-aware routes across the Chicago Loop at noon on 6 July 2025, using SCOUT's routing model and its forecast. Load the Loop's roads from the OpenStreetMap extract the examples ship, and set the start time once for both scenarios. In the first scenario rain counts most and wind least; the second is a copy of it with the two the other way round. Each scenario finds the rain-aware, the wind-aware and the fastest route between the same two points, then takes the routes and their metrics apart. Draw both scenarios' routes over the roads on one map, and chart each route's duration, distance, rain exposure and wind exposure in each scenario. The routing model is not part of the standard node set, so whatever provides it needs installing first.",
+  "prompt": "Recreate SCOUT's weather routing example: two routes across downtown Chicago, west and south of the Loop, from (41.896438, -87.659758) to (41.861649, -87.614034), starting at midnight on 6 July 2025, using SCOUT's routing model and its forecast with the default weather weights and one route per kind. Load downtown Chicago's roads from the Data Catalog, marked as roads so the map draws them, and find the fastest route and the weather-aware route once. Then compare them as two scenarios, \"Fastest route\" in light blue and \"Weather-aware route\" in teal, the second a copy of the first: each keeps its route, as a band, and that route's metrics. Draw both scenarios' routes over the roads on one map, and chart the two routes' duration, distance, rain exposure and wind exposure, one bar per scenario. The routing model is not part of the standard node set, so whatever provides it needs installing first.",
   "context": null,
   "required": {
     "datasets": [
-      "data.scout.wrf-rain",
-      "data.scout.wrf-rh2",
-      "data.scout.wrf-t2",
-      "data.scout.wrf-wdir10",
-      "data.scout.wrf-wspd10"
+      "data.osm.chicago-downtown-roads",
+      "data.scout.chicago-weather-2025-07-06"
     ],
     "packages": [
       "scout.routing@1"
-    ],
-    "paths": [
-      "docs/examples/data/chicago_loop.osm.pbf"
     ]
   },
   "expected": {
@@ -35,9 +29,9 @@
       },
       {
         "ref": "visualization2",
-        "type": "curio.builtin/autk-grammar",
+        "type": "curio.builtin/compare-scenarios",
         "role": "visualization",
-        "executable": false,
+        "executable": true,
         "hasContent": true
       },
       {
@@ -56,13 +50,6 @@
       },
       {
         "ref": "visualization5",
-        "type": "curio.builtin/compare-scenarios",
-        "role": "visualization",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "visualization6",
         "type": "curio.builtin/compare-scenarios",
         "role": "visualization",
         "executable": true,
@@ -97,21 +84,14 @@
         "hasContent": true
       },
       {
-        "ref": "endpoint1",
-        "type": "curio.builtin/parameter",
-        "role": "endpoint",
-        "executable": false,
-        "hasContent": false
-      },
-      {
-        "ref": "analysis5",
-        "type": "scout.routing/weather-routing",
-        "role": "analysis",
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
         "executable": true,
         "hasContent": true
       },
       {
-        "ref": "analysis6",
+        "ref": "analysis5",
         "type": "scout.routing/weather-routing",
         "role": "analysis",
         "executable": true,
@@ -120,34 +100,24 @@
     ],
     "edges": [
       {
-        "from": "visualization1",
-        "to": "visualization2",
-        "kind": "data"
-      },
-      {
-        "from": "visualization1",
-        "to": "analysis5",
-        "kind": "data"
-      },
-      {
-        "from": "visualization1",
-        "to": "analysis6",
-        "kind": "data"
-      },
-      {
         "from": "analysis1",
-        "to": "visualization2",
+        "to": "visualization1",
         "kind": "data",
         "slot": 1
       },
       {
         "from": "analysis2",
-        "to": "visualization2",
+        "to": "visualization1",
         "kind": "data",
         "slot": 2
       },
       {
         "from": "analysis3",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis3",
         "to": "visualization3",
         "kind": "data"
       },
@@ -162,9 +132,10 @@
         "kind": "data"
       },
       {
-        "from": "analysis3",
-        "to": "visualization6",
-        "kind": "data"
+        "from": "analysis4",
+        "to": "visualization2",
+        "kind": "data",
+        "slot": 1
       },
       {
         "from": "analysis4",
@@ -185,10 +156,14 @@
         "slot": 1
       },
       {
-        "from": "analysis4",
-        "to": "visualization6",
-        "kind": "data",
-        "slot": 1
+        "from": "loader1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis5",
+        "kind": "data"
       },
       {
         "from": "analysis5",
@@ -197,43 +172,32 @@
       },
       {
         "from": "analysis5",
-        "to": "analysis3",
-        "kind": "data"
-      },
-      {
-        "from": "analysis6",
         "to": "analysis2",
         "kind": "data"
       },
       {
-        "from": "analysis6",
+        "from": "analysis5",
+        "to": "analysis3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis5",
         "to": "analysis4",
         "kind": "data"
       }
     ],
     "sources": {
       "datasetIds": [
-        "data.scout.wrf-rain",
-        "data.scout.wrf-rh2",
-        "data.scout.wrf-t2",
-        "data.scout.wrf-wdir10",
-        "data.scout.wrf-wspd10"
+        "data.osm.chicago-downtown-roads",
+        "data.scout.chicago-weather-2025-07-06"
       ],
-      "paths": [
-        "docs/examples/data/chicago_loop.osm.pbf"
-      ],
+      "paths": [],
       "urls": []
     }
   },
   "intents": [
     {
       "ref": "analysis5",
-      "mustMention": [
-        "route"
-      ]
-    },
-    {
-      "ref": "analysis6",
       "mustMention": [
         "route"
       ]
@@ -263,7 +227,7 @@
   "split": "train",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "the SCOUT routing step (#662), from the example JSON, 2026-10-05",
+    "draftedBy": "the SCOUT routing step (#662), from the example JSON, 2026-10-07",
     "reviewedBy": null,
     "reviewedAt": null
   },
@@ -272,27 +236,15 @@
     "licence": "MIT (this repository)",
     "sourceLicences": [
       {
-        "datasetId": "data.scout.wrf-rain",
-        "licence": ""
+        "datasetId": "data.osm.chicago-downtown-roads",
+        "licence": "ODbL-1.0"
       },
       {
-        "datasetId": "data.scout.wrf-rh2",
-        "licence": ""
-      },
-      {
-        "datasetId": "data.scout.wrf-t2",
-        "licence": ""
-      },
-      {
-        "datasetId": "data.scout.wrf-wdir10",
-        "licence": ""
-      },
-      {
-        "datasetId": "data.scout.wrf-wspd10",
+        "datasetId": "data.scout.chicago-weather-2025-07-06",
         "licence": ""
       }
     ],
-    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids. The datasets, and the weather GNN the routing nodes name from the Model Catalog, are SCOUT's (urban-toolkit/scout), used with the permission of its authors; the datasets carry no licence string."
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids. The datasets, and the weather GNN the routing nodes name from the Model Catalog, are SCOUT's (urban-toolkit/scout), used with the permission of its authors; the SCOUT datasets carry no licence string. The roads are OpenStreetMap data, © OpenStreetMap contributors, ODbL 1.0."
   },
-  "notes": "A package node with widgets in two scenarios over Autark's roads and a shared Parameter node: SCOUT's weather routing with rain or wind weighed most, mapped through Autark and compared on four charts."
+  "notes": "A package node with widgets over roads from the Data Catalog, shared by two scenarios: SCOUT's weather routing example, its fastest and weather-aware routes kept one per scenario, mapped through Autark and compared on four Compare Scenarios charts, as SCOUT's example compares them."
 }

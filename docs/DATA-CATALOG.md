@@ -9,7 +9,7 @@ This guide is in seven parts, plus operator notes:
 - [1. What is the Data Catalog?](#1-what-is-the-data-catalog): datasets, what ships, origins, ids, and the four storage layers.
 - [2. Surfaces and workflows](#2-surfaces-and-workflows): the three places you manage datasets, the action matrix, and walkthroughs.
 - [3. Using a dataset in a dataflow](#3-using-a-dataset-in-a-dataflow): drag and drop, generated loader code, collections, and linkage badges.
-- [4. Computed datasets (node outputs)](#4-computed-datasets-node-outputs): the save-output toggle, lineage, and bundles.
+- [4. Computed datasets (node outputs)](#4-computed-datasets-node-outputs): the save-output toggle, lineage, bundles, and files a node saves from its code.
 - [5. Previews, schema, and export](#5-previews-schema-and-export): what each format supports.
 - [6. Importing, publishing, and sharing](#6-importing-publishing-and-sharing): supported formats, OSM PBF and GeoPackage, NetCDF groups, publish, unpublish, and delete.
 - [7. The manifest](#7-the-manifest): the fields a dataset declares.
@@ -39,7 +39,7 @@ data.utk.chicago-boundary@1/
 
 ### What ships with Curio
 
-Thirty-four datasets ship in the shared catalog at `<repo_root>/datasets/`: six under `data.utk.*` (the Chicago boundary and community areas, an ACS profile, and the three Milan heat-exposure inputs), five under `data.cityofchicago.*` (green roofs, neighborhoods, 2010 energy usage, and the speed-camera and red-light violation tables), one under `data.projectsidewalk.*` (Chicago accessibility labels), the Mapillary sample example 10 reads (`data.curio.mapillary-sample`), eight under `data.curio.storage-*` (the tables and collections the storage examples read, added from the Discovery Catalog's **Example storage** source), and thirteen under `data.scout.*`. Seven are `data.scout.flood-*`: crops of SCOUT's Quad Cities flood rasters, the nature-based solution classes and each period's flood depth with and without them, which the FloodScenarios test dataflow reads. One is SCOUT's Loop buildings (`data.scout.loop-buildings`), which the ScoutShadows test dataflow and example 24 read. Five are the weather the `scout.routing@1` package reads: SCOUT's WRF forecast over Chicago, a NetCDF group of five variables (`data.scout.wrf-*`); its weather graph network is a [Model Catalog](MODEL-CATALOG.md) model. SCOUT (urban-toolkit/scout) publishes them, and they are used with the permission of SCOUT's authors.
+Twenty-five datasets ship in the shared catalog at `<repo_root>/datasets/`: six under `data.utk.*` (the Chicago boundary and community areas, an ACS profile, and the three Milan heat-exposure inputs), five under `data.cityofchicago.*` (green roofs, neighborhoods, 2010 energy usage, and the speed-camera and red-light violation tables), one under `data.projectsidewalk.*` (Chicago accessibility labels), the Mapillary sample example 10 reads (`data.curio.mapillary-sample`), eight under `data.curio.storage-*` (the tables and collections the storage examples read, added from the Discovery Catalog's **Example storage** source), downtown Chicago's roads from OpenStreetMap (`data.osm.chicago-downtown-roads`, ODbL), which the WeatherRouting test dataflow loads, and three under `data.scout.*`. `data.scout.quad-cities-flood` holds SCOUT's Quad Cities flood rasters, one bundle of seven GeoTIFFs (the nature-based solution classes and each period's depth with and without them), which the `scout.flood@1` package and the FloodScenarios test dataflow read. `data.scout.loop-buildings` is SCOUT's Loop buildings, which the ScoutShadows test dataflow and example 24 read. `data.scout.chicago-weather-2025-07-06` is the weather the `scout.routing@1` package reads: SCOUT's WRF forecast over Chicago, one bundle of five NetCDF files, a variable each; its weather graph network is a [Model Catalog](MODEL-CATALOG.md) model. SCOUT (urban-toolkit/scout) publishes the `data.scout.*` datasets, and they are used with the permission of SCOUT's authors.
 
 ### Origins
 
@@ -62,6 +62,7 @@ Ids are 2 to 6 dot-separated lowercase segments (`[a-z][a-z0-9-]*`, at most 63 c
 | Shipped | `data.utk.chicago-boundary` | Written by hand in the manifest. |
 | Imported | `imported.x<uuid12>` | New for every import: uploading the same bytes twice creates **two** datasets. |
 | Computed | `computed.<dataflowId>.<nodeId>` | One per node per dataflow, so the same node id in two dataflows never collides. |
+| Saved from code | `computed.<dataflowId>.files.<name>` | What a node saves with `curio_save_file` or `curio_save_folder` ([Files a node saves from its code](#files-a-node-saves-from-its-code)). |
 | OSM group | `osm.x<uuid8>` | The parent of the layers of one `.pbf` import or one OpenStreetMap download. |
 | NetCDF group | `netcdf.<name>` | The parent of NetCDF variables stored a file each, named by their manifests' `groupId`. |
 
@@ -165,7 +166,7 @@ depth = curio_load_data("<datasetId>", part="depth_2050.tif", bounds=(-90.687, 4
 
 A name the bundle does not list stops the node with a message naming the dataset and the files it has.
 
-To read the file another way, for example a CSV with another separator, use `curio_data_path("<datasetId>")`, which gives the file's path: `pd.read_csv(curio_data_path("<datasetId>"), sep=";")`, or `netCDF4.Dataset(curio_data_path("<datasetId>"))` for a NetCDF file.
+To read the file another way, for example a CSV with another separator, use `curio_data_path("<datasetId>")`, which gives the file's path: `pd.read_csv(curio_data_path("<datasetId>"), sep=";")`, or `netCDF4.Dataset(curio_data_path("<datasetId>"))` for a NetCDF file. For one file of a bundle, name it with `part=` as `curio_load_data` does: `netCDF4.Dataset(curio_data_path("data.scout.chicago-weather-2025-07-06", part="RAIN.nc"))`.
 
 These calls name the dataset by id instead of a file path, so the code keeps working when the dataflow is shared or moved. The details' **Use in a node** box shows the `curio_load_data` call, or for a group the lines that load each of its layers, with a copy button.
 
@@ -252,6 +253,39 @@ Scalar parts (numbers, strings, booleans) are stored as `{"value": ...}`. `bundl
 A dataset you ship can be a bundle too, when several files are one input: its files side by side in `data/`, under their own names, and `data/bundle.json` listing each as `{"index", "label", "kind", "format", "file"}` (`"file": "data/depth_2050.tif"`). A node reads one file of it with `curio_load_data("<datasetId>", part="<file>")`, or all of them, as a tuple in `index` order, with `curio_load_data("<datasetId>")`. Only a file inside the dataset's folder is a part.
 
 Previewing a bundle gives you a **tab per part**; a part with no rows is labelled *"Scalar or metadata part"*. A bundle **cannot be exported** as a single file, and its Export button is disabled.
+
+### Files a node saves from its code
+
+A node's code can also keep files of its own in the dataflow, under a name, for other nodes of the dataflow to read. That is how a library that writes files, such as SCOUT's rasterizer writing map tiles into a folder, hands them to the next node.
+
+| Call | Gives |
+|---|---|
+| `curio_save_file("<name>.<ext>")` | A path to write one file: `.csv`, `.json`, `.geojson`, `.parquet`, `.tif` or `.tiff`, or `.nc` |
+| `curio_save_folder("<name>")` | An empty folder to write any files into, in subfolders too |
+| `curio_computed_path("<name>")` | In any node of the same dataflow: the file, or the folder, saved under that name |
+
+```python
+# One node saves a table, and a folder of files.
+summary.to_csv(curio_save_file("summary.csv"), index=False)
+convert_raster(buildings, "height", 16, curio_save_folder("tiles"))
+```
+
+```python
+# Another node of the dataflow reads them back.
+summary = pd.read_csv(curio_computed_path("summary"))
+tiles = curio_computed_path("tiles")   # the folder, with the files written into it
+```
+
+- **A name** starts with a lowercase letter and holds lowercase letters, digits and hyphens (`tiles`, `daily-means`). A file's name carries its extension, which is its format; save any other file into a folder.
+- **What is saved** becomes the computed dataset `computed.<dataflowId>.files.<name>@1` of your store once the node has run, whatever its save-output toggle says. A file keeps its format; a folder is a [bundle](#bundles), its files under `data/files/` and listed by `data/bundle.json`. The dataset's lineage names the node and the dataflow that saved it, and it is listed in the drawer's **Computed** tab.
+- **The dataflow is the scope.** A name means one dataset per dataflow: nodes of another dataflow cannot read it, and no node writes the dataflow id. Two nodes of one dataflow that save one name replace each other's files, so give each its own name, as the two scenarios of the ScoutShadows dataflow do (`tiles` and `tiles-towers-removed`). Deleting the dataflow deletes what its nodes saved.
+- **Running again replaces it.** Each run of the node saves the name afresh.
+- **The dataflow must be saved first.** Saving needs the dataflow's id: in a dataflow never saved, `curio_save_file` and `curio_save_folder` stop the node with *Save the dataflow first*.
+- **Run order.** A node that reads `curio_computed_path("<name>")` runs after the node that saves it, in **Run All** and in a run on the server, though no edge joins them. Only a name written in the code counts; a name a widget holds (`curio_save_folder([!! tiles !!])`) orders nothing, so connect the two nodes with an edge, as Rasterize Buildings and Mosaic Tiles are.
+- **A name nothing has saved** stops the reading node with a message naming the call that saves it.
+- Under [sandbox isolation](ARCHITECTURE.md#sandbox-isolation) a node writes its saved files into its scratch directory, and the sandbox copies out only regular files, never a link.
+
+[Example 24](examples/24-scout-building-rasters.md) saves SCOUT's tiles with `curio_save_folder` in **Rasterize Buildings**, and **Mosaic Tiles** reads them back with `curio_computed_path`.
 
 ---
 

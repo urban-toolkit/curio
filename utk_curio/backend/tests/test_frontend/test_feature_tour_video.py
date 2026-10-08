@@ -203,7 +203,7 @@ POS_LOADER = (150, 150)
 POS_TRANSFORM = (760, 150)
 
 TRANSFORM_CODE = (
-    "df = arg\n"
+    "df = input_0\n"
     'df["income_per_capita"] = (df["median_income"] / df["population"]).round(2)\n'
     'print(df.sort_values("median_income", ascending=False).to_string(index=False))\n'
     "return df\n"
@@ -1108,7 +1108,7 @@ def scene_build(ctx: Ctx) -> None:
 
     tour.say(
         "Connect them",
-        "The upstream result arrives in the next node as `arg`.",
+        "The upstream result arrives in the next node as `input_0`.",
         hold=2000,
     )
     connect_nodes(page, loader_id, transform_id)
@@ -1988,12 +1988,12 @@ SHADOW_MAPS = {
 SHADOW_STATS = "8a914e39-4cb1-535d-9a8b-19b45f6be288"
 
 # FloodScenarios: three Parameter nodes, the period and the region's corners,
-# read by its Data Loading nodes.
+# read by both scenarios' Flood Projection nodes.
 FLOOD_NAME = "FloodScenarios"
 FLOOD_PERIOD = "8f0c1e2a-5b3d-4c7e-9a61-2d4f6b8e0c13"
 FLOOD_TOPLEFT = "c1d2e3f4-0a1b-4c2d-8e3f-4a5b6c7d8e91"
-FLOOD_CLASSES = "e3f4a5b6-2c3d-4e4f-8a5b-6c7d8e9fa0b3"
-FLOOD_DEPTH = "f4a5b6c7-3d4e-4f5a-9b6c-7d8e9fa0b1c4"
+FLOOD_NO_NBS = "1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58"
+FLOOD_ALL_NBS = "2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69"
 FLOOD_COMPARES = ["7a3d9f1c-5b68-4e0a-9d4e-0f1b5a7c3d62", "9c5f1b3e-7d80-4a2c-8f6a-2b3d7c9e5f84"]
 
 # Example 17: downtown Chicago's ZIP codes from one loader, on an Autark map
@@ -2005,7 +2005,7 @@ ZIPS_MAP = "eb39411d-d742-52c8-93aa-1424997ead25"
 ZIPS_BARS = "dfdcf935-96c9-5dcf-bb44-90376fbafad8"
 PICKED_CODE = (
     "picked = \n"
-    'zips = arg[arg["zip"].isin(picked)]\n'
+    'zips = input_0[input_0["zip"].isin(picked)]\n'
     'print("Picked:", ", ".join(zips["zip"]))\n'
     "return zips\n"
 )
@@ -2318,19 +2318,19 @@ def scene_shadows(ctx: Ctx) -> None:
 
 def scene_parameter(ctx: Ctx) -> None:
     """FloodScenarios run, and its period and corner Parameter nodes beside
-    the Data Loading nodes whose code reads them."""
+    the Flood Projection nodes whose code reads them."""
     page, tour = ctx.page, ctx.tour
-    _open_project(ctx, _account_project(ctx, FLOOD_NAME), [FLOOD_PERIOD, FLOOD_DEPTH])
+    _open_project(ctx, _account_project(ctx, FLOOD_NAME), [FLOOD_PERIOD, FLOOD_NO_NBS])
     tour.hush()
     _play_all(ctx, timeout_ms=600000, settle=[(c, "compare-scenarios") for c in FLOOD_COMPARES])
     page.set_viewport_size(STILL_SIZE)
     page.wait_for_timeout(1500)
-    block = [FLOOD_PERIOD, FLOOD_TOPLEFT, FLOOD_CLASSES, FLOOD_DEPTH]
+    block = [FLOOD_PERIOD, FLOOD_TOPLEFT, FLOOD_NO_NBS, FLOOD_ALL_NBS]
     _frame_nodes(page, block, (230, 140, 1870, 1160), max_zoom=1.0)
     tour.beat(2000)
     _still_with_boxes(ctx, "parameter-node", {
         "period": _node_box(FLOOD_PERIOD), "topleft": _node_box(FLOOD_TOPLEFT),
-        "classes": _node_box(FLOOD_CLASSES), "depth": _node_box(FLOOD_DEPTH),
+        "no-nbs": _node_box(FLOOD_NO_NBS), "all-nbs": _node_box(FLOOD_ALL_NBS),
     })
     page.set_viewport_size(VIDEO_SIZE)
     page.wait_for_timeout(1000)

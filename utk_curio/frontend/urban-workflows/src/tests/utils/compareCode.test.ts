@@ -20,20 +20,20 @@ describe("stackCode", () => {
     expect(stackCode(c.inputs)).toBe(c.code);
   });
 
-  test("its chips read the inputs as any Python node's do: arg with one input, arg[i] with several", () => {
+  test("its chips read the inputs as any Python node's do: input_k for circle k", () => {
     const [two, one] = cases.cases as CodeCase[];
     const scope = (n: number) => ({ widgets: [], shared: [], inputs: Array.from({ length: n }, (_, slot) => ({ slot })) });
     const resolvedTwo = resolveReferences(two.code, scope(2), "python");
     expect(resolvedTwo.problems).toEqual([]);
-    expect(resolvedTwo.code).toContain('("s-base", "Baseline", arg[0]),');
-    expect(resolvedTwo.code).toContain('("s-tall", "Twice as tall", arg[1]),');
-    expect(resolveReferences(one.code, scope(1), "python").code).toContain('("s-base", "Baseline", arg),');
+    expect(resolvedTwo.code).toContain('("s-base", "Baseline", input_0),');
+    expect(resolvedTwo.code).toContain('("s-tall", "Twice as tall", input_1),');
+    expect(resolveReferences(one.code, scope(1), "python").code).toContain('("s-base", "Baseline", input_0),');
   });
 
   test("a circle with no edge is a chip the run refuses, naming it", () => {
     const [two] = cases.cases as CodeCase[];
     const resolved = resolveReferences(two.code, { widgets: [], shared: [], inputs: [{ slot: 0 }] }, "python");
-    expect(resolved.problems.map((p) => p.reference)).toEqual(["[!! input 1 !!]"]);
+    expect(resolved.problems.map((p) => p.reference)).toEqual(["[!! input_1 !!]"]);
   });
 
   test("calls the sandbox's stacking step", () => {

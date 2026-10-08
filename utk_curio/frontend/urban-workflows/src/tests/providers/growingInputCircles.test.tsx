@@ -279,7 +279,7 @@ describe('what a growing node reads', () => {
 });
 
 describe('deleting an edge closes the gap', () => {
-  const CODE = 'x = [!! input 0 !!]\ny = [!! input 1.area !!]\nz = [!! input 2 !!]';
+  const CODE = 'x = [!! input_0 !!]\ny = [!! input_1.area !!]\nz = [!! input_2 !!]';
 
   test('later edges move up a circle, their values follow, and the chips are renumbered', async () => {
     await fanIn('curio.builtin/computation-analysis@1', CODE);
@@ -298,7 +298,7 @@ describe('deleting an edge closes the gap', () => {
       dataType: 'outputs',
       data: [{ path: 'artifact-a' }, { path: 'artifact-c' }],
     });
-    const rewritten = 'x = [!! input 0 !!]\ny = [!! input ?.area !!]\nz = [!! input 1 !!]';
+    const rewritten = 'x = [!! input_0 !!]\ny = [!! input_?.area !!]\nz = [!! input_1 !!]';
     expect(dataOf('t').code).toBe(rewritten);
     expect(dataOf('t').defaultCode).toBe(rewritten);
     // Peers get the moved edge and the new code from here, once.
@@ -315,15 +315,25 @@ describe('deleting an edge closes the gap', () => {
     await connect('c', 't');
     await deleteEdges(api.edges.filter((e: any) => e.source !== 'c').map((e: any) => e.id));
     expect(handleOf('c')).toBe('in');
-    expect(dataOf('t').code).toBe('x = [!! input ? !!]\ny = [!! input ?.area !!]\nz = [!! input 0 !!]');
+    expect(dataOf('t').code).toBe('x = [!! input_? !!]\ny = [!! input_?.area !!]\nz = [!! input_0 !!]');
   });
 
   test('the last edge goes without rewriting code that names no later input', async () => {
-    await fanIn('curio.builtin/computation-analysis@1', 'x = [!! input 0 !!]');
+    await fanIn('curio.builtin/computation-analysis@1', 'x = [!! input_0 !!]');
     await connect('a', 't');
     await connect('b', 't');
     await deleteEdges([api.edges.find((e: any) => e.source === 'b')!.id]);
-    expect(dataOf('t').code).toBe('x = [!! input 0 !!]');
+    expect(dataOf('t').code).toBe('x = [!! input_0 !!]');
     expect(mockBroadcastNodeUpdated).not.toHaveBeenCalled();
+  });
+
+  test("a node's only edge goes without rewriting the input it names, so the next edge is read by it", async () => {
+    await fanIn('curio.builtin/computation-analysis@1', 'gdf = input_0.copy()\nx = [!! input_0 !!]');
+    await connect('a', 't');
+    await deleteEdges([api.edges.find((e: any) => e.source === 'a')!.id]);
+    expect(dataOf('t').code).toBe('gdf = input_0.copy()\nx = [!! input_0 !!]');
+    await connect('b', 't');
+    expect(handleOf('b')).toBe('in');
+    expect(dataOf('t').code).toBe('gdf = input_0.copy()\nx = [!! input_0 !!]');
   });
 });

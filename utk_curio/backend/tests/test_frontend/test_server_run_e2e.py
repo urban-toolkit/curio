@@ -44,7 +44,7 @@ def _spec() -> dict:
         {"id": SAVED, "type": PYTHON, "x": 200, "y": 300, "saveOutputDataset": True,
          "content": "import pandas as pd\nreturn pd.DataFrame({'n': [1, 2, 3]})"},
         {"id": UNSAVED, "type": PYTHON, "x": 900, "y": 300, "saveOutputDataset": False,
-         "content": "return arg.assign(twice=arg['n'] * 2)"},
+         "content": "return input_0.assign(twice=input_0['n'] * 2)"},
     ]
     edges = [{"id": f"{SAVED}-{UNSAVED}", "source": SAVED, "target": UNSAVED}]
     return {

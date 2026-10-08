@@ -64,16 +64,23 @@ import {
 } from "../services/datasetCatalog";
 import {
     hasModelDrag,
+    modelNodeElsewhere,
     modelNodeForCanvas,
+    packageDirOfNodeType,
     readModelDragPayload,
+    useModelCatalog,
     type ModelDropTemplate,
 } from "../services/modelCatalog";
+import { dependencyFailureNotice, packagesApi } from "../services/packages";
+import { refreshPackageRegistry } from "../registry/packageRegistryBootstrap";
+import { setCurrentProjectPackages } from "../registry/projectPackagesStore";
+import fetchStarterList from "../providers/starters";
 import { endScenarioDrag, hasScenarioDrag, readScenarioDragPayload } from "../services/scenarioCatalog/scenarioDrag";
 import { useScenarioDrop } from "./scenarios/useScenarioDrop";
 import { packageStarterCode } from "../adapters/node/packageNodeBehavior";
 import { renderMapsForReading } from "../adapters/node/autkMapDrawing";
-import { useStarterContext } from "../providers/StarterProvider";
-import { getAllNodeTypes, getPaletteNodeTypes } from "../registry/nodeRegistry";
+import { useStarterContext, type Starter } from "../providers/StarterProvider";
+import { getAllNodeTypes, getPaletteNodeTypes, tryGetNodeDescriptor } from "../registry/nodeRegistry";
 import type { NodeDescriptor } from "../registry/types";
 import {
   agentsApi,
@@ -124,6 +131,7 @@ export function MainCanvas() {
         onNodesDelete,
         markDirty,
         saveCurrentProject,
+        ensureProjectId,
         notebookOn,
         notebookContentHeight,
         setNotebookPane,
@@ -494,37 +502,87 @@ export function MainCanvas() {
 
     // A model dropped on the empty canvas becomes a node that runs it, as a
     // dataset becomes a Data Loading node. A drop on a node never gets here:
-    // the node's own listener takes it (styles.tsx).
-    const { getStarters } = useStarterContext();
+    // the node's own listener takes it (styles.tsx). Only a node that runs
+    // this kind of model fits (modelNodeForCanvas); when the dataflow has
+    // none, the package of the node that runs it is added to the dataflow
+    // first, as the Node Catalog's Add does.
+    const { getStarters, fetchStarters } = useStarterContext();
+    const modelCatalog = useModelCatalog();
+    const modelRows = modelCatalog.data.items;
     const handleModelCanvasDrop = useCallback((event: React.DragEvent) => {
         event.preventDefault();
         event.stopPropagation();
         const model = readModelDragPayload(event.dataTransfer);
         if (!model) return;
-        const templates = (descriptors: NodeDescriptor[]): ModelDropTemplate[] =>
+        const position = dropPosition(event);
+        const taskOf = (id: string) => modelRows.find((row) => row.id === id)?.task;
+        const templates = (
+            descriptors: NodeDescriptor[],
+            starters: Parameters<typeof packageStarterCode>[1] = getStarters,
+        ): ModelDropTemplate[] =>
             descriptors.map((d) => ({
                 nodeType: String(d.id),
                 label: d.label,
-                code: packageStarterCode(d, getStarters),
+                code: packageStarterCode(d, starters),
                 packageName: d.package?.name,
+                packageDirName: d.package ? `${d.package.packageId}@${d.package.major}` : undefined,
             }));
-        const node = modelNodeForCanvas(templates(getPaletteNodeTypes()), model);
-        if (!node) {
-            const elsewhere = modelNodeForCanvas(templates(getAllNodeTypes()), model);
-            showToast(
-                elsewhere?.packageName
-                    ? `${model.name} needs a node that runs models: add ${elsewhere.packageName} to this project from the Node Catalog.`
-                    : "No installed node runs a model.",
-                "warning",
-            );
+        const create = (node: NonNullable<ReturnType<typeof modelNodeForCanvas>>, lead = "Created") => {
+            revealCreated(createCodeNode(node.nodeType, {
+                position,
+                ...(node.code !== undefined ? { code: node.code } : {}),
+                modelRefs: node.modelRefs,
+            }));
+            const article = /^[aeiou]/i.test(node.label) ? "an" : "a";
+            showToast(`${lead} ${article} ${node.label} node for ${model.name}.`, "success");
+            markDirty();
+        };
+
+        const node = modelNodeForCanvas(templates(getPaletteNodeTypes()), model, taskOf);
+        if (node) {
+            create(node);
             return;
         }
-        const position = dropPosition(event);
-        revealCreated(createCodeNode(node.nodeType, { position, code: node.code, modelRefs: node.modelRefs }));
-        const article = /^[aeiou]/i.test(node.label) ? "an" : "a";
-        showToast(`Created ${article} ${node.label} node for ${model.name}.`, "success");
-        markDirty();
-    }, [getStarters, dropPosition, revealCreated, createCodeNode, markDirty, showToast]);
+        const target = modelNodeElsewhere(templates(getAllNodeTypes()), model, modelRows);
+        const dirName = target ? packageDirOfNodeType(target) : null;
+        if (!target || !dirName) {
+            showToast(`No node in Curio runs ${model.name}.`, "warning");
+            return;
+        }
+        void (async () => {
+            try {
+                const scopedProjectId = await ensureProjectId();
+                if (!scopedProjectId) return;
+                const result = await packagesApi.installToProject(scopedProjectId, dirName);
+                setCurrentProjectPackages(result.packages);
+                await refreshPackageRegistry();
+                // The package may have only now reached this account, so its
+                // starter code is read fresh rather than from the provider's
+                // state, which this callback saw before the install.
+                const starters: Starter[] = await fetchStarterList();
+                fetchStarters();
+                const fresh = (type: string, custom: boolean) =>
+                    custom ? [] : starters.filter((st) => st.type === type);
+                const descriptor = tryGetNodeDescriptor(target);
+                const added = descriptor
+                    ? modelNodeForCanvas(templates([descriptor], fresh), { ...model, node: target }, taskOf)
+                    : null;
+                if (!added) {
+                    showToast(`Added ${dirName} to this project, but it has no node that runs ${model.name}.`, "warning");
+                    return;
+                }
+                create(added, `Added ${added.packageName ?? dirName} to this project and created`);
+                const notice = dependencyFailureNotice(`Added ${added.packageName ?? dirName}`, result);
+                if (notice) showToast(notice, "error");
+            } catch (err) {
+                showToast(
+                    `${model.name} runs in ${dirName}, which could not be added to this project: ` +
+                        `${(err as Error)?.message || "unknown error"}. Add it from the Node Catalog.`,
+                    "error",
+                );
+            }
+        })();
+    }, [getStarters, fetchStarters, modelRows, ensureProjectId, dropPosition, revealCreated, createCodeNode, markDirty, showToast]);
 
     // A scenario from the Scenario Catalog arrives as a copy: its box where it
     // was dropped, its context as fixed data (useScenarioDrop).

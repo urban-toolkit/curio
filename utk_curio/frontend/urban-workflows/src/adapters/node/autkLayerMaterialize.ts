@@ -40,8 +40,8 @@ function joinFailureMessage(errors: string[]): string {
 // Run the compiled autk-db loader in the backend sandbox and resolve to the
 // DuckDB artifact reference ({path, dataType}) the sandbox returns. Wraps the
 // callback-based JavaScriptInterpreter in a Promise. No DuckDB input is loaded
-// (input is ''); the data spec is inlined in the code, so the wrapper's `arg`
-// is unused.
+// (input is ''); the data spec is inlined in the code, so the wrapper binds
+// no input_k.
 function runDataInBackendOnce(
     jsInterpreter: JavaScriptInterpreter,
     code: string,

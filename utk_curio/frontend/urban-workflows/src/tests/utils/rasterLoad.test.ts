@@ -40,9 +40,9 @@ describe("planForMeta", () => {
   });
 
   test("past the cap it is refused, with what to do", () => {
-    const plan = planForMeta("flood_depth", { ...META, width: 4096, height: 4096 });
+    const plan = planForMeta("flood_depth", { ...META, width: 4097, height: 4096 });
     expect(plan).toEqual({
-      refused: `flood_depth is 4096 by 4096 cells, more than an Autark map loads at its own size `
+      refused: `flood_depth is 4097 by 4096 cells, more than an Autark map loads at its own size `
         + `(${RASTER_MAX_CELLS} cells, ${RASTER_MAX_SIDE} on a side). Crop it in the node that makes it, `
         + "for example with a rasterio window read, and run that node again.",
     });
@@ -89,6 +89,8 @@ describe("planForGrid", () => {
 });
 
 test("a raster within the cap is not oversize", () => {
-  expect(oversizeSentence("input_0", 2048, 2048)).toBeNull();
-  expect(oversizeSentence("input_0", 2049, 2048)).not.toBeNull();
+  expect(oversizeSentence("input_0", 4096, 4096)).toBeNull();
+  // SCOUT's whole flood grid.
+  expect(oversizeSentence("input_0", 2592, 2064)).toBeNull();
+  expect(oversizeSentence("input_0", 4097, 4096)).not.toBeNull();
 });

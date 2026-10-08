@@ -37,7 +37,7 @@ _KIND_WORDS = {_TABLE: "a table", _GEO: "a GeoDataFrame", _VALUE: "a value"}
 
 
 def _label(position: int, name: object) -> str:
-    return f"input {position} ({name})" if name not in (None, "") else f"input {position}"
+    return f"input_{position} ({name})" if name not in (None, "") else f"input_{position}"
 
 
 def _named_layers(value):

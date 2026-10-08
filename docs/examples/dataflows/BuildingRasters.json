@@ -9,8 +9,8 @@
       {
         "id": "6a1f5d3e-2b47-4c9a-9e0d-5f8b7c41a2d6",
         "type": "curio.builtin/data-loading",
-        "x": 200,
-        "y": 300,
+        "x": 0,
+        "y": 0,
         "content": "import geopandas as gpd\nfrom shapely.geometry import box\n\n# Twelve buildings in the Chicago Loop, in longitude and latitude, each with\n# its height in metres.\nheights = [25.0, 50.0, 75.0, 100.0, 125.0, 150.0, 175.0, 200.0, 225.0, 250.0, 275.0, 300.0]\nblocks = []\nfor index, height in enumerate(heights):\n    west = -87.6350 + 0.0008 * (index % 6)\n    south = 41.8822 + 0.0012 * (index // 6)\n    blocks.append(box(west, south, west + 0.0005, south + 0.0005))\nreturn gpd.GeoDataFrame({\"height\": heights}, geometry=blocks, crs=\"EPSG:4326\")",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -22,12 +22,12 @@
       {
         "id": "c3e9b0a4-7d15-4f62-8a3b-91e4d6f02c7b",
         "type": "scout.raster-conversion/rasterize-buildings",
-        "x": 800,
-        "y": 300,
-        "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: (mosaic, tiles).\n- mosaic: one raster in EPSG:3395, each cell a height in metres. An Autark map\n  draws it as input_0, band band_1.\n- tiles: one row per map tile, with zoom, x, y and png, the 8-bit grayscale\n  PNG (base64) SCOUT's Deep Umbra shadow model reads, where 255 is the\n  maximum height.\nThe Widgets tab sets the height column, the zoom level and the maximum height.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_raster_conversion.node_outputs import rasterize_buildings\n\nreturn rasterize_buildings(\n    arg,\n    attribute=[!! attribute !!],\n    zoom=int([!! zoom !!]),\n    max_height=float([!! max_height !!]),\n    output_file=curio_output_file,\n)\n",
+        "x": 645,
+        "y": 0,
+        "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: the 256 by 256 tiles SCOUT writes, 8-bit gray where 255 is the maximum\nheight, in EPSG:3395, saved as one of this dataflow's computed datasets, under\nthe name the \"Save tiles as\" widget gives (\"tiles\"); and a table of them, one\nrow per tile: zoom, x, y and the maximum height. Mosaic Tiles, given the same\nname, puts the tiles together into one raster.\nThe Widgets tab sets the height column, the zoom level, the maximum height and\nthe name.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_raster_conversion.convert_to_raster import convert_raster\nfrom scout_raster_conversion.mosaic import tile_table\n\ntiles = curio_save_folder([!! tiles !!])\nconvert_raster(input_0, [!! attribute !!], int([!! zoom !!]), tiles, max_height=float([!! max_height !!]))\nreturn tile_table(tiles, int([!! zoom !!]), float([!! max_height !!]))\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Rasterize the buildings' heights into zoom-16 tiles and their mosaic.",
+        "goal": "Rasterize the buildings' heights into zoom-16 tiles.",
         "metadata": {
           "keywords": [],
           "widgets": [
@@ -58,6 +58,33 @@
                 "step": 1,
                 "units": "m"
               }
+            },
+            {
+              "name": "tiles",
+              "type": "text",
+              "label": "Save tiles as",
+              "default": "tiles"
+            }
+          ]
+        }
+      },
+      {
+        "id": "4d5e8f58-34ee-51c3-bbc8-65503c56cc6b",
+        "type": "scout.raster-conversion/mosaic-tiles",
+        "x": 1290,
+        "y": 0,
+        "content": "\"\"\"Mosaic Tiles: the tiles Rasterize Buildings saved, side by side in one raster.\n\nInput: Rasterize Buildings' table of tiles, whose zoom and maximum height say\nhow to put them together. The tiles are the computed dataset of this dataflow\nthat the \"Tiles\" widget names (\"tiles\"), the name Rasterize Buildings saved\nthem under.\nOutput: one raster in EPSG:3395, each cell a height in metres (a tile's gray\nlevel times the maximum height over 255). A tile with no building near it is\n0, the ground. An Autark map draws it as input_0, band band_1; SCOUT's Deep\nUmbra shadow model (Accumulated Shadow) reads it.\n\"\"\"\nfrom scout_raster_conversion.mosaic import mosaic\n\nreturn mosaic(\n    curio_computed_path([!! tiles !!]),\n    int(input_0[\"zoom\"].iloc[0]),\n    float(input_0[\"max_height\"].iloc[0]),\n    curio_output_file,\n)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Put the tiles Rasterize Buildings saved together into one height raster in metres.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "tiles",
+              "type": "text",
+              "label": "Tiles",
+              "default": "tiles"
             }
           ]
         }
@@ -65,9 +92,9 @@
       {
         "id": "f47b2c91-0e3d-4a85-b6c2-3d9a8e5f1b04",
         "type": "curio.builtin/autk-grammar",
-        "x": 1400,
-        "y": 300,
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input 0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"legendTitle\": \"Building height (m)\"\n      }\n    ]\n  }\n}",
+        "x": 1935,
+        "y": 0,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"legendTitle\": \"Building height (m)\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Draw the mosaic of building heights on a map.",
@@ -85,10 +112,17 @@
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-c3e9b0a4-7d15-4f62-8a3b-91e4d6f02c7bout-f47b2c91-0e3d-4a85-b6c2-3d9a8e5f1b04in",
-        "source": "c3e9b0a4-7d15-4f62-8a3b-91e4d6f02c7b",
+        "id": "reactflow__edge-4d5e8f58-34ee-51c3-bbc8-65503c56cc6bout-f47b2c91-0e3d-4a85-b6c2-3d9a8e5f1b04in",
+        "source": "4d5e8f58-34ee-51c3-bbc8-65503c56cc6b",
         "target": "f47b2c91-0e3d-4a85-b6c2-3d9a8e5f1b04",
         "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-c3e9b0a4-7d15-4f62-8a3b-91e4d6f02c7bout-4d5e8f58-34ee-51c3-bbc8-65503c56cc6bin",
+        "source": "c3e9b0a4-7d15-4f62-8a3b-91e4d6f02c7b",
+        "sourceHandle": "out",
+        "target": "4d5e8f58-34ee-51c3-bbc8-65503c56cc6b",
         "targetHandle": "in"
       }
     ],

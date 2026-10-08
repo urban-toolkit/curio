@@ -305,7 +305,7 @@ def _author_analysis_node(page, node_id: str, code: str) -> str:
     """Set a Python Computation node's code and turn its save toggle on.
 
     No upstream edge: a Python Computation runs standalone as long as the code
-    does not reference ``arg`` (see worker.py's "received no input" guard),
+    does not reference ``input_0`` (see worker.py's "received no input" guard),
     which is what ``test_global_imports_e2e.py`` relies on too.
     """
     node_locator(page, node_id).wait_for(state="visible", timeout=45000)

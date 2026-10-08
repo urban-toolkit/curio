@@ -95,6 +95,18 @@ _SOURCE_FILENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}\.[A-Za-z0-9
 # install route swaps it back to the real on-disk source so the rebuild does
 # not clobber unedited templates.
 _STARTER_CODE_SENTINEL = (
+    "# `input_0` holds what the edge on input circle 0 delivers (input_1, input_2,\n"
+    "# ... for more circles). Return the value to send downstream.\n"
+    "return input_0\n"
+)
+# The sentinels as they read while a node's input was ``input``, and before
+# that ``arg``: a draft made then still carries one.
+_INPUT_STARTER_CODE_SENTINEL = (
+    "# `input` holds the upstream input (a single value, or a list when\n"
+    "# multiple input ports are wired). Return the value to send downstream.\n"
+    "return input\n"
+)
+_OLD_STARTER_CODE_SENTINEL = (
     "# `arg` holds the upstream input (a single value, or a list when\n"
     "# multiple input ports are wired). Return the value to send downstream.\n"
     "return arg\n"
@@ -105,7 +117,7 @@ def _looks_like_placeholder_source(body: str) -> bool:
     """True when *body* is empty or matches the well-known starter sentinel."""
     if not body or not body.strip():
         return True
-    return body == _STARTER_CODE_SENTINEL
+    return body in (_STARTER_CODE_SENTINEL, _INPUT_STARTER_CODE_SENTINEL, _OLD_STARTER_CODE_SENTINEL)
 
 
 def preserve_unedited_sources(

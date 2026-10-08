@@ -11,7 +11,7 @@
         "type": "curio.builtin/data-loading",
         "x": 0,
         "y": 0,
-        "content": "from datetime import datetime, timedelta\n\nimport pandas as pd\n\n# The SCOUT WRF group from the Data Catalog: one NetCDF variable per\n# dataset, each loaded as an xarray Dataset.\nlayers = {}\nlayers[\"RAIN\"] = curio_load_data(\"data.scout.wrf-rain\")\nlayers[\"T2\"] = curio_load_data(\"data.scout.wrf-t2\")\nlayers[\"RH2\"] = curio_load_data(\"data.scout.wrf-rh2\")\nlayers[\"WSPD10\"] = curio_load_data(\"data.scout.wrf-wspd10\")\nlayers[\"WDIR10\"] = curio_load_data(\"data.scout.wrf-wdir10\")\n\n# Each variable's mean over the grid, one row per hour of the forecast, in UTC\n# from the files' START_DATE.\nstart = datetime.strptime(layers[\"RAIN\"].attrs[\"START_DATE\"], \"%Y-%m-%d_%H:%M:%S\")\nhours = range(layers[\"RAIN\"].sizes[\"Time\"])\ntable = pd.DataFrame({\"hour\": [(start + timedelta(hours=h)).strftime(\"%Y-%m-%dT%H:%M:%S\") for h in hours]})\nfor name, ds in layers.items():\n    table[name] = ds[name].mean(dim=(\"south_north\", \"west_east\")).values.astype(float)\nreturn table\n",
+        "content": "from datetime import datetime, timedelta\n\nimport pandas as pd\n\n# SCOUT's WRF forecast from the Data Catalog: one dataset of five NetCDF\n# files, a variable each, each file loaded as an xarray Dataset.\nlayers = {}\nlayers[\"RAIN\"] = curio_load_data(\"data.scout.chicago-weather-2025-07-06\", part=\"RAIN.nc\")\nlayers[\"T2\"] = curio_load_data(\"data.scout.chicago-weather-2025-07-06\", part=\"T2.nc\")\nlayers[\"RH2\"] = curio_load_data(\"data.scout.chicago-weather-2025-07-06\", part=\"RH2.nc\")\nlayers[\"WSPD10\"] = curio_load_data(\"data.scout.chicago-weather-2025-07-06\", part=\"WSPD10.nc\")\nlayers[\"WDIR10\"] = curio_load_data(\"data.scout.chicago-weather-2025-07-06\", part=\"WDIR10.nc\")\n\n# Each variable's mean over the grid, one row per hour of the forecast, in UTC\n# from the files' START_DATE.\nstart = datetime.strptime(layers[\"RAIN\"].attrs[\"START_DATE\"], \"%Y-%m-%d_%H:%M:%S\")\nhours = range(layers[\"RAIN\"].sizes[\"Time\"])\ntable = pd.DataFrame({\"hour\": [(start + timedelta(hours=h)).strftime(\"%Y-%m-%dT%H:%M:%S\") for h in hours]})\nfor name, ds in layers.items():\n    table[name] = ds[name].mean(dim=(\"south_north\", \"west_east\")).values.astype(float)\nreturn table\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Read the five WRF variables and average each over the grid, hour by hour.",
@@ -44,44 +44,12 @@
     ],
     "datasets": [
       {
-        "datasetId": "data.scout.wrf-rain",
-        "dirName": "data.scout.wrf-rain@1",
+        "datasetId": "data.scout.chicago-weather-2025-07-06",
+        "dirName": "data.scout.chicago-weather-2025-07-06@1",
         "origin": "imported",
         "producerNodeId": null,
         "consumerNodeIds": [],
-        "installedAt": "2026-10-05T00:00:00Z"
-      },
-      {
-        "datasetId": "data.scout.wrf-t2",
-        "dirName": "data.scout.wrf-t2@1",
-        "origin": "imported",
-        "producerNodeId": null,
-        "consumerNodeIds": [],
-        "installedAt": "2026-10-05T00:00:00Z"
-      },
-      {
-        "datasetId": "data.scout.wrf-rh2",
-        "dirName": "data.scout.wrf-rh2@1",
-        "origin": "imported",
-        "producerNodeId": null,
-        "consumerNodeIds": [],
-        "installedAt": "2026-10-05T00:00:00Z"
-      },
-      {
-        "datasetId": "data.scout.wrf-wspd10",
-        "dirName": "data.scout.wrf-wspd10@1",
-        "origin": "imported",
-        "producerNodeId": null,
-        "consumerNodeIds": [],
-        "installedAt": "2026-10-05T00:00:00Z"
-      },
-      {
-        "datasetId": "data.scout.wrf-wdir10",
-        "dirName": "data.scout.wrf-wdir10@1",
-        "origin": "imported",
-        "producerNodeId": null,
-        "consumerNodeIds": [],
-        "installedAt": "2026-10-05T00:00:00Z"
+        "installedAt": "2026-10-07T00:00:00Z"
       }
     ],
     "name": "NetCDF",

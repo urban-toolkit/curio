@@ -251,17 +251,18 @@ class TestThePatternsAreShared:
 
 
 class TestResolveCodeReferences:
-    def test_an_input_is_arg_alone_or_indexed(self):
-        assert resolve_code_references("return [!! input 0 !!]", (), "python", [0]) == "return arg"
-        assert resolve_code_references("return [!! input 1 !!]", (), "python", [0, 1]) == "return arg[1]"
+    def test_an_input_is_named_after_its_circle(self):
+        assert resolve_code_references("return [!! input 0 !!]", (), "python", [0]) == "return input_0"
+        assert resolve_code_references("return [!! input 1 !!]", (), "python", [0, 1]) == "return input_1"
+        assert resolve_code_references("return [!! input 2 !!]", (), "python", [0, 2]) == "return input_2"
 
     def test_an_input_with_no_edge_is_refused(self):
         with pytest.raises(_reference_error()) as exc:
             resolve_code_references("return [!! input 2 !!]", (), "python", [0, 1])
-        assert "input 2 has no edge" in str(exc.value)
+        assert "input_2 has no edge" in str(exc.value)
 
     def test_a_column_is_its_name_without_the_data(self):
-        assert resolve_code_references("s = arg[[!! input 0.area !!]]", (), "python", [0]) == 's = arg["area"]'
+        assert resolve_code_references("s = input_0[[!! input 0.area !!]]", (), "python", [0]) == 's = input_0["area"]'
 
     def test_a_reference_takes_the_set_value(self):
         widgets = [{"name": "factor", "type": "number", "default": 1, "value": 3}]
@@ -272,7 +273,7 @@ class TestResolveCodeReferences:
         assert resolve_code_references("x = [!! factor !!]", widgets) == "x = 1"
 
     def test_code_without_references_is_unchanged(self):
-        assert resolve_code_references("return arg") == "return arg"
+        assert resolve_code_references("return input_0") == "return input_0"
 
     def test_an_old_marker_is_refused_naming_the_new_way(self):
         with pytest.raises(_reference_error()) as exc:
@@ -405,13 +406,14 @@ class TestSeveralInputs:
         assert spec.upstream_nodes("t") == ["a", "b"]
         assert spec.input_slots("t") == [0, 1]
 
-    def test_the_sandbox_gets_both_inputs_and_the_chip_as_arg_indexed(self, tmp_curio):
+    def test_the_sandbox_gets_both_inputs_their_circles_and_the_chip_as_its_name(self, tmp_curio):
         rec = _RecordingExec()
         report = runner.run_through_node(KEY, PID, FAN_IN, "t", exec_fn=rec)
         assert report["ok"] is True
         payload = rec.calls[-1][1]
-        assert "return arg[1]" in payload["code"]
+        assert "return input_1" in payload["code"]
         assert payload["dataType"] == "outputs"
+        assert payload["input_slots"] == [0, 1]
         a_path = report["nodes"]["a"]["output"]["path"]
         b_path = report["nodes"]["b"]["output"]["path"]
         assert payload["file_path"].index(a_path) < payload["file_path"].index(b_path)
@@ -422,7 +424,7 @@ class TestSeveralInputs:
         report = runner.run_through_node(KEY, PID, spec, "t", exec_fn=rec)
         assert rec.calls == []
         assert report["ok"] is False and report["blocker"] == "t"
-        assert "input 0 has no edge" in report["nodes"]["t"]["stderrTail"]
+        assert "input_0 has no edge" in report["nodes"]["t"]["stderrTail"]
 
 
 class TestLayerChips:
@@ -445,7 +447,7 @@ class TestLayerChips:
         assert report["ok"] is True, report
         assert LAYER_HELPER == "curio_layer"
         # The runner indents the node's code into its function body.
-        assert '    roads = curio_layer(arg, "table_osm_roads", 0)\n    return roads["highway"]' in rec.calls[-1][1]["code"]
+        assert '    roads = curio_layer(input_0, "table_osm_roads", 0)\n    return roads["highway"]' in rec.calls[-1][1]["code"]
 
     def test_a_javascript_node_gets_the_same_call(self, tmp_curio):
         rec = _RecordingExec()
@@ -464,7 +466,7 @@ class TestLayerChips:
         assert report["ok"] is True, report
         endpoint, payload = rec.calls[-1]
         assert endpoint == "/execJs"
-        assert 'return curio_layer(arg[1], "roads", 1);' in payload["code"]
+        assert 'return curio_layer(input_1, "roads", 1);' in payload["code"]
 
     def test_the_names_and_the_missing_layer_message_are_the_sandboxs(self):
         """The resolver, the browser and both sandbox helpers name one call and
@@ -619,3 +621,12 @@ class TestSelectionTags:
         report = runner.run_through_node(KEY, PID, spec, "a", exec_fn=rec)
         assert rec.calls == []
         assert "this node has no selection tag named other" in report["nodes"]["a"]["stderrTail"]
+
+
+def test_an_input_chip_saved_the_old_way_is_written_as_a_chip_writes_it_now():
+    from utk_curio.backend.app.execution.code_references import normalize_input_references
+    code = "a = [!! input 0 !!]\nb = [!!input 1.area!!]  # [!! input 2:roads.lanes !!]\nc = [!! input ? !!] + [!! input_1 !!] + [!! factor !!]"
+    assert normalize_input_references(code) == (
+        "a = [!! input_0 !!]\nb = [!! input_1.area !!]  # [!! input_2:roads.lanes !!]\nc = [!! input_? !!] + [!! input_1 !!] + [!! factor !!]"
+    )
+    assert normalize_input_references("x = 1") == "x = 1"

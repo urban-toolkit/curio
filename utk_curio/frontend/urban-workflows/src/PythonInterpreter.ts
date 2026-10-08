@@ -19,6 +19,7 @@ export class PythonInterpreter {
         dataflowId?: string | null,
         saveOutputDataset = false,
         nodeName?: string,
+        inputSlots?: number[],
     ) {
         const callbackError = (message: string) => {
             callback({
@@ -72,6 +73,8 @@ export class PythonInterpreter {
                 nodeId: nodeId,
                 ...(dataflowId ? { dataflowId } : {}),
                 ...(nodeName ? { nodeName } : {}),
+                // Which input_k each value of the input is (the wired circles).
+                ...(inputSlots && inputSlots.length > 0 ? { inputSlots } : {}),
                 saveOutputDataset,
             }),
             headers: {

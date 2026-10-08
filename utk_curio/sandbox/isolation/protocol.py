@@ -46,7 +46,7 @@ class ProtocolError(ValueError):
 # defensive. Keeping both shapes in one file is what stops them drifting.
 #
 # The parent stages real payloads as files in the child's scratch directory and
-# names them here, so the child rebuilds ``arg`` without ever opening DuckDB:
+# names them here, so the child rebuilds the input without ever opening DuckDB:
 #
 #   {"kind": "none"}                       no input wired to this node
 #   {"kind": "null"}
@@ -343,6 +343,8 @@ def build_exec_request(
     models=None,
     dataset_formats=None,
     package_modules=None,
+    computed=None,
+    input_slots=None,
 ):
     """Assemble the request the parent hands to the zygote.
 
@@ -383,6 +385,9 @@ def build_exec_request(
         "work_dir": str(work_dir) if work_dir else None,
         "overlay_dir": str(overlay_dir) if overlay_dir else None,
         "input": input_spec,
+        # The wired circles, in order: which input_k each value of the input
+        # is (util/input_names.py). None leaves it to the input's shape.
+        "input_slots": list(input_slots) if input_slots else None,
         "dataset_paths": dict(dataset_paths or {}),
         # {modelId: staged folder name}, relative to scratch_dir.
         "models": dict(models or {}),
@@ -399,6 +404,10 @@ def build_exec_request(
         # They cross the private parent->child pipe and nothing else; the child
         # pops them out of the request the moment it builds the callable.
         "secrets": dict(secrets or {}),
+        # {"names", "canSave", "reason"} for the saved-file helpers
+        # (util/saved_files.py). The child writes what it saves under
+        # <scratch>/saved, and the parent copies it out (collect_saved).
+        "computed": dict(computed or {}),
     }
 
 

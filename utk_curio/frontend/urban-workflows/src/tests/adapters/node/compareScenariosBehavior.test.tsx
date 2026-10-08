@@ -160,7 +160,7 @@ describe("its labels and code follow the graph", () => {
         code: written,
       }),
     );
-    expect(written).toContain('("s-tall", "Twice as tall", [!! input 1 !!]),');
+    expect(written).toContain('("s-tall", "Twice as tall", [!! input_1 !!]),');
     // It had run, so its output is now stale.
     expect(mockMarkNodeStale).toHaveBeenCalledWith(COMPARE);
   });
@@ -235,7 +235,7 @@ describe("its body", () => {
     mockFlow = flowOf(g);
     const view = render(<Harness data={compare.data} state={nodeState()} />);
     expect(screen.getByText(/read different context/).textContent).toBe(
-      "Input 1 (Twice as tall) and input 0 (Baseline) read different context: only input 1 reads Loader 2020; only input 0 reads Loader.",
+      "input_1 (Twice as tall) and input_0 (Baseline) read different context: only input_1 reads Loader 2020; only input_0 reads Loader.",
     );
     fireEvent.click(screen.getByRole("tab", { name: "What differs" }));
     const row = view.container.querySelector('[data-compare-widget="factor"]')!;
@@ -272,11 +272,11 @@ describe("a run's outcome", () => {
       code: "error",
       content:
         "Traceback (most recent call last):\n  File \"<string>\", line 4, in userCode\n" +
-        "ValueError: Compare Scenarios stacks inputs of one kind, and these differ: input 0 (Baseline) is a table, input 1 (Twice as tall) is a value. Connect outcomes of the same kind.",
+        "ValueError: Compare Scenarios stacks inputs of one kind, and these differ: input_0 (Baseline) is a table, input_1 (Twice as tall) is a value. Connect outcomes of the same kind.",
     };
     const view = render(<Harness data={compare.data} state={nodeState(failed)} />);
     expect(view.container.querySelector("[data-compare-run-error]")!.textContent).toBe(
-      "Compare Scenarios stacks inputs of one kind, and these differ: input 0 (Baseline) is a table, input 1 (Twice as tall) is a value. Connect outcomes of the same kind.",
+      "Compare Scenarios stacks inputs of one kind, and these differ: input_0 (Baseline) is a table, input_1 (Twice as tall) is a value. Connect outcomes of the same kind.",
     );
     expect(mockUseVega).not.toHaveBeenCalled();
   });
@@ -321,8 +321,8 @@ describe("a run's outcome", () => {
   });
 
   test("a message that is no traceback is shown as it is", () => {
-    expect(failureLine("Input 1 (from Scale) has no value yet. Run the node that feeds it.")).toBe(
-      "Input 1 (from Scale) has no value yet. Run the node that feeds it.",
+    expect(failureLine("input_1 (from Scale) has no value yet. Run the node that feeds it.")).toBe(
+      "input_1 (from Scale) has no value yet. Run the node that feeds it.",
     );
   });
 });

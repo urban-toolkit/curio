@@ -239,6 +239,8 @@ export function checkWidgetDef(def: WidgetDef, others: WidgetDef[], parameter = 
   if (!WIDGET_NAME_RE.test(def.name)) {
     return "A name is letters, digits and underscores, and does not start with a digit.";
   }
+  // `input_<i>` names a node's input, in code as in its chips.
+  if (/^input_\d+$/.test(def.name)) return `${def.name} names one of the node's inputs. Pick another name.`;
   if (others.some((w) => w.name === def.name)) {
     return parameter
       ? `Another Parameter node is named ${def.name}.`

@@ -87,6 +87,9 @@ def model_row(manifest: ModelManifest, *, origin: str, folder: Path) -> dict[str
         row["discoverySource"] = dict(manifest.discovery_source)
     # The libraries its runtime needs, by name: installed when it was added.
     row["dependencies"] = sorted(manifest.python_deps)
+    # The node that runs it, so a drop on the canvas can make that node.
+    if manifest.node:
+        row["node"] = manifest.node
     return row
 
 

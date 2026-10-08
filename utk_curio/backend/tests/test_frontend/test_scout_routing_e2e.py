@@ -1,26 +1,27 @@
-"""SCOUT's weather routing in two scenarios, mapped through Autark and charted (#662, step 20).
+"""SCOUT's weather routing example, mapped through Autark and charted (#662, step 20).
 
-The shipped test dataflow ``WeatherRouting.json``: an Autark node that loads the
-Chicago Loop's roads from the committed OpenStreetMap extract, a start-time
-Parameter node, and two scenarios, "Avoid rain" and "Avoid wind" (its copy),
-each holding the ``scout.routing@1`` package's Weather Routing node with its
-weights, which reads the Autark node's roads layer through its layer chip
-``[!! input 0:table_osm_roads !!]``, then a node that takes its routes and one
-that takes their metrics. An
-Autark map draws both scenarios' routes over the roads; four Compare Scenarios
-nodes chart each route's duration, distance, rain exposure and wind exposure by
-scenario (#720). Run All drives the whole path:
+The shipped test dataflow ``WeatherRouting.json`` is SCOUT's weather routing
+example: a Data Loading node that loads downtown Chicago's roads from the Data
+Catalog (``data.osm.chicago-downtown-roads``, OpenStreetMap), and the
+``scout.routing@1`` package's Weather
+Routing node set as SCOUT's example sets it (Default weights, K 1, midnight on
+6 July 2025), which reads the roads through its layer chip
+``[!! input_0:table_osm_roads !!]``. It finds SCOUT's two routes, the fastest
+(SCOUT's C) and the one its weather weights favor (D). Two scenarios,
+"Fastest route" and "Weather-aware route" (its copy), each keep one of them: a
+node with the route as a band, and one with its metrics. An Autark map draws
+both scenarios' routes in their colors, SCOUT's, with a darker outline; four
+Compare Scenarios nodes chart the two routes' duration, distance, rain exposure
+and wind exposure, one bar per scenario, as SCOUT's example compares them. Run
+All drives the whole path:
 
-1. Both Weather Routing nodes route over the roads the Autark node loads, with
-   the weather the WRF group gives at noon in Chicago, the time the Parameter
-   node holds.
+1. Weather Routing routes over the roads the Data Loading node loads.
 2. The map draws.
 3. Each chart draws both scenarios in their colors from the stacked table,
-   whose routes and metrics are the ones the package's own test pins for the
-   same roads (``EXAMPLE`` in ``test_packages/test_scout_routing.py``).
-4. What differs lists one lever, the Weather Routing node, and in it two
-   widgets, the rain and wind weights; no code line differs, and nothing is
-   warned.
+   whose metrics are the ones the package's own test pins for the same roads
+   (``EXAMPLE`` in ``test_packages/test_scout_routing.py``).
+4. What differs lists two levers, each scenario's two nodes, each with the one
+   code line that names the route it keeps; nothing is warned.
 
 The five close-ups are the frames.
 
@@ -37,7 +38,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from utk_curio.backend.tests.test_packages.test_scout_routing import EXAMPLE
+from utk_curio.backend.tests.test_packages.test_scout_routing import EXAMPLE, EXAMPLE_CHARTS, EXAMPLE_SCENARIOS
 
 from .test_compare_scenarios_e2e import _CHART_STATE_JS, _COLOR_PIXELS_JS, _OUTPUT_ARTIFACT_JS
 from .utils import (
@@ -66,9 +67,11 @@ DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "WeatherRouting
 PACKAGE_DIR = "scout.routing@1"
 ROUTING_TYPE = "scout.routing/weather-routing"
 AUTARK_TYPE = "curio.builtin/autk-grammar"
+LOADING_TYPE = "curio.builtin/data-loading"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
-SCENARIOS = {"avoid-rain": ("Avoid rain", "#2a9d8f"), "avoid-wind": ("Avoid wind", "#e76f51")}
-TEST_NAME = "test_two_routing_scenarios_are_mapped_and_charted"
+#: The two scenarios' colors, SCOUT's: the fastest route, the weather-aware one.
+ROUTE_COLORS = [color for _name, color, _route in EXAMPLE_SCENARIOS.values()]
+TEST_NAME = "test_scouts_routing_example_is_mapped_and_charted"
 #: The stacked table's metric columns, and where each sits in an ``EXAMPLE`` row.
 COLUMNS = {"distance": 3, "duration": 4, "rain_exposure": 5, "wind_exposure": 6}
 #: The opacity of each of a node's header tools, which show under the pointer,
@@ -82,8 +85,7 @@ _TOOLS_OPACITY_JS = """(id) => {
 def _release_nodes(page, node_id: str) -> None:
     """Click the empty pane where the pointer parks, so no node keeps the
     pointer, focus or the selection, and wait for *node_id*'s header tools to
-    hide: a close-up taken after a click inside a node (the What differs tabs)
-    would show them."""
+    hide."""
     park_pointer(page)
     page.mouse.down()
     page.mouse.up()
@@ -98,52 +100,46 @@ def _release_nodes(page, node_id: str) -> None:
 
 
 def _assert_chart_drew(page, node_id: str) -> None:
-    """The grouped bars compiled with no problem, and the canvas holds both
-    scenarios' colors."""
+    """The bars compiled with no problem, and the canvas holds both scenarios'
+    colors."""
     deadline = time.time() + 60
     state = None
     while time.time() < deadline:
-        state = page.evaluate(_CHART_STATE_JS, [node_id, "grouped-bar"])
+        state = page.evaluate(_CHART_STATE_JS, [node_id, "bar"])
         if state in ("drawn", "problem"):
             break
         page.wait_for_timeout(250)
     problem = node_locator(page, node_id).locator("[data-compare-chart-problem]").all_inner_texts()
     assert state == "drawn", f"the chart's compile ended {state!r}: {problem}"
     assert_vega_canvas_rendered(page, node_id, timeout=30000)
-    colors = [color for _name, color in SCENARIOS.values()]
     counts = None
     deadline = time.time() + 15
     while time.time() < deadline:
-        counts = page.evaluate(_COLOR_PIXELS_JS, [node_id, colors])
+        counts = page.evaluate(_COLOR_PIXELS_JS, [node_id, ROUTE_COLORS])
         if counts and all(count >= 30 for count in counts):
             return
         page.wait_for_timeout(250)
-    raise AssertionError(f"the chart does not draw both scenarios' colors {colors}: pixels {counts}")
+    raise AssertionError(f"the chart does not draw both routes' colors {ROUTE_COLORS}: pixels {counts}")
 
 
 def _assert_stacked_table(page, node_id: str) -> None:
-    """The node's saved table: each scenario's routes, in its order, with the
-    metrics the package's test pins for these roads."""
+    """The node's saved table: each scenario's route, with the metrics the
+    package's test pins for these roads."""
     artifact = page.evaluate(_OUTPUT_ARTIFACT_JS, node_id)
     assert artifact, "Compare Scenarios shows no saved table"
     stacked = load_artifact_as_dict(artifact)
     assert stacked["dataType"] == "dataframe", stacked["dataType"]
     table = stacked["data"]
-    # The stored table's columns come back by name, not in their order.
-    assert sorted(table) == sorted([
-        "route", "route_index", "distance", "duration", "rain_exposure", "heat_exposure", "wind_exposure",
-        "humidity_exposure", "scenario", "scenario_name"]), list(table)
-    expected = [(scenario, row) for scenario in SCENARIOS for row in EXAMPLE[scenario]]
-    assert table["scenario"] == [scenario for scenario, _row in expected]
-    assert table["scenario_name"] == [SCENARIOS[scenario][0] for scenario, _row in expected]
-    assert table["route"] == [row[0] for _scenario, row in expected]
-    assert table["route_index"] == [row[1] for _scenario, row in expected]
+    expected = [(sid, row) for sid, (_n, _c, route) in EXAMPLE_SCENARIOS.items() for row in EXAMPLE if row[0] == route]
+    assert table["scenario"] == [sid for sid, _row in expected]
+    assert table["scenario_name"] == [EXAMPLE_SCENARIOS[sid][0] for sid, _row in expected]
+    assert table["route"] == [row[0] for _sid, row in expected]
     for column, at in COLUMNS.items():
         tolerance = 1e-6 if column in ("distance", "duration") else 1e-3
-        assert table[column] == pytest.approx([row[at] for _scenario, row in expected], abs=tolerance), column
+        assert table[column] == pytest.approx([row[at] for _sid, row in expected], abs=tolerance), column
 
 
-def test_two_routing_scenarios_are_mapped_and_charted(
+def test_scouts_routing_example_is_mapped_and_charted(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     require_project_page()
@@ -165,24 +161,24 @@ def test_two_routing_scenarios_are_mapped_and_charted(
         f"{PACKAGE_DIR} is not in the account's store {store}: start the stack --with-examples"
     )
     nodes = spec["dataflow"]["nodes"]
+    edges = spec["dataflow"]["edges"]
     for node in nodes:
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
-    routings = [n["id"] for n in nodes if n["type"] == ROUTING_TYPE]
-    (loader_id,) = [n["id"] for n in nodes if n["type"] == AUTARK_TYPE and "data" in json.loads(n["content"])]
-    # Both routing nodes read the loader's roads layer through their layer chip.
-    assert {e["source"] for e in spec["dataflow"]["edges"] if e["target"] in routings} == {loader_id}
+    (routing,) = [n["id"] for n in nodes if n["type"] == ROUTING_TYPE]
+    (loader_id,) = [n["id"] for n in nodes if n["type"] == LOADING_TYPE]
+    # The routing node reads the loaded roads through its layer chip.
+    assert [e["source"] for e in edges if e["target"] == routing] == [loader_id]
     (map_id,) = [n["id"] for n in nodes if n["type"] == AUTARK_TYPE and "map" in json.loads(n["content"])]
-    compares = {n["metadata"]["compareScenarios"]["chart"]["y"]: n["id"] for n in nodes if n["type"] == COMPARE_TYPE}
-    assert sorted(compares) == sorted(COLUMNS)
+    charts = {n["metadata"]["compareScenarios"]["chart"]["y"]: n["id"] for n in nodes if n["type"] == COMPARE_TYPE}
+    assert list(charts) == EXAMPLE_CHARTS
 
-    # 1. Run All: both scenarios route over Autark's roads at the shared time.
+    # 1. Run All: SCOUT's two routes over the catalog's roads.
     run_all_and_wait(page, timeout_ms=300000)
-    status = wait_for_node_settled(page, loader_id, node_type=AUTARK_TYPE, timeout_ms=120000)
-    assert status == "done", f"the Autark node did not load the roads: {read_node_error_text(node_locator(page, loader_id))}"
-    for routing in routings:
-        status = wait_for_node_settled(page, routing, node_type=ROUTING_TYPE, timeout_ms=120000)
-        assert status == "done", f"Weather Routing did not run: {read_node_error_text(node_locator(page, routing))}"
-    for node_id in compares.values():
+    status = wait_for_node_settled(page, loader_id, node_type=LOADING_TYPE, timeout_ms=120000)
+    assert status == "done", f"the roads did not load: {read_node_error_text(node_locator(page, loader_id))}"
+    status = wait_for_node_settled(page, routing, node_type=ROUTING_TYPE, timeout_ms=120000)
+    assert status == "done", f"Weather Routing did not run: {read_node_error_text(node_locator(page, routing))}"
+    for node_id in charts.values():
         status = wait_for_node_settled(page, node_id, node_type=COMPARE_TYPE, timeout_ms=120000)
         assert status == "done", f"Compare Scenarios did not compare: {read_node_error_text(node_locator(page, node_id))}"
 
@@ -190,26 +186,23 @@ def test_two_routing_scenarios_are_mapped_and_charted(
     frame_nodes(page, [map_id])
     assert_autark_map_drawn(page, map_id, timeout=60000)
 
-    # 3. The four charts, from the routes and metrics the package's test pins.
-    for column in COLUMNS:
-        frame_nodes(page, [compares[column]])
-        _assert_chart_drew(page, compares[column])
-        _assert_stacked_table(page, compares[column])
+    # 3. The four charts, from the metrics the package's test pins.
+    for column in EXAMPLE_CHARTS:
+        frame_nodes(page, [charts[column]])
+        _assert_chart_drew(page, charts[column])
+        _assert_stacked_table(page, charts[column])
 
-    # 4. What differs: the two weights, and nothing else.
-    frame_nodes(page, [compares["duration"]])
-    compare = node_locator(page, compares["duration"])
+    # 4. What differs: the route each scenario keeps, and nothing else.
+    frame_nodes(page, [charts["duration"]])
+    compare = node_locator(page, charts["duration"])
     compare.get_by_role("tab", name="What differs", exact=True).click()
-    compare.locator('[data-compare-widget="rain"]').wait_for(state="visible", timeout=10000)
-    assert compare.locator("[data-compare-lever]").count() == 1
-    assert sorted(compare.locator("[data-compare-widget]").evaluate_all(
-        "(els) => els.map((el) => el.getAttribute('data-compare-widget'))")) == ["rain", "wind"]
-    rain = compare.locator('[data-compare-widget="rain"]')
-    assert "0.85834" in rain.locator('[data-compare-value="avoid-rain"]').inner_text()
-    assert "0.01657" in rain.locator('[data-compare-value="avoid-wind"]').inner_text()
-    assert compare.locator("[data-compare-code-added]").count() == 0
-    assert compare.locator("[data-compare-code-removed]").count() == 0
-    assert compare.locator("[data-compare-same]").get_attribute("data-compare-same") == "2"
+    compare.locator("[data-compare-lever]").first.wait_for(state="visible", timeout=10000)
+    assert compare.locator("[data-compare-lever]").count() == 2
+    assert compare.locator("[data-compare-widget]").count() == 0
+    assert sorted(compare.locator("[data-compare-code-added]").all_inner_texts()) == [
+        '+ return metrics[metrics["route"] == "weighted-route"]',
+        '+ route = routes[routes["weight_type"] == "weighted-route"]']
+    assert compare.locator("[data-compare-code-removed]").count() == 2
     assert compare.locator("[data-compare-warning]").count() == 0
     compare.get_by_role("tab", name="Chart", exact=True).click()
 
@@ -217,11 +210,11 @@ def test_two_routing_scenarios_are_mapped_and_charted(
     assert_autark_map_drawn(page, map_id, timeout=30000)
     _release_nodes(page, map_id)
     save_node_closeup(page, "scout-routing-routes-map", map_id, test_name=TEST_NAME, sweep_toasts=True)
-    for column in COLUMNS:
-        frame_nodes(page, [compares[column]])
-        _assert_chart_drew(page, compares[column])
-        _release_nodes(page, compares[column])
+    for column in EXAMPLE_CHARTS:
+        frame_nodes(page, [charts[column]])
+        _assert_chart_drew(page, charts[column])
+        _release_nodes(page, charts[column])
         save_node_closeup(
-            page, f"scout-routing-{column.replace('_', '-')}", compares[column],
+            page, f"scout-routing-{column.replace('_', '-')}", charts[column],
             test_name=TEST_NAME, sweep_toasts=True,
         )

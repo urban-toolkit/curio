@@ -23,6 +23,7 @@ import {
 import { effectiveValue, type WidgetDef, type WidgetValue } from "../../../utils/widgets/widgetModel";
 import {
   findReferences,
+  inputName,
   parseReference,
   referenceContexts,
   referenceProblem,
@@ -108,15 +109,15 @@ function hoverFor(inner: string, scope: ReferenceScope, language: CodeLanguage):
   const from = input?.label ? `, from ${input.label}` : "";
   if (parsed.layer !== undefined) {
     const layer = input?.layers?.find((l) => l.name === parsed.layer);
-    if (parsed.column === undefined) return `layer ${parsed.layer} of input ${parsed.slot}${from}`;
+    if (parsed.column === undefined) return `layer ${parsed.layer} of ${inputName(parsed.slot)}${from}`;
     const dtype = layer?.dtypes?.[parsed.column];
-    return `column ${parsed.column} of layer ${parsed.layer}, input ${parsed.slot}${from}` + (dtype ? ` (${dtype})` : "");
+    return `column ${parsed.column} of layer ${parsed.layer}, ${inputName(parsed.slot)}${from}` + (dtype ? ` (${dtype})` : "");
   }
   if (parsed.column !== undefined) {
     const dtype = input?.dtypes?.[parsed.column];
-    return `column ${parsed.column} of input ${parsed.slot}${from}` + (dtype ? ` (${dtype})` : "");
+    return `column ${parsed.column} of ${inputName(parsed.slot)}${from}` + (dtype ? ` (${dtype})` : "");
   }
-  return `input ${parsed.slot}${from}` + (input?.dataType ? ` (${input.dataType})` : "");
+  return `${inputName(parsed.slot)}${from}` + (input?.dataType ? ` (${input.dataType})` : "");
 }
 
 /** Every reference in *code*, where it and its name are, and what its chip says. */

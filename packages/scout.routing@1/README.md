@@ -52,8 +52,10 @@ weighted by the rest.
 
 ## Weather
 
-The node reads the Data Catalog's SCOUT WRF group, one NetCDF dataset per
-variable (`data.scout.wrf-rain`, `-t2`, `-rh2`, `-wspd10` and `-wdir10`): SCOUT's
+The node reads the Data Catalog's `data.scout.chicago-weather-2025-07-06`, one
+bundle of five NetCDF files, a variable each (`RAIN.nc`, `T2.nc`, `RH2.nc`,
+`WSPD10.nc` and `WDIR10.nc`, each opened by its path,
+`curio_data_path(id, part="RAIN.nc")`): SCOUT's
 WRF-Chem forecast over Chicago, an hour a step from 2025-07-06 00:00 UTC to
 2025-07-08 00:00 UTC. A start time is read in the time zone the files declare,
 Chicago's, so the forecast runs from 2025-07-05 19:00 to 2025-07-07 19:00 there;
@@ -75,7 +77,7 @@ which gives it as a GeoDataFrame:
 
 ```python
 return calculate_weather_route(
-    [!! input 0:table_osm_roads !!],
+    [!! input_0:table_osm_roads !!],
     ...
 )
 ```
@@ -86,8 +88,11 @@ several layers without a `table_osm_roads` one, the node fails with a message
 naming the layers its input has.
 
 The test dataflow [WeatherRouting](../../docs/examples/dataflows/WeatherRouting.json)
-is this dataflow in two scenarios, "Avoid rain" and "Avoid wind", over the
-Chicago Loop's roads and a start time they share.
+is SCOUT's weather routing example: the node set as SCOUT's example sets it
+(Default weights, midnight on 6 July 2025), over downtown Chicago's roads, the
+Data Catalog's `data.osm.chicago-downtown-roads`, which a Data Loading node loads. Two scenarios each
+keep one of its routes, the fastest and the weather-aware one; a map draws both
+in SCOUT's colors, and four Compare Scenarios charts compare them.
 
 ## Setup
 

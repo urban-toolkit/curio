@@ -9,8 +9,9 @@
  *   reads as x and y, and the aggregate that combines the y values.
  * - `mode`, Chart or Difference, once the user has chosen one; without it the
  *   node picks (`compareMode.ts`).
- * - `difference`, what Difference joins rows on (`key`) and what its map
- *   colors by (`value`).
+ * - `difference`, what Difference joins rows on (`key`), what its map
+ *   colors by (`value`) and in which color scale (`colors`), and whether it
+ *   gives each difference's size (`absolute`).
  * - `layer`, the layer it reads from an input that is an Autark node's
  *   several layers (a compute step hands on its workspace's every layer).
  *
@@ -29,7 +30,8 @@ export interface CompareInputLabel {
 export const COMPARE_PRESETS = ["bar", "grouped-bar", "line", "scatter", "pie", "lollipop", "table"] as const;
 export type ComparePreset = (typeof COMPARE_PRESETS)[number];
 
-export const COMPARE_AGGREGATES = ["mean", "sum", "median", "min", "max", "count"] as const;
+// "none" plots each row's value as it is, for a table of one row per scenario.
+export const COMPARE_AGGREGATES = ["mean", "sum", "median", "min", "max", "count", "none"] as const;
 export type CompareAggregate = (typeof COMPARE_AGGREGATES)[number];
 
 export interface CompareChart {
@@ -48,6 +50,10 @@ export interface CompareDifference {
   key?: string;
   /** The column, or the band, the map colors by; absent means the first number. */
   value?: string;
+  /** The color scale of a map of numbers, one of `DIFFERENCE_COLORS`; absent means Viridis. */
+  colors?: string;
+  /** Each difference's size, |comparison - reference|, rather than comparison minus reference. */
+  absolute?: boolean;
 }
 
 export interface CompareSettings {
@@ -92,6 +98,8 @@ function normalizeDifference(raw: unknown): CompareDifference | undefined {
   const difference: CompareDifference = {};
   if (nonEmpty(entry.key)) difference.key = entry.key;
   if (nonEmpty(entry.value)) difference.value = entry.value;
+  if (nonEmpty(entry.colors)) difference.colors = entry.colors;
+  if (entry.absolute === true) difference.absolute = true;
   return Object.keys(difference).length > 0 ? difference : undefined;
 }
 

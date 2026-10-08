@@ -35,17 +35,58 @@ export function differenceTableName(value: DifferenceValue | undefined): string 
   return /^[A-Za-z_]/.test(name) ? name : `_${name}`;
 }
 
-/** The map's legend title (a layerRef's `legendTitle`): `<band or column> change`, or `change`. */
-export function differenceLegendTitle(value: DifferenceValue): string {
-  return value.value === CHANGE_FIELD ? CHANGE_FIELD : `${value.value} change`;
+/** The map's legend title (a layerRef's `legendTitle`): `<band or column> change`,
+ * `<band or column> absolute change` when the difference is its size, or `change`. */
+export function differenceLegendTitle(value: DifferenceValue, absolute = false): string {
+  if (value.value === CHANGE_FIELD) return CHANGE_FIELD;
+  return absolute ? `${value.value} absolute change` : `${value.value} change`;
 }
 
 /**
  * A raster's or a layer's difference, from its lowest value (dark purple) to
- * its highest (yellow). Sequential, since autk-grammar takes no domain that
- * would centre a diverging scheme on zero.
+ * its highest (yellow), unless the node picks another of `DIFFERENCE_COLORS`.
+ * Sequential, since autk-grammar takes no domain that would centre a
+ * diverging scheme on zero.
  */
 export const DIFFERENCE_INTERPOLATOR = "interpolateViridis";
+
+export interface DifferenceColors {
+  value: string;
+  text: string;
+  /** What the map's note says the colors mean. */
+  note: string;
+  /** Centered on no change (0), the scheme turned around so red is more:
+   * a raster's difference alone (`centeredDomain` in `autkRasters.ts`). */
+  centered?: boolean;
+}
+
+/** The color scales a difference map can take. Kept in sync with
+ * `compareScenarios.difference.colors` in `docs/schemas/trill.v1.json`. */
+export const DIFFERENCE_COLORS: readonly DifferenceColors[] = [
+  { value: "interpolateViridis", text: "Viridis", note: "Dark purple is the lowest difference and yellow the highest." },
+  {
+    value: "interpolateRdBu",
+    text: "Blue, white, red",
+    note: "White is no change, red more and blue less, the deeper the more.",
+    centered: true,
+  },
+  { value: "interpolateReds", text: "Reds", note: "Pale red is the lowest difference and dark red the highest." },
+  { value: "interpolateBlues", text: "Blues", note: "Pale blue is the lowest difference and dark blue the highest." },
+  { value: "interpolateGreens", text: "Greens", note: "Pale green is the lowest difference and dark green the highest." },
+  { value: "interpolateOranges", text: "Oranges", note: "Pale orange is the lowest difference and dark orange the highest." },
+  { value: "interpolatePurples", text: "Purples", note: "Pale purple is the lowest difference and dark purple the highest." },
+];
+
+/** The color scales a difference of *kind* can take: a centered one draws a
+ * raster's alone. */
+export function differenceColorOptions(kind: string | null): readonly DifferenceColors[] {
+  return DIFFERENCE_COLORS.filter((option) => !option.centered || kind === "raster");
+}
+
+/** The color scale *wanted*, when a difference of *kind* can take it, else Viridis. */
+export function differenceColors(wanted: string | undefined, kind: string | null = "raster"): DifferenceColors {
+  return differenceColorOptions(kind).find((option) => option.value === wanted) ?? DIFFERENCE_COLORS[0];
+}
 
 export type DifferenceKind = "raster" | "layer" | "table";
 
@@ -93,13 +134,20 @@ export function resolveValue(wanted: string | undefined, values: readonly Differ
 
 /**
  * The Autark document that draws the difference, one raster or layer colored
- * by *value*, read as the table `differenceTableName` names, its legend titled
- * by `differenceLegendTitle`.
+ * by *value* in the scale *colors* names (Viridis when it names none, or one a
+ * difference of *kind* cannot take), read as
+ * the table `differenceTableName` names, its legend titled by
+ * `differenceLegendTitle`.
  */
-export function differenceMapDoc(value: DifferenceValue | undefined): Record<string, unknown> {
+export function differenceMapDoc(
+  value: DifferenceValue | undefined,
+  colors?: string,
+  kind: string = "raster",
+  absolute = false,
+): Record<string, unknown> {
   const table = differenceTableName(value);
   if (!value) return { map: { layerRefs: [{ dataRef: table }] } };
-  const legendTitle = differenceLegendTitle(value);
+  const legendTitle = differenceLegendTitle(value, absolute);
   if (value.categorical) {
     return {
       map: {
@@ -114,6 +162,7 @@ export function differenceMapDoc(value: DifferenceValue | undefined): Record<str
       },
     };
   }
+  const scale = differenceColors(colors, kind);
   return {
     map: {
       layerRefs: [{
@@ -121,7 +170,8 @@ export function differenceMapDoc(value: DifferenceValue | undefined): Record<str
         legendTitle,
         getFnv: value.value,
         getFnvType: "quantitative",
-        colorMapInterpolator: DIFFERENCE_INTERPOLATOR,
+        colorMapInterpolator: scale.value,
+        ...(scale.centered ? { colorMapCenter: 0, colorMapReverse: true } : {}),
       }],
     },
   };

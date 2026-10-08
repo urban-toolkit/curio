@@ -17,7 +17,7 @@ Two contracts, both from #158, both previously untested:
 
 2. **Imports crossing node boundaries.** A node's own ``import`` used to be
    unreachable from anywhere else by construction: user code is sunk into
-   ``def userCode(arg):``, so every import in it is function-local. Imports are
+   ``def userCode(input, arg):``, so every import in it is function-local. Imports are
    now hoisted into a session-scoped namespace, so an upstream
    ``import numpy as np`` reaches downstream nodes.
 
@@ -71,7 +71,7 @@ def run(body: str, session_id: str = "sess-1") -> dict:
 
     The frontend indents every line by four spaces before POSTing it (see
     ``PythonInterpreter.interpretCode``), so the code reaching ``execute_code``
-    is always ready to drop into ``def userCode(arg):``. Reproducing that here
+    is always ready to drop into ``def userCode(input, arg):``. Reproducing that here
     matters: the import hoister has to dedent before it can parse, and a test
     that skipped the indent would not exercise that.
     """

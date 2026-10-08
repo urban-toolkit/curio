@@ -48,7 +48,7 @@ from .utils import api_json, load_artifact_as_dict, require_user_auth
 
 LIB = "inflection"
 
-# The sandbox wraps user code as ``def userCode(arg):`` and the frontend indents
+# The sandbox wraps user code as ``def userCode(input_0=None, ...):`` and the frontend indents
 # it before posting, so the payload arrives pre-indented.
 #
 # ``worker.py`` also refuses code that mentions ``arg`` when no input is wired,
@@ -59,7 +59,7 @@ PY_CODE = (
     "    import inflection\n"
     "    return [inflection.camelize('hello_world')]\n"
 )
-assert "arg" not in PY_CODE, "worker.py refuses code containing 'arg' with no input"
+assert "arg" not in PY_CODE, "worker.py refuses code containing 'input_0' with no input"
 
 _NET_FAIL_RE = re.compile(
     r"Could not find a version|Temporary failure in name resolution|ProxyError|"

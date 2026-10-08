@@ -343,6 +343,7 @@ def _run_thread(app, run_id, user_id, token, project_id, plan, spec) -> Iterator
             save_output_dataset=should_save_output_on_run(
                 step.node, default_save, step.node_id in sources,
             ),
+            input_slots=tuple(plan.spec.input_slots(step.node_id)) or None,
         )
         run_node = (
             node_exec.execute_js_node if step.engine == "javascript"

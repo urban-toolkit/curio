@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/JSComputation.json",
-    "sha256": "5d42ca546775913a302d1663c45537d1305b48898b57e8483a50749bf98522b9",
+    "sha256": "6aac9b18f78dc934d3d053cc429bf91aa3f92a2f487445727ddeb58b6386d6be",
     "walkthrough": null
   },
   "prompt": "Double the numbers one, two and three in a JavaScript computation step, log the result, and show the returned array in the simple view.",

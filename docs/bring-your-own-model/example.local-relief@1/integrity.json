@@ -1,0 +1,9 @@
+{
+  "sha256": {
+    "README.md": "7d95f0bf0b486ae30c6aae51375837420a2fbd63251fdc590ddb1ca098b96614",
+    "manifest.json": "176c7f583308119a521a05cc414cf47e7813260001ca6724b49c2161e78a4691",
+    "sources/local-relief.py": "c92d0fc67c5703e3c4b3fa850559f188e65705e96b6cc9f7a1d5c05d04ef15a9",
+    "sources/local_relief/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sources/local_relief/run.py": "60af78f4eeb8abf5a26c44336a30d5bbd7240be5f2f2c03dca83a5e1e16f17a3"
+  }
+}

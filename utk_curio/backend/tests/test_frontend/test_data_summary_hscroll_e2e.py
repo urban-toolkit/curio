@@ -75,10 +75,10 @@ LOADING_CODE = (
 
 SUMMARY_CODE = (
     "summary = {\n"
-    "    'shape': {'rows': arg.shape[0], 'columns': arg.shape[1]},\n"
-    "    'describe': arg.describe(include='all').to_dict(),\n"
-    "    'dtypes': {c: str(t) for c, t in arg.dtypes.items()},\n"
-    "    'missing': {c: int(n) for c, n in arg.isna().sum().items()},\n"
+    "    'shape': {'rows': input_0.shape[0], 'columns': input_0.shape[1]},\n"
+    "    'describe': input_0.describe(include='all').to_dict(),\n"
+    "    'dtypes': {c: str(t) for c, t in input_0.dtypes.items()},\n"
+    "    'missing': {c: int(n) for c, n in input_0.isna().sum().items()},\n"
     "}\n"
     "return summary\n"
 )

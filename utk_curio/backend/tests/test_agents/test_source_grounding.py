@@ -159,15 +159,18 @@ class TestCatalogIdForm:
         ]
 
     def test_a_bundle_part_is_a_file_of_the_dataset_not_a_path(self):
-        """``curio_load_data("<id>", part="<file>")`` names a file inside the
-        catalog dataset, by name or as an f-string: only the id is a
-        reference, in both scanners, and the code is grounded by it."""
+        """``curio_load_data("<id>", part="<file>")``, and ``curio_data_path``
+        with ``part=``, name a file inside the catalog dataset, by name or as
+        an f-string: only the id is a reference, in both scanners, and the
+        code is grounded by it."""
         codes = (
             'rain = curio_load_data("data.x.weather", part="RAIN.nc")\nreturn rain',
             'rain = curio_load_data("data.x.weather", part=f"{var}.nc")\nreturn rain',
             "rain = curio_load_data('data.x.weather', bounds=(0, 0, 1, 1), part='data/RAIN.nc')\nreturn rain",
             'rain = curio_load_data("data.x.weather", part="RAIN.nc")\nreturn (rain',  # syntax error, regex
             'rain = curio_load_data("data.x.weather", part=f"{var}.nc")\nreturn (rain',  # syntax error, regex
+            'rain = open(curio_data_path("data.x.weather", part="RAIN.nc"))\nreturn rain',
+            'rain = open(curio_data_path("data.x.weather", part="RAIN.nc"))\nreturn (rain',  # syntax error, regex
         )
         for code in codes:
             refs = [(r.kind, r.literal) for r in sg.scan_sources(code, "python")]

@@ -69,7 +69,7 @@ it would in a bar chart.
 ## Add a second geometry column
 
 ```python
-gdf = arg
+gdf = input_0
 
 # A second geometry column. Centroids are taken in a projected CRS so they land
 # in the right place, then brought back to lon/lat.

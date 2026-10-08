@@ -1,0 +1,288 @@
+{
+  "dataflow": {
+    "categories": {
+      "city": [
+        "Chicago"
+      ],
+      "topic": [
+        "Sensors"
+      ],
+      "complexity": [
+        "Intermediate"
+      ]
+    },
+    "name": "Several inputs",
+    "description": "One node fed by several others, in every kind of node that takes several inputs: Python, Data Transformation, JavaScript, Vega-Lite, Autark and a Data Pool, with a tuple arriving on one input.",
+    "task": "Join air quality readings, stations and ZIP codes, then chart, map and tabulate them.",
+    "timestamp": 0,
+    "provenance_id": "several-inputs",
+    "packages": [],
+    "datasets": [
+      {
+        "datasetId": "data.curio.storage-air-quality",
+        "dirName": "data.curio.storage-air-quality@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-06T00:00:00Z"
+      },
+      {
+        "datasetId": "data.curio.storage-stations",
+        "dirName": "data.curio.storage-stations@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-06T00:00:00Z"
+      },
+      {
+        "datasetId": "data.utk.chicago-boundary",
+        "dirName": "data.utk.chicago-boundary@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-06T00:00:00Z"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "several-readings",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 43,
+        "title": "Readings",
+        "content": "import pandas as pd\nimport geopandas as gpd\n\ndataset_path = curio_data_path(\"data.curio.storage-air-quality\")\ntry:\n    df = gpd.read_parquet(dataset_path)\nexcept Exception:\n    df = pd.read_parquet(dataset_path)\n\nreturn df\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the PM2.5 readings of three sensors.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "several-stations",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 473,
+        "title": "Stations",
+        "content": "import geopandas as gpd\n\ndf = curio_load_data(\"data.curio.storage-stations\")\n\n# A point at each station, in longitude and latitude.\nreturn gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df[\"lon\"], df[\"lat\"]), crs=4326)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load where each sensor stands, as points.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "several-zips",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 903,
+        "title": "ZIP codes",
+        "content": "gdf = curio_load_data(\"data.utk.chicago-boundary\")\n\n# The Loop and the ZIP codes around it.\ndowntown = [\"60601\", \"60602\", \"60603\", \"60604\", \"60605\",\n            \"60606\", \"60607\", \"60611\", \"60654\", \"60661\"]\nreturn gdf[gdf[\"zip\"].isin(downtown)][[\"zip\", \"geometry\"]]\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the ZIP code polygons of the Loop and around it.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "several-summary",
+        "type": "curio.builtin/computation-analysis",
+        "x": 645,
+        "y": 473,
+        "title": "Summarize",
+        "content": "# One input, on circle 0, so input_0 is that input itself: the readings table.\nreadings = input_0\n\n# Two tables from one input, returned together as a tuple: each sensor's mean\n# PM2.5 and its highest reading. The tuple leaves by the one output circle.\nmeans = readings.groupby(\"sensor\", as_index=False)[\"pm25\"].mean().rename(columns={\"pm25\": \"pm25_mean\"})\npeaks = readings.groupby(\"sensor\", as_index=False)[\"pm25\"].max().rename(columns={\"pm25\": \"pm25_peak\"})\nreturn means, peaks\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "From one input, return a tuple: each sensor's mean PM2.5 and its peak.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "several-join",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1290,
+        "y": 473,
+        "title": "Join three inputs",
+        "content": "import geopandas as gpd\n\n# Three inputs, one per circle, and each chip below runs as that circle's\n# variable, input_0, input_1, input_2.\nstations = [!! input_0 !!]      # runs as input_0: the stations\nmeans, peaks = [!! input_1 !!]  # runs as input_1: Summarize's tuple, unpacked\nzips = [!! input_2 !!]          # runs as input_2: the ZIP code polygons\n\n# input_1[0] would be the means alone: input 1, then item 0 of its tuple.\nstations = stations.merge(means, on=\"sensor\").merge(peaks, on=\"sensor\")\nreturn gpd.sjoin(stations, zips, predicate=\"within\").drop(columns=\"index_right\")\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Three inputs: join the stations to Summarize's two tables and to the ZIP code each stands in.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "several-transform",
+        "type": "curio.builtin/data-transformation",
+        "x": 1935,
+        "y": 215,
+        "title": "Name the readings",
+        "content": "readings, stations = [!! input_0 !!], [!! input_1 !!]\n\n# Each reading, with the name of the station that took it.\nreturn readings.merge(stations[[\"sensor\", \"name\"]], on=\"sensor\")\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Two inputs: name each reading after its station.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "several-js",
+        "type": "curio.builtin/js-computation",
+        "x": 1935,
+        "y": 645,
+        "title": "Stations per ZIP",
+        "content": "// Two inputs, input_0 and input_1. A GeoDataFrame reaches JavaScript as\n// a GeoJSON FeatureCollection (and a DataFrame as a list of rows).\nconst zips = [!! input_0 !!];\nconst stations = [!! input_1 !!];\n\n// How many stations stand in each ZIP code, and their mean PM2.5.\nreturn zips.features.map((zip) => {\n  const inside = stations.features.filter((station) => station.properties.zip === zip.properties.zip);\n  const total = inside.reduce((sum, station) => sum + station.properties.pm25_mean, 0);\n  return {\n    zip: zip.properties.zip,\n    stations: inside.length,\n    pm25_mean: inside.length > 0 ? Math.round((total / inside.length) * 100) / 100 : null,\n  };\n});\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Two inputs in JavaScript: count the stations in each ZIP code and average their PM2.5.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "several-chart",
+        "type": "curio.builtin/vis-vega",
+        "x": 2580,
+        "y": 0,
+        "title": "Readings and means",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"PM2.5 at each station over time, and a dashed rule at its mean.\",\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"line\",\n        \"point\": true\n      },\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"timestamp\",\n          \"type\": \"temporal\",\n          \"title\": \"Time\",\n          \"scale\": {\n            \"type\": \"utc\"\n          }\n        },\n        \"y\": {\n          \"field\": \"pm25\",\n          \"type\": \"quantitative\",\n          \"title\": \"PM2.5\"\n        },\n        \"color\": {\n          \"field\": \"name\",\n          \"type\": \"nominal\",\n          \"title\": \"Station\"\n        }\n      }\n    },\n    {\n      \"data\": {\n        \"name\": \"[!! input_1 !!]\"\n      },\n      \"mark\": {\n        \"type\": \"rule\",\n        \"strokeDash\": [\n          4,\n          4\n        ]\n      },\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"[!! input_1.pm25_mean !!]\",\n          \"type\": \"quantitative\"\n        },\n        \"color\": {\n          \"field\": \"name\",\n          \"type\": \"nominal\"\n        }\n      }\n    }\n  ]\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Two inputs in Vega-Lite: each station's PM2.5 over time, with its mean from the other input.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "several-map",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1935,
+        "y": 1075,
+        "title": "Stations map",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\"\n      },\n      {\n        \"dataRef\": \"[!! input_1 !!]\",\n        \"getFnv\": \"pm25_mean\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"isPick\": true,\n        \"legendTitle\": \"Mean PM2.5\"\n      }\n    ]\n  }\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Two inputs in Autark: the ZIP codes, and the stations coloured by mean PM2.5.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "several-pool",
+        "type": "curio.builtin/data-pool",
+        "x": 2580,
+        "y": 430,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Two inputs in a Data Pool: the joined stations and the named readings, a tab each.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-several-readingsout-several-summaryin",
+        "source": "several-readings",
+        "sourceHandle": "out",
+        "target": "several-summary",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-several-stationsout-several-joinin",
+        "source": "several-stations",
+        "sourceHandle": "out",
+        "target": "several-join",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-several-summaryout-several-joinin_1",
+        "source": "several-summary",
+        "sourceHandle": "out",
+        "target": "several-join",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-several-zipsout-several-joinin_2",
+        "source": "several-zips",
+        "sourceHandle": "out",
+        "target": "several-join",
+        "targetHandle": "in_2"
+      },
+      {
+        "id": "reactflow__edge-several-readingsout-several-transformin",
+        "source": "several-readings",
+        "sourceHandle": "out",
+        "target": "several-transform",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-several-joinout-several-transformin_1",
+        "source": "several-join",
+        "sourceHandle": "out",
+        "target": "several-transform",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-several-zipsout-several-jsin",
+        "source": "several-zips",
+        "sourceHandle": "out",
+        "target": "several-js",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-several-joinout-several-jsin_1",
+        "source": "several-join",
+        "sourceHandle": "out",
+        "target": "several-js",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-several-transformout-several-chartin",
+        "source": "several-transform",
+        "sourceHandle": "out",
+        "target": "several-chart",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-several-joinout-several-chartin_1",
+        "source": "several-join",
+        "sourceHandle": "out",
+        "target": "several-chart",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-several-zipsout-several-mapin",
+        "source": "several-zips",
+        "sourceHandle": "out",
+        "target": "several-map",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-several-joinout-several-mapin_1",
+        "source": "several-join",
+        "sourceHandle": "out",
+        "target": "several-map",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-several-joinout-several-poolin",
+        "source": "several-join",
+        "sourceHandle": "out",
+        "target": "several-pool",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-several-transformout-several-poolin_1",
+        "source": "several-transform",
+        "sourceHandle": "out",
+        "target": "several-pool",
+        "targetHandle": "in_1"
+      }
+    ]
+  }
+}

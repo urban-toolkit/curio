@@ -2,7 +2,11 @@
    after Play, and its pills right after it. */
 .labelWrap {
     flex: 0 1 auto;
-    min-width: 0;
+    /* A few letters of the title and the gear, always: the pills after it give
+       way first (PackageMetaHeader.module.css). With no minimum the title was
+       the one thing in a narrow header that shrank, down to nothing, and the
+       gear spilled out of it over the category pill. */
+    min-width: 72px;
     display: flex;
     align-items: center;
     justify-content: flex-start;

@@ -227,9 +227,9 @@ def test_a_python_node_downstream_indexes_the_tuple(client, user_and_token):
     )
     inputs = [{"path": zones_id, "dataType": "dataframe"}, {"path": utci_id, "dataType": "outputs"}]
     code = textwrap.indent(
-        "zones = arg[0]\n"
-        "utci_list = arg[1][0]\n"
-        "utci_shape = arg[1][1]\n"
+        "zones = input_0\n"
+        "utci_list = input_1[0]\n"
+        "utci_shape = input_1[1]\n"
         "empty = sum(value is None for row in utci_list for value in row)\n"
         "return [len(zones), utci_shape, empty]\n",
         "    ",
@@ -490,13 +490,13 @@ def test_get_serves_a_dict_of_frames_under_its_keys(client, user_and_token, reop
 #: What a node downstream does with its input, and what it returns.
 USED_AS = {
     list: (
-        "frames = arg\n"
+        "frames = list(input_0)\n"
         "frames.append(frames[1].head(1))\n"
         "return [len(frame) for frame in frames]\n",
         [2, 3, 1],
     ),
     dict: (
-        'return [list(arg), len(arg["roads"]), len(arg["blocks"])]\n',
+        'return [list(input_0), len(input_0["roads"]), len(input_0["blocks"])]\n',
         [["roads", "blocks"], 2, 3],
     ),
 }

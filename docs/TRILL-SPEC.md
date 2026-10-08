@@ -141,8 +141,8 @@ edge. There is no `"Data"` value.
 
 `sourceHandle` and `targetHandle` name the concrete ports. A node whose one input
 port takes several edges has a circle per edge: `in` is the first, then `in_1`,
-`in_2`, and so on. Its code reads circle N as `[!! input N !!]`, and the order of the
-circles is the order of `arg`. When the handles are absent, the reader infers a
+`in_2`, and so on. Its code reads circle N as `[!! input_N !!]`, and the order of the
+circles names its variables, `input_0`, `input_1`, …. When the handles are absent, the reader infers a
 circle from an `in_N` suffix of `edge.id`, which cannot recover a named port such as
 `in_points`.
 

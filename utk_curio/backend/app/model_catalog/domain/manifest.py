@@ -21,7 +21,11 @@ node needs to run it, so the node hard-codes nothing:
   ``NHWC``, for an ``image-to-image`` model), as ``uint8`` pixels or as
   ``float32`` scaled by ``scale`` and then normalized by ``mean`` and ``std``;
 - ``license``, and ``licenseFile`` for its text: required, since a model is
-  someone's work.
+  someone's work;
+- ``node``, optional: the node that runs it, as a canonical template id
+  (``<packageId>/<templateId>@<major>``), so a model dropped on the canvas
+  becomes that node, and its package is added to the dataflow when it is not
+  there yet.
 
 A model from the Discovery Catalog also carries ``discoverySource``, where it
 came from, as a dataset does, and ``dependencies.python``, the libraries its
@@ -57,6 +61,9 @@ MAX_SOURCE_VALUE = 512
 
 _VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 _LIBRARY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+#: A canonical template id, as ``spec_packages`` reads a node type.
+_PKG_SEGMENT = r"[a-z][a-z0-9-]{0,62}"
+_NODE_RE = re.compile(rf"^{_PKG_SEGMENT}(?:\.{_PKG_SEGMENT}){{1,5}}/[a-z][a-z0-9-]{{0,62}}@(?:0|[1-9][0-9]{{0,3}})$")
 
 
 class ModelManifestError(ValueError):
@@ -95,6 +102,8 @@ class ModelManifest:
     discovery_source: dict[str, Any] | None = None
     #: ``{library: version spec}``: what the runtime needs installed.
     python_deps: dict[str, str] = field(default_factory=dict)
+    #: The node that runs it, ``<packageId>/<templateId>@<major>``.
+    node: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
@@ -228,6 +237,9 @@ def parse_manifest(raw: object, *, dir_name: str | None = None) -> ModelManifest
     size = raw.get("sizeBytes", 0)
     if isinstance(size, bool) or not isinstance(size, int) or size < 0:
         raise ModelManifestError("model manifest sizeBytes must be a whole number of bytes")
+    node = raw.get("node")
+    if node is not None and not (isinstance(node, str) and _NODE_RE.match(node)):
+        raise ModelManifestError("model manifest node must be a template id, <packageId>/<templateId>@<major>")
     homepage = raw.get("homepage")
     if homepage is not None and not (isinstance(homepage, str) and homepage.startswith("https://")):
         raise ModelManifestError("model manifest homepage must be an https link")
@@ -235,14 +247,14 @@ def parse_manifest(raw: object, *, dir_name: str | None = None) -> ModelManifest
     known = {
         "id", "name", "version", "compatibility", "description", "publisher", "homepage", "license",
         "licenseFile", "runtime", "task", "entry", "labels", "input", "tags", "sizeBytes",
-        "discoverySource", "dependencies", "createdAt", "updatedAt",
+        "discoverySource", "dependencies", "node", "createdAt", "updatedAt",
     }
     return ModelManifest(
         id=model_id, major=major, name=_str(raw, "name"), version=version, runtime=runtime, task=task,
         entry=entry, license=license_text, description=_str(raw, "description", required=False),
         publisher=_str(raw, "publisher", required=False), homepage=homepage, license_file=license_file,
         labels=labels, input=model_input, tags=tuple(tags), size_bytes=size,
-        discovery_source=dict(source) if source else None, python_deps=dict(python_deps),
+        discovery_source=dict(source) if source else None, python_deps=dict(python_deps), node=node,
         created_at=raw.get("createdAt"), updated_at=raw.get("updatedAt"),
         extra={k: v for k, v in raw.items() if k not in known},
     )
@@ -281,6 +293,8 @@ def manifest_dict(manifest: ModelManifest) -> dict[str, Any]:
         out["discoverySource"] = dict(manifest.discovery_source)
     if manifest.python_deps:
         out["dependencies"] = {"python": dict(manifest.python_deps)}
+    if manifest.node:
+        out["node"] = manifest.node
     for key in ("created_at", "updated_at"):
         value = getattr(manifest, key)
         if value:

@@ -287,8 +287,12 @@ def test_dataset_loads_and_feeds_a_consumer(
     if plan.loader_suffix:
         # The format's value stays in the loader's own code (an xarray Dataset
         # cannot cross an edge), so the loader uses it there and returns a
-        # table for its consumer.
-        set_node_code(page, loader_id, loader_code.rstrip("\n") + "\n" + plan.loader_suffix)
+        # table for its consumer. A loader that returns its value (a bundle's)
+        # returns that table instead.
+        lines = loader_code.rstrip("\n").split("\n")
+        if lines[-1].startswith("return "):
+            lines.pop()
+        set_node_code(page, loader_id, "\n".join(lines) + "\n" + plan.loader_suffix)
 
     # 3. A CONSUMER, wired to it. The edge id is derived, not random, so it
     #    doubles as an assertion that the handles the drag hit were the
@@ -301,7 +305,7 @@ def test_dataset_loads_and_feeds_a_consumer(
     set_node_code(page, transform_id, plan.transform_code)
 
     # 4. RUN. The loader's artifact line proves the file reached DuckDB; the
-    #    consumer's markers prove the *content* crossed the edge as ``arg``.
+    #    consumer's markers prove the *content* crossed the edge as ``input_0``.
     loader_output = run_node_and_wait(page, loader_id, node_type=LOADER_TYPE)
     assert "Saved to file:" in loader_output, loader_output
 

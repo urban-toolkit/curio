@@ -1,7 +1,7 @@
 """Playwright E2E for #603: a failed node stops the node it feeds.
 
-The report: a Python Computation node reading ``arg['sp_units']`` failed with
-"This node received no input but its code references `arg`", although its
+The report: a Python Computation node reading ``input_0['sp_units']`` failed with
+"This node received no input but its code reads `input`", although its
 input was wired. The Data Loading node feeding it had failed a moment earlier
 in the same Run All. The runner went on to the next level anyway, so the
 downstream node was sent to the sandbox with nothing, and its message pointed
@@ -45,7 +45,7 @@ COMPUTE_ID = "upstream-failure-compute"
 
 LOADER_CODE = 'raise RuntimeError("upstream boom")\n'
 # Reads its input the way the reporter's node did.
-COMPUTE_CODE = "sp = arg['sp_units']\nreturn sp\n"
+COMPUTE_CODE = "sp = input_0['sp_units']\nreturn sp\n"
 
 
 def _node(node_id: str, node_type: str, x: int, content: str) -> dict:

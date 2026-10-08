@@ -275,6 +275,31 @@ export function bleedIntoClearCells(rgba: Float32Array, width: number, height: n
 }
 
 /**
+ * The domain a layerRef that names a `colorMapCenter` is colored over: from
+ * the center less the farthest value's distance to the center plus it, so a
+ * diverging scheme's middle color is the center (no change, on a difference)
+ * whatever the values' own range. `colorMapReverse` turns it around, so the
+ * scheme's first color is the highest value: on `interpolateRdBu`, red is more
+ * and blue less. autk-map takes three values for a diverging scheme, and its
+ * legend shows them, left to right. A raster's alone: autk-map colors its
+ * cells as it loads them, while a layer of features is colored on the GPU,
+ * which reads a domain from its lowest value up. Null when the layerRef names
+ * no center or the raster has no value.
+ */
+export function centeredDomain(ref: any, values: ArrayLike<number> | undefined): number[] | null {
+    const center = ref?.colorMapCenter;
+    if (typeof center !== 'number' || !Number.isFinite(center) || !values) return null;
+    let farthest = 0;
+    for (let i = 0; i < values.length; i++) {
+        const value = values[i];
+        if (Number.isFinite(value)) farthest = Math.max(farthest, Math.abs(value - center));
+    }
+    if (farthest === 0) return null;
+    const domain = [center - farthest, center, center + farthest];
+    return ref.colorMapReverse === true ? domain.reverse() : domain;
+}
+
+/**
  * Draw every raster layer the same way, in the colors its legend shows.
  * autk-map colors a raster's cells when it loads it, in its default reds, and
  * autk-grammar sets the layer's `colorMapInterpolator` after that, so the
@@ -284,8 +309,10 @@ export function bleedIntoClearCells(rgba: Float32Array, width: number, height: n
  * `RASTER_TRANSFER_FUNCTION` says, and gives the legend its domain. A
  * raster's cells are colored whatever its `isColorMap`, so on a raster
  * `"isColorMap": false` hides the legend alone; the grammar turns it on for
- * any layer with a scheme. A map whose raster was colored again is asked for
- * a frame (`requestRender`), since it draws on demand (`autkMapDrawing`). The
+ * any layer with a scheme. A raster's layerRef that names a
+ * `colorMapCenter` is colored over the domain `centeredDomain` gives it. A map
+ * whose raster was colored again is asked for a frame (`requestRender`), since
+ * it draws on demand (`autkMapDrawing`). The
  * grammar keeps each map by the dataRefs it draws (`_mapRegistry`); a layer
  * that is not a raster is left as drawn.
  */
@@ -299,7 +326,8 @@ export function recolorRasters(grammar: any, spec: any): void {
             const layer = map?.layerManager?.searchByLayerId?.(ref.dataRef);
             if (layer?.layerInfo?.typeLayer !== 'raster' || typeof map.updateColorMap !== 'function') continue;
             layer.setTransferFunction?.(RASTER_TRANSFER_FUNCTION);
-            map.updateColorMap(ref.dataRef, { colorMap: {} });
+            const domain = centeredDomain(ref, layer.rasterValues);
+            map.updateColorMap(ref.dataRef, { colorMap: domain ? { domainSpec: { type: 'user', params: domain } } : {} });
             const rgba = layer.rasterData;
             if (rgba instanceof Float32Array && layer.rasterResX > 0 && layer.rasterResY > 0) {
                 bleedIntoClearCells(rgba, layer.rasterResX, layer.rasterResY);

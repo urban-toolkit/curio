@@ -12,8 +12,6 @@ check that each drop makes the node the guides describe:
 
 * a dataset card from the Data Catalog drawer: a Data Loading node that reads
   the dataset;
-* a layer group card from that drawer: a Data Loading node that reads each of
-  the group's layers, and runs;
 * a model card from the Model Catalog drawer: an Image Segmentation node whose
   code names the model;
 * a saved output from the Saved outputs group: a Data Loading node that reads
@@ -66,15 +64,7 @@ SEGMENTATION = "curio.streetvision/image-segmentation"
 
 BOUNDARY = "data.utk.chicago-boundary"
 BOUNDARY_TITLE = "Chicago Boundary"
-# The one layer group that ships in the catalog: SCOUT's WRF variables.
-WRF_GROUP = "netcdf.scout-wrf"
-WRF_LAYERS = (
-    "data.scout.wrf-rain",
-    "data.scout.wrf-rh2",
-    "data.scout.wrf-t2",
-    "data.scout.wrf-wdir10",
-    "data.scout.wrf-wspd10",
-)
+
 DDRNET = "model.curio.ddrnet23-slim"
 DDRNET_NAME = "DDRNet23-Slim (street scenes)"
 
@@ -164,28 +154,6 @@ def test_a_dataset_card_dragged_from_the_data_catalog_drawer_becomes_a_data_load
     expect(_toast(page, f"Created a Data Loading node for {BOUNDARY_TITLE}.")).to_be_visible(
         timeout=10000
     )
-
-
-def test_a_layer_group_card_dragged_from_the_data_catalog_drawer_becomes_a_loader_that_runs(
-    app_frontend: "FrontendPage", current_server: str, page,
-):
-    _enter(page, app_frontend, current_server)
-    drawer = _open_drawer(page, "Data Catalog", DATA_DRAWER)
-    card = drawer.locator(f'{CARD}[data-dataset-id="{WRF_GROUP}"]')
-    expect(card).to_have_count(1, timeout=30000)
-
-    node = drag_to_canvas_with_the_mouse(page, card.locator("h3"), at=UNDER_THE_SCRIM)
-
-    assert (canvas_node_type(page, node) or "").split("@")[0] == LOADER_TYPE
-    code = read_node_code(page, node)
-    # One read per layer, by the layer's own id: no dataset has the group's id.
-    missing = [layer for layer in WRF_LAYERS if f'curio_load_data("{layer}")' not in code]
-    assert (missing, WRF_GROUP in code) == ([], False), code
-
-    # The drawer's scrim lies over the canvas: close the drawer, then run it.
-    page.keyboard.press("Escape")
-    wait_for_drawer_closed(page, DATA_DRAWER)
-    run_node_and_wait(page, node, node_type=LOADER_TYPE)
 
 
 def test_a_model_card_dragged_from_the_model_catalog_drawer_becomes_a_node_that_runs_it(

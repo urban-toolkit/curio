@@ -272,15 +272,24 @@ def _parse_python(code: str) -> tuple[ast.AST, int] | None:
 #: value IS — not a list of schema hosts to trust.
 SCHEMA_DECLARATION_KEY = "$schema"
 _SCHEMA_KEY_RE = re.compile(r'"\$schema"\s*:\s*$')
-#: ``part="RAIN.nc"`` in a ``curio_load_data`` call names a file inside a
-#: catalog dataset (a bundle), not a path on disk; both scanners skip it.
-PART_CALL = "curio_load_data"
+#: ``part="RAIN.nc"`` in a ``curio_load_data`` or ``curio_data_path`` call
+#: names a file inside a catalog dataset (a bundle), not a path on disk; both
+#: scanners skip it.
+PART_CALLS = ("curio_load_data", "curio_data_path")
 _PART_KEYWORD_RE = re.compile(r"\bpart\s*=\s*[fFrRbBuU]{0,2}$")
+#: ``curio_save_file("summary.csv")``, ``curio_save_folder("tiles")`` and
+#: ``curio_computed_path("tiles")`` name a file the dataflow keeps
+#: (datasets/domain/saved_files.py), not a path on disk; both scanners skip
+#: their argument.
+SAVED_FILE_CALLS = ("curio_save_file", "curio_save_folder", "curio_computed_path")
+_SAVED_FILE_CALL_RE = re.compile(
+    r"""\b(?:curio_save_file|curio_save_folder|curio_computed_path)\(\s*(["'])[^"'\n]{1,200}\1\s*\)"""
+)
 
 
 def _in_part_keyword(code: str, start: int, part_calls: list[int]) -> bool:
     """Whether the literal at *start* is the ``part=`` of a ``curio_load_data``
-    call still open there, for the regex scan: an argument of that call, not
+    or ``curio_data_path`` call still open there, for the regex scan: an argument of that call, not
     of a call inside it."""
     if not _PART_KEYWORD_RE.search(code, 0, start):
         return False
@@ -332,10 +341,14 @@ def _scan_python(code: str) -> list[SourceRef] | None:
                 ))
             # ``curio_load_data("<id>", part="RAIN.nc")`` names a file inside
             # the catalog dataset, not a path the node reads from disk.
-            if _call_name(node) == PART_CALL:
+            if _call_name(node) in PART_CALLS:
                 for keyword in node.keywords:
                     if keyword.arg == "part" and isinstance(keyword.value, (ast.Constant, ast.JoinedStr)):
                         call_ids.add(id(keyword.value))
+        elif isinstance(node, ast.Call) and _call_name(node) in SAVED_FILE_CALLS:
+            arg = node.args[0] if node.args else None
+            if isinstance(arg, (ast.Constant, ast.JoinedStr)):
+                call_ids.add(id(arg))
     for node in ast.walk(tree):
         line = max(1, getattr(node, "lineno", 1) - offset)
         if isinstance(node, ast.JoinedStr):
@@ -384,11 +397,12 @@ def _scan_regex(code: str) -> list[SourceRef]:
     part_calls: list[int] = []
     for match in _CATALOG_CALL_RE.finditer(code):
         call_spans.append(match.span())
-        if match.group(1) == PART_CALL:
+        if match.group(1) in PART_CALLS:
             part_calls.append(match.start())
         refs.append(SourceRef(
             "catalog-id", match.group(3), code.count("\n", 0, match.start()) + 1, call=match.group(1),
         ))
+    call_spans.extend(match.span() for match in _SAVED_FILE_CALL_RE.finditer(code))
     for match in _STRING_LITERAL_RE.finditer(code):
         if any(a <= match.start() < b for a, b in call_spans):
             continue

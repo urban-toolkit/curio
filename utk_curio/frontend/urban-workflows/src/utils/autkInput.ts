@@ -360,11 +360,11 @@ export function autkSourcesFrom(
 
   for (const { at, earlier, frame, name } of clashes) {
     const alias = aliasOf(frame.circle);
-    problems[at] = `Inputs ${earlier} and ${frame.circle} both bring a layer named ${name}: `
-      + `${name} means the one from input ${earlier}, and `
+    problems[at] = `input_${earlier} and input_${frame.circle} both bring a layer named ${name}: `
+      + `${name} means the one from input_${earlier}, and `
       + (alias
-        ? `${alias} means the one from input ${frame.circle}.`
-        : `the one from input ${frame.circle} is left out. Rename one of them.`);
+        ? `${alias} means the one from input_${frame.circle}.`
+        : `the one from input_${frame.circle} is left out. Rename one of them.`);
   }
 
   // The alias is added only when the document reads it, as the Vega-Lite node

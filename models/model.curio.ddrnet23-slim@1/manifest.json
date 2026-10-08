@@ -10,6 +10,7 @@
   "licenseFile": "LICENSE",
   "runtime": "onnx",
   "task": "semantic-segmentation",
+  "node": "curio.streetvision/image-segmentation@1",
   "entry": "files/ddrnet23_slim.onnx",
   "input": { "width": 2048, "height": 1024, "dtype": "uint8", "layout": "NCHW", "scale": 1.0 },
   "labels": [

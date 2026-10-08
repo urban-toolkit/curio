@@ -2,7 +2,12 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  flex-shrink: 0;
+  /* In a narrow header the pills give way before the title does: they shrink
+     first and are clipped, while the title keeps its minimum
+     (EditableNodeHeaderLabel.module.css). */
+  flex: 0 1000 auto;
+  min-width: 0;
+  overflow: hidden;
   font-family: var(--curio-font-family);
 }
 

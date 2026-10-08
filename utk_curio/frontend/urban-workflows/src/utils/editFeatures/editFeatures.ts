@@ -123,8 +123,8 @@ export function editFeaturesCode(settings: EditFeaturesSettings | undefined): st
     settings?.layer ? `layer=${widgetLiteral(settings.layer, "python")}` : "",
   ].filter(Boolean);
   const tail = args.length > 0 ? `, ${args.join(", ")}` : "";
-  if (edits.length === 0) return [...EDIT_CODE_NOTE, `return ${EDIT_HELPER}(arg, []${tail})`, ""].join("\n");
-  return [...EDIT_CODE_NOTE, `return ${EDIT_HELPER}(arg, [`, ...edits.map(editLine), `]${tail})`, ""].join("\n");
+  if (edits.length === 0) return [...EDIT_CODE_NOTE, `return ${EDIT_HELPER}(input_0, []${tail})`, ""].join("\n");
+  return [...EDIT_CODE_NOTE, `return ${EDIT_HELPER}(input_0, [`, ...edits.map(editLine), `]${tail})`, ""].join("\n");
 }
 
 /** Whether *node* is an Edit Features node. */

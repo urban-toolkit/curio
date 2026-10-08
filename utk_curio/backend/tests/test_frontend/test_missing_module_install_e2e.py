@@ -77,13 +77,13 @@ _NET_FAIL_RE = re.compile(
 
 
 def _node_code(module: str) -> str:
-    # The sandbox wraps user code as ``def userCode(arg):`` and the frontend
+    # The sandbox wraps user code as ``def userCode(input_0=None, ...):`` and the frontend
     # indents it before posting, so the payload arrives pre-indented. worker.py
     # also refuses code mentioning "arg" when no input is wired, and that guard
     # is a plain substring test - any occurrence at all would turn every run
     # into the same misleading error and quietly void these tests.
     code = f"    import {module}\n    return [1]\n"
-    assert "arg" not in code, "worker.py refuses code containing 'arg' with no input"
+    assert "arg" not in code, "worker.py refuses code containing 'input_0' with no input"
     return code
 
 

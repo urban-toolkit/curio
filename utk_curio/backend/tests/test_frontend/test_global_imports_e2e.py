@@ -11,7 +11,7 @@ Two separate causes, and this test covers the user-visible surface of both:
     ``shapely`` were dropped from that seed when execution moved in-process
     (the old subprocess wrapper leaked them via ``from parsers import *``).
   * a node's own ``import`` was function-local by construction, because user
-    code is sunk into ``def userCode(arg):``.
+    code is sunk into ``def userCode(input_0=None, ...):``.
 
 Both are unit-tested in ``test_sandbox_namespace.py``, which is where the
 detail belongs. This test exists because that one talks to ``execute_code``
@@ -88,8 +88,8 @@ def test_a_library_imported_upstream_is_usable_downstream(
     set_node_code(
         page, downstream,
         # No import line. Pre-fix this raised NameError: name 'e2e_np' is not defined.
-        f'print("{CROSS_MARKER}", e2e_np.mean(arg))\n'
-        "return float(e2e_np.mean(arg))\n",
+        f'print("{CROSS_MARKER}", e2e_np.mean(input_0))\n'
+        "return float(e2e_np.mean(input_0))\n",
     )
 
     run_node_and_wait(page, upstream, node_type=ANALYSIS_TYPE)

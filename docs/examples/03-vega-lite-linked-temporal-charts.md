@@ -49,7 +49,7 @@ Parse the date, derive a `Year` column, sum violations per camera per year, then
 ```python
 import pandas as pd
 
-df = arg
+df = input_0
 df['Year'] = df['VIOLATION DATE'].dt.year
 
 yr_sum = (df.groupby(['CAMERA ID', 'Year'], observed=True)['VIOLATIONS']

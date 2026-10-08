@@ -14,7 +14,7 @@
         "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Choose the projection period both scenarios read.",
+        "goal": "The projection period both scenarios run.",
         "metadata": {
           "keywords": [],
           "widgets": [
@@ -34,7 +34,8 @@
             }
           ],
           "packageTemplateLabel": "Projection period"
-        }
+        },
+        "title": "Projection period"
       },
       {
         "id": "c1d2e3f4-0a1b-4c2d-8e3f-4a5b6c7d8e91",
@@ -44,7 +45,7 @@
         "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Set the region's north-west corner.",
+        "goal": "The region's north-west corner, SCOUT's flood example's.",
         "metadata": {
           "keywords": [],
           "widgets": [
@@ -53,13 +54,14 @@
               "type": "location",
               "label": "Top-left corner",
               "default": {
-                "lat": 41.4669317349186,
-                "lon": -90.48363204845099
+                "lat": 41.6242105,
+                "lon": -90.6879323
               }
             }
           ],
           "packageTemplateLabel": "Top-left corner"
-        }
+        },
+        "title": "Top-left corner"
       },
       {
         "id": "d2e3f4a5-1b2c-4d3e-9f4a-5b6c7d8e9fa2",
@@ -69,7 +71,7 @@
         "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Set the region's south-east corner.",
+        "goal": "The region's south-east corner, SCOUT's flood example's.",
         "metadata": {
           "keywords": [],
           "widgets": [
@@ -78,65 +80,23 @@
               "type": "location",
               "label": "Bottom-right corner",
               "default": {
-                "lat": 41.44098884583301,
-                "lon": -90.4576891593654
+                "lat": 41.4150156,
+                "lon": -90.4252158
               }
             }
           ],
           "packageTemplateLabel": "Bottom-right corner"
-        }
-      },
-      {
-        "id": "e3f4a5b6-2c3d-4e4f-8a5b-6c7d8e9fa0b3",
-        "type": "curio.builtin/data-loading",
-        "x": 650,
-        "y": 0,
-        "content": "# The region's window of SCOUT's nature-based solutions (NbS) class raster,\n# at its own cells: the corners are the two location Parameter nodes.\ntopleft, bottomright = [!! @topleft !!], [!! @bottomright !!]\nbounds = (topleft[\"lon\"], bottomright[\"lat\"], bottomright[\"lon\"], topleft[\"lat\"])\nsrc = curio_load_data(\"data.scout.flood-nbs-classes\", bounds=bounds)\nreturn src\n",
-        "out": "DEFAULT",
-        "in": "DEFAULT",
-        "goal": "Read the region of SCOUT's nature-based solution classes.",
-        "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "NbS classes"
-        }
-      },
-      {
-        "id": "f4a5b6c7-3d4e-4f5a-9b6c-7d8e9fa0b1c4",
-        "type": "curio.builtin/data-loading",
-        "x": 650,
-        "y": 450,
-        "content": "# The region's window of the period's flood depth with NbS, in metres:\n# the period is the timeline Parameter node.\ntopleft, bottomright = [!! @topleft !!], [!! @bottomright !!]\nbounds = (topleft[\"lon\"], bottomright[\"lat\"], bottomright[\"lon\"], topleft[\"lat\"])\ndepths = {\n    \"2020 - 2040\": lambda: curio_load_data(\"data.scout.flood-depth-2020-2040-nbs\", bounds=bounds),\n    \"2050 - 2080\": lambda: curio_load_data(\"data.scout.flood-depth-2050-2080-nbs\", bounds=bounds),\n    \"2080 - 2100\": lambda: curio_load_data(\"data.scout.flood-depth-2080-2100-nbs\", bounds=bounds),\n}\nperiod = [!! @timeline !!]\nif period not in depths:\n    raise ValueError(f\"There is no flood projection for {period!r}. The periods: {', '.join(depths)}.\")\nsrc = depths[period]()\nreturn src\n",
-        "out": "DEFAULT",
-        "in": "DEFAULT",
-        "goal": "Read the region's flood depth with nature-based solutions for the period.",
-        "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Depth with NbS"
-        }
-      },
-      {
-        "id": "a5b6c7d8-4e5f-4a6b-8c7d-8e9fa0b1c2d5",
-        "type": "curio.builtin/data-loading",
-        "x": 650,
-        "y": 900,
-        "content": "# The region's window of the period's flood depth without NbS, in metres:\n# the period is the timeline Parameter node.\ntopleft, bottomright = [!! @topleft !!], [!! @bottomright !!]\nbounds = (topleft[\"lon\"], bottomright[\"lat\"], bottomright[\"lon\"], topleft[\"lat\"])\ndepths = {\n    \"2020 - 2040\": lambda: curio_load_data(\"data.scout.flood-depth-2020-2040-no-nbs\", bounds=bounds),\n    \"2050 - 2080\": lambda: curio_load_data(\"data.scout.flood-depth-2050-2080-no-nbs\", bounds=bounds),\n    \"2080 - 2100\": lambda: curio_load_data(\"data.scout.flood-depth-2080-2100-no-nbs\", bounds=bounds),\n}\nperiod = [!! @timeline !!]\nif period not in depths:\n    raise ValueError(f\"There is no flood projection for {period!r}. The periods: {', '.join(depths)}.\")\nsrc = depths[period]()\nreturn src\n",
-        "out": "DEFAULT",
-        "in": "DEFAULT",
-        "goal": "Read the region's flood depth without nature-based solutions for the period.",
-        "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Depth without NbS"
-        }
+        },
+        "title": "Bottom-right corner"
       },
       {
         "id": "1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58",
-        "type": "curio.builtin/raster-calculator",
-        "x": 1300,
+        "type": "scout.flood/flood-projection",
+        "x": 650,
         "y": 0,
-        "content": "# Raster Calculator: one operation over rasters on one grid, cell by cell.\n# Input 0 is SCOUT's NbS classes, input 1 the depth with NbS and input 2 the\n# depth without: a cell takes the depth with NbS where its class is one of\n# the chosen solutions, and the depth without NbS elsewhere.\nNBS_CLASSES = {\n    21: \"Bioswales/Infiltration trenches\",\n    31: \"Permeable pavements\",\n    43: \"Retention ponds\",\n    52: \"Infiltration trench\",\n    71: \"Bioswales\",\n    81: \"Bioswales\",\n    90: \"Constructed wetlands\",\n    95: \"Constructed wetlands\",\n}\nchosen = [!! use_NBS_classes !!]\ncodes = [code for code, name in NBS_CLASSES.items() if name in chosen]\nreturn curio_raster_calculate(\"choose\", arg, codes=codes)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Take the flood depth with no nature-based solution in place.",
+        "goal": "Project the flood depth with no nature-based solution in place.",
         "metadata": {
           "keywords": [],
           "widgets": [
@@ -165,32 +125,64 @@
               "value": []
             }
           ],
-          "packageTemplateLabel": "Flood depth"
-        }
+          "packageTemplateLabel": "Flood Projection - No NbS"
+        },
+        "title": "Flood Projection - No NbS",
+        "content": "\"\"\"Flood Projection: SCOUT's Quad Cities flood projection, simulate_flood_projection.\n\nInput: none. SCOUT's rasters are the Data Catalog's data.scout.quad-cities-flood.\nOutput: (depth, metrics).\n- depth: the flood depth in metres, one raster in EPSG:4326 on SCOUT's grid: a\n  cell takes the depth with nature-based solutions (NbS) where its class is\n  one of the chosen solutions, and the depth without NbS elsewhere. An Autark\n  map draws it as input_0, band band_1.\n- metrics: SCOUT's metrics, the median and mean flood depth, one row (SCOUT\n  writes them as a CSV; here its function returns them).\nA node after it takes either part, input_0[0] or input_0[1].\nThe region's corners and the projection period are the dataflow's Parameter\nnodes, shared by both scenarios; the Widgets tab sets the solutions.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nimport hashlib\nimport json\nimport os\n\nimport rasterio\nfrom scout_flood.flood_simulation import simulate_flood_projection\n\ntopleft, bottomright = [!! @topleft !!], [!! @bottomright !!]\nperiod, chosen = [!! @timeline !!], [!! use_NBS_classes !!]\n# SCOUT's rasters, beside the bundle's bundle.json.\nrasters = os.path.dirname(curio_data_path(\"data.scout.quad-cities-flood\"))\n# The raster SCOUT's code writes is the node's output. Its name, one per run's\n# settings, keeps two scenarios from writing the same file.\nsettings = json.dumps([topleft, bottomright, period, sorted(chosen)], sort_keys=True)\ndepth = curio_output_file(f\"flood-{hashlib.sha256(settings.encode()).hexdigest()[:16]}.tif\")\nmetrics = simulate_flood_projection(\n    f\"{topleft['lon']!r}, {topleft['lat']!r}\",\n    f\"{bottomright['lon']!r}, {bottomright['lat']!r}\",\n    \"flood\",\n    year=period,\n    use_NBS_classes=chosen,\n    data_dir=rasters,\n    output_path=depth,\n)\nreturn rasterio.open(depth), metrics\n"
+      },
+      {
+        "id": "e3b1c6a2-7d4f-4e19-9a5c-2f8d0b6e4a13",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1300,
+        "y": 0,
+        "content": "# Flood Projection returns (depth, metrics): the flood depth in metres, a\n# raster, for the map and the difference.\nreturn input_0[0]\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the flood depth with no nature-based solution in place.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Depth - No NbS"
+        },
+        "title": "Depth - No NbS"
       },
       {
         "id": "5e1b7d9a-3f46-4c8a-9b2c-7d9f3e5a1b40",
-        "type": "curio.builtin/raster-statistics",
-        "x": 1950,
-        "y": 0,
-        "content": "# Raster Statistics: the mean, median, minimum, maximum and count of a\n# raster's cells, nodata left out, as a table of one row.\n# A condition keeps only some cells: where=lambda value: value < 1.08 tests\n# the raster's own values. With a mask raster on input 1, it tests the mask's\n# values instead, and mask_values=[0] keeps the cells whose mask value is 0.\nreturn curio_raster_statistics(arg)\n",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1300,
+        "y": 430,
+        "content": "# Flood Projection returns (depth, metrics): SCOUT's metrics, the median and\n# mean flood depth, for Compare Scenarios.\nreturn input_0[1]\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Take the median and the mean flood depth.",
+        "goal": "Take SCOUT's metrics of the flood depth with no nature-based solution in place.",
         "metadata": {
           "keywords": [],
-          "packageTemplateLabel": "Depth statistics"
-        }
+          "packageTemplateLabel": "Metrics - No NbS"
+        },
+        "title": "Metrics - No NbS"
+      },
+      {
+        "id": "3c9e5a71-2b48-4f6d-9a13-6e8b0c4d2f17",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1950,
+        "y": 0,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map the flood depth with no nature-based solution in place.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Flood depth map - No NbS"
+        },
+        "title": "Flood depth map - No NbS",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateBlues\",\n        \"legendTitle\": \"Flood depth (m)\"\n      }\n    ]\n  }\n}"
       },
       {
         "id": "2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69",
-        "type": "curio.builtin/raster-calculator",
-        "x": 1300,
-        "y": 900,
-        "content": "# Raster Calculator: one operation over rasters on one grid, cell by cell.\n# Input 0 is SCOUT's NbS classes, input 1 the depth with NbS and input 2 the\n# depth without: a cell takes the depth with NbS where its class is one of\n# the chosen solutions, and the depth without NbS elsewhere.\nNBS_CLASSES = {\n    21: \"Bioswales/Infiltration trenches\",\n    31: \"Permeable pavements\",\n    43: \"Retention ponds\",\n    52: \"Infiltration trench\",\n    71: \"Bioswales\",\n    81: \"Bioswales\",\n    90: \"Constructed wetlands\",\n    95: \"Constructed wetlands\",\n}\nchosen = [!! use_NBS_classes !!]\ncodes = [code for code, name in NBS_CLASSES.items() if name in chosen]\nreturn curio_raster_calculate(\"choose\", arg, codes=codes)\n",
+        "type": "scout.flood/flood-projection",
+        "x": 650,
+        "y": 960,
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Take the flood depth with every nature-based solution in place.",
+        "goal": "Project the flood depth with every nature-based solution in place.",
         "metadata": {
           "keywords": [],
           "widgets": [
@@ -226,41 +218,78 @@
               ]
             }
           ],
-          "packageTemplateLabel": "Flood depth",
           "copiedFrom": [
             "1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58"
-          ]
-        }
+          ],
+          "packageTemplateLabel": "Flood Projection - All NbS"
+        },
+        "title": "Flood Projection - All NbS",
+        "content": "\"\"\"Flood Projection: SCOUT's Quad Cities flood projection, simulate_flood_projection.\n\nInput: none. SCOUT's rasters are the Data Catalog's data.scout.quad-cities-flood.\nOutput: (depth, metrics).\n- depth: the flood depth in metres, one raster in EPSG:4326 on SCOUT's grid: a\n  cell takes the depth with nature-based solutions (NbS) where its class is\n  one of the chosen solutions, and the depth without NbS elsewhere. An Autark\n  map draws it as input_0, band band_1.\n- metrics: SCOUT's metrics, the median and mean flood depth, one row (SCOUT\n  writes them as a CSV; here its function returns them).\nA node after it takes either part, input_0[0] or input_0[1].\nThe region's corners and the projection period are the dataflow's Parameter\nnodes, shared by both scenarios; the Widgets tab sets the solutions.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nimport hashlib\nimport json\nimport os\n\nimport rasterio\nfrom scout_flood.flood_simulation import simulate_flood_projection\n\ntopleft, bottomright = [!! @topleft !!], [!! @bottomright !!]\nperiod, chosen = [!! @timeline !!], [!! use_NBS_classes !!]\n# SCOUT's rasters, beside the bundle's bundle.json.\nrasters = os.path.dirname(curio_data_path(\"data.scout.quad-cities-flood\"))\n# The raster SCOUT's code writes is the node's output. Its name, one per run's\n# settings, keeps two scenarios from writing the same file.\nsettings = json.dumps([topleft, bottomright, period, sorted(chosen)], sort_keys=True)\ndepth = curio_output_file(f\"flood-{hashlib.sha256(settings.encode()).hexdigest()[:16]}.tif\")\nmetrics = simulate_flood_projection(\n    f\"{topleft['lon']!r}, {topleft['lat']!r}\",\n    f\"{bottomright['lon']!r}, {bottomright['lat']!r}\",\n    \"flood\",\n    year=period,\n    use_NBS_classes=chosen,\n    data_dir=rasters,\n    output_path=depth,\n)\nreturn rasterio.open(depth), metrics\n"
+      },
+      {
+        "id": "f4c2d7b3-8e5a-4f2a-ab6d-3a9e1c7f5b24",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1300,
+        "y": 960,
+        "content": "# Flood Projection returns (depth, metrics): the flood depth in metres, a\n# raster, for the map and the difference.\nreturn input_0[0]\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the flood depth with every nature-based solution in place.",
+        "metadata": {
+          "keywords": [],
+          "copiedFrom": [
+            "e3b1c6a2-7d4f-4e19-9a5c-2f8d0b6e4a13"
+          ],
+          "packageTemplateLabel": "Depth - All NbS"
+        },
+        "title": "Depth - All NbS"
       },
       {
         "id": "6f2c8e0b-4a57-4d9b-8c3d-9e0a4f6b2c51",
-        "type": "curio.builtin/raster-statistics",
-        "x": 1950,
-        "y": 900,
-        "content": "# Raster Statistics: the mean, median, minimum, maximum and count of a\n# raster's cells, nodata left out, as a table of one row.\n# A condition keeps only some cells: where=lambda value: value < 1.08 tests\n# the raster's own values. With a mask raster on input 1, it tests the mask's\n# values instead, and mask_values=[0] keeps the cells whose mask value is 0.\nreturn curio_raster_statistics(arg)\n",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1300,
+        "y": 1390,
+        "content": "# Flood Projection returns (depth, metrics): SCOUT's metrics, the median and\n# mean flood depth, for Compare Scenarios.\nreturn input_0[1]\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Take the median and the mean flood depth.",
+        "goal": "Take SCOUT's metrics of the flood depth with every nature-based solution in place.",
         "metadata": {
           "keywords": [],
-          "packageTemplateLabel": "Depth statistics",
           "copiedFrom": [
             "5e1b7d9a-3f46-4c8a-9b2c-7d9f3e5a1b40"
-          ]
-        }
+          ],
+          "packageTemplateLabel": "Metrics - All NbS"
+        },
+        "title": "Metrics - All NbS"
+      },
+      {
+        "id": "4d0f6b82-3c59-4a7e-8b24-7f9c1d5e3a28",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1950,
+        "y": 960,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map the flood depth with every nature-based solution in place.",
+        "metadata": {
+          "keywords": [],
+          "copiedFrom": [
+            "3c9e5a71-2b48-4f6d-9a13-6e8b0c4d2f17"
+          ],
+          "packageTemplateLabel": "Flood depth map - All NbS"
+        },
+        "title": "Flood depth map - All NbS",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateBlues\",\n        \"legendTitle\": \"Flood depth (m)\"\n      }\n    ]\n  }\n}"
       },
       {
         "id": "7a3d9f1c-5b68-4e0a-9d4e-0f1b5a7c3d62",
         "type": "curio.builtin/compare-scenarios",
-        "x": 2650,
-        "y": 0,
-        "content": "# Compare Scenarios writes this code from its inputs: input 1 minus input 0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"no-nbs\", \"No NbS\", [!! input 0 !!]),\n    (\"nbs\", \"NbS\", [!! input 1 !!]),\n])\n",
+        "x": 2600,
+        "y": 700,
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Map how much the nature-based solutions change the flood depth.",
+        "goal": "Map how much the flood depth changes with every nature-based solution in place.",
         "metadata": {
           "keywords": [],
-          "packageTemplateLabel": "Depth change",
           "compareScenarios": {
             "inputs": [
               {
@@ -269,27 +298,32 @@
                 "color": "#e76f51"
               },
               {
-                "scenario": "nbs",
-                "name": "NbS",
+                "scenario": "all-nbs",
+                "name": "All NbS",
                 "color": "#2a9d8f"
               }
             ],
-            "mode": "difference"
-          }
-        }
+            "mode": "difference",
+            "difference": {
+              "colors": "interpolateBlues",
+              "absolute": true
+            }
+          },
+          "packageTemplateLabel": "Change in flood depth"
+        },
+        "title": "Change in flood depth",
+        "content": "# Compare Scenarios writes this code from its inputs: input 1 minus input 0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"no-nbs\", \"No NbS\", [!! input_0 !!]),\n    (\"all-nbs\", \"All NbS\", [!! input_1 !!]),\n], absolute=True)"
       },
       {
         "id": "9c5f1b3e-7d80-4a2c-8f6a-2b3d7c9e5f84",
         "type": "curio.builtin/compare-scenarios",
-        "x": 2650,
-        "y": 900,
-        "content": "# Compare Scenarios writes this code from its inputs: each input, under the\n# id and the name of its scenario. It is written again when they change.\nreturn curio_stack_scenarios([\n    (\"no-nbs\", \"No NbS\", [!! input 0 !!]),\n    (\"nbs\", \"NbS\", [!! input 1 !!]),\n])\n",
+        "x": 2600,
+        "y": 200,
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Chart the median flood depth of each scenario.",
+        "goal": "Compare the median flood depth of both scenarios, as SCOUT's flood example does.",
         "metadata": {
           "keywords": [],
-          "packageTemplateLabel": "Median flood depth",
           "compareScenarios": {
             "inputs": [
               {
@@ -298,67 +332,50 @@
                 "color": "#e76f51"
               },
               {
-                "scenario": "nbs",
-                "name": "NbS",
+                "scenario": "all-nbs",
+                "name": "All NbS",
                 "color": "#2a9d8f"
               }
             ],
             "mode": "chart",
             "chart": {
-              "preset": "bar",
-              "y": "median"
+              "preset": "pie",
+              "y": "median flood depth",
+              "aggregate": "none"
             }
-          }
-        }
+          },
+          "packageTemplateLabel": "Median flood depth"
+        },
+        "title": "Median flood depth",
+        "content": "# Compare Scenarios writes this code from its inputs: each input, under the\n# id and the name of its scenario. It is written again when they change.\nreturn curio_stack_scenarios([\n    (\"no-nbs\", \"No NbS\", [!! input_0 !!]),\n    (\"all-nbs\", \"All NbS\", [!! input_1 !!]),\n])"
       }
     ],
     "edges": [
       {
-        "id": "reactflow__edge-e3f4a5b6-2c3d-4e4f-8a5b-6c7d8e9fa0b3out-1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58in",
-        "source": "e3f4a5b6-2c3d-4e4f-8a5b-6c7d8e9fa0b3",
-        "target": "1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58",
+        "id": "reactflow__edge-1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58out-e3b1c6a2-7d4f-4e19-9a5c-2f8d0b6e4a13in",
+        "source": "1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58",
+        "target": "e3b1c6a2-7d4f-4e19-9a5c-2f8d0b6e4a13",
         "sourceHandle": "out",
         "targetHandle": "in"
-      },
-      {
-        "id": "reactflow__edge-f4a5b6c7-3d4e-4f5a-9b6c-7d8e9fa0b1c4out-1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58in_1",
-        "source": "f4a5b6c7-3d4e-4f5a-9b6c-7d8e9fa0b1c4",
-        "target": "1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58",
-        "sourceHandle": "out",
-        "targetHandle": "in_1"
-      },
-      {
-        "id": "reactflow__edge-a5b6c7d8-4e5f-4a6b-8c7d-8e9fa0b1c2d5out-1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58in_2",
-        "source": "a5b6c7d8-4e5f-4a6b-8c7d-8e9fa0b1c2d5",
-        "target": "1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58",
-        "sourceHandle": "out",
-        "targetHandle": "in_2"
-      },
-      {
-        "id": "reactflow__edge-e3f4a5b6-2c3d-4e4f-8a5b-6c7d8e9fa0b3out-2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69in",
-        "source": "e3f4a5b6-2c3d-4e4f-8a5b-6c7d8e9fa0b3",
-        "target": "2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69",
-        "sourceHandle": "out",
-        "targetHandle": "in"
-      },
-      {
-        "id": "reactflow__edge-f4a5b6c7-3d4e-4f5a-9b6c-7d8e9fa0b1c4out-2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69in_1",
-        "source": "f4a5b6c7-3d4e-4f5a-9b6c-7d8e9fa0b1c4",
-        "target": "2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69",
-        "sourceHandle": "out",
-        "targetHandle": "in_1"
-      },
-      {
-        "id": "reactflow__edge-a5b6c7d8-4e5f-4a6b-8c7d-8e9fa0b1c2d5out-2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69in_2",
-        "source": "a5b6c7d8-4e5f-4a6b-8c7d-8e9fa0b1c2d5",
-        "target": "2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69",
-        "sourceHandle": "out",
-        "targetHandle": "in_2"
       },
       {
         "id": "reactflow__edge-1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58out-5e1b7d9a-3f46-4c8a-9b2c-7d9f3e5a1b40in",
         "source": "1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58",
         "target": "5e1b7d9a-3f46-4c8a-9b2c-7d9f3e5a1b40",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-e3b1c6a2-7d4f-4e19-9a5c-2f8d0b6e4a13out-3c9e5a71-2b48-4f6d-9a13-6e8b0c4d2f17in",
+        "source": "e3b1c6a2-7d4f-4e19-9a5c-2f8d0b6e4a13",
+        "target": "3c9e5a71-2b48-4f6d-9a13-6e8b0c4d2f17",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69out-f4c2d7b3-8e5a-4f2a-ab6d-3a9e1c7f5b24in",
+        "source": "2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69",
+        "target": "f4c2d7b3-8e5a-4f2a-ab6d-3a9e1c7f5b24",
         "sourceHandle": "out",
         "targetHandle": "in"
       },
@@ -370,15 +387,22 @@
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58out-7a3d9f1c-5b68-4e0a-9d4e-0f1b5a7c3d62in",
-        "source": "1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58",
+        "id": "reactflow__edge-f4c2d7b3-8e5a-4f2a-ab6d-3a9e1c7f5b24out-4d0f6b82-3c59-4a7e-8b24-7f9c1d5e3a28in",
+        "source": "f4c2d7b3-8e5a-4f2a-ab6d-3a9e1c7f5b24",
+        "target": "4d0f6b82-3c59-4a7e-8b24-7f9c1d5e3a28",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-e3b1c6a2-7d4f-4e19-9a5c-2f8d0b6e4a13out-7a3d9f1c-5b68-4e0a-9d4e-0f1b5a7c3d62in",
+        "source": "e3b1c6a2-7d4f-4e19-9a5c-2f8d0b6e4a13",
         "target": "7a3d9f1c-5b68-4e0a-9d4e-0f1b5a7c3d62",
         "sourceHandle": "out",
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69out-7a3d9f1c-5b68-4e0a-9d4e-0f1b5a7c3d62in_1",
-        "source": "2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69",
+        "id": "reactflow__edge-f4c2d7b3-8e5a-4f2a-ab6d-3a9e1c7f5b24out-7a3d9f1c-5b68-4e0a-9d4e-0f1b5a7c3d62in_1",
+        "source": "f4c2d7b3-8e5a-4f2a-ab6d-3a9e1c7f5b24",
         "target": "7a3d9f1c-5b68-4e0a-9d4e-0f1b5a7c3d62",
         "sourceHandle": "out",
         "targetHandle": "in_1"
@@ -405,81 +429,39 @@
         "color": "#e76f51",
         "nodes": [
           "1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58",
-          "5e1b7d9a-3f46-4c8a-9b2c-7d9f3e5a1b40"
+          "e3b1c6a2-7d4f-4e19-9a5c-2f8d0b6e4a13",
+          "5e1b7d9a-3f46-4c8a-9b2c-7d9f3e5a1b40",
+          "3c9e5a71-2b48-4f6d-9a13-6e8b0c4d2f17"
         ]
       },
       {
-        "id": "nbs",
-        "name": "NbS",
+        "id": "all-nbs",
+        "name": "All NbS",
         "color": "#2a9d8f",
         "nodes": [
           "2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69",
-          "6f2c8e0b-4a57-4d9b-8c3d-9e0a4f6b2c51"
+          "f4c2d7b3-8e5a-4f2a-ab6d-3a9e1c7f5b24",
+          "6f2c8e0b-4a57-4d9b-8c3d-9e0a4f6b2c51",
+          "4d0f6b82-3c59-4a7e-8b24-7f9c1d5e3a28"
         ]
       }
     ],
-    "packages": [],
+    "packages": [
+      "scout.flood@1"
+    ],
     "datasets": [
       {
-        "datasetId": "data.scout.flood-nbs-classes",
-        "dirName": "data.scout.flood-nbs-classes@1",
+        "datasetId": "data.scout.quad-cities-flood",
+        "dirName": "data.scout.quad-cities-flood@1",
         "origin": "imported",
         "producerNodeId": null,
         "consumerNodeIds": [],
-        "installedAt": "2026-10-05T00:00:00Z"
-      },
-      {
-        "datasetId": "data.scout.flood-depth-2020-2040-nbs",
-        "dirName": "data.scout.flood-depth-2020-2040-nbs@1",
-        "origin": "imported",
-        "producerNodeId": null,
-        "consumerNodeIds": [],
-        "installedAt": "2026-10-05T00:00:00Z"
-      },
-      {
-        "datasetId": "data.scout.flood-depth-2020-2040-no-nbs",
-        "dirName": "data.scout.flood-depth-2020-2040-no-nbs@1",
-        "origin": "imported",
-        "producerNodeId": null,
-        "consumerNodeIds": [],
-        "installedAt": "2026-10-05T00:00:00Z"
-      },
-      {
-        "datasetId": "data.scout.flood-depth-2050-2080-nbs",
-        "dirName": "data.scout.flood-depth-2050-2080-nbs@1",
-        "origin": "imported",
-        "producerNodeId": null,
-        "consumerNodeIds": [],
-        "installedAt": "2026-10-05T00:00:00Z"
-      },
-      {
-        "datasetId": "data.scout.flood-depth-2050-2080-no-nbs",
-        "dirName": "data.scout.flood-depth-2050-2080-no-nbs@1",
-        "origin": "imported",
-        "producerNodeId": null,
-        "consumerNodeIds": [],
-        "installedAt": "2026-10-05T00:00:00Z"
-      },
-      {
-        "datasetId": "data.scout.flood-depth-2080-2100-nbs",
-        "dirName": "data.scout.flood-depth-2080-2100-nbs@1",
-        "origin": "imported",
-        "producerNodeId": null,
-        "consumerNodeIds": [],
-        "installedAt": "2026-10-05T00:00:00Z"
-      },
-      {
-        "datasetId": "data.scout.flood-depth-2080-2100-no-nbs",
-        "dirName": "data.scout.flood-depth-2080-2100-no-nbs@1",
-        "origin": "imported",
-        "producerNodeId": null,
-        "consumerNodeIds": [],
-        "installedAt": "2026-10-05T00:00:00Z"
+        "installedAt": "2026-10-07T00:00:00Z"
       }
     ],
     "name": "FloodScenarios",
     "task": "",
-    "timestamp": 1791158400000,
+    "timestamp": 1791331200000,
     "provenance_id": "FloodScenarios"
   }
 }

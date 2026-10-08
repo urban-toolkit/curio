@@ -1,4 +1,4 @@
-"""The shape of ``arg`` for one node — stated, and enforced before the sandbox.
+"""The shape of a node's inputs — stated, and enforced before the sandbox.
 
 Memo dev/128, from the owner's sentence: *"The merge node always outputs a list
 called `arg`, where each item in this list corresponds to the linked nodes in
@@ -6,39 +6,35 @@ the order of their connections to the input handles of the merge node. Your
 attempts always used `arg` alone; when I changed it to `arg[0]`, it worked
 correctly."*
 
-The runtime knows this per node. ``runner.run_through_node`` decides it in one
-place: a node with ONE input gets that upstream's value (through a node with
-no code of its own, a pool or a passive view, which passes it straight
-through), and a node with several input circles gets them as a list tagged
-``dataType: "outputs"``; ``workflow_spec.upstream_nodes`` orders those sources
-by circle, ``in``, ``in_1``, … So the shape of ``arg`` is a fact available
-before a line is generated, and this module is the ONE place that reads it.
-Code reads each input through its chip, ``[!! input k !!]``, which the run
-turns into ``arg`` or ``arg[k]``.
+A node's code reads each input circle as its own variable, ``input_k`` for
+circle k (``sandbox/util/input_names.py``), usually through its chip,
+``[!! input_k !!]``. The runtime knows what each holds before a line is
+generated, and this module is the ONE place that reads it:
 
-Two halves, both deterministic:
+- ``arg_shape``: ``several`` (one value per circle, with their slots),
+  ``single`` (one circle), ``list`` (one circle that a node with no code of its
+  own, a pool or a merge, hands SEVERAL values on, in a list) or ``none``.
+- ``check`` — with a ``list``, an attribute access on that circle's input
+  (``input_0.crs``, or ``gdf = input_0`` followed by ``gdf.to_crs(...)``, the
+  owner's exact mistake) is provably wrong: a list has no such attribute.
+  Refused BEFORE the sandbox runs, in the ``DEC-072`` pattern, and the refusal
+  is the next round's error. The code is judged as it runs, with its input
+  chips resolved.
 
-- ``arg_shape``: ``list`` (with its slots, in circle order), ``single`` or
-  ``none``. A node with ONE connected input is ``single``, because that is
-  what the runner does.
-- ``check`` — with a list-shaped ``arg``, an attribute access on it (``arg.crs``,
-  or ``gdf = arg`` followed by ``gdf.to_crs(...)``, the owner's exact code) is
-  provably wrong: a list has no such attribute. Refused BEFORE the sandbox
-  runs, in the ``DEC-072`` pattern, and the refusal is the next round's error.
-  The code is judged as it runs, with its input chips resolved.
-
-Legitimate uses of a list are never refused: ``arg[0]``, ``arg[0].crs``,
-iteration, ``len(arg)``, ``pd.concat(arg)``, returning it.
+Legitimate uses of a list are never refused: ``input_0[0]``, ``input_0[0].crs``,
+iteration, ``len(input_0)``, ``pd.concat(input_0)``, returning it.
 """
 
 from __future__ import annotations
 
 import ast
 import logging
+import re
 
 log = logging.getLogger(__name__)
 
 KIND_LIST = "list"
+KIND_SEVERAL = "several"
 KIND_SINGLE = "single"
 KIND_NONE = "none"
 
@@ -61,14 +57,17 @@ def _graph(spec: dict | None):
 
 
 def arg_shape(spec: dict | None, node_id: str) -> dict:
-    """What ``arg`` will be for *node_id*, read the way the runner reads it.
+    """What *node_id*'s inputs will be, read the way the runner reads them.
 
-    ``{"kind": "list", "length": N, "circles": [...], "slots": [{argIndex,
-    circle, chip, upstreamNodeId, goal, upstreamNodeType}], "via": "<node id>"}``,
-    ``{"kind": "single", upstreamNodeId, goal, upstreamNodeType}`` or
-    ``{"kind": "none"}``. ``argIndex`` is the position in ``arg``; ``circle``
-    is the circle the edge feeds, which is what a chip names, so a node wired
-    on ``in`` and ``in_3`` reads its second input as ``[!! input 3 !!]``.
+    ``{"kind": "several", "length": N, "circles": [...], "slots": [{circle,
+    chip, upstreamNodeId, goal, upstreamNodeType}]}``: one value per circle,
+    each read by its own chip, so a node wired on ``in`` and ``in_3`` reads its
+    second input as ``[!! input_3 !!]``, which runs as ``input_3``.
+    ``{"kind": "list", "length": N, "circles": [k], "slots": [{argIndex, chip,
+    ...}], "via": "<node id>"}``: one circle that a node with no code of its own
+    hands several values on, ``input_k[argIndex]`` each.
+    ``{"kind": "single", upstreamNodeId, goal, upstreamNodeType, chip}`` or
+    ``{"kind": "none"}``.
     """
     graph = _graph(spec)
     if graph is None:
@@ -111,27 +110,30 @@ def arg_shape(spec: dict | None, node_id: str) -> dict:
         if not ups:
             return {"kind": KIND_NONE}
         if len(ups) > 1:
-            # Several input circles: the runner hands them over as a list. On
-            # the node itself each is read by its circle's chip; through a
-            # pass-through the node has one input, the list, read by index.
+            # Several input circles. On the node itself each is its own
+            # variable, read by its circle's chip; through a pass-through the
+            # node has one input, a list of them, read by index.
             direct = target == node_id
             circles = graph.input_slots(target) if direct else own_circles
             slots = []
             for i, upstream in enumerate(ups[:MAX_SLOTS]):
-                row = _describe(upstream, i)
                 if direct:
+                    row = _describe(upstream)
                     row["circle"] = circles[i]
                     row["chip"] = _chip(circles[i])
                 else:
+                    row = _describe(upstream, i)
                     row["chip"] = f"{own_chip}[{i}]"
                 slots.append(row)
-            return {
-                "kind": KIND_LIST,
+            shape = {
+                "kind": KIND_SEVERAL if direct else KIND_LIST,
                 "length": len(ups),
                 "circles": circles,
-                "via": target,
                 "slots": slots,
             }
+            if not direct:
+                shape["via"] = target
+            return shape
         upstream = ups[0]
         node = nodes.get(upstream)
         if node is not None and getattr(node, "category", "code") != "code" and depth < _WALK_MAX_DEPTH:
@@ -155,7 +157,7 @@ def with_schemas(shape: dict, rows: list | None) -> dict:
     }  # dev/127's rows are keyed by nodeId; the slots name it upstreamNodeId
     if not by_node:
         return shape
-    if shape.get("kind") == KIND_LIST:
+    if shape.get("kind") in (KIND_LIST, KIND_SEVERAL):
         slots = []
         for slot in shape.get("slots") or []:
             schema = by_node.get(str(slot.get("upstreamNodeId")))
@@ -184,7 +186,7 @@ def describe(shape: dict | None) -> str:
     """One line for a prompt, a card or a log."""
     if not isinstance(shape, dict):
         return ""
-    if shape.get("kind") == KIND_LIST:
+    if shape.get("kind") in (KIND_LIST, KIND_SEVERAL):
         parts = []
         for slot in shape.get("slots") or []:
             label = slot.get("goal") or slot.get("upstreamNodeId") or "?"
@@ -196,15 +198,25 @@ def describe(shape: dict | None) -> str:
             parts.append(
                 f"{_slot_chip(slot)} = {label}" + (f" ({columns})" if columns else "")
             )
-        return f"arg is a list of {shape.get('length')} inputs: " + "; ".join(parts)
+        if shape.get("kind") == KIND_SEVERAL:
+            return f"{shape.get('length')} inputs, one per circle: " + "; ".join(parts)
+        return (
+            f"{_circle_name(shape)} is a list of {shape.get('length')} inputs: " + "; ".join(parts)
+        )
     if shape.get("kind") == KIND_SINGLE:
         label = shape.get("goal") or shape.get("upstreamNodeId") or "the upstream node"
-        return f"{shape.get('chip') or _chip(0)} (arg) IS the value {label} returned"
+        return f"{shape.get('chip') or _chip(0)} IS the value {label} returned"
     return "this node has no input"
 
 
+def _circle_name(shape: dict) -> str:
+    """The variable a list-shaped input arrives in: ``input_<its circle>``."""
+    circles = shape.get("circles") or [0]
+    return f"input_{circles[0]}"
+
+
 def _slot_chip(slot: dict) -> str:
-    """The chip a slot of a list-shaped ``arg`` is read by."""
+    """The chip a slot of a several- or list-shaped input is read by."""
     return slot.get("chip") or _chip(slot.get("argIndex"))
 
 
@@ -221,21 +233,18 @@ def _chip(position) -> str:
 # ── the check ────────────────────────────────────────────────────────────────
 
 
-def _names_bound_to_arg(tree: ast.AST) -> set[str]:
-    """Names assigned DIRECTLY from ``arg`` — ``gdf = arg`` (the owner's code).
+def _names_bound_to(tree: ast.AST, names: set[str]) -> set[str]:
+    """Names assigned DIRECTLY from one of *names* — ``gdf = input_0`` — and,
+    in turn, from those.
 
-    A name bound to ``arg[0]`` is not one of these: it holds a slot, which is
-    the correct form.
+    A name bound to ``input_0[0]`` is not one of these: it holds a slot, which
+    is the correct form.
     """
-    bound: set[str] = set()
+    bound: set[str] = set(names)
     for node in ast.walk(tree):
         if not isinstance(node, ast.Assign):
             continue
-        if isinstance(node.value, ast.Name) and node.value.id == "arg":
-            for target in node.targets:
-                if isinstance(target, ast.Name):
-                    bound.add(target.id)
-        elif isinstance(node.value, ast.Name) and node.value.id in bound:
+        if isinstance(node.value, ast.Name) and node.value.id in bound:
             for target in node.targets:
                 if isinstance(target, ast.Name):
                     bound.add(target.id)
@@ -243,13 +252,13 @@ def _names_bound_to_arg(tree: ast.AST) -> set[str]:
 
 
 def check(code: object, shape: dict | None) -> dict | None:
-    """The ONE rule: with a list-shaped ``arg``, an attribute access on it is
+    """The ONE rule: with a list-shaped input, an attribute access on it is
     wrong. Returns ``{"attribute", "name", "line"}`` or None.
 
     Only ``kind: list`` is judged, on the code as it runs: its input chips
-    become ``arg[k]``. A syntax error is not this gate's business (the
-    sandbox reports it), and a candidate that never mentions ``arg`` cannot
-    violate a contract about it.
+    become ``input_k``. A syntax error is not this gate's business (the
+    sandbox reports it), and a candidate that never mentions the list's
+    circle cannot violate a contract about it.
     """
     if not isinstance(shape, dict) or shape.get("kind") != KIND_LIST:
         return None
@@ -257,24 +266,25 @@ def check(code: object, shape: dict | None) -> dict | None:
         return None
     from utk_curio.backend.app.execution.code_references import REFERENCE_RE, resolve_references
 
-    circles = shape.get("circles") or range(int(shape.get("length") or 0))
+    circles = shape.get("circles") or [0]
     inputs = [{"slot": circle} for circle in circles]
     code, _ = resolve_references(code, (), "python", inputs)
     # #662: what is left is a widget or a shared tag, a value when the node
     # runs; standing in as one, it keeps the code parseable for this gate.
     code = REFERENCE_RE.sub("None", code)
-    if "arg" not in code:
+    names = {f"input_{circle}" for circle in circles}
+    if not any(re.search(rf"\b{name}\b", code) for name in names):
         return None
     try:
         tree = ast.parse(code)
     except SyntaxError:
         return None
-    bound = _names_bound_to_arg(tree) | {"arg"}
+    bound = _names_bound_to(tree, names)
     for node in ast.walk(tree):
         if not isinstance(node, ast.Attribute):
             continue
         value = node.value
-        # `arg[0].crs` is an attribute of a SUBSCRIPT — correct, never refused.
+        # `input_0[0].crs` is an attribute of a SUBSCRIPT — correct, never refused.
         if isinstance(value, ast.Name) and value.id in bound:
             return {
                 "attribute": node.attr,
@@ -286,7 +296,7 @@ def check(code: object, shape: dict | None) -> dict | None:
 
 def refusal_text(shape: dict, violation: dict) -> str:
     """What the model is told, and what a human reads in the trail."""
-    name = violation.get("name") or "arg"
+    name = violation.get("name") or _circle_name(shape)
     attribute = violation.get("attribute") or "?"
     line = violation.get("line") or 0
     used = f"{name}.{attribute}" + (f" (line {line})" if line else "")
@@ -304,10 +314,11 @@ def refusal_text(shape: dict, violation: dict) -> str:
         slots.append(f"{_slot_chip(slot)} = {label}{detail}")
     body = "; ".join(slots)
     chips = [_slot_chip(slot) for slot in (shape.get("slots") or [])[:2]] or [_chip(0), _chip(1)]
+    circle = _circle_name(shape)
     return (
-        f"input contract refused: this node has {shape.get('length')} inputs, so "
-        "`arg` is a LIST of them in circle order: " + body + ". "
+        f"input contract refused: {shape.get('length')} inputs reach this node through "
+        f"one circle, so `{circle}` is a LIST of them in order: " + body + ". "
         f"Your code used `{used}`: a list has no attribute {attribute!r}. "
-        f"Read the input you need through its chip ({', '.join(chips)}, ...): "
-        "`arg` alone is the list itself."
+        f"Read the input you need by its index ({', '.join(chips)}, ...): "
+        f"`{circle}` alone is the list itself."
     )

@@ -54,7 +54,7 @@
         "type": "curio.builtin/computation-analysis",
         "x": 1051.9524879230898,
         "y": 528.1914271723454,
-        "content": "import pandas as pd\r\n\r\ndf = None\r\nmult = None\r\n\r\n# Extract dataframe + multiplier from the two inputs\r\nif isinstance(arg, (list, tuple)):\r\n    for item in arg:\r\n        if isinstance(item, pd.DataFrame):\r\n            df = item\r\n        elif isinstance(item, dict) and 'multiplier' in item:\r\n            mult = item['multiplier']\r\n\r\n# Defaults\r\nif df is None:\r\n    df = pd.DataFrame({'a': [], 'b': []})\r\nif mult is None:\r\n    mult = 1\r\n\r\ndf = df.copy()\r\nif 'b' in df.columns:\r\n    df['b'] = pd.to_numeric(df['b'], errors='coerce') * float(mult)\r\n\r\ndf.metadata = {'name': 'Multiplied Numbers'}\r\nreturn df\r\n",
+        "content": "import pandas as pd\r\n\r\ndf = None\r\nmult = None\r\n\r\n# Extract dataframe + multiplier from the two inputs\r\nfor item in (input_0, input_1):\r\n    if isinstance(item, pd.DataFrame):\r\n        df = item\r\n    elif isinstance(item, dict) and 'multiplier' in item:\r\n        mult = item['multiplier']\r\n\r\n# Defaults\r\nif df is None:\r\n    df = pd.DataFrame({'a': [], 'b': []})\r\nif mult is None:\r\n    mult = 1\r\n\r\ndf = df.copy()\r\nif 'b' in df.columns:\r\n    df['b'] = pd.to_numeric(df['b'], errors='coerce') * float(mult)\r\n\r\ndf.metadata = {'name': 'Multiplied Numbers'}\r\nreturn df\r\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

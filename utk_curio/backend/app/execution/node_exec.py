@@ -48,6 +48,8 @@ class NodeRun:
     dataflow_id: str | None = None
     node_name: str | None = None
     save_output_dataset: bool = bool(CURIO_DEFAULT_SAVE_NODE_OUTPUT)
+    # The wired circles, in order: which input_k each value of *input* is.
+    input_slots: tuple[int, ...] | None = None
 
     @classmethod
     def from_request_json(cls, body: dict) -> "NodeRun":
@@ -62,7 +64,19 @@ class NodeRun:
             dataflow_id=body.get('dataflowId') or None,
             node_name=body.get('nodeName') or None,
             save_output_dataset=bool(save_output_dataset),
+            input_slots=parse_input_slots(body.get('inputSlots')),
         )
+
+
+def parse_input_slots(raw) -> tuple[int, ...] | None:
+    """A request's ``inputSlots``: the wired circles, or None when absent or malformed."""
+    if not isinstance(raw, (list, tuple)) or not raw:
+        return None
+    try:
+        slots = tuple(int(s) for s in raw)
+    except (TypeError, ValueError):
+        return None
+    return slots if all(0 <= s <= 255 for s in slots) else None
 
 
 def parse_input_ref(req_input: dict | None) -> dict:
@@ -104,6 +118,77 @@ def resolve_dataset_paths(code: str, dataflow_id: str | None, user, formats: dic
     except Exception as e:  # noqa: BLE001 - resolution must never fail the execution
         print(f"[processPythonCode] dataset path resolution failed: {e}", flush=True)
         return {}
+
+
+#: What a run that cannot save is told when its code saves a file.
+UNSAVED_DATAFLOW_REASON = (
+    "Save the dataflow first: curio_save_file and curio_save_folder keep files "
+    "in the dataflow's Computed datasets, and this dataflow has not been saved yet."
+)
+
+
+def resolve_computed(code: str, dataflow_id: str | None, user, dataset_paths: dict, formats: dict | None = None) -> dict:
+    """What the sandbox's saved-file helpers need for one run (``sandbox/util/saved_files.py``).
+
+    Each ``curio_computed_path("<name>")`` the code reads is the dataset
+    ``computed.<dataflowId>.files.<name>``; the ones that resolve are added to
+    *dataset_paths* (and *formats*), so they are staged like any dataset, and
+    named in ``names``. ``canSave`` says whether the run may save at all: a
+    saved file belongs to a dataflow, so one with no id cannot. Fail-open like
+    dataset paths: a name that does not resolve is the helper's own error.
+    """
+    from utk_curio.backend.app.datasets.domain.saved_files import computed_names_in_code
+
+    can_save = bool(dataflow_id) and user is not None
+    computed = {"names": {}, "canSave": can_save, "reason": "" if can_save else UNSAVED_DATAFLOW_REASON}
+    names = computed_names_in_code(code)
+    if not names or not dataflow_id or user is None:
+        return computed
+    try:
+        from utk_curio.backend.app.datasets.install.saved import saved_dataset_id
+        from utk_curio.backend.app.datasets.service import DatasetCatalogService
+
+        ids = {name: saved_dataset_id(dataflow_id, name) for name in names}
+        service = DatasetCatalogService(user)
+        if formats is None:
+            paths = service.resolve_execution_paths(list(ids.values()), dataflow_id=dataflow_id)
+        else:
+            paths = service.resolve_execution_paths(list(ids.values()), dataflow_id=dataflow_id, formats=formats)
+    except Exception as e:  # noqa: BLE001 - resolution must never fail the execution
+        print(f"[processPythonCode] saved-file resolution failed: {e}", flush=True)
+        return computed
+    for name, dataset_id in ids.items():
+        if dataset_id in paths:
+            dataset_paths[dataset_id] = paths[dataset_id]
+            computed["names"][name] = dataset_id
+    return computed
+
+
+def install_saved_files(user, run: "NodeRun", output) -> list | None:
+    """Install what the run saved (``output["savedFiles"]``) as computed
+    datasets of its dataflow; None when it saved nothing."""
+    saved = output.get("savedFiles") if isinstance(output, dict) else None
+    if not saved or user is None or not run.dataflow_id:
+        return None
+    from utk_curio.backend.app.datasets.install.saved import install_saved_files as _install
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user_key = _user_dir_key(user)
+    dataflow_name = None
+    try:
+        from utk_curio.backend.app.projects import storage as project_storage
+
+        spec = project_storage.read_spec(user_key, run.dataflow_id)
+        dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+        if isinstance(dataflow, dict):
+            dataflow_name = dataflow.get("name") or None
+    except Exception:  # noqa: BLE001 - the name is lineage, best-effort
+        pass
+    return _install(
+        user_key, saved,
+        dataflow_id=run.dataflow_id, node_id=run.node_id,
+        node_type=run.node_type, dataflow_name=dataflow_name,
+    )
 
 
 def resolve_models(code: str, user) -> dict:
@@ -220,6 +305,8 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         "session_id": session_token,
         "save_dataset": run.save_output_dataset,
     }
+    if run.input_slots:
+        body["input_slots"] = list(run.input_slots)
     if language == "python":
         from utk_curio.backend.app.datasets.infrastructure import left_out_files
 
@@ -230,6 +317,7 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         # with its own error, where the sandbox would only say "not available".
         with left_out_files.failures() as unavailable:
             dataset_paths = resolve_dataset_paths(run.code, run.dataflow_id, user, dataset_formats)
+            computed = resolve_computed(run.code, run.dataflow_id, user, dataset_paths, dataset_formats)
             exec_models = resolve_models(run.code, user)
         if unavailable:
             return _unavailable_reply(user, run, input_ref, unavailable, started=t0), 200
@@ -248,6 +336,7 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
             "user_key": user_key,
             "collections": collections,
             "media_dir": media_dir,
+            "computed": computed,
             # dev/116: present only when the code names a saved key; the
             # request body is otherwise byte-identical to before.
             **({"secrets": exec_secrets} if exec_secrets else {}),
@@ -326,6 +415,10 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
                 flush=True,
             )
 
+    # What the code saved with curio_save_file / curio_save_folder, whatever
+    # the save-output toggle says: the node asked for it by name.
+    saved_datasets = install_saved_files(user, run, output)
+
     record_runtime_outcome(
         user,
         node_id=run.node_id,
@@ -363,6 +456,8 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         'installedDataset': installed_dataset,
         'datasetDiagnostic': dataset_diagnostic,
     }
+    if saved_datasets:
+        reply['savedDatasets'] = saved_datasets
     if language == "python":
         reply['missingModule'] = _missing_module(user, output, stderr)
     return reply, 200

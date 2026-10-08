@@ -109,7 +109,7 @@ def _python_node(node_id: str, x: int, metadata: dict) -> dict:
         "type": "curio.builtin/computation-analysis",
         "x": x,
         "y": 0,
-        "content": "return arg",
+        "content": "return input_0",
         "in": "DEFAULT",
         "out": "DEFAULT",
         "goal": "",

@@ -1,7 +1,7 @@
 """The Compare Scenarios node's difference step (#662), ``curio_difference_scenarios``.
 
-In Difference the node compares two inputs, a reference (input 0) and a
-comparison (input 1), and every number it gives is comparison minus reference.
+In Difference the node compares two inputs, a reference (input_0) and a
+comparison (input_1), and every number it gives is comparison minus reference.
 
 - Two layers or two tables are joined on a stable id (``osm_id`` or
   ``building_id``, or a key the node names): rows on both sides hold the
@@ -140,7 +140,7 @@ class TestLayersJoinedOnAStableId:
     def test_a_layer_with_no_coordinate_system_takes_the_others(self, capsys):
         out = _diff(_roads([1], [5.0], crs=None), _roads([1], [4.0], crs="EPSG:4326"))
         assert out.crs.to_epsg() == 4326
-        assert "input 0 (Baseline) names no coordinate system" in capsys.readouterr().out
+        assert "input_0 (Baseline) names no coordinate system" in capsys.readouterr().out
 
     def test_buildings_are_joined_on_building_id(self):
         reference = gpd.GeoDataFrame({"building_id": [10, 11], "height": [9.0, 12.0]}, geometry=[Point(0, 0), Point(1, 1)])
@@ -290,7 +290,7 @@ class TestLayersWithNoIdJoinedOnTheirShapes:
         reference = self._lines([1.0], [[(0, 0), (1, 0)]])
         comparison = reference.copy()
         comparison.loc[0, "geometry"] = None
-        with pytest.raises(ValueError, match=r"input 1 \(Twice as tall\) has 1 row with no geometry"):
+        with pytest.raises(ValueError, match=r"input_1 \(Twice as tall\) has 1 row with no geometry"):
             _diff(reference, comparison)
 
     def test_one_layer_of_an_autark_nodes_several(self):
@@ -327,12 +327,12 @@ class TestWhatTheJoinRefuses:
 
     def test_a_layer_beside_a_table_names_both(self):
         table = pd.DataFrame({"osm_id": [1], "sunlight": [1.0]})
-        with pytest.raises(ValueError, match=r"input 0 \(Baseline\) is a layer while input 1 \(Twice as tall\) is a table"):
+        with pytest.raises(ValueError, match=r"input_0 \(Baseline\) is a layer while input_1 \(Twice as tall\) is a table"):
             _diff(_roads([1], [1.0]), table)
 
     def test_a_raster_beside_a_layer_names_both(self, tmp_path):
         raster = _raster(tmp_path / "r.tif", [[1.0]])
-        with pytest.raises(ValueError, match=r"input 0 \(Baseline\) is a raster while input 1 \(Twice as tall\) is a layer"):
+        with pytest.raises(ValueError, match=r"input_0 \(Baseline\) is a raster while input_1 \(Twice as tall\) is a layer"):
             _diff(raster, _roads([1], [1.0]))
 
     def test_no_stable_id_names_the_columns_both_have(self):
@@ -344,16 +344,16 @@ class TestWhatTheJoinRefuses:
     def test_a_key_one_input_lacks(self):
         reference = pd.DataFrame({"segment": ["r1"], "sunlight": [1.0]})
         comparison = pd.DataFrame({"part": ["r1"], "sunlight": [2.0]})
-        with pytest.raises(ValueError, match=r"input 1 \(Twice as tall\) has no column segment to join on"):
+        with pytest.raises(ValueError, match=r"input_1 \(Twice as tall\) has no column segment to join on"):
             _diff(reference, comparison, key="segment")
 
     def test_a_key_that_repeats_names_the_input_and_the_id(self):
-        with pytest.raises(ValueError, match=r"input 1 \(Twice as tall\) has 2 rows with osm_id 7"):
+        with pytest.raises(ValueError, match=r"input_1 \(Twice as tall\) has 2 rows with osm_id 7"):
             _diff(_roads([1, 7], [1.0, 2.0]), _roads([7, 7], [1.0, 2.0]))
 
     def test_rows_with_no_key(self):
         reference = pd.DataFrame({"osm_id": [1.0, np.nan], "sunlight": [1.0, 2.0]})
-        with pytest.raises(ValueError, match=r"input 0 \(Baseline\) has 1 row with no osm_id"):
+        with pytest.raises(ValueError, match=r"input_0 \(Baseline\) has 1 row with no osm_id"):
             _diff(reference, pd.DataFrame({"osm_id": [1.0], "sunlight": [1.0]}))
 
     def test_two_coordinate_systems(self):
@@ -362,11 +362,11 @@ class TestWhatTheJoinRefuses:
 
     def test_a_column_the_difference_adds_itself(self):
         reference = pd.DataFrame({"osm_id": [1], "change": ["x"]})
-        with pytest.raises(ValueError, match=r"input 0 \(Baseline\) already has a column named change"):
+        with pytest.raises(ValueError, match=r"input_0 \(Baseline\) already has a column named change"):
             _diff(reference, pd.DataFrame({"osm_id": [1]}))
 
     def test_an_input_with_no_value(self):
-        with pytest.raises(ValueError, match=r"input 1 \(Twice as tall\) has no value"):
+        with pytest.raises(ValueError, match=r"input_1 \(Twice as tall\) has no value"):
             _diff(_roads([1], [1.0]), None)
 
     def test_an_entry_that_is_not_scenario_name_and_input(self):
@@ -390,8 +390,8 @@ class TestTheRasterRequest:
         # It crosses the isolation protocol and the store as plain JSON.
         assert json.loads(json.dumps(request, allow_nan=False)) == request
         side = request["reference"]
-        assert (side["scenario"], side["name"], side["label"]) == ("s-base", "Baseline", "input 0 (Baseline)")
-        assert request["comparison"]["label"] == "input 1 (Twice as tall)"
+        assert (side["scenario"], side["name"], side["label"]) == ("s-base", "Baseline", "input_0 (Baseline)")
+        assert request["comparison"]["label"] == "input_1 (Twice as tall)"
         # The description the raster route serves, which the browser loads by.
         assert side["meta"]["crs"] == "EPSG:32616"
         assert side["meta"]["transform"] == [100.0, 0.0, 447000.0, 0.0, -100.0, 4637000.0]
@@ -405,12 +405,12 @@ class TestTheRasterRequest:
 
         path = tmp_path / "large.tif"
         with rasterio.open(
-            path, "w", driver="GTiff", width=2049, height=2048, count=1, dtype="uint8",
+            path, "w", driver="GTiff", width=4097, height=4096, count=1, dtype="uint8",
             crs="EPSG:32616", transform=Affine(10.0, 0.0, 447000.0, 0.0, -10.0, 4637000.0), compress="DEFLATE",
         ) as target:
-            target.write(np.zeros((2048, 2049), dtype="uint8"), 1)
+            target.write(np.zeros((4096, 4097), dtype="uint8"), 1)
         large = rasterio.open(path)
-        with pytest.raises(ValueError, match=r"input 1 \(Twice as tall\) is 2049 by 2048 cells, more than an Autark map loads"):
+        with pytest.raises(ValueError, match=r"input_1 \(Twice as tall\) is 4097 by 4096 cells, more than an Autark map loads"):
             _diff(rasterio.open(FIXTURE), large)
 
     def test_the_size_it_refuses_is_the_size_an_autark_map_refuses(self):
@@ -470,9 +470,9 @@ class TestRastersSubtractedThroughAutark:
         with pytest.raises(difference().RasterDifferenceFailed) as refused:
             self._subtract(reference, cropped, tmp_path)
         message = str(refused.value)
-        assert "input 1 (Twice as tall) minus input 0 (Baseline) cannot be computed: their grids differ in size." in message
-        assert "input 0 (Baseline) is 40 by 30 cells" in message
-        assert "input 1 (Twice as tall) is 20 by 30 cells" in message
+        assert "input_1 (Twice as tall) minus input_0 (Baseline) cannot be computed: their grids differ in size." in message
+        assert "input_0 (Baseline) is 40 by 30 cells" in message
+        assert "input_1 (Twice as tall) is 20 by 30 cells" in message
 
     def test_grids_that_differ_in_origin_resolution_and_crs_are_refused_naming_each(self, tmp_path):
         from affine import Affine
@@ -489,7 +489,7 @@ class TestRastersSubtractedThroughAutark:
     def test_a_raster_with_no_crs_is_refused_as_an_autark_map_refuses_it(self, tmp_path):
         a = _raster(tmp_path / "a.tif", [[1.0]])
         bare = _raster(tmp_path / "bare.tif", [[1.0]], crs=None)
-        with pytest.raises(difference().RasterDifferenceFailed, match=r"input 1 \(Twice as tall\) has no CRS, so Autark cannot place it"):
+        with pytest.raises(difference().RasterDifferenceFailed, match=r"input_1 \(Twice as tall\) has no CRS, so Autark cannot place it"):
             self._subtract(a, bare, tmp_path)
 
 
@@ -594,7 +594,7 @@ class TestTheSandboxCompletesTheRequest:
         )
         assert completed["output"] == {"path": "", "dataType": "str"}
         assert completed["stderr"].startswith(
-            "Compare Scenarios: input 1 (Twice as tall) minus input 0 (Baseline) cannot be computed"
+            "Compare Scenarios: input_1 (Twice as tall) minus input_0 (Baseline) cannot be computed"
         )
 
     def test_any_other_output_is_left_as_it_came(self, store):
