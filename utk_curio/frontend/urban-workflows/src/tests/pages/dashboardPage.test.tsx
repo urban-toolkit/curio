@@ -75,9 +75,11 @@ jest.mock("../../providers/UserProvider", () => ({
 }));
 
 import DashboardPage, {
+  LOAD_FAILED_BODY,
   LOAD_FAILED_TITLE,
   NOTHING_PINNED_TITLE,
 } from "../../pages/dashboard/DashboardPage";
+import { resetEmbeddedDashboardForTests } from "../../standalone/dashboardPayload";
 
 function flow(over: Record<string, unknown> = {}) {
   return {
@@ -410,6 +412,49 @@ describe("the states", () => {
 
     expect(screen.getByText(LOAD_FAILED_TITLE)).toBeTruthy();
     expect(screen.queryByText(NOTHING_PINNED_TITLE)).toBeNull();
+  });
+
+  describe("a dashboard the server refused", () => {
+    // The backend would not build it as a page of its own, so the page server
+    // carried the backend's reason instead of the data (cli/static_server.py).
+    const REASON = [
+      "This dashboard needs 31.0 MB of data embedded in the page, over the 25.0 MB limit.",
+      "",
+      "Heaviest outputs:",
+      "  trips-by-hour  31.0 MB  dataframe",
+      "",
+      "Aggregate or filter upstream of these nodes, or unpin the tiles that use them.",
+    ].join("\n");
+
+    beforeEach(() => {
+      const el = document.createElement("script");
+      el.id = "curio-dashboard-payload";
+      el.type = "application/json";
+      el.textContent = JSON.stringify({
+        meta: { projectId: ID, name: "Chicago trips" },
+        refused: { status: 413, message: REASON },
+      });
+      document.body.appendChild(el);
+      resetEmbeddedDashboardForTests();
+    });
+
+    afterEach(() => {
+      document.getElementById("curio-dashboard-payload")?.remove();
+      resetEmbeddedDashboardForTests();
+    });
+
+    test("says why, in the server's own words", async () => {
+      mockLoadState = "failed";
+      mockFlow = flow({ nodes: [], dashboardPins: {} });
+      await renderPage();
+
+      const failed = screen.getByTestId("dashboard-load-failed");
+      expect(failed.textContent).toContain(LOAD_FAILED_TITLE);
+      // The whole reason, rows and all: the heaviest node is the thing to fix.
+      expect(failed.textContent).toContain(REASON);
+      expect(screen.queryByText(LOAD_FAILED_BODY)).toBeNull();
+      expect(screen.queryByText(NOTHING_PINNED_TITLE)).toBeNull();
+    });
   });
 
   test("the owner gets no read-only notice", async () => {

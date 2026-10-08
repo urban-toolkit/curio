@@ -21,6 +21,7 @@ const mockLoadSharedProject = jest.fn();
 const mockLoadTrill = jest.fn();
 const mockSetOutputs = jest.fn();
 const mockHydrateRestoredOutputs = jest.fn();
+const mockSetWorkflowName = jest.fn();
 
 let mockRouteId = "11111111-2222-3333-4444-555555555555";
 
@@ -37,6 +38,7 @@ jest.mock("../../providers/FlowProvider", () => ({
     loadParsedTrill: jest.fn(),
     projectId: null,
     attachLatestRun: jest.fn(),
+    setWorkflowName: mockSetWorkflowName,
   }),
 }));
 jest.mock("../../hook/useCode", () => ({
@@ -62,6 +64,7 @@ jest.mock("../../registry/projectPackagesStore", () => ({
 }));
 
 import { ProjectLoader, useProjectLoadState } from "../../components/ProjectLoader";
+import { resetEmbeddedDashboardForTests } from "../../standalone/dashboardPayload";
 
 const SPEC = {
   dataflow: { nodes: [{ id: "py" }, { id: "chart" }], edges: [], packages: ["x@1"] },
@@ -201,5 +204,38 @@ describe("the load state a page can read", () => {
     const { getByTestId } = renderLoader(true);
 
     await waitFor(() => expect(getByTestId("state").textContent).toBe("failed"));
+  });
+});
+
+describe("a dashboard the server refused", () => {
+  // The backend would not build it as a page of its own, so the page server
+  // carried the backend's reason instead of the data (cli/static_server.py).
+  // Loading the dashboard some other way is the fallback that rules out.
+  beforeEach(() => {
+    const el = document.createElement("script");
+    el.id = "curio-dashboard-payload";
+    el.type = "application/json";
+    el.textContent = JSON.stringify({
+      meta: { projectId: mockRouteId, name: "Trips" },
+      refused: { status: 413, message: "over the 25.0 MB limit" },
+    });
+    document.body.appendChild(el);
+    resetEmbeddedDashboardForTests();
+  });
+
+  afterEach(() => {
+    document.getElementById("curio-dashboard-payload")?.remove();
+    resetEmbeddedDashboardForTests();
+  });
+
+  it("loads nothing, ends in failed, and keeps the dataflow's name", async () => {
+    const { getByTestId } = renderLoader(true);
+
+    await waitFor(() => expect(getByTestId("state").textContent).toBe("failed"));
+    expect(mockLoadProject).not.toHaveBeenCalled();
+    expect(mockLoadSharedProject).not.toHaveBeenCalled();
+    expect(mockLoadTrill).not.toHaveBeenCalled();
+    // The bar names the dataflow, as it does on a page that carries one.
+    expect(mockSetWorkflowName).toHaveBeenCalledWith("Trips");
   });
 });

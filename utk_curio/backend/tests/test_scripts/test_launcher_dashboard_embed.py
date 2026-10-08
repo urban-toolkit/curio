@@ -12,10 +12,11 @@ data, column names and all, and a dataflow that produced the text
 ``</script>`` would otherwise end the tag early and have the rest of itself
 parsed as markup.
 
-A dashboard that cannot be embedded must still be a working page. Over the size
-limit, or with the backend down, serving the ordinary page that fetches for
-itself is better than serving an error: the feature degrades to what it
-replaced.
+A dashboard the backend refuses to build carries the backend's reason instead
+of its data: over the size limit (413), or with a tile that loads its own data
+(409), the page says why and fetches nothing. A page that fetched its rows
+instead would look standalone and not be. A backend that fails or cannot be
+reached says nothing about the dashboard, so that page is the ordinary one.
 
 And only a real navigation should pay for it. A HEAD, or a URL that cannot be a
 project id, must not send the backend off to read every artifact behind a tile.
@@ -57,14 +58,12 @@ class _StubBackend:
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):  # noqa: N802
                 outer.paths.append(self.path)
-                if outer.status != 200:
-                    self.send_response(outer.status)
-                    self.send_header("Content-Length", "0")
-                    self.end_headers()
-                    return
-                body = json.dumps(outer.payload).encode("utf-8")
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
+                # Whatever the status, as the backend answers: a refusal is a
+                # JSON body too.
+                body = b"" if outer.payload is None else json.dumps(outer.payload).encode("utf-8")
+                self.send_response(outer.status)
+                if body:
+                    self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
@@ -201,10 +200,83 @@ def test_a_head_request_does_not_assemble_a_payload(tmp_path):
         assert backend.paths == []
 
 
-def test_a_backend_that_refuses_still_serves_a_working_page(tmp_path):
-    # 413 is the size refusal. The page must still load and fetch for itself,
-    # which is what it did before any of this existed.
-    with _StubBackend(PAYLOAD, status=413) as backend:
+def _too_large(name: str) -> tuple[str, dict]:
+    """The size refusal as ``GET /api/projects/<id>/dashboard`` answers it: the
+    limit's own words, which name the node to aggregate."""
+    from utk_curio.backend.app.projects.dashboard_payload import (
+        DashboardTooLargeError,
+        TileWeight,
+    )
+
+    weight = TileWeight(
+        node_id="trips-by-hour", filename="a.parquet", data_type="dataframe",
+        bytes=31 * 1024 * 1024,
+    )
+    error = DashboardTooLargeError(weight.bytes, 25 * 1024 * 1024, [weight])
+    reason = error.describe()
+    return reason, {
+        "error": reason,
+        "totalBytes": error.total_bytes,
+        "limitBytes": error.limit_bytes,
+        "heaviest": [{"nodeId": weight.node_id, "bytes": weight.bytes, "dataType": weight.data_type}],
+        "name": name,
+    }
+
+
+def test_a_dashboard_over_the_size_limit_says_why_and_carries_no_data(tmp_path):
+    # The limit is a refusal, not a fallback. A page that fetched its rows
+    # instead would look standalone and not be, so the page carries the
+    # backend's reason and the dataflow's name, and no data.
+    reason, body = _too_large("Trips")
+    with _StubBackend(body, status=413) as backend:
+        spa = _start_spa(tmp_path, backend.url)
+
+        html = _get(spa, f"/dashboard/{DASHBOARD_ID}")
+
+        assert _embedded(html) == {
+            "meta": {"projectId": DASHBOARD_ID, "name": "Trips"},
+            "refused": {"status": 413, "message": reason},
+        }, "the page carries no refusal, so it is an ordinary page that fetches its data itself"
+        assert "trips-by-hour" in reason
+
+
+def test_a_tile_that_loads_its_own_data_says_why_and_carries_no_data(tmp_path):
+    from utk_curio.backend.app.projects.dashboard_payload import (
+        DashboardCannotBeStandaloneError,
+    )
+
+    reason = DashboardCannotBeStandaloneError(["city-map"]).describe()
+    body = {"error": reason, "tiles": ["city-map"], "name": "Trips"}
+    with _StubBackend(body, status=409) as backend:
+        spa = _start_spa(tmp_path, backend.url)
+
+        html = _get(spa, f"/dashboard/{DASHBOARD_ID}")
+
+        assert _embedded(html) == {
+            "meta": {"projectId": DASHBOARD_ID, "name": "Trips"},
+            "refused": {"status": 409, "message": reason},
+        }, "the page carries no refusal, so it is an ordinary page that fetches its data itself"
+
+
+def test_a_refusal_survives_a_script_tag_in_the_dataflow_name(tmp_path):
+    # The name is the owner's text, and travels in the same tag as a payload.
+    hostile = "</script><img src=x onerror=alert(1)>"
+    reason, body = _too_large(hostile)
+    with _StubBackend(body, status=413) as backend:
+        spa = _start_spa(tmp_path, backend.url)
+
+        html = _get(spa, f"/dashboard/{DASHBOARD_ID}")
+
+        assert _embedded(html) == {
+            "meta": {"projectId": DASHBOARD_ID, "name": hostile},
+            "refused": {"status": 413, "message": reason},
+        }, "the page carries no refusal, so it is an ordinary page that fetches its data itself"
+        assert "<img src=x" not in html
+
+
+def test_a_backend_that_fails_still_serves_an_ordinary_page(tmp_path):
+    # A failure is not a refusal: it says nothing about the dashboard.
+    with _StubBackend({"error": "Internal Server Error"}, status=500) as backend:
         spa = _start_spa(tmp_path, backend.url)
 
         html = _get(spa, f"/dashboard/{DASHBOARD_ID}")
