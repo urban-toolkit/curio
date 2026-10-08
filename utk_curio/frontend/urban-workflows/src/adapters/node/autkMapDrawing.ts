@@ -17,10 +17,17 @@
  * window listeners and the map's controls) when its next run replaces them and
  * when it leaves the page, a deleted node or a closed dataflow
  * (`autkGrammarBehavior`).
+ *
+ * Code that reads a map's pixels (a screenshot) reads them in the animation
+ * frame that renders the map (`renderMapsForReading`): Chrome can read back
+ * an idle WebGPU canvas, long after its last frame, as transparent.
  */
 import type { AutkMap } from '@urban-toolkit/autk-map';
 
 type DrawnMap = Pick<AutkMap, 'draw' | 'requestRender' | 'destroy'>;
+
+/** The maps drawing on demand, until they are destroyed. */
+const onDemandMaps = new Set<DrawnMap>();
 
 /** The maps autk-grammar made: its registry keeps one for each layer a map draws. */
 function mapsOf(grammar: any): DrawnMap[] {
@@ -31,6 +38,7 @@ function mapsOf(grammar: any): DrawnMap[] {
 
 /** Destroy *map*: its GPU textures, window listeners and controls. */
 function destroy(map: DrawnMap): void {
+    onDemandMaps.delete(map);
     try {
         map.destroy();
     } catch (error) {
@@ -46,6 +54,25 @@ function destroy(map: DrawnMap): void {
  */
 export function drawMapsOnDemand(grammar: unknown): () => void {
     const maps = mapsOf(grammar);
-    for (const map of maps) map.draw({ onDemand: true });
+    for (const map of maps) {
+        map.draw({ onDemand: true });
+        onDemandMaps.add(map);
+    }
     return () => maps.forEach(destroy);
 }
+
+/**
+ * Ask every on-demand map for a frame, and resolve inside the animation frame
+ * that renders them. Code that goes on from the returned promise, before it
+ * awaits anything else, reads each map canvas with the picture just rendered
+ * into it. A page that is hidden runs no frames, so there it resolves at once.
+ */
+export function renderMapsForReading(): Promise<void> {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return Promise.resolve();
+    for (const map of onDemandMaps) map.requestRender();
+    // Asked after the maps' own frames, so it runs after them in the same frame.
+    return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+// The e2e captures read map canvases through it too (test_frontend/utils/images.py).
+if (typeof window !== 'undefined') (window as any).__curio_renderMapsForReading = renderMapsForReading;

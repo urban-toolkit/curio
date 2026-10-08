@@ -332,7 +332,7 @@ def _settle(page) -> bool:
 
 def _check_idle(page, why: str, problems: list[str], *, shown: bool) -> None:
     """The map, once nothing changes it, draws no frame; one that *shown* still
-    reads as a drawn map, as screenshots and drawing checks read it."""
+    reads as a drawn map, as the drawing checks read it."""
     settled = _settle(page)
     frames = _count_frames(page)["maps"][MAP]
     assert frames is not None, f"{why}: the map has no canvas in the page"

@@ -71,6 +71,7 @@ import {
 import { endScenarioDrag, hasScenarioDrag, readScenarioDragPayload } from "../services/scenarioCatalog/scenarioDrag";
 import { useScenarioDrop } from "./scenarios/useScenarioDrop";
 import { packageStarterCode } from "../adapters/node/packageNodeBehavior";
+import { renderMapsForReading } from "../adapters/node/autkMapDrawing";
 import { useStarterContext } from "../providers/StarterProvider";
 import { getAllNodeTypes, getPaletteNodeTypes } from "../registry/nodeRegistry";
 import type { NodeDescriptor } from "../registry/types";
@@ -383,7 +384,10 @@ export function MainCanvas() {
         const screenshotTarget = document.getElementsByClassName("react-flow__renderer")[0] as HTMLElement;
 
         if (!screenshotTarget) return null;
-    
+
+        // html2canvas copies each canvas when it is called, so a map is copied
+        // in the frame that renders it (maps draw on demand).
+        await renderMapsForReading();
         return new Promise((resolve) => {
             html2canvas(screenshotTarget).then((canvas) => {
                 canvas.toBlob((blob) => {
