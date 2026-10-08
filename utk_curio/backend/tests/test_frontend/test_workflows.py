@@ -377,7 +377,9 @@ def test_interaction_table_matches_the_dataflows():
 
 #: How long test_bar_hover_taken_back_when_the_map_draws_late holds the target
 #: map's drawing, from just before the double-click that takes the hover back.
-MAP_DRAWING_HELD_MS = 30000
+#: Framing the pair and the captures before the wait took 12.7 s on a loaded
+#: runner (CI run 37728560442), so a wait of 15 s ended 27.7 s into a 30 s hold.
+MAP_DRAWING_HELD_MS = 60000
 
 # Holds the drawing of one map canvas: while held, its WebGPU context refuses
 # to hand out its texture, so autk-map's frame for that map stops before it
