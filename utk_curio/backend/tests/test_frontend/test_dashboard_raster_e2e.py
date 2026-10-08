@@ -162,13 +162,16 @@ def test_a_standalone_dashboard_draws_a_pinned_raster_map(
     assert_autark_map_drawn(page, MAP, timeout=60000)
     _pin(page, MAP)
     _save(page)
+    # Off the canvas before anything is refused: it can still save on its way
+    # out, and that request is the canvas's, not the dashboard's.
+    page.goto("about:blank")
 
     standalone = _serve_dashboards(current_server)
 
     asked: list[str] = []
 
     def refuse(route, request):
-        asked.append(request.url)
+        asked.append(f"{request.method} {request.url}")
         route.abort()
 
     for pattern in DATA_ROUTES:
