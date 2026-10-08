@@ -48,6 +48,8 @@ on:
       # The guides the tests read: the examples table, the launcher's flags,
       # the Solve loop's stop reasons.
       - 'docs/*.md'
+      # The bring-your-own-model guide's worked example, which its test reads.
+      - 'docs/bring-your-own-model/**'
   pull_request:
     branches: [ main ]
     # `labeled` is here so that putting the `stress` label on an open PR starts
@@ -97,6 +99,8 @@ on:
       # The guides the tests read: the examples table, the launcher's flags,
       # the Solve loop's stop reasons.
       - 'docs/*.md'
+      # The bring-your-own-model guide's worked example, which its test reads.
+      - 'docs/bring-your-own-model/**'
   # test-gpu-stress runs on this schedule instead of on every push. It holds
   # the single GPU runner for ~30 minutes, which roughly doubles a run, and
   # what it measures -- does the stack hold up under 5/10/50/100 users -- moves

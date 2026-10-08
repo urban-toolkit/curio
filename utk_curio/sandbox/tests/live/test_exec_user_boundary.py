@@ -530,7 +530,9 @@ def test_scouts_rasterizer_runs_as_the_exec_user():
         with tempfile.TemporaryDirectory() as work:
             vector = os.path.join(work, "buildings")
             buildings.to_file(vector, driver="GeoJSON")
+            # A node's folder comes from curio_save_folder, made and empty.
             rasters = os.path.join(work, "rasters")
+            os.makedirs(rasters)
             convert_raster(vector, "height", 16, rasters, max_height=550.0)
             names = sorted(name[:-4] for name in os.listdir(rasters))
             heights = mosaic(rasters, 16, 550.0, curio_output_file)
