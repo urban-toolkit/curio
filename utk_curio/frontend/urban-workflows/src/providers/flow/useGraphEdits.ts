@@ -158,13 +158,19 @@ export function useGraphEdits({
         );
     };
 
-    // updates a single box with the new input (new connections)
+    /**
+     * Hand *outId*'s output to *inId* alone, along a new edge: the one hand-over
+     * a new connection makes. *edges* is the graph the edge joins, which tells
+     * a node with several circles which of them are wired; the new edge is not
+     * in it yet, and its circle counts as wired.
+     */
     const applyOutput = (
         inNodeType: NodeType,
         inId: string,
         outId: string,
         sourceHandle: string,
-        targetHandle: string
+        targetHandle: string,
+        edges: Edge[],
     ) => {
         if (sourceHandle == "in/out" && targetHandle == "in/out") return;
 
@@ -185,9 +191,8 @@ export function useGraphEdits({
                 if (node.id !== inId) return node;
 
                 if (nodeGrowsInputs(node)) {
-                    // The edge is not in the graph yet: its circle counts as wired.
                     const slot = inputSlotOf(targetHandle);
-                    return slot >= 0 ? withSlotValues(node, [slot], normalized, outId, reactFlow.getEdges()) : node;
+                    return slot >= 0 ? withSlotValues(node, [slot], normalized, outId, edges) : node;
                 }
 
                 const data = { ...node.data, input: normalized, source: outId };
