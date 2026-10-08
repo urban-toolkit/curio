@@ -27,7 +27,7 @@ Curio is a framework for urban visual analytics built on dataflows: a React canv
 - `utk_curio/main.py` `main()`: the argument parser and the `setup`, `start` and `test` commands. What it calls is in `utk_curio/cli/`: `environment.py` (arguments to environment variables), `frontend_build.py`, `static_server.py`, `services.py` (start the backend, sandbox and frontend), `dependencies.py`, `test_runner.py`, `logs.py`, `lifecycle.py`, `arguments.py`.
 - Backend: `utk_curio/backend/server.py` builds the app with `create_app()` from `utk_curio/backend/app/__init__.py`, which registers every blueprint. Settings: `utk_curio/backend/config.py`.
 - Sandbox: `utk_curio/sandbox/server.py`. `app/api.py` holds the routes (`/exec`, `/execJs`, `/get`, `/artifact-meta`, `/monitor`); `app/worker.py` runs node code (`execute_code`, `execute_js_code`); `app/auth.py` checks the backend's token.
-- Sandbox internals: `utk_curio/sandbox/isolation/` (fork isolation: `zygote.py`, `supervisor.py`, `child.py`, `hardening.py`); `utk_curio/sandbox/util/` (`db.py`, `parsers.py`, `codec.py`).
+- Sandbox internals: `utk_curio/sandbox/isolation/` (fork isolation: `zygote.py`, `supervisor.py`, `child.py`, `hardening.py`); `utk_curio/sandbox/util/` (`db.py`, `parsers.py`, `codec.py`, `user_code.py`: the `userCode` both paths run, whose relative paths into `docs/` read the shipped files).
 - Frontend: `src/index.tsx` (routes and provider nesting).
 
 ## Catalog features by layer

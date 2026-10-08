@@ -46,6 +46,7 @@ import sys
 
 from utk_curio.common.redaction import redact
 from utk_curio.sandbox.util.secrets import make_curio_secret, shape_secrets
+from utk_curio.sandbox.util.user_code import compile_user_code
 
 RESULT_FILENAME = "result.json"
 
@@ -706,7 +707,9 @@ def run_node(request, namespace_factory):
                 except Exception:
                     continue
 
-            exec(f"def userCode(arg):\n{code}", namespace)
+            # A relative path in docs/ that the folder the child runs in does
+            # not hold reads the file Curio ships, as in-process.
+            exec(compile_user_code(code, os.getcwd()), namespace)
 
             argument = rebuild_input(request.get("input") or {"kind": "none"},
                                      scratch_dir)

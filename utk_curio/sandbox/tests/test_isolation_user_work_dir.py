@@ -149,10 +149,9 @@ class TestPreparingIt(unittest.TestCase):
 
     @posix_only
     def test_a_link_another_install_left_is_pointed_at_the_shipped_docs(self):
-        """A work directory outlives the install that made it: a virtual
-        environment rebuilt elsewhere, or a launch from a folder whose own
-        `docs/` the link used to follow. Its link then leads to the `docs/`
-        this install ships."""
+        """A work directory outlives the install that made it, as when a
+        virtual environment is rebuilt elsewhere. Its link then leads to the
+        `docs/` this install ships."""
         import tempfile
 
         from utk_curio import shipped

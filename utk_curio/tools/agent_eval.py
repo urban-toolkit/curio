@@ -4,7 +4,7 @@
     export CURIO_EVAL_LIVE=1
     python -m utk_curio.tools.agent_eval run \
         --backend-url http://localhost:5002 --token "$CURIO_EVAL_TOKEN" \
-        --tier T0,T1 --out .curio/eval
+        --tier T0,T1
 
     python -m utk_curio.tools.agent_eval list
     python -m utk_curio.tools.agent_eval export --split validation --out eval.jsonl
@@ -12,7 +12,9 @@
 What comes out is an **evaluation report**, not a gate: ``report.json`` carries
 ``isReleaseGate: false`` and ``report.md`` says so in its header. Nothing in
 Curio passes or fails because of these numbers, and the first thing to do with a
-low score is read the transcript the report kept.
+low score is read the transcript the report kept. Without ``--out``, the
+reports go to ``eval/`` in Curio's state directory: ``.curio/`` in the folder
+the tool runs from, or ``CURIO_STATE_DIR``.
 
 The tool never reads a provider key. Which model answers is whatever the
 evaluation account saved in API Settings; the report records the provider type,
@@ -47,8 +49,11 @@ from utk_curio.backend.app.agents.evaluation.report import (
     RunReport,
     new_run_id,
 )
+from utk_curio.backend.app.common.user_storage import curio_root
 
-DEFAULT_OUT = REPO_ROOT / ".curio" / "eval"
+#: The folder of Curio's state directory ``run`` writes its reports to when no
+#: ``--out`` is given.
+EVAL_FOLDER = "eval"
 
 
 def template_index() -> dict:
@@ -269,7 +274,7 @@ def build_parser() -> argparse.ArgumentParser:
                      help="also run fixtures needing the network or a GPU")
     run.add_argument("--price-per-mtoken", default="",
                      help="IN,OUT rate for an operator-supplied cost estimate")
-    run.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    run.add_argument("--out", type=Path, default=curio_root() / EVAL_FOLDER)
     run.add_argument("--model", default="",
                      help="evaluate this model instead of the one the Dataflow "
                           "Builder runs on (a temporary configuration chosen for it, "
