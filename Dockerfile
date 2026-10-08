@@ -36,10 +36,12 @@ RUN pip install --upgrade pip setuptools wheel && \
 COPY curio.py ./
 # pyproject.toml / MANIFEST.in are what carry utk_curio/llm-prompts (not an
 # importable package -- the hyphen makes packages.find blind to it) into an
-# sdist and a wheel. tests/test_agents/test_prompt_assets.py asserts against
-# both files, and CI runs the backend suite INSIDE this image, so without
-# them here the packaging assertion cannot run where it matters.
-COPY pyproject.toml MANIFEST.in ./
+# sdist and a wheel, and setup.py copies the package.json and package-lock.json
+# above into the wheel. tests/test_agents/test_prompt_assets.py and
+# tests/test_scripts/test_launcher_sandbox_nodejs.py assert against these
+# files, and CI runs the backend suite INSIDE this image, so without them here
+# the packaging assertions cannot run where they matter.
+COPY pyproject.toml MANIFEST.in setup.py ./
 COPY scripts/ scripts/
 COPY packages/ packages/
 COPY datasets/ datasets/

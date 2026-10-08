@@ -1,5 +1,5 @@
-"""Dependencies installed at launch: pip, package manifests, the root
-node_modules, and DuckDB's extensions."""
+"""Dependencies installed at launch: pip, package manifests, the sandbox's
+Node.js packages, and DuckDB's extensions."""
 
 import os
 import shutil
@@ -10,6 +10,7 @@ import threading
 from pathlib import Path
 
 from utk_curio.cli.frontend_build import (
+    NODE_MAJOR,
     _node_tree_is_stale,
     _read_node_version,
     _write_node_stamp,
@@ -75,62 +76,140 @@ def _skip_dep_install() -> bool:
     return os.environ.get("CURIO_SKIP_DEP_INSTALL", "").strip().lower() in ("1", "true", "yes", "on")
 
 
+#: What fails without the sandbox's Node.js packages.
+_WITHOUT_NODE_PACKAGES = "Autark data nodes and OpenStreetMap downloads will fail"
+
+
 def _ensure_root_node_modules(project_root: str) -> None:
-    """Install the repo-root node_modules used by the sandbox's Node.js
-    subprocess. ``@urban-toolkit/autk-db`` is declared in the root
-    ``package.json``; the Autark grammar's data section is compiled to
-    autk-db JavaScript and executed server-side (see
-    ``utk_curio/sandbox/app/worker.py`` ``execute_js_code``). ``check_install_build``
-    only manages the *frontend* node_modules under
-    ``utk_curio/frontend/urban-workflows/``, so without this step a fresh
-    checkout fails Autark data nodes with ``ERR_MODULE_NOT_FOUND``.
+    """Install the Node.js packages the sandbox runs: ``@urban-toolkit/autk-db``,
+    which Autark data nodes (``utk_curio/sandbox/app/worker.py``
+    ``execute_js_code``) and the Discovery Catalog's OpenStreetMap downloads
+    run in Node. ``check_install_build`` only manages the *frontend*
+    node_modules under ``utk_curio/frontend/urban-workflows/``.
+
+    *project_root* is the folder that holds ``utk_curio/``.
+    ``node_runtime.nodejs_dir`` says where the packages go, and the sandbox and
+    the backend read them through the same function: beside Curio's
+    package.json in a clone, the Docker image and CI, and in ``nodejs/`` of
+    Curio's state directory for a pip install, whose site-packages holds no
+    package.json of Curio's. For a pip install the launcher first writes the
+    package.json and package-lock.json the package ships into that folder.
+
+    npm runs only in a folder that holds Curio's package.json, with that folder
+    as ``--prefix``. Pointed at a folder without one, npm takes the nearest
+    folder above that holds a package.json or a node_modules as its project: in
+    a conda environment with conda's Node.js, a pip install's site-packages
+    leads it to ``<env>/lib``, whose node_modules it empties, conda's own npm
+    with it.
     """
     if shutil.which("npm") is None:
         log_warning(
-            "[Sandbox] npm not found in PATH; skipping root npm install. "
-            "Autark grammar data nodes will fail with ERR_MODULE_NOT_FOUND "
-            "until 'npm install' is run at the repo root."
+            "[Sandbox] npm not found in PATH; the sandbox's Node.js packages are not "
+            f"installed. {_WITHOUT_NODE_PACKAGES} with ERR_MODULE_NOT_FOUND until Curio "
+            f"starts with Node.js {NODE_MAJOR} and npm on PATH."
         )
+        return
+
+    folder = _sandbox_nodejs_folder(Path(project_root))
+    if folder is None:
         return
 
     # An unreadable version leaves the tree alone rather than wiping it on a
     # guess. An out-of-date one never reaches here: _require_supported_node
     # stops the launch before any server starts.
     node_version_raw, node_major = _read_node_version()
-    if node_version_raw and _node_tree_is_stale(project_root, node_major):
+    if node_version_raw and _node_tree_is_stale(str(folder), node_major):
         log_info(
-            f"[Sandbox] Root node_modules was installed by a different Node.js "
+            f"[Sandbox] {folder / 'node_modules'} was installed by a different Node.js "
             f"major; reinstalling for Node.js {node_major}...",
             COLOR_SANDBOX, 0,
         )
-        shutil.rmtree(os.path.join(project_root, "node_modules"), ignore_errors=True)
+        shutil.rmtree(folder / "node_modules", ignore_errors=True)
 
     # Run npm install unconditionally (mirrors the frontend's check_install_build):
     # it's idempotent and fast when the lockfile is already satisfied, and it
-    # self-heals when the root package.json bumps @urban-toolkit/autk-db. Gating
+    # self-heals when Curio's package.json bumps @urban-toolkit/autk-db. Gating
     # on the autk-db directory merely *existing* (the previous behavior) skipped
     # the update and left the sandbox on a stale version whose API differs,
     # silently breaking server-side data loading.
     log_info(
-        "[Sandbox] Ensuring root node_modules (@urban-toolkit/autk-db) at "
-        f"{project_root}...",
+        f"[Sandbox] Ensuring the sandbox's Node.js packages (@urban-toolkit/autk-db) in {folder}...",
         COLOR_SANDBOX, 0,
     )
     try:
         subprocess.run(
-            ["npm", "install", "--no-audit", "--no-fund"],
-            check=True, cwd=project_root, shell=shell_required,
+            ["npm", "install", "--prefix", str(folder), "--no-audit", "--no-fund"],
+            check=True, cwd=str(folder), shell=shell_required,
         )
     except subprocess.CalledProcessError as e:
         log_error(
-            f"[Sandbox] Root 'npm install' failed (exit code {e.returncode}). "
-            f"Autark data nodes will fail; install manually at {project_root}."
+            f"[Sandbox] 'npm install' failed in {folder} (exit code {e.returncode}). "
+            f"{_WITHOUT_NODE_PACKAGES}."
         )
     except Exception as e:
-        log_error(f"[Sandbox] Failed to run root 'npm install': {e}")
+        log_error(f"[Sandbox] Failed to run 'npm install' in {folder}: {e}")
     else:
         if node_major:
-            _write_node_stamp(project_root, node_major)
+            _write_node_stamp(str(folder), node_major)
+
+
+def _sandbox_nodejs_folder(root: Path) -> Path | None:
+    """The folder npm installs the sandbox's Node.js packages in, holding
+    Curio's package.json, or None after saying why there is none.
+
+    A clone, the Docker image and CI: *root*, beside its package.json. A pip
+    install: ``nodejs/`` in Curio's state directory, a folder of Curio's own
+    (not a link elsewhere), after the package.json and package-lock.json the
+    package ships are written there. A file is replaced, never written through.
+    """
+    from utk_curio.sandbox.util import node_runtime
+
+    folder = node_runtime.nodejs_dir(root)
+    if folder == root:
+        return root.resolve()
+    shipped = root / node_runtime.SHIPPED_PACKAGE_FILES
+    for name in node_runtime.PACKAGE_FILES:
+        if not (shipped / name).is_file():
+            log_error(
+                f"[Sandbox] {shipped / name} is missing, so Curio has no list of the sandbox's "
+                f"Node.js packages to install ({root} holds no package.json of Curio's). npm is "
+                f"not run, and {_WITHOUT_NODE_PACKAGES}. Install Curio from its release on PyPI, "
+                f"or start it from a clone."
+            )
+            return None
+    if not node_runtime.is_curio_package_json(shipped / "package.json"):
+        log_error(
+            f"[Sandbox] {shipped / 'package.json'} is not Curio's package.json, so npm is not "
+            f"run, and {_WITHOUT_NODE_PACKAGES}."
+        )
+        return None
+    expected = node_runtime.state_dir().resolve() / node_runtime.NODEJS_FOLDER
+    links = [path for path in (folder, folder / "node_modules") if path.is_symlink()]
+    if links or folder.resolve() != expected:
+        path = links[0] if links else folder
+        log_error(
+            f"[Sandbox] {path} leads to {path.resolve()}, which is not the folder of Curio's own "
+            f"for the sandbox's Node.js packages ({expected}), so npm is not run, and "
+            f"{_WITHOUT_NODE_PACKAGES}. Remove {path}; the next start creates the folder."
+        )
+        return None
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        for name in node_runtime.PACKAGE_FILES:
+            data = (shipped / name).read_bytes()
+            target = folder / name
+            if target.is_file() and not target.is_symlink() and target.read_bytes() == data:
+                continue
+            partial = folder / f".{name}.partial"
+            partial.write_bytes(data)
+            os.replace(partial, target)
+    except OSError as exc:
+        log_error(
+            f"[Sandbox] Could not write Curio's package.json into {folder} ({exc}), so npm is "
+            f"not run, and {_WITHOUT_NODE_PACKAGES}."
+        )
+        return None
+    return folder.resolve()
 
 
 def _run_pip(cmd: list[str], failure_label: str) -> None:

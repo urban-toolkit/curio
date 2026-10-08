@@ -1,6 +1,11 @@
 include README.md
 include pyproject.toml
 include LICENSE
+
+# The sandbox's Node.js package list. The wheel build copies both into the
+# package (setup.py), and the release builds the wheel from the sdist.
+include package.json
+include package-lock.json
 recursive-include packages *
 recursive-include datasets *
 recursive-include discovery *

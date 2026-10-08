@@ -91,7 +91,7 @@ Two sources reach OpenStreetMap:
   request a second for the whole server, each answer kept for a day, with a
   User-Agent naming Curio.
 - **OpenStreetMap downloads** run Node.js from the backend, with autk-db from
-  the repo-root `node_modules`, and autk-db sends its requests to
+  the sandbox's Node.js packages (see [Build and run](#3-build-and-run)), and autk-db sends its requests to
   `https://overpass-api.de` itself. They do not pass the address policy above.
   No value a user types becomes part of a URL: the area and the layers go in the
   request body, and a name with a quote, bracket, backslash or line break is
@@ -232,6 +232,8 @@ sudo systemctl reload caddy
 ## 3. Build and run
 
 This is where the frontend bundle gets compiled. The first build takes 10-15 minutes because it has to install Python and Node dependencies and run the full webpack build, subsequent builds are faster thanks to layer caching.
+
+The build also installs the sandbox's Node.js packages (autk-db, which Autark data nodes and OpenStreetMap downloads run) into `node_modules/` beside the repository's `package.json`, and `curio.py start` checks them with `npm install` there on every start.
 
 > [!WARNING]
 > **Always deploy with both compose files.** `docker-compose.yml` alone starts

@@ -1,28 +1,90 @@
 """How Curio runs autk-db in Node, shared by every caller.
 
-The sandbox's JS nodes (``app/worker.py::execute_js_code``) and the Discovery
-Catalog's OpenStreetMap loader (``backend/app/discovery/providers/autark_osm.py``)
-both run Node against the repo-root ``node_modules``, so they resolve the same
-autk-db build, and both identify themselves to Overpass the same way.
+The launcher installs the sandbox's Node.js packages
+(``cli/dependencies.py::_ensure_root_node_modules``), and the sandbox's JS
+nodes (``app/worker.py::execute_js_code``) and the Discovery Catalog's
+OpenStreetMap loader (``backend/app/discovery/providers/autark_osm.py``) run
+Node against them. All three find the folder through :func:`nodejs_dir`, so
+they agree on one autk-db, and both Node callers identify themselves to
+Overpass the same way.
 """
 
+import json
 import os
 import pathlib
 
-#: The repository root: ``utk_curio/sandbox/util/`` is three levels below it.
+#: The folder that holds ``utk_curio/``: the repository root in a clone, the
+#: Docker image and CI; site-packages in a pip install.
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 
-#: The ``node_modules`` the root ``package.json`` installs autk-db into.
-ROOT_NODE_MODULES = REPO_ROOT / 'node_modules'
+#: The files that name the Node.js packages the sandbox runs.
+PACKAGE_FILES = ('package.json', 'package-lock.json')
+
+#: Where the pip package carries the repository's ``PACKAGE_FILES``, under the
+#: folder that holds ``utk_curio/``. A wheel holds only package folders, so the
+#: build copies them there (``setup.py``); a clone has none.
+SHIPPED_PACKAGE_FILES = pathlib.PurePosixPath('utk_curio', 'sandbox', 'nodejs')
+
+#: The folder of Curio's state directory where a pip install keeps the
+#: sandbox's Node.js packages.
+NODEJS_FOLDER = 'nodejs'
+
+AUTK_DB = '@urban-toolkit/autk-db'
 
 #: What every Overpass request from Curio's Node processes says it is. The
 #: Overpass usage policy asks a client to identify itself.
 OVERPASS_USER_AGENT = 'Curio (https://curio.urbantk.org) autk-db'
 
 
-def node_env(base=None):
+def is_curio_package_json(path):
+    """Whether *path* is a package.json of Curio's own: named ``curio``, with
+    autk-db among its dependencies."""
+    try:
+        data = json.loads(pathlib.Path(path).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    dependencies = data.get('dependencies')
+    return data.get('name') == 'curio' and isinstance(dependencies, dict) and AUTK_DB in dependencies
+
+
+def state_dir():
+    """Curio's state directory: ``CURIO_STATE_DIR``, or ``.curio`` in the
+    folder Curio was started from (``CURIO_LAUNCH_CWD``). Read at call time, as
+    the backend's ``user_storage.curio_root`` reads it, but without its
+    ``test/`` folder: the Node.js packages are an install, not test state."""
+    override = os.environ.get('CURIO_STATE_DIR')
+    if override:
+        return pathlib.Path(override)
+    return pathlib.Path(os.environ.get('CURIO_LAUNCH_CWD') or os.getcwd()) / '.curio'
+
+
+def nodejs_dir(root=None):
+    """The folder that holds Curio's package.json for the sandbox's Node.js
+    packages, and the ``node_modules`` npm installs from it.
+
+    *root* is the folder that holds ``utk_curio/`` (``REPO_ROOT`` when None). A
+    clone, the Docker image and CI have Curio's package.json there, and use that
+    folder. A pip install has site-packages there, which is not Curio's folder:
+    its packages go to ``nodejs/`` in Curio's state directory, where the
+    launcher writes the package.json and package-lock.json the package ships
+    (``SHIPPED_PACKAGE_FILES``).
+    """
+    root = pathlib.Path(REPO_ROOT if root is None else root)
+    if is_curio_package_json(root / 'package.json'):
+        return root
+    return state_dir() / NODEJS_FOLDER
+
+
+def node_modules_dir(root=None):
+    """The ``node_modules`` the sandbox's Node.js packages are installed in."""
+    return nodejs_dir(root) / 'node_modules'
+
+
+def node_env(base=None, node_modules=None):
     """The environment for a Node child: *base* (default ``os.environ``), with
-    ``ROOT_NODE_MODULES`` first on ``NODE_PATH``.
+    *node_modules* (default :func:`node_modules_dir`) first on ``NODE_PATH``.
 
     ``NODE_PATH`` is consulted only by the CommonJS ``require()`` resolver, not
     by ESM, so it does not resolve a top-level autk-db import (callers rewrite
@@ -30,9 +92,10 @@ def node_env(base=None):
     any CJS ``require()`` autk-db's worker threads perform.
     """
     env = dict(os.environ if base is None else base)
-    if ROOT_NODE_MODULES.is_dir():
+    node_modules = pathlib.Path(node_modules) if node_modules is not None else node_modules_dir()
+    if node_modules.is_dir():
         existing = env.get('NODE_PATH', '')
-        env['NODE_PATH'] = str(ROOT_NODE_MODULES) + (os.pathsep + existing if existing else '')
+        env['NODE_PATH'] = str(node_modules) + (os.pathsep + existing if existing else '')
     return env
 
 

@@ -997,6 +997,17 @@ per-user work directory it is **not** owned by the execution account: it is an
 import path, so node code writing there could shadow a later import. The
 startup audit reports it if it ever becomes writable.
 
+### The sandbox's Node.js packages
+
+autk-db runs in Node.js for the sandbox's JS nodes (`/execJs`, and Compare Scenarios' raster Difference) and for the backend's OpenStreetMap downloads (`autark_osm.mjs`). [`sandbox/util/node_runtime.py`](../utk_curio/sandbox/util/node_runtime.py) `nodejs_dir` names, at call time, the folder whose `node_modules` they all read and the launcher installs:
+
+- In a clone, the Docker image and CI, the folder that holds `utk_curio/` has Curio's `package.json` (named `curio`, with autk-db among its dependencies), and the packages are in `node_modules/` beside it. The image installs them with `npm ci` when it is built.
+- A pip install has site-packages there, so its packages go to `nodejs/` in Curio's state directory (`CURIO_STATE_DIR`, or `.curio/` in the launch directory, never its `test/` folder). A wheel holds only package folders, so `setup.py`'s `build_py` copies the repository's `package.json` and `package-lock.json` into the package at `utk_curio/sandbox/nodejs/` (`SHIPPED_PACKAGE_FILES`), and `MANIFEST.in` puts them in the sdist the release builds the wheel from.
+
+On every start, `cli/dependencies.py::_ensure_root_node_modules` runs `npm install --prefix <folder>` in that folder, after writing the shipped files there on a pip install (each replaced, never written through). npm runs only in a folder that holds Curio's `package.json`: pointed at one without it, npm takes the nearest folder above that holds a `package.json` or a `node_modules` as its project, which for a pip install in a conda environment is `<env>/lib`, and empties its `node_modules`, conda's npm with it. A shipped file that is missing or not Curio's, or a `.curio/nodejs` or its `node_modules` that is a link, is reported and npm is not run. A tree another Node.js major installed (`NODE_STAMP`) is removed only in that folder.
+
+`.curio/nodejs` is in the sandbox's `SENSITIVE_PATHS`: Node runs as the sandbox's own user and never in an isolated child, and hardening keeps the execution account from changing a module the sandbox's Node imports.
+
 ### DuckDB extensions come from this instance
 
 autk-db's `init()` runs `INSTALL spatial; LOAD spatial;`, and DuckDB autoloads
@@ -2171,6 +2182,6 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `cli/environment.py` | `set_environment_variables` (arguments to environment variables) and the isolation decision |
 | `cli/frontend_build.py` | `NODE_MAJOR`, Node and node_modules checks, the frontend build and its stamp |
 | `cli/static_server.py` | `run_spa_static_server`, the static server for the built frontend |
-| `cli/dependencies.py` | pip and manifest dependency installs, the root node_modules, DuckDB extension seeding |
+| `cli/dependencies.py` | pip and manifest dependency installs, the sandbox's Node.js packages, DuckDB extension seeding |
 | `cli/services.py` | `start_frontend`, `start_backend`, `start_sandbox`, the database migration, `_kill_port` |
 | `cli/test_runner.py` | `curio test` and its translation to `scripts/test.sh` flags |

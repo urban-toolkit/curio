@@ -26,8 +26,8 @@ import time
 from utk_curio.common.redaction import redact
 from utk_curio.sandbox.util.node_runtime import (
     OVERPASS_USER_AGENT,
-    ROOT_NODE_MODULES,
     node_env,
+    node_modules_dir,
     resolve_pkg_entry_url,
 )
 from utk_curio.sandbox.util.secrets import make_curio_secret
@@ -881,13 +881,14 @@ def backend_base_url():
     return f'http://{host}:{port}'
 
 
-def run_js_script(code, input_data, *, cwd, node_type, t0=None, node_flags=()):
+def run_js_script(code, input_data, *, cwd, node_type, t0=None, node_flags=(), node_modules=None):
     """Run JavaScript in one Node.js subprocess, the way a JS node runs.
 
     The code is wrapped by ``util/js_wrapper.mjs`` with *input_data* as
-    ``arg``, its bare package imports are resolved against the repo-root
-    node_modules, and it runs under the JS slot, once more if Node died in its
-    own HTTP parser. *node_flags* go to ``node`` before the script.
+    ``arg``, its bare package imports are resolved against *node_modules*
+    (default: the sandbox's, ``node_runtime.node_modules_dir``), and it runs
+    under the JS slot, once more if Node died in its own HTTP parser.
+    *node_flags* go to ``node`` before the script.
 
     :func:`execute_js_code` and the Compare Scenarios node's raster difference
     (``util/scenario_difference.py``) both run Node through this, so they run
@@ -907,14 +908,14 @@ def run_js_script(code, input_data, *, cwd, node_type, t0=None, node_flags=()):
         t0 = time.perf_counter()
 
     # Resolve bare package specifiers (e.g. '@urban-toolkit/autk-db') to an
-    # ABSOLUTE file URL under the repo-root node_modules so the dynamic ESM
+    # ABSOLUTE file URL under the sandbox's node_modules so the dynamic ESM
     # import() below resolves regardless of the Node subprocess cwd. Node's ESM
     # resolver does NOT consult NODE_PATH and resolves a bare specifier only by
     # walking node_modules up from the importing module - which fails when
-    # CURIO_LAUNCH_CWD is outside the repo. Rewriting only the top-level
+    # CURIO_LAUNCH_CWD is outside that folder. Rewriting only the top-level
     # specifier is enough: the package's own internal imports still resolve
     # relative to its installed location.
-    root_node_modules = ROOT_NODE_MODULES
+    root_node_modules = pathlib.Path(node_modules) if node_modules is not None else node_modules_dir()
 
     def _resolved_source(quoted_source):
         # quoted_source keeps its surrounding quotes, e.g. "'@urban-toolkit/autk-db'".
@@ -974,7 +975,7 @@ def run_js_script(code, input_data, *, cwd, node_type, t0=None, node_flags=()):
     # NODE_PATH is a belt-and-braces aid for any CJS require() autk-db's
     # worker threads perform (see node_runtime.node_env). cwd stays
     # launch_dir so other JS nodes' relative file reads keep working.
-    node_env_vars = node_env()
+    node_env_vars = node_env(node_modules=root_node_modules)
 
     def _run_node():
         """Run the script in one Node subprocess, up to the JS ceiling.
