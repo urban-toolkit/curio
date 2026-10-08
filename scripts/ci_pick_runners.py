@@ -3,7 +3,7 @@
 CPU jobs run on GitHub-hosted ``ubuntu-latest`` while the organization's
 hosted runners have room, and on the self-hosted arcade pool
 (``[self-hosted, cpu]``) after that. The GPU job (test-gpu) runs on the arcade
-GPU pool (arcade-gpu-01..06, ``[self-hosted, gpu, h100]``) while it has a free
+GPU pool (arcade-gpu-01..04, ``[self-hosted, gpu, h100]``) while it has a free
 runner, and on utk-gpu (``[self-hosted, gpu, curio]``) when it has none.
 GitHub cannot express "this runner, or that one if busy": ``runs-on`` has no
 "or", and it sends ``ubuntu-latest`` jobs only to its own runners. So the
@@ -50,8 +50,8 @@ GPU_POOLS = ("arcade-gpu", "utk")
 
 #: Runners in the arcade CPU pool (arcade-cpu-01..40).
 CPU_RUNNERS = 40
-#: Runners in the arcade GPU pool (arcade-gpu-01..06, all on one H100).
-GPU_RUNNERS = 6
+#: Runners in the arcade GPU pool (arcade-gpu-01..04, all on one H100).
+GPU_RUNNERS = 4
 #: Concurrent GitHub-hosted jobs the organization's plan allows.
 HOSTED_SLOTS = 20
 
