@@ -680,13 +680,16 @@ WEBGPU_ANSWER_MS = 4000
 
 # Before the page's own scripts. The first ``requestAdapter`` answers after
 # WEBGPU_ANSWER_MS, and so does every call made while it is out; later calls,
-# autk-map's own among them, answer at once.
+# autk-map's own among them, answer at once. The page notes that it held one.
 _WEBGPU_ANSWERS_LATE_JS = """(() => {
     if (typeof GPU === "undefined" || !navigator.gpu) return;
     const request = GPU.prototype.requestAdapter;
     let answered = null;
     GPU.prototype.requestAdapter = function (...args) {
-        answered = answered || new Promise((resolve) => setTimeout(resolve, %d));
+        if (!answered) {
+            window.__curioTestWebGpuHeld = true;
+            answered = new Promise((resolve) => setTimeout(resolve, %d));
+        }
         return answered.then(() => request.apply(this, args));
     };
 })();""" % WEBGPU_ANSWER_MS
@@ -778,3 +781,6 @@ def test_an_autark_map_tile_draws_when_webgpu_answers_after_its_rows(
     project_id = _autark_tile_pinned_and_saved(page, app_frontend, current_server)
     page.add_init_script(_WEBGPU_ANSWERS_LATE_JS)
     _the_tile_draws_without_a_run(page, app_frontend.base_url, project_id)
+    assert page.evaluate("() => window.__curioTestWebGpuHeld === true"), (
+        "the dashboard never asked for WebGPU, so no answer came late"
+    )
