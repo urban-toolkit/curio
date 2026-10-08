@@ -45,14 +45,16 @@ describe("scenarioLayers", () => {
 });
 
 describe("colorScenarioLayers", () => {
-  test("each layer is drawn in its scenario's color, not color-mapped", () => {
+  test("each layer is drawn in its scenario's color, not color-mapped, with a darker outline", () => {
     const { grammar, map } = fakeGrammar();
     colorScenarioLayers(grammar, spec, scenarios);
     expect(map.updateRenderInfo).toHaveBeenCalledWith("input_1", {
       isColorMap: false, color: { r: 0x2a, g: 0x9d, b: 0x8f, alpha: 1 },
+      strokeColor: { r: 27, g: 102, b: 93, alpha: 1 },
     });
     expect(map.updateRenderInfo).toHaveBeenCalledWith("input_2", {
       isColorMap: false, color: { r: 0xe7, g: 0x6f, b: 0x51, alpha: 1 },
+      strokeColor: { r: 150, g: 72, b: 53, alpha: 1 },
     });
     expect(map.updateRenderInfo).toHaveBeenCalledTimes(2);
   });
@@ -66,6 +68,34 @@ describe("colorScenarioLayers", () => {
     const rows = Array.from(legends[0].children) as HTMLElement[];
     expect(rows.map((row) => row.textContent)).toEqual(["Dry", "Avoid wind"]);
     expect((rows[0].firstElementChild as HTMLElement).style.backgroundColor).toBe("rgb(53, 103, 199)");
+  });
+
+  test("a layer with a color of its own wears it, with its outline, and the legend names it by its label", () => {
+    const { grammar, map, host } = fakeGrammar();
+    const routes = {
+      map: {
+        layerRefs: [
+          { dataRef: "input_0" },
+          { dataRef: "input_1", color: "#90CAF9", stroke: "#42A5F5", label: "Fastest route" },
+          { dataRef: "input_2", color: "#00ACC1" },
+          { dataRef: "input_3", color: "not a color" },
+        ],
+      },
+    };
+    colorScenarioLayers(grammar, routes, scenarios);
+    expect(map.updateRenderInfo).toHaveBeenCalledWith("input_1", {
+      isColorMap: false, color: { r: 0x90, g: 0xca, b: 0xf9, alpha: 1 },
+      strokeColor: { r: 0x42, g: 0xa5, b: 0xf5, alpha: 1 },
+    });
+    // No stroke: a darker shade of its color.
+    expect(map.updateRenderInfo).toHaveBeenCalledWith("input_2", {
+      isColorMap: false, color: { r: 0x00, g: 0xac, b: 0xc1, alpha: 1 },
+      strokeColor: { r: 0, g: 112, b: 125, alpha: 1 },
+    });
+    expect(map.updateRenderInfo).toHaveBeenCalledTimes(2);
+    const rows = Array.from(host.querySelector(`[${SCENARIO_LEGEND_ATTR}]`)!.children) as HTMLElement[];
+    expect(rows.map((row) => row.textContent)).toEqual(["Fastest route", "input_2"]);
+    expect((rows[0].firstElementChild as HTMLElement).style.border).toBe("2px solid rgb(66, 165, 245)");
   });
 
   test("a map with no scenario layer gets no legend, and a missing registry is no error", () => {

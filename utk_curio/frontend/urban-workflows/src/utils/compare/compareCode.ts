@@ -48,11 +48,11 @@ export function stackCode(inputs: readonly CodeInput[], layer?: string): string 
 
 /**
  * The difference code for these inputs, in circle order, joining rows on
- * *key* and reading *layer* from an Autark node's several. The key comes last,
- * as `keyOfCode` reads it.
+ * *key*, reading *layer* from an Autark node's several, and, when *absolute*,
+ * giving each difference's size. The key comes last, as `keyOfCode` reads it.
  */
-export function differenceCode(inputs: readonly CodeInput[], key?: string, layer?: string): string {
-  const args = `${layerArgument(layer)}${key ? `, key=${widgetLiteral(key, "python")}` : ""}`;
+export function differenceCode(inputs: readonly CodeInput[], key?: string, layer?: string, absolute?: boolean): string {
+  const args = `${layerArgument(layer)}${absolute ? ", absolute=True" : ""}${key ? `, key=${widgetLiteral(key, "python")}` : ""}`;
   if (inputs.length === 0) return [...DIFFERENCE_CODE_NOTE, `return ${DIFFERENCE_HELPER}([]${args})`, ""].join("\n");
   return [...DIFFERENCE_CODE_NOTE, `return ${DIFFERENCE_HELPER}([`, ...inputs.map(entryLine), `]${args})`, ""].join("\n");
 }
@@ -64,7 +64,9 @@ export function compareCode(
   difference?: CompareDifference,
   layer?: string,
 ): string {
-  return mode === "difference" ? differenceCode(inputs, difference?.key, layer) : stackCode(inputs, layer);
+  return mode === "difference"
+    ? differenceCode(inputs, difference?.key, layer, difference?.absolute)
+    : stackCode(inputs, layer);
 }
 
 /** The view *code* was written for, by the step it calls, or null for code that calls neither. */
@@ -91,6 +93,11 @@ export function keyOfCode(code: string): string | undefined {
 }
 
 const LAYER_RE = /\blayer=("(?:[^"\\]|\\.)*")[,)]/;
+
+/** Whether the difference code gives each difference's size. */
+export function absoluteOfCode(code: string): boolean {
+  return /\babsolute=True\b/.test(code);
+}
 
 /** The layer the code reads from an Autark node's several, or undefined when it names none. */
 export function layerOfCode(code: string): string | undefined {

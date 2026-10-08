@@ -182,6 +182,8 @@ def execute_isolated(
     models=None,
     dataset_formats=None,
     package_modules=None,
+    computed=None,
+    input_slots=None,
 ):
     """Run one node in an isolated child. Returns the standard response dict.
 
@@ -270,6 +272,8 @@ def execute_isolated(
             limits=config.limits,
             wall_timeout=config.wall_timeout,
             secrets=secrets,
+            computed=computed,
+            input_slots=input_slots,
         )
 
         client = supervisor.ZygoteClient(config.socket_path)
@@ -313,6 +317,13 @@ def execute_isolated(
         output = {"path": art_id, "dataType": descriptor["kind"]}
         if dataset_file:
             output["dataset"] = dataset_file
+        # What the child saved under <scratch>/saved, copied out before the
+        # scratch directory goes (util/saved_files.py).
+        from utk_curio.sandbox.util.saved_files import collect_saved
+
+        saved_files = collect_saved(scratch_dir, _shared_data_dir())
+        if saved_files:
+            output["savedFiles"] = saved_files
         return {
             "stdout": manifest["stdout"],
             "stderr": manifest["stderr"],

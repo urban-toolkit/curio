@@ -17,7 +17,7 @@
       "spatialpandas": ">=0.5.0"
     }
   },
-  "description": "SCOUT's building rasterizer, ported from SCOUT (urban-toolkit/scout): the Rasterize Buildings node runs SCOUT's convert_raster on a buildings layer and joins the zoom-16 height tiles it writes, the input of SCOUT's Deep Umbra shadow model, into one raster in metres that an Autark map draws.",
+  "description": "SCOUT's building rasterizer, ported from SCOUT (urban-toolkit/scout): the Rasterize Buildings node runs SCOUT's convert_raster on a buildings layer and saves the zoom-16 height tiles it writes, the input of SCOUT's Deep Umbra shadow model, as the dataflow's computed dataset \"tiles\"; Mosaic Tiles joins them into one raster in metres that an Autark map draws.",
   "id": "scout.raster-conversion",
   "license": "MIT",
   "name": "SCOUT Raster Conversion",
@@ -27,7 +27,7 @@
   "templates": [
     {
       "category": "computation",
-      "description": "SCOUT's OSM vector to raster: SCOUT's convert_raster draws each building's height into 256 by 256 map tiles at a zoom level, 8-bit gray where 255 is the maximum height, in EPSG:3395. Input: a buildings GeoDataFrame with a column of heights in metres. Output: one RASTER, the tiles side by side, heights in metres, for an Autark map and for Accumulated Shadow (scout.shadow).",
+      "description": "SCOUT's OSM vector to raster: SCOUT's convert_raster draws each building's height into 256 by 256 map tiles at a zoom level, 8-bit gray where 255 is the maximum height, in EPSG:3395. Input: a buildings GeoDataFrame with a column of heights in metres. Output: the tiles, saved as one of this dataflow's computed datasets under the name the \"Save tiles as\" widget gives (\"tiles\"), and a DATAFRAME of them (zoom, x, y, max_height) for Mosaic Tiles.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
@@ -38,7 +38,9 @@
       "inputPorts": [
         {
           "cardinality": "1",
-          "types": ["GEODATAFRAME"]
+          "types": [
+            "GEODATAFRAME"
+          ]
         }
       ],
       "label": "Rasterize Buildings",
@@ -46,7 +48,9 @@
       "outputPorts": [
         {
           "cardinality": "1",
-          "types": ["RASTER"]
+          "types": [
+            "DATAFRAME"
+          ]
         }
       ],
       "source": "sources/rasterize-buildings.py",
@@ -62,14 +66,66 @@
           "type": "number",
           "label": "Zoom level",
           "default": 16,
-          "options": {"min": 1, "max": 20, "step": 1}
+          "options": {
+            "min": 1,
+            "max": 20,
+            "step": 1
+          }
         },
         {
           "name": "max_height",
           "type": "number",
           "label": "Maximum height",
           "default": 550,
-          "options": {"min": 1, "step": 1, "units": "m"}
+          "options": {
+            "min": 1,
+            "step": 1,
+            "units": "m"
+          }
+        },
+        {
+          "name": "tiles",
+          "type": "text",
+          "label": "Save tiles as",
+          "default": "tiles"
+        }
+      ]
+    },
+    {
+      "category": "computation",
+      "description": "The tiles Rasterize Buildings saved, side by side in one raster. Input: Rasterize Buildings' DATAFRAME of tiles (zoom, x, y, max_height); the tiles are read from the computed dataset of this dataflow the \"Tiles\" widget names, as Rasterize Buildings saved them (\"tiles\"). Output: one RASTER in EPSG:3395, heights in metres, for an Autark map and for Accumulated Shadow (scout.shadow).",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": true,
+      "iconRef": "fa-solid:border-all",
+      "id": "mosaic-tiles",
+      "inputPorts": [
+        {
+          "cardinality": "1",
+          "types": [
+            "DATAFRAME"
+          ]
+        }
+      ],
+      "label": "Mosaic Tiles",
+      "behavior": "code",
+      "outputPorts": [
+        {
+          "cardinality": "1",
+          "types": [
+            "RASTER"
+          ]
+        }
+      ],
+      "source": "sources/mosaic-tiles.py",
+      "widgets": [
+        {
+          "name": "tiles",
+          "type": "text",
+          "label": "Tiles",
+          "default": "tiles"
         }
       ]
     }

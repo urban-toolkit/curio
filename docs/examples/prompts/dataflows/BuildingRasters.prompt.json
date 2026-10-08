@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/BuildingRasters.json",
-    "sha256": "a14583cfb6c78a7133ef950cc463dbdd9680e7cdbb77ea8797b5d0c4da1c885b",
+    "sha256": "77958828b74b1945af5aa6169d660f12c0c3a5169da67960b762d829a471f833",
     "walkthrough": null
   },
   "prompt": "Make me twelve rectangular buildings in two rows in the Chicago Loop in a loading step, each with a different height in metres. Turn their heights into zoom 16 map tiles and a height mosaic with SCOUT's building rasterizer, and draw the mosaic on an Autark map. The rasterizer is not part of the standard node set, so whatever provides it needs installing first.",
@@ -33,6 +33,13 @@
       },
       {
         "ref": "analysis1",
+        "type": "scout.raster-conversion/mosaic-tiles",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
         "type": "scout.raster-conversion/rasterize-buildings",
         "role": "analysis",
         "executable": true,
@@ -42,12 +49,17 @@
     "edges": [
       {
         "from": "loader1",
-        "to": "analysis1",
+        "to": "analysis2",
         "kind": "data"
       },
       {
         "from": "analysis1",
         "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "analysis1",
         "kind": "data"
       }
     ],
@@ -67,10 +79,19 @@
       "outputKind": "geodataframe"
     },
     {
+      "ref": "analysis2",
+      "mustMention": [
+        "height",
+        "tile"
+      ],
+      "outputKind": "dataframe"
+    },
+    {
       "ref": "analysis1",
       "mustMention": [
         "tile"
-      ]
+      ],
+      "outputKind": "raster"
     }
   ],
   "execution": {

@@ -499,10 +499,10 @@ def _scenario_spec() -> dict:
             "nodes": [
                 pinned(_node(SCN_LOAD, "curio.builtin/data-loading", 0, PRODUCER_CODE)),
                 pinned(factor),
-                pinned(_node(SCN_BASE, "curio.builtin/computation-analysis", 700, "return arg\n")),
+                pinned(_node(SCN_BASE, "curio.builtin/computation-analysis", 700, "return input_0\n")),
                 pinned({**_node(SCN_TALL, "curio.builtin/computation-analysis", 700,
-                                "factor = [!! @factor !!]\nreturn arg\n"), "y": 700}),
-                pinned(_node(SCN_COMPARE, "curio.builtin/computation-analysis", 1400, "return arg\n")),
+                                "factor = [!! @factor !!]\nreturn input_0\n"), "y": 700}),
+                pinned(_node(SCN_COMPARE, "curio.builtin/computation-analysis", 1400, "return input_0\n")),
             ],
             "edges": [
                 edge(SCN_LOAD, SCN_BASE),

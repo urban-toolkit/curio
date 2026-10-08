@@ -30,8 +30,8 @@ console.log = (...args) => {
   __origLog(...args);
 };
 
-// A layer chip (#662), `[!! input 0:table_osm_roads !!]`, is written as
-// `curio_layer(arg, "table_osm_roads", 0)`: the layer of that name among the
+// A layer chip (#662), `[!! input_0:table_osm_roads !!]`, is written as
+// `curio_layer(input_0, "table_osm_roads", 0)`: the layer of that name among the
 // ones the input carries, as a FeatureCollection, found by its name exactly as
 // an Autark spec finds it. An input that is exactly one FeatureCollection with
 // no layer name (a GeoDataFrame on its own) is that layer. The input's circle
@@ -69,18 +69,20 @@ const curio_layer = (value, layer, slot = 0) => {
   if (items.length === 1 && named.length === 0 && unnamed.length === 1) return unnamed[0];
   const names = named.map(([name]) => name);
   const has = names.length > 0 ? `Its layers are ${names.join(', ')}.` : 'It carries no named layers.';
-  throw new Error(`[!! input ${slot}:${layer} !!]: input ${slot} has no layer ${layer}. ${has}`);
+  throw new Error(`[!! input_${slot}:${layer} !!]: input_${slot} has no layer ${layer}. ${has}`);
 };
 
-const arg = __ARG_JSON__;
+// The node's inputs, {input_0: ..., input_1: ...}: each wired circle k is the
+// code's input_k (util/input_names.py).
+const __inputs = __ARG_JSON__;
 const __RESULT_PREFIX = '__CURIO_JSON_RESULT__';
 
 (async () => {
 __DYNAMIC_IMPORTS__
   try {
-    const __result = await (async function(arg) {
+    const __result = await (async function(__INPUT_PARAMS__) {
 __USER_CODE__
-    })(arg);
+    })(__INPUT_ARGS__);
     try {
       process.stdout.write(__RESULT_PREFIX + JSON.stringify({ success: true, value: __result, logs: __logs }) + '\n', () => process.exit(0));
     } catch (serErr) {

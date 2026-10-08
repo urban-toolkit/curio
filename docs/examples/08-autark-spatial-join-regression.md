@@ -55,7 +55,7 @@ A grammar node with only a `data` block loads Niterói's surface, parks, water, 
 The data-only grammar node persists the layer array (`table_osm_surface` / `_parks` / `_water` / `_roads`)
 to the backend and emits a DuckDB reference. The downstream `js-computation` join receives it as the plain
 `[{ name, type, geojson }]` array, and the Curio sandbox resolves the reference automatically before the join's
-code reads it as `[!! input 0 !!]`, so no manual fetch is needed. Downstream autark nodes reference these layers by name
+code reads it as `[!! input_0 !!]`, so no manual fetch is needed. Downstream autark nodes reference these layers by name
 (`"dataRef": "table_osm_roads"`), the named-layer case of
 [Referencing Upstream Data in Autark Nodes](../ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
 
@@ -86,7 +86,7 @@ return gdf
 ```
 
 Both branches go straight into the join node: the OSM layer array on its first input circle and the raster
-row on its second. Its code reads them as `[!! input 0 !!]` and `[!! input 1 !!]` (see
+row on its second. Its code reads them as `[!! input_0 !!]` and `[!! input_1 !!]` (see
 [Several inputs](../USAGE.md#several-inputs)).
 
 ## Step 3: Spatial join LST → roads (`js-computation`, DuckDB)
@@ -98,8 +98,8 @@ every road segment. A final `rawQuery` reshapes the per-band averages into a sin
 and re-emits the layer stack (all in EPSG:3395) for a consistent CRS across surface/parks/water/roads.
 
 ```js
-const osmLayers = [!! input 0 !!];
-const rasterFc = [!! input 1 !!];
+const osmLayers = [!! input_0 !!];
+const rasterFc = [!! input_1 !!];
 // … rasterFc's geotiff_b64 is decoded into geotiffArrayBuffer …
 for (const layer of osmLayers)
   await db.loadGeojson({ geojsonObject: snapLayer(layer.geojson), outputTableName: layer.name, coordinateFormat: 'EPSG:3395', layerType: layer.type });

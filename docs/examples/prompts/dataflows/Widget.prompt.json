@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/Widget.json",
-    "sha256": "559ad958abed0b0f7d0bc3c0fb12db9ff2bf935b5ae5bdbbb562b7ffcd71ce23",
+    "sha256": "b2f04b626c08e298fb93cdb535b6d6fb4247c787a7f7285016cf1b0c4d1a4162",
     "walkthrough": null
   },
   "prompt": "Make a nine-row table of letters and numbers in a Python computation step, and add a second computation step holding a number-input widget that returns its multiplier. Feed the table and the multiplier into one further step, route part of the flow through a fan-out, and in a further computation step multiply the table's numbers by the widget's value. End with a second combining step so the multiplied result can be read alongside the original.",

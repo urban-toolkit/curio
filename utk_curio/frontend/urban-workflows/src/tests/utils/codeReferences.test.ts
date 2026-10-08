@@ -1,6 +1,6 @@
 /**
  * How a node's references become code (#662): `[!! name !!]` its widgets'
- * values, `[!! input 1 !!]` its inputs, `[!! input 1.height !!]` their columns.
+ * values, `[!! input_1 !!]` its inputs, `[!! input_1.height !!]` their columns.
  *
  * The cases live in `utils/references/codeReferences.cases.json`, which
  * `utk_curio/backend/tests/test_execution/test_code_references.py` reads too:
@@ -14,6 +14,7 @@ import {
   isReferenceableColumn,
   parseReference,
   renumberInputReferences,
+  normalizeInputReferences,
   resolveReferences,
   widgetLiteral,
   type CodeLanguage,
@@ -89,22 +90,22 @@ describe("a layer chip in code", () => {
 
   test("is the call that picks the layer, in Python and JavaScript alike", () => {
     for (const language of ["python", "javascript"] as CodeLanguage[]) {
-      const result = resolveReferences("x = [!! input 0:table_osm_roads !!]", scope(layered), language);
-      expect(result).toEqual({ code: 'x = curio_layer(arg, "table_osm_roads", 0)', problems: [] });
+      const result = resolveReferences("x = [!! input_0:table_osm_roads !!]", scope(layered), language);
+      expect(result).toEqual({ code: 'x = curio_layer(input_0, "table_osm_roads", 0)', problems: [] });
     }
   });
 
   test("a layer the input does not have names the ones it has", () => {
-    const result = resolveReferences("x = [!! input 0:table_osm_water !!]", scope(layered), "python");
+    const result = resolveReferences("x = [!! input_0:table_osm_water !!]", scope(layered), "python");
     expect(describeReferenceProblems(result.problems)).toBe(
-      "[!! input 0:table_osm_water !!]: input 0 has no layer table_osm_water. "
+      "[!! input_0:table_osm_water !!]: input_0 has no layer table_osm_water. "
         + "Its layers are table_osm_roads, table_osm_buildings.",
     );
   });
 
   test("closing up circles renumbers a layer chip and keeps its layer", () => {
-    const code = "a = [!! input 1:table_osm_roads !!]";
-    expect(renumberInputReferences(code, 0)).toBe("a = [!! input 0:table_osm_roads !!]");
+    const code = "a = [!! input_1:table_osm_roads !!]";
+    expect(renumberInputReferences(code, 0)).toBe("a = [!! input_0:table_osm_roads !!]");
   });
 });
 
@@ -122,12 +123,26 @@ describe("references", () => {
     expect(describeReferenceProblems(problems).split("\n")).toHaveLength(2);
   });
 
+  test("an input chip saved the old way is written as a chip writes it now, and runs the same", () => {
+    const code = "a = [!! input 0 !!]\nb = [!!input 1.area!!]  # [!! input 2:roads.lanes !!]\nc = [!! input ? !!] + [!! input_1 !!] + [!! factor !!]";
+    expect(normalizeInputReferences(code)).toBe(
+      "a = [!! input_0 !!]\nb = [!! input_1.area !!]  # [!! input_2:roads.lanes !!]\nc = [!! input_? !!] + [!! input_1 !!] + [!! factor !!]",
+    );
+    expect(normalizeInputReferences("x = 1")).toBe("x = 1");
+    const scope = { widgets: [{ name: "factor", type: "number" as const, default: 2 }], inputs: [{ slot: 0 }, { slot: 1 }], shared: [] };
+    const old = "a = [!! input 1 !!] * [!! factor !!]";
+    expect(resolveReferences(normalizeInputReferences(old), scope, "python").code).toBe(resolveReferences(old, scope, "python").code);
+  });
+
   test("an input, a column and a widget are told apart", () => {
     expect(parseReference("input 2")).toEqual({ kind: "input", slot: 2 });
     expect(parseReference("input 2.pop.2020")).toEqual({ kind: "input", slot: 2, column: "pop.2020" });
     expect(parseReference("input ?")).toEqual({ kind: "input", slot: null });
     expect(parseReference("input")).toEqual({ kind: "widget", name: "input" });
-    expect(parseReference("input_2")).toEqual({ kind: "widget", name: "input_2" });
+    expect(parseReference("input_2.pop.2020")).toEqual({ kind: "input", slot: 2, column: "pop.2020" });
+    expect(parseReference("input_?")).toEqual({ kind: "input", slot: null });
+    expect(parseReference("input_2")).toEqual({ kind: "input", slot: 2 });
+    expect(parseReference("input_2x")).toEqual({ kind: "widget", name: "input_2x" });
   });
 
   test("a selection tag is told apart from a widget named selection", () => {
@@ -148,39 +163,39 @@ describe("references", () => {
 
   test("an empty input is named, with the node that feeds it", () => {
     const message = describeEmptyInputs([1], [{ slot: 0 }, { slot: 1, label: "Parcels" }]);
-    expect(message).toBe("Input 1 (from Parcels) has no value yet. Run the node that feeds it.");
+    expect(message).toBe("input_1 (from Parcels) has no value yet. Run the node that feeds it.");
   });
 });
 
 describe("closing up circles", () => {
   test("later inputs count one less, the deleted one reports itself", () => {
-    const code = "a = [!! input 0 !!]\nb = [!! input 1.area !!]\nc = [!!input 2!!]\nw = [!! factor !!]";
+    const code = "a = [!! input_0 !!]\nb = [!! input_1.area !!]\nc = [!!input_2!!]\nw = [!! factor !!]";
     expect(renumberInputReferences(code, 1)).toBe(
-      "a = [!! input 0 !!]\nb = [!! input ?.area !!]\nc = [!! input 1 !!]\nw = [!! factor !!]",
+      "a = [!! input_0 !!]\nb = [!! input_?.area !!]\nc = [!! input_1 !!]\nw = [!! factor !!]",
     );
   });
 
   test("code without input references is returned as it is", () => {
-    const code = "x = [!! factor !!] # input 3";
+    const code = "x = [!! factor !!] # input_3";
     expect(renumberInputReferences(code, 0)).toBe(code);
   });
 
   test("deleting two circles, the lower first, keeps each chip on its input", () => {
-    const code = "[!! input 0 !!] [!! input 1 !!] [!! input 2 !!] [!! input 3 !!]";
+    const code = "[!! input_0 !!] [!! input_1 !!] [!! input_2 !!] [!! input_3 !!]";
     const once = renumberInputReferences(code, 2);
-    expect(renumberInputReferences(once, 1)).toBe("[!! input 0 !!] [!! input ? !!] [!! input ? !!] [!! input 1 !!]");
+    expect(renumberInputReferences(once, 1)).toBe("[!! input_0 !!] [!! input_? !!] [!! input_? !!] [!! input_1 !!]");
   });
 
   test("after closing up, the chips resolve to the inputs they named", () => {
-    // Inputs 0, 1 and 2 feed the node; input 1 is deleted, so input 2 is now
-    // input 1 and is arg[1] of the two that remain.
-    const code = renumberInputReferences("return [!! input 2 !!]", 1);
+    // Inputs 0, 1 and 2 feed the node; input_1 is deleted, so input_2 is now
+    // input_1, the second of the two that remain.
+    const code = renumberInputReferences("return [!! input_2 !!]", 1);
     const { code: resolved } = resolveReferences(
       code,
       { widgets: [], inputs: [{ slot: 0 }, { slot: 1 }], shared: [] },
       "python",
     );
-    expect(resolved).toBe("return arg[1]");
+    expect(resolved).toBe("return input_1");
   });
 });
 

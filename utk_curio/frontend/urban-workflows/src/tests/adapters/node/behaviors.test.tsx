@@ -1227,7 +1227,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
 
         expect(setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error')).toBeUndefined();
         expect(api().fetchData.mock.calls.filter((c: any[]) => c[0] === 'art-r')).toHaveLength(0);
-        expect(fetchRaster).toHaveBeenCalledWith('art-r', expect.objectContaining({ maxCells: 2048 * 2048 }));
+        expect(fetchRaster).toHaveBeenCalledWith('art-r', expect.objectContaining({ maxCells: 4096 * 4096 }));
         expect(runSpec.data.map((s: any) => [s.type, s.outputTableName])).toEqual([['curio-raster', 'input_0']]);
         expect(mockAutkDbLoadGeoTiff).toHaveBeenCalledWith({
           geotiffArrayBuffer: bytes,

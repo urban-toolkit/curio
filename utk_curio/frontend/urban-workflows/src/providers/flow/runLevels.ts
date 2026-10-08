@@ -10,8 +10,51 @@ export function directedEdgesOf<E extends { sourceHandle?: string | null; target
     return edges.filter(e => !(e.sourceHandle === "in/out" && e.targetHandle === "in/out"));
 }
 
+// Literal curio_save_file("<name>.<ext>") / curio_save_folder("<name>") and
+// curio_computed_path("<name>") calls: the twins of SAVE_CALL_RE and
+// COMPUTED_PATH_CALL_RE in the backend's datasets/domain/saved_files.py.
+const SAVE_CALL = /curio_save_(?:file|folder)\(\s*(["'])([a-z][a-z0-9-]{0,62})(?:\.[A-Za-z0-9]{1,8})?\1\s*\)/g;
+const COMPUTED_PATH_CALL = /curio_computed_path\(\s*(["'])([a-z][a-z0-9-]{0,62})\1\s*\)/g;
+
+function namesIn(code: unknown, pattern: RegExp): string[] {
+    if (typeof code !== "string") return [];
+    return [...new Set([...code.matchAll(pattern)].map(m => m[2]))];
+}
+
+/**
+ * An ordering edge from each node whose code saves a name to each other node
+ * whose code reads it with curio_computed_path, so Run All runs the reader
+ * after the saver with no data edge between them (run_plan.saved_file_edges
+ * on the server). They order a run and carry no data.
+ */
+export function savedFileEdges(nodes: Node[]): Edge[] {
+    const savers = new Map<string, string[]>();
+    for (const n of nodes) {
+        for (const name of namesIn(n.data?.code, SAVE_CALL)) {
+            savers.set(name, [...(savers.get(name) ?? []), n.id]);
+        }
+    }
+    const edges: Edge[] = [];
+    for (const n of nodes) {
+        for (const name of namesIn(n.data?.code, COMPUTED_PATH_CALL)) {
+            for (const saver of savers.get(name) ?? []) {
+                if (saver !== n.id) {
+                    edges.push({ id: `saved-${saver}-${n.id}-${name}`, source: saver, target: n.id, type: "SavedFile" });
+                }
+            }
+        }
+    }
+    return edges;
+}
+
+/** *edges* with the saved-file ordering edges among *nodes* that it does not hold yet. */
+function withSavedFileEdges(nodes: Node[], edges: Edge[]): Edge[] {
+    const ids = new Set(edges.map(e => e.id));
+    return [...edges, ...savedFileEdges(nodes).filter(e => !ids.has(e.id))];
+}
+
 export function computeTopologicalLevels(nodes: Node[], edges: Edge[]): string[][] {
-    const directedEdges = directedEdgesOf(edges);
+    const directedEdges = directedEdgesOf(withSavedFileEdges(nodes, edges));
 
     const inDegree = new Map<string, number>();
     const successors = new Map<string, string[]>();
@@ -65,6 +108,8 @@ export function nodesToRunUpTo(
     emittedForInput: Map<string, unknown>,
 ): { ancestorIds: Set<string>; willRun: Set<string> } {
     const targets = typeof target === "string" ? [target] : [...target];
+    // A node reading a file another saves depends on it, as on an edge.
+    currentEdges = withSavedFileEdges(currentNodes, currentEdges);
     const directedEdges = directedEdgesOf(currentEdges);
 
     const predecessors = new Map<string, string[]>();

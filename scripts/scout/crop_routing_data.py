@@ -8,9 +8,9 @@ two cuts: the weather into the Data Catalog, each dataset with its manifest,
 and the roads as the scout.routing proof's test fixture (a Curio road graph
 comes from a Curio roads layer, so SCOUT's graph is not a dataset):
 
-- Weather, the NetCDF group `netcdf.scout-wrf`: the five variables (RAIN, T2, RH2,
-  WSPD10, WDIR10), `data.scout.wrf-<variable>`, each still a NetCDF file of its
-  own with its grid, its 88 global attributes and its variable attributes. Kept:
+- Weather, one bundle dataset, `data.scout.chicago-weather-2025-07-06`: the five
+  variables (RAIN, T2, RH2, WSPD10, WDIR10), `data/<variable>.nc` listed by its
+  `data/bundle.json`, each still a NetCDF file of its own with its grid, its 88 global attributes and its variable attributes. Kept:
   every grid cell of a box around SCOUT's Chicago graph (its node extent, plus
   WEATHER_MARGIN_CELLS cells on every side), and all 49 hourly time steps (SCOUT
   counts steps from the file's first, so the time axis stays whole). Values are
@@ -64,8 +64,8 @@ import pyarrow.parquet as pq
 from scipy.spatial import cKDTree
 
 from scout_checkout import (BLOBS, CATALOG, FIXTURES, PERMISSION, ROAD_EDGES_FILE, ROAD_NODES_FILE, ROUTING,
-                            SCOUT_COMMIT, SCOUT_URL, WEATHER_GROUP, WEATHER_IDS, WEATHER_VARIABLES, blob_ids,
-                            check_scout_checkout, data_file, sha256, write_manifest)
+                            SCOUT_COMMIT, SCOUT_URL, WEATHER_ID, WEATHER_INDEX, WEATHER_VARIABLES, blob_ids,
+                            check_scout_checkout, sha256, weather_file, write_manifest, write_weather_bundle)
 
 GRAPH_PICKLE = "backend/data/osm/processed/chicago/roads.pkl.gz"
 ROADS_LAYER = "backend/data/osm/processed/chicago/roads.feather"
@@ -90,7 +90,7 @@ WEATHER_NAMES = {
     "WSPD10": ("Wind Speed at 10 m", "The wind speed at 10 m (WSPD10, in metres per second)"),
     "WDIR10": ("Wind Direction at 10 m", "The wind direction at 10 m (WDIR10, in degrees)"),
 }
-WEATHER_TAGS = ["netcdf", "weather", "wrf", "scout", "chicago"]
+WEATHER_TAGS = ["netcdf", "weather", "wrf", "scout", "chicago", "2025-07-06"]
 
 
 # Roads.
@@ -332,15 +332,17 @@ def check_weather_file(src, dst, rows, cols):
     return problems
 
 
-def weather_description(name, steps, cells, lat, lon):
-    title, what = WEATHER_NAMES[name]
+def weather_description(steps, cells, lat, lon):
+    files = "; ".join(f"{name}.nc, {WEATHER_NAMES[name][1][0].lower()}{WEATHER_NAMES[name][1][1:]}"
+                      for name in WEATHER_VARIABLES)
     return (
-        f"{what} over Chicago from SCOUT's WRF-Chem 4.5.1 forecast of 2025-07-06 00:00 UTC: {steps} hourly "
-        f"steps, 2025-07-06 00:00 to 2025-07-08 00:00 UTC, on its 1 km Lambert conformal grid, cut to the "
-        f"{cells[0]} by {cells[1]} cells around SCOUT's Chicago road graph (latitude {lat[0]:.2f} to "
-        f"{lat[1]:.2f}, longitude {lon[0]:.2f} to {lon[1]:.2f}). One of the five variables of the SCOUT WRF "
-        f"group the scout.routing package reads; its global attribute timezone ({TIMEZONE}) is the time zone "
-        f"the package reads a start time in. From SCOUT, {SCOUT_URL}, {ROUTING}/weather_data/{name}.nc, "
+        f"SCOUT's WRF-Chem 4.5.1 forecast of 2025-07-06 00:00 UTC over Chicago, the weather the scout.routing "
+        f"package reads: five NetCDF files, {steps} hourly steps from 2025-07-06 00:00 to 2025-07-08 00:00 UTC "
+        f"on its 1 km Lambert conformal grid, cut to the {cells[0]} by {cells[1]} cells around SCOUT's Chicago "
+        f"road graph (latitude {lat[0]:.2f} to {lat[1]:.2f}, longitude {lon[0]:.2f} to {lon[1]:.2f}): {files}. "
+        f"Each file's global attribute timezone ({TIMEZONE}) is the time zone the package reads a start time in. "
+        f'Read one with curio_load_data("{WEATHER_ID}", part="RAIN.nc"), or its path with '
+        f'curio_data_path("{WEATHER_ID}", part="RAIN.nc"). From SCOUT, {SCOUT_URL}, {ROUTING}/weather_data/, '
         f"{PERMISSION}."
     )
 
@@ -361,7 +363,7 @@ def crop_weather(scout, G, catalog, report):
     cells = [rows[1] - rows[0], cols[1] - cols[0]]
     files = {}
     for name in WEATHER_VARIABLES:
-        src, dst = base / f"{name}.nc", data_file(catalog, WEATHER_IDS[name])
+        src, dst = base / f"{name}.nc", weather_file(catalog, name)
         with nc.Dataset(src) as s:
             same_grid = (np.array_equal(np.asarray(s.variables["XLAT"][0]), xlat[0])
                          and np.array_equal(np.asarray(s.variables["XLONG"][0]), xlong[0]))
@@ -371,9 +373,11 @@ def crop_weather(scout, G, catalog, report):
         file_problems = check_weather_file(src, dst, rows, cols)
         problems += [f"{name}.nc: {p}" for p in file_problems]
         files[f"{name}.nc"] = {"bytes": dst.stat().st_size, "sha256": sha256(dst), "problems": file_problems}
-        write_manifest(catalog, WEATHER_IDS[name], name=f"SCOUT WRF {WEATHER_NAMES[name][0]}", fmt="netcdf",
-                       description=weather_description(name, int(xlat.shape[0]), cells, lat_range, lon_range),
-                       tags=WEATHER_TAGS, group_id=WEATHER_GROUP, layer_name=name)
+    write_weather_bundle(catalog, {name: WEATHER_NAMES[name][0] for name in WEATHER_VARIABLES})
+    write_manifest(catalog, WEATHER_ID, name="SCOUT Chicago weather, 6 July 2025", fmt="bundle",
+                   data_file=WEATHER_INDEX,
+                   description=weather_description(int(xlat.shape[0]), cells, lat_range, lon_range),
+                   tags=WEATHER_TAGS)
     report["weather"] = {
         "graph_extent": extent,
         "south_north": [rows[0], rows[1] - 1], "west_east": [cols[0], cols[1] - 1],

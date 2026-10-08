@@ -25,6 +25,7 @@ import pandas as pd
 import pytest
 
 from utk_curio.backend.app.projects.seed import _repo_root
+from utk_curio.sandbox.util.input_names import call_as_node
 
 REPO_ROOT = str(_repo_root())
 COMPARE_DIR = os.path.join(REPO_ROOT, "utk_curio", "frontend", "urban-workflows", "src", "utils", "compare")
@@ -98,12 +99,11 @@ def _spec_for(case: dict) -> dict:
     return {"dataflow": {"name": "Compare", "nodes": nodes, "edges": edges}}
 
 
-def _run(code: str, arg):
+def _run(code: str, arg, slots=None):
     from utk_curio.sandbox.util.scenario_stack import stack_scenarios
 
     namespace = {"curio_stack_scenarios": stack_scenarios}
-    exec("def userCode(arg):\n" + textwrap.indent(code, "    "), namespace)
-    return namespace["userCode"](arg)
+    return call_as_node(textwrap.indent(code, "    "), namespace, arg, slots)
 
 
 def test_the_written_code_runs_as_a_server_run_resolves_it():
@@ -120,7 +120,7 @@ def test_the_written_code_runs_as_a_server_run_resolves_it():
         assert "[!!" not in resolved, f"{case['name']}: a chip was left in the code:\n{resolved}"
         frames = [pd.DataFrame({"value": [input["slot"] * 10]}) for input in case["inputs"]]
         arg = frames[0] if len(frames) == 1 else frames
-        stacked = _run(resolved, arg)
+        stacked = _run(resolved, arg, [input["slot"] for input in case["inputs"]])
         expected = [
             [input["label"].get("scenario"), input["label"]["name"], input["slot"] * 10] for input in case["inputs"]
         ]

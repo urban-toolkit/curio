@@ -25,8 +25,9 @@ export function epsgCode(crs: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
-/** The most cells an Autark map loads from one raster: 2048 by 2048. */
-export const RASTER_MAX_CELLS = 2048 * 2048;
+/** The most cells an Autark map loads from one raster: 4096 by 4096, which
+ *  holds SCOUT's whole flood grid (2592 by 2064). */
+export const RASTER_MAX_CELLS = 4096 * 4096;
 /** The longest side WebGPU guarantees a texture. */
 export const RASTER_MAX_SIDE = 8192;
 

@@ -209,8 +209,8 @@ describe("a node shown as a notebook cell", () => {
     await mount(true);
     expect(screen.getByTestId("handle-in")).toHaveTextContent("0");
     expect(screen.getByTestId("handle-in_1")).toHaveTextContent("1");
-    expect(screen.getByTestId("handle-in")).toHaveAttribute("title", "input 0 · Load roads");
-    expect(screen.getByTestId("handle-in_1")).toHaveAttribute("title", "input 1");
+    expect(screen.getByTestId("handle-in")).toHaveAttribute("title", "input_0 · Load roads");
+    expect(screen.getByTestId("handle-in_1")).toHaveAttribute("title", "input_1");
     expect(screen.getByTestId("handle-out")).toHaveAttribute("title", "output");
   });
 

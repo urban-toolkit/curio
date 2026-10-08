@@ -539,6 +539,69 @@ def test_an_isolated_node_reads_one_part_of_a_staged_bundle(tmp_path):
     assert f"data.x.bundle has no file '../manifest.json'; its files are {BUNDLE_FILES}." in refused["stderr"]
 
 
+#: ``curio_data_path(id, part=...)``: one file of a bundle, for code that opens
+#: the file itself, as netCDF4 opens a NetCDF file.
+PATH_CODE = (
+    '    import pandas as pd\n'
+    '    path = curio_data_path("data.x.bundle", part="frame.csv")\n'
+    '    return int(pd.read_csv(path)["x"].sum()) + len(open(curio_data_path("data.x.bundle", part="Count")).read())\n'
+)
+OUTSIDE_PATH_CODE = '    return curio_data_path("data.x.bundle", part="../manifest.json")\n'
+ONE_FILE_PATH_CODE = '    return curio_data_path("data.x.table", part="t.csv")\n'
+
+
+def test_an_in_process_node_gets_one_file_of_a_bundle_by_path(tmp_path):
+    from utk_curio.sandbox.app.worker import _worker_init, execute_code
+    from utk_curio.sandbox.util.db import init_db
+
+    _worker_init()
+    init_db()
+    bundle = _bundle_dataset(tmp_path / "data.x.bundle@1")
+    table = tmp_path / "t.csv"
+    table.write_text("a\n1\n", encoding="utf-8")
+
+    def run(code):
+        return execute_code(
+            code, "", "PYTHON_COMPUTATION", "", save_dataset=False,
+            dataset_paths={"data.x.bundle": str(bundle), "data.x.table": str(table)},
+            dataset_formats={"data.x.bundle": {"format": "bundle"}, "data.x.table": {"format": "csv"}},
+        )
+
+    result = run(PATH_CODE)
+    assert result["stderr"] == "", result["stderr"]
+    # frame.csv sums to 3, and count.json is {"value": 7}, 12 characters.
+    assert result["output"]["dataType"] == "int"
+    refused = run(OUTSIDE_PATH_CODE)
+    assert f"data.x.bundle has no file '../manifest.json'; its files are {BUNDLE_FILES}." in refused["stderr"]
+    one_file = run(ONE_FILE_PATH_CODE)
+    assert 'data.x.table is one file: curio_data_path("data.x.table") gives its path.' in one_file["stderr"]
+
+
+def test_an_isolated_node_gets_one_file_of_a_staged_bundle_by_path(tmp_path):
+    from utk_curio.sandbox.isolation import child
+    from utk_curio.sandbox.util import staging
+
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    bundle = _bundle_dataset(tmp_path / "data.x.bundle@1")
+    staged = staging.stage_dataset_paths({"data.x.bundle": str(bundle)}, scratch)
+
+    def run(code):
+        return child.run_node({
+            "code": code, "node_type": "curio.builtin/computation-analysis", "data_type": "",
+            "scratch_dir": str(scratch), "input": {"kind": "none"},
+            "dataset_paths": staged, "dataset_formats": {"data.x.bundle": {"format": "bundle"}},
+            "session_imports": [], "limits": {},
+        }, lambda: {"pd": pd})
+
+    result = run(PATH_CODE)
+    assert result["ok"], result["stderr"]
+    assert result["output"]["value"] == 3 + 12
+    refused = run(OUTSIDE_PATH_CODE)
+    assert not refused["ok"]
+    assert f"data.x.bundle has no file '../manifest.json'; its files are {BUNDLE_FILES}." in refused["stderr"]
+
+
 def test_an_isolated_node_reads_a_shipped_dataset_as_in_process(tmp_path):
     """#596: the shipped chicago-labels keeps its list columns JSON-encoded and
     names them in ``chicago-labels.parquet.decode.json``. An isolated node got

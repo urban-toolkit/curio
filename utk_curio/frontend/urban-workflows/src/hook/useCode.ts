@@ -19,6 +19,7 @@ import { dataPoolFromSpec } from "../utils/dataPoolSpec";
 import { normalizeWidgets, type WidgetDef } from "../utils/widgets/widgetModel";
 import { runKeyWithShared, sharedWidgetsOfSpec } from "../utils/references/sharedParameters";
 import { normalizeSelections, type SelectionTag } from "../utils/references/selectionTags";
+import { normalizeInputReferences } from "../utils/references/codeReferences";
 import { lineageFromSpec } from "../utils/scenarios/duplicateSelection";
 import { normalizeCompareSettings, type CompareSettings } from "../utils/compare/compareSettings";
 import { normalizeEditFeatures, type EditFeaturesSettings } from "../utils/editFeatures/editFeatures";
@@ -161,7 +162,7 @@ export function useCode(): IUseCode {
         // key covers, as a run's does.
         const shared = sharedWidgetsOfSpec(trill.dataflow.nodes);
 
-        for(const node of trill.dataflow.nodes){
+        for(let node of trill.dataflow.nodes){
             let x = node.x;
             let y = node.y;
             const parsedWidth =
@@ -190,6 +191,10 @@ export function useCode(): IUseCode {
                 x = position.x + 800;
                 y = position.y;
             }
+
+            // An input chip saved the old way, `[!! input 1 !!]`, reads as
+            // its tag does, `input_1`. It runs the same.
+            if (typeof node.content === "string") node = { ...node, content: normalizeInputReferences(node.content) };
 
             let nodeMeta: any = {
                 nodeId: node.id, 

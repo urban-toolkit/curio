@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/24-scout-building-rasters.json",
-    "sha256": "5220ef729a24652c2ac91d1ee28a14de4da944f6464aeb2e043a19429daca942",
+    "sha256": "bc6877160174ffe8186566bfa020b2b5862f38d0b748be26b31583dad78ae569",
     "walkthrough": "docs/examples/24-scout-building-rasters.md"
   },
-  "prompt": "Load SCOUT's Chicago Loop buildings, with their heights in metres, from the Data Catalog, and mark them as buildings so a map can raise each footprint to its height. Draw them in 3D on an Autark map coloured by height. Then turn their heights into zoom 16 map tiles and a height mosaic with SCOUT's building rasterizer, leaving its settings at their defaults, and draw the mosaic on a second Autark map. Run SCOUT's Deep Umbra shadow model on the height mosaic for a summer day, and draw the minutes of shadow on a third Autark map. Finally take the shadow's mean and median over the ground, where the height raster is under 1.08 m. The rasterizer and the shadow model are not part of the standard node set, so whatever provides them needs installing first.",
+  "prompt": "Load SCOUT's Chicago Loop buildings, with their heights in metres, from the Data Catalog, and mark them as buildings so a map can raise each footprint to its height. Draw them in 3D on an Autark map coloured by height. Then turn their heights into zoom 16 map tiles and a height mosaic with SCOUT's building rasterizer, leaving its settings at their defaults, and draw the mosaic on a second Autark map. Run SCOUT's Deep Umbra shadow model on the height mosaic for a summer day, and draw the minutes of shadow on a third Autark map. Also keep the model's own mean and median accumulated shadow over the ground, which it returns with the shadow raster. The rasterizer and the shadow model are not part of the standard node set, so whatever provides them needs installing first.",
   "context": null,
   "required": {
     "datasets": [
@@ -42,6 +42,20 @@
         "hasContent": true
       },
       {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
         "ref": "loader1",
         "type": "curio.builtin/data-loading",
         "role": "loader",
@@ -49,21 +63,21 @@
         "hasContent": true
       },
       {
-        "ref": "analysis1",
-        "type": "curio.builtin/raster-statistics",
+        "ref": "analysis3",
+        "type": "scout.raster-conversion/mosaic-tiles",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
-        "ref": "analysis2",
+        "ref": "analysis4",
         "type": "scout.raster-conversion/rasterize-buildings",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
-        "ref": "analysis3",
+        "ref": "analysis5",
         "type": "scout.shadow/accumulated-shadow",
         "role": "analysis",
         "executable": true,
@@ -72,29 +86,18 @@
     ],
     "edges": [
       {
-        "from": "loader1",
+        "from": "analysis2",
         "to": "visualization1",
         "kind": "data"
       },
       {
         "from": "loader1",
-        "to": "analysis2",
-        "kind": "data"
-      },
-      {
-        "from": "analysis2",
         "to": "visualization2",
         "kind": "data"
       },
       {
-        "from": "analysis2",
-        "to": "analysis1",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis2",
-        "to": "analysis3",
+        "from": "loader1",
+        "to": "analysis4",
         "kind": "data"
       },
       {
@@ -103,8 +106,23 @@
         "kind": "data"
       },
       {
-        "from": "analysis3",
+        "from": "analysis4",
+        "to": "analysis3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis4",
+        "to": "analysis5",
+        "kind": "data"
+      },
+      {
+        "from": "analysis5",
         "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis5",
+        "to": "analysis2",
         "kind": "data"
       }
     ],
@@ -126,25 +144,39 @@
       "outputKind": "geodataframe"
     },
     {
-      "ref": "analysis1",
+      "ref": "analysis4",
       "mustMention": [
-        "shadow"
+        "height",
+        "tile"
       ],
       "outputKind": "dataframe"
     },
     {
-      "ref": "analysis2",
+      "ref": "analysis3",
       "mustMention": [
-        "height",
         "tile"
       ],
       "outputKind": "raster"
     },
     {
-      "ref": "analysis3",
+      "ref": "analysis5",
       "mustMention": [
         "shadow"
       ]
+    },
+    {
+      "ref": "analysis2",
+      "mustMention": [
+        "shadow"
+      ],
+      "outputKind": "raster"
+    },
+    {
+      "ref": "analysis1",
+      "mustMention": [
+        "shadow"
+      ],
+      "outputKind": "dataframe"
     }
   ],
   "execution": {
@@ -193,5 +225,5 @@
       }
     ]
   },
-  "notes": "Two package nodes with widgets on SCOUT's buildings: SCOUT's rasterizer, its mosaic drawn by a map, then Accumulated Shadow running the Model Catalog's Deep Umbra on the height mosaic, drawn by a third map beside the buildings in 3D, and Raster Statistics of the shadow over the ground, the heights as its mask."
+  "notes": "Two package nodes with widgets on SCOUT's buildings: SCOUT's rasterizer, its mosaic drawn by a map, then Accumulated Shadow running the Model Catalog's Deep Umbra on the saved height tiles, whose (shadow, metrics) two Python Computation nodes take apart: the shadow drawn by a third map beside the buildings in 3D, and SCOUT's own mean and median over the ground."
 }

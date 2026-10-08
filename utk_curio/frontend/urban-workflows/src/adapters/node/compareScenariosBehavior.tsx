@@ -23,7 +23,7 @@ import type { NodeBehaviorHook } from "../../registry/types";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { CompareScenariosBody } from "../../components/compare/CompareScenariosBody";
 import { compareInputs, labelsNeedWriting } from "../../utils/compare/compareInputs";
-import { compareCode, keyOfCode, layerOfCode, modeOfCode, stackCode } from "../../utils/compare/compareCode";
+import { absoluteOfCode, compareCode, keyOfCode, layerOfCode, modeOfCode, stackCode } from "../../utils/compare/compareCode";
 import { inputKinds, wantedMode } from "../../utils/compare/compareMode";
 import { normalizeCompareSettings, type CompareSettings } from "../../utils/compare/compareSettings";
 import type { Scenario } from "../../utils/scenarios/scenarioModel";
@@ -82,7 +82,8 @@ export const useCompareScenariosBehavior: NodeBehaviorHook = (data, nodeState) =
     const mode = wantedMode(stored, inputKinds(live.inputSlots, inputs.map((input) => input.slot))) ?? written ?? "chart";
     const relabel = labelsNeedWriting(stored?.inputs, inputs, edges.length > 0);
     const switched = written !== null && written !== mode;
-    const rekeyed = written === "difference" && mode === "difference" && keyOfCode(current) !== stored?.difference?.key;
+    const rekeyed = written === "difference" && mode === "difference"
+      && (keyOfCode(current) !== stored?.difference?.key || absoluteOfCode(current) !== (stored?.difference?.absolute === true));
     const relayered = written !== null && layerOfCode(current) !== stored?.layer;
     if (!relabel && !switched && !rekeyed && !relayered) return;
     const code = compareCode(mode, inputs, stored?.difference, stored?.layer);

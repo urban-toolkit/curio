@@ -70,7 +70,7 @@ LOADER_CODE = (
     "        pop.append(i * 10 + j)\n"
     'return gpd.GeoDataFrame({"pop": pop}, geometry=cells, crs="EPSG:4326")\n'
 )
-SCALE_CODE = 'gdf = arg.copy()\ngdf["pop"] = gdf["pop"] * 2\nreturn gdf\n'
+SCALE_CODE = 'gdf = input_0.copy()\ngdf["pop"] = gdf["pop"] * 2\nreturn gdf\n'
 MAP_CONTENT = json.dumps({"map": {"layerRefs": [{
     "dataRef": "input_0",
     "getFnv": "pop",

@@ -79,6 +79,58 @@
       }
     },
     {
+      "name": "bar with no combining: each row as it is, titled by its column",
+      "chart": {
+        "aggregate": "none"
+      },
+      "resolved": {
+        "preset": "bar",
+        "aggregate": "none",
+        "y": "hour"
+      },
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "mark": {
+          "type": "bar",
+          "tooltip": true
+        },
+        "encoding": {
+          "x": {
+            "field": "scenario_name",
+            "type": "nominal",
+            "title": "Scenario",
+            "sort": [
+              "Baseline",
+              "Twice as tall"
+            ],
+            "axis": {
+              "labelAngle": 0
+            }
+          },
+          "y": {
+            "field": "hour",
+            "type": "quantitative",
+            "title": "hour"
+          },
+          "color": {
+            "field": "scenario_name",
+            "type": "nominal",
+            "title": "Scenario",
+            "scale": {
+              "domain": [
+                "Baseline",
+                "Twice as tall"
+              ],
+              "range": [
+                "#2a9d8f",
+                "#e76f51"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "bar, counting rows",
       "chart": {
         "preset": "bar",
@@ -293,16 +345,13 @@
       },
       "spec": {
         "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-        "mark": {
-          "type": "arc",
-          "tooltip": true
-        },
         "encoding": {
           "theta": {
             "field": "hour",
             "type": "quantitative",
             "aggregate": "sum",
-            "title": "sum of hour"
+            "title": "sum of hour",
+            "stack": true
           },
           "color": {
             "field": "scenario_name",
@@ -319,7 +368,40 @@
               ]
             }
           }
-        }
+        },
+        "layer": [
+          {
+            "mark": {
+              "type": "arc",
+              "tooltip": true
+            }
+          },
+          {
+            "mark": {
+              "type": "text",
+              "radius": {
+                "expr": "min(width, height) / 3"
+              },
+              "fontWeight": "bold"
+            },
+            "encoding": {
+              "text": {
+                "field": "hour",
+                "type": "quantitative",
+                "aggregate": "sum",
+                "title": "sum of hour",
+                "format": ",.3~f"
+              },
+              "color": {
+                "value": "white"
+              },
+              "detail": {
+                "field": "scenario_name",
+                "type": "nominal"
+              }
+            }
+          }
+        ]
       }
     },
     {

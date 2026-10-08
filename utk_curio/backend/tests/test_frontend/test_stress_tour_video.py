@@ -151,7 +151,7 @@ DATAFLOW_GOAL = (
 )
 
 TRANSFORM_CODE = (
-    "df = arg\n"
+    "df = input_0\n"
     'df["income_per_capita"] = (df["median_income"] / df["population"]).round(2)\n'
     'print(df.sort_values("median_income", ascending=False).to_string(index=False))\n'
     "return df\n"
@@ -163,7 +163,7 @@ RAISING_CODE = (
 )
 
 CSV_TRANSFORM_CODE = (
-    "df = arg" + chr(10)
+    "df = input_0" + chr(10)
     + 'df["trips_per_minute"] = (df["trips"] / df["avg_duration_min"]).round(2)' + chr(10)
     + 'print(df.sort_values("trips", ascending=False).to_string(index=False))' + chr(10)
     + "return df" + chr(10)
@@ -1368,7 +1368,7 @@ def chapter_nodes(run: StressRun) -> None:
         run.state["authored"] = node_id
         set_node_code(
             page, node_id,
-            "df = arg\n"
+            "df = input_0\n"
             'return df.describe(include="all")\n',
         )
 

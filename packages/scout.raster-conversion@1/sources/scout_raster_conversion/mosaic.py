@@ -28,6 +28,22 @@ def corner(x, y, zoom):
     return invtransformer.transform(*num2deg(x, y, zoom))
 
 
+def tile_table(folder, zoom, max_height):
+    """The tiles ``convert_raster`` wrote in *folder*, one row each, by
+    ``x`` then ``y``: ``zoom``, ``x``, ``y`` and the ``max_height`` their gray
+    levels scale to, what :func:`mosaic` needs to put them together."""
+    import pandas as pd
+
+    rows = []
+    for name in os.listdir(folder):
+        match = TILE_FILE.match(name)
+        if match and int(match[1]) == int(zoom):
+            rows.append({"zoom": int(zoom), "x": int(match[2]), "y": int(match[3]), "max_height": float(max_height)})
+    if not rows:
+        raise ValueError("Rasterize Buildings wrote no tiles: the buildings layer has no building near any tile.")
+    return pd.DataFrame(rows, columns=["zoom", "x", "y", "max_height"]).sort_values(["x", "y"], ignore_index=True)
+
+
 def mosaic(folder, zoom, max_height, output_file):
     """The tiles in *folder* as one raster, opened. *output_file(name)* names
     where the GeoTIFF is written."""

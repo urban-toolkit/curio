@@ -42,7 +42,7 @@ The manifest says which runtime runs the model (**ONNX** or **Transformers**), i
 
 DDRNet23-Slim is about 23 MB and labels a street photo in a fraction of a second on a CPU. A new **Image Segmentation** node runs it.
 
-Deep Umbra, [SCOUT](https://github.com/urban-toolkit/scout)'s shadow model, is about 10.5 MB. The **Accumulated Shadow** node of the SCOUT Shadow package (`scout.shadow@1`) runs it on a raster of building heights ([example 24](examples/24-scout-building-rasters.md)). A pip install downloads it from GitHub the first time a node runs it ([Installation from pip](USAGE.md#installation-from-pip)).
+Deep Umbra, [SCOUT](https://github.com/urban-toolkit/scout)'s shadow model, is about 10.5 MB. The **Accumulated Shadow** node of the SCOUT Shadow package (`scout.shadow@1`) runs it with SCOUT's own code on the height tiles SCOUT's rasterizer saved in the dataflow, opening the ONNX file itself (`curio_load_model("model.scout.deep-umbra").entry`, the file's path) ([example 24](examples/24-scout-building-rasters.md)). A pip install downloads it from GitHub the first time a node runs it ([Installation from pip](USAGE.md#installation-from-pip)).
 
 The weather GNN, SCOUT's weather graph network, is about 52 KB. The **Weather Routing** node of the SCOUT Routing package (`scout.routing@1`) runs it on the road graph it builds from a roads layer, to weigh each road by the weather before routing ([the WeatherRouting test dataflow](examples/dataflows/WeatherRouting.json)).
 
@@ -93,7 +93,7 @@ A node's code loads its model with `curio_load_model("<id>")`. **Image Segmentat
 model = curio_load_model("model.curio.ddrnet23-slim")
 classes = ["vegetation", "terrain", "sky", "road", "sidewalk", "building"]
 
-return curio_segment(arg, model, classes)
+return curio_segment(input_0, model, classes)
 ```
 
 `curio_segment` reads a collection's rows, each with a `path`, as a Data Loading node gives them for images from the Data or Discovery Catalog. Each row comes back with the results as its first columns:
@@ -109,7 +109,7 @@ Every input column follows. A class the model does not label stops the node, wit
 
 Dragging a model onto a node rewrites the id in its first `curio_load_model(...)` call and nothing else, so `classes` stays as you set it. The dataflow saves the node's code, so it reopens with the same model.
 
-An image-to-image or node-regression model is run by the node made for it, which prepares the model's inputs itself and calls `model.run({input name: array})`; it returns the graph's outputs in order. **Accumulated Shadow** runs Deep Umbra this way, one map tile at a time, and **Weather Routing** runs the weather GNN on its road graph's node features and edges. `curio_segment` refuses these models.
+An image-to-image or node-regression model is run by the node made for it, which prepares the model's inputs itself and calls `model.run({input name: array})`; it returns the graph's outputs in order. A node can also take the model's file, `model.entry`, and open it with its own runtime: **Accumulated Shadow** hands Deep Umbra's ONNX file to SCOUT's code, which runs it with onnxruntime one map tile at a time. **Weather Routing** runs the weather GNN on its road graph's node features and edges. `curio_segment` refuses these models.
 
 ---
 
@@ -158,11 +158,18 @@ A dataflow names its models by id. Someone you share it with runs a shipped mode
 |---|---|---|
 | `CURIO_MODELS_ROOT` | `--models-root` | Reads the shipped models from this directory instead of `<repo_root>/models`. |
 
+**Your own model.** A model you trained in PyTorch or TensorFlow is exported
+to ONNX, added as a folder here, and run by a node you write:
+[BRINGING-MODELS.md](BRINGING-MODELS.md) walks through it, with an example you
+can run and the two SCOUT models as case studies.
+
 **Shipping a model.** Add its folder to `models/` and restart. The Docker image bakes `models/` in, as it does `datasets/`. A model there must be one Curio may redistribute, with its license in the folder.
 
 ---
 
 ## See also
+
+- [BRINGING-MODELS.md](BRINGING-MODELS.md): exporting your own model to ONNX and writing the node that runs it.
 
 - [`docs/DISCOVERY-CATALOG.md`](DISCOVERY-CATALOG.md#adding-a-model): adding a model from Hugging Face.
 - [`docs/NODE-CATALOG.md`](NODE-CATALOG.md): the Street Vision package and its Image Segmentation node, and the SCOUT Shadow package and its Accumulated Shadow node.

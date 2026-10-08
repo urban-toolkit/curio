@@ -16,10 +16,10 @@ and attach the per-polygon mean back to the GeoDataFrame.
 import numpy as np
 from rasterstats import zonal_stats
 
-dataset = [!! input 0 !!]
-utci_list = [!! input 1 !!][0]
-utci_shape = [!! input 1 !!][1]
-gdf = [!! input 2 !!]
+dataset = [!! input_0 !!]
+utci_list = [!! input_1 !!][0]
+utci_shape = [!! input_1 !!][1]
+gdf = [!! input_2 !!]
 
 utci = np.asarray(utci_list, dtype=float)
 if utci.ndim != 2:

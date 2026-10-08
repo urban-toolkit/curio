@@ -20,6 +20,7 @@ connection guard in util/db.py, not by a lock of its own.
 import collections
 import contextlib
 import os
+import re
 import threading
 import time
 
@@ -200,55 +201,16 @@ def _import_bindings_for(session_id):
     return bindings
 
 
-# What a node that reads `arg` with no input delivered fails with. The isolated
-# child (isolation/child.py) raises the same text from its own copy.
-NO_INPUT_MESSAGE = (
-    "This node received no input but its code references `arg`. "
-    "An upstream node has not run yet, failed, or is not wired "
-    "to this node's input handle. Check the nodes feeding this "
-    "one: fix any that show an error, run them until each shows "
-    "'Done', then run this node again."
-)
-
-
-def _code_reads_arg(code):
-    """Whether the node's code actually *reads* the ``arg`` parameter.
-
-    The tripwire below used to ask ``'arg' in code``, a substring test over the
-    whole source. That fires on any occurrence of those three letters - a word
-    in a comment, a URL query string, or an identifier such as ``target``,
-    ``large``, ``margin`` or ``args`` - so a deliberately input-free loader like
-    ``gpd.read_file(<url>)`` was refused for referencing an input it never
-    mentions (#273).
-
-    ``code`` is already indented ready to drop into ``def userCode(arg):``, and
-    the caller has just ``exec``-ed that same wrapped source, so parsing it here
-    cannot fail on syntax. Walking for a load of the name is exact: a *binding*
-    of ``arg`` (the parameter itself, or a reassignment) is a Store and does not
-    count, which is what we want - code that only overwrites ``arg`` does not
-    need an input either.
-    """
-    import ast
-
-    try:
-        tree = ast.parse("def userCode(arg):" + chr(10) + code)
-    except SyntaxError:
-        # Unreachable in practice; fall back to the old test rather than
-        # deciding that a node we cannot parse is input-free.
-        return "arg" in code
-    return any(
-        isinstance(node, ast.Name)
-        and node.id == "arg"
-        and isinstance(node.ctx, ast.Load)
-        for node in ast.walk(tree)
-    )
+# A node's code is the body of a function whose parameters are the inputs it
+# reads, input_0, input_1, ... (util/input_names.py, shared with the isolated
+# child and the JavaScript wrapper).
 
 
 def _hoist_user_imports(code, ns, session_id, skip=()):
     """Execute the user's top-level imports into ``ns`` and remember them.
 
     ``code`` is the node body as the frontend sends it - every line already
-    indented by four spaces, ready to be dropped into ``def userCode(arg):`` -
+    indented by four spaces, ready to be dropped under ``input_names.user_code_header`` -
     so it has to be dedented before it will parse.
 
     Only ``import`` / ``from ... import`` statements at the *top level* of the
@@ -434,7 +396,7 @@ def _worker_init():
         'curio_difference_scenarios': difference_scenarios,
         # The Edit Features node's code applies its edit list with it (#662).
         'curio_edit_features': edit_features,
-        # A layer chip, [!! input 0:roads !!], reads one layer of an input with it.
+        # A layer chip, [!! input_0:roads !!], reads one layer of an input with it.
         'curio_layer': curio_layer,
     }
 
@@ -501,7 +463,7 @@ def _expand_outputs_wrapper(input_data, session_id=None):
         load, so `load_from_duckdb` hands back the whole
         `{dataType:'outputs', data:[refs]}` wrapper dict. Without this, user code
         gets the wrapper object (e.g. `const [a,b] = arg` → "arg is not iterable").
-    In the reloaded case, resolve each inner element so `arg` matches the live list.
+    In the reloaded case, resolve each inner element so the input matches the live list.
     """
     if (isinstance(input_data, dict)
             and input_data.get('dataType') == 'outputs'
@@ -511,7 +473,8 @@ def _expand_outputs_wrapper(input_data, session_id=None):
 
 
 def _make_curio_data_path(dataset_paths):
-    """Resolver injected into user code as ``curio_data_path(dataset_id)``.
+    """Resolver injected into user code as ``curio_data_path(dataset_id)``, and
+    ``curio_data_path(dataset_id, part="<file>")`` for one file of a bundle.
 
     Generated Data Loading nodes reference datasets by id instead of a baked-in
     absolute path; the backend resolves the ids it finds in the code and passes
@@ -520,7 +483,7 @@ def _make_curio_data_path(dataset_paths):
     """
     mapping = dict(dataset_paths or {})
 
-    def curio_data_path(dataset_id):
+    def curio_data_path(dataset_id, part=None):
         path = mapping.get(str(dataset_id))
         if not path:
             raise RuntimeError(
@@ -528,6 +491,11 @@ def _make_curio_data_path(dataset_paths):
                 "install it from the Data Catalog drawer (or re-import the "
                 "source file), then run this node again."
             )
+        if part is not None:
+            # One file of a bundle, by its name or label.
+            from utk_curio.sandbox.util.catalog_helpers import bundle_part_path
+
+            return bundle_part_path(path, part, str(dataset_id))
         return path
 
     return curio_data_path
@@ -560,7 +528,7 @@ def _stage_package_modules(package_modules):
 
 def execute_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None, save_dataset=True,
                  dataset_paths=None, secrets=None, collections=None, media_dir=None, models=None,
-                 dataset_formats=None, package_modules=None):
+                 dataset_formats=None, package_modules=None, computed=None, input_slots=None):
     """
     Execute user code in-process using pre-loaded library globals.
 
@@ -587,6 +555,11 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 packages it depends on, importable by name for this run only
                 (#468, ``util/package_modules.py``).
 
+    computed:   {"names", "canSave", "reason"} for curio_save_file,
+                curio_save_folder and curio_computed_path
+                (``util/saved_files.py``). What the run saved is listed in
+                the output's ``savedFiles``.
+
     Returns {'stdout': [str, ...], 'stderr': str, 'output': {'path': str, 'dataType': str}}
     """
     import io as _io
@@ -599,7 +572,7 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
 
     from utk_curio.sandbox.isolation.supervisor import cleanup_scratch
     from utk_curio.sandbox.util.package_modules import importable
-    from utk_curio.sandbox.util.parsers import load_artifact
+    from utk_curio.sandbox.util.parsers import _shared_data_dir, load_artifact
     save_to_duckdb   = _globals_cache['save_to_duckdb']
     detect_kind      = _globals_cache['detect_kind']
     save_dataset_parquet = _globals_cache['save_dataset_parquet']
@@ -640,20 +613,32 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
 
                 from utk_curio.sandbox.util.catalog_helpers import install_catalog_helpers
 
-                install_catalog_helpers(
+                from utk_curio.sandbox.util.saved_files import in_process_saved_root
+
+                saved_root = in_process_saved_root(_shared_data_dir())
+                saved = install_catalog_helpers(
                     ns,
                     data_path=_make_curio_data_path(dataset_paths),
                     formats=dataset_formats,
                     collections=collections,
                     media_dir=media_dir,
                     models=models,
+                    computed=computed,
+                    saved_root=str(saved_root),
                 )
                 # Hoist this node's own top-level imports before defining userCode,
                 # so they are recorded for later nodes in the same session. The
                 # statements stay in the function body too - re-importing is a
                 # sys.modules hit, and it keeps a standalone run of this node working.
                 _hoist_user_imports(code, ns, session_id, skip=modules[1])
-                exec(f"def userCode(arg):\n{code}", ns)
+                from utk_curio.sandbox.util import input_names
+
+                # Code that still reads `input` / `arg` would otherwise reach
+                # Python's built-in input() and fail somewhere unhelpful.
+                legacy = input_names.legacy_name_read(code)
+                if legacy:
+                    raise RuntimeError(input_names.legacy_input_message(legacy))
+                exec(f"{input_names.user_code_header(code)}\n{code}", ns)
 
                 # Load input from DuckDB.
                 input_data = ''
@@ -670,28 +655,19 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 input_data = rasters_for_python(input_data, python_raster_dir)
                 t_load = time.perf_counter()
 
-                # Validate and prepare input.
-                # dev/120: no name-keyed I/O check here any more — the type
-                # contract is the template's declared ports, enforced by the
-                # canvas at connect time (see parsers.checkIOType's note).
-                incomingInput = None
-                if input_data is not None and not (isinstance(input_data, str) and input_data == ''):
-                    incomingInput = input_data
+                # Each wired circle k is the code's input_k (util/input_names.py).
+                inputs = input_names.split_inputs(input_data, input_slots, data_type)
 
-                # Tripwire: if the user code reads `arg` but no input was
-                # delivered, the historical behaviour was to bubble up a
-                # confusing `'NoneType' object is not subscriptable` from the
-                # first `arg[…]`. Fail fast here with a message that points the
-                # user at the actual cause (unwired/unrun upstream, or a stale
-                # `data.input` because an upstream output hadn't propagated
-                # yet). The check is an AST walk rather than a
-                # substring test, so a node that never reads an input is not
-                # refused for merely containing the letters "arg" (#273).
-                if incomingInput is None and _code_reads_arg(code):
-                    raise RuntimeError(NO_INPUT_MESSAGE)
+                # If the code reads an input_k that holds nothing, the run
+                # would fail on the first `input_k[...]` with a confusing
+                # `'NoneType' object is not subscriptable`. Fail here instead,
+                # naming the circle, so the user looks at what feeds it.
+                missing = input_names.missing_input(code, inputs)
+                if missing:
+                    raise RuntimeError(missing)
 
                 # Run user code.
-                output = ns['userCode'](incomingInput)
+                output = ns['userCode'](**inputs)
                 t_code = time.perf_counter()
 
                 # Classify output (dev/120: classified, never refused by node name).
@@ -707,6 +683,12 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 result = {'path': result_path, 'dataType': out_kind}
                 if dataset_file:
                     result['dataset'] = dataset_file
+                if saved:
+                    from utk_curio.sandbox.util.saved_files import describe_saved
+
+                    saved_files = describe_saved(saved, saved_root)
+                    if saved_files:
+                        result['savedFiles'] = saved_files
                 t_save = time.perf_counter()
 
         except BaseException:
@@ -881,11 +863,12 @@ def backend_base_url():
     return f'http://{host}:{port}'
 
 
-def run_js_script(code, input_data, *, cwd, node_type, t0=None, node_flags=()):
+def run_js_script(code, inputs, *, cwd, node_type, t0=None, node_flags=()):
     """Run JavaScript in one Node.js subprocess, the way a JS node runs.
 
-    The code is wrapped by ``util/js_wrapper.mjs`` with *input_data* as
-    ``arg``, its bare package imports are resolved against the repo-root
+    The code is wrapped by ``util/js_wrapper.mjs`` with each of *inputs*,
+    ``{"input_k": value}``, as a parameter of that name (as are the
+    ``input_k`` the code reads and *inputs* lacks, undefined), its bare package imports are resolved against the repo-root
     node_modules, and it runs under the JS slot, once more if Node died in its
     own HTTP parser. *node_flags* go to ``node`` before the script.
 
@@ -959,8 +942,15 @@ def run_js_script(code, input_data, *, cwd, node_type, t0=None, node_flags=()):
     dynamic_imports_block = '\n'.join(dynamic_import_lines)
     indented = '\n'.join('    ' + line for line in clean_code.splitlines())
 
-    # Serialize input as an inline JS literal.
-    arg_json = json.dumps(_to_js_value(input_data))
+    # Serialize the inputs as an inline JS literal, one parameter each.
+    from utk_curio.sandbox.util.input_names import input_name, input_names_read_js
+
+    inputs = dict(inputs or {})
+    params = sorted(
+        set(inputs) | {input_name(k) for k in input_names_read_js(code)},
+        key=lambda name: int(name.split('_')[1]),
+    )
+    arg_json = json.dumps({name: _to_js_value(value) for name, value in inputs.items()})
 
     # Build script from static template - no temp file written to disk.
     template_path = pathlib.Path(__file__).parent.parent / 'util' / 'js_wrapper.mjs'
@@ -968,6 +958,8 @@ def run_js_script(code, input_data, *, cwd, node_type, t0=None, node_flags=()):
     script = (template
               .replace('__DYNAMIC_IMPORTS__', dynamic_imports_block)
               .replace('__ARG_JSON__', arg_json)
+              .replace('__INPUT_PARAMS__', ', '.join(params))
+              .replace('__INPUT_ARGS__', ', '.join(f'__inputs.{name}' for name in params))
               .replace('__OVERPASS_USER_AGENT__', json.dumps(OVERPASS_USER_AGENT))
               .replace('__USER_CODE__', indented))
 
@@ -1079,7 +1071,8 @@ def run_js_script(code, input_data, *, cwd, node_type, t0=None, node_flags=()):
     return result_json, user_log_lines, stderr_lines
 
 
-def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None, save_dataset=True):
+def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None, save_dataset=True,
+                    input_slots=None):
     """
     Execute user JavaScript code in an isolated Node.js subprocess.
 
@@ -1120,8 +1113,18 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
             input_data = load_artifact(file_path, session_id=session_id)
         input_data = _expand_outputs_wrapper(input_data, session_id=session_id)
 
+        from utk_curio.sandbox.util import input_names
+
+        legacy = input_names.legacy_name_read_js(code)
+        if legacy:
+            raise RuntimeError(input_names.legacy_input_message(legacy))
+        inputs = input_names.split_inputs(input_data, input_slots, data_type)
+        missing = input_names.missing_input(code, inputs, javascript=True)
+        if missing:
+            raise RuntimeError(missing)
+
         result_json, user_log_lines, stderr_lines = run_js_script(
-            code, input_data, cwd=cwd, node_type=node_type, t0=t0,
+            code, inputs, cwd=cwd, node_type=node_type, t0=t0,
         )
 
         stderr_text = '\n'.join(stderr_lines)

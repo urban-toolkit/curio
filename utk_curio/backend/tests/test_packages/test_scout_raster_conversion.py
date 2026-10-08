@@ -6,10 +6,13 @@ high-rise shadow example writes the four zoom-16 height tiles SCOUT committed
 for them, byte for byte. Both are SCOUT's own files, copied unchanged into
 ``fixtures/scout/`` (see its ``ATTRIBUTION.md``).
 
-The node: its template, with the widgets its manifest declares, resolved the
-way a run resolves a node's widgets, runs in the sandbox with its package's
-modules (#719). It returns one raster, the mosaic of SCOUT's tiles, which the
-Autark node's raster path (#718) loads, and each widget reaches the call.
+The nodes: Rasterize Buildings, its widgets resolved the way a run resolves
+them, runs SCOUT's call on its input GeoDataFrame in the sandbox with its
+package's modules (#719), saves SCOUT's tiles as the dataflow's computed
+dataset "tiles" (``curio_save_folder``) and returns a table of them. Mosaic
+Tiles reads them back (``curio_computed_path``) and returns one raster, the
+mosaic of SCOUT's tiles, which the Autark node's raster path (#718) loads.
+Each widget reaches the call.
 
 Package code is imported inside each test, through a run's staged copy of the
 package's modules, so a checkout without the package or its libraries fails
@@ -31,6 +34,7 @@ PACKAGE = REPO / "packages" / "scout.raster-conversion@1"
 SOURCES = PACKAGE / "sources"
 MODULE = "scout_raster_conversion"
 NODE_TYPE = "scout.raster-conversion/rasterize-buildings"
+MOSAIC_TYPE = "scout.raster-conversion/mosaic-tiles"
 DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "BuildingRasters.json"
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scout"
@@ -48,14 +52,17 @@ TILE_SLOTS = {
     "16_16814_24356.png": (1, 0), "16_16815_24356.png": (1, 1),
 }
 #: What #718's Autark raster path loads at its own size (utils/raster/rasterLoad.ts).
-AUTARK_MAX_CELLS = 2048 * 2048
+AUTARK_MAX_CELLS = 4096 * 4096
 AUTARK_MAX_SIDE = 8192
 
 
-def _template() -> dict:
+def _templates() -> dict:
     manifest = json.loads((PACKAGE / "manifest.json").read_text(encoding="utf-8"))
-    (template,) = manifest["templates"]
-    return template
+    return {template["id"]: template for template in manifest["templates"]}
+
+
+def _template(template_id: str = "rasterize-buildings") -> dict:
+    return _templates()[template_id]
 
 
 def _gray(path):
@@ -115,40 +122,77 @@ def _buildings():
     return gpd.read_file(BUILDINGS)
 
 
-def _with_values(**values) -> list:
-    """The manifest's widgets, with *values* set as a user sets them."""
-    widgets = [dict(widget) for widget in _template()["widgets"]]
+def _with_values(template_id="rasterize-buildings", **values) -> list:
+    """A template's widgets, with *values* set as a user sets them."""
+    widgets = [dict(widget) for widget in _template(template_id)["widgets"]]
     for widget in widgets:
         if widget["name"] in values:
             widget["value"] = values[widget["name"]]
     return widgets
 
 
-def run_node(buildings, workspace, *, fails=False, **values):
-    """Run the node's template, its widgets at *values*, on *buildings* in the
-    sandbox, in process: ``(artifact id, output)``, or with *fails* the
-    node's ``(stdout, stderr)``."""
-    from utk_curio.backend.app.execution.code_references import resolve_references
-    from utk_curio.sandbox.app.worker import _worker_init, execute_code
-    from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
+#: The id the backend gives the saved tiles; any id does in process.
+TILES_ID = "computed.test.files.tiles"
 
-    template = _template()
+
+def _run(template_id, input_art, data_type, workspace, *, values=(), computed=None):
+    from utk_curio.backend.app.execution.code_references import resolve_references
+    from utk_curio.sandbox.app.worker import execute_code
+
+    template = _template(template_id)
     source = (PACKAGE / template["source"]).read_text(encoding="utf-8")
-    code, problems = resolve_references(source, _with_values(**values), "python", inputs=[{"slot": 0}])
+    widgets = _with_values(template_id, **dict(values))
+    code, problems = resolve_references(source, widgets, "python", inputs=[{"slot": 0}])
     assert problems == [], problems
-    _worker_init()
-    art_id = save_to_duckdb(buildings, node_id="buildings")
-    result = execute_code(
-        textwrap.indent(code, "    "), art_id, NODE_TYPE, "geodataframe",
+    computed = computed or {}
+    return execute_code(
+        textwrap.indent(code, "    "), input_art, f"scout.raster-conversion/{template_id}", data_type,
         save_dataset=False, media_dir=str(workspace / "media"),
         package_modules={"root": str(SOURCES), "names": [MODULE]},
+        dataset_paths=computed.pop("_paths", None), computed=computed,
     )
+
+
+def rasterize(buildings, workspace, **values):
+    """Rasterize Buildings, its widgets at *values*, on *buildings*: its result."""
+    from utk_curio.sandbox.app.worker import _worker_init
+    from utk_curio.sandbox.util.parsers import save_to_duckdb
+
+    _worker_init()
+    art_id = save_to_duckdb(buildings, node_id="buildings")
+    return _run("rasterize-buildings", art_id, "geodataframe", workspace, values=values, computed={"canSave": True})
+
+
+def _saved_tiles(result) -> Path:
+    """The folder of tiles Rasterize Buildings saved, as the backend would
+    install it: its files beside a ``bundle.json``."""
+    [entry] = result["output"]["savedFiles"]
+    assert (entry["name"], entry["kind"]) == ("tiles", "folder"), entry
+    folder = Path(entry["path"])
+    (folder.parent / "bundle.json").write_text("{}", encoding="utf-8")
+    return folder
+
+
+def run_node(buildings, workspace, *, fails=False, **values):
+    """Run Rasterize Buildings, its widgets at *values*, on *buildings*, then
+    Mosaic Tiles on what it saved and returned, in the sandbox, in process:
+    ``(artifact id, mosaic)``, or with *fails* Rasterize's ``(stdout, stderr)``."""
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    result = rasterize(buildings, workspace, **values)
     if fails:
         assert result["stderr"], f"the node ran: {result['output']}"
         return result["stdout"], result["stderr"]
     assert result["stderr"] == "", result["stderr"]
-    assert result["output"]["dataType"] == "raster", result["output"]
-    return result["output"]["path"], load_from_duckdb(result["output"]["path"])
+    assert result["output"]["dataType"] == "dataframe", result["output"]
+    folder = _saved_tiles(result)
+    mosaicked = _run(
+        "mosaic-tiles", result["output"]["path"], "dataframe", workspace,
+        computed={"names": {"tiles": TILES_ID}, "_paths": {TILES_ID: str(folder.parent / "bundle.json")}},
+    )
+    assert mosaicked["stderr"] == "", mosaicked["stderr"]
+    assert mosaicked["output"]["dataType"] == "raster", mosaicked["output"]
+    return mosaicked["output"]["path"], load_from_duckdb(mosaicked["output"]["path"])
 
 
 # ---------------------------------------------------------------------------
@@ -156,8 +200,11 @@ def run_node(buildings, workspace, *, fails=False, **values):
 # ---------------------------------------------------------------------------
 
 def test_scouts_file_changes_only_the_marked_lines():
-    """The lines Curio changes in SCOUT's file are the 7 it marks: pygeos's
-    import and three calls, ``.array.data``, and the maximum height."""
+    """The lines Curio changes in SCOUT's file are the ones it marks: pygeos's
+    import and three calls, ``.array.data``, a GeoDataFrame read as it is
+    rather than from a file, the maximum height, and the making and emptying
+    of the output folder taken out, since ``curio_save_folder`` gives an
+    empty one."""
     text = (SOURCES / MODULE / "convert_to_raster.py").read_text(encoding="utf-8")
     marked = [line.split("# Curio:")[0].strip() for line in text.splitlines() if "# Curio:" in line]
     assert marked == [
@@ -167,12 +214,15 @@ def test_scouts_file_changes_only_the_marked_lines():
         "coords, indices = shapely.get_coordinates(arr_flat2, return_index=True)",
         "geometries = spatialpandas_from_pygeos(np.asarray(source.geometry.array))",
         "def convert_raster(vector_in: str, attribute: str, zoom: int, raster_out: str, max_height: float = 550):",
+        "gdf = vector_in if isinstance(vector_in, gpd.GeoDataFrame) else gpd.read_file(vector_in)",
+        "",
         "ddelayed = compute_tile(gdf, i, j, zoom, max_height, raster_out)",
     ]
+    assert "raster_out.mkdir" not in text and "file.unlink()" not in text
     assert "pygeos." not in text.replace("# Curio: pygeos.", "")
     # SCOUT's own lines Curio keeps.
     for line in ("import cv2", "success_ = cv2.imwrite(filename_, values)", "ds.Canvas.polygons = polygons",
-                 "gdf = gpd.read_file(vector_in)", "print(f\"Feature '{attribute}' not supported for layer\")"):
+                 "gdf = gdf.to_crs(epsg=3395)", "print(f\"Feature '{attribute}' not supported for layer\")"):
         assert line in text, line
 
 
@@ -181,12 +231,25 @@ def test_scouts_buildings_become_scouts_committed_tiles(tmp_path):
     tiles: the same four files, byte for byte."""
     with scout_modules(tmp_path) as (convert, _mosaic):
         out = tmp_path / "A_rasters"
+        out.mkdir()  # as curio_save_folder gives it
         convert.convert_raster(vector_in=str(BUILDINGS), attribute="height", zoom=16, raster_out=str(out))
     assert sorted(p.name for p in out.iterdir()) == TILE_NAMES
     for name in TILE_NAMES:
         assert (out / name).read_bytes() == (SCOUT_TILES / name).read_bytes(), name
     # Not two blank images agreeing: each of SCOUT's tiles holds buildings.
     assert all(_gray(SCOUT_TILES / name).max() > 0 for name in TILE_NAMES)
+
+
+def test_a_geodataframe_becomes_the_same_tiles_as_scouts_file(tmp_path):
+    """The node hands SCOUT's call its input GeoDataFrame, not a file: the
+    tiles are SCOUT's committed ones all the same."""
+    with scout_modules(tmp_path) as (convert, _mosaic):
+        out = tmp_path / "from_frame"
+        out.mkdir()  # as curio_save_folder gives it
+        convert.convert_raster(vector_in=_buildings(), attribute="height", zoom=16, raster_out=str(out))
+    assert sorted(p.name for p in out.iterdir()) == TILE_NAMES
+    for name in TILE_NAMES:
+        assert (out / name).read_bytes() == (SCOUT_TILES / name).read_bytes(), name
 
 
 # ---------------------------------------------------------------------------
@@ -228,23 +291,67 @@ def test_the_template_declares_the_widgets_its_source_reads():
     template = _template()
     assert template["hasWidgets"] is True
     assert {w["name"]: w["default"] for w in template["widgets"]} == {
-        "attribute": "height", "zoom": 16, "max_height": 550,
+        "attribute": "height", "zoom": 16, "max_height": 550, "tiles": "tiles",
     }
+    assert template["outputPorts"] == [{"cardinality": "1", "types": ["DATAFRAME"]}]
+    source = (PACKAGE / template["source"]).read_text(encoding="utf-8")
+    assert re.findall(r"\[!!\s*(\w+)\s*!!\]", source) == [
+        "tiles", "attribute", "zoom", "max_height", "zoom", "max_height",
+    ]
+    assert "curio_save_folder([!! tiles !!])" in source
+
+
+def test_mosaic_tiles_reads_what_rasterize_saves():
+    """Mosaic Tiles' one widget is the name Rasterize Buildings saved the
+    tiles under; its input says the zoom and the maximum height."""
+    template = _template("mosaic-tiles")
+    assert template["hasWidgets"] is True
+    assert [(w["name"], w["default"]) for w in template["widgets"]] == [("tiles", "tiles")]
+    assert template["inputPorts"] == [{"cardinality": "1", "types": ["DATAFRAME"]}]
     assert template["outputPorts"] == [{"cardinality": "1", "types": ["RASTER"]}]
     source = (PACKAGE / template["source"]).read_text(encoding="utf-8")
-    assert re.findall(r"\[!!\s*(\w+)\s*!!\]", source) == ["attribute", "zoom", "max_height", "zoom", "max_height"]
+    assert "curio_computed_path([!! tiles !!])" in source
+
+
+def test_rasterize_returns_a_table_of_the_tiles_it_saved(workspace):
+    result = rasterize(_buildings(), workspace)
+    assert result["stderr"] == "", result["stderr"]
+    folder = _saved_tiles(result)
+    assert sorted(p.name for p in folder.iterdir() if p.is_file()) == TILE_NAMES
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    table = load_from_duckdb(result["output"]["path"])
+    assert list(table.columns) == ["zoom", "x", "y", "max_height"]
+    assert [tuple(row) for row in table[["x", "y"]].itertuples(index=False)] == [
+        (16814, 24355), (16814, 24356), (16815, 24355), (16815, 24356),
+    ]
+    assert set(table["zoom"]) == {16} and set(table["max_height"]) == {550.0}
+
+
+def test_rasterize_cannot_save_in_a_dataflow_never_saved(workspace):
+    from utk_curio.sandbox.app.worker import _worker_init
+    from utk_curio.sandbox.util.parsers import save_to_duckdb
+
+    _worker_init()
+    art_id = save_to_duckdb(_buildings(), node_id="buildings")
+    result = _run("rasterize-buildings", art_id, "geodataframe", workspace,
+                  computed={"canSave": False, "reason": "Save the dataflow first."})
+    assert "Save the dataflow first." in result["stderr"]
 
 
 def test_the_shipped_dataflow_runs_the_template_as_the_palette_drops_it():
-    """``BuildingRasters.json`` is how its CI run reaches this package: its node
-    holds the template's own source and widgets, so the dataflow cannot drift
-    from what the package ships."""
+    """``BuildingRasters.json`` is how its CI run reaches this package: its
+    nodes hold the templates' own sources and widgets, so the dataflow cannot
+    drift from what the package ships, and Mosaic Tiles reads Rasterize's table."""
     spec = json.loads(DATAFLOW.read_text(encoding="utf-8"))["dataflow"]
     assert spec["packages"] == ["scout.raster-conversion@1"]
     (node,) = [n for n in spec["nodes"] if n["type"] == NODE_TYPE]
     template = _template()
     assert node["content"] == (PACKAGE / template["source"]).read_text(encoding="utf-8")
     assert node["metadata"]["widgets"] == template["widgets"]
+    (mosaic,) = [n for n in spec["nodes"] if n["type"] == MOSAIC_TYPE]
+    assert mosaic["content"] == (PACKAGE / _template("mosaic-tiles")["source"]).read_text(encoding="utf-8")
+    assert [(e["source"], e["target"]) for e in spec["edges"] if e["target"] == mosaic["id"]] == [(node["id"], mosaic["id"])]
 
 
 # ---------------------------------------------------------------------------
@@ -299,7 +406,7 @@ def _tile_corner(x, y, zoom):
 def test_the_mosaic_is_a_raster_the_autark_node_loads(workspace):
     """What #718's raster route serves for the node's output, and what the
     Autark node then requires of it: an EPSG CRS, a north-up grid, at most
-    2048 by 2048 cells and 8192 on a side."""
+    4096 by 4096 cells and 8192 on a side."""
     from rasterio.io import MemoryFile
 
     from utk_curio.sandbox.util.rasters import serve_raster
@@ -340,7 +447,8 @@ def test_each_widget_reaches_the_call(workspace):
 
 def test_a_column_other_than_height_is_scouts_unsupported_feature(workspace):
     """SCOUT rasterizes ``height`` only: for another column it prints so and
-    writes no tile, and the node has no mosaic to make."""
+    writes no tile, and the node says it wrote none."""
     renamed = _buildings().rename(columns={"height": "roof_m"})
-    stdout, _stderr = run_node(renamed, workspace, fails=True, attribute="roof_m")
-    assert "Feature 'roof_m' not supported for layer" in stdout
+    stdout, stderr = run_node(renamed, workspace, fails=True, attribute="roof_m")
+    assert "Feature 'roof_m' not supported for layer" in "\n".join(stdout)
+    assert "wrote no tiles" in stderr

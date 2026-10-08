@@ -18,6 +18,7 @@ import {
   loadGeoTiffParams,
   RASTER_TRANSFER_FUNCTION,
   bleedIntoClearCells,
+  centeredDomain,
   recolorRasters,
   resolveRasterInputs,
   withRasterSources,
@@ -293,6 +294,25 @@ describe("recolorRasters", () => {
       updateRenderInfo: jest.fn(),
     };
   }
+
+  test("a raster whose layerRef names a center is colored over a domain centered on it, turned around when asked", () => {
+    const map = fakeMap({ difference: "raster" });
+    map.layers.difference.rasterValues = new Float32Array([-707, 0, NaN, 0, 551]);
+    const grammar = { _mapRegistry: new Map([["difference", map]]) };
+    recolorRasters(grammar, {
+      map: { layerRefs: [{ dataRef: "difference", getFnv: "band_1", colorMapInterpolator: "interpolateRdBu", colorMapCenter: 0, colorMapReverse: true }] },
+    });
+    expect(map.updateColorMap).toHaveBeenCalledWith("difference", {
+      colorMap: { domainSpec: { type: "user", params: [707, 0, -707] } },
+    });
+  });
+
+  test("a centered domain reaches as far as the farthest value, on either side; none without a center or a value", () => {
+    expect(centeredDomain({ colorMapCenter: 0 }, [-2, 1, 5])).toEqual([-5, 0, 5]);
+    expect(centeredDomain({ colorMapCenter: 10 }, [4, 12])).toEqual([4, 10, 16]);
+    expect(centeredDomain({}, [1, 2])).toBeNull();
+    expect(centeredDomain({ colorMapCenter: 0 }, [0, 0, NaN])).toBeNull();
+  });
 
   test("colors a raster's cells again in the scheme its layerRef names", () => {
     const map = fakeMap({ input_0: "raster" });

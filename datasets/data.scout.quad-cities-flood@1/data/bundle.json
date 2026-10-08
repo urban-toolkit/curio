@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "parts": [
+    {
+      "index": 0,
+      "label": "NbS classes",
+      "kind": "raster",
+      "format": "geotiff",
+      "file": "data/nbs_classes.tif"
+    },
+    {
+      "index": 1,
+      "label": "Flood depth 2020 - 2040 with NbS",
+      "kind": "raster",
+      "format": "geotiff",
+      "file": "data/2020_2040_NbS.tif"
+    },
+    {
+      "index": 2,
+      "label": "Flood depth 2020 - 2040 without NbS",
+      "kind": "raster",
+      "format": "geotiff",
+      "file": "data/2020_2040_noNbS.tif"
+    },
+    {
+      "index": 3,
+      "label": "Flood depth 2050 - 2080 with NbS",
+      "kind": "raster",
+      "format": "geotiff",
+      "file": "data/2050_2080_NbS.tif"
+    },
+    {
+      "index": 4,
+      "label": "Flood depth 2050 - 2080 without NbS",
+      "kind": "raster",
+      "format": "geotiff",
+      "file": "data/2050_2080_noNbS.tif"
+    },
+    {
+      "index": 5,
+      "label": "Flood depth 2080 - 2100 with NbS",
+      "kind": "raster",
+      "format": "geotiff",
+      "file": "data/2080_2100_NbS.tif"
+    },
+    {
+      "index": 6,
+      "label": "Flood depth 2080 - 2100 without NbS",
+      "kind": "raster",
+      "format": "geotiff",
+      "file": "data/2080_2100_noNbS.tif"
+    }
+  ]
+}

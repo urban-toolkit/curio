@@ -113,8 +113,8 @@ class FinishedRunHoldsNothingTest(unittest.TestCase):
             "return frame\n", "    ")
         shape = textwrap.indent(
             "import builtins, weakref\n"
-            "builtins._curio_rerun_probes.append(weakref.ref(arg))\n"
-            "tall = arg[arg['stories'] > 1]\n"
+            "builtins._curio_rerun_probes.append(weakref.ref(input_0))\n"
+            "tall = input_0[input_0['stories'] > 1]\n"
             "builtins._curio_rerun_probes.append(weakref.ref(tall))\n"
             "return tall\n", "    ")
 

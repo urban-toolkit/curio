@@ -41,6 +41,45 @@ def directed_edges(edges: Iterable[dict]) -> list[dict]:
     return [e for e in edges if isinstance(e, dict) and not is_interaction_edge(e)]
 
 
+#: The type of an ordering edge from a node that saves a file to one that
+#: reads it (:func:`saved_file_edges`). It orders a run and carries no data.
+SAVED_FILE_EDGE = "SavedFile"
+
+
+def saved_file_edges(nodes: Iterable[dict]) -> list[dict]:
+    """An ordering edge from each node whose code saves a name
+    (``curio_save_file("<name>.<ext>")``, ``curio_save_folder("<name>")``) to
+    each other node whose code reads it (``curio_computed_path("<name>")``),
+    so a run puts the reader after the saver with no data edge between them.
+    Never an input: these edges order a run, nothing more."""
+    from utk_curio.backend.app.datasets.domain.saved_files import (
+        computed_names_in_code,
+        saved_names_in_code,
+    )
+
+    savers: dict[str, list[str]] = {}
+    readers: list[tuple[str, list[str]]] = []
+    for node in nodes:
+        if not isinstance(node, dict) or not node.get("id"):
+            continue
+        code = node.get("content")
+        for name in saved_names_in_code(code):
+            savers.setdefault(name, []).append(node["id"])
+        names = computed_names_in_code(code)
+        if names:
+            readers.append((node["id"], names))
+    edges: list[dict] = []
+    for reader, names in readers:
+        for name in names:
+            for saver in savers.get(name, []):
+                if saver != reader:
+                    edges.append({
+                        "id": f"saved-{saver}-{reader}-{name}",
+                        "source": saver, "target": reader, "type": SAVED_FILE_EDGE,
+                    })
+    return edges
+
+
 def topological_levels(node_ids: list[str], edges: Iterable[dict]) -> list[list[str]]:
     """The levels a run executes, one after another (``computeTopologicalLevels``).
 

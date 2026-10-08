@@ -1,0 +1,20 @@
+{
+  "id": "model.example.local-relief",
+  "name": "Local Relief (example)",
+  "version": "1.0.0",
+  "compatibility": { "major": 1 },
+  "description": "The worked example of docs/BRINGING-MODELS.md: for each cell of a building-height raster, how many metres it stands above the mean height of the 5 by 5 cells around it. A PyTorch module exported to ONNX by docs/bring-your-own-model/export_local_relief.py: one float32 input, height, and one output, relief, each 1 by 1 by rows by columns, rows and columns free. The Local Relief node of example.local-relief@1 runs it.",
+  "publisher": "Curio",
+  "homepage": "https://github.com/urban-toolkit/curio",
+  "license": "MIT",
+  "runtime": "onnx",
+  "task": "image-to-image",
+  "node": "example.local-relief/local-relief@1",
+  "entry": "files/local_relief.onnx",
+  "input": { "width": 64, "height": 64, "dtype": "float32", "layout": "NCHW", "scale": 1.0 },
+  "labels": [],
+  "tags": ["example", "heights", "buildings", "onnx"],
+  "sizeBytes": 2394,
+  "createdAt": "2026-10-07T00:00:00Z",
+  "updatedAt": "2026-10-07T00:00:00Z"
+}

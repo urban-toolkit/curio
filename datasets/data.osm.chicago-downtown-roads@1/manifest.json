@@ -1,0 +1,55 @@
+{
+  "id": "data.osm.chicago-downtown-roads",
+  "name": "Chicago downtown roads",
+  "version": "1.0.0",
+  "format": "parquet",
+  "description": "The roads of downtown Chicago, the Loop with the West Loop and the South Loop, from OpenStreetMap: longitude -87.662 to -87.613, latitude 41.859 to 41.898. One line per road, cut at the box, with its highway class, oneway, maxspeed and name, as Autark's OpenStreetMap loader reads them. Built by scripts/build_chicago_downtown_roads.py.",
+  "publisher": "OpenStreetMap contributors",
+  "license": "ODbL-1.0",
+  "tags": [
+    "roads",
+    "openstreetmap",
+    "chicago",
+    "parquet"
+  ],
+  "dataFile": "data/roads.parquet",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "© OpenStreetMap contributors (ODbL)",
+  "createdAt": "2026-10-08T00:00:00Z",
+  "updatedAt": "2026-10-08T00:00:00Z",
+  "rowCount": 7500,
+  "featureCount": null,
+  "schema": {
+    "fields": [
+      {
+        "name": "highway",
+        "type": "STRING",
+        "nullable": false
+      },
+      {
+        "name": "oneway",
+        "type": "STRING",
+        "nullable": true
+      },
+      {
+        "name": "maxspeed",
+        "type": "STRING",
+        "nullable": true
+      },
+      {
+        "name": "name",
+        "type": "STRING",
+        "nullable": true
+      },
+      {
+        "name": "geometry",
+        "type": "GEOMETRY",
+        "nullable": false
+      }
+    ],
+    "geometryType": "LineString",
+    "crs": "EPSG:4326"
+  }
+}

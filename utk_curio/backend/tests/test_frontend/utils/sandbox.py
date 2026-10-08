@@ -325,6 +325,8 @@ def execute_workflow_programmatically(
                 # lines with it (no type dispatch happens on it — dev/120).
                 "nodeType": node.raw_type,
                 "dataType": data_type,
+                # Which input_k each value of the input is, as Play sends it.
+                "input_slots": spec.input_slots(node.id),
                 # The backend resolves these for the browser path; this runner
                 # bypasses the backend, so it resolves them itself.
                 "dataset_paths": resolution["paths"],

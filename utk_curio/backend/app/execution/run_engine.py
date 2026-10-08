@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Iterator, Optional
 
 from utk_curio.backend.app.execution.code_references import CodeReferenceError
-from utk_curio.backend.app.execution.run_plan import ancestors, node_role, topological_levels
+from utk_curio.backend.app.execution.run_plan import ancestors, node_role, saved_file_edges, topological_levels
 from utk_curio.backend.app.execution.workflow_spec import WorkflowSpec, parse_workflow_dict
 
 #: How much of a node's stdout and stderr an event carries: the end.
@@ -114,11 +114,13 @@ def plan_run(
         if isinstance(n, dict) and n.get("id")
     }
     all_ids = [n.id for n in spec.nodes]
+    # A node that reads a file another saves runs after it (run_plan.saved_file_edges).
+    ordering = list(spec.edges) + saved_file_edges(saved.values())
     kept_reuse: dict = {}
     if target_node_id:
         if target_node_id not in saved:
             raise PlanError(f"node {target_node_id!r} is not in the dataflow")
-        wanted = ancestors(target_node_id, spec.edges)
+        wanted = ancestors(target_node_id, ordering)
         kept_reuse = {
             node_id: {k: v for k, v in ref.items() if k in _INPUT_KEYS}
             for node_id, ref in (reuse or {}).items()
@@ -128,7 +130,7 @@ def plan_run(
     else:
         run_ids = list(all_ids)
     run_set = set(run_ids)
-    edges = [e for e in spec.edges if e.get("source") in run_set and e.get("target") in run_set]
+    edges = [e for e in ordering if e.get("source") in run_set and e.get("target") in run_set]
     levels = topological_levels(run_ids, edges)
     levelled = {node_id for level in levels for node_id in level}
     unplanned = {n: CYCLE_REASON for n in run_ids if n not in levelled}

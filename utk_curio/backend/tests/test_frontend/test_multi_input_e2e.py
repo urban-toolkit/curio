@@ -9,12 +9,12 @@ This drives the whole path in a browser:
    first one made, and a third, empty circle appears.
 2. The input tags and a column tag are dragged into the code, where each lands
    at its drop point as a chip.
-3. A run reads both inputs: ``[!! input 0 !!]`` is ``arg[0]``,
-   ``[!! input 1 !!]`` is ``arg[1]``, and the column chip is the column's name.
+3. A run reads both inputs: ``[!! input 0 !!]`` is ``input_0``,
+   ``[!! input 1 !!]`` is ``input_1``, and the column chip is the column's name.
 4. Deleting the first producer closes the gap: the second producer's edge moves
    to circle 0, and the code is renumbered, the deleted input's chip becoming
    ``[!! input ? !!]``. With that line gone, a run reads the one input left as
-   ``arg``.
+   ``input_0``.
 5. Save and reopen: the circles and the chips are back.
 
 Before, a node held one input, and a second edge was refused.

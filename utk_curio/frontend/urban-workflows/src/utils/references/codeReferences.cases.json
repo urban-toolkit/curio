@@ -243,28 +243,28 @@
       "problems": ["[!! w !!]: this node has no widget named w. Add it in the Widgets tab."]
     },
     {
-      "name": "the only input is arg itself",
+      "name": "the only input is input_0",
       "language": "python",
       "code": "df = [!! input 0 !!]",
       "widgets": [],
       "inputs": [{"slot": 0}],
-      "expected": "df = arg"
+      "expected": "df = input_0"
     },
     {
-      "name": "several inputs index arg in circle order",
+      "name": "each input is input_<circle>",
       "language": "python",
       "code": "a = [!! input 0 !!]\nc = [!! input 2 !!]",
       "widgets": [],
       "inputs": [{"slot": 2}, {"slot": 0}, {"slot": 1}],
-      "expected": "a = arg[0]\nc = arg[2]"
+      "expected": "a = input_0\nc = input_2"
     },
     {
-      "name": "an empty circle takes no place in arg",
+      "name": "an empty circle leaves the others' names as they are",
       "language": "python",
       "code": "a = [!! input 1 !!]; b = [!! input 2 !!]",
       "widgets": [],
       "inputs": [{"slot": 1}, {"slot": 2}],
-      "expected": "a = arg[0]; b = arg[1]"
+      "expected": "a = input_1; b = input_2"
     },
     {
       "name": "a JavaScript input",
@@ -272,15 +272,15 @@
       "code": "const n = [!! input 1 !!].length;",
       "widgets": [],
       "inputs": [{"slot": 0}, {"slot": 1}],
-      "expected": "const n = arg[1].length;"
+      "expected": "const n = input_1.length;"
     },
     {
       "name": "a column on its own is its quoted name",
       "language": "python",
-      "code": "s = arg[[!! input 0.population !!]]",
+      "code": "s = input_0[[!! input 0.population !!]]",
       "widgets": [],
       "inputs": [{"slot": 0, "columns": ["population", "area"]}],
-      "expected": "s = arg[\"population\"]"
+      "expected": "s = input_0[\"population\"]"
     },
     {
       "name": "a column inside a string and a comment is its name",
@@ -320,7 +320,7 @@
       "code": "x = [!! input !!] + [!! input 0 !!]",
       "widgets": [{"name": "input", "type": "number", "default": 5}],
       "inputs": [{"slot": 0}],
-      "expected": "x = 5 + arg"
+      "expected": "x = 5 + input_0"
     },
     {
       "name": "an input with no edge",
@@ -329,7 +329,7 @@
       "widgets": [],
       "inputs": [{"slot": 0}, {"slot": 1}],
       "expected": "x = [!! input 3 !!]",
-      "problems": ["[!! input 3 !!]: input 3 has no edge. Connect one to that circle, or drag one of this node's input chips here."]
+      "problems": ["[!! input 3 !!]: input_3 has no edge. Connect one to that circle, or drag one of this node's input chips here."]
     },
     {
       "name": "an input inside a string is not text",
@@ -371,7 +371,7 @@
       "widgets": [],
       "inputs": [{"slot": 0, "layers": [{"name": "roads"}, {"name": "buildings"}]}],
       "expected": "{\"dataRef\": [!! input 0 !!]}",
-      "problems": ["[!! input 0 !!]: input 0 carries several layers (roads, buildings). Drag one of its layer chips here."]
+      "problems": ["[!! input 0 !!]: input_0 carries several layers (roads, buildings). Drag one of its layer chips here."]
     },
     {
       "name": "a layer or a layer's column the input does not have",
@@ -381,8 +381,8 @@
       "inputs": [{"slot": 0, "layers": [{"name": "roads", "columns": ["lanes"]}, {"name": "buildings"}]}],
       "expected": "{\"a\": [!! input 0:parks !!], \"b\": [!! input 0:roads.width !!]}",
       "problems": [
-        "[!! input 0:parks !!]: input 0 has no layer parks. Its layers are roads, buildings.",
-        "[!! input 0:roads.width !!]: layer roads of input 0 has no column width."
+        "[!! input 0:parks !!]: input_0 has no layer parks. Its layers are roads, buildings.",
+        "[!! input 0:roads.width !!]: layer roads of input_0 has no column width."
       ]
     },
     {
@@ -391,15 +391,15 @@
       "code": "roads = [!! input 0:table_osm_roads !!]\nreturn roads[[!! input 0:table_osm_roads.lanes !!]]",
       "widgets": [],
       "inputs": [{"slot": 0}],
-      "expected": "roads = curio_layer(arg, \"table_osm_roads\", 0)\nreturn roads[\"lanes\"]"
+      "expected": "roads = curio_layer(input_0, \"table_osm_roads\", 0)\nreturn roads[\"lanes\"]"
     },
     {
-      "name": "a layer chip of one of several inputs picks from it by its place and names its circle",
+      "name": "a layer chip of one of several inputs picks from that input and names its circle",
       "language": "python",
       "code": "a = [!! input 2:roads !!]  # [!! input 2:roads.lanes !!] of [!! input 1 !!]",
       "widgets": [],
       "inputs": [{"slot": 1}, {"slot": 2, "layers": [{"name": "roads", "columns": ["lanes"]}, {"name": "buildings"}]}],
-      "expected": "a = curio_layer(arg[1], \"roads\", 2)  # lanes of [!! input 1 !!]",
+      "expected": "a = curio_layer(input_2, \"roads\", 2)  # lanes of [!! input 1 !!]",
       "problems": ["[!! input 1 !!] is an input, not text. Use it outside quotes and comments."]
     },
     {
@@ -408,7 +408,7 @@
       "code": "const roads = [!! input 0:table_osm_roads !!];\nconst label = `${roads.features.length} roads, [!! input 0:table_osm_roads.lanes !!]`;",
       "widgets": [],
       "inputs": [{"slot": 0}],
-      "expected": "const roads = curio_layer(arg, \"table_osm_roads\", 0);\nconst label = `${roads.features.length} roads, lanes`;"
+      "expected": "const roads = curio_layer(input_0, \"table_osm_roads\", 0);\nconst label = `${roads.features.length} roads, lanes`;"
     },
     {
       "name": "a layer chip in code is an input, not text",
@@ -433,8 +433,8 @@
       ],
       "expected": "parks = [!! input 0:parks !!]\nwater = [!! input 1:water !!]",
       "problems": [
-        "[!! input 0:parks !!]: input 0 has no layer parks. Its layers are table_osm_roads, table_osm_buildings.",
-        "[!! input 1:water !!]: input 1 has no layer water. It carries no named layers."
+        "[!! input 0:parks !!]: input_0 has no layer parks. Its layers are table_osm_roads, table_osm_buildings.",
+        "[!! input 1:water !!]: input_1 has no layer water. It carries no named layers."
       ]
     },
     {
@@ -443,7 +443,7 @@
       "code": "roads = [!! input 0:table_osm_roads !!]\nreturn roads[[!! input 0:table_osm_roads.highway !!]]",
       "widgets": [],
       "inputs": [{"slot": 0, "columns": ["highway", "oneway"]}],
-      "expected": "roads = curio_layer(arg, \"table_osm_roads\", 0)\nreturn roads[\"highway\"]"
+      "expected": "roads = curio_layer(input_0, \"table_osm_roads\", 0)\nreturn roads[\"highway\"]"
     },
     {
       "name": "a layer's column the one frame of its input does not have",
@@ -452,7 +452,7 @@
       "widgets": [],
       "inputs": [{"slot": 0, "columns": ["highway", "oneway"]}],
       "expected": "const w = [!! input 0:table_osm_roads.width !!];",
-      "problems": ["[!! input 0:table_osm_roads.width !!]: layer table_osm_roads of input 0 has no column width."]
+      "problems": ["[!! input 0:table_osm_roads.width !!]: layer table_osm_roads of input_0 has no column width."]
     },
     {
       "name": "a layer chip on an input of several frames, none of them named so, names the ones it has",
@@ -461,7 +461,7 @@
       "widgets": [],
       "inputs": [{"slot": 0, "layers": [{"name": "table_osm_parks"}, {"name": "table_osm_water"}]}],
       "expected": "const roads = [!! input 0:table_osm_roads !!];",
-      "problems": ["[!! input 0:table_osm_roads !!]: input 0 has no layer table_osm_roads. Its layers are table_osm_parks, table_osm_water."]
+      "problems": ["[!! input 0:table_osm_roads !!]: input_0 has no layer table_osm_roads. Its layers are table_osm_parks, table_osm_water."]
     },
     {
       "name": "a layer chip in a spec on an input of one frame with no layer name is that frame: the name the input is read by, and its column the frame's",
@@ -497,7 +497,7 @@
       "widgets": [],
       "inputs": [{"slot": 0, "dataType": "geodataframe", "columns": ["highway", "oneway"]}],
       "expected": "{\"field\": [!! input 0:roads.width !!]}",
-      "problems": ["[!! input 0:roads.width !!]: layer roads of input 0 has no column width."]
+      "problems": ["[!! input 0:roads.width !!]: layer roads of input_0 has no column width."]
     },
     {
       "name": "a layer chip in a spec on an input not known to be one frame is the layer's name: layers not read yet, or a value with no data type",
@@ -514,7 +514,7 @@
       "widgets": [],
       "inputs": [{"slot": 0, "dataType": "geodataframe", "layerName": "table_osm_roads", "columns": ["highway"]}],
       "expected": "{\"map\": {\"layerRefs\": [{\"dataRef\": \"input_0\", \"getFnv\": \"highway\"}, {\"dataRef\": [!! input 0:parks !!]}]}}",
-      "problems": ["[!! input 0:parks !!]: input 0 has no layer parks. Its layers are table_osm_roads."]
+      "problems": ["[!! input 0:parks !!]: input_0 has no layer parks. Its layers are table_osm_roads."]
     },
     {
       "name": "a layer chip in code on one frame whose value names its layer: that name is picked, another is the missing layer",
@@ -522,8 +522,8 @@
       "code": "roads = [!! input 0:table_osm_roads !!]\nparks = [!! input 0:parks !!]",
       "widgets": [],
       "inputs": [{"slot": 0, "dataType": "geodataframe", "layerName": "table_osm_roads"}],
-      "expected": "roads = curio_layer(arg, \"table_osm_roads\", 0)\nparks = [!! input 0:parks !!]",
-      "problems": ["[!! input 0:parks !!]: input 0 has no layer parks. Its layers are table_osm_roads."]
+      "expected": "roads = curio_layer(input_0, \"table_osm_roads\", 0)\nparks = [!! input 0:parks !!]",
+      "problems": ["[!! input 0:parks !!]: input_0 has no layer parks. Its layers are table_osm_roads."]
     },
     {
       "name": "the chip of a deleted input",
@@ -544,7 +544,7 @@
       "widgets": [],
       "inputs": [{"slot": 0, "columns": ["a"]}],
       "expected": "x = [!! input 0.missing !!]",
-      "problems": ["[!! input 0.missing !!]: input 0 has no column missing."]
+      "problems": ["[!! input 0.missing !!]: input_0 has no column missing."]
     },
     {
       "name": "a shared tag takes its Parameter node's set value",
@@ -614,10 +614,10 @@
     {
       "name": "a selection tag's ids on their own are a list",
       "language": "python",
-      "code": "picked = [!! selection picked !!]\nreturn arg[arg[\"osm_id\"].isin(picked)]",
+      "code": "picked = [!! selection picked !!]\nreturn input_0[input_0[\"osm_id\"].isin(picked)]",
       "widgets": [],
       "selections": [{"name": "picked", "node": "chart", "column": "osm_id", "ids": [101, 104, 12345678901]}],
-      "expected": "picked = [101, 104, 12345678901]\nreturn arg[arg[\"osm_id\"].isin(picked)]"
+      "expected": "picked = [101, 104, 12345678901]\nreturn input_0[input_0[\"osm_id\"].isin(picked)]"
     },
     {
       "name": "a selection's text and number ids in JavaScript",
@@ -700,6 +700,70 @@
       "selections": [{"name": "picked", "node": "chart", "column": "osm_id", "count": 25000}],
       "expected": "{\"oneOf\": [!! selection picked !!]}",
       "problems": ["[!! selection picked !!]: the selection holds 25000 ids, more than the 10000 a selection tag takes. Select fewer rows in its view."]
+    },
+    {
+      "name": "an input chip written input_0 reads as one written input 0",
+      "language": "python",
+      "code": "a = [!! input_0 !!]\nb = [!! input_1.height !!]\nc = [!! input_1:roads !!]",
+      "widgets": [],
+      "inputs": [{"slot": 0}, {"slot": 1}],
+      "expected": "a = input_0\nb = \"height\"\nc = curio_layer(input_1, \"roads\", 1)"
+    },
+    {
+      "name": "a typed input name is left as written, the name its chip writes",
+      "language": "python",
+      "code": "df = input_0",
+      "widgets": [],
+      "inputs": [{"slot": 0}],
+      "expected": "df = input_0"
+    },
+    {
+      "name": "typed input names of several inputs are left as written",
+      "language": "python",
+      "code": "a = input_1.merge(input_2, on=\"id\")",
+      "widgets": [],
+      "inputs": [{"slot": 1}, {"slot": 2}],
+      "expected": "a = input_1.merge(input_2, on=\"id\")"
+    },
+    {
+      "name": "a typed input name in a string, a comment, a member or a longer name is kept",
+      "language": "python",
+      "code": "s = \"input_0\"  # input_0\nt = df.input_0 + my_input_0 + input_01x",
+      "widgets": [],
+      "inputs": [{"slot": 0}],
+      "expected": "s = \"input_0\"  # input_0\nt = df.input_0 + my_input_0 + input_01x"
+    },
+    {
+      "name": "a typed name of an input with no edge is kept as written",
+      "language": "python",
+      "code": "x = input_3",
+      "widgets": [],
+      "inputs": [{"slot": 0}, {"slot": 1}],
+      "expected": "x = input_3"
+    },
+    {
+      "name": "typed input names in JavaScript, beside a chip",
+      "language": "javascript",
+      "code": "const n = input_0.length + [!! input_1 !!].length; // input_0",
+      "widgets": [],
+      "inputs": [{"slot": 0}, {"slot": 1}],
+      "expected": "const n = input_0.length + input_1.length; // input_0"
+    },
+    {
+      "name": "a typed input name in JSON is the spec's own text",
+      "language": "json",
+      "code": "{\"dataRef\": \"input_0\"}",
+      "widgets": [],
+      "inputs": [{"slot": 0}],
+      "expected": "{\"dataRef\": \"input_0\"}"
+    },
+    {
+      "name": "a widget value that reads input_0 stays text",
+      "language": "python",
+      "code": "x = [!! label !!]",
+      "widgets": [{"name": "label", "type": "text", "default": "input_0"}],
+      "inputs": [{"slot": 0}],
+      "expected": "x = \"input_0\""
     }
   ]
 }

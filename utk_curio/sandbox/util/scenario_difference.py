@@ -1,10 +1,12 @@
 """The Compare Scenarios node's difference step (#662).
 
-In Difference the node compares exactly two inputs: input 0 is the reference
-and input 1 the comparison, and every number it gives is comparison minus
+In Difference the node compares exactly two inputs: input_0 is the reference
+and input_1 the comparison, and every number it gives is comparison minus
 reference. Its code calls ``curio_difference_scenarios`` with one
 ``(scenario id, scenario name, input)`` entry per input, as the stacking step
-(``scenario_stack.py``) takes them, and reads its inputs the same way.
+(``scenario_stack.py``) takes them, and reads its inputs the same way. With
+``absolute=True`` every number it gives is the size of that difference,
+whichever is higher: 0 where nothing changed.
 
 - Two layers (GeoDataFrames) or two tables are joined on a stable id: ``key``
   when the node names one, else ``osm_id`` or ``building_id``, the first both
@@ -65,7 +67,7 @@ STABLE_IDS = ("osm_id", "building_id")
 
 #: The most cells, and the longest side, an Autark map loads from one raster:
 #: ``RASTER_MAX_CELLS`` and ``RASTER_MAX_SIDE`` in ``utils/raster/rasterLoad.ts``.
-MAX_CELLS = 2048 * 2048
+MAX_CELLS = 4096 * 4096
 MAX_SIDE = 8192
 
 _RASTER = "raster"
@@ -106,13 +108,14 @@ def _side(position: int, entry, layer=None) -> dict:
     return {**side, "kind": kind, "frame": frame}
 
 
-def difference_scenarios(entries, key=None, layer=None):
+def difference_scenarios(entries, key=None, layer=None, absolute=False):
     """The second input minus the first: a difference layer or table, or, for
     two rasters, the request the sandbox completes.
 
     *entries* lists ``(scenario_id, scenario_name, value)`` per input, in
     circle order. *key* names the column rows are joined on, and *layer* the
-    layer to read from an input that is an Autark node's several layers.
+    layer to read from an input that is an Autark node's several layers. With
+    *absolute*, each difference is its size, ``|comparison - reference|``.
     """
     entries = list(entries or [])
     if len(entries) != 2:
@@ -122,9 +125,9 @@ def difference_scenarios(entries, key=None, layer=None):
         )
     reference, comparison = (_side(position, entry, layer) for position, entry in enumerate(entries))
     if reference["kind"] == _RASTER and comparison["kind"] == _RASTER:
-        return _raster_request(reference, comparison)
+        return _raster_request(reference, comparison, absolute)
     if reference["kind"] == comparison["kind"] and reference["kind"] in (_GEO, _TABLE):
-        return _join(reference, comparison, key)
+        return _join(reference, comparison, key, absolute)
     raise ValueError(
         "Compare Scenarios in Difference compares two rasters, two layers or two tables, and "
         f"{reference['label']} is {_WORDS[reference['kind']]} while {comparison['label']} is "
@@ -239,7 +242,7 @@ def _without_numbers(value):
     return None if _is_number_value(value) else value
 
 
-def _nested_difference(before, after):
+def _nested_difference(before, after, absolute=False):
     """``(cell, changed)`` for one row of a nested column: *after* with each
     number that *before* holds at the same place replaced by after minus
     before, and whether any value differs. A value one side alone holds is kept
@@ -258,10 +261,11 @@ def _nested_difference(before, after):
             continue
         old, new = before[key], after[key]
         if isinstance(old, dict) and isinstance(new, dict):
-            out[key], differs = _nested_difference(old, new)
+            out[key], differs = _nested_difference(old, new, absolute)
         elif _is_number_value(old) and _is_number_value(new):
             old_empty, new_empty = _no_value(old), _no_value(new)
-            out[key] = None if old_empty or new_empty else float(new) - float(old)
+            change = None if old_empty or new_empty else float(new) - float(old)
+            out[key] = abs(change) if absolute and change is not None else change
             differs = old_empty != new_empty or (not old_empty and not new_empty and float(new) != float(old))
         else:
             out[key] = new
@@ -292,7 +296,7 @@ def _differs(left, right):
     return (~(equal | both_empty)).to_numpy()
 
 
-def _join(reference: dict, comparison: dict, key):
+def _join(reference: dict, comparison: dict, key, absolute=False):
     import numpy as np
     import pandas as pd
 
@@ -356,11 +360,11 @@ def _join(reference: dict, comparison: dict, key):
     for column in numbers:
         before = pd.to_numeric(ref_both[column], errors="coerce").to_numpy(dtype="float64")
         after = pd.to_numeric(on_both[column], errors="coerce").to_numpy(dtype="float64")
-        on_both[column] = after - before
+        on_both[column] = np.abs(after - before) if absolute else after - before
         before_empty, after_empty = np.isnan(before), np.isnan(after)
         changed |= (before_empty != after_empty) | (~before_empty & ~after_empty & (after != before))
     for column in nested:
-        pairs = [_nested_difference(old, new) for old, new in zip(ref_both[column], on_both[column])]
+        pairs = [_nested_difference(old, new, absolute) for old, new in zip(ref_both[column], on_both[column])]
         on_both[column] = pd.Series([cell for cell, _ in pairs], index=on_both.index, dtype=object)
         changed |= np.asarray([flag for _, flag in pairs], dtype=bool)
     for column in others:
@@ -410,10 +414,12 @@ def _oversize(label: str, width: int, height: int) -> str:
     )
 
 
-def _raster_request(reference: dict, comparison: dict) -> dict:
+def _raster_request(reference: dict, comparison: dict, absolute=False) -> dict:
     from utk_curio.sandbox.util.rasters import geotiff_bytes, raster_meta
 
     request = {"dataType": RASTER_DIFFERENCE}
+    if absolute:
+        request["absolute"] = True
     for role, side in (("reference", reference), ("comparison", comparison)):
         dataset = side["value"]
         meta = raster_meta(dataset)
@@ -457,6 +463,7 @@ def subtract_in_autark(request: dict, *, cwd=None, node_type="curio.builtin/comp
         return subtract_envelopes(
             (request["reference"]["label"], envelopes["reference"]),
             (request["comparison"]["label"], envelopes["comparison"]),
+            absolute=request.get("absolute") is True,
         )
     except RasterAlgebraError as refused:
         raise RasterDifferenceFailed(f"Compare Scenarios: {refused}") from refused
@@ -473,7 +480,7 @@ def _load_in_autark(request: dict, *, cwd, node_type) -> dict:
 
     try:
         result_json, _logs, stderr_lines = run_js_script(
-            program_text(), request, cwd=cwd or os.getcwd(), node_type=node_type,
+            program_text(), {"input_0": request}, cwd=cwd or os.getcwd(), node_type=node_type,
             t0=time.perf_counter(), node_flags=_NODE_FLAGS,
         )
     except FileNotFoundError as exc:

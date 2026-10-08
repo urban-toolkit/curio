@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/22-storage-audio-recordings.json",
-    "sha256": "a269759f394bd605e449ff30e07053107629098b3d92ea466565933ee8f69fb6",
+    "sha256": "cb5ba75c36ebedd480c66a85241c66c0fd7efb7ece8ea31ebac1637336c5c211",
     "walkthrough": "docs/examples/22-storage-audio-recordings.md"
   },
   "prompt": "Load the Example noise recordings collection from the Data Catalog: WAV recordings from noise sensors in the Chicago Loop, timed by their file names. Show each recording as a spectrogram card, then split the audio into windows of a tenth of a second, measure the level of each window, and chart the level per window in Vega-Lite.",

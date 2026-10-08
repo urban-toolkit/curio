@@ -88,8 +88,8 @@ class TestTheDiagnosis:
         )
         assert text.startswith("the code ran but produced an EMPTY result — 0 rows")
         assert "geodataframe" in text
-        assert "arg[0] 'Chicago Boundaries'" in text and "2 rows" in text
-        assert "arg[1] 'Population Data'" in text and "3 rows" in text
+        assert "input_0[0] 'Chicago Boundaries'" in text and "2 rows" in text
+        assert "input_0[1] 'Population Data'" in text and "3 rows" in text
         # The VALUES are the point: the column names looked joinable.
         assert "area_numbe int e.g. 32" in text
         assert "tract_id str e.g. '17031010100'" in text

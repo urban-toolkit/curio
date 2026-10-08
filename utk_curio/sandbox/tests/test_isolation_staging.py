@@ -270,7 +270,7 @@ def test_a_full_input_to_output_cycle(workspace, scratch):
     downstream_scratch.mkdir()
     spec = staging.stage_input(first, downstream_scratch)
     second = _run_and_persist(
-        "    return int(arg['a'].sum())\n", downstream_scratch, input_spec=spec
+        "    return int(input_0['a'].sum())\n", downstream_scratch, input_spec=spec
     )
     assert load_from_duckdb(second) == 6
 

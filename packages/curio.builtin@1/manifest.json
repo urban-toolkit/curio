@@ -226,7 +226,7 @@
     },
     {
       "category": "computation",
-      "description": "Run JavaScript via Node.js. Input from the previous node is available as `arg`. Use `return` to pass output downstream.",
+      "description": "Run JavaScript via Node.js. What the edge on each input circle delivers is `input_0`, `input_1`, and so on. Use `return` to pass output downstream.",
       "editor": "code",
       "engine": "javascript",
       "hasCode": true,

@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/Scenarios.json",
-    "sha256": "85e3643b1f9d81455a5adc6de2b45fa608ec3278a5aaaae508324cb999afde64",
+    "sha256": "2c756e870355ad243dd1957a9d53bc112be85c78acddea44f9ec22483d563fbe",
     "walkthrough": null
   },
   "prompt": "In Python, make a frame of six buildings and their heights. From it, compute each building's shadow length in a step whose height factor is a number widget, and draw the shadows as a bar chart. Make that step and its chart one scenario, then add a second scenario that copies them with the height factor set to 2. Finally compare the two scenarios in a step that reads both shadow results and returns the mean shadow of each, drawn as bars.",

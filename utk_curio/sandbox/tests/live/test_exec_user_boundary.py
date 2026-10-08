@@ -97,7 +97,7 @@ def run_node(code, *, file_path="", data_type="", user_key=USER_KEY,
     """Execute *code* as a Python node and return the sandbox's response.
 
     ``code`` is written here as an ordinary top-level snippet and indented on
-    the way out, because the worker drops it into ``def userCode(arg):`` --
+    the way out, because the worker drops it into ``def userCode(input, arg):`` --
     see ``worker.execute_code``. Its input, when there is one, arrives as
     ``arg``.
     """
@@ -557,17 +557,17 @@ def test_scouts_rasterizer_runs_as_the_exec_user():
 #: declares the package, so the stack's ``--with-examples`` boot installs its
 #: libraries.
 ROUTING_SOURCES = LAUNCH_DIR + "/packages/scout.routing@1/sources"
+#: SCOUT's WRF forecast: one bundle, a NetCDF file per variable.
 ROUTING_DATASETS = {
-    "data.scout.wrf-" + name.lower(): "/datasets/data.scout.wrf-%s@1/data/%s.nc" % (name.lower(), name)
-    for name in ("RAIN", "T2", "WSPD10", "WDIR10", "RH2")
+    "data.scout.chicago-weather-2025-07-06": "/datasets/data.scout.chicago-weather-2025-07-06@1/data/bundle.json",
 }
 WEATHER_GNN = "model.scout.weather-gnn"
 
 
 def test_scouts_weather_routing_runs_as_the_exec_user():
     """The Weather Routing node's code, as the execution user: osmnx builds the
-    road graph of a grid of Loop streets, netCDF4 reads the WRF group's staged
-    files, onnxruntime runs the Model Catalog's weather GNN, staged as a model
+    road graph of a grid of Loop streets, netCDF4 reads the WRF forecast's
+    staged files (``curio_data_path(id, part=...)``), onnxruntime runs the Model Catalog's weather GNN, staged as a model
     folder is, and networkx finds the routes."""
     body = textwrap.indent(textwrap.dedent("""
         import geopandas as gpd
@@ -578,7 +578,7 @@ def test_scouts_weather_routing_runs_as_the_exec_user():
         ys = [41.876, 41.878, 41.880, 41.882]
         lines = [LineString([(x, y) for x in xs]) for y in ys] + [LineString([(x, y) for y in ys]) for x in xs]
         roads = gpd.GeoDataFrame({"highway": ["secondary"] * len(lines)}, geometry=lines, crs="EPSG:4326")
-        weather = {name: curio_data_path("data.scout.wrf-" + name.lower())
+        weather = {name: curio_data_path("data.scout.chicago-weather-2025-07-06", part=name + ".nc")
                    for name in ("RAIN", "T2", "WSPD10", "WDIR10", "RH2")}
         routes, metrics = calculate_weather_route(
             roads, weather, curio_load_model("model.scout.weather-gnn"),

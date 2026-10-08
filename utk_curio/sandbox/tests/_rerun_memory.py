@@ -154,7 +154,7 @@ def _loader_code(path: Path) -> str:
 
 
 _TRANSFORM_CODE = (
-    "tall = arg[arg['stories'] > 1].copy()\n"
+    "tall = input_0[input_0['stories'] > 1].copy()\n"
     "tall['footprint'] = tall.geometry.area\n"
     "return tall\n"
 )

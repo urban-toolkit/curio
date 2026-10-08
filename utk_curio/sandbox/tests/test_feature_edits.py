@@ -24,6 +24,7 @@ from unittest import mock
 import geopandas as gpd
 import pytest
 from shapely.geometry import Point, box
+from utk_curio.sandbox.util.input_names import call_as_node
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CASES = REPO_ROOT / "utk_curio/frontend/urban-workflows/src/utils/editFeatures/editFeaturesCode.cases.json"
@@ -291,8 +292,8 @@ def test_the_code_the_node_writes_runs_its_edits(case):
 
     assert case["code"] is not None, case["name"]
     namespace = {"curio_edit_features": edit_features}
-    exec(f"def userCode(arg):\n{textwrap.indent(case['code'], '    ')}", namespace)
-    out = namespace["userCode"](_records())
+    records = _records()
+    out = call_as_node(textwrap.indent(case['code'], '    '), namespace, records)
     buildings = out if isinstance(out, list) else out["data"]
     fc = buildings[1]["geojson"] if isinstance(out, list) else buildings[1]["data"]
     assert _ids(fc) == case["kept"]

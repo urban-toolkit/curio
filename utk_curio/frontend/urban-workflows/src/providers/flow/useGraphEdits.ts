@@ -17,6 +17,7 @@ import {
     withoutSlot,
 } from "../../utils/inputSlots";
 import { renumberInputReferences } from "../../utils/references/codeReferences";
+import { getUnversionedFlowNodeType } from "../../utils/flowNodeCanonicalType";
 import type { useCollab } from "../CollaborationProvider";
 import { normalizeFlowInput } from "../../utils/flowOutputRef";
 import { markSelectionEcho, SelectionEchoOptions } from "../../utils/selectionEcho";
@@ -204,7 +205,7 @@ export function useGraphEdits({
      * each surviving edge moves up one circle per deleted circle above it, the
      * values move with it, and the node's code is rewritten so every input
      * chip still names the same input. Deleted inputs' chips become
-     * `[!! input ? !!]`. Peers get the moved edges and the new code from here;
+     * `[!! input_? !!]`. Peers get the moved edges and the new code from here;
      * they never rewrite on their own, so the code changes once.
      */
     const closeUpCircles = (target: Node, deleted: Edge[], deletedIds: Set<string>) => {
@@ -231,7 +232,9 @@ export function useGraphEdits({
         }
 
         const code: string = typeof target.data?.code === "string" ? target.data.code : "";
-        const rewritten = removed.reduce((text, slot) => renumberInputReferences(text, slot), code);
+        // A spec's input names sit in its strings, which a Python scan skips.
+        const language = getUnversionedFlowNodeType(target) === NodeType.JS_COMPUTATION ? "javascript" : "python";
+        const rewritten = removed.reduce((text, slot) => renumberInputReferences(text, slot, language), code);
         let inputSlots: unknown[] = target.data?.inputSlots ?? [];
         let sourceSlots: unknown[] = target.data?.sourceSlots ?? [];
         for (const slot of removed) {

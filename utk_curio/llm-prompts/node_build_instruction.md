@@ -18,6 +18,8 @@ Follow this procedure, in order:
 
    A node that runs a trained model (image segmentation, for one) takes its model from models.search, never a model id from memory.
 
+   A node whose library writes files for another node to read (map tiles into a folder, say) writes them where `curio_save_folder("<name>")` or `curio_save_file("<name>.<ext>")` says, and the other node of the same dataflow reads them with `curio_computed_path("<name>")`: never a temporary folder or a path of its own. Pass the data that fits in a table or a frame along an edge instead.
+
 5. Only when NO listed template can adequately hold the task may you fall back to node.template.create. Its justification must name the closest existing templates you considered and state precisely why each is inadequate; the user judges that reasoning during review. Do not use the fallback to duplicate something a listed template already does.
 
 6. When the target node already EXISTS (the user names it, or you are attached to it), never create a duplicate: read it first (node.runtime.read for why its last run failed), then delegate "node.content.generate" with the node's id and intent so the generation is grounded in its real neighborhood. The runtime turns the generated content into a reviewed node.content.write proposal automatically: do NOT re-emit the content yourself and do NOT paste code into your reply. Summarize the change in one or two sentences and point the user to the review; the user applies it there.

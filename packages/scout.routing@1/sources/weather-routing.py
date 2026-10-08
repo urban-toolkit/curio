@@ -16,17 +16,18 @@ Ported from SCOUT, https://github.com/urban-toolkit/scout.
 """
 from scout_routing.weather_routing import calculate_weather_route
 
-# The Data Catalog's SCOUT WRF group, a NetCDF file per variable.
+# SCOUT's WRF forecast from the Data Catalog, one dataset of five NetCDF
+# files, a variable each.
 weather = {
-    "RAIN": curio_data_path("data.scout.wrf-rain"),
-    "T2": curio_data_path("data.scout.wrf-t2"),
-    "WSPD10": curio_data_path("data.scout.wrf-wspd10"),
-    "WDIR10": curio_data_path("data.scout.wrf-wdir10"),
-    "RH2": curio_data_path("data.scout.wrf-rh2"),
+    "RAIN": curio_data_path("data.scout.chicago-weather-2025-07-06", part="RAIN.nc"),
+    "T2": curio_data_path("data.scout.chicago-weather-2025-07-06", part="T2.nc"),
+    "WSPD10": curio_data_path("data.scout.chicago-weather-2025-07-06", part="WSPD10.nc"),
+    "WDIR10": curio_data_path("data.scout.chicago-weather-2025-07-06", part="WDIR10.nc"),
+    "RH2": curio_data_path("data.scout.chicago-weather-2025-07-06", part="RH2.nc"),
 }
 
 return calculate_weather_route(
-    [!! input 0:table_osm_roads !!],
+    [!! input_0:table_osm_roads !!],
     weather,
     # SCOUT's weather graph network, the Model Catalog's weather GNN.
     curio_load_model("model.scout.weather-gnn"),

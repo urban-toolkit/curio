@@ -350,7 +350,9 @@ def template_code(module: str, function: FunctionSignature, uses: dict[str, dict
     "default"}``. Positional-only parameters are passed by position, the
     others by name.
     """
-    callee = function.name if function.name != "arg" else "arg_function"
+    # The node's code is the body of a function whose parameters are its
+    # inputs, input_0, input_1, ...: a function of such a name would be hidden.
+    callee = function.name if not re.match(r"^input_\d+$", function.name) else f"{function.name}_function"
     imported = function.name if callee == function.name else f"{function.name} as {callee}"
     arguments: list[str] = []
     skipped: list[Parameter] = []
@@ -368,7 +370,7 @@ def template_code(module: str, function: FunctionSignature, uses: dict[str, dict
         elif how == FIXED:
             text = fixed_value_text(use.get("value"), param.name)
         elif how == INPUT:
-            text = f"[!! input {int(use.get('slot', 0))} !!]"
+            text = f"[!! input_{int(use.get('slot', 0))} !!]"
         else:
             raise FunctionSourceError(f"Choose what {param.name} is given: a widget, a value, an input or its default.")
         if param.kind == POSITIONAL_ONLY:

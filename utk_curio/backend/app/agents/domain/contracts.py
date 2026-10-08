@@ -769,14 +769,21 @@ def _runtime_block_keys(_src: _Sources) -> str:
 
 
 def _input_kind_list(_src: _Sources) -> str:
-    """The ``inputContract`` kind of an ``arg`` that is a list, quoted."""
+    """The ``inputContract`` kind of one circle that holds a list, quoted."""
     from utk_curio.backend.app.agents.domain.input_contract import KIND_LIST
 
     return json.dumps(KIND_LIST)
 
 
+def _input_kind_several(_src: _Sources) -> str:
+    """The ``inputContract`` kind of several circles, one value each, quoted."""
+    from utk_curio.backend.app.agents.domain.input_contract import KIND_SEVERAL
+
+    return json.dumps(KIND_SEVERAL)
+
+
 def _input_kind_single(_src: _Sources) -> str:
-    """The ``inputContract`` kind of an ``arg`` that is one value, quoted."""
+    """The ``inputContract`` kind of one circle that is one value, quoted."""
     from utk_curio.backend.app.agents.domain.input_contract import KIND_SINGLE
 
     return json.dumps(KIND_SINGLE)
@@ -929,6 +936,7 @@ PROMPT_FIELDS: dict[str, PromptField] = {
     "candidates.rows_per_lane": PromptField(_rows_per_lane),
     "node_context.runtime_keys": PromptField(_runtime_block_keys),
     "input_contract.list": PromptField(_input_kind_list),
+    "input_contract.several": PromptField(_input_kind_several),
     "input_contract.single": PromptField(_input_kind_single),
     "vega.runtime_field": PromptField(_vega_runtime_field, takes_arg=True),
     "backend.handler_pattern": PromptField(_handler_pattern),

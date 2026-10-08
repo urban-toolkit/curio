@@ -11,26 +11,40 @@
  * map gets a legend of its own listing every such layer by its scenario's
  * name. autk-map's legend shows one color-mapped layer at a time and these
  * layers are not color-mapped, so it stays hidden for them.
+ *
+ * A layerRef can also give a fixed color of its own, with no scenario:
+ * `"color": "#90CAF9"`, an outline `"stroke": "#42A5F5"` (else a darker shade
+ * of the color) and the legend's `"label"` (else its dataRef). Two routes in
+ * a web map's colors, a light fill and a darker casing, are drawn this way.
  */
 import type { Scenario } from '../../utils/scenarios/scenarioModel';
 
 export const SCENARIO_LEGEND_ATTR = 'data-curio-scenario-legend';
 
-/** One layer drawn in a scenario's color. */
+/** One layer drawn in a fixed color: its scenario's, or its own. */
 export interface ScenarioLayer {
     dataRef: string;
     color: string;
     label: string;
+    /** The outline's color, when the layerRef gives one. */
+    stroke?: string;
 }
 
-/** The layers of each map that name a scenario this dataflow has, in the
- *  document's order, one list per map. */
+/** The layers of each map that name a scenario this dataflow has, or a color
+ *  of their own, in the document's order, one list per map. */
 export function scenarioLayers(spec: any, scenarios: readonly Scenario[]): ScenarioLayer[][] {
     const maps = spec?.map ? (Array.isArray(spec.map) ? spec.map : [spec.map]) : [];
     return maps.map((mapSpec: any) => {
         const layers: ScenarioLayer[] = [];
         for (const ref of mapSpec?.layerRefs ?? []) {
-            if (!ref?.dataRef || typeof ref.scenario !== 'string') continue;
+            if (!ref?.dataRef) continue;
+            if (typeof ref.scenario !== 'string') {
+                if (typeof ref.color !== 'string' || !rgb(ref.color)) continue;
+                const label = typeof ref.label === 'string' && ref.label.trim() ? ref.label.trim() : ref.dataRef;
+                const stroke = typeof ref.stroke === 'string' && rgb(ref.stroke) ? ref.stroke : undefined;
+                layers.push({ dataRef: ref.dataRef, color: ref.color, label, ...(stroke ? { stroke } : {}) });
+                continue;
+            }
             const scenario = scenarios.find((s) => s.id === ref.scenario);
             if (!scenario) continue;
             layers.push({ dataRef: ref.dataRef, color: scenario.color, label: scenario.name });
@@ -44,6 +58,13 @@ function rgb(hex: string): { r: number; g: number; b: number; alpha: number } | 
     if (!match) return null;
     const value = parseInt(match[1], 16);
     return { r: (value >> 16) & 255, g: (value >> 8) & 255, b: value & 255, alpha: 1 };
+}
+
+/** A darker shade of *color*, the outline a polygon layer wears around its
+ *  scenario's color, as a route on a web map has a darker casing. */
+export function outlineOf(color: { r: number; g: number; b: number; alpha: number }) {
+    const shade = (value: number) => Math.round(value * 0.65);
+    return { r: shade(color.r), g: shade(color.g), b: shade(color.b), alpha: color.alpha };
 }
 
 /** The legend: a swatch and a name per scenario, styled as autk-map's own. */
@@ -74,6 +95,8 @@ function legendElement(layers: ScenarioLayer[]): HTMLDivElement {
             height: '4px',
             borderRadius: '2px',
             backgroundColor: layer.color,
+            // A layer with an outline of its own shows it, as the map does.
+            ...(layer.stroke ? { height: '6px', boxSizing: 'border-box', border: `2px solid ${layer.stroke}` } : {}),
         });
         const name = document.createElement('span');
         name.textContent = layer.label;
@@ -94,7 +117,10 @@ export function colorScenarioLayers(grammar: any, spec: any, scenarios: readonly
             const map = registry.get(layer.dataRef);
             const color = rgb(layer.color);
             if (!map || !color || typeof map.updateRenderInfo !== 'function') return false;
-            map.updateRenderInfo(layer.dataRef, { isColorMap: false, color });
+            // autk-map outlines polygon layers only (its border pass): a line
+            // drawn as a band, such as a route, gets a darker casing.
+            const strokeColor = (layer.stroke && rgb(layer.stroke)) || outlineOf(color);
+            map.updateRenderInfo(layer.dataRef, { isColorMap: false, color, strokeColor });
             return true;
         });
         if (drawn.length === 0) continue;

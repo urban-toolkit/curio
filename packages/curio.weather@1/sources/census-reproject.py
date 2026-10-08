@@ -13,7 +13,7 @@ back through ``getattr`` (parsers.py), so both write paths work — but
 only the dict path stays warning-free.
 """
 
-gdf = arg
+gdf = input_0
 
 filtered_gdf = gdf.set_crs(32632)
 filtered_gdf = filtered_gdf.to_crs(3395)

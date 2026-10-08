@@ -67,7 +67,7 @@ and ``overlay_url`` shows the image tinted by class.
 model = curio_load_model("model.curio.ddrnet23-slim")
 classes = ["vegetation", "terrain", "sky", "road", "sidewalk", "building"]
 
-return curio_segment(arg, model, classes)
+return curio_segment(input_0, model, classes)
 ```
 
 Each row comes back with the results first: `dominant_class` and `dominant_pct`, then `vegetation_pct`, `terrain_pct` and the other classes asked for, each as a share of all the photo's pixels, then `overlay_url` and `segment_error` (empty unless the photo could not be read). Every input column follows, so the photo keeps its place and its credit.
@@ -111,7 +111,7 @@ The Spatial Join node tags each point with the polygon column you pick in its bo
 # photo already has one, its file name.
 import geopandas as gpd
 
-gdf = arg.rename(columns={"pri_neigh": "neighborhood"})
+gdf = input_0.rename(columns={"pri_neigh": "neighborhood"})
 # __dict__, not plain assignment: pandas warns about creating a column via
 # a new attribute name, and that warning lands in this node's output with
 # an absolute site-packages path. NOT gdf.attrs, and do not just delete the
@@ -209,7 +209,7 @@ this node. Until then it runs DDRNet23-Slim, the model that ships with Curio.
 model = curio_load_model("model.curio.ddrnet23-slim")
 classes = None  # every class the model names
 
-return curio_segment(arg, model, classes)
+return curio_segment(input_0, model, classes)
 ```
 
 To give it a model of its own:

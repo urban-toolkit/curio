@@ -168,10 +168,15 @@ class TestFailures(ChildTestCase):
         self.assertFalse(result["ok"])
         self.assertIn("cannot store", result["stderr"])
 
-    def test_the_arg_tripwire_fires_when_nothing_is_wired(self):
+    def test_the_tripwire_fires_when_nothing_is_wired(self):
+        result = self.run_code("    return input_0['x']\n")
+        self.assertFalse(result["ok"])
+        self.assertIn("reads `input_0`, but nothing arrived on input circle 0", result["stderr"])
+
+    def test_code_that_reads_the_old_name_is_told_the_new_one(self):
         result = self.run_code("    return arg['x']\n")
         self.assertFalse(result["ok"])
-        self.assertIn("received no input but its code references `arg`", result["stderr"])
+        self.assertIn("reads `arg`, which Curio no longer defines", result["stderr"])
 
     def test_a_system_exit_in_node_code_does_not_escape(self):
         """BaseException, so a bare `except Exception` would miss it."""
@@ -204,7 +209,7 @@ class TestInputRebuilding(ChildTestCase):
         frame = pd.DataFrame({"a": [1, 2, 3]})
         frame.to_parquet(self.scratch / "in.parquet")
         result = self.run_code(
-            "    return int(arg['a'].sum())\n",
+            "    return int(input_0['a'].sum())\n",
             input={"kind": "dataframe", "file": "in.parquet",
                    "encoded_object_columns": []},
         )
@@ -236,11 +241,13 @@ class TestInputRebuilding(ChildTestCase):
         spec = {"kind": "mapping", "items": {"k": {"kind": "int", "value": 2}}}
         self.assertEqual(child.rebuild_input(spec, self.scratch), {"k": 2})
 
-    def test_a_merge_of_two_frames_arrives_as_a_tuple(self):
+    def test_two_circles_arrive_as_input_0_and_input_1(self):
         for name, values in (("in_0.parquet", [1]), ("in_1.parquet", [2])):
             pd.DataFrame({"a": values}).to_parquet(self.scratch / name)
         result = self.run_code(
-            "    return int(arg[0]['a'][0]) + int(arg[1]['a'][0])\n",
+            "    return int(input_0['a'][0]) + 10 * int(input_1['a'][0])\n",
+            data_type="outputs",
+            input_slots=[0, 1],
             input={
                 "kind": "sequence", "container": "tuple",
                 "items": [
@@ -252,7 +259,28 @@ class TestInputRebuilding(ChildTestCase):
             },
         )
         self.assertTrue(result["ok"], result["stderr"])
-        self.assertEqual(result["output"]["value"], 3)
+        self.assertEqual(result["output"]["value"], 21)
+
+    def test_circles_keep_their_numbers_when_one_between_has_no_edge(self):
+        result = self.run_code(
+            "    return f'{input_0}|{input_1}|{input_2}'\n",
+            data_type="outputs",
+            input_slots=[0, 2],
+            input={"kind": "sequence", "container": "tuple",
+                   "items": [{"kind": "int", "value": 1}, {"kind": "int", "value": 3}]},
+        )
+        self.assertTrue(result["ok"], result["stderr"])
+        self.assertEqual(result["output"]["value"], "1|None|3")
+
+    def test_a_tuple_on_one_circle_is_that_circles_input(self):
+        result = self.run_code(
+            "    return input_0[1]\n",
+            input_slots=[0],
+            input={"kind": "sequence", "container": "tuple",
+                   "items": [{"kind": "int", "value": 1}, {"kind": "int", "value": 2}]},
+        )
+        self.assertTrue(result["ok"], result["stderr"])
+        self.assertEqual(result["output"]["value"], 2)
 
 
 class TestCrossValidation(ChildTestCase):
@@ -485,47 +513,37 @@ class TestDeathDescriptions(unittest.TestCase):
 
 
 class TestNoInputTripwire(unittest.TestCase):
-    """The isolated path must use the same AST walk as the in-process one (#273).
-
-    #273 was fixed in ``worker.py`` but not here, so a node that merely spells
-    the letters "arg" in a comment, a URL or an identifier was still refused on
-    every deployment that runs isolated - which is the shipped image and any
-    Linux ``--deploy`` instance. These guard the AST walk itself, so they run
-    everywhere rather than only where a fork can be taken.
+    """What counts as reading an input, which both paths ask
+    ``util/input_names.py`` (#273): a node that merely spells "arg" or
+    "input" in a comment, a URL or an identifier is not refused.
     """
 
-    def test_a_loader_that_never_reads_arg_is_not_refused(self):
+    def test_a_loader_that_never_reads_an_input_is_not_refused(self):
+        from utk_curio.sandbox.util.input_names import input_names_read, legacy_name_read
+
         code = (
-            "    # pull the target layer, large extent, no upstream needed\n"
+            "    # pull the target layer, large extent, no upstream input needed\n"
             "    import geopandas as gpd\n"
-            "    return gpd.read_file('https://example.org/x?margin=2&args=1')\n"
+            "    return gpd.read_file('https://example.org/x?margin=2&args=1&input_0=1')\n"
         )
-        self.assertFalse(child._code_reads_arg(code))
+        self.assertEqual(input_names_read(code), [])
+        self.assertIsNone(legacy_name_read(code))
 
-    def test_reading_arg_is_still_caught(self):
-        self.assertTrue(child._code_reads_arg("    return arg\n"))
+    def test_reading_an_old_name_is_caught(self):
+        from utk_curio.sandbox.util.input_names import legacy_name_read
 
-    def test_binding_arg_without_reading_it_is_not_refused(self):
-        self.assertFalse(child._code_reads_arg("    arg = 1\n    return 2\n"))
+        self.assertEqual(legacy_name_read("    return arg\n"), "arg")
+        self.assertEqual(legacy_name_read("    return input.head()\n"), "input")
 
-    def test_it_matches_the_in_process_implementation(self):
-        from utk_curio.sandbox.app import worker
+    def test_binding_arg_makes_it_the_codes_own(self):
+        from utk_curio.sandbox.util.input_names import legacy_name_read
 
-        for code in (
-            "    # margin target args\n    return 1\n",
-            "    return arg\n",
-            "    arg = 1\n    return 2\n",
-            "    return arg['x']\n",
-        ):
-            self.assertEqual(
-                child._code_reads_arg(code),
-                worker._code_reads_arg(code),
-                code,
-            )
+        self.assertIsNone(legacy_name_read("    arg = 1\n    return arg\n"))
+        self.assertIsNone(legacy_name_read("    for arg in [1]:\n        pass\n    return 2\n"))
 
 
 class TestNoInputMessage(ChildTestCase):
-    """Both paths say the same thing when a node reads `arg` and has no input (#603).
+    """Both paths say the same thing when a node reads an input and has none (#603).
 
     The in-process message was rewritten to name the likely causes and what
     to do about each; the isolated child kept the old sentence, so the same
@@ -537,7 +555,7 @@ class TestNoInputMessage(ChildTestCase):
         from utk_curio.sandbox.app import worker
 
         worker._worker_init()
-        code = "    return arg['sp_units']\n"
+        code = "    return input_0['sp_units']\n"
 
         isolated = self.run_code(code)
         in_process = worker.execute_code(

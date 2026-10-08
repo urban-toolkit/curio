@@ -68,9 +68,9 @@ LOAD_CODE = (
     "import pandas as pd\n"
     'return pd.DataFrame({"segment": ["r1", "r2", "r3", "r4"], "sunlight": [6.0, 5.0, 7.0, 4.0]})\n'
 )
-SHADE_CODE = 'df = arg.copy()\ndf["sunlight"] = df["sunlight"] / [!! factor !!]\nreturn df\n'
-TALL_CODE = 'df = arg.copy()\ndf["sunlight"] = df["sunlight"] / [!! factor !!]\ndf = df.round(2)\nreturn df\n'
-CLIP_CODE = 'df = arg.copy()\ndf["sunlight"] = df["sunlight"].clip(lower=0)\nreturn df\n'
+SHADE_CODE = 'df = input_0.copy()\ndf["sunlight"] = df["sunlight"] / [!! factor !!]\nreturn df\n'
+TALL_CODE = 'df = input_0.copy()\ndf["sunlight"] = df["sunlight"] / [!! factor !!]\ndf = df.round(2)\nreturn df\n'
+CLIP_CODE = 'df = input_0.copy()\ndf["sunlight"] = df["sunlight"].clip(lower=0)\nreturn df\n'
 
 # The lines the node writes for its two inputs (utils/compare/compareCode.ts).
 ENTRY_LINES = (

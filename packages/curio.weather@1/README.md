@@ -34,8 +34,8 @@ dependencies.
                                         [ Reproject to EPSG:3395 ]   [ Project gt_65 column ]
 ```
 
-Multi-input nodes read their input circles in order (`[!! input 0 !!]`,
-`[!! input 1 !!]`, …), so **wiring order matters**. `utci-compute` expects
+Multi-input nodes read their input circles in order (`[!! input_0 !!]`,
+`[!! input_1 !!]`, …), so **wiring order matters**. `utci-compute` expects
 (raster, weather DataFrame); `utci-zonal` expects (raster, UTCI tuple, polygons).
 
 ## Setup

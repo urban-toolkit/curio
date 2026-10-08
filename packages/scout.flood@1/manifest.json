@@ -1,0 +1,110 @@
+{
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
+  "compatibility": {
+    "curioRuntime": ">=0.5.0",
+    "major": 1
+  },
+  "createdAt": "2026-10-07T00:00:00Z",
+  "dependencies": {
+    "js": {},
+    "packages": {},
+    "python": {
+      "rasterio": ">=1.4",
+      "numpy": ">=1.24",
+      "pandas": ">=2.0",
+      "geopandas": ">=0.12",
+      "shapely": ">=2.0"
+    }
+  },
+  "description": "SCOUT's Quad Cities flood projection, ported from SCOUT (urban-toolkit/scout): the Flood Projection node runs SCOUT's simulate_flood_projection on the Data Catalog's data.scout.quad-cities-flood, SCOUT's seven rasters, for a region, a projection period and the nature-based solutions (NbS) in place. It returns the flood depth in metres, one raster that an Autark map draws, and SCOUT's metrics, the median and mean flood depth, as a table.",
+  "id": "scout.flood",
+  "license": "MIT",
+  "name": "SCOUT Flood",
+  "permissions": [],
+  "publisher": "Curio",
+  "readOnly": true,
+  "templates": [
+    {
+      "category": "computation",
+      "description": "SCOUT's flood projection for the Quad Cities: for each cell of a region, the projected flood depth in metres with nature-based solutions (NbS) where the cell's class is one of the chosen solutions, and without NbS elsewhere, for a projection period. No input; SCOUT's rasters are the Data Catalog's data.scout.quad-cities-flood. Output: (depth, metrics): one RASTER in EPSG:4326 on SCOUT's grid, for an Autark map, and SCOUT's metrics, a DATAFRAME of one row with the median and mean flood depth.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": true,
+      "iconRef": "fa-solid:water",
+      "id": "flood-projection",
+      "inputPorts": [],
+      "label": "Flood Projection",
+      "behavior": "code",
+      "outputPorts": [
+        {
+          "cardinality": "[1,n]",
+          "types": [
+            "RASTER",
+            "DATAFRAME"
+          ]
+        }
+      ],
+      "source": "sources/flood-projection.py",
+      "widgets": [
+        {
+          "name": "topleft",
+          "type": "location",
+          "label": "Top-left corner",
+          "default": {
+            "lat": 41.6242105,
+            "lon": -90.6879323
+          }
+        },
+        {
+          "name": "bottomright",
+          "type": "location",
+          "label": "Bottom-right corner",
+          "default": {
+            "lat": 41.4150156,
+            "lon": -90.4252158
+          }
+        },
+        {
+          "name": "timeline",
+          "type": "choice",
+          "label": "Projection period",
+          "default": "2020 - 2040",
+          "options": {
+            "choices": [
+              "2020 - 2040",
+              "2050 - 2080",
+              "2080 - 2100"
+            ],
+            "display": "radio"
+          }
+        },
+        {
+          "name": "use_NBS_classes",
+          "type": "checkbox-group",
+          "label": "Nature-based solutions",
+          "default": [
+            "Bioswales/Infiltration trenches",
+            "Permeable pavements",
+            "Retention ponds",
+            "Infiltration trench",
+            "Bioswales",
+            "Constructed wetlands"
+          ],
+          "options": {
+            "choices": [
+              "Bioswales/Infiltration trenches",
+              "Permeable pavements",
+              "Retention ponds",
+              "Infiltration trench",
+              "Bioswales",
+              "Constructed wetlands"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "version": "1.0.0"
+}

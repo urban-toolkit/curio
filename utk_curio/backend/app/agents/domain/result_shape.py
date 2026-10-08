@@ -239,7 +239,9 @@ def _slot_line(index: int, row: dict) -> str:
     summary = row.get("schema") if isinstance(row.get("schema"), dict) else None
     goal = str(row.get("goal") or row.get("upstreamNodeId") or "an input")[:60]
     arg = row.get("argIndex")
-    where = f"arg[{arg}]" if isinstance(arg, int) else f"input {index}"
+    # A row that arrived through a pass-through is one item of the list on
+    # the node's one circle; any other is its own circle's input.
+    where = f"input_0[{arg}]" if isinstance(arg, int) else f"input_{index}"
     if summary is None:
         return f"{where} {goal!r} (shape unknown)"
     count = row_count(summary)

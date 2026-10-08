@@ -64,7 +64,7 @@ input chip (see [Several inputs](../USAGE.md#several-inputs)):
 import geopandas as gpd
 import pandas as pd
 
-roads, parks = [!! input 0 !!], [!! input 1 !!]
+roads, parks = [!! input_0 !!], [!! input_1 !!]
 roads = roads.assign(layer="road")
 parks = parks.assign(layer="park")
 

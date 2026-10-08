@@ -162,7 +162,7 @@ export function SummaryContent({ summary, nodeId }: { summary: any; nodeId: stri
 
 const DEFAULT_CODE = `import pandas as pd
 
-df = arg  # Getting DataFrame from previous node
+df = input_0  # The DataFrame on input circle 0
 
 summary = {
     "shape": {"rows": int(df.shape[0]), "columns": int(df.shape[1])},

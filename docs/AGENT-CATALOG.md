@@ -164,7 +164,7 @@ When Solve cannot fix a node, nothing is written, and the chat shows every attem
 
 Applying a plan gives every created node a **Node Builder**, and every data-loading node a **Dataset Finder** too. When a data-loading node's source is not settled, Solve asks that Dataset Finder for candidates: they appear in its chat, and the node stays pending, *awaiting your dataset selection*, with an **Open Dataset Finder** button. **Confirm source for this node** records your choice, and the next Solve builds the loader from that source.
 
-A node with several inputs reads each through its input chip, `[!! input 0 !!]`, `[!! input 1 !!]` and so on, in the order of its input circles (see [Several inputs](USAGE.md#several-inputs)), and the agent is told which dataset sits on each circle. Code that treats the inputs as one value is refused before it runs.
+A node with several inputs reads each through its input chip, `[!! input_0 !!]`, `[!! input_1 !!]` and so on, in the order of its input circles (see [Several inputs](USAGE.md#several-inputs)), and the agent is told which dataset sits on each circle. Code that treats the inputs as one value is refused before it runs.
 
 ### Widgets and scenarios
 

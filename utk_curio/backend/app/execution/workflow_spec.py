@@ -30,15 +30,15 @@ def named_input_slot(edge: dict) -> int | None:
     """Which input circle an edge names: ``in`` → 0, ``in_N`` → N, or None.
 
     The HANDLE is the authority, exactly as the canvas reads it
-    (``inputSlots.inputSlotOf(e.targetHandle)`` → the order Play assembles
-    ``arg`` in). The edge id's ``in_N`` suffix is the canvas's own legacy
+    (``inputSlots.inputSlotOf(e.targetHandle)`` → the circle whose
+    ``input_k`` Play binds it to). The edge id's ``in_N`` suffix is the canvas's own legacy
     encoding and stays as a fallback for specs saved with no handle; an edge
     whose handle is ``in`` is circle 0 whatever its id says.
 
     dev/128, from a field failure: agent-applied edges carry a UUID id and the
     slot in ``targetHandle`` (dev/67-3 made handles explicit), so reading only
     the id left every plan-created fan-in unordered, sorted lexicographically
-    by UUID. A node then validated against ``arg`` in one order and ran at Play
+    by UUID. A node then validated against its inputs in one order and ran at Play
     in another: dataflow ``00708324`` passed *"solved · pass after 1 round"* and
     failed on Play with ``KeyError: 'tract_id'``, because validation handed it
     ``[population, boundaries]`` and Play handed it ``[boundaries, population]``.
@@ -346,7 +346,7 @@ class WorkflowSpec:
 
         Sources are ordered by the circle they feed: the plain ``in`` handle
         first, then ``in_1``, ``in_2``, … — the same authority the canvas uses
-        to build ``arg`` at Play (``inputSlots``), with the edge id's legacy
+        to name ``input_0``, ``input_1``, … at Play (``inputSlots``), with the edge id's legacy
         ``in_N`` suffix as a fallback (dev/128).
         """
         return [e["source"] for e in self._data_edges_to(node_id)]

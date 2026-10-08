@@ -4,21 +4,16 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/NetCDF.json",
-    "sha256": "59175200747c308ef7943348046703a3af3694fd643990fa4f4ab9c5e8442333",
+    "sha256": "b9ea1b5c7282a76846ef20c3ba6da728dd7e59ffea05fb3240f85dad165908fc",
     "walkthrough": null
   },
   "prompt": "Read the five variables of SCOUT's WRF weather forecast from the Data Catalog, average each one over the forecast's grid hour by hour into one table, and draw the mean rain over time as a line chart.",
   "context": null,
   "required": {
     "datasets": [
-      "data.scout.wrf-rain",
-      "data.scout.wrf-rh2",
-      "data.scout.wrf-t2",
-      "data.scout.wrf-wdir10",
-      "data.scout.wrf-wspd10"
+      "data.scout.chicago-weather-2025-07-06"
     ],
-    "packages": [],
-    "paths": []
+    "packages": []
   },
   "expected": {
     "nodes": [
@@ -46,11 +41,7 @@
     ],
     "sources": {
       "datasetIds": [
-        "data.scout.wrf-rain",
-        "data.scout.wrf-rh2",
-        "data.scout.wrf-t2",
-        "data.scout.wrf-wdir10",
-        "data.scout.wrf-wspd10"
+        "data.scout.chicago-weather-2025-07-06"
       ],
       "paths": [],
       "urls": []
@@ -95,27 +86,11 @@
     "licence": "MIT (this repository)",
     "sourceLicences": [
       {
-        "datasetId": "data.scout.wrf-rain",
-        "licence": ""
-      },
-      {
-        "datasetId": "data.scout.wrf-rh2",
-        "licence": ""
-      },
-      {
-        "datasetId": "data.scout.wrf-t2",
-        "licence": ""
-      },
-      {
-        "datasetId": "data.scout.wrf-wdir10",
-        "licence": ""
-      },
-      {
-        "datasetId": "data.scout.wrf-wspd10",
+        "datasetId": "data.scout.chicago-weather-2025-07-06",
         "licence": ""
       }
     ],
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
   },
-  "notes": "A NetCDF group read whole by one loader: the case the isolated stack runs."
+  "notes": "SCOUT's WRF forecast, one bundle of five NetCDF files, read part by part by one loader: the case the isolated stack runs."
 }

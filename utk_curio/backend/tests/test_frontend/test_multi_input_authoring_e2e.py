@@ -72,7 +72,7 @@ UP_B_CODE = "return 31\n"
 DOWN_CODE = (
     "a = [!! input 0 !!]\n"
     "b = [!! input 1 !!]\n"
-    "count = len(arg) if isinstance(arg, (list, tuple)) else 1\n"
+    "count = sum(x is not None for x in (input_0, input_1))\n"
     f'print("{MARKER}", count, int(a), int(b), int(a) + int(b))\n'
     "return int(a) + int(b)\n"
 )

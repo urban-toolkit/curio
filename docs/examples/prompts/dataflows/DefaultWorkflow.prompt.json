@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/DefaultWorkflow.json",
-    "sha256": "c097e4fa619a5c04aa689bc2f5bbf7258b53bd1dd483a29cdb6d847734754641",
+    "sha256": "551c86a88fb46adce43a83da4ef5ddde5d1ad7559f170805af0bb051fd15b79d",
     "walkthrough": null
   },
   "prompt": "Generate eleven pseudo-random integers with a fixed seed in one Python computation step, then take their median in a second computation step that reads the first one's output.",

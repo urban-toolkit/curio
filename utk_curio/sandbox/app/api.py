@@ -15,6 +15,7 @@ from shapely import wkt
 
 from utk_curio.sandbox.app.worker import _worker_init, execute_code, execute_js_code, chdir_locked
 from utk_curio.sandbox.util import package_modules as package_modules_util
+from utk_curio.sandbox.util.input_names import parse_slots
 from utk_curio.sandbox.util.secrets import shape_secrets
 from utk_curio.sandbox.util.db import connection_in_use
 
@@ -631,6 +632,8 @@ def exec():
     node_type  = request.json['nodeType']
     data_type  = request.json['dataType']
     session_id = request.json.get('session_id') or None
+    # The wired circles, in order: which input_k each value is.
+    input_slots = parse_slots(request.json.get('input_slots'))
     save_dataset = request.json.get('save_dataset', True)
     if isinstance(save_dataset, str):
         save_dataset = save_dataset.strip().lower() not in ('0', 'false', 'no', 'off')
@@ -687,6 +690,21 @@ def exec():
     # templates, from the user's package store (#468). Both paths stage them
     # into a folder of the run's own and make them importable for the run.
     package_modules = package_modules_util.shape(request.json.get('package_modules'))
+    # What curio_save_file, curio_save_folder and curio_computed_path need
+    # (util/saved_files.py): the saved names the code reads, each with the
+    # dataset id the backend resolved in dataset_paths, and whether the run
+    # may save. Re-shaped defensively, like dataset_paths.
+    computed = request.json.get('computed') or {}
+    if not isinstance(computed, dict):
+        computed = {}
+    computed_names = computed.get('names') or {}
+    if not isinstance(computed_names, dict):
+        computed_names = {}
+    computed = {
+        'names': {str(k): str(v) for k, v in list(computed_names.items())[:32] if v},
+        'canSave': computed.get('canSave') is True,
+        'reason': str(computed.get('reason') or '')[:500],
+    }
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
 
     print(f"[sandbox /exec] received  node={node_type}", file=sys.stderr, flush=True)
@@ -703,6 +721,7 @@ def exec():
             dataset_paths=dataset_paths, user_key=user_key, config=config,
             secrets=secrets, collections=collections, media_dir=media_dir, models=models,
             dataset_formats=dataset_formats, package_modules=package_modules,
+            computed=computed, input_slots=input_slots,
         )
     else:
         result = execute_code(
@@ -710,6 +729,7 @@ def exec():
             session_id=session_id, save_dataset=bool(save_dataset),
             dataset_paths=dataset_paths, secrets=secrets, collections=collections, media_dir=media_dir,
             models=models, dataset_formats=dataset_formats, package_modules=package_modules,
+            computed=computed, input_slots=input_slots,
         )
 
     # A Compare Scenarios node's code hands two rasters back as a request: they
@@ -739,6 +759,8 @@ def exec_js():
     node_type  = request.json['nodeType']
     data_type  = request.json['dataType']
     session_id = request.json.get('session_id') or None
+    # The wired circles, in order: which input_k each value is.
+    input_slots = parse_slots(request.json.get('input_slots'))
     save_dataset = request.json.get('save_dataset', True)
     if isinstance(save_dataset, str):
         save_dataset = save_dataset.strip().lower() not in ('0', 'false', 'no', 'off')
@@ -749,7 +771,7 @@ def exec_js():
     metrics.record_dispatch(False)
     result = execute_js_code(
         code, str(file_path), str(node_type), str(data_type), launch_dir,
-        session_id=session_id, save_dataset=bool(save_dataset),
+        session_id=session_id, save_dataset=bool(save_dataset), input_slots=input_slots,
     )
 
     print(f"[sandbox /execJs] finished  total={time.perf_counter()-t0:.3f}s  node={node_type}", file=sys.stderr, flush=True)

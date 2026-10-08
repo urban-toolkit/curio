@@ -1,6 +1,6 @@
 """The ``curio.media@1`` nodes, run the way the canvas runs them.
 
-Each template's source is indented and wrapped in ``def userCode(arg):`` as
+Each template's source is indented and wrapped in the sandbox's ``def userCode(input, arg):`` as
 ``PythonInterpreter.ts`` does, and fed the rows ``curio_load_collection`` returns
 for the example storage source's collections, so the input is what a Data
 Loading node would hand it.
@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from utk_curio.sandbox.util.input_names import call_as_node
 
 REPO = Path(__file__).resolve().parents[4]
 PACKAGE = REPO / "packages" / "curio.media@1"
@@ -34,9 +35,7 @@ def node_source(name: str, **settings) -> str:
 
 def run_node(name: str, arg, namespace: dict, **settings):
     body = "\n".join("    " + line for line in node_source(name, **settings).splitlines())
-    ns = dict(namespace)
-    exec(f"def userCode(arg):\n{body}", ns)  # noqa: S102 - the canvas does exactly this
-    return ns["userCode"](arg)
+    return call_as_node(body, dict(namespace), arg)
 
 
 def collection_rows(manifest, resource_id: str, tmp_path: Path):
@@ -161,9 +160,7 @@ def test_the_uhvi_zonal_node_reads_a_mosaic(collection):
     zones = gpd.GeoDataFrame({"zone": ["left"]}, geometry=[zone], crs=mosaic.crs)
     code = (REPO / "packages" / "ai.utk.uhvi@1" / "sources" / "uhvi-zonal.py").read_text(encoding="utf-8")
     body = "\n".join("    " + line for line in code.splitlines())
-    ns: dict = {}
-    exec(f"def userCode(arg):\n{body}", ns)  # noqa: S102 - the canvas does exactly this
-    out = ns["userCode"]([mosaic, zones])
+    out = call_as_node(body, {}, [mosaic, zones], [0, 1])
     band = mosaic.read(1).astype(float)
     inside = geometry_mask([zone], transform=mosaic.transform, invert=True, out_shape=band.shape)
     assert out["uhvi_mean"].iloc[0] == pytest.approx(float(np.mean(band[inside])))

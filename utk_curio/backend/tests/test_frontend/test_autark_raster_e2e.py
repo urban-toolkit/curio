@@ -81,15 +81,15 @@ return {
 PYTHON_READS_RASTER = '''import math
 import rasterio
 
-assert isinstance(arg, rasterio.io.DatasetReader), type(arg)
-assert arg.crs.to_epsg() == 32616, arg.crs
-assert (arg.width, arg.height) == (64, 48), (arg.width, arg.height)
-assert tuple(arg.transform)[:6] == (60.0, 0.0, 447000.0, 0.0, -60.0, 4637000.0), arg.transform
-band = arg.read(1)
+assert isinstance(input_0, rasterio.io.DatasetReader), type(input_0)
+assert input_0.crs.to_epsg() == 32616, input_0.crs
+assert (input_0.width, input_0.height) == (64, 48), (input_0.width, input_0.height)
+assert tuple(input_0.transform)[:6] == (60.0, 0.0, 447000.0, 0.0, -60.0, 4637000.0), input_0.transform
+band = input_0.read(1)
 # Row 0 of the collection is the south edge, the last row a GeoTIFF reads.
 assert math.isnan(band[47, 0]), band[47, 0]
 assert band[47, 1] == 1.0 and band[0, 63] == 157.0, (band[47, 1], band[0, 63])
-summary = f"rasterio {arg.width}x{arg.height} EPSG:{arg.crs.to_epsg()}"
+summary = f"rasterio {input_0.width}x{input_0.height} EPSG:{input_0.crs.to_epsg()}"
 print(summary)
 return summary
 '''

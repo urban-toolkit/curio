@@ -93,7 +93,7 @@ Its code is written from that list:
 # Edit Features writes this code from its edit list: each edit, in the
 # order it was made, on the features whose key is one of its ids. It is
 # written again when the list changes.
-return curio_edit_features(arg, [
+return curio_edit_features(input_0, [
     {"op": "remove", "ids": [119, 136]},
 ], key="building_id", layer="table_osm_buildings")
 ```
@@ -196,8 +196,8 @@ are alike. It warns about nothing, since the three scenarios read the same pool.
 # each under the id and the name of its scenario. It is written again when
 # they change.
 return curio_difference_scenarios([
-    ("s-baseline", "Baseline", [!! input 0 !!]),
-    ("s-twice", "Twice as tall", [!! input 1 !!]),
+    ("s-baseline", "Baseline", [!! input_0 !!]),
+    ("s-twice", "Twice as tall", [!! input_1 !!]),
 ], layer="table_osm_roads")
 ```
 

@@ -1,6 +1,6 @@
-"""A layer chip in code (#662): ``[!! input 0:table_osm_roads !!]`` runs as
-``curio_layer(arg, "table_osm_roads", 0)``, the layer of that name among the
-ones input 0 carries, found by its name exactly as an Autark spec finds it.
+"""A layer chip in code (#662): ``[!! input_0:table_osm_roads !!]`` runs as
+``curio_layer(input_0, "table_osm_roads", 0)``, the layer of that name among the
+ones input_0 carries, found by its name exactly as an Autark spec finds it.
 
 Python's helper is ``util/input_layers.py``; JavaScript's twin is defined in
 ``util/js_wrapper.mjs``. Both are reached by name from node code, in process
@@ -111,7 +111,7 @@ class TestOneFrameWithNoName:
     """An input that carries exactly one frame with no layer name is that
     layer, whatever the chip calls it: a roads GeoDataFrame a Python node
     returns or Data Loading reads reaches a template that reads
-    ``[!! input 0:table_osm_roads !!]`` as it reached one that read ``arg``."""
+    ``[!! input_0:table_osm_roads !!]`` as it reached one that read ``input_0``."""
 
     def test_a_frame_on_its_own(self):
         import geopandas as gpd
@@ -144,7 +144,7 @@ class TestOneFrameWithNoName:
         with pytest.raises(LookupError) as raised:
             _layer([a, b], "table_osm_roads", 2)
         assert str(raised.value) == (
-            "[!! input 2:table_osm_roads !!]: input 2 has no layer table_osm_roads. It carries no named layers."
+            "[!! input_2:table_osm_roads !!]: input_2 has no layer table_osm_roads. It carries no named layers."
         )
 
     def test_one_frame_named_otherwise_is_not_it(self):
@@ -180,7 +180,7 @@ class TestAMissingLayer:
         with pytest.raises(LookupError) as raised:
             _layer(records(), "table_osm_water", 2)
         assert str(raised.value) == (
-            "[!! input 2:table_osm_water !!]: input 2 has no layer table_osm_water. "
+            "[!! input_2:table_osm_water !!]: input_2 has no layer table_osm_water. "
             "Its layers are table_osm_roads, table_osm_buildings."
         )
 
@@ -190,14 +190,14 @@ class TestAMissingLayer:
         for value in (None, [pd.DataFrame({"a": [1]}), pd.DataFrame({"a": [2]})], [1, 2], {"a": 1}):
             with pytest.raises(LookupError) as raised:
                 _layer(value, "roads", 1)
-            assert str(raised.value) == "[!! input 1:roads !!]: input 1 has no layer roads. It carries no named layers."
+            assert str(raised.value) == "[!! input_1:roads !!]: input_1 has no layer roads. It carries no named layers."
 
 
 class TestNodeCodeReachesIt:
     """The node's code calls it by name, in process and under isolation."""
 
     CODE = (
-        "    roads = curio_layer(arg, \"table_osm_roads\", 0)\n"
+        "    roads = curio_layer(input_0, \"table_osm_roads\", 0)\n"
         "    return f\"{len(roads)} {roads.crs.to_epsg()} {roads.metadata['name']}\"\n"
     )
 
@@ -229,10 +229,10 @@ class TestNodeCodeReachesIt:
         self._store()
         produced = execute_js_code(f"return {json.dumps(records())};", "", "AUTK_GRAMMAR", "", save_dataset=False)
         output = produced["output"]
-        result = execute_code("    return curio_layer(arg, \"table_osm_water\", 0)\n", output["path"],
+        result = execute_code("    return curio_layer(input_0, \"table_osm_water\", 0)\n", output["path"],
                               "curio.builtin/computation-analysis", output["dataType"], save_dataset=False)
         assert (
-            "[!! input 0:table_osm_water !!]: input 0 has no layer table_osm_water. "
+            "[!! input_0:table_osm_water !!]: input_0 has no layer table_osm_water. "
             "Its layers are table_osm_roads, table_osm_buildings."
         ) in result["stderr"]
 
@@ -256,10 +256,10 @@ class TestNodeCodeReachesIt:
         assert result["output"]["value"] == "2 3395 table_osm_roads"
 
     def test_an_isolated_node_names_the_missing_layer(self, tmp_path):
-        result = self._isolated(tmp_path, "    return curio_layer(arg, \"table_osm_water\", 3)\n")
+        result = self._isolated(tmp_path, "    return curio_layer(input_0, \"table_osm_water\", 3)\n")
         assert not result["ok"]
         assert (
-            "[!! input 3:table_osm_water !!]: input 3 has no layer table_osm_water. "
+            "[!! input_3:table_osm_water !!]: input_3 has no layer table_osm_water. "
             "Its layers are table_osm_roads, table_osm_buildings."
         ) in result["stderr"]
 
@@ -271,7 +271,7 @@ class TestTheJavaScriptTwin:
     def _run(self, code, value):
         from utk_curio.sandbox.app.worker import run_js_script
 
-        result, _logs, stderr = run_js_script(code, value, cwd=".", node_type="curio.builtin/js-computation")
+        result, _logs, stderr = run_js_script(code, {"input_0": value}, cwd=".", node_type="curio.builtin/js-computation")
         assert result is not None, "\n".join(stderr)
         return json.loads(result)
 
@@ -279,7 +279,7 @@ class TestTheJavaScriptTwin:
         import geopandas as gpd
         from shapely.geometry import Point
 
-        code = "const roads = curio_layer(arg, \"table_osm_roads\", 0);\nreturn roads.features.map((f) => f.properties.highway);"
+        code = "const roads = curio_layer(input_0, \"table_osm_roads\", 0);\nreturn roads.features.map((f) => f.properties.highway);"
         for value in (records(), envelopes()):
             run = self._run(code, value)
             assert run["success"], run.get("error")
@@ -288,7 +288,7 @@ class TestTheJavaScriptTwin:
         # FeatureCollection that does too.
         parks = gpd.GeoDataFrame({"v": [7]}, geometry=[Point(0, 0)], crs="EPSG:4326")
         parks.__dict__["metadata"] = {"name": "parks"}
-        run = self._run("return curio_layer(arg, \"parks\", 0).features[0].properties.v;", [parks])
+        run = self._run("return curio_layer(input_0, \"parks\", 0).features[0].properties.v;", [parks])
         assert run["success"], run.get("error")
         assert run["value"] == 7
 
@@ -299,20 +299,20 @@ class TestTheJavaScriptTwin:
         from utk_curio.sandbox.util.input_layers import missing_layer_message
 
         roads = gpd.GeoDataFrame({"v": [7]}, geometry=[Point(0, 0)], crs="EPSG:4326")
-        run = self._run("return curio_layer(arg, \"table_osm_roads\", 0).features[0].properties.v;", roads)
+        run = self._run("return curio_layer(input_0, \"table_osm_roads\", 0).features[0].properties.v;", roads)
         assert run["success"], run.get("error")
         assert run["value"] == 7
         other = gpd.GeoDataFrame({"v": [8]}, geometry=[Point(1, 1)], crs="EPSG:4326")
-        run = self._run("return curio_layer(arg, \"table_osm_roads\", 0);", [roads, other])
+        run = self._run("return curio_layer(input_0, \"table_osm_roads\", 0);", [roads, other])
         assert not run["success"]
         assert run["error"].startswith(missing_layer_message(0, "table_osm_roads", []) + "\n"), run["error"]
 
     def test_a_missing_layer_says_what_python_says(self):
         from utk_curio.sandbox.util.input_layers import missing_layer_message
 
-        run = self._run("return curio_layer(arg, \"table_osm_water\", 2);", records())
+        run = self._run("return curio_layer(input_0, \"table_osm_water\", 2);", records())
         assert not run["success"]
         message = missing_layer_message(2, "table_osm_water", ["table_osm_roads", "table_osm_buildings"])
         assert run["error"].startswith(message + "\n"), run["error"]
-        run = self._run("return curio_layer(arg, \"roads\", 1);", {"a": 1})
+        run = self._run("return curio_layer(input_0, \"roads\", 1);", {"a": 1})
         assert run["error"].startswith(missing_layer_message(1, "roads", []) + "\n"), run["error"]

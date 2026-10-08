@@ -231,7 +231,7 @@ def test_saving_into_curio_weather_scans_the_sources_that_read_their_inputs_thro
     weather = Path(__file__).resolve().parents[4] / "packages" / "curio.weather@1"
     manifest = json.loads((weather / "manifest.json").read_text(encoding="utf-8"))
     code = (weather / "sources" / "utci-compute.py").read_text(encoding="utf-8")
-    assert "[!! input 0 !!]" in code, "utci-compute no longer holds a chip; this test needs a source that does"
+    assert "[!! input_0 !!]" in code, "utci-compute no longer holds a chip; this test needs a source that does"
     edited = code.replace("import numpy as np\n", "import numpy as np\nfrom scipy import ndimage\n", 1)
     assert edited != code
     draft = {

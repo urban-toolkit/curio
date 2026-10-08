@@ -203,7 +203,7 @@ def _codes(operation: str, codes):
         return None
     if codes is None:
         raise RasterAlgebraError(
-            f"{CHOOSE} takes input 1 where input 0's class is one of codes, and input 2 elsewhere: "
+            f"{CHOOSE} takes input_1 where input_0's class is one of codes, and input_2 elsewhere: "
             "give the codes, for example codes=[21, 31]."
         )
     if isinstance(codes, (int, float)):
@@ -256,14 +256,14 @@ def masked_bands(dataset):
 
 
 def _inputs(rasters) -> list:
-    """The node's ``arg``: one raster or several, in input-circle order."""
+    """The rasters a step takes: one, or several in input-circle order."""
     if isinstance(rasters, (list, tuple)):
         return list(rasters)
     return [rasters]
 
 
 def _name(position: int) -> str:
-    return f"input {position}"
+    return f"input_{position}"
 
 
 def _check_rasters(rasters: list) -> None:
@@ -309,10 +309,10 @@ def write_raster(values, like, path, *, descriptions=None):
 def calculate(operation, rasters, *, codes=None, output_file):
     """*operation* over *rasters* cell by cell: a rasterio dataset.
 
-    ``add``, ``subtract``, ``multiply`` and ``divide`` take input 0 and input 1
-    (input 0 minus input 1, input 0 over input 1; a cell divided by 0 is
-    nodata). ``choose`` takes input 1 where input 0's class is one of *codes*,
-    and input 2 elsewhere; a nodata class is no class. Band by band; a class
+    ``add``, ``subtract``, ``multiply`` and ``divide`` take input_0 and input_1
+    (input_0 minus input_1, input_0 over input_1; a cell divided by 0 is
+    nodata). ``choose`` takes input_1 where input_0's class is one of *codes*,
+    and input_2 elsewhere; a nodata class is no class. Band by band; a class
     raster of one band applies to every band. *output_file(name)* gives where
     the result is written.
     """
@@ -363,7 +363,7 @@ def statistics(raster, *, band=1, mask=None, mask_values=None, where=None):
     """The mean, median, minimum, maximum and count of *raster*'s cells in
     *band*, nodata left out: a one-row table.
 
-    With *mask*, a raster on the same grid (or the node's input 1), only the
+    With *mask*, a raster on the same grid (or the node's input_1), only the
     cells whose mask value is one of *mask_values*, or meets *where*, count; a
     nodata mask cell keeps none. *where* is a condition on the mask's first
     band, or on *raster*'s own values when there is no mask: it takes them as a
@@ -378,13 +378,13 @@ def statistics(raster, *, band=1, mask=None, mask_values=None, where=None):
         rasters, mask = rasters[:1], rasters[1]
     if len(rasters) != 1:
         raise RasterAlgebraError(
-            f"Raster Statistics reads one raster, and a mask on input 1, and it has {len(rasters)}."
+            f"Raster Statistics reads one raster, and a mask on input_1, and it has {len(rasters)}."
         )
     _check_rasters(rasters + ([mask] if mask is not None else []))
     dataset = rasters[0]
     band = int(band)
     if not 1 <= band <= dataset.count:
-        raise RasterAlgebraError(f"input 0 has bands 1 to {dataset.count}, so it has no band {band}.")
+        raise RasterAlgebraError(f"input_0 has bands 1 to {dataset.count}, so it has no band {band}.")
     values = masked_bands(dataset)[band - 1].astype("float64")
     tested = None
     if mask is not None:
@@ -393,13 +393,13 @@ def statistics(raster, *, band=1, mask=None, mask_values=None, where=None):
                 "A mask keeps the cells whose mask value is one of mask_values, or meets where: give one "
                 "of them, for example mask_values=[0] or where=lambda value: value < 1.08."
             )
-        _refuse_grids("Statistics of input 0 inside input 1", ["input 0", "input 1"],
+        _refuse_grids("Statistics of input_0 inside input_1", ["input_0", "input_1"],
                       [dataset_grid(dataset), dataset_grid(mask)])
         tested = masked_bands(mask)[0]
     elif mask_values is not None:
         raise RasterAlgebraError(
-            "mask_values pick the cells of a mask raster on input 1, and there is none: connect one, "
-            "or give where= for a condition on input 0's own values."
+            "mask_values pick the cells of a mask raster on input_1, and there is none: connect one, "
+            "or give where= for a condition on input_0's own values."
         )
     elif where is not None:
         tested = values
@@ -452,10 +452,10 @@ def _wire_values(envelope: dict, band: str):
     return np.frombuffer(base64.b64decode(wire[WIRE_BAND_KEY]), dtype="<f4")
 
 
-def subtract_envelopes(reference: tuple, comparison: tuple) -> dict:
+def subtract_envelopes(reference: tuple, comparison: tuple, absolute: bool = False) -> dict:
     """``comparison`` minus ``reference``, cell by cell and band by band, each a
     ``(name, envelope)``: the envelope of the difference, positive where the
-    comparison is higher. A cell that is nodata (NaN) in either is nodata in
+    comparison is higher, or, with *absolute*, its size, 0 where they agree. A cell that is nodata (NaN) in either is nodata in
     the result. The result keeps the reference's properties and takes the
     comparison's extent and grid. Refused, naming both, when their grids or
     their bands differ."""
@@ -480,7 +480,8 @@ def subtract_envelopes(reference: tuple, comparison: tuple) -> dict:
     for band in ids:
         base = _wire_values(a, band).astype("float64")
         other = _wire_values(b, band).astype("float64")
-        result = (other - base).astype("<f4")
+        difference = np.abs(other - base) if absolute else other - base
+        result = difference.astype("<f4")
         properties[band] = {WIRE_BAND_KEY: base64.b64encode(result.tobytes()).decode("ascii")}
     return {
         "dataType": "raster",

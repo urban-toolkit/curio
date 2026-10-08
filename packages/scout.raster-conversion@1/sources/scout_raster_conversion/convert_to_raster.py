@@ -105,26 +105,6 @@ def num2deg(xtile, ytile, zoom):
     lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * ytile / n)))
     lat_deg = math.degrees(lat_rad)
     return (lat_deg, lon_deg)
-
-# def create_image(values, i, j, zoom, max_height, outputfolder):
-#     filename = '%s/%d/%d/%d.png'%(outputfolder,zoom,i,j)
-#     success = cv2.imwrite(filename, 255.0 * (values / max_height))
-#     if not success:
-#         raise Exception("Could not write image")
-        
-# @dask.delayed
-# def compute_tile(gdf, i, j, zoom, max_height, outputfolder):
-#     bb0 = num2deg(i,j,zoom)
-#     bb1 = num2deg(i+1,j+1,zoom)
-#     bb0 = invtransformer.transform(bb0[0],bb0[1])
-#     bb1 = invtransformer.transform(bb1[0],bb1[1])
-#     bbox = box(bb0[0],bb0[1],bb1[0],bb1[1])
-# #     filtered = gdf.cx[bb0[0]:bb1[0],bb0[1]:bb1[1]]
-#     filtered = gdf.loc[gdf.sindex.intersection(bbox.bounds)]
-    
-#     if len(filtered) > 0:
-#         values = elevation(filtered, bbox)
-#         create_image(values, i, j, zoom, max_height, outputfolder)
         
 def compute_all(gdf, zoom, max_height, outputfolder):
     bounds = gdf.total_bounds
@@ -166,16 +146,11 @@ def elevation(filtered, bbox):
 
 def create_image(values, i, j, zoom, max_height, outputfolder):
     filename_ = '%s/%d_%d_%d.png'%(outputfolder,zoom,i,j)
-    # filename = '%s/%d_%d_%d.png'%(outputfolder,zoom,i,j)
 
     values = 255.0 * (values / max_height)
     success_ = cv2.imwrite(filename_, values)
 
-    # arr = 255 - values
-    # success = cv2.imwrite(filename, arr)
-
     if not success_:
-    # not success
         raise Exception("Could not write image")
         
 # @dask.delayed
@@ -185,7 +160,6 @@ def compute_tile(gdf, i, j, zoom, max_height, outputfolder):
     bb0 = invtransformer.transform(bb0[0],bb0[1])
     bb1 = invtransformer.transform(bb1[0],bb1[1])
     bbox = box(bb0[0],bb0[1],bb1[0],bb1[1])
-#     filtered = gdf.cx[bb0[0]:bb1[0],bb0[1]:bb1[1]]
     filtered = gdf.loc[gdf.sindex.intersection(bbox.bounds)]
     
     if len(filtered) > 0:
@@ -198,7 +172,7 @@ def compute_tile(gdf, i, j, zoom, max_height, outputfolder):
 def convert_raster(vector_in: str, attribute: str, zoom: int, raster_out: str, max_height: float = 550):  # Curio: max_height, 550 in SCOUT
     raster_out = Path(raster_out)
 
-    gdf = gpd.read_file(vector_in)
+    gdf = vector_in if isinstance(vector_in, gpd.GeoDataFrame) else gpd.read_file(vector_in)  # Curio: SCOUT reads a file
     gdf = gdf.to_crs(epsg=3395)
 
     bounds = gdf.total_bounds
@@ -209,14 +183,9 @@ def convert_raster(vector_in: str, attribute: str, zoom: int, raster_out: str, m
     bottomleft = [min(coord0[0],coord1[0]),min(coord0[1],coord1[1])]
     topright = [max(coord0[0],coord1[0]),max(coord0[1],coord1[1])]
     
-    raster_out.mkdir(parents=True, exist_ok=True)
-
-    if raster_out.exists():
-        for file in raster_out.iterdir():
-            file.unlink()
+    # Curio: no mkdir or emptying of raster_out here: curio_save_folder gives an empty folder
 
     if attribute == "height":
-        raster_out.mkdir(parents=True, exist_ok=True)
         delayed = []
         for i in range(math.floor(bottomleft[0]),math.ceil(topright[0])):
             for j in range(math.floor(bottomleft[1]),math.ceil(topright[1])):
@@ -229,12 +198,3 @@ def convert_raster(vector_in: str, attribute: str, zoom: int, raster_out: str, m
         print(f"Feature '{attribute}' not supported for layer")
 
     return
-
-# from convert_to_raster import convert_raster
-
-# input = "baselayer-0"
-# feature = "height"
-# zoom = 16
-# output = "rasters-baselayer-0"
-
-# convert_raster(input, tag, feature, zoom, output)

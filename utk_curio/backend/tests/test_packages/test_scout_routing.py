@@ -1,7 +1,7 @@
 """``scout.routing@1``: SCOUT's weather-aware routing in Curio (#662, step 20).
 
 The proof: the package's port of SCOUT's routing, on the cut of SCOUT's own road
-graph and the Data Catalog's SCOUT WRF group, gives what SCOUT's own
+graph and the Data Catalog's SCOUT WRF forecast, gives what SCOUT's own
 ``calculate_weather_route`` gave on them, recorded once by
 ``scripts/scout/reference_routing.py`` in SCOUT's stack (``fixtures/scout_routing/``,
 see its ``ATTRIBUTION.md``). For each of SCOUT's eight recorded runs the weather
@@ -17,12 +17,12 @@ the hourly weather steps were read as 15-minute steps; and the origin's
 longitude was checked against the northern edge.
 
 The node: its template, with the widgets its manifest declares resolved as a run
-resolves them, reads the WRF group and the GNN model by id and runs in the sandbox
-with its package's modules (#719), on the layers the shipped example's Autark
-node hands on, whose roads layer its layer chip ``[!! input 0:table_osm_roads !!]``
-reads (the roads' lines and the tags routing reads are
-``fixtures/scout_routing/loop_roads.parquet``, written by
-``scripts/scout/loop_roads_fixture.py``). It returns ``(routes, metrics)``.
+resolves them, reads the WRF forecast and the GNN model by id and runs in the sandbox
+with its package's modules (#719), on the roads the shipped example's Data
+Loading node hands on, the Data Catalog's ``data.osm.chicago-downtown-roads``
+(written by ``scripts/build_chicago_downtown_roads.py``): one GeoDataFrame, the
+layer its layer chip ``[!! input_0:table_osm_roads !!]`` reads. It returns
+``(routes, metrics)``.
 
 Package code is imported inside each test, through a run's staged copy of the
 package's modules, so a checkout without the package or its libraries fails
@@ -51,18 +51,16 @@ PYTHON_TYPE = "curio.builtin/computation-analysis"
 DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "WeatherRouting.json"
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scout_routing"
 REFERENCE = FIXTURES / "routing_reference.json"
-LOOP_ROADS = FIXTURES / "loop_roads.parquet"
+#: The roads the example loads from the Data Catalog.
+ROADS_ID = "data.osm.chicago-downtown-roads"
+EXAMPLE_ROADS = REPO / "datasets" / f"{ROADS_ID}@1" / "data" / "roads.parquet"
 #: The coordinate system an Autark data node names on each layer it hands on
 #: (``autkDataCompile.ts``): World Mercator, the CRS Autark keeps its layers in.
 CRS_3395 = {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::3395"}}
 
-WEATHER_IDS = {
-    "RAIN": "data.scout.wrf-rain",
-    "T2": "data.scout.wrf-t2",
-    "WSPD10": "data.scout.wrf-wspd10",
-    "WDIR10": "data.scout.wrf-wdir10",
-    "RH2": "data.scout.wrf-rh2",
-}
+#: SCOUT's WRF forecast: one bundle dataset, a NetCDF file per variable.
+WEATHER_ID = "data.scout.chicago-weather-2025-07-06"
+WEATHER_VARIABLES = ("RAIN", "T2", "WSPD10", "WDIR10", "RH2")
 GNN_ID = "model.scout.weather-gnn"
 GNN_DIR = REPO / "models" / f"{GNN_ID}@1"
 SCOUT_COMMIT = "b98369e50b2972c0fc22180f56da0ac99a98a545"
@@ -74,22 +72,34 @@ METRICS = ("distance", "duration", "rain_exposure", "heat_exposure", "wind_expos
 #: within 1e-4 of torch's, and an exposure sums a route's edges.
 TOLERANCE = 1e-3
 
-#: The example's two scenarios on the Autark Loop roads, at noon in Chicago
-#: (weather step 17): per route, ``(route, route_index, points, distance km,
-#: duration min, rain exposure, wind exposure)``.
-EXAMPLE = {
-    "avoid-rain": [
-        ("rain-aware-route", 0, 105, 3.682813649158174, 6.025991956871075, 783.37371301651, 362.17459201812744),
-        ("wind-aware-route", 0, 155, 2.98274308599643, 3.9845607240805028, 1111.9804782867432, 244.8135024011135),
-        ("fastest-route", 0, 156, 2.9827308078544057, 3.9845451643183925, 1120.354250907898, 244.9364112019539),
-    ],
-    "avoid-wind": [
-        ("rain-aware-route", 0, 146, 2.9941345207889287, 3.998996785748454, 255.61172150075436, 510.0768229961395),
-        ("wind-aware-route", 0, 105, 3.682813649158174, 6.025991956871075, 369.7025283277035, 393.4203200340271),
-        ("fastest-route", 0, 156, 2.9827308078544057, 3.9845451643183925, 256.08559469878674, 542.8171148300171),
-    ],
+#: SCOUT's weather routing example (``routing_reference.json``'s ``example``):
+#: the widget values the shipped dataflow's Weather Routing node holds.
+EXAMPLE_VALUES = {
+    "origin": {"lat": 41.896438, "lon": -87.659758},
+    "destination": {"lat": 41.861649, "lon": -87.614034},
+    "mode": "Default weights",
+    "K": 1,
+    "time": "2025-07-06T00:00:00",
+    "rain": 0.85834,
+    "wind": 0.01657,
 }
-EXAMPLE_WEIGHTS = {"avoid-rain": (0.85834, 0.01657), "avoid-wind": (0.01657, 0.85834)}
+#: Its two routes on the roads the dataflow loads from the Data Catalog
+#: (OpenStreetMap today, not SCOUT's snapshot, so close to SCOUT's but not the same): per
+#: route, ``(route, route_index, points, distance km, duration min, rain
+#: exposure, wind exposure)``. As in SCOUT's, the weather-aware route trades
+#: time and wind for less rain.
+EXAMPLE = [
+    ("fastest-route", 0, 299, 7.3598173248939185, 10.102611935770371, 2201.0672464370728, 610.4986320510507),
+    ("weighted-route", 1, 264, 7.646003063522548, 12.365133939742854, 1992.3714365959167, 742.6831955313683),
+]
+#: The example's two scenarios, each keeping one of the routes: SCOUT's C and
+#: D, in SCOUT's colors.
+EXAMPLE_SCENARIOS = {
+    "fastest": ("Fastest route", "#42A5F5", "fastest-route"),
+    "weather-aware": ("Weather-aware route", "#00838F", "weighted-route"),
+}
+#: Each Compare Scenarios chart's metric, in the dataflow's order.
+EXAMPLE_CHARTS = ["duration", "distance", "rain_exposure", "wind_exposure"]
 
 
 def _template() -> dict:
@@ -116,8 +126,13 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _weather_file(name: str) -> Path:
+    """The file of WRF variable *name* in the weather bundle."""
+    return REPO / "datasets" / f"{WEATHER_ID}@1" / "data" / f"{name}.nc"
+
+
 def _weather() -> dict:
-    return {name: str(_data_file(dataset_id)) for name, dataset_id in WEATHER_IDS.items()}
+    return {name: str(_weather_file(name)) for name in WEATHER_VARIABLES}
 
 
 def _gnn_file() -> Path:
@@ -197,7 +212,7 @@ def test_the_reference_is_scouts_own_run_on_the_committed_data():
     assert (made["torch"], made["torch_geometric"], made["osmnx"], made["networkx"], made["numpy"]) == (
         "2.2.2", "2.6.1", "2.0.6", "3.2.1", "1.23.5")
     assert made["python"].startswith("3.9.")
-    assert reference["datasets"] == {i: _sha256(_data_file(i)) for i in WEATHER_IDS.values()}
+    assert reference["datasets"] == {f"{WEATHER_ID}/{n}.nc": _sha256(_weather_file(n)) for n in WEATHER_VARIABLES}
     assert reference["road_graph"] == {n: _sha256(FIXTURES / n) for n in ("roads_nodes.parquet", "roads_edges.parquet")}
     assert sorted(reference["cases"]) == sorted(CASES)
     default = reference["cases"]["default"][0]
@@ -333,7 +348,7 @@ def test_a_start_time_reads_the_hourly_step_it_falls_in(tmp_path):
 
     steps = _reference()["scout_bugs"]["time_read_as_quarter_hours"]["scout_steps"]
     assert steps["default"] == [1] and steps["default-later"] == [17]
-    rain = _data_file(WEATHER_IDS["RAIN"])
+    rain = _weather_file("RAIN")
     with netCDF4.Dataset(rain) as ds:
         start, zone, count = ds.getncattr("START_DATE"), ds.getncattr("timezone"), len(ds.dimensions["Time"])
     first = datetime.strptime(start, "%Y-%m-%d_%H:%M:%S")
@@ -515,19 +530,26 @@ def test_the_template_declares_the_widgets_its_source_reads():
     assert re.findall(r"\[!!\s*(\w+)\s*!!\]", _source()) == ["origin", "destination", "mode", "K", "time", "rain", "wind"]
 
 
-def test_the_template_reads_the_wrf_group_and_the_gnn_by_id():
-    """The weather is the Data Catalog's WRF group, read by dataset id; the GNN
-    is a Model Catalog model, named by a literal ``curio_load_model`` call."""
+def test_the_template_reads_the_wrf_forecast_and_the_gnn_by_id():
+    """The weather is the Data Catalog's WRF forecast, one bundle of a NetCDF
+    file per variable, each file's path read by the dataset's id and the
+    file's name (``curio_data_path(id, part=...)``); the GNN is a Model Catalog
+    model, named by a literal ``curio_load_model`` call."""
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code, model_ids_in_code
     from utk_curio.backend.app.model_catalog.domain.manifest import load_manifest
 
-    assert sorted(dataset_ids_in_code(_source())) == sorted(WEATHER_IDS.values())
+    assert dataset_ids_in_code(_source()) == [WEATHER_ID]
     assert model_ids_in_code(_source()) == [GNN_ID]
-    for name, dataset_id in WEATHER_IDS.items():
-        manifest = json.loads((REPO / "datasets" / f"{dataset_id}@1" / "manifest.json").read_text(encoding="utf-8"))
-        assert (manifest["format"], manifest["groupId"], manifest["layerName"]) == ("netcdf", "netcdf.scout-wrf", name)
-        assert (manifest["publisher"], manifest["license"]) == ("SCOUT (urban-toolkit/scout)", "")
-        assert "used with the permission of SCOUT's authors" in manifest["description"]
+    for name in WEATHER_VARIABLES:
+        assert f'"{name}": curio_data_path("{WEATHER_ID}", part="{name}.nc"),' in _source()
+    root = REPO / "datasets" / f"{WEATHER_ID}@1"
+    manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    assert (manifest["format"], manifest["dataFile"]) == ("bundle", "data/bundle.json")
+    assert (manifest["publisher"], manifest["license"]) == ("SCOUT (urban-toolkit/scout)", "")
+    assert "used with the permission of SCOUT's authors" in manifest["description"]
+    parts = json.loads((root / "data" / "bundle.json").read_text(encoding="utf-8"))["parts"]
+    assert sorted((p["file"], p["format"]) for p in parts) == sorted(
+        (f"data/{n}.nc", "netcdf") for n in WEATHER_VARIABLES)
     gnn = load_manifest(GNN_DIR)
     assert (gnn.runtime, gnn.task, gnn.labels, gnn.input) == ("onnx", "node-regression", (), None)
     assert gnn.publisher == "SCOUT (urban-toolkit/scout)"
@@ -572,94 +594,102 @@ def _dataflow() -> dict:
     return json.loads(DATAFLOW.read_text(encoding="utf-8"))["dataflow"]
 
 
-def test_the_shipped_dataflow_runs_the_template_with_the_shared_start_time():
-    """``WeatherRouting.json`` is how its CI run reaches this package. Its two
-    Weather Routing nodes hold the template's source with one change, the start
-    time read from the Parameter node, and the template's widgets with their
-    mode and weights; their code resolves with nothing left over."""
+def test_the_shipped_dataflow_runs_scouts_example():
+    """``WeatherRouting.json`` is SCOUT's weather routing example and how its CI
+    run reaches this package: one Weather Routing node holding the template's
+    source and widgets, set as SCOUT's example sets them, whose code resolves
+    with nothing left over. Two scenarios share it, each keeping one of its
+    routes, the fastest (SCOUT's C) or the weather-aware one (D): a node with
+    the route as a band the map outlines, and one with its metrics. The second
+    scenario's nodes are copies of the first's, one line apart."""
     from utk_curio.backend.app.execution.code_references import resolve_references
 
     spec = _dataflow()
     assert spec["packages"] == ["scout.routing@1"]
-    assert sorted(ref["datasetId"] for ref in spec["datasets"]) == sorted(WEATHER_IDS.values())
+    assert sorted(ref["datasetId"] for ref in spec["datasets"]) == sorted([ROADS_ID, WEATHER_ID])
     nodes = {n["id"]: n for n in spec["nodes"]}
-    (parameter,) = [n for n in spec["nodes"] if n["type"] == "curio.builtin/parameter"]
-    (start,) = parameter["metadata"]["widgets"]
-    time_widget = next(w for w in _template()["widgets"] if w["name"] == "time")
-    assert start["name"] == "start"
-    assert {k: start[k] for k in ("type", "default")} == {k: time_widget[k] for k in ("type", "default")}
-
-    expected_code = _source().replace("[!! time !!]", "[!! @start !!]")
-    assert expected_code != _source()
-    weights = {}
+    (routing,) = [n for n in spec["nodes"] if n["type"] == NODE_TYPE]
+    assert routing["content"] == _source()
+    widgets = routing["metadata"]["widgets"]
+    assert [{k: v for k, v in w.items() if k != "value"} for w in widgets] == _template()["widgets"]
+    assert {w["name"]: w["value"] for w in widgets} == EXAMPLE_VALUES
+    scout = _reference()["example"]["arguments"]
+    assert EXAMPLE_VALUES == {
+        "origin": scout["origin_"], "destination": scout["destination_"], "mode": scout["mode"],
+        "K": scout["K"], "time": scout["time_"], "rain": scout["rain"], "wind": scout["wind"]}
+    code, problems = resolve_references(routing["content"], widgets, "python", inputs=[{"slot": 0}])
+    assert problems == [], problems
+    assert 'time_="2025-07-06T00:00:00"' in code and 'mode="Default weights"' in code
+    assert [(s["id"], s["name"], s["color"]) for s in spec["scenarios"]] == [
+        (sid, name, color) for sid, (name, color, _route) in EXAMPLE_SCENARIOS.items()]
     for scenario in spec["scenarios"]:
-        (routing,) = [nodes[i] for i in scenario["nodes"] if nodes[i]["type"] == NODE_TYPE]
-        assert routing["content"] == expected_code
-        widgets = routing["metadata"]["widgets"]
-        values = {w["name"]: w["value"] for w in widgets if "value" in w}
-        assert [{k: v for k, v in w.items() if k != "value"} for w in widgets] == _template()["widgets"]
-        weights[scenario["id"]] = (values["rain"], values["wind"])
-        assert values["mode"] == "Custom weights"
-        code, problems = resolve_references(routing["content"], widgets, "python", shared=[start],
-                                            inputs=[{"slot": 0}])
-        assert problems == [], problems
-        assert 'time_="2025-07-06T12:00:00"' in code
-        pickers = sorted(nodes[i]["content"].splitlines()[-1] for i in scenario["nodes"] if i != routing["id"])
-        assert pickers == ["return arg[0]", "return arg[1]"]
-    assert weights == EXAMPLE_WEIGHTS
-    (avoid_rain, avoid_wind) = spec["scenarios"]
-    copies = {nodes[i]["metadata"]["copiedFrom"][-1] for i in avoid_wind["nodes"]}
-    assert copies == set(avoid_rain["nodes"])
+        assert routing["id"] not in scenario["nodes"]
+        parts = [nodes[i] for i in scenario["nodes"]]
+        assert all(n["type"] == PYTHON_TYPE for n in parts) and len(parts) == 2
+        assert all([e["source"] for e in spec["edges"] if e["target"] == n["id"]] == [routing["id"]] for n in parts)
+        route = EXAMPLE_SCENARIOS[scenario["id"]][2]
+        assert all(f'== "{route}"' in n["content"] for n in parts), [n["content"] for n in parts]
+    (fastest, weather_aware) = spec["scenarios"]
+    copies = {nodes[i]["metadata"]["copiedFrom"][-1] for i in weather_aware["nodes"]}
+    assert copies == set(fastest["nodes"])
 
 
 def test_the_shipped_dataflows_compare_nodes_chart_the_four_metrics():
-    """Each Compare Scenarios node holds the code it writes for its two inputs,
-    Avoid rain in circle 0 and Avoid wind in circle 1
-    (``utils/compare/compareCode.ts``), and charts one metric by route."""
+    """As in SCOUT's example, the two routes are compared on four bar charts,
+    one per metric: each a Compare Scenarios node holding the code it writes
+    for its two inputs (``utils/compare/compareCode.ts``), the fastest route in
+    circle 0 and the weather-aware one in circle 1, one bar per scenario."""
     spec = _dataflow()
-    entries = '    ("avoid-rain", "Avoid rain", [!! input 0 !!]),\n    ("avoid-wind", "Avoid wind", [!! input 1 !!]),\n])\n'
+    entries = ('    ("fastest", "Fastest route", [!! input_0 !!]),\n'
+               '    ("weather-aware", "Weather-aware route", [!! input_1 !!]),\n])\n')
     compares = [n for n in spec["nodes"] if n["type"] == "curio.builtin/compare-scenarios"]
-    labels = [{"scenario": "avoid-rain", "name": "Avoid rain", "color": "#2a9d8f"},
-              {"scenario": "avoid-wind", "name": "Avoid wind", "color": "#e76f51"}]
-    charted = []
+    labels = [{"scenario": sid, "name": name, "color": color} for sid, (name, color, _r) in EXAMPLE_SCENARIOS.items()]
     scenario_of = {i: s["id"] for s in spec["scenarios"] for i in s["nodes"]}
+    charted = []
     for node in compares:
         settings = node["metadata"]["compareScenarios"]
         assert settings["inputs"] == labels and settings["mode"] == "chart"
         assert node["content"].endswith(f"return curio_stack_scenarios([\n{entries}"), node["content"]
-        assert settings["chart"]["preset"] == "grouped-bar" and settings["chart"]["x"] == "route"
+        assert settings["chart"]["preset"] == "bar"
         charted.append(settings["chart"]["y"])
         sources = {e["targetHandle"]: e["source"] for e in spec["edges"] if e["target"] == node["id"]}
-        assert {handle: scenario_of[s] for handle, s in sources.items()} == {"in": "avoid-rain", "in_1": "avoid-wind"}
-    assert charted == ["duration", "distance", "rain_exposure", "wind_exposure"]
+        assert {handle: scenario_of[s] for handle, s in sources.items()} == {"in": "fastest", "in_1": "weather-aware"}
+        assert all("input_0[1]" in _node(spec, s)["content"] for s in sources.values())
+    assert charted == EXAMPLE_CHARTS
 
 
-def test_the_shipped_dataflows_roads_and_map_are_autarks():
-    """Autark loads the roads and draws the routes. Both scenarios' Weather
-    Routing nodes take the loader's layers straight on their one input, and
-    their layer chip reads the roads layer out of them: no node in between."""
+def _node(spec, node_id):
+    return next(n for n in spec["nodes"] if n["id"] == node_id)
+
+
+def test_the_shipped_dataflows_roads_come_from_the_catalog_and_autark_maps_them():
+    """A Data Loading node loads the roads of SCOUT's routing area from the
+    Data Catalog, marked as roads for Autark, and the dataflow declares the
+    dataset. The Weather Routing node takes them straight on its one input, and
+    its layer chip reads them as the roads layer: no node in between.
+    The map draws each scenario's route in its color, SCOUT's, with a darker
+    outline, and its legend names the scenarios (Curio's ``scenario`` key)."""
     spec = _dataflow()
     nodes = {n["id"]: n for n in spec["nodes"]}
     autark = {n["id"]: json.loads(n["content"]) for n in spec["nodes"] if n["type"] == "curio.builtin/autk-grammar"}
-    (loader_id,) = [i for i, doc in autark.items() if "data" in doc]
-    (map_id,) = [i for i, doc in autark.items() if "map" in doc]
-    (source,) = autark[loader_id]["data"]
-    assert (source["type"], source["pbfFileUrl"], source["autoLoadLayers"]) == (
-        "osm", "docs/examples/data/chicago_loop.osm.pbf", {"layers": ["roads"]})
-    routings = {n["id"] for n in spec["nodes"] if n["type"] == NODE_TYPE}
-    assert len(routings) == 2
-    assert {e["target"] for e in spec["edges"] if e["source"] == loader_id} == routings | {map_id}
-    for routing in routings:
-        assert [(e["source"], e["targetHandle"]) for e in spec["edges"] if e["target"] == routing] == [
-            (loader_id, "in")]
-        assert "    [!! input 0:table_osm_roads !!],\n" in nodes[routing]["content"]
+    (map_id,) = autark
+    assert list(autark[map_id]) == ["map"]
+    (loader,) = [n for n in spec["nodes"] if n["type"] == "curio.builtin/data-loading"]
+    loader_id = loader["id"]
+    assert f'roads = curio_load_data("{ROADS_ID}")\n' in loader["content"]
+    assert 'roads.metadata = {"layerType": "roads"}\n' in loader["content"]
+    assert ROADS_ID in [ref["datasetId"] for ref in spec["datasets"]]
+    (routing,) = [n["id"] for n in spec["nodes"] if n["type"] == NODE_TYPE]
+    assert {e["target"] for e in spec["edges"] if e["source"] == loader_id} == {routing, map_id}
+    assert [(e["source"], e["targetHandle"]) for e in spec["edges"] if e["target"] == routing] == [(loader_id, "in")]
+    assert "    [!! input_0:table_osm_roads !!],\n" in nodes[routing]["content"]
     layers = autark[map_id]["map"]["layerRefs"]
-    assert [layer["dataRef"] for layer in layers] == ["[!! input 0 !!]", "[!! input 1 !!]", "[!! input 2 !!]"]
-    # Each scenario's routes wear its color, the one Compare Scenarios' charts
-    # use, and the map's legend names them (Curio's `scenario` key), rather
-    # than a scale of each route's duration.
-    assert [layer.get("scenario") for layer in layers] == [None, "avoid-rain", "avoid-wind"]
-    assert {s["id"] for s in spec["scenarios"]} == {"avoid-rain", "avoid-wind"}
+    assert [layer["dataRef"] for layer in layers] == ["[!! input_0 !!]", "[!! input_1 !!]", "[!! input_2 !!]"]
+    assert [layer.get("scenario") for layer in layers] == [None, *EXAMPLE_SCENARIOS]
+    scenario_of = {i: s["id"] for s in spec["scenarios"] for i in s["nodes"]}
+    sources = {e["targetHandle"]: e["source"] for e in spec["edges"] if e["target"] == map_id}
+    assert [scenario_of.get(sources[h]) for h in ("in_1", "in_2")] == list(EXAMPLE_SCENARIOS)
+    assert all("input_0[0]" in nodes[sources[h]]["content"] for h in ("in_1", "in_2"))
     assert not any("getFnv" in layer or "colorMapInterpolator" in layer for layer in layers)
 
 
@@ -678,12 +708,12 @@ def test_the_templates_layer_chip_reads_autarks_layer_array():
     loaded = [{"name": "table_osm_parks"}, {"name": "table_osm_roads", "columns": ["highway", "oneway"]}]
     code, problems = resolve_references(_source(), _with_values(), "python", inputs=[{"slot": 0, "layers": loaded}])
     assert problems == [], problems
-    assert '    curio_layer(arg, "table_osm_roads", 0),\n' in code
+    assert '    curio_layer(input_0, "table_osm_roads", 0),\n' in code
     _code, problems = resolve_references(_source(), _with_values(), "python",
                                          inputs=[{"slot": 0, "layers": [{"name": "table_osm_buildings"}]}])
     assert problems == [{
-        "reference": "[!! input 0:table_osm_roads !!]",
-        "message": "[!! input 0:table_osm_roads !!]: input 0 has no layer table_osm_roads. "
+        "reference": "[!! input_0:table_osm_roads !!]",
+        "message": "[!! input_0:table_osm_roads !!]: input_0 has no layer table_osm_roads. "
                    "Its layers are table_osm_buildings.",
     }]
 
@@ -702,10 +732,11 @@ def test_the_templates_layer_chip_reads_autarks_layer_array():
     assert isinstance(roads, gpd.GeoDataFrame) and roads.crs.to_epsg() == 3395
     assert list(roads.columns) == ["geometry", "highway", "oneway", "name", "lanes"]
     assert roads.iloc[0]["highway"] == "secondary" and roads.iloc[0]["oneway"] == "yes"
-    # The fixture the node tests route on is the Loop's roads layer: its lines
-    # and the tags routing reads.
-    fixture = gpd.read_parquet(LOOP_ROADS)
-    assert fixture.crs.to_epsg() == 3395 and list(fixture.columns) == ["highway", "oneway", "maxspeed", "geometry"]
+    # The roads the node tests route on are the example's dataset: lines and
+    # the tags routing reads, and the street's name.
+    roads = gpd.read_parquet(EXAMPLE_ROADS)
+    assert roads.crs.to_epsg() == 4326
+    assert list(roads.columns) == ["highway", "oneway", "maxspeed", "name", "geometry"]
 
 
 # ---------------------------------------------------------------------------
@@ -743,17 +774,16 @@ def _execute(code, input_path, node_type, data_type, workspace, **kwargs):
     )
 
 
-def _loop_roads_artifact():
-    """The Loop's roads as the example's Autark node hands them on: its layer
-    array, the roads layer's lines in EPSG:3395 metres under their table name,
-    beside another layer, so the node's layer chip has to pick the roads by
-    name."""
+def _example_roads_layers_artifact():
+    """The example's roads as an Autark node that loads OpenStreetMap hands
+    roads on: its layer array, the roads layer's lines in EPSG:3395 metres under
+    their table name, beside another layer, so the node's layer chip has to
+    pick the roads by name."""
     import geopandas as gpd
 
     from utk_curio.sandbox.util.parsers import save_to_duckdb
 
-    roads = gpd.read_parquet(LOOP_ROADS)
-    assert roads.crs.to_epsg() == 3395 and list(roads.columns) == ["highway", "oneway", "maxspeed", "geometry"]
+    roads = gpd.read_parquet(EXAMPLE_ROADS).to_crs(3395)
     lines = json.loads(roads.to_json())
     lines["crs"] = CRS_3395
     layers = [
@@ -764,31 +794,32 @@ def _loop_roads_artifact():
     return save_to_duckdb(layers, node_id="osm")
 
 
-def _loop_roads_frame_artifact():
-    """The Loop's roads as one GeoDataFrame on its own, with no layer name, as
-    a Python node or Data Loading hands roads on."""
+def _example_roads_artifact():
+    """The example's roads as its Data Loading node hands them on: the
+    dataset as ``curio_load_data`` gives it, one GeoDataFrame with no layer
+    name, marked as roads for Autark."""
     import geopandas as gpd
 
     from utk_curio.sandbox.util.parsers import save_to_duckdb
 
-    roads = gpd.read_parquet(LOOP_ROADS)
-    assert "metadata" not in roads.__dict__
+    roads = gpd.read_parquet(EXAMPLE_ROADS)
+    roads.metadata = {"layerType": "roads"}
     return save_to_duckdb(roads, node_id="roads")
 
 
-def run_node(workspace, *, fails=False, frame=False, **values):
-    """Run the node's template, its widgets at *values*, on the Autark layers
-    holding the Loop's roads (with *frame*, on the roads as one GeoDataFrame)
-    in the sandbox, in process, with the datasets and the model its code names
-    resolved: ``(artifact id, (routes, metrics))``, or with *fails* the node's
-    error text."""
+def run_node(workspace, *, fails=False, layers=False, **values):
+    """Run the node's template, its widgets at *values*, on the example's roads
+    as its Data Loading node hands them on (with *layers*, as an Autark node's
+    layer array) in the sandbox, in process, with the datasets and the model
+    its code names resolved: ``(artifact id, (routes, metrics))``, or with
+    *fails* the node's error text."""
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code, model_ids_in_code
     from utk_curio.backend.app.execution.code_references import resolve_references
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
     code, problems = resolve_references(_source(), _with_values(**values), "python", inputs=[{"slot": 0}])
     assert problems == [], problems
-    artifact, data_type = (_loop_roads_frame_artifact(), "geodataframe") if frame else (_loop_roads_artifact(), "list")
+    artifact, data_type = (_example_roads_layers_artifact(), "list") if layers else (_example_roads_artifact(), "geodataframe")
     result = _execute(
         code, artifact, NODE_TYPE, data_type, workspace,
         dataset_paths={i: str(_data_file(i)) for i in dataset_ids_in_code(code)},
@@ -816,50 +847,55 @@ def _assert_rows(rows, expected):
         assert ours[5:] == pytest.approx(pinned[5:], abs=TOLERANCE), ours
 
 
-@pytest.mark.parametrize("scenario", sorted(EXAMPLE))
-def test_the_node_routes_over_autarks_roads_as_the_example_does(workspace, scenario):
-    rain, wind = EXAMPLE_WEIGHTS[scenario]
-    _art_id, (routes, metrics) = run_node(workspace, mode="Custom weights", rain=rain, wind=wind)
+def test_the_node_routes_over_autarks_roads_as_the_example_does(workspace):
+    _art_id, (routes, metrics) = run_node(workspace, **EXAMPLE_VALUES)
     assert routes.crs.to_epsg() == 4326
     assert list(routes.columns) == ["weight_type", "route_index", "distance_m", "duration_minutes", "rain_exposure",
                                     "heat_exposure", "wind_exposure", "humidity_exposure", "geometry"]
     assert list(metrics.columns) == ["route", "route_index", *METRICS]
-    _assert_rows(_rows(routes, metrics), EXAMPLE[scenario])
+    _assert_rows(_rows(routes, metrics), EXAMPLE)
     assert list(routes["distance_m"]) == pytest.approx([1000 * d for d in metrics["distance"]], rel=1e-12)
-    # Each route runs from the origin to the destination, inside the Loop.
+    # Each route runs from the origin to the destination, inside SCOUT's box.
     for line in routes.geometry:
         assert line.coords[0] == routes.geometry.iloc[-1].coords[0]
         assert line.coords[-1] == routes.geometry.iloc[-1].coords[-1]
     xmin, ymin, xmax, ymax = routes.total_bounds
-    assert -87.64 < xmin and xmax < -87.60 and 41.85 < ymin and ymax < 41.90
+    assert -87.665 < xmin and xmax < -87.612 and 41.857 < ymin and ymax < 41.90
 
 
-def test_the_node_routes_over_a_roads_frame_on_its_own_as_before(workspace):
-    """A roads GeoDataFrame with no layer name, as a Python node or Data
-    Loading hands roads on, is the layer the template's chip reads: the node
-    routes over it as it did when its code read ``arg``, to the same routes."""
-    rain, wind = EXAMPLE_WEIGHTS["avoid-rain"]
-    _art_id, (routes, metrics) = run_node(workspace, frame=True, mode="Custom weights", rain=rain, wind=wind)
+def test_the_node_routes_over_an_autark_layer_array_too(workspace):
+    """The layers an Autark node that loads OpenStreetMap hands on, its roads
+    under their table name beside another layer, are read by the template's
+    chip too: the same roads in EPSG:3395 give the same routes."""
+    _art_id, (routes, metrics) = run_node(workspace, layers=True, **EXAMPLE_VALUES)
     assert routes.crs.to_epsg() == 4326
-    _assert_rows(_rows(routes, metrics), EXAMPLE["avoid-rain"])
+    _assert_rows(_rows(routes, metrics), EXAMPLE)
 
 
 def test_the_example_picks_each_part(workspace):
-    """The two nodes after Weather Routing in each scenario of the example take
-    its routes and its metrics."""
+    """The two nodes of each scenario take its route, as a 30 m band, a
+    polygon the map outlines, and that route's row of the metrics."""
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
-    art_id, (routes, metrics) = run_node(workspace, mode="Custom weights")
-    nodes = {n["id"]: n for n in _dataflow()["nodes"]}
-    pickers = {nodes[e["target"]]["content"].splitlines()[-1]: nodes[e["target"]]["content"]
-               for e in _dataflow()["edges"] if nodes[e["source"]]["type"] == NODE_TYPE}
-    picked_routes = _execute(pickers["return arg[0]"], art_id, PYTHON_TYPE, "file", workspace)
-    picked_metrics = _execute(pickers["return arg[1]"], art_id, PYTHON_TYPE, "file", workspace)
-    assert picked_routes["stderr"] == "" and picked_metrics["stderr"] == ""
-    assert picked_routes["output"]["dataType"] == "geodataframe", picked_routes["output"]
-    assert picked_metrics["output"]["dataType"] == "dataframe", picked_metrics["output"]
-    assert load_from_duckdb(picked_metrics["output"]["path"]).equals(metrics)
-    assert len(load_from_duckdb(picked_routes["output"]["path"])) == len(routes)
+    spec = _dataflow()
+    nodes = {n["id"]: n for n in spec["nodes"]}
+    art_id, (routes, metrics) = run_node(workspace, **EXAMPLE_VALUES)
+    for scenario in spec["scenarios"]:
+        pick = EXAMPLE_SCENARIOS[scenario["id"]][2]
+        codes = [nodes[i]["content"] for i in scenario["nodes"]]
+        (route_code,) = [c for c in codes if "input_0[0]" in c]
+        (metrics_code,) = [c for c in codes if "input_0[1]" in c]
+        picked = _execute(route_code, art_id, PYTHON_TYPE, "file", workspace)
+        assert picked["stderr"] == "", picked["stderr"]
+        assert picked["output"]["dataType"] == "geodataframe", picked["output"]
+        band = load_from_duckdb(picked["output"]["path"])
+        assert list(band["weight_type"]) == [pick]
+        assert list(band.geometry.geom_type) == ["Polygon"]
+        assert band.geometry.iloc[0].covers(routes[routes["weight_type"] == pick].geometry.iloc[0])
+        picked = _execute(metrics_code, art_id, PYTHON_TYPE, "file", workspace)
+        assert picked["stderr"] == "" and picked["output"]["dataType"] == "dataframe", picked
+        row = load_from_duckdb(picked["output"]["path"])
+        assert row.reset_index(drop=True).equals(metrics[metrics["route"] == pick].reset_index(drop=True))
 
 
 def test_each_widget_reaches_the_call(workspace):

@@ -2,21 +2,18 @@
 
 Input: a buildings layer, a GeoDataFrame of polygons with a CRS and a column
 of heights in metres.
-Output: one raster in EPSG:3395, each cell a height in metres: the 256 by 256
-tiles SCOUT writes, side by side. An Autark map draws it as input_0, band
-band_1; SCOUT's Deep Umbra shadow model (Accumulated Shadow) reads it.
-The Widgets tab sets the height column, the zoom level and the maximum height.
+Output: the 256 by 256 tiles SCOUT writes, 8-bit gray where 255 is the maximum
+height, in EPSG:3395, saved as one of this dataflow's computed datasets, under
+the name the "Save tiles as" widget gives ("tiles"); and a table of them, one
+row per tile: zoom, x, y and the maximum height. Mosaic Tiles, given the same
+name, puts the tiles together into one raster.
+The Widgets tab sets the height column, the zoom level, the maximum height and
+the name.
 Ported from SCOUT, https://github.com/urban-toolkit/scout.
 """
-import os
-import tempfile
-
 from scout_raster_conversion.convert_to_raster import convert_raster
-from scout_raster_conversion.mosaic import mosaic
+from scout_raster_conversion.mosaic import tile_table
 
-with tempfile.TemporaryDirectory() as work:
-    buildings = os.path.join(work, "buildings")
-    arg.to_file(buildings, driver="GeoJSON")
-    rasters = os.path.join(work, "rasters")
-    convert_raster(buildings, [!! attribute !!], int([!! zoom !!]), rasters, max_height=float([!! max_height !!]))
-    return mosaic(rasters, int([!! zoom !!]), float([!! max_height !!]), curio_output_file)
+tiles = curio_save_folder([!! tiles !!])
+convert_raster(input_0, [!! attribute !!], int([!! zoom !!]), tiles, max_height=float([!! max_height !!]))
+return tile_table(tiles, int([!! zoom !!]), float([!! max_height !!]))

@@ -1378,6 +1378,11 @@ def delete_project(user, project_id: str) -> None:
         raise ProjectError(
             "Example dataflows ship with Curio and cannot be deleted.", 403
         )
+    # The files its nodes saved with curio_save_file / curio_save_folder are
+    # this dataflow's own, so they go with it (datasets/install/saved.py).
+    from utk_curio.backend.app.datasets.install.saved import remove_saved_datasets
+
+    remove_saved_datasets(_user_dir_key(user), project_id)
     storage.delete_tree(_user_dir_key(user), project_id)
     repo.delete_project_row(project_id, user.id)
     db.session.commit()

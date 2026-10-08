@@ -1,27 +1,26 @@
 #!/usr/bin/env python3
-"""Cut SCOUT's flood rasters down to the area the FloodScenarios test dataflow reads.
+"""Ship SCOUT's flood rasters as one Data Catalog dataset, ``data.scout.quad-cities-flood``.
 
 SCOUT (https://github.com/urban-toolkit/scout) ships its Quad Cities flood
 projections in ``backend/compute/quad_city_flooding_simulation/data_substitutes/``:
 a class raster of where each nature-based solution (NbS) would go, and, for each
 of three periods, the flood depth with and without NbS. Each is a 2592 by 2064
-cell GeoTIFF in EPSG:4326 (the depth rasters 42.8 MB each), too large for the
-repository. This script writes a crop of each into ``datasets/<id>@1/`` with its
-manifest:
+cell GeoTIFF in EPSG:4326 on one grid, uncompressed (the depth rasters 42.8 MB
+each). This script writes the seven of them into one bundle,
+``datasets/data.scout.quad-cities-flood@1/``:
 
-- the crop is the example's region (``EXAMPLE_REGION``, the corners the
-  FloodScenarios dataflow's Parameter nodes hold) plus ``MARGIN`` cells on
-  every side;
-- it keeps SCOUT's grid: the same CRS, cell size and cell edges, dtype and
-  nodata, so a window read on a crop gives the cells the same window read on
-  SCOUT's file gives;
-- it is compressed losslessly (DEFLATE).
+- ``data/nbs_classes.tif`` and ``data/<period>_NbS.tif`` / ``_noNbS.tif``:
+  each raster whole, beside ``data/bundle.json``; the Flood Projection node of
+  ``scout.flood@1`` hands SCOUT's function the ``data`` folder, and its copy of
+  SCOUT's code opens these names;
+- the same CRS, transform, dtype, nodata and tags, every cell kept; compressed
+  losslessly (DEFLATE, tiled);
+- ``data/bundle.json`` lists them, and ``manifest.json`` describes them.
 
-``--check`` reads the example region and 400 random windows inside the crop
-from each crop and from SCOUT's file and stops at the first window whose cells
-or transform differ. ``--pins`` runs SCOUT's original ``simulate_flood_projection``
-(the test fixture copy) on SCOUT's files for the proof cases in
-``test_scout_flood.py`` and prints the values that test pins.
+``--check`` reads every part whole and stops at the first whose cells, grid or
+nodata differ from SCOUT's file. ``--pins`` runs SCOUT's original
+``simulate_flood_projection`` (the test fixture copy) on SCOUT's files for the
+proof cases in ``test_scout_flood.py`` and prints the values that test pins.
 
 This is AUTHORING-ONLY tooling, run once by hand; nothing imports it.
 
@@ -37,9 +36,7 @@ import contextlib
 import hashlib
 import importlib.util
 import json
-import math
 import os
-import random
 import shutil
 import sys
 import tempfile
@@ -53,98 +50,57 @@ from utk_curio.backend.app.datasets.domain.manifest import (  # noqa: E402
     build_manifest_dict,
 )
 
-CATALOG_DIR = REPO_ROOT / "datasets"
+DATASET_ID = "data.scout.quad-cities-flood"
+DATASET_DIR = REPO_ROOT / "datasets" / f"{DATASET_ID}@1"
 SCOUT_FUNCTION = (
     REPO_ROOT / "utk_curio" / "backend" / "tests" / "test_packages" / "fixtures" / "scout_flood" / "flood_simulation.py"
 )
-STAMP = "2026-10-05T00:00:00Z"
+STAMP = "2026-10-07T00:00:00Z"
 PUBLISHER = "SCOUT (urban-toolkit/scout)"
-
-#: (top, left, bottom, right) in degrees: the FloodScenarios dataflow's corners,
-#: on the edges of SCOUT's cells (columns 2016 to 2271 and rows 1552 to 1807 of
-#: its grid), 256 by 256 cells that hold every NbS class code.
-EXAMPLE_REGION = (41.4669317349186, -90.48363204845099, 41.44098884583301, -90.4576891593654)
-#: Cells kept on every side of the region.
-MARGIN = 32
 
 CLASS_FILE = "NBS_others_5m_4326_cropped_cleaned_resampled.tif"
 PERIODS = ("2020 - 2040", "2050 - 2080", "2080 - 2100")
 
-CLASS_CODES = (
-    "21 bioswales or infiltration trenches, 31 permeable pavements, 43 retention ponds, "
-    "52 infiltration trench, 71 and 81 bioswales, 90 and 95 constructed wetlands, and 0 none"
+
+def _parts() -> list[dict]:
+    """The seven parts: the class raster and each period's two depth rasters,
+    each with its name in the bundle (``file``) and SCOUT's (``scout``)."""
+    parts = [{"file": "nbs_classes.tif", "scout": CLASS_FILE, "label": "NbS classes"}]
+    for period in PERIODS:
+        stem = period.replace(" - ", "_")
+        for kind, what in (("NbS", "with"), ("noNbS", "without")):
+            parts.append({"file": f"{stem}_{kind}.tif", "scout": f"{stem}_{kind}_4326_cropped.tif",
+                          "label": f"Flood depth {period} {what} NbS"})
+    return parts
+
+
+DESCRIPTION = (
+    "SCOUT's Quad Cities flood projections, the seven rasters SCOUT's simulate_flood_projection reads, "
+    "each a 2592 by 2064 cell GeoTIFF on one grid (EPSG:4326, cells of 0.000101 degrees, longitude "
+    "-90.6879 to -90.4252 and latitude 41.4150 to 41.6242): "
+    "nbs_classes.tif, where nature-based solutions (NbS) would go, as class codes (21 bioswales or "
+    "infiltration trenches, 31 permeable pavements, 43 retention ponds, 52 infiltration trench, 71 and 81 "
+    "bioswales, 90 and 95 constructed wetlands, and 0 none); and, for 2020-2040, 2050-2080 and 2080-2100, "
+    "<period>_NbS.tif and <period>_noNbS.tif, the projected flood depth in metres "
+    "with and without NbS. The Flood Projection node of the scout.flood package runs SCOUT's function on "
+    "them. Every cell as SCOUT ships it, compressed losslessly. From SCOUT, "
+    "https://github.com/urban-toolkit/scout, backend/compute/quad_city_flooding_simulation/data_substitutes, "
+    "used with the permission of SCOUT's authors."
 )
 
 
-def _datasets() -> list[dict]:
-    """The seven datasets: the class raster and each period's two depth rasters."""
-    entries = [{
-        "id": "data.scout.flood-nbs-classes",
-        "name": "SCOUT Flood NbS Classes",
-        "scout_file": CLASS_FILE,
-        "data_file": "data/flood-nbs-classes.tif",
-        "what": (
-            "Where nature-based solutions (NbS) would go in SCOUT's Quad Cities flood projections, "
-            f"as class codes: {CLASS_CODES}."
-        ),
-        "tags": ["raster", "flood", "nbs", "scout", "quad-cities", "geotiff"],
-    }]
-    for period in PERIODS:
-        start, end = period.split(" - ")
-        for nbs in (True, False):
-            entries.append({
-                "id": f"data.scout.flood-depth-{start}-{end}-{'nbs' if nbs else 'no-nbs'}",
-                "name": f"SCOUT Flood Depth {start}-{end} {'with' if nbs else 'without'} NbS",
-                "scout_file": f"{start}_{end}_{'NbS' if nbs else 'noNbS'}_4326_cropped.tif",
-                "data_file": f"data/flood-depth-{start}-{end}-{'nbs' if nbs else 'no-nbs'}.tif",
-                "what": (
-                    f"Projected flood depth in metres for {start} to {end} "
-                    f"{'with' if nbs else 'without'} nature-based solutions (NbS), from SCOUT's Quad Cities "
-                    "flood projections. A cell with no depth holds no value."
-                ),
-                "tags": ["raster", "flood", "depth", "scout", "quad-cities", "geotiff"],
-            })
-    return entries
-
-
-def _crop_window(transform):
-    """The crop's window on SCOUT's grid: the example region plus the margin,
-    on whole cells."""
-    from rasterio.windows import Window, from_bounds
-
-    top, left, bottom, right = EXAMPLE_REGION
-    # The region's corners lie on cell edges, so its window is whole cells.
-    region = from_bounds(left, bottom, right, top, transform=transform)
-    col0 = round(region.col_off) - MARGIN
-    row0 = round(region.row_off) - MARGIN
-    col1 = round(region.col_off + region.width) + MARGIN
-    row1 = round(region.row_off + region.height) + MARGIN
-    return Window(col0, row0, col1 - col0, row1 - row0)
-
-
-def _describe(entry: dict, window, bounds) -> str:
-    return (
-        f"{entry['what']} A {window.width} by {window.height} cell crop of SCOUT's {entry['scout_file']} "
-        f"on its own grid (EPSG:4326, cells of 0.000101 degrees), longitude {bounds.left:.4f} to "
-        f"{bounds.right:.4f} and latitude {bounds.bottom:.4f} to {bounds.top:.4f}: the area the "
-        "FloodScenarios test dataflow reads. From SCOUT, https://github.com/urban-toolkit/scout, "
-        "backend/compute/quad_city_flooding_simulation/data_substitutes, used with the permission of "
-        "SCOUT's authors."
-    )
-
-
-def _write_manifest(entry: dict, root: Path, description: str) -> None:
+def _write_manifest() -> None:
     manifest = DatasetManifest(
-        id=entry["id"],
-        name=entry["name"],
+        id=DATASET_ID,
+        name="SCOUT Quad Cities Flood Projections",
         version="1.0.0",
-        format="geotiff",
-        description=description,
+        format="bundle",
+        description=DESCRIPTION,
         publisher=PUBLISHER,
         # SCOUT's data is used with its authors' permission and names no license.
-        license="",
-        tags=list(entry["tags"]),
-        data_file=entry["data_file"],
+        license="to be confirmed",
+        tags=["raster", "flood", "depth", "nbs", "scout", "quad-cities", "geotiff"],
+        data_file="data/bundle.json",
         major=1,
         created_at=STAMP,
         updated_at=STAMP,
@@ -154,105 +110,92 @@ def _write_manifest(entry: dict, root: Path, description: str) -> None:
         schema=None,
         source_label="SCOUT",
     )
-    (root / "manifest.json").write_text(json.dumps(build_manifest_dict(manifest), indent=2) + "\n", encoding="utf-8")
+    (DATASET_DIR / "manifest.json").write_text(
+        json.dumps(build_manifest_dict(manifest), indent=2) + "\n", encoding="utf-8"
+    )
 
 
 def build(scout: Path) -> None:
     import rasterio
 
-    with rasterio.open(scout / CLASS_FILE) as classes:
-        window = _crop_window(classes.transform)
-        grid = (classes.crs, classes.transform)
-    total = 0
-    for entry in _datasets():
-        root = CATALOG_DIR / f"{entry['id']}@1"
-        if root.exists():
-            shutil.rmtree(root)
-        (root / "data").mkdir(parents=True)
-        target = root / entry["data_file"]
-        with rasterio.open(scout / entry["scout_file"]) as source:
-            if (source.crs, source.transform) != grid:
-                raise SystemExit(f"{entry['scout_file']} is not on the class raster's grid")
-            cells = source.read(1, window=window)
+    if DATASET_DIR.exists():
+        shutil.rmtree(DATASET_DIR)
+    parts_dir = DATASET_DIR / "data"
+    parts_dir.mkdir(parents=True)
+    listed, total = [], 0
+    for index, part in enumerate(_parts()):
+        target = parts_dir / part["file"]
+        with rasterio.open(scout / part["scout"]) as source:
+            cells = source.read(1)
             floating = cells.dtype.kind == "f"
             profile = {
-                "driver": "GTiff", "width": window.width, "height": window.height, "count": 1,
-                "dtype": cells.dtype, "crs": source.crs, "transform": source.window_transform(window),
-                "nodata": source.nodata, "compress": "deflate", "predictor": 3 if floating else 2, "zlevel": 9,
+                "driver": "GTiff", "width": source.width, "height": source.height, "count": 1,
+                "dtype": cells.dtype, "crs": source.crs, "transform": source.transform, "nodata": source.nodata,
+                "compress": "deflate", "predictor": 3 if floating else 2, "zlevel": 9,
+                "tiled": True, "blockxsize": 256, "blockysize": 256,
             }
-            with rasterio.open(target, "w", **profile) as crop:
-                crop.write(cells, 1)
-                crop.update_tags(**source.tags())
-        with rasterio.open(target) as crop:
-            bounds = crop.bounds
-        _write_manifest(entry, root, _describe(entry, window, bounds))
+            with rasterio.open(target, "w", **profile) as copy:
+                copy.write(cells, 1)
+                copy.update_tags(**source.tags())
         size = target.stat().st_size
         total += size
-        print(f"{entry['id']}: {target.relative_to(REPO_ROOT)}, {window.width} by {window.height} cells "
-              f"from column {window.col_off}, row {window.row_off}; {size} bytes")
-    print(f"crop bounds: left {bounds.left!r}, bottom {bounds.bottom!r}, right {bounds.right!r}, top {bounds.top!r}")
-    print(f"total {total} bytes ({total / 1e6:.3f} MB)")
+        listed.append({
+            "index": index, "label": part["label"], "kind": "raster", "format": "geotiff",
+            "file": f"data/{part['file']}",
+        })
+        print(f"{part['file']}: {size} bytes")
+    (DATASET_DIR / "data" / "bundle.json").write_text(
+        json.dumps({"version": 1, "parts": listed}, indent=2) + "\n", encoding="utf-8"
+    )
+    _write_manifest()
+    print(f"total {total} bytes ({total / 1e6:.1f} MB)")
 
 
-def _same_cells(a, b) -> bool:
-    return a.shape == b.shape and a.dtype == b.dtype and a.tobytes() == b.tobytes()
-
-
-def check(scout: Path, windows: int = 400) -> None:
-    """Every crop reads like SCOUT's file, window for window."""
+def check(scout: Path) -> None:
+    """Every part holds SCOUT's file's cells on SCOUT's grid."""
     import rasterio
-    from rasterio.windows import from_bounds
 
-    rng = random.Random(662)
-    for entry in _datasets():
-        crop_path = CATALOG_DIR / f"{entry['id']}@1" / entry["data_file"]
-        with rasterio.open(scout / entry["scout_file"]) as full, rasterio.open(crop_path) as crop:
-            res = crop.transform.a
-            b = crop.bounds
-            regions = [EXAMPLE_REGION]
-            for _ in range(windows):
-                width, height = rng.uniform(3, 250) * res, rng.uniform(3, 250) * res
-                left = rng.uniform(b.left + 2 * res, b.right - 2 * res - width)
-                top = rng.uniform(b.bottom + 2 * res + height, b.top - 2 * res)
-                regions.append((top, left, top - height, left + width))
-            for top, left, bottom, right in regions:
-                on_full = from_bounds(left, bottom, right, top, transform=full.transform)
-                on_crop = from_bounds(left, bottom, right, top, transform=crop.transform)
-                if not _same_cells(full.read(1, window=on_full), crop.read(1, window=on_crop)):
-                    raise SystemExit(f"{entry['id']}: the cells of {(top, left, bottom, right)} differ")
-                if tuple(full.window_transform(on_full)) != tuple(crop.window_transform(on_crop)):
-                    raise SystemExit(f"{entry['id']}: the transform of {(top, left, bottom, right)} differs")
-        print(f"{entry['id']}: {len(regions)} windows read the same cells and transform as SCOUT's file")
+    for part in _parts():
+        with rasterio.open(scout / part["scout"]) as theirs, rasterio.open(DATASET_DIR / "data" / part["file"]) as ours:
+            a, b = theirs.read(1), ours.read(1)
+            if a.dtype != b.dtype or a.shape != b.shape or a.tobytes() != b.tobytes():
+                raise SystemExit(f"{part['file']}: the cells differ")
+            if (theirs.crs, theirs.transform, theirs.nodata) != (ours.crs, ours.transform, ours.nodata):
+                raise SystemExit(f"{part['file']}: the grid or nodata differs")
+        print(f"{part['file']}: every cell, the grid and nodata as SCOUT's file")
 
 
-#: The proof's cases, as ``test_scout_flood.py`` lists them: a region
-#: (top, left, bottom, right), a period and the chosen NbS.
+#: SCOUT's flood example's corners, (top, left, bottom, right): the whole grid.
+SCOUT_REGION = (41.6242105, -90.6879323, 41.4150156, -90.4252158)
+#: The edges of SCOUT's columns 2061 to 2215 and rows 1599 to 1758.
+INNER_REGION = (41.46216878262555, -90.4790717749789, 41.44595447694705, -90.46336416635286)
 ALL_NBS = [
     "Bioswales/Infiltration trenches", "Permeable pavements", "Retention ponds",
     "Infiltration trench", "Bioswales", "Constructed wetlands",
 ]
+#: The proof's cases, as ``test_scout_flood.py`` lists them: a region, a
+#: period and the chosen NbS.
 PROOF_CASES = {
-    "example-2020-all": (EXAMPLE_REGION, "2020 - 2040", ALL_NBS),
-    "example-2020-none": (EXAMPLE_REGION, "2020 - 2040", []),
-    "example-2050-none": (EXAMPLE_REGION, "2050 - 2080", []),
-    "example-2050-all": (EXAMPLE_REGION, "2050 - 2080", ALL_NBS),
-    "example-2080-some": (EXAMPLE_REGION, "2080 - 2100", ["Bioswales", "Constructed wetlands"]),
-    # Columns 2061 to 2215 and rows 1599 to 1758 of SCOUT's grid, on cell edges.
-    "inner-2020-some": ((41.46216878262555, -90.4790717749789, 41.44595447694705, -90.46336416635286),
-                        "2020 - 2040", ["Retention ponds", "Permeable pavements"]),
+    "scout-2020-none": (SCOUT_REGION, "2020 - 2040", []),
+    "scout-2020-all": (SCOUT_REGION, "2020 - 2040", ALL_NBS),
+    "scout-2050-none": (SCOUT_REGION, "2050 - 2080", []),
+    "scout-2050-all": (SCOUT_REGION, "2050 - 2080", ALL_NBS),
+    "scout-2080-none": (SCOUT_REGION, "2080 - 2100", []),
+    "scout-2080-all": (SCOUT_REGION, "2080 - 2100", ALL_NBS),
+    "inner-2080-some": (INNER_REGION, "2080 - 2100", ["Bioswales", "Constructed wetlands"]),
 }
 
 
 @contextlib.contextmanager
-def _scout_layout(files: dict):
-    """A folder laid out as SCOUT's function reads it, entered: *files* maps
-    SCOUT's file names to the files to read under them."""
+def _scout_layout(folder_of_rasters: Path):
+    """A folder laid out as SCOUT's function reads it, entered: SCOUT's
+    rasters linked in from *folder_of_rasters*."""
     previous = os.getcwd()
     with tempfile.TemporaryDirectory(prefix="scout-flood-") as folder:
         rasters = Path(folder) / "models" / "flooding" / "data_substitutes"
         rasters.mkdir(parents=True)
-        for name, path in files.items():
-            os.symlink(path, rasters / name)
+        for part in _parts():
+            os.symlink(folder_of_rasters / part["scout"], rasters / part["scout"])
         os.chdir(folder)
         try:
             yield Path(folder)
@@ -267,14 +210,14 @@ def _scout_function():
     return module.simulate_flood_projection
 
 
-def run_scout(files: dict, region, period, chosen, output="A"):
+def run_scout(folder_of_rasters: Path, region, period, chosen, output="A"):
     """SCOUT's function as SCOUT's example calls it: ``(cells, transform,
     metrics)``, the raster it writes and the text of its metrics file."""
     import rasterio
 
     top, left, bottom, right = region
     simulate = _scout_function()
-    with _scout_layout(files) as folder:
+    with _scout_layout(folder_of_rasters) as folder:
         simulate(f"{left!r}, {top!r}", f"{right!r}, {bottom!r}", output, year=period, use_NBS_classes=list(chosen))
         with rasterio.open(folder / "data" / "served" / "raster" / f"{output}.tif") as raster:
             cells, transform = raster.read(1), tuple(raster.transform)[:6]
@@ -283,13 +226,12 @@ def run_scout(files: dict, region, period, chosen, output="A"):
 
 
 def pins(scout: Path) -> None:
-    """The median and mean SCOUT computes, from the cells it writes (its
-    metrics file rounds them), and a digest of those cells."""
+    """The median and mean SCOUT computes, from the cells it writes, and a
+    digest of those cells."""
     import numpy as np
 
-    files = {entry["scout_file"]: str(scout / entry["scout_file"]) for entry in _datasets()}
     for case, (region, period, chosen) in PROOF_CASES.items():
-        cells, transform, metrics = run_scout(files, region, period, chosen)
+        cells, transform, metrics = run_scout(scout, region, period, chosen)
         digest = hashlib.sha256(cells.tobytes()).hexdigest()
         median, mean = float(np.nanmedian(cells)), float(np.nanmean(cells))
         print(f'    "{case}": Pin(shape={cells.shape!r}, median={median!r}, mean={mean!r},\n'
@@ -300,7 +242,7 @@ def pins(scout: Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("scout", type=Path, help="SCOUT's data_substitutes folder")
-    parser.add_argument("--check", action="store_true", help="compare the crops with SCOUT's files")
+    parser.add_argument("--check", action="store_true", help="compare the parts with SCOUT's files")
     parser.add_argument("--pins", action="store_true", help="print the proof's values from SCOUT's files")
     args = parser.parse_args()
     if not args.check and not args.pins:

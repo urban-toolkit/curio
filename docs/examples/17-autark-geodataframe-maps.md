@@ -52,14 +52,14 @@ return gdf[["zip", "area_km2", "geometry"]]
 ## Draw it
 
 The frame reaches the Autark document as the table `input_0`, written with the
-input chip `[!! input 0 !!]`; the document writes no `data` entry for it.
+input chip `[!! input_0 !!]`; the document writes no `data` entry for it.
 
 ```json
 {
   "map": {
     "layerRefs": [
       {
-        "dataRef": "[!! input 0 !!]",
+        "dataRef": "[!! input_0 !!]",
         "getFnv": "area_km2",
         "getFnvType": "quantitative",
         "colorMapInterpolator": "interpolateViridis",
@@ -82,7 +82,7 @@ is the first row of its own.
 import pandas as pd
 
 # A plain DataFrame that still holds a column of shapely geometries.
-return pd.DataFrame(arg)
+return pd.DataFrame(input_0)
 ```
 
 Both nodes find the one column that holds geometries and draw it.
@@ -93,7 +93,7 @@ Both nodes find the one column that holds geometries and draw it.
 import pandas as pd
 
 # The attributes alone: nothing here can be drawn on a map.
-return pd.DataFrame(arg.drop(columns="geometry"))
+return pd.DataFrame(input_0.drop(columns="geometry"))
 ```
 
 Both nodes draw nothing and say why in the node body: there is no geometry
@@ -104,7 +104,7 @@ feeding it: return a `GeoDataFrame`.
 
 ```python
 # The same frame in a projected CRS (Illinois East, in metres), declared.
-return arg.to_crs(26971)
+return input_0.to_crs(26971)
 ```
 
 The Autark node reads the coordinates in the CRS the frame declares. A frame
@@ -114,7 +114,7 @@ them, and as EPSG:3395 otherwise.
 ## Two layers
 
 ```python
-gdf = arg
+gdf = input_0
 
 # Two layers: the ZIP polygons, and a point at each one's centre.
 centres = gdf.copy()

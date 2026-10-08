@@ -34,6 +34,7 @@ import {
   faTable,
   faUpload,
   faWandMagicSparkles,
+  faWater,
   faWaveSquare,
 } from '@fortawesome/free-solid-svg-icons';
 import { faJs, faPython } from '@fortawesome/free-brands-svg-icons';
@@ -91,5 +92,6 @@ registerIcon('fa-solid:wave-square', faWaveSquare);
 registerIcon('fa-solid:border-all', faBorderAll);
 // scout.shadow@1.
 registerIcon('fa-solid:sun', faSun);
+registerIcon('fa-solid:water', faWater);
 registerIcon('fa-brands:js', faJs);
 registerIcon('fa-brands:python', faPython);

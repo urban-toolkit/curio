@@ -11,7 +11,8 @@ permission of SCOUT's authors.
   order, rebuilds SCOUT's graph with SCOUT's node, successor and predecessor order.
 - `routing_reference.json`: the routes and metrics SCOUT's own
   `calculate_weather_route` (`backend/models/routing/scripts/`, unchanged) gives on
-  that graph and on the Data Catalog's SCOUT WRF group, for the origin, destination,
+  that graph and on the Data Catalog's SCOUT WRF forecast
+  (`data.scout.chicago-weather-2025-07-06`), for the origin, destination,
   start times and weights of SCOUT's weather routing example and its three modes.
   Written once by `scripts/scout/reference_routing.py` in SCOUT's own stack (Python
   3.9, torch 2.2.2, torch-geometric 2.6.1, osmnx 2.0.6, networkx 3.2.1, numpy 1.23.5;

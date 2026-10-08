@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/25-several-inputs.json",
-    "sha256": "8306088ee789ac49ff5a564f9196de498b3efc1cfd2bff0ef1a373ef8dee4e2b",
+    "sha256": "5a891146dc8ad670ab64d6839b251795999d385569254564e1714522ca669e0a",
     "walkthrough": "docs/examples/25-several-inputs.md"
   },
   "prompt": "Load the Example air quality readings and Example air quality stations tables and Chicago's ZIP code boundaries from the Data Catalog, keeping only the ZIP codes of the Loop and around it, and make the stations points. In Python, summarize the readings into two tables returned together, each sensor's mean PM2.5 and its highest reading. Then join the stations to both summaries and to the ZIP code each stands in, in one Python step that reads the stations, the summaries and the ZIP codes. Name each reading after its station in a Data Transformation step that reads the readings and the joined stations. In JavaScript, count the stations in each ZIP code and average their PM2.5. Chart each station's PM2.5 over time in Vega-Lite with a dashed rule at its mean taken from the joined stations, map the ZIP codes with the stations coloured by mean PM2.5 in Autark, and put the joined stations and the named readings in a Data Pool.",

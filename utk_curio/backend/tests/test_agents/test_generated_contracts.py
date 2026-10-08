@@ -177,11 +177,11 @@ class TestThePromptFacts:
         assert handles == ", ".join(f'"{slot_handle_id(k)}"' for k in range(3)) + ", ..."
         assert handles == '"in", "in_1", "in_2", ...'
         chip0 = contracts.render_template("{{inputs.chip:0}}")
-        assert chip0 == reference_text(input_reference_inner(0)) == "[!! input 0 !!]"
-        assert contracts.render_template("{{inputs.chip:1}}") == "[!! input 1 !!]"
+        assert chip0 == reference_text(input_reference_inner(0)) == "[!! input_0 !!]"
+        assert contracts.render_template("{{inputs.chip:1}}") == "[!! input_1 !!]"
         column = contracts.render_template("{{inputs.chip:0.population}}")
         assert column == reference_text(input_reference_inner(0, "population"))
-        assert column == "[!! input 0.population !!]"
+        assert column == "[!! input_0.population !!]"
         with pytest.raises(contracts.PromptTemplateError, match="circle number"):
             contracts.render_template("{{inputs.chip:population}}")
         preamble = contracts.render_prompt("default_preamble")
@@ -190,7 +190,7 @@ class TestThePromptFacts:
         assert f"`{column}`" in preamble
         orchestration = contracts.render_prompt("orchestration_instruction")
         assert f'"toHandle" ({handles})' in orchestration
-        assert f"`{chip0}`, `[!! input 1 !!]`, ..." in orchestration
+        assert f"`{chip0}`, `[!! input_1 !!]`, ..." in orchestration
         lists = contracts.builtin_lists(_manifest())
         assert "builtin.merge_slots" not in lists
 
