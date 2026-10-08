@@ -682,7 +682,9 @@ class _Sources:
 
     @cached_property
     def manifest(self) -> dict:
-        return json.loads((_repo_root() / BUILTIN_MANIFEST).read_text(encoding="utf-8"))
+        from utk_curio import shipped
+
+        return json.loads(shipped.path(BUILTIN_MANIFEST).read_text(encoding="utf-8"))
 
     @cached_property
     def trill(self) -> dict:

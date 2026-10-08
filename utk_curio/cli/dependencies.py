@@ -33,7 +33,7 @@ def seed_duckdb_extensions():
     duckdb-wasm keeps installed extensions under
     ``~/.duckdb/extensions/<repository>/<version>/<platform>/`` and only
     downloads one that is not there — so seeding that directory from
-    ``vendor/duckdb-extensions/`` means a node never reaches
+    Curio's copy (``node_runtime.duckdb_extensions_dir``) means a node never reaches
     extensions.duckdb.org: no 23 MB download on a cold container, nothing to
     flake (#318), and an offline install still runs Autark nodes.
 
@@ -276,7 +276,7 @@ def _install_user_node_deps_at_boot(user_key: str, entries) -> None:
 
 def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
     """Walk every installed package manifest — catalog source-of-truth at
-    ``<repo>/packages/`` PLUS every user store under
+    the shipped ``packages/`` (``utk_curio/shipped.py``) PLUS every user store under
     ``$CURIO_LAUNCH_CWD/.curio/users/<u>/packages/`` — collect their
     ``dependencies.python`` maps, merge into a single conflict-aware
     union via ``resolver.merge_python_deps``, and pip-install the result
@@ -311,9 +311,9 @@ def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
     from utk_curio.backend.app.packages.infrastructure import backend_runtime
     from utk_curio.backend.app.packages.service import dep_destinations
     from utk_curio.backend.app.common.user_storage import users_base
+    from utk_curio import shipped
 
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    catalog = repo_root / "packages"
+    catalog = shipped.path("packages")
     # Asked of the backend rather than spelled out again: under CURIO_TESTING
     # the per-user tree is ``.curio/test/users/``, and this walk feeding off a
     # different root than the one the backend seeds into is a boot that

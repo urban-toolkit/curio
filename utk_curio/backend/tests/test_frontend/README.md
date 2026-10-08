@@ -343,7 +343,10 @@ Two families of baseline live in that folder:
   again without moving the pointer (`save_interaction_frame`, compared like a
   close-up). The test asserts
   that the target changed and kept its drawing (a highlight, not a redraw), and
-  that taking the gesture back restores it. The CI report shows these frames as
+  that taking the gesture back restores it. It waits for both as long as an
+  Autark node may run (`INTERACTION_SHOWN_TIMEOUT_MS`): a map shows a change
+  only in a frame drawn after it, and on a loaded GPU runner that frame waits
+  for every frame queued before it. The CI report shows these frames as
   Interaction pairs. Re-mint them with the workflow's whole class selected
   (`remint_filter="TestWorkflowCanvas and <workflow>"`), as CI runs them: the
   class's earlier tests can move the pair by a fraction of a pixel, which shifts
