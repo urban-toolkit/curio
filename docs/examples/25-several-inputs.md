@@ -215,7 +215,8 @@ coloured by their mean:
         "getFnv": "pm25_mean",
         "getFnvType": "quantitative",
         "colorMapInterpolator": "interpolateReds",
-        "isPick": true
+        "isPick": true,
+        "legendTitle": "Mean PM2.5"
       }
     ]
   }

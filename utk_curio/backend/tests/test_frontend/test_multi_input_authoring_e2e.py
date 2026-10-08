@@ -70,8 +70,8 @@ UP_B_CODE = "return 31\n"
 # swapped its inputs, and one that only checked a value would pass on a node
 # that dropped the other.
 DOWN_CODE = (
-    "a = [!! input 0 !!]\n"
-    "b = [!! input 1 !!]\n"
+    "a = [!! input_0 !!]\n"
+    "b = [!! input_1 !!]\n"
     "count = sum(x is not None for x in (input_0, input_1))\n"
     f'print("{MARKER}", count, int(a), int(b), int(a) + int(b))\n'
     "return int(a) + int(b)\n"
@@ -140,7 +140,7 @@ def test_palette_dragged_producers_feed_one_node_through_its_circles(
     assert node_locator(page, down).locator(".monaco-editor .curio-input-ref-problem").count() == 0
 
     # 3. Run upstream first, then the consumer. A node that drew one circle
-    #    would have refused the second edge, and `[!! input 1 !!]` would name
+    #    would have refused the second edge, and `[!! input_1 !!]` would name
     #    nothing.
     run_node_and_wait(page, up_a, node_type=ANALYSIS_TYPE)
     run_node_and_wait(page, up_b, node_type=ANALYSIS_TYPE)

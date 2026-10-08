@@ -33,7 +33,7 @@
         "type": "curio.builtin/computation-analysis",
         "x": 1423.551666086507,
         "y": 260.04505115875406,
-        "content": "return [input_0, input_1]",
+        "content": "return (input_0, input_1)",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

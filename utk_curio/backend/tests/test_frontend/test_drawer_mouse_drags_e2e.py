@@ -25,15 +25,19 @@ Run::
 """
 from __future__ import annotations
 
+import json
 import uuid
+from pathlib import Path
 from typing import TYPE_CHECKING
 
+import pytest
 from playwright.sync_api import expect
 
 from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
 
 from .utils import (
     CANVAS_DROP_TARGET,
+    REPO_ROOT,
     api_json,
     canvas_node_type,
     close_tools_palette,
@@ -66,15 +70,17 @@ SEGMENTATION = "curio.streetvision/image-segmentation"
 
 BOUNDARY = "data.utk.chicago-boundary"
 BOUNDARY_TITLE = "Chicago Boundary"
-# The one layer group that ships in the catalog: SCOUT's WRF variables.
-WRF_GROUP = "netcdf.scout-wrf"
-WRF_LAYERS = (
-    "data.scout.wrf-rain",
-    "data.scout.wrf-rh2",
-    "data.scout.wrf-t2",
-    "data.scout.wrf-wdir10",
-    "data.scout.wrf-wspd10",
-)
+
+
+def _shipped_layer_groups() -> dict[str, list[str]]:
+    """Each layer group the Data Catalog ships, its id to its layers' ids, read
+    from the committed manifests (``groupId``)."""
+    groups: dict[str, list[str]] = {}
+    for manifest in sorted((Path(REPO_ROOT) / "datasets").glob("*/manifest.json")):
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        if data.get("groupId"):
+            groups.setdefault(data["groupId"], []).append(data["id"])
+    return groups
 DDRNET = "model.curio.ddrnet23-slim"
 DDRNET_NAME = "DDRNet23-Slim (street scenes)"
 
@@ -169,9 +175,14 @@ def test_a_dataset_card_dragged_from_the_data_catalog_drawer_becomes_a_data_load
 def test_a_layer_group_card_dragged_from_the_data_catalog_drawer_becomes_a_loader_that_runs(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
+    groups = _shipped_layer_groups()
+    if not groups:
+        # SCOUT's WRF variables were the one group; they ship as one bundle now.
+        pytest.skip("the Data Catalog ships no layer group to drag")
+    group, layers = next(iter(groups.items()))
     _enter(page, app_frontend, current_server)
     drawer = _open_drawer(page, "Data Catalog", DATA_DRAWER)
-    card = drawer.locator(f'{CARD}[data-dataset-id="{WRF_GROUP}"]')
+    card = drawer.locator(f'{CARD}[data-dataset-id="{group}"]')
     expect(card).to_have_count(1, timeout=30000)
 
     node = drag_to_canvas_with_the_mouse(page, card.locator("h3"), at=UNDER_THE_SCRIM)
@@ -179,8 +190,8 @@ def test_a_layer_group_card_dragged_from_the_data_catalog_drawer_becomes_a_loade
     assert (canvas_node_type(page, node) or "").split("@")[0] == LOADER_TYPE
     code = read_node_code(page, node)
     # One read per layer, by the layer's own id: no dataset has the group's id.
-    missing = [layer for layer in WRF_LAYERS if f'curio_load_data("{layer}")' not in code]
-    assert (missing, WRF_GROUP in code) == ([], False), code
+    missing = [layer for layer in layers if f'curio_load_data("{layer}")' not in code]
+    assert (missing, group in code) == ([], False), code
 
     # The drawer's scrim lies over the canvas: close the drawer, then run it.
     page.keyboard.press("Escape")

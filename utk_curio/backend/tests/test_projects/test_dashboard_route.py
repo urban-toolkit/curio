@@ -287,7 +287,7 @@ def test_a_raster_behind_a_pinned_map_travels_as_its_geotiff(
     # No session: the sandbox reads the copy the shared load hydrated.
     [params] = [params for path, params in asked if path == "/raster"]
     assert params["fileName"] == "r_output"
-    assert int(params["maxCells"]) == 2048 * 2048 and int(params["maxSide"]) == 8192
+    assert int(params["maxCells"]) == 4096 * 4096 and int(params["maxSide"]) == 8192
     assert "part" not in params and "sessionId" not in params
 
 

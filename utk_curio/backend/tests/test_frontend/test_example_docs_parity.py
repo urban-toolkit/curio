@@ -231,7 +231,7 @@ def _is_subset(small, big) -> bool:
     return small == big
 
 
-#: A node reference as written in code (``[!! input 1 !!]``), the same pattern as
+#: A node reference as written in code (``[!! input_1 !!]``), the same pattern as
 #: ``REFERENCE_RE`` in ``utk_curio/backend/app/execution/code_references.py``.
 _REFERENCE = re.compile(r"\[!!\s*(.*?)\s*!!\]")
 

@@ -3,7 +3,7 @@
     "README.md": "633ca164d7593abbb1774cae162edde3961c8e47e59b0475c34d5f5f43a3fc69",
     "manifest.json": "b383d5b1ea8bad6a5ee167198db12aba0cbae737769da1709cc2d44263708f1e",
     "sources/accumulated-shadow.py": "104e264e48d4445cf9e5c107195ee87f60f9a45e78bc3813820a826dd6023caa",
-    "sources/scout_shadow/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sources/scout_shadow/__init__.py": "e33af840093ea902fa71d098462e1e0ce7d2e53b7e3649eea1c60764dff695cc",
     "sources/scout_shadow/deep_umbra.py": "f715e5737e86250b935efce2536c06948015eb8cd25888f7ff5d1613306e2e6c",
     "sources/scout_shadow/mosaic.py": "5c52cb5d5c3f83146f49248847d44a707c94300392fe5f5d1b91077b0d36f4c7"
   }

@@ -804,7 +804,8 @@ class TestResearcher:
         # through chips; no Merge Flow to route through.
         # #662, 2026-10-05: a planned node declares the widgets its code
         # reads, and a plan saves scenarios (selections and duplicates).
-        "31b6b8fd1eece7fc9db3409bde9a740016c436bffff13d30baeee3b38e4dc7d2"
+        # 2026-10-08: input chips are named as code names them, `[!! input_0 !!]`.
+        "b46000695c97b1644e0835115e16241e5b8ade54d9bd7353f32a1b0262849982"
     )
 
     def test_manifest_surface(self):

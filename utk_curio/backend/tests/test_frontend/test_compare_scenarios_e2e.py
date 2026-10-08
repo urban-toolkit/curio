@@ -74,8 +74,8 @@ CLIP_CODE = 'df = input_0.copy()\ndf["sunlight"] = df["sunlight"].clip(lower=0)\
 
 # The lines the node writes for its two inputs (utils/compare/compareCode.ts).
 ENTRY_LINES = (
-    '    ("s-base", "Baseline", [!! input 0 !!]),',
-    '    ("s-tall", "Twice as tall", [!! input 1 !!]),',
+    '    ("s-base", "Baseline", [!! input_0 !!]),',
+    '    ("s-tall", "Twice as tall", [!! input_1 !!]),',
 )
 
 

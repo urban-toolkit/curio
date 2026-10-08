@@ -2,7 +2,7 @@
 
 SCOUT's Compute Catalog, the Curio way. The Node Catalog drawer's **New node
 from a Python function** lists the functions of the modules installed
-packages ship. This picks ``season_factor`` in ``scout_shadow.deep_umbra``,
+packages ship. This picks ``season_minutes`` in ``scout_shadow.mosaic``,
 a module of the shipped, read-only ``scout.shadow@1`` package, gives its one
 parameter a text widget, and creates the node in a new package. Then:
 
@@ -59,13 +59,13 @@ NODE_TYPE = "curio.builtin/computation-analysis"
 READER_CODE = "print(f'<<{input_0}>>')\nreturn input_0\n"
 
 SHADOW_DIR = "scout.shadow@1"
-MODULE = "scout_shadow.deep_umbra"
-FUNCTION = "season_factor"
-LABEL = "Season factor"
+MODULE = "scout_shadow.mosaic"
+FUNCTION = "season_minutes"
+LABEL = "Season minutes"
 WRITTEN_CODE = (
-    "from scout_shadow.deep_umbra import season_factor\n"
+    "from scout_shadow.mosaic import season_minutes\n"
     "\n"
-    "return season_factor(season=[!! season !!])\n"
+    "return season_minutes(season=[!! season !!])\n"
 )
 
 DRAWER = '[data-curio-node-catalog-drawer="true"]'
@@ -234,7 +234,7 @@ def test_a_function_in_a_shipped_package_becomes_a_node_that_runs(
         node = drag_to_canvas(page, palette_row, at=(150, 150))
         close_tools_palette(page, "packages")
         connect_nodes(page, node, reader)
-        _wait_for_code_containing(page, node, "season_factor(")
+        _wait_for_code_containing(page, node, "season_minutes(")
         assert read_node_code(page, node) == WRITTEN_CODE, read_node_code(page, node)
         # The template's widget came with the node: its tag above the code, and
         # the reference drawn as a chip. Captured before the run, whose output

@@ -97,9 +97,9 @@ def run_node(code, *, file_path="", data_type="", user_key=USER_KEY,
     """Execute *code* as a Python node and return the sandbox's response.
 
     ``code`` is written here as an ordinary top-level snippet and indented on
-    the way out, because the worker drops it into ``def userCode(input, arg):`` --
+    the way out, because the worker drops it into ``def userCode(input_0=None, ...):`` --
     see ``worker.execute_code``. Its input, when there is one, arrives as
-    ``arg``.
+    ``input_0``.
     """
     body = textwrap.indent(textwrap.dedent(code).strip("\n"), "    ")
     return _request("/exec", {
@@ -196,8 +196,8 @@ def test_a_staged_dataframe_input_reaches_the_child():
     )
 
     consumed = assert_ran(run_node("""
-        print(len(arg))
-        print(int(arg["n"].sum()))
+        print(len(input_0))
+        print(int(input_0["n"].sum()))
     """, file_path=artifact_id, data_type=produced["output"]["dataType"]),
         "consuming the staged dataframe")
 
@@ -665,46 +665,33 @@ def test_a_fetched_dataset_reaches_the_child_only_as_a_staged_link():
     FETCHED_RELEASE + "/models/" + DEEP_UMBRA + "@1",
 ], ids=["shipped", "fetched"])
 def test_scouts_shadow_model_runs_as_the_exec_user(model_folder):
-    """The Accumulated Shadow node's code, as the execution user, on the height
-    mosaic a Rasterize Buildings run hands on (here of SCOUT's committed tiles):
-    the Model Catalog model reaches the child staged as a model folder is,
-    onnxruntime opens it
-    and runs it there under the stack's limits, and the node returns its shadow
-    raster, whose mean over the ground is SCOUT's mean accumulated shadow for
-    these tiles, 128.6 minutes. The model's folder is the shipped one, or the
-    one a pip install downloads Deep Umbra's graph into."""
-    heights = textwrap.indent(textwrap.dedent("""
-        from scout_raster_conversion.mosaic import mosaic
-
-        return mosaic(%r, 16, 550.0, curio_output_file)
-    """ % SCOUT_A_RASTERS).strip("\n"), "    ")
-    produced = assert_ran(_request("/exec", {
-        "code": heights + "\n",
-        "file_path": "",
-        "nodeType": "scout.raster-conversion/rasterize-buildings",
-        "dataType": "",
-        "user_key": USER_KEY,
-        "save_dataset": False,
-        "package_modules": {"root": RASTER_CONVERSION_SOURCES, "names": ["scout_raster_conversion"]},
-    }), "writing SCOUT's tiles as one mosaic")
-    assert produced["output"]["dataType"] == "raster", produced["output"]
+    """The Accumulated Shadow node's code, as the execution user, on SCOUT's
+    committed height tiles: the Model Catalog model reaches the child staged as
+    a model folder is, onnxruntime opens it and runs SCOUT's run_shadow_model
+    there under the stack's limits, and the node returns its shadow raster and
+    SCOUT's metrics, whose mean is SCOUT's mean accumulated shadow for these
+    tiles, 128.6 minutes. The model's folder is the shipped one, or the one a
+    pip install downloads Deep Umbra's graph into."""
     body = textwrap.indent(textwrap.dedent("""
-        from scout_shadow.node_outputs import accumulated_shadow, open_model
+        import os
+        import tempfile
 
-        model = open_model(lambda: curio_load_model("model.scout.deep-umbra"))
-        shadow = accumulated_shadow(arg, "summer", model, curio_output_file)
-        # What the dataflow's Raster Statistics node computes: the shadow over
-        # the ground, the heights as the mask.
-        metrics = curio_raster_statistics((shadow, arg), where=lambda height: height < 1.08)
+        from scout_shadow.deep_umbra import run_shadow_model
+        from scout_shadow.mosaic import mosaic
+
+        shadows = tempfile.mkdtemp()
+        metrics = run_shadow_model(%r, "summer", shadows,
+                                   model_path=curio_load_model("model.scout.deep-umbra").entry)
+        shadow = mosaic(shadows, "summer", curio_output_file)
         print(shadow.crs.to_epsg(), shadow.width, shadow.height)
-        print(round(float(metrics["mean"].iloc[0]), 2))
+        print(round(float(metrics["Mean Acc shadow"].iloc[0]), 2))
         return shadow
-    """).strip("\n"), "    ")
+    """ % SCOUT_A_RASTERS).strip("\n"), "    ")
     result = assert_ran(_request("/exec", {
         "code": body + "\n",
-        "file_path": produced["output"]["path"],
+        "file_path": "",
         "nodeType": "scout.shadow/accumulated-shadow",
-        "dataType": produced["output"]["dataType"],
+        "dataType": "",
         "user_key": USER_KEY,
         "save_dataset": False,
         "package_modules": {"root": SHADOW_SOURCES, "names": ["scout_shadow"]},

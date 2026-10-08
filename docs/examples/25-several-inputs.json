@@ -162,7 +162,7 @@
         "x": 1935,
         "y": 1075,
         "title": "Stations map",
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\"\n      },\n      {\n        \"dataRef\": \"[!! input_1 !!]\",\n        \"getFnv\": \"pm25_mean\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"isPick\": true\n      }\n    ]\n  }\n}\n",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\"\n      },\n      {\n        \"dataRef\": \"[!! input_1 !!]\",\n        \"getFnv\": \"pm25_mean\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"isPick\": true,\n        \"legendTitle\": \"Mean PM2.5\"\n      }\n    ]\n  }\n}\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Two inputs in Autark: the ZIP codes, and the stations coloured by mean PM2.5.",

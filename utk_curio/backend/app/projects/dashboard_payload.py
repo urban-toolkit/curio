@@ -78,7 +78,7 @@ DEFAULT_PAYLOAD_LIMIT_BYTES = 25 * 1024 * 1024
 #: ``RASTER_MAX_SIDE`` in ``utils/raster/rasterLoad.ts``). The page's rasters
 #: are asked of ``/raster`` with these, as the editor's map asks, so a larger
 #: one travels as the refusal the editor gets and is never written out whole.
-RASTER_MAX_CELLS = 2048 * 2048
+RASTER_MAX_CELLS = 4096 * 4096
 RASTER_MAX_SIDE = 8192
 
 

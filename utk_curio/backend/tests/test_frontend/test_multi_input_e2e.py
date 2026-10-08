@@ -9,8 +9,8 @@ This drives the whole path in a browser:
    first one made, and a third, empty circle appears.
 2. The input tags and a column tag are dragged into the code, where each lands
    at its drop point as a chip.
-3. A run reads both inputs: ``[!! input 0 !!]`` is ``input_0``,
-   ``[!! input 1 !!]`` is ``input_1``, and the column chip is the column's name.
+3. A run reads both inputs: ``[!! input_0 !!]`` is ``input_0``,
+   ``[!! input_1 !!]`` is ``input_1``, and the column chip is the column's name.
 4. Deleting the first producer closes the gap: the second producer's edge moves
    to circle 0, and the code is renumbered, the deleted input's chip becoming
    ``[!! input ? !!]``. With that line gone, a run reads the one input left as
@@ -70,9 +70,9 @@ T_TEMPLATE = (
     "return total\n"
 )
 T_WITH_CHIPS = (
-    "a = [!! input 0 !!]\n"
-    "b = [!! input 1 !!]\n"
-    "col = [!! input 1.population !!]\n"
+    "a = [!! input_0 !!]\n"
+    "b = [!! input_1 !!]\n"
+    "col = [!! input_1.population !!]\n"
     "total = int(b[col].sum())\n"
     "print(f'<<{a}|{total}>>')\n"
     "return total\n"
@@ -80,15 +80,15 @@ T_WITH_CHIPS = (
 # What deleting the first producer leaves: input 1 is now input 0.
 T_RENUMBERED = (
     "a = [!! input ? !!]\n"
-    "b = [!! input 0 !!]\n"
-    "col = [!! input 0.population !!]\n"
+    "b = [!! input_0 !!]\n"
+    "col = [!! input_0.population !!]\n"
     "total = int(b[col].sum())\n"
     "print(f'<<{a}|{total}>>')\n"
     "return total\n"
 )
 T_ONE_INPUT = (
-    "b = [!! input 0 !!]\n"
-    "col = [!! input 0.population !!]\n"
+    "b = [!! input_0 !!]\n"
+    "col = [!! input_0.population !!]\n"
     "total = int(b[col].sum())\n"
     "print(f'<<{total}>>')\n"
     "return total\n"
@@ -294,10 +294,10 @@ def test_a_node_reads_several_inputs_through_chips(
     strip.locator('[data-input-tag="1"]').wait_for(state="visible", timeout=10000)
     _drag_tag_to_line_end(page, t, '[data-input-tag="0"]', 1)
     _drag_tag_to_line_end(page, t, '[data-input-tag="1"]', 2)
-    strip.get_by_label("Show the columns of input 1").click()
+    strip.get_by_label("Show the columns of input_1").click()
     strip.locator('[data-column-tag="population"]').wait_for(state="visible", timeout=30000)
     _drag_tag_to_line_end(page, t, '[data-column-tag="population"]', 3)
-    _wait_for_code(page, t, "[!! input 1.population !!]")
+    _wait_for_code(page, t, "[!! input_1.population !!]")
     assert read_node_code(page, t) == T_WITH_CHIPS, (
         f"the dropped tags did not land at the ends of lines 1 to 3: {read_node_code(page, t)!r}"
     )
@@ -323,12 +323,12 @@ def test_a_node_reads_several_inputs_through_chips(
     saved = api_json(f"{current_server}/api/projects/{project_id}", session["token"])["spec"]
     edges = [e for e in saved["dataflow"]["edges"] if e["target"] == t]
     assert [(e["source"], e.get("targetHandle")) for e in edges] == [(b, "in")], edges
-    assert "[!! input 0.population !!]" in {n["id"]: n for n in saved["dataflow"]["nodes"]}[t]["content"]
+    assert "[!! input_0.population !!]" in {n["id"]: n for n in saved["dataflow"]["nodes"]}[t]["content"]
 
     page.goto(f"{app_frontend.base_url}/projects")
     page.wait_for_load_state("domcontentloaded")
     page.goto(f"{app_frontend.base_url}/dataflow/{project_id}")
     node_locator(page, t).wait_for(state="visible", timeout=45000)
-    _wait_for_code(page, t, "[!! input 0.population !!]", timeout=45000)
+    _wait_for_code(page, t, "[!! input_0.population !!]", timeout=45000)
     _wait_for_circles(page, t, ["in", "in_1"])
     node_locator(page, t).locator('[data-widget-strip] [data-input-tag="0"]').wait_for(state="visible", timeout=15000)

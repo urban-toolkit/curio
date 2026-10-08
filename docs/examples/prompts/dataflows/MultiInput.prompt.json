@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/MultiInput.json",
-    "sha256": "60cdb3131ff4741f70d6b304720f0aec482ce767e84b552c63363f2ae2776b2e",
+    "sha256": "f247d75391608e5a1de169358da16db15a6010fc515aa3965ac166bb16a5f80a",
     "walkthrough": null
   },
   "prompt": "Load two small nine-row tables of the same letters with different numbers, feed both into one step, and in a Python computation step join them on the letter column and add the average of the two number columns. Also pass one of the combined inputs straight through a second computation step unchanged.",
