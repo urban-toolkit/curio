@@ -263,6 +263,19 @@ class TestTheCli:
         assert main(["run"]) == 2
         assert "never reads a provider key" in capsys.readouterr().err
 
+    def test_run_writes_its_reports_in_curios_state_directory(self, monkeypatch, tmp_path):
+        """Without ``--out``, ``eval/`` of Curio's state directory (``.curio/``
+        in the folder it starts from, or ``CURIO_STATE_DIR``), as Curio's other
+        outputs; never the folder that holds ``utk_curio/``, which is
+        site-packages in a pip install."""
+        from utk_curio.backend.app.common.user_storage import curio_root
+        from utk_curio.tools.agent_eval import build_parser
+
+        monkeypatch.setenv("CURIO_STATE_DIR", str(tmp_path / "state"))
+        out = build_parser().parse_args(["run"]).out
+        assert out == curio_root() / "eval"
+        assert out.is_relative_to(tmp_path / "state")
+
     def test_the_cli_has_no_train_verb(self):
         from utk_curio.tools.agent_eval import build_parser
 

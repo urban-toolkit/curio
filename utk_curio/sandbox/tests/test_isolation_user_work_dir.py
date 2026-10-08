@@ -111,52 +111,82 @@ class TestPreparingIt(unittest.TestCase):
 
     @posix_only
     def test_the_examples_stay_readable_from_it(self):
-        """The bundled examples read their data by relative path.
+        """The shipped examples read their data by relative path.
 
         With the cwd off the launch directory, `docs/examples/...` resolves to
-        nothing unless the link is there. This is the mechanism that keeps the
-        e2e workflows running.
+        nothing unless the link is there. It leads to the `docs/` Curio ships
+        (`utk_curio/shipped.py`), whatever folder Curio started from: a pip
+        install keeps it inside `utk_curio/` and starts from a folder of the
+        user's. This is the mechanism that keeps the examples running.
         """
         import tempfile
 
+        from utk_curio import shipped
+
+        raster = "docs/examples/data/niteroi_lst_verao_2001_2024.tif"
         with tempfile.TemporaryDirectory() as tmp:
-            launch = os.path.join(tmp, "launch")
-            data = os.path.join(launch, "docs", "examples", "data")
-            os.makedirs(data)
-            with open(os.path.join(data, "thing.txt"), "w", encoding="utf-8") as handle:
-                handle.write("42")
+            path = self._prepare(tmp)
 
-            path = self._prepare(tmp, launch_dir=launch)
-
-            linked = os.path.join(path, "docs", "examples", "data", "thing.txt")
             self.assertTrue(os.path.islink(os.path.join(path, "docs")))
-            with open(linked, encoding="utf-8") as handle:
-                self.assertEqual(handle.read(), "42")
+            self.assertEqual(
+                os.path.realpath(os.path.join(path, "docs")),
+                os.path.realpath(shipped.path("docs")),
+            )
+            with open(os.path.join(path, raster), "rb") as handle:
+                self.assertEqual(handle.read(), shipped.path(raster).read_bytes())
 
     @posix_only
     def test_the_link_is_not_replaced_on_a_later_run(self):
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
-            launch = os.path.join(tmp, "launch")
-            os.makedirs(os.path.join(launch, "docs"))
+            first = self._prepare(tmp)
+            before = os.lstat(os.path.join(first, "docs"))
+            self._prepare(tmp)
 
-            first = self._prepare(tmp, launch_dir=launch)
-            before = os.readlink(os.path.join(first, "docs"))
-            self._prepare(tmp, launch_dir=launch)
+            after = os.lstat(os.path.join(first, "docs"))
+            self.assertEqual((after.st_ino, after.st_mtime_ns), (before.st_ino, before.st_mtime_ns))
 
-            self.assertEqual(os.readlink(os.path.join(first, "docs")), before)
+    @posix_only
+    def test_a_link_another_install_left_is_pointed_at_the_shipped_docs(self):
+        """A work directory outlives the install that made it: a virtual
+        environment rebuilt elsewhere, or a launch from a folder whose own
+        `docs/` the link used to follow. Its link then leads to the `docs/`
+        this install ships."""
+        import tempfile
 
-    def test_a_launch_dir_without_docs_is_fine(self):
+        from utk_curio import shipped
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = supervisor.user_work_dir(os.path.join(tmp, "data"), "7")
+            os.makedirs(path)
+            os.symlink(os.path.join(tmp, "gone", "docs"), os.path.join(path, "docs"))
+
+            self._prepare(tmp)
+
+            self.assertEqual(
+                os.path.realpath(os.path.join(path, "docs")),
+                os.path.realpath(shipped.path("docs")),
+            )
+
+    @posix_only
+    def test_a_docs_folder_of_the_users_own_is_kept(self):
+        """A node may have made a `docs/` of its own in its work directory
+        before the link existed; its files stay."""
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
-            launch = os.path.join(tmp, "launch")
-            os.makedirs(launch)
+            path = supervisor.user_work_dir(os.path.join(tmp, "data"), "7")
+            os.makedirs(os.path.join(path, "docs"))
+            mine = os.path.join(path, "docs", "notes.txt")
+            with open(mine, "w", encoding="utf-8") as handle:
+                handle.write("mine")
 
-            path = self._prepare(tmp, launch_dir=launch)
+            self._prepare(tmp)
 
-            self.assertFalse(os.path.lexists(os.path.join(path, "docs")))
+            self.assertFalse(os.path.islink(os.path.join(path, "docs")))
+            with open(mine, encoding="utf-8") as handle:
+                self.assertEqual(handle.read(), "mine")
 
 
 if __name__ == "__main__":

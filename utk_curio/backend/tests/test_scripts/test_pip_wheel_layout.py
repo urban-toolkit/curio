@@ -11,11 +11,12 @@ mix in one folder, uninstalling either can break the other, and without
 Hugging Face's package ``import datasets`` finds Curio's data.
 
 Curio also reads part of ``docs/``: the dataflows it ships, which every
-account is seeded with and agents' runs are shown; the folder of the
-Discovery Catalog's Example storage source; the agent evaluation's prompt
-fixtures and their schema; and the Trill schema the agents' prompt fields
-project. A pip install needs those files and none of the guides, images,
-walkthroughs or screenshot baselines.
+account is seeded with and agents' runs are shown; the example data their
+nodes read by its path in ``docs/examples/data/``, through ``/file/`` or from
+node code; the folder of the Discovery Catalog's Example storage source; the
+agent evaluation's prompt fixtures and their schema; and the Trill schema the
+agents' prompt fields project. A pip install needs those files and none of the
+guides, images, walkthroughs or screenshot baselines.
 
 The release builds the sdist, then the wheel from the sdist
 (``publish-pip-to-pypi.yml``). The tests run those two steps through
@@ -46,7 +47,11 @@ from types import SimpleNamespace
 import pytest
 
 from utk_curio.backend.tests._support.left_out_files import COMMIT, listed
-from utk_curio.backend.tests._support.pip_install_probe import MARKER
+from utk_curio.backend.tests._support.pip_install_probe import (
+    MARKER,
+    example_data_paths,
+    python_nodes_reading_example_data,
+)
 
 REPO = Path(__file__).resolve().parents[4]
 PROBE = REPO / "utk_curio" / "backend" / "tests" / "_support" / "pip_install_probe.py"
@@ -86,6 +91,29 @@ def _files(folder: Path) -> dict[str, str]:
 def _with_manifest(folder: str) -> list[str]:
     """The entries of the checkout's *folder* that hold a manifest.json."""
     return sorted(path.parent.name for path in (REPO / folder).glob("*/manifest.json"))
+
+
+def _spelled_example_data() -> list[str]:
+    """Each path in ``docs/examples/data/`` a node of a dataflow Curio ships
+    spells, as its code or its ``pbfFileUrl`` spells it."""
+    from utk_curio.backend.app.projects.shipped import shipped_dataflows
+
+    spelled = set()
+    for dataflow in shipped_dataflows():
+        spec = json.loads(Path(dataflow.path).read_text(encoding="utf-8"))
+        for node in spec["dataflow"]["nodes"]:
+            spelled |= example_data_paths(node.get("content"))
+    return sorted(spelled)
+
+
+def _example_data() -> list[str]:
+    """The files of ``docs/examples/data/`` the dataflows Curio ships read, by
+    repository path: each one a node spells, and the files of each folder."""
+    files = set()
+    for repo_path in _spelled_example_data():
+        path = REPO / repo_path
+        files |= {path} if path.is_file() else {inner for inner in path.rglob("*") if inner.is_file()}
+    return sorted(path.relative_to(REPO).as_posix() for path in files)
 
 
 def _shipped_folder_sources() -> dict[str, str]:
@@ -190,7 +218,8 @@ def _in_sdist(release, folder: str) -> dict[str, str]:
 def pip_install(release, tmp_path_factory):
     """The wheel unpacked as pip installs it, into a site-packages that holds
     Hugging Face's datasets package, and what the installed copy reads when
-    Curio starts from an empty folder (``_support/pip_install_probe.py``)."""
+    Curio starts from an empty folder (``_support/pip_install_probe.py``),
+    which asks ``/file/`` for the example data the shipped dataflows read."""
     root = tmp_path_factory.mktemp("pip-install")
     site = root / "site-packages"
     (site / "datasets").mkdir(parents=True)
@@ -211,7 +240,7 @@ def pip_install(release, tmp_path_factory):
         "CURIO_LAUNCH_CWD": str(launch),
     }
     run = subprocess.run(
-        [sys.executable, "-c", PROBE.read_text(encoding="utf-8")],
+        [sys.executable, "-c", PROBE.read_text(encoding="utf-8"), json.dumps(_example_data())],
         cwd=launch, env=env, capture_output=True, text=True, timeout=600,
     )
     assert run.returncode == 0, run.stdout[-3000:] + run.stderr[-3000:]
@@ -220,7 +249,7 @@ def pip_install(release, tmp_path_factory):
     assert Path(report["utk_curio"]) == (site / "utk_curio").resolve(), (
         f"the probe ran Curio from {report['utk_curio']}, not from the pip install in {site}"
     )
-    return SimpleNamespace(site=site, home=home, report=report)
+    return SimpleNamespace(site=site, home=home, launch=launch, report=report)
 
 
 def test_the_wheel_installs_nothing_but_utk_curio_and_its_dist_info(release):
@@ -452,14 +481,21 @@ def test_a_pip_install_finds_the_folder_of_every_shipped_folder_source(pip_insta
 
 def test_the_wheel_carries_of_docs_only_what_curio_reads(release):
     """Of ``docs/``, the wheel carries the files Curio reads and nothing else:
-    the dataflows it ships, the prompt fixtures and their schema, the Trill
-    schema, and each folder source's folder, with the credits of its photos.
-    No guide, image, walkthrough or screenshot baseline."""
+    the dataflows it ships and the example data their nodes read by its path
+    in ``docs/examples/data/``, the prompt fixtures and their schema, the
+    Trill schema, and each folder source's folder, with the credits of its
+    photos. No guide, image, walkthrough or screenshot baseline. A shipped
+    dataflow that reads a file the package does not carry fails here."""
     from utk_curio.backend.app.agents.domain import contracts
     from utk_curio.backend.app.agents.evaluation import fixtures
     from utk_curio.backend.app.projects.shipped import shipped_dataflows
 
+    spelled = _spelled_example_data()
+    assert spelled, "no shipped dataflow reads example data in this checkout"
+    missing = [repo_path for repo_path in spelled if not (REPO / repo_path).exists()]
+    assert not missing, f"shipped dataflows read {missing}, which this checkout does not hold"
     read = {dataflow.path for dataflow in shipped_dataflows()}
+    read |= {REPO / repo_path for repo_path in _example_data()}
     read |= {*fixtures.fixture_paths(), fixtures.FIXTURE_SCHEMA_PATH, REPO / contracts.TRILL_SCHEMA, REPO / PHOTO_CREDITS}
     for repo_path in _shipped_folder_sources().values():
         read |= {path for path in (REPO / repo_path).rglob("*") if path.is_file()}
@@ -470,3 +506,55 @@ def test_the_wheel_carries_of_docs_only_what_curio_reads(release):
         f"of docs/, the wheel carries {sorted(set(carried) - set(expected))[:5]}, which Curio does not read, "
         f"and lacks {sorted(set(expected) - set(carried))[:5]} of the {len(expected)} files it reads"
     )
+
+
+def test_a_pip_install_serves_the_example_data_its_dataflows_read(pip_install):
+    """``/file/`` serves each file of ``docs/examples/data/`` the shipped
+    dataflows read, byte for byte, with Curio started from an empty folder:
+    the Autark examples (06, 07, 08, 11 and their tests) fetch their
+    OpenStreetMap extracts through it."""
+    expected = {repo_path: _sha256((REPO / repo_path).read_bytes()) for repo_path in _example_data()}
+    assert expected, "no shipped dataflow reads example data in this checkout"
+    served = _read(pip_install, "file_route")
+    wrong = {repo_path: answer for repo_path, answer in served.items() if answer != expected.get(repo_path)}
+    assert sorted(served) == sorted(expected) and not wrong, (
+        f"in a pip install started from an empty folder, /file/ answers {wrong} for example data "
+        f"the shipped dataflows read"
+    )
+
+
+def test_a_pip_installs_nodes_read_the_example_data_by_the_path_they_spell(pip_install):
+    """Run in-process from an empty folder, as a launch runs every node unless
+    it isolates them, each Python node of a shipped dataflow that opens
+    example data by its path reads it: example 08's raster, and the access
+    scores and images of the test dataflows. The folder gets no ``docs/``."""
+    expected = [node["key"] for node in python_nodes_reading_example_data()]
+    assert "08-autark-spatial-join-regression/niteroi-raster" in expected, expected
+    runs = _read(pip_install, "in_process_runs")
+    assert sorted(runs) == sorted(expected)
+    failed = {key: run["stderr"][-600:] for key, run in runs.items() if run["stderr"]}
+    assert not failed, f"in a pip install started from an empty folder, these nodes fail: {failed}"
+    assert not (pip_install.launch / "docs").exists(), "a run wrote docs/ into the folder Curio started from"
+
+
+def test_a_pip_installs_isolated_runs_read_the_example_data_through_their_work_directory(pip_install):
+    """An isolated run's work directory holds a ``docs/`` that leads to the
+    one the pip install ships, so each node that opens example data by its
+    path reads it there, as the forked child runs it."""
+    package = (pip_install.site / "utk_curio").resolve()
+    found = _read(pip_install, "isolated_runs")
+    assert Path(found["docs"]).resolve().is_relative_to(package), (
+        f"an isolated run's work directory reads docs/ at {found['docs']}, not inside {package}"
+    )
+    assert sorted(found["runs"]) == sorted(node["key"] for node in python_nodes_reading_example_data())
+    failed = {key: run["stderr"][-600:] for key, run in found["runs"].items() if not run["ok"]}
+    assert not failed, f"in a pip install, these nodes fail in an isolated run's work directory: {failed}"
+
+
+def test_a_pip_installs_agent_evaluation_writes_its_reports_in_the_launch_folder(pip_install):
+    """``agent_eval run`` without ``--out`` writes its reports in ``eval/`` of
+    Curio's state directory, ``.curio/`` in the folder it starts from, never
+    in site-packages."""
+    out = Path(_read(pip_install, "agent_eval_out")).resolve()
+    assert not out.is_relative_to(pip_install.site.resolve()), f"agent_eval run writes its reports in site-packages, at {out}"
+    assert out == (pip_install.launch / ".curio" / "eval").resolve()
