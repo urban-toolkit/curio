@@ -596,10 +596,11 @@ def main():
                 install_framework_requirements()
                 install_manifest_dependencies()
 
-            # Autark's data path runs autk-db in the sandbox's Node, which installs
-            # DuckDB's spatial extension. Seed it from the copy Curio ships so that
-            # never becomes a download (#318).
-            if args.server in ("all", "sandbox"):
+            # autk-db runs in Node in the sandbox (Autark's data path) and in the
+            # backend (the Discovery Catalog's OpenStreetMap downloads), and
+            # installs DuckDB's spatial extension. Seed it from the copy Curio
+            # ships so that never becomes a download (#318).
+            if args.server in ("all", "backend", "sandbox"):
                 seed_duckdb_extensions()
         except SystemExit:
             # A failed check ends the start with its own exit code, and the

@@ -1035,9 +1035,12 @@ runtimes read that copy:
   instead. DuckDB's own setting for this (`custom_extension_repository`) is not
   reachable: autk-db installs the extension inside `init()`, before Curio holds
   a connection, and the worker has its own global scope.
-- **Sandbox.** `cli/dependencies.py::seed_duckdb_extensions` copies them into
-  `~/.duckdb/extensions/extensions.duckdb.org/`, which is where duckdb-wasm
-  looks before downloading. Nothing is intercepted there.
+- **Node.** autk-db runs in the sandbox's Node (Autark's data path) and in the
+  backend's (the Discovery Catalog's OpenStreetMap downloads). Each `curio.py
+  start` that runs either one (`all`, `backend` or `sandbox`) calls
+  `cli/dependencies.py::seed_duckdb_extensions`, which copies them into
+  `~/.duckdb/extensions/extensions.duckdb.org/`, where duckdb-wasm looks before
+  downloading. Nothing is intercepted there.
 
 Both fall back to the CDN for a file this checkout does not carry, so a newer
 `@duckdb/duckdb-wasm` keeps working before its extensions are vendored; see

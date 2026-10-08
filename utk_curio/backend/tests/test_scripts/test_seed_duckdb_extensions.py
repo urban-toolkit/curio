@@ -1,4 +1,4 @@
-"""Seeding DuckDB's spatial extension so the sandbox never downloads it (#318).
+"""Seeding DuckDB's spatial extension so neither the sandbox nor the backend downloads it (#318).
 
 autk-db's ``init()`` runs ``INSTALL spatial; LOAD spatial;``. In Node,
 duckdb-wasm installs into ``~/.duckdb/extensions/<repository>/<version>/<platform>/``
@@ -97,6 +97,31 @@ def test_it_lands_where_duckdb_looks(tmp_path, monkeypatch):
     shipped = {p.relative_to(VENDORED) for p in VENDORED.rglob("*.duckdb_extension.wasm")}
     # Same relative layout duckdb resolves: <version>/<platform>/<file>.
     assert seeded == shipped, f"seeded {seeded}, ships {shipped}"
+
+
+@pytest.mark.parametrize("server", ["all", "backend", "sandbox"])
+def test_every_start_that_runs_autk_db_seeds_it(server, tmp_path, monkeypatch):
+    """autk-db runs in Node in the sandbox (Autark's data path) and in the
+    backend (the Discovery Catalog's OpenStreetMap downloads,
+    ``discovery/providers/autark_osm.mjs``), so a start of either seeds the
+    HOME its servers run under. ``start backend`` did not, and a backend
+    started alone fetched the extension from extensions.duckdb.org on its first
+    OpenStreetMap download."""
+    from utk_curio.backend.tests.test_scripts.test_launcher_start_order import _start
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    _, _, code = _start(
+        monkeypatch, must_build=False, server=server, seed=dependencies.seed_duckdb_extensions,
+    )
+
+    target = tmp_path / ".duckdb" / "extensions" / "extensions.duckdb.org"
+    seeded = sorted(p.relative_to(target).as_posix() for p in target.rglob("*.duckdb_extension.wasm"))
+    shipped = sorted(p.relative_to(VENDORED).as_posix() for p in VENDORED.rglob("*.duckdb_extension.wasm"))
+    assert code == 0
+    assert shipped, "Curio ships no DuckDB extension to seed"
+    assert seeded == shipped, f"curio.py start {server} seeded {seeded}, Curio ships {shipped}"
 
 
 def test_it_does_not_recopy_what_is_already_there(tmp_path, monkeypatch):

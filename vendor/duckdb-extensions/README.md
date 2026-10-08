@@ -24,9 +24,10 @@ because both consumers key off it:
   prepends a redirect to duckdb's worker at build time, pointing
   `extensions.duckdb.org` at this directory through the backend's `/file/`
   route. It falls back to the CDN if a requested file is not here.
-- **Sandbox (Node)**: `utk_curio/cli/dependencies.py::seed_duckdb_extensions` copies these
-  into `~/.duckdb/extensions/extensions.duckdb.org/`, where duckdb-wasm looks
-  before downloading.
+- **Node (the sandbox and the backend)**: every `curio.py start` that runs the
+  sandbox or the backend calls `utk_curio/cli/dependencies.py::seed_duckdb_extensions`,
+  which copies these into `~/.duckdb/extensions/extensions.duckdb.org/`, where
+  duckdb-wasm looks before downloading.
 
 ## Updating after a duckdb-wasm bump
 
