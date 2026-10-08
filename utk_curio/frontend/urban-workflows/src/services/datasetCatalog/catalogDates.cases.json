@@ -1,15 +1,15 @@
 {
-  "about": "Cases for the catalog's Recent activity order. Each recent case lists its items in the order the listing gives them; each groups case gives a layer group's layer dates and the date the group takes. test_catalog_recent_parity.py runs them through the listing, and src/tests/parity/catalogRecentOrder.test.ts through the canvas's Data palette.",
-  "recent": [
+  "description": "How the catalog reads dataset dates as times: catalogDates.ts and its twin datasets/domain/catalog_dates.py. Each of cases lists its items in the order the catalog's Recent activity lists them; each of groups gives the dates of a layer group's layers and the date the group takes. Read by src/tests/services/catalogDatesCases.test.ts (the canvas's Data palette) and by backend/tests/test_datasets/test_catalog_dates.py (the catalog listing and its layer groups).",
+  "cases": [
     {
-      "case": "a millisecond date and a whole second date in one second",
+      "name": "a millisecond date and a whole second date in one second",
       "items": [
         {"id": "computed.output", "title": "Run output", "updatedAt": "2026-10-07T10:00:00.500Z"},
         {"id": "imported.upload", "title": "Upload", "updatedAt": "2026-10-07T10:00:00Z"}
       ]
     },
     {
-      "case": "microseconds and milliseconds and whole seconds in one second",
+      "name": "microseconds and milliseconds and whole seconds in one second",
       "items": [
         {"id": "a", "title": "a", "updatedAt": "2026-10-07T10:00:00.500001Z"},
         {"id": "b", "title": "b", "updatedAt": "2026-10-07T10:00:00.500Z"},
@@ -18,7 +18,7 @@
       ]
     },
     {
-      "case": "offsets are read",
+      "name": "offsets are read",
       "items": [
         {"id": "a", "title": "a", "updatedAt": "2026-10-07T05:15:00-05:00"},
         {"id": "b", "title": "b", "updatedAt": "2026-10-07T10:00:00.250+00:00"},
@@ -29,7 +29,7 @@
       ]
     },
     {
-      "case": "a date without an offset is UTC and a day alone is its midnight",
+      "name": "a date without an offset is UTC and a day alone is its midnight",
       "items": [
         {"id": "a", "title": "a", "updatedAt": "2026-10-07T10:00:00"},
         {"id": "b", "title": "b", "updatedAt": "2026-10-07 09:00:00Z"},
@@ -40,7 +40,7 @@
       ]
     },
     {
-      "case": "spaces around a date and digits past the microsecond are dropped",
+      "name": "spaces around a date and digits past the microsecond are dropped",
       "items": [
         {"id": "a", "title": "a", "updatedAt": " 2026-10-07T10:00:01Z "},
         {"id": "b", "title": "b", "updatedAt": "2026-10-07T10:00:00.9999999Z"},
@@ -48,7 +48,7 @@
       ]
     },
     {
-      "case": "one time written in different ways ties and the tie goes by title then id",
+      "name": "one time written in different ways ties and the tie goes by title then id",
       "items": [
         {"id": "t9", "title": null, "updatedAt": "2026-10-07T10:00:00Z"},
         {"id": "t1", "title": "alpha", "updatedAt": "2026-10-07T10:00:00+00:00"},
@@ -60,7 +60,7 @@
       ]
     },
     {
-      "case": "a missing or unreadable date is the oldest and those go by title then id",
+      "name": "a missing or unreadable date is the oldest and those go by title then id",
       "items": [
         {"id": "u00", "title": "leap day", "updatedAt": "2028-02-29T00:00:00Z"},
         {"id": "u01", "title": "old", "updatedAt": "1999-01-01T00:00:00Z"},
@@ -83,17 +83,17 @@
   ],
   "groups": [
     {
-      "case": "layers dated to the second and to the millisecond in one second",
+      "name": "layers dated to the second and to the millisecond in one second",
       "layers": ["2026-10-07T10:00:00Z", "2026-10-07T10:00:00.500Z"],
       "updatedAt": "2026-10-07T10:00:00.500Z"
     },
     {
-      "case": "a layer offset is read",
+      "name": "a layer offset is read",
       "layers": ["2026-10-07T12:00:00+02:00", "2026-10-07T10:30:00Z"],
       "updatedAt": "2026-10-07T10:30:00Z"
     },
     {
-      "case": "a missing or unreadable layer date gives way to a real one",
+      "name": "a missing or unreadable layer date gives way to a real one",
       "layers": [null, "not a date", "2026-10-07T09:00:00Z", ""],
       "updatedAt": "2026-10-07T09:00:00Z"
     }
