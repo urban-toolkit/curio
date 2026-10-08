@@ -56,19 +56,17 @@ curio = "utk_curio.main:main"
 
 [tool.setuptools]
 include-package-data = true
+# The packages, and the folders the repository keeps beside utk_curio/, which
+# the wheel carries inside it, are in setup.py.
 
 [tool.setuptools.package-data]
 # MANIFEST.in gets these into the sdist; this gets them into the wheel.
 # "llm-prompts" is a data directory inside the utk_curio package rather than a
-# package of its own (the hyphen makes it unimportable), so packages.find never
-# sees it and it needs naming explicitly or the built-in agents ship promptless.
+# package of its own (the hyphen makes it unimportable), so package discovery
+# never sees it and it needs naming explicitly or the built-in agents ship
+# promptless.
 utk_curio = ["llm-prompts/*.md"]
 
 [tool.setuptools.dynamic]
 version = {attr = "utk_curio.__version__"}
-
-[tool.setuptools.packages.find]
-where = ["."]
-
-
 

@@ -178,8 +178,9 @@ def serve_launch_cwd_file(filename: str):
     refuses it with the same 404 a missing file gets.
 
     ``vendor/duckdb-extensions/`` is Curio's own copy of DuckDB's extensions,
-    which the browser's duckdb worker asks for: it is served from the folder
-    that holds ``utk_curio/``, whatever folder Curio was started from.
+    which the browser's duckdb worker asks for: it is served from where Curio
+    keeps it (``node_runtime.duckdb_extensions_dir``), whatever folder Curio
+    was started from.
     """
     from flask import send_from_directory
     from utk_curio.backend.app.common.safe_paths import PathTraversalError, safe_join

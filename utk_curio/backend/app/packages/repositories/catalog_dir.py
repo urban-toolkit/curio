@@ -15,6 +15,7 @@ import zipfile
 from pathlib import Path
 from typing import IO
 
+from utk_curio import shipped
 from utk_curio.backend.app.common.safe_paths import is_within
 from utk_curio.backend.app.packages.domain.manifest import ManifestError
 from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
@@ -35,8 +36,9 @@ log = logging.getLogger(__name__)
 
 #: Where the shared package catalog lives.
 #:
-#: ``<repo_root>/packages/`` by default, resolved from this file rather than
-#: the launch CWD so a dev server finds it wherever it was started.
+#: The shipped ``packages/`` by default (``utk_curio/shipped.py``), resolved
+#: from the code rather than the launch CWD so a dev server finds it wherever
+#: it was started.
 #:
 #: Overridable because that default is one directory for every process on the
 #: machine, whatever else they have been given their own copy of. Two backends
@@ -56,8 +58,7 @@ def catalog_root() -> Path:
     override = os.environ.get(_CATALOG_ROOT_ENV, "").strip()
     if override:
         return Path(override).expanduser().resolve()
-    # repositories/catalog_dir.py -> packages/ -> app/ -> backend/ -> utk_curio/ -> repo_root/packages/
-    return Path(__file__).resolve().parents[5] / "packages"
+    return shipped.path("packages")
 
 
 def publish_package_archive_to_catalog_dir(
