@@ -659,7 +659,7 @@ The edit list is saved with the dataflow, and the node's code is written from it
 
 ```python
 return curio_edit_features(arg, [
-    {"op": "remove", "ids": [119, 136]},
+    {"op": "remove", "ids": [29623484, 29628154]},
     {"op": "set", "ids": [42], "column": "height", "value": 30},
 ], key="building_id", layer="table_osm_buildings")
 ```
@@ -940,7 +940,8 @@ no `data` entry for its input; it names the tables the input provides.
 - A `GeoDataFrame` whose `metadata` names one of Autark's layer types loads as
   that layer: `gdf.metadata = {"layerType": "buildings"}` draws its rows as
   buildings, raised to their height. A building's height comes from `height`,
-  else `building:levels` (3.4 m a level); one with neither stands 6 m high. The
+  else `building:height`, else `building:levels` (3.4 m a level); one with none
+  of them stands 6 m high. The
   loader of an OpenStreetMap layer downloaded from the Discovery Catalog sets it.
 - Coordinates are read in the CRS the frame declares. A frame with no CRS is
   read as EPSG:4326 when its coordinates look like longitude and latitude, and

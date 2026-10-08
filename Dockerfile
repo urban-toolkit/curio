@@ -21,9 +21,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # npm install in utk_curio/cli/dependencies.py::_ensure_root_node_modules at container
 # start then becomes a fast idempotent no-op.
 COPY package.json package-lock.json ./
-# The root package.json installs autk-db from the vendored tarball; see
-# utk_curio/frontend/urban-workflows/vendor/autark/README.md.
-COPY utk_curio/frontend/urban-workflows/vendor/autark/ utk_curio/frontend/urban-workflows/vendor/autark/
 RUN npm ci --no-audit --no-fund
 
 # Before the source, so a code change reuses this layer: pip needs nothing but
@@ -63,11 +60,10 @@ COPY vendor/ vendor/
 # Stage 2: Build frontends with Node (avoids NodeSource on slim in CI)
 # -----------------------------------------------------------------------------
 FROM node:26-bookworm-slim AS frontend_builder
-# The dependencies first, from the manifests and the vendored tarballs they
-# point at, so a source change reuses the npm layer and only rebuilds.
+# The dependencies first, from the manifests, so a source change reuses the npm
+# layer and only rebuilds.
 WORKDIR /src/utk_curio/frontend/urban-workflows
 COPY utk_curio/frontend/urban-workflows/package.json utk_curio/frontend/urban-workflows/package-lock.json ./
-COPY utk_curio/frontend/urban-workflows/vendor/ vendor/
 RUN npm install
 
 COPY utk_curio/frontend/ /src/utk_curio/frontend/
