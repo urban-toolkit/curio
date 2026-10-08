@@ -380,12 +380,9 @@ class TestTheChildCanReachItsScratchDirectory(unittest.TestCase):
 
     @posix_only
     def test_the_sandboxs_nodejs_packages_are_closed_to_node_code(self):
-        """A pip install keeps the Node.js packages the sandbox runs (autk-db)
-        in ``.curio/nodejs`` (``node_runtime.nodejs_dir``). Node runs in the
-        sandbox's own process tree as its own user (``/execJs`` has no isolated
-        path), so hardening closes the folder: node code running as the
-        execution account can neither read nor change a module there that the
-        sandbox's Node later imports, and the sandbox still reads it."""
+        """Hardening closes ``.curio/nodejs``, the Node.js packages a pip
+        install's sandbox runs as its own user: the execution account cannot
+        reach a module there, and the sandbox still reads it."""
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:

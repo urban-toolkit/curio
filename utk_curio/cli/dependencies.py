@@ -81,32 +81,20 @@ _WITHOUT_NODE_PACKAGES = "Autark data nodes and OpenStreetMap downloads will fai
 
 
 def _ensure_root_node_modules(project_root: str) -> None:
-    """Install the Node.js packages the sandbox runs: ``@urban-toolkit/autk-db``,
-    which Autark data nodes (``utk_curio/sandbox/app/worker.py``
-    ``execute_js_code``) and the Discovery Catalog's OpenStreetMap downloads
-    run in Node. ``check_install_build`` only manages the *frontend*
-    node_modules under ``utk_curio/frontend/urban-workflows/``.
+    """Install the sandbox's Node.js packages (``@urban-toolkit/autk-db``),
+    which Autark data nodes and OpenStreetMap downloads run, with ``npm install
+    --prefix`` the folder ``node_runtime.nodejs_dir`` names for *project_root*,
+    the folder that holds ``utk_curio/``.
 
-    *project_root* is the folder that holds ``utk_curio/``.
-    ``node_runtime.nodejs_dir`` says where the packages go, and the sandbox and
-    the backend read them through the same function: beside Curio's
-    package.json in a clone, the Docker image and CI, and in ``nodejs/`` of
-    Curio's state directory for a pip install, whose site-packages holds no
-    package.json of Curio's. For a pip install the launcher first writes the
-    package.json and package-lock.json the package ships into that folder.
-
-    npm runs only in a folder that holds Curio's package.json, with that folder
-    as ``--prefix``. Pointed at a folder without one, npm takes the nearest
-    folder above that holds a package.json or a node_modules as its project: in
-    a conda environment with conda's Node.js, a pip install's site-packages
-    leads it to ``<env>/lib``, whose node_modules it empties, conda's own npm
-    with it.
+    npm runs only in a folder that holds Curio's package.json: pointed at
+    site-packages, npm takes the nearest folder above with a package.json or a
+    node_modules as its project (``<env>/lib`` in a conda environment) and
+    empties its node_modules.
     """
     if shutil.which("npm") is None:
         log_warning(
-            "[Sandbox] npm not found in PATH; the sandbox's Node.js packages are not "
-            f"installed. {_WITHOUT_NODE_PACKAGES} with ERR_MODULE_NOT_FOUND until Curio "
-            f"starts with Node.js {NODE_MAJOR} and npm on PATH."
+            "[Sandbox] npm not found in PATH, so the sandbox's Node.js packages are not "
+            f"installed and {_WITHOUT_NODE_PACKAGES}. Install Node.js {NODE_MAJOR}."
         )
         return
 
@@ -154,14 +142,10 @@ def _ensure_root_node_modules(project_root: str) -> None:
 
 
 def _sandbox_nodejs_folder(root: Path) -> Path | None:
-    """The folder npm installs the sandbox's Node.js packages in, holding
-    Curio's package.json, or None after saying why there is none.
-
-    A clone, the Docker image and CI: *root*, beside its package.json. A pip
-    install: ``nodejs/`` in Curio's state directory, a folder of Curio's own
-    (not a link elsewhere), after the package.json and package-lock.json the
-    package ships are written there. A file is replaced, never written through.
-    """
+    """The folder npm installs the sandbox's Node.js packages in, or None after
+    logging why there is none: *root* when it holds Curio's package.json, else
+    ``nodejs/`` in Curio's state directory, not a link, with the package.json
+    and package-lock.json the package ships written into it."""
     from utk_curio.sandbox.util import node_runtime
 
     folder = node_runtime.nodejs_dir(root)
@@ -171,26 +155,22 @@ def _sandbox_nodejs_folder(root: Path) -> Path | None:
     for name in node_runtime.PACKAGE_FILES:
         if not (shipped / name).is_file():
             log_error(
-                f"[Sandbox] {shipped / name} is missing, so Curio has no list of the sandbox's "
-                f"Node.js packages to install ({root} holds no package.json of Curio's). npm is "
-                f"not run, and {_WITHOUT_NODE_PACKAGES}. Install Curio from its release on PyPI, "
-                f"or start it from a clone."
+                f"[Sandbox] {shipped / name} is missing, so npm is not run and "
+                f"{_WITHOUT_NODE_PACKAGES}. Install Curio from its release on PyPI, or start "
+                f"it from a clone."
             )
             return None
     if not node_runtime.is_curio_package_json(shipped / "package.json"):
         log_error(
-            f"[Sandbox] {shipped / 'package.json'} is not Curio's package.json, so npm is not "
-            f"run, and {_WITHOUT_NODE_PACKAGES}."
+            f"[Sandbox] {shipped / 'package.json'} is not Curio's, so npm is not run and "
+            f"{_WITHOUT_NODE_PACKAGES}."
         )
         return None
-    expected = node_runtime.state_dir().resolve() / node_runtime.NODEJS_FOLDER
     links = [path for path in (folder, folder / "node_modules") if path.is_symlink()]
-    if links or folder.resolve() != expected:
-        path = links[0] if links else folder
+    if links:
         log_error(
-            f"[Sandbox] {path} leads to {path.resolve()}, which is not the folder of Curio's own "
-            f"for the sandbox's Node.js packages ({expected}), so npm is not run, and "
-            f"{_WITHOUT_NODE_PACKAGES}. Remove {path}; the next start creates the folder."
+            f"[Sandbox] {links[0]} is a link to {links[0].resolve()}, so npm is not run and "
+            f"{_WITHOUT_NODE_PACKAGES}. Remove the link; the next start creates the folder."
         )
         return None
     try:
@@ -206,7 +186,7 @@ def _sandbox_nodejs_folder(root: Path) -> Path | None:
     except OSError as exc:
         log_error(
             f"[Sandbox] Could not write Curio's package.json into {folder} ({exc}), so npm is "
-            f"not run, and {_WITHOUT_NODE_PACKAGES}."
+            f"not run and {_WITHOUT_NODE_PACKAGES}."
         )
         return None
     return folder.resolve()

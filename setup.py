@@ -1,11 +1,6 @@
-"""The build step that ships the sandbox's Node.js package list in the pip package.
-
-The repository root's package.json and package-lock.json name the Node.js
-packages the sandbox runs (autk-db). A wheel holds only package folders, so the
-build copies both into the package, at utk_curio/sandbox/nodejs/, where the
-launcher reads them on a pip install (SHIPPED_PACKAGE_FILES in
-utk_curio/sandbox/util/node_runtime.py). The sdist carries them at its root
-(MANIFEST.in), so the wheel built from it gets them too.
+"""Copies the repository's package.json and package-lock.json into the wheel,
+at utk_curio/sandbox/nodejs/, where a pip install's launcher reads them
+(SHIPPED_PACKAGE_FILES in utk_curio/sandbox/util/node_runtime.py).
 
 Everything else about the build is in pyproject.toml.
 """
@@ -24,8 +19,7 @@ PACKAGE_FILES = ("package.json", "package-lock.json")
 
 def ship_package_files(build_lib):
     """Copy the repository's package.json and package-lock.json into the
-    package being built under *build_lib*. A missing one fails the build: a
-    package without them cannot install the sandbox's Node.js packages."""
+    package under *build_lib*; a missing one fails the build."""
     target = Path(build_lib, *TARGET)
     target.mkdir(parents=True, exist_ok=True)
     for name in PACKAGE_FILES:

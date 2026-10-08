@@ -1,21 +1,10 @@
 """Where the launcher installs the sandbox's Node.js packages, and where the
-sandbox and the backend read them.
-
-The sandbox runs autk-db in Node.js for Autark data nodes, and the backend runs
-it for OpenStreetMap downloads. A clone, the Docker image and CI install it
-from Curio's package.json beside ``utk_curio/``. A pip install has
-site-packages there, which holds no package.json of Curio's. npm run there
-takes the nearest folder above that holds a package.json or a node_modules as
-its project, which in a conda environment is ``<env>/lib``, and empties its
-node_modules, conda's own npm with it. So a pip install keeps the packages in
-``nodejs/`` of Curio's state directory: the launcher writes the package.json
-and package-lock.json the package ships there and runs ``npm install
---prefix`` that folder, and the sandbox and the backend read its node_modules.
+sandbox and the backend read them: beside Curio's package.json in a clone, and
+in ``.curio/nodejs`` for a pip install, whose site-packages holds none.
 
 npm never runs here (``subprocess.run`` is replaced), Node never starts
-(``Popen`` is replaced where a test runs a node), and no test opens a socket.
-Every tree is built under ``tmp_path``; only the packaging test reads the
-repository's own package.json.
+(``Popen`` is replaced), and no test opens a socket. Every tree is built under
+``tmp_path``.
 """
 
 from __future__ import annotations
@@ -133,11 +122,9 @@ def checkout(tmp_path, launch):
 
 
 def test_a_pip_install_runs_npm_only_in_a_folder_holding_curios_package_json(pip_install, npm):
-    """The launcher ran ``npm install`` in site-packages, which holds no
-    package.json, so npm took ``<env>/lib`` as its project and emptied
-    ``<env>/lib/node_modules``. npm now runs only in ``.curio/nodejs``, with
-    that folder as ``--prefix``, after the launcher wrote the package.json and
-    package-lock.json the package ships there."""
+    """npm runs only in ``.curio/nodejs``, with that folder as ``--prefix``,
+    after the launcher writes the package.json and package-lock.json the
+    package ships there."""
     dependencies._ensure_root_node_modules(str(pip_install.site))
 
     assert npm.calls, f"no npm install ran; the launcher said {npm.errors + npm.warnings}"
@@ -150,8 +137,7 @@ def test_a_pip_install_runs_npm_only_in_a_folder_holding_curios_package_json(pip
             f"environment, and empties its node_modules, conda's npm with it. Command: {cmd}"
         )
         assert "--prefix" in cmd and Path(cwd).resolve() == project.resolve(), (
-            f"npm ran in {cwd} as {cmd}: the folder it installs in is also its --prefix, so npm "
-            f"never looks above it"
+            f"npm ran in {cwd} as {cmd}, without that folder as --prefix"
         )
     assert [_project(cmd, cwd).resolve() for cmd, cwd in npm.calls] == [pip_install.folder.resolve()]
     for name in ("package.json", "package-lock.json"):
@@ -162,10 +148,8 @@ def test_a_pip_install_runs_npm_only_in_a_folder_holding_curios_package_json(pip
 
 @pytest.mark.parametrize("missing", ["package.json", "package-lock.json"])
 def test_a_pip_install_that_ships_no_package_json_says_so_and_runs_no_npm(pip_install, npm, missing):
-    """A package built without the files (not by ``python -m build``) has
-    nothing to install from: the launcher names the missing file and what
-    fails without it, and runs no npm. Never a silent skip, and never npm
-    without Curio's package.json."""
+    """Without a shipped file, the launcher names it and what fails, and runs
+    no npm."""
     (pip_install.shipped / missing).unlink()
 
     dependencies._ensure_root_node_modules(str(pip_install.site))
@@ -178,9 +162,8 @@ def test_a_pip_install_that_ships_no_package_json_says_so_and_runs_no_npm(pip_in
 
 
 def test_a_clone_installs_beside_its_own_package_json(checkout, launch, npm):
-    """A clone, the Docker image and CI keep their Node.js packages where they
-    were: in the node_modules beside Curio's package.json, at the repository
-    root. Nothing goes to the state directory."""
+    """A clone, the Docker image and CI install beside Curio's package.json,
+    and nothing goes to the state directory."""
     dependencies._ensure_root_node_modules(str(checkout))
 
     assert [_project(cmd, cwd).resolve() for cmd, cwd in npm.calls] == [checkout.resolve()]
@@ -190,10 +173,8 @@ def test_a_clone_installs_beside_its_own_package_json(checkout, launch, npm):
 
 
 def test_a_state_folder_that_links_out_of_curios_own_is_refused(pip_install, launch, npm):
-    """``.curio/nodejs`` must be a folder of Curio's own. As a link to another
-    folder (here conda's ``<env>/lib``), npm would install there and take it
-    as its project: the launcher refuses, writes nothing through the link and
-    runs no npm."""
+    """``.curio/nodejs`` as a link (here to conda's ``<env>/lib``): the launcher
+    writes nothing through it and runs no npm."""
     (launch / ".curio").mkdir()
     (launch / ".curio" / "nodejs").symlink_to(pip_install.lib, target_is_directory=True)
 
@@ -209,10 +190,9 @@ def test_a_state_folder_that_links_out_of_curios_own_is_refused(pip_install, lau
 
 
 def test_only_curios_own_node_modules_is_reinstalled_for_another_node_major(pip_install, npm):
-    """A tree another Node.js major installed is removed and installed again
-    (``NODE_STAMP``), and only the one beside Curio's package.json. A
-    node_modules in site-packages is not Curio's and has no stamp, so the
-    launcher took it for a stale tree of its own and removed it."""
+    """A tree another Node.js major installed (``NODE_STAMP``) is reinstalled
+    only beside Curio's package.json; a node_modules in site-packages is left
+    alone."""
     foreign = pip_install.site / "node_modules" / "someones-package" / "index.js"
     foreign.parent.mkdir(parents=True)
     foreign.write_text("module.exports = 1;\n", encoding="utf-8")
@@ -331,11 +311,9 @@ def test_the_sandbox_and_the_backend_read_the_node_modules_the_launcher_installe
 
 
 def test_the_pip_package_ships_curios_package_json_and_lockfile(tmp_path, monkeypatch):
-    """A wheel holds only package folders, so the build copies the
-    repository's package.json and package-lock.json into the package
-    (``setup.py``'s ``build_py``), to the folder the launcher reads them from.
-    The release builds the wheel from the sdist, which carries both
-    (``test_left_out_files.py`` applies ``MANIFEST.in``)."""
+    """``setup.py``'s ``build_py`` copies the repository's package.json and
+    package-lock.json into the package, where the launcher reads them.
+    ``MANIFEST.in`` puts both in the sdist (``test_left_out_files.py``)."""
     setup_py = REPO / "setup.py"
     if not setup_py.is_file():
         pytest.fail(

@@ -165,7 +165,7 @@ Curio's frontend will be available at http://localhost:8080 by default.
 > [!NOTE]
 > The pip installation includes a pre-built frontend and does not support rebuilding it. If you need to modify or rebuild the frontend, please use the manual installation method described below.
 
-Autark data nodes and OpenStreetMap downloads run autk-db in Node.js, so they need Node.js 26 and npm (`conda install -c conda-forge nodejs=26`). On every start, `curio start` installs autk-db and the Node.js packages it uses into `.curio/nodejs/` in the folder you start Curio from (or in the folder `--state-dir` names), with `npm install` and the `package.json` and `package-lock.json` the pip package ships. The first start downloads them from the npm registry.
+Autark data nodes and OpenStreetMap downloads need Node.js 26 and npm (`conda install -c conda-forge nodejs=26`). On every start, `curio start` installs their Node.js packages with `npm install` into `.curio/nodejs/` in the folder you start Curio from.
 
 Five large files are not in the pip package: the data of four Data Catalog datasets (Milan Mean Radiant Temperature, Project Sidewalk Chicago Labels, Chicago Red-Light Violations and Chicago Speed Camera Violations) and the Model Catalog's Deep Umbra model. Curio downloads each one from GitHub the first time something reads it: a preview in the Data Catalog, adding the dataset to a dataflow, or a node that loads it. Downloaded files go to `.curio/fetched/` in the folder you start Curio from.
 

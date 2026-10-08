@@ -1,11 +1,10 @@
 """How Curio runs autk-db in Node, shared by every caller.
 
-The launcher installs the sandbox's Node.js packages
-(``cli/dependencies.py::_ensure_root_node_modules``), and the sandbox's JS
-nodes (``app/worker.py::execute_js_code``) and the Discovery Catalog's
-OpenStreetMap loader (``backend/app/discovery/providers/autark_osm.py``) run
-Node against them. All three find the folder through :func:`nodejs_dir`, so
-they agree on one autk-db, and both Node callers identify themselves to
+The launcher (``cli/dependencies.py::_ensure_root_node_modules``) installs the
+sandbox's Node.js packages in the folder :func:`nodejs_dir` names, and the
+sandbox's JS nodes (``app/worker.py::execute_js_code``) and the Discovery
+Catalog's OpenStreetMap loader (``backend/app/discovery/providers/autark_osm.py``)
+run Node against that folder's ``node_modules`` and identify themselves to
 Overpass the same way.
 """
 
@@ -20,9 +19,8 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 #: The files that name the Node.js packages the sandbox runs.
 PACKAGE_FILES = ('package.json', 'package-lock.json')
 
-#: Where the pip package carries the repository's ``PACKAGE_FILES``, under the
-#: folder that holds ``utk_curio/``. A wheel holds only package folders, so the
-#: build copies them there (``setup.py``); a clone has none.
+#: Where the pip package carries the repository's ``PACKAGE_FILES`` (``setup.py``
+#: copies them there), under the folder that holds ``utk_curio/``.
 SHIPPED_PACKAGE_FILES = pathlib.PurePosixPath('utk_curio', 'sandbox', 'nodejs')
 
 #: The folder of Curio's state directory where a pip install keeps the
@@ -51,9 +49,7 @@ def is_curio_package_json(path):
 
 def state_dir():
     """Curio's state directory: ``CURIO_STATE_DIR``, or ``.curio`` in the
-    folder Curio was started from (``CURIO_LAUNCH_CWD``). Read at call time, as
-    the backend's ``user_storage.curio_root`` reads it, but without its
-    ``test/`` folder: the Node.js packages are an install, not test state."""
+    folder Curio was started from (``CURIO_LAUNCH_CWD``)."""
     override = os.environ.get('CURIO_STATE_DIR')
     if override:
         return pathlib.Path(override)
@@ -62,14 +58,11 @@ def state_dir():
 
 def nodejs_dir(root=None):
     """The folder that holds Curio's package.json for the sandbox's Node.js
-    packages, and the ``node_modules`` npm installs from it.
+    packages, and their ``node_modules``.
 
-    *root* is the folder that holds ``utk_curio/`` (``REPO_ROOT`` when None). A
-    clone, the Docker image and CI have Curio's package.json there, and use that
-    folder. A pip install has site-packages there, which is not Curio's folder:
-    its packages go to ``nodejs/`` in Curio's state directory, where the
-    launcher writes the package.json and package-lock.json the package ships
-    (``SHIPPED_PACKAGE_FILES``).
+    *root* is the folder that holds ``utk_curio/`` (``REPO_ROOT`` when None):
+    that folder when it holds Curio's package.json (a clone, the Docker image,
+    CI), else ``nodejs/`` in Curio's state directory (a pip install).
     """
     root = pathlib.Path(REPO_ROOT if root is None else root)
     if is_curio_package_json(root / 'package.json'):

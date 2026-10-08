@@ -100,9 +100,9 @@ def test_manifest_in_leaves_out_exactly_the_listed_files_and_the_frontends_sourc
     the sdist (``publish-pip-to-pypi.yml``). Its rules, applied as setuptools
     applies them, every line in order, to every file under ``datasets/``,
     ``models/`` and ``packages/``, the list and its record, the repository's
-    ``package.json`` and ``package-lock.json`` (the wheel build copies them
-    into the package for the sandbox's Node.js packages), and a built
-    frontend: the listed files and the frontend's source maps stay out, and
+    ``package.json`` and ``package-lock.json`` (``setup.py`` copies them into
+    the wheel), and a built frontend: the listed files and the frontend's
+    source maps stay out, and
     nothing else does. A package's own source map ships: ``curio.example-ui@1``
     names it in its ``integrity.json``."""
     from setuptools._distutils.filelist import FileList
