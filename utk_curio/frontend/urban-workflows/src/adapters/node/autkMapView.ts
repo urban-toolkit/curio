@@ -15,7 +15,9 @@
  * geometry each layer drew, which autk-map keeps relative to the map's origin,
  * the space its camera is in. Buildings lift the camera by the tallest one,
  * so their roofs fit as flat ground would. The map's R key frames it the same
- * way. The grammar keeps each map by the dataRefs it draws (`_mapRegistry`).
+ * way, and a framed map is asked for a frame (`requestRender`), since it draws
+ * on demand (`autkMapDrawing`). The grammar keeps each map by the dataRefs it
+ * draws (`_mapRegistry`).
  */
 
 /** What a map's layers drew, in its world units, and the tallest height. */
@@ -89,6 +91,8 @@ function frameMap(map: any): boolean {
     const { lookAt, eye } = framingCamera(extent, aspect, camera.getFovyRadians(), camera.getFar());
     camera.resetCamera([0, 1, 0], lookAt, eye);
     camera.resize(map.renderer.pixelWidth, map.renderer.pixelHeight);
+    // A map that draws on demand draws the camera it was given.
+    map.requestRender?.();
     return true;
 }
 
