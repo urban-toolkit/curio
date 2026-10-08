@@ -18,9 +18,9 @@
  * when it leaves the page, a deleted node or a closed dataflow
  * (`autkGrammarBehavior`).
  *
- * Code that reads a map's pixels (a screenshot) reads them in the animation
- * frame that renders the map (`renderMapsForReading`): Chrome can read back
- * an idle WebGPU canvas, long after its last frame, as transparent.
+ * The e2e captures and the map framing check read a map's pixels in the
+ * animation frame that renders the map (`renderMapsForReading`): Chrome can
+ * read back an idle WebGPU canvas, long after its last frame, as transparent.
  */
 import type { AutkMap } from '@urban-toolkit/autk-map';
 
@@ -74,5 +74,6 @@ export function renderMapsForReading(): Promise<void> {
     return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
 
-// The e2e captures read map canvases through it too (test_frontend/utils/images.py).
+// The e2e captures and the map framing check read map canvases through it
+// (test_frontend/utils/images.py, node_drawings.py).
 if (typeof window !== 'undefined') (window as any).__curio_renderMapsForReading = renderMapsForReading;
