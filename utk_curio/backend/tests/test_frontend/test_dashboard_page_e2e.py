@@ -35,6 +35,7 @@ import os
 import re
 import uuid
 from typing import TYPE_CHECKING
+from urllib.parse import urlsplit
 
 import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, expect
@@ -52,6 +53,7 @@ from .utils import (
     require_owner_view,
     require_project_page,
     require_user_auth,
+    serve_built_frontend,
     stub_db_login,
     stub_login_and_enter_workflow,
     viewport_hints,
@@ -81,6 +83,9 @@ CHART_SPEC = json.dumps({
         "y": {"field": "count", "type": "quantitative"},
     },
 }, indent=2)
+
+#: Every route a page asks the server for data on.
+DATA_ROUTES = ("**/api/**", "**/get?**", "**/get-preview?**", "**/raster?**", "**/live", "**/starters")
 
 
 def _node(node_id: str, node_type: str, x: int, content: str = "") -> dict:
@@ -238,6 +243,61 @@ def test_the_owner_opens_a_dashboard_that_draws_without_a_run(
         ".filter((n) => n.style?.display !== 'none').map((n) => n.id)"
     )
     assert visible == [CHART], f"tiles on the page: {visible!r}"
+
+
+def test_a_dashboard_served_as_the_hosted_stacks_serve_it_carries_its_data(
+    app_frontend: "FrontendPage", current_server, page, monkeypatch,
+):
+    """The page draws with every data request refused, because it carries its data.
+
+    The hosted stacks start Curio with ``--backend-url /api``: the backend is a
+    path on whichever host serves the page, behind a proxy. The page server
+    asks the backend the launcher started for a dashboard's data, at the
+    address the launcher hands its children (FLASK_BACKEND_HOST/PORT). The
+    dashboards the other tests here open come from this stack's own page
+    server, which was given an address on the runner that does not answer
+    inside its container, so they fetch their data. This one is served the
+    hosted way: the production page server on the built bundle, given
+    ``/api`` and this worker's backend as the one it was started with.
+    """
+    require_project_page()
+    require_user_auth()
+    session = _pinned_and_saved(page, app_frontend, current_server, prefix="dash_hosted")
+    project_id = session["project"]["id"]
+    # Off the canvas before anything is refused: it can still save on its way
+    # out, and that request is the canvas's, not the dashboard's.
+    page.goto("about:blank")
+
+    backend = urlsplit(current_server)
+    monkeypatch.setenv("FLASK_BACKEND_HOST", backend.hostname)
+    monkeypatch.setenv("FLASK_BACKEND_PORT", str(backend.port))
+    hosted = serve_built_frontend("/api")
+
+    asked: list[str] = []
+
+    def refuse(route, request):
+        asked.append(f"{request.method} {request.url}")
+        route.abort()
+
+    for pattern in DATA_ROUTES:
+        page.route(pattern, refuse)
+
+    page.goto(f"{hosted}/dashboard/{project_id}", wait_until="domcontentloaded")
+    assert page.locator("script#curio-dashboard-payload").count() == 1, (
+        "the page server, given --backend-url /api as the hosted stacks are, served "
+        "the dashboard without its data, so the page fetches it from the server"
+    )
+    page.get_by_test_id("open-dataflow-link").wait_for(state="visible", timeout=45000)
+    drawn_problem = None
+    try:
+        _chart_drew(page)
+    except (AssertionError, PlaywrightTimeoutError) as exc:
+        drawn_problem = str(exc)
+    assert asked == [], (
+        "the dashboard asked the server for data: " + ", ".join(asked)
+        + f". The chart: {drawn_problem or 'drew'}"
+    )
+    assert drawn_problem is None, drawn_problem
 
 
 def test_the_editor_restores_saved_outputs_on_reload(
