@@ -11,6 +11,11 @@
  * below a restored output got it twice, and a Data Pool fetched its artifact
  * twice.
  *
+ * A new edge from the producer, one the user draws or one Duplicate selection
+ * wires into a copy, hands its output to the edge's own target. It also pushed
+ * that output to every node the producer already fed, so each of them took it
+ * in again.
+ *
  * The real ProjectLoader, FlowProvider, useWorkflowOperations and useCode run
  * here, under a router on the dataflow's or the dashboard's address; the
  * projects and runs APIs are mocked. A delivery is a new `data.input` on a
@@ -99,10 +104,16 @@ jest.mock('../../hook/useVega', () => ({
 jest.mock('vega', () => ({}), { virtual: true });
 jest.mock('vega-lite', () => ({}), { virtual: true });
 
+// A connection the user draws goes through the node type check, which reads
+// descriptors this suite does not register. What is tested is the hand-over.
+jest.mock('../../ConnectionValidator', () => ({
+  ConnectionValidator: { checkBoxCompatibility: () => true },
+}));
+
 import FlowProvider, { useFlowContext } from '../../providers/FlowProvider';
 import { ProjectLoader } from '../../components/ProjectLoader';
 import { useScenarioActions } from '../../components/scenarios/useScenarioActions';
-import { NodeType, SupportedType } from '../../constants';
+import { CURIO_UNIVERSAL_NODE_TYPE, NodeType, SupportedType } from '../../constants';
 import { registerNode } from '../../registry/nodeRegistry';
 import type { NodeDescriptor } from '../../registry/types';
 
@@ -132,6 +143,8 @@ const CHART = 'chart';
 /** The idle node on its one circle. */
 const WAITING = 'waiting';
 const IDS = [PRODUCER, TUPLE, IDLE, POOL, SUMMARY, JOIN, CHART, WAITING];
+/** A Python node put on the canvas after the load, which nothing feeds. */
+const ADDED = 'added';
 
 /** The saved outputs, as `GET /api/projects/<id>` lists them. */
 const SAVED = [
@@ -375,5 +388,144 @@ describe('what the load still does', () => {
     expect(copies).toHaveLength(1);
     expect(api.edges.some((e) => e.source === PRODUCER && e.target === copies[0].id)).toBe(true);
     expect(copies[0].data?.input).toEqual(FRAME);
+  });
+});
+
+/** How many values each node had committed: a mark to read what came after. */
+function mark(): Map<string, number> {
+  return new Map(Array.from(delivered, ([id, values]) => [id, values.length] as const));
+}
+
+/** What *id* was handed after *before*. */
+const handedSince = (before: Map<string, number>, id: string) =>
+  deliveriesTo(id).slice(before.get(id) ?? 0);
+
+/** What the nodes the load handed the restored outputs to were handed after *before*. */
+function handedToTheFedNodes(before: Map<string, number>) {
+  return {
+    [POOL]: handedSince(before, POOL),
+    [SUMMARY]: handedSince(before, SUMMARY),
+    [JOIN]: handedSince(before, JOIN),
+  };
+}
+const NOTHING_MORE = { [POOL]: [], [SUMMARY]: [], [JOIN]: [] };
+
+const dataOf = (id: string): any => api.nodes.find((n) => n.id === id)?.data;
+
+/** A Python node, as a palette drag puts one on the canvas. */
+async function addPythonNode(id: string) {
+  await act(async () => {
+    api.addNode(
+      {
+        id,
+        type: CURIO_UNIVERSAL_NODE_TYPE,
+        position: { x: 1400, y: 1000 },
+        data: { nodeId: id, nodeType: `${COMPUTATION}@1`, input: '', inputTypes: [], code: '', defaultCode: '' },
+      } as any,
+      undefined,
+      false,
+    );
+  });
+}
+
+/** A connection the user draws: the canvas hands `onConnect` the connection alone. */
+async function connect(source: string, target: string, targetHandle = 'in') {
+  await act(async () => {
+    api.onConnect({ source, sourceHandle: 'out', target, targetHandle });
+  });
+  await wait(50);
+}
+
+/** Duplicate selection on *id* alone; the copy it made. */
+async function duplicate(id: string) {
+  const present = new Set(api.nodes.map((n) => n.id));
+  await act(async () => {
+    api.onNodesChange([{ id, type: 'select', selected: true }]);
+  });
+  await act(async () => {
+    scenarioActions.duplicate(false);
+  });
+  await wait(50);
+  const copies = api.nodes.filter((n) => !present.has(n.id));
+  expect(copies).toHaveLength(1);
+  return copies[0];
+}
+
+describe("a new edge hands its source's output to its own target alone", () => {
+  test('a connection the user draws, then one into the next circle', async () => {
+    open('dataflow');
+    await settle();
+    await addPythonNode(ADDED);
+    mockShowToast.mockClear();
+
+    let before = mark();
+    await connect(PRODUCER, ADDED);
+    expect(handedToTheFedNodes(before)).toEqual(NOTHING_MORE);
+    expect(handedSince(before, ADDED)).toEqual([FRAME]);
+
+    // Dropped on the taken circle, it lands on the next one. The node reads
+    // both, in circle order, from this one hand-over.
+    before = mark();
+    await connect(TUPLE, ADDED);
+    expect(handedToTheFedNodes(before)).toEqual(NOTHING_MORE);
+    expect(handedSince(before, ADDED)).toEqual([{ dataType: 'outputs', data: [FRAME, TUPLE_REF] }]);
+    expect(api.edges.filter((e) => e.target === ADDED).map((e) => e.targetHandle)).toEqual(['in', 'in_1']);
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  test('an edge moved to another node clears the node it left', async () => {
+    open('dataflow');
+    await settle();
+    await addPythonNode(ADDED);
+
+    const before = mark();
+    const moved = api.edges.find((e) => e.source === PRODUCER && e.target === SUMMARY)!;
+    await act(async () => {
+      api.onEdgesDelete([moved]);
+      api.onEdgesChange([{ type: 'remove', id: moved.id }]);
+    });
+    await connect(PRODUCER, ADDED);
+
+    expect(dataOf(SUMMARY).input).toBe('');
+    expect(handedToTheFedNodes(before)).toEqual(NOTHING_MORE);
+    expect(handedSince(before, ADDED)).toEqual([FRAME]);
+  });
+
+  test('Duplicate selection hands the output to the copy, and nothing to the nodes that hold it', async () => {
+    open('dataflow');
+    await settle();
+
+    const before = mark();
+    const copy = await duplicate(SUMMARY);
+    expect(handedToTheFedNodes(before)).toEqual(NOTHING_MORE);
+    expect(handedSince(before, copy.id)).toEqual([FRAME]);
+  });
+
+  test('a copy with two circles fed from outside reads both in one value, in circle order', async () => {
+    open('dataflow');
+    await settle();
+
+    const before = mark();
+    const copy = await duplicate(JOIN);
+    expect(handedToTheFedNodes(before)).toEqual(NOTHING_MORE);
+    expect(handedSince(before, copy.id)).toEqual([{ dataType: 'outputs', data: [FRAME, TUPLE_REF] }]);
+  });
+
+  test('a copy whose second circle waits for a node that never ran reads nothing yet', async () => {
+    open('dataflow');
+    await settle();
+    await addPythonNode(ADDED);
+    await connect(PRODUCER, ADDED);
+    await connect(IDLE, ADDED);
+    expect(dataOf(ADDED).input).toBe('');
+
+    const before = mark();
+    const copy = await duplicate(ADDED);
+    expect(handedToTheFedNodes(before)).toEqual(NOTHING_MORE);
+    expect(handedSince(before, copy.id)).toEqual([]);
+    const data = dataOf(copy.id);
+    expect(data.inputSlots[0]).toEqual(FRAME);
+    expect(data.sourceSlots.slice(0, 2)).toEqual([PRODUCER, IDLE]);
+    expect(data.input).toBe('');
   });
 });
