@@ -20,11 +20,13 @@ from __future__ import annotations
 
 import json
 import logging
+import posixpath
 import re
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
+from utk_curio import shipped
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import contracts
 from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
@@ -114,7 +116,14 @@ class IndexEntry:
 
     @property
     def path(self) -> Path:
-        return (builtin.PROMPT_SOURCE_DIR / self.target).resolve()
+        """The linked file on this machine: the link names a repository path
+        (``docs/examples/...``), found through ``utk_curio/shipped.py``."""
+        linked = posixpath.normpath(f"{contracts.PROMPTS_DIR}/{self.target}")
+        try:
+            return shipped.path(linked).resolve()
+        except ValueError:
+            # Not a file Curio ships, so no shipped dataflow has this path.
+            return (builtin.PROMPT_SOURCE_DIR / self.target).resolve()
 
     @property
     def line(self) -> str:
@@ -247,18 +256,15 @@ def _answer_parts(spec: object) -> set[str]:
 
 def used_examples() -> list[Example]:
     """The "Used" dataflows, read now. Empty, with one warning per process,
-    when this install ships no dataflows (a pip install has no ``docs/examples``)."""
+    when this install has no shipped dataflows."""
     global _warned_missing
-    shipped = projects_services.shipped_dataflow_paths()
-    if not shipped:
+    dataflows = projects_services.shipped_dataflow_paths()
+    if not dataflows:
         if not _warned_missing:
             _warned_missing = True
-            log.warning(
-                "No shipped dataflows found (an installed Curio ships no docs/examples), "
-                "so runs get no worked examples"
-            )
+            log.warning("No shipped dataflows found, so runs get no worked examples")
         return []
-    keys = {path.resolve(): key for key, path in shipped.items()}
+    keys = {path.resolve(): key for key, path in dataflows.items()}
     out = []
     for entry in read_index():
         key = keys.get(entry.path)

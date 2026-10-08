@@ -373,8 +373,9 @@ def test_examples_read_their_data_from_the_catalog(basename):
     """Every tabular/raster/vector input resolves by dataset id, not by path.
 
     A literal ``docs/examples/data/x.csv`` in an example node works on a repo
-    checkout and nowhere else: ``MANIFEST.in`` does not ship ``docs/``, so a pip
-    install has no such tree, and an isolated sandbox cannot reach one. That
+    checkout and nowhere else: the path is relative to the folder Curio starts
+    from, which has no such tree in a pip install, and an isolated sandbox
+    cannot reach one. That
     portability is the whole point of moving these into the Data Catalog, and a
     single un-migrated node is enough to make an example machine-specific again.
 

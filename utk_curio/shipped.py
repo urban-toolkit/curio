@@ -3,12 +3,15 @@
 The repository keeps them beside ``utk_curio/``: the Data Catalog's datasets
 (``datasets/``), the Discovery Catalog's sources (``discovery/``), the Model
 Catalog's models (``models/``), the Node Catalog's packages (``packages/``),
-the scripts (``scripts/``) and DuckDB's extensions (``vendor/``). A clone, the
-Docker image and CI read them there.
+the scripts (``scripts/``) and DuckDB's extensions (``vendor/``), and
+``docs/``, of which Curio reads the dataflows it ships, the Example storage
+source's folder, the agent evaluation's prompt fixtures and two schemas. A
+clone, the Docker image and CI read them there.
 
 The pip package carries them inside ``utk_curio/``, at
 ``utk_curio/_shipped/<folder>/`` (``setup.py`` maps them there), so a pip
 install puts nothing in site-packages but ``utk_curio/`` and its dist-info.
+Of ``docs/`` it carries only what Curio reads (``MANIFEST.in`` names it).
 The sdist keeps the repository's layout.
 
 Every reader asks :func:`path`. The layout is decided once, by whether
@@ -29,7 +32,7 @@ CODE_ROOT = Path(__file__).resolve().parents[1]
 IN_THE_PACKAGE = PurePosixPath("utk_curio", "_shipped")
 
 #: The folders Curio ships beside its code, by their name in the repository.
-FOLDERS = ("datasets", "discovery", "models", "packages", "scripts", "vendor")
+FOLDERS = ("datasets", "discovery", "docs", "models", "packages", "scripts", "vendor")
 
 
 def root(code_root=None) -> Path:
