@@ -12,7 +12,7 @@ import { withExtensionRetry } from './duckdbExtensionRetry';
 import { autkTableName } from '../../utils/autkInput';
 import { framesFromPayload } from '../../utils/grammarInput';
 import { deriveBuildingHeight } from '../../utils/buildingHeight';
-import { requestedLayerTables } from './autkDataCompile';
+import { loadableFeatures, requestedLayerTables } from './autkDataCompile';
 
 // Message for a load that produced layers, but not the ones the spec asked for.
 // Shared by both loaders so the two paths report a short load identically.
@@ -170,6 +170,17 @@ function explodeBuildingParts(features: any[]): any[] {
     return out;
 }
 
+// A GeoJSON source as autk-db loads it: its rows through loadableFeatures,
+// fetched first when the source names a file, as the grammar's own adapter does.
+// The sandbox's copy is in compileDataSpecToAutkDbJs.
+async function loadableGeojson(source: any): Promise<any> {
+    let fc = source.geojsonObject;
+    if (fc == null && source.geojsonFileUrl) fc = await (await fetch(source.geojsonFileUrl)).json();
+    if (fc == null || !Array.isArray(fc.features)) return source;
+    const { geojsonFileUrl: _url, ...rest } = source;
+    return { ...rest, geojsonObject: { ...fc, features: loadableFeatures(fc.features).features } };
+}
+
 // Load a data-only grammar spec's sources directly with AutkDb and return the
 // resulting layers, so a grammar node can export its parsed data downstream.
 // (The grammar engine itself never exposes the loaded DB — createEngine returns
@@ -192,7 +203,7 @@ export async function loadSpecLayers(spec: any): Promise<Array<{ name: string; t
         const { type, ...rest } = source ?? {};
         try {
             if (type === 'osm') await db.loadOsm(rest);
-            else if (type === 'geojson') await db.loadGeojson(rest);
+            else if (type === 'geojson') await db.loadGeojson(await loadableGeojson(rest));
             else if (type === 'csv') await db.loadCsv(rest);
             else if (type === 'json') await db.loadJson(rest);
             // In-grammar spatial join between already-loaded tables (sources
