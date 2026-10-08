@@ -14,10 +14,12 @@ from __future__ import annotations
 
 import os
 import platform
+import threading
 import time
 
 from flask import Blueprint, jsonify, request
 
+from utk_curio.backend.app.common.token_bucket import TokenBucket
 from utk_curio.backend.app.monitor import counters, errors, hardware, stats, storage
 
 monitor_bp = Blueprint("monitor", __name__, url_prefix="/api/monitor")
@@ -35,7 +37,7 @@ MAX_CLIENT_STACK_CHARS = 8000
 
 _PER_IP_PER_MINUTE = 10
 _GLOBAL_PER_MINUTE = 100
-_rate_state: dict = {}
+_MINUTE = 60.0
 
 
 def _sandbox_monitor():
@@ -242,28 +244,63 @@ def _allow_client_report(key: str) -> bool:
     loop, the global one stops a spread-out flood from filling the window.
     """
     try:
-        now = time.monotonic()
-        window = int(now // 60)
-        state = _rate_state
-        if state.get("window") != window:
-            state.clear()
-            state["window"] = window
-        total = state.get("__total__", 0)
-        if total >= _GLOBAL_PER_MINUTE:
-            return False
-        used = state.get(key, 0)
-        if used >= _PER_IP_PER_MINUTE:
-            return False
-        state[key] = used + 1
-        state["__total__"] = total + 1
-        return True
+        return _client_reports.allow(key, time.monotonic())
     except Exception:  # noqa: BLE001
         return False
 
 
+class _ClientReportBuckets:
+    """The buckets behind :func:`_allow_client_report`.
+
+    A report spends a token from both buckets or from neither, so the refused
+    reports of a browser in a loop leave the global allowance to everyone else.
+    A bucket left alone for a minute is full again, the same as a new one, so
+    once a minute those are dropped and the table holds only recent addresses.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.reset()
+
+    def reset(self) -> None:
+        with self._lock:
+            self.overall: TokenBucket | None = None
+            self.per_address: dict[str, TokenBucket] = {}
+            self.swept_at: float | None = None
+
+    def allow(self, key: str, now: float) -> bool:
+        with self._lock:
+            self._forget_full_buckets(now)
+            if self.overall is None:
+                self.overall = TokenBucket(
+                    _GLOBAL_PER_MINUTE, _GLOBAL_PER_MINUTE / _MINUTE, now)
+            if self.overall.refill(now) < 1.0:
+                return False
+            bucket = self.per_address.get(key)
+            if bucket is None:
+                bucket = TokenBucket(_PER_IP_PER_MINUTE, _PER_IP_PER_MINUTE / _MINUTE, now)
+                self.per_address[key] = bucket
+            if not bucket.take(now):
+                return False
+            self.overall.take(now)
+            return True
+
+    def _forget_full_buckets(self, now: float) -> None:
+        if self.swept_at is not None and now - self.swept_at < _MINUTE:
+            return
+        self.swept_at = now
+        self.per_address = {
+            key: bucket for key, bucket in self.per_address.items()
+            if bucket.refill(now) < bucket.capacity
+        }
+
+
+_client_reports = _ClientReportBuckets()
+
+
 def reset_rate_limit() -> None:
     """For tests only."""
-    _rate_state.clear()
+    _client_reports.reset()
 
 
 def _iso_now() -> str:
