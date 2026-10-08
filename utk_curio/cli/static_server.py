@@ -9,6 +9,8 @@ import urllib.request
 from html import escape as html_escape
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
+from utk_curio.common.backend_address import backend_base_url
+
 
 # How long the page server waits for the backend to assemble a dashboard before
 # serving the page without its data. Generous because assembling reads every
@@ -56,6 +58,23 @@ def _refused_page(project_id: str, answer: urllib.error.HTTPError) -> dict:
     }
 
 
+def _payload_backend(backend_url: str) -> str:
+    """Where this server asks for a dashboard's data, given ``--backend-url``.
+
+    An http(s) address is asked as a browser would ask it. A path, such as the
+    hosted stacks' ``/api``, is on whichever host serves the page, where a
+    proxy hands it to the backend with the prefix stripped; this server sits
+    behind that proxy, so it asks the backend the launcher started, at the
+    address the launcher hands its children (``backend_base_url``), as the
+    sandbox does. No ``--backend-url``, no data.
+    """
+    if not backend_url:
+        return ""
+    if backend_url.startswith(("http://", "https://")):
+        return backend_url.rstrip("/")
+    return backend_base_url()
+
+
 def run_spa_static_server(directory: str, port: int, base_path: str = "", backend_url: str = "") -> None:
     """Serve a built SPA with index.html fallback for deep links.
 
@@ -71,12 +90,16 @@ def run_spa_static_server(directory: str, port: int, base_path: str = "", backen
     ``<meta name="curio-backend-url">`` that ``backendUrl.ts`` reads. A request
     that still carries the prefix, because no proxy in front strips it, is
     served too.
+
+    A dashboard's page is served with its data, which this server asks the
+    backend for itself (``_payload_backend``).
     """
 
     dist_dir = os.path.abspath(directory)
     index_file = os.path.join(dist_dir, "index.html")
     base_tag = f'<base href="{base_path}/">'
     backend_tag = f'<meta name="curio-backend-url" content="{html_escape(backend_url)}">' if backend_url else ""
+    payload_backend = _payload_backend(backend_url)
 
     def index_html(extra_head: str = "") -> bytes:
         with open(index_file, encoding="utf-8") as fh:
@@ -102,7 +125,7 @@ def run_spa_static_server(directory: str, port: int, base_path: str = "", backen
         The whole point of the page is that it stands on its own, so the
         fetching happens here, once, on the server, instead of a dozen times in
         the browser. This process has no database, so it asks the backend for
-        the assembled payload the same way a browser would have.
+        the assembled payload, at ``payload_backend``.
 
         A dashboard the backend refuses to build (``DASHBOARD_REFUSALS``)
         carries the backend's reason in its place, and the page says why and
@@ -111,11 +134,11 @@ def run_spa_static_server(directory: str, port: int, base_path: str = "", backen
         slower than ``DASHBOARD_EMBED_TIMEOUT``, returns "", which leaves an
         ordinary SPA page that fetches for itself.
         """
-        if not backend_url:
+        if not payload_backend:
             return ""
         try:
             with urllib.request.urlopen(
-                f"{backend_url.rstrip('/')}/api/projects/{project_id}/dashboard",
+                f"{payload_backend}/api/projects/{project_id}/dashboard",
                 timeout=DASHBOARD_EMBED_TIMEOUT,
             ) as resp:
                 if resp.status != 200:

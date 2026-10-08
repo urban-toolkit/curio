@@ -35,6 +35,7 @@ import os
 import re
 import uuid
 from typing import TYPE_CHECKING
+from urllib.parse import urlsplit
 
 import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, expect
@@ -52,6 +53,7 @@ from .utils import (
     require_owner_view,
     require_project_page,
     require_user_auth,
+    serve_built_frontend,
     stub_db_login,
     stub_login_and_enter_workflow,
     viewport_hints,
@@ -81,6 +83,9 @@ CHART_SPEC = json.dumps({
         "y": {"field": "count", "type": "quantitative"},
     },
 }, indent=2)
+
+#: Every route a page asks the server for data on.
+DATA_ROUTES = ("**/api/**", "**/get?**", "**/get-preview?**", "**/raster?**", "**/live", "**/starters")
 
 
 def _node(node_id: str, node_type: str, x: int, content: str = "") -> dict:
@@ -238,6 +243,170 @@ def test_the_owner_opens_a_dashboard_that_draws_without_a_run(
         ".filter((n) => n.style?.display !== 'none').map((n) => n.id)"
     )
     assert visible == [CHART], f"tiles on the page: {visible!r}"
+
+
+def _serve_hosted(app_frontend: "FrontendPage", current_server: str, monkeypatch) -> str:
+    """The production page server on the built bundle, started the hosted way.
+
+    The hosted stacks start Curio with ``--backend-url /api``: the backend is a
+    path on whichever host serves the page, behind a proxy. The page server
+    asks the backend the launcher started for a dashboard's data, at the
+    address the launcher hands its children (FLASK_BACKEND_HOST/PORT), here
+    this worker's backend. The dashboards the other tests here open come from
+    this stack's own page server, which was given an address on the runner
+    that does not answer inside its container, so they fetch their data.
+
+    It is opened on the app's own host, as a hosted stack serves both from one
+    origin, so a browser signed in to the app is signed in on the page too.
+    """
+    backend = urlsplit(current_server)
+    monkeypatch.setenv("FLASK_BACKEND_HOST", backend.hostname)
+    monkeypatch.setenv("FLASK_BACKEND_PORT", str(backend.port))
+    return serve_built_frontend("/api", host=urlsplit(app_frontend.base_url).hostname)
+
+
+def test_a_dashboard_served_as_the_hosted_stacks_serve_it_carries_its_data(
+    app_frontend: "FrontendPage", current_server, page, browser, monkeypatch,
+):
+    """The page draws with every data request refused, because it carries its data.
+
+    Opened by a visitor with no session, in a browser of its own: nothing at
+    all is asked of the server.
+    """
+    require_project_page()
+    require_user_auth()
+    session = _pinned_and_saved(page, app_frontend, current_server, prefix="dash_hosted")
+    project_id = session["project"]["id"]
+    # Off the canvas: it can still save on its way out.
+    page.goto("about:blank")
+    hosted = _serve_hosted(app_frontend, current_server, monkeypatch)
+
+    visitor_ctx = browser.new_context()
+    try:
+        visitor = visitor_ctx.new_page()
+        asked: list[str] = []
+
+        def refuse(route, request):
+            asked.append(f"{request.method} {request.url}")
+            route.abort()
+
+        for pattern in DATA_ROUTES:
+            visitor.route(pattern, refuse)
+
+        visitor.goto(f"{hosted}/dashboard/{project_id}", wait_until="domcontentloaded")
+        assert visitor.locator("script#curio-dashboard-payload").count() == 1, (
+            "the page server, given --backend-url /api as the hosted stacks are, served "
+            "the dashboard without its data, so the page fetches it from the server"
+        )
+        visitor.get_by_test_id("open-dataflow-link").wait_for(state="visible", timeout=45000)
+        drawn_problem = None
+        try:
+            _chart_drew(visitor)
+        except (AssertionError, PlaywrightTimeoutError) as exc:
+            drawn_problem = str(exc)
+        assert asked == [], (
+            "the dashboard asked the server for data: " + ", ".join(asked)
+            + f". The chart: {drawn_problem or 'drew'}"
+        )
+        assert drawn_problem is None, drawn_problem
+    finally:
+        visitor_ctx.close()
+
+
+#: The one thing a page served with its data asks when the browser holds a
+#: session: whether that session may edit the dashboard's layout.
+EDIT_CHECK_PATH = "/dashboard/can-edit"
+
+
+def test_the_owner_of_a_dashboard_served_with_its_data_edits_its_layout(
+    app_frontend: "FrontendPage", current_server, page, browser, monkeypatch,
+):
+    """Served with its data, the dashboard still knows its owner.
+
+    A page served complete has no session of its own and names no account. A
+    browser that holds a session asks whether it may edit the layout
+    (``GET /api/projects/<id>/dashboard/can-edit``). The owner gets Edit layout
+    and Save layout as on a page that fetches. A viewer signed in on another
+    account gets the read-only page, its data from the page, having asked that
+    one question and nothing else.
+    """
+    require_project_page()
+    require_user_auth()
+    session = _pinned_and_saved(page, app_frontend, current_server, prefix="dash_hosted_owner")
+    project_id = session["project"]["id"]
+    before = _project(current_server, session["token"], project_id)
+    page.goto("about:blank")
+    hosted = _serve_hosted(app_frontend, current_server, monkeypatch)
+
+    # The owner, signed in on this browser.
+    page.goto(f"{hosted}/dashboard/{project_id}", wait_until="domcontentloaded")
+    assert page.locator("script#curio-dashboard-payload").count() == 1, (
+        "the page server served the dashboard without its data"
+    )
+    edit = page.get_by_test_id("edit-layout-btn")
+    try:
+        edit.wait_for(state="visible", timeout=45000)
+    except PlaywrightTimeoutError:
+        pytest.fail(
+            "the owner, signed in on this browser, got the page served with its data "
+            "read-only: it offers no Edit layout"
+        )
+    _chart_drew(page)
+    edit.click()
+    handle = page.locator(
+        f'.react-flow__node[data-id="{CHART}"] .curio-dashboard-tile-handle'
+    ).first
+    box = handle.bounding_box()
+    assert box, "the tile's title band has no box to grab"
+    x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.mouse.move(x + 140, y + 70, steps=10)
+    page.mouse.up()
+    page.get_by_test_id("save-layout-btn").click()
+    page.get_by_test_id("save-layout-btn").wait_for(state="detached", timeout=20000)
+
+    after = _project(current_server, session["token"], project_id)
+    chart_before = _node_in_spec(before, CHART)
+    chart_after = _node_in_spec(after, CHART)
+    assert (chart_after.get("dashboardX"), chart_after.get("dashboardY")) != (
+        chart_before.get("dashboardX"), chart_before.get("dashboardY"),
+    ), "the owner's new layout was not saved"
+
+    # A viewer signed in on another account, in a browser of its own.
+    viewer_ctx = browser.new_context()
+    try:
+        viewer = viewer_ctx.new_page()
+        stub_db_login(
+            viewer,
+            frontend_url=app_frontend.base_url,
+            backend_url=current_server,
+            username=f"dash_viewer_{uuid.uuid4().hex[:8]}",
+            name="Someone Else",
+        )
+        checked: list[str] = []
+        asked: list[str] = []
+
+        def only_the_check(route, request):
+            if urlsplit(request.url).path.endswith(EDIT_CHECK_PATH):
+                checked.append(request.url)
+                route.continue_()
+                return
+            asked.append(f"{request.method} {request.url}")
+            route.abort()
+
+        for pattern in DATA_ROUTES:
+            viewer.route(pattern, only_the_check)
+
+        viewer.goto(f"{hosted}/dashboard/{project_id}", wait_until="domcontentloaded")
+        viewer.get_by_test_id("shared-view-banner").wait_for(timeout=45000)
+        assert_vega_canvas_rendered(viewer, CHART, timeout=90000)
+        assert viewer.get_by_test_id("edit-layout-btn").count() == 0
+        # The session asked once, was told no, and asked nothing else.
+        assert len(checked) == 1, f"the viewer's page asked whether it may edit {len(checked)} times"
+        assert asked == [], "the viewer's page asked the server for more: " + ", ".join(asked)
+    finally:
+        viewer_ctx.close()
 
 
 def test_the_editor_restores_saved_outputs_on_reload(

@@ -23,6 +23,7 @@ import os
 import threading
 import time
 
+from utk_curio.common.backend_address import backend_base_url
 from utk_curio.common.redaction import redact
 from utk_curio.sandbox.util.node_runtime import (
     OVERPASS_USER_AGENT,
@@ -858,27 +859,6 @@ def is_node_internal_stream_crash(exit_code, stdout_lines, stderr_lines) -> bool
 # here, in the process that actually performs the fetch, rather than guessed in
 # the browser bundle.
 _SANDBOX_BACKEND_URL_TOKEN = '__CURIO_BACKEND_URL__'
-
-
-def backend_base_url():
-    """``http://host:port`` for the backend, as reachable from this process.
-
-    ``cli/environment.py::set_environment_variables`` exports FLASK_BACKEND_HOST/PORT and
-    start_sandbox passes the environment through, so a sandbox launched with the
-    stack always has the true values - including on a custom-port stack, where
-    the browser's own port would be wrong, and inside a container, where a
-    host-published port is not the one to dial.
-
-    The loopback host is normalised to 127.0.0.1: Node's fetch can stall when
-    ``localhost`` resolves to IPv6 ::1 while Flask listens on IPv4 only.
-    """
-    import os
-
-    host = os.environ.get('FLASK_BACKEND_HOST') or '127.0.0.1'
-    port = os.environ.get('FLASK_BACKEND_PORT') or '5002'
-    if host in ('localhost', '0.0.0.0', '::', '[::]'):
-        host = '127.0.0.1'
-    return f'http://{host}:{port}'
 
 
 def run_js_script(code, input_data, *, cwd, node_type, t0=None, node_flags=(), node_modules=None):

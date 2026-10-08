@@ -24,7 +24,14 @@ const mockHydrateRestoredOutputs = jest.fn();
 const mockSetWorkflowName = jest.fn();
 
 let mockRouteId = "11111111-2222-3333-4444-555555555555";
+let mockToken: string | undefined;
+const mockApiFetch = jest.fn();
 
+jest.mock("../../utils/authApi", () => ({
+  ...jest.requireActual("../../utils/authApi"),
+  getToken: () => mockToken,
+  apiFetch: (...a: unknown[]) => mockApiFetch(...a),
+}));
 jest.mock("react-router-dom", () => ({
   useParams: () => ({ id: mockRouteId }),
   useNavigate: () => jest.fn(),
@@ -88,6 +95,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockRouteId = `11111111-2222-3333-4444-${String(Date.now()).slice(-12)}`;
   mockLoadTrill.mockReturnValue({ nodes: SPEC.dataflow.nodes, edges: BUILT_EDGES });
+  mockToken = undefined;
+  mockApiFetch.mockResolvedValue({ canEdit: false });
 });
 
 describe("restoring saved outputs", () => {
@@ -237,5 +246,65 @@ describe("a dashboard the server refused", () => {
     expect(mockLoadTrill).not.toHaveBeenCalled();
     // The bar names the dataflow, as it does on a page that carries one.
     expect(mockSetWorkflowName).toHaveBeenCalledWith("Trips");
+  });
+});
+
+describe("a dashboard served with its data", () => {
+  // The page names no account. A browser that holds a session asks whether it
+  // may edit the layout (`/dashboard/can-edit`); on a yes it gets the dataflow
+  // the way a fetching page loads it, so the layout controls work. Anyone else
+  // gets the page's own data.
+  beforeEach(() => {
+    const el = document.createElement("script");
+    el.id = "curio-dashboard-payload";
+    el.type = "application/json";
+    el.textContent = JSON.stringify({
+      meta: { projectId: mockRouteId, name: "Trips" },
+      spec: SPEC,
+      outputs: {},
+      outputRefs: OUTPUTS,
+    });
+    document.body.appendChild(el);
+    resetEmbeddedDashboardForTests();
+  });
+
+  afterEach(() => {
+    document.getElementById("curio-dashboard-payload")?.remove();
+    resetEmbeddedDashboardForTests();
+  });
+
+  it("gives a session that may edit it the dataflow as a fetching page loads it", async () => {
+    mockToken = "owner-token";
+    mockApiFetch.mockResolvedValue({ canEdit: true });
+    mockLoadProject.mockResolvedValue({ spec: SPEC, outputs: OUTPUTS });
+
+    const { getByTestId } = renderLoader(true);
+
+    await waitFor(() => expect(getByTestId("state").textContent).toBe("loaded"));
+    expect(mockLoadProject).toHaveBeenCalledWith(mockRouteId);
+    expect(mockLoadSharedProject).not.toHaveBeenCalled();
+  });
+
+  it("gives a session that may not the page's own data", async () => {
+    mockToken = "viewer-token";
+
+    const { getByTestId } = renderLoader(true);
+
+    await waitFor(() => expect(getByTestId("state").textContent).toBe("loaded"));
+    expect(mockLoadProject).not.toHaveBeenCalled();
+    expect(mockLoadSharedProject).not.toHaveBeenCalled();
+    expect(mockLoadTrill).toHaveBeenCalledWith(SPEC, undefined, undefined, { py: OUTPUTS[0].filename });
+  });
+
+  it("falls back to the page's own data when the owner's load fails", async () => {
+    mockToken = "owner-token";
+    mockApiFetch.mockResolvedValue({ canEdit: true });
+    mockLoadProject.mockRejectedValue(Object.assign(new Error("offline"), { status: 0 }));
+
+    const { getByTestId } = renderLoader(true);
+
+    await waitFor(() => expect(getByTestId("state").textContent).toBe("loaded"));
+    expect(mockLoadSharedProject).not.toHaveBeenCalled();
+    expect(mockLoadTrill).toHaveBeenCalledWith(SPEC, undefined, undefined, { py: OUTPUTS[0].filename });
   });
 });

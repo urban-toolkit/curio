@@ -5,7 +5,12 @@ server inlines the spec and the rows instead of letting the browser fetch them.
 This process has no database, so it asks the backend once, on the server, for
 the payload a browser would otherwise have assembled from a dozen requests.
 
-Three things here are worth a test rather than a reading.
+Four things here are worth a test rather than a reading.
+
+The page server must reach the backend however the instance names it. The
+hosted stacks pass ``--backend-url /api``, a path on whichever host serves the
+page, which a proxy in front hands to the backend; the page server is behind
+that proxy, so it asks the backend the launcher started instead.
 
 The page must not break out of its own script tag. The payload is somebody's
 data, column names and all, and a dataflow that produced the text
@@ -142,6 +147,28 @@ def test_a_dashboard_page_carries_its_own_data(tmp_path):
 
         assert _embedded(html) == PAYLOAD
         assert backend.paths == [f"/api/projects/{DASHBOARD_ID}/dashboard"]
+
+
+def test_with_a_path_for_backend_url_it_asks_the_backend_the_launcher_started(
+    tmp_path, monkeypatch
+):
+    # The hosted stacks: --backend-url /api, the backend as a path on whichever
+    # host serves the page. A proxy in front strips the prefix, so the backend
+    # itself answers /api/projects/..., at the address the launcher hands its
+    # children (FLASK_BACKEND_HOST/PORT; 0.0.0.0 is what a container listens on).
+    with _StubBackend(PAYLOAD) as backend:
+        monkeypatch.setenv("FLASK_BACKEND_HOST", "0.0.0.0")
+        monkeypatch.setenv("FLASK_BACKEND_PORT", str(backend.port))
+        spa = _start_spa(tmp_path, "/api")
+
+        html = _get(spa, f"/dashboard/{DASHBOARD_ID}")
+
+        assert _embedded(html) == PAYLOAD, (
+            "a page served with --backend-url /api carries no data, so it fetches its data itself"
+        )
+        assert backend.paths == [f"/api/projects/{DASHBOARD_ID}/dashboard"]
+        # The browser still reaches the backend by the path.
+        assert '<meta name="curio-backend-url" content="/api">' in html
 
 
 def test_the_payload_survives_a_script_tag_in_the_data(tmp_path):
