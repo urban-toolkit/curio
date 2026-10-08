@@ -415,8 +415,8 @@ describe("only an Autark node", () => {
   });
 
   test("two inputs that land before WebGPU answers draw once", async () => {
-    // A Data Pool hands its rows on with every fetch that lands, and a load
-    // can deliver a saved output to it twice. On a GPU that is slow to answer,
+    // A Data Pool hands its rows on with every fetch that lands, so a map can
+    // get a second input while it waits. On a GPU that is slow to answer,
     // both arrive while the probe is still out. Each queued a draw on that one
     // answer, both ran in one tick, and two `sendCode` calls in one tick
     // cancel each other in the widgets pass: the map never ran, and sat at
