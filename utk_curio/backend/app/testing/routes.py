@@ -893,10 +893,15 @@ def package_store():
     can compare the store copy against the catalog it came from in one call.
     ``stale`` appends a marker byte to the file and records the result as the
     copy the catalog installed, then answers the same shape, after which the
-    two hashes differ by construction.
+    two hashes differ.
+
+    Every action runs under the store lock the seeder swaps under, so a seeding
+    pass lands before or after it and the answer describes the copy the action
+    left.
     """
     import hashlib
 
+    from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
     from utk_curio.backend.app.packages.repositories import seed_state
     from utk_curio.backend.app.packages.repositories.catalog_dir import catalog_root as _catalog_root
     from utk_curio.backend.app.packages.service import (
@@ -926,74 +931,77 @@ def package_store():
     if user is None:
         return jsonify({"error": f"no such user: {username}"}), 404
 
+    store_key = _user_dir_key(user)
     try:
-        store_root = package_dir(_user_dir_key(user), dir_name)
+        store_root = package_dir(store_key, dir_name)
     except Exception as exc:  # noqa: BLE001 — traversal guard etc.
         return jsonify({"error": str(exc)}), 400
-
-    if action == "reset":
-        # Drop the store copy so the next install is a true first install.
-        #
-        # A test cannot get this by using a fresh username. The store is keyed
-        # by user ID, and the e2e harness truncates the ``user`` table between
-        # tests, so SQLite reissues low ids and a brand-new account inherits
-        # whatever the last occupant of that id left on disk — including, for
-        # this test, a deliberately damaged file. That is the hazard the recheck
-        # logged as F6; until it is fixed at the source, a test that needs a
-        # known starting state has to say so explicitly.
-        import shutil
-
-        if store_root.is_dir():
-            shutil.rmtree(store_root, ignore_errors=True)
-        seed_state.clear(_user_dir_key(user), dir_name)
-        return jsonify({"reset": dir_name, "present": store_root.is_dir()}), 200
-
-    target = store_root / rel
-    if not target.is_file():
-        return jsonify({"error": f"not in the store: {dir_name}/{rel}"}), 404
-
-    if action == "stale":
-        from utk_curio.backend.app.packages.repositories.archive import refresh_package_integrity
-
-        # A marker byte rather than a rewrite: the file stays valid for anything
-        # that only parses it, so the ONLY thing this changes is the hash.
-        with open(target, "ab") as fh:
-            fh.write(b"\n// stale-marker\n")
-        # ...and then rewrite the store copy's own integrity.json to match.
-        #
-        # This is what makes it an UPGRADE rather than a corruption, and the
-        # distinction is the whole point. A real upgrade leaves the user's copy
-        # internally consistent — its files and its integrity map agree, they
-        # are simply an older pair than the catalog's. Perturbing the file alone
-        # leaves the store's map still quoting the original hash, so it matches
-        # the catalog's map and the refresh correctly declines to act: the copy
-        # is damaged, not out of date, and repairing damage is a different job
-        # (`_package_is_healthy`). Skipping this step made the first version of
-        # this endpoint simulate the wrong thing entirely.
-        #
-        # ...and record that older pair as the copy the catalog installed,
-        # which is what an upgrade leaves behind. Clearing the record instead
-        # made the copy look like one from before the record existed, and a
-        # copy recorded as the user's own is never refreshed at all (#564).
-        integrity = refresh_package_integrity(store_root)
-        seed_state.mark_installed(
-            _user_dir_key(user), dir_name, catalog_copy=seed_state.copy_digest(integrity),
-        )
 
     def _sha256(path):
         h = hashlib.sha256()
         h.update(path.read_bytes())
         return h.hexdigest()
 
-    catalog_file = _catalog_root() / dir_name / rel
-    return (
-        jsonify(
-            {
-                "sha256": _sha256(target),
-                "catalog_sha256": _sha256(catalog_file) if catalog_file.is_file() else None,
-                "path": rel,
-                "dirName": dir_name,
-            }
-        ),
-        200,
-    )
+    # The lock every other reader and writer of the store holds (memo dev/99).
+    # The page's own requests run seeding passes: one landing between the
+    # plant's record and its read-back would refresh the planted copy and the
+    # plant would answer the catalog's hash, and a read could fall between a
+    # swap's two renames.
+    with package_seed_lock(store_key):
+        if action == "reset":
+            # Drop the store copy so the next install is a true first install.
+            #
+            # A test cannot get this by using a fresh username. The store is keyed
+            # by user ID, and the e2e harness truncates the ``user`` table between
+            # tests, so SQLite reissues low ids and a brand-new account inherits
+            # whatever the last occupant of that id left on disk, including, for
+            # this test, a deliberately damaged file. That is the hazard the recheck
+            # logged as F6; until it is fixed at the source, a test that needs a
+            # known starting state has to say so explicitly.
+            import shutil
+
+            if store_root.is_dir():
+                shutil.rmtree(store_root, ignore_errors=True)
+            seed_state.clear(store_key, dir_name)
+            return jsonify({"reset": dir_name, "present": store_root.is_dir()}), 200
+
+        target = store_root / rel
+        if not target.is_file():
+            return jsonify({"error": f"not in the store: {dir_name}/{rel}"}), 404
+
+        if action == "stale":
+            from utk_curio.backend.app.packages.repositories.archive import refresh_package_integrity
+
+            # A marker byte rather than a rewrite: the file stays valid for anything
+            # that only parses it, so the ONLY thing this changes is the hash.
+            with open(target, "ab") as fh:
+                fh.write(b"\n// stale-marker\n")
+            # ...and then rewrite the store copy's own integrity.json to match.
+            #
+            # This is what makes it an UPGRADE rather than a corruption, and the
+            # distinction is the whole point. A real upgrade leaves the user's copy
+            # internally consistent: its files and its integrity map agree, they
+            # are simply an older pair than the catalog's. Perturbing the file alone
+            # leaves the store's map still quoting the original hash, so it matches
+            # the catalog's map and the refresh correctly declines to act: the copy
+            # is damaged, not out of date, and repairing damage is a different job
+            # (`_package_is_healthy`). Skipping this step made the first version of
+            # this endpoint simulate the wrong thing entirely.
+            #
+            # ...and record that older pair as the copy the catalog installed,
+            # which is what an upgrade leaves behind. Clearing the record instead
+            # made the copy look like one from before the record existed, and a
+            # copy recorded as the user's own is never refreshed at all (#564).
+            integrity = refresh_package_integrity(store_root)
+            seed_state.mark_installed(
+                store_key, dir_name, catalog_copy=seed_state.copy_digest(integrity),
+            )
+
+        catalog_file = _catalog_root() / dir_name / rel
+        answer = {
+            "sha256": _sha256(target),
+            "catalog_sha256": _sha256(catalog_file) if catalog_file.is_file() else None,
+            "path": rel,
+            "dirName": dir_name,
+        }
+    return jsonify(answer), 200
