@@ -87,7 +87,7 @@ def base_url(servers: dict, port_key: str) -> str:
     return f"http://{host}:{port}"
 
 
-def serve_built_frontend(backend_url: str) -> str:
+def serve_built_frontend(backend_url: str, host: str = "127.0.0.1") -> str:
     """Start the production page server on the built bundle, host-side; returns its URL.
 
     It is the server a deployed Curio runs (``run_spa_static_server``), the one
@@ -96,6 +96,10 @@ def serve_built_frontend(backend_url: str) -> str:
     container, where the address it was given does not answer, so its dashboard
     pages carry nothing; a test that opens one that does serves it here. The
     server runs in a daemon thread for the rest of the worker's life.
+
+    *host* is the name the returned URL opens the page at. The app's own host
+    makes the browser's session cookie (host-only, whatever the port) the
+    page's too, as on a hosted stack, where one origin serves both.
     """
     import threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -119,6 +123,6 @@ def serve_built_frontend(backend_url: str) -> str:
     threading.Thread(
         target=run_spa_static_server, args=(dist, port, "", backend_url), daemon=True,
     ).start()
-    url = f"http://127.0.0.1:{port}"
+    url = f"http://{host}:{port}"
     wait_for_http_ready(url, path="/", timeout=15.0)
     return url

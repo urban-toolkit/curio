@@ -182,11 +182,14 @@ env:
 #   * test-gpu-stress: always utk-gpu.
 #
 # GitHub cannot send a job to one runner, or another when the first is busy, so
-# pick-runners chooses for each job when the run starts. Every self-hosted
-# runner is a container with a Docker daemon of its own that keeps its
-# workspace between jobs (uic-evl/evl-github-runners), so each job hands back
-# the files its containers wrote before checkout, and start-stack and
-# stop-stack remove the curio stacks a job leaves behind.
+# pick-runners chooses for each job when the run starts. A self-hosted runner
+# keeps its workspace and its Docker daemon between jobs. Each arcade runner is
+# a container with a daemon of its own (uic-evl/evl-github-runners); utk-gpu
+# runs on its host as the user deploy, on the host's daemon, which also runs
+# other stacks. So every job that can run on one starts by removing the
+# curio-ci* stacks an earlier job left and handing back the files containers
+# wrote as root (build-image's first step, `&reclaim`), and a job that starts a
+# stack tears it down at its end (stop-stack, or a step of its own).
 #
 # Concurrency is set on the GPU jobs, not on the run: a GPU runner has one GPU
 # and a fixed set of CI ports, so two of its jobs must never execute at once,
@@ -255,9 +258,32 @@ jobs:
     outputs:
       image: ${{ steps.name.outputs.image }}
     steps:
-      - name: 🧹 Reclaim root-owned workspace files (self-hosted)
+      # The first step of every job that can run on a self-hosted runner; the
+      # jobs below repeat it as `*reclaim`. A job cancelled before its teardown
+      # leaves its stack running, writing into this workspace as root, and
+      # compose would reuse it under a later job of the same project. So every
+      # curio-ci* compose stack still on the daemon goes first, found by label,
+      # which needs no compose file and leaves every other stack alone. Then a
+      # throwaway root container hands the files containers wrote as root back
+      # to the runner user, which actions/checkout's clean needs. A local action
+      # could not do this: it is not on disk before checkout.
+      - &reclaim
+        name: 🧹 Remove stacks an earlier job left, reclaim root-owned files (self-hosted)
         if: runner.environment == 'self-hosted'
-        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: |
+          projects=$(docker ps -a --format '{{.Label "com.docker.compose.project"}}' | grep '^curio-ci' | sort -u || true)
+          [ -n "$projects" ] || echo "no stack an earlier job left"
+          for project in $projects; do
+            echo "removing stack $project"
+            label="label=com.docker.compose.project=$project"
+            docker ps -aq --filter "$label" | xargs -r docker rm -f
+            docker volume ls -q --filter "$label" | xargs -r docker volume rm
+            docker network ls -q --filter "$label" | xargs -r docker network rm
+          done
+          echo "handing root-owned files back to the runner user"
+          docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
 
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
@@ -382,16 +408,7 @@ jobs:
       CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
 
     steps:
-      # On the persistent self-hosted runner, the previous run's container
-      # writes files into the workspace as root (.curio/, instance/*.db, ...),
-      # which the runner user (deploy) cannot delete — that fatally breaks
-      # actions/checkout's clean. Chown the whole workspace back to the runner
-      # user via a throwaway root container BEFORE checkout runs, so it can
-      # clean any container-created artifact. (Runs in the leftover workspace
-      # from the prior run; a no-op on a fresh runner.)
-      - name: 🧹 Reclaim root-owned workspace files (self-hosted)
-        if: runner.environment == 'self-hosted'
-        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+      - *reclaim
 
       # The runner image points Vulkan at NVIDIA's EGL library on GPU runners
       # (uic-evl/evl-github-runners); this shows what the job got.
@@ -775,9 +792,7 @@ jobs:
       FLASK_SANDBOX_PORT: "2020"
       CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
     steps:
-      - name: 🧹 Reclaim root-owned workspace files (self-hosted)
-        if: runner.environment == 'self-hosted'
-        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+      - *reclaim
 
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
@@ -827,10 +842,7 @@ jobs:
       run:
         working-directory: utk_curio/frontend/urban-workflows
     steps:
-      - name: 🧹 Reclaim root-owned workspace files (self-hosted)
-        if: runner.environment == 'self-hosted'
-        working-directory: ${{ github.workspace }}
-        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+      - *reclaim
 
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
@@ -919,9 +931,7 @@ jobs:
       FLASK_SANDBOX_PORT: "2020"
       CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
     steps:
-      - name: 🧹 Reclaim root-owned workspace files (self-hosted)
-        if: runner.environment == 'self-hosted'
-        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+      - *reclaim
 
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
@@ -1045,9 +1055,7 @@ jobs:
       CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/ci-report/failures
       CURIO_E2E_TRACE: "1"
     steps:
-      - name: 🧹 Reclaim root-owned workspace files (self-hosted)
-        if: runner.environment == 'self-hosted'
-        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+      - *reclaim
 
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
@@ -1188,9 +1196,7 @@ jobs:
       CURIO_LIVE_LAUNCH_DIR: /app
       CURIO_LIVE_EXEC_USER: curio-exec
     steps:
-      - name: 🧹 Reclaim root-owned workspace files (self-hosted)
-        if: runner.environment == 'self-hosted'
-        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+      - *reclaim
 
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
@@ -1546,11 +1552,7 @@ jobs:
       CURIO_WEBGPU_BACKEND: hardware
 
     steps:
-      # Same reason as the exec-user job: this stack hardens bind-mounted
-      # paths to root, and checkout runs as the runner user.
-      - name: 🧹 Reclaim root-owned workspace files (self-hosted)
-        if: runner.environment == 'self-hosted'
-        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+      - *reclaim
 
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
@@ -1628,8 +1630,11 @@ jobs:
       # A stack can be fine for a hundred people working and still fall over
       # when all hundred press Run in the same millisecond, and the two
       # numbers are fixed by different things, so both are recorded.
+      # This stage and the browser tier run after a red stage but not after a
+      # cancel: GitHub force-ends a cancelled job five minutes on, so a cancel
+      # goes straight to the steps that keep the logs and tear the stack down.
       - name: 🚶 Run the session profile (100 users, realistic pacing)
-        if: always()
+        if: ${{ !cancelled() }}
         run: |
           bash scripts/ci_repeat.sh python -m utk_curio.backend.tests.stress \
             --backend "http://localhost:5072" \
@@ -1649,7 +1654,7 @@ jobs:
       # those host-side paths are never read by anything; pointing them at the
       # runner's temp dir costs nothing.
       - name: 🖥️ Run the browser tier (5 concurrent WebGPU users)
-        if: always()
+        if: ${{ !cancelled() }}
         env:
           CURIO_STATE_DIR: ${{ runner.temp }}/stress-e2e/.curio
         run: |
@@ -1730,9 +1735,7 @@ jobs:
       contents: read
       actions: read
     steps:
-      - name: 🧹 Reclaim root-owned workspace files (self-hosted)
-        if: runner.environment == 'self-hosted'
-        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+      - *reclaim
 
       - name: 📥 Checkout repository
         uses: actions/checkout@v6

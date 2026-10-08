@@ -408,3 +408,79 @@ def test_a_tile_that_loads_its_own_data_is_refused_by_name(client, user_and_toke
     assert body.get("name") == "Dashboard", (
         "the refusal does not name its dataflow, so the page that shows it cannot either"
     )
+
+
+# ---------------------------------------------------------------------------
+# Who may edit the layout of a page served with its data
+# ---------------------------------------------------------------------------
+#
+# Anyone with the link opens the page, so it names no account. A browser that
+# holds a session asks GET /api/projects/<id>/dashboard/can-edit instead, and
+# the page offers the layout controls on a yes: the answer is the gate a save
+# of the layout passes, and it says nothing else about the dataflow.
+
+def _second_session(db, username="bob"):
+    """Another signed-in account, as ``user_and_token`` makes one."""
+    from utk_curio.backend.app.users.models import User, UserSession
+
+    user = User(username=username, name=username.title(), email=f"{username}@test.com")
+    db.session.add(user)
+    db.session.flush()
+    token = f"{username}-token-456"
+    db.session.add(UserSession(user_id=user.id, token=token))
+    db.session.commit()
+    return token
+
+
+def test_the_payload_names_no_account(client, user_and_token, tmp_curio):
+    _, token = user_and_token
+    pid = _create(client, token)
+
+    body = client.get(f"/api/projects/{pid}/dashboard").get_json()
+
+    assert set(body["meta"]) == {"projectId", "name", "generatedAt"}
+
+
+def test_the_owner_may_edit_the_layout(client, user_and_token, tmp_curio):
+    _, token = user_and_token
+    pid = _create(client, token)
+
+    resp = client.get(f"/api/projects/{pid}/dashboard/can-edit", headers=_auth(token))
+
+    assert resp.status_code == 200, (
+        f"{resp.status_code}: a page served with its data cannot ask whether this "
+        "session may edit its layout, so it never offers its owner the controls"
+    )
+    assert resp.get_json() == {"canEdit": True}
+
+
+def test_another_account_may_not(client, user_and_token, db, tmp_curio):
+    _, token = user_and_token
+    pid = _create(client, token)
+    other = _second_session(db)
+
+    resp = client.get(f"/api/projects/{pid}/dashboard/can-edit", headers=_auth(other))
+
+    assert resp.status_code == 200, resp.status_code
+    assert resp.get_json() == {"canEdit": False}
+
+
+def test_an_unknown_dataflow_is_a_plain_no(client, user_and_token, tmp_curio):
+    _, token = user_and_token
+
+    resp = client.get(
+        "/api/projects/00000000-0000-0000-0000-000000000000/dashboard/can-edit",
+        headers=_auth(token),
+    )
+
+    assert resp.status_code == 200, resp.status_code
+    assert resp.get_json() == {"canEdit": False}
+
+
+def test_asking_needs_a_session(client, user_and_token, tmp_curio):
+    _, token = user_and_token
+    pid = _create(client, token)
+
+    resp = client.get(f"/api/projects/{pid}/dashboard/can-edit")
+
+    assert resp.status_code == 401

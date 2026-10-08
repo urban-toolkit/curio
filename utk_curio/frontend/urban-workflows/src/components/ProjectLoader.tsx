@@ -41,6 +41,7 @@ import { restoredByNode, restoredOutputs, withOutputs } from "../utils/restoredO
 
 import { SHARE_UUID_RE as UUID_RE } from "../utils/shareLinks";
 import { dashboardRefusal, getEmbeddedDashboard } from "../standalone/dashboardPayload";
+import { mayEditServedDashboard } from "../standalone/servedDashboardAccess";
 
 /** How far the load has got, for a page that has to say which state it is in. */
 export type ProjectLoadState = "idle" | "loading" | "loaded" | "failed";
@@ -259,8 +260,24 @@ export const ProjectLoader: React.FC<{
       // not auto-install the dependencies its spec declares, and `presentation`
       // already blocks that, but saying so twice costs nothing and the day this
       // payload is served on another route it will still be foreign content.
+      //
+      // A session that may edit the layout (`mayEditServedDashboard`, asked
+      // once for the page) gets the dataflow the way a page that fetches loads
+      // it, from the owner's endpoint, so Edit layout, Save layout and Arrange
+      // work as there; the rows still come from the page. If that load fails,
+      // it gets the page's own data like anyone else.
       const embedded = getEmbeddedDashboard();
       if (embedded) {
+        if (await mayEditServedDashboard()) {
+          try {
+            const result = await loadProject(id);
+            applyResult(result, { trusted: true });
+            setLoadState("loaded");
+            return;
+          } catch (ownerErr) {
+            console.error("Failed to load the dashboard as its owner:", ownerErr);
+          }
+        }
         try {
           applyResult(
             { spec: embedded.spec, outputs: embedded.outputRefs ?? [] },
