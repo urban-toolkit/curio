@@ -6,11 +6,13 @@ from logging.handlers import RotatingFileHandler
 from utk_curio.sandbox.config import Config as config_class
 
 from utk_curio.sandbox.extensions import cache
+from utk_curio.sandbox.util.memory_release import ReleaseMemoryWhenIdle
 
 
 # Flask app
 app = Flask(__name__)
 app.config.from_object(config_class)
+app.wsgi_app = ReleaseMemoryWhenIdle(app.wsgi_app)
 
 # Flask-Caching
 cache.init_app(app)

@@ -825,6 +825,10 @@ The sandbox runs as a separate Flask process. It:
   the backend in `execution/sandbox_client.py`, and checked in `sandbox/app/auth.py`. An
   instance started with `--deploy` refuses to boot without one.
 - Sends no CORS headers, because no browser calls it directly.
+- Returns the memory its allocators keep free to the system whenever no
+  request is in flight (`sandbox/util/memory_release.py`): every request runs
+  on a thread of its own, and glibc's malloc arenas and pyarrow's pool would
+  otherwise keep the pages each run freed.
 - Caches repeated executions of identical code + input combinations (`sandbox/app/utils/cache.py`).
 
 > [!WARNING]
@@ -1770,7 +1774,7 @@ The backend is a Flask application in `utk_curio/backend/`. Routes are split acr
 | `/get` | GET | Download an artifact by id (Arrow IPC when the client asks for it). A name the session-tagged store cannot serve falls back to the shared data directory, where a project load hydrates that project's saved outputs, so they are readable by anyone who can load the project |
 | `/get-preview` | GET | First N rows + metadata of an artifact, for DataPool display |
 | `/raster` | GET | A raster artifact (or one `part` of a tuple) as GeoTIFF bytes for an Autark node, described in the `X-Curio-Raster` header; 413 with its size over `maxCells` or `maxSide`. A raster output the session-tagged store cannot serve falls back to its hydrated copy, as `/get` does |
-| `/file/<path>` | GET | Serve a file relative to `CURIO_LAUNCH_CWD` so browser-side nodes can fetch binary assets (PBF, GeoTIFF) by the same relative path Python nodes use. Unauthenticated, so it refuses hidden paths and Curio's own state: the instance folder, the `.curio` state root, the shared data directory, the dataset hub and the SQLite database |
+| `/file/<path>` | GET | Serve a file relative to `CURIO_LAUNCH_CWD` so browser-side nodes can fetch binary assets (PBF, GeoTIFF) by the same relative path Python nodes use. Unauthenticated, so it refuses hidden paths and Curio's own state: the instance folder, the `.curio` state root, the shared data directory, the dataset hub and the SQLite database. `vendor/duckdb-extensions/` comes from the folder that holds `utk_curio/` instead |
 | `/starters` | GET | Per-template starter source bodies from every installed package |
 | `/spatial_join` | POST | Spatial join of two GeoJSON inputs (see `common/spatial.py`) |
 
