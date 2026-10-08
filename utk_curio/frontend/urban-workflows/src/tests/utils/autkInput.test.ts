@@ -364,21 +364,30 @@ describe("loadableSource", () => {
     coordinateFormat: "EPSG:4326",
   });
 
+  const EMPTY = { type: "GeometryCollection", geometries: [] };
+
   test("a first feature without geometry trades places with the first that has one", () => {
     const { source: loaded, order } = loadableSource(source([null, null, point(2, 2), point(3, 3)]));
-    expect((loaded.geojsonObject.features as any[]).map((f) => f.properties.value)).toEqual([2, 1, 0, 3]);
-    // The table holds rows 2, 1, 0, 3; a map draws only 2 and 3.
-    expect(order).toEqual({ load: [2, 1, 0, 3], map: [2, 3] });
+    const features = loaded.geojsonObject.features as any[];
+    expect(features.map((f) => f.properties.value)).toEqual([2, 1, 0, 3]);
+    // Rows 1 and 0 have no geometry, so they get the empty one autk-db loads.
+    expect(features.map((f) => f.geometry)).toEqual([point(2, 2), EMPTY, EMPTY, point(3, 3)]);
+    // The table is handed rows 2, 1, 0, 3; autk-db stores rows 1 and 0, whose
+    // geometry is empty, first, and a map draws the table as stored.
+    expect(order).toEqual({ load: [2, 1, 0, 3], map: [1, 0, 2, 3] });
   });
 
   test("a map pick and a highlight name the input's rows, not positions in what was drawn", () => {
-    const { order } = loadableSource(source([point(0, 0), null, point(2, 2)]));
-    expect(order).toEqual({ load: null, map: [0, 2] });
-    // The second thing the map drew is input row 2...
-    expect(inputRow(1, order.map)).toBe(2);
-    // ...and a highlight on rows 1 and 2 lights map position 1 (row 1 is not drawn).
-    expect(tablePositions([1, 2], order.map)).toEqual([1]);
-    // A plot reads the table as loaded, so its positions are the rows.
+    const { source: loaded, order } = loadableSource(source([point(0, 0), null, point(2, 2)]));
+    expect((loaded.geojsonObject.features as any[]).map((f) => f.geometry)).toEqual([point(0, 0), EMPTY, point(2, 2)]);
+    expect(order).toEqual({ load: null, map: [1, 0, 2] });
+    // autk-db stores row 1, whose geometry is empty, first: the map's second
+    // feature is input row 0 and its third is input row 2...
+    expect(inputRow(1, order.map)).toBe(0);
+    expect(inputRow(2, order.map)).toBe(2);
+    // ...and a highlight on rows 1 and 2 lights map positions 0 (drawn as nothing) and 2.
+    expect(tablePositions([1, 2], order.map)).toEqual([0, 2]);
+    // A plot reads the table as handed, so its positions are the rows.
     expect(inputRow(1, order.load)).toBe(1);
     expect(tablePositions([1, 2], order.load)).toEqual([1, 2]);
   });

@@ -23,7 +23,7 @@ flowchart LR
   BM["Baseline · autk-grammar<br/>map · roads by sunlight"]
   MC["Twice as tall · autk-grammar<br/>shadow WGSL, height_factor 2"]
   MM["Twice as tall · autk-grammar<br/>map · roads by sunlight"]
-  TE["Two towers removed · Edit Features<br/>remove building_id 119, 136"]
+  TE["Two towers removed · Edit Features<br/>remove building_id 29623484, 29628154"]
   TC["Two towers removed · autk-grammar<br/>shadow WGSL, height_factor 1"]
   TM["Two towers removed · autk-grammar<br/>map · roads by sunlight"]
   CC["Compare Scenarios<br/>Chart · mean sunlight"]
@@ -94,7 +94,7 @@ Its code is written from that list:
 # order it was made, on the features whose key is one of its ids. It is
 # written again when the list changes.
 return curio_edit_features(arg, [
-    {"op": "remove", "ids": [119, 136]},
+    {"op": "remove", "ids": [29623484, 29628154]},
 ], key="building_id", layer="table_osm_buildings")
 ```
 
@@ -186,7 +186,7 @@ written for them.
 `scenario` and a `scenario_name` column, and draws a bar for each scenario's mean `sunlight`, in
 the scenarios' colours. Its **What differs** tab lists two levers: the shadow step, whose
 `height_factor` is 1 in Baseline, 2 in Twice as tall and 1 in Two towers removed, and the Edit
-Features node, only in Two towers removed, with its edit, Remove building_id 119, 136. The maps
+Features node, only in Two towers removed, with its edit, Remove building_id 29623484, 29628154. The maps
 are alike. It warns about nothing, since the three scenarios read the same pool.
 
 **Sunlight change** is in Difference:

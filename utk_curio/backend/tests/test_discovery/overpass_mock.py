@@ -165,6 +165,9 @@ RULES: list[dict] = [
     {"name": "golf-buildings", "when": ['way["building"]', 'relation["name"="Golf"]'], "elements": GOLF_BUILDINGS},
     # No boundary has this name: every request for it gets an empty answer.
     {"name": "nowhere", "when": ['"Nowhere Land"'], "elements": []},
+    # autk-db asks for the coastline in every area, to leave the sea out of its
+    # surface; none of these places has one.
+    {"name": "no-coastline", "when": ['"natural"="coastline"'], "elements": []},
 ]
 
 

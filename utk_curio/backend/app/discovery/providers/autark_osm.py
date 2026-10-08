@@ -35,7 +35,8 @@ from utk_curio.backend.app.discovery.domain.resource import DiscoveryResource
 
 PARAMETER_IDS = ("area", "tags")
 
-#: The one tag set a tag resource asks autk-db for, and the layers it can come back as.
+#: A tag resource asks autk-db for one tag set per geometry, ``tags_<geometry>``,
+#: each with the same tags; the layers come back as these geometries, one group.
 TAG_SET = "tags"
 TAG_GEOMETRIES = ("points", "polylines", "polygons")
 
@@ -137,7 +138,8 @@ class AutarkOsmService:
                 filters.append({"key": key} if value is None else {"key": key, "value": value})
             if not filters:
                 raise DiscoveryError("OpenStreetMap needs one or more tags, as key=value or key=*")
-            tag_sets = [{"name": TAG_SET, "tags": filters}]
+            tag_sets = [{"name": f"{TAG_SET}_{geometry}", "type": geometry, "tags": filters}
+                        for geometry in TAG_GEOMETRIES]
         if "names" in area:
             self._check_named_areas_size(spec, area["names"])
         autk_db = resolve_pkg_entry_url("@urban-toolkit/autk-db", ROOT_NODE_MODULES)
