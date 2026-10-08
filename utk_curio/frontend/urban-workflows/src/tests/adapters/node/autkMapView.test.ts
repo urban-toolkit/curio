@@ -29,6 +29,7 @@ function fakeMap(layers: any[], width = 480, height = 300) {
     renderer: { pixelWidth: width * 2, pixelHeight: height * 2 },
     layerManager: { layers },
     resetCamera: ownReset,
+    requestRender: jest.fn(),
   };
   return { map, ownReset, canvas };
 }
@@ -147,6 +148,24 @@ describe("frameMaps", () => {
     // Once only: a later resize keeps whatever view the map has by then.
     window.dispatchEvent(new Event("resize"));
     expect(map.camera.resetCamera).toHaveBeenCalledTimes(1);
+  });
+
+  test("a map framed is asked for a frame, since it draws on demand: at once, on the R key and when first shown", () => {
+    const { map } = fakeMap([flatLayer(0, 0, 1200, 700)]);
+    frameMaps({ _mapRegistry: new Map([["input_0", map]]) });
+    expect(map.requestRender).toHaveBeenCalledTimes(1);
+    map.resetCamera();
+    expect(map.requestRender).toHaveBeenCalledTimes(2);
+
+    let shown = { width: 0, height: 0 };
+    const hidden = fakeMap([flatLayer(0, 0, 1200, 700)]);
+    Object.defineProperty(hidden.canvas, "offsetWidth", { get: () => shown.width });
+    Object.defineProperty(hidden.canvas, "offsetHeight", { get: () => shown.height });
+    frameMaps({ _mapRegistry: new Map([["input_0", hidden.map]]) });
+    expect(hidden.map.requestRender).not.toHaveBeenCalled();
+    shown = { width: 300, height: 600 };
+    window.dispatchEvent(new Event("resize"));
+    expect(hidden.map.requestRender).toHaveBeenCalledTimes(1);
   });
 
   test("a grammar with no maps, or a map without autk-map's camera, is left alone", () => {

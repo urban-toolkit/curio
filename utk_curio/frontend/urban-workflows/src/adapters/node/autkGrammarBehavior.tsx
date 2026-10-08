@@ -44,6 +44,7 @@ import {
 import { applyComputeBlocks } from './autkComputeBlocks';
 import { titleLegends } from './autkLegendTitles';
 import { frameMaps } from './autkMapView';
+import { drawMapsOnDemand } from './autkMapDrawing';
 
 /**
  * The layer a document's selections come from when they name none: its map's
@@ -110,6 +111,16 @@ export const useAutkGrammarBehavior = (
     // Disposer for the map interaction zoom-fix listeners (window-bound), cleared
     // and re-populated on each applyGrammar run with a map, and on unmount.
     const pickFixCleanupRef = useRef<(() => void) | null>(null);
+    // Destroys the last run's maps (adapters/node/autkMapDrawing): when the
+    // next run removes their canvas, and when the node leaves the page.
+    const destroyMapsRef = useRef<(() => void) | null>(null);
+    const destroyLastMaps = () => {
+        destroyMapsRef.current?.();
+        destroyMapsRef.current = null;
+    };
+    // Whether the node is on the page: maps a run makes after it has left are
+    // destroyed at once.
+    const mountedRef = useRef(true);
     // Always-current ref to data so grammar event callbacks never close over a
     // stale data object (grammar subscriptions outlive individual renders).
     const dataRef = useRef(data);
@@ -228,9 +239,9 @@ export const useAutkGrammarBehavior = (
         const hasMaps = spec.map != null;
         const hasPlot = spec.plot != null;
 
-        // Reset container children before each run to release the old WebGPU
-        // context. AutkGrammar has no destroy() — replacing the canvas element
-        // is the only way to prevent context leaks across re-runs.
+        // Each run draws on a canvas of its own. The previous run's maps are
+        // destroyed with theirs (AutkGrammar has no destroy() of its own).
+        destroyLastMaps();
         const wrapper = wrapperRef.current;
         if (wrapper) {
             // Dispose the previous run's interaction-zoom-fix listeners (they live on
@@ -629,9 +640,16 @@ export const useAutkGrammarBehavior = (
                     await g.run(spec);
                     return g;
                 });
+                // The grammar starts its maps drawing every frame: from here
+                // they draw only when their picture changes. Handed over first,
+                // so they are destroyed with the next run or the node even if a
+                // step below fails.
+                destroyMapsRef.current = drawMapsOnDemand(grammar);
                 recolorRasters(grammar, spec);
                 titleLegends(grammar, spec);
                 frameMaps(grammar);
+                // A node that left the page while they were made destroys them now.
+                if (!mountedRef.current) destroyLastMaps();
                 // autk-plot's SVG is inline, so it sits on a line of text whose
                 // descender space overflows a pane the plot exactly fills, and
                 // brings the scrollbars back. As a block it fits.
@@ -1134,10 +1152,17 @@ export const useAutkGrammarBehavior = (
     }, []);
 
     // Unsubscribe grammar event listeners and remove the interaction zoom-fix
-    // window listeners when the node is removed from the canvas.
-    useEffect(() => () => {
-        interactionOffRef.current.forEach(f => f());
-        pickFixCleanupRef.current?.();
+    // window listeners when the node is removed from the canvas (a deleted
+    // node, a closed dataflow), and destroy its maps.
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+            interactionOffRef.current.forEach(f => f());
+            pickFixCleanupRef.current?.();
+            destroyLastMaps();
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Stable JSX reference across incidental re-renders, but identity changes

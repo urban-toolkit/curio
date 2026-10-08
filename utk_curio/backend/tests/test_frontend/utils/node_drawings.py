@@ -113,6 +113,18 @@ _AUTK_MAP_PIXELS_JS = """async (id) => {
     return canvas.toDataURL('image/png');
 }"""
 
+# An Autark map's canvas read in the frame that renders it, as the captures read
+# it (``images.py``): through the page's own function for that,
+# renderMapsForReading in adapters/node/autkMapDrawing.ts. A page without it has
+# no map drawing on demand.
+_AUTK_MAP_PIXELS_IN_FRAME_JS = """async (id) => {
+    const canvas = document.getElementById('autk-grammar-map-' + id);
+    if (!canvas) return null;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    if (window.__curio_renderMapsForReading) await window.__curio_renderMapsForReading();
+    return canvas.toDataURL('image/png');
+}"""
+
 # How the map canvas sits in the page: its box, the styles that could hide it,
 # and what the page reports on top at its centre.
 _AUTK_MAP_PLACEMENT_JS = """(id) => {
@@ -203,8 +215,9 @@ def autark_map_framing(page, node_id: str, *, min_span: float = AUTK_MAP_MIN_FRA
     corner, which a framed map leaves to the map's background. A framed map's
     drawing spans at least *min_span* of the canvas along one axis and leaves
     the background showing at both ends of that axis: neither a speck in the
-    middle nor a crop that runs past the canvas's edges. Read in the page, as
-    ``assert_autark_map_drawn`` reads the map.
+    middle nor a crop that runs past the canvas's edges. Read in the page, in
+    the frame that renders the map, as the captures read it: the framing is the
+    camera the map has now.
     """
     import base64
 
@@ -213,7 +226,7 @@ def autark_map_framing(page, node_id: str, *, min_span: float = AUTK_MAP_MIN_FRA
     deadline = time.monotonic() + timeout / 1000
     while True:
         problem = None
-        url = page.evaluate(_AUTK_MAP_PIXELS_JS, node_id)
+        url = page.evaluate(_AUTK_MAP_PIXELS_IN_FRAME_JS, node_id)
         if not url:
             problem = f"Autark node {node_id} has no map canvas"
         else:

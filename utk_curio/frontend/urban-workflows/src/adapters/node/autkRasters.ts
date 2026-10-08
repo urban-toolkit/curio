@@ -284,8 +284,10 @@ export function bleedIntoClearCells(rgba: Float32Array, width: number, height: n
  * `RASTER_TRANSFER_FUNCTION` says, and gives the legend its domain. A
  * raster's cells are colored whatever its `isColorMap`, so on a raster
  * `"isColorMap": false` hides the legend alone; the grammar turns it on for
- * any layer with a scheme. The grammar keeps each map by the dataRefs it
- * draws (`_mapRegistry`); a layer that is not a raster is left as drawn.
+ * any layer with a scheme. A map whose raster was colored again is asked for
+ * a frame (`requestRender`), since it draws on demand (`autkMapDrawing`). The
+ * grammar keeps each map by the dataRefs it draws (`_mapRegistry`); a layer
+ * that is not a raster is left as drawn.
  */
 export function recolorRasters(grammar: any, spec: any): void {
     const registry: Map<string, any> | undefined = grammar?._mapRegistry;
@@ -303,6 +305,9 @@ export function recolorRasters(grammar: any, spec: any): void {
                 bleedIntoClearCells(rgba, layer.rasterResX, layer.rasterResY);
             }
             if (ref.isColorMap === false) map.updateRenderInfo(ref.dataRef, { isColorMap: false });
+            // The cells were written in place, which autk-map cannot see: a map
+            // that draws on demand is asked for a frame.
+            map.requestRender?.();
         }
     }
 }

@@ -60,10 +60,12 @@ COPY vendor/ vendor/
 # Stage 2: Build frontends with Node (avoids NodeSource on slim in CI)
 # -----------------------------------------------------------------------------
 FROM node:26-bookworm-slim AS frontend_builder
-# The dependencies first, from the manifests, so a source change reuses the npm
-# layer and only rebuilds.
+# The dependencies first, from the manifests and the vendored tarball they
+# name (vendor/autark/README.md), so a source change reuses the npm layer and
+# only rebuilds.
 WORKDIR /src/utk_curio/frontend/urban-workflows
 COPY utk_curio/frontend/urban-workflows/package.json utk_curio/frontend/urban-workflows/package-lock.json ./
+COPY utk_curio/frontend/urban-workflows/vendor/ vendor/
 RUN npm install
 
 COPY utk_curio/frontend/ /src/utk_curio/frontend/
