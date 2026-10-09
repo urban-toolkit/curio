@@ -14,5 +14,5 @@ Produce an explanation summarizing logic, purpose, and expected behavior.
 
 ## Output
 
-**DO NOT PRODUCE MORE THAN 500 WORDS**
+**THIS IS VERY IMPORTANT: YOU EXPLANATION SHOULD HAVE MAXIMUM 500 WORDS**
 
