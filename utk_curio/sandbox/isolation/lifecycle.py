@@ -38,6 +38,10 @@ MALLOC_ARENA_MB = 64
 #: The share of a child's budget its malloc arenas may reserve between them.
 MALLOC_ARENA_SHARE = 4
 
+#: The Arrow memory pool a memory-capped zygote's children allocate from:
+#: glibc's malloc, in the arenas capped above.
+ARROW_POOL_UNDER_A_CAP = "system"
+
 
 class ZygoteStartupError(RuntimeError):
     """The zygote could not be started or never became ready."""
@@ -49,7 +53,7 @@ def malloc_arena_cap(memory_mb):
 
 
 def zygote_environment(limits, environ=None):
-    """The zygote's environment: this process's, with its malloc arenas capped.
+    """The zygote's environment: this process's, with its allocators fitted to the cap.
 
     glibc gives every thread that mallocs an arena of its own, up to eight per
     core, and each one reserves ``MALLOC_ARENA_MB`` of address space up front.
@@ -63,6 +67,22 @@ def zygote_environment(limits, environ=None):
     arena limit once per process and a forked child inherits what the zygote
     settled: a ``mallopt`` in the child comes too late. A lower
     ``MALLOC_ARENA_MAX`` already in the environment stands.
+
+    Arrow's allocator is the other reservation (#376). pyarrow's default pool,
+    mimalloc, reserves an arena of address space on a child's first Arrow
+    allocation: 1 GiB when that fits under the cap, else 128 MiB. RLIMIT_AS
+    counts the whole arena, so at the default budget a quarter of it is gone
+    before the node's own data. And when the space left is just over an
+    arena's size, the arena fits but the 64 KiB its page map needs next does
+    not, and the allocation fails with ``ArrowMemoryError``: budgets of 128
+    and 1024 MB, the two arena sizes, failed a node's first 64 bytes. pandas
+    reaches Arrow for any string, column labels included, since its default
+    string dtype is Arrow-backed. Under a cap Arrow allocates through glibc
+    instead (``ARROW_DEFAULT_MEMORY_POOL``), which maps only what it uses, in
+    the arenas capped above. Arrow reads that variable once, when it is
+    loaded, and the zygote loads it before its first fork, so a child could
+    not change it; unlike ``MALLOC_ARENA_MAX``, a pool already named in the
+    environment does not stand under a cap.
     """
     env = dict(os.environ if environ is None else environ)
     memory_mb = (limits or {}).get("memory_mb")
@@ -73,6 +93,7 @@ def zygote_environment(limits, environ=None):
         except ValueError:
             current = 0
         env["MALLOC_ARENA_MAX"] = str(min(current, cap) if current > 0 else cap)
+        env["ARROW_DEFAULT_MEMORY_POOL"] = ARROW_POOL_UNDER_A_CAP
     return env
 
 

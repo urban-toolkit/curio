@@ -717,13 +717,17 @@ def test_a_dataframe_writes_parquet_under_the_memory_cap(isolated):
     writer now gets 128MB at 256, so it can; it gets 64MB at 128 and reaches
     its 256MB cap at 1024.
 
-    128 and 1024 are #376's budgets. In three CI runs on utk (September 2026)
-    both failed here with an ArrowMemoryError in user code, before
-    serialization, while 256 passed, and in one run 1024 failed running first,
-    so it was not an ordering effect. ``--exec-memory-mb`` is an operator's
-    knob with a floor of 64, so a tiny frame has to fit at budgets other than
-    this suite's default. The probe below proves the cap itself is applied at
-    each budget, so a failure past it is downstream of ``_apply_rlimits``.
+    128 and 1024 are #376's budgets, and the sizes of mimalloc's two arenas.
+    While mimalloc, pyarrow's default pool, served the child, both failed here
+    with an ArrowMemoryError in user code, before serialization, and 256
+    passed: pandas builds even the column labels as Arrow strings, and the
+    first allocation reserved an arena that fit under the cap but left no room
+    for the page map mimalloc extends next. Under a cap the zygote now gives
+    Arrow glibc's allocator (``lifecycle.zygote_environment``).
+    ``--exec-memory-mb`` is an operator's knob with a floor of 64, so a tiny
+    frame has to fit at budgets other than this suite's default. The probe
+    below proves the cap itself is applied at each budget, so a failure past
+    it is downstream of ``_apply_rlimits``.
     """
     # Read the cap the child is actually running under FIRST, so a failure
     # below comes with the numbers rather than just a traceback. An
@@ -895,10 +899,48 @@ def test_the_zygote_starts_with_the_budgets_arena_cap():
     assert lifecycle.zygote_environment({"memory_mb": 256}, {})["MALLOC_ARENA_MAX"] == "2"
     many = {"MALLOC_ARENA_MAX": str(MANY_CORE_ARENA_MAX), "PATH": "/bin"}
     env = lifecycle.zygote_environment({"memory_mb": 4096}, many)
-    assert env == {"MALLOC_ARENA_MAX": "16", "PATH": "/bin"}
+    assert env == {"MALLOC_ARENA_MAX": "16", "ARROW_DEFAULT_MEMORY_POOL": "system", "PATH": "/bin"}
     lower = lifecycle.zygote_environment({"memory_mb": 4096}, {"MALLOC_ARENA_MAX": "4"})
     assert lower["MALLOC_ARENA_MAX"] == "4"
     assert lifecycle.zygote_environment({"memory_mb": None}, {"PATH": "/bin"}) == {"PATH": "/bin"}
+
+
+def test_a_capped_zygote_gives_arrow_the_system_allocator():
+    """Under a cap Arrow allocates through glibc, whatever pool was inherited (#376).
+
+    mimalloc, pyarrow's default, reserves a 1 GiB or 128 MiB arena of address
+    space on a child's first Arrow allocation, and RLIMIT_AS counts all of it.
+    Arrow reads the pool's name once, when it is loaded, so the name goes into
+    the zygote's environment and an inherited one does not stand. With no cap
+    the environment is left as it is.
+    """
+    from utk_curio.sandbox.isolation import lifecycle
+
+    for budget in (64, 128, 1024, 4096):
+        env = lifecycle.zygote_environment({"memory_mb": budget}, {})
+        assert env["ARROW_DEFAULT_MEMORY_POOL"] == "system", (budget, env)
+    inherited = {"ARROW_DEFAULT_MEMORY_POOL": "mimalloc"}
+    env = lifecycle.zygote_environment({"memory_mb": 1024}, inherited)
+    assert env["ARROW_DEFAULT_MEMORY_POOL"] == "system"
+    assert lifecycle.zygote_environment({"memory_mb": None}, inherited) == inherited
+
+
+def test_arrow_allocates_through_glibc_in_a_capped_child(isolated):
+    """The pool the zygote's environment names is the one a child's Arrow uses.
+
+    Read inside the child, after the zygote loaded pyarrow and forked. Were
+    pyarrow to stop reading ``ARROW_DEFAULT_MEMORY_POOL``, the budget test
+    would only show #376's ArrowMemoryError again; this names the cause.
+    """
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    result = run_isolated(
+        isolated,
+        "    import pyarrow as pa\n"
+        "    return pa.default_memory_pool().backend_name\n",
+    )
+    assert result["stderr"] == "", result["stderr"]
+    assert load_from_duckdb(result["output"]["path"]) == "system"
 
 
 @pytest.fixture
