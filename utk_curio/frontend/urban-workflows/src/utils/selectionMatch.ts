@@ -102,6 +102,25 @@ function rowsHolding(points: PointValue[], rows: SelectionRows): number[] {
   return indices;
 }
 
+/** Text that starts as an ISO date, as a table holds dates: "2020-01-02", "2020-01-02T10:00:00". */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}/;
+
+/**
+ * A row's value as a numeric range reads it: a number, a Date's time, text
+ * that reads as a number, or the time of text that starts as an ISO date (a
+ * temporal brush's bounds are times). Anything else (a column the row lacks, a
+ * null, other text) is NaN, which no range holds (#872).
+ */
+function rangeValue(value: unknown): number {
+  const at = comparable(value);
+  if (typeof at === "number") return at;
+  if (typeof at !== "string" || at.trim() === "") return NaN;
+  const number = Number(at);
+  if (Number.isFinite(number) || !ISO_DATE.test(at)) return number;
+  // Vega's parse of the same text: a date alone is UTC, a time without a zone is local.
+  return Date.parse(at);
+}
+
 /** Row positions one select covers. */
 export function selectIndices(detail: SelectDetail, rows: SelectionRows): number[] {
   if (detail.type === VisInteractionType.POINT) {
@@ -127,9 +146,9 @@ export function selectIndices(detail: SelectDetail, rows: SelectionRows): number
           break;
         }
       } else if (bounds.length === 2) {
-        // numerical interval
-        const value = rows.value(i, column) as number;
-        if (value < bounds[0] || value > bounds[1]) {
+        // numerical interval: a row with no number in the column is outside it
+        const value = rangeValue(rows.value(i, column));
+        if (!Number.isFinite(value) || value < bounds[0] || value > bounds[1]) {
           interacted = false;
           break;
         }
