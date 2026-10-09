@@ -342,7 +342,8 @@ def run_through_node(
     if len(to_run) > limit:
         report["error"] = (
             f"the upstream slice has {len(to_run)} nodes to run (validation bound "
-            f"{limit}); run the dataflow manually instead"
+            f"{limit}); raise the bound with --validation-node-limit, or run the "
+            "dataflow manually instead"
         )
         return report
     report["order"] = [n.id for n in ordered]
