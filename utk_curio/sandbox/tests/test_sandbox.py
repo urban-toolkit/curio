@@ -1,3 +1,4 @@
+import contextlib
 import shutil
 import unittest
 import tempfile
@@ -63,6 +64,34 @@ _CONTRACT_CHECK_JS = (
     "__out.push({{ name: t.name, type: t.type ?? 'polygons', geojson }}); }}\n"
     "return __out;"
 )
+
+
+@contextlib.contextmanager
+def _serve_files_like_the_backend():
+    """Serve the repository under ``/file/`` on a free loopback port, yielding it.
+
+    Node's fetch cannot read a ``file://`` URL, so a test that loads an extract
+    through autk-db serves it as the backend's ``/file/`` route does: with
+    Flask's ``send_from_directory``, which answers Range requests.
+    """
+    import threading
+    from flask import send_from_directory
+    from werkzeug.serving import make_server
+
+    files = Flask('file-route')
+
+    @files.route('/file/<path:filename>')
+    def serve(filename):
+        return send_from_directory(_REPO_ROOT, filename)
+
+    server = make_server('127.0.0.1', 0, files, threaded=True)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield server.server_port
+    finally:
+        server.shutdown()
+        thread.join()
 
 
 class TestSandbox(unittest.TestCase):
@@ -208,6 +237,64 @@ class TestSandbox(unittest.TestCase):
         self.assertEqual(layer['name'], 'probe_pts')
         self.assertEqual(layer['geojson']['type'], 'FeatureCollection')
         self.assertEqual(len(layer['geojson']['features']), 1)
+
+    @_SKIP_NO_NODE
+    @_SKIP_NO_AUTK_DB
+    def test_exec_js_autk_loads_the_chicago_loop_buildings_without_a_topology_error(self):
+        """The Chicago Loop's buildings load with no GEOS TopologyException (#320).
+
+        autk-db 2.1.2 unioned each building's parts. In CI run 34804940458
+        (Linux x86_64) GEOS refused one Loop building's: "TopologyException:
+        found non-noded intersection". autk-db only logged a warning, so no
+        node or test failed. Autark 4 keeps a building's parts as one
+        GeometryCollection and unions nothing. This
+        loads the buildings of the extract example 07 reads, at the URL the
+        frontend writes for a relative pbfFileUrl (resolveDataSourceUrls), with
+        DuckDB's extensions seeded from Curio's copy as a launch seeds them.
+        A warning reaches the result only when the run succeeds (the worker
+        then returns Node's stderr), so the code calls nothing beyond loadOsm
+        and getLayer, which every autk-db has.
+        """
+        from pathlib import Path
+        from unittest import mock
+
+        from utk_curio.cli import dependencies
+        from utk_curio.sandbox.app.worker import execute_js_code, _worker_init
+        from utk_curio.sandbox.util.parsers import load_from_duckdb
+        _worker_init()
+
+        # resolveDataSourceUrls with SANDBOX_BACKEND_URL_TOKEN as the base.
+        pbf_url = '__CURIO_BACKEND_URL__/file/docs/examples/data/chicago_loop.osm.pbf'
+        code = (
+            "import { AutkDb } from '@urban-toolkit/autk-db';\n"
+            "const db = new AutkDb();\n"
+            "await db.init();\n"
+            f"await db.loadOsm({{ pbfFileUrl: {json.dumps(pbf_url)}, "
+            "queryArea: { geocodeArea: 'Chicago', areas: ['Loop'] }, "
+            "outputTableName: 'table_osm', autoLoadLayers: { layers: ['buildings'] } });\n"
+            "const buildings = await db.getLayer('table_osm_buildings');\n"
+            "return { buildings: buildings.features.length };"
+        )
+
+        with tempfile.TemporaryDirectory() as home, _serve_files_like_the_backend() as port:
+            env = {
+                'HOME': home,
+                'FLASK_BACKEND_HOST': '127.0.0.1',
+                'FLASK_BACKEND_PORT': str(port),
+            }
+            with mock.patch.dict(os.environ, env), \
+                    mock.patch.object(Path, 'home', lambda: Path(home)):
+                dependencies.seed_duckdb_extensions()
+                result = execute_js_code(
+                    code, '', 'AUTK_GRAMMAR', '', launch_dir=_REPO_ROOT, session_id=None,
+                )
+
+        logs = '\n'.join(result['stdout'] + [result['stderr']])
+        for symptom in ('TopologyException', 'union failed'):
+            self.assertNotIn(symptom, logs, msg=f"autk-db logged {symptom!r}:\n{logs}")
+        self.assertNotEqual(result['output']['path'], '', msg=result['stderr'])
+        loaded = load_from_duckdb(result['output']['path'], session_id=None)
+        self.assertGreater(loaded['buildings'], 0, msg=logs)
 
     def test_backend_base_url_follows_the_running_stack(self):
         """The backend URL handed to JS comes from the environment, not a constant.
