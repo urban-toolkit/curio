@@ -67,6 +67,77 @@ describe('selectIndices', () => {
 
 });
 
+describe('a numeric range over rows that hold no number for its column (#872)', () => {
+  const units = objectRows([
+    { unit_id: 101, name: 'Alder', height: 8 },
+    { unit_id: 102, name: 'Birch', height: 15 },
+    { unit_id: 103, name: 'Cedar', height: 22 },
+    { unit_id: 104, name: 'Dogwood', height: 12 },
+    { unit_id: 105, name: 'Elm', height: 30 },
+    { unit_id: 106, name: 'Fir', height: 18 },
+  ]);
+  // Three readings per unit, in another order than the units, and no height.
+  const readings = columnRows({
+    reading: [
+      '104-1', '101-1', '106-1', '103-1', '102-1', '105-1',
+      '104-2', '101-2', '106-2', '103-2', '102-2', '105-2',
+      '104-3', '101-3', '106-3', '103-3', '102-3', '105-3',
+    ],
+    unit_id: [
+      104, 101, 106, 103, 102, 105,
+      104, 101, 106, 103, 102, 105,
+      104, 101, 106, 103, 102, 105,
+    ],
+  });
+
+  test('a brush over a column the rows lack marks none of them (#872)', () => {
+    const brush = { type: INTERVAL, data: { height: [10, 20] } };
+    expect(selectIndices(brush, units)).toEqual([1, 3, 5]);
+    expect(readings.count).toBe(18);
+    expect(selectIndices(brush, readings)).toEqual([]);
+  });
+
+  test('a brush over two columns, one the rows lack, marks none of them (#872)', () => {
+    // The unit_id range alone covers the readings of 102 to 104, so a matcher
+    // that skipped the missing column would mark these nine.
+    expect(selectIndices({ type: INTERVAL, data: { unit_id: [102, 104] } }, readings))
+      .toEqual([0, 3, 4, 6, 9, 10, 12, 15, 16]);
+    const brush = { type: INTERVAL, data: { height: [10, 20], unit_id: [102, 104] } };
+    expect(selectIndices(brush, units)).toEqual([1, 3]);
+    expect(selectIndices(brush, readings)).toEqual([]);
+    expect(selectIndices({ type: INTERVAL, data: { unit_id: [102, 104], height: [10, 20] } }, readings))
+      .toEqual([]);
+  });
+
+  test('a null, empty, missing or non-numeric value is outside a numeric range (#872)', () => {
+    // The range holds 0, which a null or empty text reads as in a comparison.
+    const odd = objectRows([
+      { height: 12 }, { height: null }, { height: '' }, { height: '  ' }, { height: 'n/a' }, { height: NaN }, {},
+    ]);
+    expect(selectIndices({ type: INTERVAL, data: { height: [0, 20] } }, odd)).toEqual([0]);
+  });
+
+  test('numeric text is compared as the number it reads (#872)', () => {
+    const text = objectRows([{ height: '12' }, { height: '25' }, { height: ' 15 ' }]);
+    expect(selectIndices({ type: INTERVAL, data: { height: [10, 20] } }, text)).toEqual([0, 2]);
+  });
+
+  test('a date is compared by its time, against time or date bounds (#872)', () => {
+    const dated = objectRows([
+      { when: new Date(Date.UTC(2024, 2, 15)) },
+      { when: new Date(Date.UTC(2024, 8, 1)) },
+    ]);
+    const [start, end] = [Date.UTC(2024, 0, 1), Date.UTC(2024, 5, 30)];
+    expect(selectIndices({ type: INTERVAL, data: { when: [start, end] } }, dated)).toEqual([0]);
+    expect(selectIndices({ type: INTERVAL, data: { when: [new Date(start), new Date(end)] } }, dated))
+      .toEqual([0]);
+  });
+
+  test('a text interval over a column the rows lack marks none of them (#872)', () => {
+    expect(selectIndices({ type: INTERVAL, data: { city: ['A', 'B'] } }, readings)).toEqual([]);
+  });
+});
+
 describe('resolveIndices', () => {
   const entries = [
     { priority: 0, indices: [0, 1, 2] },
