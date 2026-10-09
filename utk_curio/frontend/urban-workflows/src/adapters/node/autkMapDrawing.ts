@@ -17,6 +17,8 @@
  * map's controls) when its next run replaces them and when it leaves the
  * page, a deleted node or a closed dataflow (`autkGrammarBehavior`).
  *
+ * Every reader of the maps a grammar made takes them from `grammarMaps`.
+ *
  * The e2e captures and the map framing check read a map's pixels in the
  * animation frame that renders the map (`renderMapsForReading`): Chrome can
  * read back an idle WebGPU canvas, long after its last frame, as transparent.
@@ -28,11 +30,13 @@ type KeptMap = Pick<AutkMap, 'requestRender' | 'destroy'>;
 /** The maps the nodes keep, until they are destroyed. */
 const keptMaps = new Set<KeptMap>();
 
-/** The maps autk-grammar made: its registry keeps one for each layer a map draws. */
-function mapsOf(grammar: any): KeptMap[] {
-    const registry = grammar?._mapRegistry;
-    if (!(registry instanceof Map)) return [];
-    return [...new Set<KeptMap>(registry.values())].filter((map) => typeof map?.destroy === 'function');
+/**
+ * The maps *grammar*'s last run drew, one for each `map` entry of its
+ * document, in the document's order (autk-grammar's `maps`).
+ */
+export function grammarMaps(grammar: unknown): any[] {
+    const maps = (grammar as { maps?: unknown } | null | undefined)?.maps;
+    return Array.isArray(maps) ? Array.from(maps) : [];
 }
 
 /** Destroy *map*: its GPU textures, window listeners and controls. */
@@ -51,7 +55,7 @@ function destroy(map: KeptMap): void {
  * drops it. Returns what destroys the maps, for the node that drops them.
  */
 export function trackMaps(grammar: unknown): () => void {
-    const maps = mapsOf(grammar);
+    const maps: KeptMap[] = grammarMaps(grammar).filter((map) => typeof map?.destroy === 'function');
     for (const map of maps) keptMaps.add(map);
     return () => maps.forEach(destroy);
 }

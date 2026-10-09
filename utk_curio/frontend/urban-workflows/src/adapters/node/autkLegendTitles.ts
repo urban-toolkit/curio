@@ -9,10 +9,12 @@
  * a Vega-Lite legend is titled with its field; a table the document names
  * (`table_osm_roads`) keeps its name. The map's UI writes the legend over
  * whenever the layer, its domain or its visibility changes
- * (`updateLegendContent`), so the title is put back each time it does. The
- * grammar keeps each map by the dataRefs it draws (`_mapRegistry`).
+ * (`updateLegendContent`), so the title is put back each time it does. Each
+ * map the grammar drew (`grammarMaps`) is titled from the layerRefs of its own
+ * `map` entry.
  */
 import { INPUT_TABLE_PREFIX } from '../../generated/autkGrammar';
+import { grammarMaps } from './autkMapDrawing';
 
 const TITLES = Symbol.for('curio.autk.legendTitles');
 
@@ -44,27 +46,28 @@ export function legendTitles(spec: any): Map<string, string> {
 
 /** Title each legend of the grammar's maps as its layerRef's `legendTitle` says. */
 export function titleLegends(grammar: any, spec: any): void {
-    const registry: Map<string, any> | undefined = grammar?._mapRegistry;
-    const titles = legendTitles(spec);
-    if (!registry || titles.size === 0) return;
-    for (const [dataRef, title] of titles) {
-        const ui = registry.get(dataRef)?.ui;
+    const drawn = grammarMaps(grammar);
+    const maps = spec?.map ? (Array.isArray(spec.map) ? spec.map : [spec.map]) : [];
+    for (const [index, mapSpec] of maps.entries()) {
+        const ui = drawn[index]?.ui;
         if (!ui || typeof ui.updateLegendContent !== 'function') continue;
-        let byLayer: Map<string, string> | undefined = ui[TITLES];
-        if (!byLayer) {
-            byLayer = new Map();
-            const own = byLayer;
-            const update = ui.updateLegendContent.bind(ui);
-            ui.updateLegendContent = (...args: any[]) => {
-                const result = update(...args);
-                const name = own.get(ui._activeLayer?.layerInfo?.id);
-                const heading = ui._legend?.firstElementChild;
-                if (name && heading) heading.textContent = name;
-                return result;
-            };
-            ui[TITLES] = byLayer;
+        for (const [dataRef, title] of legendTitles({ map: mapSpec })) {
+            let byLayer: Map<string, string> | undefined = ui[TITLES];
+            if (!byLayer) {
+                byLayer = new Map();
+                const own = byLayer;
+                const update = ui.updateLegendContent.bind(ui);
+                ui.updateLegendContent = (...args: any[]) => {
+                    const result = update(...args);
+                    const name = own.get(ui._activeLayer?.layerInfo?.id);
+                    const heading = ui._legend?.firstElementChild;
+                    if (name && heading) heading.textContent = name;
+                    return result;
+                };
+                ui[TITLES] = byLayer;
+            }
+            byLayer.set(dataRef, title);
+            ui.updateLegendContent();
         }
-        byLayer.set(dataRef, title);
-        ui.updateLegendContent();
     }
 }

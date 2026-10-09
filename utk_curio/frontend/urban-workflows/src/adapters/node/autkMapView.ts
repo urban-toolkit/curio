@@ -16,9 +16,10 @@
  * the space its camera is in. Buildings lift the camera by the tallest one,
  * so their roofs fit as flat ground would. The map's R key frames it the same
  * way, and a framed map is asked for a frame (`requestRender`), since it draws
- * on demand (`autkMapDrawing`). The grammar keeps each map by the dataRefs it
- * draws (`_mapRegistry`).
+ * on demand (`autkMapDrawing`). Every map the grammar drew is framed
+ * (`grammarMaps`).
  */
+import { grammarMaps } from './autkMapDrawing';
 
 /** What a map's layers drew, in its world units, and the tallest height. */
 export type MapExtent = { minX: number; minY: number; maxX: number; maxY: number; top: number };
@@ -105,9 +106,7 @@ const FRAMED = Symbol.for('curio.autk.framedMap');
  * handles before this listener, added later, runs.
  */
 export function frameMaps(grammar: any): void {
-    const registry: Map<string, any> | undefined = grammar?._mapRegistry;
-    if (!registry) return;
-    for (const map of new Set(registry.values())) {
+    for (const map of grammarMaps(grammar)) {
         if (!map || map._terrainRenderPath || typeof map.resetCamera !== 'function') continue;
         if (!map[FRAMED]) {
             const ownReset = map.resetCamera.bind(map);

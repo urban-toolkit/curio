@@ -13,6 +13,7 @@
  * reader of map pixels reads each map in the frame that renders it.
  */
 import * as path from "path";
+import { grammarThatRan } from "../../_support/autkGrammarMaps";
 
 // The autk-map build the app bundles, as CommonJS. A map is made without
 // WebGPU, which only its `init()` asks for.
@@ -128,8 +129,11 @@ describe("autk-map's on-demand rendering", () => {
     });
 });
 
-/** A grammar holding *map* as autk-grammar does: once for each layer it draws. */
-const grammarOf = (map: any) => ({ _mapRegistry: new Map([["roads", map], ["buildings", map]]) });
+/** A grammar that drew *map*, one map of two layers. */
+const grammarOf = (map: any) => grammarThatRan({ map: { layerRefs: [{ dataRef: "roads" }, { dataRef: "buildings" }] } }, map);
+
+/** A document whose two maps draw one table. */
+const TWO_MAPS_OF_ONE_TABLE = { map: [{ layerRefs: [{ dataRef: "roads" }] }, { layerRefs: [{ dataRef: "roads" }] }] };
 
 describe("trackMaps", () => {
     // Loaded in each test, so a page that lacks the module fails the test, not the file.
@@ -143,7 +147,9 @@ describe("trackMaps", () => {
     test("each map the grammar made draws its frame, then nothing while nothing changes it", () => {
         const roads = startedMap();
         const buildings = startedMap();
-        trackMaps({ _mapRegistry: new Map([["roads", roads.map], ["buildings", buildings.map], ["water", roads.map]]) });
+        trackMaps(grammarThatRan({
+            map: [{ layerRefs: [{ dataRef: "roads" }, { dataRef: "water" }] }, { layerRefs: [{ dataRef: "buildings" }] }],
+        }, roads.map, buildings.map));
 
         runFrames(1000);
         expect(roads.renders).toHaveBeenCalledTimes(1);
@@ -168,7 +174,9 @@ describe("trackMaps", () => {
         const broken = startedMap();
         const other = startedMap();
         jest.spyOn(broken.map, "destroy").mockImplementation(() => { throw new Error("no context"); });
-        const destroyMaps = trackMaps({ _mapRegistry: new Map([["roads", broken.map], ["buildings", other.map]]) });
+        const destroyMaps = trackMaps(grammarThatRan({
+            map: [{ layerRefs: [{ dataRef: "roads" }] }, { layerRefs: [{ dataRef: "buildings" }] }],
+        }, broken.map, other.map));
 
         expect(destroyMaps).not.toThrow();
         expect(warned).toHaveBeenCalled();
@@ -177,7 +185,18 @@ describe("trackMaps", () => {
 
     test("a grammar that drew no map is left alone", () => {
         expect(() => trackMaps(null)()).not.toThrow();
-        expect(() => trackMaps({ _mapRegistry: new Map() })()).not.toThrow();
+        expect(() => trackMaps(grammarThatRan({}))()).not.toThrow();
+    });
+
+    test("both maps of a document whose two maps draw one table are destroyed", () => {
+        const first = startedMap();
+        const second = startedMap();
+        const destroyMaps = trackMaps(grammarThatRan(TWO_MAPS_OF_ONE_TABLE, first.map, second.map));
+        runFrames(1000);
+
+        destroyMaps();
+        expect(first.map._isDestroyed).toBe(true);
+        expect(second.map._isDestroyed).toBe(true);
     });
 });
 
@@ -255,6 +274,27 @@ describe("renderMapsForReading", () => {
         await frames.run(log);
         await read;
         expect(log).toEqual(["roads rendered", "buildings rendered", "read", "frame end", "frame end"]);
+    });
+
+    test("both maps of a document whose two maps draw one table render for the reader", async () => {
+        const log: string[] = [];
+        const first = startedMap();
+        const second = startedMap();
+        trackMaps(grammarThatRan(TWO_MAPS_OF_ONE_TABLE, first.map, second.map));
+        await frames.run();
+        first.renders.mockImplementation(() => {
+            log.push("first rendered");
+        });
+        second.renders.mockImplementation(() => {
+            log.push("second rendered");
+        });
+
+        const read = renderMapsForReading().then(() => {
+            log.push("read");
+        });
+        await frames.run(log);
+        await read;
+        expect(log).toEqual(["first rendered", "second rendered", "read", "frame end"]);
     });
 
     test("a map already waiting for its frame renders once, before the reader", async () => {

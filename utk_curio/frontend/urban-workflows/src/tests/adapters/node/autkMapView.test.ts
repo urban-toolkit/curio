@@ -3,9 +3,13 @@
  * units above its origin whatever they hold.
  */
 import { drawnExtent, frameMaps, framingCamera } from "../../../adapters/node/autkMapView";
+import { grammarThatRan } from "../../_support/autkGrammarMaps";
 
 const FOVY = (45 * Math.PI) / 180;
 const FAR = 5e5;
+
+// A document of one map with one layer.
+const ONE_MAP = { map: { layerRefs: [{ dataRef: "input_0" }] } };
 
 // autk-map's camera as frameMaps uses it.
 function fakeCamera() {
@@ -89,7 +93,7 @@ describe("frameMaps", () => {
   test("each map's camera frames the layers it drew, once per map however many dataRefs it draws", () => {
     // The Loop's few blocks, about 1,200 by 700 around (40, -10) from the origin.
     const { map } = fakeMap([flatLayer(40, -10, 1200, 700), flatLayer(40, -10, 600, 300)]);
-    frameMaps({ _mapRegistry: new Map([["input_0", map], ["input_1", map]]) });
+    frameMaps(grammarThatRan({ map: { layerRefs: [{ dataRef: "input_0" }, { dataRef: "input_1" }] } }, map));
 
     expect(map.camera.resetCamera).toHaveBeenCalledTimes(1);
     const [up, lookAt, eye] = map.camera.resetCamera.mock.calls[0];
@@ -103,7 +107,7 @@ describe("frameMaps", () => {
 
   test("the map's R key frames it the same way", () => {
     const { map, ownReset } = fakeMap([flatLayer(0, 0, 1200, 700)]);
-    frameMaps({ _mapRegistry: new Map([["input_0", map]]) });
+    frameMaps(grammarThatRan(ONE_MAP, map));
     map.camera.resetCamera.mockClear();
     map.resetCamera();
     expect(map.camera.resetCamera).toHaveBeenCalledTimes(1);
@@ -113,7 +117,9 @@ describe("frameMaps", () => {
   test("a map that drew one point, or nothing, keeps autk-map's own view", () => {
     const one = fakeMap([{ pointInstances: new Float32Array([5, 5]) }]);
     const none = fakeMap([]);
-    frameMaps({ _mapRegistry: new Map([["input_0", one.map], ["input_1", none.map]]) });
+    frameMaps(grammarThatRan({
+      map: [{ layerRefs: [{ dataRef: "input_0" }] }, { layerRefs: [{ dataRef: "input_1" }] }],
+    }, one.map, none.map));
     expect(one.map.camera.resetCamera).not.toHaveBeenCalled();
     expect(none.map.camera.resetCamera).not.toHaveBeenCalled();
     expect(one.ownReset).toHaveBeenCalledTimes(1);
@@ -123,7 +129,7 @@ describe("frameMaps", () => {
   test("a map in terrain mode is left to autk-map, which fits it itself", () => {
     const { map, ownReset } = fakeMap([flatLayer(0, 0, 1200, 700)]);
     map._terrainRenderPath = {};
-    frameMaps({ _mapRegistry: new Map([["input_0", map]]) });
+    frameMaps(grammarThatRan(ONE_MAP, map));
     expect(map.camera.resetCamera).not.toHaveBeenCalled();
     expect(map.resetCamera).toBe(ownReset);
   });
@@ -133,7 +139,7 @@ describe("frameMaps", () => {
     const { map, canvas } = fakeMap([flatLayer(0, 0, 1200, 700)]);
     Object.defineProperty(canvas, "offsetWidth", { get: () => shown.width });
     Object.defineProperty(canvas, "offsetHeight", { get: () => shown.height });
-    frameMaps({ _mapRegistry: new Map([["input_0", map]]) });
+    frameMaps(grammarThatRan(ONE_MAP, map));
     expect(map.camera.resetCamera).not.toHaveBeenCalled();
 
     window.dispatchEvent(new Event("resize"));
@@ -152,7 +158,7 @@ describe("frameMaps", () => {
 
   test("a map framed is asked for a frame, since it draws on demand: at once, on the R key and when first shown", () => {
     const { map } = fakeMap([flatLayer(0, 0, 1200, 700)]);
-    frameMaps({ _mapRegistry: new Map([["input_0", map]]) });
+    frameMaps(grammarThatRan(ONE_MAP, map));
     expect(map.requestRender).toHaveBeenCalledTimes(1);
     map.resetCamera();
     expect(map.requestRender).toHaveBeenCalledTimes(2);
@@ -161,7 +167,7 @@ describe("frameMaps", () => {
     const hidden = fakeMap([flatLayer(0, 0, 1200, 700)]);
     Object.defineProperty(hidden.canvas, "offsetWidth", { get: () => shown.width });
     Object.defineProperty(hidden.canvas, "offsetHeight", { get: () => shown.height });
-    frameMaps({ _mapRegistry: new Map([["input_0", hidden.map]]) });
+    frameMaps(grammarThatRan(ONE_MAP, hidden.map));
     expect(hidden.map.requestRender).not.toHaveBeenCalled();
     shown = { width: 300, height: 600 };
     window.dispatchEvent(new Event("resize"));
@@ -170,6 +176,17 @@ describe("frameMaps", () => {
 
   test("a grammar with no maps, or a map without autk-map's camera, is left alone", () => {
     expect(() => frameMaps({})).not.toThrow();
-    expect(() => frameMaps({ _mapRegistry: new Map([["input_0", {}]]) })).not.toThrow();
+    expect(() => frameMaps(grammarThatRan(ONE_MAP, {}))).not.toThrow();
+  });
+
+  test("each of two maps that draw one table is framed on what it drew", () => {
+    const first = fakeMap([flatLayer(40, -10, 1200, 700)]);
+    const second = fakeMap([flatLayer(40, -10, 1200, 700)]);
+    frameMaps(grammarThatRan({
+      map: [{ layerRefs: [{ dataRef: "input_0" }] }, { layerRefs: [{ dataRef: "input_0" }] }],
+    }, first.map, second.map));
+    expect(first.map.camera.resetCamera).toHaveBeenCalledTimes(1);
+    expect(second.map.camera.resetCamera).toHaveBeenCalledTimes(1);
+    expect(first.map.camera.resetCamera.mock.calls[0][1]).toEqual([40, -10, 0]);
   });
 });
