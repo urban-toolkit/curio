@@ -11,7 +11,10 @@ the bounded v1 part contracts below, and persists the resulting parts on the
 agent turn (`DEC-043`). Fail-open for model content: a malformed, oversized,
 or unknown block is *not* stripped — it stays visible exactly as the model
 wrote it and no parts attach; nothing the model says is ever silently lost.
-Bounds are enforced here, server-side, never trusted from the model.
+The one exception is a datasetCandidates block that did not become a card:
+its rows stay visible as text, without the tags, the fence or the JSON keys
+(#269, #356). Bounds are enforced here, server-side, never trusted from the
+model.
 
 Part types (v1) and their bounds — the single place limits are named:
 
@@ -1022,6 +1025,143 @@ def parse_parts(body: str) -> list[dict] | None:
 _REQUEST_TYPES = ("toolRequest", "delegateRequest")
 _ANY_BLOCK_RE = re.compile(r"```curio\.v1[ \t]*\n(.*?)\n?```", re.DOTALL)
 
+# #269, #356: a datasetCandidates block that did not become a card. The model
+# wrote XML, or a fence whose JSON breaks the contract (a bad row, too many
+# rows, broken JSON) or is not the reply's last block, and the raw markup
+# reached the chat. The rows' text still does; the tags, the fence and the
+# JSON keys do not. Only a block that IS the candidates block counts: a
+# request whose params mention the name, or prose naming it, stays as it is.
+_CANDIDATES_FENCE_RE = re.compile(
+    r"^```[A-Za-z0-9._-]*[ \t]*\n"
+    r"(?P<body>\s*(?:\{\s*\"datasetCandidates\"|<datasetCandidates\b).*?)"
+    r"(?:\n```[ \t]*(?=\n|\Z)|\Z)",
+    re.DOTALL | re.MULTILINE | re.IGNORECASE,
+)
+# Outside a fence, and not inside a code span; an unclosed block (a reply cut
+# off mid-list) runs to the end of the reply when more markup follows it.
+_CANDIDATES_XML_RE = re.compile(
+    r"(?<!`)<datasetCandidates\b[^>]*?"
+    r"(?:/>|>(?:.*?</datasetCandidates\s*>|(?=.*?<[A-Za-z/]).*\Z))",
+    re.DOTALL | re.IGNORECASE,
+)
+_JSON_TOKEN_RE = re.compile(r'"(?:[^"\\\n]|\\.)*"|[{}\[\]:]|[^\s"{}\[\]:,]+')
+# A bare JSON value that is no text: a number, true, false, null.
+_JSON_LITERAL_RE = re.compile(r"-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null")
+_XML_TOKEN_RE = re.compile(
+    r"(?P<tag><(?P<close>/?)[A-Za-z][\w.:-]*[^<>]*?(?P<self>/?)>)"
+    r"|(?P<comment><!--.*?-->)|(?P<text>[^<]+)|<",
+    re.DOTALL,
+)
+
+
+def _one_line(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _json_rows(text: str) -> list[list[str]]:
+    """The text values of a candidates JSON body, valid or broken, one list
+    per row: an object in a list is a row, and an object or list inside an
+    object (a row's ``fit``) belongs to that row. Keys, numbers and booleans
+    are dropped; a word left outside its quotes by broken JSON is kept."""
+    rows: list[list[str]] = []
+    stack: list[tuple[str, list[str]]] = []
+
+    def _close() -> None:
+        _kind, values = stack.pop()
+        if not values:
+            return
+        if stack and stack[-1][0] == "{":
+            stack[-1][1].extend(values)
+        else:
+            rows.append(values)
+
+    tokens = _JSON_TOKEN_RE.findall(text)
+    for index, token in enumerate(tokens):
+        if token in ("{", "["):
+            stack.append((token, []))
+        elif token in ("}", "]"):
+            if stack:
+                _close()
+        elif token != ":":
+            if index + 1 < len(tokens) and tokens[index + 1] == ":":
+                continue  # a key
+            if not token.startswith('"'):
+                if _JSON_LITERAL_RE.fullmatch(token):
+                    continue
+                value = token
+            else:
+                try:
+                    value = json.loads(token)
+                except ValueError:
+                    value = token[1:-1]
+            value = _one_line(str(value))
+            if not value:
+                continue
+            if stack:
+                stack[-1][1].append(value)
+            else:
+                rows.append([value])
+    while stack:
+        _close()
+    return rows
+
+
+def _xml_rows(text: str) -> list[list[str]]:
+    """The text of an XML-shaped candidates block, one list per row: an
+    element holding elements is a row, and a leaf element (``<name>``)
+    belongs to its parent. Tags, attributes and comments are dropped."""
+    rows: list[list[str]] = []
+    stack: list[list] = []  # [values, has child elements]
+
+    def _close() -> None:
+        values, has_children = stack.pop()
+        if not values:
+            return
+        if stack and not has_children:
+            stack[-1][0].extend(values)
+        else:
+            rows.append(values)
+
+    for match in _XML_TOKEN_RE.finditer(text):
+        if match.group("tag"):
+            if match.group("close"):
+                if stack:
+                    _close()
+                continue
+            if stack:
+                stack[-1][1] = True
+            if not match.group("self"):
+                stack.append([[], False])
+        elif match.group("text"):
+            value = _one_line(match.group("text"))
+            if not value:
+                continue
+            if stack:
+                stack[-1][0].append(value)
+            else:
+                rows.append([value])
+    while stack:
+        _close()
+    return rows
+
+
+def _candidate_lines(block: str) -> str:
+    rows = _xml_rows(block) if block.lstrip().startswith("<") else _json_rows(block)
+    lines = "\n".join("- " + " · ".join(row) for row in rows)
+    return f"\n\n{lines}\n\n" if lines else "\n\n"
+
+
+def _without_candidates_markup(visible: object) -> object:
+    """*visible* with every candidates block left in it turned into its rows'
+    text, one Markdown bullet per row. Any other text is returned as is."""
+    if not isinstance(visible, str) or "datasetcandidates" not in visible.lower():
+        return visible
+    cleaned = _CANDIDATES_FENCE_RE.sub(lambda m: _candidate_lines(m.group("body")), visible)
+    cleaned = _CANDIDATES_XML_RE.sub(lambda m: _candidate_lines(m.group(0)), cleaned)
+    if cleaned == visible:
+        return visible
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
 
 def extract_content(reply: str) -> tuple[str, list[dict]]:
     """The runtime entry point: ``(visible_text, parts)`` for one reply.
@@ -1040,7 +1180,17 @@ def extract_content(reply: str) -> tuple[str, list[dict]]:
     request blocks, or no valid terminal block at all, keep the pre-A10
     behavior byte-identically (the conservative boundary: this tolerance
     exists for the observed decorated-request shape only).
+
+    #269, #356: a datasetCandidates block left in the visible text (it did
+    not parse, or sat where no tail counts) keeps its rows' text and loses
+    its markup. Every other visible text is returned byte for byte.
     """
+    visible, parts = _split_parts(reply)
+    return _without_candidates_markup(visible), parts
+
+
+def _split_parts(reply: str) -> tuple[str, list[dict]]:
+    """:func:`extract_content` before candidates markup leaves the text."""
     visible, body = split_tail(reply)
     if body is None:
         return reply, []
@@ -1157,8 +1307,8 @@ CANDIDATES_INSTRUCTION = (
     "each. Every catalog row needs the datasetId catalog.search returned; only "
     "http(s) URLs are accepted; fit.score is 0-100. Names stay under 120 "
     "characters and the other text fields under 160. Do not invent any other "
-    "markup for candidates — a block that does not match this shape is shown to "
-    "the user as raw text."
+    "markup for candidates: a block that does not match this shape reaches the "
+    "user as plain text, with no card to select from."
 )
 
 
