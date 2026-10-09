@@ -11,6 +11,10 @@ jest.mock("../../services/agents/agentEvents", () => ({
   notifyAgentCatalogRefresh: () => mockPaletteRefresh(),
 }));
 
+// The chat panel the line tests render loads the package review on demand
+// only; mocked so this suite stays network-free, as the panel's own suite is.
+jest.mock("../../services/packages/packagesApi", () => ({ packagesApi: {} }));
+
 jest.mock("../../services/agents/agentsApi", () => ({
   agentsApi: {
     listAttachments: jest.fn(),
@@ -37,11 +41,14 @@ jest.mock("../../services/agents/agentsApi", () => ({
   },
 }));
 
+import { MemoryRouter } from "react-router-dom";
+
 import { agentsApi } from "../../services/agents";
 import {
   AgentAttachmentsProvider,
   useAgentAttachmentsContext,
 } from "../../providers/agents";
+import { AgentChatPanel } from "../../components/agents/attach/AgentChatPanel";
 
 const api = agentsApi as jest.Mocked<typeof agentsApi>;
 
@@ -678,6 +685,110 @@ describe("AgentAttachmentsProvider delegate activity lines (memo dev/48)", () =>
     expect(flat).toContain("agent.node-content-builder@1.0.0 · ok");
     // Transient: cleared once the turn finalizes.
     expect(seen[seen.length - 1]).toEqual([]);
+  });
+});
+
+describe("AgentAttachmentsProvider lines that stay under a reply (#447, #243)", () => {
+  const REFUSAL =
+    "refused by the egress policy: host '127.0.0.1' resolves to a non-public address (127.0.0.1) - refused";
+  const NO_CHANGE = "No changes were made to the canvas";
+  const nodeBuilder = { ...attachment, coord: "agent.node-builder@1.0.0", name: "Node Builder" };
+
+  /** The live chat: the provider's transcript and tool lines in the real panel. */
+  function renderChat(chat: typeof attachment, seen: string[][] = []) {
+    const ChatProbe: React.FC = () => {
+      const ctx = useAgentAttachmentsContext();
+      if (!ctx) return null;
+      seen.push(ctx.toolActivity["a1"] ?? []);
+      return (
+        <>
+          <button onClick={() => void ctx.sendMessage("a1", "go")}>send-go</button>
+          <AgentChatPanel
+            attachment={chat}
+            turns={ctx.transcripts["a1"] ?? []}
+            toolActivity={ctx.toolActivity["a1"] ?? []}
+            onSend={async () => undefined}
+            onClose={() => undefined}
+          />
+        </>
+      );
+    };
+    return render(
+      <MemoryRouter>
+        <AgentAttachmentsProvider>
+          <ChatProbe />
+        </AgentAttachmentsProvider>
+      </MemoryRouter>,
+    );
+  }
+
+  it("a refused web.fetch keeps its reason under the reply once the turn ends (#447)", async () => {
+    api.runAttachmentStream.mockImplementation(async (_p, _a, _m, onDelta, onEvent) => {
+      onEvent?.("tool_requested", { tool: "web.fetch" });
+      onEvent?.("tool_started", { tool: "web.fetch" });
+      onEvent?.("tool_result", { tool: "web.fetch", status: "error", reason: REFUSAL });
+      onDelta("I could not reach that address.");
+      return { reply: "I could not reach that address.", executionId: "e5", usage: null };
+    });
+    const seen: string[][] = [];
+    renderChat(attachment, seen);
+    await act(async () => {
+      fireEvent.click(screen.getByText("send-go"));
+    });
+    // While the run streams, the tool line already names the refusal...
+    expect(seen.flat()).toContain(`web.fetch · ${REFUSAL}`);
+    // ...the transient lines are gone once the turn ends...
+    expect(seen[seen.length - 1]).toEqual([]);
+    // ...and the refusal stays under the reply.
+    expect(screen.getByText("I could not reach that address.")).toBeInTheDocument();
+    expect(screen.getByText(`web.fetch · ${REFUSAL}`)).toBeInTheDocument();
+  });
+
+  it("a Node Builder reply with only a dataflow.read call says nothing changed on the canvas (#243)", async () => {
+    api.runAttachmentStream.mockImplementation(async (_p, _a, _m, onDelta, onEvent) => {
+      onEvent?.("tool_requested", { tool: "dataflow.read" });
+      onEvent?.("tool_started", { tool: "dataflow.read" });
+      onEvent?.("tool_result", { tool: "dataflow.read", status: "ok" });
+      onDelta("I have now added a new node to your dataflow.");
+      return { reply: "I have now added a new node to your dataflow.", executionId: "e6", usage: null };
+    });
+    renderChat(nodeBuilder);
+    await act(async () => {
+      fireEvent.click(screen.getByText("send-go"));
+    });
+    expect(screen.getByText("I have now added a new node to your dataflow.")).toBeInTheDocument();
+    expect(screen.getByText(NO_CHANGE)).toBeInTheDocument();
+  });
+
+  it("a Node Builder reply that holds a node.create proposal does not (#243)", async () => {
+    api.runAttachmentStream.mockImplementation(async (_p, _a, _m, onDelta, onEvent) => {
+      onEvent?.("tool_requested", { tool: "node.create" });
+      onEvent?.("tool_result", { tool: "node.create", status: "proposed" });
+      onEvent?.("review_required", { proposalId: "pc1", tool: "node.create", summary: "Create a node" });
+      onDelta("Here is the node for your review.");
+      return {
+        reply: "Here is the node for your review.",
+        executionId: "e7",
+        usage: null,
+        content: [
+          {
+            type: "proposal",
+            proposalId: "pc1",
+            tool: "node.create",
+            summary: "Create a node",
+            preview: "print(1)",
+            pins: { nodeType: "COMPUTATION_ANALYSIS" },
+            status: "pending",
+          },
+        ],
+      } as never;
+    });
+    renderChat(nodeBuilder);
+    await act(async () => {
+      fireEvent.click(screen.getByText("send-go"));
+    });
+    expect(screen.getByText("Here is the node for your review.")).toBeInTheDocument();
+    expect(screen.queryByText(NO_CHANGE)).not.toBeInTheDocument();
   });
 });
 
