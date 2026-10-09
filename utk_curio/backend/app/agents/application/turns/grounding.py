@@ -490,11 +490,17 @@ def _grounding_context(
     extra_texts: tuple = (),
     base: dict | None = None,
     is_data_loading: bool | None = None,
+    request_texts: tuple = (),
 ) -> "source_grounding.GroundingContext":
     """dev/114 (DEC-072): everything the gate needs for ONE mint — catalog
     paths, the conversation's evidence, the run-budgeted prober, and the
     grant-aware corrective routes. ``base`` (a Solve batch's precomputed
-    catalog paths / texts / verified map) replaces the per-mint reads."""
+    catalog paths / texts / verified map) replaces the per-mint reads.
+
+    #411: the catalog ids named in the message this run answers, or in
+    ``request_texts`` (a Solve node's own goal), are the datasets the content
+    must read. An id in an earlier turn, the dataflow's task or another
+    node's goal restricts nothing, so those texts are not read for it."""
     from utk_curio.backend.app.packages import service as packages_services
 
     canonical = packages_services.canonical_template_id(node_type) if node_type else ""
@@ -573,6 +579,9 @@ def _grounding_context(
         secrets=secrets,
         secret_values=lambda names: secret_values(
             [f'curio_secret("{n}")' for n in names]
+        ),
+        requested_dataset_ids=source_grounding.named_dataset_ids(
+            [loop_ctx.get("message"), *request_texts], catalog_ids,
         ),
     )
 

@@ -214,6 +214,8 @@ class VerifiedRounds:
                 self.user_key, self.project_id, self.grounding_loop_ctx, node_type=self.node_type,
                 base=grounding_base,
                 extra_texts=(str(self.node.get("goal") or ""), str(dataflow.get("task") or "")),
+                # #411: a catalog id in THIS node's goal is the dataset it loads.
+                request_texts=(str(self.node.get("goal") or ""),),
             )
         except Exception:
             log.warning("Grounding context unavailable for node %s", self.node_id, exc_info=True)
@@ -882,6 +884,12 @@ class VerifiedRounds:
         if source_state.get("state") == "awaiting":
             return self._awaiting_source(source_state, rounds=0, after=None, stopped_by=None)
         self.confirmed_source = source_state.get("confirmedSource")
+        if self.grounding_ctx is not None:
+            # #411: a catalog row the user confirmed for this node is a
+            # dataset they asked for, so the gate holds the code to it.
+            self.grounding_ctx.requested_dataset_ids |= source_grounding.confirmed_dataset_ids(
+                self.confirmed_source
+            )
         if source_state.get("detail"):
             self.rounds_trace.append(f"source: {str(source_state['detail'])[:160]}")
         return None

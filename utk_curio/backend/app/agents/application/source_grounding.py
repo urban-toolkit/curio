@@ -15,6 +15,8 @@ The rules (all runtime-enforced; prompt wording only teaches them):
   path — the same truth ``catalog.search`` serves); the portable
   ``curio_data_path("<id>")`` call the loader recipe emits is grounded
   when the id is a dataset of this project's catalog;
+- when the user asked for catalog datasets by id (or confirmed some for the
+  node), code that reads catalog data must read one of those (#411);
 - a **URL** is grounded only when the runtime probed it this run (the dev/67-4
   gate: ``verified``, or ``401``/``403`` = the endpoint exists behind a
   credential) or an already-verified candidate row in this session carries
@@ -173,6 +175,10 @@ class GroundingContext:
     #: dev/116: resolves names → values for a keyed probe (the ONE reader of
     #: values on the agent path); None when no store is reachable.
     secret_values: Callable[[list[str]], dict] | None = None
+    #: #411: the Data Catalog datasets the user asked for: the ids named in the
+    #: message this run answers (or in a Solve node's own goal), and the catalog
+    #: rows the user confirmed for the node. Empty restricts nothing.
+    requested_dataset_ids: set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -708,6 +714,42 @@ def user_paths(texts: list[str] | tuple[str, ...]) -> set[str]:
     return out
 
 
+# #411: a dataset id as free text writes it: letters and digits joined by dots,
+# dashes or underscores, perhaps with an ``@<version>`` suffix.
+_DATASET_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._@-]*")
+_VERSION_SUFFIX_RE = re.compile(r"@\d+$")
+
+
+def _bare_dataset_id(value: str) -> str:
+    return _VERSION_SUFFIX_RE.sub("", value.rstrip("._-@"))
+
+
+def named_dataset_ids(texts, catalog_ids) -> set[str]:
+    """#411: the ids of *catalog_ids* that *texts* name. A whole token must be
+    the id: a version suffix and trailing punctuation are ignored, and an id
+    that only begins a longer one is not named by it."""
+    by_bare: dict[str, set[str]] = {}
+    for dataset_id in catalog_ids or {}:
+        by_bare.setdefault(_bare_dataset_id(str(dataset_id)), set()).add(str(dataset_id))
+    named: set[str] = set()
+    for text in texts or ():
+        if not isinstance(text, str):
+            continue
+        for token in _DATASET_TOKEN_RE.findall(text):
+            named |= by_bare.get(_bare_dataset_id(token), set())
+    return named
+
+
+def confirmed_dataset_ids(confirmed: object) -> set[str]:
+    """#411: the catalog datasets among the sources the user confirmed for a
+    node (the shape ``dataset_resolution.confirmed_source`` returns)."""
+    picks = confirmed.get("picks") if isinstance(confirmed, dict) else None
+    return {
+        str(pick["datasetId"]) for pick in picks or ()
+        if isinstance(pick, dict) and pick.get("datasetId")
+    }
+
+
 def synthetic_requested(texts: list[str] | tuple[str, ...], params: dict | None = None) -> bool:
     """True when the USER asked for made-up data, or the model declared
     ``synthetic: true`` — the declaration is only honoured when the user's
@@ -775,6 +817,7 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
     refs = scan_sources(code, engine)
     violations: list[str] = []
     source_refs: list[dict] = []
+    catalog_reads: list[tuple[str, str]] = []  # #411: (where, dataset id)
     for ref in refs:
         where = f"{ref.literal!r} (line {ref.line})"
         if ref.kind == "catalog-id":
@@ -785,6 +828,7 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
                     "this project's Data Catalog — use the id of a catalog.search row"
                 )
             else:
+                catalog_reads.append((f"{ref.call}({ref.literal!r}) (line {ref.line})", catalog.dataset_id))
                 source_refs.append({
                     "kind": "catalog",
                     "value": f'{ref.call}("{ref.literal}")',
@@ -802,6 +846,8 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
                 continue
             catalog = _catalog_match(ref.literal, ctx)
             if catalog is not None:
+                if not _user_match(ref.literal, ctx):  # a path the user typed is theirs to load
+                    catalog_reads.append((where, catalog.dataset_id))
                 source_refs.append({
                     "kind": "catalog",
                     "value": ref.literal[:_VALUE_MAX_CHARS],
@@ -865,6 +911,19 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
             else:
                 why = detail or "unreachable"
             violations.append(f"{where}: {why} — only a URL the runtime verified may be fetched")
+    # #411: the user asked for particular catalog datasets. Code that reads
+    # catalog data but none of those put another dataset in their place, so
+    # each read is refused with both named. A requested dataset read beside
+    # another one (a boundary to clip by) stays grounded.
+    requested = ctx.requested_dataset_ids or set()
+    if requested and catalog_reads and not any(d in requested for _, d in catalog_reads):
+        asked = ", ".join(repr(d) for d in sorted(requested))
+        for read_at, dataset_id in catalog_reads:
+            violations.append(
+                f"{read_at}: loads the Data Catalog dataset {dataset_id!r}, but the user "
+                f"asked for {asked}; load the dataset the user asked for, or ask the user "
+                "before using another one"
+            )
     # dev/116: connection keys by name — known names are grounded refs, an
     # unknown name is refused with the saved names listed (DEC-067).
     saved_names = sorted((ctx.secrets or {}).keys())
