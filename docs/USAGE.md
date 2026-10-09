@@ -493,7 +493,8 @@ Pinned to the dashboard, a Parameter node shows its value.
 
 A selection tag gives a node's code what you selected in a view: a brush or a
 click in a Vega-Lite chart, or a pick or a brush in an Autark map or plot. The
-code gets the ids of the selected rows.
+code gets the ids of the selected rows. A selection of key values (see
+[Linking charts](#linking-charts)) selects every row that holds them.
 
 1. Run the view, so its rows are known.
 2. In the node's **Widgets** tab, under **Selections**, click **Add selection**.
@@ -902,7 +903,7 @@ A selection in one chart highlights the matching rows in the charts linked to it
 
 The receiving chart styles the marked rows through its spec, for example `"color": {"condition": {"test": "datum.interacted === '1'", "value": "red"}, "value": "blue"}`. A selection only restyles the rows; the chart is not redrawn, and its own selection stays where it is.
 
-A point selection matches rows by position, so both charts must read the same rows in the same order. An interval selection matches by column name, so the receiving chart needs the columns the interval names.
+A point selection over fields (`"select": {"type": "point", "fields": ["unit_id"]}`) sends the values of the points picked, such as `{"unit_id": 103}`, and the receiving chart marks every row that holds them, in whatever order it holds its rows. A point selection without fields matches rows by position, so both charts must read the same rows in the same order. An interval selection matches by column name, so the receiving chart needs the columns the interval names.
 
 When several selections reach a Data Pool, the two selects at the top of the pool decide which rows it marks. **Conflict inside visualization** combines the selections of one chart, and **Conflict between visualizations** combines the latest selection of each linked chart:
 
@@ -913,6 +914,14 @@ When several selections reach a Data Pool, the two selects at the top of the poo
 The chosen modes are saved with the dataflow.
 
 An Autark map takes part the same way: a selection highlights its features, and a pick on the map, or a selection in an Autark plot, is a selection the others receive.
+
+An Autark view names the columns that identify its rows with `selectFields`, on the pickable map layer or on the plot. A pick or a brush on it then sends their values, as a point selection over fields does, and a feature that holds none selects nothing. Without `selectFields`, it matches rows by position.
+
+```json
+{"map": {"layerRefs": [{"dataRef": "input_0", "isPick": true, "selectFields": ["unit_id"]}]}}
+```
+
+The values are read from the node's input, so the table must come from an input, not from the document's own `data` section, and each column must be one its features have; otherwise the run fails and says which. The map highlights the feature picked, while a Vega-Lite chart highlights every mark that holds the value picked.
 
 
 ## Autark node

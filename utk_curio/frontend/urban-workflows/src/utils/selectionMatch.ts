@@ -9,7 +9,8 @@
  * A point selection names row positions: it lines up only when both ends read
  * the same rows in the same order. An interval names column values, so it
  * matches any rows that have those columns. So does a point selection over
- * fields (#847): it names the values of each point it picked, `{unit_id: 103}`,
+ * fields (#847), a Vega-Lite select over `fields` or an Autark view that names
+ * `selectFields`: it names the values of each point it picked, `{unit_id: 103}`,
  * and picks every row that holds them, wherever the row sits.
  */
 import { ResolutionType, VisInteractionType } from "../constants";

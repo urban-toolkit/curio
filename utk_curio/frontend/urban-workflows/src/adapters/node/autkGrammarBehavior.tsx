@@ -1063,7 +1063,8 @@ export const useAutkGrammarBehavior = (
 
     // #662: a selection tag on this node reads the features of the layer its
     // pick or brush came from, the rows a direct selection is matched against
-    // above (utils/references/viewSelections). A pick names their positions.
+    // above (utils/references/viewSelections). A pick names their positions,
+    // or their key values when the view names selectFields.
     useEffect(
         () =>
             provideViewRows(data.nodeId, async (layer) => {
