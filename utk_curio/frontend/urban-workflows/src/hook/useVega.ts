@@ -13,6 +13,7 @@ import { inputTableName } from "../generated/autkGrammar";
 import { usableCounts } from "../utils/vegaUsableRows";
 import { matchSelections, objectRows } from "../utils/selectionMatch";
 import { columnsOfRows, provideViewRows } from "../utils/references/viewSelections";
+import { viewSelects } from "../utils/vegaSelects";
 import { echoedCircle } from "../utils/selectionEcho";
 import type { NodeEmptyReason } from "../utils/nodeEmptyState";
 import { resolveGrammarEmptyReason } from "../utils/nodeEmptyState";
@@ -516,24 +517,12 @@ export const useVega = ({
 
     setCurrentView(view);
 
-    // getting signals names
-    let viewState = view.getState();
-    let stateAttributes = Object.keys(viewState.signals);
-    for (const stateAttribute of stateAttributes) {
-      let parsedAttr = stateAttribute.split("_");
-
-      // adding a signal listener for each signal
-      if (parsedAttr.length > 1 && parsedAttr[1] == "modify") {
-        setInteractions({
-          ...interactionsRef.current,
-          [parsedAttr[0]]: {
-            type: VisInteractionType.UNDETERMINED,
-            data: [],
-            source: NodeType.VIS_VEGA,
-          },
-        });
-
-        view.addSignalListener(parsedAttr[0], (name: any, value: any) => {
+    // A listener on each select's top-level signal, `<name>`, which holds its
+    // selection, whatever the name and wherever the spec declares it (#846).
+    const selects = viewSelects(specObj, Object.keys(view.getState().signals ?? {}));
+    for (const select of selects.keys()) {
+      try {
+        view.addSignalListener(select, (name: any, value: any) => {
           // detecting the type of interaction (point/hover or interval (brush))
           let signalAttributes = Object.keys(value);
 
@@ -541,7 +530,7 @@ export const useVega = ({
 
           if (signalAttributes.length == 0) {
             // no interaction
-            let previousValue = interactionsRef.current[parsedAttr[0]];
+            let previousValue = interactionsRef.current[select];
 
             let type = VisInteractionType.UNDETERMINED;
             let data: any = [];
@@ -565,7 +554,7 @@ export const useVega = ({
               };
             }
 
-            newObj[parsedAttr[0]] = {
+            newObj[select] = {
               type: type,
               data: data,
               priority: 1,
@@ -591,7 +580,7 @@ export const useVega = ({
               };
             }
 
-            newObj[parsedAttr[0]] = {
+            newObj[select] = {
               type: VisInteractionType.POINT,
               data: interactedElementsPoint,
               priority: 1,
@@ -613,7 +602,7 @@ export const useVega = ({
               };
             }
 
-            newObj[parsedAttr[0]] = {
+            newObj[select] = {
               type: VisInteractionType.INTERVAL,
               data: { ...value },
               priority: 1,
@@ -623,7 +612,19 @@ export const useVega = ({
             setInteractions(newObj);
           }
         });
+      } catch {
+        // vega throws for a name that is not one of the view's top-level
+        // signals, as a `<name>_modify` signal no select made can give.
+        continue;
       }
+      setInteractions({
+        ...interactionsRef.current,
+        [select]: {
+          type: VisInteractionType.UNDETERMINED,
+          data: [],
+          source: NodeType.VIS_VEGA,
+        },
+      });
     }
 
     // replicating input to the output
