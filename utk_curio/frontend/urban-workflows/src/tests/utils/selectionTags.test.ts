@@ -2,6 +2,19 @@
  * Selection tags (#662): a view's current selection, read by a node's code as
  * `[!! selection name !!]`, the ids of the rows it picks.
  */
+// An Autark node, to tag its picks (_support/autkNode).
+jest.mock("../../providers/FlowProvider", () => require("../_support/autkNodeMocks").flowProviderModule);
+jest.mock("../../providers/ToastProvider", () => require("../_support/autkNodeMocks").toastProviderModule);
+jest.mock("../../services/api", () => require("../_support/autkNodeMocks").apiModule);
+jest.mock("../../JavaScriptInterpreter", () => ({ JavaScriptInterpreter: class { } }));
+jest.mock(
+  "@urban-toolkit/autk-grammar",
+  () => require("../_support/autkNodeMocks").autkGrammarModule,
+  { virtual: true },
+);
+jest.mock("@urban-toolkit/autk-compute", () => ({ ComputeGpgpu: jest.fn() }), { virtual: true });
+
+import { act } from "@testing-library/react";
 import { VisInteractionType } from "../../constants";
 import { objectRows } from "../../utils/selectionMatch";
 import {
@@ -17,6 +30,10 @@ import {
 } from "../../utils/references/selectionTags";
 import { resolveReferences } from "../../utils/references/codeReferences";
 import { runKeyWithShared } from "../../utils/references/sharedParameters";
+import { resetViewSelections, selectionStateOf } from "../../utils/references/viewSelections";
+import { grammarRuns, resetAutkNodeMocks } from "../_support/autkNodeMocks";
+import { mountAutkNode, stubWebGpu, unstubWebGpu } from "../_support/autkNode";
+import { UNIT_PROPERTIES, UNIT_ROW, drawnAt, unitsCollection } from "../_support/keyedSelections";
 
 const BUILDINGS = [
   { osm_id: 101, building_id: 7, height: 10, name: "a" },
@@ -93,6 +110,33 @@ describe("the ids a selection picks", () => {
     const exactly = rows.slice(0, SELECTION_ID_CAP);
     const state = selectedIds(brush({ v: [0, 2] }), objectRows(exactly), "osm_id");
     expect("ids" in state && state.ids).toHaveLength(SELECTION_ID_CAP);
+  });
+});
+
+describe("a tag on an Autark map that names its rows by key (selectFields)", () => {
+  beforeEach(() => {
+    resetAutkNodeMocks();
+    resetViewSelections();
+    stubWebGpu();
+  });
+  afterEach(unstubWebGpu);
+
+  // Read through the node's own rows: the input row behind the square picked,
+  // not the row at its drawn position, which is unit 101's.
+  test("guard: a pick on unit 103's square holds 103 by unit_id, and its name by name", async () => {
+    const node = mountAutkNode("units-map", unitsCollection());
+    await node.run({
+      map: { layerRefs: [{ dataRef: "input_0", isPick: true, selectFields: ["unit_id"] }] },
+    });
+    const at = drawnAt(UNIT_ROW[103]);
+    expect(UNIT_PROPERTIES[at]).toMatchObject({ unit_id: 101, name: "Alpha" });
+
+    act(() => grammarRuns[0].pick([at]));
+    const calls = node.interactions.mock.calls;
+    const details = calls[calls.length - 1][0];
+
+    expect(await selectionStateOf("units-map", "unit_id", details)).toEqual({ ids: [103] });
+    expect(await selectionStateOf("units-map", "name", details)).toEqual({ ids: ["Charlie"] });
   });
 });
 
