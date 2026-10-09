@@ -2,6 +2,7 @@ import { ResolutionType, VisInteractionType } from '../../constants';
 import {
   columnRows,
   featureRows,
+  isActiveSelect,
   matchSelections,
   objectRows,
   resolveIndices,
@@ -40,6 +41,28 @@ describe('selectIndices', () => {
   test('an interval over no column, or a cleared selection, picks nothing', () => {
     expect(selectIndices({ type: INTERVAL, data: {} }, rows)).toEqual([]);
     expect(selectIndices({ type: UNDETERMINED, data: [] }, rows)).toEqual([]);
+  });
+
+  test('a point selection over fields names values: the rows holding them, in any order (#847)', () => {
+    const picked = { type: POINT, data: [{ unit_id: 103 }, { unit_id: 105 }] };
+    // The chart's own rows, and readings of the units taken in another order.
+    const units = objectRows([101, 102, 103, 104, 105, 106].map((unit_id) => ({ unit_id })));
+    const readings = columnRows({
+      reading: ['104-1', '101-1', '106-1', '103-1', '102-1', '105-1', '104-2', '101-2', '106-2', '103-2'],
+      unit_id: [104, 101, 106, 103, 102, 105, 104, 101, 106, 103],
+    });
+    expect(selectIndices(picked, units)).toEqual([2, 4]);
+    expect(selectIndices(picked, readings)).toEqual([3, 5, 9]);
+  });
+
+  test('a point over text values, or over several fields, matches each point whole (#847)', () => {
+    expect(selectIndices({ type: POINT, data: [{ label: 'd' }, { label: 'b' }] }, rows)).toEqual([1, 3]);
+    expect(selectIndices({ type: POINT, data: [{ kind: 'x', value: 30 }, { kind: 'y', value: 10 }] }, rows))
+      .toEqual([2]);
+  });
+
+  test("a binned field's point holds the rows in its bin, [start, end) (#847)", () => {
+    expect(selectIndices({ type: POINT, data: [{ value: [20, 40] }] }, rows)).toEqual([1, 2]);
   });
 
 });
@@ -106,6 +129,15 @@ describe('matchSelections', () => {
     expect(matchSelections([chart], rows, { plot: ResolutionType.MERGE_AND })).toEqual([0, 1]);
     // OVERWRITE still reads the newest select, cleared or not.
     expect(matchSelections([chart], rows)).toEqual([]);
+  });
+
+  test('a point selection over values is active, and MERGE_AND intersects it like any other (#847)', () => {
+    const fromBar = { priority: 0, details: { pick: { type: POINT, data: [{ kind: 'x' }], priority: 1 } } };
+    const fromScatter = { priority: 1, details: { brush: { type: INTERVAL, data: { value: [20, 40] }, priority: 1 } } };
+    const cleared = { priority: 0, details: { pick: { type: UNDETERMINED, data: [], priority: 1 } } };
+    expect(isActiveSelect(fromBar.details.pick)).toBe(true);
+    expect(matchSelections([fromBar, fromScatter, cleared], rows, { between: ResolutionType.MERGE_AND }))
+      .toEqual([2]);
   });
 
   test("Autark's map pick is a select like any other", () => {
