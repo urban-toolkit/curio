@@ -7,7 +7,18 @@ import {
   objectRows,
   resolveIndices,
   selectIndices,
+  type SelectionRows,
 } from '../../utils/selectionMatch';
+import {
+  UNIT_ROW,
+  atPositions,
+  expectDiscriminates,
+  inHeightRange,
+  looselyHolding,
+  readingColumns,
+  readingsOf,
+} from '../_support/keyedSelections';
+import { scanRowsHolding } from '../_support/selectionScan';
 
 const POINT = VisInteractionType.POINT;
 const INTERVAL = VisInteractionType.INTERVAL;
@@ -157,6 +168,131 @@ describe('matchSelections', () => {
       },
     };
     expect(matchSelections([selection], rows)).toEqual([1]);
+  });
+});
+
+describe('a point selection over fields, matched by looking its values up', () => {
+  /** A generator of the same numbers on every run. */
+  const seeded = (seed: number) => () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const comparable = (value: unknown) => (value instanceof Date ? value.getTime() : value);
+  /** The scan with another equality for exact values; a bin holds what it holds. */
+  const scanWith = (equal: (held: unknown, value: unknown) => boolean) =>
+    (points: Record<string, unknown>[], rows: SelectionRows): number[] => {
+      const holds = (held: unknown, value: unknown) => (Array.isArray(held) && held.length === 2
+        ? scanRowsHolding([{ v: held }], objectRows([{ v: value }])).length === 1
+        : equal(held, value));
+      return Array.from({ length: rows.count }, (_, i) => i).filter((i) =>
+        points.some((point) => Object.entries(point).every(([field, held]) => holds(held, rows.value(i, field)))));
+    };
+
+  test('guard: the lookup marks what the scan marks, on 500 random fixtures of numbers, numeric text, Dates, nulls and bins', () => {
+    const random = seeded(847);
+    const pick = <T,>(list: T[]): T => list[Math.floor(random() * list.length)];
+    const shared = { kind: 'object' };
+    const VALUES: unknown[] = [
+      0, -0, 1, 2, 103, '103', '0', '2', '', false, true, null, NaN,
+      new Date(2), new Date(103), new Date(NaN), shared, [1, 2, 3],
+    ];
+    const bin = () => {
+      const start = pick<unknown>([0, 1, 2, 100, new Date(0)]);
+      const width = pick([1, 2, 5, 200]);
+      const end = start instanceof Date ? new Date(start.getTime() + width) : (start as number) + width;
+      return [start, end];
+    };
+    // Each other equality must mark other rows somewhere among the fixtures,
+    // or they would not show the lookup loosened or tightened.
+    const others = {
+      loose: scanWith((held, value) => comparable(held) == comparable(value)), // eslint-disable-line eqeqeq
+      datesByIdentity: scanWith((held, value) => held === value),
+      nanEqualsNan: scanWith((held, value) => Object.is(comparable(held), comparable(value)) || comparable(held) === comparable(value)),
+    };
+    const told = { loose: false, datesByIdentity: false, nanEqualsNan: false };
+    let binsMarked = 0;
+
+    for (let n = 0; n < 500; n++) {
+      const fields = ['a', 'b', 'c'].slice(0, 1 + Math.floor(random() * 3));
+      const rows = objectRows(Array.from({ length: 1 + Math.floor(random() * 25) }, () =>
+        Object.fromEntries(fields.flatMap((field) => (random() < 0.15 ? [] : [[field, pick(VALUES)]])))));
+      const points = Array.from({ length: 1 + Math.floor(random() * 5) }, () => {
+        const named = fields.filter(() => random() < 0.6);
+        return Object.fromEntries((named.length > 0 ? named : [fields[0]])
+          .map((field) => [field, random() < 0.2 ? bin() : pick(VALUES)]));
+      });
+
+      const scanned = scanRowsHolding(points, rows);
+      expect({ fixture: n, marked: selectIndices({ type: POINT, data: points }, rows) })
+        .toEqual({ fixture: n, marked: scanned });
+      for (const name of Object.keys(others) as Array<keyof typeof others>) {
+        if (JSON.stringify(others[name](points, rows)) !== JSON.stringify(scanned)) told[name] = true;
+      }
+      if (points.some((point) => Object.values(point).some((held) => Array.isArray(held) && held.length === 2))
+        && scanned.length > 0) binsMarked += 1;
+    }
+    expect(told).toEqual({ loose: true, datesByIdentity: true, nanEqualsNan: true });
+    expect(binsMarked).toBeGreaterThan(0);
+  });
+
+  test("repro: 2,000 points against 2,000 rows read each row's value once (the scan reads it millions of times)", () => {
+    let reads = 0;
+    const rows = {
+      count: 2000,
+      value: (index: number, column: string) => {
+        reads += 1;
+        return column === 'unit_id' ? 1000 + index : undefined;
+      },
+    };
+    // Points 0 to 1999 against values 1000 to 2999: half the rows hold none.
+    const points = Array.from({ length: 2000 }, (_, i) => ({ unit_id: i }));
+
+    expect(selectIndices({ type: POINT, data: points }, rows)).toEqual(Array.from({ length: 1000 }, (_, i) => i));
+    expect(reads).toBeLessThanOrEqual(2000);
+  });
+
+  test('guard: a key names every row holding it: all three readings of a unit (a first-match lookup marks one)', () => {
+    const marked = selectIndices({ type: POINT, data: [{ unit_id: 103 }] }, columnRows(readingColumns()));
+    expect(marked).toEqual(readingsOf(103));
+    expect(marked).toHaveLength(3);
+    expectDiscriminates(marked, {
+      positions: atPositions([UNIT_ROW[103]]),
+      range: inHeightRange([103]),
+      looseEquality: looselyHolding([103]),
+    });
+  });
+
+  test('guard: a key of two fields matches both: unit 103 of one city, not of the other (a one-field lookup marks both)', () => {
+    const sites = objectRows([
+      { city: 'Chicago', unit_id: 103 },
+      { city: 'Boston', unit_id: 103 },
+      { city: 'Chicago', unit_id: 104 },
+      { city: 'Boston', unit_id: 104 },
+      { city: 'Boston', unit_id: 103 },
+    ]);
+    // The same key with its fields in either order.
+    for (const point of [{ unit_id: 103, city: 'Boston' }, { city: 'Boston', unit_id: 103 }]) {
+      const marked = selectIndices({ type: POINT, data: [point] }, sites);
+      expect(marked).toEqual([1, 4]);
+      const [first, held] = Object.entries(point)[0];
+      expectDiscriminates(marked, {
+        firstField: selectIndices({ type: POINT, data: [{ [first]: held }] }, sites),
+      });
+    }
+    // Two points with their fields in different orders are one lookup.
+    expect(selectIndices({ type: POINT, data: [{ unit_id: 104, city: 'Chicago' }, { city: 'Boston', unit_id: 103 }] }, sites))
+      .toEqual([1, 2, 4]);
+  });
+
+  test('repro: a point holding undefined marks no row (the scan marked every row lacking the field)', () => {
+    const readings = columnRows(readingColumns());
+    // Readings have no height.
+    expect(selectIndices({ type: POINT, data: [{ height: undefined }] }, readings)).toEqual([]);
+    expect(selectIndices({ type: POINT, data: [{ unit_id: 103, height: undefined }] }, readings)).toEqual([]);
+    expect(selectIndices({ type: POINT, data: [{ unit_id: 105 }, { height: undefined }] }, readings))
+      .toEqual(readingsOf(105));
   });
 });
 
