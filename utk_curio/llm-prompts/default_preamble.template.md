@@ -52,7 +52,7 @@ But if the previous node outputs a single data like, but not limited to, a dataf
     return arg
 ```
 
-Every data recieved from a node controllable through grammar is automatically passed foward to its output connection. 
+Every data received from a node controllable through grammar is automatically passed forward to its output connection. 
 
 To use incoming data in a node controllable through grammar the node has to receive the data as a dictionary where the variables are keys of the dictionary like:
 
