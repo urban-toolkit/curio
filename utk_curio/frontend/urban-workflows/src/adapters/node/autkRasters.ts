@@ -33,6 +33,7 @@ import {
     type GeotiffLoad,
 } from '../../utils/raster/rasterLoad';
 import { decodeRasterEnvelope, rasterBandIds, type RasterGrid } from '../../utils/raster/rasterWire';
+import { grammarMaps } from './autkMapDrawing';
 
 export const CURIO_RASTER_SOURCE = 'curio-raster';
 
@@ -285,18 +286,17 @@ export function bleedIntoClearCells(rgba: Float32Array, width: number, height: n
  * raster's cells are colored whatever its `isColorMap`, so on a raster
  * `"isColorMap": false` hides the legend alone; the grammar turns it on for
  * any layer with a scheme. A map whose raster was colored again is asked for
- * a frame (`requestRender`), since it draws on demand (`autkMapDrawing`). The
- * grammar keeps each map by the dataRefs it draws (`_mapRegistry`); a layer
- * that is not a raster is left as drawn.
+ * a frame (`requestRender`), since it draws on demand (`autkMapDrawing`).
+ * Each map the grammar drew (`grammarMaps`) is colored from the layerRefs of
+ * its own `map` entry; a layer that is not a raster is left as drawn.
  */
 export function recolorRasters(grammar: any, spec: any): void {
-    const registry: Map<string, any> | undefined = grammar?._mapRegistry;
-    if (!registry) return;
+    const drawn = grammarMaps(grammar);
     const maps = spec?.map ? (Array.isArray(spec.map) ? spec.map : [spec.map]) : [];
-    for (const mapSpec of maps) {
+    for (const [index, mapSpec] of maps.entries()) {
+        const map = drawn[index];
         for (const ref of mapSpec?.layerRefs ?? []) {
-            const map = registry.get(ref?.dataRef);
-            const layer = map?.layerManager?.searchByLayerId?.(ref.dataRef);
+            const layer = map?.layerManager?.searchByLayerId?.(ref?.dataRef);
             if (layer?.layerInfo?.typeLayer !== 'raster' || typeof map.updateColorMap !== 'function') continue;
             layer.setTransferFunction?.(RASTER_TRANSFER_FUNCTION);
             map.updateColorMap(ref.dataRef, { colorMap: {} });
