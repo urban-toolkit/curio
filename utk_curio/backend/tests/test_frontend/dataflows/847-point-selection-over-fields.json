@@ -1,0 +1,82 @@
+{
+  "dataflow": {
+    "name": "847 point selection over fields",
+    "task": "Shows issue #847: a Vega-Lite point selection declared with fields (pick over unit_id). Click a bar in Pick units, Shift-click a second one, then run Selected units and look at the Readings chart.",
+    "timestamp": 1791590400000,
+    "provenance_id": "847-point-selection-over-fields",
+    "nodes": [
+      {
+        "id": "units",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 0,
+        "in": "DEFAULT",
+        "out": "DEFAULT",
+        "goal": "Six units, each with a numeric unit_id.",
+        "content": "import pandas as pd\n\n# Six units with a numeric id. The Pick units chart selects over unit_id.\nreturn pd.DataFrame({\n    \"unit_id\": [101, 102, 103, 104, 105, 106],\n    \"name\": [\"Alpha\", \"Bravo\", \"Charlie\", \"Delta\", \"Echo\", \"Foxtrot\"],\n    \"value\": [5, 3, 8, 2, 7, 4],\n})\n"
+      },
+      {
+        "id": "pick",
+        "type": "curio.builtin/vis-vega",
+        "x": 520,
+        "y": -60,
+        "in": "DATAFRAME",
+        "out": "DATAFRAME",
+        "goal": "Pick units: a point selection declared with fields, over unit_id (#847). Click a bar; Shift-click adds another.",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"title\": \"Pick units: click a bar, Shift-click to add one\",\n  \"params\": [\n    {\"name\": \"pick\", \"select\": {\"type\": \"point\", \"fields\": [\"unit_id\"], \"toggle\": \"event.shiftKey\"}}\n  ],\n  \"mark\": {\"type\": \"bar\", \"cursor\": \"pointer\"},\n  \"encoding\": {\n    \"x\": {\"field\": \"unit_id\", \"type\": \"ordinal\"},\n    \"y\": {\"field\": \"value\", \"type\": \"quantitative\"},\n    \"fillOpacity\": {\"condition\": {\"param\": \"pick\", \"value\": 1}, \"value\": 0.3},\n    \"tooltip\": [{\"field\": \"unit_id\"}, {\"field\": \"name\"}]\n  }\n}\n"
+      },
+      {
+        "id": "selected",
+        "type": "curio.builtin/data-transformation",
+        "x": 520,
+        "y": 420,
+        "in": "DATAFRAME",
+        "out": "DATAFRAME",
+        "goal": "The units the selection tag says were picked in Pick units.",
+        "content": "# The selection tag \"picked\" holds the unit_id of each unit picked in the\n# Pick units chart. It should hold exactly the units you clicked.\npicked = [!! selection picked !!]\nprint(\"The tag holds:\", picked)\nunits = arg\nreturn units[units[\"unit_id\"].isin(picked)]\n",
+        "metadata": {
+          "selections": [
+            {"name": "picked", "node": "pick", "column": "unit_id", "ids": []}
+          ]
+        }
+      },
+      {
+        "id": "readings",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 820,
+        "in": "DEFAULT",
+        "out": "DEFAULT",
+        "goal": "Three readings per unit, in the order they were taken, so a row's position says nothing about its unit.",
+        "content": "import pandas as pd\n\n# Three readings per unit, taken in rounds, units in a shuffled order:\n# row 2 is unit 106's first reading, not unit 103's.\norder = [104, 101, 106, 103, 102, 105]\nrows = []\nfor t in (1, 2, 3):\n    for unit_id in order:\n        rows.append({\"reading\": f\"{unit_id}-{t}\", \"unit_id\": unit_id, \"t\": t, \"level\": unit_id % 7 + t})\nreturn pd.DataFrame(rows)\n"
+      },
+      {
+        "id": "pool",
+        "type": "curio.builtin/data-pool",
+        "x": 520,
+        "y": 820,
+        "in": "DEFAULT",
+        "out": "DEFAULT",
+        "goal": "Marks the readings of the units picked in Pick units, which it is linked to by an interaction edge.",
+        "content": ""
+      },
+      {
+        "id": "readings_chart",
+        "type": "curio.builtin/vis-vega",
+        "x": 1040,
+        "y": 820,
+        "in": "DATAFRAME",
+        "out": "DATAFRAME",
+        "goal": "Readings, red where the pool marks them: the picked units' readings should turn red, three per unit.",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"title\": \"Readings: red where the pool marks the picked units\",\n  \"mark\": {\"type\": \"bar\"},\n  \"encoding\": {\n    \"x\": {\"field\": \"reading\", \"type\": \"ordinal\", \"sort\": null},\n    \"y\": {\"field\": \"level\", \"type\": \"quantitative\"},\n    \"color\": {\"condition\": {\"test\": \"datum.interacted === '1'\", \"value\": \"red\"}, \"value\": \"steelblue\"},\n    \"tooltip\": [{\"field\": \"reading\"}, {\"field\": \"unit_id\"}]\n  }\n}\n"
+      }
+    ],
+    "edges": [
+      {"id": "reactflow__edge-unitsout-pickin", "source": "units", "target": "pick"},
+      {"id": "reactflow__edge-unitsout-selectedin", "source": "units", "target": "selected"},
+      {"id": "reactflow__edge-readingsout-poolin", "source": "readings", "target": "pool"},
+      {"id": "reactflow__edge-poolout-readings_chartin", "source": "pool", "target": "readings_chart"},
+      {"id": "reactflow__edge-poolin/out-pickin/out", "type": "Interaction", "source": "pool", "target": "pick", "sourceHandle": "in/out", "targetHandle": "in/out"}
+    ]
+  }
+}
