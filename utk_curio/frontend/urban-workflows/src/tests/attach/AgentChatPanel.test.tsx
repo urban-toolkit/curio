@@ -568,24 +568,41 @@ describe("AgentChatPanel review + tool activity (memo dev/41)", () => {
   });
 
   it("a reloaded reply keeps a failed tool call's reason under it (#447)", () => {
-    const reason =
-      "refused by the egress policy: host '127.0.0.1' resolves to a non-public address (127.0.0.1) - refused";
     renderPanel({
       turns: [
         { role: "user", text: "check the data endpoint" },
         savedReply("I could not reach that address.", {
           toolCalls: [
             { tool: "node.read", status: "ok", durationMs: 2 },
-            { tool: "web.fetch", status: "error", durationMs: 4, reason },
+            { tool: "web.fetch", status: "error", durationMs: 4, reason: REFUSAL, egress: true },
           ],
         }),
       ],
     });
-    expect(screen.getByText(`web.fetch · ${reason}`)).toBeInTheDocument();
+    expect(screen.getByText(`web.fetch · ${REFUSAL}`)).toBeInTheDocument();
     // A call that succeeded leaves no line.
     expect(screen.queryByText(/^node\.read ·/)).not.toBeInTheDocument();
   });
+
+  it("an egress refusal keeps its line even when a later fetch in the turn succeeds (#447)", () => {
+    renderPanel({
+      turns: [
+        { role: "user", text: "check both endpoints" },
+        savedReply("The second address answered.", {
+          toolCalls: [
+            { tool: "web.fetch", status: "error", durationMs: 4, reason: REFUSAL, egress: true },
+            { tool: "web.fetch", status: "ok", durationMs: 80 },
+          ],
+        }),
+      ],
+    });
+    expect(screen.getByText(`web.fetch · ${REFUSAL}`)).toBeInTheDocument();
+  });
 });
+
+/** The reason the egress policy gives for a non-public address (#447). */
+const REFUSAL =
+  "refused by the egress policy: host '127.0.0.1' resolves to a non-public address (127.0.0.1) - refused";
 
 /** An agent reply as the server saves it, with the run's execution record
  * (pins, duration, usage) plus *execution*'s fields. */
@@ -648,6 +665,39 @@ describe("AgentChatPanel says when a canvas agent changed nothing (#243)", () =>
     });
     expect(screen.getByText("Here is the node for your review.")).toBeInTheDocument();
     expect(screen.queryByText(NO_CHANGE)).not.toBeInTheDocument();
+  });
+
+  it("a refused node.create the turn never recovered from keeps its reason, beside the no-change line (#447)", () => {
+    renderPanel({
+      attachment: nodeBuilder,
+      turns: [
+        ask,
+        savedReply("I have now added a new node to your dataflow.", {
+          toolCalls: [
+            { tool: "node.create", status: "refused", durationMs: 1, reason: "template.content must be a non-empty string" },
+          ],
+        }),
+      ],
+    });
+    expect(screen.getByText("node.create · template.content must be a non-empty string")).toBeInTheDocument();
+    expect(screen.getByText(NO_CHANGE)).toBeInTheDocument();
+  });
+
+  it("a node.create the turn recovered from leaves no line beside the proposal (#447)", () => {
+    renderPanel({
+      attachment: nodeBuilder,
+      turns: [
+        ask,
+        savedReply("Here is the node for your review.", {
+          toolCalls: [
+            { tool: "node.create", status: "refused", durationMs: 1, reason: "template.content must be a non-empty string" },
+            { tool: "node.create", status: "proposed", durationMs: 3 },
+          ],
+        }, [proposal]),
+      ],
+    });
+    expect(screen.getByRole("group", { name: "Review proposal: Create a node" })).toBeInTheDocument();
+    expect(screen.queryByText(/^node\.create ·/)).not.toBeInTheDocument();
   });
 
   it("a Solve verdict or a delegated task, which answer no message of the user's, does not", () => {

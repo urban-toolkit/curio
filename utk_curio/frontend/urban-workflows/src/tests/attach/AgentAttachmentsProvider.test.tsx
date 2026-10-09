@@ -726,7 +726,7 @@ describe("AgentAttachmentsProvider lines that stay under a reply (#447, #243)", 
     api.runAttachmentStream.mockImplementation(async (_p, _a, _m, onDelta, onEvent) => {
       onEvent?.("tool_requested", { tool: "web.fetch" });
       onEvent?.("tool_started", { tool: "web.fetch" });
-      onEvent?.("tool_result", { tool: "web.fetch", status: "error", reason: REFUSAL });
+      onEvent?.("tool_result", { tool: "web.fetch", status: "error", reason: REFUSAL, egress: true });
       onDelta("I could not reach that address.");
       return { reply: "I could not reach that address.", executionId: "e5", usage: null };
     });
@@ -788,6 +788,60 @@ describe("AgentAttachmentsProvider lines that stay under a reply (#447, #243)", 
       fireEvent.click(screen.getByText("send-go"));
     });
     expect(screen.getByText("Here is the node for your review.")).toBeInTheDocument();
+    expect(screen.queryByText(NO_CHANGE)).not.toBeInTheDocument();
+  });
+
+  it("a request for a tool the agent is not granted leaves no line (#447)", async () => {
+    api.runAttachmentStream.mockImplementation(async (_p, _a, _m, onDelta, onEvent) => {
+      onEvent?.("tool_requested", { tool: "dataflow.read" });
+      // What the server sends for it: refused to the model only, with no reason.
+      onEvent?.("tool_result", { tool: "dataflow.read", status: "refused" });
+      onDelta("Done without it.");
+      return { reply: "Done without it.", executionId: "e8", usage: null };
+    });
+    renderChat(attachment);
+    await act(async () => {
+      fireEvent.click(screen.getByText("send-go"));
+    });
+    expect(screen.getByText("Done without it.")).toBeInTheDocument();
+    expect(screen.queryByText(/^dataflow\.read ·/)).not.toBeInTheDocument();
+  });
+
+  it("a node.create the turn recovered from leaves no line beside the proposal (#447)", async () => {
+    api.runAttachmentStream.mockImplementation(async (_p, _a, _m, onDelta, onEvent) => {
+      onEvent?.("tool_requested", { tool: "node.create" });
+      onEvent?.("tool_result", {
+        tool: "node.create",
+        status: "refused",
+        reason: "template.content must be a non-empty string",
+      });
+      onEvent?.("tool_requested", { tool: "node.create" });
+      onEvent?.("tool_result", { tool: "node.create", status: "proposed" });
+      onEvent?.("review_required", { proposalId: "pc2", tool: "node.create", summary: "Create a node" });
+      onDelta("Here is the node for your review.");
+      return {
+        reply: "Here is the node for your review.",
+        executionId: "e10",
+        usage: null,
+        content: [
+          {
+            type: "proposal",
+            proposalId: "pc2",
+            tool: "node.create",
+            summary: "Create a node",
+            preview: "print(1)",
+            pins: { nodeType: "COMPUTATION_ANALYSIS" },
+            status: "pending",
+          },
+        ],
+      } as never;
+    });
+    renderChat(nodeBuilder);
+    await act(async () => {
+      fireEvent.click(screen.getByText("send-go"));
+    });
+    expect(screen.getByRole("group", { name: "Review proposal: Create a node" })).toBeInTheDocument();
+    expect(screen.queryByText(/^node\.create ·/)).not.toBeInTheDocument();
     expect(screen.queryByText(NO_CHANGE)).not.toBeInTheDocument();
   });
 });

@@ -955,6 +955,8 @@ class TestToolLoop:
         assert tool_result["tool"] == "web.fetch" and tool_result["status"] == "error"
         assert "egress policy" in tool_result["reason"]
         assert "non-public address" in tool_result["reason"]
+        # Marked as the egress policy's: its line stays even if a later fetch works.
+        assert tool_result["egress"] is True
         # The model still got the refusal as its tool result.
         assert "refused by the egress policy" in calls[1][-1]["content"]
         turns = client.get(
@@ -964,6 +966,47 @@ class TestToolLoop:
         (call,) = turns[1]["execution"]["toolCalls"]
         assert call["tool"] == "web.fetch" and call["status"] == "error"
         assert call["reason"] == tool_result["reason"]
+        assert call["egress"] is True
+
+    def test_an_ungranted_request_carries_no_reason(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        """#447 keeps dev/41's rule for a tool the agent is not granted: the
+        refusal goes to the model only. Its event and its saved record carry no
+        reason, so the chat keeps no line for it."""
+        calls = []
+
+        def _fake_stream(config, messages, usage_out=None, **kwargs):
+            calls.append(messages)
+            if len(calls) == 1:
+                yield '```curio.v1\n{"toolRequest": {"tool": "dataflow.read", "params": {}}}\n```'
+            else:
+                yield "Done without it."
+
+        monkeypatch.setattr(
+            'utk_curio.backend.app.agents.infrastructure.providers.stream_chat_turn', _fake_stream
+        )
+        monkeypatch.setattr(
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn',
+            lambda c, m, **kw: "Ungranted Title",
+        )
+        _, token = user_and_token
+        # Node Researcher is not granted dataflow.read.
+        att_id = self._install_attach(
+            client, token, alice_project, "agent.node-researcher@1.0.0", {"kind": "canvas"},
+        )
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
+            json={"message": "q"}, headers=_auth(token),
+        )
+        events = self._sse_events(r)
+        tool_result = next(p for k, p in events if k == "tool_result")
+        assert tool_result == {"tool": "dataflow.read", "status": "refused"}
+        assert "not granted" in calls[1][-1]["content"]
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        (call,) = turns[1]["execution"]["toolCalls"]
+        assert call["status"] == "refused" and "reason" not in call
 
     def test_a_failure_reason_is_one_bounded_line_without_url_queries(self):
         """#447: the reason is shown in the chat and saved with the turn, so it is
