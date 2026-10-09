@@ -243,3 +243,22 @@ test("a select inside a concatenated view is heard through its top-level signal 
     priority: 1,
   });
 });
+
+test("a point select over fields is reported as the rows holding the values it picked, not as an interval (#847)", async () => {
+  const { view, interactionsCallback } = await drawn(
+    POP,
+    barsWith([{ name: "pick", select: { type: "point", fields: ["value"] } }]),
+  );
+
+  // A select over fields reports their values, not vega's tuple ids.
+  await act(async () => {
+    view.listeners.pick("pick", { value: [1] });
+  });
+  expect(lastReported(interactionsCallback).pick).toMatchObject({ type: "POINT", data: [0], priority: 1 });
+
+  // As vega reports two points: each field's values, and each point under vlPoint.
+  await act(async () => {
+    view.listeners.pick("pick", { value: [1, 2], vlPoint: { or: [{ value: 1 }, { value: 2 }] } });
+  });
+  expect(lastReported(interactionsCallback).pick).toMatchObject({ type: "POINT", data: [0, 1], priority: 1 });
+});
