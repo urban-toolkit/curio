@@ -81,6 +81,10 @@ from .utils import (
     _post_json,
     accept_confirm_dialog,
     api_json,
+    assert_in_view,
+    at_fraction,
+    brush_area,
+    brush_mismatches,
     CANVAS_DROP_TARGET,
     _DRAG_TO_CANVAS_JS,
     canvas_nodes,
@@ -90,6 +94,7 @@ from .utils import (
     dismiss_toasts,
     drag_to_canvas,
     frame_node,
+    lit_marks,
     mark_point,
     node_locator,
     open_tools_palette,
@@ -226,6 +231,11 @@ EXAMPLE_INTERACTION = os.path.join(
 EXAMPLE_AUTARK = os.path.join(
     REPO_ROOT, "docs", "examples", "11-autark-pbf-loading.json",
 )
+# Its three nodes: the loader, a brushable histogram of building heights, and
+# the map that highlights the buildings a brush covers.
+AUTARK_LOAD = "pbf-load"
+AUTARK_PLOT = "pbf-plot"
+AUTARK_MAP = "pbf-map"
 # What the heat scene runs: Milan's heat exposure, from a thermal raster, a
 # weather feed and census tracts to a map and two linked charts.
 EXAMPLE_HEAT = os.path.join(
@@ -1718,24 +1728,51 @@ def scene_autark(ctx: Ctx) -> None:
     _new_dataflow_from_menu(ctx)
     _load_example(ctx, EXAMPLE_AUTARK, expected_nodes=3)
     tour.say(
-        "An OSM extract, parsed in the browser",
-        "DuckDB-WASM reads a local .pbf; no tile server, no Overpass call.",
+        "An OSM extract, parsed in Curio's sandbox",
+        "autk-db reads a local .pbf; no tile server, no Overpass call.",
         hold=3000,
     )
     tour.hush()
-    _play_all(ctx)
+    # Each node is waited for by itself, so one that fails stops the scene
+    # instead of passing for settled.
+    _play_all(ctx, settle=[(n, "autk-grammar") for n in (AUTARK_LOAD, AUTARK_PLOT, AUTARK_MAP)])
     tour.say(
-        "Rendered with WebGPU",
-        "Lower Manhattan: buildings, roads and water as separate layers.",
+        "A histogram and a map, linked",
+        "Brushing building heights highlights those buildings on the WebGPU map.",
         hold=3000,
     )
     tour.hush()
-    ids = _node_ids_by_type(page, "autk-grammar")
-    if ids:
-        # Frame the rendering node: at fitView zoom the map is a thumbnail
-        # inside a 525x350 node, which is not what this chapter is about.
-        _center_on(page, ids[-1], zoom=1.25)
-        tour.beat(5000)
+    # The two views, plot above map, as large as the frame's height allows,
+    # with the loader beside them: clear of the left rail and the dataflow's
+    # title, and above the bottom strip the guide crops away.
+    _frame_nodes(
+        page, [AUTARK_LOAD, AUTARK_PLOT, AUTARK_MAP], (180, 125, 1260, 755), max_zoom=1.0,
+    )
+    plot = f"#autk-grammar-plot-{AUTARK_PLOT}"
+    area = brush_area(page, plot)
+    assert area, "the histogram drew no brush overlay"
+    # The span the interaction test brushes on this example: the lowest bars,
+    # where most of the buildings are.
+    _drag_on_camera(
+        ctx,
+        assert_in_view(page, *at_fraction(area, (0.02, 0.5)), "the brush's start"),
+        assert_in_view(page, *at_fraction(area, (0.3, 0.5)), "the brush's end"),
+    )
+    wrong = brush_mismatches(page, plot)
+    assert wrong is not None, "the brush did not stay on the histogram"
+    assert not wrong, f"the brush on the histogram lit the wrong bars: {wrong}"
+    lit = lit_marks(page, plot, at_least=0.01)
+    assert lit and lit["lit"], f"the brush on the histogram lit no bars: {lit}"
+    # The real pointer leaves the plot, which shows its header's buttons while
+    # hovered, for the empty canvas under the loader. The tour's cursor moves
+    # to the water beside the island, off the buildings and the legend.
+    loader = node_locator(page, AUTARK_LOAD).bounding_box()
+    if loader:
+        page.mouse.move(loader["x"] + loader["width"] / 2, loader["y"] + loader["height"] + 60)
+    canvas = page.locator(f"#autk-grammar-map-{AUTARK_MAP}").bounding_box()
+    if canvas:
+        tour.point_at(canvas["x"] + canvas["width"] * 0.2, canvas["y"] + canvas["height"] * 0.45, hold=900)
+    tour.beat(4500)
 
 
 def _fit_nodes(page, node_ids: list[str], padding: float = 0.06) -> None:
@@ -2122,20 +2159,23 @@ def _frame_with_boxes(page, node_ids: list[str], box: tuple[int, int, int, int])
     page.wait_for_timeout(1200)
 
 
-def _drag_on_camera(ctx: Ctx, start, end, *, dragging: str) -> None:
+def _drag_on_camera(ctx: Ctx, start, end, *, dragging: str | None = None) -> None:
     """A mouse drag from *start* to *end*, with the tour's cursor following
     it: ``page.mouse`` does not move the overlay's cursor. *dragging* is a
-    selector that is attached once the drag has begun."""
+    selector that is attached once a drag and drop has begun, which the
+    pointer first moves a little to start. Without it, the drag runs straight
+    from *start*, as a brush does."""
     page, tour = ctx.page, ctx.tour
     tour.point_at(*start, hold=600)
     page.mouse.move(*start)
     page.mouse.down()
     x, y = start
-    for i in range(1, 7):
-        x, y = start[0] - 40 * i / 6, start[1] + 10 * i / 6
-        page.mouse.move(x, y)
-        tour.point_at(x, y, hold=40)
-    page.locator(dragging).wait_for(state="attached", timeout=5000)
+    if dragging:
+        for i in range(1, 7):
+            x, y = start[0] - 40 * i / 6, start[1] + 10 * i / 6
+            page.mouse.move(x, y)
+            tour.point_at(x, y, hold=40)
+        page.locator(dragging).wait_for(state="attached", timeout=5000)
     begin = (x, y)
     steps = 30
     for i in range(1, steps + 1):
