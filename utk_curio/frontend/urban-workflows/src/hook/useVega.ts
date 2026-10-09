@@ -11,9 +11,9 @@ import { injectInputs, prepareVegaInputs, usesNamedDatasets, type VegaDataset } 
 import { DEFAULT_INPUT_DATASET } from "../utils/vegaGeoSpec";
 import { inputTableName } from "../generated/autkGrammar";
 import { usableCounts } from "../utils/vegaUsableRows";
-import { matchSelections, objectRows } from "../utils/selectionMatch";
+import { matchSelections, objectRows, type PointValue } from "../utils/selectionMatch";
 import { columnsOfRows, provideViewRows } from "../utils/references/viewSelections";
-import { isPointSelection, pointRows, viewSelects } from "../utils/vegaSelects";
+import { isPointSelection, pointValues, viewSelects } from "../utils/vegaSelects";
 import { echoedCircle } from "../utils/selectionEcho";
 import type { NodeEmptyReason } from "../utils/nodeEmptyState";
 import { resolveGrammarEmptyReason } from "../utils/nodeEmptyState";
@@ -526,7 +526,9 @@ export const useVega = ({
           // detecting the type of interaction (point/hover or interval (brush))
           let signalAttributes = Object.keys(value);
 
-          let interactedElementsPoint: number[] = []; // id of the elements interacted with point/hover
+          // what a point/hover selection names: the rows' positions, or (a
+          // select over fields) the values it picked
+          let interactedElementsPoint: Array<number | PointValue> = [];
 
           if (signalAttributes.length == 0) {
             // no interaction
@@ -563,15 +565,16 @@ export const useVega = ({
 
             setInteractions(newObj);
           } else if (isPointSelection(declared, value)) {
-            // point/hover: the rows vega's tuple ids name, or the rows that
-            // hold the values a select over fields reports (#847)
+            // point/hover: the rows vega's tuple ids name, or the values a
+            // select over fields picked, which every reader matches its own
+            // rows against (#847)
             if (signalAttributes.includes("_vgsid_")) {
               for (const elem of value._vgsid_) {
                 const idx = vgsidToIndexRef.current.get(elem);
                 if (idx !== undefined) interactedElementsPoint.push(idx);
               }
             } else {
-              interactedElementsPoint = pointRows(value, lastValuesRef.current);
+              interactedElementsPoint = pointValues(value);
             }
 
             let interactionsKeys = Object.keys(interactionsRef.current);

@@ -1,5 +1,6 @@
 /**
- * The selects of a Vega-Lite chart, as its node hears them (#846).
+ * The selects of a Vega-Lite chart, as its node hears them (#846), and the
+ * values a point select over fields picked (#847).
  *
  * vega lets the page listen to a view's top-level signals only. Each select
  * holds its selection in one of them, `<name>`, wherever the spec declares it.
@@ -8,6 +9,7 @@
  * scope. So the selects are read from the spec.
  */
 import { viewsOf } from "./vegaDatasets";
+import type { PointValue } from "./selectionMatch";
 
 /** What a select picks, as its spec declares it. */
 export type SelectType = "point" | "interval";
@@ -53,54 +55,28 @@ export function isPointSelection(type: SelectType | undefined, value: Record<str
 /** What a point selection reports besides the values of its fields. */
 const NOT_FIELDS = new Set(["_vgsid_", "vlPoint"]);
 
-/** One point of a selection: for each field, the values it allows. */
-type Point = Array<[field: string, allowed: unknown[]]>;
-
-const comparable = (value: unknown) => (value instanceof Date ? value.getTime() : value);
+const isPoint = (entry: unknown): entry is PointValue =>
+  entry != null && typeof entry === "object" && !Array.isArray(entry);
 
 /**
- * Whether a row's *value* is one a point *allowed*: the same value, or for a
- * binned field, inside the bin, which vega reports as [start, end).
+ * The points a point selection over fields picked (#847), each as the value
+ * it holds for each field: the ones vega lists under `vlPoint`
+ * (`{unit_id: [103, 105], vlPoint: {or: [{unit_id: 103}, {unit_id: 105}]}}`),
+ * or else every combination of the values it reports for each field. Whatever
+ * reads the selection (a Data Pool, a linked chart, a selection tag) picks out
+ * the rows that hold those values, in whatever order it holds its rows
+ * (utils/selectionMatch).
  */
-function allows(allowed: unknown, value: unknown): boolean {
-  if (Array.isArray(allowed) && allowed.length === 2) {
-    const [start, end, held] = [comparable(allowed[0]), comparable(allowed[1]), comparable(value)];
-    return typeof held === "number" && typeof start === "number" && typeof end === "number"
-      && start <= held && held < end;
-  }
-  return comparable(allowed) === comparable(value);
-}
-
-/**
- * The points a selection over fields holds: each one vega lists under
- * `vlPoint` (`{or: [{zip: 60614}, {zip: 60622}]}`), or else one point that
- * allows each value reported for each field (`{zip: [60614, 60622]}`).
- */
-function pointsOf(value: Record<string, any>): Point[] {
+export function pointValues(value: Record<string, any>): PointValue[] {
   const listed = value.vlPoint?.or;
-  if (Array.isArray(listed)) {
-    return listed
-      .filter((point) => point != null && typeof point === "object")
-      .map((point) => Object.entries(point).map(([field, held]): [string, unknown[]] => [field, [held]]));
-  }
+  if (Array.isArray(listed)) return listed.filter(isPoint).map((point) => ({ ...point }));
   const fields = Object.keys(value).filter((key) => !NOT_FIELDS.has(key));
-  return [fields.map((field): [string, unknown[]] => [field, Array.isArray(value[field]) ? value[field] : [value[field]]])];
-}
-
-/**
- * The rows a point selection over fields picks (#847), as their positions
- * among *rows* (a row's `__row_index__`), which is how a point selection by
- * vega's tuple ids reaches a Data Pool or a selection tag too. vega reports a
- * select over fields by the values of those fields: a row is picked when it
- * holds a point's value for each of the point's fields.
- */
-export function pointRows(value: Record<string, any>, rows: readonly any[]): number[] {
-  const points = pointsOf(value).filter((point) => point.length > 0);
-  const picked: number[] = [];
-  rows.forEach((row, position) => {
-    const holds = (point: Point) =>
-      point.every(([field, allowed]) => allowed.some((one) => allows(one, row?.[field])));
-    if (points.some(holds)) picked.push(typeof row?.__row_index__ === "number" ? row.__row_index__ : position);
-  });
-  return picked;
+  if (fields.length === 0) return [];
+  return fields.reduce<PointValue[]>(
+    (points, field) => {
+      const held = Array.isArray(value[field]) ? value[field] : [value[field]];
+      return points.flatMap((point) => held.map((one: unknown) => ({ ...point, [field]: one })));
+    },
+    [{}],
+  );
 }

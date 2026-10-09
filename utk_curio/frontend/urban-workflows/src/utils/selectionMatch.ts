@@ -8,7 +8,9 @@
  *
  * A point selection names row positions: it lines up only when both ends read
  * the same rows in the same order. An interval names column values, so it
- * matches any rows that have those columns.
+ * matches any rows that have those columns. So does a point selection over
+ * fields (#847): it names the values of each point it picked, `{unit_id: 103}`,
+ * and picks every row that holds them, wherever the row sits.
  */
 import { ResolutionType, VisInteractionType } from "../constants";
 
@@ -66,10 +68,47 @@ function resolvedActive(entries: Resolved[], mode: string): boolean {
   return entries.some((entry) => entry.active !== false);
 }
 
+/**
+ * One point a point selection over fields picked: the value it holds for each
+ * of its fields, `{unit_id: 103}`. A binned field's value is its bin, as vega
+ * reports it: [start, end).
+ */
+export type PointValue = Record<string, unknown>;
+
+const isPointValue = (entry: unknown): entry is PointValue =>
+  entry != null && typeof entry === "object" && !Array.isArray(entry);
+
+const comparable = (value: unknown) => (value instanceof Date ? value.getTime() : value);
+
+/** Whether a row's *value* is the one a point *held*: equal, or inside the [start, end) of a bin. */
+function holdsValue(held: unknown, value: unknown): boolean {
+  if (Array.isArray(held) && held.length === 2) {
+    const [start, end, at] = [comparable(held[0]), comparable(held[1]), comparable(value)];
+    return typeof at === "number" && typeof start === "number" && typeof end === "number"
+      && start <= at && at < end;
+  }
+  return comparable(held) === comparable(value);
+}
+
+/** Positions of the rows that hold every field value of one of *points*. */
+function rowsHolding(points: PointValue[], rows: SelectionRows): number[] {
+  const wanted = points.map((point) => Object.entries(point)).filter((fields) => fields.length > 0);
+  const indices: number[] = [];
+  for (let i = 0; i < rows.count; i++) {
+    if (wanted.some((fields) => fields.every(([field, held]) => holdsValue(held, rows.value(i, field))))) {
+      indices.push(i);
+    }
+  }
+  return indices;
+}
+
 /** Row positions one select covers. */
 export function selectIndices(detail: SelectDetail, rows: SelectionRows): number[] {
   if (detail.type === VisInteractionType.POINT) {
-    return (detail.data ?? []).map((index: number) => index);
+    const data: unknown[] = detail.data ?? [];
+    // A point over fields names values; any other point, row positions.
+    if (data.some(isPointValue)) return rowsHolding(data.filter(isPointValue), rows);
+    return data.map((index) => index as number);
   }
   if (detail.type !== VisInteractionType.INTERVAL) return [];
 
