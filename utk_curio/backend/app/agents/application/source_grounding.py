@@ -810,6 +810,23 @@ def _http_status(evidence: dict | None) -> int | None:
     return status if isinstance(status, int) else None
 
 
+def _unrequested_catalog_reads(catalog_reads: list[tuple[str, str]], ctx: GroundingContext) -> list[str]:
+    """#411: the user asked for particular catalog datasets. Code that reads
+    catalog data but none of those put another dataset in their place, so each
+    read is refused with both named. A requested dataset read beside another
+    one (a boundary to clip by) stays grounded."""
+    requested = ctx.requested_dataset_ids or set()
+    if not requested or not catalog_reads or any(d in requested for _, d in catalog_reads):
+        return []
+    asked = ", ".join(repr(d) for d in sorted(requested))
+    return [
+        f"{read_at}: loads the Data Catalog dataset {dataset_id!r}, but the user "
+        f"asked for {asked}; load the dataset the user asked for, or ask the user "
+        "before using another one"
+        for read_at, dataset_id in catalog_reads
+    ]
+
+
 def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> GroundingVerdict:
     """The gate. Every path ref must be user- or catalog-known; every URL ref
     must be verified (session evidence or a probe now); a data-loading node
@@ -911,19 +928,7 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
             else:
                 why = detail or "unreachable"
             violations.append(f"{where}: {why} — only a URL the runtime verified may be fetched")
-    # #411: the user asked for particular catalog datasets. Code that reads
-    # catalog data but none of those put another dataset in their place, so
-    # each read is refused with both named. A requested dataset read beside
-    # another one (a boundary to clip by) stays grounded.
-    requested = ctx.requested_dataset_ids or set()
-    if requested and catalog_reads and not any(d in requested for _, d in catalog_reads):
-        asked = ", ".join(repr(d) for d in sorted(requested))
-        for read_at, dataset_id in catalog_reads:
-            violations.append(
-                f"{read_at}: loads the Data Catalog dataset {dataset_id!r}, but the user "
-                f"asked for {asked}; load the dataset the user asked for, or ask the user "
-                "before using another one"
-            )
+    violations.extend(_unrequested_catalog_reads(catalog_reads, ctx))  # #411
     # dev/116: connection keys by name — known names are grounded refs, an
     # unknown name is refused with the saved names listed (DEC-067).
     saved_names = sorted((ctx.secrets or {}).keys())
