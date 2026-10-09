@@ -7,12 +7,13 @@
  *
  * The grammar is a stand-in that draws one real autk-map map on the node's
  * canvas, as autk-grammar does (`new AutkMap(canvas)`, then `draw()`, which
- * draws on demand). jsdom has no WebGPU, so the map's frames are counted
- * instead of rendered.
+ * draws on demand), and keeps it as autk-grammar does (`grammarThatRan`).
+ * jsdom has no WebGPU, so the map's frames are counted instead of rendered.
  */
 import React from 'react';
 import * as path from 'path';
 import { render, act } from '@testing-library/react';
+import { grammarThatRan } from '../../_support/autkGrammarMaps';
 
 // The node reads its input edge from the flow context (hook/useGrammarInputState);
 // the real provider would load the whole node registry, vega included.
@@ -50,13 +51,13 @@ const mockDrawn: Drawn[] = [];
 let mockHold: Promise<void> | null = null;
 
 const mockAutkGrammar = jest.fn().mockImplementation((targets: Record<string, string>) => {
-  const grammar: any = { _mapRegistry: new Map(), data: {} };
+  const grammar: any = { data: {} };
   grammar.run = jest.fn(async (spec: any) => {
     const map = new mockAutkMap(document.getElementById(targets.map));
     const drawn: Drawn = { map, frames: 0 };
     map.render = () => { drawn.frames += 1; };
     mockDrawn.push(drawn);
-    for (const ref of spec.map.layerRefs) grammar._mapRegistry.set(ref.dataRef, map);
+    Object.assign(grammar, grammarThatRan(spec, map));
     map.draw();
     if (mockHold) await mockHold;
   });

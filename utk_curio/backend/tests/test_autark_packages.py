@@ -6,7 +6,9 @@ root's tree, which the sandbox's Node and the Discovery Catalog's OpenStreetMap
 downloads load autk-db from, takes autk-db and autk-core the same way. The
 Autark packages, all but autk-grammar, which is released on its own, are one
 release, 4.1.0 or later: from 4.1.0 on, autk-map draws a map on demand
-(adapters/node/autkMapDrawing). Curio vendors no Autark package.
+(adapters/node/autkMapDrawing). autk-grammar is 4.1.0 or later: from 4.1.0 on,
+it lists the maps a run drew (`AutkGrammar.maps`), which is where Curio takes
+a node's maps from (`grammarMaps`). Curio vendors no Autark package.
 """
 from __future__ import annotations
 
@@ -31,6 +33,9 @@ GRAMMAR = "autk-grammar"
 
 #: The first Autark release whose maps draw on demand.
 ON_DEMAND_RELEASE = (4, 1, 0)
+
+#: The first autk-grammar release that lists the maps a run drew.
+GRAMMAR_MAPS_RELEASE = (4, 1, 0)
 
 
 def _read(path: Path) -> dict:
@@ -82,6 +87,16 @@ def test_the_autark_packages_are_one_release_whose_maps_draw_on_demand(tree):
     release = next(iter(versions.values()))
     assert _release(release) >= ON_DEMAND_RELEASE, (
         f"the {tree} lockfile takes Autark {release}, whose maps do not draw on demand: 4.1.0 is the first that does"
+    )
+
+
+def test_the_grammar_lists_the_maps_a_run_drew():
+    entries = _read(FRONTEND / "package-lock.json")["packages"]
+    version = entries.get(f"node_modules/@urban-toolkit/{GRAMMAR}", {}).get("version", "")
+    assert version, "the frontend lockfile has no autk-grammar"
+    assert _release(version) >= GRAMMAR_MAPS_RELEASE, (
+        f"the frontend lockfile takes autk-grammar {version}, which does not list the maps a run drew "
+        f"(AutkGrammar.maps): 4.1.0 is the first that does"
     )
 
 
