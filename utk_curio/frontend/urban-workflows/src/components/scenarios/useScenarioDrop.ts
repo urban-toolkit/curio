@@ -14,6 +14,14 @@ import { restoredByNode, restoredOutputs, withOutputs } from "../../utils/restor
 import { dropGraph, loaderNodes, planScenarioDrop } from "../../utils/scenarios/scenarioDrop";
 import { liveScenarios } from "../../utils/scenarios/scenarioParts";
 
+/** What a scenario drop added. */
+export interface DroppedScenario {
+  /** The ids of the nodes the drop added. */
+  nodes: string[];
+  /** The id of the scenario it added. */
+  scenario: string;
+}
+
 /**
  * A scenario dragged from the Scenario Catalog onto this canvas (#662).
  *
@@ -24,7 +32,7 @@ import { liveScenarios } from "../../utils/scenarios/scenarioParts";
  * way Duplicate selection does, with the copied outputs restored the way
  * opening a project restores them, and adds the scenario collapsed.
  *
- * Resolves to the ids of the nodes it added, none when the drop is refused.
+ * Resolves to what it added, null when the drop is refused.
  */
 export function useScenarioDrop() {
   const {
@@ -44,17 +52,17 @@ export function useScenarioDrop() {
   const { showToast } = useToastContext();
 
   return useCallback(
-    async (payload: ScenarioDragPayload, at: { x: number; y: number }): Promise<string[]> => {
+    async (payload: ScenarioDragPayload, at: { x: number; y: number }): Promise<DroppedScenario | null> => {
       const target = await ensureProjectId();
       if (!target) {
         showToast("Save this dataflow first, then drag the scenario again.", "warning");
-        return [];
+        return null;
       }
       try {
         const plan = await scenarioCatalogApi.getCopyPlan(payload.projectId, payload.scenarioId, target);
         if (plan.problems.length > 0) {
           showToast(plan.problems.join(" "), "error");
-          return [];
+          return null;
         }
         const live = TrillGenerator.generateTrill(
           reactFlow.getNodes(), reactFlow.getEdges(), workflowNameRef.current, workflowGoal,
@@ -62,7 +70,7 @@ export function useScenarioDrop() {
         const drop = planScenarioDrop(plan, live.dataflow, scenarios, { newId: uuid, at });
         if ("error" in drop) {
           showToast(drop.error, "warning");
-          return [];
+          return null;
         }
         const copied = await scenarioCatalogApi.copyInto(payload.projectId, payload.scenarioId, target, drop.outputs);
         if (copied.added.length > 0) {
@@ -72,11 +80,16 @@ export function useScenarioDrop() {
           await refreshPackageRegistry();
         }
         const graph = dropGraph(drop, loaderNodes(drop.loaders, copied.datasets, buildDatasetLoaderNodeOptions));
+        // No load fit: it frames the nodes React Flow measures, and the box is
+        // not one and its members are hidden, so it framed the context alone
+        // and left the box out of view. The canvas brings the box into sight
+        // once it is drawn (#769).
         const loaded = loadTrill(
           { dataflow: { ...live.dataflow, nodes: graph.nodes, edges: graph.edges } },
           "none",
           undefined,
           restoredByNode(copied.outputs),
+          { fit: false },
         );
         if (copied.outputs.length > 0) {
           const outputs = restoredOutputs(copied.outputs);
@@ -88,10 +101,13 @@ export function useScenarioDrop() {
         const added = copied.added.length > 0 ? ` Added ${copied.added.join(", ")} to this project.` : "";
         showToast(`Added "${drop.scenario.name}" from ${plan.project.name}.${added}`, "success");
         const before = new Set(live.dataflow.nodes.map((node: { id: string }) => node.id));
-        return graph.nodes.map((node) => node.id).filter((id) => !before.has(id));
+        return {
+          nodes: graph.nodes.map((node) => node.id).filter((id) => !before.has(id)),
+          scenario: drop.scenario.id,
+        };
       } catch (err: any) {
         showToast(err?.message || "The scenario could not be added.", "error");
-        return [];
+        return null;
       }
     },
     [

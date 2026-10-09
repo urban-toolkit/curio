@@ -104,6 +104,12 @@ export interface LoadedGraph {
     edges: any[];
 }
 
+/** `fit: false`: the load leaves the view as it is; the caller frames what it
+ *  added (a dropped scenario's box, #769). */
+export interface LoadTrillOptions {
+    fit?: boolean;
+}
+
 interface IUseCode {
     createCodeNode: (nodeType: string, options?: CreateCodeNodeOptions) => void;
     loadTrill: (
@@ -111,6 +117,7 @@ interface IUseCode {
         suggestionType?: string,
         fromProvenance?: boolean,
         restoredOutputs?: Record<string, string>,
+        options?: LoadTrillOptions,
     ) => LoadedGraph;
 }
 
@@ -153,6 +160,7 @@ export function useCode(): IUseCode {
         suggestionType?: string,
         fromProvenance?: boolean,
         restoredOutputs?: Record<string, string>,
+        options?: LoadTrillOptions,
     ): LoadedGraph => {
 
         let nodes = [];
@@ -377,7 +385,7 @@ export function useCode(): IUseCode {
             const savedProv = TrillGenerator.getSerializableDataflowProvenance();
             // #662: a snapshot carries scenarios only when it had some, so an
             // absent key restores none.
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], undefined, trill.dataflow.scenarios ?? []);
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], undefined, trill.dataflow.scenarios ?? [], options?.fit);
             TrillGenerator.loadDataflowProvenance(savedProv);
             // Reverting puts a DIFFERENT graph on the canvas than the one on
             // disk, so it is an edit. The edge replay inside loadParsedTrill no
@@ -386,11 +394,11 @@ export function useCode(): IUseCode {
             // reach loadParsedTrill identically from there down.
             markDirty();
         } else if(suggestionType == undefined) {
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], trill.dataflow.categories || {}, trill.dataflow.scenarios ?? []);
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], trill.dataflow.categories || {}, trill.dataflow.scenarios ?? [], options?.fit);
             if (trill.nodeProvenance) loadNodeProvenance(rekeyNodeProvenance(trill.nodeProvenance, nodes.map((n) => n.id)));
             if (trill.dataflowProvenance) TrillGenerator.loadDataflowProvenance(trill.dataflowProvenance);
         } else {
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, true, undefined, trill.dataflow.description || "", trill.dataflow.datasets || []);
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, true, undefined, trill.dataflow.description || "", trill.dataflow.datasets || [], undefined, undefined, options?.fit);
         }
 
         return { nodes, edges };

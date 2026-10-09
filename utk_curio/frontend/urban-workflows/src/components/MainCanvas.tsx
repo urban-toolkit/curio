@@ -82,7 +82,7 @@ import { AgentAttachmentsProvider } from "../providers/agents";
 import { isDrawnHidden } from "../utils/hiddenNodes";
 import { isNodeDragRegion, keepPaneOffNodes } from "../utils/nodeDragRegion";
 import { useSharedView } from "../hook/useSharedView";
-import { frameNodesInView } from "../utils/focusDatasetNodes";
+import { frameNodesInView, revealRectInView } from "../utils/focusDatasetNodes";
 import { scenarioCanvasView } from "../utils/scenarios/scenarioCanvasView";
 import { BOX_WIDTH, boxLayout } from "./scenarios/ScenarioLayers";
 import { CanvasScenarioLayers } from "./scenarios/CanvasScenarioLayers";
@@ -444,18 +444,30 @@ export function MainCanvas() {
     }, [getStarters, dropPosition, revealCreated, createCodeNode, markDirty, showToast]);
 
     // A scenario from the Scenario Catalog arrives as a copy: its box where it
-    // was dropped, its context as fixed data (useScenarioDrop).
+    // was dropped, its context as fixed data (useScenarioDrop). The notebook
+    // view shows its cells. On the canvas the box is drawn beside React Flow,
+    // not in its store, so no fit of nodes frames it: once it is drawn, the
+    // view moves as far as it takes to bring the box into sight (#769).
     const dropScenario = useScenarioDrop();
+    const [boxToReveal, setBoxToReveal] = useState<string | null>(null);
     const handleScenarioCanvasDrop = useCallback((event: React.DragEvent) => {
         event.preventDefault();
         event.stopPropagation();
         const scenario = readScenarioDragPayload(event.dataTransfer);
         endScenarioDrag();
         if (!scenario) return;
-        void dropScenario(scenario, dropPosition(event)).then((ids) => {
-            if (ids.length > 0) revealNodes(ids);
+        void dropScenario(scenario, dropPosition(event)).then((dropped) => {
+            if (!dropped || revealNodes(dropped.nodes)) return;
+            setBoxToReveal(dropped.scenario);
         });
     }, [dropScenario, dropPosition, revealNodes]);
+    useEffect(() => {
+        if (!boxToReveal) return;
+        const box = scenarioView.boxes.find((b) => b.scenario.id === boxToReveal);
+        if (!box) return;
+        setBoxToReveal(null);
+        revealRectInView(reactFlow, { x: box.x, y: box.y, width: BOX_WIDTH, height: boxLayout(box).height });
+    }, [boxToReveal, scenarioView.boxes, reactFlow]);
 
     const handleDrop = useCallback((event: React.DragEvent) => {
         if (hasDatasetDrag(event.dataTransfer)) {
