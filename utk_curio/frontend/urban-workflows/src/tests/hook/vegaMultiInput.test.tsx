@@ -62,6 +62,7 @@ jest.mock("../../services/api", () => ({ fetchData: jest.fn(), fetchPreviewData:
 
 import { useVega } from "../../hook/useVega";
 import { markSelectionEcho } from "../../utils/selectionEcho";
+import { objectRows, selectIndices } from "../../utils/selectionMatch";
 
 const vegaMock = () => jest.requireMock("vega") as any;
 
@@ -244,21 +245,26 @@ test("a select inside a concatenated view is heard through its top-level signal 
   });
 });
 
-test("a point select over fields is reported as the rows holding the values it picked, not as an interval (#847)", async () => {
+test("a point select over fields is reported as the values it picked, and matched by value (#847)", async () => {
   const { view, interactionsCallback } = await drawn(
     POP,
     barsWith([{ name: "pick", select: { type: "point", fields: ["value"] } }]),
   );
 
-  // A select over fields reports their values, not vega's tuple ids.
+  // A select over fields reports their values, not vega's tuple ids: value 2,
+  // which is not the position of its row.
   await act(async () => {
-    view.listeners.pick("pick", { value: [1] });
+    view.listeners.pick("pick", { value: [2] });
   });
-  expect(lastReported(interactionsCallback).pick).toMatchObject({ type: "POINT", data: [0], priority: 1 });
+  expect(lastReported(interactionsCallback).pick).toMatchObject({ type: "POINT", data: [{ value: 2 }], priority: 1 });
 
   // As vega reports two points: each field's values, and each point under vlPoint.
   await act(async () => {
     view.listeners.pick("pick", { value: [1, 2], vlPoint: { or: [{ value: 1 }, { value: 2 }] } });
   });
-  expect(lastReported(interactionsCallback).pick).toMatchObject({ type: "POINT", data: [0, 1], priority: 1 });
+  const picked = lastReported(interactionsCallback).pick;
+  expect(picked).toMatchObject({ type: "POINT", data: [{ value: 1 }, { value: 2 }], priority: 1 });
+
+  // Whatever table reads it finds the rows holding those values, in its own order.
+  expect(selectIndices(picked, objectRows([{ value: 2 }, { value: 3 }, { value: 1 }]))).toEqual([0, 2]);
 });
