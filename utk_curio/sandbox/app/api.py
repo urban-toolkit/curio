@@ -18,6 +18,11 @@ from utk_curio.sandbox.util import package_modules as package_modules_util
 from utk_curio.sandbox.util.secrets import shape_secrets
 from utk_curio.sandbox.util.db import connection_in_use
 
+# The log lines below go to sys.__stderr__, the process's own stderr. While a
+# node runs in process, sys.stderr is that node's captured stderr for every
+# thread (worker.py), so a line printed there by another request showed up in
+# the node's output (#770).
+
 
 def holds_duckdb(view):
     """Keep the shared DuckDB connection open for one whole request.
@@ -298,7 +303,7 @@ def get_artifact():
         # fails under load left no account of itself anywhere a CI run could
         # read afterwards.
         print(f"[sandbox /get] failed  fileName={art_id}  session={session_id}\n"
-              f"{_tb.format_exc()}", file=sys.stderr, flush=True)
+              f"{_tb.format_exc()}", file=sys.__stderr__, flush=True)
         return jsonify({
             'error': type(e).__name__,
             'message': str(e),
@@ -457,7 +462,7 @@ def _isolated_runner():
         except isolation_mode.IsolationUnavailable as exc:
             # server.py should have caught this at boot; if we somehow get here,
             # do not silently run unisolated on a hosted instance.
-            print(f"[isolation] {exc}", file=sys.stderr, flush=True)
+            print(f"[isolation] {exc}", file=sys.__stderr__, flush=True)
             _isolation_state = False
             return None
 
@@ -484,7 +489,7 @@ def _isolated_runner():
             print(
                 f"[isolation] could not start the execution zygote, falling back "
                 f"to in-process execution: {exc}",
-                file=sys.stderr, flush=True,
+                file=sys.__stderr__, flush=True,
             )
             metrics.record_error(
                 summary="Could not start the execution zygote",
@@ -501,7 +506,7 @@ def _isolated_runner():
             f"(memory={config.limits['memory_mb']}MB, "
             f"timeout={config.wall_timeout}s, "
             f"parallelism={config.parallelism})",
-            file=sys.stderr, flush=True,
+            file=sys.__stderr__, flush=True,
         )
         _isolation_state = (runner.execute_isolated, config)
         return _isolation_state
@@ -601,7 +606,7 @@ def get_raster():
         }), 404
     except Exception as e:
         print(f"[sandbox /raster] failed  fileName={art_id}  session={session_id}\n"
-              f"{_tb.format_exc()}", file=sys.stderr, flush=True)
+              f"{_tb.format_exc()}", file=sys.__stderr__, flush=True)
         return jsonify({
             'error': type(e).__name__,
             'message': str(e),
@@ -689,7 +694,7 @@ def exec():
     package_modules = package_modules_util.shape(request.json.get('package_modules'))
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
 
-    print(f"[sandbox /exec] received  node={node_type}", file=sys.stderr, flush=True)
+    print(f"[sandbox /exec] received  node={node_type}", file=sys.__stderr__, flush=True)
     isolated = _isolated_runner()
     metrics.record_dispatch(isolated is not None)
     if isolated is not None:
@@ -720,7 +725,7 @@ def exec():
         result, node_type=str(node_type), session_id=session_id, launch_dir=launch_dir,
     )
 
-    print(f"[sandbox /exec] finished  total={time.perf_counter()-t0:.3f}s  node={node_type}", file=sys.stderr, flush=True)
+    print(f"[sandbox /exec] finished  total={time.perf_counter()-t0:.3f}s  node={node_type}", file=sys.__stderr__, flush=True)
     return jsonify(result)
 
 @app.route('/execJs', methods=['POST'])
@@ -744,7 +749,7 @@ def exec_js():
         save_dataset = save_dataset.strip().lower() not in ('0', 'false', 'no', 'off')
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
 
-    print(f"[sandbox /execJs] received  node={node_type}", file=sys.stderr, flush=True)
+    print(f"[sandbox /execJs] received  node={node_type}", file=sys.__stderr__, flush=True)
     # JS has no isolated path at all, so this is always an in-process dispatch.
     metrics.record_dispatch(False)
     result = execute_js_code(
@@ -752,6 +757,6 @@ def exec_js():
         session_id=session_id, save_dataset=bool(save_dataset),
     )
 
-    print(f"[sandbox /execJs] finished  total={time.perf_counter()-t0:.3f}s  node={node_type}", file=sys.stderr, flush=True)
+    print(f"[sandbox /execJs] finished  total={time.perf_counter()-t0:.3f}s  node={node_type}", file=sys.__stderr__, flush=True)
     return jsonify(result)
 

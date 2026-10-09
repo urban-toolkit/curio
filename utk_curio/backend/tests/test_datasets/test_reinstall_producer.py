@@ -6,6 +6,10 @@ from a previous computed node, the install flow can receive an item whose
 ``producerNodeId`` was dropped (origin flipped to "imported"). The install must
 recover the producer so the persisted ref keeps ``producerNodeId`` / computed
 origin and the catalog/palette upstream badge stays visible.
+
+A re-install also removes the dataset's folder and writes it again, so a
+listing running at that moment can find a data file gone right after it
+checked for it (#780). The listing must still answer.
 """
 from __future__ import annotations
 
@@ -13,9 +17,12 @@ import json
 import os
 from pathlib import Path
 
+from utk_curio.backend.app.datasets.domain.catalog_item import item_from_file
 from utk_curio.backend.app.datasets.install.installer import (
+    install_computed_file_for_node,
     node_segment_from_computed_id,
 )
+from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     auth_headers,
     create_project,
@@ -83,3 +90,58 @@ def test_reinstall_preserves_producer_node_id(client, user_and_token):
     reinstalled = next(i for i in relisted["items"] if i["id"] == computed["id"])
     assert reinstalled["producerNodeId"] == "map-node"
     assert reinstalled["origin"] == "computed"
+
+
+def _is_file_says_yes_once(monkeypatch, target: Path) -> None:
+    """Make ``Path.is_file`` answer True once for *target*, which is gone: the
+    answer a check gives just before a re-install removes the file. Every
+    other call gets the real answer."""
+    real_is_file = Path.is_file
+    pending = [Path(os.path.realpath(target))]
+
+    def is_file(self):
+        if pending and Path(os.path.realpath(self)) == pending[0]:
+            pending.clear()
+            return True
+        return real_is_file(self)
+
+    monkeypatch.setattr(Path, "is_file", is_file)
+
+
+def test_listing_answers_while_a_reinstall_removes_the_data_file(
+    app, client, user_and_token, monkeypatch
+):
+    """The listing checks a computed dataset's data file, a re-install removes
+    it, then the listing reads its size (#780). The listing must answer 200
+    and list the dataset with no size and no path."""
+    user, token = user_and_token
+    with app.app_context():
+        result = install_computed_file_for_node(
+            _user_dir_key(user), b"id,value\n1,42\n", "out.csv", "csv",
+            node_id="node-780", dataflow_id="flow-780",
+        )
+    data_file = result.dest / result.manifest.data_file
+    assert data_file.is_file()
+
+    data_file.unlink()
+    _is_file_says_yes_once(monkeypatch, data_file)
+
+    resp = client.get(
+        "/api/datasets/catalog?includeHub=true", headers=auth_headers(token)
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    items = {i["id"]: i for i in resp.get_json()["items"]}
+    assert result.manifest.id in items
+    listed = items[result.manifest.id]
+    assert (listed["sizeBytes"], listed["path"]) == (None, None)
+
+
+def test_a_workspace_file_removed_after_its_check_is_left_out(tmp_path, monkeypatch):
+    """The workspace listing's item builder checks a file, then reads its size
+    and date; a file removed between the two is left out, not an error."""
+    gone = tmp_path / "gone.csv"
+    gone.write_text("id,value\n1,42\n", encoding="utf-8")
+    gone.unlink()
+    _is_file_says_yes_once(monkeypatch, gone)
+
+    assert item_from_file(gone, source_label="Workspace data") is None
