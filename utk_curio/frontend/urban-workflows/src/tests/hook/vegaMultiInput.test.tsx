@@ -6,8 +6,9 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 
 // Only what useVega calls on the library. A view records the spec it was built
-// from, the changesets it is handed and its signal listeners; its scenegraph is
-// whatever the test sets.
+// from, the changesets it is handed and its signal listeners; its scenegraph
+// and its top-level signals are whatever the test sets. As in vega, a listener
+// is added only to a top-level signal.
 jest.mock("vega", () => {
   const views: any[] = [];
   const changeset = () => {
@@ -25,6 +26,7 @@ jest.mock("vega", () => {
     changes: Array<{ name: string; ops: any[] }> = [];
     listeners: Record<string, (name: string, value: any) => void> = {};
     static scene: any = { items: [] };
+    static signals: string[] = [];
     constructor(spec: any) { this.spec = spec; views.push(this); }
     logLevel() { return this; }
     renderer() { return this; }
@@ -35,8 +37,11 @@ jest.mock("vega", () => {
     resize() { return this; }
     runAsync() { return Promise.resolve(this); }
     scenegraph() { return { root: View.scene }; }
-    getState() { return { signals: { pick: null, pick_modify: null } }; }
-    addSignalListener(name: string, fn: any) { this.listeners[name] = fn; }
+    getState() { return { signals: Object.fromEntries(View.signals.map((name) => [name, null])) }; }
+    addSignalListener(name: string, fn: any) {
+      if (!View.signals.includes(name)) throw new Error(`Unrecognized signal name: "${name}"`);
+      this.listeners[name] = fn;
+    }
     change(name: string, cs: any) { this.changes.push({ name, ops: cs.ops }); return this; }
   }
   return { changeset, View, parse: (spec: any) => spec, Warn: 2, __views: views };
@@ -57,6 +62,7 @@ jest.mock("../../services/api", () => ({ fetchData: jest.fn(), fetchPreviewData:
 
 import { useVega } from "../../hook/useVega";
 import { markSelectionEcho } from "../../utils/selectionEcho";
+import { objectRows, selectIndices } from "../../utils/selectionMatch";
 
 const vegaMock = () => jest.requireMock("vega") as any;
 
@@ -97,7 +103,15 @@ beforeAll(() => {
 
 beforeEach(() => {
   vegaMock().View.scene = { items: [] };
+  vegaMock().View.signals = ["pick", "pick_modify"];
 });
+
+/** The interactions the node reported last. */
+const lastReported = (interactionsCallback: jest.Mock) =>
+  interactionsCallback.mock.calls[interactionsCallback.mock.calls.length - 1][0];
+
+/** BARS declaring *params*. */
+const barsWith = (params: any[]) => JSON.stringify({ ...JSON.parse(BARS), params });
 
 test("one input is the spec's own data, named input_0", async () => {
   const { view } = await drawn(POP, BARS);
@@ -189,4 +203,68 @@ test("a pick on a mark of the second input is not sent on as a row of the first"
   });
   const [after] = interactionsCallback.mock.calls[interactionsCallback.mock.calls.length - 1];
   expect(after.pick.data).toEqual([]);
+});
+
+test("a select whose name holds an underscore is heard, and reported under its whole name (#846)", async () => {
+  vegaMock().View.signals = ["zip_select", "zip_select_modify"];
+  const { view, interactionsCallback } = await drawn(
+    POP,
+    barsWith([{ name: "zip_select", select: { type: "point", fields: ["label"] } }]),
+  );
+  expect(view.listeners.zip_select).toEqual(expect.any(Function));
+
+  await act(async () => {
+    view.listeners.zip_select("zip_select", { label: ["a"] });
+  });
+  const reported = lastReported(interactionsCallback);
+  expect(Object.keys(reported)).toEqual(["zip_select"]);
+  expect(reported.zip_select.priority).toBe(1);
+});
+
+test("a select inside a concatenated view is heard through its top-level signal (#846)", async () => {
+  // vega keeps `brush_modify` in the concatenated view's own scope: only the
+  // signal holding the selection, `brush`, is a top-level one.
+  vegaMock().View.signals = ["brush"];
+  const encoding = { x: { field: "label", type: "nominal" }, y: { field: "value", type: "quantitative" } };
+  const spec = JSON.stringify({
+    hconcat: [
+      { params: [{ name: "brush", select: { type: "interval" } }], mark: "point", encoding },
+      { mark: "bar", encoding },
+    ],
+  });
+  const { view, interactionsCallback } = await drawn(POP, spec);
+  expect(view.listeners.brush).toEqual(expect.any(Function));
+
+  await act(async () => {
+    view.listeners.brush("brush", { value: [1, 2] });
+  });
+  expect(lastReported(interactionsCallback).brush).toMatchObject({
+    type: "INTERVAL",
+    data: { value: [1, 2] },
+    priority: 1,
+  });
+});
+
+test("a point select over fields is reported as the values it picked, and matched by value (#847)", async () => {
+  const { view, interactionsCallback } = await drawn(
+    POP,
+    barsWith([{ name: "pick", select: { type: "point", fields: ["value"] } }]),
+  );
+
+  // A select over fields reports their values, not vega's tuple ids: value 2,
+  // which is not the position of its row.
+  await act(async () => {
+    view.listeners.pick("pick", { value: [2] });
+  });
+  expect(lastReported(interactionsCallback).pick).toMatchObject({ type: "POINT", data: [{ value: 2 }], priority: 1 });
+
+  // As vega reports two points: each field's values, and each point under vlPoint.
+  await act(async () => {
+    view.listeners.pick("pick", { value: [1, 2], vlPoint: { or: [{ value: 1 }, { value: 2 }] } });
+  });
+  const picked = lastReported(interactionsCallback).pick;
+  expect(picked).toMatchObject({ type: "POINT", data: [{ value: 1 }, { value: 2 }], priority: 1 });
+
+  // Whatever table reads it finds the rows holding those values, in its own order.
+  expect(selectIndices(picked, objectRows([{ value: 2 }, { value: 3 }, { value: 1 }]))).toEqual([0, 2]);
 });

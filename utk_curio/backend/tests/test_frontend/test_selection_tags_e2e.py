@@ -17,6 +17,14 @@ signed-in canvas makes:
    the ids are back, the chart declaring its selection again keeps them, and
    the server run reads them.
 
+A second test clicks bars of example 02's zip chart, whose point selection is
+named ``zip_select`` and picks rows by their ``zip`` (#768): a tag on that chart
+holds one zip after a click, and two after a Shift-click on another bar.
+
+A third opens the owner's dataflow for #847 (``dataflows/``): a point selection
+over ``unit_id`` names unit ids, so a Data Pool of readings held in another
+order marks exactly the clicked units' readings, and the tag holds their ids.
+
 Run::
 
     CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/test_selection_tags_e2e.py -v
@@ -24,7 +32,9 @@ Run::
 
 from __future__ import annotations
 
+import json
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .utils import (
@@ -32,7 +42,9 @@ from .utils import (
     assert_in_view,
     at_fraction,
     brush_area,
+    drawing_selector,
     frame_node,
+    mark_point,
     node_execution_timeout_ms,
     node_locator,
     play_node,
@@ -46,6 +58,7 @@ from .utils import (
     set_node_code,
     stub_login_and_enter_workflow,
 )
+from .walkthroughs import load_example_spec
 
 if TYPE_CHECKING:
     from .utils import FrontendPage
@@ -434,3 +447,257 @@ def test_a_brush_reaches_a_python_node_through_a_selection_tag(
     assert counter["metadata"].get("selections") == by_id[COUNTER_ID]["metadata"]["selections"], counter["metadata"]
     frame_node(page, COUNTER_ID)
     assert node_locator(page, COUNTER_ID).locator(".monaco-editor .curio-widget-ref-problem").count() == 0
+
+
+ZIPS_EXAMPLE = "02-vega-lite-spatial-density.json"
+#: Example 02's "Top 10 largest zip codes" chart: one horizontal bar per zip,
+#: longest first, selected with ``{"name": "zip_select", "select": {"type":
+#: "point", "fields": ["zip"], "toggle": "event.shiftKey"}}``.
+ZIP_BARS_ID = "d23e2587-57bf-4db4-84fe-cdb7c2de638d"
+#: Example 02's data transformation node, which holds the tag on that chart.
+ZIP_TAG_NODE_ID = "e5e7e21f-609d-496b-b231-659ee91ff9af"
+
+# What one field reads in the tooltip of the mark under the pointer: vega's own
+# tooltip handler writes the hovered mark's tooltip into the chart's container
+# as its title, one line per field ("zip: 60614\nVEGETATED_SQFT: ..."), at
+# every pointer move over it.
+_HOVERED_JS = r"""([nodeId, field]) => {
+    const el = document.getElementById("vega" + nodeId);
+    const lines = ((el && el.getAttribute("title")) || "").split("\n");
+    const line = lines.find((l) => l.startsWith(field + ": "));
+    return line === undefined ? null : line.slice(field.length + 2);
+}"""
+_FORGET_HOVER_JS = r"""(nodeId) => {
+    const el = document.getElementById("vega" + nodeId);
+    if (el) el.removeAttribute("title");
+}"""
+
+# The ids a selection tag holds, as text; null when it holds a count instead.
+_TAG_IDS_JS = r"""([nodeId, name]) => {
+    const rf = window.__curio_reactFlow;
+    const node = rf && rf.getNodes().find((n) => n.id === nodeId);
+    const tag = ((node && node.data && node.data.selections) || []).find((t) => t.name === name);
+    return tag && Array.isArray(tag.ids) ? tag.ids.map(String) : null;
+}"""
+
+
+def _hovered(page, node_id: str, field: str, point: tuple[float, float]) -> str | None:
+    """What *field* reads in the tooltip of chart *node_id*'s mark at *point*;
+    None off every mark."""
+    page.evaluate(_FORGET_HOVER_JS, node_id)
+    page.mouse.move(*point)
+    try:
+        page.wait_for_function(
+            "(args) => (" + _HOVERED_JS + ")(args) !== null", arg=[node_id, field], timeout=3000
+        )
+    except Exception:
+        return None
+    return page.evaluate(_HOVERED_JS, [node_id, field])
+
+
+def _two_zip_bars(page) -> list[tuple[str, tuple[float, float]]]:
+    """Two bars of the zip chart, each as its zip and a point on it.
+
+    Found before any click: a selection fades every other bar, and a faded bar
+    is no longer a mark ``mark_point`` finds. The points go down the left end
+    of the bars, where every bar is drawn, until two of them name different
+    zips."""
+    page.evaluate(_UNSCROLL_JS, ZIP_BARS_ID)
+    frame_node(page, ZIP_BARS_ID)
+    page.locator(f"#vega{ZIP_BARS_ID} canvas").first.wait_for(state="attached", timeout=60000)
+    selector = drawing_selector(page, ZIP_BARS_ID)
+    assert selector, "the zip chart drew nothing"
+    bars: list[tuple[str, tuple[float, float]]] = []
+    seen: list[str] = []
+    for down in (0.05, 0.2, 0.12, 0.28, 0.36, 0.44):
+        mark = mark_point(page, selector, (0.1, down))
+        if not mark:
+            seen.append(f"{down:.0%} down: no bar")
+            continue
+        point = assert_in_view(page, mark["x"], mark["y"], f"the bar {down:.0%} down the zip chart")
+        zip_code = _hovered(page, ZIP_BARS_ID, "zip", point)
+        seen.append(f"{down:.0%} down: zip {zip_code}")
+        if zip_code is not None and all(zip_code != known for known, _ in bars):
+            bars.append((zip_code, point))
+        if len(bars) == 2:
+            return bars
+    raise AssertionError(f"the zip chart showed no two bars to click: {seen}")
+
+
+def test_a_point_selection_over_fields_reaches_a_selection_tag(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+):
+    require_project_page()
+    require_user_auth()
+
+    page.emulate_media(reduced_motion="reduce")
+    stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Zip Selection Tags",
+        username="zip_selection_tags_e2e",
+        project_name="Zip selection tags",
+        project_spec=load_example_spec(ZIPS_EXAMPLE),
+    )
+    require_owner_view(page)
+    for node_id in (ZIP_TAG_NODE_ID, ZIP_BARS_ID):
+        node_locator(page, node_id).wait_for(state="visible", timeout=45000)
+
+    # The chart draws, so the rows a tag reads are known.
+    run_all_and_wait(page, timeout_ms=180000)
+
+    # A tag on the zip chart, by zip.
+    frame_node(page, ZIP_TAG_NODE_ID)
+    _open_tab(page, ZIP_TAG_NODE_ID, "widgets")
+    panel = _panel(page, ZIP_TAG_NODE_ID)
+    panel.get_by_role("button", name="Add selection", exact=True).click()
+    panel.get_by_label("Selection view").select_option(ZIP_BARS_ID)
+    column = panel.get_by_label("Selection id column")
+    column.wait_for(state="visible", timeout=15000)
+    column.select_option("zip")
+    assert column.input_value() == "zip"
+    panel.get_by_label("Selection tag name").fill("zips")
+    panel.get_by_role("button", name="Add selection tag").click()
+    panel.locator('[data-selection-row="zips"]').wait_for(state="visible", timeout=10000)
+    _wait_for_tag_state(page, ZIP_TAG_NODE_ID, "zips", "Nothing selected", "Before any click on the zip chart")
+
+    # A click on one bar, then a Shift-click on another, which adds it.
+    (first, first_at), (second, second_at) = _two_zip_bars(page)
+    page.mouse.click(*first_at)
+    _wait_for_tag_state(page, ZIP_TAG_NODE_ID, "zips", "1 selected", f"After a click on the bar of zip {first}")
+    assert page.evaluate(_TAG_IDS_JS, [ZIP_TAG_NODE_ID, "zips"]) == [first]
+
+    page.keyboard.down("Shift")
+    try:
+        page.mouse.click(*second_at)
+    finally:
+        page.keyboard.up("Shift")
+    _wait_for_tag_state(
+        page, ZIP_TAG_NODE_ID, "zips", "2 selected", f"After a Shift-click on the bar of zip {second}"
+    )
+    assert sorted(page.evaluate(_TAG_IDS_JS, [ZIP_TAG_NODE_ID, "zips"])) == sorted([first, second])
+
+
+#: The owner's dataflow for #847. "Pick units" draws six units (numeric
+#: unit_id 101 to 106) as bars, selected with a point selection over unit_id,
+#: ``pick``; "Selected units" holds the tag ``picked`` on it. A Data Pool holds
+#: three readings per unit in shuffled order, so a reading's position says
+#: nothing about its unit (row 2 is 106-1), and is joined to "Pick units" by an
+#: interaction edge; "Readings chart" draws the readings it marks in red.
+UNITS_DATAFLOW = Path(__file__).with_name("dataflows") / "847-point-selection-over-fields.json"
+PICK_ID = "pick"
+SELECTED_ID = "selected"
+POOL_ID = "pool"
+
+# The readings the pool marks: the `reading` of each row of its table whose
+# `interacted` column says "1". Null while its rows have no such column.
+_MARKED_READINGS_JS = r"""(nodeId) => {
+    const table = document.querySelector(
+        `.react-flow__node[data-id="${nodeId}"] table[aria-label="tabular preview"]`);
+    if (!table) return null;
+    const heads = Array.from(table.querySelectorAll("thead th")).map((th) => th.textContent.trim());
+    const reading = heads.indexOf("reading"), flag = heads.indexOf("interacted");
+    if (reading < 0 || flag < 0) return null;
+    return Array.from(table.querySelectorAll("tbody tr"))
+        .map((tr) => Array.from(tr.children).map((td) => td.textContent.trim()))
+        .filter((cells) => cells[flag] === "1")
+        .map((cells) => cells[reading])
+        .sort();
+}"""
+
+
+def _bars_by_tooltip(page, node_id: str, field: str, wanted: set[str]) -> dict[str, tuple[float, float]]:
+    """A point on each bar of chart *node_id* whose tooltip reads one of
+    *wanted* for *field*, found across the chart's lower part before any click
+    (a selection fades every other bar)."""
+    page.evaluate(_UNSCROLL_JS, node_id)
+    frame_node(page, node_id)
+    page.locator(f"#vega{node_id} canvas").first.wait_for(state="attached", timeout=60000)
+    selector = drawing_selector(page, node_id)
+    assert selector, f"chart {node_id} drew nothing"
+    found: dict[str, tuple[float, float]] = {}
+    seen: list[str] = []
+    for step in range(1, 20):
+        across = step / 20
+        mark = mark_point(page, selector, (across, 0.9))
+        if not mark:
+            seen.append(f"{across:.0%} across: no bar")
+            continue
+        point = assert_in_view(page, mark["x"], mark["y"], f"the bar {across:.0%} across chart {node_id}")
+        value = _hovered(page, node_id, field, point)
+        seen.append(f"{across:.0%} across: {field} {value}")
+        if value in wanted:
+            found.setdefault(value, point)
+        if set(found) == wanted:
+            return found
+    raise AssertionError(f"chart {node_id} showed no bar for {sorted(wanted - set(found))}: {seen}")
+
+
+def _wait_for_marked(page, expected: list[str], what: str) -> None:
+    """The pool marks exactly the readings *expected*."""
+    try:
+        page.wait_for_function(
+            "([nodeId, expected]) => JSON.stringify((" + _MARKED_READINGS_JS + ")(nodeId))"
+            " === JSON.stringify(expected)",
+            arg=[POOL_ID, sorted(expected)],
+            timeout=15000,
+        )
+    except Exception:
+        raise AssertionError(
+            f"{what}: the pool marks the readings {page.evaluate(_MARKED_READINGS_JS, POOL_ID)!r}, "
+            f"not {sorted(expected)!r}; the tag reads {_tag_state(page, SELECTED_ID, 'picked')!r} and "
+            f"holds {page.evaluate(_TAG_IDS_JS, [SELECTED_ID, 'picked'])!r}"
+        ) from None
+
+
+def test_a_point_selection_over_fields_marks_the_rows_holding_its_values(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+):
+    """A click on unit 103's bar marks exactly its three readings, wherever the
+    pool holds them, and the tag holds 103; a Shift-click on unit 105's bar adds
+    its three (#847)."""
+    require_project_page()
+    require_user_auth()
+
+    with open(UNITS_DATAFLOW, encoding="utf-8") as fh:
+        spec = json.load(fh)
+    page.emulate_media(reduced_motion="reduce")
+    stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Point Selection Over Fields",
+        username="point_selection_fields_e2e",
+        project_name="Point selection over fields",
+        project_spec=spec,
+    )
+    require_owner_view(page)
+    for node in spec["dataflow"]["nodes"]:
+        node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
+
+    # Every node runs, so the chart holds the units and the pool the readings.
+    run_all_and_wait(page, timeout_ms=180000)
+    _open_tab(page, SELECTED_ID, "widgets")
+    _wait_for_tag_state(page, SELECTED_ID, "picked", "Nothing selected", "Before any click on Pick units")
+    bars = _bars_by_tooltip(page, PICK_ID, "unit_id", {"103", "105"})
+
+    page.mouse.click(*bars["103"])
+    _wait_for_marked(page, ["103-1", "103-2", "103-3"], "After a click on unit 103's bar")
+    _wait_for_tag_state(page, SELECTED_ID, "picked", "1 selected", "After a click on unit 103's bar")
+    assert page.evaluate(_TAG_IDS_JS, [SELECTED_ID, "picked"]) == ["103"]
+
+    page.keyboard.down("Shift")
+    try:
+        page.mouse.click(*bars["105"])
+    finally:
+        page.keyboard.up("Shift")
+    _wait_for_marked(
+        page, ["103-1", "103-2", "103-3", "105-1", "105-2", "105-3"], "After a Shift-click on unit 105's bar"
+    )
+    _wait_for_tag_state(page, SELECTED_ID, "picked", "2 selected", "After a Shift-click on unit 105's bar")
+    assert page.evaluate(_TAG_IDS_JS, [SELECTED_ID, "picked"]) == ["103", "105"]

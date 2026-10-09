@@ -15,21 +15,34 @@ export const namesDataset = (data: unknown): boolean =>
   isObject(data) && typeof data.name === "string" && data.url === undefined && data.values === undefined;
 
 /**
+ * A spec's views: the spec itself, then every view below it, in a layer, a
+ * concatenation, or a facet's or a repeat's inner spec.
+ */
+export function viewsOf(spec: any): Record<string, any>[] {
+  const views: Record<string, any>[] = [];
+  const visit = (node: any) => {
+    if (Array.isArray(node)) return node.forEach(visit);
+    if (!isObject(node)) return;
+    views.push(node);
+    for (const key of ["layer", "concat", "hconcat", "vconcat", "spec"]) visit(node[key]);
+  };
+  visit(spec);
+  return views;
+}
+
+/**
  * Whether anything below the spec's top level reads a dataset by name: a
  * layer's or a concatenated view's `data`, a facet's inner spec, or a lookup's
  * `from.data`.
  */
 function readsNamedDataBelowTop(spec: any): boolean {
-  const visit = (node: any, top: boolean): boolean => {
-    if (Array.isArray(node)) return node.some((child) => visit(child, false));
-    if (!isObject(node)) return false;
-    if (!top && namesDataset(node.data)) return true;
-    for (const step of Array.isArray(node.transform) ? node.transform : []) {
-      if (isObject(step?.from) && namesDataset(step.from.data)) return true;
-    }
-    return ["layer", "concat", "hconcat", "vconcat", "spec"].some((key) => visit(node[key], false));
-  };
-  return visit(spec, true);
+  return viewsOf(spec).some(
+    (view) =>
+      (view !== spec && namesDataset(view.data)) ||
+      (Array.isArray(view.transform) ? view.transform : []).some(
+        (step: any) => isObject(step?.from) && namesDataset(step.from.data),
+      ),
+  );
 }
 
 /** Whether a spec reads a node's *inputCount* inputs as named datasets. */
