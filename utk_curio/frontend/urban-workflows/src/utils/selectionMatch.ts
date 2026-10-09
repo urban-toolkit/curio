@@ -102,6 +102,18 @@ function rowsHolding(points: PointValue[], rows: SelectionRows): number[] {
   return indices;
 }
 
+/**
+ * A row's value as a numeric range reads it: a number, a Date's time, or text
+ * that reads as a number. Anything else (a column the row lacks, a null, other
+ * text) is NaN, which no range holds (#872).
+ */
+function rangeValue(value: unknown): number {
+  const at = comparable(value);
+  if (typeof at === "number") return at;
+  if (typeof at === "string" && at.trim() !== "") return Number(at);
+  return NaN;
+}
+
 /** Row positions one select covers. */
 export function selectIndices(detail: SelectDetail, rows: SelectionRows): number[] {
   if (detail.type === VisInteractionType.POINT) {
@@ -127,9 +139,9 @@ export function selectIndices(detail: SelectDetail, rows: SelectionRows): number
           break;
         }
       } else if (bounds.length === 2) {
-        // numerical interval
-        const value = rows.value(i, column) as number;
-        if (value < bounds[0] || value > bounds[1]) {
+        // numerical interval: a row with no number in the column is outside it
+        const value = rangeValue(rows.value(i, column));
+        if (!Number.isFinite(value) || value < bounds[0] || value > bounds[1]) {
           interacted = false;
           break;
         }
