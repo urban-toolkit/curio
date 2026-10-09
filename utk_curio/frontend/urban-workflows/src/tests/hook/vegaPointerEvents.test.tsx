@@ -20,7 +20,8 @@ jest.mock("vega", () => {
     logLevel() { return this; }
     renderer() { return this; }
     initialize(selector: string) {
-      document.querySelector(selector)?.appendChild(document.createElement("canvas"));
+      const page = globalThis.document;
+      page.querySelector(selector)?.appendChild(page.createElement("canvas"));
       return this;
     }
     hover() { return this; }
@@ -63,11 +64,10 @@ beforeAll(() => {
 });
 
 describe("vega's pointer mapping", () => {
-  // The vega build the app bundles, as CommonJS: its own `point`, which its
-  // canvas handler maps every pointer event through.
-  const vega = require(path.resolve(__dirname, "../../../node_modules/vega/build/vega.js"));
-
   test("a pointer on a canvas a CSS transform scales maps to the canvas's own pixels", () => {
+    // The vega build the app bundles, as CommonJS: its own `point`, which its
+    // canvas handler maps every pointer event through.
+    const vega = require(path.resolve(__dirname, "../../../node_modules/vega/build/vega.js"));
     const canvas = document.createElement("canvas");
     // Laid out 400 by 200, shown at half that size, as a node at zoom 0.5.
     Object.defineProperty(canvas, "offsetWidth", { get: () => 400 });
