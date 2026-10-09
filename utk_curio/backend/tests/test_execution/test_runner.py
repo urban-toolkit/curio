@@ -136,6 +136,19 @@ class TestRunThroughNode:
         assert report["error"] is None, report["error"]
         assert report["ok"] is True
 
+    def test_the_refusal_names_the_setting_that_raises_the_bound(self, tmp_curio):
+        """#467: a refused slice says how to raise the bound, not only that
+        the dataflow can be run by hand."""
+        ids = [f"n{i}" for i in range(30)]
+        exec_fn = _RecordingExec()
+        report = runner.run_through_node(
+            KEY, PID, _chain_spec(ids), "n29", exec_fn=exec_fn, node_limit=5,
+        )
+        assert report["ok"] is False
+        assert "30 nodes to run" in report["error"] and "validation bound 5" in report["error"]
+        assert "--validation-node-limit" in report["error"]
+        assert exec_fn.calls == []  # refused before anything ran
+
     def test_a_node_with_several_inputs_receives_them_in_circle_order(self, tmp_curio):
         """#662: fan-in goes straight into the node that reads it, one circle per
         edge, and ``arg`` is assembled in circle order. ``a``'s edge kept the id
