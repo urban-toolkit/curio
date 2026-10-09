@@ -82,6 +82,48 @@ def node(action, pad_target=None):
     return NODE.replace("ACTION", ACTIONS[action]).replace("PAD_TARGET", repr(pad_target))
 
 
+# Pads the child to exactly TARGET_KB free under its cap, then builds the
+# test's frame at once, measuring only before the pad and after the frame.
+FINE = """
+    import mmap
+    import resource
+    cap = resource.getrlimit(resource.RLIMIT_AS)[0]
+    with open('/proc/self/statm') as h:
+        size = int(h.read().split()[0]) * 4096
+    pad = (cap - size - TARGET_KB * 1024) // 4096 * 4096
+    keep = mmap.mmap(-1, pad) if pad > 0 else None
+    error = 'ok'
+    try:
+        import pandas as pd
+        pd.DataFrame({'a': [1, 2, 3], 'b': ['x', 'y', 'z']})
+    except BaseException as exc:
+        error = repr(exc)[:120]
+    with open('/proc/self/statm') as h:
+        after = int(h.read().split()[0]) * 4096
+    grown = (after - size - max(pad, 0)) // 1024
+    print('MEMBUDGET-FINE target_kb=%d free_kb=%d grew_kb=%d %s' % (TARGET_KB, (cap - size - max(pad, 0)) // 1024, grown, error))
+    return 0
+"""
+
+# The two nodes test_a_dataframe_writes_parquet_under_the_memory_cap runs, verbatim.
+TEST_PROBE = (
+    "    import os, resource\n"
+    "    from utk_curio.sandbox.util import codec\n"
+    "    with open('/proc/self/statm') as h:\n"
+    "        pages = int(h.read().split()[0])\n"
+    "    return {\n"
+    "        'as_mb': resource.getrlimit(resource.RLIMIT_AS)[0] // (1024 * 1024),\n"
+    "        'baseline_mb': (pages * os.sysconf('SC_PAGE_SIZE')) // (1024 * 1024),\n"
+    "        'budget_env': os.environ.get('CURIO_EXEC_MEMORY_MB', '<unset>'),\n"
+    "        'writer': codec._writer_config()['memory_limit'],\n"
+    "    }\n"
+)
+TEST_FRAME = (
+    "    import pandas as pd\n"
+    "    return pd.DataFrame({'a': [1, 2, 3], 'b': ['x', 'y', 'z']})\n"
+)
+
+
 def facts():
     import numpy
     import pandas as pd
@@ -142,12 +184,18 @@ def run(budget, extra, nodes):
                 code, "", "curio.builtin/computation-analysis", "",
                 save_dataset=False, config=config,
             )
-            lines = [line for line in result.get("stdout") or [] if line.startswith("MEMBUDGET ")]
+            out = result.get("stdout") or []
+            lines = [line for line in out if line.startswith("MEMBUDGET ")]
+            fine = [line for line in out if line.startswith("MEMBUDGET-FINE ")]
+            stderr = result.get("stderr") or ""
             if lines:
                 print(row(budget, extra, label, json.loads(lines[-1][len("MEMBUDGET "):])))
+            elif fine:
+                print(f"fine budget={budget} pool_env={extra.get('ARROW_DEFAULT_MEMORY_POOL', '-')} "
+                      f"{fine[-1][len('MEMBUDGET-FINE '):]}")
             else:
-                print(f"budget={budget} env={extra} node={label} NO REPORT "
-                      f"stderr={(result.get('stderr') or '')[-600:]!r}")
+                print(f"budget={budget} env={extra} node={label} clean={stderr == ''} "
+                      f"tail={stderr.strip().splitlines()[-1:]!r}")
             sys.stdout.flush()
     except Exception as exc:  # noqa: BLE001 - a probe reports and goes on
         print(f"budget={budget} env={extra} zygote failed: {exc!r}")
@@ -160,6 +208,23 @@ def run(budget, extra, nodes):
 
 
 def main():
+    facts()
+    print("== A. the test's own two nodes, then its frame alone, as pytest runs them")
+    exact = [("test-probe", TEST_PROBE), ("test-frame", TEST_FRAME), ("frame-again", TEST_FRAME)]
+    for budget in (128, 256, 1024):
+        run(budget, {"MIMALLOC_SHOW_ERRORS": "1"}, exact)
+        run(budget, {"ARROW_DEFAULT_MEMORY_POOL": "system"}, exact)
+
+    print("== B. free space in 128 KiB steps across mimalloc's two arena sizes")
+    for centre_kb in (128 * 1024, 1024 * 1024):
+        steps = [centre_kb + 128 * i for i in range(-4, 17)]
+        nodes = [(f"fine@{kb}", FINE.replace("TARGET_KB", str(kb))) for kb in steps]
+        run(2048, {"MIMALLOC_SHOW_ERRORS": "1"}, nodes)
+        run(2048, {"ARROW_DEFAULT_MEMORY_POOL": "system"}, nodes)
+    print("== done")
+
+
+def first_round():
     facts()
     every = [(name, node(name)) for name in ACTIONS]
     print("== 1. budgets, default environment, each allocator first-used in a fresh child")
