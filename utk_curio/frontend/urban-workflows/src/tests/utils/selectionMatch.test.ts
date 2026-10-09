@@ -133,6 +133,29 @@ describe('a numeric range over rows that hold no number for its column (#872)', 
       .toEqual([0]);
   });
 
+  test('a date held as text is compared by its time (#872)', () => {
+    const days = objectRows(['2020-01-01', '2020-01-02', '2020-01-03', '2020-01-04', '2020-01-05']
+      .map((day) => ({ day })));
+    const brush = { type: INTERVAL, data: { day: [Date.parse('2020-01-02'), Date.parse('2020-01-04')] } };
+    expect(selectIndices(brush, days)).toEqual([1, 2, 3]);
+  });
+
+  test('a date and time held as text is compared by its time (#872)', () => {
+    const times = objectRows(['01', '02', '03', '04', '05'].map((day) => ({ at: `2020-01-${day}T10:00:00` })));
+    const brush = {
+      type: INTERVAL,
+      data: { at: [Date.parse('2020-01-02T10:00:00'), Date.parse('2020-01-04T10:00:00')] },
+    };
+    expect(selectIndices(brush, times)).toEqual([1, 2, 3]);
+  });
+
+  test('numeric text that could be a year stays a number (#872)', () => {
+    expect(selectIndices({ type: INTERVAL, data: { height: [10, 20] } }, objectRows([{ height: '12' }])))
+      .toEqual([0]);
+    const years = objectRows([{ year: '2012' }, { year: '1999' }]);
+    expect(selectIndices({ type: INTERVAL, data: { year: [2000, 2020] } }, years)).toEqual([0]);
+  });
+
   test('a text interval over a column the rows lack marks none of them (#872)', () => {
     expect(selectIndices({ type: INTERVAL, data: { city: ['A', 'B'] } }, readings)).toEqual([]);
   });
