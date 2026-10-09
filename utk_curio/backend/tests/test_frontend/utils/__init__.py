@@ -96,6 +96,7 @@ from .interactions import (  # noqa: F401
     brush_mismatches,
     _LIT_MARKS_JS,
     lit_marks,
+    lit_labels,
     capture_node,
     changed_pixels,
     wait_for_node_capture,
