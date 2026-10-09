@@ -922,6 +922,10 @@ over tables. A table comes from the document's own `data` section (an OSM
 extract, a GeoJSON or CSV file) or from the node's input. The document writes
 no `data` entry for its input; it names the tables the input provides.
 
+A node draws one map. A document whose `map` lists more than one map does not
+run, and the node's error says to put each map in its own `Autark` node and
+link them with interaction edges (see [Linking charts](#linking-charts)).
+
 ### Its input
 
 - Each input is the table `input_0`, `input_1`, and so on, in the order of the

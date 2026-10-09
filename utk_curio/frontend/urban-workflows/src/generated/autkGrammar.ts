@@ -14,3 +14,13 @@ export const INPUT_TABLE_PREFIX = "input_";
 export function inputTableName(position: number): string {
   return `${INPUT_TABLE_PREFIX}${position}`;
 }
+
+/** What a document whose `map` lists more than one map is told: an Autark node draws one map. */
+export const AUTK_ONE_MAP =
+  "An Autark node draws one map. Put each map in its own Autark node, and link them with interaction edges.";
+
+/** AUTK_ONE_MAP when *spec* lists more than one map, else null. A list of one map is that map. */
+export function autkOneMapProblem(spec: unknown): string | null {
+  const map = (spec as { map?: unknown } | null | undefined)?.map;
+  return Array.isArray(map) && map.length > 1 ? AUTK_ONE_MAP : null;
+}

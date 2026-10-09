@@ -245,9 +245,12 @@ def validate_autk_grammar(content: str, *, columns: list | None = None) -> dict:
     """An Autark document, against the grammar's own JSON Schema.
 
     The schema is the vendored copy of what autk-grammar publishes
-    (``contracts.AUTK_SCHEMA_PATH``). One rule sits on top, because no schema
-    form says it: the document must load, compute or draw something, and a map
-    must list a layer (``_draws_nothing``).
+    (``contracts.AUTK_SCHEMA_PATH``). Two rules sit on top, because no schema
+    form says them. A node draws one map, so a document that lists more is
+    refused first, with the words the node's own error says
+    (``contracts.autk_one_map_problem``): the fix is to split it, whatever its
+    maps hold. And the document must load, compute or draw something, and a
+    map must list a layer (``_draws_nothing``).
     """
     from utk_curio.backend.app.agents.domain import contracts
 
@@ -257,6 +260,9 @@ def validate_autk_grammar(content: str, *, columns: list | None = None) -> dict:
     if not isinstance(payload, dict):
         return {"status": STATUS_INVALID,
                 "detail": "an Autark grammar document must be a JSON object"}
+    several_maps = contracts.autk_one_map_problem(payload)
+    if several_maps:
+        return {"status": STATUS_INVALID, "detail": _detail(several_maps)}
     try:
         import jsonschema
     except Exception as exc:  # noqa: BLE001
@@ -507,14 +513,17 @@ def validate(
 
 
 def refusal_text(node_type: object, verdict: dict, *, grammar_id: object = None) -> str:
-    """What the model is told, and what a human reads in the trail."""
+    """What the model is told, and what a human reads in the trail. The detail
+    is a clause of its sentence, so a detail that ends a sentence of its own
+    gives up its final period."""
     grammar = grammar_of(node_type, grammar_id)
     what = "Vega-Lite" if grammar == "vega-lite" else (
         "Autark grammar" if grammar == "autk-grammar" else
         grammar or canonical_suffix(node_type) or "document"
     )
+    detail = _detail(verdict.get("detail")).removesuffix(".")
     return (
         f"document refused — this node's content is a {what} document and it does not "
-        f"validate: {_detail(verdict.get('detail'))}. Fix exactly that and return the "
+        f"validate: {detail}. Fix exactly that and return the "
         "whole document; nothing is written to the node until it validates."
     )
