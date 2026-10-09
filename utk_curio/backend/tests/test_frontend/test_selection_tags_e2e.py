@@ -17,6 +17,10 @@ signed-in canvas makes:
    the ids are back, the chart declaring its selection again keeps them, and
    the server run reads them.
 
+A second test clicks bars of example 02's zip chart, whose point selection is
+named ``zip_select`` and picks rows by their ``zip`` (#768): a tag on that chart
+holds one zip after a click, and two after a Shift-click on another bar.
+
 Run::
 
     CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/test_selection_tags_e2e.py -v
@@ -32,7 +36,9 @@ from .utils import (
     assert_in_view,
     at_fraction,
     brush_area,
+    drawing_selector,
     frame_node,
+    mark_point,
     node_execution_timeout_ms,
     node_locator,
     play_node,
@@ -46,6 +52,7 @@ from .utils import (
     set_node_code,
     stub_login_and_enter_workflow,
 )
+from .walkthroughs import load_example_spec
 
 if TYPE_CHECKING:
     from .utils import FrontendPage
@@ -434,3 +441,132 @@ def test_a_brush_reaches_a_python_node_through_a_selection_tag(
     assert counter["metadata"].get("selections") == by_id[COUNTER_ID]["metadata"]["selections"], counter["metadata"]
     frame_node(page, COUNTER_ID)
     assert node_locator(page, COUNTER_ID).locator(".monaco-editor .curio-widget-ref-problem").count() == 0
+
+
+ZIPS_EXAMPLE = "02-vega-lite-spatial-density.json"
+#: Example 02's "Top 10 largest zip codes" chart: one horizontal bar per zip,
+#: longest first, selected with ``{"name": "zip_select", "select": {"type":
+#: "point", "fields": ["zip"], "toggle": "event.shiftKey"}}``.
+ZIP_BARS_ID = "d23e2587-57bf-4db4-84fe-cdb7c2de638d"
+#: Example 02's data transformation node, which holds the tag on that chart.
+ZIP_TAG_NODE_ID = "e5e7e21f-609d-496b-b231-659ee91ff9af"
+
+# The zip of the bar under the pointer: vega's own tooltip handler writes the
+# hovered mark's tooltip into the chart's container as its title, one line per
+# field ("zip: 60614\nVEGETATED_SQFT: ..."), at every pointer move over it.
+_HOVERED_ZIP_JS = r"""(nodeId) => {
+    const el = document.getElementById("vega" + nodeId);
+    const match = /^zip: (.+)$/m.exec((el && el.getAttribute("title")) || "");
+    return match ? match[1] : null;
+}"""
+_FORGET_HOVER_JS = r"""(nodeId) => {
+    const el = document.getElementById("vega" + nodeId);
+    if (el) el.removeAttribute("title");
+}"""
+
+# The ids a selection tag holds, as text; null when it holds a count instead.
+_TAG_IDS_JS = r"""([nodeId, name]) => {
+    const rf = window.__curio_reactFlow;
+    const node = rf && rf.getNodes().find((n) => n.id === nodeId);
+    const tag = ((node && node.data && node.data.selections) || []).find((t) => t.name === name);
+    return tag && Array.isArray(tag.ids) ? tag.ids.map(String) : null;
+}"""
+
+
+def _zip_under(page, point: tuple[float, float]) -> str | None:
+    """The zip of the bar at *point*, from its tooltip; None off every bar."""
+    page.evaluate(_FORGET_HOVER_JS, ZIP_BARS_ID)
+    page.mouse.move(*point)
+    try:
+        page.wait_for_function(
+            "(nodeId) => (" + _HOVERED_ZIP_JS + ")(nodeId) !== null", arg=ZIP_BARS_ID, timeout=3000
+        )
+    except Exception:
+        return None
+    return page.evaluate(_HOVERED_ZIP_JS, ZIP_BARS_ID)
+
+
+def _two_zip_bars(page) -> list[tuple[str, tuple[float, float]]]:
+    """Two bars of the zip chart, each as its zip and a point on it.
+
+    Found before any click: a selection fades every other bar, and a faded bar
+    is no longer a mark ``mark_point`` finds. The points go down the left end
+    of the bars, where every bar is drawn, until two of them name different
+    zips."""
+    page.evaluate(_UNSCROLL_JS, ZIP_BARS_ID)
+    frame_node(page, ZIP_BARS_ID)
+    page.locator(f"#vega{ZIP_BARS_ID} canvas").first.wait_for(state="attached", timeout=60000)
+    selector = drawing_selector(page, ZIP_BARS_ID)
+    assert selector, "the zip chart drew nothing"
+    bars: list[tuple[str, tuple[float, float]]] = []
+    seen: list[str] = []
+    for down in (0.05, 0.2, 0.12, 0.28, 0.36, 0.44):
+        mark = mark_point(page, selector, (0.1, down))
+        if not mark:
+            seen.append(f"{down:.0%} down: no bar")
+            continue
+        point = assert_in_view(page, mark["x"], mark["y"], f"the bar {down:.0%} down the zip chart")
+        zip_code = _zip_under(page, point)
+        seen.append(f"{down:.0%} down: zip {zip_code}")
+        if zip_code is not None and all(zip_code != known for known, _ in bars):
+            bars.append((zip_code, point))
+        if len(bars) == 2:
+            return bars
+    raise AssertionError(f"the zip chart showed no two bars to click: {seen}")
+
+
+def test_a_point_selection_over_fields_reaches_a_selection_tag(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+):
+    require_project_page()
+    require_user_auth()
+
+    page.emulate_media(reduced_motion="reduce")
+    stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Zip Selection Tags",
+        username="zip_selection_tags_e2e",
+        project_name="Zip selection tags",
+        project_spec=load_example_spec(ZIPS_EXAMPLE),
+    )
+    require_owner_view(page)
+    for node_id in (ZIP_TAG_NODE_ID, ZIP_BARS_ID):
+        node_locator(page, node_id).wait_for(state="visible", timeout=45000)
+
+    # The chart draws, so the rows a tag reads are known.
+    run_all_and_wait(page, timeout_ms=180000)
+
+    # A tag on the zip chart, by zip.
+    frame_node(page, ZIP_TAG_NODE_ID)
+    _open_tab(page, ZIP_TAG_NODE_ID, "widgets")
+    panel = _panel(page, ZIP_TAG_NODE_ID)
+    panel.get_by_role("button", name="Add selection", exact=True).click()
+    panel.get_by_label("Selection view").select_option(ZIP_BARS_ID)
+    column = panel.get_by_label("Selection id column")
+    column.wait_for(state="visible", timeout=15000)
+    column.select_option("zip")
+    assert column.input_value() == "zip"
+    panel.get_by_label("Selection tag name").fill("zips")
+    panel.get_by_role("button", name="Add selection tag").click()
+    panel.locator('[data-selection-row="zips"]').wait_for(state="visible", timeout=10000)
+    _wait_for_tag_state(page, ZIP_TAG_NODE_ID, "zips", "Nothing selected", "Before any click on the zip chart")
+
+    # A click on one bar, then a Shift-click on another, which adds it.
+    (first, first_at), (second, second_at) = _two_zip_bars(page)
+    page.mouse.click(*first_at)
+    _wait_for_tag_state(page, ZIP_TAG_NODE_ID, "zips", "1 selected", f"After a click on the bar of zip {first}")
+    assert page.evaluate(_TAG_IDS_JS, [ZIP_TAG_NODE_ID, "zips"]) == [first]
+
+    page.keyboard.down("Shift")
+    try:
+        page.mouse.click(*second_at)
+    finally:
+        page.keyboard.up("Shift")
+    _wait_for_tag_state(
+        page, ZIP_TAG_NODE_ID, "zips", "2 selected", f"After a Shift-click on the bar of zip {second}"
+    )
+    assert sorted(page.evaluate(_TAG_IDS_JS, [ZIP_TAG_NODE_ID, "zips"])) == sorted([first, second])
