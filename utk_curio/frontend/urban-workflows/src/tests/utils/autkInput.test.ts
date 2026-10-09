@@ -22,6 +22,7 @@ import {
 import type { GrammarFrame, GrammarInput } from "../../utils/grammarInput";
 import { resolveReferences } from "../../utils/references/codeReferences";
 import { inputScopeFor } from "../../utils/references/inputScope";
+import { LOAD_ORDER, MAP_ORDER, UNIT_ROW, drawnAt, unitsCollection } from "../_support/keyedSelections";
 
 const point = (x: number, y: number) => ({ type: "Point", coordinates: [x, y] });
 const fc = (geoms: any[], crs?: string) => ({
@@ -395,6 +396,21 @@ describe("loadableSource", () => {
   test("a table with geometry everywhere is left alone", () => {
     const plain = source([point(0, 0), point(1, 1)]);
     expect(loadableSource(plain)).toEqual({ source: plain, order: { load: null, map: null } });
+  });
+
+  test("guard: the keyed-selection fixture's units are drawn and loaded in other orders than they came", () => {
+    const { order } = loadableSource({
+      type: "geojson",
+      geojsonObject: unitsCollection(),
+      outputTableName: "input_0",
+      coordinateFormat: "EPSG:4326",
+    });
+    expect(order).toEqual({ load: LOAD_ORDER, map: MAP_ORDER });
+    // The input row behind unit 103's drawn square is not the row at that
+    // position, and the first two rows a plot holds trade places.
+    expect(inputRow(drawnAt(UNIT_ROW[103]), order.map)).toBe(UNIT_ROW[103]);
+    expect(drawnAt(UNIT_ROW[103])).not.toBe(UNIT_ROW[103]);
+    expect(order.load!.slice(0, 2)).toEqual([1, 0]);
   });
 });
 
