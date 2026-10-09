@@ -1166,16 +1166,6 @@ const nodeContentStyle: CSS.Properties = {
     backgroundColor: "white",
 };
 
-export const buttonStyle: CSS.Properties = {
-    backgroundColor: "transparent",
-    color: "#545353",
-    border: "1px solid #545353",
-    padding: "4px 8px",
-    borderRadius: "4px",
-    cursor: "pointer",
-    outline: "none",
-};
-
 const buttonStyleProgrammer: CSS.Properties = {
     color: "#d66800",
     padding: 0,
