@@ -22,7 +22,7 @@ import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../ut
 import { autkOneViewProblem } from '../../generated/autkGrammar';
 import {
     autkNeedsInput, autkSourcesFrom, documentTableRefs, inputRow, keyValues, loadableSource, ownTableNames,
-    readAutkInput, selectFieldsOf, tablePositions, type LoadOrder, type PreparedAutkInput,
+    readAutkInput, selectFieldsOf, selectFieldsProblem, tablePositions, type LoadOrder, type PreparedAutkInput,
 } from '../../utils/autkInput';
 import { type GrammarInput } from '../../utils/grammarInput';
 import { featureRows, matchSelections, type IncomingSelection } from '../../utils/selectionMatch';
@@ -347,6 +347,18 @@ export const useAutkGrammarBehavior = (
         // grammar instance, so we never hold stale references.
         interactionOffRef.current.forEach(f => f());
         interactionOffRef.current = [];
+
+        // Key columns a pick or a brush cannot read (utils/autkInput
+        // selectFieldsProblem) fail the run before anything is loaded or
+        // drawn, as a document with more than one view does.
+        const keyProblem = selectFieldsProblem(spec, preparedInput?.sources ?? []);
+        if (keyProblem) {
+            grammarRef.current = null;
+            specRef.current = null;
+            emit({ code: 'error', content: keyProblem });
+            showToast(keyProblem, 'error');
+            return;
+        }
 
         emit({ code: 'exec', content: '' });
         let summary: string | null = null;

@@ -253,6 +253,41 @@ export function selectFieldsOf(view: any): string[] | null {
 }
 
 /**
+ * Why a pick or a brush could not send the key columns a document names
+ * (`selectFields`), or null when it can. They are read from the features of
+ * the node's input, the rows the charts linked to it hold. A table the
+ * document loads itself is not among them: the map draws it with the features
+ * that have no geometry left out, so its picks name none of these rows. And a
+ * column that no feature of its table has names nothing.
+ */
+export function selectFieldsProblem(spec: any, sources: readonly AutkSource[]): string | null {
+  const own = new Set([
+    ...ownTableNames(spec),
+    ...asList<any>(spec?.data).map((source) => source?.outputTableName).filter((name) => typeof name === "string"),
+  ]);
+  const views = [...asList<any>(spec?.map).flatMap((map) => asList<any>(map?.layerRefs)), ...asList<any>(spec?.plot)];
+  for (const view of views) {
+    const fields = selectFieldsOf(view);
+    const table = view?.dataRef;
+    if (!fields || typeof table !== "string") continue;
+    const source = sources.find((s) => s.outputTableName === table);
+    if (!source) {
+      if (!own.has(table)) continue;
+      return `selectFields needs ${table} to come from this node's input, but this document loads it. `
+        + `Load ${table} in an upstream node and connect that node here.`;
+    }
+    const features: any[] = (source.geojsonObject as any)?.features ?? [];
+    // An empty table is reported as one when the node draws.
+    if (features.length === 0) continue;
+    const missing = fields.find((field) => !features.some(
+      (feature) => feature?.properties != null && Object.prototype.hasOwnProperty.call(feature.properties, field),
+    ));
+    if (missing) return `selectFields names ${missing}, which no feature of ${table} has.`;
+  }
+  return null;
+}
+
+/**
  * The values input *rows* hold for *fields*, one point per row, as a Vega-Lite
  * point select over fields sends them (#847): `{unit_id: 103}`. Each is sent
  * once, in row order, and a row that holds no value for one of them is left
