@@ -1269,7 +1269,8 @@ for. It is saved with the project.
 
 Agents run under a default-deny egress policy. Web fetches are restricted to
 http and https, refused when a host resolves to a non-public address, capped in
-body size and redirect count, and bounded per run.
+body size and redirect count, and bounded per run. A refused fetch shows its
+reason under the agent's reply.
 
 The agents' web-search tool defaults to DuckDuckGo's keyless Instant Answer API.
 Operators who would rather not send queries to a third party can point

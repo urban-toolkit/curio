@@ -418,6 +418,16 @@
   padding-left: 2px;
 }
 
+/* A line that stays under one reply, in the meta line's quiet type: why a
+   tool call failed, or that a canvas agent changed nothing on the canvas. */
+.turnNote {
+  padding-left: 2px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--curio-text-secondary, var(--curio-text-meta));
+  overflow-wrap: anywhere;
+}
+
 .agentRowAvatar {
   flex: none;
   width: 22px;

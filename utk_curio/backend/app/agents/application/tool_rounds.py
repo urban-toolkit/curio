@@ -9,6 +9,7 @@ and import order between siblings cannot matter.
 from __future__ import annotations
 
 import json as _json
+import re
 import time
 
 from utk_curio.backend.app.agents.application import tools
@@ -349,8 +350,9 @@ def _execute_tool_request(
 
     Only granted read contracts execute; a granted mutate contract mints a
     review proposal (never executes — `DEC-006`); everything else resolves to
-    a synthetic result the model can recover from — loudly to the model,
-    invisibly to the user, never a run error. Appends to ``tool_calls`` (the
+    a synthetic result the model can recover from, never a run error. The
+    model gets the whole result; the user gets one bounded line of it, the
+    record's ``reason``, under the reply (#447). Appends to ``tool_calls`` (the
     execution record's tool history) and ``minted`` (proposal parts for the
     persisted turn)."""
     tool_id = req.get("tool", "")
@@ -390,13 +392,15 @@ def _execute_tool_request(
                 target=loop_ctx.get("target"),
                 params=req.get("params") or {},
             )
-    tool_calls.append(
-        {
-            "tool": tool_id,
-            "status": status,
-            "durationMs": int((time.monotonic() - started) * 1000),
-        }
-    )
+    record = {
+        "tool": tool_id,
+        "status": status,
+        "durationMs": int((time.monotonic() - started) * 1000),
+    }
+    reason = _failure_reason(status, text)
+    if reason is not None:
+        record["reason"] = reason
+    tool_calls.append(record)
     return status, text
 
 
@@ -422,6 +426,29 @@ def _delegate_result_message(
 
 #: The statuses of a result that is not an error.
 _NATIVE_OK_STATUSES = frozenset({"ok", "proposed"})
+
+#: How long a failed call's reason may be: one line under the reply (#447).
+_FAILURE_REASON_MAX_CHARS = 300
+
+#: A URL's query string. A search provider's key rides there
+#: (``CURIO_SEARCH_URL``), and transport errors repeat the URL they failed on.
+_URL_QUERY = re.compile(r"\?[^\s'\"()<>]+")
+
+
+def _failure_reason(status: str, text: object) -> str | None:
+    """What the chat shows, and the turn saves, for a call that did not
+    succeed (#447): the first line of its result, with URL query strings cut
+    and the length bounded. None for a call that succeeded, so its event and
+    record keep their shape."""
+    if status in _NATIVE_OK_STATUSES:
+        return None
+    lines = str(text or "").strip().splitlines()
+    if not lines:
+        return None
+    reason = _URL_QUERY.sub("?…", lines[0].strip())
+    if len(reason) > _FAILURE_REASON_MAX_CHARS:
+        reason = reason[: _FAILURE_REASON_MAX_CHARS - 1] + "…"
+    return reason
 
 
 #: The answer to every call of a reply after its first, which is the one run.

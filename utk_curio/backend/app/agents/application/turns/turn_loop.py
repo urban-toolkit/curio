@@ -497,7 +497,12 @@ class AttachmentTurn:
         status, text = agents_tool_rounds._execute_tool_request(
             self.user_key, self.project_id, self.loop_ctx, req, self.tool_calls, self.minted
         )
-        yield from self._emit("tool_result", {"tool": req["tool"], "status": status})
+        # A call that did not succeed says why, as its saved record does (#447).
+        reason = agents_tool_rounds._failure_reason(status, text)
+        yield from self._emit(
+            "tool_result",
+            {"tool": req["tool"], "status": status, **({"reason": reason} if reason is not None else {})},
+        )
         if isinstance(text, ParamRefusal) and self.refusals_used < agents_tool_rounds.MAX_REFUSED_ROUNDS:
             self.refusals_used += 1  # dev/105 D2: a free correction, not a round
         else:

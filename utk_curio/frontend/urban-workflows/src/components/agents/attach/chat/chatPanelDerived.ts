@@ -1,12 +1,14 @@
 /**
  * Pure derivations the chat panel renders from (memo dev/142, F4 — split out
- * of `AgentChatPanel.tsx`): the per-turn status meta, the plan-row state a
- * review card gets from the attachment's mirrors, the header's target label,
- * and the newest turn's suggested prompts.
+ * of `AgentChatPanel.tsx`): the per-turn status meta, whether a canvas
+ * agent's reply changed nothing, the plan-row state a review card gets from
+ * the attachment's mirrors, the header's target label, and the newest turn's
+ * suggested prompts.
  */
 import {
   turnStatusDisplay,
   type AgentAttachment,
+  type AgentDelegationPart,
   type AgentProposalPart,
   type AgentSessionTurn,
   type AgentSuggestedPromptsPart,
@@ -53,6 +55,31 @@ export function turnMetaFor(
       pendingReview: i === lastAgentIdx && pendingReview,
     };
   return null;
+}
+
+/** The agents whose work lands on the canvas (#243). */
+const CANVAS_AGENTS = ["agent.node-builder@", "agent.dataflow-builder@", "agent.node-content-builder@"];
+
+/**
+ * #243: a canvas agent's reply that holds no proposal changed nothing on the
+ * canvas, and says so, so a reply that claims a new node is never the only
+ * account. Read from the transcript, so it holds after a reload too:
+ * - only a reply to the user's message: a Solve verdict or an apply result
+ *   follows no message, and a task another agent delegated here carries that
+ *   run's id (`parentExecutionId`);
+ * - only once the reply landed with its execution record, so a reply still
+ *   streaming says nothing yet;
+ * - a delegation that went through hands the change to the agent it names,
+ *   whose chat holds the review, so that reply says nothing either.
+ */
+export function canvasUnchangedFor(attachment: AgentAttachment, turns: AgentSessionTurn[], i: number): boolean {
+  const t = turns[i];
+  if (!CANVAS_AGENTS.some((prefix) => attachment.coord.startsWith(prefix))) return false;
+  if (t.role !== "agent" || t.error || !t.execution || "parentExecutionId" in t.execution) return false;
+  if (turns[i - 1]?.role !== "user") return false;
+  return !(t.content ?? []).some(
+    (p) => p.type === "proposal" || (p.type === "delegation" && (p as AgentDelegationPart).status === "ok"),
+  );
 }
 
 /** dev/67-5/67-9: the mirror's per-node state feeds the part whose proposal

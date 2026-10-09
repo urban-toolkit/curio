@@ -15,12 +15,26 @@ export interface AgentUsage {
 }
 
 /**
+ * One tool call of a run (memo dev/41): the tool, how it ended, and, for a
+ * call that did not succeed, the one-line reason the chat shows under the
+ * reply (#447). Saved turns from before the reason have none.
+ */
+export interface AgentToolCall {
+  tool: string;
+  status: string;
+  durationMs?: number;
+  reason?: string;
+}
+
+/**
  * The per-run execution record riding an agent turn (memo dev/37): identity,
  * DEC-031 reproducibility pins, duration, status, and Actual usage (null when
  * the provider reports none). Turns that predate the record simply lack it.
  */
 export interface AgentExecution {
   executionId: string;
+  /** Present on a delegated task's record: the run that delegated it (dev/48). */
+  parentExecutionId?: string | null;
   pins?: {
     coord?: string;
     promptSha256?: string | null;
@@ -34,6 +48,8 @@ export interface AgentExecution {
   usage: AgentUsage | null;
   durationMs?: number;
   status: "ok" | "error";
+  /** The tool calls the run made, in order; absent when it made none. */
+  toolCalls?: AgentToolCall[];
 }
 
 /**
