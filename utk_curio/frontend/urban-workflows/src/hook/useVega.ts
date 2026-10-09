@@ -477,13 +477,9 @@ export const useVega = ({
       .initialize("#vega" + data.nodeId)
       .hover();
 
-    // Vega's point.js computes coordinates as `clientX - getBoundingClientRect().left`,
-    // both in screen pixels. But ReactFlow applies a CSS zoom transform to its viewport,
-    // so getBoundingClientRect() returns scaled (screen) dimensions while Vega's internal
-    // coordinate system is in CSS pixels. event.offsetX gives the correct CSS-pixel
-    // position within the canvas, ignoring parent transforms (per CSSOM spec).
-    // Intercept events before Vega sees them and replace clientX/Y so that
-    // Vega's subtraction gives offsetX — the correct CSS-pixel position.
+    // React Flow's zoom scales the canvas with a CSS transform; vega maps a
+    // pointer through that scale itself, so its events stay as the browser
+    // sent them.
     const vegaEl = document.getElementById("vega" + data.nodeId);
     const vegaCanvas = vegaEl?.querySelector('canvas') as HTMLCanvasElement | null;
     if (vegaCanvas) {
@@ -492,41 +488,6 @@ export const useVega = ({
       // scrollbars back. As a block it fits, as autk-plot's SVG does.
       vegaCanvas.style.display = 'block';
       vegaCanvas.style.margin = '0 auto';
-      const FIXED = '__curio_coord_fixed';
-      const PATCH_TYPES = [
-        'mousemove', 'mousedown', 'mouseup', 'click',
-        'pointermove', 'pointerdown', 'pointerup', 'pointerover', 'pointerout',
-        'mouseover', 'mouseout',
-      ];
-      PATCH_TYPES.forEach(type => {
-        vegaCanvas.addEventListener(type, (evt: Event) => {
-          const me = evt as MouseEvent;
-          if ((me as any)[FIXED]) return;
-          me.stopImmediatePropagation();
-          const rect = vegaCanvas.getBoundingClientRect();
-          const synth = new MouseEvent(type, {
-            bubbles: me.bubbles,
-            cancelable: me.cancelable,
-            view: me.view,
-            detail: me.detail,
-            clientX: rect.left + me.offsetX,
-            clientY: rect.top + me.offsetY,
-            screenX: me.screenX,
-            screenY: me.screenY,
-            ctrlKey: me.ctrlKey,
-            shiftKey: me.shiftKey,
-            altKey: me.altKey,
-            metaKey: me.metaKey,
-            button: me.button,
-            buttons: me.buttons,
-            relatedTarget: me.relatedTarget,
-            movementX: me.movementX,
-            movementY: me.movementY,
-          });
-          (synth as any)[FIXED] = true;
-          vegaCanvas.dispatchEvent(synth);
-        }, { capture: true });
-      });
     }
 
     // dev/136: the same chain, with its result kept — the marks can only be
