@@ -1,0 +1,54 @@
+name: Memory budget probe
+
+# Diagnostic for #376, never part of normal CI and only on this diag branch:
+# starts the stack the unit job starts, from the image of the before-run, and
+# runs scripts/membudget_probe.py inside it.
+on:
+  push:
+    branches: ["diag/memory-budgets**"]
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
+      CURIO_E2E_BACKEND_URL: "http://localhost:5022"
+      CURIO_E2E_HOST: localhost
+      CURIO_E2E_BACKEND_PORT: "5022"
+      CURIO_E2E_SANDBOX_PORT: "2020"
+      CURIO_E2E_FRONTEND_PORT: "8100"
+      FLASK_SANDBOX_HOST: localhost
+      FLASK_SANDBOX_PORT: "2020"
+      CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
+      IMAGE: ghcr.io/urban-toolkit/curio-ci:cc9f6763c7c00e4b6b7c1d48819ff03d08ceaf63
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v6
+
+      - uses: ./.github/actions/start-stack
+        with:
+          image: ${{ env.IMAGE }}
+          project: curio-ci
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🔬 Probe the first Arrow allocation under each budget
+        timeout-minutes: 30
+        run: |
+          nproc
+          free -m
+          docker compose -p curio-ci cp scripts/membudget_probe.py curio:/tmp/membudget_probe.py
+          docker compose -p curio-ci exec -T -w /app -e PYTHONPATH=/app curio \
+            python /tmp/membudget_probe.py 2>&1 | tee membudget-probe.txt
+
+      - name: 📤 Upload the probe output
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: membudget-probe
+          path: membudget-probe.txt
+          retention-days: 7
