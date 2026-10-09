@@ -15,12 +15,19 @@ export function inputTableName(position: number): string {
   return `${INPUT_TABLE_PREFIX}${position}`;
 }
 
-/** What a document whose `map` lists more than one map is told: an Autark node draws one map. */
-export const AUTK_ONE_MAP =
-  "An Autark node draws one map. Put each map in its own Autark node, and link them with interaction edges.";
+/** What a document with more than one view is told: an Autark node draws one map or one plot. */
+export const AUTK_ONE_VIEW =
+  "An Autark node draws one view: one map or one plot. Put each in its own Autark node, and link them with interaction edges.";
 
-/** AUTK_ONE_MAP when *spec* lists more than one map, else null. A list of one map is that map. */
-export function autkOneMapProblem(spec: unknown): string | null {
-  const map = (spec as { map?: unknown } | null | undefined)?.map;
-  return Array.isArray(map) && map.length > 1 ? AUTK_ONE_MAP : null;
+/**
+ * AUTK_ONE_VIEW when *spec* has a map and a plot, or lists more than one map or
+ * more than one plot, else null. A list of one map or one plot is that view.
+ */
+export function autkOneViewProblem(spec: unknown): string | null {
+  if (spec === null || typeof spec !== "object" || Array.isArray(spec)) return null;
+  const { map, plot } = spec as { map?: unknown; plot?: unknown };
+  const views = [map, plot];
+  const both = views.every((view) => view != null);
+  const several = views.some((view) => Array.isArray(view) && view.length > 1);
+  return both || several ? AUTK_ONE_VIEW : null;
 }

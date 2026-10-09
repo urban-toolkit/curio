@@ -6,7 +6,7 @@
         "id": "pbf-load",
         "type": "curio.builtin/autk-grammar",
         "x": 0,
-        "y": 0,
+        "y": 215,
         "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/lower_mnt.osm.pbf\",\n      \"queryArea\": {\n        \"geocodeArea\": \"New York\",\n        \"areas\": [\n          \"Battery Park City\",\n          \"Financial District\"\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"surface\",\n          \"parks\",\n          \"water\",\n          \"roads\",\n          \"buildings\"\n        ]\n      }\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -16,14 +16,27 @@
         }
       },
       {
-        "id": "pbf-viz",
+        "id": "pbf-plot",
         "type": "curio.builtin/autk-grammar",
         "x": 645,
         "y": 0,
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_surface\"\n      },\n      {\n        \"dataRef\": \"table_osm_parks\"\n      },\n      {\n        \"dataRef\": \"table_osm_water\"\n      },\n      {\n        \"dataRef\": \"table_osm_buildings\",\n        \"isPick\": true,\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 10,\n        \"legendTitle\": \"Building height (m)\"\n      },\n      {\n        \"dataRef\": \"table_osm_roads\"\n      }\n    ]\n  },\n  \"plot\": {\n    \"dataRef\": \"table_osm_buildings\",\n    \"mark\": \"bar\",\n    \"axis\": [\n      \"height\",\n      \"@transform\"\n    ],\n    \"title\": \"Lower Manhattan building heights (m)\",\n    \"transform\": {\n      \"preset\": \"binning-1d\",\n      \"options\": {\n        \"bins\": 12\n      }\n    },\n    \"events\": [\n      \"brushX\"\n    ],\n    \"mapRef\": \"table_osm_buildings\"\n  }\n}",
+        "content": "{\n  \"plot\": {\n    \"dataRef\": \"table_osm_buildings\",\n    \"mark\": \"bar\",\n    \"axis\": [\n      \"height\",\n      \"@transform\"\n    ],\n    \"title\": \"Lower Manhattan building heights (m)\",\n    \"transform\": {\n      \"preset\": \"binning-1d\",\n      \"options\": {\n        \"bins\": 12\n      }\n    },\n    \"events\": [\n      \"brushX\"\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Render the layer stack, colour buildings by height, and link a brushable height histogram.",
+        "goal": "Show a brushable histogram of building heights; brushing it highlights those buildings on the map.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "pbf-map",
+        "type": "curio.builtin/autk-grammar",
+        "x": 645,
+        "y": 430,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_surface\"\n      },\n      {\n        \"dataRef\": \"table_osm_parks\"\n      },\n      {\n        \"dataRef\": \"table_osm_water\"\n      },\n      {\n        \"dataRef\": \"table_osm_buildings\",\n        \"isPick\": true,\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 10,\n        \"legendTitle\": \"Building height (m)\"\n      },\n      {\n        \"dataRef\": \"table_osm_roads\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Render the layer stack and colour buildings by height.",
         "metadata": {
           "keywords": []
         }
@@ -31,13 +44,24 @@
     ],
     "edges": [
       {
-        "id": "e-load-viz",
+        "id": "e-load-plot",
         "source": "pbf-load",
-        "target": "pbf-viz"
+        "target": "pbf-plot"
+      },
+      {
+        "id": "e-load-map",
+        "source": "pbf-load",
+        "target": "pbf-map"
+      },
+      {
+        "type": "Interaction",
+        "id": "reactflow__edge-pbf-plotin/out-pbf-mapin/out",
+        "source": "pbf-plot",
+        "target": "pbf-map"
       }
     ],
     "name": "Autark PBF loading",
-    "description": "Single autk-grammar node loading OSM layers from a local .pbf file; all parsing in the browser via DuckDB-WASM.",
+    "description": "One autk-grammar node loads OSM layers from a local .pbf file; a map colours the buildings by height, and a brushable height histogram highlights the buildings it covers.",
     "task": "",
     "timestamp": 1780885972204,
     "provenance_id": "Autark PBF loading",

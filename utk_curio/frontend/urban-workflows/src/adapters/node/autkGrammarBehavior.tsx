@@ -19,7 +19,7 @@ import { fitPlotToPane } from '../../utils/autkPlotSizing';
 import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRunSettlement';
 import { withExtensionRetry } from './duckdbExtensionRetry';
 import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
-import { autkOneMapProblem } from '../../generated/autkGrammar';
+import { autkOneViewProblem } from '../../generated/autkGrammar';
 import {
     autkNeedsInput, autkSourcesFrom, documentTableRefs, inputRow, loadableSource, ownTableNames,
     readAutkInput, tablePositions, type LoadOrder, type PreparedAutkInput,
@@ -210,18 +210,21 @@ export const useAutkGrammarBehavior = (
         setSpecKind(classifyAutkSpec(spec));
         setRunSummary(null);
 
-        // A node draws one map, on its one canvas: a document that lists more
-        // is refused before anything runs, with the words the agents' document
-        // check says too (generated/autkGrammar). A list of one map is that
-        // map, so the checks below read its layers.
-        const severalMaps = autkOneMapProblem(spec);
-        if (severalMaps) {
-            emit({ code: 'error', content: severalMaps });
-            showToast(severalMaps, 'error');
+        // A node draws one view, a map on its one canvas or a plot in its one
+        // pane: a document with a map and a plot, or with more than one of
+        // either, is refused before anything runs, with the words the agents'
+        // document check says too (generated/autkGrammar). A list of one map
+        // or one plot is that view, so the checks below read it.
+        const severalViews = autkOneViewProblem(spec);
+        if (severalViews) {
+            emit({ code: 'error', content: severalViews });
+            showToast(severalViews, 'error');
             return;
         }
-        if (Array.isArray(spec?.map) && spec.map.length === 1) {
-            spec = { ...spec, map: spec.map[0] };
+        for (const view of ['map', 'plot'] as const) {
+            if (Array.isArray(spec?.[view]) && spec[view].length === 1) {
+                spec = { ...spec, [view]: spec[view][0] };
+            }
         }
 
         // Ask whether this browser can run Autark at all, BEFORE any canvas or
@@ -332,7 +335,7 @@ export const useAutkGrammarBehavior = (
 
         const targets: Record<string, string> = {};
         if (hasMaps) targets.map = mapCanvasId;
-        if (hasPlot && !hasMaps) targets.plot = plotDivId;
+        if (hasPlot) targets.plot = plotDivId;
 
         // Tear down any listeners from the previous run before creating a new
         // grammar instance, so we never hold stale references.

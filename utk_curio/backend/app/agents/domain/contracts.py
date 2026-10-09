@@ -166,7 +166,7 @@ STOPPED_BY_PHRASES: dict[str, str] = one_phrase_per_reason(SOLVE_STOP_REASONS)
 # TypeScript types, and ``schemas/autk-grammar.v1.json`` is a byte-for-byte copy
 # of the released file (``scripts/sync_autk_schema.py``). The renderers below
 # read that file. The Curio facts they add are how a node names its input and
-# that a node draws one map.
+# that a node draws one view.
 
 #: The vendored schema, beside this module so an installed wheel carries it.
 # domain/contracts.py -> agents/schemas/ (one level up since the module moved into domain/, memo dev/142 B1)
@@ -183,22 +183,29 @@ def input_table_name(position: int) -> str:
     return f"{INPUT_TABLE_PREFIX}{position}"
 
 
-#: What a document whose ``map`` lists more than one map is told. An Autark node
-#: draws one map, on the one canvas it hands autk-grammar, which would put every
-#: map of a list on that canvas. The node's error (``autkOneMapProblem`` in the
-#: generated ``autkGrammar.ts``), the agents' document check
-#: (``document_validation``) and the preamble say these words.
-AUTK_ONE_MAP = (
-    "An Autark node draws one map. Put each map in its own Autark node, "
-    "and link them with interaction edges."
+#: What a document with more than one view is told: a map and a plot, or a list
+#: of more than one map or more than one plot. An Autark node draws one view, a
+#: map on the one canvas or a plot in the one pane it hands autk-grammar, which
+#: puts every map of a list on that canvas and draws a plot only into a pane.
+#: The node's error (``autkOneViewProblem`` in the generated ``autkGrammar.ts``),
+#: the agents' document check (``document_validation``) and the preamble say
+#: these words.
+AUTK_ONE_VIEW = (
+    "An Autark node draws one view: one map or one plot. Put each in its own "
+    "Autark node, and link them with interaction edges."
 )
 
 
-def autk_one_map_problem(document: object) -> str | None:
-    """``AUTK_ONE_MAP`` when *document* lists more than one map, else None. A
-    list of one map is that map. ``autkOneMapProblem`` is the node's copy."""
-    maps = document.get("map") if isinstance(document, dict) else None
-    return AUTK_ONE_MAP if isinstance(maps, list) and len(maps) > 1 else None
+def autk_one_view_problem(document: object) -> str | None:
+    """``AUTK_ONE_VIEW`` when *document* has a map and a plot, or lists more
+    than one map or more than one plot, else None. A list of one map or one
+    plot is that view. ``autkOneViewProblem`` is the node's copy."""
+    if not isinstance(document, dict):
+        return None
+    views = [document.get("map"), document.get("plot")]
+    both = all(view is not None for view in views)
+    several = any(isinstance(view, list) and len(view) > 1 for view in views)
+    return AUTK_ONE_VIEW if both or several else None
 
 
 def load_autk_schema(path: Path = AUTK_SCHEMA_PATH) -> dict:
@@ -330,11 +337,12 @@ def render_autk_region(schema: dict, label: str) -> str:
     lines += [
         f"  - A uniform is written inline or as {{\"fromFeature\": {{...}}}}. {directive.get('description', '')} "
         f"Its \"iterate\": {iterate.get('description', '')}".rstrip(),
-        # The schema's own description of "map" allows several; a node draws one.
-        f'- "map": {AUTK_ONE_MAP} Requires {_every(_definition(schema, "MapSpec").get("required", []))}, '
+        # The schema's own descriptions of "map" and "plot" allow several, and a
+        # document may name both; a node draws one view.
+        f'- "map": {AUTK_ONE_VIEW} Requires {_every(_definition(schema, "MapSpec").get("required", []))}, '
         f'and each entry of "{layers}" requires {_every(layer_required)}. '
         f'"colorMapInterpolator" is one of {_either(interpolators)}.',
-        f'- "plot": {props.get("plot", {}).get("description", "")} Every plot requires '
+        f'- "plot": {AUTK_ONE_VIEW} Every plot requires '
         f'{_every(_plot_required(schema))}; "mark" selects the rest:',
     ]
     for values, definition in _variants(schema, "PlotSpec", "mark"):
@@ -1063,7 +1071,7 @@ def render_default_preamble() -> str:
 
 def render_autk_grammar_ts() -> str:
     """``src/generated/autkGrammar.ts``: the grammar's families, the input layer
-    name and the one map a node draws (``autk_one_map_problem``, as TypeScript)."""
+    name and the one view a node draws (``autk_one_view_problem``, as TypeScript)."""
     return (
         _ts_header()
         + "\n"
@@ -1080,13 +1088,20 @@ def render_autk_grammar_ts() -> str:
         + "  return `${INPUT_TABLE_PREFIX}${position}`;\n"
         + "}\n"
         + "\n"
-        + "/** What a document whose `map` lists more than one map is told: an Autark node draws one map. */\n"
-        + _ts_const("AUTK_ONE_MAP", AUTK_ONE_MAP)
+        + "/** What a document with more than one view is told: an Autark node draws one map or one plot. */\n"
+        + _ts_const("AUTK_ONE_VIEW", AUTK_ONE_VIEW)
         + "\n"
-        + "/** AUTK_ONE_MAP when *spec* lists more than one map, else null. A list of one map is that map. */\n"
-        + "export function autkOneMapProblem(spec: unknown): string | null {\n"
-        + "  const map = (spec as { map?: unknown } | null | undefined)?.map;\n"
-        + "  return Array.isArray(map) && map.length > 1 ? AUTK_ONE_MAP : null;\n"
+        + "/**\n"
+        + " * AUTK_ONE_VIEW when *spec* has a map and a plot, or lists more than one map or\n"
+        + " * more than one plot, else null. A list of one map or one plot is that view.\n"
+        + " */\n"
+        + "export function autkOneViewProblem(spec: unknown): string | null {\n"
+        + "  if (spec === null || typeof spec !== \"object\" || Array.isArray(spec)) return null;\n"
+        + "  const { map, plot } = spec as { map?: unknown; plot?: unknown };\n"
+        + "  const views = [map, plot];\n"
+        + "  const both = views.every((view) => view != null);\n"
+        + "  const several = views.some((view) => Array.isArray(view) && view.length > 1);\n"
+        + "  return both || several ? AUTK_ONE_VIEW : null;\n"
         + "}\n"
     )
 
