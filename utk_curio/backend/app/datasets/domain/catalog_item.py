@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
+from stat import S_ISREG
 from typing import Any
 
 from utk_curio.backend.app.datasets.infrastructure.catalog_utils import iso_from_timestamp, stable_id, title_from_filename
@@ -439,11 +441,28 @@ def origin_from_dataflow_ref(ref: dict[str, Any]) -> str:
     return "imported"
 
 
+def _regular_file_stat(path: Path) -> os.stat_result | None:
+    """The stat of *path* if it is a regular file, else None.
+
+    One call rather than a check and then a stat: a re-install removes a
+    computed dataset's folder and writes it again, so its data file can go at
+    any moment (#780), and a listing that finds it gone must still answer.
+    ``is_file`` also read a ValueError (a null byte in the path) as no file.
+    """
+    try:
+        info = path.stat()
+    except (OSError, ValueError):
+        return None
+    return info if S_ISREG(info.st_mode) else None
+
+
 def item_from_file(path: Path, *, source_label: str, origin: str = "imported") -> dict[str, Any] | None:
     fmt = format_for_path(path)
-    if fmt is None or not path.is_file():
+    if fmt is None:
         return None
-    stat = path.stat()
+    stat = _regular_file_stat(path)
+    if stat is None:
+        return None
     file_path = path.as_posix()
     title = title_from_filename(path.name)
     row_count, feature_count = read_file_meta(path)
@@ -466,7 +485,8 @@ def item_from_file(path: Path, *, source_label: str, origin: str = "imported") -
 
 def item_from_manifest(manifest: DatasetManifest, dataset_root: Path, *, origin: str = "hub") -> dict[str, Any]:
     data_path = dataset_root / manifest.data_file
-    size_bytes = data_path.stat().st_size if data_path.is_file() else None
+    data_stat = _regular_file_stat(data_path)
+    size_bytes = data_stat.st_size if data_stat is not None else None
     updated_at = manifest.updated_at or manifest.created_at or iso_from_timestamp()
     created_at = manifest.created_at or manifest.updated_at or updated_at
     return base_item(
@@ -480,7 +500,7 @@ def item_from_manifest(manifest: DatasetManifest, dataset_root: Path, *, origin:
         origin=origin,
         format=manifest.format,
         uri=f"curio://hub/{manifest.id}" if origin == "hub" else f"curio://datasets/{manifest.dir_name}",
-        path=data_path.as_posix() if data_path.is_file() else None,
+        path=data_path.as_posix() if data_stat is not None else None,
         dirName=manifest.dir_name,
         sizeBytes=size_bytes,
         rowCount=manifest.row_count,

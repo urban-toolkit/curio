@@ -206,7 +206,7 @@ def prepare_backend_database():
     
 
 def _kill_port(port: int) -> None:
-    """Kill any process occupying `port` so the backend can bind (cross-platform)."""
+    """Kill any process listening on `port` so the server can bind (cross-platform)."""
     import re, signal as _signal
     try:
         if platform.system() == "Windows":
@@ -224,8 +224,12 @@ def _kill_port(port: int) -> None:
                             capture_output=True,
                         )
         else:
+            # Listeners only, as netstat's LISTENING above: without
+            # -sTCP:LISTEN lsof also lists every client connected to the port,
+            # such as a test runner polling the backend (#767).
             out = subprocess.check_output(
-                ["lsof", "-t", f"-i:{port}"], text=True, stderr=subprocess.DEVNULL
+                ["lsof", "-t", f"-iTCP:{port}", "-sTCP:LISTEN"],
+                text=True, stderr=subprocess.DEVNULL,
             )
             pids = []
             for pid_str in out.strip().splitlines():

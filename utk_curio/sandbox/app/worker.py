@@ -8,6 +8,8 @@ cached imports - no subprocess spawning, no IPC overhead.
 Thread safety: _exec_lock serializes calls because contextlib.redirect_stdout
 mutates the global sys.stdout, and os.chdir is process-wide. Both are restored
 after each call via a finally block. For a single-user tool this is acceptable.
+The swap also catches what other threads print meanwhile, so the sandbox's own
+log lines go to sys.__stderr__, never to sys.stderr (#770).
 
 execute_js_code() runs JavaScript via a Node.js subprocess, and those run in
 parallel: the child isolates the user code, so no lock is needed for
@@ -975,14 +977,14 @@ def run_js_script(code, input_data, *, cwd, node_type, t0=None, node_flags=(), n
         queued = time.perf_counter() - waited_at
         if queued > 1.0:
             print(f"[execJs] waited {queued:.1f}s for a slot  node={node_type}",
-                  file=_sys.stderr, flush=True)
+                  file=_sys.__stderr__, flush=True)
         try:
             return _run_node_holding_slot()
         finally:
             slot.release()
 
     def _run_node_holding_slot():
-        print(f"[execJs] starting Node.js  node={node_type}", file=_sys.stderr, flush=True)
+        print(f"[execJs] starting Node.js  node={node_type}", file=_sys.__stderr__, flush=True)
         t_start = time.perf_counter()
 
         proc = subprocess.Popen(
@@ -1001,7 +1003,7 @@ def run_js_script(code, input_data, *, cwd, node_type, t0=None, node_flags=(), n
                 line = line.rstrip('\n')
                 lines.append(line)
                 if not line.startswith('__CURIO_JSON_RESULT__'):
-                    print(f"[execJs] {label}: {line}", file=_sys.stderr, flush=True)
+                    print(f"[execJs] {label}: {line}", file=_sys.__stderr__, flush=True)
 
         def _write_stdin(proc, data):
             try:
@@ -1032,7 +1034,7 @@ def run_js_script(code, input_data, *, cwd, node_type, t0=None, node_flags=(), n
 
         print(f"[execJs] Node.js finished  total={time.perf_counter()-t_start:.3f}s  "
               f"exit={proc.returncode}  node={node_type}",
-              file=_sys.stderr, flush=True)
+              file=_sys.__stderr__, flush=True)
         return proc.returncode, stdout_lines, stderr_lines
 
     exit_code, stdout_lines, stderr_lines = _run_node()
@@ -1044,11 +1046,11 @@ def run_js_script(code, input_data, *, cwd, node_type, t0=None, node_flags=(), n
     if is_node_internal_stream_crash(exit_code, stdout_lines, stderr_lines):
         print(f"[execJs] Node died inside its own HTTP parser before user code "
               f"could either fail or produce a result; retrying once  "
-              f"node={node_type}", file=_sys.stderr, flush=True)
+              f"node={node_type}", file=_sys.__stderr__, flush=True)
         exit_code, stdout_lines, stderr_lines = _run_node()
         print(f"[execJs] retry {'hit it too' if is_node_internal_stream_crash(exit_code, stdout_lines, stderr_lines) else 'cleared it'}"
               f"  total_with_retry={time.perf_counter()-t0:.3f}s  node={node_type}",
-              file=_sys.stderr, flush=True)
+              file=_sys.__stderr__, flush=True)
 
     # Extract result from stdout - a single line prefixed with __CURIO_JSON_RESULT__.
     RESULT_PREFIX = '__CURIO_JSON_RESULT__'
@@ -1145,7 +1147,7 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
                         output['dataset'] = dataset_file
             except Exception:  # noqa: BLE001 - dataset save is best-effort
                 print(f"[execJs] save_dataset failed for node={node_type}",
-                      file=_sys.stderr, flush=True)
+                      file=_sys.__stderr__, flush=True)
 
         return {
             'stdout': run_result.get('logs', []),
