@@ -31,7 +31,6 @@ jest.mock("../../providers/packages/PackagePaletteContext", () => ({
   usePackagePalette: () => ({ setActivePackageKey: mockSetActivePackageKey }),
 }));
 jest.mock("../../providers/ToastProvider", () => ({ useToastContext: () => ({ showToast: jest.fn() }) }));
-jest.mock("../../providers/ProvenanceProvider", () => ({ useProvenanceContext: () => ({}) }));
 jest.mock("../../providers/StarterProvider", () => ({ useStarterContext: () => ({ getStarters: jest.fn() }) }));
 jest.mock("../../providers/agents", () => ({ AgentAttachmentsProvider: ({ children }: any) => <>{children}</> }));
 jest.mock("../../components/datasets/catalog/datasetDetailsContext", () => ({
@@ -53,7 +52,6 @@ jest.mock("../../components/UniversalNode", () => ({
 jest.mock("../../components/edges/BiDirectionalEdge", () => ({ __esModule: true, default: () => null }));
 jest.mock("../../components/edges/UniDirectionalEdge", () => ({ __esModule: true, default: () => null }));
 jest.mock("../../components/VersionBadge", () => ({ __esModule: true, default: () => null }));
-jest.mock("../../components/styles", () => ({ buttonStyle: {} }));
 jest.mock("../../components/menus", () => ({ ToolsMenu: () => null, UpMenu: () => null }));
 jest.mock("../../components/notebook/NotebookRunAll", () => ({ NotebookRunAll: () => null }));
 jest.mock("../../components/collab/CollaborationSidePanel", () => ({ CollaborationSidePanel: () => null }));

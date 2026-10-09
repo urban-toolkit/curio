@@ -1,6 +1,5 @@
 import React, { ReactNode, useState, useEffect, useMemo, useRef } from "react";
 import CSS from "csstype";
-import { Dropdown } from "react-bootstrap";
 
 import { useFlowContext } from "../providers/FlowProvider";
 import { useNotebookViewContext } from "../providers/flow/notebookViewContext";
@@ -25,7 +24,6 @@ import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import { NODE_CATEGORY_KEY, categoryFg, colorForNodeType } from "../constants/nodeCategoryPalette";
 import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { readCanvasTemplateConfig } from "../utils/canvasTemplateConfig";
-import { ConnectionValidator } from "../ConnectionValidator";
 import { unversionedNodeType } from "../utils/flowNodeCanonicalType";
 import { HeaderIconButton } from "./HeaderIconButton";
 import {
@@ -37,29 +35,11 @@ import {
 import {
     faCopy,
     faFloppyDisk,
-    faSquareMinus,
     faMinus,
-    faUpRightAndDownLeftFromCenter,
-    faMagnifyingGlassChart,
-    faSquareRootVariable,
-    faBroom,
-    faDownload,
-    faUpload,
-    faServer,
-    faDatabase,
-    faRepeat,
-    faCodeMerge,
-    faTable,
-    faCirclePlus,
-    faFont,
-    faCube,
     faCircleInfo,
     faTriangleExclamation,
-    faChartLine,
-    faAnglesUp
 } from "@fortawesome/free-solid-svg-icons";
 import {
-    AccessLevelType,
     DEFAULT_NODE_HEIGHT,
     DEFAULT_NODE_WIDTH,
     MIN_NODE_HEIGHT,
@@ -86,7 +66,6 @@ import {
 import "./styles.css";
 import { useStarterContext } from "../providers/StarterProvider";
 import { useCode } from "../hook/useCode";
-import { TrillGenerator } from "TrillGenerator";
 import { ICodeData } from "types";
 import { NodeRunControls } from "./nodes/NodeRunControls";
 import { NodeResizeHandle } from "./nodes/NodeResizeHandle";
@@ -110,17 +89,12 @@ export const NodeContainer = ({
     code,
     promptDescription,
     updateTemplate,
-    promptModal,
-    user,
-    setOutputCallback,
     sendCodeToWidgets,
     output,
     nodeWidth,
     nodeHeight,
     cellBox,
     noContent,
-    setTemplateConfig,
-    handleType,
     styles = {},
     disablePlay = false,
     isLoading = false,
@@ -132,7 +106,6 @@ export const NodeContainer = ({
     code?: string;
     promptDescription: any;
     updateTemplate?: any;
-    promptModal?: any;
     user?: any;
     setOutputCallback: any;
     sendCodeToWidgets?: any;
@@ -145,7 +118,6 @@ export const NodeContainer = ({
      *  state is the canvas size the node goes back to. */
     cellBox?: { width: number; minHeight: number };
     noContent?: boolean;
-    setTemplateConfig?: any;
     styles?: CSS.Properties;
     handleType?: string;
     disablePlay?: boolean;
@@ -154,9 +126,6 @@ export const NodeContainer = ({
     const { showToast } = useToastContext();
     const { openDatasetDetails } = useDatasetDetails();
     const {
-        nodes,
-        edges,
-        workflowNameRef,
         applyRemoveChanges,
         setPinForDashboard,
         dashboardPins,
@@ -164,7 +133,6 @@ export const NodeContainer = ({
         setExpandStatus,
         updateDataNode,
         updateDefaultCode,
-        workflowGoal,
         acceptSuggestion,
         nodeExecStatus,
         playNodesUpTo,
@@ -198,9 +166,11 @@ export const NodeContainer = ({
     // Whether this node is selected on the canvas — drives a more vibrant dataset
     // chip. Read reactively from the React Flow store so it updates on selection.
     const isNodeSelected = useStore((s) => !!s.nodeInternals.get(nodeId)?.selected);
-    const { getNodes, getEdges } = useReactFlow();
-    const { getStarters, deleteStarter, fetchStarters } = useStarterContext();
-    const { createCodeNode, loadTrill } = useCode();
+    const { getNodes } = useReactFlow();
+    // Nothing reads these two; they are called so the node keeps the hooks and
+    // the renders it had when it read them.
+    useStarterContext();
+    useCode();
     const [showComments, setShowComments] = useState(false);
     const { user: currentUser } = useUserContext();
     const [saveAsOpen, setSaveAsOpen] = useState(false);
@@ -240,8 +210,8 @@ export const NodeContainer = ({
         markDirty();
     };
     const [pinnedToDashboard, setPinnedToDashboard] = useState<boolean>(!!dashboardPins[nodeId]);
-    const [expectedInputType, setExpectedInputType] = useState(data.in);
-    const [expectedOutputType, setExpectedOutputType] = useState(data.out);
+    const [, setExpectedInputType] = useState(data.in);
+    const [, setExpectedOutputType] = useState(data.out);
     const [showWarnings, setShowWarnings] = useState<boolean>(false);
     // A node with content starts at the size the mount clamp below gives it, so
     // its first render is already its final size: the canvas measures that
@@ -433,14 +403,6 @@ export const NodeContainer = ({
     const updatePin = (nodeId: string, value: boolean) => {
         setPinnedToDashboard(!value);
         setPinForDashboard(nodeId, !value);
-    };
-
-    const handleChangeExpectedInputType = (event: React.ChangeEvent<HTMLSelectElement>) => {
-        setExpectedInputType(event.target.value as SupportedType);
-    };
-
-    const handleChangeExpectedOutputType = (event: React.ChangeEvent<HTMLSelectElement>) => {
-        setExpectedOutputType(event.target.value as SupportedType);
     };
 
     const nodeIconTranslation = (nodeType: NodeTemplateId) => {
@@ -1162,35 +1124,6 @@ export const getNodeContainerStyles = (
     };
 };
 
-const nodeContentStyle: CSS.Properties = {
-    backgroundColor: "white",
-};
-
-export const buttonStyle: CSS.Properties = {
-    backgroundColor: "transparent",
-    color: "#545353",
-    border: "1px solid #545353",
-    padding: "4px 8px",
-    borderRadius: "4px",
-    cursor: "pointer",
-    outline: "none",
-};
-
-const buttonStyleProgrammer: CSS.Properties = {
-    color: "#d66800",
-    padding: 0,
-};
-
-const buttonStyleExpert: CSS.Properties = {
-    color: "#0044d6",
-    padding: 0,
-};
-
-const buttonStyleAny: CSS.Properties = {
-    color: "#545353",
-    padding: 0,
-};
-
 const buttonAcceptSuggestion: CSS.Properties = {
     position: "absolute",
     top: "-50px",
@@ -1202,89 +1135,4 @@ const buttonAcceptSuggestion: CSS.Properties = {
     fontWeight: "bold",
     border: "none",
     borderRadius: "4px",
-};
-
-const openSubtasksButton: CSS.Properties = {
-    position: "absolute",
-    bottom: "-80px",
-    left: "calc(50% - 12px)"
-}
-
-const closedSubtasksButton: CSS.Properties = {
-    position: "absolute",
-    bottom: "-25px",
-    left: "calc(50% - 12px)"
-}
-
-const openConnectionLeftButton: CSS.Properties = {
-    position: "absolute",
-    left: "-190px",
-    top: "calc(50% - 12px)"
-}
-
-const closedConnectionLeftButton: CSS.Properties = {
-    position: "absolute",
-    left: "-35px",
-    top: "calc(50% - 12px)"
-}
-
-const openConnectionRightButton: CSS.Properties = {
-    position: "absolute",
-    right: "-190px",
-    top: "calc(50% - 12px)"
-}
-
-const closedConnectionRightButton: CSS.Properties = {
-    position: "absolute",
-    right: "-35px",
-    top: "calc(50% - 12px)"
-}
-
-const goalInput: CSS.Properties = {
-    position: "absolute",
-    bottom: "-50px",
-    left: "2px",
-    backgroundColor: "#1E1F23",
-    color: "rgb(251, 252, 246)",
-    borderRadius: "0 0 10px 10px",
-    fontFamily: "Rubik",
-    paddingTop: "10px",
-    height: "60px",
-    display: "flex", 
-    justifyContent: "center",
-    alignItems: "center"
-}
-
-const inputTypeSelect: CSS.Properties = {
-    position: "absolute",
-    left: "-160px",
-    fontSize: "13px",
-    top: "calc(50% - 13px)",
-    fontFamily: "Rubik",
-    color: "#1E1F23"
-}
-
-const newInConnectionStyle: CSS.Properties = {
-    position: "absolute",
-    left: "-105px",
-    fontSize: "25px",
-    top: "calc(50% - 50px)",
-    color: "#1E1F23"
-};
-
-const outputTypeSelect: CSS.Properties = {
-    position: "absolute",
-    right: "-160px",
-    fontSize: "13px",
-    top: "calc(50% - 13px)",
-    fontFamily: "Rubik",
-    color: "#1E1F23"
-}
-
-const newOutConnectionStyle: CSS.Properties = {
-    position: "absolute",
-    right: "-100px",
-    fontSize: "25px",
-    top: "calc(50% - 50px)",
-    color: "#1E1F23"
 };
