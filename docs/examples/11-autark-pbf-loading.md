@@ -56,7 +56,8 @@ path a Python node would read from disk. The behavior prepends
 ## Step 2: Brushable height histogram (`pbf-plot`)
 
 The histogram node has no `data` block of its own; it reads `table_osm_buildings` from the upstream layers.
-Its `plot` block bins the buildings' `height` into twelve bars, and `brushX` lets you brush a range of them.
+Its `plot` block bins the buildings' `height` into twelve bins (an empty bin draws no bar), and `brushX` lets
+you brush a range of the bars.
 
 ```json
 "plot": {
@@ -87,9 +88,8 @@ and pickable.
 ## Step 4: Link the histogram to the map
 
 An interaction edge joins the two nodes directly, with no Data Pool between them. A brush on the histogram
-selects the buildings in the brushed bars, and the map highlights them; a pick on a building in the map
-selects it in the histogram. Both nodes read the same buildings table from `pbf-load`, so a selection names
-the same rows in each.
+selects the buildings in the brushed bars, and the map highlights them. Both nodes read the same buildings
+table from `pbf-load`, so a selection names the same rows in each.
 
 ## Final result
 

@@ -327,8 +327,8 @@ INTERACTIONS = {
     ),
     # Autark to Autark, joined directly with no Data Pool: a building height
     # histogram and the map of those buildings, each in its own node. The brush
-    # covers the four lowest of twelve bins, where most buildings are, so most
-    # of the map lights up. No pick the other way, for Interaction_Autark's
+    # covers the three lowest bars, where most buildings are, so most of the map
+    # lights up. No pick the other way, for Interaction_Autark's
     # reason: a pick that lands on one building changes a few of the map's pixels.
     "11-autark-pbf-loading.json": (
         Interaction("plot-brush", source=EXAMPLE_11_HISTOGRAM, target=EXAMPLE_11_MAP,
