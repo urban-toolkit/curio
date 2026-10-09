@@ -198,6 +198,13 @@ def _mint_params(tool: str, spec: builtin.BuiltinAgentSpec) -> dict:
     raise AssertionError(f"no mint params defined for {tool!r}")
 
 
+def _read_params(tool: str, spec: builtin.BuiltinAgentSpec) -> dict:
+    """A canvas attachment names no node, so a node read has to."""
+    if tool in ("node.read", "node.runtime.read"):
+        return {"nodeId": _mint_node_id(spec)}
+    return {}
+
+
 def _characteristic(spec: builtin.BuiltinAgentSpec) -> tuple[str, str | None]:
     """What this agent is *for*, as ``(leg, tool)``.
 
@@ -223,7 +230,7 @@ def _scripted_replies(spec: builtin.BuiltinAgentSpec) -> tuple[str, str | None, 
         ]
     if leg == "read":
         return leg, tool, [
-            _tail({"toolRequest": {"tool": tool, "params": {}}}),
+            _tail({"toolRequest": {"tool": tool, "params": _read_params(tool, spec)}}),
             "That is what the project currently contains.",
         ]
     return leg, tool, [
@@ -411,11 +418,8 @@ def _native_replies(spec: builtin.BuiltinAgentSpec) -> tuple[str, str | None, li
     if leg == "mint":
         arguments = _mint_params(tool, spec)
         arguments = arguments.get("dataflowPlan", arguments)
-    elif tool in ("node.read", "node.runtime.read"):
-        # A canvas attachment names no node, so the read has to.
-        arguments = {"nodeId": _mint_node_id(spec)}
     else:
-        arguments = {}
+        arguments = _read_params(tool, spec)
     follow_up = (
         "I have proposed the change for your review." if leg == "mint"
         else "That is what the project currently contains."

@@ -911,6 +911,124 @@ class TestToolLoop:
         assert isinstance(call["durationMs"], int)
         assert turns[1]["text"] == "Let me look at the node.\n\nIt prints 1."
 
+    def test_an_egress_refusal_reaches_the_chat_with_its_reason(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        """#447: a web.fetch the egress policy refuses reaches the user with the
+        refusal's reason, live on the tool_result event and on the saved turn, so
+        a refused address no longer looks like a site that is down."""
+        from utk_curio.backend.app.agents.infrastructure import egress
+
+        def _refuse(url, **kwargs):
+            raise egress.EgressRefused(
+                "host '127.0.0.1' resolves to a non-public address (127.0.0.1) - refused"
+            )
+
+        monkeypatch.setattr(egress, "fetch", _refuse)
+        calls = []
+
+        def _fake_stream(config, messages, usage_out=None, **kwargs):
+            calls.append(messages)
+            if len(calls) == 1:
+                yield (
+                    '```curio.v1\n{"toolRequest": {"tool": "web.fetch", '
+                    '"params": {"url": "http://127.0.0.1/data.json"}}}\n```'
+                )
+            else:
+                yield "I could not reach that address."
+
+        monkeypatch.setattr(
+            'utk_curio.backend.app.agents.infrastructure.providers.stream_chat_turn', _fake_stream
+        )
+        monkeypatch.setattr(
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn',
+            lambda c, m, **kw: "Fetch Title",
+        )
+        _, token = user_and_token
+        att_id = self._install_attach(
+            client, token, alice_project, "agent.node-researcher@1.0.0", {"kind": "canvas"},
+        )
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
+            json={"message": "check the data endpoint"}, headers=_auth(token),
+        )
+        events = self._sse_events(r)
+        tool_result = next(p for k, p in events if k == "tool_result")
+        assert tool_result["tool"] == "web.fetch" and tool_result["status"] == "error"
+        assert "egress policy" in tool_result["reason"]
+        assert "non-public address" in tool_result["reason"]
+        # Marked as the egress policy's: its line stays even if a later fetch works.
+        assert tool_result["egress"] is True
+        # The model still got the refusal as its tool result.
+        assert "refused by the egress policy" in calls[1][-1]["content"]
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        (call,) = turns[1]["execution"]["toolCalls"]
+        assert call["tool"] == "web.fetch" and call["status"] == "error"
+        assert call["reason"] == tool_result["reason"]
+        assert call["egress"] is True
+
+    def test_an_ungranted_request_carries_no_reason(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        """#447 keeps dev/41's rule for a tool the agent is not granted: the
+        refusal goes to the model only. Its event and its saved record carry no
+        reason, so the chat keeps no line for it."""
+        calls = []
+
+        def _fake_stream(config, messages, usage_out=None, **kwargs):
+            calls.append(messages)
+            if len(calls) == 1:
+                yield '```curio.v1\n{"toolRequest": {"tool": "dataflow.read", "params": {}}}\n```'
+            else:
+                yield "Done without it."
+
+        monkeypatch.setattr(
+            'utk_curio.backend.app.agents.infrastructure.providers.stream_chat_turn', _fake_stream
+        )
+        monkeypatch.setattr(
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn',
+            lambda c, m, **kw: "Ungranted Title",
+        )
+        _, token = user_and_token
+        # Node Researcher is not granted dataflow.read.
+        att_id = self._install_attach(
+            client, token, alice_project, "agent.node-researcher@1.0.0", {"kind": "canvas"},
+        )
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
+            json={"message": "q"}, headers=_auth(token),
+        )
+        events = self._sse_events(r)
+        tool_result = next(p for k, p in events if k == "tool_result")
+        assert tool_result == {"tool": "dataflow.read", "status": "refused"}
+        assert "not granted" in calls[1][-1]["content"]
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        (call,) = turns[1]["execution"]["toolCalls"]
+        assert call["status"] == "refused" and "reason" not in call
+
+    def test_a_failure_reason_is_one_bounded_line_without_url_queries(self):
+        """#447: the reason is shown in the chat and saved with the turn, so it is
+        one bounded line, and a URL's query string (where a search provider's key
+        rides) never reaches it. A call that succeeded has no reason at all."""
+        from utk_curio.backend.app.agents.application import tool_rounds
+
+        failure = (
+            "the search provider failed: HTTPSConnectionPool(host='search.example.org', "
+            "port=443): Max retries exceeded with url: /api?q=parks&key=sk-live-0123456789abcdef "
+            "(Caused by NewConnectionError('connection refused'))"
+        )
+        reason = tool_rounds._failure_reason("error", failure)
+        assert reason.startswith("the search provider failed: ")
+        assert "/api?" in reason and "sk-live-0123456789abcdef" not in reason
+        assert tool_rounds._failure_reason(
+            "refused", "the plan's revision targets are invalid:\n- node 'x' is unknown"
+        ) == "the plan's revision targets are invalid:"
+        assert len(tool_rounds._failure_reason("error", "tool failed: " + "x" * 5000)) <= 300
+        assert tool_rounds._failure_reason("ok", "{}") is None
+        assert tool_rounds._failure_reason("proposed", "") is None
+
     def test_ungranted_request_is_refused_to_the_model_only(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         calls = []
 

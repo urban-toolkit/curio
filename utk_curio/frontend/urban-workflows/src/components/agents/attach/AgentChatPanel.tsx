@@ -35,7 +35,13 @@ import { IntentMessage } from "./chat/IntentMessage";
 import { PendingReplyRow } from "./chat/PendingReplyRow";
 import { SuggestedPromptsRow } from "./chat/SuggestedPromptsRow";
 import { useConversationTitle } from "./chat/useConversationTitle";
-import { suggestedPromptsOf, targetLabelFor, targetTooltipFor, turnMetaFor } from "./chat/chatPanelDerived";
+import {
+  canvasUnchangedFor,
+  suggestedPromptsOf,
+  targetLabelFor,
+  targetTooltipFor,
+  turnMetaFor,
+} from "./chat/chatPanelDerived";
 
 /**
  * Chat panel for one attached agent, styled to the approved concept screens
@@ -453,7 +459,15 @@ export const AgentChatPanel: React.FC<{
                 {t.text}
               </div>
             ) : (
-              <AgentTurn key={i} turn={t} attachment={attachment} tint={tint} meta={turnMetaFor(t, i, metaCtx)} actions={turnActions} />
+              <AgentTurn
+                key={i}
+                turn={t}
+                attachment={attachment}
+                tint={tint}
+                meta={turnMetaFor(t, i, metaCtx)}
+                actions={turnActions}
+                canvasUnchanged={canvasUnchangedFor(attachment, turns, i)}
+              />
             ),
           )
         )}

@@ -23,7 +23,7 @@ import { SafeAgentContent } from "../../content/SafeAgentContent";
 import { AgentRunStatusLine } from "../AgentRunStatusLine";
 import { LlmConfigAction } from "../../../llmConfigs/LlmConfigAction";
 import styles from "../AgentChatPanel.module.css";
-import { planNodeStateFor } from "./chatPanelDerived";
+import { lastingToolFailures, planNodeStateFor } from "./chatPanelDerived";
 
 /** The review-before-apply and plan callbacks a turn's cards may need. */
 export interface AgentTurnActions {
@@ -50,9 +50,10 @@ export interface AgentTurnActions {
 
 /**
  * One agent turn (split out of `AgentChatPanel.tsx` by memo dev/142, F4):
- * the avatar, the message, every typed content part it carries, and its
- * meta line. Agent rich content renders ONLY through the safe renderer
- * (REQ-SEC-002); error markers are server-composed plain text.
+ * the avatar, the message, every typed content part it carries, the lines
+ * that stay under it, and its meta line. Agent rich content renders ONLY
+ * through the safe renderer (REQ-SEC-002); error markers and the lines under
+ * the reply are plain text.
  */
 export const AgentTurn: React.FC<{
   turn: AgentSessionTurn;
@@ -60,9 +61,13 @@ export const AgentTurn: React.FC<{
   tint: string;
   meta: RunStatusDisplay | null;
   actions: AgentTurnActions;
-}> = ({ turn: t, attachment, tint, meta, actions }) => {
+  /** A canvas agent's reply that changed nothing on the canvas (#243). */
+  canvasUnchanged?: boolean;
+}> = ({ turn: t, attachment, tint, meta, actions, canvasUnchanged = false }) => {
   const isFinderOnNode =
     attachment.coord.startsWith("agent.dataset-finder@") && attachment.target.kind === "node";
+  // #447: the failed tool calls that keep their reason under the reply.
+  const failedCalls = lastingToolFailures(t);
   return (
     <div className={styles.agentRow}>
       <span className={`${styles.agentRowAvatar} ${tint}`} aria-hidden="true">
@@ -144,6 +149,12 @@ export const AgentTurn: React.FC<{
               />
             ))}
         </div>
+        {failedCalls.map((call, j) => (
+          <div key={`call-${j}`} className={styles.turnNote}>
+            {call.tool} · {call.reason}
+          </div>
+        ))}
+        {canvasUnchanged ? <div className={styles.turnNote}>No changes were made to the canvas</div> : null}
         {/* Per-reply execution status (dev/80 amendment): running while THIS
             reply streams, then its own duration + tokens. */}
         {meta ? (

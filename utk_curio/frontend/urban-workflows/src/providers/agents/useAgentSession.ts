@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AgentRemedy } from "../../services/agents";
 import { agentsApi, type AgentAttachmentsState } from "../../services/agents";
-import type { AgentSessionTurn, AgentUsage } from "../../services/agents/types";
+import type { AgentSessionTurn, AgentToolCall, AgentUsage } from "../../services/agents/types";
 import type { AgentRunStatus } from "../../services/agents/agentRunStatus";
 
 export interface AgentSessionSlice {
@@ -172,19 +172,32 @@ export function useAgentSession(
         if (runSeqRef.current[attachmentId] !== seq) return;
         setRunStatus((prev) => ({ ...prev, [attachmentId]: { startedAt, ...patch } }));
       };
-      const landTurn = (result: {
-        reply: string;
-        executionId?: string;
-        usage?: AgentUsage | null;
-        durationMs?: number;
-        content?: AgentSessionTurn["content"];
-      }) => {
+      // The streamed run's tool calls, as its tool_result events report them:
+      // the done frame does not repeat them, and the saved record has them.
+      const toolCalls: AgentToolCall[] = [];
+      const landTurn = (
+        result: {
+          reply: string;
+          executionId?: string;
+          usage?: AgentUsage | null;
+          durationMs?: number;
+          content?: AgentSessionTurn["content"];
+        },
+        calls: AgentToolCall[],
+      ) => {
         // The finalized turn keeps the run's execution identity + Actual usage
-        // (memo dev/37), its duration (dev/80), and its typed content parts
-        // (memo dev/39) so the local transcript matches the persisted one.
+        // (memo dev/37), its duration (dev/80), its tool calls with the reason
+        // any of them failed (#447), and its typed content parts (memo dev/39)
+        // so the local transcript matches the persisted one.
         const durationMs = result.durationMs ?? Date.now() - startedAt;
         const execution = result.executionId
-          ? { executionId: result.executionId, usage: result.usage ?? null, status: "ok" as const, durationMs }
+          ? {
+              executionId: result.executionId,
+              usage: result.usage ?? null,
+              status: "ok" as const,
+              durationMs,
+              ...(calls.length ? { toolCalls: [...calls] } : {}),
+            }
           : undefined;
         const content = result.content && result.content.length ? result.content : undefined;
         sawProposal = sawProposal || Boolean(content?.some((p) => p.type === "proposal"));
@@ -209,6 +222,7 @@ export function useAgentSession(
           });
           return;
         }
+        if (name === "tool_result") toolCalls.push(toolCallOf(payload));
         const line = toolActivityLine(name, payload);
         if (line)
           setToolActivity((prev) => ({
@@ -230,7 +244,7 @@ export function useAgentSession(
           onEvent,
           context,
         );
-        const { execution, content } = landTurn(result);
+        const { execution, content } = landTurn(result, toolCalls);
         if (!streamed)
           appendTurns(attachmentId, [
             { role: "agent", text: result.reply, ...(execution ? { execution } : {}), ...(content ? { content } : {}) },
@@ -242,10 +256,12 @@ export function useAgentSession(
         if (!streamed && status === undefined) {
           // Pre-delta stream failure → one blocking-run fallback. Payload
           // parity with the streamed path (dev/53): the turn keeps its
-          // execution record AND its content parts.
+          // execution record AND its content parts. The blocking run sends no
+          // tool events, so its tool calls show once the saved session loads
+          // again.
           try {
             const result = await state.run(attachmentId, message, context);
-            const { execution, content } = landTurn(result);
+            const { execution, content } = landTurn(result, []);
             appendTurns(attachmentId, [
               { role: "agent", text: result.reply, ...(execution ? { execution } : {}), ...(content ? { content } : {}) },
             ]);
@@ -332,17 +348,31 @@ export function useAgentSession(
   );
 }
 
+/** One tool_result event as the turn's record keeps it (dev/41): a granted
+ * call that did not succeed carries its reason, and an egress refusal says so
+ * (#447). */
+function toolCallOf(payload: Record<string, unknown>): AgentToolCall {
+  return {
+    tool: typeof payload.tool === "string" ? payload.tool : "",
+    status: typeof payload.status === "string" ? payload.status : "",
+    ...(typeof payload.reason === "string" && payload.reason ? { reason: payload.reason } : {}),
+    ...(payload.egress === true ? { egress: true } : {}),
+  };
+}
+
 /** Transient system lines (dev/41 tools; dev/48 delegates; dev/54 plan
  * revisions): live during the run, gone on finalize — the durable record is
- * the execution. dev/72: the delegate event names the delegate. */
+ * the execution. dev/72: the delegate event names the delegate. A tool that
+ * did not succeed shows its reason, the line the reply keeps (#447). */
 function toolActivityLine(name: string, payload: Record<string, unknown>): string | null {
   const tool = typeof payload.tool === "string" ? payload.tool : "";
   const capability = typeof payload.capability === "string" ? payload.capability : "";
   const coord = typeof payload.coord === "string" ? payload.coord : "";
+  const reason = typeof payload.reason === "string" && payload.reason ? payload.reason : null;
   return name === "tool_requested"
     ? `${tool} …`
     : name === "tool_result"
-      ? `${tool} · ${payload.status ?? ""}`
+      ? `${tool} · ${reason ?? payload.status ?? ""}`
       : name === "delegate_requested"
         ? `delegating ${capability} …`
         : name === "delegate_result"

@@ -566,6 +566,158 @@ describe("AgentChatPanel review + tool activity (memo dev/41)", () => {
     expect(screen.getByText("node.read …")).toBeInTheDocument();
     expect(screen.getByText("node.read · ok")).toBeInTheDocument();
   });
+
+  it("a reloaded reply keeps a failed tool call's reason under it (#447)", () => {
+    renderPanel({
+      turns: [
+        { role: "user", text: "check the data endpoint" },
+        savedReply("I could not reach that address.", {
+          toolCalls: [
+            { tool: "node.read", status: "ok", durationMs: 2 },
+            { tool: "web.fetch", status: "error", durationMs: 4, reason: REFUSAL, egress: true },
+          ],
+        }),
+      ],
+    });
+    expect(screen.getByText(`web.fetch · ${REFUSAL}`)).toBeInTheDocument();
+    // A call that succeeded leaves no line.
+    expect(screen.queryByText(/^node\.read ·/)).not.toBeInTheDocument();
+  });
+
+  it("an egress refusal keeps its line even when a later fetch in the turn succeeds (#447)", () => {
+    renderPanel({
+      turns: [
+        { role: "user", text: "check both endpoints" },
+        savedReply("The second address answered.", {
+          toolCalls: [
+            { tool: "web.fetch", status: "error", durationMs: 4, reason: REFUSAL, egress: true },
+            { tool: "web.fetch", status: "ok", durationMs: 80 },
+          ],
+        }),
+      ],
+    });
+    expect(screen.getByText(`web.fetch · ${REFUSAL}`)).toBeInTheDocument();
+  });
+});
+
+/** The reason the egress policy gives for a non-public address (#447). */
+const REFUSAL =
+  "refused by the egress policy: host '127.0.0.1' resolves to a non-public address (127.0.0.1) - refused";
+
+/** An agent reply as the server saves it, with the run's execution record
+ * (pins, duration, usage) plus *execution*'s fields. */
+function savedReply(
+  text: string,
+  execution: Record<string, unknown> = {},
+  content?: unknown[],
+): AgentSessionTurn {
+  return {
+    role: "agent",
+    text,
+    execution: {
+      executionId: `e-${text.length}`,
+      pins: { coord: "agent.node-builder@1.0.0", promptSha256: "abc", tools: ["dataflow.read", "node.create"] },
+      usage: { inputTokens: 10, outputTokens: 20 },
+      durationMs: 1200,
+      status: "ok",
+      ...execution,
+    },
+    ...(content ? { content } : {}),
+  } as unknown as AgentSessionTurn;
+}
+
+describe("AgentChatPanel says when a canvas agent changed nothing (#243)", () => {
+  const NO_CHANGE = "No changes were made to the canvas";
+  const nodeBuilder: AgentAttachment = { ...attachment, coord: "agent.node-builder@1.0.0", name: "Node Builder" };
+  const ask: AgentSessionTurn = { role: "user", text: "Add a node that loads the parks." };
+  const proposal = {
+    type: "proposal",
+    proposalId: "pc1",
+    tool: "node.create",
+    summary: "Create a node",
+    preview: "print(1)",
+    pins: { nodeType: "COMPUTATION_ANALYSIS" },
+    status: "pending",
+  };
+
+  it("a reloaded Node Builder reply with only a dataflow.read call says so", () => {
+    renderPanel({
+      attachment: nodeBuilder,
+      turns: [
+        ask,
+        savedReply("I have now added a new node to your dataflow.", {
+          toolCalls: [{ tool: "dataflow.read", status: "ok", durationMs: 3 }],
+        }),
+      ],
+    });
+    expect(screen.getByText(NO_CHANGE)).toBeInTheDocument();
+  });
+
+  it("a reply that holds a node.create proposal does not", () => {
+    renderPanel({
+      attachment: nodeBuilder,
+      turns: [
+        ask,
+        savedReply("Here is the node for your review.", {
+          toolCalls: [{ tool: "node.create", status: "proposed", durationMs: 3 }],
+        }, [proposal]),
+      ],
+    });
+    expect(screen.getByText("Here is the node for your review.")).toBeInTheDocument();
+    expect(screen.queryByText(NO_CHANGE)).not.toBeInTheDocument();
+  });
+
+  it("a refused node.create the turn never recovered from keeps its reason, beside the no-change line (#447)", () => {
+    renderPanel({
+      attachment: nodeBuilder,
+      turns: [
+        ask,
+        savedReply("I have now added a new node to your dataflow.", {
+          toolCalls: [
+            { tool: "node.create", status: "refused", durationMs: 1, reason: "template.content must be a non-empty string" },
+          ],
+        }),
+      ],
+    });
+    expect(screen.getByText("node.create · template.content must be a non-empty string")).toBeInTheDocument();
+    expect(screen.getByText(NO_CHANGE)).toBeInTheDocument();
+  });
+
+  it("a node.create the turn recovered from leaves no line beside the proposal (#447)", () => {
+    renderPanel({
+      attachment: nodeBuilder,
+      turns: [
+        ask,
+        savedReply("Here is the node for your review.", {
+          toolCalls: [
+            { tool: "node.create", status: "refused", durationMs: 1, reason: "template.content must be a non-empty string" },
+            { tool: "node.create", status: "proposed", durationMs: 3 },
+          ],
+        }, [proposal]),
+      ],
+    });
+    expect(screen.getByRole("group", { name: "Review proposal: Create a node" })).toBeInTheDocument();
+    expect(screen.queryByText(/^node\.create ·/)).not.toBeInTheDocument();
+  });
+
+  it("a Solve verdict or a delegated task, which answer no message of the user's, does not", () => {
+    renderPanel({
+      attachment: nodeBuilder,
+      turns: [
+        ask,
+        savedReply("Here is the node for your review.", {}, [proposal]),
+        // A Solve verdict: written by the run, not a reply to a message.
+        savedReply("Solved 'Load parks': the corrected code ran successfully.", {
+          pins: { coord: "agent.node-builder@1.0.0", tools: [], intentEdited: false },
+        }),
+        // A task another agent delegated here: the delegate's own record.
+        { role: "user", text: "[Delegated by Dataflow Builder] write the code" },
+        savedReply("Wrote the code for the node.", { parentExecutionId: "e-parent" }),
+      ],
+    });
+    expect(screen.getByText("Wrote the code for the node.")).toBeInTheDocument();
+    expect(screen.queryByText(NO_CHANGE)).not.toBeInTheDocument();
+  });
 });
 
 describe("AgentChatPanel package-install review (memo dev/84)", () => {

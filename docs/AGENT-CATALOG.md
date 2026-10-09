@@ -148,6 +148,8 @@ Each attachment has its own chat transcript and its own **intent**, the editable
 
 When an agent proposes a change to your dataflow, it does not apply it. The proposal appears as a **review card**, and applying it is a separate click, which first checks that the target has not changed since the proposal. Dismissing it leaves nothing behind.
 
+A reply of Node Builder, Dataflow Builder or Node Content Builder that carries no review card says **No changes were made to the canvas** under it. A web address the egress policy refused shows its reason under the reply. So does any other tool call that failed, unless a later call of the same tool in that reply succeeded.
+
 ### Required agents
 
 An agent may require others. The drawer says so before you click: the button reads **Add to project (+2 required)**, and its tooltip names what else will be added. Adding brings in all of them at once.

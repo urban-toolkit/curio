@@ -9,6 +9,7 @@ and import order between siblings cannot matter.
 from __future__ import annotations
 
 import json as _json
+import re
 import time
 
 from utk_curio.backend.app.agents.application import tools
@@ -352,10 +353,12 @@ def _execute_tool_request(
     a synthetic result the model can recover from — loudly to the model,
     invisibly to the user, never a run error. Appends to ``tool_calls`` (the
     execution record's tool history) and ``minted`` (proposal parts for the
-    persisted turn)."""
+    persisted turn). A granted call that failed also records the line the chat
+    may show for it (:func:`_failure_fields`, #447)."""
     tool_id = req.get("tool", "")
     started = time.monotonic()
-    if tool_id not in loop_ctx["granted"]:
+    granted = tool_id in loop_ctx["granted"]
+    if not granted:
         status, text = "refused", f"tool {tool_id!r} is not granted for this run"
     elif tool_id in _EGRESS_TOOLS and loop_ctx.get("egressCalls", 0) >= egress.MAX_CALLS_PER_RUN:
         # dev/67-4 (DEC-053): the per-run egress budget — verification, never
@@ -390,13 +393,15 @@ def _execute_tool_request(
                 target=loop_ctx.get("target"),
                 params=req.get("params") or {},
             )
-    tool_calls.append(
-        {
-            "tool": tool_id,
-            "status": status,
-            "durationMs": int((time.monotonic() - started) * 1000),
-        }
-    )
+    record = {
+        "tool": tool_id,
+        "status": status,
+        "durationMs": int((time.monotonic() - started) * 1000),
+    }
+    if granted:
+        # An ungranted request stays the model's alone (dev/41).
+        record.update(_failure_fields(status, text))
+    tool_calls.append(record)
     return status, text
 
 
@@ -422,6 +427,44 @@ def _delegate_result_message(
 
 #: The statuses of a result that is not an error.
 _NATIVE_OK_STATUSES = frozenset({"ok", "proposed"})
+
+#: How long a failed call's reason may be: one line under the reply (#447).
+_FAILURE_REASON_MAX_CHARS = 300
+
+#: A URL's query string. A search provider's key rides there
+#: (``CURIO_SEARCH_URL``), and transport errors repeat the URL they failed on.
+_URL_QUERY = re.compile(r"\?[^\s'\"()<>]+")
+
+
+def _failure_reason(status: str, text: object) -> str | None:
+    """What the chat shows, and the turn saves, for a call that did not
+    succeed (#447): the first line of its result, with URL query strings cut
+    and the length bounded. None for a call that succeeded, so its event and
+    record keep their shape."""
+    if status in _NATIVE_OK_STATUSES:
+        return None
+    lines = str(text or "").strip().splitlines()
+    if not lines:
+        return None
+    reason = _URL_QUERY.sub("?…", lines[0].strip())
+    if len(reason) > _FAILURE_REASON_MAX_CHARS:
+        reason = reason[: _FAILURE_REASON_MAX_CHARS - 1] + "…"
+    return reason
+
+
+def _failure_fields(status: str, text: object) -> dict:
+    """The fields a granted call that did not succeed adds to its record and
+    its ``tool_result`` event (#447): ``reason``, and ``egress`` when the
+    egress policy refused it. The chat keeps an egress refusal's line under the
+    reply, and any other one only when no later call of the same tool in the
+    turn succeeded. Empty for a call that succeeded."""
+    reason = _failure_reason(status, text)
+    if reason is None:
+        return {}
+    fields: dict = {"reason": reason}
+    if str(text).startswith(tools.EGRESS_REFUSED):
+        fields["egress"] = True
+    return fields
 
 
 #: The answer to every call of a reply after its first, which is the one run.
