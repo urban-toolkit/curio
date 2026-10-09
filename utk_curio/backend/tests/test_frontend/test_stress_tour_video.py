@@ -2456,7 +2456,7 @@ EXAMPLE_RUNS: tuple[tuple[str, int, bool], ...] = (
     ("06-autark-what-if-shadow-study.json", 11, True),
     ("07-autark-gpu-shader.json", 5, True),
     ("08-autark-spatial-join-regression.json", 7, True),
-    ("11-autark-pbf-loading.json", 2, True),
+    ("11-autark-pbf-loading.json", 3, True),
     # Needs curio.streetvision, which the `nodes` chapter installs.
     ("10-street-vision-cv-analysis.json", 12, False),
 )

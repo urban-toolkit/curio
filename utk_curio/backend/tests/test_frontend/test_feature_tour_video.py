@@ -1716,7 +1716,7 @@ def scene_autark(ctx: Ctx) -> None:
         "One declarative UrbanSpec for data loading, WGSL compute and rendering.",
     )
     _new_dataflow_from_menu(ctx)
-    _load_example(ctx, EXAMPLE_AUTARK, expected_nodes=2)
+    _load_example(ctx, EXAMPLE_AUTARK, expected_nodes=3)
     tour.say(
         "An OSM extract, parsed in the browser",
         "DuckDB-WASM reads a local .pbf; no tile server, no Overpass call.",

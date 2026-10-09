@@ -917,14 +917,15 @@ An Autark map takes part the same way: a selection highlights its features, and 
 
 ## Autark node
 
-The `Autark` node draws an Autark document: map layers, plots and GPU compute
-over tables. A table comes from the document's own `data` section (an OSM
-extract, a GeoJSON or CSV file) or from the node's input. The document writes
-no `data` entry for its input; it names the tables the input provides.
+The `Autark` node draws an Autark document: map layers or a plot, and GPU
+compute over tables. A table comes from the document's own `data` section (an
+OSM extract, a GeoJSON or CSV file) or from the node's input. The document
+writes no `data` entry for its input; it names the tables the input provides.
 
-A node draws one map. A document whose `map` lists more than one map does not
-run, and the node's error says to put each map in its own `Autark` node and
-link them with interaction edges (see [Linking charts](#linking-charts)).
+A node draws one view: one map or one plot. A document with a map and a plot,
+or whose `map` or `plot` lists more than one, does not run, and the node's
+error says to put each in its own `Autark` node and link them with interaction
+edges (see [Linking charts](#linking-charts)).
 
 ### Its input
 

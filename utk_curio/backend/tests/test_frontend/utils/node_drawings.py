@@ -200,6 +200,44 @@ def assert_autark_map_drawn(
     )
 
 
+# The marks an Autark plot drew in its node's pane, and how many of them take up
+# room. The id is autkGrammarBehavior's ``'autk-grammar-plot-' + nodeId``.
+# autk-plot draws a bar, a point or a table row as ``.autkMark`` and a line as
+# ``.autk-line``.
+_AUTK_PLOT_MARKS_JS = """(id) => {
+    const pane = document.getElementById('autk-grammar-plot-' + id);
+    if (!pane) return null;
+    const marks = [...pane.querySelectorAll('.autkMark, .autk-line')];
+    const sized = marks.filter((mark) => {
+        const box = mark.getBoundingClientRect();
+        return box.width > 0 && box.height > 0;
+    });
+    return { marks: marks.length, sized: sized.length };
+}"""
+
+
+def assert_autark_plot_drawn(page, node_id: str, *, timeout: float = 30000) -> None:
+    """Assert an Autark node's plot pane holds a drawn plot: marks that take up room.
+
+    Read in the page. autk-grammar draws a plot only into the pane the node
+    hands it, so a plot the node gave no pane is not drawn anywhere, and the
+    node has no pane to show.
+    """
+    deadline = time.monotonic() + timeout / 1000
+    while True:
+        found = page.evaluate(_AUTK_PLOT_MARKS_JS, node_id)
+        if (found and found["sized"] > 0) or time.monotonic() >= deadline:
+            break
+        page.wait_for_timeout(500)
+    assert found is not None, (
+        f"Autark node {node_id} has no plot pane, so the plot its document names was not drawn"
+    )
+    assert found["sized"] > 0, (
+        f"Autark node {node_id}: its plot pane holds {found['marks']} marks and none that "
+        f"takes up room, so no plot was drawn"
+    )
+
+
 #: A framed map's drawing spans at least this share of its canvas along one
 #: axis. The camera fits the layers' extent with 8% to spare, about 93% of the
 #: canvas along the side that limits it; autk-map's own view, 10,000 world

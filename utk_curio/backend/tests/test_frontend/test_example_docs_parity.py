@@ -124,7 +124,6 @@ _DIAGRAM_EXEMPT = {
     # diagram draws those sections, which is the useful picture even though it
     # outnumbers the nodes.
     "07-autark-gpu-shader",
-    "11-autark-pbf-loading",
     "08-autark-spatial-join-regression",
 }
 
