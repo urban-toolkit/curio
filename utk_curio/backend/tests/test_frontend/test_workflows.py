@@ -27,6 +27,7 @@ from .utils import (
     _wait_for_reactflow_ready,
     assert_autark_drawing_fits,
     assert_autark_map_drawn,
+    assert_autark_plot_drawn,
     AUTK_MAP_MIN_FRAMED_SPAN,
     autark_map_framing,
     assert_editor_panes_clear_of_markers,
@@ -183,6 +184,8 @@ EXAMPLE_09_SCATTER = "3334485c-50ad-4adf-9574-45f8a9704860"
 EXAMPLE_09_MAP = "6c4aa6a8-45eb-480e-bb3d-3fd54d13325b"
 EXAMPLE_08_SCATTER = "niteroi-plot"
 EXAMPLE_08_MAP = "niteroi-map"
+EXAMPLE_11_HISTOGRAM = "pbf-plot"
+EXAMPLE_11_MAP = "pbf-map"
 
 #: Compare Scenarios (#662) runs its inputs through Python behind its own play
 #: button, but it has no legacy category, so ``NodeSpec.has_play_button`` is
@@ -321,6 +324,15 @@ INTERACTIONS = {
     "08-autark-spatial-join-regression.json": (
         Interaction("scatter-brush", source=EXAMPLE_08_SCATTER, target=EXAMPLE_08_MAP,
                     gesture="brush", span=((0.70, 0.02), (0.995, 0.70)), min_lit=0.5),
+    ),
+    # Autark to Autark, joined directly with no Data Pool: a building height
+    # histogram and the map of those buildings, each in its own node. The brush
+    # covers the four lowest of twelve bins, where most buildings are, so most
+    # of the map lights up. No pick the other way, for Interaction_Autark's
+    # reason: a pick that lands on one building changes a few of the map's pixels.
+    "11-autark-pbf-loading.json": (
+        Interaction("plot-brush", source=EXAMPLE_11_HISTOGRAM, target=EXAMPLE_11_MAP,
+                    gesture="brush", span=((0.02, 0.5), (0.3, 0.5))),
     ),
 }
 
@@ -1284,6 +1296,12 @@ class TestWorkflowCanvas:
             self.page,
             expect_some=any(n.category in ("code", "grammar") for n in self.spec.nodes),
         )
+        # Each plot a document names is drawn. autk-grammar draws a plot only
+        # into the pane its node hands it, and passes over one it has no pane
+        # for without a word.
+        for node in self._drawing_autark_nodes():
+            if "plot" in json.loads(self.spec.node_code(node, "json")):
+                assert_autark_plot_drawn(self.page, node.id)
         self._save_screenshot(request)
 
         # A map or plot that drew nothing leaves a blank node, which in the

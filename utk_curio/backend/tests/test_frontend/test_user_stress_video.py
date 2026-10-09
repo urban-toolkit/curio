@@ -1373,7 +1373,7 @@ class TestSessionMapsAndInteraction:
                 os.path.join(
                     REPO_ROOT, "docs", "examples", "11-autark-pbf-loading.json"
                 ),
-                expected_nodes=2,
+                expected_nodes=3,
             )
 
         with s.step("Run the map", "DuckDB-WASM reads the .pbf, WebGPU draws it.",

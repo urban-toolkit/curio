@@ -422,16 +422,19 @@ class TestTheAutarkRenderers:
                 for value in values:
                     assert f'"{value}"' in region, (union, value)
 
-    def test_the_region_says_a_node_draws_one_map(self):
+    def test_the_region_says_a_node_draws_one_view(self):
         schema = contracts.load_autk_schema()
         region = contracts.render_autk_region(schema, "Autark")
-        [line] = [row for row in region.splitlines() if row.startswith('- "map":')]
-        assert line.startswith(
-            '- "map": An Autark node draws one map. Put each map in its own Autark node, '
-            'and link them with interaction edges. Requires "layerRefs"'
-        )
-        assert "several" not in line
-        assert line in contracts.render_default_preamble()
+        one_view = ("An Autark node draws one view: one map or one plot. Put each in its own "
+                    "Autark node, and link them with interaction edges.")
+        [map_line] = [row for row in region.splitlines() if row.startswith('- "map":')]
+        [plot_line] = [row for row in region.splitlines() if row.startswith('- "plot":')]
+        assert map_line.startswith(f'- "map": {one_view} Requires "layerRefs"')
+        assert plot_line.startswith(f'- "plot": {one_view} Every plot requires')
+        preamble = contracts.render_default_preamble()
+        for line in (map_line, plot_line):
+            assert "several" not in line
+            assert line in preamble
 
     def test_the_preamble_fills_every_field_and_names_no_retired_node(self):
         text = contracts.render_default_preamble()

@@ -207,35 +207,60 @@ class TestAutkGrammar:
         assert "could not be read" in verdict["why"]
 
 
-#: What an Autark node's error says of a document with more than one map
-#: (``src/tests/adapters/node/autkOneMap.test.tsx``).
-ONE_MAP = ("An Autark node draws one map. Put each map in its own Autark node, "
-           "and link them with interaction edges.")
+#: What an Autark node's error says of a document with more than one view
+#: (``src/tests/adapters/node/autkOneView.test.tsx``).
+ONE_VIEW = ("An Autark node draws one view: one map or one plot. Put each in its own "
+            "Autark node, and link them with interaction edges.")
 A_MAP = {"layerRefs": [{"dataRef": "input_0"}]}
+A_PLOT = {"dataRef": "input_0", "mark": "bar", "axis": ["name", "value"]}
 
 
-class TestOneMapPerNode:
-    """An Autark node draws one map, so a document that lists more is refused
-    before it is written, with the words the node's own error says."""
+class TestOneViewPerNode:
+    """An Autark node draws one view, one map or one plot, so a document with
+    more is refused before it is written, with the words the node's own error
+    says."""
 
     @pytest.mark.parametrize("count", [2, 3])
     def test_a_document_with_several_maps_is_refused_with_the_fix(self, count):
         verdict = dv.validate(AUTK, json.dumps({"map": [A_MAP] * count}))
-        assert verdict == {"status": dv.STATUS_INVALID, "detail": ONE_MAP}
+        assert verdict == {"status": dv.STATUS_INVALID, "detail": ONE_VIEW}
 
-    def test_the_maps_are_counted_before_the_schema_is_applied(self):
-        # The fix is to split the document, so its maps' own errors wait.
-        grammar = {"map": [A_MAP, {"layerRefs": [{}]}]}
-        assert dv.validate(AUTK, json.dumps(grammar)) == {"status": dv.STATUS_INVALID, "detail": ONE_MAP}
+    @pytest.mark.parametrize("count", [2, 3])
+    def test_a_document_with_several_plots_is_refused_with_the_fix(self, count):
+        verdict = dv.validate(AUTK, json.dumps({"plot": [A_PLOT] * count}))
+        assert verdict == {"status": dv.STATUS_INVALID, "detail": ONE_VIEW}
 
-    def test_one_map_and_a_list_of_one_map_are_valid(self):
-        for grammar in ({"map": A_MAP}, {"map": [A_MAP]}):
-            assert dv.validate(AUTK, json.dumps(grammar)) == {"status": dv.STATUS_VALID}, grammar
+    @pytest.mark.parametrize("grammar", [
+        {"map": A_MAP, "plot": A_PLOT},
+        {"map": [A_MAP], "plot": A_PLOT},
+        {"map": A_MAP, "plot": [A_PLOT]},
+    ], ids=["map-and-plot", "map-list-and-plot", "map-and-plot-list"])
+    def test_a_document_with_a_map_and_a_plot_is_refused_with_the_fix(self, grammar):
+        verdict = dv.validate(AUTK, json.dumps(grammar))
+        assert verdict == {"status": dv.STATUS_INVALID, "detail": ONE_VIEW}
 
-    def test_the_refusal_says_the_fix_in_its_own_sentence(self):
-        verdict = dv.validate(AUTK, json.dumps({"map": [A_MAP, A_MAP]}))
+    @pytest.mark.parametrize("grammar", [
+        {"map": [A_MAP, {"layerRefs": [{}]}]},
+        {"plot": [A_PLOT, {"dataRef": "input_0", "mark": "pie", "axis": ["a"]}]},
+        {"map": {"layerRefs": [{}]}, "plot": {"mark": "pie"}},
+    ], ids=["maps", "plots", "map-and-plot"])
+    def test_the_views_are_counted_before_the_schema_is_applied(self, grammar):
+        # The fix is to split the document, so its views' own errors wait.
+        assert dv.validate(AUTK, json.dumps(grammar)) == {"status": dv.STATUS_INVALID, "detail": ONE_VIEW}
+
+    @pytest.mark.parametrize("grammar", [
+        {"map": A_MAP}, {"map": [A_MAP]}, {"plot": A_PLOT}, {"plot": [A_PLOT]},
+    ], ids=["map", "map-list", "plot", "plot-list"])
+    def test_one_view_and_a_list_of_one_are_valid(self, grammar):
+        assert dv.validate(AUTK, json.dumps(grammar)) == {"status": dv.STATUS_VALID}, grammar
+
+    @pytest.mark.parametrize("grammar", [
+        {"map": [A_MAP, A_MAP]}, {"map": A_MAP, "plot": A_PLOT},
+    ], ids=["maps", "map-and-plot"])
+    def test_the_refusal_says_the_fix_in_its_own_sentence(self, grammar):
+        verdict = dv.validate(AUTK, json.dumps(grammar))
         text = dv.refusal_text(AUTK, verdict)
-        assert f"does not validate: {ONE_MAP.removesuffix('.')}. Fix exactly that" in text
+        assert f"does not validate: {ONE_VIEW.removesuffix('.')}. Fix exactly that" in text
 
 
 def _shipped_autk_documents() -> list:
