@@ -58,6 +58,21 @@ describe('ContentTable', () => {
     expect(screen.getByText('9000000')).toBeInTheDocument();
   });
 
+  test('an object cell reads as WKT or JSON, not [object Object] (#443)', () => {
+    // A frame's property can hold a second geometry, a dict or a list, and the
+    // Simple View printed String(value). The preview table's cases
+    // (TabularPreviewTable.test.tsx).
+    const cells = (rows: Record<string, unknown>[]) => {
+      const { container } = render(<ContentTable tableData={rows} />);
+      return Array.from(container.querySelectorAll('tbody td')).map((td) => td.textContent);
+    };
+    expect(cells([
+      { v: { type: 'Point', coordinates: [1, 2] } },
+      { v: { x: 1 } },
+      { v: [1, 2] },
+    ])).toEqual(['POINT (1 2)', '{"x":1}', '[1,2]']);
+  });
+
   test('renders "null" for null/undefined values', () => {
     const data = [{ col: null }];
     render(<ContentTable tableData={data as any} />);
