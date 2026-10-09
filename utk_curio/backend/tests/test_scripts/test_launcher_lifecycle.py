@@ -62,7 +62,7 @@ class _Host:
         self.sent = []
 
     def lsof(self, cmd, **kwargs):
-        assert cmd == ["lsof", "-t", f"-i:{PORT}"]
+        assert cmd == ["lsof", "-t", f"-iTCP:{PORT}", "-sTCP:LISTEN"]
         return "".join(f"{pid}\n" for pid in self.fates)
 
     def kill(self, pid, sig):
