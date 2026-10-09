@@ -19,6 +19,7 @@ import { fitPlotToPane } from '../../utils/autkPlotSizing';
 import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRunSettlement';
 import { withExtensionRetry } from './duckdbExtensionRetry';
 import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
+import { autkOneMapProblem } from '../../generated/autkGrammar';
 import {
     autkNeedsInput, autkSourcesFrom, documentTableRefs, inputRow, loadableSource, ownTableNames,
     readAutkInput, tablePositions, type LoadOrder, type PreparedAutkInput,
@@ -208,6 +209,20 @@ export const useAutkGrammarBehavior = (
         }
         setSpecKind(classifyAutkSpec(spec));
         setRunSummary(null);
+
+        // A node draws one map, on its one canvas: a document that lists more
+        // is refused before anything runs, with the words the agents' document
+        // check says too (generated/autkGrammar). A list of one map is that
+        // map, so the checks below read its layers.
+        const severalMaps = autkOneMapProblem(spec);
+        if (severalMaps) {
+            emit({ code: 'error', content: severalMaps });
+            showToast(severalMaps, 'error');
+            return;
+        }
+        if (Array.isArray(spec?.map) && spec.map.length === 1) {
+            spec = { ...spec, map: spec.map[0] };
+        }
 
         // Ask whether this browser can run Autark at all, BEFORE any canvas or
         // DOM work (#201). Upstream of the dynamic import, the compute path and

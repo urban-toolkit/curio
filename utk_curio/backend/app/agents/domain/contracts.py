@@ -165,7 +165,8 @@ STOPPED_BY_PHRASES: dict[str, str] = one_phrase_per_reason(SOLVE_STOP_REASONS)
 # The grammar is defined upstream: autk-grammar generates a JSON Schema from its
 # TypeScript types, and ``schemas/autk-grammar.v1.json`` is a byte-for-byte copy
 # of the released file (``scripts/sync_autk_schema.py``). The renderers below
-# read that file. The one Curio fact they add is how a node names its input.
+# read that file. The Curio facts they add are how a node names its input and
+# that a node draws one map.
 
 #: The vendored schema, beside this module so an installed wheel carries it.
 # domain/contracts.py -> agents/schemas/ (one level up since the module moved into domain/, memo dev/142 B1)
@@ -180,6 +181,24 @@ INPUT_TABLE_PREFIX = "input_"
 def input_table_name(position: int) -> str:
     """The name a grammar node's input at *position* is read by."""
     return f"{INPUT_TABLE_PREFIX}{position}"
+
+
+#: What a document whose ``map`` lists more than one map is told. An Autark node
+#: draws one map, on the one canvas it hands autk-grammar, which would put every
+#: map of a list on that canvas. The node's error (``autkOneMapProblem`` in the
+#: generated ``autkGrammar.ts``), the agents' document check
+#: (``document_validation``) and the preamble say these words.
+AUTK_ONE_MAP = (
+    "An Autark node draws one map. Put each map in its own Autark node, "
+    "and link them with interaction edges."
+)
+
+
+def autk_one_map_problem(document: object) -> str | None:
+    """``AUTK_ONE_MAP`` when *document* lists more than one map, else None. A
+    list of one map is that map. ``autkOneMapProblem`` is the node's copy."""
+    maps = document.get("map") if isinstance(document, dict) else None
+    return AUTK_ONE_MAP if isinstance(maps, list) and len(maps) > 1 else None
 
 
 def load_autk_schema(path: Path = AUTK_SCHEMA_PATH) -> dict:
@@ -311,7 +330,8 @@ def render_autk_region(schema: dict, label: str) -> str:
     lines += [
         f"  - A uniform is written inline or as {{\"fromFeature\": {{...}}}}. {directive.get('description', '')} "
         f"Its \"iterate\": {iterate.get('description', '')}".rstrip(),
-        f'- "map": {props.get("map", {}).get("description", "")} Requires {_every(_definition(schema, "MapSpec").get("required", []))}, '
+        # The schema's own description of "map" allows several; a node draws one.
+        f'- "map": {AUTK_ONE_MAP} Requires {_every(_definition(schema, "MapSpec").get("required", []))}, '
         f'and each entry of "{layers}" requires {_every(layer_required)}. '
         f'"colorMapInterpolator" is one of {_either(interpolators)}.',
         f'- "plot": {props.get("plot", {}).get("description", "")} Every plot requires '
@@ -1042,7 +1062,8 @@ def render_default_preamble() -> str:
 
 
 def render_autk_grammar_ts() -> str:
-    """``src/generated/autkGrammar.ts``: the grammar's families and the input layer name."""
+    """``src/generated/autkGrammar.ts``: the grammar's families, the input layer
+    name and the one map a node draws (``autk_one_map_problem``, as TypeScript)."""
     return (
         _ts_header()
         + "\n"
@@ -1057,6 +1078,15 @@ def render_autk_grammar_ts() -> str:
         + "/** The name a grammar node's input at *position* is read by. */\n"
         + "export function inputTableName(position: number): string {\n"
         + "  return `${INPUT_TABLE_PREFIX}${position}`;\n"
+        + "}\n"
+        + "\n"
+        + "/** What a document whose `map` lists more than one map is told: an Autark node draws one map. */\n"
+        + _ts_const("AUTK_ONE_MAP", AUTK_ONE_MAP)
+        + "\n"
+        + "/** AUTK_ONE_MAP when *spec* lists more than one map, else null. A list of one map is that map. */\n"
+        + "export function autkOneMapProblem(spec: unknown): string | null {\n"
+        + "  const map = (spec as { map?: unknown } | null | undefined)?.map;\n"
+        + "  return Array.isArray(map) && map.length > 1 ? AUTK_ONE_MAP : null;\n"
         + "}\n"
     )
 
