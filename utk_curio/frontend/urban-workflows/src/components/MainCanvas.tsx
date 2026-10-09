@@ -44,8 +44,6 @@ import { useViewportMotionHint } from "../hook/useViewportMotionHint";
 import UniversalNode from "./UniversalNode";
 import BiDirectionalEdge from "./edges/BiDirectionalEdge";
 import { useCode } from "../hook/useCode";
-import { useProvenanceContext } from "../providers/ProvenanceProvider";
-import { buttonStyle } from "./styles";
 import { ToolsMenu, UpMenu } from "components/menus";
 import UniDirectionalEdge from "./edges/UniDirectionalEdge";
 import "./MainCanvas.css";
@@ -195,7 +193,7 @@ export function MainCanvas() {
     }), []);
 
     const reactFlow = useReactFlow();
-    const {getZoom, getViewport, setViewport, setCenter, screenToFlowPosition, fitView} = useReactFlow();
+    const { setViewport, screenToFlowPosition } = useReactFlow();
     const viewportMotionHint = useViewportMotionHint();
 
     // The notebook view holds React Flow on its own pane: zoom 1, no gestures,
@@ -571,25 +569,6 @@ export function MainCanvas() {
         setActivePackageKey(packageKey ?? null);
     }, [setActivePackageKey]);
 
-    // const handleWheel = (e: React.WheelEvent) => {
-
-    //     // e.preventDefault();
-
-    //     // Adjust this factor to control zoom speed (lower = smoother/slower)
-    //     const zoomIntensity = 0.0015;
-
-    //     const mouseScreen = { x: e.clientX, y: e.clientY };
-    //     const mouseFlow = screenToFlowPosition(mouseScreen);
-
-    //     const currentZoom = getZoom();
-    //     const nextZoom = Math.min(Math.max(currentZoom * (1 - e.deltaY * zoomIntensity), 0.05), 2);
-    //     const newX = mouseScreen.x - mouseFlow.x * nextZoom;
-    //     const newY = mouseScreen.y - mouseFlow.y * nextZoom;
-
-    //     setViewport({ x: newX, y: newY, zoom: nextZoom }, { duration: 200 });
-    // };
-
-
     const loadingAnimation = () => {
         return <div id="plug-loader" role="status" aria-live="polite" aria-busy="true">
                 <style>{`
@@ -630,7 +609,6 @@ export function MainCanvas() {
         <ScenarioUiContext.Provider value={scenarioUi}>
         {!loading ? <div
             style={{ width: "100vw", height: "100vh", backgroundColor: "#f0f0f0" }}
-            // onWheelCapture={handleWheel}
         >
             {/* The notebook view adds no nodes, so it has no rail, only the
                 rail's Run all. */}
