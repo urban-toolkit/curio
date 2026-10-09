@@ -44,7 +44,7 @@ import {
 import { applyComputeBlocks } from './autkComputeBlocks';
 import { titleLegends } from './autkLegendTitles';
 import { frameMaps } from './autkMapView';
-import { drawMapsOnDemand } from './autkMapDrawing';
+import { trackMaps } from './autkMapDrawing';
 
 /**
  * The layer a document's selections come from when they name none: its map's
@@ -640,11 +640,10 @@ export const useAutkGrammarBehavior = (
                     await g.run(spec);
                     return g;
                 });
-                // The grammar starts its maps drawing every frame: from here
-                // they draw only when their picture changes. Handed over first,
-                // so they are destroyed with the next run or the node even if a
-                // step below fails.
-                destroyMapsRef.current = drawMapsOnDemand(grammar);
+                // The node keeps the grammar's maps, handed over first, so they
+                // are destroyed with the next run or the node even if a step
+                // below fails.
+                destroyMapsRef.current = trackMaps(grammar);
                 recolorRasters(grammar, spec);
                 titleLegends(grammar, spec);
                 frameMaps(grammar);

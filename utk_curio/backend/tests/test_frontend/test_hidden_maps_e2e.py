@@ -1,12 +1,11 @@
 """Playwright E2E: an Autark map draws on demand, and a map nobody will see
 again is destroyed.
 
-autk-grammar starts each map drawing on every animation frame, and every map
-of the page draws with the same GPU. Curio switches each map to autk-map's
-on-demand rendering: once it has settled, a map that nothing changes draws
-nothing, whether it shows, sits out of the window, is behind its node's
-grammar tab, on a minimized node or in a collapsed scenario, and a map that
-shows still reads as drawn. A change draws: a map shown again, and the R key,
+autk-grammar starts each map with autk-map's ``draw()``, which draws on
+demand, and every map of the page draws with the same GPU: once it has
+settled, a map that nothing changes draws nothing, whether it shows, sits out
+of the window, is behind its node's grammar tab, on a minimized node or in a
+collapsed scenario, and a map that shows still reads as drawn. A change draws: a map shown again, and the R key,
 which frames the map through Curio's ``frameMaps``. A map nobody will see
 again, the one a re-run replaced, a deleted node's and a closed dataflow's, is
 destroyed: autk-map's ``destroy()`` unconfigures its canvas's WebGPU context

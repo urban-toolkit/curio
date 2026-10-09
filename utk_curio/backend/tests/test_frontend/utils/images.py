@@ -18,8 +18,7 @@ from playwright.sync_api import Page
 # frame is unchanged. Maps draw on demand, and Chrome can read back an idle
 # WebGPU canvas as transparent, so each canvas is read in the frame that renders
 # it, through the page's own function for that (renderMapsForReading in
-# adapters/node/autkMapDrawing.ts); a page without it has no map drawing on
-# demand.
+# adapters/node/autkMapDrawing.ts); a page without it has no Autark map.
 _PAINT_MAP_CANVASES_JS = """async () => {
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     if (window.__curio_renderMapsForReading) await window.__curio_renderMapsForReading();

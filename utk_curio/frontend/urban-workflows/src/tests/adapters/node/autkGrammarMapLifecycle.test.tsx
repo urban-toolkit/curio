@@ -6,9 +6,9 @@
  * working: its new map draws.
  *
  * The grammar is a stand-in that draws one real autk-map map on the node's
- * canvas, as autk-grammar does (`new AutkMap(canvas)`, then `draw()`, every
- * frame). jsdom has no WebGPU, so the map's frames are counted instead of
- * rendered.
+ * canvas, as autk-grammar does (`new AutkMap(canvas)`, then `draw()`, which
+ * draws on demand). jsdom has no WebGPU, so the map's frames are counted
+ * instead of rendered.
  */
 import React from 'react';
 import * as path from 'path';
@@ -143,7 +143,7 @@ test('a map the node draws draws its frame, then only when something asks for on
   await node.run();
   const [drawn] = mockDrawn;
   await frames();
-  // The grammar started it drawing every frame; the node switched it to on demand.
+  // Started as autk-grammar starts it, it draws its frame, then rests.
   expect(drawn.frames).toBeGreaterThanOrEqual(1);
   const settled = drawn.frames;
   await frames();

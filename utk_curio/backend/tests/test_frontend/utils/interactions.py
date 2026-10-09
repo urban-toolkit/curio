@@ -36,9 +36,9 @@ INTERACTION_RESTORED_RATIO = 0.01
 #: How long a gesture, and taking it back, may take to show on the target: as
 #: long as an Autark node may take to run. A map shows a change only in a frame
 #: it draws after the change, and on a loaded GPU runner that frame waits for
-#: every frame already queued for the GPU. Example 17 draws five maps every
-#: frame: in CI run 37724810297 its map's highlight was cleared 0.1 s after the
-#: double-click, and reading the map back waited 20 to 35 s (#763).
+#: every frame already queued for the GPU. Example 17 draws five maps: in CI run
+#: 37724810297 its map's highlight was cleared 0.1 s after the double-click, and
+#: reading the map back waited 20 to 35 s (#763).
 INTERACTION_SHOWN_TIMEOUT_MS = node_execution_timeout_ms("AUTK_GRAMMAR")
 
 # The element a node draws into: a Vega chart's canvas, an Autark map's canvas,
