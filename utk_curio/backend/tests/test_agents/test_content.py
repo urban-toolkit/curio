@@ -581,6 +581,69 @@ class TestCandidatesSurviveTheirOwnSchema:
         assert "```" not in visible
         assert visible.strip() == "Here is what I found."
 
+    @staticmethod
+    def _same_line(visible: str, *values: str) -> bool:
+        return any(all(v in line for v in values) for line in visible.splitlines())
+
+    def test_an_xml_shaped_reply_shows_its_rows_without_the_tags(self):
+        """#269's report: the model wrote its candidates as XML. That is no
+        curio.v1 fence, nothing parses it, and the tags reached the chat."""
+        reply = (
+            "Here is what I found.\n\n"
+            "<datasetCandidates>\n"
+            '  <lane name="catalog">\n'
+            "    <row>\n"
+            "      <name>Chicago Building Footprints</name>\n"
+            "      <source>data.cityofchicago.building-footprints</source>\n"
+            "    </row>\n"
+            "  </lane>\n"
+            '  <lane name="external">\n'
+            "    <row><name>Cook County Buildings</name><source>https://example.org/cook</source></row>\n"
+            "  </lane>\n"
+            "</datasetCandidates>"
+        )
+        visible, parts = content.extract_content(reply)
+        assert parts == []
+        assert "<" not in visible
+        assert "Here is what I found." in visible
+        # One line per row, holding that row's values.
+        assert self._same_line(visible, "Chicago Building Footprints", "data.cityofchicago.building-footprints")
+        assert self._same_line(visible, "Cook County Buildings", "https://example.org/cook")
+        assert not self._same_line(visible, "Chicago Building Footprints", "Cook County Buildings")
+        # The audit's one-line reproduction.
+        visible, parts = content.extract_content(
+            '<datasetCandidates><lane name="catalog"><row><source>demo</source></row></lane></datasetCandidates>')
+        assert parts == [] and "<" not in visible and "demo" in visible
+
+    def test_a_fenced_block_with_a_bad_row_shows_its_rows_without_the_markup(self):
+        """#356: one row breaks its contract, so the whole block fails to parse
+        and used to reach the chat as raw JSON inside its fence."""
+        payload = self._maximal_block()
+        payload["datasetCandidates"]["lanes"]["external"][0]["sourceType"] = "spaceship"
+        assert content.parse_parts(json.dumps(payload)) is None  # the premise
+        visible, parts = content.extract_content("Here is what I found.\n\n" + _tail(payload))
+        assert parts == []
+        assert "```" not in visible and "{" not in visible
+        assert "datasetCandidates" not in visible and '"name"' not in visible
+        assert "Here is what I found." in visible
+        row = payload["datasetCandidates"]["lanes"]["external"][0]
+        assert self._same_line(visible, row["name"], row["url"])
+
+    def test_a_block_over_the_row_cap_shows_its_rows_without_the_markup(self):
+        """The instruction allows 8 rows a lane; a model that lists nine fails
+        the block the same way."""
+        rows = [{"name": f"Dataset {i}", "sourceType": "catalog", "datasetId": f"data.x.d{i}"} for i in range(9)]
+        payload = {"datasetCandidates": {"lanes": {"catalog": rows}}}
+        visible, parts = content.extract_content(_tail(payload) + "\n")
+        assert parts == []
+        assert "```" not in visible and "datasetCandidates" not in visible and '"datasetId"' not in visible
+        for i in range(9):
+            assert self._same_line(visible, f"Dataset {i}", f"data.x.d{i}")
+
+    def test_a_reply_that_only_mentions_the_block_is_unchanged(self):
+        reply = "I will list the datasetCandidates in my next reply."
+        assert content.extract_content(reply) == (reply, [])
+
     def test_every_maximal_row_survives_the_trip(self):
         payload = self._maximal_block()
         _, parts = content.extract_content(_tail(payload))
