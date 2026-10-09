@@ -362,7 +362,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setNodes((prevNodes: Node[]) => updateNodeData(prevNodes, nodeId, () => ({ ...newData })));
     }, [setNodes]);
 
-    const loadParsedTrill = async (workflowName: string, task: string, loaded_nodes: any, loaded_edges: any, provenance?: boolean, merge?: boolean, incomingPackages?: string[], incomingDescription?: string, incomingDatasets?: any[], incomingCategories?: HandCategories, incomingScenarios?: unknown) => {
+    const loadParsedTrill = async (workflowName: string, task: string, loaded_nodes: any, loaded_edges: any, provenance?: boolean, merge?: boolean, incomingPackages?: string[], incomingDescription?: string, incomingDatasets?: any[], incomingCategories?: HandCategories, incomingScenarios?: unknown, fit?: boolean) => {
         if (!merge) {
             TrillGenerator.reset();
             // Before the replay below, whose version snapshots carry them.
@@ -529,8 +529,11 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
 
             // The dashboard page frames its own tiles (`useDashboardFit`); the
             // canvas fit would fight it, and it cannot even complete there since
-            // an unpinned node is `display: none` and never gets measured.
-            if (!presentation) setFitViewOnLoad(true);
+            // an unpinned node is `display: none` and never gets measured. A
+            // caller that frames what it added asks for no fit (`fit: false`):
+            // a dropped scenario's box is not a node, so the fit framed its
+            // context alone and left the box out of view (#769).
+            if (!presentation && fit !== false) setFitViewOnLoad(true);
             return prevNodes;
         });
 

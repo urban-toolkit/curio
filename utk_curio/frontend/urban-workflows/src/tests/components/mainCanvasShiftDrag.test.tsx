@@ -89,7 +89,7 @@ jest.mock("../../registry/packageKeys", () => ({ packageKeyFromCanonicalNodeType
 jest.mock("../../utils/flowNodeCanonicalType", () => ({ getFlowNodeCanonicalType: () => "" }));
 jest.mock("../../utils/agentDropHover", () => ({ clearAgentDropHover: jest.fn(), setAgentDropHoverEdgeId: jest.fn() }));
 jest.mock("../../utils/agentDropAttach", () => ({ attachAgentOnDrop: jest.fn() }));
-jest.mock("../../utils/focusDatasetNodes", () => ({ frameNodesInView: jest.fn() }));
+jest.mock("../../utils/focusDatasetNodes", () => ({ frameNodesInView: jest.fn(), revealRectInView: jest.fn() }));
 jest.mock("../../utils/scenarios/scenarioCanvasView", () => ({
   scenarioCanvasView: (nodes: unknown, edges: unknown) => ({ nodes, edges, boxes: [] }),
 }));

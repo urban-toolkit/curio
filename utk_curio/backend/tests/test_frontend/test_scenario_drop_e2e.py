@@ -19,6 +19,10 @@ A second test drops a scenario whose lever needs ``curio.weather`` into a
 project without it: the package is added. One whose package is in no catalog
 is refused, naming it, and adds nothing.
 
+A third drops a scenario into an empty dataflow near the canvas's right edge,
+where its box hangs past the edge: once the view stops moving, the box is in
+sight (#769).
+
 The first runs an Autark node, which needs WebGPU: without an adapter it
 skips, unless ``CURIO_REQUIRE_HARDWARE_WEBGPU=1`` (CI's GPU job), where it
 fails.
@@ -35,6 +39,7 @@ import os
 from typing import TYPE_CHECKING
 
 import pytest
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, expect
 
 from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
 
@@ -497,3 +502,142 @@ def test_a_dropped_scenario_brings_the_packages_its_levers_need(
     assert dropped["source"] == {"project": source, "scenario": "era5"}, dropped
     assert dropped["nodes"] == [copy], dropped
     assert "curio.weather@1" in lockfile()
+
+
+#: A collapsed scenario's box is this wide, in canvas units (``BOX_WIDTH`` in
+#: ``ScenarioLayers.tsx``).
+BOX_WIDTH = 260
+
+#: How often the wait for a dropped box reads the view back, in ms: on a timer,
+#: never per animation frame.
+_SIGHT_READ_MS = 100
+
+# What the canvas shows: React Flow's viewport, the transform the canvas draws,
+# each scenario box's rectangle on the page, and the part of the canvas the top
+# bar and the palette rail leave in sight.
+_SIGHT_STATE_JS = """() => {
+    const flow = window.__curio_reactFlow;
+    const pane = document.querySelector(".curio-canvas-drop-target");
+    const viewport = pane && pane.querySelector(".react-flow__viewport");
+    const rect = (el) => {
+        const r = el.getBoundingClientRect();
+        return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+    };
+    let sight = null;
+    if (pane) {
+        sight = rect(pane);
+        for (const bar of document.querySelectorAll("[data-curio-menu-bar]")) {
+            sight.top = Math.max(sight.top, bar.getBoundingClientRect().bottom);
+        }
+        const rail = document.getElementById("tools-palette-dock");
+        if (rail) sight.left = Math.max(sight.left, rail.getBoundingClientRect().right);
+    }
+    return {
+        viewport: flow ? flow.getViewport() : null,
+        drawn: viewport ? getComputedStyle(viewport).transform : null,
+        boxes: [...document.querySelectorAll('[data-testid^="scenario-box-"]')].map(rect),
+        sight,
+    };
+}"""
+
+# One read of the wait: true once the one scenario box lies wholly in sight and
+# the view, as React Flow holds it and as the canvas draws it, has stayed put
+# for *reads* reads in a row. A view still moving, or a box out of sight, starts
+# the count again, so a fit that lands late cannot slip past it.
+_BOX_HELD_IN_SIGHT_JS = """({ reads }) => {
+    const { viewport, drawn, boxes, sight } = (""" + _SIGHT_STATE_JS + """)();
+    const wait = window.__curio_boxSight = window.__curio_boxSight || { key: null, held: 0 };
+    let settled = false;
+    if (viewport && drawn) {
+        const m = drawn === "none" ? new DOMMatrixReadOnly() : new DOMMatrixReadOnly(drawn);
+        const near = (a, b) => Math.abs(a - b) < 1e-3;
+        settled = near(m.a, viewport.zoom) && near(m.e, viewport.x) && near(m.f, viewport.y);
+    }
+    const box = boxes.length === 1 ? boxes[0] : null;
+    const inSight = !!box && !!sight && box.left >= sight.left && box.right <= sight.right
+        && box.top >= sight.top && box.bottom <= sight.bottom;
+    const key = JSON.stringify([viewport, drawn, box]);
+    if (!settled || !inSight || key !== wait.key) {
+        wait.key = settled && inSight ? key : null;
+        wait.held = settled && inSight ? 1 : 0;
+        return false;
+    }
+    wait.held += 1;
+    return wait.held >= reads;
+}"""
+
+
+def test_a_scenario_dropped_into_an_empty_dataflow_keeps_its_box_in_sight(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """#769. The scenario arrives collapsed, its context as a Data Loading node
+    one column to the left of its box. The canvas then fitted the nodes it
+    measures, which were that node alone (the box is drawn beside React Flow,
+    the members are hidden), and left the box past the right edge. The box is
+    dropped where it hangs past the edge, so a view that never moves fails too.
+    The source has no map, so it runs without WebGPU."""
+    require_project_page()
+    require_user_auth()
+    session = stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Scenario Drop View",
+        username="scenario_drop_view_e2e",
+        project_name="Heights",
+        project_spec=_dataflow(
+            "Heights",
+            [
+                _node(LOADER, "curio.builtin/data-loading", 0, _grid_code(1)),
+                _node(SCALE, "curio.builtin/computation-analysis", 645, SCALE_CODE),
+            ],
+            [{"id": "e-load-scale", "source": LOADER, "target": SCALE, "sourceHandle": "out", "targetHandle": "in"}],
+            [{"id": SCENARIO, "name": "Twice as tall", "color": "#e86a3c", "nodes": [SCALE]}],
+        ),
+    )
+    require_owner_view(page)
+    token = session["token"]
+    source = session["project"]["id"]
+
+    # The context's output is saved, so the scenario can arrive elsewhere.
+    node_locator(page, LOADER).wait_for(state="visible", timeout=45000)
+    play_node(page, LOADER)
+    status = wait_for_node_settled(page, LOADER, timeout_ms=120000)
+    assert status == "done", read_node_error_text(node_locator(page, LOADER))
+    save_dataflow(page)
+    details = api_json(f"{current_server}/api/scenarios/{source}/{SCENARIO}", token)
+    assert [r["nodeId"] for r in details["context"][0]["results"]] == [LOADER], details["context"]
+
+    # An empty dataflow, open: before it is, a drop saves a new one instead.
+    target = _create_project(current_server, token, "Empty", _dataflow("Empty", []))
+    page.goto(f"{app_frontend.base_url}/dataflow/{target}")
+    expect(page.locator("[data-curio-canvas-title] h1")).to_have_text("Empty", timeout=45000)
+    page.wait_for_function("() => !!window.__curio_reactFlow", timeout=45000)
+
+    # Dropped near the right edge, where the box hangs past it.
+    pane = page.locator(CANVAS_DROP_TARGET).bounding_box()
+    assert pane, f"{CANVAS_DROP_TARGET} has no layout box"
+    zoom = page.evaluate("() => window.__curio_reactFlow.getViewport().zoom")
+    at = (pane["width"] - 60.0, 120.0)
+    assert at[0] + BOX_WIDTH * zoom > pane["width"], (
+        f"a box dropped at x={at[0]:.0f} fits the {pane['width']:.0f} px canvas at zoom {zoom}: this proves nothing"
+    )
+    _open_scenario_catalog(page)
+    _drag_scenario_onto_canvas(page, source, SCENARIO, at=at)
+    _toast(page, 'Added "Twice as tall" from Heights.')
+    page.keyboard.press("Escape")
+    wait_for_drawer_closed(page, '[data-curio-scenario-catalog-drawer="true"]')
+
+    # Once the view stops moving, the box is in sight.
+    page.evaluate("() => { delete window.__curio_boxSight; }")
+    try:
+        page.wait_for_function(
+            _BOX_HELD_IN_SIGHT_JS, arg={"reads": 6}, polling=_SIGHT_READ_MS, timeout=20000,
+        )
+    except PlaywrightTimeoutError:
+        state = page.evaluate(_SIGHT_STATE_JS)
+        raise AssertionError(
+            "the dropped scenario's box is not in sight once the view settles: "
+            f"box {state['boxes']}, in sight {state['sight']}, "
+            f"viewport {state['viewport']}, drawn {state['drawn']}"
+        ) from None

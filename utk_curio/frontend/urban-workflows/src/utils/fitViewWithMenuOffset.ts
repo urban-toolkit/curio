@@ -1,4 +1,4 @@
-import type { ReactFlowInstance, ReactFlowState, FitViewOptions, Node, Viewport } from "reactflow";
+import type { ReactFlowInstance, ReactFlowState, FitViewOptions, Node, Rect, Viewport } from "reactflow";
 import { getNodesBounds, getViewportForBounds } from "reactflow";
 import { zoomIdentity } from "d3-zoom";
 import { TOOLS_PALETTE_PANEL_ATTR } from "../components/menus/nodes/toolsPaletteDismiss";
@@ -78,6 +78,34 @@ export function fitViewWithMenuOffset(rf: ReactFlowInstance, options?: MenuOffse
     return true;
 }
 
+/**
+ * `fitViewWithMenuOffset` for a rectangle of the canvas, in its units, rather
+ * than for nodes: for what is drawn beside React Flow and is not in its store,
+ * such as a collapsed scenario's box (#769).
+ */
+export function fitBoundsWithMenuOffset(rf: ReactFlowInstance, bounds: Rect, options?: MenuOffsetFitOptions): boolean {
+    const plan = planBoundsFit(bounds, options);
+    if (plan === "no pane") {
+        rf.fitBounds(bounds, { padding: options?.padding, duration: options?.duration });
+        return true;
+    }
+    rf.setViewport(plan, options?.duration ? { duration: options.duration } : undefined);
+    return true;
+}
+
+/** Whether *bounds* (canvas units) lie wholly in the part of the pane the
+ *  overlays leave in sight, at the view the canvas shows now. */
+export function boundsInSight(rf: ReactFlowInstance, bounds: Rect): boolean {
+    const sight = paneInSight();
+    if (!sight) return false;
+    const { x, y, zoom } = rf.getViewport();
+    const left = bounds.x * zoom + x;
+    const top = bounds.y * zoom + y;
+    return left >= sight.left && top >= sight.top &&
+        left + bounds.width * zoom <= sight.left + sight.width &&
+        top + bounds.height * zoom <= sight.top + sight.height;
+}
+
 /** The part of React Flow's store that moves the viewport. */
 type ZoomStore = { getState: () => Pick<ReactFlowState, "d3Zoom" | "d3Selection"> };
 
@@ -137,13 +165,45 @@ function planFit(rf: ReactFlowInstance, options?: MenuOffsetFitOptions): FitPlan
         typeof n.height === "number" && n.height > 0;
     if (!targetNodes.every(measured)) return "unmeasured";
 
-    const container = document.querySelector<HTMLElement>(".react-flow");
-    const paneRect = container?.getBoundingClientRect();
-    if (!paneRect || paneRect.width === 0 || paneRect.height === 0) return "no pane";
+    return planBoundsFit(getNodesBounds(targetNodes), options);
+}
+
+/** Where a fit of *nodeBounds* (canvas units) puts the viewport, or "no pane"
+ *  when the pane has no size to fit against. */
+function planBoundsFit(nodeBounds: Rect, options?: MenuOffsetFitOptions): Viewport | "no pane" {
+    const sight = paneInSight();
+    if (!sight) return "no pane";
 
     const padding = typeof options?.padding === "number" ? options.padding : DEFAULT_PADDING;
     const minZoom = options?.minZoom ?? FALLBACK_MIN_ZOOM;
     const maxZoom = options?.maxZoom ?? FALLBACK_MAX_ZOOM;
+
+    const headroom = Math.max(0, options?.headroom ?? 0);
+    const bounds = { ...nodeBounds, y: nodeBounds.y - headroom, height: nodeBounds.height + headroom };
+    const { x, y, zoom } = getViewportForBounds(
+        bounds,
+        sight.width,
+        sight.height,
+        minZoom,
+        maxZoom,
+        padding,
+    );
+
+    // getViewportForBounds centered the content within the visible box at the
+    // origin; shift it right past the dock and down past the bar so it centers
+    // in the part of the pane in sight.
+    return { x: x + sight.left, y: y + sight.top, zoom };
+}
+
+/** The part of the pane the overlays leave in sight: its offset from the
+ *  pane's top left corner and its size, in screen pixels. */
+type PaneInSight = { left: number; top: number; width: number; height: number };
+
+/** The part of the pane in sight, or null when the pane has no size. */
+function paneInSight(): PaneInSight | null {
+    const container = document.querySelector<HTMLElement>(".react-flow");
+    const paneRect = container?.getBoundingClientRect();
+    if (!paneRect || paneRect.width === 0 || paneRect.height === 0) return null;
 
     // Width the dock occludes on the left (measured from the pane's left edge).
     // With a palette panel open this is wide, so it must shrink the width the fit
@@ -174,20 +234,5 @@ function planFit(rf: ReactFlowInstance, options?: MenuOffsetFitOptions): FitPlan
     }
     const visibleHeight = Math.max(1, paneRect.height - occludedTop);
 
-    const nodeBounds = getNodesBounds(targetNodes);
-    const headroom = Math.max(0, options?.headroom ?? 0);
-    const bounds = { ...nodeBounds, y: nodeBounds.y - headroom, height: nodeBounds.height + headroom };
-    const { x, y, zoom } = getViewportForBounds(
-        bounds,
-        visibleWidth,
-        visibleHeight,
-        minZoom,
-        maxZoom,
-        padding,
-    );
-
-    // getViewportForBounds centered the content within the visible box at the
-    // origin; shift it right past the dock and down past the bar so it centers
-    // in [occluded, paneRect.width] x [occludedTop, paneRect.height].
-    return { x: x + occluded, y: y + occludedTop, zoom };
+    return { left: occluded, top: occludedTop, width: visibleWidth, height: visibleHeight };
 }

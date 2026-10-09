@@ -119,6 +119,34 @@ describe("notebookToTrill", () => {
     expect(setup[0].type).toBe(NodeType.COMPUTATION_ANALYSIS);
   });
 
+  it("comments out IPython lines in the Setup node and in other cells (#160)", async () => {
+    // `%matplotlib inline` and `!pip install ...` are not Python. Copied as
+    // they were, the Setup node, which runs first, failed on its first line.
+    stubAnalyzer(
+      [{ is_import_only: true }, { is_import_only: true }, { last_var: "df" }],
+      [],
+    );
+
+    const { dataflow } = await notebookToTrill(
+      notebook(
+        "%matplotlib inline\nimport pandas as pd",
+        "!pip install geopandas\nimport geopandas as gpd",
+        "!pip install fiona\ndf = load()",
+      ),
+      "http://backend",
+    );
+
+    const ipython = (content?: string) =>
+      (content ?? "").split("\n").filter((line) => /^\s*[%!]/.test(line));
+    const setup = dataflow.nodes.find((n) => n.title === SETUP_NODE_TITLE)!;
+    expect(ipython(setup.content)).toEqual([]);
+    expect(setup.content).toContain("# %matplotlib inline");
+    expect(setup.content).toContain("import geopandas as gpd");
+    const work = dataflow.nodes.find((n) => n.title === "df")!;
+    expect(ipython(work.content)).toEqual([]);
+    expect(work.content).toContain("df = load()");
+  });
+
   it("places the Setup node clear of the pipeline's first column", async () => {
     // It used to share column 0 with the first real stage, stacked above it.
     stubAnalyzer([{ is_import_only: true }, { last_var: "df" }], []);
@@ -169,6 +197,31 @@ describe("notebookToTrill", () => {
     expect(dataflow.edges).toHaveLength(1);
     expect(byId[dataflow.edges[0].source].title).toBe("df");
     expect(byId[dataflow.edges[0].target].title).toBe("out");
+  });
+
+  it("reads several inputs as arg[k], each edge on its own circle (#160)", async () => {
+    // A node with several inputs gets them as `arg[k]`, k in circle order.
+    // The cell used to say "# multiple inputs available via arg", and its
+    // edges named no circle, so both landed on circle 0.
+    stubAnalyzer(
+      [{ last_var: "a" }, { last_var: "b" }, { last_var: "c" }],
+      [[0, 2], [1, 2]],
+    );
+
+    const { dataflow } = await notebookToTrill(
+      notebook("a = 1", "b = 2", "c = a + b"),
+      "http://backend",
+    );
+
+    const byId = Object.fromEntries(dataflow.nodes.map((n) => [n.id, n]));
+    const sum = dataflow.nodes.find((n) => n.title === "c")!;
+    const lines = (sum.content ?? "").split("\n");
+    expect(lines).toContain("a = arg[0]");
+    expect(lines).toContain("b = arg[1]");
+    const circles = Object.fromEntries(
+      dataflow.edges.map((e) => [byId[e.source].title, e.targetHandle]),
+    );
+    expect(circles).toEqual({ a: "in", b: "in_1" });
   });
 
   it("titles nodes from the variable they produce", async () => {

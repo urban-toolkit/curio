@@ -2,7 +2,7 @@ import { v4 as uuid } from "uuid";
 import { NodeType } from "./constants";
 import { dataflowOrder } from "./utils/dataflowOrder";
 import { unversionedNodeType } from "./utils/flowNodeCanonicalType";
-import { inputSlotOf } from "./utils/inputSlots";
+import { inputSlotOf, slotHandleId } from "./utils/inputSlots";
 import { resolveReferences } from "./utils/references/codeReferences";
 import { PARAMETER_NODE_TYPE, sharedWidgetsOfSpec } from "./utils/references/sharedParameters";
 import { normalizeSelections } from "./utils/references/selectionTags";
@@ -100,6 +100,20 @@ function inferNodeType(code: string): NodeType {
 
 type CellEdge = { source: number; target: number };
 
+/** A line magic (`%matplotlib inline`), a cell magic (`%%time`) or a shell
+ *  escape (`!pip install geopandas`): not Python. The analyzer's
+ *  `_MAGIC_OR_SHELL_LINE` (`backend/app/notebooks/analyzer.py`). */
+const MAGIC_OR_SHELL_LINE = /^\s*[%!]/;
+
+/** *code* with its IPython lines commented out, so the Python around them
+ *  runs in a node, which still shows them (#160). */
+function commentOutMagics(code: string): string {
+  return code
+    .split("\n")
+    .map((line) => (MAGIC_OR_SHELL_LINE.test(line) ? line.replace(/^(\s*)/, "$1# ") : line))
+    .join("\n");
+}
+
 function wireCode(
   code: string,
   cellIdx: number,
@@ -113,7 +127,12 @@ function wireCode(
     const srcVar = lastVars[sources[0]] ?? "arg";
     out = `${srcVar} = arg\n${out}`;
   } else if (sources.length > 1) {
-    out = `# multiple inputs available via arg\n${out}`;
+    // A node with several inputs reads input k as `arg[k]`, k its circle,
+    // and the edge from the k-th source lands on circle k (#160).
+    const bound = sources
+      .map((source, k) => (lastVars[source] ? `${lastVars[source]} = arg[${k}]` : null))
+      .filter((line): line is string => line !== null);
+    if (bound.length > 0) out = `${bound.join("\n")}\n${out}`;
   }
   const lv = lastVars[cellIdx];
   if (hasOutgoing.has(cellIdx) && lv) {
@@ -170,13 +189,15 @@ export const SETUP_NODE_TITLE = "Setup / Imports";
  * because notebooks routinely repeat `import pandas as pd` in three separate
  * setup cells and the merged node should read like something a person wrote.
  * Blank lines are dropped: the cell boundaries they used to separate no
- * longer exist.
+ * longer exist. IPython lines (`%matplotlib inline`, `!pip install ...`) are
+ * commented out: the Setup node runs before every other, and a line that is
+ * not Python failed it at once (#160).
  */
 export function mergeImportCells(sources: string[]): string {
   const seen = new Set<string>();
   const lines: string[] = [];
   for (const source of sources) {
-    for (const raw of source.split("\n")) {
+    for (const raw of commentOutMagics(source).split("\n")) {
       const line = raw.trimEnd();
       const key = line.trim();
       if (key === "") continue;
@@ -258,12 +279,16 @@ export async function notebookToTrill(
     importOnly = [];
   }
 
-  // Build wiring sets
+  // Build wiring sets. A cell's inputs keep the order of its edges: the k-th
+  // is read as `arg[k]` (wireCode) and its edge lands on circle k (#160).
   const hasOutgoing = new Set(cellEdges.map((e) => e.source));
   const incomingSources = new Map<number, number[]>();
+  const circleOf: number[] = [];
   for (const { source, target } of cellEdges) {
     if (!incomingSources.has(target)) incomingSources.set(target, []);
-    incomingSources.get(target)!.push(source);
+    const sources = incomingSources.get(target)!;
+    circleOf.push(sources.length);
+    sources.push(source);
   }
 
   // Import-only cells collapse into a single Setup node. They can have no
@@ -280,18 +305,20 @@ export async function notebookToTrill(
   const keptSlot = new Map<number, number>();
   keptIndices.forEach((original, slot) => keptSlot.set(original, slot));
 
-  const keptEdges: CellEdge[] = cellEdges
+  const keptEdges: Array<CellEdge & { circle: number }> = cellEdges
+    .map((edge, i) => ({ ...edge, circle: circleOf[i] }))
     .filter(({ source, target }) => keptSlot.has(source) && keptSlot.has(target))
-    .map(({ source, target }) => ({
+    .map(({ source, target, circle }) => ({
       source: keptSlot.get(source)!,
       target: keptSlot.get(target)!,
+      circle,
     }));
 
   const positions = computeLayout(keptIndices.length, keptEdges);
   const nodeIds = keptIndices.map(() => uuid());
 
   const nodes: TrillNode[] = keptIndices.map((original, slot) => {
-    const code = codeCells[original];
+    const code = commentOutMagics(codeCells[original]);
     const spec = altairSpecs[original] ?? null;
     const nodeType = spec ? NodeType.VIS_VEGA : inferNodeType(code);
     const content = spec
@@ -329,10 +356,13 @@ export async function notebookToTrill(
     });
   }
 
-  const edgeList: TrillEdge[] = keptEdges.map(({ source, target }) => ({
+  // Each edge names its circle: without a handle every edge landed on circle
+  // 0, so a cell with several inputs got one of them (#160).
+  const edgeList: TrillEdge[] = keptEdges.map(({ source, target, circle }) => ({
     id: uuid(),
     source: nodeIds[source],
     target: nodeIds[target],
+    targetHandle: slotHandleId(circle),
   }));
 
   return {

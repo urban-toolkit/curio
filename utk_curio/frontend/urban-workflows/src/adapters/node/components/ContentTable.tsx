@@ -7,6 +7,7 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Paper from '@mui/material/Paper';
 import { shortenString } from '../../../utils/parsing';
+import { cellText } from '../../../utils/cellText';
 
 interface ContentTableProps {
   tableData: Record<string, unknown>[];
@@ -48,8 +49,10 @@ const ContentTable = memo(({ tableData, nodeId = '' }: ContentTableProps) => {
                 sx={{ '&:last-child td, &:last-child th': { border: 0 } }}
               >
                 {columns.map((column, colIndex) => (
+                  // A geometry reads as WKT and any other object as JSON, as
+                  // in the preview tables, not "[object Object]" (#443).
                   <TableCell key={`cell_${colIndex}_${rowIndex}_${nodeId}`} align="right">
-                    {row[column] != null ? shortenString(String(row[column])) : 'null'}
+                    {row[column] != null ? shortenString(cellText(row[column])) : 'null'}
                   </TableCell>
                 ))}
               </TableRow>
