@@ -233,6 +233,52 @@ class TestCatalogGrounding:
         assert proposal["source"]["kind"] == "user-path"
         assert proposal["source"]["refs"][0]["value"] == "data/tracts.geojson"
 
+    def test_a_dataset_other_than_the_one_the_user_named_is_refused(self, client, user_and_token, tmp_curio, project, monkeypatch):
+        """#411: asked for one Data Catalog dataset by its id, the Node Builder
+        loaded another. Both are real catalog datasets, so only the request
+        tells them apart: nothing is proposed and the refusal names both."""
+        user, token = user_and_token
+        seed = routes_turns.TestDatasetFinderTools()._seed_dataset
+        asked = seed(user, filename="building_footprints.csv")
+        other = seed(user, filename="cook_buildings_2022.csv")
+        _install(client, token, project, NB)
+        att = _attach(client, token, project, NB)
+        calls = _script(monkeypatch, [
+            _create_tail(
+                "import pandas as pd\n"
+                f'dataset_path = curio_data_path("{other}")\n'
+                "df = pd.read_csv(dataset_path)\nreturn df"
+            ),
+            "Which dataset should the node load?",
+        ])
+        body = _run(client, token, project, att, f"Build a data-loading node for the {asked} dataset.")
+        assert _proposals(body) == []
+        refusal = calls[1][-1]["content"]
+        assert "refused" in refusal.split("\n", 1)[0]
+        assert asked in refusal and other in refusal
+
+    def test_the_named_dataset_is_proposed_even_beside_another(self, client, user_and_token, tmp_curio, project, monkeypatch):
+        """#411's guard: a node that loads the dataset the user named is
+        proposed, here with a second catalog dataset read beside it."""
+        user, token = user_and_token
+        seed = routes_turns.TestDatasetFinderTools()._seed_dataset
+        asked = seed(user, filename="building_footprints.csv")
+        boundary = seed(user, filename="city_boundary.csv")
+        _install(client, token, project, NB)
+        att = _attach(client, token, project, NB)
+        _script(monkeypatch, [
+            _create_tail(
+                "import pandas as pd\n"
+                f'df = pd.read_csv(curio_data_path("{asked}"))\n'
+                f'edge = pd.read_csv(curio_data_path("{boundary}"))\n'
+                "return df"
+            ),
+            "Proposed.",
+        ])
+        body = _run(client, token, project, att, f"Build a data-loading node for {asked}.")
+        [proposal] = _proposals(body)
+        assert {ref["datasetId"] for ref in proposal["source"]["refs"]} == {asked, boundary}
+
 
 DDRNET = "model.curio.ddrnet23-slim"
 

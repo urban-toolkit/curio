@@ -190,6 +190,87 @@ class TestCatalogIdForm:
             assert ("path", "/data/x.csv") in refs, code
 
 
+class TestRequestedDatasets:
+    """#411: a Data Catalog dataset the user named by its id, or confirmed for
+    the node, is the one the node loads. Code that loads only other catalog
+    datasets is refused, and the refusal names both."""
+
+    ASKED = "data.x.footprints"
+    OTHER = "data.x.footprints-2022"
+    BOUNDARY = "data.x.boundary"
+
+    def _refs(self) -> dict:
+        return {
+            i: sg.CatalogRef(i, i, "csv", f"/curio/users/4242/datasets/{i}@1/data/{i}.csv")
+            for i in (self.ASKED, self.OTHER, self.BOUNDARY)
+        }
+
+    def test_an_id_is_named_by_its_whole_token(self):
+        refs = self._refs()
+        assert sg.named_dataset_ids(["load data.x.footprints please"], refs) == {self.ASKED}
+        # A version suffix, a code span and a full stop still name it.
+        assert sg.named_dataset_ids(["use `data.x.footprints@1`."], refs) == {self.ASKED}
+        # An id that begins a longer id is not named by it.
+        assert sg.named_dataset_ids(["load data.x.footprints-2022"], refs) == {self.OTHER}
+        assert sg.named_dataset_ids(["the building footprints", None], refs) == set()
+
+    def test_confirmed_catalog_picks_are_requested(self):
+        confirmed = {"note": "Load ONLY these.", "picks": [
+            {"lane": "catalog", "datasetId": self.BOUNDARY, "name": "Boundary"},
+            {"lane": "external", "url": "https://example.org/areas.geojson", "name": "Areas"},
+        ]}
+        assert sg.confirmed_dataset_ids(confirmed) == {self.BOUNDARY}
+        assert sg.confirmed_dataset_ids(None) == set()
+
+    def test_another_catalog_dataset_is_refused_by_id_and_by_path(self):
+        refs = self._refs()
+        ctx = _ctx(
+            is_data_loading=True, catalog_ids=refs,
+            catalog_paths={ref.path: ref for ref in refs.values()},
+            requested_dataset_ids={self.ASKED},
+        )
+        by_id = sg.check_grounding(f'p = curio_data_path("{self.OTHER}")\nreturn pd.read_csv(p)', "python", ctx)
+        assert not by_id.ok
+        assert f"'{self.ASKED}'" in by_id.violations[0] and f"'{self.OTHER}'" in by_id.violations[0]
+        path = refs[self.OTHER].path
+        by_path = sg.check_grounding(f'df = pd.read_csv("{path}")\nreturn df', "python", ctx)
+        assert not by_path.ok and f"'{self.ASKED}'" in by_path.violations[0]
+        # A path the user typed is theirs to load.
+        typed = _ctx(
+            is_data_loading=True, catalog_paths={path: refs[self.OTHER]}, user_paths={path},
+            requested_dataset_ids={self.ASKED},
+        )
+        assert sg.check_grounding(f'df = pd.read_csv("{path}")\nreturn df', "python", typed).ok
+
+    def test_the_requested_dataset_may_be_read_beside_another(self):
+        ctx = _ctx(is_data_loading=True, catalog_ids=self._refs(), requested_dataset_ids={self.ASKED})
+        code = (f'df = pd.read_csv(curio_data_path("{self.ASKED}"))\n'
+                f'edge = pd.read_csv(curio_data_path("{self.BOUNDARY}"))\nreturn df')
+        verdict = sg.check_grounding(code, "python", ctx)
+        assert verdict.ok, verdict.violations
+        assert {ref["datasetId"] for ref in verdict.source["refs"]} == {self.ASKED, self.BOUNDARY}
+
+    def test_with_nothing_requested_any_catalog_dataset_is_grounded(self):
+        ctx = _ctx(is_data_loading=True, catalog_ids=self._refs())
+        assert sg.check_grounding(f'p = curio_data_path("{self.OTHER}")\nreturn p', "python", ctx).ok
+
+    def test_only_the_message_and_the_nodes_own_goal_are_requests(self):
+        """An id in an earlier turn, the dataflow's task or another node's goal
+        restricts nothing: those texts are in ``texts``, not in the request."""
+        from utk_curio.backend.app.agents.application.turns import grounding
+
+        base = {"catalog_paths": {}, "catalog_ids": self._refs(), "verified": {}, "secrets": {},
+                "texts": [f"compare {self.BOUNDARY} with the footprints"]}
+        node_type = "curio.builtin/data-loading"
+        solve = grounding._grounding_context(
+            "4242", "p-1", {}, node_type=node_type, base=base, request_texts=(f"load {self.ASKED}",),
+        )
+        assert solve.requested_dataset_ids == {self.ASKED}
+        chat = grounding._grounding_context("4242", "p-1", {"message": f"use {self.OTHER}"}, node_type=node_type, base=base)
+        assert chat.requested_dataset_ids == {self.OTHER}
+        assert grounding._grounding_context("4242", "p-1", {}, node_type=node_type, base=base).requested_dataset_ids == set()
+
+
 class TestUserTexts:
     def test_user_paths_from_free_text(self):
         paths = sg.user_paths(["load /data/tracts.geojson and also `raw/pop.csv`, please."])
