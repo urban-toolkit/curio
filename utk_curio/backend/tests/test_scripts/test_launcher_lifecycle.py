@@ -8,6 +8,11 @@ The ``logger`` those lines called was the queue printer of
 so the AttributeError cut the cleanup short: the remaining processes were
 never signalled, and the launcher reported "Could not check port" (#652).
 
+Only a server listening on the port is stale. lsof lists a process for every
+TCP socket on the port unless it is asked for listening sockets only, so a
+client connected to the port (the e2e harness polling the backend, a browser
+tab on an older stack) was stopped as well (#767).
+
 ``main()`` ends its wait loop in ``clean_shutdown()`` when a KeyboardInterrupt
 reaches it, and used to pass an argument ``clean_shutdown`` does not take.
 """
@@ -72,13 +77,30 @@ class _Host:
             self.alive.discard(pid)
 
 
+class _HostWithAClient(_Host):
+    """The same host, plus a process connected to PORT as a client.
+
+    Real lsof lists the client beside the servers unless the command asks for
+    listening sockets only (``-sTCP:LISTEN``). The client exits on SIGTERM, as
+    the e2e harness did in #767.
+    """
+
+    def __init__(self, fates, client):
+        super().__init__({**fates, client: "exits on SIGTERM"})
+        self.listeners = list(fates)
+
+    def lsof(self, cmd, **kwargs):
+        listed = self.listeners if "-sTCP:LISTEN" in cmd else list(self.fates)
+        return "".join(f"{pid}\n" for pid in listed)
+
+
 @pytest.fixture
 def held_port(monkeypatch, caplog):
     """Put processes with the given fates on PORT, as lsof and kill see them."""
     caplog.set_level(logging.DEBUG, logger=logs.__name__)
 
-    def hold(fates):
-        host = _Host(fates)
+    def hold(fates, client=None):
+        host = _Host(fates) if client is None else _HostWithAClient(fates, client)
         monkeypatch.setattr(services.platform, "system", lambda: "Linux")
         monkeypatch.setattr(services.subprocess, "check_output", host.lsof)
         monkeypatch.setattr(services.os, "kill", host.kill)
@@ -125,6 +147,15 @@ def test_a_pid_gone_before_its_sigkill_is_skipped(held_port, caplog):
     assert host.sent[0] == (444, signal.SIGTERM)
     assert host.sent[-1] == (444, signal.SIGKILL)
     _assert_skipped_quietly(caplog, 444)
+
+
+def test_a_client_connected_to_the_port_is_left_alone(held_port):
+    host = held_port({222: "exits on SIGTERM"}, client=555)
+
+    services._kill_port(PORT)
+
+    assert (222, signal.SIGTERM) in host.sent, host.sent
+    assert [sig for pid, sig in host.sent if pid == 555] == [], host.sent
 
 
 class _Server:
