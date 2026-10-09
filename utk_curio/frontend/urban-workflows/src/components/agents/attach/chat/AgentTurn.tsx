@@ -23,7 +23,7 @@ import { SafeAgentContent } from "../../content/SafeAgentContent";
 import { AgentRunStatusLine } from "../AgentRunStatusLine";
 import { LlmConfigAction } from "../../../llmConfigs/LlmConfigAction";
 import styles from "../AgentChatPanel.module.css";
-import { planNodeStateFor } from "./chatPanelDerived";
+import { lastingToolFailures, planNodeStateFor } from "./chatPanelDerived";
 
 /** The review-before-apply and plan callbacks a turn's cards may need. */
 export interface AgentTurnActions {
@@ -66,8 +66,8 @@ export const AgentTurn: React.FC<{
 }> = ({ turn: t, attachment, tint, meta, actions, canvasUnchanged = false }) => {
   const isFinderOnNode =
     attachment.coord.startsWith("agent.dataset-finder@") && attachment.target.kind === "node";
-  // #447: a tool call that did not succeed keeps its reason under the reply.
-  const failedCalls = (t.execution?.toolCalls ?? []).filter((call) => call.reason);
+  // #447: the failed tool calls that keep their reason under the reply.
+  const failedCalls = lastingToolFailures(t);
   return (
     <div className={styles.agentRow}>
       <span className={`${styles.agentRowAvatar} ${tint}`} aria-hidden="true">

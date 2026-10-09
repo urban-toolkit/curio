@@ -350,14 +350,15 @@ def _execute_tool_request(
 
     Only granted read contracts execute; a granted mutate contract mints a
     review proposal (never executes — `DEC-006`); everything else resolves to
-    a synthetic result the model can recover from, never a run error. The
-    model gets the whole result; the user gets one bounded line of it, the
-    record's ``reason``, under the reply (#447). Appends to ``tool_calls`` (the
+    a synthetic result the model can recover from — loudly to the model,
+    invisibly to the user, never a run error. Appends to ``tool_calls`` (the
     execution record's tool history) and ``minted`` (proposal parts for the
-    persisted turn)."""
+    persisted turn). A granted call that failed also records the line the chat
+    may show for it (:func:`_failure_fields`, #447)."""
     tool_id = req.get("tool", "")
     started = time.monotonic()
-    if tool_id not in loop_ctx["granted"]:
+    granted = tool_id in loop_ctx["granted"]
+    if not granted:
         status, text = "refused", f"tool {tool_id!r} is not granted for this run"
     elif tool_id in _EGRESS_TOOLS and loop_ctx.get("egressCalls", 0) >= egress.MAX_CALLS_PER_RUN:
         # dev/67-4 (DEC-053): the per-run egress budget — verification, never
@@ -397,9 +398,9 @@ def _execute_tool_request(
         "status": status,
         "durationMs": int((time.monotonic() - started) * 1000),
     }
-    reason = _failure_reason(status, text)
-    if reason is not None:
-        record["reason"] = reason
+    if granted:
+        # An ungranted request stays the model's alone (dev/41).
+        record.update(_failure_fields(status, text))
     tool_calls.append(record)
     return status, text
 
@@ -449,6 +450,21 @@ def _failure_reason(status: str, text: object) -> str | None:
     if len(reason) > _FAILURE_REASON_MAX_CHARS:
         reason = reason[: _FAILURE_REASON_MAX_CHARS - 1] + "…"
     return reason
+
+
+def _failure_fields(status: str, text: object) -> dict:
+    """The fields a granted call that did not succeed adds to its record and
+    its ``tool_result`` event (#447): ``reason``, and ``egress`` when the
+    egress policy refused it. The chat keeps an egress refusal's line under the
+    reply, and any other one only when no later call of the same tool in the
+    turn succeeded. Empty for a call that succeeded."""
+    reason = _failure_reason(status, text)
+    if reason is None:
+        return {}
+    fields: dict = {"reason": reason}
+    if str(text).startswith(tools.EGRESS_REFUSED):
+        fields["egress"] = True
+    return fields
 
 
 #: The answer to every call of a reply after its first, which is the one run.

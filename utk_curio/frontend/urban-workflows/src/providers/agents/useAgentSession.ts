@@ -348,13 +348,15 @@ export function useAgentSession(
   );
 }
 
-/** One tool_result event as the turn's record keeps it (dev/41): a call that
- * did not succeed carries its reason (#447). */
+/** One tool_result event as the turn's record keeps it (dev/41): a granted
+ * call that did not succeed carries its reason, and an egress refusal says so
+ * (#447). */
 function toolCallOf(payload: Record<string, unknown>): AgentToolCall {
   return {
     tool: typeof payload.tool === "string" ? payload.tool : "",
     status: typeof payload.status === "string" ? payload.status : "",
     ...(typeof payload.reason === "string" && payload.reason ? { reason: payload.reason } : {}),
+    ...(payload.egress === true ? { egress: true } : {}),
   };
 }
 

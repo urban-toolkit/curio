@@ -1,9 +1,9 @@
 /**
  * Pure derivations the chat panel renders from (memo dev/142, F4 — split out
- * of `AgentChatPanel.tsx`): the per-turn status meta, whether a canvas
- * agent's reply changed nothing, the plan-row state a review card gets from
- * the attachment's mirrors, the header's target label, and the newest turn's
- * suggested prompts.
+ * of `AgentChatPanel.tsx`): the per-turn status meta, the failed tool calls
+ * a reply keeps lines for, whether a canvas agent's reply changed nothing,
+ * the plan-row state a review card gets from the attachment's mirrors, the
+ * header's target label, and the newest turn's suggested prompts.
  */
 import {
   turnStatusDisplay,
@@ -11,6 +11,7 @@ import {
   type AgentDelegationPart,
   type AgentProposalPart,
   type AgentSessionTurn,
+  type AgentToolCall,
   type AgentSuggestedPromptsPart,
   type AgentRunStatus,
   type RunStatusDisplay,
@@ -55,6 +56,27 @@ export function turnMetaFor(
       pendingReview: i === lastAgentIdx && pendingReview,
     };
   return null;
+}
+
+/** The statuses of a tool call that succeeded (a mutate tool's is "proposed"). */
+const SUCCEEDED = new Set(["ok", "proposed"]);
+
+/**
+ * #447: the failed tool calls whose reason stays under a reply, live and after
+ * a reload. Only a failed call of a granted tool carries a reason (a request
+ * for a tool the agent is not granted is refused to the model only). An
+ * egress refusal always keeps its line; any other failure keeps it only when
+ * no later call of the same tool in that turn succeeded, so a request the
+ * model corrected leaves nothing beside the proposal that followed.
+ */
+export function lastingToolFailures(turn: AgentSessionTurn): AgentToolCall[] {
+  const calls = turn.execution?.toolCalls ?? [];
+  return calls.filter(
+    (call, i) =>
+      Boolean(call.reason) &&
+      (call.egress === true ||
+        !calls.slice(i + 1).some((later) => later.tool === call.tool && SUCCEEDED.has(later.status))),
+  );
 }
 
 /** The agents whose work lands on the canvas (#243). */

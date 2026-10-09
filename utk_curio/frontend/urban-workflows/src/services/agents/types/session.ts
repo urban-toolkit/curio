@@ -16,14 +16,16 @@ export interface AgentUsage {
 
 /**
  * One tool call of a run (memo dev/41): the tool, how it ended, and, for a
- * call that did not succeed, the one-line reason the chat shows under the
- * reply (#447). Saved turns from before the reason have none.
+ * granted call that did not succeed, the one-line reason the chat may show
+ * under the reply (#447). Saved turns from before the reason have none.
  */
 export interface AgentToolCall {
   tool: string;
   status: string;
   durationMs?: number;
   reason?: string;
+  /** The egress policy refused it: its line stays under the reply (#447). */
+  egress?: boolean;
 }
 
 /**

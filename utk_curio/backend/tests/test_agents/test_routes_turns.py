@@ -823,8 +823,7 @@ class TestRunContext:
 class TestToolLoop:
     """The bounded read-tool execution loop (memo dev/41): granted reads
     execute with normalized events; everything else refuses loudly to the
-    model, and to the user only as one line under the reply (#447); grant-less
-    runs stay byte-identical to T2."""
+    model, invisibly to the user; grant-less runs stay byte-identical to T2."""
 
     def _save_node(self, client, token, project_id, node):
         r = client.put(

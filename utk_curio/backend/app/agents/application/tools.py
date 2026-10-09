@@ -1256,6 +1256,10 @@ def execute_read_tool(
 _WEB_BODY_PREVIEW_MAX_CHARS = 4000
 _WEB_SEARCH_MAX_ROWS = 8
 
+#: How a web tool's result opens when the egress policy refused the request.
+#: The agent loop reads it to mark the call, whose line the chat keeps (#447).
+EGRESS_REFUSED = "refused by the egress policy"
+
 
 def _execute_web_fetch(params: dict) -> tuple[str, str]:
     """dev/67-4 (DEC-053): one policy-gated fetch, framed as bounded data."""
@@ -1267,7 +1271,7 @@ def _execute_web_fetch(params: dict) -> tuple[str, str]:
     try:
         result = egress.fetch(url.strip())
     except egress.EgressRefused as exc:
-        return "error", f"refused by the egress policy: {exc}"
+        return "error", f"{EGRESS_REFUSED}: {exc}"
     except Exception as exc:
         return "error", f"the endpoint is unreachable: {exc}"
     return "ok", _truncate(json.dumps({
@@ -1321,7 +1325,7 @@ def _execute_web_search(params: dict) -> tuple[str, str]:
         )
         payload = json.loads(result.body)
     except egress.EgressRefused as exc:
-        return "error", f"refused by the egress policy: {exc}"
+        return "error", f"{EGRESS_REFUSED}: {exc}"
     except Exception as exc:
         return "error", f"the search provider failed: {exc}"
     rows_raw = _search_rows_of(payload)
