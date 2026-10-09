@@ -688,6 +688,7 @@ def resource_unlimited():
     return resource.RLIM_INFINITY
 
 
+@pytest.mark.parametrize("isolated", [128, 256, 1024], indirect=True)
 def test_a_dataframe_writes_parquet_under_the_memory_cap(isolated):
     """#334's actual failure mode, exercised rather than approximated (#358).
 
@@ -708,18 +709,21 @@ def test_a_dataframe_writes_parquet_under_the_memory_cap(isolated):
     Deliberately a tiny frame. The claim is not "big frames fit", it is "the
     writer's own footprint fits", which is what #334 broke.
 
-    Runs at the fixture's budget only, which is 256MB. Deriving the writer's
-    limit is what moved this off the boundary it used to sit on: 256 was both
-    the fixture's budget and the writer's fixed ``memory_limit``, so the test
-    could not distinguish a writer sized against the child's budget from one
-    that ignores it. The writer now gets 128MB here, so it can.
+    Runs at 256MB, the fixture's default budget, and at 128 and 1024MB on
+    either side of it. Deriving the writer's limit is what moved the 256 case
+    off the boundary it used to sit on: 256 was both the fixture's budget and
+    the writer's fixed ``memory_limit``, so the test could not distinguish a
+    writer sized against the child's budget from one that ignores it. The
+    writer now gets 128MB at 256, so it can; it gets 64MB at 128 and reaches
+    its 256MB cap at 1024.
 
-    **Do not parametrize this over other budgets without reading #376.** Three
-    CI runs showed 128 and 1024 both failing here with an ArrowMemoryError in
-    user code, before serialization, while 256 passed - in one run 1024 failed
-    running first, so it is not an ordering effect either. The probe below
-    proves the cap itself is applied correctly at those budgets, so whatever is
-    wrong is downstream of ``_apply_rlimits`` and is not this test's subject.
+    128 and 1024 are #376's budgets. In three CI runs on utk (September 2026)
+    both failed here with an ArrowMemoryError in user code, before
+    serialization, while 256 passed, and in one run 1024 failed running first,
+    so it was not an ordering effect. ``--exec-memory-mb`` is an operator's
+    knob with a floor of 64, so a tiny frame has to fit at budgets other than
+    this suite's default. The probe below proves the cap itself is applied at
+    each budget, so a failure past it is downstream of ``_apply_rlimits``.
     """
     # Read the cap the child is actually running under FIRST, so a failure
     # below comes with the numbers rather than just a traceback. An
