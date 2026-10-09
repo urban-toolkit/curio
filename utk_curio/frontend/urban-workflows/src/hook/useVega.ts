@@ -13,7 +13,7 @@ import { inputTableName } from "../generated/autkGrammar";
 import { usableCounts } from "../utils/vegaUsableRows";
 import { matchSelections, objectRows } from "../utils/selectionMatch";
 import { columnsOfRows, provideViewRows } from "../utils/references/viewSelections";
-import { viewSelects } from "../utils/vegaSelects";
+import { isPointSelection, pointRows, viewSelects } from "../utils/vegaSelects";
 import { echoedCircle } from "../utils/selectionEcho";
 import type { NodeEmptyReason } from "../utils/nodeEmptyState";
 import { resolveGrammarEmptyReason } from "../utils/nodeEmptyState";
@@ -520,7 +520,7 @@ export const useVega = ({
     // A listener on each select's top-level signal, `<name>`, which holds its
     // selection, whatever the name and wherever the spec declares it (#846).
     const selects = viewSelects(specObj, Object.keys(view.getState().signals ?? {}));
-    for (const select of selects.keys()) {
+    for (const [select, declared] of selects) {
       try {
         view.addSignalListener(select, (name: any, value: any) => {
           // detecting the type of interaction (point/hover or interval (brush))
@@ -562,11 +562,16 @@ export const useVega = ({
             };
 
             setInteractions(newObj);
-          } else if (signalAttributes.includes("_vgsid_")) {
-            // point/hover
-            for (const elem of value._vgsid_) {
-              const idx = vgsidToIndexRef.current.get(elem);
-              if (idx !== undefined) interactedElementsPoint.push(idx);
+          } else if (isPointSelection(declared, value)) {
+            // point/hover: the rows vega's tuple ids name, or the rows that
+            // hold the values a select over fields reports (#847)
+            if (signalAttributes.includes("_vgsid_")) {
+              for (const elem of value._vgsid_) {
+                const idx = vgsidToIndexRef.current.get(elem);
+                if (idx !== undefined) interactedElementsPoint.push(idx);
+              }
+            } else {
+              interactedElementsPoint = pointRows(value, lastValuesRef.current);
             }
 
             let interactionsKeys = Object.keys(interactionsRef.current);
