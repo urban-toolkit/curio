@@ -669,7 +669,7 @@ class TestSolveRequestedDatasets:
     """#867: a Solve with ``verify: false`` writes content without running it,
     and holds it to the dataset the node's goal names, as a verified Solve does."""
 
-    def _applied_plan(self, client, user, token, project, monkeypatch):
+    def _applied_plan(self, client, user, token, project, monkeypatch, *, load_the_asked=False):
         seed = routes_turns.TestDatasetFinderTools()._seed_dataset
         asked = seed(user, filename="building_footprints.csv")
         other = seed(user, filename="cook_buildings_2022.csv")
@@ -682,7 +682,7 @@ class TestSolveRequestedDatasets:
         plan_tail = "Plan.\n```curio.v1\n" + json.dumps({"dataflowPlan": plan}) + "\n```"
         loader = (
             "import pandas as pd\n"
-            f'dataset_path = curio_data_path("{other}")\n'
+            f'dataset_path = curio_data_path("{asked if load_the_asked else other}")\n'
             "df = pd.read_csv(dataset_path)\nreturn df"
         )
         _install(client, token, project, "agent.dataflow-builder@1.0.0", NCB)
@@ -730,6 +730,21 @@ class TestSolveRequestedDatasets:
         assert asked in results[-1]["error"] and other in results[-1]["error"]
         assert not any(p.get("proposalId") for p in results)
         assert self._content(user, project, load) == ""
+
+    def test_an_unverified_proposing_solve_proposes_the_requested_dataset(self, client, user_and_token, tmp_curio, project, monkeypatch):
+        """#880: the review mint of a proposing Solve without verification ran
+        without the batch's catalog listing, so it refused every catalog
+        dataset, the requested one too, as not in the project's Data Catalog."""
+        user, token = user_and_token
+        att, load, asked, _other = self._applied_plan(client, user, token, project, monkeypatch, load_the_asked=True)
+        r = client.post(
+            f"/api/agents/projects/{project}/attachments/{att}/solve/stream",
+            json={"mode": "propose", "verify": False}, headers=_auth(token),
+        )
+        events = routes_solve.TestStreamedSolve()._sse_events(r)
+        result = next(p for k, p in events if k == "node_result" and p.get("nodeId") == load)
+        assert result["status"] == "proposed" and result.get("proposalId"), result
+        assert self._content(user, project, load) == ""  # proposed, not written
 
 
 class TestContentReviewMintInheritsTheGate:
