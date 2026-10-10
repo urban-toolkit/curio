@@ -16,8 +16,10 @@ A download of a box:
    ``bbox`` meets the area, and writes them as one GeoParquet file, with the
    columns as Overture names them.
 
-Every request goes through the transport (``infrastructure/remote_parquet.py``),
-to the catalog's host or a host ``options.dataHosts`` lists.
+Steps 2 and 3 are ``infrastructure/parquet_area.py``, which a Direct URL link
+and a bucket row read the same way. Every request goes through the transport
+(``infrastructure/remote_parquet.py``), to the catalog's host or a host
+``options.dataHosts`` lists.
 """
 
 from __future__ import annotations
@@ -31,7 +33,12 @@ from urllib.parse import urlsplit
 from utk_curio.backend.app.discovery.domain.errors import DiscoveryError, ProviderError
 from utk_curio.backend.app.discovery.domain.manifest import DiscoverySourceManifest, ResourceSpec
 from utk_curio.backend.app.discovery.domain.resource import DiscoveryResource
-from utk_curio.backend.app.discovery.infrastructure.remote_parquet import RemoteParquet, boxes_meet
+from utk_curio.backend.app.discovery.infrastructure import parquet_area
+from utk_curio.backend.app.discovery.infrastructure.remote_parquet import (
+    MAX_FOOTER_BYTES,
+    RemoteParquet,
+    boxes_meet,
+)
 from utk_curio.backend.app.discovery.providers.autark_osm import LoadedLayer
 from utk_curio.backend.app.discovery.providers.mapillary import host_allowed
 
@@ -45,9 +52,6 @@ ASSET = "aws"
 
 #: Bytes one download may fetch, footers and row groups together.
 MAX_JOB_BYTES = 512 * 1024 * 1024
-
-#: The longest footer read.
-MAX_FOOTER_BYTES = 16 * 1024 * 1024
 
 #: Where Overture says how to credit each theme.
 ATTRIBUTION_URL = "https://docs.overturemaps.org/attribution/"
@@ -104,6 +108,8 @@ class OvertureService:
         cancelled: Callable[[], bool] | None = None,
     ) -> list[LoadedLayer]:
         """The rows of *spec*'s feature type whose box meets the area in *values*."""
+        import pyarrow.compute as pc
+
         box = (values.get("area") or {}).get("box")
         if not box:
             raise DiscoveryError("Overture Maps needs an area: a box")
@@ -116,24 +122,16 @@ class OvertureService:
         files = self._files_meeting(collection, box)
         if stage is not None:
             stage(f"Reading the index of {len(files)} {'file' if len(files) == 1 else 'files'}…")
-        plans = []
-        planned = 0
-        for url, size in files:
-            remote = RemoteParquet(
-                self.transport, url, size, max_footer_bytes=MAX_FOOTER_BYTES, cancelled=cancelled
-            )
-            groups = remote.row_groups_meeting(box)
-            planned += sum(len(span) for span in remote.requests) + remote.planned_bytes(groups)
-            if groups:
-                plans.append((remote, groups))
-        if planned > MAX_JOB_BYTES:
-            raise DiscoveryError(
-                f"this area needs {planned / 2**20:,.0f} MB of Overture data, more than one download "
-                f"reads ({MAX_JOB_BYTES // 2**20} MB); draw a smaller area"
-            )
+        remotes = [
+            RemoteParquet(self.transport, url, size, max_footer_bytes=MAX_FOOTER_BYTES, cancelled=cancelled)
+            for url, size in files
+        ]
+        parts = parquet_area.plan(remotes, box, bound=MAX_JOB_BYTES, what="Overture data")
         layer = str(spec.options.get("layer") or spec.id)
         path = out_dir / f"{layer}.parquet"
-        rows = self._write(plans, box, spec.options.get("subtype"), path, stage=stage)
+        subtype = spec.options.get("subtype")
+        keep = None if subtype is None else (lambda table: pc.equal(table.column("subtype"), subtype))
+        rows = parquet_area.write(parts, path, keep=keep, stage=stage)
         return [LoadedLayer(layer=layer, path=path, features=rows)]
 
     # ── the catalog ────────────────────────────────────────────────────────
@@ -183,90 +181,6 @@ class OvertureService:
                 raise ProviderError(f"Overture's item {item.get('id')} names a file on a host its source does not list")
             files.append((url, size))
         return files
-
-    # ── the rows ───────────────────────────────────────────────────────────
-
-    def _write(self, plans, box, subtype, path: Path, *, stage) -> int:
-        """Keep the rows meeting *box* (and of *subtype*, when one is named),
-        written to *path* as GeoParquet. Returns the rows kept."""
-        import pyarrow.compute as pc
-        import pyarrow.parquet as pq
-
-        west, south, east, north = box
-        total_groups = sum(len(groups) for _, groups in plans)
-        # The rows are written here first: the box of the rows kept, which the
-        # final file's metadata carries, is known only once they all are.
-        part = path.with_name(path.name + ".part")
-        writer = None
-        schema = None
-        geo: dict[str, Any] = {}
-        extent = [float("inf"), float("inf"), float("-inf"), float("-inf")]
-        rows = 0
-        done = 0
-        try:
-            for remote, groups in plans:
-                for g in groups:
-                    done += 1
-                    if stage is not None:
-                        stage(f"Downloading part {done:,} of {total_groups:,}…")
-                    table = remote.read_row_group(g)
-                    bbox = table.column("bbox").combine_chunks()
-                    xmin, ymin = bbox.field("xmin"), bbox.field("ymin")
-                    xmax, ymax = bbox.field("xmax"), bbox.field("ymax")
-                    keep = pc.and_(
-                        pc.and_(pc.less_equal(xmin, east), pc.greater_equal(xmax, west)),
-                        pc.and_(pc.less_equal(ymin, north), pc.greater_equal(ymax, south)),
-                    )
-                    if subtype is not None:
-                        keep = pc.and_(keep, pc.equal(table.column("subtype"), subtype))
-                    table = table.filter(pc.fill_null(keep, False))
-                    if table.num_rows == 0:
-                        continue
-                    bbox = table.column("bbox").combine_chunks()
-                    extent = [
-                        min(extent[0], pc.min(bbox.field("xmin")).as_py()),
-                        min(extent[1], pc.min(bbox.field("ymin")).as_py()),
-                        max(extent[2], pc.max(bbox.field("xmax")).as_py()),
-                        max(extent[3], pc.max(bbox.field("ymax")).as_py()),
-                    ]
-                    if writer is None:
-                        geo = remote.geo()
-                        schema = table.schema.remove_metadata()
-                        writer = pq.ParquetWriter(part, schema)
-                    try:
-                        table = table.replace_schema_metadata(None).cast(schema)
-                    except (ValueError, TypeError) as exc:
-                        raise ProviderError("Overture's files of one feature type disagree on their columns") from exc
-                    writer.write_table(table)
-                    rows += table.num_rows
-            if writer is not None:
-                writer.close()
-                writer = None
-                _with_geo(part, path, geo, extent)
-        finally:
-            if writer is not None:
-                writer.close()
-            part.unlink(missing_ok=True)
-        return rows
-
-
-def _with_geo(part: Path, path: Path, geo: dict[str, Any], extent: list[float]) -> None:
-    """*part*'s rows, copied a row group at a time to *path* with GeoParquet
-    ``geo`` metadata: the source file's, its geometry column's box made the
-    box of the rows kept."""
-    import pyarrow.parquet as pq
-
-    geo = json.loads(json.dumps(geo)) if geo else {}
-    primary = geo.get("primary_column") or "geometry"
-    geo.setdefault("version", "1.1.0")
-    geo["primary_column"] = primary
-    column = geo.setdefault("columns", {}).setdefault(primary, {"encoding": "WKB", "geometry_types": []})
-    column["bbox"] = [float(v) for v in extent]
-    source = pq.ParquetFile(part)
-    schema = source.schema_arrow.with_metadata({b"geo": json.dumps(geo).encode("utf-8")})
-    with pq.ParquetWriter(path, schema) as writer:
-        for g in range(source.num_row_groups):
-            writer.write_table(source.read_row_group(g).replace_schema_metadata(schema.metadata))
 
 
 __all__ = ["OvertureService", "STAC_BASE", "MAX_JOB_BYTES"]

@@ -12,27 +12,39 @@ applies, and under test the recorded corpus answers each range by its own key
 never left to the Parquet reader, so a recorded answer stays valid whatever
 the reader's own reading pattern is: pyarrow reads from the bytes already
 fetched, and a read outside them is an error rather than another request.
+
+A file whose size nobody gave (a pasted link) is asked for its first byte,
+and the answer's ``Content-Range`` says the size.
 """
 
 from __future__ import annotations
 
 import io
 import json
+import re
 import struct
 from dataclasses import dataclass
 from typing import Callable, Iterable
+from urllib.parse import urlsplit
 
-from utk_curio.backend.app.discovery.domain.errors import ProviderError
+from utk_curio.backend.app.discovery.domain.errors import DownloadTooLarge, ProviderError
 
 #: Parquet's magic, at both ends of a file.
 MAGIC = b"PAR1"
 
-#: The columns of a GeoParquet ``bbox`` covering, as the footer names them.
+#: The columns of a GeoParquet ``bbox`` covering, as the footer names them,
+#: when the file's ``geo`` metadata names none.
 BBOX_COLUMNS = ("bbox.xmin", "bbox.ymin", "bbox.xmax", "bbox.ymax")
 
 #: How much of a file's end the Parquet reader reads first, whatever its
 #: footer's length (Arrow's default footer read size).
 READER_TAIL_BYTES = 64 * 1024
+
+#: The longest footer read.
+MAX_FOOTER_BYTES = 16 * 1024 * 1024
+
+#: A ranged answer's ``Content-Range``: the bytes sent, and the file's size.
+_CONTENT_RANGE_RE = re.compile(r"^\s*bytes\s+\d+-\d+/(\d+)\s*$", re.IGNORECASE)
 
 
 def boxes_meet(a, b) -> bool:
@@ -111,44 +123,70 @@ class SparseFile(io.RawIOBase):
 
 
 class RemoteParquet:
-    """One remote Parquet file of known *size*, read in ranges.
+    """One remote Parquet file, read in ranges.
 
-    *fetch_ceiling* bounds each request: a server that ignores ``Range`` and
-    answers with the whole file is refused on its declared length instead of
-    being read.
+    Its *size* is given when it is known (a bucket's listing, a catalog), or
+    None for a link, which is then asked for it. Each request is bounded by
+    the bytes it asks for: a server that ignores ``Range`` and answers with
+    the whole file is refused on its declared length instead of being read.
     """
 
-    def __init__(self, transport, url: str, size: int, *, max_footer_bytes: int,
+    def __init__(self, transport, url: str, size: int | None, *, max_footer_bytes: int,
                  cancelled: Callable[[], bool] | None = None) -> None:
-        if size < 12:
-            raise ProviderError(f"{url} is too small to be a Parquet file")
         self.transport = transport
         self.url = url
-        self.size = size
         self.max_footer_bytes = max_footer_bytes
         self.cancelled = cancelled
-        self.file = SparseFile(size)
         self.requests: list[Span] = []
         self._metadata = None
+        self.size = size
+        self.file: SparseFile | None = None
+        if size is not None:
+            self._sized(size)
+
+    def _sized(self, size: int) -> None:
+        if size < 12:
+            raise ProviderError(f"{self.url} is too small to be a Parquet file")
+        self.size = size
+        self.file = SparseFile(size)
 
     def fetch(self, span: Span) -> bytes:
         """The bytes of *span*, in one request."""
+        return self._fetch(span)[0]
+
+    def _fetch(self, span: Span) -> tuple[bytes, dict]:
+        """The bytes of *span* and the answer's headers."""
         from utk_curio.backend.app.discovery.providers.autark_osm import Cancelled
 
         if self.cancelled is not None and self.cancelled():
             raise Cancelled()
         chunks: list[bytes] = []
-        self.transport.download(
-            self.url, chunks.append, max_bytes=len(span), ceiling=len(span),
-            headers={"Range": span.header},
-        )
+        try:
+            result = self.transport.download(
+                self.url, chunks.append, max_bytes=len(span), ceiling=len(span),
+                headers={"Range": span.header},
+            )
+        except DownloadTooLarge as exc:
+            raise ProviderError(
+                f"{urlsplit(self.url).hostname or self.url} does not send parts of a file, so an Area "
+                "cannot be read from it; download the file without an Area"
+            ) from exc
         data = b"".join(chunks)
         if len(data) != len(span):
             raise ProviderError(
                 f"asked {self.url} for {len(span):,} bytes at {span.start:,} and got {len(data):,}"
             )
         self.requests.append(span)
-        return data
+        return data, dict(getattr(result, "headers", None) or {})
+
+    def _probe_size(self) -> None:
+        """Learn the file's size from a one-byte answer's ``Content-Range``."""
+        _data, headers = self._fetch(Span(0, 1))
+        sent = next((value for name, value in headers.items() if name.lower() == "content-range"), "")
+        match = _CONTENT_RANGE_RE.match(str(sent))
+        if match is None:
+            raise ProviderError(f"{self.url} answered a part of the file without saying how large the file is")
+        self._sized(int(match.group(1)))
 
     @property
     def metadata(self):
@@ -160,6 +198,8 @@ class RemoteParquet:
         if self._metadata is None:
             import pyarrow.parquet as pq
 
+            if self.file is None:
+                self._probe_size()
             tail = self.fetch(Span(self.size - 8, self.size))
             length = struct.unpack("<I", tail[:4])[0]
             if tail[4:] != MAGIC:
@@ -196,17 +236,37 @@ class RemoteParquet:
             stops.append(first + column.total_compressed_size)
         return Span(min(starts), max(stops))
 
-    def row_groups_meeting(self, box) -> list[int]:
-        """The row groups whose ``bbox`` statistics meet *box*.
+    def covering(self) -> tuple[str, str, str, str] | None:
+        """The columns holding each row's box, as the footer names them
+        (``bbox.xmin`` and so on), or None when the file has none.
 
-        A file with no ``bbox`` column, or a group missing a statistic, cannot
-        be narrowed: its every group is kept.
+        GeoParquet 1.1 names them in the primary geometry column's
+        ``covering``; a file that names none may still have Overture's.
         """
         meta = self.metadata
         paths = [meta.schema.column(c).path for c in range(meta.num_columns)]
-        if not all(name in paths for name in BBOX_COLUMNS):
+        geo = self.geo()
+        column = (geo.get("columns") or {}).get(geo.get("primary_column") or "geometry") or {}
+        named = ((column.get("covering") or {}).get("bbox")) or {}
+        try:
+            declared = tuple(".".join(named[key]) for key in ("xmin", "ymin", "xmax", "ymax"))
+        except (KeyError, TypeError):
+            declared = BBOX_COLUMNS
+        return declared if all(name in paths for name in declared) else None
+
+    def row_groups_meeting(self, box) -> list[int]:
+        """The row groups whose box statistics meet *box*.
+
+        A file with no box columns, or a group missing a statistic, cannot be
+        narrowed: its every group is kept.
+        """
+        meta = self.metadata
+        paths = [meta.schema.column(c).path for c in range(meta.num_columns)]
+        names = self.covering()
+        if names is None:
             return list(range(meta.num_row_groups))
-        where = {name: paths.index(name) for name in BBOX_COLUMNS}
+        where = {name: paths.index(name) for name in names}
+        xmin, ymin, xmax, ymax = names
         kept = []
         for g in range(meta.num_row_groups):
             group = meta.row_group(g)
@@ -214,10 +274,7 @@ class RemoteParquet:
             if any(s is None or not s.has_min_max for s in stats.values()):
                 kept.append(g)
                 continue
-            extent = (
-                stats["bbox.xmin"].min, stats["bbox.ymin"].min,
-                stats["bbox.xmax"].max, stats["bbox.ymax"].max,
-            )
+            extent = (stats[xmin].min, stats[ymin].min, stats[xmax].max, stats[ymax].max)
             if boxes_meet(extent, box):
                 kept.append(g)
         return kept
@@ -238,4 +295,4 @@ class RemoteParquet:
             self.file.drop(span.start)
 
 
-__all__ = ["RemoteParquet", "SparseFile", "Span", "boxes_meet", "BBOX_COLUMNS"]
+__all__ = ["RemoteParquet", "SparseFile", "Span", "boxes_meet", "BBOX_COLUMNS", "MAX_FOOTER_BYTES"]

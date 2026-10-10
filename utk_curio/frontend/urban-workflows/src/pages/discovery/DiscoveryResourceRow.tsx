@@ -94,6 +94,8 @@ export function DiscoveryResourceRow({
   const parameters = resource.parameters ?? [];
   const asksSomething = parameters.length > 0;
   const mustAsk = parameters.some((p) => p.required);
+  // A storage row that takes an Area is named after the place it covers.
+  const asksArea = parameters.some((p) => p.type === "area");
   const [filesOpen, setFilesOpen] = React.useState(false);
   // A portal row is held one format at a time: holding the CSV is not holding
   // the GeoJSON, so the row offers the format picked and not yet held. A
@@ -122,9 +124,12 @@ export function DiscoveryResourceRow({
   // A finished download counts for the format it fetched only. A row with no
   // format of its own (a pasted link) is whatever its file turned out to be.
   const jobFormat = (job?.dataset as { format?: string } | null | undefined)?.format;
+  // A pasted link's row downloads nothing more, so it stands for what its job
+  // landed as, all of the file or the part in an area.
+  const linkRow = !storage && !modelRow && !onDownload;
   const finished =
     job?.status === "completed" &&
-    !narrowedJob &&
+    (!narrowedJob || linkRow) &&
     (Boolean(storage) || !jobFormat || !format || jobFormat === format);
   const failed = job != null && (job.status === "failed" || job.status === "refused");
   const landedAt = (finished ? (modelRow ? job?.model?.id : job?.datasetId) : null) ?? heldId;
@@ -329,6 +334,7 @@ export function DiscoveryResourceRow({
         <DiscoveryAddDialog
           resource={resource}
           splitBy={splitBy}
+          titleFromPlace={asksArea}
           onCancel={() => setAdding(false)}
           onAdd={(body) => {
             setAdding(false);

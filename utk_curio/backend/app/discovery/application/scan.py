@@ -475,6 +475,16 @@ def group_name(group: Group) -> str:
     return spec.name
 
 
+def takes_area(manifest: DiscoverySourceManifest, spec: ResourceSpec) -> bool:
+    """Whether an add of *spec*'s rows takes an Area: a table of GeoParquet
+    files on a source that declares one (a bucket; a folder cannot)."""
+    return (
+        spec.kind == "table"
+        and spec.format == "parquet"
+        and any(p.id == "area" for p in manifest.declared_parameters(spec.id))
+    )
+
+
 def to_resource(manifest: DiscoverySourceManifest, group: Group) -> DiscoveryResource:
     fields = field_summary(group.spec, group.files)
     return DiscoveryResource(
@@ -492,6 +502,7 @@ def to_resource(manifest: DiscoverySourceManifest, group: Group) -> DiscoveryRes
         file_count=len(group.files),
         fields=tuple(fields),
         samples=tuple(f.relpath for f in group.files[:MAX_SAMPLES]),
+        parameter_ids=("area",) if takes_area(manifest, group.spec) else (),
     )
 
 

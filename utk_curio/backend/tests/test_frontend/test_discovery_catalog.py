@@ -36,6 +36,7 @@ from .utils import (
     require_owner_view,
     require_project_page,
     require_user_auth,
+    save_workflow_test_screenshot,
     stub_login_and_enter_workflow,
 )
 
@@ -567,3 +568,49 @@ def test_the_files_list_adds_only_the_picked_files(
     row.get_by_label("Pick survey/2024/IMG_0001.jpg").check()
     row.get_by_role("button", name="Add 1 picked file").click()
     expect(page.get_by_text("to your Data Catalog.")).to_be_visible(timeout=60000)
+
+
+DIRECT = "source.curio.direct-url@1"
+
+#: A made-up GeoParquet file the corpus serves one byte range at a time
+#: (``test_discovery/remote_parquet_fixture.py``), and a box over its first
+#: six blocks.
+BLOCKS_LINK = "https://portal.test/blocks.parquet"
+BLOCKS_BOX = ("-87.64", "41.87", "-87.62", "41.89")
+
+
+def test_a_geoparquet_link_downloads_only_the_area_asked_for(
+    app_frontend: "FrontendPage", current_server: str, page
+):
+    """#608: a link to a GeoParquet file takes an Area, and the dataset that
+    lands holds only the rows inside it, named after the file and the area."""
+    require_project_page()
+    require_user_auth()
+    _enter(page, app_frontend, current_server, username="discoveryarea", project="Discovery Area")
+    _goto_discovery(page, app_frontend, f"/catalog/discovery/{DIRECT}")
+
+    form = page.get_by_role("form", name="Add a file by its link")
+    form.get_by_label("Link to a file").fill(BLOCKS_LINK)
+    area = form.get_by_role("group", name="Area")
+    expect(area).to_be_visible(timeout=15000)
+    area.get_by_role("tab", name="Coordinates").click()
+    for label, value in zip(("West", "South", "East", "North"), BLOCKS_BOX):
+        area.get_by_label(label, exact=True).fill(value)
+    save_workflow_test_screenshot(
+        page, "discovery-link-area",
+        test_name="test_a_geoparquet_link_downloads_only_the_area_asked_for", fit_reactflow=False,
+    )
+    form.get_by_role("button", name="Download").click()
+
+    row = page.locator(f'[data-discovery-resource="{BLOCKS_LINK}"]')
+    view = row.get_by_role("button", name="View dataset")
+    expect(view).to_be_visible(timeout=120000)
+    view.click()
+    details = page.get_by_role("dialog", name="Dataset details")
+    expect(details).to_be_visible(timeout=30000)
+    expect(
+        details.get_by_role("heading", name="blocks.parquet, -87.6400, 41.8700 to -87.6200, 41.8900")
+    ).to_be_visible(timeout=30000)
+    # Total features, or records: the six blocks inside the box, of twenty.
+    total = details.locator("dt", has_text="Total").first.locator("xpath=following-sibling::dd[1]")
+    expect(total).to_have_text("6", timeout=30000)

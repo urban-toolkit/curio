@@ -30,6 +30,9 @@ from utk_curio.backend.app.discovery.providers.storage_base import (
 
 MAX_PAGES = 400
 
+#: The parameters this provider reads: an area, for a GeoParquet table row.
+PARAMETER_IDS = ("area",)
+
 _NEXT_RE = re.compile(r'<([^>]+)>\s*;\s*rel="?next"?')
 
 

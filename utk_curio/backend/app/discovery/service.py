@@ -707,6 +707,7 @@ class DiscoveryService:
                             refresh=refresh,
                             filters=filters,
                             files=files,
+                            parameters=values,
                             progress=_progress,
                             items=_items,
                             stage=_stage,
@@ -918,10 +919,11 @@ def _refusal(manifest: DiscoverySourceManifest, group: scanning.Group | None) ->
     files; None when it would not, or when the row is not a storage row.
 
     Asked on every request rather than kept with the scan, which every user
-    shares, so it follows the limits as they are now."""
+    shares, so it follows the limits as they are now. A row that takes an
+    Area is not refused for its files' sizes: an Area reads only part of them."""
     if group is None:
         return None
-    return add_refusal(manifest, group.spec, group.files)
+    return add_refusal(manifest, group.spec, group.files, for_area=scanning.takes_area(manifest, group.spec))
 
 
 def _parameters_for(manifest: DiscoverySourceManifest, resource) -> tuple:
