@@ -76,8 +76,8 @@ built-in nodes, with nothing extra to declare.
    becomes this node's output. Run it until it does what you want.
 2. Click the **cog** on the node header to open **Node settings**. Set the label,
    the port types, and the editor mode.
-3. Click **Save as package node…**, then **New package…**. Give it a package id
-   (reverse-domain, e.g. `me.roughness`).
+3. Click **Save as package node…**, pick **New package…** as the destination
+   package, and give it a name.
 4. The canvas node rebinds to your new package's kind. It is now in the palette,
    and it survives a restart.
 

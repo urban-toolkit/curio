@@ -32,11 +32,12 @@ cd /srv/curio
 mkdir -p instance .curio datasets
 ```
 
-Create `/srv/curio/docker-compose.site.yml` with Curio's arguments for this site: the address the browser reaches the backend at, and the path the app is served under. Both must match the Caddy paths in step 2.
+Create `/srv/curio/docker-compose.site.yml` with Curio's arguments for this site: the address the browser reaches the backend at, and the path the app is served under. Both must match the Caddy paths in step 2. The `ports` line publishes the backend and the frontend on loopback only, so they are reached through Caddy (`!override` needs Docker Compose 2.24.4 or newer).
 
 ```yaml
 services:
   curio:
+    ports: !override ["127.0.0.1:5002:5002", "127.0.0.1:8080:8080"]
     command: ["--backend-url", "https://lab-name.your-uni.edu/curio/api", "--base-path", "/curio"]
 ```
 
@@ -304,12 +305,12 @@ A second checkout running on different ports under a different path lets you tes
 | Published ports | 5002 / 8080 | 5012 / 8090 |
 | Public URL | `lab-name.your-uni.edu/curio/` | `lab-name.your-uni.edu/curio-dev/` |
 
-Clone into `/srv/curio-dev` and write its `docker-compose.site.yml`, which also moves the stack to host ports of its own (`!override` needs Docker Compose 2.24.4 or newer):
+Clone into `/srv/curio-dev` and write its `docker-compose.site.yml`, which also moves the stack to host ports of its own:
 
 ```yaml
 services:
   curio:
-    ports: !override ["5012:5002", "8090:8080"]
+    ports: !override ["127.0.0.1:5012:5002", "127.0.0.1:8090:8080"]
     command: ["--backend-url", "https://lab-name.your-uni.edu/curio-dev/api", "--base-path", "/curio-dev"]
 ```
 
@@ -401,12 +402,12 @@ account Curio runs as, fragments of other users' node code, and any values
 their tracebacks interpolated.
 
 There is no redaction setting. If that exposure is not acceptable for your
-deployment, block `/api/monitor/errors` (or `/monitor` as a whole) at the
-reverse proxy. In Caddy:
+deployment, block the page and its API at the reverse proxy. In the Caddy site
+of step 2, add:
 
 ```caddyfile
-@monitor path /monitor /api/monitor*
-respond @monitor 404
+handle /curio/monitor* { respond 404 }
+handle /curio/api/api/monitor* { respond 404 }
 ```
 
 Browser error reports arrive on `POST /api/monitor/errors/client`, which is
@@ -430,7 +431,6 @@ flooding it cannot push real errors out of the log.
 
 - **Decide who may read `/monitor`.** It is public and unauthenticated on every instance, and its error log carries raw tracebacks including server paths and fragments of user node code. Block it at the reverse proxy if that is not acceptable; see [The monitor page](#the-monitor-page).
 - **Verify auth is on**: `docker compose logs curio | grep CURIO_NO_AUTH` must print `CURIO_NO_AUTH=0`. If it prints `1`, you started without the `docker-compose.deploy.yml` overlay and the instance is open to anyone.
-- Set a real `SECRET_KEY`. Auth is on for any real deployment, so this is not optional.
 - Keep `--no-allow-publish` (the overlay supplies it). Without it, any signed-in user can publish into the shared node catalog, including over a package already there. See [NODE-CATALOG.md § Operator notes](NODE-CATALOG.md#operator-notes).
 - `--no-allow-publish` covers the shared Data Catalog too. Without it, any signed-in user other than a guest can publish a dataset there; only the original publisher can unpublish or delete it. See [DATA-CATALOG.md](DATA-CATALOG.md#operator-notes).
 - **Library installs are on, and scoped per user.** With isolation on (below), an install goes to `.curio/exec-overlays/users/<key>/` rather than the interpreter every user's nodes share. Three limits: a user's tree is readable by other users' node code (the execution account is shared), there is no size quota, so disk is the operator's to watch, and the shared guest cannot install at all.
@@ -445,7 +445,7 @@ flooding it cannot push real errors out of the log.
   ```
 
   The `isolation` field must read `fork`. The version badge in the UI shows the same answer.
-- **Isolation chmods several paths on the host, permanently.** At every boot the sandbox tightens the bind-mounted `./instance` to `0700` with its files at `0600`, the three stores `./.curio/data`, `./.curio/users` and `./datasets` to `0700`, and `./.env` to `0600`. It changes **modes only, never ownership**, so each path keeps whatever user created it. The three stores keep their *file* modes because a staged input reaches the child as a hardlink, which shares its source's inode. Any other host process that reads these paths, such as a backup job or an operator shell as a third user, loses access and needs to run as root or as the owning account.
+- **Isolation chmods several paths on the host, permanently.** At every boot the sandbox tightens the bind-mounted `./instance` to `0700` with its files at `0600`, the three stores `./.curio/data`, `./.curio/users` and `./datasets` to `0700`. It changes **modes only, never ownership**, so each path keeps whatever user created it. The three stores keep their *file* modes because a staged input reaches the child as a hardlink, which shares its source's inode. Any other host process that reads these paths, such as a backup job or an operator shell as a third user, loses access and needs to run as root or as the owning account.
 - **The boundary is node code against the host, not user against user.** One OS account (`curio-exec`) is what every Curio user's nodes run as. What keeps two users' data apart is session scoping in the parent process, which no child can reach. Because all children share a uid, two nodes running concurrently can reach each other's scratch directories and find each other through `/proc`. Treat "another user's node ran at the same time" as within reach, and "another user's stored artifacts" as not, with one exception: the outputs a project SAVED are readable by anyone who can load that project, because that is what a shared dataflow or dashboard link shows.
 - **Relative writes from node code land in a per-user work directory**, `.curio/exec-scratch/users/<key>/`, which is `0700` and owned by `curio-exec`. It persists between runs and is the only place a node may write; a relative write anywhere else fails, because the launch tree is root-owned. Node output still reaches the user's store, but through the parent's validated persist step rather than the child's filesystem access. Nothing cleans this directory automatically, so include it when you size the disk.
 - **Node authoring is still close to shell access.** A node author cannot read `instance/urban_workflow.db` or another session's artifacts, and cannot open a socket, but can run arbitrary Python within the child's limits, and writes are bounded by ownership and `RLIMIT_FSIZE` rather than confined to a directory. Give accounts accordingly. See [ARCHITECTURE.md § Sandbox Isolation](ARCHITECTURE.md#sandbox-isolation).

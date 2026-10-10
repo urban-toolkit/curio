@@ -35,6 +35,8 @@ python curio.py start --deploy --collab
 python curio.py start --deploy --collab --collab-origins http://192.168.1.5:8080
 ```
 
+`--deploy` gives each person an account of their own, which is how Curio tells collaborators apart. It needs a host that can isolate node execution, such as Curio's Docker image; see [DEPLOYMENT.md](DEPLOYMENT.md).
+
 Open the project URL (`http://<host>:8080/dataflow/<UUID>`) on each collaborator's browser. The `--collab` flag is read at runtime by the frontend via `/api/config/public`, so **no frontend rebuild is required** to flip the flag.
 
 | Flag | Variable | Default | Purpose |

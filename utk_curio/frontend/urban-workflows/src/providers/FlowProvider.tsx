@@ -477,7 +477,7 @@ const FlowProvider = ({
                             void serverRun.startRun(target);
                         } else if (serverRun.serverRunActive) {
                             showToast(
-                                "A run is already in progress. Wait for it to finish, or cancel it from the Run All button.",
+                                "A run is already in progress. Wait for it to finish, or cancel it with the stop button.",
                                 "info",
                             );
                         } else {

@@ -383,7 +383,7 @@ export function useServerRun({
     const startRun = async (targetNodeId?: string) => {
         if (followedRef.current || startingRef.current || playAllStateRef.current != null) {
             showToast(
-                "A run is already in progress. Wait for it to finish, or cancel it from the Run All button.",
+                "A run is already in progress. Wait for it to finish, or cancel it with the stop button.",
                 "info",
             );
             return;
