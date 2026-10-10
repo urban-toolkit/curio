@@ -90,7 +90,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 | `--models-root PATH` | `<repo_root>/models/` | Where the shipped Model Catalog models are read from |
 | `--packages-root PATH` | `<repo_root>/packages/` | Where the shared Node Catalog is read from and published to. Start it from a copy of `packages/`: the built-in nodes are installed from it |
 | `--save-node-outputs` / `--no-save-node-outputs` | off | Whether a new node's **Save output dataset** toggle starts on. Users can still flip it on each node |
-| `--allow-publish` / `--no-allow-publish` | on | Whether the node and data catalogs allow Publish/Unpublish |
+| `--allow-publish` / `--no-allow-publish` | on | Whether the node, data and agent catalogs allow Publish/Unpublish |
 | `--testing` | off | Run against the dedicated test database under `.curio/test/` and mount the test-only `/api/testing/*` routes. Also the one exemption to `--deploy` requiring isolated execution. Never for a real instance: those routes reset the database and sign in as any user without a password |
 | `--with-examples` | off | Seed the use cases, examples and tests from `docs/examples/` |
 | `--reseed` | off | Force re-seeding catalog packages into the guest package store |
@@ -287,7 +287,7 @@ To add an LLM configuration:
 2. Open **API Settings** from the top bar (on the canvas it opens on the right).
 3. On the **API keys** tab, click **Add configuration**.
 4. In **Kind**, choose **Language model**.
-5. Type a **Label**, choose the **Provider**, paste the **API key**, and type the **Model**, or click **Fetch models** and pick one. **Custom** also asks for the **Base URL**.
+5. Type a **Label**, choose the **Provider**, paste the **API key**, and type the **Model** (the provider's default model is shown in grey), or click **Fetch models** and pick one. **Custom** also asks for the **Base URL**.
 6. Click **Add configuration**. The configuration's row shows in the list, with **saved** in its **Key** column when you gave a key.
 
 Configurations and choices belong to your account and apply to all of your projects; the fields, the row actions and which configuration answers a run are in [AGENT-CATALOG.md part 4](AGENT-CATALOG.md#4-llm-configurations).

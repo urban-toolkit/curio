@@ -174,8 +174,8 @@ def main():
     parser.add_argument(
         "--allow-publish", action=argparse.BooleanOptionalAction, default=True,
         help=(
-            "Allow the catalog Publish/Unpublish actions (sets "
-            "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH=1, the previous default). "
+            "Allow Publish/Unpublish in the node, data and agent catalogs (sets "
+            "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH=1). "
             "Pass --no-allow-publish to lock these author actions down."
         ),
     )

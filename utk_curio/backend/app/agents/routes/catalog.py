@@ -21,6 +21,7 @@ from utk_curio.backend.app.agents.infrastructure import provider_config as agent
 from utk_curio.backend.app.agents.infrastructure import providers as agents_providers
 from utk_curio.backend.app.agents.infrastructure import llm_configs as agents_llm_configs
 from utk_curio.backend.app.agents.repositories import model_catalog as agents_model_catalog
+from utk_curio.backend.app.packages.routes import common as packages_routes_common
 from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.app.users.capabilities import settings_refusal
 from utk_curio.backend.app.users.dependencies import require_auth
@@ -276,6 +277,8 @@ def read_definition(coord: str):
 @agents_bp.route("/publications", methods=["POST"])
 @require_auth
 def publish_agent():
+    if not packages_routes_common.CURIO_ALLOW_FACTORY_CATALOG_PUBLISH:
+        return packages_routes_common.catalog_publish_disabled()
     body = request.get_json(silent=True) or {}
     coord = body.get("coord")
     if not isinstance(coord, str):
@@ -290,6 +293,8 @@ def publish_agent():
 @agents_bp.route("/publications/<coord>", methods=["DELETE"])
 @require_auth
 def unpublish_agent(coord: str):
+    if not packages_routes_common.CURIO_ALLOW_FACTORY_CATALOG_PUBLISH:
+        return packages_routes_common.catalog_publish_disabled()
     try:
         payload = agents_services.unpublish_agent(_user_dir_key(g.user), coord)
     except AgentServiceError as exc:

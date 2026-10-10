@@ -15,10 +15,11 @@
  * judged worth more than that distinction, so the button borrows the label and
  * the intro carries the nuance ("makes it available to all your projects").
  */
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 import type { AgentCard } from "../../services/agents";
 import { agentCategoryKey } from "../../components/menus/nodes/agentsPalette/agentCategoryStyle";
+import { packagesApi } from "../../services/packages";
 import type { SortMode } from "../../services/packages";
 import browseStyles from "../catalog/CatalogBrowseLayout.module.css";
 import { AgentCatalogBrowseCard } from "./AgentCatalogBrowseCard";
@@ -52,6 +53,8 @@ export const AgentCatalogBrowse: React.FC = () => {
     y: number;
     agent: AgentCard;
   } | null>(null);
+  // The operator's publish switch, read as the Data Catalog page reads it.
+  const [catalogPublishAllowed, setCatalogPublishAllowed] = useState(false);
   const {
     search,
     setSearch,
@@ -79,6 +82,17 @@ export const AgentCatalogBrowse: React.FC = () => {
     onUnpublish,
     reload,
   } = useAgentCatalogBrowse();
+
+  useEffect(() => {
+    void packagesApi
+      .factoryCapabilities()
+      .then((cap) => {
+        setCatalogPublishAllowed(cap.catalogPublish);
+      })
+      .catch(() => {
+        setCatalogPublishAllowed(false);
+      });
+  }, []);
 
   const runAgentAction = (id: CatalogCardActionId, agent: AgentCard) => {
     switch (id) {
@@ -235,7 +249,7 @@ export const AgentCatalogBrowse: React.FC = () => {
       <AgentCatalogBrowseDrawer
         agent={selectedAgent}
         busyCoord={busyCoord}
-        catalogPublishAllowed
+        catalogPublishAllowed={catalogPublishAllowed}
         onImport={(a) => void onImport(a)}
         onRemoveImport={(a) => void onRemoveImport(a)}
         onPublish={(a) => void onPublish(a)}

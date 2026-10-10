@@ -174,6 +174,43 @@ class TestPublish:
         assert not any(a["id"] == "agent.my-custom" for a in cat)
 
 
+class TestPublishSwitch:
+    """#861: ``--no-allow-publish`` refuses agent Publish and Unpublish in the
+    API, with the same 403 and message as node packages and datasets."""
+
+    def _published_agent(self, client, user, token):
+        coord = _write_def(user, "agent.my-custom", "1.0.0")
+        client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
+        assert client.post("/api/agents/publications", json={"coord": coord}, headers=_auth(token)).status_code == 201
+        return coord
+
+    def _catalog_ids(self, client, token):
+        return {a["id"] for a in client.get("/api/agents/catalog", headers=_auth(token)).get_json()["agents"]}
+
+    def test_publish_is_refused_with_publishing_off(self, client, user_and_token, tmp_curio, monkeypatch):
+        from utk_curio.backend.app.packages.routes import common as packages_routes_common
+
+        user, token = user_and_token
+        coord = _write_def(user, "agent.my-custom", "1.0.0")
+        client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
+        monkeypatch.setattr(packages_routes_common, "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", False)
+        r = client.post("/api/agents/publications", json={"coord": coord}, headers=_auth(token))
+        assert r.status_code == 403, r.get_data(as_text=True)
+        assert r.get_json()["error"] == packages_routes_common.CATALOG_PUBLISH_DISABLED_MESSAGE
+        assert "agent.my-custom" not in self._catalog_ids(client, token)
+
+    def test_unpublish_is_refused_with_publishing_off(self, client, user_and_token, tmp_curio, monkeypatch):
+        from utk_curio.backend.app.packages.routes import common as packages_routes_common
+
+        user, token = user_and_token
+        coord = self._published_agent(client, user, token)
+        monkeypatch.setattr(packages_routes_common, "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", False)
+        r = client.delete(f"/api/agents/publications/{coord}", headers=_auth(token))
+        assert r.status_code == 403, r.get_data(as_text=True)
+        assert r.get_json()["error"] == packages_routes_common.CATALOG_PUBLISH_DISABLED_MESSAGE
+        assert "agent.my-custom" in self._catalog_ids(client, token)
+
+
 class TestUnpublishKeepsAddersCopies:
     """#438: adding a published agent copies it into the adder's store, as the
     Data Catalog does with a shared dataset and the Node Catalog with a

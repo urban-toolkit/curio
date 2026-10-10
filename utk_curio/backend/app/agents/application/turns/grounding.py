@@ -491,16 +491,16 @@ def _grounding_context(
     base: dict | None = None,
     is_data_loading: bool | None = None,
     request_texts: tuple = (),
+    requested_ids=(),
 ) -> "source_grounding.GroundingContext":
     """dev/114 (DEC-072): everything the gate needs for ONE mint — catalog
     paths, the conversation's evidence, the run-budgeted prober, and the
     grant-aware corrective routes. ``base`` (a Solve batch's precomputed
     catalog paths / texts / verified map) replaces the per-mint reads.
 
-    #411: the catalog ids named in the message this run answers, or in
-    ``request_texts`` (a Solve node's own goal), are the datasets the content
-    must read. An id in an earlier turn, the dataflow's task or another
-    node's goal restricts nothing, so those texts are not read for it."""
+    #411: the datasets the content must read are ``_requested_dataset_ids``
+    plus ``requested_ids`` (the catalog rows the user confirmed for a Solve
+    node)."""
     from utk_curio.backend.app.packages import service as packages_services
 
     canonical = packages_services.canonical_template_id(node_type) if node_type else ""
@@ -580,10 +580,22 @@ def _grounding_context(
         secret_values=lambda names: secret_values(
             [f'curio_secret("{n}")' for n in names]
         ),
-        requested_dataset_ids=source_grounding.named_dataset_ids(
-            [loop_ctx.get("message"), *request_texts], catalog_ids,
+        requested_dataset_ids=(
+            _requested_dataset_ids(loop_ctx, request_texts, catalog_ids) | set(requested_ids)
         ),
     )
+
+
+def _requested_dataset_ids(loop_ctx: dict, request_texts: tuple, catalog_ids: dict) -> set[str]:
+    """#411: the catalog ids named in the message this run answers, or in
+    ``request_texts`` (a Solve node's own goal). #867: a message that names
+    none, such as "go ahead", acts on the user's previous message, so the ids
+    that one names are requested. An id in an older turn, the dataflow's task
+    or another node's goal restricts nothing."""
+    named = source_grounding.named_dataset_ids([loop_ctx.get("message"), *request_texts], catalog_ids)
+    if named:
+        return named
+    return source_grounding.named_dataset_ids([loop_ctx.get("previous_message")], catalog_ids)
 
 
 def _gate_generated_content(
@@ -598,6 +610,8 @@ def _gate_generated_content(
     extra_texts: tuple = (),
     base: dict | None = None,
     is_data_loading: bool | None = None,
+    request_texts: tuple = (),
+    requested_ids=(),
 ) -> tuple["source_grounding.GroundingVerdict", str | None]:
     """The ONE call every agent-authored-content boundary makes (dev/114):
     ``(verdict, refusal_text | None)``. The refusal is model-correctable
@@ -605,6 +619,7 @@ def _gate_generated_content(
     ctx = _grounding_context(
         user_key, project_id, loop_ctx, node_type=node_type, params=params,
         extra_texts=extra_texts, base=base, is_data_loading=is_data_loading,
+        request_texts=request_texts, requested_ids=requested_ids,
     )
     engine_name = engine if isinstance(engine, str) and engine else "python"
     verdict = source_grounding.check_grounding(code, engine_name, ctx)
