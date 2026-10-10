@@ -287,7 +287,7 @@ To add an LLM configuration:
 2. Open **API Settings** from the top bar (on the canvas it opens on the right).
 3. On the **API keys** tab, click **Add configuration**.
 4. In **Kind**, choose **Language model**.
-5. Type a **Label**, choose the **Provider**, paste the **API key**, and type the **Model**, or click **Fetch models** and pick one. **Custom** also asks for the **Base URL**.
+5. Type a **Label**, choose the **Provider**, paste the **API key**, and type the **Model** (the provider's default model is shown in grey), or click **Fetch models** and pick one. **Custom** also asks for the **Base URL**.
 6. Click **Add configuration**. The configuration's row shows in the list, with **saved** in its **Key** column when you gave a key.
 
 Configurations and choices belong to your account and apply to all of your projects; the fields, the row actions and which configuration answers a run are in [AGENT-CATALOG.md part 4](AGENT-CATALOG.md#4-llm-configurations).
