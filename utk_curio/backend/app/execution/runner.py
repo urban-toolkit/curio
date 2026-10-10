@@ -196,16 +196,23 @@ def _http_exec(endpoint: str, payload: dict) -> dict:
     """POST one node execution to the sandbox; raises on transport failure
     (the caller maps that to an INFRASTRUCTURE outcome, never a node error).
     Carries the sandbox shared secret like the API bridge does."""
+    import contextlib
+
     import requests as _req
+
+    from utk_curio.backend.app.execution.sandbox_client import exec_turn
 
     seconds = exec_timeout_s()
     try:
-        resp = _req.post(
-            f"{_sandbox_url()}{endpoint}",
-            json=payload,
-            headers=sandbox_headers(),
-            timeout=(SANDBOX_CONNECT_TIMEOUT_S, seconds),
-        )
+        # A Python run waits for its turn as a node run does, so the timeout
+        # covers the run and not the wait (#863).
+        with exec_turn() if endpoint == "/exec" else contextlib.nullcontext():
+            resp = _req.post(
+                f"{_sandbox_url()}{endpoint}",
+                json=payload,
+                headers=sandbox_headers(),
+                timeout=(SANDBOX_CONNECT_TIMEOUT_S, seconds),
+            )
     except _req.exceptions.Timeout as exc:  # dev/115: the node's behaviour, not ours
         raise ExecutionTimeout(seconds) from exc
     if resp.status_code == 401:
