@@ -138,6 +138,13 @@ def _set_auto_run(page, on: bool) -> None:
     expect(_toggle(page)).to_have_count(0)
 
 
+def _frame(page, test_name: str) -> None:
+    """The whole dataflow, with the mouse on empty canvas: the last click (a menu
+    row, Run All) otherwise leaves a node's or a button's hover look in the frame."""
+    page.mouse.move(1260, 440)
+    save_workflow_test_screenshot(page, FRAMES, test_name=test_name, sweep_toasts=True)
+
+
 def _no_new_run(backend: str, token: str, project_id: str, before: int, what: str) -> None:
     # Longer than a change takes to settle and a run takes to start.
     time.sleep(3)
@@ -178,7 +185,7 @@ def test_a_slider_move_runs_the_stale_nodes_only_when_auto_run_is_on(
     _move_slider(page, 3)
     _no_new_run(current_server, token, project_id, runs_before, "With auto-run off")
     assert "<<B 21>>" in read_node_output_text(page, BELOW_ID)
-    save_workflow_test_screenshot(page, FRAMES, test_name="slider-moved", sweep_toasts=True)
+    _frame(page, "slider-moved")
 
     # The View menu offers the toggle, off.
     _view_menu(page).click()
@@ -201,7 +208,7 @@ def test_a_slider_move_runs_the_stale_nodes_only_when_auto_run_is_on(
     auto = api_json(f"{current_server}/api/runs/{runs[0]['id']}", token)
     assert auto["trigger"] == "auto", auto
     assert sorted(s["nodeId"] for s in auto["steps"]) == sorted([READS_ID, BELOW_ID]), auto["steps"]
-    save_workflow_test_screenshot(page, FRAMES, test_name="slider-auto-run", sweep_toasts=True)
+    _frame(page, "slider-auto-run")
 
     # 4. Code typed into a node runs nothing.
     runs_before = len(runs)
