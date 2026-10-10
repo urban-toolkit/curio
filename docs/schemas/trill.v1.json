@@ -334,11 +334,11 @@
         },
         "spatialJoin": {
           "type": "object",
-          "description": "Settings of a Spatial Join node (#262). `nameProperty` is the polygon column used as the tag; absent means `name`, which is also what the backend assumes. `output` picks what the node emits: the tagged points (absent, the default) or the polygons with the count of points inside each.",
+          "description": "Settings of a Spatial Join node (#576). `predicate` is how input 0's shape must meet input 1's; absent means `intersects`, which is also what the backend assumes. `output` picks what the node emits: one row per matching pair with input 1's columns added (`pairs`, absent, the default) or input 1's rows, each with `point_count` (`counts`).",
           "additionalProperties": false,
           "properties": {
-            "nameProperty": { "type": "string", "minLength": 1 },
-            "output": { "type": "string", "enum": ["points", "polygons"] }
+            "predicate": { "type": "string", "enum": ["intersects", "within", "contains", "touches", "overlaps", "crosses", "nearest"] },
+            "output": { "type": "string", "enum": ["pairs", "counts"] }
           }
         },
         "simpleVis": {
@@ -669,7 +669,7 @@
         },
         "targetHandle": {
           "type": "string",
-          "description": "Explicit target handle id. The observed vocabulary is 'in', 'in/out', the input circles 'in_1', 'in_2', ... of a node whose one input port takes several edges ('in' is its first circle, and a node's code reads circle N as [!! input N !!]), and template-specific named ports such as 'in_points' and 'in_polygons'. Deliberately NOT pattern-constrained: the legal set is derived from the template's inputPorts in its package manifest, so a third-party package may name its ports anything. When absent, the reader infers a circle from an 'in_N' suffix of edge.id and otherwise falls back to 'in', which cannot recover a named port."
+          "description": "Explicit target handle id. The observed vocabulary is 'in', 'in/out', the input circles 'in_1', 'in_2', ... of a node whose one input port takes several edges ('in' is its first circle, and a node's code reads circle N as [!! input N !!]), and any named port a package template declares. A node with several input ports, such as the Spatial Join, takes one edge on each of 'in' and 'in_1'. Deliberately NOT pattern-constrained: the legal set is derived from the template's inputPorts in its package manifest, so a third-party package may name its ports anything. When absent, the reader infers a circle from an 'in_N' suffix of edge.id and otherwise falls back to 'in', which cannot recover a named port."
         },
         "metadata": {
           "type": "object",

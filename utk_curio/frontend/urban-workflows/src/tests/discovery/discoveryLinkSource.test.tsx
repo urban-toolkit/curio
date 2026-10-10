@@ -133,6 +133,63 @@ test('a finished link offers its dataset, not a Download that does nothing', asy
   expect(within(row).queryByRole('button', { name: 'Download' })).toBeNull();
 });
 
+test('a GeoParquet link takes an Area and sends it, and another link asks none (#608)', async () => {
+  const withArea: DiscoverySourceRow = {
+    ...source,
+    capabilities: { ...source.capabilities, formats: ['csv', 'geojson', 'parquet'] },
+    parameters: [
+      { id: 'area', type: 'area', label: 'Area', description: 'Keep only the rows inside a box.', required: false, accepts: ['box'] },
+    ],
+  };
+  const parquet = 'https://data.example.org/files/blocks.parquet';
+  apiFetch.mockImplementation((path: string) => {
+    if (path.includes('/acquire')) return Promise.resolve({ jobId: 'j1', status: 'queued' });
+    if (path.startsWith('/api/discovery/jobs/')) {
+      return Promise.resolve({
+        jobId: 'j1', status: 'completed', bytesRead: 10, totalBytes: 10, stageMessage: '', error: null,
+        datasetId: 'imported.xblocks',
+        dataset: { id: 'imported.xblocks', format: 'parquet', discoverySource: { parametersHash: 'h1' } },
+        alreadyPresent: false, unchanged: false, sourceId: 'source.curio.direct-url@1', resourceId: parquet,
+      });
+    }
+    return Promise.resolve(withArea);
+  });
+  renderPage();
+  await act(async () => {
+    await jest.advanceTimersByTimeAsync(0);
+  });
+  fireEvent.change(screen.getByLabelText('Link to a file'), { target: { value: LINK } });
+  expect(screen.queryByRole('group', { name: 'Area' })).toBeNull();
+
+  fireEvent.change(screen.getByLabelText('Link to a file'), { target: { value: parquet } });
+  const area = screen.getByRole('group', { name: 'Area' });
+  fireEvent.click(within(area).getByRole('tab', { name: 'Coordinates' }));
+  ['-87.64', '41.87', '-87.62', '41.89'].forEach((value, i) => {
+    fireEvent.change(within(area).getByLabelText(['West', 'South', 'East', 'North'][i]), { target: { value } });
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+    await jest.advanceTimersByTimeAsync(0);
+  });
+  const acquire = apiFetch.mock.calls.find(([path]) => String(path).includes('/acquire'));
+  expect(acquire?.[0]).toBe(
+    `/api/discovery/sources/source.curio.direct-url%401/resources/${encodeURIComponent(parquet)}/acquire`,
+  );
+  // Named by the server after the file and the area, so it is told apart
+  // from the whole file.
+  expect(JSON.parse(String(acquire?.[1]?.body))).toEqual({
+    parameters: { area: { box: [-87.64, 41.87, -87.62, 41.89] } },
+  });
+  // The part that landed is what the link's row offers, as a whole file is.
+  await act(async () => {
+    await jest.advanceTimersByTimeAsync(1000);
+  });
+  const row = document.querySelector(`[data-discovery-resource="${parquet}"]`) as HTMLElement;
+  expect(row).not.toBeNull();
+  expect(within(row).getByRole('button', { name: 'View dataset' })).toBeInTheDocument();
+  expect(within(row).queryByRole('button', { name: 'Download' })).toBeNull();
+});
+
 test('a link that is not https is refused before any request', async () => {
   apiFetch.mockResolvedValue(source);
   renderPage();

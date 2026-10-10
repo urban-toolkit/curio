@@ -24,7 +24,8 @@ from utk_curio.backend.app.discovery.domain.manifest import (
 )
 from utk_curio.backend.app.discovery.infrastructure.transport import DiscoveryTransport
 from utk_curio.backend.app.discovery.providers import (
-    arcgis, autark_osm, ckan, direct, google_streetview, mapillary, overture, socrata, wfs,
+    arcgis, autark_osm, ckan, direct, folder, google_streetview, huggingface, mapillary, overture, s3,
+    socrata, wfs,
 )
 from utk_curio.backend.app.discovery.providers.base import BaseProvider, DiscoveryProvider
 from utk_curio.backend.app.discovery.providers.folder import FolderStorage
@@ -96,7 +97,7 @@ assert set(PROVIDERS) | set(STORAGE_PROVIDERS) | set(SERVICE_PROVIDERS) | set(MO
 _MODULES = {
     "socrata": socrata, "ckan": ckan, "arcgis": arcgis, "wfs": wfs, "direct": direct,
     "autark-osm": autark_osm, "mapillary": mapillary, "google-streetview": google_streetview,
-    "overture": overture,
+    "overture": overture, "folder": folder, "s3": s3, "huggingface": huggingface,
 }
 for _type, _module in _MODULES.items():
     assert tuple(getattr(_module, "PARAMETER_IDS", ())) == PROVIDER_PARAMETER_IDS.get(_type, ()), (

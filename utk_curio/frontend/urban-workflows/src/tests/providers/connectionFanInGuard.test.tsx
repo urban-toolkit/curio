@@ -226,10 +226,10 @@ describe('onConnect fan-in guard (dev/67-3, DEC-051)', () => {
       makeNode('polys', 'curio.builtin/data-loading@1'),
       makeNode('sj', 'curio.builtin/spatial-join@1'),
     ]);
-    await connect('pts', 'sj', 'in_points');
-    await connect('polys', 'sj', 'in_polygons');
+    await connect('pts', 'sj', 'in');
+    await connect('polys', 'sj', 'in_1');
     expect(api.edges).toHaveLength(2); // per-handle, not per-node
-    await connect('pts', 'sj', 'in_polygons');
+    await connect('pts', 'sj', 'in_1');
     expect(api.edges).toHaveLength(2); // occupied handle refused
   });
 

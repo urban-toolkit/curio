@@ -1997,6 +1997,17 @@ class TestPlanFanInValidation:
          "outputPorts": [{"types": ["JSON"], "cardinality": "1"}]},
     ]
 
+    #: A computation node plus the Spatial Join's shape: two input ports, one
+    #: edge each, on the circles "in" (input 0) and "in_1" (input 1).
+    TWO_PORT_TEMPLATES = BOUNDED_TEMPLATES[:1] + [
+        {"id": "spatial-join", "label": "Spatial Join",
+         "category": "data", "engine": "python", "editor": "none", "hasCode": False,
+         "description": "Pair the rows of two inputs whose shapes meet.",
+         "inputPorts": [{"types": ["GEODATAFRAME"], "cardinality": "1"},
+                        {"types": ["GEODATAFRAME"], "cardinality": "1"}],
+         "outputPorts": [{"types": ["GEODATAFRAME"], "cardinality": "1"}]},
+    ]
+
     def _plan_reply(self, plan):
         import json as _json
 
@@ -2166,6 +2177,53 @@ class TestPlanFanInValidation:
             "edges[0].toHandle 'in_0': this node's inputs are \"in\", \"in_1\", \"in_2\", ..."
         ) in feedback
         assert "edges[1].toHandle" not in feedback
+
+    def test_two_edges_into_a_two_port_node_take_its_two_circles(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # #576: the Spatial Join's inputs follow its circles, "in" for input 0
+        # and "in_1" for input 1. A plan that names no circle put both of its
+        # edges on "in", so the join had input 0 twice and no input 1.
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        join = "curio.builtin/spatial-join"
+        plan = {"goal": "g",
+                "nodes": [self._node("a"), self._node("b"), self._node("j", join)],
+                "edges": [{"from": "a", "to": "j"}, {"from": "b", "to": "j"}]}
+        att_id, _ = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=[self._plan_reply(plan)], templates=self.TWO_PORT_TEMPLATES,
+        )
+        r = helper._run(client, token, alice_project, att_id)
+        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
+        assert proposal["status"] == "pending"
+        body = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        ).get_json()
+        applied = body["appliedGraph"]["edges"]
+        assert sorted(e["targetHandle"] for e in applied) == ["in", "in_1"]
+        spec = projects_storage.read_spec(_user_dir_key(user), alice_project)
+        assert sorted(e.get("targetHandle") for e in spec["dataflow"]["edges"]) == ["in", "in_1"]
+
+    def test_a_handle_past_a_two_port_nodes_circles_feeds_correction(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # #576: a two-port node's circles are "in" and "in_1", as a bounded
+        # growing node's are; "in_2" names no input of it.
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        join = "curio.builtin/spatial-join"
+        bad = {"goal": "g",
+               "nodes": [self._node("a"), self._node("b"), self._node("j", join)],
+               "edges": [{"from": "a", "to": "j"}, {"from": "b", "to": "j", "toHandle": "in_2"}]}
+        att_id, calls = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=[self._plan_reply(bad), "Fixed.\n" + helper._plan_tail()],
+            templates=self.TWO_PORT_TEMPLATES,
+        )
+        helper._run(client, token, alice_project, att_id)
+        feedback = calls[1][-1]["content"]
+        assert "edges[1].toHandle 'in_2': this node's inputs are \"in\", \"in_1\"" in feedback
 
 
 class TestPlanEdgeApply:

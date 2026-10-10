@@ -79,6 +79,9 @@ class DownloadTarget:
     #: - the transport is the only code that materialises one, and it adds the
     #: header itself from ``credential_slot``.
     headers: dict[str, str] = field(default_factory=dict)
+    #: A GeoParquet file read for this box, [west, south, east, north]: its
+    #: footer, then only the row groups that meet the box. Never downloaded whole.
+    area: tuple[float, float, float, float] | None = None
 
 
 @dataclass(frozen=True)

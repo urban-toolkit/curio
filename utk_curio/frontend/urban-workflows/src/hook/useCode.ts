@@ -66,12 +66,12 @@ type CreateCodeNodeOptions = {
     // #237: persisted per-node comments (canonical shape metadata.comments).
     // Opaque here - utils/nodeComments owns the mapping to live IComment.
     comments?: unknown[];
-    // #262: the Spatial Join's polygon property (canonical shape
+    // #576: the Spatial Join's operation and output (canonical shape
     // metadata.spatialJoin). #276: Simple View's image column
     // (metadata.simpleVis). Both were read off the spec in loadTrill and then
     // dropped here, because this factory builds node data from an explicit
     // list: the setting survived a save and never a load.
-    spatialJoin?: { nameProperty?: string; output?: "points" | "polygons" };
+    spatialJoin?: { predicate?: string; output?: "pairs" | "counts" };
     simpleVis?: { imageColumn?: string };
     // #412: a renamed node header (metadata.packageTemplateLabel), which the
     // header reads through resolveNodeDisplayLabel.
@@ -341,8 +341,8 @@ export function useCode(): IUseCode {
 
         for(const edge of trill.dataflow.edges){
 
-            // Respect explicit handle ids in the spec (named handles like
-            // `in_points` / `in_polygons` on spatial-join). Fall back to the
+            // Respect explicit handle ids in the spec (`in`, `in_1`, ... and
+            // any named handle a package declares). Fall back to the
             // legacy `in_N` suffix of the edge id, then to the default "in"
             // handle, as `named_input_slot` reads them in the runner.
             let targetHandle = edge.targetHandle || "in";
