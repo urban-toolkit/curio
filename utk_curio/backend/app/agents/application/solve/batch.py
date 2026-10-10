@@ -28,6 +28,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from utk_curio.backend.app.agents.application import attachments
+from utk_curio.backend.app.agents.application import dataset_resolution as agents_dataset_resolution
 from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
@@ -496,6 +497,23 @@ class SolveBatch:
         self.results[node_id] = {"status": "failed", "error": err, **trail, **extra}
         return {"nodeId": node_id, "status": "failed", "error": err, **trail, **extra}
 
+    def _gate_unverified(self, node_id: str, code: str) -> str | None:
+        """dev/114 (DEC-072): the gate on content written without running it.
+        #867: it holds the content to the datasets a verified Solve holds it
+        to, the ids the node's goal names and the catalog rows the user
+        confirmed for the node."""
+        node = self.nodes_by_id.get(node_id) or {}
+        _verdict, refusal = agents_grounding._gate_generated_content(
+            self.user_key, self.project_id, self.solve_ctx,
+            code=code, engine="python", node_type=node.get("type"),
+            base=self.solve_ground,
+            request_texts=(str(node.get("goal") or ""),),
+            requested_ids=source_grounding.confirmed_dataset_ids(
+                agents_dataset_resolution.confirmed_source(self.current["spec"], node_id)
+            ),
+        )
+        return refusal
+
     def _record_solved(self, node_id: str, text) -> dict:
         # The child replies with response formatting around the code —
         # only the executable content is written (dev/57).
@@ -504,11 +522,7 @@ class SolveBatch:
         # unverified URL never reaches the spec; the node fails LOUDLY
         # with the literal and the remedy named.
         node = self.nodes_by_id.get(node_id) or {}
-        _verdict, refusal = agents_grounding._gate_generated_content(
-            self.user_key, self.project_id, self.solve_ctx,
-            code=text_out, engine="python", node_type=node.get("type"),
-            base=self.solve_ground,
-        )
+        refusal = self._gate_unverified(node_id, text_out)
         if refusal:
             err = self._ungrounded_error(refusal, node_id)
             self.results[node_id] = {"status": "failed", "error": err[:300]}
@@ -1061,12 +1075,7 @@ class SolveBatch:
             self.delegations.append(child)
         # dev/114: the gate runs on the batch base BEFORE the
         # mint so the node's failure names the source.
-        _pnode = self.nodes_by_id.get(node_id) or {}
-        _v, _refusal = agents_grounding._gate_generated_content(
-            self.user_key, self.project_id, self.solve_ctx,
-            code=content.extract_node_content(text), engine="python",
-            node_type=_pnode.get("type"), base=self.solve_ground,
-        )
+        _refusal = self._gate_unverified(node_id, content.extract_node_content(text))
         if _refusal:
             err = self._ungrounded_error(_refusal, node_id)
             self.results[node_id] = {"status": "failed", "error": err[:300]}

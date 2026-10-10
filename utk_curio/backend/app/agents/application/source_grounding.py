@@ -176,8 +176,9 @@ class GroundingContext:
     #: values on the agent path); None when no store is reachable.
     secret_values: Callable[[list[str]], dict] | None = None
     #: #411: the Data Catalog datasets the user asked for: the ids named in the
-    #: message this run answers (or in a Solve node's own goal), and the catalog
-    #: rows the user confirmed for the node. Empty restricts nothing.
+    #: message this run answers (or in a Solve node's own goal; #867: for a
+    #: message that names none, in the user's previous message), and the
+    #: catalog rows the user confirmed for the node. Empty restricts nothing.
     requested_dataset_ids: set[str] = field(default_factory=set)
 
 
