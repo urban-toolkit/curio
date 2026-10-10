@@ -69,10 +69,10 @@
         "type": "curio.builtin/data-transformation",
         "x": 645,
         "y": 538,
-        "content": "# Spatial Join tags each photo with the polygon column its body names,\n# `neighborhood` here. Chicago's file calls it `pri_neigh`. Not `name`: a\n# photo already has one, its file name.\nimport geopandas as gpd\n\ngdf = arg.rename(columns={\"pri_neigh\": \"neighborhood\"})\n# __dict__, not plain assignment: pandas warns about creating a column via\n# a new attribute name, and that warning lands in this node's output with\n# an absolute site-packages path. NOT gdf.attrs, and do not just delete the\n# line: the sandbox reads this name (sandbox/util/parsers.py) and both of\n# those drop it silently from the emitted FeatureCollection.\ngdf.__dict__[\"metadata\"] = {\"name\": \"chicago_neighborhoods\"}\nreturn gdf\n",
+        "content": "# Each Spatial Join adds these polygons' columns to every photo it pairs\n# with one, and the charts read `neighborhood`. Chicago's file calls it\n# `pri_neigh`.\nimport geopandas as gpd\n\ngdf = arg.rename(columns={\"pri_neigh\": \"neighborhood\"})\n# __dict__, not plain assignment: pandas warns about creating a column via\n# a new attribute name, and that warning lands in this node's output with\n# an absolute site-packages path. NOT gdf.attrs, and do not just delete the\n# line: the sandbox reads this name (sandbox/util/parsers.py) and both of\n# those drop it silently from the emitted FeatureCollection.\ngdf.__dict__[\"metadata\"] = {\"name\": \"chicago_neighborhoods\"}\nreturn gdf\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Rename the neighborhood column from pri_neigh to neighborhood, the polygon column both Spatial Joins tag with.",
+        "goal": "Rename the neighborhood column from pri_neigh to neighborhood, the column the charts read after both Spatial Joins.",
         "metadata": {
           "keywords": []
         }
@@ -85,12 +85,9 @@
         "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Tag each photo point with the neighborhood it falls in. Wire Simple View to in_points (top) and Data Transformation to in_polygons (bottom).",
+        "goal": "Pair each photo with the neighborhood it falls in, adding the neighborhood's columns. Wire Simple View to input 0 (the top circle) and Data Transformation to input 1 (the bottom circle).",
         "metadata": {
-          "keywords": [],
-          "spatialJoin": {
-            "nameProperty": "neighborhood"
-          }
+          "keywords": []
         }
       },
       {
@@ -98,7 +95,7 @@
         "type": "curio.builtin/vis-vega",
         "x": 2515,
         "y": 0,
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"width\": 600,\n  \"height\": 600,\n  \"projection\": {\"type\": \"mercator\"},\n  \"layer\": [\n    {\n      \"transform\": [{\"filter\": \"datum.geometry != null\"}],\n      \"mark\": {\"type\": \"geoshape\", \"stroke\": \"#888\", \"strokeWidth\": 0.4},\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"neighborhood_dominant_class\",\n          \"type\": \"nominal\",\n          \"scale\": {\n            \"domain\": [\"road\", \"sidewalk\", \"building\", \"vegetation\", \"sky\", \"terrain\"],\n            \"range\":  [\"#4A90D9\", \"#8B5CF6\", \"#2ECC71\", \"#F5A623\", \"#3498DB\", \"#2C3E50\"]\n          },\n          \"legend\": {\"title\": \"Dominant class\"}\n        },\n        \"tooltip\": [\n          {\"field\": \"neighborhood\", \"title\": \"neighborhood\"},\n          {\"field\": \"neighborhood_dominant_class\", \"title\": \"dominant\"},\n          {\"field\": \"neighborhood_dominant_pct\",   \"title\": \"avg %\"}\n        ]\n      }\n    }\n  ]\n}",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"width\": 600,\n  \"height\": 600,\n  \"projection\": {\"type\": \"mercator\"},\n  \"layer\": [\n    {\n      \"transform\": [\n        {\"filter\": \"datum.geometry != null\"},\n        {\n          \"joinaggregate\": [\n            {\"op\": \"count\", \"as\": \"class_count\"},\n            {\"op\": \"mean\", \"field\": \"dominant_pct\", \"as\": \"class_pct\"}\n          ],\n          \"groupby\": [\"neighborhood\", \"dominant_class\"]\n        },\n        {\n          \"window\": [\n            {\"op\": \"first_value\", \"field\": \"dominant_class\", \"as\": \"neighborhood_dominant_class\"},\n            {\"op\": \"first_value\", \"field\": \"class_pct\", \"as\": \"neighborhood_dominant_pct\"}\n          ],\n          \"sort\": [{\"field\": \"class_count\", \"order\": \"descending\"}],\n          \"groupby\": [\"neighborhood\"],\n          \"frame\": [null, null]\n        }\n      ],\n      \"mark\": {\"type\": \"geoshape\", \"stroke\": \"#888\", \"strokeWidth\": 0.4},\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"neighborhood_dominant_class\",\n          \"type\": \"nominal\",\n          \"scale\": {\n            \"domain\": [\"road\", \"sidewalk\", \"building\", \"vegetation\", \"sky\", \"terrain\"],\n            \"range\":  [\"#4A90D9\", \"#8B5CF6\", \"#2ECC71\", \"#F5A623\", \"#3498DB\", \"#2C3E50\"]\n          },\n          \"legend\": {\"title\": \"Dominant class\"}\n        },\n        \"tooltip\": [\n          {\"field\": \"neighborhood\", \"title\": \"neighborhood\"},\n          {\"field\": \"neighborhood_dominant_class\", \"title\": \"dominant\"},\n          {\"field\": \"neighborhood_dominant_pct\", \"title\": \"avg %\", \"format\": \".2f\"}\n        ]\n      }\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Map of the photos: each colored by the dominant class of its neighborhood.",
@@ -153,12 +150,9 @@
         "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Tag the second model's photo points with their neighborhood. Wire Simple View to in_points (top) and Data Transformation to in_polygons (bottom).",
+        "goal": "Pair the second model's photos with their neighborhood. Wire Simple View to input 0 (the top circle) and Data Transformation to input 1 (the bottom circle).",
         "metadata": {
-          "keywords": [],
-          "spatialJoin": {
-            "nameProperty": "neighborhood"
-          }
+          "keywords": []
         }
       },
       {
@@ -191,11 +185,11 @@
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-5d2ac264-58a5-431d-83cd-d6785c6fd176out-7541416c-a960-4d64-b7f8-175b8978c563in_points",
+        "id": "reactflow__edge-5d2ac264-58a5-431d-83cd-d6785c6fd176out-7541416c-a960-4d64-b7f8-175b8978c563in",
         "source": "5d2ac264-58a5-431d-83cd-d6785c6fd176",
         "sourceHandle": "out",
         "target": "7541416c-a960-4d64-b7f8-175b8978c563",
-        "targetHandle": "in_points"
+        "targetHandle": "in"
       },
       {
         "id": "reactflow__edge-408e6f23-7b85-4470-9c91-f0c58c5769ddout-1cbd2725-458f-4617-86cd-2fd9d190f908in",
@@ -205,11 +199,11 @@
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-1cbd2725-458f-4617-86cd-2fd9d190f908out-7541416c-a960-4d64-b7f8-175b8978c563in_polygons",
+        "id": "reactflow__edge-1cbd2725-458f-4617-86cd-2fd9d190f908out-7541416c-a960-4d64-b7f8-175b8978c563in_1",
         "source": "1cbd2725-458f-4617-86cd-2fd9d190f908",
         "sourceHandle": "out",
         "target": "7541416c-a960-4d64-b7f8-175b8978c563",
-        "targetHandle": "in_polygons"
+        "targetHandle": "in_1"
       },
       {
         "id": "reactflow__edge-7541416c-a960-4d64-b7f8-175b8978c563out-8aaff248-9894-4ca8-b9a3-3b79216ce592in",
@@ -240,18 +234,18 @@
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-c3e85a7f-1d2b-4f90-8a6c-5b7e9d0f2a31out-d4f19b2e-6c3a-4e85-b7d0-9a1e2f3c4b56in_points",
+        "id": "reactflow__edge-c3e85a7f-1d2b-4f90-8a6c-5b7e9d0f2a31out-d4f19b2e-6c3a-4e85-b7d0-9a1e2f3c4b56in",
         "source": "c3e85a7f-1d2b-4f90-8a6c-5b7e9d0f2a31",
         "sourceHandle": "out",
         "target": "d4f19b2e-6c3a-4e85-b7d0-9a1e2f3c4b56",
-        "targetHandle": "in_points"
+        "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-1cbd2725-458f-4617-86cd-2fd9d190f908out-d4f19b2e-6c3a-4e85-b7d0-9a1e2f3c4b56in_polygons",
+        "id": "reactflow__edge-1cbd2725-458f-4617-86cd-2fd9d190f908out-d4f19b2e-6c3a-4e85-b7d0-9a1e2f3c4b56in_1",
         "source": "1cbd2725-458f-4617-86cd-2fd9d190f908",
         "sourceHandle": "out",
         "target": "d4f19b2e-6c3a-4e85-b7d0-9a1e2f3c4b56",
-        "targetHandle": "in_polygons"
+        "targetHandle": "in_1"
       },
       {
         "id": "reactflow__edge-d4f19b2e-6c3a-4e85-b7d0-9a1e2f3c4b56out-e5a27c3f-8d4b-4f16-a9e2-0b3c4d5e6f78in",

@@ -2,10 +2,9 @@
 
 ``loadTrill`` read ``metadata.spatialJoin`` off every spec node and then handed
 it to a node factory that builds ``node.data`` from an explicit option list the
-setting was not on, so the Spatial Join's polygon property survived every save
-and died on every load. Example 15 shipped with ``nameProperty: "zip"`` and ran
-with ``name``, warning that no polygon had one (#262). ``metadata.simpleVis``
-(#276) took the same path.
+setting was not on, so the Spatial Join's setting survived every save and died
+on every load (#262). ``metadata.simpleVis`` (#276) took the same path. Since
+#576 the Spatial Join's settings are its operation and its output.
 
 This asks the loaded node, not the file: right after the canvas opens, the
 control on the Spatial Join must already read the persisted value. No run is
@@ -59,7 +58,7 @@ def _spec() -> dict:
                     "in": "DEFAULT",
                     "out": "DEFAULT",
                     "goal": "",
-                    "metadata": {"keywords": [], "spatialJoin": {"nameProperty": "zip", "output": "polygons"}},
+                    "metadata": {"keywords": [], "spatialJoin": {"predicate": "within", "output": "counts"}},
                 }
             ],
             "edges": [],
@@ -67,11 +66,12 @@ def _spec() -> dict:
     }
 
 
-def test_the_spatial_join_property_is_live_after_the_load(
+def test_the_spatial_join_settings_are_live_after_the_load(
     app_frontend: "FrontendPage",
     current_server: str,
     page,
 ):
+    """#576: the operation and the output, as the spec saved them."""
     require_project_page()
     require_user_auth()
 
@@ -87,20 +87,18 @@ def test_the_spatial_join_property_is_live_after_the_load(
     )
     require_owner_view(page)
 
-    control = node_locator(page, JOIN_ID).locator(
-        'select[aria-label="Tag each point with this polygon column"]'
-    )
+    control = node_locator(page, JOIN_ID).locator('select[aria-label="Operation"]')
     control.wait_for(state="visible", timeout=45000)
-    assert control.input_value() == "zip", (
+    assert control.input_value() == "within", (
         "the Spatial Join opened with "
-        f"{control.input_value()!r} although the spec persisted 'zip': the "
+        f"{control.input_value()!r} although the spec persisted 'within': the "
         "setting was dropped between loadTrill and the node factory"
     )
 
     # The second setting rides in the same metadata object and must survive too.
     output = node_locator(page, JOIN_ID).locator('select[aria-label="Output"]')
     output.wait_for(state="visible", timeout=15000)
-    assert output.input_value() == "polygons", output.input_value()
+    assert output.input_value() == "counts", output.input_value()
 
 
 def _python_node(node_id: str, x: int, metadata: dict) -> dict:

@@ -72,7 +72,7 @@ describe("per-node settings survive a load", () => {
         const typeStart = USE_CODE.indexOf("CreateCodeNodeOptions");
         const typeEnd = USE_CODE.indexOf("interface IUseCode", typeStart);
         const typeBlock = USE_CODE.slice(typeStart, typeEnd);
-        expect(typeBlock).toMatch(/spatialJoin\?: \{ nameProperty\?: string; output\?: "points" \| "polygons" \};/);
+        expect(typeBlock).toMatch(/spatialJoin\?: \{ predicate\?: string; output\?: "pairs" \| "counts" \};/);
         expect(typeBlock).toMatch(/simpleVis\?: \{ imageColumn\?: string \};/);
         expect(typeBlock).toMatch(/packageTemplateLabel\?: string;/);
         expect(typeBlock).toMatch(/packageTemplateConfig\?: Partial<CanvasTemplateConfig>;/);

@@ -143,7 +143,7 @@ def _spec() -> dict:
             "nodes": [
                 _node(POINTS_ID, "curio.builtin/data-loading", 0, 0, POINTS_CODE),
                 _node(POLYGONS_ID, "curio.builtin/data-loading", 0, 430, POLYGONS_CODE),
-                # The join's tag column, as the example sets it.
+                # The join's settings, as the example sets them.
                 _node(JOIN_ID, "curio.builtin/spatial-join", 645, 215, "",
                       _shipped_join_metadata()),
                 _node(MAP_ID, "curio.builtin/vis-vega", 1045, 0, _shipped_spec(MAP_NODE)),
@@ -152,8 +152,9 @@ def _spec() -> dict:
                       _shipped_spec(SECOND_BARS_NODE)),
             ],
             "edges": [
-                _edge(POINTS_ID, JOIN_ID, "in_points"),
-                _edge(POLYGONS_ID, JOIN_ID, "in_polygons"),
+                # The photos on input 0, the neighborhoods on input 1 (#576).
+                _edge(POINTS_ID, JOIN_ID, "in"),
+                _edge(POLYGONS_ID, JOIN_ID, "in_1"),
                 _edge(JOIN_ID, MAP_ID, "in"),
                 _edge(JOIN_ID, BARS_ID, "in"),
                 _edge(JOIN_ID, SECOND_BARS_ID, "in"),
@@ -231,16 +232,15 @@ def test_the_street_vision_vega_specs_draw_from_a_spatial_join(
     wait_for_node_done(page, JOIN_ID, node_type="SPATIAL_JOIN", timeout_ms=120000)
 
     # Every synthetic point sits inside its own ZIP polygon, so the join must
-    # tag all of them. The status also names the column the tag landed in: the
-    # one the specs read, and not `name_polygon`, which is where a `name` tag
-    # goes on points that already carry a `name`.
+    # pair each of them with exactly one polygon (#576): 61 pairs, and every
+    # one of the 61 points matched.
     status = node_locator(page, JOIN_ID).locator("[data-curio-spatial-join-status]")
     status.wait_for(state="visible", timeout=30000)
-    assert "Tagged 61 of 61 points" in status.inner_text(), status.inner_text()
-    assert "the points' `neighborhood` column" in status.inner_text(), status.inner_text()
+    assert status.inner_text() == "61 pairs: 61 of 61 input 0 rows matched.", status.inner_text()
 
     # The map: a geoshape layer over the joined points, coloured by the
-    # per-polygon dominant class. Before the fixes it was blank three times
+    # per-polygon dominant class, which the spec works out itself since #576.
+    # Before the fixes it was blank three times
     # over (empty "table" dataset, unresolvable field paths, no geometry
     # attached). `assert_vega_canvas_rendered` only proves *something* was
     # drawn, and axes count, so the colour count is what says the encodings

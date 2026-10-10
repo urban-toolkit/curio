@@ -453,36 +453,33 @@ describe("TrillGenerator provenance ids are unique", () => {
   });
 });
 
-describe("TrillGenerator Spatial Join settings (#262)", () => {
+describe("TrillGenerator Spatial Join settings (#576)", () => {
   beforeEach(() => {
     TrillGenerator.reset();
   });
 
-  test("persists the chosen polygon property at metadata.spatialJoin, and only when set", () => {
+  test("persists the operation and the output at metadata.spatialJoin, leaving the defaults out", () => {
+    const join = (nodeId: string, spatialJoin?: Record<string, unknown>) => ({
+      type: "CURIO_UNIVERSAL_NODE",
+      position: { x: 0, y: 0 },
+      data: { nodeId, nodeType: "curio.builtin/spatial-join", ...(spatialJoin ? { spatialJoin } : {}) },
+    });
     const spec = TrillGenerator.generateTrill(
       [
-        {
-          type: "CURIO_UNIVERSAL_NODE",
-          position: { x: 0, y: 0 },
-          data: {
-            nodeId: "sj-1",
-            nodeType: "curio.builtin/spatial-join",
-            spatialJoin: { nameProperty: "pri_neigh" },
-          },
-        },
-        {
-          type: "CURIO_UNIVERSAL_NODE",
-          position: { x: 5, y: 5 },
-          data: { nodeId: "sj-2", nodeType: "curio.builtin/spatial-join" },
-        },
+        join("sj-1", { predicate: "within", output: "counts" }),
+        join("sj-2", { predicate: "nearest" }),
+        join("sj-3", { predicate: "intersects", output: "pairs" }),
+        join("sj-4"),
       ],
       [],
       "Imported Workflow"
     );
 
     const byId = Object.fromEntries(spec.dataflow.nodes.map((n: any) => [n.id, n]));
-    expect(byId["sj-1"].metadata.spatialJoin).toEqual({ nameProperty: "pri_neigh" });
-    expect(byId["sj-2"].metadata).toBeUndefined();
+    expect(byId["sj-1"].metadata.spatialJoin).toEqual({ predicate: "within", output: "counts" });
+    expect(byId["sj-2"].metadata.spatialJoin).toEqual({ predicate: "nearest" });
+    expect(byId["sj-3"].metadata).toBeUndefined();
+    expect(byId["sj-4"].metadata).toBeUndefined();
   });
 });
 

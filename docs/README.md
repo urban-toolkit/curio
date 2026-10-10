@@ -58,6 +58,7 @@ Icons indicate the complexity level of each example: 🟢 Easy, 🟡 Intermediat
 | 22 | [Storage: audio recordings](examples/22-storage-audio-recordings.md) | Recordings timed by their file names as one collection: spectrogram cards, then `Split Audio` levels per window in Vega-Lite | Noise sensors in the Chicago Loop | 🟡 |
 | 23 | [Storage: a folder of different files](examples/23-storage-folder-of-different-files.md) | A shapefile and a GeoJSON file from one folder, each its own dataset, stacked on one Vega-Lite map | Roads and a park in the Chicago Loop | 🟢 |
 | 24 | [SCOUT building rasters](examples/24-scout-building-rasters.md) | Two package nodes: `Rasterize Buildings` (`scout.raster-conversion@1`) turns buildings into SCOUT's zoom-16 height tiles, drawn in 3D and as a raster mosaic in Autark; `Accumulated Shadow` (`scout.shadow@1`) runs Deep Umbra from the Model Catalog on the heights, an Autark map draws the minutes of shadow and `Raster Statistics` takes their mean and median over the ground | Summer shadows in SCOUT's Chicago Loop example, with SCOUT's Deep Umbra model | 🟡 |
+| 25 | [Spatial Join operations](examples/25-spatial-join-operations.md) | Every `Spatial Join` operation, one flow each (intersects, within with the counts output, contains, touches, overlaps, crosses, nearest), over points, lines and polygons on either input, and a point on a shared edge joined two ways | Chicago green roofs, sidewalk labels, neighborhoods and ZIP codes | 🟡 |
 
 ### SCOUT scenario studies
 

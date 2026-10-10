@@ -1,10 +1,11 @@
 /**
- * The Spatial Join's polygon tag property is a setting, not a constant (#262).
+ * The Spatial Join pairs its two inputs by an operation (#576).
  *
- * The backend had accepted `name_property` all along; the node sent the
- * literal 'name' and told users to rename their field upstream. Now the node
- * body carries the control, the value persists on the node, and a wrong
- * property is reported instead of silently tagging everything polygon_<i>.
+ * Input 0 arrives on the `in` circle and input 1 on `in_1`, and that is the
+ * order they are joined in, whatever their geometry: the node used to sort
+ * them into points and polygons by geometry type, so two polygon inputs never
+ * joined. The body picks the operation and the output, both persisted on the
+ * node, and the backend's counts reach the status line.
  */
 import React from 'react';
 import { renderHook, render, act, fireEvent, waitFor } from '@testing-library/react';
@@ -16,8 +17,9 @@ jest.mock('reactflow', () => ({
 }));
 
 const mockUpdateDataNode = jest.fn();
+const mockFlow = { dashboardOn: false };
 jest.mock('../../../providers/FlowProvider', () => ({
-  useFlowContext: () => ({ updateDataNode: mockUpdateDataNode }),
+  useFlowContext: () => ({ updateDataNode: mockUpdateDataNode, dashboardOn: mockFlow.dashboardOn }),
 }));
 
 const mockShowToast = jest.fn();
@@ -31,24 +33,30 @@ jest.mock('../../../services/api', () => ({
   fetchData: jest.fn(),
 }));
 
-import {
-  useSpatialJoinBehavior,
-  polygonPropertyNames,
-  resolveNameProperty,
-} from '../../../adapters/node/spatialJoinBehavior';
+import { useSpatialJoinBehavior } from '../../../adapters/node/spatialJoinBehavior';
 
 const POINTS = {
   type: 'FeatureCollection',
-  features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [-87.6, 41.8] }, properties: {} }],
+  features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [-87.6, 41.8] }, properties: { name: 'photo-1.jpg' } }],
 };
 const POLYGONS = {
   type: 'FeatureCollection',
   features: [{
     type: 'Feature',
     geometry: { type: 'Polygon', coordinates: [[[-88, 41], [-87, 41], [-87, 42], [-88, 42], [-88, 41]]] },
-    properties: { pri_neigh: 'Loop', sec_neigh: 'LOOP', shape_area: '1' },
+    properties: { pri_neigh: 'Loop' },
   }],
 };
+const ZIPS = {
+  type: 'FeatureCollection',
+  features: [{
+    type: 'Feature',
+    geometry: { type: 'Polygon', coordinates: [[[-87.7, 41.7], [-87.5, 41.7], [-87.5, 41.9], [-87.7, 41.9], [-87.7, 41.7]]] },
+    properties: { zip: '60614' },
+  }],
+};
+
+const OPERATIONS = ['intersects', 'within', 'contains', 'touches', 'overlaps', 'crosses', 'nearest'];
 
 function mockFetch(response: unknown) {
   const fetchMock = jest.fn().mockResolvedValue({ ok: true, json: async () => response });
@@ -56,11 +64,17 @@ function mockFetch(response: unknown) {
   return fetchMock;
 }
 
-function joined(features: any[], warnings?: string[]) {
+/** A join answer: the features and the counts the backend reports. */
+function joined(features: any[], metadata: Record<string, unknown> = {}) {
   return {
     type: 'FeatureCollection',
     features,
-    metadata: { name: 'spatial_join_result', aggregates: [], ...(warnings ? { warnings } : {}) },
+    metadata: {
+      name: 'spatial_join_result', output: 'pairs', predicate: 'intersects',
+      pairs: features.length, matched_left: features.length, left_rows: features.length,
+      matched_right: features.length ? 1 : 0, right_rows: 1,
+      ...metadata,
+    },
   };
 }
 
@@ -88,7 +102,7 @@ function makeNodeState(): UseNodeStateReturn {
 
 type Ports = Record<string, unknown>;
 
-/** The node as the canvas holds it: the same data, with what each port holds (`data.portInputs`) set by a prop. */
+/** The node as the canvas holds it: the same data, with what each circle holds (`data.portInputs`) set by a prop. */
 function renderJoin(overrides: Record<string, unknown> = {}, nodeState: UseNodeStateReturn = makeNodeState()) {
   const data = makeData(overrides);
   const hook = renderHook(
@@ -99,177 +113,186 @@ function renderJoin(overrides: Record<string, unknown> = {}, nodeState: UseNodeS
   return { ...hook, data, nodeState };
 }
 
-/** Both inputs, one after the other, as the canvas delivers them: each stays on its port. */
-async function feedBoth(rerender: (props: { ports: Ports }) => void) {
-  await act(async () => { rerender({ ports: { in_points: POINTS } }); });
-  await act(async () => { rerender({ ports: { in_points: POINTS, in_polygons: POLYGONS } }); });
+/** Both inputs, one after the other, as the canvas delivers them: each stays on its circle. */
+async function feed(rerender: (props: { ports: Ports }) => void, input0: unknown = POINTS, input1: unknown = POLYGONS) {
+  await act(async () => { rerender({ ports: { in: input0 } }); });
+  await act(async () => { rerender({ ports: { in: input0, in_1: input1 } }); });
   await act(async () => { await Promise.resolve(); });
 }
 
-beforeEach(() => {
-  jest.clearAllMocks();
-});
-
-describe('resolveNameProperty / polygonPropertyNames', () => {
-  test('defaults to name, trims, and ignores blanks', () => {
-    expect(resolveNameProperty({})).toBe('name');
-    expect(resolveNameProperty({ spatialJoin: { nameProperty: '  pri_neigh ' } })).toBe('pri_neigh');
-    expect(resolveNameProperty({ spatialJoin: { nameProperty: '   ' } })).toBe('name');
-  });
-
-  test('lists the polygon properties, sorted and de-duplicated', () => {
-    expect(polygonPropertyNames(POLYGONS)).toEqual(['pri_neigh', 'sec_neigh', 'shape_area']);
-    expect(polygonPropertyNames(null)).toEqual([]);
-  });
-
-  test('lists a column that only a late feature carries', () => {
-    // The list is the only way to pick a column, so a sample of the first
-    // features would put a later one out of reach.
-    const fc = {
-      type: 'FeatureCollection',
-      features: [
-        ...Array.from({ length: 25 }, () => ({ type: 'Feature', geometry: null, properties: { zone: 'A' } })),
-        { type: 'Feature', geometry: null, properties: { zone: 'B', ward: 7 } },
-      ],
-    };
-    expect(polygonPropertyNames(fc)).toEqual(['ward', 'zone']);
-  });
-});
-
-const COLUMN_SELECT = 'select[aria-label="Tag each point with this polygon column"]';
+function posted(fetchMock: jest.Mock, call = 0) {
+  return JSON.parse(fetchMock.mock.calls[call][1].body);
+}
 
 /** The body as it renders now, unmounted again so a test can look twice. */
 function readBody(contentComponent: React.ReactNode) {
   const { container, unmount } = render(<>{contentComponent}</>);
-  const select = container.querySelector(COLUMN_SELECT) as HTMLSelectElement | null;
-  const label = container.querySelector('[data-curio-spatial-join-column-label]');
+  const select = (label: string) => {
+    const el = container.querySelector(`select[aria-label="${label}"]`) as HTMLSelectElement | null;
+    return el && { value: el.value, options: Array.from(el.options).map(o => o.value) };
+  };
+  const label = container.querySelector('[data-curio-spatial-join-operation-label]');
+  const status = container.querySelector('[data-curio-spatial-join-status]');
   const read = {
-    select: select && {
-      value: select.value,
-      disabled: select.disabled,
-      options: Array.from(select.options).map(o => [o.value, o.textContent]),
-    },
+    operation: select('Operation'),
+    output: select('Output'),
     labelText: label?.textContent ?? null,
     labelSwatches: label
       ? Array.from(label.querySelectorAll('[data-curio-handle-swatch]')).map(el => el.getAttribute('data-curio-handle-swatch'))
       : [],
-    status: container.querySelector('[data-curio-spatial-join-status]')?.textContent ?? null,
+    status: status?.textContent ?? null,
+    statusSwatches: status
+      ? Array.from(status.querySelectorAll('[data-curio-handle-swatch]')).map(el => el.getAttribute('data-curio-handle-swatch'))
+      : [],
   };
   unmount();
   return read;
 }
 
-describe('useSpatialJoinBehavior', () => {
-  test('sends the default property when none is chosen', async () => {
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockFlow.dashboardOn = false;
+});
+
+describe('which input is which (#576)', () => {
+  test('the inputs follow the circles, not their geometry: polygons on input 0 are the left side', async () => {
     const fetchMock = mockFetch(joined([]));
     const { rerender } = renderJoin();
 
-    await feedBoth(rerender);
+    await feed(rerender, POLYGONS, POINTS);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.name_property).toBe('name');
+    const body = posted(fetchMock);
+    expect(body.left).toEqual(POLYGONS);
+    expect(body.right).toEqual(POINTS);
   });
 
-  test('sends the persisted property', async () => {
+  test('two polygon inputs join', async () => {
+    // Both used to land in the polygons slot, and the join never ran.
     const fetchMock = mockFetch(joined([]));
-    const { rerender } = renderJoin({ spatialJoin: { nameProperty: 'pri_neigh' } });
+    const { rerender } = renderJoin();
 
-    await feedBoth(rerender);
+    await feed(rerender, POLYGONS, ZIPS);
 
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.name_property).toBe('pri_neigh');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(posted(fetchMock)).toEqual(expect.objectContaining({ left: POLYGONS, right: ZIPS }));
   });
 
-  test('picking a column from the list persists it on the node', async () => {
-    mockFetch(joined([]));
+  test('one input on both circles joins with itself', async () => {
+    // Example 25's touches flow: the neighborhoods on input 0 and input 1.
+    const fetchMock = mockFetch(joined([]));
+    const { rerender } = renderJoin();
+
+    await act(async () => { rerender({ ports: { in: POLYGONS, in_1: POLYGONS } }); });
+    await act(async () => { await Promise.resolve(); });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(posted(fetchMock)).toEqual(expect.objectContaining({ left: POLYGONS, right: POLYGONS }));
+  });
+});
+
+describe('the operation and the output (#576)', () => {
+  test('the operation select lists the seven operations and starts on intersects', async () => {
+    const fetchMock = mockFetch(joined([]));
     const { result, rerender } = renderJoin();
-    await feedBoth(rerender);
+    await feed(rerender);
+
+    expect(readBody(result.current.contentComponent).operation).toEqual({ value: 'intersects', options: OPERATIONS });
+    expect(posted(fetchMock).predicate).toBe('intersects');
+  });
+
+  test('a saved operation is sent, and picking another saves it on the node', async () => {
+    const fetchMock = mockFetch(joined([]));
+    const { result, rerender } = renderJoin({ spatialJoin: { predicate: 'within' } });
+    await feed(rerender);
+
+    expect(posted(fetchMock).predicate).toBe('within');
+    const { container } = render(<>{result.current.contentComponent}</>);
+    fireEvent.change(container.querySelector('select[aria-label="Operation"]')!, { target: { value: 'nearest' } });
+    expect(mockUpdateDataNode).toHaveBeenCalledWith('sj-1', expect.objectContaining({
+      spatialJoin: { predicate: 'nearest' },
+    }));
+  });
+
+  test('the output is one row per pair unless counts is saved, and picking it saves it', async () => {
+    const fetchMock = mockFetch(joined([]));
+    const { result, rerender } = renderJoin({ spatialJoin: { predicate: 'within', output: 'counts' } });
+    await feed(rerender);
+
+    expect(posted(fetchMock)).toEqual(expect.objectContaining({ predicate: 'within', output: 'counts' }));
+    const body = readBody(result.current.contentComponent);
+    expect(body.output).toEqual({ value: 'counts', options: ['pairs', 'counts'] });
 
     const { container } = render(<>{result.current.contentComponent}</>);
-    const select = container.querySelector(COLUMN_SELECT) as HTMLSelectElement;
-    expect(select).not.toBeNull();
-    expect(select.disabled).toBe(false);
-    // A dropdown, not a box to type in.
-    expect(container.querySelector('input[type="text"]')).toBeNull();
-
-    fireEvent.change(select, { target: { value: 'pri_neigh' } });
-
-    expect(mockUpdateDataNode).toHaveBeenCalledWith(
-      'sj-1',
-      expect.objectContaining({ spatialJoin: { nameProperty: 'pri_neigh' } }),
-    );
+    fireEvent.change(container.querySelector('select[aria-label="Output"]')!, { target: { value: 'pairs' } });
+    expect(mockUpdateDataNode).toHaveBeenCalledWith('sj-1', expect.objectContaining({
+      spatialJoin: { predicate: 'within', output: 'pairs' },
+    }));
   });
 
-  test('the list holds the polygon columns, and says when the chosen one is not among them', async () => {
+  test('with nothing saved the output is pairs', async () => {
+    const fetchMock = mockFetch(joined([]));
+    const { result, rerender } = renderJoin();
+    await feed(rerender);
+
+    expect(posted(fetchMock).output).toBe('pairs');
+    expect(readBody(result.current.contentComponent).output!.value).toBe('pairs');
+  });
+});
+
+describe('what the body says (#576)', () => {
+  test('before any input it says which input goes on which circle', () => {
+    mockFetch(joined([]));
+    const { result } = renderHook(() => useSpatialJoinBehavior(makeData(), makeNodeState()));
+    const body = readBody(result.current.contentComponent);
+    expect(body.status).toMatch(/input 0 to the blue circle and input 1 to the green circle/);
+    expect(body.statusSwatches).toEqual(['#3b82f6', '#22c55e']);
+  });
+
+  test('the operation reads as a sentence, each input wearing its circle', async () => {
     mockFetch(joined([]));
     const { result, rerender } = renderJoin();
-    await feedBoth(rerender);
-
-    // The default `name` stays the choice, flagged, rather than the select
-    // showing pri_neigh while the node joins on `name`.
-    expect(readBody(result.current.contentComponent).select).toEqual({
-      value: 'name',
-      disabled: false,
-      options: [
-        ['name', 'name (not in the polygons)'],
-        ['pri_neigh', 'pri_neigh'],
-        ['sec_neigh', 'sec_neigh'],
-        ['shape_area', 'shape_area'],
-      ],
-    });
-  });
-
-  test('a chosen column the polygons carry is listed once', async () => {
-    mockFetch(joined([]));
-    const { result, rerender } = renderJoin({ spatialJoin: { nameProperty: 'sec_neigh' } });
-    await feedBoth(rerender);
-
-    const { select } = readBody(result.current.contentComponent);
-    expect(select!.value).toBe('sec_neigh');
-    expect(select!.options.map(([v]) => v)).toEqual(['pri_neigh', 'sec_neigh', 'shape_area']);
-  });
-
-  test('a saved column is the choice before the polygons arrive', () => {
-    mockFetch(joined([]));
-    const { result } = renderHook(() =>
-      useSpatialJoinBehavior(makeData({ spatialJoin: { nameProperty: 'zip' } }), makeNodeState()),
-    );
-
-    // Nothing to pick from yet: the saved choice shows, and the list waits.
-    expect(readBody(result.current.contentComponent).select).toEqual({
-      value: 'zip',
-      disabled: true,
-      options: [['zip', 'zip']],
-    });
-  });
-
-  test('the column label wears both circles, before and after the join', async () => {
-    mockFetch(joined([{ type: 'Feature', geometry: POINTS.features[0].geometry, properties: { name: 'Loop' } }]));
-    const { result, rerender } = renderJoin();
-
     const before = readBody(result.current.contentComponent);
-    expect(before.labelText).toMatch(/point.*polygon column/);
+    expect(before.labelText).toBe('Pair each input 0 row with the input 1 rows it');
     expect(before.labelSwatches).toEqual(['#3b82f6', '#22c55e']);
 
-    await feedBoth(rerender);
+    await feed(rerender);
+    expect(readBody(result.current.contentComponent).labelSwatches).toEqual(['#3b82f6', '#22c55e']);
+  });
 
-    // The status line no longer names the circles once the join answers; the
-    // label still does.
-    const after = readBody(result.current.contentComponent);
-    expect(after.status).toMatch(/Tagged 1 of 1/);
-    expect(after.labelSwatches).toEqual(['#3b82f6', '#22c55e']);
+  test('a pairs answer says how many pairs and how many input 0 rows matched', async () => {
+    const pair = { type: 'Feature', geometry: POINTS.features[0].geometry, properties: { name: 'photo-1.jpg', pri_neigh: 'Loop' } };
+    mockFetch(joined([pair, pair, pair], { pairs: 3, matched_left: 2, left_rows: 5 }));
+    const { result, rerender } = renderJoin();
+    await feed(rerender);
+
+    await waitFor(() => expect(readBody(result.current.contentComponent).status).toBe('3 pairs: 2 of 5 input 0 rows matched.'));
+  });
+
+  test('one pair is one pair', async () => {
+    mockFetch(joined([{ type: 'Feature', geometry: null, properties: {} }], { pairs: 1, matched_left: 1, left_rows: 3 }));
+    const { result, rerender } = renderJoin();
+    await feed(rerender);
+
+    await waitFor(() => expect(readBody(result.current.contentComponent).status).toBe('1 pair: 1 of 3 input 0 rows matched.'));
+  });
+
+  test('a counts answer says how many input 1 rows have pairs', async () => {
+    mockFetch(joined(POLYGONS.features, { output: 'counts', pairs: 7, matched_right: 2, right_rows: 4 }));
+    const { result, rerender } = renderJoin({ spatialJoin: { output: 'counts' } });
+    await feed(rerender);
+
+    await waitFor(() => expect(readBody(result.current.contentComponent).status).toBe(
+      '2 of 4 input 1 rows have pairs (7 in all); each row carries point_count.',
+    ));
   });
 
   test('a backend warning reaches the body, the output and a toast; the join still completes', async () => {
-    const warning = "No polygon has a 'name' property, so tags fall back to polygon_<index>. Available properties: pri_neigh, sec_neigh.";
-    mockFetch(joined(
-      [{ type: 'Feature', geometry: null, properties: { name: 'polygon_0' } }],
-      [warning],
-    ));
-    const { result, rerender, data, nodeState } = renderJoin();
+    const warning = 'No pairs: a polygon is never within a point. Pick contains, or swap the two inputs.';
+    mockFetch(joined([], { predicate: 'within', pairs: 0, matched_left: 0, left_rows: 1, warnings: [warning] }));
+    const { result, rerender, data, nodeState } = renderJoin({ spatialJoin: { predicate: 'within' } });
 
-    await feedBoth(rerender);
+    await feed(rerender, POLYGONS, POINTS);
 
     expect(data.outputCallback).toHaveBeenCalledWith('sj-1', expect.objectContaining({ dataType: 'geodataframe' }));
     expect(nodeState.setOutput).toHaveBeenLastCalledWith({ code: 'success', content: warning });
@@ -277,14 +300,25 @@ describe('useSpatialJoinBehavior', () => {
 
     const { container } = render(<>{result.current.contentComponent}</>);
     expect(container.querySelector('[data-curio-spatial-join-warning]')!.textContent).toBe(warning);
-    expect(container.querySelector('[data-curio-spatial-join-status]')!.textContent).toMatch(/Tagged 1 of 1/);
+    expect(container.querySelector('[data-curio-spatial-join-status]')!.textContent).toBe('0 pairs: 0 of 1 input 0 rows matched.');
   });
 
-  test('an artifact reference is fetched and classified before the join', async () => {
+  test('a run with an input missing is told which one', async () => {
+    mockFetch(joined([]));
+    const { result, rerender, nodeState } = renderJoin();
+    await act(async () => { rerender({ ports: { in: POINTS } }); });
+
+    await act(async () => { await (result.current.sendCodeOverride as () => Promise<void>)(); });
+    const last = (nodeState.setOutput as jest.Mock).mock.calls.at(-1)[0];
+    expect(last.code).toBe('error');
+    expect(last.content).toBe('The Spatial Join has no input 1 to join: connect it and run the nodes feeding it.');
+  });
+});
+
+describe('inputs that take time, and runs (#576 keeps #151 and #792)', () => {
+  test('an artifact reference is fetched before the join', async () => {
     // What every Python node hands a consumer is `{ path, dataType }`, not rows
-    // (normalizeFlowInput). Classifying that by geometry type found nothing, so
-    // a join fed by a sandbox node never fired; example 10's polygons come out
-    // of a Data Transformation node and never reached the polygon slot.
+    // (normalizeFlowInput); the join posts the rows.
     const { fetchData } = require('../../../services/api');
     (fetchData as jest.Mock)
       .mockResolvedValueOnce({ dataType: 'geodataframe', data: POINTS, schema: {} })
@@ -295,25 +329,23 @@ describe('useSpatialJoinBehavior', () => {
 
     const { rerender } = renderHook(
       ({ ports }: { ports: Ports }) => useSpatialJoinBehavior(makeData({ portInputs: ports }), nodeState),
-      { initialProps: { ports: { in_points: points } as Ports } },
+      { initialProps: { ports: { in: points } as Ports } },
     );
     await waitFor(() => expect(fetchData).toHaveBeenCalledWith('points-artifact'));
-    rerender({ ports: { in_points: points, in_polygons: { path: 'polygons-artifact', dataType: 'geodataframe' } } });
+    rerender({ ports: { in: points, in_1: { path: 'polygons-artifact', dataType: 'geodataframe' } } });
     await waitFor(() => expect(fetchData).toHaveBeenCalledWith('polygons-artifact'));
 
-    // Both slots resolved and classified: the join fires with the rows, not the references.
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.points.features).toHaveLength(1);
-    expect(body.polygons.features[0].properties.pri_neigh).toBe('Loop');
+    const body = posted(fetchMock);
+    expect(body.left).toEqual(POINTS);
+    expect(body.right).toEqual(POLYGONS);
     expect(nodeState.setOutput).not.toHaveBeenCalledWith(expect.objectContaining({ code: 'error' }));
   });
 
   test('a second input arriving while the first still resolves does not lose the first', async () => {
-    // Example 15's order: polygons loader first, points loader right behind it.
-    // The polygon artifact is still downloading when the points reference
-    // lands; a cancel-on-new-input cleanup dropped it and the join waited
-    // forever for polygons it had been handed.
+    // Input 1 first, input 0 right behind it, while input 1's artifact is
+    // still downloading: a cancel-on-new-input cleanup dropped it and the join
+    // waited forever for an input it had been handed.
     const { fetchData } = require('../../../services/api');
     let releasePolygons: (v: unknown) => void = () => {};
     (fetchData as jest.Mock)
@@ -325,38 +357,17 @@ describe('useSpatialJoinBehavior', () => {
 
     const { rerender } = renderHook(
       ({ ports }: { ports: Ports }) => useSpatialJoinBehavior(makeData({ portInputs: ports }), nodeState),
-      { initialProps: { ports: { in_polygons: polygons } as Ports } },
+      { initialProps: { ports: { in_1: polygons } as Ports } },
     );
     await waitFor(() => expect(fetchData).toHaveBeenCalledWith('polygons-artifact'));
-    // The points reference arrives before the polygon download has finished.
-    rerender({ ports: { in_polygons: polygons, in_points: { path: 'points-artifact', dataType: 'geodataframe' } } });
+    rerender({ ports: { in_1: polygons, in: { path: 'points-artifact', dataType: 'geodataframe' } } });
     await waitFor(() => expect(fetchData).toHaveBeenCalledWith('points-artifact'));
     await act(async () => { releasePolygons({ dataType: 'geodataframe', data: POLYGONS, schema: {} }); });
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.points.features).toHaveLength(1);
-    expect(body.polygons.features[0].properties.pri_neigh).toBe('Loop');
-  });
-
-  test('the polygon output is sent along and persisted like the property', async () => {
-    const fetchMock = mockFetch(joined([]));
-    const { result, rerender } = renderJoin({ spatialJoin: { nameProperty: 'zip', output: 'polygons' } });
-
-    await feedBoth(rerender);
-
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.output).toBe('polygons');
-    expect(body.name_property).toBe('zip');
-
-    // Switching the control persists the choice on the node, beside the property.
-    const { container } = render(<>{result.current.contentComponent}</>);
-    const select = container.querySelector('select[aria-label="Output"]') as HTMLSelectElement;
-    expect(select.value).toBe('polygons');
-    fireEvent.change(select, { target: { value: 'points' } });
-    expect(mockUpdateDataNode).toHaveBeenCalledWith('sj-1', expect.objectContaining({
-      spatialJoin: expect.objectContaining({ nameProperty: 'zip', output: 'points' }),
-    }));
+    const body = posted(fetchMock);
+    expect(body.left).toEqual(POINTS);
+    expect(body.right).toEqual(POLYGONS);
   });
 
   test('a Run All waits for inputs still on their way and for the join they start', async () => {
@@ -373,17 +384,17 @@ describe('useSpatialJoinBehavior', () => {
     (global as any).fetch = fetchMock;
     const points = { path: 'points-artifact', dataType: 'geodataframe' };
     const { result, rerender, data, nodeState } = renderJoin({
-      portInputs: { in_points: points },
+      portInputs: { in: points },
     });
     const order: string[] = [];
     (data.outputCallback as jest.Mock).mockImplementation(() => order.push('rows downstream'));
     (nodeState.setOutput as jest.Mock).mockImplementation((o: any) => order.push(`outcome ${o.code}`));
 
     await waitFor(() => expect(fetchData).toHaveBeenCalledWith('points-artifact'));
-    rerender({ ports: { in_points: points, in_polygons: { path: 'polygons-artifact', dataType: 'geodataframe' } } });
+    rerender({ ports: { in: points, in_1: { path: 'polygons-artifact', dataType: 'geodataframe' } } });
     await waitFor(() => expect(fetchData).toHaveBeenCalledWith('polygons-artifact'));
 
-    // The run asks while the polygons are still downloading.
+    // The run asks while input 1 is still downloading.
     let done = false;
     let run: Promise<void> = Promise.resolve();
     act(() => { run = (result.current.sendCodeOverride as () => Promise<void>)().then(() => { done = true; }); });
@@ -392,7 +403,7 @@ describe('useSpatialJoinBehavior', () => {
     expect(done).toBe(false);
 
     await act(async () => {
-      answer({ ok: true, json: async () => joined([{ type: 'Feature', geometry: POINTS.features[0].geometry, properties: { name: 'Loop' } }]) });
+      answer({ ok: true, json: async () => joined([{ type: 'Feature', geometry: POINTS.features[0].geometry, properties: { pri_neigh: 'Loop' } }]) });
       await run;
     });
     expect(done).toBe(true);
@@ -403,7 +414,7 @@ describe('useSpatialJoinBehavior', () => {
   test('a join that already answered says so again when a run asks', async () => {
     mockFetch(joined([]));
     const { result, rerender, nodeState } = renderJoin();
-    await feedBoth(rerender);
+    await feed(rerender);
     await waitFor(() => expect(nodeState.setOutput).toHaveBeenCalledWith(expect.objectContaining({ code: 'success' })));
     (nodeState.setOutput as jest.Mock).mockClear();
 
@@ -411,43 +422,27 @@ describe('useSpatialJoinBehavior', () => {
     expect(nodeState.setOutput).toHaveBeenCalledWith({ code: 'success', content: '' });
   });
 
-  test('a run with an input missing is told which one', async () => {
-    mockFetch(joined([]));
-    const { result, rerender, nodeState } = renderJoin();
-    await act(async () => { rerender({ ports: { in_points: POINTS } }); });
-
-    await act(async () => { await (result.current.sendCodeOverride as () => Promise<void>)(); });
-    const last = (nodeState.setOutput as jest.Mock).mock.calls.at(-1)[0];
-    expect(last.code).toBe('error');
-    expect(last.content).toContain('no polygons');
-  });
-
   test("a run's status for the node never lands in an input slot", async () => {
     // UniversalNode sets a node's own status through `setOutputCallbackOverride`
-    // when the behavior has one: `{ code: "exec" }` when a run asks it, the
-    // skip reason when a run passes it by. The join's override filled its
-    // points slot with that, and posted it as the points: "Tagged 0 of 0
-    // points" on example 10, and 0 rows for every chart after it. Its inputs
-    // come through `data.portInputs`, so it has no such override.
+    // when the behavior has one: `{ code: "exec" }` when a run asks it. The
+    // join's inputs come through `data.portInputs`, so it has no such override.
     const fetchMock = mockFetch(joined([]));
     const { result, rerender } = renderJoin();
     expect(result.current.setOutputCallbackOverride).toBeUndefined();
 
-    await feedBoth(rerender);
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.points).toEqual(POINTS);
-    expect(body.polygons).toEqual(POLYGONS);
+    await feed(rerender);
+    const body = posted(fetchMock);
+    expect(body.left).toEqual(POINTS);
+    expect(body.right).toEqual(POLYGONS);
   });
 
-  test('before any input the body says what to connect', () => {
-    mockFetch(joined([]));
-    const { result } = renderHook(() => useSpatialJoinBehavior(makeData(), makeNodeState()));
-    const { container } = render(<>{result.current.contentComponent}</>);
-    expect(container.querySelector('[data-curio-spatial-join-status]')!.textContent).toMatch(/Connect points/);
-    // The words name the input circles by colour, and each name carries its swatch.
-    const status = container.querySelector('[data-curio-spatial-join-status]')!;
-    expect(status.textContent).toMatch(/blue circle.*green circle/);
-    const swatches = Array.from(status.querySelectorAll('[data-curio-handle-swatch]')).map(el => el.getAttribute('data-curio-handle-swatch'));
-    expect(swatches).toEqual(['#3b82f6', '#22c55e']);
+  test('a dashboard never joins: it shows what was saved (#609)', async () => {
+    mockFlow.dashboardOn = true;
+    const fetchMock = mockFetch(joined([]));
+    const { rerender } = renderJoin();
+
+    await feed(rerender);
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
