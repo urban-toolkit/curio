@@ -11,6 +11,7 @@ request.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from dataclasses import dataclass
@@ -22,7 +23,7 @@ from utk_curio.backend.app.datasets.domain.code_refs import (
 from utk_curio.backend.app.discovery.application.exec_collections import (
     resolve_exec_collections,
 )
-from utk_curio.backend.app.execution.sandbox_client import sandbox_request
+from utk_curio.backend.app.execution.sandbox_client import exec_turn, sandbox_request
 from utk_curio.backend.app.monitor import counters as _monitor_counters
 from utk_curio.backend.app.monitor import errors as _monitor_errors
 from utk_curio.backend.config import CURIO_DEFAULT_SAVE_NODE_OUTPUT
@@ -259,16 +260,21 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
     else:
         endpoint = '/execJs'
     t1 = time.perf_counter()
-    # The gauge wraps only the sandbox round trip, which is where a node
-    # actually spends its time. Counting the surrounding parse and JSON work
-    # would report nodes as "running" that are really just being serialised.
-    with _monitor_counters.in_flight():
-        response = sandbox_request(
-            'post', endpoint,
-            label=label, timeout=SANDBOX_EXEC_TIMEOUT,
-            data=json.dumps(body),
-            headers={"Content-Type": "application/json"},
-        )
+    # A Python node waits for its turn before the request is sent, so the
+    # timeout covers its run and not its wait (#863). A waiting node is not
+    # counted as running.
+    with exec_turn() if language == "python" else contextlib.nullcontext():
+        t_turn = time.perf_counter()
+        # The gauge wraps only the sandbox round trip, which is where a node
+        # actually spends its time. Counting the surrounding parse and JSON work
+        # would report nodes as "running" that are really just being serialised.
+        with _monitor_counters.in_flight():
+            response = sandbox_request(
+                'post', endpoint,
+                label=label, timeout=SANDBOX_EXEC_TIMEOUT,
+                data=json.dumps(body),
+                headers={"Content-Type": "application/json"},
+            )
     t2 = time.perf_counter()
 
     try:
@@ -291,7 +297,8 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
     t3 = time.perf_counter()
     print(
         f"[backend {label}] parse={t1-t0:.3f}s"
-        f"  sandbox_rtt={t2-t1:.3f}s"
+        f"  queue={t_turn-t1:.3f}s"
+        f"  sandbox_rtt={t2-t_turn:.3f}s"
         f"  json={t3-t2:.3f}s"
         f"  total={t3-t0:.3f}s"
         f"  node={run.node_type}",
