@@ -194,7 +194,7 @@ Every agent, on every dataflow, answers with an **LLM configuration**: the one c
 | Provider | OpenAI, Anthropic, Gemini, Custom (any OpenAI-compatible endpoint), or **This Curio install** when the operator offers its endpoint. |
 | Base URL | Only for Custom: Ollama, LM Studio, vLLM, Groq, Azure. |
 | API key | Write-only, and held for this configuration's endpoint only. Editing leaves it in place unless you type a new one or remove it; changing the provider, or the base URL's scheme, host or port, needs it again. This Curio install uses the operator's key, which you never see. |
-| Model | Which model answers. **Fetch models** suggests what the endpoint serves. |
+| Model | Which model answers. For OpenAI, Anthropic and Gemini the empty box shows the provider's default model in grey; type it or another model. **Fetch models** suggests what the endpoint serves. |
 
 To add a configuration:
 
@@ -202,7 +202,7 @@ To add a configuration:
 2. Open **API Settings** from the top bar (on the canvas it opens on the right).
 3. On the **API keys** tab, click **Add configuration**.
 4. In **Kind**, choose **Language model**.
-5. Type a **Label**, choose the **Provider**, paste the **API key**, and type the **Model**, or click **Fetch models** and pick one. **Custom** also asks for the **Base URL**.
+5. Type a **Label**, choose the **Provider**, paste the **API key**, and type the **Model** (the provider's default model is shown in grey), or click **Fetch models** and pick one. **Custom** also asks for the **Base URL**.
 6. Click **Add configuration**. The configuration's row shows in the list, with **saved** in its **Key** column when you gave a key.
 
 **Make this my default** is ticked for your first configuration. Each row offers **Edit**, **Duplicate** (the copy keeps the key) and **Remove**; an account holds up to 32. Its **Details** show the provider, the model and the host, and **Chosen for** lists the agents chosen to run on it. The **Default** badge marks your default. The **Deployment default** row is the operator's own configuration: read-only, with **set by this Curio** in its **Key** column, shown when the operator configured one, and the one that answers while you have no default of your own. Choosing it in **Default for agents**, or removing your own default, goes back to it.
@@ -237,7 +237,7 @@ It is a convenience, not a gate: the field stays free text. Two sources fill the
 | *From this endpoint* | What the endpoint reported just now. For Gemini, only models that support `generateContent` are offered. |
 | *Last reported by this endpoint (on <date>)* | What it reported the last time it could be asked, shown when it cannot be asked now: no key pasted yet, offline, or a key without permission to list models. |
 
-A model you type by hand is always accepted.
+Until a key has listed an endpoint's models, there are no suggestions: the Model box shows the provider's default model in grey, and you type the model. A model you type by hand is always accepted.
 
 Whoever runs the install can set a Deployment default with `curio.py start` flags (see [Operator notes](#operator-notes)). It is not stored in your account, so when the operator changes it, the Deployment default row changes with it.
 
@@ -358,10 +358,11 @@ Curio ships with **no default LLM endpoint**. Until an operator sets a Deploymen
 | `CURIO_SOLVE_BATCH_DEADLINE` | `--solve-batch-deadline` | Seconds a Solve batch may run in all. Default 2700. |
 | `CURIO_VALIDATION_EXEC_TIMEOUT` | `--validation-exec-timeout` | Seconds one node may run when an agent validates code. Default 300. |
 | `CURIO_VALIDATION_NODE_LIMIT` | `--validation-node-limit` | How many nodes one validation run may execute. Upstream nodes whose earlier output is reused do not count. Default 25. |
+| `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH` | `--allow-publish` (default), `--no-allow-publish` | Allows or forbids **Publish** and **Unpublish** of agents, as it does for node packages and datasets. When forbidden, both are refused and their buttons are hidden on `/catalog/agents`. |
 
-Run `python curio.py start --help` for the current list. A flag writes its variable only when passed, so a value already in the environment is not cleared by a start that omits it.
+Run `python curio.py start --help` for the current list. A flag writes its variable only when passed, so a value already in the environment is not cleared by a start that omits it. `--allow-publish` is the exception: `curio.py start` sets it on every start.
 
-**Anyone signed in can publish.** Agent publishing has no on/off switch. The only restriction is ownership: you may publish only definitions you imported. On a multi-tenant deployment, any signed-in user can publish an agent they wrote into the shared catalog.
+**On a multi-user install, start with `--no-allow-publish`.** Otherwise any signed-in user can publish an agent they imported into the shared catalog.
 
 **The usage record needs no care.** The per-day files under `.curio/users/<key>/agents/ledger/` are append-only and rotate by date. Deleting a day's file loses that day's history and nothing else, and nothing expires the files automatically.
 

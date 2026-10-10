@@ -398,11 +398,12 @@ def _mint_content_review_from_delegate(
     except Exception:
         pass
     # dev/114: the mint's grounding gate reads the PARENT run's evidence
-    # (current message, verified rows, probe cache, grants) — the home
+    # (current message and the one before it, verified rows, probe cache, grants) — the home
     # session alone would not know what the user just typed.
     mint_ctx = {
         k: v for k, v in (parent_loop_ctx or {}).items()
-        if k in ("message", "_verified_urls", "_egress_budget", "_probe_cache", "granted", "manifest")
+        if k in ("message", "previous_message", "_verified_urls", "_egress_budget", "_probe_cache",
+                 "granted", "manifest")
     }
     mint_ctx.update({"attachment_id": home_att, "session_id": home_sess})
     if grounding_base is not None:
