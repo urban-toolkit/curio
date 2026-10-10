@@ -16,6 +16,7 @@ import pytest
 
 from utk_curio.backend.tests._support.agent_routes import _auth
 from utk_curio.backend.tests.test_agents import test_routes_proposals as routes_proposals
+from utk_curio.backend.tests.test_agents import test_routes_solve as routes_solve
 from utk_curio.backend.tests.test_agents import test_routes_turns as routes_turns
 
 NB = "agent.node-builder@1.0.0"
@@ -278,6 +279,46 @@ class TestCatalogGrounding:
         body = _run(client, token, project, att, f"Build a data-loading node for {asked}.")
         [proposal] = _proposals(body)
         assert {ref["datasetId"] for ref in proposal["source"]["refs"]} == {asked, boundary}
+
+    def _two_turns(self, client, token, project, monkeypatch, asked, loaded):
+        """#867: the user names a dataset, the agent asks before building, and
+        the user answers "go ahead"; the node is built in that second turn."""
+        _install(client, token, project, NB)
+        att = _attach(client, token, project, NB)
+        calls = _script(monkeypatch, [
+            "I can build a data-loading node for it. Shall I go ahead?",
+            _create_tail(
+                "import pandas as pd\n"
+                f'dataset_path = curio_data_path("{loaded}")\n'
+                "df = pd.read_csv(dataset_path)\nreturn df"
+            ),
+            "Done.",
+        ])
+        first = _run(client, token, project, att, f"Load the {asked} dataset into a node.")
+        assert _proposals(first) == []
+        return _run(client, token, project, att, "go ahead"), calls
+
+    def test_go_ahead_keeps_the_dataset_named_in_the_turn_before(self, client, user_and_token, tmp_curio, project, monkeypatch):
+        """#867: "go ahead" names no dataset, so the one named in the turn
+        before it is still the one asked for: loading another is refused."""
+        user, token = user_and_token
+        seed = routes_turns.TestDatasetFinderTools()._seed_dataset
+        asked = seed(user, filename="building_footprints.csv")
+        other = seed(user, filename="cook_buildings_2022.csv")
+        body, calls = self._two_turns(client, token, project, monkeypatch, asked, other)
+        assert _proposals(body) == []
+        [refusal] = [t for t in _tool_results(calls[-1], "node.create") if "refused" in t.split("\n", 1)[0]]
+        assert asked in refusal and other in refusal
+
+    def test_go_ahead_proposes_the_dataset_named_in_the_turn_before(self, client, user_and_token, tmp_curio, project, monkeypatch):
+        """#867's guard: the dataset named in the turn before is proposed."""
+        user, token = user_and_token
+        seed = routes_turns.TestDatasetFinderTools()._seed_dataset
+        asked = seed(user, filename="building_footprints.csv")
+        seed(user, filename="cook_buildings_2022.csv")
+        body, _calls = self._two_turns(client, token, project, monkeypatch, asked, asked)
+        [proposal] = _proposals(body)
+        assert [ref["datasetId"] for ref in proposal["source"]["refs"]] == [asked]
 
 
 DDRNET = "model.curio.ddrnet23-slim"
@@ -622,6 +663,88 @@ class TestSolveSourceGrounding:
         assert path in exec_payloads[-1]["code"]
         spec = projects_storage.read_spec(_user_dir_key(user), project)
         assert path in next(n for n in spec["dataflow"]["nodes"] if n["id"] == load)["content"]
+
+
+class TestSolveRequestedDatasets:
+    """#867: a Solve with ``verify: false`` writes content without running it,
+    and holds it to the dataset the node's goal names, as a verified Solve does."""
+
+    def _applied_plan(self, client, user, token, project, monkeypatch, *, load_the_asked=False):
+        seed = routes_turns.TestDatasetFinderTools()._seed_dataset
+        asked = seed(user, filename="building_footprints.csv")
+        other = seed(user, filename="cook_buildings_2022.csv")
+        plan = {
+            "goal": "building footprints",
+            "nodes": [{"ref": "load", "nodeType": DL, "title": "Load",
+                       "intent": f"load the {asked} dataset"}],
+            "edges": [],
+        }
+        plan_tail = "Plan.\n```curio.v1\n" + json.dumps({"dataflowPlan": plan}) + "\n```"
+        loader = (
+            "import pandas as pd\n"
+            f'dataset_path = curio_data_path("{asked if load_the_asked else other}")\n'
+            "df = pd.read_csv(dataset_path)\nreturn df"
+        )
+        _install(client, token, project, "agent.dataflow-builder@1.0.0", NCB)
+        att = _attach(client, token, project, "agent.dataflow-builder@1.0.0")
+        _script(monkeypatch, [
+            lambda calls: loader if "[delegated task" in calls[-1][-1]["content"] else plan_tail,
+        ])
+        [proposal] = _proposals(_run(client, token, project, att, "plan the footprints"))
+        applied = client.post(
+            f"/api/agents/projects/{project}/attachments/{att}/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        ).get_json()
+        load = next(n["id"] for n in applied["appliedGraph"]["nodes"] if str(n.get("type", "")).startswith(DL))
+        return att, load, asked, other
+
+    def _content(self, user, project, node_id):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        spec = projects_storage.read_spec(_user_dir_key(user), project)
+        return next(n for n in spec["dataflow"]["nodes"] if n["id"] == node_id)["content"]
+
+    def test_an_unverified_solve_refuses_a_dataset_the_goal_does_not_name(self, client, user_and_token, tmp_curio, project, monkeypatch):
+        user, token = user_and_token
+        att, load, asked, other = self._applied_plan(client, user, token, project, monkeypatch)
+        body = client.post(
+            f"/api/agents/projects/{project}/attachments/{att}/solve",
+            json={"verify": False}, headers=_auth(token),
+        ).get_json()
+        result = body["results"][load]
+        assert result["status"] == "failed", result
+        assert asked in result["error"] and other in result["error"]
+        assert self._content(user, project, load) == ""
+
+    def test_an_unverified_proposing_solve_refuses_it_too(self, client, user_and_token, tmp_curio, project, monkeypatch):
+        user, token = user_and_token
+        att, load, asked, other = self._applied_plan(client, user, token, project, monkeypatch)
+        r = client.post(
+            f"/api/agents/projects/{project}/attachments/{att}/solve/stream",
+            json={"mode": "propose", "verify": False}, headers=_auth(token),
+        )
+        events = routes_solve.TestStreamedSolve()._sse_events(r)
+        results = [p for k, p in events if k == "node_result" and p.get("nodeId") == load]
+        assert results and all(p["status"] == "failed" for p in results), results
+        assert asked in results[-1]["error"] and other in results[-1]["error"]
+        assert not any(p.get("proposalId") for p in results)
+        assert self._content(user, project, load) == ""
+
+    def test_an_unverified_proposing_solve_proposes_the_requested_dataset(self, client, user_and_token, tmp_curio, project, monkeypatch):
+        """#880: the review mint of a proposing Solve without verification ran
+        without the batch's catalog listing, so it refused every catalog
+        dataset, the requested one too, as not in the project's Data Catalog."""
+        user, token = user_and_token
+        att, load, asked, _other = self._applied_plan(client, user, token, project, monkeypatch, load_the_asked=True)
+        r = client.post(
+            f"/api/agents/projects/{project}/attachments/{att}/solve/stream",
+            json={"mode": "propose", "verify": False}, headers=_auth(token),
+        )
+        events = routes_solve.TestStreamedSolve()._sse_events(r)
+        result = next(p for k, p in events if k == "node_result" and p.get("nodeId") == load)
+        assert result["status"] == "proposed" and result.get("proposalId"), result
+        assert self._content(user, project, load) == ""  # proposed, not written
 
 
 class TestContentReviewMintInheritsTheGate:
