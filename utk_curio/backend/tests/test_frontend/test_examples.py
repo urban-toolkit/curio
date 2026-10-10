@@ -93,6 +93,11 @@ EXAMPLE_INVARIANTS = [
      {"curio.builtin/data-loading": 1, "scout.raster-conversion/rasterize-buildings": 1,
       "curio.builtin/computation-analysis": 1, "scout.shadow/accumulated-shadow": 1,
       "curio.builtin/raster-statistics": 1, "curio.builtin/autk-grammar": 3}, False),
+    # #576: one Spatial Join per operation, plus two over a point on an edge.
+    ("25-spatial-join-operations.json", 25, 28,
+     {"curio.builtin/data-loading": 6, "curio.builtin/data-transformation": 1,
+      "curio.builtin/spatial-join": 9, "curio.builtin/vis-vega": 7,
+      "curio.builtin/vis-simple": 2}, False),
 ]
 
 
@@ -105,9 +110,13 @@ FAN_IN_NODES = {
     "06-autark-what-if-shadow-study.json": 2,
     "08-autark-spatial-join-regression.json": 1,
     "09-heterogeneous-data-linked-views.json": 2,
+    # #576: a Spatial Join takes input 0 on "in" and input 1 on "in_1".
+    "10-street-vision-cv-analysis.json": 2,
+    "15-vega-lite-spec-forms-and-catalogs.json": 1,
     "20-storage-folder-of-csv-files.json": 1,
     "23-storage-folder-of-different-files.json": 1,
     "24-scout-building-rasters.json": 1,
+    "25-spatial-join-operations.json": 9,
 }
 
 

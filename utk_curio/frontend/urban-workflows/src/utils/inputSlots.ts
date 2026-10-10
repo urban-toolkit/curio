@@ -8,8 +8,8 @@
  * `in`, circle k is `in_k`. Deleting an edge closes the gap: the circles below
  * move up one.
  *
- * A template with several input ports (the Spatial Join's `in_points` and
- * `in_polygons`) keeps what each port holds the same way, by handle.
+ * A template with several input ports (the Spatial Join's `in` and `in_1`)
+ * keeps what each port holds the same way, by handle.
  *
  * Duck-typed edges, so this module needs no `reactflow` import.
  */
@@ -43,7 +43,7 @@ export function ensureSlotArrays(
 
 /**
  * The circle a target handle names: `in` (or none) is circle 0, `in_N` is
- * circle N. Any other handle (`in_points`, `in/out`) is -1.
+ * circle N. Any other handle (a named port, `in/out`) is -1.
  */
 export function inputSlotOf(handle: string | null | undefined): number {
     if (handle == null || handle === "in") return 0;

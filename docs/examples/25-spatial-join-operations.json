@@ -1,0 +1,602 @@
+{
+  "dataflow": {
+    "categories": {
+      "city": [
+        "Chicago"
+      ],
+      "topic": [
+        "Mobility and streets",
+        "Greenery"
+      ],
+      "complexity": [
+        "Intermediate"
+      ]
+    },
+    "description": "Every Spatial Join operation, one flow each, over points, lines and polygons.",
+    "nodes": [
+      {
+        "id": "a7af0d37-7b1d-5abe-814c-e4ee30e30285",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 210,
+        "content": "import geopandas as gpd\nimport pandas as pd\nfrom shapely.geometry import Point\n\ndataset_path = curio_data_path(\"data.cityofchicago.green-roofs\")\ndf = pd.read_csv(dataset_path).dropna(subset=[\"LONGITUDE\", \"LATITUDE\"])\npoints = [Point(xy) for xy in zip(df[\"LONGITUDE\"], df[\"LATITUDE\"])]\n\nreturn gpd.GeoDataFrame(df, geometry=points, crs=4326)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load Chicago's green roofs as points.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "e2ee6f47-f6cc-5f4c-af8d-373791c551a0",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 1070,
+        "content": "import geopandas as gpd\n\ndataset_path = curio_data_path(\"data.projectsidewalk.chicago-labels\")\ngdf = gpd.read_parquet(dataset_path)\n\n# Every 365th label: 400 points spread across the city.\nreturn gdf[[\"label_type\", \"severity\", \"geometry\"]].iloc[::365]\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load 400 Project Sidewalk labels, spread across the city, as points.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "03d76cdc-8f91-55f1-9f95-7ded593f0b37",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 1500,
+        "content": "gdf = curio_load_data(\"data.cityofchicago.neighborhoods\")\n\nreturn gdf\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load Chicago's 98 neighborhoods as polygons.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "8ba51085-1b61-5b1e-8f12-53759fbfff23",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 640,
+        "content": "gdf = curio_load_data(\"data.utk.chicago-boundary\")\n\nreturn gdf\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load Chicago's ZIP codes as polygons.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "e9addd4c-0b57-57af-822a-e4fc0a0361b1",
+        "type": "curio.builtin/data-transformation",
+        "x": 645,
+        "y": 50,
+        "content": "# Each ZIP's border as a line, for the crosses operation.\ngdf = arg[[\"zip\", \"geometry\"]].copy()\ngdf[\"geometry\"] = gdf.boundary\n\nreturn gdf\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Turn each ZIP polygon into its border line.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "d1e998a1-592b-59e2-a91c-b4639e059f3c",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 1930,
+        "content": "import geopandas as gpd\nfrom shapely.geometry import box\n\n# Two squares in Lincoln Park that share their middle edge.\nreturn gpd.GeoDataFrame(\n    {\"square\": [\"west\", \"east\"]},\n    geometry=[box(-87.65, 41.92, -87.64, 41.93), box(-87.64, 41.92, -87.63, 41.93)],\n    crs=4326,\n)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Two squares that share an edge.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "06a6b730-cf05-5734-a3b8-1e46741023bb",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 2360,
+        "content": "import geopandas as gpd\nfrom shapely.geometry import Point\n\n# One point inside the west square, one on the edge the squares share, one outside both.\nreturn gpd.GeoDataFrame(\n    {\"point\": [\"inside the west square\", \"on the shared edge\", \"outside both\"]},\n    geometry=[Point(-87.645, 41.925), Point(-87.64, 41.925), Point(-87.62, 41.925)],\n    crs=4326,\n)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Three points: inside a square, on the shared edge, outside both.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "3269d5de-21d6-57e4-b811-e3ee90a27f49",
+        "type": "curio.builtin/spatial-join",
+        "x": 678,
+        "y": 860,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Pair each green roof with the neighborhood it intersects.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "5ed28c6e-270b-54d5-85e8-3b5973552eab",
+        "type": "curio.builtin/spatial-join",
+        "x": 678,
+        "y": 1620,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Count the sidewalk labels within each neighborhood.",
+        "metadata": {
+          "keywords": [],
+          "spatialJoin": {
+            "predicate": "within",
+            "output": "counts"
+          }
+        }
+      },
+      {
+        "id": "e9c18033-f81d-527c-9624-7bdfb40123ec",
+        "type": "curio.builtin/spatial-join",
+        "x": 1290,
+        "y": 1208,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Pair each neighborhood with the sidewalk labels it contains.",
+        "metadata": {
+          "keywords": [],
+          "spatialJoin": {
+            "predicate": "contains"
+          }
+        }
+      },
+      {
+        "id": "6e954c1d-9f2d-5e24-9144-22ddefc5d1fd",
+        "type": "curio.builtin/spatial-join",
+        "x": 1290,
+        "y": 1588,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Pair each neighborhood with the neighborhoods it touches.",
+        "metadata": {
+          "keywords": [],
+          "spatialJoin": {
+            "predicate": "touches"
+          }
+        }
+      },
+      {
+        "id": "292f8f9c-9fd8-57a3-8617-cf9aaad9225b",
+        "type": "curio.builtin/spatial-join",
+        "x": 678,
+        "y": 1240,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Pair each neighborhood with the ZIP codes it overlaps.",
+        "metadata": {
+          "keywords": [],
+          "spatialJoin": {
+            "predicate": "overlaps"
+          }
+        }
+      },
+      {
+        "id": "d604f407-ecab-5495-a9d2-f777300c306d",
+        "type": "curio.builtin/spatial-join",
+        "x": 1902,
+        "y": 25,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Pair each ZIP border with the neighborhoods it crosses.",
+        "metadata": {
+          "keywords": [],
+          "spatialJoin": {
+            "predicate": "crosses"
+          }
+        }
+      },
+      {
+        "id": "0165bd33-0850-5d3e-9b86-fdfb7f359ac5",
+        "type": "curio.builtin/spatial-join",
+        "x": 678,
+        "y": 480,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Pair each green roof with its nearest sidewalk label, and how far it is.",
+        "metadata": {
+          "keywords": [],
+          "spatialJoin": {
+            "predicate": "nearest"
+          }
+        }
+      },
+      {
+        "id": "4e8407e1-d56b-59ea-ac6e-c61bdc73e308",
+        "type": "curio.builtin/spatial-join",
+        "x": 1290,
+        "y": 1968,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Pair the points with the squares they intersect: the edge point meets both.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "ae8ddaa2-f7ff-596f-b229-7789206ad513",
+        "type": "curio.builtin/spatial-join",
+        "x": 1290,
+        "y": 2348,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Pair the points with the squares they lie within: the edge point is in neither.",
+        "metadata": {
+          "keywords": [],
+          "spatialJoin": {
+            "predicate": "within"
+          }
+        }
+      },
+      {
+        "id": "bb22d6d9-2c09-52a1-9ab5-e84f0155c0a6",
+        "type": "curio.builtin/vis-vega",
+        "x": 1870,
+        "y": 835,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Green roofs per neighborhood, from intersects: the 15 neighborhoods with the most.\",\n  \"width\": 320,\n  \"height\": {\n    \"step\": 14\n  },\n  \"transform\": [\n    {\n      \"aggregate\": [\n        {\n          \"op\": \"count\",\n          \"as\": \"roofs\"\n        }\n      ],\n      \"groupby\": [\n        \"pri_neigh\"\n      ]\n    },\n    {\n      \"window\": [\n        {\n          \"op\": \"row_number\",\n          \"as\": \"rank\"\n        }\n      ],\n      \"sort\": [\n        {\n          \"field\": \"roofs\",\n          \"order\": \"descending\"\n        },\n        {\n          \"field\": \"pri_neigh\",\n          \"order\": \"ascending\"\n        }\n      ]\n    },\n    {\n      \"filter\": \"datum.rank <= 15\"\n    }\n  ],\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"y\": {\n      \"field\": \"pri_neigh\",\n      \"type\": \"nominal\",\n      \"sort\": \"-x\",\n      \"title\": null\n    },\n    \"x\": {\n      \"field\": \"roofs\",\n      \"type\": \"quantitative\",\n      \"title\": \"green roofs\"\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"pri_neigh\",\n        \"title\": \"neighborhood\"\n      },\n      {\n        \"field\": \"roofs\",\n        \"title\": \"green roofs\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Green roofs per neighborhood.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "e9cc1cea-8afa-5709-9223-58523a7886d3",
+        "type": "curio.builtin/vis-vega",
+        "x": 1870,
+        "y": 1695,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Sidewalk labels within each neighborhood, from the counts output.\",\n  \"width\": 320,\n  \"height\": 380,\n  \"projection\": {\n    \"type\": \"mercator\"\n  },\n  \"mark\": {\n    \"type\": \"geoshape\",\n    \"stroke\": \"white\",\n    \"strokeWidth\": 0.5\n  },\n  \"encoding\": {\n    \"color\": {\n      \"field\": \"point_count\",\n      \"type\": \"quantitative\",\n      \"title\": \"sidewalk labels\",\n      \"scale\": {\n        \"scheme\": \"blues\"\n      }\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"pri_neigh\",\n        \"title\": \"neighborhood\"\n      },\n      {\n        \"field\": \"point_count\",\n        \"title\": \"sidewalk labels\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "A map of the sidewalk labels in each neighborhood.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "117943b9-497b-528c-b829-edfc95805a7a",
+        "type": "curio.builtin/vis-vega",
+        "x": 2515,
+        "y": 1108,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Sidewalk labels per neighborhood by type, from contains: the 12 neighborhoods with the most.\",\n  \"width\": 320,\n  \"height\": {\n    \"step\": 14\n  },\n  \"transform\": [\n    {\n      \"joinaggregate\": [\n        {\n          \"op\": \"count\",\n          \"as\": \"labels\"\n        }\n      ],\n      \"groupby\": [\n        \"pri_neigh\"\n      ]\n    },\n    {\n      \"window\": [\n        {\n          \"op\": \"dense_rank\",\n          \"as\": \"rank\"\n        }\n      ],\n      \"sort\": [\n        {\n          \"field\": \"labels\",\n          \"order\": \"descending\"\n        }\n      ]\n    },\n    {\n      \"filter\": \"datum.rank <= 12\"\n    }\n  ],\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"y\": {\n      \"field\": \"pri_neigh\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"sort\": {\n        \"field\": \"labels\",\n        \"op\": \"max\",\n        \"order\": \"descending\"\n      }\n    },\n    \"x\": {\n      \"aggregate\": \"count\",\n      \"type\": \"quantitative\",\n      \"title\": \"sidewalk labels\"\n    },\n    \"color\": {\n      \"field\": \"label_type\",\n      \"type\": \"nominal\",\n      \"title\": \"label type\"\n    }\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Sidewalk labels per neighborhood, by label type.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "9a85441a-9e12-5f7a-9336-9cbbe0dc2be9",
+        "type": "curio.builtin/vis-vega",
+        "x": 2515,
+        "y": 1538,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Bordering neighborhoods per neighborhood, from touches: the 15 with the most.\",\n  \"width\": 320,\n  \"height\": {\n    \"step\": 14\n  },\n  \"transform\": [\n    {\n      \"aggregate\": [\n        {\n          \"op\": \"count\",\n          \"as\": \"neighbors\"\n        }\n      ],\n      \"groupby\": [\n        \"pri_neigh\"\n      ]\n    },\n    {\n      \"window\": [\n        {\n          \"op\": \"row_number\",\n          \"as\": \"rank\"\n        }\n      ],\n      \"sort\": [\n        {\n          \"field\": \"neighbors\",\n          \"order\": \"descending\"\n        },\n        {\n          \"field\": \"pri_neigh\",\n          \"order\": \"ascending\"\n        }\n      ]\n    },\n    {\n      \"filter\": \"datum.rank <= 15\"\n    }\n  ],\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"y\": {\n      \"field\": \"pri_neigh\",\n      \"type\": \"nominal\",\n      \"sort\": \"-x\",\n      \"title\": null\n    },\n    \"x\": {\n      \"field\": \"neighbors\",\n      \"type\": \"quantitative\",\n      \"title\": \"bordering neighborhoods\"\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"pri_neigh\",\n        \"title\": \"neighborhood\"\n      },\n      {\n        \"field\": \"neighbors\",\n        \"title\": \"bordering neighborhoods\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "How many neighborhoods border each one.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "4f09ca31-ec7b-5a81-bee0-9ce3555e37a6",
+        "type": "curio.builtin/vis-vega",
+        "x": 1870,
+        "y": 1265,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"ZIP codes per neighborhood, from overlaps: the 15 neighborhoods split by the most.\",\n  \"width\": 320,\n  \"height\": {\n    \"step\": 14\n  },\n  \"transform\": [\n    {\n      \"aggregate\": [\n        {\n          \"op\": \"count\",\n          \"as\": \"zips\"\n        }\n      ],\n      \"groupby\": [\n        \"pri_neigh\"\n      ]\n    },\n    {\n      \"window\": [\n        {\n          \"op\": \"row_number\",\n          \"as\": \"rank\"\n        }\n      ],\n      \"sort\": [\n        {\n          \"field\": \"zips\",\n          \"order\": \"descending\"\n        },\n        {\n          \"field\": \"pri_neigh\",\n          \"order\": \"ascending\"\n        }\n      ]\n    },\n    {\n      \"filter\": \"datum.rank <= 15\"\n    }\n  ],\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"y\": {\n      \"field\": \"pri_neigh\",\n      \"type\": \"nominal\",\n      \"sort\": \"-x\",\n      \"title\": null\n    },\n    \"x\": {\n      \"field\": \"zips\",\n      \"type\": \"quantitative\",\n      \"title\": \"ZIP codes overlapping it\"\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"pri_neigh\",\n        \"title\": \"neighborhood\"\n      },\n      {\n        \"field\": \"zips\",\n        \"title\": \"ZIP codes overlapping it\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "How many ZIP codes each neighborhood straddles.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "1ad71c29-3824-52a3-9896-f9091462f436",
+        "type": "curio.builtin/vis-vega",
+        "x": 3160,
+        "y": 0,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"ZIP borders through each neighborhood, from crosses: the 15 crossed by the most.\",\n  \"width\": 320,\n  \"height\": {\n    \"step\": 14\n  },\n  \"transform\": [\n    {\n      \"aggregate\": [\n        {\n          \"op\": \"count\",\n          \"as\": \"borders\"\n        }\n      ],\n      \"groupby\": [\n        \"pri_neigh\"\n      ]\n    },\n    {\n      \"window\": [\n        {\n          \"op\": \"row_number\",\n          \"as\": \"rank\"\n        }\n      ],\n      \"sort\": [\n        {\n          \"field\": \"borders\",\n          \"order\": \"descending\"\n        },\n        {\n          \"field\": \"pri_neigh\",\n          \"order\": \"ascending\"\n        }\n      ]\n    },\n    {\n      \"filter\": \"datum.rank <= 15\"\n    }\n  ],\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"y\": {\n      \"field\": \"pri_neigh\",\n      \"type\": \"nominal\",\n      \"sort\": \"-x\",\n      \"title\": null\n    },\n    \"x\": {\n      \"field\": \"borders\",\n      \"type\": \"quantitative\",\n      \"title\": \"ZIP borders crossing it\"\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"pri_neigh\",\n        \"title\": \"neighborhood\"\n      },\n      {\n        \"field\": \"borders\",\n        \"title\": \"ZIP borders crossing it\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "How many ZIP borders run through each neighborhood.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "3ec2adff-8f58-5e83-9055-f8918f7aa108",
+        "type": "curio.builtin/vis-vega",
+        "x": 1870,
+        "y": 405,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"How far each green roof is from the nearest sidewalk label, from nearest.\",\n  \"width\": 320,\n  \"height\": 220,\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"distance\",\n      \"type\": \"quantitative\",\n      \"bin\": {\n        \"maxbins\": 30\n      },\n      \"title\": \"meters to the nearest sidewalk label\"\n    },\n    \"y\": {\n      \"aggregate\": \"count\",\n      \"type\": \"quantitative\",\n      \"title\": \"green roofs\"\n    }\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "A histogram of each green roof's distance to the nearest sidewalk label.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "e469f1ae-c258-5ead-a240-a7d15e9832a9",
+        "type": "curio.builtin/vis-simple",
+        "x": 2515,
+        "y": 1968,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "The pairs intersects finds: the edge point twice.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "2bcc7dbd-c511-576d-a450-7bda1fe4b642",
+        "type": "curio.builtin/vis-simple",
+        "x": 2515,
+        "y": 2398,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "The pairs within finds: the edge point not at all.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-8ba51085-1b61-5b1e-8f12-53759fbfff23out-e9addd4c-0b57-57af-822a-e4fc0a0361b1in",
+        "source": "8ba51085-1b61-5b1e-8f12-53759fbfff23",
+        "sourceHandle": "out",
+        "target": "e9addd4c-0b57-57af-822a-e4fc0a0361b1",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-a7af0d37-7b1d-5abe-814c-e4ee30e30285out-3269d5de-21d6-57e4-b811-e3ee90a27f49in",
+        "source": "a7af0d37-7b1d-5abe-814c-e4ee30e30285",
+        "sourceHandle": "out",
+        "target": "3269d5de-21d6-57e4-b811-e3ee90a27f49",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-03d76cdc-8f91-55f1-9f95-7ded593f0b37out-3269d5de-21d6-57e4-b811-e3ee90a27f49in_1",
+        "source": "03d76cdc-8f91-55f1-9f95-7ded593f0b37",
+        "sourceHandle": "out",
+        "target": "3269d5de-21d6-57e4-b811-e3ee90a27f49",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-e2ee6f47-f6cc-5f4c-af8d-373791c551a0out-5ed28c6e-270b-54d5-85e8-3b5973552eabin",
+        "source": "e2ee6f47-f6cc-5f4c-af8d-373791c551a0",
+        "sourceHandle": "out",
+        "target": "5ed28c6e-270b-54d5-85e8-3b5973552eab",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-03d76cdc-8f91-55f1-9f95-7ded593f0b37out-5ed28c6e-270b-54d5-85e8-3b5973552eabin_1",
+        "source": "03d76cdc-8f91-55f1-9f95-7ded593f0b37",
+        "sourceHandle": "out",
+        "target": "5ed28c6e-270b-54d5-85e8-3b5973552eab",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-03d76cdc-8f91-55f1-9f95-7ded593f0b37out-e9c18033-f81d-527c-9624-7bdfb40123ecin",
+        "source": "03d76cdc-8f91-55f1-9f95-7ded593f0b37",
+        "sourceHandle": "out",
+        "target": "e9c18033-f81d-527c-9624-7bdfb40123ec",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-e2ee6f47-f6cc-5f4c-af8d-373791c551a0out-e9c18033-f81d-527c-9624-7bdfb40123ecin_1",
+        "source": "e2ee6f47-f6cc-5f4c-af8d-373791c551a0",
+        "sourceHandle": "out",
+        "target": "e9c18033-f81d-527c-9624-7bdfb40123ec",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-03d76cdc-8f91-55f1-9f95-7ded593f0b37out-6e954c1d-9f2d-5e24-9144-22ddefc5d1fdin",
+        "source": "03d76cdc-8f91-55f1-9f95-7ded593f0b37",
+        "sourceHandle": "out",
+        "target": "6e954c1d-9f2d-5e24-9144-22ddefc5d1fd",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-03d76cdc-8f91-55f1-9f95-7ded593f0b37out-6e954c1d-9f2d-5e24-9144-22ddefc5d1fdin_1",
+        "source": "03d76cdc-8f91-55f1-9f95-7ded593f0b37",
+        "sourceHandle": "out",
+        "target": "6e954c1d-9f2d-5e24-9144-22ddefc5d1fd",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-03d76cdc-8f91-55f1-9f95-7ded593f0b37out-292f8f9c-9fd8-57a3-8617-cf9aaad9225bin",
+        "source": "03d76cdc-8f91-55f1-9f95-7ded593f0b37",
+        "sourceHandle": "out",
+        "target": "292f8f9c-9fd8-57a3-8617-cf9aaad9225b",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-8ba51085-1b61-5b1e-8f12-53759fbfff23out-292f8f9c-9fd8-57a3-8617-cf9aaad9225bin_1",
+        "source": "8ba51085-1b61-5b1e-8f12-53759fbfff23",
+        "sourceHandle": "out",
+        "target": "292f8f9c-9fd8-57a3-8617-cf9aaad9225b",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-e9addd4c-0b57-57af-822a-e4fc0a0361b1out-d604f407-ecab-5495-a9d2-f777300c306din",
+        "source": "e9addd4c-0b57-57af-822a-e4fc0a0361b1",
+        "sourceHandle": "out",
+        "target": "d604f407-ecab-5495-a9d2-f777300c306d",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-03d76cdc-8f91-55f1-9f95-7ded593f0b37out-d604f407-ecab-5495-a9d2-f777300c306din_1",
+        "source": "03d76cdc-8f91-55f1-9f95-7ded593f0b37",
+        "sourceHandle": "out",
+        "target": "d604f407-ecab-5495-a9d2-f777300c306d",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-a7af0d37-7b1d-5abe-814c-e4ee30e30285out-0165bd33-0850-5d3e-9b86-fdfb7f359ac5in",
+        "source": "a7af0d37-7b1d-5abe-814c-e4ee30e30285",
+        "sourceHandle": "out",
+        "target": "0165bd33-0850-5d3e-9b86-fdfb7f359ac5",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-e2ee6f47-f6cc-5f4c-af8d-373791c551a0out-0165bd33-0850-5d3e-9b86-fdfb7f359ac5in_1",
+        "source": "e2ee6f47-f6cc-5f4c-af8d-373791c551a0",
+        "sourceHandle": "out",
+        "target": "0165bd33-0850-5d3e-9b86-fdfb7f359ac5",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-06a6b730-cf05-5734-a3b8-1e46741023bbout-4e8407e1-d56b-59ea-ac6e-c61bdc73e308in",
+        "source": "06a6b730-cf05-5734-a3b8-1e46741023bb",
+        "sourceHandle": "out",
+        "target": "4e8407e1-d56b-59ea-ac6e-c61bdc73e308",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-d1e998a1-592b-59e2-a91c-b4639e059f3cout-4e8407e1-d56b-59ea-ac6e-c61bdc73e308in_1",
+        "source": "d1e998a1-592b-59e2-a91c-b4639e059f3c",
+        "sourceHandle": "out",
+        "target": "4e8407e1-d56b-59ea-ac6e-c61bdc73e308",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-06a6b730-cf05-5734-a3b8-1e46741023bbout-ae8ddaa2-f7ff-596f-b229-7789206ad513in",
+        "source": "06a6b730-cf05-5734-a3b8-1e46741023bb",
+        "sourceHandle": "out",
+        "target": "ae8ddaa2-f7ff-596f-b229-7789206ad513",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-d1e998a1-592b-59e2-a91c-b4639e059f3cout-ae8ddaa2-f7ff-596f-b229-7789206ad513in_1",
+        "source": "d1e998a1-592b-59e2-a91c-b4639e059f3c",
+        "sourceHandle": "out",
+        "target": "ae8ddaa2-f7ff-596f-b229-7789206ad513",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-3269d5de-21d6-57e4-b811-e3ee90a27f49out-bb22d6d9-2c09-52a1-9ab5-e84f0155c0a6in",
+        "source": "3269d5de-21d6-57e4-b811-e3ee90a27f49",
+        "sourceHandle": "out",
+        "target": "bb22d6d9-2c09-52a1-9ab5-e84f0155c0a6",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-5ed28c6e-270b-54d5-85e8-3b5973552eabout-e9cc1cea-8afa-5709-9223-58523a7886d3in",
+        "source": "5ed28c6e-270b-54d5-85e8-3b5973552eab",
+        "sourceHandle": "out",
+        "target": "e9cc1cea-8afa-5709-9223-58523a7886d3",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-e9c18033-f81d-527c-9624-7bdfb40123ecout-117943b9-497b-528c-b829-edfc95805a7ain",
+        "source": "e9c18033-f81d-527c-9624-7bdfb40123ec",
+        "sourceHandle": "out",
+        "target": "117943b9-497b-528c-b829-edfc95805a7a",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-6e954c1d-9f2d-5e24-9144-22ddefc5d1fdout-9a85441a-9e12-5f7a-9336-9cbbe0dc2be9in",
+        "source": "6e954c1d-9f2d-5e24-9144-22ddefc5d1fd",
+        "sourceHandle": "out",
+        "target": "9a85441a-9e12-5f7a-9336-9cbbe0dc2be9",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-292f8f9c-9fd8-57a3-8617-cf9aaad9225bout-4f09ca31-ec7b-5a81-bee0-9ce3555e37a6in",
+        "source": "292f8f9c-9fd8-57a3-8617-cf9aaad9225b",
+        "sourceHandle": "out",
+        "target": "4f09ca31-ec7b-5a81-bee0-9ce3555e37a6",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-d604f407-ecab-5495-a9d2-f777300c306dout-1ad71c29-3824-52a3-9896-f9091462f436in",
+        "source": "d604f407-ecab-5495-a9d2-f777300c306d",
+        "sourceHandle": "out",
+        "target": "1ad71c29-3824-52a3-9896-f9091462f436",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-0165bd33-0850-5d3e-9b86-fdfb7f359ac5out-3ec2adff-8f58-5e83-9055-f8918f7aa108in",
+        "source": "0165bd33-0850-5d3e-9b86-fdfb7f359ac5",
+        "sourceHandle": "out",
+        "target": "3ec2adff-8f58-5e83-9055-f8918f7aa108",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-4e8407e1-d56b-59ea-ac6e-c61bdc73e308out-e469f1ae-c258-5ead-a240-a7d15e9832a9in",
+        "source": "4e8407e1-d56b-59ea-ac6e-c61bdc73e308",
+        "sourceHandle": "out",
+        "target": "e469f1ae-c258-5ead-a240-a7d15e9832a9",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-ae8ddaa2-f7ff-596f-b229-7789206ad513out-2bcc7dbd-c511-576d-a450-7bda1fe4b642in",
+        "source": "ae8ddaa2-f7ff-596f-b229-7789206ad513",
+        "sourceHandle": "out",
+        "target": "2bcc7dbd-c511-576d-a450-7bda1fe4b642",
+        "targetHandle": "in"
+      }
+    ],
+    "name": "Spatial Join operations",
+    "task": "",
+    "timestamp": 1791590400000,
+    "provenance_id": "DefaultWorkflow",
+    "datasets": [
+      {
+        "datasetId": "data.cityofchicago.green-roofs",
+        "dirName": "data.cityofchicago.green-roofs@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-10T00:00:00Z"
+      },
+      {
+        "datasetId": "data.projectsidewalk.chicago-labels",
+        "dirName": "data.projectsidewalk.chicago-labels@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-10T00:00:00Z"
+      },
+      {
+        "datasetId": "data.cityofchicago.neighborhoods",
+        "dirName": "data.cityofchicago.neighborhoods@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-10T00:00:00Z"
+      },
+      {
+        "datasetId": "data.utk.chicago-boundary",
+        "dirName": "data.utk.chicago-boundary@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-10T00:00:00Z"
+      }
+    ]
+  }
+}

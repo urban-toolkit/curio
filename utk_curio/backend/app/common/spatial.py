@@ -1,184 +1,230 @@
-"""Generic spatial-join helper: tag each point with the polygon it falls in.
+"""Spatial Join: pair the rows of two GeoJSON inputs whose shapes meet (#576).
 
-Backs the ``/spatial_join`` endpoint in ``app/api/routes.py`` which in turn
-powers the Spatial Join node in ``curio.builtin@1``. Lazy-imports
-``shapely`` so this module remains importable even on installs without
-geospatial extras; the route layer surfaces an ImportError as a 503 response.
+Backs the ``/spatial_join`` endpoint in ``app/api/routes.py``, which in turn
+powers the Spatial Join node in ``curio.builtin@1``. Input 0 is the left side
+of the join and input 1 the right, as geopandas names them: ``sjoin`` finds
+the pairs for every operation but ``nearest``, which is ``sjoin_nearest``.
 
-Originally adapted from the per-neighborhood enrichment helper in
-github.com/ManeeshJupalle/Street-Level-Vision-Analytics-Node-for-Curio,
-generalized here to accept caller-supplied polygons (instead of bundling a
-hardcoded Chicago basemap) and made reusable beyond CV pipelines.
+geopandas is imported inside the functions, so this module stays importable on
+an install without it; the route answers that case with a 503.
 """
 
 from collections import Counter
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
+PREDICATES = ("intersects", "within", "contains", "touches", "overlaps", "crosses", "nearest")
+OUTPUTS = ("pairs", "counts")
+DEFAULT_PREDICATE = "intersects"
+DEFAULT_OUTPUT = "pairs"
+
+#: What a clashing input 1 column is renamed with, so no input 0 column is overwritten.
+RIGHT_SUFFIX = "_right"
+#: The column the counts output gives each input 1 row.
+COUNT_COLUMN = "point_count"
+#: The column ``nearest`` adds: the distance between the pair, in meters.
+DISTANCE_COLUMN = "distance"
+
+_KINDS = {0: "point", 1: "line", 2: "polygon"}
 
 
-def enrich_points_with_polygons(
-    points: List[dict],
-    polygon_fc: dict,
-    name_property: str = "name",
-    warnings: Optional[List[str]] = None,
-) -> Tuple[List[dict], List[dict], str]:
-    """Tag each point with the containing polygon + compute per-polygon aggregates.
+class JoinInputError(ValueError):
+    """A request the join cannot run. The message says what to change."""
 
-    Args:
-        points: list of dicts with at least ``latitude``, ``longitude``.
-            May also carry ``dominant_class``, ``dominant_pct`` (used to roll
-            up a "modal class per polygon"), or any other keys (preserved
-            in the output).
-        polygon_fc: GeoJSON FeatureCollection of Polygon / MultiPolygon
-            features. Each feature should have ``properties.<name_property>``
-            as a string; missing names fall back to ``polygon_<index>``.
-        name_property: which property field is used as the polygon's tag.
-        warnings: optional list the function appends human-readable warnings
-            to - today, that polygons lacked ``name_property`` (#262). The
-            fallback to ``polygon_<index>`` used to be silent, so a wrong
-            property name looked like a successful join.
 
-    Returns:
-        ``(enriched_points, aggregates, tag_column)``. ``enriched_points``
-        preserves input order and adds:
+def spatial_join(
+    left_fc: Any,
+    right_fc: Any,
+    predicate: str = DEFAULT_PREDICATE,
+    output: str = DEFAULT_OUTPUT,
+) -> Dict[str, Any]:
+    """Join *left_fc* (input 0) to *right_fc* (input 1) by *predicate*.
 
-        * ``<tag_column>``: the containing polygon's value of ``name_property``,
-          or None for a point outside every polygon. The column is named after
-          the polygon column itself (``zip`` stays ``zip``); when the points
-          already carry a column of that name the tag goes to
-          ``<name_property>_polygon`` instead, so nothing is overwritten.
-        * ``<tag_column>_point_count``: how many points fell in the same
-          polygon (None for an untagged point).
-        * ``<tag_column>_dominant_class`` / ``<tag_column>_dominant_pct``: only
-          when the points carry a ``dominant_class`` (the street-vision case),
-          the polygon's modal class and its mean confidence.
+    ``output="pairs"`` gives one feature per matching pair: input 0's row and
+    geometry, with input 1's columns added (``<column>_right`` on a clash).
+    ``output="counts"`` gives input 1's features, each with ``point_count``,
+    the number of input 0 rows paired with it.
 
-        ``aggregates`` is the per-polygon roll-up, one row per polygon that
-        received at least one point, keyed by ``tag_column``. See
-        :func:`polygons_with_counts` for the other output shape.
-
-        The join was carved out of the street-vision pipeline, whose tag column
-        was hard-coded to ``neighborhood_name`` and whose roll-ups were
-        ``nbhd_*``; a roof tagged with a ZIP code deserves better names.
+    A point on a polygon's edge follows shapely's rule for the operation: it
+    intersects and touches the polygon, and is not within it.
     """
-    # shapely is a heavy-ish geospatial dep; keep it lazy so a Curio install
-    # without the spatial extras can still import this module.
-    from shapely.geometry import Point, shape
-    from shapely.strtree import STRtree
+    if predicate not in PREDICATES:
+        raise JoinInputError(f"The operation must be one of {', '.join(PREDICATES)}; got {predicate!r}.")
+    if output not in OUTPUTS:
+        raise JoinInputError(f"The output must be one of {', '.join(OUTPUTS)}; got {output!r}.")
+    left_features = _features(left_fc, "Input 0")
+    right_features = _features(right_fc, "Input 1")
+    left = _frame(left_features, left_fc, "Input 0")
+    right = _frame(right_features, right_fc, "Input 1")
+    if right.crs != left.crs:
+        right = right.to_crs(left.crs)
 
-    polygons = []
-    names = []
-    unnamed = 0
-    seen_props: set = set()
-    for i, feat in enumerate(polygon_fc.get("features", [])):
+    pairs = _pairs(left, right, predicate)
+    warnings: List[str] = []
+    if not pairs and len(left) and len(right):
+        hint = _never_matches_hint(predicate, _dimension(left), _dimension(right))
+        if hint:
+            warnings.append(hint)
+
+    if output == "counts":
+        counts = Counter(j for _, j, _ in pairs)
+        features = []
+        for j, feat in enumerate(right_features):
+            props = dict(feat.get("properties") or {})
+            props[COUNT_COLUMN] = counts.get(j, 0)
+            features.append({"type": "Feature", "geometry": feat.get("geometry"), "properties": props})
+        crs_member = right_fc.get("crs")
+    else:
+        features = _pair_features(left_features, right_features, pairs, predicate == "nearest")
+        crs_member = left_fc.get("crs")
+
+    metadata: Dict[str, Any] = {
+        "name": "spatial_join_result",
+        "output": output,
+        "predicate": predicate,
+        "pairs": len(pairs),
+        "matched_left": len({i for i, _, _ in pairs}),
+        "matched_right": len({j for _, j, _ in pairs}),
+        "left_rows": len(left_features),
+        "right_rows": len(right_features),
+    }
+    if warnings:
+        metadata["warnings"] = warnings
+    result: Dict[str, Any] = {"type": "FeatureCollection", "features": features, "metadata": metadata}
+    if crs_member is not None:
+        result["crs"] = crs_member
+    return result
+
+
+def _features(fc: Any, name: str) -> List[dict]:
+    """The features of a GeoJSON FeatureCollection, or a message saying it is not one."""
+    features = fc.get("features") if isinstance(fc, dict) else None
+    if not isinstance(features, list):
+        raise JoinInputError(
+            f"{name} is not geodata: connect a node whose output has a geometry column "
+            "(a GeoDataFrame) to its circle."
+        )
+    return [f if isinstance(f, dict) else {} for f in features]
+
+
+def _frame(features: List[dict], fc: dict, name: str):
+    """A GeoDataFrame of the features' geometries alone, in the collection's CRS.
+
+    The sandbox writes a GeoDataFrame's CRS as the collection's ``crs`` member
+    (``sandbox/util/parsers.py``); without one, GeoJSON means longitude and
+    latitude. A geometry that cannot be read is left empty and pairs with
+    nothing, as a row without a geometry does.
+    """
+    import geopandas as gpd
+    from pyproj import CRS
+    from shapely.geometry import shape
+
+    geometries = []
+    for feat in features:
+        raw = feat.get("geometry")
         try:
-            polygons.append(shape(feat["geometry"]))
-            props = feat.get("properties") or {}
-            seen_props.update(k for k in props.keys() if isinstance(k, str))
-            name = polygon_tag(props, name_property, i)
-            if name == f"polygon_{i}":
-                unnamed += 1
-            names.append(name)
+            geometries.append(shape(raw) if raw else None)
         except Exception:
-            # Skip malformed features; one bad polygon shouldn't abort the join.
-            continue
-    tree = STRtree(polygons) if polygons else None
-
-    if warnings is not None and polygons and unnamed:
-        if unnamed == len(polygons):
-            available = ", ".join(sorted(k for k in seen_props if k != "geometry")[:12])
-            warnings.append(
-                f"No polygon has a '{name_property}' column, so tags fall back to "
-                f"polygon_<index>. Available columns: {available or 'none'}."
-            )
-        else:
-            warnings.append(
-                f"{unnamed} of {len(polygons)} polygons lack a '{name_property}' "
-                f"column and are tagged polygon_<index>."
-            )
-
-    # The tag column is the polygon column itself, unless the points already
-    # have one of that name, in which case it is suffixed rather than clobbered.
-    tag_column = name_property
-    if any(name_property in p for p in points):
-        tag_column = f"{name_property}_polygon"
-
-    enriched: List[dict] = []
-    groups: dict = {}
-
-    for p in points:
-        lat, lon = p.get("latitude"), p.get("longitude")
-        tag: Optional[str] = None
-        if lat is not None and lon is not None and tree is not None:
-            pt = Point(lon, lat)
-            for idx in tree.query(pt):
-                if polygons[idx].contains(pt):
-                    tag = names[idx]
-                    break
-        enriched.append({**p, tag_column: tag})
-        if tag:
-            groups.setdefault(tag, []).append(p)
-
-    aggregates: List[dict] = []
-    for name, group in groups.items():
-        row: dict = {tag_column: name, "point_count": len(group)}
-        classes = [g.get("dominant_class") for g in group if g.get("dominant_class")]
-        if classes:
-            counter = Counter(classes)
-            top_class, _ = counter.most_common(1)[0]
-            relevant_pcts = [
-                g.get("dominant_pct", 0) for g in group if g.get("dominant_class") == top_class
-            ]
-            row["dominant_class"] = top_class
-            row["dominant_pct"] = round(sum(relevant_pcts) / max(len(relevant_pcts), 1), 2)
-            row["top3"] = [{"class": c, "count": cnt} for c, cnt in counter.most_common(3)]
-        aggregates.append(row)
-
-    # Project the roll-up back onto each member point so a Vega-Lite spec can
-    # size or colour by it without a separate dataset. The count is always
-    # there; the class fields only when some point carried a dominant class.
-    any_class = any("dominant_class" in agg for agg in aggregates)
-    agg_lookup = {agg[tag_column]: agg for agg in aggregates}
-    for ep in enriched:
-        agg = agg_lookup.get(ep.get(tag_column))
-        ep[f"{tag_column}_point_count"] = agg["point_count"] if agg else None
-        if any_class:
-            ep[f"{tag_column}_dominant_class"] = agg.get("dominant_class") if agg else None
-            ep[f"{tag_column}_dominant_pct"] = agg.get("dominant_pct") if agg else None
-
-    return enriched, aggregates, tag_column
+            geometries.append(None)
+    crs_name = None
+    member = fc.get("crs")
+    if isinstance(member, dict):
+        crs_name = (member.get("properties") or {}).get("name")
+    try:
+        crs = CRS.from_user_input(crs_name or "EPSG:4326")
+    except Exception:
+        raise JoinInputError(f"{name} has a coordinate system Curio cannot read: {crs_name!r}.") from None
+    return gpd.GeoDataFrame(geometry=geometries, crs=crs)
 
 
-def polygon_tag(props: dict, name_property: str, index: int) -> str:
-    """The tag a polygon contributes: its ``name_property``, else ``polygon_<index>``."""
-    name = props.get(name_property) if isinstance(props, dict) else None
-    if not isinstance(name, str) or not name:
-        return f"polygon_{index}"
-    return name
+def _pairs(left, right, predicate: str) -> List[Tuple[int, int, Optional[float]]]:
+    """``(input 0 row, input 1 row, distance)`` for every matching pair, in input 0's order."""
+    import geopandas as gpd
+
+    left = left[left.geometry.notna() & ~left.geometry.is_empty]
+    right = right[right.geometry.notna() & ~right.geometry.is_empty]
+    if left.empty or right.empty:
+        return []
+    if predicate == "nearest":
+        # In degrees the nearest polygon is the wrong one away from the
+        # equator, and a distance in degrees means nothing to anyone: measure
+        # in the UTM zone of input 0, in meters.
+        metric = left.estimate_utm_crs()
+        joined = gpd.sjoin_nearest(
+            left.to_crs(metric), right.to_crs(metric), how="inner", distance_col=DISTANCE_COLUMN,
+        )
+        rows = [
+            (int(i), int(j), round(float(d), 2))
+            for i, j, d in zip(joined.index, joined["index_right"], joined[DISTANCE_COLUMN])
+        ]
+    else:
+        joined = gpd.sjoin(left, right, how="inner", predicate=predicate)
+        rows = [(int(i), int(j), None) for i, j in zip(joined.index, joined["index_right"])]
+    return sorted(rows)
 
 
-def polygons_with_counts(
-    polygon_fc: dict,
-    aggregates: List[dict],
-    tag_column: str,
-    name_property: str = "name",
+def _pair_features(
+    left_features: List[dict],
+    right_features: List[dict],
+    pairs: List[Tuple[int, int, Optional[float]]],
+    with_distance: bool,
 ) -> List[dict]:
-    """The other output shape: the polygons, each with its roll-up.
+    """One feature per pair: input 0's row and geometry, input 1's columns added.
 
-    Every polygon feature comes back with ``point_count`` (0 when nothing fell
-    inside) and, when the points carried a ``dominant_class``,
-    ``dominant_class`` and ``dominant_pct``. Geometry and the polygon's own
-    properties are untouched, so a choropleth is one ``geoshape`` away and a
-    bar chart of counts is the same rows without the geometry.
+    Built from the features as they came, so every value keeps its JSON form.
     """
-    by_tag = {agg[tag_column]: agg for agg in aggregates}
-    any_class = any("dominant_class" in agg for agg in aggregates)
+    left_columns = {k for f in left_features for k in (f.get("properties") or {})}
+    right_columns = {k for f in right_features for k in (f.get("properties") or {})}
+    taken = set(left_columns)
+    renamed: Dict[str, str] = {}
+    for column in sorted(right_columns):
+        name = column
+        while name in taken:
+            name = f"{name}{RIGHT_SUFFIX}"
+        renamed[column] = name
+        taken.add(name)
+    distance_column = DISTANCE_COLUMN
+    while distance_column in taken:
+        distance_column = f"{distance_column}{RIGHT_SUFFIX}"
+
     out: List[dict] = []
-    for i, feat in enumerate(polygon_fc.get("features") or []):
-        props = dict(feat.get("properties") or {})
-        agg = by_tag.get(polygon_tag(props, name_property, i))
-        props["point_count"] = agg["point_count"] if agg else 0
-        if any_class:
-            props["dominant_class"] = agg.get("dominant_class") if agg else None
-            props["dominant_pct"] = agg.get("dominant_pct") if agg else None
-        out.append({"type": "Feature", "geometry": feat.get("geometry"), "properties": props})
+    for i, j, distance in pairs:
+        left_feat = left_features[i]
+        props = dict(left_feat.get("properties") or {})
+        for column, value in (right_features[j].get("properties") or {}).items():
+            props[renamed[column]] = value
+        if with_distance:
+            props[distance_column] = distance
+        out.append({"type": "Feature", "geometry": left_feat.get("geometry"), "properties": props})
     return out
+
+
+def _dimension(frame) -> Optional[int]:
+    """0, 1 or 2 when every geometry of *frame* is points, lines or polygons; else None."""
+    import shapely
+
+    geometries = frame.geometry[frame.geometry.notna() & ~frame.geometry.is_empty]
+    dims = {int(d) for d in shapely.get_dimensions(geometries.to_numpy())}
+    return dims.pop() if len(dims) == 1 else None
+
+
+def _never_matches_hint(predicate: str, left_dim: Optional[int], right_dim: Optional[int]) -> Optional[str]:
+    """Why an operation found no pairs when it never can for these shapes, and what to pick."""
+    if left_dim is None or right_dim is None:
+        return None
+    left_kind, right_kind = _KINDS[left_dim], _KINDS[right_dim]
+    if predicate == "within" and left_dim > right_dim:
+        return (f"No pairs: a {left_kind} is never within a {right_kind}. "
+                "Pick contains, or swap the two inputs.")
+    if predicate == "contains" and left_dim < right_dim:
+        return (f"No pairs: a {left_kind} never contains a {right_kind}. "
+                "Pick within, or swap the two inputs.")
+    if predicate == "overlaps" and left_dim != right_dim:
+        return (f"No pairs: overlaps pairs shapes of one kind, and these are {left_kind}s "
+                f"and {right_kind}s. Pick intersects.")
+    if predicate == "crosses" and left_dim == right_dim == 2:
+        return "No pairs: two polygons never cross. Pick overlaps or intersects."
+    if predicate == "crosses" and 0 in (left_dim, right_dim):
+        return "No pairs: a point never crosses another shape. Pick intersects."
+    if predicate == "touches" and left_dim == right_dim == 0:
+        return "No pairs: points never touch. Pick intersects or nearest."
+    return None

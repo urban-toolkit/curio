@@ -1,0 +1,414 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "25-spatial-join-operations",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/25-spatial-join-operations.json",
+    "sha256": "ea63e7b3c3e8f95e1979cd401d70640cc009ff0906218baec7bb50afe8ca273e",
+    "walkthrough": null
+  },
+  "prompt": "From the Data Catalog, load Chicago's green roofs, a sample of Project Sidewalk labels spread across the city, the city's neighborhoods and its ZIP codes, and show every kind of spatial join side by side: the neighborhood each green roof is in; a map of how many sidewalk labels lie within each neighborhood; the labels each neighborhood contains, by type; which neighborhoods border each other; which ZIP codes each neighborhood overlaps; which neighborhoods each ZIP border runs through; and how far each green roof is from the nearest sidewalk label. Add two small squares that share an edge and three points, one inside a square, one on the shared edge and one outside both, and show that the point on the edge meets both squares but lies within neither.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.cityofchicago.green-roofs",
+      "data.cityofchicago.neighborhoods",
+      "data.projectsidewalk.chicago-labels",
+      "data.utk.chicago-boundary"
+    ],
+    "packages": [],
+    "paths": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader2",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader3",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader4",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader5",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader6",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform1",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "endpoint1",
+        "type": "curio.builtin/spatial-join",
+        "role": "endpoint",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "endpoint2",
+        "type": "curio.builtin/spatial-join",
+        "role": "endpoint",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "endpoint3",
+        "type": "curio.builtin/spatial-join",
+        "role": "endpoint",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "endpoint4",
+        "type": "curio.builtin/spatial-join",
+        "role": "endpoint",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "endpoint5",
+        "type": "curio.builtin/spatial-join",
+        "role": "endpoint",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "endpoint6",
+        "type": "curio.builtin/spatial-join",
+        "role": "endpoint",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "endpoint7",
+        "type": "curio.builtin/spatial-join",
+        "role": "endpoint",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "endpoint8",
+        "type": "curio.builtin/spatial-join",
+        "role": "endpoint",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "endpoint9",
+        "type": "curio.builtin/spatial-join",
+        "role": "endpoint",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/vis-simple",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/vis-simple",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization4",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization5",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization6",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization7",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization8",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization9",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "loader1",
+        "to": "transform1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "endpoint3",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader2",
+        "to": "endpoint1",
+        "kind": "data"
+      },
+      {
+        "from": "loader2",
+        "to": "endpoint2",
+        "kind": "data"
+      },
+      {
+        "from": "loader3",
+        "to": "endpoint1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader3",
+        "to": "endpoint2",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader4",
+        "to": "endpoint4",
+        "kind": "data"
+      },
+      {
+        "from": "loader4",
+        "to": "endpoint5",
+        "kind": "data"
+      },
+      {
+        "from": "loader5",
+        "to": "endpoint4",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader5",
+        "to": "endpoint6",
+        "kind": "data"
+      },
+      {
+        "from": "loader5",
+        "to": "endpoint7",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader6",
+        "to": "endpoint3",
+        "kind": "data"
+      },
+      {
+        "from": "loader6",
+        "to": "endpoint5",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader6",
+        "to": "endpoint6",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader6",
+        "to": "endpoint7",
+        "kind": "data"
+      },
+      {
+        "from": "loader6",
+        "to": "endpoint8",
+        "kind": "data"
+      },
+      {
+        "from": "loader6",
+        "to": "endpoint8",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader6",
+        "to": "endpoint9",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "transform1",
+        "to": "endpoint9",
+        "kind": "data"
+      },
+      {
+        "from": "endpoint1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "endpoint2",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "endpoint3",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "endpoint4",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "endpoint5",
+        "to": "visualization5",
+        "kind": "data"
+      },
+      {
+        "from": "endpoint6",
+        "to": "visualization6",
+        "kind": "data"
+      },
+      {
+        "from": "endpoint7",
+        "to": "visualization7",
+        "kind": "data"
+      },
+      {
+        "from": "endpoint8",
+        "to": "visualization8",
+        "kind": "data"
+      },
+      {
+        "from": "endpoint9",
+        "to": "visualization9",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.cityofchicago.green-roofs",
+        "data.cityofchicago.neighborhoods",
+        "data.projectsidewalk.chicago-labels",
+        "data.utk.chicago-boundary"
+      ],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/spatial-join",
+      "curio.builtin/vis-simple",
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T0",
+    "needs": [],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5-5 from the example JSON and its walkthrough, 2026-10-10",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids.",
+    "sourceLicences": [
+      {
+        "datasetId": "data.cityofchicago.green-roofs",
+        "licence": "Open Data"
+      },
+      {
+        "datasetId": "data.cityofchicago.neighborhoods",
+        "licence": "Open Data"
+      },
+      {
+        "datasetId": "data.projectsidewalk.chicago-labels",
+        "licence": "Project Sidewalk API terms"
+      },
+      {
+        "datasetId": "data.utk.chicago-boundary",
+        "licence": "Open Data"
+      }
+    ]
+  },
+  "notes": "Every Spatial Join operation, one flow each, over points, lines and polygons; two joins over a point on a shared edge show the boundary rule."
+}

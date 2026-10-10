@@ -18,7 +18,7 @@ flowchart LR
   L1 --> V18[Vega-Lite<br/>layer inheritance]
   L1 --> V19[Vega-Lite<br/>hconcat]
   L2[Data Loading<br/>green roofs] --> V20[Vega-Lite<br/>lon/lat channels]
-  L2 --> SJ[Spatial Join<br/>count by zip]
+  L2 --> SJ[Spatial Join<br/>roofs per ZIP polygon]
   L1 --> SJ
   SJ --> V23[Vega-Lite<br/>choropleth]
   SJ --> V25[Vega-Lite<br/>roofs per ZIP]
@@ -66,13 +66,11 @@ GeoParquet, read with `gpd.read_parquet`. The spec is no different from the
 geojson one.
 
 The join is a node, not code. `Spatial Join` takes the green-roof points on
-its upper, blue circle and the ZIP polygons on its lower, green circle, and
-works out which
-polygon each point falls in. Its two settings are which polygon column is the
-tag, picked from a list of the polygons' columns (`name` by default; `zip`
-here), and what comes out: the points, each tagged
-with that column under its own name, or, as here, the polygons, each with a
-`point_count`. The polygons feed two views. A choropleth first:
+input 0, its upper, blue circle, and the ZIP polygons on input 1, its lower,
+green circle, and pairs each point with the polygon it intersects. Its output
+is set to counts, so the ZIP polygons come out, each with a `point_count`: how
+many roofs it holds. A ZIP drawn as two polygons gets a count for each. The
+polygons feed two views. A choropleth first:
 
 ```json
 {

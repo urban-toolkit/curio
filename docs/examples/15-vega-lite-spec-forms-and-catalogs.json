@@ -50,12 +50,11 @@
         "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Count the green roofs inside each ZIP polygon. Points on the top handle, polygons on the bottom; the node is set to emit the polygons, each with a point_count.",
+        "goal": "Count the green roofs inside each ZIP polygon. The roofs on input 0 (the top circle), the ZIP polygons on input 1 (the bottom circle); the node is set to the counts output, so each ZIP polygon comes out with a point_count.",
         "metadata": {
           "keywords": [],
           "spatialJoin": {
-            "nameProperty": "zip",
-            "output": "polygons"
+            "output": "counts"
           }
         }
       },
@@ -196,18 +195,18 @@
         "target": "d5bab88e-8724-587f-8fc2-8c7fc04e2f60"
       },
       {
-        "id": "reactflow__edge-c6f4d823-e04d-5e45-a453-e3f04fc6d5edout-bd66665d-d0ca-5d58-9637-d3049048b6d9in_points",
+        "id": "reactflow__edge-c6f4d823-e04d-5e45-a453-e3f04fc6d5edout-bd66665d-d0ca-5d58-9637-d3049048b6d9in",
         "source": "c6f4d823-e04d-5e45-a453-e3f04fc6d5ed",
         "sourceHandle": "out",
         "target": "bd66665d-d0ca-5d58-9637-d3049048b6d9",
-        "targetHandle": "in_points"
+        "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-cd0fd9a5-8bbc-5f1f-b9aa-9962113713a1out-bd66665d-d0ca-5d58-9637-d3049048b6d9in_polygons",
+        "id": "reactflow__edge-cd0fd9a5-8bbc-5f1f-b9aa-9962113713a1out-bd66665d-d0ca-5d58-9637-d3049048b6d9in_1",
         "source": "cd0fd9a5-8bbc-5f1f-b9aa-9962113713a1",
         "sourceHandle": "out",
         "target": "bd66665d-d0ca-5d58-9637-d3049048b6d9",
-        "targetHandle": "in_polygons"
+        "targetHandle": "in_1"
       },
       {
         "id": "reactflow__edge-bd66665d-d0ca-5d58-9637-d3049048b6d9out-9cf84371-6163-5acb-93ee-111fbadbc465in",

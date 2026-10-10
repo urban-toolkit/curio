@@ -1802,7 +1802,7 @@ The backend is a Flask application in `utk_curio/backend/`. Routes are split acr
 | `/raster` | GET | A raster artifact (or one `part` of a tuple) as GeoTIFF bytes for an Autark node, described in the `X-Curio-Raster` header; 413 with its size over `maxCells` or `maxSide`. A raster output the session-tagged store cannot serve falls back to its hydrated copy, as `/get` does |
 | `/file/<path>` | GET | Serve a file relative to `CURIO_LAUNCH_CWD` so browser-side nodes can fetch binary assets (PBF, GeoTIFF) by the same relative path Python nodes use. Unauthenticated, so it refuses hidden paths and Curio's own state: the instance folder, the `.curio` state root, the shared data directory, the dataset hub and the SQLite database. `vendor/duckdb-extensions/` and `docs/examples/data/` come from the folders Curio ships instead ([Where the shipped folders are](#where-the-shipped-folders-are)) |
 | `/starters` | GET | Per-template starter source bodies from every installed package |
-| `/spatial_join` | POST | Spatial join of two GeoJSON inputs (see `common/spatial.py`) |
+| `/spatial_join` | POST | Spatial join of two GeoJSON inputs by an operation, on geopandas `sjoin` (see `common/spatial.py`) |
 
 File ingestion is **not** here - it lives in the datasets blueprint as `POST /api/datasets/import`.
 

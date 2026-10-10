@@ -1045,6 +1045,42 @@ The first matching rule wins:
 | one layer with geometry only | a plain map |
 | no geometry, or only rasters | the editor stays empty |
 
+## Spatial Join node
+
+The `Spatial Join` node pairs the rows of two GeoDataFrames whose shapes meet.
+It has two input circles: **input 0**, the upper, blue one, and **input 1**,
+the lower, green one. Input 0 is the left side of the join and input 1 the
+right. Either circle takes points, lines or polygons, and one node can feed
+both.
+
+Its body reads as a sentence, *Pair each input 0 row with the input 1 rows
+it ...*, finished by the operation you pick. A point on an edge follows
+[shapely](https://shapely.readthedocs.io/)'s rule for each:
+
+| Operation | Pairs input 0's shape with input 1's when | A point on a polygon's edge |
+|---|---|---|
+| intersects (the default) | they share at least one point | pairs |
+| within | input 0's lies inside input 1's | does not pair |
+| contains | input 0's holds input 1's | is not contained |
+| touches | they meet only along their edges | pairs |
+| overlaps | two shapes of one kind share part of themselves, and neither holds the other | |
+| crosses | a line runs through the other shape, partly inside and partly outside it | |
+| nearest | input 1's is the closest to input 0's, ties included | |
+
+The output is one of:
+- **One row per pair**, the default: input 0's row and shape, with input 1's
+  columns added. A column whose name input 0 already has comes in as
+  `<column>_right`. A row with no pair is left out. `nearest` also adds
+  `distance`, in meters.
+- **Counts**: input 1's rows, each with `point_count`, the number of input 0
+  rows paired with it.
+
+When an operation can never match the shapes given, such as polygons within
+points, the node says so and names the operation or the swap that would.
+Example 25 runs every operation, one flow each
+([Spatial Join operations](examples/25-spatial-join-operations.md)). On a
+dashboard the node shows the output saved with the dataflow and never joins.
+
 ## Rasters
 
 Two nodes in the palette's computation group work on rasters: a `rasterio`
