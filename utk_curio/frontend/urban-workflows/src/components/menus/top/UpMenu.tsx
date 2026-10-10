@@ -15,6 +15,7 @@ import headerStyles from "../../layout/GlobalPageHeader.module.css";
 import clsx from "clsx";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
+    faBolt,
     faCircleCheck,
     faClockRotateLeft,
     faClone,
@@ -86,6 +87,9 @@ export default function UpMenu() {
         edges,
         canvasView,
         setCanvasView,
+        autoRun,
+        setAutoRun,
+        autoRunAvailable,
     } = useFlowContext();
 
     /** Run *action* now, or ask first when there is unsaved work to lose.
@@ -267,6 +271,8 @@ export default function UpMenu() {
             workflowCategories,
             // A downloaded file carries scenarios only when there are some.
             scenarios && scenarios.length > 0 ? scenarios : undefined,
+            // And auto-run only when it is on (#845).
+            autoRun ? true : undefined,
         );
         const content = JSON.stringify(trillSpec, null, 2);
         const url = URL.createObjectURL(new Blob([content], { type: "application/json" }));
@@ -511,6 +517,25 @@ export default function UpMenu() {
                                 onClick={scenarioItem(() => scenarioUi.setPanelOpen(!scenarioUi.panelOpen))}
                             >
                                 {scenarioUi.panelOpen ? "Hide scenarios" : "Show scenarios"}
+                            </HeaderMenuItem>
+                        </>
+                    )}
+                    {/* #845: a widget or Parameter change runs the nodes it
+                        makes stale. Saved with the dataflow; offered where
+                        Run All runs on the server. */}
+                    {autoRunAvailable && (
+                        <>
+                            <HeaderMenuDivider />
+                            <HeaderMenuItem
+                                icon={faBolt}
+                                checked={autoRun}
+                                testId="auto-run-menu-item"
+                                onClick={() => {
+                                    setAutoRun(!autoRun);
+                                    setActiveMenu(null);
+                                }}
+                            >
+                                Run stale nodes automatically
                             </HeaderMenuItem>
                         </>
                     )}

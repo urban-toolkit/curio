@@ -173,6 +173,14 @@
   color: var(--curio-warning-text, #b7791f);
 }
 
+/* #845: the dataflow runs its stale nodes on its own. */
+.autoRunBadge {
+  align-self: flex-start;
+  margin-left: 3px;
+  font-size: 0.5em;
+  color: #f5c451;
+}
+
 .playAllButton:hover {
     background-color: #2c2d32;
 }

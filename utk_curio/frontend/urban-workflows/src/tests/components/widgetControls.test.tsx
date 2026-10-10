@@ -222,6 +222,33 @@ describe("location", () => {
   });
 });
 
+describe("what the Widgets tab tells auto-run (#845)", () => {
+  const rain: WidgetDef = {
+    name: "rain", type: "slider", label: "Rain", default: 10, options: { min: 0, max: 50 },
+  };
+
+  test("a new value says so, once per step", () => {
+    const onValueChange = jest.fn();
+    const { props } = renderEditor({ widgets: [rain], onValueChange });
+    fireEvent.change(screen.getByLabelText("Rain"), { target: { value: "20" } });
+    expect(props.onWidgetsChange).toHaveBeenCalledWith([{ ...rain, value: 20 }]);
+    expect(onValueChange).toHaveBeenCalledTimes(1);
+  });
+
+  test("adding, editing or deleting a widget changes no value", () => {
+    const onValueChange = jest.fn();
+    renderEditor({ widgets: [rain], onValueChange });
+    fireEvent.click(screen.getByRole("button", { name: "Edit widget rain" }));
+    fireEvent.change(screen.getByLabelText("Widget label"), { target: { value: "Rainfall" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete widget rain" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add widget" }));
+    fireEvent.change(screen.getByLabelText("Widget name"), { target: { value: "snow" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add widget" }));
+    expect(onValueChange).not.toHaveBeenCalled();
+  });
+});
+
 describe("declaring the new widgets", () => {
   const openForm = (name: string, type: string) => {
     fireEvent.click(screen.getByRole("button", { name: "Add widget" }));

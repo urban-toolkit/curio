@@ -89,16 +89,24 @@ export function replyFromRecord(step: RunStep): any {
  * chart, map and pool), as Run All plays every node: the run ends once they
  * have drawn, and a map that cannot draw says why.
  *
- * *played* is the node a play ran up to. When the run only forwarded it (a
- * chart, say), the browser still runs it, as its play button would.
+ * *played* is the node a play ran up to, or the nodes a run of several ran
+ * (#845). When the run only forwarded one of them (a chart, say), the browser
+ * still runs it, as its play button would.
  */
-export function browserWalk(steps: Map<string, TrackedStep>, edges: Edge[], played?: string | null): string[] {
+export function browserWalk(
+  steps: Map<string, TrackedStep>,
+  edges: Edge[],
+  played?: string | readonly string[] | null,
+): string[] {
+  const targets = played == null ? [] : typeof played === "string" ? [played] : [...played];
   const walk = new Set<string>();
   for (const [nodeId, step] of steps) {
     if (step.status === "browser" || step.status === "waiting") walk.add(nodeId);
-    else if (!played && step.status === "forwarded") walk.add(nodeId);
+    else if (!targets.length && step.status === "forwarded") walk.add(nodeId);
   }
-  if (played && steps.get(played)?.status === "forwarded") walk.add(played);
+  for (const target of targets) {
+    if (steps.get(target)?.status === "forwarded") walk.add(target);
+  }
   if (!walk.size) return [];
   const predecessors = new Map<string, string[]>();
   for (const edge of directedEdgesOf(edges)) {
@@ -155,17 +163,18 @@ export function stepsToRestore(steps: RunStep[], restored: ReadonlySet<string>):
 }
 
 /**
- * The ancestor outputs a play of *targetNodeId* reuses: those of the ancestors
- * the in-browser walk would not run again, as the canvas holds them.
+ * The ancestor outputs a play of *target* reuses (one node, or the several of
+ * an automatic run): those of the ancestors the in-browser walk would not run
+ * again, as the canvas holds them.
  */
 export function reuseFor(
-  targetNodeId: string,
+  target: string | readonly string[],
   nodes: Node[],
   edges: Edge[],
   emittedForInput: Map<string, unknown>,
   outputs: IOutput[],
 ): Record<string, unknown> {
-  const { ancestorIds, willRun } = nodesToRunUpTo(targetNodeId, nodes, edges, emittedForInput);
+  const { ancestorIds, willRun } = nodesToRunUpTo(target, nodes, edges, emittedForInput);
   const reuse: Record<string, unknown> = {};
   for (const nodeId of ancestorIds) {
     if (willRun.has(nodeId)) continue;

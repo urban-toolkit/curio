@@ -1892,12 +1892,13 @@ A run executes the saved dataflow on a thread of the backend, so it goes on whet
 - When the server's part ends, the tab that started the run walks the `browser` and `waiting` nodes, with the `forward` nodes above them, through `usePlayAll.playNodes`, and reports each to `/steps/<nodeId>`. Stop cancels the run and gives the button back at once.
 - A run's end, on the server or in the browser, sends the install save its outputs queued at once (`flushInstallSyncRef`), in the tick its last output lands. The save names that output too: `buildOutputRefs` reads `outputsRef`, which `setOutputs` writes before React renders.
 - After a load, `ProjectLoader` asks for the dataflow's last run: a run still going is followed; a finished one gives its `ok` steps whose `codeCurrent` is true and whose output the manifest did not restore, restored as a load restores outputs; a run that ended `needs_canvas` offers **Finish run**.
+- With the dataflow's `autoRun` on (View > Run stale nodes automatically), [`providers/flow/useAutoRun.ts`](../utk_curio/frontend/urban-workflows/src/providers/flow/useAutoRun.ts) starts a run of `targets`: the nodes a widget or Parameter value change touched (`requestAutoRun`, called by `WidgetsEditor` and the Parameter node) and every node below them, 500 ms after the last change. A change during a run waits for its end and then runs once; Stop drops it. It is offered only where `runsOnServer` holds.
 
 `runner.py::run_through_node`, behind Solve's validation and an agent's run through a node, walks a slice one node at a time and stops at the first failure, sending seeded code straight to the sandbox. It takes upstreams, input circles, references, roles and the ancestor slice from the same places as a run; `tests/test_runs/test_run_parity.py` runs both on the same dataflows.
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/api/projects/<id>/runs` | POST | Start a run of the saved dataflow: `{target?, reuse?, specRevision?}`. 202; 409 for a revision that is not the saved one or while the dataflow runs (with `runId`); 429 over the account's two runs; 403 for a hosted guest |
+| `/api/projects/<id>/runs` | POST | Start a run of the saved dataflow: `{target?, targets?, reuse?, specRevision?}`. `targets` lists several nodes, an automatic run (trigger `auto`). 202; 409 for a revision that is not the saved one or while the dataflow runs (with `runId`); 429 over the account's two runs; 403 for a hosted guest |
 | `/api/projects/<id>/runs` | GET | The dataflow's runs, newest first; `?kind=all\|node` |
 | `/api/runs` | GET | Every run of the account; `?status=`, `?kind=` |
 | `/api/runs/<id>` | GET | A run with its steps; each step's `codeCurrent` says whether its node holds, as saved now, the code the step ran |

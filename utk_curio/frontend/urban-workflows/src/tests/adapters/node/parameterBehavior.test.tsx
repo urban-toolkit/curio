@@ -13,12 +13,14 @@ let mockNodes: any[] = [];
 const mockUpdateDataNode = jest.fn();
 const mockMarkNodeStale = jest.fn();
 const mockMarkDirty = jest.fn();
+const mockRequestAutoRun = jest.fn();
 jest.mock("../../../providers/FlowProvider", () => ({
   useFlowContext: () => ({
     nodes: mockNodes,
     updateDataNode: mockUpdateDataNode,
     markNodeStale: mockMarkNodeStale,
     markDirty: mockMarkDirty,
+    requestAutoRun: mockRequestAutoRun,
     dashboardOn: false,
   }),
 }));
@@ -49,6 +51,7 @@ beforeEach(() => {
   mockUpdateDataNode.mockReset();
   mockMarkNodeStale.mockReset();
   mockMarkDirty.mockReset();
+  mockRequestAutoRun.mockReset();
 });
 
 describe("a new Parameter node", () => {
@@ -116,6 +119,29 @@ describe("a Parameter node with its widget", () => {
       expect.objectContaining({ widgets: [{ ...factor, value: 5 }] }),
     );
     expect(mockMarkNodeStale.mock.calls.map((c) => c[0]).sort()).toEqual(["a", "b"]);
+  });
+
+  test("a new value asks once for an auto-run of the nodes that use it (#845)", () => {
+    const self = node("p1", PARAM, { widgets: [factor] });
+    mockNodes = [self, ...users()];
+    render(<Harness data={self.data} />);
+    const control = screen.getByLabelText("Factor", { selector: "input" });
+    fireEvent.change(control, { target: { value: "5" } });
+    fireEvent.change(control, { target: { value: "6" } });
+    expect(mockRequestAutoRun).not.toHaveBeenCalled();
+    fireEvent.blur(control);
+    expect(mockRequestAutoRun).toHaveBeenCalledTimes(1);
+    expect([...mockRequestAutoRun.mock.calls[0][0]].sort()).toEqual(["a", "b"]);
+  });
+
+  test("a rename asks for no auto-run: no value changed (#845)", () => {
+    const self = node("p1", PARAM, { widgets: [{ ...factor, value: 3 }] });
+    mockNodes = [self, ...users()];
+    render(<Harness data={self.data} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit parameter factor" }));
+    fireEvent.change(screen.getByLabelText("Widget name"), { target: { value: "height_factor" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save parameter" }));
+    expect(mockRequestAutoRun).not.toHaveBeenCalled();
   });
 
   test("a rename rewrites the references in every node that uses it, and nowhere else", () => {

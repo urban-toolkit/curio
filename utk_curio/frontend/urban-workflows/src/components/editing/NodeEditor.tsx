@@ -109,7 +109,7 @@ function NodeEditor({
     const [activeTab, setActiveTab] = useState<string>(
         () => resolveInitialEditorTab({ code, grammar, widgets: widgetsTab })
     );
-    const { dashboardOn, markDirty, markNodeStale, nodes: flowNodes } = useFlowContext();
+    const { dashboardOn, markDirty, markNodeStale, requestAutoRun, nodes: flowNodes } = useFlowContext();
 
     // #662: the node's widgets. Node data holds them (TrillGenerator saves
     // data.widgets), set directly as data.code is, so a value change does not
@@ -542,6 +542,7 @@ function NodeEditor({
                                             disableWidgets={disableWidgets}
                                             widgets={widgets}
                                             onWidgetsChange={updateWidgets}
+                                            onValueChange={() => requestAutoRun?.([data.nodeId])}
                                             language={widgetLanguage}
                                             onResolveError={resolveError}
                                             inputs={inputs}

@@ -64,6 +64,20 @@ class TestARun:
         run = _run(_project(db, user), user, trigger="node", target_node_id="load")
         assert not run.whole_dataflow
 
+    def test_an_automatic_run_keeps_its_nodes_and_is_not_the_whole_dataflow(self, db, user_and_token):
+        """#845: a change runs the nodes it touched and those below them."""
+        from utk_curio.backend.app.runs import repositories as runs
+
+        user, _ = user_and_token
+        project = _project(db, user)
+        whole = _run(project, user)
+        auto = _run(project, user, trigger="auto", target_node_ids=["b", "d"])
+
+        assert auto.target_ids == ["b", "d"] and auto.target_node_id is None
+        assert not auto.whole_dataflow and whole.target_ids == []
+        assert [r.id for r in runs.list_project_runs(project.id, whole_dataflow=True)] == [whole.id]
+        assert [r.id for r in runs.list_project_runs(project.id, whole_dataflow=False)] == [auto.id]
+
     def test_unknown_triggers_roles_and_statuses_are_refused(self, db, user_and_token):
         from utk_curio.backend.app.runs import repositories as runs
 

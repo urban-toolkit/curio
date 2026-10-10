@@ -186,8 +186,11 @@ export class TrillGenerator {
      * *scenarios* (`dataflow.scenarios`, #662) follow the same rule: a save
      * passes the canvas's list and `[]` clears them. Their members are kept
      * only when they are among *nodes*.
+     *
+     * *autoRun* (`dataflow.autoRun`, #845) too: a save passes the toggle, on
+     * or off.
      */
-    static generateTrill(nodes: any, edges: any, name: string, task: string = "", packages: string[] = [], description: string = "", datasets: any[] = [], categories?: HandCategories, scenarios?: Scenario[]){
+    static generateTrill(nodes: any, edges: any, name: string, task: string = "", packages: string[] = [], description: string = "", datasets: any[] = [], categories?: HandCategories, scenarios?: Scenario[], autoRun?: boolean){
 
         let trill: any = {
             dataflow: {
@@ -205,6 +208,9 @@ export class TrillGenerator {
         }
         if (categories) {
             trill.dataflow.categories = categories;
+        }
+        if (typeof autoRun === "boolean") {
+            trill.dataflow.autoRun = autoRun;
         }
 
         const datasetRefs = new Map<string, any>();
