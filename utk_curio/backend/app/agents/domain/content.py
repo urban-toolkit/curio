@@ -621,7 +621,7 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
         errors.append(f"edges has {len(edges_raw)} entries (max {_PLAN_MAX_EDGES})")
         edges_raw = []
     edges: list[dict] = []
-    seen_edges: set[tuple[str, str, str]] = set()
+    seen_edges: set[tuple[str, str, str, str]] = set()
     removed = set(remove_nodes)
     for i, edge_raw in enumerate(edges_raw):
         where = f"edges[{i}]"
@@ -680,13 +680,18 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
         # is what a linked view IS: the pool feeds the chart, the chart feeds
         # selections back. Keying on the pair alone made those graphs
         # unproposable, so the eight interaction fixtures scored 0 with the
-        # whole plan refused.
-        if (src, dst, kind) in seen_edges:
+        # whole plan refused. #576: the key includes the circle an edge names,
+        # too. One node may feed both inputs of another, as example 25's
+        # neighborhoods feed both circles of a Spatial Join; the same circle
+        # twice is still a duplicate.
+        edge_key = (src, dst, kind, to_handle or "")
+        if edge_key in seen_edges:
             errors.append(
                 f"{where} duplicates an earlier {src!r}→{dst!r} {kind} edge"
+                + (f" on {to_handle!r}" if to_handle else "")
             )
             continue
-        seen_edges.add((src, dst, kind))
+        seen_edges.add(edge_key)
         edge_entry = {"from": src, "to": dst}
         if to_handle:
             # Present only when named — additive plans stay byte-identical.

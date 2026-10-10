@@ -6,9 +6,10 @@
   lines on input 0, and nearest;
 - two joins over a point on a shared edge, which show the boundary rule.
 
-Each test opens the example, plays one flow's view (which runs its loaders
-and its join), and pins the join's own account of what it paired. It then
-checks that the view drew. ``test_spatial_join_example.py`` runs the same
+Each test opens the example, plays one flow's chart (which runs its loaders
+and its join), or for a Simple View, which has no play button, the loaders.
+It pins the join's own account of what it paired, then checks that the view
+drew. ``test_spatial_join_example.py`` runs the same
 flows through the route alone.
 
 Run::
@@ -34,6 +35,7 @@ from .utils import (
     require_owner_view,
     require_project_page,
     require_user_auth,
+    run_node_and_wait,
     stub_login_and_enter_workflow,
     wait_for_node_done,
     wait_for_node_settled,
@@ -112,15 +114,23 @@ def test_each_spatial_join_case_pairs_and_draws(operations_canvas, case):
     page = operations_canvas
     spec = _example_spec()
     join, view, expected_status = CASES[case]
+    simple_view = _node_type(spec, view) == "curio.builtin/vis-simple"
 
-    play_node(page, view)
+    if simple_view:
+        # A Simple View has no play button. Run the loaders its join reads;
+        # the join and the view follow on their own.
+        for edge in spec["dataflow"]["edges"]:
+            if edge["target"] == join:
+                run_node_and_wait(page, edge["source"], node_type="DATA_LOADING", timeout_ms=120000)
+    else:
+        play_node(page, view)
     wait_for_node_done(page, join, node_type="SPATIAL_JOIN", timeout_ms=240000)
     status = node_locator(page, join).locator("[data-curio-spatial-join-status]")
     status.wait_for(state="visible", timeout=30000)
     assert status.inner_text() == expected_status, f"{case}: {status.inner_text()!r}"
     assert node_locator(page, join).locator("[data-curio-spatial-join-warning]").count() == 0
 
-    if _node_type(spec, view) == "curio.builtin/vis-vega":
+    if not simple_view:
         wait_for_node_done(page, view, node_type="VIS_VEGA", timeout_ms=120000)
         assert_vega_canvas_rendered(page, view)
     else:
