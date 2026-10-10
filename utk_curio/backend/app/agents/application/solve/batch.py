@@ -1090,6 +1090,9 @@ class SolveBatch:
             parent_attachment_id=self.attachment_id,
             parent_session_id=self.session_id,
             local_turn=True,
+            # #880: a job thread cannot list the Data Catalog, so the mint's
+            # gate grounds against the batch's listing, as the verified path does.
+            grounding_base=self.solve_ground,
         )
         if part is not None:
             self.results[node_id] = {
