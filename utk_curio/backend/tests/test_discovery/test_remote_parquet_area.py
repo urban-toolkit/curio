@@ -111,7 +111,9 @@ class TestALink:
         assert dataset["title"] == f"blocks.parquet, {PLACE}"
         frame = gpd.read_parquet(dataset["path"])
         assert sorted(frame["id"]) == F.INSIDE_BLOCKS
-        assert {"name", "floors", "notes", "bbox"} <= set(frame.columns)
+        assert dataset["featureCount"] == dataset["rowCount"] == len(F.INSIDE_BLOCKS)
+        # Every column of the file, its box column too (which geopandas does not show).
+        assert pq.read_schema(dataset["path"]).names == ["id", "name", "floors", "notes", "geometry", "bbox"]
         geo = json.loads(pq.read_metadata(dataset["path"]).metadata[b"geo"])
         west, south, east, north = geo["columns"]["geometry"]["bbox"]
         assert F.TEST_BOX[0] <= west < east <= F.TEST_BOX[2]
@@ -281,6 +283,7 @@ class TestABucketRow:
         assert job["status"] == "completed", job
         dataset = job["dataset"]
         assert sorted(gpd.read_parquet(dataset["path"])["id"]) == F.INSIDE_BLOCKS
+        assert dataset["featureCount"] == len(F.INSIDE_BLOCKS)
         assert dataset["discoverySource"]["parameters"] == {"area": AREA}
         footer, groups = _reads("blocks.parquet")
         # The listing gave the file's size: it is never probed.
@@ -305,6 +308,7 @@ class TestABucketRow:
         assert job["status"] == "completed", job
         frame = gpd.read_parquet(job["dataset"]["path"])
         assert sorted(frame["id"]) == sorted(F.INSIDE_BLOCKS + F.INSIDE_PLAIN)
+        assert job["dataset"]["featureCount"] == len(F.INSIDE_BLOCKS + F.INSIDE_PLAIN)
         assert dict(zip(frame["id"], frame["part"])) == {
             **{i: "a" for i in F.INSIDE_BLOCKS}, **{i: "b" for i in F.INSIDE_PLAIN},
         }

@@ -325,12 +325,15 @@ class StorageAcquire:
         with tempfile.TemporaryDirectory(dir=self._tmp_dir()) as tmp:
             work = Path(tmp)
             staged: dict[str, Path] = {}
+            rows: dict[str, int] = {}
             digest = hashlib.sha256()
             for index, part in enumerate(parts, start=1):
                 found = found_by[id(part.remote)]
                 path = work / f"area-{index:06d}.parquet"
-                if parquet_area.write([part], path, stage=stage):
+                kept_rows = parquet_area.write([part], path, stage=stage)
+                if kept_rows:
                     staged[found.relpath] = path
+                    rows[found.relpath] = kept_rows
                     digest.update(f"{found.relpath} {_sha256_of(path)}\n".encode())
                 if items is not None:
                     items(index, len(parts))
@@ -359,6 +362,7 @@ class StorageAcquire:
                 return self._install_path(
                     staged[only.relpath], _filename(only.relpath), "parquet", title=title,
                     discovery_source=discovery_source, description=f"The rows of {only.relpath} in {place}.",
+                    row_count=rows[only.relpath], feature_count=rows[only.relpath],
                 )
             parts_read = [staged[found.relpath] for found in kept]
             geo, extent = parquet_area.combined_geo(parts_read, what=spec.name)
@@ -373,7 +377,7 @@ class StorageAcquire:
             discovery_source["fields"] = ",".join(spec.template.names)
             return self._install_path(
                 dest, dest.name, "parquet", title=title, discovery_source=discovery_source,
-                row_count=combined.rows,
+                row_count=combined.rows, feature_count=combined.rows,
                 description=f"The rows of {len(kept):,} {spec.format} files of {manifest.name} in {place}.",
             )
 

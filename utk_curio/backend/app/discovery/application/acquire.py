@@ -374,6 +374,8 @@ class DiscoveryAcquire:
                 title=title or f"{name}, {place}",
                 discovery_source=discovery_source,
                 description=f"The rows of {name} in {place}.",
+                row_count=rows,
+                feature_count=rows,
             )
         finally:
             shutil.rmtree(work, ignore_errors=True)
