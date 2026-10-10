@@ -9,7 +9,8 @@
  * A point selection names row positions: it lines up only when both ends read
  * the same rows in the same order. An interval names column values, so it
  * matches any rows that have those columns. So does a point selection over
- * fields (#847): it names the values of each point it picked, `{unit_id: 103}`,
+ * fields (#847), a Vega-Lite select over `fields` or an Autark view that names
+ * `selectFields`: it names the values of each point it picked, `{unit_id: 103}`,
  * and picks every row that holds them, wherever the row sits.
  */
 import { ResolutionType, VisInteractionType } from "../constants";
@@ -80,9 +81,21 @@ const isPointValue = (entry: unknown): entry is PointValue =>
 
 const comparable = (value: unknown) => (value instanceof Date ? value.getTime() : value);
 
+const isBin = (held: unknown): held is unknown[] => Array.isArray(held) && held.length === 2;
+
+/**
+ * Whether no row can hold *held*: undefined, which would otherwise be held by
+ * every row that lacks the field, and NaN (an invalid Date too), which equals
+ * nothing.
+ */
+const holdsNothing = (held: unknown) => {
+  const value = comparable(held);
+  return value === undefined || (typeof value === "number" && Number.isNaN(value));
+};
+
 /** Whether a row's *value* is the one a point *held*: equal, or inside the [start, end) of a bin. */
 function holdsValue(held: unknown, value: unknown): boolean {
-  if (Array.isArray(held) && held.length === 2) {
+  if (isBin(held)) {
     const [start, end, at] = [comparable(held[0]), comparable(held[1]), comparable(value)];
     return typeof at === "number" && typeof start === "number" && typeof end === "number"
       && start <= at && at < end;
@@ -90,14 +103,63 @@ function holdsValue(held: unknown, value: unknown): boolean {
   return comparable(held) === comparable(value);
 }
 
-/** Positions of the rows that hold every field value of one of *points*. */
+/** Values to the values of the next field, down to an empty map: one tree per set of fields. */
+type ValueTree = Map<unknown, ValueTree>;
+
+/**
+ * Positions of the rows that hold every field value of one of *points*, in row
+ * order.
+ *
+ * A brush over thousands of rows sends thousands of points, so exact values
+ * are looked up rather than compared with every row: the points that name the
+ * same fields share a tree of their values, keyed as `comparable` gives them.
+ * A Map compares its keys as `===` does but for NaN, which no point holds
+ * here. A point with a bin is compared with each row. Each row's value of a
+ * field is read once.
+ */
 function rowsHolding(points: PointValue[], rows: SelectionRows): number[] {
-  const wanted = points.map((point) => Object.entries(point)).filter((fields) => fields.length > 0);
+  const trees = new Map<string, { fields: string[]; tree: ValueTree }>();
+  const binned: Array<Array<[string, unknown]>> = [];
+  for (const point of points) {
+    const held = Object.entries(point);
+    if (held.length === 0 || held.some(([, value]) => holdsNothing(value))) continue;
+    if (held.some(([, value]) => isBin(value))) {
+      binned.push(held);
+      continue;
+    }
+    held.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    const fields = held.map(([field]) => field);
+    const key = JSON.stringify(fields);
+    if (!trees.has(key)) trees.set(key, { fields, tree: new Map() });
+    let level = trees.get(key)!.tree;
+    for (const [, value] of held) {
+      const at = comparable(value);
+      if (!level.has(at)) level.set(at, new Map());
+      level = level.get(at)!;
+    }
+  }
+
   const indices: number[] = [];
   for (let i = 0; i < rows.count; i++) {
-    if (wanted.some((fields) => fields.every(([field, held]) => holdsValue(held, rows.value(i, field))))) {
-      indices.push(i);
+    const read = new Map<string, unknown>();
+    const valueOf = (field: string) => {
+      if (!read.has(field)) read.set(field, rows.value(i, field));
+      return read.get(field);
+    };
+    let holds = false;
+    for (const { fields, tree } of trees.values()) {
+      let level: ValueTree | undefined = tree;
+      for (const field of fields) {
+        level = level.get(comparable(valueOf(field)));
+        if (!level) break;
+      }
+      if (level) {
+        holds = true;
+        break;
+      }
     }
+    if (!holds) holds = binned.some((held) => held.every(([field, value]) => holdsValue(value, valueOf(field))));
+    if (holds) indices.push(i);
   }
   return indices;
 }

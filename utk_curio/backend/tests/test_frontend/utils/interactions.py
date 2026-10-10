@@ -395,6 +395,24 @@ def lit_marks(page: Page, selector: str, *, at_least: float, timeout_ms: int = 5
         page.wait_for_timeout(300)
 
 
+# The labels of an Autark plot's marks that show its highlight: each mark's
+# value for one field of its row.
+_LIT_LABELS_JS = """({ selector, highlight, field }) => {
+    const el = document.querySelector(selector);
+    if (!el) return null;
+    return [...el.querySelectorAll('.autkMark')]
+        .filter((m) => getComputedStyle(m).fill === highlight)
+        .map((m) => String((m.__data__ || {})[field] ?? ''));
+}"""
+
+
+def lit_labels(page: Page, selector: str, field: str = "label") -> list[str] | None:
+    """What *field* reads on each mark of the Autark plot in *selector* that
+    shows its highlight, sorted. None when nothing matches *selector*."""
+    labels = page.evaluate(_LIT_LABELS_JS, {"selector": selector, "highlight": AUTK_PLOT_HIGHLIGHT, "field": field})
+    return None if labels is None else sorted(labels)
+
+
 def capture_node(page: Page, node_id: str):
     """The node as a frame of it shows it, in memory (maps painted, see #427)."""
     return _capture_element(page, f'.react-flow__node[data-id="{node_id}"]')

@@ -26,6 +26,7 @@ import { resolveGeometryField } from "./geometryField";
 import { readGrammarInput, type GrammarFrame, type GrammarInput, type RasterPayload } from "./grammarInput";
 import type { NodeEmptyReason } from "./nodeEmptyState";
 import { toRows } from "./rowSource";
+import type { PointValue } from "./selectionMatch";
 
 export const AUTK_INPUT_LABEL = "the Autark node";
 
@@ -238,6 +239,82 @@ export function tablePositions(rows: number[], order: number[] | null | undefine
   if (!order) return rows;
   const at = new Map(order.map((row, position) => [row, position]));
   return rows.flatMap((row) => (at.has(row) ? [at.get(row)!] : []));
+}
+
+/**
+ * The key columns a map layer or a plot names its rows by (`selectFields`): a
+ * pick or a brush on it sends their values. Null when it names none.
+ */
+export function selectFieldsOf(view: any): string[] | null {
+  const fields = view?.selectFields;
+  return Array.isArray(fields) && fields.length > 0 && fields.every((f) => typeof f === "string" && f !== "")
+    ? fields
+    : null;
+}
+
+/**
+ * Why a pick or a brush could not send the key columns a document names
+ * (`selectFields`), or null when it can. They are read from the features of
+ * the node's input, the rows the charts linked to it hold. A table the
+ * document loads itself is not among them: the map draws it with the features
+ * that have no geometry left out, so its picks name none of these rows. And a
+ * column that no feature of its table has names nothing.
+ */
+export function selectFieldsProblem(spec: any, sources: readonly AutkSource[]): string | null {
+  const own = new Set([
+    ...ownTableNames(spec),
+    ...asList<any>(spec?.data).map((source) => source?.outputTableName).filter((name) => typeof name === "string"),
+  ]);
+  const views = [...asList<any>(spec?.map).flatMap((map) => asList<any>(map?.layerRefs)), ...asList<any>(spec?.plot)];
+  for (const view of views) {
+    const fields = selectFieldsOf(view);
+    const table = view?.dataRef;
+    if (!fields || typeof table !== "string") continue;
+    const source = sources.find((s) => s.outputTableName === table);
+    if (!source) {
+      if (!own.has(table)) continue;
+      return `selectFields needs ${table} to come from this node's input, but this document loads it. `
+        + `Load ${table} in an upstream node and connect that node here.`;
+    }
+    const features: any[] = (source.geojsonObject as any)?.features ?? [];
+    // An empty table is reported as one when the node draws.
+    if (features.length === 0) continue;
+    const missing = fields.find((field) => !features.some(
+      (feature) => feature?.properties != null && Object.prototype.hasOwnProperty.call(feature.properties, field),
+    ));
+    if (missing) return `selectFields names ${missing}, which no feature of ${table} has.`;
+  }
+  return null;
+}
+
+/**
+ * The values input *rows* hold for *fields*, one point per row, as a Vega-Lite
+ * point select over fields sends them (#847): `{unit_id: 103}`. Each is sent
+ * once, in row order, and a row that holds no value for one of them is left
+ * out. Whatever reads them marks every row holding those values, in its own
+ * rows (utils/selectionMatch).
+ */
+export function keyValues(rows: number[], features: readonly any[], fields: string[]): PointValue[] {
+  const own = (properties: any, field: string) =>
+    properties != null && Object.prototype.hasOwnProperty.call(properties, field) ? properties[field] : undefined;
+  // The values sent so far, field by field.
+  const sent = new Map<unknown, any>();
+  const points: PointValue[] = [];
+  for (const row of rows) {
+    const values = fields.map((field) => own(features[row]?.properties, field));
+    if (values.some((value) => value === undefined)) continue;
+    let level = sent;
+    let isNew = false;
+    for (const value of values) {
+      if (!level.has(value)) {
+        level.set(value, new Map());
+        isNew = true;
+      }
+      level = level.get(value);
+    }
+    if (isNew) points.push(Object.fromEntries(fields.map((field, i) => [field, values[i]])));
+  }
+  return points;
 }
 
 /** What a frame becomes under a name: a geojson source and its rows, a

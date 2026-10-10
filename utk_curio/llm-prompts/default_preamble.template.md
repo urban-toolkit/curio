@@ -218,7 +218,7 @@ Visualizations can be connected to a {{template.label:curio.builtin/data-pool}} 
 } 
 ```
 
-Two visualizations can also be connected to each other directly with an Interaction edge, without a {{template.label:curio.builtin/data-pool}}, when at least one of them is a {{template.label:curio.builtin/vis-vega}} or an {{template.label:curio.builtin/autk-grammar}} node: each of those highlights the rows the other one selects, and a {{template.label:curio.builtin/vis-vega}} node marks them in the column "interacted" the same way. A point selection matches rows by position, so both visualizations must read the same rows; an interval selection matches by column name.
+Two visualizations can also be connected to each other directly with an Interaction edge, without a {{template.label:curio.builtin/data-pool}}, when at least one of them is a {{template.label:curio.builtin/vis-vega}} or an {{template.label:curio.builtin/autk-grammar}} node: each of those highlights the rows the other one selects, and a {{template.label:curio.builtin/vis-vega}} node marks them in the column "interacted" the same way. A point selection over key columns matches rows by their values, so the two visualizations may read different rows that share those columns: a Vega-Lite point select with "fields": ["unit_id"], or an Autark map layer (the one with "isPick": true) or plot with "selectFields": ["unit_id"], whose table must come from the node's input. A point selection without them matches rows by position, so both visualizations must read the same rows in the same order; an interval selection matches by column name.
 
 Nodes that can have interaction connection edge:
 

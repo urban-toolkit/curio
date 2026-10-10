@@ -9,76 +9,62 @@
  * the node's pane, checked against the tables at hand and brushed by its layer,
  * as an object's are.
  *
- * The grammar is a stand-in that records what the node hands it.
+ * The grammar is a stand-in that records what the node hands it
+ * (_support/autkNodeMocks).
+ *
+ * A pick or a brush on a view that names its rows by key columns
+ * (`selectFields`) sends their values, `{unit_id: 103}`, as a Vega-Lite point
+ * select over fields does, read from the input row behind what was picked.
+ * A view that names none sends the input rows. The units and readings are
+ * _support/keyedSelections' fixture.
  */
-import React from 'react';
-import { render, act } from '@testing-library/react';
+import { act } from '@testing-library/react';
 
 // The node reads its input edge from the flow context (hook/useGrammarInputState);
 // the real provider would load the whole node registry, vega included.
-const mockMarkNodeErrored = jest.fn();
-jest.mock('../../../providers/FlowProvider', () => ({
-  useFlowContext: () => ({ edges: [], nodeExecStatus: {}, markNodeErrored: mockMarkNodeErrored }),
-}));
-const mockShowToast = jest.fn();
-jest.mock('../../../providers/ToastProvider', () => ({
-  useToastContext: () => ({ showToast: mockShowToast }),
-}));
-// One upstream row, so a layer or a plot naming `input_0` resolves.
-jest.mock('../../../services/api', () => ({
-  fetchData: jest.fn().mockResolvedValue({
-    dataType: 'geodataframe',
-    data: {
-      type: 'FeatureCollection',
-      features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [0, 0] }, properties: { pop: 1 } }],
-    },
-  }),
-  fetchPreviewData: jest.fn(),
-}));
+jest.mock('../../../providers/FlowProvider', () => require('../../_support/autkNodeMocks').flowProviderModule);
+jest.mock('../../../providers/ToastProvider', () => require('../../_support/autkNodeMocks').toastProviderModule);
+jest.mock('../../../services/api', () => require('../../_support/autkNodeMocks').apiModule);
 jest.mock('../../../JavaScriptInterpreter', () => ({
   JavaScriptInterpreter: class { },
 }));
-
-type Run = {
-  targets: Record<string, unknown>;
-  spec: any;
-  /** A pick on the map, as autk-grammar reports one. */
-  pick: (selection: number[]) => void;
-  /** A brush on the plot, as autk-grammar reports one. */
-  brush: (selection: number[]) => void;
-};
-/** Every run of the stand-in grammar, in order. */
-const mockRuns: Run[] = [];
-const mockAutkGrammar = jest.fn().mockImplementation((targets: Record<string, unknown>) => {
-  const handlers: Record<string, (event: any) => void> = {};
-  const grammar: any = {
-    data: {},
-    interactions: {
-      on: (event: string, handler: (event: any) => void) => {
-        handlers[event] = handler;
-        return () => { delete handlers[event]; };
-      },
-    },
-  };
-  grammar.run = jest.fn(async (spec: any) => {
-    mockRuns.push({
-      targets,
-      spec,
-      pick: (selection) => handlers['map:picking']?.({ selection }),
-      brush: (selection) => handlers['plot:selection']?.({ selection }),
-    });
-  });
-  return grammar;
-});
 jest.mock(
   '@urban-toolkit/autk-grammar',
-  () => ({ AutkGrammar: mockAutkGrammar }),
+  () => require('../../_support/autkNodeMocks').autkGrammarModule,
   { virtual: true },
 );
 jest.mock('@urban-toolkit/autk-compute', () => ({ ComputeGpgpu: jest.fn() }), { virtual: true });
+// A document that loads its own tables, with no sandbox and no database here.
+jest.mock(
+  '@urban-toolkit/autk-db',
+  () => ({ AutkDb: class { async init() { throw new Error('no autk-db in this test'); } } }),
+  { virtual: true },
+);
 
-import { useAutkGrammarBehavior } from '../../../adapters/node/autkGrammarBehavior';
-import { __resetWebGpuSupportCache } from '../../../utils/webgpuSupport';
+import { NodeType, ResolutionType, VisInteractionType } from '../../../constants';
+import { columnRows, isActiveSelect, matchSelections } from '../../../utils/selectionMatch';
+import {
+  AutkGrammar as mockAutkGrammar,
+  grammarRuns as mockRuns,
+  markNodeErrored as mockMarkNodeErrored,
+  resetAutkNodeMocks,
+  showToast as mockShowToast,
+} from '../../_support/autkNodeMocks';
+import { lastSelection, mountAutkNode, stubWebGpu, unstubWebGpu } from '../../_support/autkNode';
+import {
+  LOAD_ORDER,
+  UNIT_PROPERTIES,
+  UNIT_ROW,
+  YARD_ROW,
+  atPositions,
+  drawnAt,
+  expectDiscriminates,
+  inHeightRange,
+  looselyHolding,
+  readingColumns,
+  readingsOf,
+  unitsCollection,
+} from '../../_support/keyedSelections';
 
 /** What the node says of a document with more than one view. */
 const ONE_VIEW =
@@ -96,45 +82,7 @@ const PLOT = {
   transform: { preset: 'binning-1d' }, events: ['brushX'],
 };
 
-type MountedNode = {
-  /** Run *spec* and wait for the run to end. */
-  run: (spec: object) => Promise<void>;
-  lastOutput: () => any;
-  /** What the node tells the nodes it is linked to. */
-  interactions: jest.Mock;
-};
-
-function mountNode(): MountedNode {
-  let apply: (spec: string) => Promise<void> = async () => { };
-  const setOutput = jest.fn();
-  const interactions = jest.fn();
-  const Probe: React.FC = () => {
-    const behavior = useAutkGrammarBehavior(
-      {
-        nodeId: NODE,
-        input: { path: 'art-1', dataType: 'geodataframe' },
-        defaultCode: '{}',
-        interactionsCallback: interactions,
-      } as any,
-      {
-        output: { code: '', content: '' },
-        setOutput,
-        setCode: jest.fn(),
-        templateData: {},
-      } as any,
-    );
-    apply = behavior.applyGrammar as (spec: string) => Promise<void>;
-    return <>{behavior.contentComponent}</>;
-  };
-  render(<Probe />);
-  return {
-    run: async (spec) => {
-      await act(async () => { await apply(JSON.stringify(spec)); });
-    },
-    lastOutput: () => setOutput.mock.calls[setOutput.mock.calls.length - 1]?.[0],
-    interactions,
-  };
-}
+const mountNode = () => mountAutkNode(NODE);
 
 /** Run *spec* and expect it refused: nothing ran, and the node failed with the fix. */
 async function expectRefused(spec: object): Promise<void> {
@@ -150,24 +98,11 @@ async function expectRefused(spec: object): Promise<void> {
 }
 
 beforeEach(() => {
-  mockRuns.length = 0;
-  mockAutkGrammar.mockClear();
-  mockMarkNodeErrored.mockClear();
-  mockShowToast.mockClear();
-  __resetWebGpuSupportCache();
-  Object.defineProperty(navigator, 'gpu', {
-    configurable: true,
-    value: {
-      requestAdapter: jest.fn().mockResolvedValue({ name: 'fake' }),
-      getPreferredCanvasFormat: () => 'bgra8unorm',
-    },
-  });
+  resetAutkNodeMocks();
+  stubWebGpu();
 });
 
-afterEach(() => {
-  __resetWebGpuSupportCache();
-  Object.defineProperty(navigator, 'gpu', { configurable: true, value: undefined });
-});
+afterEach(unstubWebGpu);
 
 test.each([2, 3])('a document with %i maps fails before anything runs, and its error names the fix', async (count) => {
   await expectRefused({ map: Array.from({ length: count }, () => MAP) });
@@ -257,5 +192,142 @@ test('a list of one plot that names a table the dataflow does not produce is rep
   expect(node.lastOutput()).toMatchObject({
     code: 'error',
     content: expect.stringContaining('(asked for: parks; available: input_0)'),
+  });
+});
+
+describe('a pick or a brush on a view that names its rows by key columns (selectFields)', () => {
+  const KEYED_MAP = {
+    map: { layerRefs: [{ dataRef: 'input_0', getFnv: 'height', isPick: true, selectFields: ['unit_id'] }] },
+  };
+  const KEYED_PLOT = {
+    plot: { dataRef: 'input_0', mark: 'bar', axis: ['name', 'height'], events: ['brushX'], selectFields: ['unit_id'] },
+  };
+  /** A Vega-Lite chart's selection of unit 105, as it reaches a Data Pool beside the node's. */
+  const VEGA_105 = {
+    priority: 0,
+    details: { pick: { type: VisInteractionType.POINT, data: [{ unit_id: 105 }], priority: 1 } },
+  };
+  /** The readings a Data Pool linked to the node marks for its *selection*, and with VEGA_105 under MERGE_AND. */
+  const marked = (selection: any) =>
+    matchSelections([{ details: { autk_selection: selection }, priority: 1 }], columnRows(readingColumns()));
+  const markedWithVega = (selection: any) =>
+    matchSelections(
+      [{ details: { autk_selection: selection }, priority: 1 }, VEGA_105],
+      columnRows(readingColumns()),
+      { between: ResolutionType.MERGE_AND },
+    );
+
+  /** The node over the units, after a run of *spec* that drew. */
+  async function drawn(spec: object) {
+    const node = mountAutkNode(NODE, unitsCollection());
+    await node.run(spec);
+    expect(node.lastOutput()).toEqual({ code: 'success', content: '' });
+    return node;
+  }
+
+  test("repro: a pick sends the key of the input row drawn where it landed, and a Data Pool marks that unit's readings", async () => {
+    const node = await drawn(KEYED_MAP);
+    const at = drawnAt(UNIT_ROW[103]);
+    // The input row at that position is another unit.
+    expect(UNIT_PROPERTIES[at].unit_id).toBe(101);
+
+    act(() => mockRuns[0].pick([at]));
+
+    expect(lastSelection(node)).toEqual({
+      type: VisInteractionType.POINT,
+      data: [{ unit_id: 103 }],
+      priority: 1,
+      source: NodeType.AUTK_GRAMMAR,
+      layerRef: 'input_0',
+    });
+    expect(marked(lastSelection(node))).toEqual(readingsOf(103));
+    expectDiscriminates(readingsOf(103), {
+      positions: atPositions([UNIT_ROW[103]]),
+      range: inHeightRange([103]),
+      looseEquality: looselyHolding([103]),
+    });
+  });
+
+  test('repro: a plot brush sends the keys of the rows it covers, read in the order the plot holds them', async () => {
+    const node = await drawn(KEYED_PLOT);
+    // Bars 1 to 3: the depot, which holds no unit_id, then units 103 and 101.
+    const brushed = [1, 2, 3];
+    expect(brushed.map((p) => UNIT_PROPERTIES[LOAD_ORDER[p]].unit_id)).toEqual([undefined, 103, 101]);
+    expect(brushed.map((p) => UNIT_PROPERTIES[p].unit_id)).toEqual([104, 103, 101]);
+
+    act(() => mockRuns[0].brush(brushed));
+
+    expect(lastSelection(node)).toMatchObject({
+      type: VisInteractionType.POINT,
+      data: [{ unit_id: 103 }, { unit_id: 101 }],
+      layerRef: 'input_0',
+    });
+    expect(marked(lastSelection(node))).toEqual(readingsOf(101, 103));
+    expectDiscriminates(readingsOf(101, 103), {
+      positions: atPositions(brushed.map((p) => LOAD_ORDER[p])),
+      range: inHeightRange([101, 103]),
+      looseEquality: looselyHolding([101, 103]),
+    });
+  });
+
+  test('guard: a view that names no key sends the input rows, as before', async () => {
+    const map = await drawn({ map: { layerRefs: [{ dataRef: 'input_0', isPick: true }] } });
+    act(() => mockRuns[0].pick([drawnAt(UNIT_ROW[103])]));
+    expect(lastSelection(map)).toMatchObject({ type: VisInteractionType.POINT, data: [UNIT_ROW[103]] });
+
+    const plot = await drawn({ plot: { ...KEYED_PLOT.plot, selectFields: undefined } });
+    act(() => mockRuns[1].brush([1, 2, 3]));
+    expect(lastSelection(plot)).toMatchObject({ type: VisInteractionType.POINT, data: [0, 2, 3] });
+  });
+
+  test('repro: a pick on a drawn row that holds no key selects nothing, and MERGE_AND passes over it', async () => {
+    const node = await drawn(KEYED_MAP);
+    expect(UNIT_PROPERTIES[YARD_ROW].unit_id).toBeUndefined();
+
+    act(() => mockRuns[0].pick([drawnAt(YARD_ROW)]));
+
+    expect(lastSelection(node)).toMatchObject({ type: VisInteractionType.UNDETERMINED, data: [] });
+    expect(isActiveSelect(lastSelection(node))).toBe(false);
+    expect(markedWithVega(lastSelection(node))).toEqual(readingsOf(105));
+  });
+
+  test('guard: an empty pick selects nothing, and MERGE_AND passes over it', async () => {
+    const node = await drawn(KEYED_MAP);
+    act(() => mockRuns[0].pick([drawnAt(UNIT_ROW[103])]));
+
+    act(() => mockRuns[0].pick([]));
+
+    expect(lastSelection(node)).toMatchObject({ type: VisInteractionType.UNDETERMINED, data: [] });
+    expect(isActiveSelect(lastSelection(node))).toBe(false);
+    expect(markedWithVega(lastSelection(node))).toEqual(readingsOf(105));
+  });
+
+  /** Run *spec* over the units and expect it failed with *message*: nothing drawn, nothing sent. */
+  async function expectFailed(spec: object, message: string) {
+    const node = mountAutkNode(NODE, unitsCollection());
+    await node.run(spec);
+    expect(node.lastOutput()).toEqual({ code: 'error', content: message });
+    expect(mockAutkGrammar).not.toHaveBeenCalled();
+    expect(node.interactions).not.toHaveBeenCalled();
+    expect(mockMarkNodeErrored).toHaveBeenCalledWith(NODE);
+    expect(mockShowToast).toHaveBeenCalledWith(message, 'error');
+  }
+
+  test('repro: a key column no feature of the layer has fails the run, naming the column and the layer', async () => {
+    await expectFailed(
+      { map: { layerRefs: [{ dataRef: 'input_0', isPick: true, selectFields: ['unit_id', 'unit_idx'] }] } },
+      'selectFields names unit_idx, which no feature of input_0 has.',
+    );
+  });
+
+  test('repro: a key on a table the document loads itself fails the run, and says to load it upstream', async () => {
+    await expectFailed(
+      {
+        data: [{ type: 'csv', url: 'https://example.org/parks.csv', outputTableName: 'parks' }],
+        map: { layerRefs: [{ dataRef: 'parks', isPick: true, selectFields: ['park_id'] }] },
+      },
+      "selectFields needs parks to come from this node's input, but this document loads it. "
+        + 'Load parks in an upstream node and connect that node here.',
+    );
   });
 });

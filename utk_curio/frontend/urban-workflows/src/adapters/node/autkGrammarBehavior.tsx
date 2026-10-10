@@ -21,8 +21,8 @@ import { withExtensionRetry } from './duckdbExtensionRetry';
 import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
 import { autkOneViewProblem } from '../../generated/autkGrammar';
 import {
-    autkNeedsInput, autkSourcesFrom, documentTableRefs, inputRow, loadableSource, ownTableNames,
-    readAutkInput, tablePositions, type LoadOrder, type PreparedAutkInput,
+    autkNeedsInput, autkSourcesFrom, documentTableRefs, inputRow, keyValues, loadableSource, ownTableNames,
+    readAutkInput, selectFieldsOf, selectFieldsProblem, tablePositions, type LoadOrder, type PreparedAutkInput,
 } from '../../utils/autkInput';
 import { type GrammarInput } from '../../utils/grammarInput';
 import { featureRows, matchSelections, type IncomingSelection } from '../../utils/selectionMatch';
@@ -152,6 +152,9 @@ export const useAutkGrammarBehavior = (
     // (loadableSource), by name: a pick or a highlight goes through it, so a
     // position always names the row the Data Pool and the other charts mean.
     const loadOrdersRef = useRef<Record<string, LoadOrder>>({});
+    // Each input table's features as they came, by name: the rows a pick or a
+    // brush reads the key columns of, when its view names them (selectFields).
+    const inputFeaturesRef = useRef<Record<string, readonly any[]>>({});
 
     // What the node knows about its input edge, asked the way the Vega-Lite
     // node asks (hook/useGrammarInputState).
@@ -321,12 +324,15 @@ export const useAutkGrammarBehavior = (
                     inputProblemRef.current = { reason: prepared.emptyReason, detail: prepared.detail };
                 }
                 const orders: Record<string, LoadOrder> = {};
+                const features: Record<string, readonly any[]> = {};
                 upstreamSources = prepared.sources.map((source) => {
                     const loadable = loadableSource(source);
                     orders[source.outputTableName] = loadable.order;
+                    features[source.outputTableName] = (source.geojsonObject as any)?.features ?? [];
                     return loadable.source;
                 });
                 loadOrdersRef.current = orders;
+                inputFeaturesRef.current = features;
             } catch (e) {
                 // What the render then cannot find is what gets reported.
                 console.warn('[autk-grammar] reading the input failed:', e);
@@ -341,6 +347,18 @@ export const useAutkGrammarBehavior = (
         // grammar instance, so we never hold stale references.
         interactionOffRef.current.forEach(f => f());
         interactionOffRef.current = [];
+
+        // Key columns a pick or a brush cannot read (utils/autkInput
+        // selectFieldsProblem) fail the run before anything is loaded or
+        // drawn, as a document with more than one view does.
+        const keyProblem = selectFieldsProblem(spec, preparedInput?.sources ?? []);
+        if (keyProblem) {
+            grammarRef.current = null;
+            specRef.current = null;
+            emit({ code: 'error', content: keyProblem });
+            showToast(keyProblem, 'error');
+            return;
+        }
 
         emit({ code: 'exec', content: '' });
         let summary: string | null = null;
@@ -692,6 +710,12 @@ export const useAutkGrammarBehavior = (
                         spec.map?.layerRefs?.find?.((l: any) => l.isPick)?.dataRef
                         ?? spec.map?.layerRefs?.[0]?.dataRef;
                     const plotLayerRef: string | undefined = spec.plot?.dataRef;
+                    // The key columns the picked layer and the plot name their
+                    // rows by, if any (selectFields).
+                    const keys = {
+                        map: selectFieldsOf(spec.map?.layerRefs?.find?.((l: any) => l.isPick) ?? spec.map?.layerRefs?.[0]),
+                        plot: selectFieldsOf(spec.plot),
+                    };
 
                     const emitInteraction = (
                         selection: number[],
@@ -702,10 +726,18 @@ export const useAutkGrammarBehavior = (
                         // Rows of the input, not positions in what was drawn.
                         const order = layerRef ? loadOrdersRef.current[layerRef]?.[from === 'map' ? 'map' : 'load'] : null;
                         const rows = selection.map((position) => inputRow(position, order));
+                        // A view that names its key columns sends their values,
+                        // as a Vega-Lite point select over fields does (#847), so
+                        // a chart over other rows finds the ones they name. A
+                        // pick on rows that hold none selects nothing.
+                        const fields = keys[from];
+                        const data = fields && layerRef
+                            ? keyValues(rows, inputFeaturesRef.current[layerRef] ?? [], fields)
+                            : rows;
                         d.interactionsCallback?.({
                             autk_selection: {
-                                type: rows.length > 0 ? VisInteractionType.POINT : VisInteractionType.UNDETERMINED,
-                                data: rows,
+                                type: data.length > 0 ? VisInteractionType.POINT : VisInteractionType.UNDETERMINED,
+                                data,
                                 priority: 1,
                                 source: NodeType.AUTK_GRAMMAR,
                                 layerRef,
@@ -1031,7 +1063,8 @@ export const useAutkGrammarBehavior = (
 
     // #662: a selection tag on this node reads the features of the layer its
     // pick or brush came from, the rows a direct selection is matched against
-    // above (utils/references/viewSelections). A pick names their positions.
+    // above (utils/references/viewSelections). A pick names their positions,
+    // or their key values when the view names selectFields.
     useEffect(
         () =>
             provideViewRows(data.nodeId, async (layer) => {

@@ -96,6 +96,14 @@
           "const": "bar",
           "type": "string"
         },
+        "selectFields": {
+          "description": "Columns whose values name the rows a selection in this plot selects, so an app can link the selection to other tables that hold those columns. Neither adapter reads it: the Autark adapter's `plot:selection` events still report feature ids.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
         "title": {
           "type": "string"
         },
@@ -925,6 +933,14 @@
           "const": "heatmatrix",
           "type": "string"
         },
+        "selectFields": {
+          "description": "Columns whose values name the rows a selection in this plot selects, so an app can link the selection to other tables that hold those columns. Neither adapter reads it: the Autark adapter's `plot:selection` events still report feature ids.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
         "title": {
           "type": "string"
         },
@@ -1204,6 +1220,14 @@
           ],
           "type": "string"
         },
+        "selectFields": {
+          "description": "Columns whose values name the rows a selection in this plot selects, so an app can link the selection to other tables that hold those columns. Neither adapter reads it: the Autark adapter's `plot:selection` events still report feature ids.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
         "title": {
           "type": "string"
         },
@@ -1333,6 +1357,14 @@
           "items": {
             "type": "number"
           },
+          "type": "array"
+        },
+        "selectFields": {
+          "description": "Columns whose values name the rows a pick on this layer selects, so an app can link the selection to other tables that hold those columns. Neither adapter reads it: the Autark adapter's `map:picking` events still report feature ids.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
           "type": "array"
         }
       },
@@ -1574,6 +1606,14 @@
         "mark": {
           "const": "parallel-coordinates",
           "type": "string"
+        },
+        "selectFields": {
+          "description": "Columns whose values name the rows a selection in this plot selects, so an app can link the selection to other tables that hold those columns. Neither adapter reads it: the Autark adapter's `plot:selection` events still report feature ids.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
         },
         "title": {
           "type": "string"
@@ -1919,6 +1959,14 @@
           "const": "scatter",
           "type": "string"
         },
+        "selectFields": {
+          "description": "Columns whose values name the rows a selection in this plot selects, so an app can link the selection to other tables that hold those columns. Neither adapter reads it: the Autark adapter's `plot:selection` events still report feature ids.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
         "title": {
           "type": "string"
         },
@@ -1994,6 +2042,14 @@
         "mark": {
           "const": "table",
           "type": "string"
+        },
+        "selectFields": {
+          "description": "Columns whose values name the rows a selection in this plot selects, so an app can link the selection to other tables that hold those columns. Neither adapter reads it: the Autark adapter's `plot:selection` events still report feature ids.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
         },
         "title": {
           "type": "string"

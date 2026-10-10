@@ -3,9 +3,10 @@
  * a selection against, and the selection the view made last.
  *
  * A view hands over its rows here as it holds them: a Vega-Lite node the rows
- * it draws (whose positions its point selections name), an Autark node the
- * features of each layer it reads (whose positions its picks name). Nothing is
- * fetched again. The flow records each view's latest selection as the view
+ * it draws (whose positions or values its point selections name), an Autark
+ * node the features of each layer it reads (whose positions its picks name, or
+ * whose key values when the view names `selectFields`). Nothing is fetched
+ * again. The flow records each view's latest selection as the view
  * reports it (`useSelectionTags`), so a tag added later starts from it.
  */
 import type { SelectDetail, SelectionRows } from "../selectionMatch";
