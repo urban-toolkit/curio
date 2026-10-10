@@ -84,7 +84,7 @@ The last two flows join three points to two squares that share their middle edge
 | within | pairs with neither square |
 | contains, with the squares on input 0 | neither square contains it |
 
-So the Simple View after **intersects** lists the edge point twice, once with each square, and the one after **within** lists only the point inside the west square.
+So the Simple View after **intersects** lists `on the edge` twice, once with each square, and the one after **within** lists only `inside`, with the west square.
 
 ```python
 import geopandas as gpd
@@ -92,7 +92,7 @@ from shapely.geometry import Point
 
 # One point inside the west square, one on the edge the squares share, one outside both.
 return gpd.GeoDataFrame(
-    {"point": ["inside the west square", "on the shared edge", "outside both"]},
+    {"point": ["inside", "on the edge", "outside"]},
     geometry=[Point(-87.645, 41.925), Point(-87.64, 41.925), Point(-87.62, 41.925)],
     crs=4326,
 )

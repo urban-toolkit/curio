@@ -168,7 +168,12 @@
       "urls": []
     }
   },
-  "intents": [],
+  "intents": [
+    {
+      "ref": "endpoint1",
+      "slotOrderMatters": true
+    }
+  ],
   "execution": {
     "mode": "sandbox",
     "browserOnlyKinds": [

@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/25-spatial-join-operations.json",
-    "sha256": "ea63e7b3c3e8f95e1979cd401d70640cc009ff0906218baec7bb50afe8ca273e",
+    "sha256": "c278b1d11ab33d089950a3c3e1e36982259f6de4b6ffd61cba0dcfb9fde7fa0c",
     "walkthrough": null
   },
   "prompt": "From the Data Catalog, load Chicago's green roofs, a sample of Project Sidewalk labels spread across the city, the city's neighborhoods and its ZIP codes, and show every kind of spatial join side by side: the neighborhood each green roof is in; a map of how many sidewalk labels lie within each neighborhood; the labels each neighborhood contains, by type; which neighborhoods border each other; which ZIP codes each neighborhood overlaps; which neighborhoods each ZIP border runs through; and how far each green roof is from the nearest sidewalk label. Add two small squares that share an edge and three points, one inside a square, one on the shared edge and one outside both, and show that the point on the edge meets both squares but lies within neither.",
@@ -359,7 +359,72 @@
       "urls": []
     }
   },
-  "intents": [],
+  "intents": [
+    {
+      "ref": "loader1",
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "loader2",
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "loader3",
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "loader4",
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "loader5",
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "loader6",
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "transform1",
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "endpoint1",
+      "slotOrderMatters": true
+    },
+    {
+      "ref": "endpoint2",
+      "slotOrderMatters": true
+    },
+    {
+      "ref": "endpoint3",
+      "slotOrderMatters": true
+    },
+    {
+      "ref": "endpoint4",
+      "slotOrderMatters": true
+    },
+    {
+      "ref": "endpoint5",
+      "slotOrderMatters": true
+    },
+    {
+      "ref": "endpoint6",
+      "slotOrderMatters": true
+    },
+    {
+      "ref": "endpoint7",
+      "slotOrderMatters": true
+    },
+    {
+      "ref": "endpoint8",
+      "slotOrderMatters": true
+    },
+    {
+      "ref": "endpoint9",
+      "slotOrderMatters": true
+    }
+  ],
   "execution": {
     "mode": "sandbox",
     "browserOnlyKinds": [

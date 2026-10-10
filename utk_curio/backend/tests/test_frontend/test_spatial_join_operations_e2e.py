@@ -136,14 +136,15 @@ def test_each_spatial_join_case_pairs_and_draws(operations_canvas, case):
     else:
         wait_for_node_settled(page, view, node_type="VIS_SIMPLE", timeout_ms=120000)
         # A Simple View says done when its input arrives, before its table
-        # draws: wait for a row every case has.
-        node_locator(page, view).get_by_text("inside the west square").first.wait_for(
+        # draws: wait for a row every case has. The point names are short
+        # because the table cuts a long cell to its first characters.
+        node_locator(page, view).get_by_text("inside", exact=True).first.wait_for(
             state="visible", timeout=30000
         )
         text = node_locator(page, view).inner_text()
         # The pairs the boundary rule gives: the edge point pairs with both
         # squares under intersects, and with neither under within.
         edge_rows = 2 if case == "edge-intersects" else 0
-        assert text.count("on the shared edge") == edge_rows, text
-        assert text.count("inside the west square") == 1, text
-        assert "outside both" not in text, text
+        assert text.count("on the edge") == edge_rows, text
+        assert text.count("inside") == 1, text
+        assert "outside" not in text, text

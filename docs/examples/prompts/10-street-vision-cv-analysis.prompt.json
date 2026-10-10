@@ -195,6 +195,14 @@
         "rename",
         "column"
       ]
+    },
+    {
+      "ref": "endpoint1",
+      "slotOrderMatters": true
+    },
+    {
+      "ref": "endpoint2",
+      "slotOrderMatters": true
     }
   ],
   "execution": {

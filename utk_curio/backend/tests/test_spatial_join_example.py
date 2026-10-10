@@ -170,12 +170,10 @@ def _point_pairs(body: dict) -> list:
 def test_a_point_on_a_shared_edge_intersects_both_squares(client):
     """#576: the boundary rule, as shapely has it: on the edge is intersecting."""
     body = _join(client, JOIN_EDGE_INTERSECTS)
-    assert _point_pairs(body) == [
-        ("inside the west square", "west"), ("on the shared edge", "east"), ("on the shared edge", "west"),
-    ]
+    assert _point_pairs(body) == [("inside", "west"), ("on the edge", "east"), ("on the edge", "west")]
 
 
 def test_a_point_on_a_shared_edge_is_within_neither_square(client):
     """#576: and on the edge is not within."""
     body = _join(client, JOIN_EDGE_WITHIN)
-    assert _point_pairs(body) == [("inside the west square", "west")]
+    assert _point_pairs(body) == [("inside", "west")]

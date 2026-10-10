@@ -97,7 +97,7 @@
         "type": "curio.builtin/data-loading",
         "x": 0,
         "y": 2360,
-        "content": "import geopandas as gpd\nfrom shapely.geometry import Point\n\n# One point inside the west square, one on the edge the squares share, one outside both.\nreturn gpd.GeoDataFrame(\n    {\"point\": [\"inside the west square\", \"on the shared edge\", \"outside both\"]},\n    geometry=[Point(-87.645, 41.925), Point(-87.64, 41.925), Point(-87.62, 41.925)],\n    crs=4326,\n)\n",
+        "content": "import geopandas as gpd\nfrom shapely.geometry import Point\n\n# One point inside the west square, one on the edge the squares share, one outside both.\nreturn gpd.GeoDataFrame(\n    {\"point\": [\"inside\", \"on the edge\", \"outside\"]},\n    geometry=[Point(-87.645, 41.925), Point(-87.64, 41.925), Point(-87.62, 41.925)],\n    crs=4326,\n)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Three points: inside a square, on the shared edge, outside both.",
