@@ -32,6 +32,9 @@ _NS = "{http://s3.amazonaws.com/doc/2006-03-01/}"
 #: Pages listed per scan at most: 1000 keys each.
 MAX_PAGES = 400
 
+#: The parameters this provider reads: an area, for a GeoParquet table row.
+PARAMETER_IDS = ("area",)
+
 
 class S3Storage:
     type: ClassVar[str] = "s3"
@@ -50,7 +53,7 @@ class S3Storage:
             url += f"&continuation-token={quote(token, safe='')}"
         return url
 
-    def object_url(self, relpath: str) -> str:
+    def file_url(self, relpath: str) -> str:
         validate_relpath(relpath)
         url = f"{self.base}/{quote(self.prefix + relpath, safe='/')}"
         if not url.startswith(self.base + "/"):
@@ -96,7 +99,7 @@ class S3Storage:
         buffer = io.BytesIO()
         try:
             result = self.transport.download(
-                self.object_url(relpath), buffer.write, max_bytes=max_bytes,
+                self.file_url(relpath), buffer.write, max_bytes=max_bytes,
                 headers=headers, ceiling=ceiling,
             )
         except DiscoveryTransportError as exc:
@@ -109,7 +112,7 @@ class S3Storage:
     def stream(self, relpath: str, sink, *, max_bytes: int, ceiling: int, progress=None):
         """Write one file straight to *sink*, for caching it to disk."""
         result = self.transport.download(
-            self.object_url(relpath), sink, max_bytes=max_bytes, ceiling=ceiling, progress=progress,
+            self.file_url(relpath), sink, max_bytes=max_bytes, ceiling=ceiling, progress=progress,
         )
         if not 200 <= result.status < 300:
             raise ResourceNotFound(f"{relpath}: {self.manifest.name} answered {result.status}")

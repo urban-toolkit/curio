@@ -9,6 +9,7 @@ import {
 } from "../../services/discoveryCatalog";
 import styles from "./DiscoveryAddDialog.module.css";
 import { DiscoveryResourceRow } from "./DiscoveryResourceRow";
+import { SourceParameterForm, answered, parameterProblem, type ParameterValues } from "./SourceParameterForm";
 
 /**
  * A link-only source's page (Direct URL): paste a link to a file, and it is
@@ -17,6 +18,9 @@ import { DiscoveryResourceRow } from "./DiscoveryResourceRow";
  * The link is the resource id, the same contract the Dataset Finder's
  * candidate rows use, so a pasted link and a found one share one download
  * and one held lookup. Each link added here gets a row with its progress.
+ *
+ * A link to a GeoParquet file takes the source's Area: only the parts of the
+ * file inside it are read, and the dataset is named after the file and the area.
  */
 
 export interface DiscoveryLinkFormProps {
@@ -35,18 +39,36 @@ export function linkTitle(url: string): string {
   }
 }
 
+/** Whether a link names a GeoParquet file, which an Area can narrow. */
+export function isParquetLink(url: string): boolean {
+  return linkTitle(url).toLowerCase().endsWith(".parquet");
+}
+
 export function DiscoveryLinkForm({ source, acquisition, onViewDataset }: DiscoveryLinkFormProps) {
   const [link, setLink] = React.useState("");
   const [links, setLinks] = React.useState<string[]>([]);
+  const [values, setValues] = React.useState<ParameterValues>({});
   const trimmed = link.trim();
   const problem = trimmed && !trimmed.startsWith("https://") ? "The link must start with https://." : null;
+  const parameters = React.useMemo(
+    () => (trimmed && isParquetLink(trimmed) ? (source.parameters ?? []).filter((p) => p.type === "area") : []),
+    [source.parameters, trimmed],
+  );
+  const areaProblem = parameterProblem(parameters, values);
 
   const add = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!trimmed || problem) return;
+    if (!trimmed || problem || areaProblem) return;
+    const answers = answered(parameters, values);
     setLinks((all) => (all.includes(trimmed) ? all : [trimmed, ...all]));
     setLink("");
-    void acquisition.start(source.dirName, trimmed, { title: linkTitle(trimmed) });
+    setValues({});
+    // With an Area, the server names the dataset after the file and the area.
+    void acquisition.start(
+      source.dirName,
+      trimmed,
+      Object.keys(answers).length > 0 ? { parameters: answers } : { title: linkTitle(trimmed) },
+    );
   };
 
   const row = (url: string): DiscoveryResource => ({
@@ -82,7 +104,7 @@ export function DiscoveryLinkForm({ source, acquisition, onViewDataset }: Discov
           <button
             type="submit"
             className={`${styles.modeBtn} ${styles.modeBtnActive}`}
-            disabled={!trimmed || Boolean(problem)}
+            disabled={!trimmed || Boolean(problem) || Boolean(areaProblem)}
           >
             Download
           </button>
@@ -92,6 +114,10 @@ export function DiscoveryLinkForm({ source, acquisition, onViewDataset }: Discov
           {source.capabilities.formats.map((f) => f.toUpperCase()).join(", ")}.
         </p>
         {problem ? <p className={styles.warning}>{problem}</p> : null}
+        {parameters.length > 0 ? (
+          <SourceParameterForm parameters={parameters} values={values} onChange={setValues} />
+        ) : null}
+        {areaProblem ? <p className={styles.warning}>{areaProblem}</p> : null}
       </form>
       {links.map((url) => (
         <DiscoveryResourceRow

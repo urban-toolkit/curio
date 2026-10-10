@@ -1,4 +1,177 @@
 {
+  "https://bucket.test/?list-type=2&max-keys=1000&prefix=": {
+    "file": "remote_parquet/listing-all.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://bucket.test/?list-type=2&max-keys=1000&prefix=blocks%2F": {
+    "file": "remote_parquet/listing-blocks.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://bucket.test/?list-type=2&max-keys=1000&prefix=parts%2F": {
+    "file": "remote_parquet/listing-parts.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://bucket.test/blocks/loop.parquet bytes=123129-164173": {
+    "file": "remote_parquet/ranges/blocks-123129-164173.bin",
+    "headers": {
+      "Content-Range": "bytes 123129-164173/210356",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://bucket.test/blocks/loop.parquet bytes=144820-210355": {
+    "file": "remote_parquet/ranges/blocks-144820-210355.bin",
+    "headers": {
+      "Content-Range": "bytes 144820-210355/210356",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://bucket.test/blocks/loop.parquet bytes=164174-205218": {
+    "file": "remote_parquet/ranges/blocks-164174-205218.bin",
+    "headers": {
+      "Content-Range": "bytes 164174-205218/210356",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://bucket.test/blocks/loop.parquet bytes=210348-210355": {
+    "file": "remote_parquet/ranges/blocks-210348-210355.bin",
+    "headers": {
+      "Content-Range": "bytes 210348-210355/210356",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://bucket.test/blocks/loop.parquet bytes=4-41044": {
+    "file": "remote_parquet/ranges/blocks-4-41044.bin",
+    "headers": {
+      "Content-Range": "bytes 4-41044/210356",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://bucket.test/blocks/loop.parquet bytes=41045-82085": {
+    "file": "remote_parquet/ranges/blocks-41045-82085.bin",
+    "headers": {
+      "Content-Range": "bytes 41045-82085/210356",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://bucket.test/blocks/loop.parquet bytes=82086-123128": {
+    "file": "remote_parquet/ranges/blocks-82086-123128.bin",
+    "headers": {
+      "Content-Range": "bytes 82086-123128/210356",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://bucket.test/parts/a.parquet bytes=123129-164173": {
+    "file": "remote_parquet/ranges/blocks-123129-164173.bin",
+    "headers": {
+      "Content-Range": "bytes 123129-164173/210356",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://bucket.test/parts/a.parquet bytes=144820-210355": {
+    "file": "remote_parquet/ranges/blocks-144820-210355.bin",
+    "headers": {
+      "Content-Range": "bytes 144820-210355/210356",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://bucket.test/parts/a.parquet bytes=164174-205218": {
+    "file": "remote_parquet/ranges/blocks-164174-205218.bin",
+    "headers": {
+      "Content-Range": "bytes 164174-205218/210356",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://bucket.test/parts/a.parquet bytes=210348-210355": {
+    "file": "remote_parquet/ranges/blocks-210348-210355.bin",
+    "headers": {
+      "Content-Range": "bytes 210348-210355/210356",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://bucket.test/parts/a.parquet bytes=4-41044": {
+    "file": "remote_parquet/ranges/blocks-4-41044.bin",
+    "headers": {
+      "Content-Range": "bytes 4-41044/210356",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://bucket.test/parts/a.parquet bytes=41045-82085": {
+    "file": "remote_parquet/ranges/blocks-41045-82085.bin",
+    "headers": {
+      "Content-Range": "bytes 41045-82085/210356",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://bucket.test/parts/a.parquet bytes=82086-123128": {
+    "file": "remote_parquet/ranges/blocks-82086-123128.bin",
+    "headers": {
+      "Content-Range": "bytes 82086-123128/210356",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://bucket.test/parts/b.parquet bytes=0-2994": {
+    "file": "remote_parquet/ranges/plain-0-2994.bin",
+    "headers": {
+      "Content-Range": "bytes 0-2994/2995",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://bucket.test/parts/b.parquet bytes=1106-1658": {
+    "file": "remote_parquet/ranges/plain-1106-1658.bin",
+    "headers": {
+      "Content-Range": "bytes 1106-1658/2995",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://bucket.test/parts/b.parquet bytes=2987-2994": {
+    "file": "remote_parquet/ranges/plain-2987-2994.bin",
+    "headers": {
+      "Content-Range": "bytes 2987-2994/2995",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://bucket.test/parts/b.parquet bytes=4-554": {
+    "file": "remote_parquet/ranges/plain-4-554.bin",
+    "headers": {
+      "Content-Range": "bytes 4-554/2995",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://bucket.test/parts/b.parquet bytes=555-1105": {
+    "file": "remote_parquet/ranges/plain-555-1105.bin",
+    "headers": {
+      "Content-Range": "bytes 555-1105/2995",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
   "https://ckan.publishing.service.gov.uk/api/3/action/package_search?rows=20&start=0&q=cycling": {
     "file": "ckan/01.json",
     "headers": {
@@ -872,6 +1045,77 @@
     },
     "status": 200
   },
+  "https://portal.test/blocks.parquet": {
+    "file": "remote_parquet/files/blocks.parquet",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://portal.test/blocks.parquet bytes=0-0": {
+    "file": "remote_parquet/ranges/blocks-0-0.bin",
+    "headers": {
+      "Content-Range": "bytes 0-0/210356",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://portal.test/blocks.parquet bytes=123129-164173": {
+    "file": "remote_parquet/ranges/blocks-123129-164173.bin",
+    "headers": {
+      "Content-Range": "bytes 123129-164173/210356",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://portal.test/blocks.parquet bytes=144820-210355": {
+    "file": "remote_parquet/ranges/blocks-144820-210355.bin",
+    "headers": {
+      "Content-Range": "bytes 144820-210355/210356",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://portal.test/blocks.parquet bytes=164174-205218": {
+    "file": "remote_parquet/ranges/blocks-164174-205218.bin",
+    "headers": {
+      "Content-Range": "bytes 164174-205218/210356",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://portal.test/blocks.parquet bytes=210348-210355": {
+    "file": "remote_parquet/ranges/blocks-210348-210355.bin",
+    "headers": {
+      "Content-Range": "bytes 210348-210355/210356",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://portal.test/blocks.parquet bytes=4-41044": {
+    "file": "remote_parquet/ranges/blocks-4-41044.bin",
+    "headers": {
+      "Content-Range": "bytes 4-41044/210356",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://portal.test/blocks.parquet bytes=41045-82085": {
+    "file": "remote_parquet/ranges/blocks-41045-82085.bin",
+    "headers": {
+      "Content-Range": "bytes 41045-82085/210356",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://portal.test/blocks.parquet bytes=82086-123128": {
+    "file": "remote_parquet/ranges/blocks-82086-123128.bin",
+    "headers": {
+      "Content-Range": "bytes 82086-123128/210356",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
   "https://portal.test/bomb.zip": {
     "file": "download/archives/bomb.zip",
     "headers": {
@@ -963,6 +1207,14 @@
     },
     "status": 200
   },
+  "https://portal.test/no-ranges.parquet bytes=0-0": {
+    "file": "remote_parquet/files/blocks.parquet",
+    "headers": {
+      "Content-Length": "210356",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
   "https://portal.test/not-a-tiff.tif": {
     "file": "download/crimes.csv",
     "headers": {
@@ -973,12 +1225,140 @@
   "https://portal.test/oversized.csv": {
     "error": "too-large"
   },
+  "https://portal.test/plain.parquet bytes=0-0": {
+    "file": "remote_parquet/ranges/plain-0-0.bin",
+    "headers": {
+      "Content-Range": "bytes 0-0/2995",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://portal.test/plain.parquet bytes=0-2994": {
+    "file": "remote_parquet/ranges/plain-0-2994.bin",
+    "headers": {
+      "Content-Range": "bytes 0-2994/2995",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://portal.test/plain.parquet bytes=1106-1658": {
+    "file": "remote_parquet/ranges/plain-1106-1658.bin",
+    "headers": {
+      "Content-Range": "bytes 1106-1658/2995",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://portal.test/plain.parquet bytes=2987-2994": {
+    "file": "remote_parquet/ranges/plain-2987-2994.bin",
+    "headers": {
+      "Content-Range": "bytes 2987-2994/2995",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://portal.test/plain.parquet bytes=4-554": {
+    "file": "remote_parquet/ranges/plain-4-554.bin",
+    "headers": {
+      "Content-Range": "bytes 4-554/2995",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://portal.test/plain.parquet bytes=555-1105": {
+    "file": "remote_parquet/ranges/plain-555-1105.bin",
+    "headers": {
+      "Content-Range": "bytes 555-1105/2995",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://portal.test/projected.parquet bytes=0-0": {
+    "file": "remote_parquet/ranges/projected-0-0.bin",
+    "headers": {
+      "Content-Range": "bytes 0-0/11504",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://portal.test/projected.parquet bytes=0-11503": {
+    "file": "remote_parquet/ranges/projected-0-11503.bin",
+    "headers": {
+      "Content-Range": "bytes 0-11503/11504",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://portal.test/projected.parquet bytes=11496-11503": {
+    "file": "remote_parquet/ranges/projected-11496-11503.bin",
+    "headers": {
+      "Content-Range": "bytes 11496-11503/11504",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://portal.test/projected.parquet bytes=1776-2661": {
+    "file": "remote_parquet/ranges/projected-1776-2661.bin",
+    "headers": {
+      "Content-Range": "bytes 1776-2661/11504",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://portal.test/projected.parquet bytes=4-889": {
+    "file": "remote_parquet/ranges/projected-4-889.bin",
+    "headers": {
+      "Content-Range": "bytes 4-889/11504",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://portal.test/projected.parquet bytes=890-1775": {
+    "file": "remote_parquet/ranges/projected-890-1775.bin",
+    "headers": {
+      "Content-Range": "bytes 890-1775/11504",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
   "https://portal.test/slip.zip": {
     "file": "download/archives/slip.zip",
     "headers": {
       "Content-Type": "application/zip"
     },
     "status": 200
+  },
+  "https://portal.test/table.parquet bytes=0-0": {
+    "file": "remote_parquet/ranges/table-0-0.bin",
+    "headers": {
+      "Content-Range": "bytes 0-0/740",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://portal.test/table.parquet bytes=0-739": {
+    "file": "remote_parquet/ranges/table-0-739.bin",
+    "headers": {
+      "Content-Range": "bytes 0-739/740",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://portal.test/table.parquet bytes=4-192": {
+    "file": "remote_parquet/ranges/table-4-192.bin",
+    "headers": {
+      "Content-Range": "bytes 4-192/740",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://portal.test/table.parquet bytes=732-739": {
+    "file": "remote_parquet/ranges/table-732-739.bin",
+    "headers": {
+      "Content-Range": "bytes 732-739/740",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
   },
   "https://portal.test/timeout.csv": {
     "error": "timeout"

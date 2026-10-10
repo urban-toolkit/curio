@@ -46,6 +46,7 @@ from utk_curio.backend.app.common.user_storage import user_key_segment, users_ba
 from utk_curio.backend.app.discovery.application import archives
 from utk_curio.backend.app.discovery.domain.errors import (
     CapabilityUnsupported,
+    DiscoveryError,
     DownloadTooLarge,
     ResourceNotFound,
     UnsupportedFormatError,
@@ -149,6 +150,11 @@ class DiscoveryAcquire:
         target = self._download_target(manifest, resource_id, fmt, values)
         if not target or not target.url:
             raise ResourceNotFound(f"{resource_id} has no download URL")
+        if target.area is not None:
+            return self._acquire_area(
+                manifest, resource_id, target, values, values_hash,
+                title=title, held=held, cancelled=cancelled, stage=stage,
+            )
 
         # An archive Curio does not unpack, named as one, costs no request.
         refuse_archives("", target.filename_hint)
@@ -316,6 +322,63 @@ class DiscoveryAcquire:
         # explain it.
         return {"dataset": dataset, "alreadyPresent": False, "unchanged": False}
 
+    def _acquire_area(
+        self, manifest, resource_id, target, values, values_hash, *, title, held, cancelled, stage,
+    ) -> dict[str, Any]:
+        """A GeoParquet file read for an area: its footer, then only the row
+        groups that meet the area, and the rows inside it. The file is never
+        downloaded whole, so the limit is on the bytes read, not its size."""
+        from utk_curio.backend.app.discovery.application.service_acquire import place_label
+        from utk_curio.backend.app.discovery.infrastructure import parquet_area
+        from utk_curio.backend.app.discovery.infrastructure.remote_parquet import (
+            MAX_FOOTER_BYTES,
+            RemoteParquet,
+        )
+
+        name = target.filename_hint or _url_name(target.url) or "file.parquet"
+        place = place_label(values)
+        bound = min(manifest.capabilities.max_download_bytes, MAX_DISCOVERY_DOWNLOAD_BYTES)
+        remote = RemoteParquet(
+            self._transport_for(manifest), target.url, None,
+            max_footer_bytes=MAX_FOOTER_BYTES, cancelled=cancelled,
+        )
+        if stage is not None:
+            stage("Reading the file's index…")
+        parts = parquet_area.plan([remote], target.area, bound=bound, what=name)
+        work = Path(tempfile.mkdtemp(prefix="area", dir=self._tmp_dir()))
+        try:
+            filename = safe_remote_filename(name, fallback="area.parquet")
+            path = work / filename
+            rows = parquet_area.write(parts, path, stage=stage) if parts else 0
+            if not rows:
+                raise DiscoveryError(f"{name} has nothing in {place}")
+            sha256 = _sha256_of(path)
+            same = self._held_by_content(held, sha256)
+            if same is not None:
+                return same
+            discovery_source = {
+                "sourceId": manifest.dir_name,
+                "sourceName": manifest.name,
+                "resourceId": resource_id,
+                "resourceUrl": target.url,
+                "finalUrl": target.url,
+                "fetchedAt": _iso_now(),
+                "contentSha256": sha256,
+                "parameters": values,
+                "parametersHash": values_hash,
+            }
+            dataset = self._install_path(
+                path,
+                filename,
+                "parquet",
+                title=title or f"{name}, {place}",
+                discovery_source=discovery_source,
+                description=f"The rows of {name} in {place}.",
+            )
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+        return {"dataset": dataset, "alreadyPresent": False, "unchanged": False}
+
     def _held_by_content(self, held, sha256: str) -> dict[str, Any] | None:
         """The answer when these bytes are already held, else None."""
         if held is not None and held.get("discoverySource", {}).get("contentSha256") == sha256:
@@ -392,6 +455,16 @@ class _Cancelled(Exception):
 
 def _token() -> str:
     return f"dl{uuid.uuid4().hex[:16]}"
+
+
+def _sha256_of(path: Path) -> str:
+    import hashlib
+
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _url_name(url: str | None) -> str | None:

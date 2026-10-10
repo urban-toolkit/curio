@@ -27,6 +27,7 @@ from utk_curio.backend.app.common.user_storage import user_key_segment, users_ba
 from utk_curio.backend.app.discovery.application import combine_tables
 from utk_curio.backend.app.discovery.application import index_collection
 from utk_curio.backend.app.discovery.application import scan as scanning
+from utk_curio.backend.app.discovery.domain import parameters as P
 from utk_curio.backend.app.discovery.domain.errors import (
     CapabilityUnsupported,
     DiscoveryError,
@@ -105,7 +106,7 @@ def _one_file_bound(manifest: DiscoverySourceManifest, fmt: str | None) -> int:
     return min(bound, MAX_CONVERTED_FILE_BYTES) if fmt in CONVERTED_FORMATS else bound
 
 
-def check_addable(manifest: DiscoverySourceManifest, spec, files) -> None:
+def check_addable(manifest: DiscoverySourceManifest, spec, files, *, for_area: bool = False) -> None:
     """Refuse an add of *files* of *spec* that what the scan knows of them
     already refuses: a file or a shapefile part over its limit, a shapefile
     without its parts, more files or bytes than one table combines, or files
@@ -113,16 +114,22 @@ def check_addable(manifest: DiscoverySourceManifest, spec, files) -> None:
 
     The add checks this before it reads a byte, and a listing checks each row
     it shows, so a row that cannot be added says why in the words its add
-    fails with.
+    fails with. An add for an Area (*for_area*) is not refused for the files'
+    sizes: it reads only part of each, and that part is checked once their
+    footers are read.
     """
     if spec.is_collection or not files:
         return
     if not _combined(spec, files):
-        _check_copy(files[0], spec.format, _one_file_bound(manifest, spec.format))
+        if not for_area:
+            _check_copy(files[0], spec.format, _one_file_bound(manifest, spec.format))
         return
     local = manifest.provider.type == "folder"
-    combine_tables.check_bounds(files, local=local)
-    if not local:
+    if for_area:
+        combine_tables.check_count(files)
+    else:
+        combine_tables.check_bounds(files, local=local)
+    if not local and not for_area:
         # A bucket's files are copied here one at a time to be combined.
         bound = _file_bound(manifest)
         for found in files:
@@ -130,10 +137,10 @@ def check_addable(manifest: DiscoverySourceManifest, spec, files) -> None:
     combine_tables.check_format(spec)
 
 
-def add_refusal(manifest: DiscoverySourceManifest, spec, files) -> str | None:
+def add_refusal(manifest: DiscoverySourceManifest, spec, files, *, for_area: bool = False) -> str | None:
     """Why an add of *files* of *spec* would be refused, or None when it would not."""
     try:
-        check_addable(manifest, spec, files)
+        check_addable(manifest, spec, files, for_area=for_area)
     except DiscoveryError as exc:
         return str(exc)
     return None
@@ -182,6 +189,7 @@ class StorageAcquire:
         refresh: bool = False,
         filters: dict[str, Any] | None = None,
         files: list[str] | None = None,
+        parameters: dict[str, Any] | None = None,
         progress: Callable[[int, int | None], None] | None = None,
         items: Callable[[int, int | None], None] | None = None,
         stage: Callable[[str], None] | None = None,
@@ -193,14 +201,28 @@ class StorageAcquire:
         add is always a new dataset: it is not the row, so holding one says
         nothing about holding the other.
 
+        *parameters* are the answers already checked against the manifest: an
+        Area, for a row of GeoParquet files, reads each file only where it
+        meets the area. The same row for another area is another dataset.
+
         *refresh* adds a held row again. When its files are as they were, the
         held dataset is the answer; when they changed, a new dataset is added.
         """
+        values = dict(parameters or {})
+        values_hash = P.values_hash(values) if values else None
+        area = (values.get("area") or {}).get("box")
         selection = scanning.narrow(
             scanning.parse_resource_id(manifest, resource_id), filters=filters, files=files
         )
         spec = selection.spec
-        held = None if selection.narrowed else self._find_held(manifest.dir_name, resource_id, None)
+        if area is not None and not scanning.takes_area(manifest, spec):
+            raise P.ParameterError(
+                f"an Area narrows a table of GeoParquet files, and {spec.name} is not one; "
+                "add it without an Area"
+            )
+        held = None if selection.narrowed else self._find_held(
+            manifest.dir_name, resource_id, None, values_hash
+        )
         if held is not None and not refresh:
             return {"dataset": held, "alreadyPresent": True, "unchanged": True}
 
@@ -223,7 +245,16 @@ class StorageAcquire:
         if held is not None and _held_fingerprint(held) == fingerprint:
             return {"dataset": held, "alreadyPresent": True, "unchanged": True}
 
-        check_addable(manifest, spec, files)
+        check_addable(manifest, spec, files, for_area=area is not None)
+        if area is not None:
+            dataset = self._add_area(
+                manifest, provider, spec, selection, files, area=area, values=values,
+                values_hash=values_hash, resource_id=resource_id, name=name, title=title,
+                held=held, fingerprint=fingerprint, items=items, stage=stage, cancelled=cancelled,
+            )
+            if dataset.get("alreadyPresent"):
+                return dataset
+            return {"dataset": dataset, "alreadyPresent": False, "unchanged": False}
         if spec.is_collection:
             dataset = self._add_collection(
                 manifest, provider, spec, selection, files, resource_id=resource_id,
@@ -263,6 +294,88 @@ class StorageAcquire:
         if dataset.get("alreadyPresent"):
             return dataset
         return {"dataset": dataset, "alreadyPresent": False, "unchanged": False}
+
+    # ── GeoParquet files in an area ────────────────────────────────────────
+
+    def _add_area(
+        self, manifest, provider, spec, selection, files, *, area, values, values_hash, resource_id,
+        name, title, held, fingerprint, items, stage, cancelled,
+    ) -> dict[str, Any]:
+        """The rows of a row's GeoParquet *files* in an area: each file's
+        footer, then only its row groups that meet the area
+        (``infrastructure/parquet_area.py``). One file lands as its part;
+        several are combined from their parts as a whole row's files are."""
+        from utk_curio.backend.app.discovery.application.service_acquire import place_label
+        from utk_curio.backend.app.discovery.infrastructure import parquet_area
+        from utk_curio.backend.app.discovery.infrastructure.remote_parquet import (
+            MAX_FOOTER_BYTES,
+            RemoteParquet,
+        )
+
+        place = place_label(values)
+        if stage:
+            stage(f"Reading the index of {len(files):,} {'file' if len(files) == 1 else 'files'}…")
+        remotes = [
+            RemoteParquet(provider.transport, provider.file_url(found.relpath), found.size,
+                          max_footer_bytes=MAX_FOOTER_BYTES, cancelled=cancelled)
+            for found in files
+        ]
+        found_by = {id(remote): found for remote, found in zip(remotes, files)}
+        parts = parquet_area.plan(remotes, area, bound=_file_bound(manifest), what=spec.name)
+        with tempfile.TemporaryDirectory(dir=self._tmp_dir()) as tmp:
+            work = Path(tmp)
+            staged: dict[str, Path] = {}
+            digest = hashlib.sha256()
+            for index, part in enumerate(parts, start=1):
+                found = found_by[id(part.remote)]
+                path = work / f"area-{index:06d}.parquet"
+                if parquet_area.write([part], path, stage=stage):
+                    staged[found.relpath] = path
+                    digest.update(f"{found.relpath} {_sha256_of(path)}\n".encode())
+                if items is not None:
+                    items(index, len(parts))
+            kept = [found for found in files if found.relpath in staged]
+            if not kept:
+                raise DiscoveryError(f"{spec.name} has nothing in {place}")
+            sha = digest.hexdigest()
+            if held is not None and (held.get("discoverySource") or {}).get("contentSha256") == sha:
+                return {"dataset": held, "alreadyPresent": True, "unchanged": True}
+            discovery_source = {
+                "sourceId": manifest.dir_name,
+                "sourceName": manifest.name,
+                "resourceId": resource_id,
+                "fileCount": len(files),
+                "fetchedAt": _iso_now(),
+                "fingerprint": fingerprint,
+                "contentSha256": sha,
+                "parameters": values,
+                "parametersHash": values_hash,
+                **_narrowing(selection),
+            }
+            title = title or f"{name}, {place}"
+            if not _combined(spec, files):
+                only = files[0]
+                discovery_source["sourcePath"] = only.relpath
+                return self._install_path(
+                    staged[only.relpath], _filename(only.relpath), "parquet", title=title,
+                    discovery_source=discovery_source, description=f"The rows of {only.relpath} in {place}.",
+                )
+            parts_read = [staged[found.relpath] for found in kept]
+            geo, extent = parquet_area.combined_geo(parts_read, what=spec.name)
+            combined = combine_tables.combine(
+                spec, kept, stage=lambda found, _into, _index: staged[found.relpath],
+                tmp=work, dest=work / "combined.parquet", cancelled=cancelled,
+            )
+            # The combined table, as GeoParquet whatever the combining wrote.
+            dest = work / "dataset" / f"{spec.id}.parquet"
+            dest.parent.mkdir()
+            parquet_area.with_geo(combined.path, dest, geo, extent)
+            discovery_source["fields"] = ",".join(spec.template.names)
+            return self._install_path(
+                dest, dest.name, "parquet", title=title, discovery_source=discovery_source,
+                row_count=combined.rows,
+                description=f"The rows of {len(kept):,} {spec.format} files of {manifest.name} in {place}.",
+            )
 
     # ── a collection ───────────────────────────────────────────────────────
 
@@ -516,6 +629,14 @@ class StorageAcquire:
 
 
 _SUFFIX_RE = re.compile(r"\.[a-z0-9]{1,16}")
+
+
+def _sha256_of(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(CHUNK_BYTES), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _filename(relpath: str) -> str:

@@ -53,13 +53,18 @@ class Combined:
     columns: tuple[str, ...]
 
 
-def check_bounds(files, *, local: bool) -> None:
-    """Refuse more files, or more bytes, than one table combines."""
+def check_count(files) -> None:
+    """Refuse more files than one table combines."""
     if len(files) > MAX_COMBINED_FILES:
         raise DownloadTooLarge(
             f"{len(files):,} files is more than one table combines ({MAX_COMBINED_FILES:,}); "
             "split the resource with datasets: per:<field>"
         )
+
+
+def check_bounds(files, *, local: bool) -> None:
+    """Refuse more files, or more bytes, than one table combines."""
+    check_count(files)
     bound = MAX_COMBINED_LOCAL_BYTES if local else MAX_COMBINED_REMOTE_BYTES
     total = sum(f.size for f in files)
     if total > bound:

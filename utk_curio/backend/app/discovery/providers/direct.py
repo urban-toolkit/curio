@@ -10,6 +10,9 @@ This is the one provider with no base URL, and therefore the one where
 itself: the URL is checked by ``egress.check_url`` before anything is fetched,
 exactly as every other provider's constructed URLs are, so "no base" removes a
 narrowing guard rather than the guard.
+
+A link to a GeoParquet file takes an area: its footer is read, then only the
+row groups that meet the area (``infrastructure/parquet_area.py``).
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ import re
 from urllib.parse import unquote, urlparse
 
 from utk_curio.backend.app.discovery.domain.errors import ResourceNotFound
+from utk_curio.backend.app.discovery.domain.parameters import ParameterError
 from utk_curio.backend.app.discovery.domain.resource import (
     DownloadTarget,
     DiscoveryResource,
@@ -32,6 +36,9 @@ from utk_curio.backend.app.discovery.providers.base import BaseProvider
 #: ``egress.check_url``, which resolves the host and applies the address
 #: policy. This only keeps obvious nonsense out of the transport.
 RESOURCE_ID_RE = re.compile(r"^https://[^\s\"'<>\\]{3,2000}$")
+
+#: The parameters this provider reads: an area, for a GeoParquet link.
+PARAMETER_IDS = ("area",)
 
 _SUFFIX_FORMAT = {
     ".csv": "csv",
@@ -70,6 +77,7 @@ class DirectProvider(BaseProvider):
                 publisher=urlparse(url).hostname or "",
                 formats=(fmt,) if fmt else (),
                 landing_url=url,
+                parameter_ids=("area",) if fmt == "parquet" else (),
             ),
             license=self.manifest.license,
         )
@@ -89,6 +97,14 @@ class DirectProvider(BaseProvider):
             chosen = None
         if chosen is not None and chosen not in self.manifest.capabilities.formats:
             raise ResourceNotFound(f"this source cannot deliver {chosen!r}")
+        area = (values or {}).get("area")
+        if area:
+            if chosen != "parquet":
+                raise ParameterError(
+                    f"an Area narrows a GeoParquet file (a .parquet link), and {name or url} is not one; "
+                    "download it without an Area"
+                )
+            return DownloadTarget(url=url, declared_format=chosen, filename_hint=name, area=tuple(area["box"]))
         return DownloadTarget(url=url, declared_format=chosen, filename_hint=name)
 
 

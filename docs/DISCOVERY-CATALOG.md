@@ -53,7 +53,7 @@ discovery/
 | data.gov.uk | CKAN | Public |
 | ArcGIS Hub Open Data | ArcGIS | Public |
 | GeoSampa (São Paulo) | OGC WFS | Public |
-| Direct URL | none | Public. Nothing to browse: it downloads one file from an https link |
+| Direct URL | none | Public. Nothing to browse: it downloads one file from an https link, or the part of a GeoParquet file inside an area |
 | OpenStreetMap | OpenStreetMap (Autark) | Public. Buildings, roads, parks, water, land surface, points of interest and features by tag for a box or for named areas, loaded by Autark |
 | Example storage | Folder | Public. A small instance of each way storage is organized, which the storage examples read |
 | Sentinel-2 over Chicago | S3 bucket | Public. True-color previews and thumbnails of one month's scenes |
@@ -137,7 +137,7 @@ A storage source is read when it is first opened, and again when its listing is 
 
 **I want a model a node can run.** Open the **Hugging Face models** card's page and search it, for example for `segformer`. Each row names the model's task, its weights (ONNX or safetensors), its downloads and its license. Click **Add to Model Catalog**; when it is done, the row offers **View model**. On the canvas, drag the model from **Model Catalog** in the left Tools panel onto an **Image Segmentation** node: see [MODEL-CATALOG.md](MODEL-CATALOG.md).
 
-**I have a link to a file.** Click **Add by link** on the Direct URL card, paste the link into **Link to a file**, and click **Download**. The link gets a row of its own, which offers **View dataset** once the file is in your Data Catalog.
+**I have a link to a file.** Click **Add by link** on the Direct URL card, paste the link into **Link to a file**, and click **Download**. The link gets a row of its own, which offers **View dataset** once the file is in your Data Catalog. A link to a GeoParquet file (`.parquet`) shows an **Area**: set it, and only the rows inside it are read ([A GeoParquet file for an area](#a-geoparquet-file-for-an-area)).
 
 **A source needs a token.** Get one from the source (its **View details** links to its instructions), add it with **Add configuration** on the **API keys** tab of **API Settings**, and save. [Part 5](#5-api-tokens) walks through it step by step.
 
@@ -241,6 +241,16 @@ A way that is tagged as an area but does not close is a line. In **Points of int
 - **On an Autark map.** **Buildings** and **Road segments** name their layer (`df.metadata = {"layerType": "buildings"}`), so an Autark map draws them as buildings, raised to their height, and as roads.
 - **Credit.** Buildings and road segments are ODbL 1.0; Overture says how to credit each theme at [docs.overturemaps.org/attribution](https://docs.overturemaps.org/attribution/).
 
+### A GeoParquet file for an area
+
+A Direct URL link to a `.parquet` file, and a bucket or Hugging Face row of `parquet` files whose manifest declares an `area`, take an **Area**. Leave it empty for the whole file.
+
+- **Only what the area needs.** Curio reads the file's footer, then only its row groups whose box meets the area, one request each. The box of a row group comes from the file's box columns: the GeoParquet `covering` columns, or a `bbox` column like Overture's. A file without them has every row group read.
+- **What a row is.** One row whose bounding box meets the area, with every column of the file. A feature that crosses the edge is kept whole. The dataset is GeoParquet, named after the file or row and the area unless you type a name.
+- **Coordinates.** A file in another coordinate system is read with the area moved into it, and the dataset keeps the file's coordinate system.
+- **Size.** What a download reads, footers and row groups together, may take up to the download limit, whatever the size of the file. A bucket row over the limit can be added for an area, and is refused whole.
+- **Refused, with a message.** A `.parquet` file with no GeoParquet geometry, a server that does not send parts of a file, a link or row that does not take an area, and an area with no rows in it.
+
 ### Downloading street-level images
 
 - **Mapillary.** A box of at most 25 km². Photos are taken from across the box, newest first, up to **Most images** (at most 1,000). Each one is CC BY-SA 4.0 and keeps its photographer in `creator`, so a figure made from them can credit each photo. Your token goes to Mapillary's API only, never to the hosts the photos come from.
@@ -263,7 +273,7 @@ A way that is tagged as an area but does not close is a line. In **Points of int
 - **Adding again.** A row marked **In your Data Catalog** offers **View dataset** and **Add again**. **Add again** reads the row's files: when they changed, it adds a new dataset of them, which the row then holds; when they did not, you keep the dataset you have, and a message says so.
 - **Narrowing.** Keeping only some values in the **Add** dialog, or picking files under **Files**, adds a separate dataset of just those files. The row stays offered whole.
 - **A bucket's files.** In a collection from a bucket or a Hugging Face dataset repository, each image and raster is indexed from its first 64 KiB, and a detail stored past them stays empty. Its videos and recordings are indexed by their path and size only. Thumbnails of its images and rasters are drawn on request; a video's or recording's appears once it is cached. Nodes read its files once **Cache files** has copied them to the Curio machine; until then a row's `path` is empty.
-- **Size.** 4 GiB per file from a folder, and the download limit per file from a bucket; 512 MiB for a GeoPackage or PBF. A combined table takes up to 10,000 files, and 16 GiB from a folder or 2 GiB from a bucket. A source lists up to 200,000 matched files, or fewer when its manifest sets a lower limit, and its page says when it holds more. Adding a resource with more files than that limit is refused: pick files under **Files**, or narrow it in the **Add** dialog when its row offers **Add to Data Catalog**.
+- **Size.** 4 GiB per file from a folder, and the download limit per file from a bucket, or for what an add for an area reads ([A GeoParquet file for an area](#a-geoparquet-file-for-an-area)); 512 MiB for a GeoPackage or PBF. A combined table takes up to 10,000 files, and 16 GiB from a folder or 2 GiB from a bucket. A source lists up to 200,000 matched files, or fewer when its manifest sets a lower limit, and its page says when it holds more. Adding a resource with more files than that limit is refused: pick files under **Files**, or narrow it in the **Add** dialog when its row offers **Add to Data Catalog**.
 - **Rows that cannot be added.** A row over one of these limits, a shapefile without its `.dbf` or `.shx`, and GeoPackage or PBF files declared as one table say why under the row's name, and **Add to Data Catalog** is off. A row of several files still offers **Files**, to add some of them.
 - **Publishing.** A collection cannot be published.
 
@@ -364,12 +374,12 @@ Each entry of `parameters` is one question the **Download** dialog asks, and the
 
 | Field | What it declares |
 |---|---|
-| `id` | What the answer is called. A source may declare only the ids its provider reads: `area` for `socrata`, `wfs` and `autark-osm`, and `tags` for one `autark-osm` resource at a time, declared on that resource and required; `area`, `captured`, `imageType`, `size` and `maxImages` for `mapillary`; `area`, `spacing`, `headings`, `fov`, `pitch`, `size`, `outdoorOnly` and `maxImages` for `google-streetview`; `area` for `overture`; none for the others. |
+| `id` | What the answer is called. A source may declare only the ids its provider reads: `area` for `socrata`, `wfs` and `autark-osm`, and `tags` for one `autark-osm` resource at a time, declared on that resource and required; `area`, `captured`, `imageType`, `size` and `maxImages` for `mapillary`; `area`, `spacing`, `headings`, `fov`, `pitch`, `size`, `outdoorOnly` and `maxImages` for `google-streetview`; `area` for `overture`, `direct`, `s3` and `huggingface`, where only a GeoParquet link or a `parquet` table row asks it; none for the others. |
 | `type` | `area`, `dateRange`, `choice` (one, or several with `multiple`), `number`, `integer`, `boolean`, `text` (with a `pattern`), `url` (https), or `tags` (1 to 16 OpenStreetMap tags, each `key=value` or `key=*`, in any order). |
 | `label`, `description` | What the dialog says. |
 | `required` | Whether the download needs an answer. |
 | `default`, `min`, `max`, `step`, `unit`, `options` | A number's range and a choice's options. |
-| `accepts` | For an `area`: `box`, `names`, or both. `socrata`, `wfs`, `mapillary`, `google-streetview` and `overture` take a box; `autark-osm` takes both. |
+| `accepts` | For an `area`: `box`, `names`, or both. `socrata`, `wfs`, `mapillary`, `google-streetview`, `overture`, `direct`, `s3` and `huggingface` take a box; `autark-osm` takes both. |
 | `maxAreaKm2` | For an `area`: the largest box, in km². |
 | `suggestions` | For `tags`: OpenStreetMap keys the field offers as you type, such as `amenity` or `shop`. |
 
