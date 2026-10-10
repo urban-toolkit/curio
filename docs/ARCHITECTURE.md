@@ -1403,7 +1403,7 @@ An agent never decides on its own that a file exists. Every piece of node conten
 | A URL | The runtime probed it in this run (2xx; 401/403 is accepted and labeled *credential-gated*), or a candidates card in this conversation already carried it as **Verified ✓**. A URL in the user's own message is not evidence: the runtime checks it. |
 | Nothing (inline data in a data-loading node) | The user asked for synthetic or sample data; the card then says *Synthetic data*. |
 
-When the message being answered names Data Catalog datasets by id (in a Solve, the node's own goal does), or the user confirmed catalog rows for the node, code that reads catalog data must read one of them; another dataset read beside it is fine.
+When the message being answered names Data Catalog datasets by id (in a Solve, the node's own goal does), or the user confirmed catalog rows for the node, code that reads catalog data must read one of them; another dataset read beside it is fine. A message that names none, such as "go ahead", takes the ids the user's previous message named; older turns never count. A Solve holds its content to these datasets whether or not it runs the content first.
 
 Anything else is refused with the literal named and the allowed routes listed. The refusal is a free correction round for the agent, and a Solve that cannot ground a node marks it failed for an ungrounded source, with the remedy, instead of writing the code. The review card carries a **Source** block above the preview: the catalog dataset by title and id, the URL with its verification chip, the user-provided path marked *not checked by Curio*, or the synthetic label.
 

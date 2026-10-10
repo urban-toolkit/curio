@@ -270,6 +270,22 @@ class TestRequestedDatasets:
         assert chat.requested_dataset_ids == {self.OTHER}
         assert grounding._grounding_context("4242", "p-1", {}, node_type=node_type, base=base).requested_dataset_ids == set()
 
+    def test_a_follow_up_that_names_no_dataset_keeps_the_previous_messages(self):
+        """#867: "go ahead" names no dataset, so the ones the user's previous
+        message named are requested. A message that names one is held to it."""
+        from utk_curio.backend.app.agents.application.turns import grounding
+
+        base = {"catalog_paths": {}, "catalog_ids": self._refs(), "verified": {}, "secrets": {}, "texts": []}
+        node_type = "curio.builtin/data-loading"
+        follow_up = {"message": "go ahead", "previous_message": f"load {self.ASKED}"}
+        assert grounding._grounding_context(
+            "4242", "p-1", follow_up, node_type=node_type, base=base,
+        ).requested_dataset_ids == {self.ASKED}
+        named = {"message": f"use {self.OTHER}", "previous_message": f"load {self.ASKED}"}
+        assert grounding._grounding_context(
+            "4242", "p-1", named, node_type=node_type, base=base,
+        ).requested_dataset_ids == {self.OTHER}
+
 
 class TestUserTexts:
     def test_user_paths_from_free_text(self):
