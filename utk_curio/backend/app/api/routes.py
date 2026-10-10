@@ -555,120 +555,55 @@ def get_loaded_files_metadata(folder_path):
 
 @bp.route('/spatial_join', methods=['POST'])
 def spatial_join():
-    """Tag each input point with the polygon it falls in (point-in-polygon).
+    """Pair the rows of two GeoJSON inputs whose shapes meet (#576).
 
-    Backs the Spatial Join node in curio.builtin@1. Accepts and returns
-    plain GeoJSON FeatureCollections so the node sits naturally between any
-    pair of nodes that emit / consume the GEODATAFRAME type.
+    Backs the Spatial Join node in curio.builtin@1. Input 0 (the node's top
+    circle) is the left side of the join and input 1 (the bottom circle) the
+    right; either takes any geometry. The work is in ``common/spatial.py``,
+    on geopandas ``sjoin`` and ``sjoin_nearest``.
 
     Request body:
         {
-          "points":        FeatureCollection (Point features),
-          "polygons":      FeatureCollection (Polygon/MultiPolygon features),
-          "name_property": optional, defaults to "name". Which column on
-                           each polygon to use as the tag (e.g. "pri_neigh"
-                           for Chicago neighborhoods, "BoroName" for NYC).
-          "output":        optional, "points" (default) or "polygons".
+          "left":      FeatureCollection, input 0,
+          "right":     FeatureCollection, input 1,
+          "predicate": optional, one of intersects (default), within,
+                       contains, touches, overlaps, crosses, nearest:
+                       how input 0's shape must meet input 1's,
+          "output":    optional, "pairs" (default) or "counts".
         }
 
-    Response:
-        {
-          "type": "FeatureCollection",
-          "features": [...]   # output "points" (default): the input points plus
-                              # the polygon's tag under the polygon column's own
-                              # name, a `<tag>_point_count` and the
-                              # `<tag>_dominant_*` roll-ups when the points carry
-                              # a dominant class. Output "polygons": the input
-                              # polygons, each with `point_count` (and the
-                              # dominant_* roll-ups when present).
-          "metadata": { "aggregates": [...],   # per-polygon roll-up
-                        "warnings": [...] }     # only when non-empty (#262)
-        }
+    Response: a FeatureCollection. "pairs" gives one feature per matching
+    pair, input 0's row and geometry with input 1's columns added
+    (``<column>_right`` on a clash, plus ``distance`` in meters for
+    nearest); "counts" gives input 1's features, each with ``point_count``.
+    ``metadata`` says how many pairs and matched rows there are, and carries
+    ``warnings`` when an operation can never match the shapes given.
 
-    Returns 503 if the shapely extras aren't installed (geopandas is already
-    a Curio base dep, but we lazy-import shapely so the failure mode is
-    explicit).
+    A request the join cannot run (not geodata, an unknown operation) is a
+    400 that says what to change. 503 when geopandas is not installed.
     """
     body = request.get_json(silent=True) or {}
-    points_fc = body.get("points")
-    polygons_fc = body.get("polygons")
-    name_property = body.get("name_property") or "name"
-
-    if not isinstance(points_fc, dict) or not isinstance(polygons_fc, dict):
-        return jsonify({
-            "error": "body must be { points: FeatureCollection, polygons: FeatureCollection, name_property? }",
-        }), 400
-
-    # Extract per-point dicts from the points FeatureCollection. Surface
-    # `latitude` / `longitude` from properties OR from the geometry itself.
-    point_dicts = []
-    for f in (points_fc.get("features") or []):
-        props = dict(f.get("properties") or {})
-        lat = props.get("latitude")
-        lon = props.get("longitude")
-        geom = f.get("geometry") or {}
-        coords = geom.get("coordinates") if isinstance(geom, dict) else None
-        if (lat is None or lon is None) and isinstance(coords, list) and len(coords) >= 2:
-            lon, lat = coords[0], coords[1]
-        props["latitude"] = lat
-        props["longitude"] = lon
-        point_dicts.append(props)
-
-    warnings: list = []
+    from utk_curio.backend.app.common.spatial import (
+        DEFAULT_OUTPUT,
+        DEFAULT_PREDICATE,
+        JoinInputError,
+        spatial_join as join,
+    )
     try:
-        from utk_curio.backend.app.common.spatial import (
-            enrich_points_with_polygons,
-            polygons_with_counts,
+        result = join(
+            body.get("left"),
+            body.get("right"),
+            predicate=body.get("predicate") or DEFAULT_PREDICATE,
+            output=body.get("output") or DEFAULT_OUTPUT,
         )
-        enriched, aggregates, tag_column = enrich_points_with_polygons(
-            points=point_dicts,
-            polygon_fc=polygons_fc,
-            name_property=name_property,
-            warnings=warnings,
-        )
+    except JoinInputError as e:
+        return jsonify({"error": str(e)}), 400
     except ImportError as e:
         return jsonify({
-            "error": "spatial extras not installed (shapely required)",
-            "hint": "pip install shapely",
+            "error": "spatial extras not installed (geopandas required)",
+            "hint": "pip install geopandas",
             "detail": str(e),
         }), 503
     except Exception as e:
         return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
-
-    output = body.get("output") or "points"
-    if output not in ("points", "polygons"):
-        return jsonify({"error": "output must be one of points, polygons"}), 400
-    if output == "polygons":
-        out_features = polygons_with_counts(polygons_fc, aggregates, tag_column, name_property)
-        metadata = {"name": "spatial_join_result", "aggregates": aggregates,
-                    "tag_column": tag_column, "output": output}
-        if warnings:
-            metadata["warnings"] = warnings
-        return jsonify({"type": "FeatureCollection", "features": out_features, "metadata": metadata})
-
-    # Re-pack enriched points as Features so downstream consumers see the
-    # same shape they sent in.
-    out_features = []
-    for p in enriched:
-        lat = p.get("latitude")
-        lon = p.get("longitude")
-        geometry = (
-            {"type": "Point", "coordinates": [lon, lat]}
-            if lat is not None and lon is not None
-            else None
-        )
-        out_features.append({
-            "type": "Feature",
-            "geometry": geometry,
-            "properties": p,
-        })
-
-    metadata = {"name": "spatial_join_result", "aggregates": aggregates,
-                "tag_column": tag_column, "output": output}
-    if warnings:
-        metadata["warnings"] = warnings
-    return jsonify({
-        "type": "FeatureCollection",
-        "features": out_features,
-        "metadata": metadata,
-    })
+    return jsonify(result)

@@ -1,6 +1,6 @@
 # Example: Street-level computer vision
 
-This example labels every pixel of 40 Mapillary street photos taken around Lincoln Park in Chicago, tags each photo with the neighborhood it was taken in, and draws what dominates each neighborhood's streets as a map of the photos and a bar chart. The use case is *urban greenery audits*, showing which streets are leafy and which are paved, but the same pipeline works for any class a segmentation model labels: sidewalks, traffic signs, building facades, and so on.
+This example labels every pixel of 40 Mapillary street photos taken around Lincoln Park in Chicago, pairs each photo with the neighborhood it was taken in, and draws what dominates each neighborhood's streets as a map of the photos and a bar chart. The use case is *urban greenery audits*, showing which streets are leafy and which are paved, but the same pipeline works for any class a segmentation model labels: sidewalks, traffic signs, building facades, and so on.
 
 It runs two routes over the same photos. Route 1 uses **DDRNet23-Slim**, the model that ships with Curio, and needs no network. Route 2 uses a model you add from Hugging Face.
 
@@ -103,12 +103,12 @@ gdf.__dict__["metadata"] = {"name": "chicago_neighborhoods"}
 return gdf
 ```
 
-The Spatial Join node tags each point with the polygon column you pick in its body. The Chicago neighborhoods file calls it `pri_neigh`; this example renames it to `neighborhood` with a `Data Transformation` node, and both Spatial Join nodes tag with `neighborhood`. Not `name`: every photo row already has one, its file name, and the join never overwrites a column the points carry.
+The Spatial Join adds every column of the neighborhoods to each photo it pairs with one. The Chicago neighborhoods file calls the name `pri_neigh`; this example renames it to `neighborhood` with a `Data Transformation` node, the column the charts read.
 
 ```python
-# Spatial Join tags each photo with the polygon column its body names,
-# `neighborhood` here. Chicago's file calls it `pri_neigh`. Not `name`: a
-# photo already has one, its file name.
+# Each Spatial Join adds these polygons' columns to every photo it pairs
+# with one, and the charts read `neighborhood`. Chicago's file calls it
+# `pri_neigh`.
 import geopandas as gpd
 
 gdf = arg.rename(columns={"pri_neigh": "neighborhood"})
@@ -121,17 +121,13 @@ gdf.__dict__["metadata"] = {"name": "chicago_neighborhoods"}
 return gdf
 ```
 
-## Step 5: Tag each photo and chart it (`Spatial Join`, `Vega-Lite`)
+## Step 5: Pair each photo with its neighborhood and chart it (`Spatial Join`, `Vega-Lite`)
 
-The Spatial Join node (built-in, in `curio.builtin@1`) has two input circles on its left edge, each a hollow ring that fills in once wired: **points** (the upper, blue one) and **polygons** (the lower, green one). Wire the `Simple View` output to the blue circle and the `Data Transformation` output to the green circle, run them, and pick `neighborhood` in its **Tag each point with this polygon column** list, which shows the polygons' columns once they arrive.
+The Spatial Join node (built-in, in `curio.builtin@1`) has two input circles on its left edge, each a hollow ring that fills in once wired: **input 0** (the upper, blue one) and **input 1** (the lower, green one). Wire the `Simple View` output to the blue circle and the `Data Transformation` output to the green circle, and run them. The operation stays at **intersects** and the output at **One row per pair**, the defaults.
 
-The node emits the input points augmented with:
+The node emits one row per photo and neighborhood that meet: the photo's own columns, with the neighborhood's columns (`neighborhood`, `sec_neigh`, `shape_area`, `shape_len`) added. A photo outside every neighborhood has no pair and is left out; every one of the 40 sample photos has one.
 
-- `neighborhood`: the matching polygon's `neighborhood`, or null for points outside every polygon.
-- `neighborhood_point_count`: how many photos fell in the same neighborhood.
-- `neighborhood_dominant_class` / `neighborhood_dominant_pct`: per-neighborhood roll-ups of the photos' dominant class, projected back onto every member point so a Vega-Lite spec can colour by them directly.
-
-A `Vega-Lite` node wired to the join maps the photos, each colored by the dominant class of its neighborhood:
+A `Vega-Lite` node wired to the join maps the photos, each colored by the dominant class of its neighborhood. The spec works out that class itself: it counts the photos of each class in each neighborhood, then gives every photo the class its neighborhood has most of, with that class's mean share:
 
 ```json
 {
@@ -141,7 +137,25 @@ A `Vega-Lite` node wired to the join maps the photos, each colored by the domina
   "projection": {"type": "mercator"},
   "layer": [
     {
-      "transform": [{"filter": "datum.geometry != null"}],
+      "transform": [
+        {"filter": "datum.geometry != null"},
+        {
+          "joinaggregate": [
+            {"op": "count", "as": "class_count"},
+            {"op": "mean", "field": "dominant_pct", "as": "class_pct"}
+          ],
+          "groupby": ["neighborhood", "dominant_class"]
+        },
+        {
+          "window": [
+            {"op": "first_value", "field": "dominant_class", "as": "neighborhood_dominant_class"},
+            {"op": "first_value", "field": "class_pct", "as": "neighborhood_dominant_pct"}
+          ],
+          "sort": [{"field": "class_count", "order": "descending"}],
+          "groupby": ["neighborhood"],
+          "frame": [null, null]
+        }
+      ],
       "mark": {"type": "geoshape", "stroke": "#888", "strokeWidth": 0.4},
       "encoding": {
         "color": {
@@ -156,7 +170,7 @@ A `Vega-Lite` node wired to the join maps the photos, each colored by the domina
         "tooltip": [
           {"field": "neighborhood", "title": "neighborhood"},
           {"field": "neighborhood_dominant_class", "title": "dominant"},
-          {"field": "neighborhood_dominant_pct",   "title": "avg %"}
+          {"field": "neighborhood_dominant_pct", "title": "avg %", "format": ".2f"}
         ]
       }
     }

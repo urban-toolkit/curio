@@ -71,6 +71,10 @@ PROVIDER_PARAMETER_IDS: dict[str, tuple[str, ...]] = {
     "mapillary": ("area", "captured", "imageType", "size", "maxImages"),
     "google-streetview": ("area", "spacing", "headings", "fov", "pitch", "size", "outdoorOnly", "maxImages"),
     "overture": ("area",),
+    # A GeoParquet file read for an area: a link, or a bucket's file.
+    "direct": ("area",),
+    "s3": ("area",),
+    "huggingface": ("area",),
 }
 
 #: The forms of an area each provider can send. A manifest may not offer a
@@ -82,6 +86,9 @@ PROVIDER_AREA_FORMS: dict[str, tuple[str, ...]] = {
     "mapillary": ("box",),
     "google-streetview": ("box",),
     "overture": ("box",),
+    "direct": ("box",),
+    "s3": ("box",),
+    "huggingface": ("box",),
 }
 
 #: Autark's OpenStreetMap layer types, the ones autk-db's ``loadOsm`` builds.

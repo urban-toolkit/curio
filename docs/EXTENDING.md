@@ -39,7 +39,7 @@ Three patterns cover essentially every node Curio ships:
 |---|---|---|
 | **Pure-frontend** | `vis-vega`, `vis-simple`, `autk-grammar`, `column-filter` (`curio.example-ui@1`) | None. The behavior hook does its work in the browser. |
 | **Sandbox-Python** | `data-loading`, `data-transformation`, `computation-analysis`, `data-summary`, `image-segmentation` (`curio.streetvision@1`) | Reuses Curio's existing code sandbox at [`utk_curio/sandbox/`](../utk_curio/sandbox/) via the `code` behavior. User-provided Python runs out-of-process. A package template does the same with its own starter file and Python dependencies (§4.2). |
-| **Backend route** | `spatial-join` (shapely STRtree) | A route in Curio's backend that the behavior hook calls: Spatial Join's is one handler in [`api/routes.py`](../utk_curio/backend/app/api/routes.py) over a helper in [`common/spatial.py`](../utk_curio/backend/app/common/spatial.py). A feature with several routes gets its own Flask blueprint under [`utk_curio/backend/app/<feature>/`](../utk_curio/backend/app/) (§5). Right call when the node needs server-side work the sandbox can't reasonably do. |
+| **Backend route** | `spatial-join` (geopandas `sjoin`) | A route in Curio's backend that the behavior hook calls: Spatial Join's is one handler in [`api/routes.py`](../utk_curio/backend/app/api/routes.py) over a helper in [`common/spatial.py`](../utk_curio/backend/app/common/spatial.py). A feature with several routes gets its own Flask blueprint under [`utk_curio/backend/app/<feature>/`](../utk_curio/backend/app/) (§5). Right call when the node needs server-side work the sandbox can't reasonably do. |
 
 Pure-frontend is the right default; reach for the sandbox before a blueprint, and only stand up a blueprint when neither covers it. Third-party data and models come in through the Discovery Catalog (§3), and a node reads them from the Data or Model Catalog.
 
@@ -217,7 +217,7 @@ A model in the Model Catalog declares its runtime's libraries the same way, in i
 
 #### When to still lazy-import
 
-Even though deps are installed up front, lazy-import expensive libraries inside the route handler that needs them so a broken install fails per-request with a clean 503 instead of crashing the backend on startup. The Spatial Join route imports its shapely helpers inside the handler:
+Even though deps are installed up front, lazy-import expensive libraries inside the code that needs them so a broken install fails per-request with a clean 503 instead of crashing the backend on startup. The Spatial Join's helper in [`common/spatial.py`](../utk_curio/backend/app/common/spatial.py) imports geopandas inside its functions, and the route turns the `ImportError` into a 503:
 
 ```python
 # api/routes.py
@@ -225,20 +225,18 @@ Even though deps are installed up front, lazy-import expensive libraries inside 
 def spatial_join():
     # ...
     try:
-        from utk_curio.backend.app.common.spatial import (
-            enrich_points_with_polygons,
-            polygons_with_counts,
+        result = join(
+            body.get("left"),
+            body.get("right"),
+            predicate=body.get("predicate") or DEFAULT_PREDICATE,
+            output=body.get("output") or DEFAULT_OUTPUT,
         )
-        enriched, aggregates, tag_column = enrich_points_with_polygons(
-            points=point_dicts,
-            polygon_fc=polygons_fc,
-            name_property=name_property,
-            warnings=warnings,
-        )
+    except JoinInputError as e:
+        return jsonify({"error": str(e)}), 400
     except ImportError as e:
         return jsonify({
-            "error": "spatial extras not installed (shapely required)",
-            "hint": "pip install shapely",
+            "error": "spatial extras not installed (geopandas required)",
+            "hint": "pip install geopandas",
             "detail": str(e),
         }), 503
     # ...
@@ -275,7 +273,7 @@ Each entry names a *behavior key* (a string), not a JS module path. The same key
 ]
 ```
 
-An input port's `cardinality` sets how many edges the node takes. `"1"` takes one. A single port whose maximum is more than one (`"[1,2]"`, `"[1,n]"`) gives the node a new input circle for each edge, up to that maximum; its code receives them as a list in circle order and reads each through an input chip, `[!! input 1 !!]` (USAGE.md, "Several inputs"). Several input ports are named circles that take one edge each, as Spatial Join's `in_points` and `in_polygons`.
+An input port's `cardinality` sets how many edges the node takes. `"1"` takes one. A single port whose maximum is more than one (`"[1,2]"`, `"[1,n]"`) gives the node a new input circle for each edge, up to that maximum; its code receives them as a list in circle order and reads each through an input chip, `[!! input 1 !!]` (USAGE.md, "Several inputs"). Several input ports take one edge each, on the circles `in`, `in_1` and so on, as Spatial Join's input 0 and input 1.
 
 The template reuses the built-in `code` behavior, so the package ships no JavaScript and no `behaviorScript`. `source` is the starter a new node opens with, [`sources/image-segmentation.py`](../packages/curio.streetvision@1/sources/image-segmentation.py):
 
@@ -293,13 +291,13 @@ Both helpers are in the sandbox's namespace for every Python node:
 
 ### 4.3 A built-in template in [`packages/curio.builtin@1/manifest.json`](../packages/curio.builtin@1/manifest.json)
 
-A generic Spatial Join that takes points + polygons and tags each point with a column of the containing polygon (or emits the polygons with a count of points inside each):
+A generic Spatial Join that pairs the rows of two inputs whose shapes meet, by an operation picked on the node (or emits input 1's rows with a count of their pairs):
 
 ```jsonc
 { "id": "spatial-join", "behavior": "spatial-join",
   "inputPorts": [
-    {"types":["GEODATAFRAME"]},   // points (handle 0, top of node)
-    {"types":["GEODATAFRAME"]}    // polygons (handle 1, bottom of node)
+    {"types":["GEODATAFRAME"]},   // input 0, the left side (circle `in`, top of node)
+    {"types":["GEODATAFRAME"]}    // input 1, the right side (circle `in_1`, bottom of node)
   ],
   "outputPorts": [{"types":["GEODATAFRAME"]}]
 }
@@ -314,7 +312,7 @@ The agents' prompts describe every `curio.builtin@1` template from this manifest
 Column Filter's hook ships inside its package, at [`packages/curio.example-ui@1/sources/`](../packages/curio.example-ui@1/sources/); Spatial Join's lives with the built-ins in [`utk_curio/frontend/urban-workflows/src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/). Image Segmentation runs on the built-in `code` behavior and needs no hook of its own.
 
 - [`columnFilterBehavior.tsx`](../packages/curio.example-ui@1/sources/columnFilterBehavior.tsx): reads `data.input` with `resolveInput`, which fetches a sandbox artifact reference and passes an inline payload through; keeps the column, comparison and threshold in `useState`; sends the matching rows downstream with `data.outputCallback` and reports through `nodeState.setOutput`. It returns only `contentComponent`.
-- [`spatialJoinBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/spatialJoinBehavior.tsx): the only node here with two distinct input handles, declared with `handlesOverride`. Posts both inputs to `/spatial_join` (§4.5). Worth reading if you ever need a 2-input node.
+- [`spatialJoinBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/spatialJoinBehavior.tsx): the only node here with two input ports, whose circles it draws with `handlesOverride`. Keeps what each circle holds apart (`data.portInputs`) and posts both inputs to `/spatial_join` (§4.5). Worth reading if you ever need a 2-input node.
 
 The package's hook registers from its bundle entry point, [`sources/index.tsx`](../packages/curio.example-ui@1/sources/index.tsx), through `window.curio`:
 
@@ -334,7 +332,7 @@ Both land in one global registry; packages reference behavior keys by name, not 
 
 ### 4.5 The backend route
 
-Spatial Join's route is a single handler at the end of [`api/routes.py`](../utk_curio/backend/app/api/routes.py) (`POST /spatial_join`) that calls generic helpers at [`utk_curio/backend/app/common/spatial.py`](../utk_curio/backend/app/common/spatial.py) (`enrich_points_with_polygons`, `polygons_with_counts`). Reusable utilities like that belong under `common/`, not in any specific blueprint. Image Segmentation has no route of its own: its work runs in the sandbox.
+Spatial Join's route is a single handler at the end of [`api/routes.py`](../utk_curio/backend/app/api/routes.py) (`POST /spatial_join`) that calls the generic `spatial_join` helper at [`utk_curio/backend/app/common/spatial.py`](../utk_curio/backend/app/common/spatial.py), on geopandas `sjoin`. Reusable utilities like that belong under `common/`, not in any specific blueprint. Image Segmentation has no route of its own: its work runs in the sandbox.
 
 ### 4.6 Shipping the package
 

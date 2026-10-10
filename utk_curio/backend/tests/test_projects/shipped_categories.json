@@ -245,6 +245,17 @@
       "Geometries"
     ]
   },
+  "25-spatial-join-operations": {
+    "tags": [
+      "Vega-Lite",
+      "GeoPandas",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries"
+    ]
+  },
   "dataflows/AutkMap": {
     "tags": [
       "Autark",

@@ -42,6 +42,15 @@ def _grows_circles(entry: dict | None) -> bool:
     return len(entry.get("inputs") or []) == 1 and entry.get("maxIncomingEdges") not in (0, 1)
 
 
+def _takes_circles(entry: dict | None) -> bool:
+    """A template whose every edge takes a circle of its own: a growing port,
+    or several input ports, one edge each (the Spatial Join's ``in`` and
+    ``in_1``, #576). An edge that names no circle takes the first free one."""
+    if not entry:
+        return False
+    return _grows_circles(entry) or len(entry.get("inputs") or []) > 1
+
+
 def _free_circle(taken: set, wanted) -> str:
     """The circle a new edge takes: a named free circle wins, else the first
     free one."""
@@ -157,7 +166,7 @@ def _validate_plan_fanin(
                 str((existing_nodes.get(target) or {}).get("type") or "")
             )
         entry = available.get(node_type)
-        if not _grows_circles(entry):
+        if not _takes_circles(entry):
             continue
         max_in = entry.get("maxIncomingEdges")
         index = _circle_index(handle)
@@ -961,7 +970,7 @@ def _plan_edge_context(
         if str(e.get("type") or "") == "Interaction":
             continue
         incoming_count[target] = incoming_count.get(target, 0) + 1
-        if _grows_circles(available.get(types_by_id.get(target))):
+        if _takes_circles(available.get(types_by_id.get(target))):
             circles_taken.setdefault(target, set()).add(e.get("targetHandle") or "in")
     return {
         "plan": plan,
@@ -1073,7 +1082,7 @@ def _apply_one_plan_edge(ctx: dict, index: int, *, record_missing: bool = True):
         edge_states[key] = "refused"
         return {**row, "status": "refused", "reason": reason}, None
     target_handle = plan_edge.get("toHandle") or "in"
-    if _grows_circles(entry):
+    if _takes_circles(entry):
         taken = ctx["circles_taken"].setdefault(target, set())
         target_handle = _free_circle(taken, plan_edge.get("toHandle"))
         taken.add(target_handle)
@@ -1507,7 +1516,7 @@ def _create_plan_edges(user_key, project_id, proposal_id, spec: dict, proposal: 
     for e in edges:
         if not isinstance(e, dict):
             continue
-        if str(e.get("type") or "") != "Interaction" and _grows_circles(available.get(types_by_id.get(e.get("target")))):
+        if str(e.get("type") or "") != "Interaction" and _takes_circles(available.get(types_by_id.get(e.get("target")))):
             circles_taken.setdefault(e.get("target"), set()).add(e.get("targetHandle") or "in")
     created_edges: list[dict] = []
     for plan_edge in plan.get("edges", []):
@@ -1523,8 +1532,8 @@ def _create_plan_edges(user_key, project_id, proposal_id, spec: dict, proposal: 
             created_edges.append(edge)
             continue
         target_handle = plan_edge.get("toHandle") or "in"
-        if _grows_circles(available.get(types_by_id.get(target))):
-            # Each edge into a growing node takes a circle of its own.
+        if _takes_circles(available.get(types_by_id.get(target))):
+            # Each edge into a growing or several-port node takes a circle of its own.
             taken = circles_taken.setdefault(target, set())
             target_handle = _free_circle(taken, plan_edge.get("toHandle"))
             taken.add(target_handle)

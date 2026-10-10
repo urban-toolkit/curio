@@ -1207,6 +1207,26 @@ class TestDataflowPlanEdgeKindGrammar:
             assert part is None
             assert any("edges[0]" in e and "an interaction edge has no input circle: drop toHandle" in e for e in errors), errors
 
+    def test_one_node_may_feed_two_circles_of_another(self):
+        # #576: example 25 joins the neighborhoods with themselves, one loader
+        # on both circles of a Spatial Join. Keyed on the pair alone, the
+        # second edge was a duplicate and the whole plan was refused.
+        plan = {"goal": "g", "edges": [{"from": "a", "to": "j"}, {"from": "a", "to": "j", "toHandle": "in_1"}]}
+        part, errors = content.parse_dataflow_plan_verbose(plan)
+        assert errors == []
+        assert part["edges"] == [{"from": "a", "to": "j"}, {"from": "a", "to": "j", "toHandle": "in_1"}]
+
+    def test_the_same_circle_twice_is_still_a_duplicate(self):
+        # #576: what the key added is the circle, so two edges onto one circle,
+        # or two that name none, are still refused.
+        for edges in (
+            [{"from": "a", "to": "j", "toHandle": "in_1"}, {"from": "a", "to": "j", "toHandle": "in_1"}],
+            [{"from": "a", "to": "j"}, {"from": "a", "to": "j"}],
+        ):
+            part, errors = content.parse_dataflow_plan_verbose({"goal": "g", "edges": edges})
+            assert part is None
+            assert any("edges[1] duplicates an earlier 'a'→'j' data edge" in e for e in errors), errors
+
     def test_edge_only_plan_is_valid(self):
         # The owner's loop: the model added filler note nodes because this was refused.
         plan = {"goal": "connect", "edges": [{"from": "existing-vis", "to": "existing-pool", "kind": "interaction"}]}

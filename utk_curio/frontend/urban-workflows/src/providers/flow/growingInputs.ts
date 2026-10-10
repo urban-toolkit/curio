@@ -11,7 +11,7 @@ export function nodeGrowsInputs(node: FlowNodeLike): boolean {
     return descriptor !== undefined && growsInputCircles(descriptor.inputPorts);
 }
 
-/** Whether *node*'s template has several input ports, each taking one edge (the Spatial Join's points and polygons). */
+/** Whether *node*'s template has several input ports, each taking one edge (the Spatial Join's `in` and `in_1`). */
 export function nodeHasSeveralPorts(node: FlowNodeLike): boolean {
     if (!node?.data?.nodeType) return false;
     const descriptor = tryGetNodeDescriptor(node.data.nodeType as any);

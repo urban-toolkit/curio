@@ -136,7 +136,7 @@ beforeAll(() => {
     category: 'data',
     label: 'Spatial Join',
     icon: faCircle,
-    // As the shipped manifest declares them: the points and the polygons, one edge each.
+    // As the shipped manifest declares them: input 0 and input 1, one edge each.
     inputPorts: [
       { types: [SupportedType.GEODATAFRAME], cardinality: '1' },
       { types: [SupportedType.GEODATAFRAME], cardinality: '1' },
@@ -150,8 +150,8 @@ beforeAll(() => {
     hasGrammar: false,
     adapter: {
       handles: [
-        { id: 'in_points', type: 'target', position: Position.Left },
-        { id: 'in_polygons', type: 'target', position: Position.Left },
+        { id: 'in', type: 'target', position: Position.Left },
+        { id: 'in_1', type: 'target', position: Position.Left },
         { id: 'out', type: 'source', position: Position.Right },
       ],
       editor: { code: false, grammar: false, widgets: false },
@@ -249,7 +249,7 @@ async function addEdge(source: string, target: string, targetHandle: string) {
   await flush();
 }
 
-/** A join with *points* wired to its blue circle and *polygons* to its green one. */
+/** A join with *points* wired to input 0, its blue circle, and *polygons* to input 1, its green one. */
 async function openJoin(points: { id: string; type: string }, polygons: { id: string; type: string }) {
   render(
     <ReactFlowProvider>
@@ -264,8 +264,8 @@ async function openJoin(points: { id: string; type: string }, polygons: { id: st
       .forEach((n) => api.addNode(n, undefined, false));
   });
   await flush();
-  await addEdge(points.id, 'join', 'in_points');
-  await addEdge(polygons.id, 'join', 'in_polygons');
+  await addEdge(points.id, 'join', 'in');
+  await addEdge(polygons.id, 'join', 'in_1');
   expect(joins.has('join')).toBe(true);
 }
 
@@ -285,7 +285,7 @@ async function askTheJoin(): Promise<any> {
 }
 
 /** The inputs of every join posted to the backend. */
-const posted: Array<{ points: unknown; polygons: unknown }> = [];
+const posted: Array<{ left: unknown; right: unknown }> = [];
 
 beforeEach(() => {
   joins.clear();
@@ -294,13 +294,15 @@ beforeEach(() => {
   (global as any).fetch = jest.fn(async (url: string, init?: { body?: string }) => {
     if (!String(url).endsWith('/spatial_join')) return { ok: false, status: 404, json: async () => ({}) };
     const body = JSON.parse(init?.body ?? '{}');
-    posted.push({ points: body.points, polygons: body.polygons });
+    posted.push({ left: body.left, right: body.right });
+    const features = body.left.features.map((f: any) => ({ ...f, properties: { ...f.properties, neighborhood: 'Loop' } }));
     return {
       ok: true,
       json: async () => ({
         type: 'FeatureCollection',
-        features: body.points.features.map((f: any) => ({ ...f, properties: { ...f.properties, neighborhood: 'Loop' } })),
-        metadata: { tag_column: 'neighborhood', output: 'points', warnings: [] },
+        features,
+        metadata: { output: 'pairs', predicate: 'intersects', pairs: features.length, matched_left: features.length,
+                    left_rows: features.length, matched_right: 1, right_rows: 1 },
       }),
     };
   });
@@ -310,7 +312,7 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
-const JOINED = { asked: { code: 'success', content: '' }, posted: [{ points: PHOTOS, polygons: NEIGHBORHOODS }] };
+const JOINED = { asked: { code: 'success', content: '' }, posted: [{ left: PHOTOS, right: NEIGHBORHOODS }] };
 
 describe('a Spatial Join whose two inputs land in one render', () => {
   test('the polygons, then the points: the join gets both and joins them', async () => {
@@ -373,5 +375,21 @@ describe('a Spatial Join whose two inputs land in one render', () => {
     await flush();
 
     expect({ asked: await askTheJoin(), posted }).toEqual(JOINED);
+  });
+});
+
+describe("a Spatial Join's circles keep their inputs (#576)", () => {
+  test('deleting input 0 leaves input 1 on its own circle', async () => {
+    // A growing node closes its circles up when an edge goes; a node with
+    // several ports must not, or input 1 would become the join's left side.
+    await openJoin(ROUTE.points, ROUTE.polygons);
+    const doomed = api.edges.filter((e: any) => e.targetHandle === 'in');
+    await act(async () => {
+      api.onEdgesDelete(doomed);
+      api.onEdgesChange(doomed.map((e: any) => ({ type: 'remove', id: e.id })) as any);
+    });
+    await flush();
+
+    expect(api.edges.map((e: any) => [e.source, e.targetHandle])).toEqual([['transform', 'in_1']]);
   });
 });

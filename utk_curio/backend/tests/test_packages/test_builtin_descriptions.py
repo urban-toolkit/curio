@@ -55,11 +55,14 @@ def test_spatial_join_says_what_each_port_expects():
     # The circles wear the colours the node's own text names them by.
     assert "blue circle" in text and "green circle" in text, "does not name the input circles by colour"
     assert "comes out" in text or "output" in text, "does not say what the node produces"
-    # #262: the tag column is chosen on the node; the "rename it upstream"
-    # workaround is no longer the documented design. "column", not "property":
-    # the node talks about GeoDataFrame columns, the way the rest of Curio does.
-    assert "column" in text, "does not say the tag column is configurable"
+    # #262: no "rename it upstream" workaround. "column", not "property": the
+    # node talks about GeoDataFrame columns, the way the rest of Curio does.
+    # Since #576 the output carries every column of the bottom input.
+    assert "column" in text, "does not say which columns come out"
     assert "rename" not in text, "still tells the user to rename the field upstream"
+    # #576: the operation is picked on the node, from these seven.
+    for operation in ("intersects", "within", "contains", "touches", "overlaps", "crosses", "nearest"):
+        assert operation in text, f"does not name the {operation} operation"
 
 
 def test_spatial_join_reads_as_plain_language():
