@@ -349,6 +349,8 @@ REJECTED = {
     "scenario box without a y": lambda d: d["dataflow"].update(
         scenarios=[{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": [], "box": {"x": 1}}]
     ),
+    # #845: the auto-run toggle is on or off.
+    "autoRun as a word": lambda d: d["dataflow"].update(autoRun="yes"),
     # #662: a copy's lineage is a list of node ids, written only on a copy.
     "copiedFrom as a bare id": lambda d: _node(d)["metadata"].update(copiedFrom="n0"),
     "copiedFrom empty": lambda d: _node(d)["metadata"].update(copiedFrom=[]),

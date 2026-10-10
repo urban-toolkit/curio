@@ -25,6 +25,7 @@ import { useSelectionTags } from "./flow/useSelectionTags";
 import { useCollaborationSync } from "./flow/useCollaborationSync";
 import { useInstallSave } from "./flow/useInstallSave";
 import { useServerRun } from "./flow/useServerRun";
+import { useAutoRun } from "./flow/useAutoRun";
 import { CanvasViewAddress, useNotebookView } from "./flow/useNotebookView";
 import { NotebookViewContext } from "./flow/notebookViewContext";
 import type { IOutput, IInteraction } from "./flow/flowTypes";
@@ -136,9 +137,11 @@ export const FlowContext = createContext<FlowContextProps>({
     workflowCategories: {},
     serverCategories: {},
     scenarios: [],
+    autoRun: false,
     renameDataflow: () => false,
     updateDataflowCategories: () => {},
     setScenarios: () => {},
+    setAutoRun: () => {},
     saveCurrentProject: async () => {},
     saveAsNewProject: async () => {},
     ensureProjectId: async () => null,
@@ -157,6 +160,8 @@ export const FlowContext = createContext<FlowContextProps>({
     serverRunActive: false,
     cancelRun: () => {},
     attachLatestRun: async () => {},
+    autoRunAvailable: false,
+    requestAutoRun: () => {},
     defaultSaveOutputDataset: false,
     setDefaultSaveOutputDataset: () => {},
 
@@ -410,10 +415,19 @@ const FlowProvider = ({
         nodeExecProv, flushInstallSyncRef,
         surfaceInstallWarnings: workflowOps.surfaceInstallWarnings,
     });
-    // Stop ends whichever run is going, on the server or in the browser.
-    const stopRuns = () => { cancelRun(); serverRun.stopRun(); };
+    // #845: where Run All runs on the server, a widget or Parameter change can
+    // run the nodes it touched through the same start, once the changes settle.
+    const autoRunner = useAutoRun({
+        enabled: runsOnServer && !!workflowOps.autoRun,
+        runActive: isRunActive || serverRun.serverRunActive,
+        reactFlow,
+        start: (targets) => { void serverRun.startRun(targets); },
+    });
+    // Stop ends whichever run is going, on the server or in the browser, and
+    // the automatic run waiting for it.
+    const stopRuns = () => { autoRunner.dropWaiting(); cancelRun(); serverRun.stopRun(); };
     // Opening another dataflow leaves a run on the server going.
-    const leaveRuns = () => { cancelRun(); serverRun.detachRun(); };
+    const leaveRuns = () => { autoRunner.dropWaiting(); cancelRun(); serverRun.detachRun(); };
 
     const nodeActionsValue = useMemo<NodeActionsContextProps>(() => ({
         workflowNameRef,
@@ -490,6 +504,8 @@ const FlowProvider = ({
                 serverRunActive: serverRun.serverRunActive,
                 cancelRun: stopRuns,
                 attachLatestRun: runsOnServer ? serverRun.attachLatestRun : async () => {},
+                autoRunAvailable: runsOnServer,
+                requestAutoRun: autoRunner.requestAutoRun,
 
                 // NEW CODE
                 dashboardPins,

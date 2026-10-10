@@ -1,8 +1,10 @@
 """A dataflow run and its per-node steps.
 
-A run is one press of Run All (``target_node_id`` empty) or of a node's play
-button (``target_node_id`` set), executed on the server. Each node it touches
-has a step that says what happened to it, when, and what it printed.
+A run is one press of Run All (no target), of a node's play button
+(``target_node_id`` set), or an automatic run after a widget or Parameter
+change (``target_node_ids``: the nodes the change touched and those below
+them, #845), executed on the server. Each node it touches has a step that says
+what happened to it, when, and what it printed.
 
 Deleting a project deletes its runs: the backref below cascades through the
 ORM, because SQLite does not enforce foreign keys here. ``create_app`` imports
@@ -10,12 +12,13 @@ this module so the backref exists before any project is deleted.
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from uuid import uuid4
 
 from utk_curio.backend.extensions import db
 
-TRIGGERS = ("all", "node", "rerun")
+TRIGGERS = ("all", "node", "rerun", "auto")
 RUN_STATUSES = (
     "queued", "running", "succeeded", "failed", "needs_canvas", "cancelled", "interrupted",
 )
@@ -43,6 +46,8 @@ class DataflowRun(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     trigger = db.Column(db.String(16), nullable=False)
     target_node_id = db.Column(db.String(255), nullable=True)
+    # A run of several nodes: their ids, as a JSON list.
+    target_node_ids = db.Column(db.Text, nullable=True)
     rerun_of = db.Column(db.String(36), nullable=True)
     spec_revision = db.Column(db.Integer, nullable=True)
     status = db.Column(db.String(16), nullable=False, default="queued")
@@ -75,8 +80,13 @@ class DataflowRun(db.Model):
     )
 
     @property
+    def target_ids(self) -> list:
+        """The nodes a run of several nodes ran; empty for any other run."""
+        return json.loads(self.target_node_ids) if self.target_node_ids else []
+
+    @property
     def whole_dataflow(self) -> bool:
-        return not self.target_node_id
+        return not self.target_node_id and not self.target_node_ids
 
     def __repr__(self):
         return f"<DataflowRun {self.id!r} {self.status!r}>"

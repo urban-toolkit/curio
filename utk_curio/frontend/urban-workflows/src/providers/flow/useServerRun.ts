@@ -1,5 +1,6 @@
-// Runs on the server. Run All, a node's play button and Ctrl+Enter save the
-// dataflow, then start a run of that saved revision, which goes on with the tab
+// Runs on the server. Run All, a node's play button, Ctrl+Enter and an
+// automatic run (useAutoRun, #845) save the dataflow, then start a run of that
+// saved revision, which goes on with the tab
 // closed (runs/routes.py). The tab follows the run's stream: each step reaches
 // its node by the rules a run in the browser follows (executionResultOutput,
 // applyNewOutput, the provenance), and the nodes only a browser can run go
@@ -56,6 +57,8 @@ interface FollowedRun {
     startedHere: boolean;
     /** The node a play ran up to, and what it showed before the click; null for Run All. */
     played: { nodeId: string; before: NodeOutput | undefined } | null;
+    /** The nodes an automatic run ran (#845); null for any other run. */
+    targets: readonly string[] | null;
     controller: AbortController;
     done: boolean;
     refollows: number;
@@ -271,6 +274,7 @@ export function useServerRun({
             settled: new Set(),
             startedHere,
             played,
+            targets: record.targetNodeIds?.length ? record.targetNodeIds : null,
             controller: new AbortController(),
             done: false,
             refollows: 0,
@@ -285,8 +289,9 @@ export function useServerRun({
         runId: string,
         steps: Map<string, TrackedStep>,
         played: FollowedRun["played"] = null,
+        targets: FollowedRun["targets"] = null,
     ): boolean => {
-        const walk = browserWalk(steps, reactFlow.getEdges(), played?.nodeId);
+        const walk = browserWalk(steps, reactFlow.getEdges(), played?.nodeId ?? targets);
         if (!walk.length) return false;
         return playNodes(walk, {
             onNodeDone: (nodeId, outcome) => {
@@ -328,7 +333,7 @@ export function useServerRun({
                     onClick: () => {
                         void runsApi.get(runId).then((record) => {
                             const steps = new Map((record.steps ?? []).map((s) => [s.nodeId, { role: s.role, status: s.status }]));
-                            finishInBrowser(runId, steps);
+                            finishInBrowser(runId, steps, null, record.targetNodeIds?.length ? record.targetNodeIds : null);
                         }).catch((err) => showToast(err?.message || "The run could not be read.", "error"));
                     },
                 },
@@ -344,7 +349,7 @@ export function useServerRun({
         followedRef.current = null;
         // In the same tick the flag goes down, so the Run All button never reads
         // "Run all nodes" between the server's part and the browser's.
-        const browserPart = run.startedHere && finishInBrowser(run.runId, run.steps, run.played);
+        const browserPart = run.startedHere && finishInBrowser(run.runId, run.steps, run.played, run.targets);
         if (!run.startedHere && status === "needs_canvas") offerFinish(run.runId);
         setServerRunActive(false);
         if (!browserPart) flushInstallSyncRef.current();
@@ -379,8 +384,13 @@ export function useServerRun({
         return false;
     };
 
-    /** Save, then run the whole dataflow or *targetNodeId* and the ancestors it needs. */
-    const startRun = async (targetNodeId?: string) => {
+    /**
+     * Save, then run the whole dataflow, or *target* and the ancestors it
+     * needs: one node (a play), or several (an automatic run, #845).
+     */
+    const startRun = async (target?: string | readonly string[]) => {
+        const targetNodeId = typeof target === "string" ? target : undefined;
+        const targets = typeof target === "string" || !target?.length ? undefined : [...target];
         if (followedRef.current || startingRef.current || playAllStateRef.current != null) {
             showToast(
                 "A run is already in progress. Wait for it to finish, or cancel it with the stop button.",
@@ -392,8 +402,9 @@ export function useServerRun({
         startingRef.current = starting;
         setServerRunActive(true);
         // Read before the save: what the canvas holds now is what it would reuse.
-        const reuse = targetNodeId
-            ? reuseFor(targetNodeId, reactFlow.getNodes(), reactFlow.getEdges(), emittedForInputRef.current, outputsRef.current)
+        const reuseTarget = targetNodeId ?? targets;
+        const reuse = reuseTarget
+            ? reuseFor(reuseTarget, reactFlow.getNodes(), reactFlow.getEdges(), emittedForInputRef.current, outputsRef.current)
             : undefined;
         // The played node says it runs from the click, as its own play makes it
         // say at once, rather than showing its last outcome through the save.
@@ -426,6 +437,7 @@ export function useServerRun({
             try {
                 record = await runsApi.start(projectId, {
                     ...(targetNodeId ? { target: targetNodeId, reuse } : {}),
+                    ...(targets ? { targets, reuse } : {}),
                     specRevision: saved?.spec_revision ?? null,
                 });
             } catch (err: any) {
@@ -521,7 +533,7 @@ export function useServerRun({
         }
         const run: FollowedRun = {
             runId: record.id, steps: new Map(), applied: new Set(), started: new Set(), settled: new Set(),
-            startedHere: false, played: null, controller: new AbortController(), done: true, refollows: 0,
+            startedHere: false, played: null, targets: null, controller: new AbortController(), done: true, refollows: 0,
         };
         for (const step of stepsToRestore(record.steps ?? [], restored)) {
             applyChange(run, step.nodeId, {

@@ -69,6 +69,13 @@
   color: var(--curio-text-on-dark-muted);
 }
 
+/* A setting's On or Off, at the row's end. */
+.itemState {
+  margin-left: auto;
+  padding-left: 16px;
+  color: var(--curio-text-on-dark-muted);
+}
+
 .divider {
   height: 1px;
   margin: 4px 0;

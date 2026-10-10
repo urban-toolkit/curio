@@ -46,8 +46,11 @@ export interface Run {
   id: string;
   projectId: string;
   projectName: string | null;
-  trigger: "all" | "node" | "rerun";
+  /** `auto`: a widget or Parameter change ran the nodes it touched (#845). */
+  trigger: "all" | "node" | "rerun" | "auto";
   targetNodeId: string | null;
+  /** The nodes a run of several nodes ran. */
+  targetNodeIds?: string[];
   wholeDataflow: boolean;
   rerunOf: string | null;
   specRevision: number | null;
@@ -88,10 +91,18 @@ export type RunEvent =
   | { kind: "run_finished"; status: RunStatus; ok: number; failed: number; skipped: number; waiting: number };
 
 export const runsApi = {
-  /** Run the saved dataflow, or one node of it. A 409 carries `runId` when the dataflow already runs. */
+  /**
+   * Run the saved dataflow, one node of it (`target`), or several (`targets`).
+   * A 409 carries `runId` when the dataflow already runs.
+   */
   start(
     projectId: string,
-    body: { target?: string; reuse?: Record<string, unknown>; specRevision?: number | null },
+    body: {
+      target?: string;
+      targets?: string[];
+      reuse?: Record<string, unknown>;
+      specRevision?: number | null;
+    },
   ): Promise<Run> {
     return apiFetch<Run>(`/api/projects/${projectId}/runs`, {
       method: "POST",

@@ -37,6 +37,7 @@ import {
   nodeChangeFor,
   stepsToRestore,
 } from "../../providers/flow/serverRunSteps";
+import { runKeyWithShared } from "../../utils/references/sharedParameters";
 
 const api = runsApi as jest.Mocked<typeof runsApi>;
 
@@ -166,6 +167,11 @@ describe("which nodes the browser still runs", () => {
 
   it("a run of the whole dataflow: every forwarded chart, map and pool too, as Run All plays every node", () => {
     expect(new Set(browserWalk(steps, edges))).toEqual(new Set(["pool", "map", "after", "chart"]));
+  });
+
+  it("a run of several nodes: as a play of each, so a chart among them draws and one outside does not (#845)", () => {
+    expect(new Set(browserWalk(steps, edges, ["code", "chart"]))).toEqual(new Set(["pool", "map", "after", "chart"]));
+    expect(new Set(browserWalk(steps, edges, ["code"]))).toEqual(new Set(["pool", "map", "after"]));
   });
 });
 
@@ -329,6 +335,36 @@ describe("a run started on the canvas", () => {
     expect(api.start).not.toHaveBeenCalled();
     expect(hook.result.current.serverRunActive).toBe(false);
     expect(deps.showToast).toHaveBeenCalledWith(expect.stringContaining("could not be saved"), "error");
+  });
+
+  it("a run of several nodes sends them with the outputs it reuses above them, marking none running first (#845)", async () => {
+    const live = stream();
+    api.start.mockResolvedValue(run("r1", [step("b"), step("c", { level: 1 }), step("chart", { level: 2, role: "forward" })], {
+      trigger: "auto", targetNodeIds: ["b", "c", "chart"], wholeDataflow: false,
+    }));
+    const current = { output: { code: "success" }, code: "x", executedCode: runKeyWithShared("x", undefined, [], undefined) };
+    const { hook, deps, shown } = harness(
+      [{ id: "a", data: current }, { id: "b", data: { output: { code: "success", content: "old b" } } }, { id: "c" }, { id: "chart" }],
+      [
+        { id: "e1", source: "a", target: "b", sourceHandle: "out", targetHandle: "in_0" },
+        { id: "e2", source: "b", target: "c", sourceHandle: "out", targetHandle: "in_0" },
+        { id: "e3", source: "c", target: "chart", sourceHandle: "out", targetHandle: "in_0" },
+      ],
+    );
+    const kept = { path: "art-a", dataType: "dataframe" };
+    deps.outputsRef.current = [{ nodeId: "a", output: kept }];
+
+    await act(async () => { await hook.result.current.startRun(["b", "c", "chart"]); });
+
+    expect(api.start).toHaveBeenCalledWith("p1", { targets: ["b", "c", "chart"], reuse: { a: kept }, specRevision: 3 });
+    expect(shown("b")).toBeUndefined();
+
+    // The chart among them is drawn by the run's browser part, as a play of it would.
+    live.emit({ kind: "step_finished", nodeId: "b", status: "ok", reply: { output: { path: "art-b" } } });
+    live.emit({ kind: "step_finished", nodeId: "c", status: "ok", reply: { output: { path: "art-c" } } });
+    live.emit({ kind: "step_finished", nodeId: "chart", status: "forwarded" });
+    expect(deps.playNodes).toHaveBeenCalledTimes(1);
+    expect(deps.playNodes.mock.calls[0][0]).toEqual(["chart"]);
   });
 
   it("a played browser node gets its earlier output back only while it still reads running", async () => {

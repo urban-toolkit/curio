@@ -143,6 +143,10 @@
           "description": "The dataflow's scenarios (#662): named selections of its nodes, each a lever set compared against the others over the context outside it. A node belongs to at most one scenario, which the backend checks on save (projects/scenarios.py) because this schema cannot say it. A save drops member ids that are not nodes of the dataflow, so deleting a node removes it from its scenario. Written by TrillGenerator.generateTrill when the canvas saves, an empty list clearing them; the backend drops an empty list and keeps the on-disk value when a writer omits the key. Version snapshots and agent views carry it only when there are scenarios.",
           "items": { "$ref": "#/$defs/scenario" }
         },
+        "autoRun": {
+          "type": "boolean",
+          "description": "\"Run stale nodes automatically\" (#845): with it on, a widget or Parameter value change runs the nodes it touched and those below them on the server, as Run All does. Off when absent. Written by TrillGenerator.generateTrill when the canvas saves, on or off; a file saved with \"Save dataflow as\" carries it only when on. The backend keeps the on-disk value when a writer omits the key."
+        },
         "datasets": {
           "type": "array",
           "description": "Data Catalog references this dataflow depends on. BACKEND-OWNED ON UPDATE - datasets/application/ref_ownership.py:preserve_dataset_refs unconditionally replaces a client-sent value, the only exceptions being a project with no spec or no datasets key on disk. Emitted only when non-empty.",

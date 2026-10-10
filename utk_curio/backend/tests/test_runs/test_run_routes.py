@@ -292,6 +292,81 @@ class TestRunningUpToANode:
         _wait(body["id"])
 
 
+class TestRunningSeveralNodes:
+    """#845: an automatic run takes the nodes a change touched and those below
+    them, with the ancestors the canvas did not reuse."""
+
+    NODES = [_node("a"), _node("b"), _node("c"), _node("d"), _node("x")]
+    EDGES = [_edge("a", "b"), _edge("b", "c"), _edge("a", "d")]
+
+    def test_only_the_targets_and_the_ancestors_not_reused_run(self, client, user_and_token, sandbox):
+        user, token = user_and_token
+        project_id, revision = _create(client, token, self.NODES, self.EDGES)
+        started = _start(
+            client, token, project_id, specRevision=revision,
+            targets=["b", "d"], reuse={"a": {"path": "art-a-kept", "dataType": "dataframe"}},
+        )
+        assert started.status_code == 202, started.get_data(as_text=True)
+        run_id = started.get_json()["id"]
+        _wait(run_id)
+
+        run = _get(client, token, run_id)
+        assert run["trigger"] == "auto" and run["targetNodeIds"] == ["b", "d"]
+        assert run["targetNodeId"] is None and run["wholeDataflow"] is False
+        assert [s["nodeId"] for s in run["steps"]] == ["b", "d"]
+        assert set(sandbox.bodies) == {"b", "d"}
+        assert sandbox.bodies["b"]["file_path"] == "art-a-kept"
+        assert sandbox.bodies["d"]["file_path"] == "art-a-kept"
+
+    def test_a_target_always_runs_though_the_canvas_offered_its_output(self, client, user_and_token, sandbox):
+        user, token = user_and_token
+        project_id, _ = _create(client, token, self.NODES, self.EDGES)
+        kept = {"path": "art-kept", "dataType": "dataframe"}
+        run_id = _start(
+            client, token, project_id, targets=["a", "b"], reuse={"a": kept, "b": kept},
+        ).get_json()["id"]
+        _wait(run_id)
+
+        assert [s["nodeId"] for s in _get(client, token, run_id)["steps"]] == ["a", "b"]
+
+    def test_run_again_repeats_the_same_nodes(self, client, user_and_token, sandbox):
+        user, token = user_and_token
+        project_id, _ = _create(client, token, self.NODES, self.EDGES)
+        first = _start(
+            client, token, project_id,
+            targets=["b", "d"], reuse={"a": {"path": "art-a-kept", "dataType": "dataframe"}},
+        ).get_json()["id"]
+        _wait(first)
+
+        again = client.post(f"/api/runs/{first}/rerun", headers=_auth(token))
+        assert again.status_code == 202, again.get_data(as_text=True)
+        body = again.get_json()
+        assert body["rerunOf"] == first and body["trigger"] == "rerun"
+        assert body["targetNodeIds"] == ["b", "d"] and body["wholeDataflow"] is False
+        # Run again reuses nothing, as a node's run again does: a runs too, and
+        # neither c nor x does.
+        assert [s["nodeId"] for s in body["steps"]] == ["a", "b", "d"]
+        _wait(body["id"])
+
+    @pytest.mark.parametrize("body", [
+        {"targets": "b"},
+        {"targets": []},
+        {"targets": ["b", 3]},
+        {"targets": ["b"], "target": "c"},
+    ], ids=["a word", "an empty list", "an id that is not text", "with a target as well"])
+    def test_a_list_of_targets_in_another_shape_is_refused(self, client, user_and_token, sandbox, body):
+        user, token = user_and_token
+        project_id, _ = _create(client, token, self.NODES, self.EDGES)
+        resp = _start(client, token, project_id, **body)
+        assert resp.status_code == 400, resp.get_data(as_text=True)
+
+    def test_a_target_the_dataflow_does_not_have_is_refused(self, client, user_and_token, sandbox):
+        user, token = user_and_token
+        project_id, _ = _create(client, token, self.NODES, self.EDGES)
+        resp = _start(client, token, project_id, targets=["b", "ghost"])
+        assert resp.status_code == 422 and "ghost" in resp.get_json()["error"]
+
+
 class TestCancel:
     def test_cancel_stops_before_the_next_node(self, client, user_and_token, sandbox):
         user, token = user_and_token

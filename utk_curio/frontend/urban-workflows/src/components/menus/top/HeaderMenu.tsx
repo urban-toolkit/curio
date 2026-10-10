@@ -75,15 +75,30 @@ export interface HeaderMenuItemProps {
   onClick?: () => void;
   disabled?: boolean;
   testId?: string;
+  /** A row that turns a setting on or off: whether it is on. */
+  checked?: boolean;
   children: React.ReactNode;
 }
 
-/** One row: a real button, its icon in a fixed column. */
-export function HeaderMenuItem({ icon, onClick, disabled, testId, children }: HeaderMenuItemProps) {
+/** One row: a real button, its icon in a fixed column; a setting says On or Off. */
+export function HeaderMenuItem({ icon, onClick, disabled, testId, checked, children }: HeaderMenuItemProps) {
   return (
-    <button type="button" className={menuStyles.item} onClick={onClick} disabled={disabled} data-testid={testId}>
+    <button
+      type="button"
+      className={menuStyles.item}
+      onClick={onClick}
+      disabled={disabled}
+      data-testid={testId}
+      aria-pressed={checked}
+    >
       <FontAwesomeIcon className={menuStyles.itemIcon} icon={icon} />
       <span>{children}</span>
+      {/* Shown, not read: aria-pressed already says it, and the row keeps its name. */}
+      {checked !== undefined ? (
+        <span className={menuStyles.itemState} aria-hidden="true">
+          {checked ? "On" : "Off"}
+        </span>
+      ) : null}
     </button>
   );
 }

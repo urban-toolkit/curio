@@ -56,7 +56,7 @@ export interface FlowContextProps {
     // Reviewed plan removals (dev/62): victims + their edge cascade leave in
     // one operation, without the manual "remove the edges first" guard.
     applyReviewedRemovals: (nodeIds: string[], edgeIds: string[]) => void;
-    loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean, packages?: string[], description?: string, datasets?: any[], categories?: HandCategories, scenarios?: unknown, fit?: boolean) => void;
+    loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean, packages?: string[], description?: string, datasets?: any[], categories?: HandCategories, scenarios?: unknown, fit?: boolean, autoRun?: boolean) => void;
     packages: string[];
     setPackages: (pkgs: string[]) => void;
     addPackage: (pkg: string) => void;
@@ -97,6 +97,8 @@ export interface FlowContextProps {
     /** The dataflow's scenarios (#662), saved with it. Member ids of nodes
      * deleted since the last save are dropped when it saves. */
     scenarios: Scenario[];
+    /** "Run stale nodes automatically" (#845), saved with the dataflow; off by default. */
+    autoRun: boolean;
 
     // Project operations
     /** Rename the open dataflow, writing BOTH name stores (#230). False if blank. */
@@ -105,6 +107,8 @@ export interface FlowContextProps {
     updateDataflowCategories: (next: HandCategories) => void;
     /** Replace the scenarios; the dataflow is dirty until the next save. */
     setScenarios: (next: Scenario[]) => void;
+    /** Turn auto-run on or off; the dataflow is dirty until the next save. */
+    setAutoRun: (on: boolean) => void;
     saveCurrentProject: (nameOverride?: string, options?: { omitOutputs?: boolean }) => Promise<any>;
     saveAsNewProject: (name: string) => Promise<any>;
     ensureProjectId: () => Promise<string | null>;
@@ -136,6 +140,11 @@ export interface FlowContextProps {
     cancelRun: () => void;
     /** Show the outputs of a just-opened dataflow's last run on the server, and follow it if it goes. */
     attachLatestRun: (projectId: string, restored: ReadonlySet<string>) => Promise<void>;
+    /** Auto-run is offered: Run All runs on the server here (#845). */
+    autoRunAvailable: boolean;
+    /** A widget or Parameter value changed what *nodeIds* compute: with auto-run on, they and
+     * the nodes below them run once the changes settle (#845). */
+    requestAutoRun: (nodeIds: readonly string[]) => void;
     defaultSaveOutputDataset: boolean;
     setDefaultSaveOutputDataset: (value: boolean) => void;
 
