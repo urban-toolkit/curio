@@ -395,3 +395,44 @@ def assert_vega_node_empty_state(page, node_id: str, reason: str, *, timeout: fl
         f"Vega node {node_id}: reported {reason!r} but rendered no message for "
         f"the user to read"
     )
+
+
+#: The artifact a node's last run saved its output to, from its outcome's
+#: "Saved to file:" line, or null before it has run.
+OUTPUT_ARTIFACT_JS = """(id) => {
+    const node = window.__curio_reactFlow.getNodes().find((n) => n.id === id);
+    const content = node && node.data && node.data.output && node.data.output.content;
+    const match = typeof content === "string" ? content.match(/Saved to file: (\\S+)/) : null;
+    return match ? match[1] : null;
+}"""
+
+
+#: How many opaque pixels of a Vega-Lite node's canvas are each color, give or take.
+_COLOR_PIXELS_JS = """([id, colors]) => {
+    const canvas = document.querySelector(`#vega${id} canvas`);
+    if (!canvas || !canvas.width || !canvas.height) return null;
+    const { data } = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height);
+    const targets = colors.map((hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)));
+    const counts = targets.map(() => 0);
+    for (let p = 0; p < data.length; p += 4) {
+        if (data[p + 3] < 200) continue;
+        targets.forEach((t, k) => {
+            if (Math.abs(data[p] - t[0]) <= 12 && Math.abs(data[p + 1] - t[1]) <= 12
+                && Math.abs(data[p + 2] - t[2]) <= 12) counts[k] += 1;
+        });
+    }
+    return counts;
+}"""
+
+
+def assert_scenario_colors_drawn(page, node_id: str, colors, *, at_least: int = 30, timeout: float = 15.0) -> None:
+    """The Vega-Lite node *node_id*'s canvas holds every one of *colors*, the
+    scenarios' colors, on *at_least* pixels each."""
+    counts = None
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        counts = page.evaluate(_COLOR_PIXELS_JS, [node_id, list(colors)])
+        if counts and all(count >= at_least for count in counts):
+            return
+        page.wait_for_timeout(250)
+    raise AssertionError(f"the chart does not draw every scenario's color {list(colors)}: pixels {counts}")

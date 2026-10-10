@@ -463,7 +463,7 @@ Model Catalog lists **Local Relief (example)** too.
 
 With real data, connect any height raster instead of Make Heights: SCOUT's
 **Rasterize Buildings** and **Mosaic Tiles** make one from a buildings layer
-(see the [ScoutShadows](examples/dataflows/ScoutShadows.json) dataflow).
+(see the [WhatIfShadows](examples/dataflows/WhatIfShadows.json) dataflow).
 
 **Step 5: test it.**
 

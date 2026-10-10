@@ -32,6 +32,7 @@ from .sandbox import (  # noqa: F401
     sandbox_auth_header,
     sandbox_base_url,
     load_artifact_as_dict,
+    fetch_raster,
     execute_workflow_programmatically,
 )
 from .vega_svg import (  # noqa: F401
@@ -196,6 +197,8 @@ from .node_drawings import (  # noqa: F401
     assert_autark_drawing_fits,
     assert_editor_panes_clear_of_markers,
     assert_vega_node_empty_state,
+    OUTPUT_ARTIFACT_JS,
+    assert_scenario_colors_drawn,
 )
 from .page import FrontendPage  # noqa: F401
 from .scripted_llm import (  # noqa: F401

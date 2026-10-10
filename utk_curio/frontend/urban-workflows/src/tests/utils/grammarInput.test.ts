@@ -75,7 +75,7 @@ describe("readGrammarInput", () => {
     expect(raster.frames[0]).toMatchObject({ name: "band_1_change", dataType: "raster", payload: { artifact: "grid" } });
 
     // A reference that does not declare its type is named once it is read,
-    // as a Compare Scenarios node's raster difference arrives.
+    // as a raster an Autark node hands on arrives.
     const envelope = { dataType: "raster", data: { type: "FeatureCollection", features: [] } };
     mockFetchData.mockResolvedValue(envelope);
     const undeclared = await readGrammarInput({ path: "grid", layerName: "band_1_change" }, { ...AUTK, rasters: true });

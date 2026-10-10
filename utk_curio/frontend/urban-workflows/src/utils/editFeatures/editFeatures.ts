@@ -1,20 +1,21 @@
 /**
- * The Edit Features node (#662): features picked on its map, removed, given a
- * value, or put back, as a list of edits that is the node's setting
- * (`metadata.editFeatures`):
+ * The Interaction node (#662; it was the Edit Features node, and keeps its
+ * type id and its setting, `metadata.editFeatures`): features picked on its
+ * map, or picked by a condition, removed, put back or given new values, as an
+ * edit log that is the node's setting:
  *
  * - `key`, the column that identifies a feature: `osm_id` or `building_id`
  *   when the layer has them, or another column whose values differ in every
  *   row. Never a row's place: a layer without such a column is refused.
  * - `layer`, the layer the edits apply to, by name, when the input names its
  *   layers (an Autark node hands on several).
- * - `edits`, in the order they were made: `remove`, `set` (a `column` to a
- *   `value`) or `restore`, each on the features whose `key` is one of `ids`.
+ * - `edits`, in the order they were made (`FeatureEdit`): `remove`,
+ *   `restore`, `set`, `scale`, `offset` or `expr`, each on the features whose
+ *   `key` is one of `ids` or that its `where` condition picks (`editExpr`).
  *
- * The node's code is written from these (`editFeaturesCode`): one call of the
- * sandbox's `curio_edit_features` (`utk_curio/sandbox/util/feature_edits.py`),
- * so a run in the browser, a run on the server and the headless runner apply
- * the same edits. Written only when present.
+ * The node's code is written from the log; `applyEdits` applies it in the
+ * browser for the map's preview, as the sandbox's `curio_edit_features`
+ * applies it in a run.
  */
 import type { SelectDetail } from "../selectionMatch";
 import { featureRows } from "../selectionMatch";
@@ -27,20 +28,36 @@ export const EDIT_FEATURES_NODE_TYPE = "curio.builtin/edit-features";
 /** What the node's code calls (`utk_curio/sandbox/util/feature_edits.py`). */
 export const EDIT_HELPER = "curio_edit_features";
 
-export const EDIT_OPS = ["remove", "set", "restore"] as const;
+export const EDIT_OPS = ["remove", "set", "restore", "scale", "offset", "expr"] as const;
 export type EditOp = (typeof EDIT_OPS)[number];
+/** The ops that write a column. */
+export const WRITE_OPS: readonly EditOp[] = ["set", "scale", "offset", "expr"];
 
 /** A value an edit writes: a text, a number, true or false, or nothing. */
 export type EditValue = string | number | boolean | null;
 
+/**
+ * One entry of the node's edit log, on the features whose key is one of
+ * `ids` or, in place of `ids`, those its `where` condition holds for
+ * (`editExpr`). `set` writes `value` into `column`; `scale` multiplies the
+ * number there by `value`, `offset` adds `value` to it; `expr` writes what the
+ * expression `value` makes of the feature. An entry with `enabled: false` is
+ * kept and skipped.
+ */
 export interface FeatureEdit {
   op: EditOp;
   /** The `key` values of the features it applies to, each once. */
-  ids: SelectionId[];
-  /** For `set`: the column it writes. */
+  ids?: SelectionId[];
+  /** In place of `ids`: the condition that picks the features. */
+  where?: string;
+  /** For a writing op: the column it writes. */
   column?: string;
-  /** For `set`: the value it writes. */
+  /** For a writing op: the value, the factor, the amount or the expression. */
   value?: EditValue;
+  /** What the entry is called in the log. */
+  label?: string;
+  /** False: kept in the log, skipped by the run. */
+  enabled?: boolean;
 }
 
 export interface EditFeaturesSettings {
@@ -80,14 +97,21 @@ export function normalizeEdit(raw: unknown): FeatureEdit | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const e = raw as Record<string, unknown>;
   if (!EDIT_OPS.includes(e.op as EditOp)) return null;
-  const ids = Array.isArray(e.ids) ? uniqueIds(e.ids) : [];
-  if (ids.length === 0) return null;
   const op = e.op as EditOp;
-  if (op === "set") {
+  const ids = Array.isArray(e.ids) ? uniqueIds(e.ids) : [];
+  const where = typeof e.where === "string" && e.where.trim() !== "" ? e.where.trim() : undefined;
+  if ((ids.length > 0) === (where !== undefined)) return null;
+  const out: FeatureEdit = where !== undefined ? { op, where } : { op, ids };
+  if (WRITE_OPS.includes(op)) {
     if (typeof e.column !== "string" || e.column === "" || !isValue(e.value)) return null;
-    return { op, ids, column: e.column, value: e.value };
+    if ((op === "scale" || op === "offset") && typeof e.value !== "number") return null;
+    if (op === "expr" && typeof e.value !== "string") return null;
+    out.column = e.column;
+    out.value = e.value;
   }
-  return { op, ids };
+  if (typeof e.label === "string" && e.label.trim() !== "") out.label = e.label.trim();
+  if (e.enabled === false) out.enabled = false;
+  return out;
 }
 
 /**
@@ -107,11 +131,13 @@ export function normalizeEditFeatures(raw: unknown): EditFeaturesSettings | unde
 }
 
 function editLine(edit: FeatureEdit): string {
-  const ids = `[${edit.ids.map((id) => widgetLiteral(id, "python")).join(", ")}]`;
-  const parts = [`"op": ${widgetLiteral(edit.op, "python")}`, `"ids": ${ids}`];
-  if (edit.op === "set") {
-    parts.push(`"column": ${widgetLiteral(edit.column ?? "", "python")}`, `"value": ${widgetLiteral(edit.value ?? null, "python")}`);
-  }
+  const py = (value: unknown) => widgetLiteral(value as any, "python");
+  const parts = [`"op": ${py(edit.op)}`];
+  if (edit.where !== undefined) parts.push(`"where": ${py(edit.where)}`);
+  else parts.push(`"ids": [${(edit.ids ?? []).map((id) => py(id)).join(", ")}]`);
+  if (WRITE_OPS.includes(edit.op)) parts.push(`"column": ${py(edit.column ?? "")}`, `"value": ${py(edit.value ?? null)}`);
+  if (edit.label) parts.push(`"label": ${py(edit.label)}`);
+  if (edit.enabled === false) parts.push(`"enabled": False`);
   return `    {${parts.join(", ")}},`;
 }
 
@@ -198,10 +224,46 @@ function idList(ids: readonly SelectionId[]): string {
 /** One line for *edit*, naming the features by *key*. */
 export function describeEdit(edit: FeatureEdit, key: string | undefined): string {
   const by = key ? `${key} ` : "";
-  if (edit.op === "remove") return `Remove ${by}${idList(edit.ids)}`;
-  if (edit.op === "restore") return `Restore ${by}${idList(edit.ids)}`;
+  const on = edit.where !== undefined ? `where ${edit.where}` : `${by}${idList(edit.ids ?? [])}`;
   const value = typeof edit.value === "string" ? edit.value : JSON.stringify(edit.value);
-  return `Set ${edit.column} to ${value} on ${by}${idList(edit.ids)}`;
+  let what: string;
+  if (edit.op === "remove") what = `Remove ${on}`;
+  else if (edit.op === "restore") what = `Restore ${on}`;
+  else if (edit.op === "scale") what = `Scale ${edit.column} ×${value} on ${on}`;
+  else if (edit.op === "offset") what = `${(edit.value as number) >= 0 ? "Raise" : "Lower"} ${edit.column} by ${Math.abs(edit.value as number)} on ${on}`;
+  else if (edit.op === "expr") what = `Set ${edit.column} = ${value} on ${on}`;
+  else what = `Set ${edit.column} to ${value} on ${on}`;
+  return edit.label ? `${edit.label}: ${what}` : what;
+}
+
+/** *settings* with its edit at *index* switched on or off. */
+export function withEditEnabled(settings: EditFeaturesSettings | undefined, index: number, enabled: boolean): EditFeaturesSettings | undefined {
+  const edits = (settings?.edits ?? []).map((edit, i) => {
+    if (i !== index) return edit;
+    const { enabled: _old, ...rest } = edit;
+    return enabled ? rest : { ...rest, enabled: false };
+  });
+  return normalizeEditFeatures({ ...(settings ?? {}), edits });
+}
+
+/**
+ * *settings* with *edit* made after its others, folded into the last entry
+ * when that is the same nudge (an offset or a scale of the same column on the
+ * same features): holding ↑ makes one entry, not one per press.
+ */
+export function withNudge(settings: EditFeaturesSettings | undefined, edit: FeatureEdit): EditFeaturesSettings {
+  const edits = settings?.edits ?? [];
+  const last = edits[edits.length - 1];
+  const same = last && last.enabled !== false && last.op === edit.op && last.column === edit.column
+    && (edit.op === "offset" || edit.op === "scale") && !last.label
+    && JSON.stringify(last.ids ?? null) === JSON.stringify(edit.ids ?? null) && (last.where ?? null) === (edit.where ?? null);
+  if (!same) return withEdit(settings, edit);
+  const value = edit.op === "offset"
+    ? Number(((last.value as number) + (edit.value as number)).toPrecision(15))
+    : Number(((last.value as number) * (edit.value as number)).toPrecision(15));
+  const folded = edits.slice(0, -1);
+  const neutral = edit.op === "offset" ? value === 0 : value === 1;
+  return normalizeEditFeatures({ ...(settings ?? {}), edits: neutral ? folded : [...folded, { ...last, value }] }) ?? {};
 }
 
 /**

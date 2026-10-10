@@ -113,8 +113,6 @@ def build_namespace_template():
     from utk_curio.sandbox.util.input_layers import curio_layer
     from utk_curio.sandbox.util.parsers import checkIOType
     from utk_curio.sandbox.util.feature_edits import edit_features
-    from utk_curio.sandbox.util.scenario_difference import difference_scenarios
-    from utk_curio.sandbox.util.scenario_stack import stack_scenarios
 
     return {
         "__builtins__": __builtins__,
@@ -139,12 +137,6 @@ def build_namespace_template():
         "duckdb": duckdb,
         "detect_kind": detect_kind,
         "checkIOType": checkIOType,
-        # The Compare Scenarios node's code stacks its inputs with it (#662),
-        # or, in Difference, subtracts one from the other. Two rasters come
-        # back as a request the sandbox completes in its own process, where
-        # Node runs (util/scenario_difference.complete_raster_difference).
-        "curio_stack_scenarios": stack_scenarios,
-        "curio_difference_scenarios": difference_scenarios,
         # The Edit Features node's code applies its edit list with it (#662).
         "curio_edit_features": edit_features,
         # A layer chip, [!! input_0:roads !!], reads one layer of an input with it.

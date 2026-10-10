@@ -16,7 +16,7 @@ What Curio does instead of SCOUT:
   ``cut_graph`` is its graph cut, and its masked weather slices fed only the
   training SCOUT runs when its model file is missing.
 - The routes are a GeoDataFrame an Autark map draws, and their metrics a table
-  Compare Scenarios charts.
+  for a chart comparing the scenarios.
 
 SCOUT's bugs fixed here:
 

@@ -20,7 +20,6 @@ import {
   useAutkGrammarBehavior,
   useSpatialJoinBehavior,
   useParameterBehavior,
-  useCompareScenariosBehavior,
   useRasterCalculatorBehavior,
   useRasterStatisticsBehavior,
   useEditFeaturesBehavior,
@@ -40,9 +39,6 @@ registerBehavior('spatial-join', useSpatialJoinBehavior);
 // curio.builtin@1 parameter node: one widget any node's code names as
 // [!! @name !!] (#662).
 registerBehavior('parameter', useParameterBehavior);
-// curio.builtin@1 compare-scenarios node: stacks scenarios' outcomes, charts
-// them in the scenarios' colors and lists what differs (#662).
-registerBehavior('compare-scenarios', useCompareScenariosBehavior);
 // curio.builtin@1 raster-calculator and raster-statistics nodes: Python nodes
 // that start with a call to Curio's raster algebra.
 registerBehavior('raster-calculator', useRasterCalculatorBehavior);

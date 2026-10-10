@@ -21,7 +21,7 @@ import { runKeyWithShared, sharedWidgetsOfSpec } from "../utils/references/share
 import { normalizeSelections, type SelectionTag } from "../utils/references/selectionTags";
 import { normalizeInputReferences } from "../utils/references/codeReferences";
 import { lineageFromSpec } from "../utils/scenarios/duplicateSelection";
-import { normalizeCompareSettings, type CompareSettings } from "../utils/compare/compareSettings";
+import { normalizeVegaCompare, type VegaCompareSettings } from "../utils/vegaCompare";
 import { normalizeEditFeatures, type EditFeaturesSettings } from "../utils/editFeatures/editFeatures";
 
 // Module-level singletons so every node shares the same interpreter
@@ -88,9 +88,8 @@ type CreateCodeNodeOptions = {
     copiedFrom?: string[];
     // #662: the node's selection tags and the ids they hold (metadata.selections).
     selections?: SelectionTag[];
-    // #662: a Compare Scenarios node's input labels and chart
-    // (metadata.compareScenarios).
-    compareScenarios?: CompareSettings;
+    // A Vega-Lite node's Compare scenarios switch (metadata.vegaCompare).
+    vegaCompare?: VegaCompareSettings;
     // #662: an Edit Features node's edit list (metadata.editFeatures).
     editFeatures?: EditFeaturesSettings;
     // #407: a node whose saved output a project load restored mounts as having
@@ -269,9 +268,9 @@ export function useCode(): IUseCode {
             if(node.metadata != undefined && Array.isArray(node.metadata.selections))
                 nodeMeta.selections = normalizeSelections(node.metadata.selections);
 
-            // #662: and a Compare Scenarios node's input labels and chart.
-            if(node.metadata != undefined && node.metadata.compareScenarios != undefined)
-                nodeMeta.compareScenarios = normalizeCompareSettings(node.metadata.compareScenarios);
+            // And a Vega-Lite node's Compare scenarios switch.
+            if(node.metadata != undefined && node.metadata.vegaCompare != undefined)
+                nodeMeta.vegaCompare = normalizeVegaCompare(node.metadata.vegaCompare);
 
             // #662: and an Edit Features node's edit list.
             if(node.metadata != undefined && node.metadata.editFeatures != undefined)
@@ -440,7 +439,7 @@ export function useCode(): IUseCode {
             widgets = undefined,
             copiedFrom = undefined,
             selections = undefined,
-            compareScenarios = undefined,
+            vegaCompare = undefined,
             editFeatures = undefined,
             output = undefined,
             executedCode = undefined,
@@ -493,7 +492,7 @@ export function useCode(): IUseCode {
                 widgets,
                 copiedFrom,
                 selections,
-                compareScenarios,
+                vegaCompare,
                 editFeatures,
                 saveOutputDataset:
                     saveOutputDataset !== undefined

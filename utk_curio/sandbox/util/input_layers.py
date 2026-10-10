@@ -89,14 +89,43 @@ def _frame_of_record(record):
     return frame
 
 
+def _declared_crs(envelope):
+    """The CRS a layer's FeatureCollection names (``crs.properties.name``, as
+    Autark writes ``urn:ogc:def:crs:EPSG::3395``), or None."""
+    data = envelope.get("data")
+    crs = data.get("crs") if isinstance(data, dict) else None
+    properties = crs.get("properties") if isinstance(crs, dict) else None
+    name = properties.get("name") if isinstance(properties, dict) else None
+    return name if isinstance(name, str) and name else None
+
+
+def _unwrap(value):
+    """A layer an Autark node handed on reaches Python as Curio's
+    ``{dataType, data}`` envelope: read it as the value it holds, in the
+    coordinate system its FeatureCollection names."""
+    if isinstance(value, dict) and "dataType" in value and "data" in value:
+        import geopandas as gpd
+
+        from utk_curio.sandbox.util.parsers import parseInput
+
+        parsed = parseInput(value)
+        if parsed is not None:
+            declared = _declared_crs(value)
+            if declared and isinstance(parsed, gpd.GeoDataFrame) and parsed.crs is None:
+                try:
+                    parsed = parsed.set_crs(declared)
+                except Exception:  # noqa: BLE001  (an unknown CRS name: the rows are read without one)
+                    pass
+            return parsed
+    return value
+
+
 def _read(item, name: str):
     """The layer *item* holds, as node code reads it, keeping its name."""
     if _is_record(item):
         frame = _frame_of_record(item)
         layer_type = item.get("type")
     elif isinstance(item, dict):
-        from utk_curio.sandbox.util.scenario_stack import _unwrap
-
         frame = _unwrap(item)
         layer_type = item.get("layerType")
     else:
@@ -125,8 +154,6 @@ def _read_unnamed(item):
     if _is_record(item):
         return _frame_of_record(item)
     if isinstance(item, dict):
-        from utk_curio.sandbox.util.scenario_stack import _unwrap
-
         return _unwrap(item)
     return item
 

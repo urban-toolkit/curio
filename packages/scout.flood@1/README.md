@@ -72,7 +72,7 @@ builds it from SCOUT's `data_substitutes` folder.
   and `mean flood depth`, the numbers SCOUT computes (and SCOUT writes to its
   CSV).
 
-A node after it takes one part. The depth, for a map or Compare Scenarios'
+A node after it takes one part. The depth, for a map or a Raster Calculator's
 difference:
 
 ```python
@@ -96,14 +96,14 @@ An Autark map draws the depth as `input_0`:
 ```
 [ Flood Projection ] ──► [ Depth ] ──► [ Autark: map of the depth ]
           │
-          └──► [ Metrics ] ──► [ Compare Scenarios: chart ]
+          └──► [ Metrics ] ──► [ Vega-Lite: scenarios compared ]
 ```
 
 The test dataflow [FloodScenarios](../../docs/examples/dataflows/FloodScenarios.json)
 compares SCOUT's two flood scenarios: no nature-based solution in place, and
-all six. A shared period and region, a map of each scenario's depth, a map of how much
-the depth changes, and a pie chart of each scenario's median flood depth,
-SCOUT's flood example's metric, each value drawn as it is.
+all six. A shared period and region, a map of each scenario's depth, a Raster
+Calculator's absolute change in depth on a map, and a Vega-Lite table of each
+scenario's median and mean flood depth, SCOUT's flood example's metrics.
 
 ## Setup
 

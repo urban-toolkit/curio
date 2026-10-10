@@ -9,7 +9,7 @@ Output: (shadow, metrics).
   SCOUT's run_shadow_model writes. An Autark map draws it, band band_1.
 - metrics: SCOUT's metrics as its run_shadow_model computes them, one row:
   "Mean Acc shadow" and "Median Acc shadow", the minutes of shadow over the
-  ground (the cells with no building), for Compare Scenarios.
+  ground (the cells with no building), for a chart comparing the scenarios.
 The shadow tiles are kept as a computed dataset of this dataflow, under the
 name the "Save shadows as" widget gives.
 The Widgets tab sets the season and the names. The model is the Model

@@ -11,17 +11,15 @@ Routing node set as SCOUT's example sets it (Default weights, K 1, midnight on
 "Fastest route" and "Weather-aware route" (its copy), each keep one of them: a
 node with the route as a band, and one with its metrics. An Autark map draws
 both scenarios' routes in their colors, SCOUT's, with a darker outline; four
-Compare Scenarios nodes chart the two routes' duration, distance, rain exposure
-and wind exposure, one bar per scenario, as SCOUT's example compares them. Run
-All drives the whole path:
+Vega-Lite nodes comparing the scenarios chart the two routes' duration,
+distance, rain exposure and wind exposure, one bar per scenario, as SCOUT's
+example compares them. Run All drives the whole path:
 
 1. Weather Routing routes over the roads the Data Loading node loads.
 2. The map draws.
-3. Each chart draws both scenarios in their colors from the stacked table,
-   whose metrics are the ones the package's own test pins for the same roads
+3. Each chart draws both scenarios in their colors, from each scenario's
+   metrics, which are the ones the package's own test pins for the same roads
    (``EXAMPLE`` in ``test_packages/test_scout_routing.py``).
-4. What differs lists two levers, each scenario's two nodes, each with the one
-   code line that names the route it keeps; nothing is warned.
 
 The five close-ups are the frames.
 
@@ -40,11 +38,12 @@ import pytest
 
 from utk_curio.backend.tests.test_packages.test_scout_routing import EXAMPLE, EXAMPLE_CHARTS, EXAMPLE_SCENARIOS
 
-from .test_compare_scenarios_e2e import _CHART_STATE_JS, _COLOR_PIXELS_JS, _OUTPUT_ARTIFACT_JS
 from .utils import (
+    OUTPUT_ARTIFACT_JS,
     REPO_ROOT,
     api_json,
     assert_autark_map_drawn,
+    assert_scenario_colors_drawn,
     assert_vega_canvas_rendered,
     frame_nodes,
     load_artifact_as_dict,
@@ -68,11 +67,11 @@ PACKAGE_DIR = "scout.routing@1"
 ROUTING_TYPE = "scout.routing/weather-routing"
 AUTARK_TYPE = "curio.builtin/autk-grammar"
 LOADING_TYPE = "curio.builtin/data-loading"
-COMPARE_TYPE = "curio.builtin/compare-scenarios"
+VEGA_TYPE = "curio.builtin/vis-vega"
 #: The two scenarios' colors, SCOUT's: the fastest route, the weather-aware one.
 ROUTE_COLORS = [color for _name, color, _route in EXAMPLE_SCENARIOS.values()]
 TEST_NAME = "test_scouts_routing_example_is_mapped_and_charted"
-#: The stacked table's metric columns, and where each sits in an ``EXAMPLE`` row.
+#: The metric columns, and where each sits in an ``EXAMPLE`` row.
 COLUMNS = {"distance": 3, "duration": 4, "rain_exposure": 5, "wind_exposure": 6}
 #: The opacity of each of a node's header tools, which show under the pointer,
 #: while focus is inside the node, or while it is selected.
@@ -100,43 +99,29 @@ def _release_nodes(page, node_id: str) -> None:
 
 
 def _assert_chart_drew(page, node_id: str) -> None:
-    """The bars compiled with no problem, and the canvas holds both scenarios'
-    colors."""
-    deadline = time.time() + 60
-    state = None
-    while time.time() < deadline:
-        state = page.evaluate(_CHART_STATE_JS, [node_id, "bar"])
-        if state in ("drawn", "problem"):
-            break
-        page.wait_for_timeout(250)
-    problem = node_locator(page, node_id).locator("[data-compare-chart-problem]").all_inner_texts()
-    assert state == "drawn", f"the chart's compile ended {state!r}: {problem}"
+    """The bars drew, in both scenarios' colors."""
     assert_vega_canvas_rendered(page, node_id, timeout=30000)
-    counts = None
-    deadline = time.time() + 15
-    while time.time() < deadline:
-        counts = page.evaluate(_COLOR_PIXELS_JS, [node_id, ROUTE_COLORS])
-        if counts and all(count >= 30 for count in counts):
-            return
-        page.wait_for_timeout(250)
-    raise AssertionError(f"the chart does not draw both routes' colors {ROUTE_COLORS}: pixels {counts}")
+    assert_scenario_colors_drawn(page, node_id, ROUTE_COLORS)
 
 
-def _assert_stacked_table(page, node_id: str) -> None:
-    """The node's saved table: each scenario's route, with the metrics the
-    package's test pins for these roads."""
-    artifact = page.evaluate(_OUTPUT_ARTIFACT_JS, node_id)
-    assert artifact, "Compare Scenarios shows no saved table"
-    stacked = load_artifact_as_dict(artifact)
-    assert stacked["dataType"] == "dataframe", stacked["dataType"]
-    table = stacked["data"]
-    expected = [(sid, row) for sid, (_n, _c, route) in EXAMPLE_SCENARIOS.items() for row in EXAMPLE if row[0] == route]
-    assert table["scenario"] == [sid for sid, _row in expected]
-    assert table["scenario_name"] == [EXAMPLE_SCENARIOS[sid][0] for sid, _row in expected]
-    assert table["route"] == [row[0] for _sid, row in expected]
-    for column, at in COLUMNS.items():
-        tolerance = 1e-6 if column in ("distance", "duration") else 1e-3
-        assert table[column] == pytest.approx([row[at] for _sid, row in expected], abs=tolerance), column
+def _assert_metrics(page, spec: dict, chart_id: str) -> None:
+    """The chart's inputs, each scenario's metrics: its route, with the metrics
+    the package's test pins for these roads."""
+    scenario_of = {n: s["id"] for s in spec["dataflow"]["scenarios"] for n in s["nodes"]}
+    sources = sorted((e["targetHandle"], e["source"]) for e in spec["dataflow"]["edges"] if e["target"] == chart_id)
+    assert [scenario_of[source] for _handle, source in sources] == list(EXAMPLE_SCENARIOS)
+    for _handle, source in sources:
+        artifact = page.evaluate(OUTPUT_ARTIFACT_JS, source)
+        assert artifact, f"{source} shows no saved metrics"
+        stored = load_artifact_as_dict(artifact)
+        assert stored["dataType"] == "dataframe", stored["dataType"]
+        table = stored["data"]
+        route = EXAMPLE_SCENARIOS[scenario_of[source]][2]
+        (row,) = [row for row in EXAMPLE if row[0] == route]
+        assert table["route"] == [route]
+        for column, at in COLUMNS.items():
+            tolerance = 1e-6 if column in ("distance", "duration") else 1e-3
+            assert table[column] == pytest.approx([row[at]], abs=tolerance), column
 
 
 def test_scouts_routing_example_is_mapped_and_charted(
@@ -169,7 +154,7 @@ def test_scouts_routing_example_is_mapped_and_charted(
     # The routing node reads the loaded roads through its layer chip.
     assert [e["source"] for e in edges if e["target"] == routing] == [loader_id]
     (map_id,) = [n["id"] for n in nodes if n["type"] == AUTARK_TYPE and "map" in json.loads(n["content"])]
-    charts = {n["metadata"]["compareScenarios"]["chart"]["y"]: n["id"] for n in nodes if n["type"] == COMPARE_TYPE}
+    charts = {json.loads(n["content"])["encoding"]["y"]["field"]: n["id"] for n in nodes if n["type"] == VEGA_TYPE}
     assert list(charts) == EXAMPLE_CHARTS
 
     # 1. Run All: SCOUT's two routes over the catalog's roads.
@@ -179,8 +164,8 @@ def test_scouts_routing_example_is_mapped_and_charted(
     status = wait_for_node_settled(page, routing, node_type=ROUTING_TYPE, timeout_ms=120000)
     assert status == "done", f"Weather Routing did not run: {read_node_error_text(node_locator(page, routing))}"
     for node_id in charts.values():
-        status = wait_for_node_settled(page, node_id, node_type=COMPARE_TYPE, timeout_ms=120000)
-        assert status == "done", f"Compare Scenarios did not compare: {read_node_error_text(node_locator(page, node_id))}"
+        status = wait_for_node_settled(page, node_id, node_type=VEGA_TYPE, timeout_ms=120000)
+        assert status == "done", f"a chart did not draw: {read_node_error_text(node_locator(page, node_id))}"
 
     # 2. The routes map.
     frame_nodes(page, [map_id])
@@ -190,21 +175,7 @@ def test_scouts_routing_example_is_mapped_and_charted(
     for column in EXAMPLE_CHARTS:
         frame_nodes(page, [charts[column]])
         _assert_chart_drew(page, charts[column])
-        _assert_stacked_table(page, charts[column])
-
-    # 4. What differs: the route each scenario keeps, and nothing else.
-    frame_nodes(page, [charts["duration"]])
-    compare = node_locator(page, charts["duration"])
-    compare.get_by_role("tab", name="What differs", exact=True).click()
-    compare.locator("[data-compare-lever]").first.wait_for(state="visible", timeout=10000)
-    assert compare.locator("[data-compare-lever]").count() == 2
-    assert compare.locator("[data-compare-widget]").count() == 0
-    assert sorted(compare.locator("[data-compare-code-added]").all_inner_texts()) == [
-        '+ return metrics[metrics["route"] == "weighted-route"]',
-        '+ route = routes[routes["weight_type"] == "weighted-route"]']
-    assert compare.locator("[data-compare-code-removed]").count() == 2
-    assert compare.locator("[data-compare-warning]").count() == 0
-    compare.get_by_role("tab", name="Chart", exact=True).click()
+        _assert_metrics(page, spec, charts[column])
 
     frame_nodes(page, [map_id])
     assert_autark_map_drawn(page, map_id, timeout=30000)

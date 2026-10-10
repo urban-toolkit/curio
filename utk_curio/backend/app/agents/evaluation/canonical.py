@@ -298,13 +298,15 @@ def edge_slot(edge: Mapping) -> int | None:
 _LABELING_BUDGET = 20000
 
 
-def _refine(colors: list, in_adj: list, out_adj: list) -> list:
+def _refine(colors: list, in_adj: list, out_adj: list, out_slots: bool = False) -> list:
     """Colour refinement (Weisfeiler-Leman) to a fixed point.
 
     A node's next colour is its current colour plus the multiset of its
     incoming ``(colour, kind, slot)`` and outgoing ``(colour, kind)`` -- so a
     Data Transformation that feeds two charts separates from one that feeds a
-    single chart without either of them being named.
+    single chart without either of them being named. With *out_slots* an
+    outgoing edge's slot counts too, so the nodes feeding one chart's circles
+    separate by circle (:func:`_canonical_order`'s fallback).
     """
     current = list(colors)
     while True:
@@ -312,7 +314,10 @@ def _refine(colors: list, in_adj: list, out_adj: list) -> list:
             (
                 current[i],
                 tuple(sorted((current[src], kind, slot) for src, kind, slot in in_adj[i])),
-                tuple(sorted((current[dst], kind) for dst, kind, _ in out_adj[i])),
+                tuple(sorted(
+                    (current[dst], kind, slot) if out_slots else (current[dst], kind)
+                    for dst, kind, slot in out_adj[i]
+                )),
             )
             for i in range(len(current))
         ]
@@ -341,7 +346,22 @@ def _canonical_order(attr_keys: list, in_adj: list, out_adj: list) -> tuple:
     Individualization-refinement: refine; if every colour class is a singleton
     the order is forced; otherwise individualize each member of the smallest
     ambiguous class in turn and keep the branch whose edge tuple is smallest.
+
+    Nodes that differ only in which circle of one node they feed (several
+    scenarios' branches into one chart) refine alike, and a graph of many such
+    groups exhausts the budget. Such a graph is searched again with outgoing
+    slots refined too; any other keeps the labeling it always had.
     """
+    order, exact = _search_order(attr_keys, in_adj, out_adj, out_slots=False)
+    if not exact:
+        retry, retry_exact = _search_order(attr_keys, in_adj, out_adj, out_slots=True)
+        if retry_exact:
+            return retry, True
+    return order, exact
+
+
+def _search_order(attr_keys: list, in_adj: list, out_adj: list, *, out_slots: bool) -> tuple:
+    """One individualization-refinement search (:func:`_canonical_order`)."""
     size = len(attr_keys)
     if size <= 1:
         return list(range(size)), True
@@ -352,7 +372,7 @@ def _canonical_order(attr_keys: list, in_adj: list, out_adj: list) -> tuple:
     exact = [True]
 
     def search(colors: list) -> None:
-        refined = _refine(colors, in_adj, out_adj)
+        refined = _refine(colors, in_adj, out_adj, out_slots)
         classes: dict = {}
         for index, colour in enumerate(refined):
             classes.setdefault(colour, []).append(index)

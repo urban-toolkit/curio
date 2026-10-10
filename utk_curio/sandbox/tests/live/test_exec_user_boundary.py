@@ -609,7 +609,7 @@ def test_scouts_weather_routing_runs_as_the_exec_user():
 
 
 #: ``scout.shadow@1``'s modules and SCOUT's Deep Umbra model (a Model Catalog
-#: model), in the image; a shipped test dataflow (``ScoutShadows.json``)
+#: model), in the image; a shipped test dataflow (``WhatIfShadows.json``)
 #: declares the package.
 SHADOW_SOURCES = LAUNCH_DIR + "/packages/scout.shadow@1/sources"
 DEEP_UMBRA = "model.scout.deep-umbra"

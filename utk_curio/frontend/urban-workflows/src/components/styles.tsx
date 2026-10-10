@@ -27,6 +27,7 @@ import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { readCanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { ConnectionValidator } from "../ConnectionValidator";
 import { unversionedNodeType } from "../utils/flowNodeCanonicalType";
+import { isComparing } from "../utils/vegaCompare";
 import { HeaderIconButton } from "./HeaderIconButton";
 import {
     EditableNodeHeaderLabel,
@@ -60,6 +61,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import {
     AccessLevelType,
+    NodeType,
     DEFAULT_NODE_HEIGHT,
     DEFAULT_NODE_WIDTH,
     MIN_NODE_HEIGHT,
@@ -1036,6 +1038,15 @@ export const NodeContainer = ({
                 storedLabel={data.packageTemplateLabel}
                 templateCode={code ?? data.defaultCode ?? ""}
                 onClose={() => setConfigOpen(false)}
+                compareScenarios={unversionedNodeType(String(data.nodeType ?? "")) === NodeType.VIS_VEGA
+                    ? {
+                        on: isComparing(data),
+                        onChange: (on: boolean) => {
+                            updateDataNode(nodeId, { ...data, vegaCompare: on ? { enabled: true } : undefined });
+                            markDirty();
+                        },
+                    }
+                    : undefined}
                 onSave={(config: CanvasTemplateConfig) => {
                     updateDataNode(nodeId, {
                         ...data,

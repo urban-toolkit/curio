@@ -91,6 +91,7 @@ export function NodeHandles({
             position={h.position}
             isConnectable={connectable}
             style={style}
+            title={h.title}
           />
         );
       })}

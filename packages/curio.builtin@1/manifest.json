@@ -438,47 +438,6 @@
       "paletteOrder": 12
     },
     {
-      "category": "vis_grammar",
-      "containerStyle": {
-        "nodeHeight": 420,
-        "nodeWidth": 560
-      },
-      "description": "Compares scenarios. Connect each scenario's outcome to its own input circle: each input is labelled by the scenario its node belongs to, and the node stacks the inputs into one table, with the scenario's id and name on every row. That table is its output. Its Chart tab draws the table in the scenarios' colors, as bars, grouped bars, lines, points, a pie, lollipops or a table. In Difference it takes two inputs and subtracts input 0 from input 1: two rasters cell by cell, two layers or two tables row by row, matched on a stable id (osm_id or building_id, or a key you pick), with rows only one side has marked removed or added. The difference is its output, drawn on a map. It shows Difference for two rasters or two layers and a Chart otherwise, and you can switch. Its What differs tab lists what changed between the scenarios: widget values and code lines. It warns when the scenarios read different context.",
-      "editor": "code",
-      "engine": "python",
-      "hasCode": true,
-      "hasGrammar": false,
-      "hasWidgets": false,
-      "iconRef": "fa-solid:code-compare",
-      "id": "compare-scenarios",
-      "inputPorts": [
-        {
-          "cardinality": "[1,n]",
-          "types": [
-            "DATAFRAME",
-            "GEODATAFRAME",
-            "RASTER",
-            "VALUE",
-            "LIST",
-            "JSON"
-          ]
-        }
-      ],
-      "label": "Compare Scenarios",
-      "behavior": "compare-scenarios",
-      "outputPorts": [
-        {
-          "cardinality": "[1,n]",
-          "types": [
-            "DATAFRAME",
-            "GEODATAFRAME",
-            "RASTER"
-          ]
-        }
-      ],
-      "paletteOrder": 13
-    },
-    {
       "category": "computation",
       "description": "One operation over rasters on one grid, cell by cell. Connect the rasters to its input circles, in order; its code names the operation: add, subtract, multiply or divide input 0 and input 1, or choose, which takes input 1 where input 0's class is one of the codes it names and input 2 elsewhere. A cell that is nodata in an input the operation reads there is nodata in the result, and rasters on different grids are refused. The output is the result, a raster an Autark map draws.",
       "editor": "code",
@@ -506,7 +465,7 @@
     },
     {
       "category": "computation",
-      "description": "The mean, median, minimum, maximum and count of a raster's cells, nodata left out, as a table of one row. Its code can keep only the cells that meet a condition, such as a value under 1.08, on the raster itself or on a second raster on input 1, on the same grid, used as a mask: a test of the mask's values or a set of them. Compare Scenarios charts the table.",
+      "description": "The mean, median, minimum, maximum and count of a raster's cells, nodata left out, as a table of one row. Its code can keep only the cells that meet a condition, such as a value under 1.08, on the raster itself or on a second raster on input 1, on the same grid, used as a mask: a test of the mask's values or a set of them. A Vega-Lite node comparing the scenarios charts the table.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
@@ -533,16 +492,16 @@
     {
       "category": "data",
       "containerStyle": {
-        "nodeHeight": 460,
+        "nodeHeight": 620,
         "nodeWidth": 560
       },
-      "description": "Removes features, or changes them, by hand. Connect a layer, or the layers an Autark node hands on, and pick the layer to edit and the column that identifies a feature: osm_id or building_id, or another column whose values differ in every feature. A layer with no such column is refused. Double-click features on its map to pick them, then Remove them, Set a column to a value on them, or Restore them as the input has them. Its edits are a list, applied in order by that column, never by a feature's place, and its output is the edited layer, with the other layers as they came. A building's parts share its building_id, so an edit by building_id applies to the whole building. Compare Scenarios lists the edits in its What differs tab.",
+      "description": "Interacts with a layer's features on a map and edits them, for a design step. Connect a layer, or the layers an Autark node hands on, and pick the layer to edit and the column that identifies a feature: osm_id or building_id, or another column whose values differ in every feature. A layer with no such column is refused. Double-click features to pick them, then remove them (Delete), raise or lower a number such as height (the arrow keys, or a step), scale it, set a column, type into the picked features' table, or restore them; or pick features by a condition such as height > 100 and do any of these to all of them, including writing a column from an expression such as levels * 3.2. The map shows the layer as the edits leave it. The edits are a log, applied in order by that column, never by a feature's place; each can be switched off, undone or deleted. Its output is the edited layer, with the other layers as they came, and Update results runs the nodes after it again. A building's parts share its building_id, so an edit by building_id applies to the whole building.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
       "hasGrammar": false,
       "hasWidgets": false,
-      "iconRef": "fa-solid:eraser",
+      "iconRef": "fa-solid:hand-pointer",
       "id": "edit-features",
       "inputPorts": [
         {
@@ -550,7 +509,7 @@
           "types": ["GEODATAFRAME", "DATAFRAME", "LIST", "JSON"]
         }
       ],
-      "label": "Edit Features",
+      "label": "Interaction",
       "behavior": "edit-features",
       "outputPorts": [
         {

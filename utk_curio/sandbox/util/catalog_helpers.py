@@ -12,7 +12,7 @@
     ``curio_load_data("<id>", part="<file>")`` reads the one its
     ``bundle.json`` lists under that file name or label, and ``bounds`` then
     windows it if it is a GeoTIFF.
-``curio_raster_calculate(operation, rasters, codes=None)``,
+``curio_raster_calculate(operation, rasters, codes=None, absolute=False)``,
 ``curio_raster_statistics(raster, band=1, mask=None, mask_values=None, where=None)``
     The Raster Calculator and Raster Statistics nodes' steps
     (``util/raster_algebra.py``).
@@ -471,12 +471,12 @@ def install_catalog_helpers(
         with rasterio.open(path) as whole:
             return read_window(whole, bounds, raster_output_file, name=dataset_id)
 
-    def curio_raster_calculate(operation, rasters, codes=None):
+    def curio_raster_calculate(operation, rasters, codes=None, absolute=False):
         """The Raster Calculator's step: *operation* over *rasters*, cell by cell
         (``util/raster_algebra.calculate``)."""
         from utk_curio.sandbox.util.raster_algebra import calculate
 
-        return calculate(operation, rasters, codes=codes, output_file=raster_output_file)
+        return calculate(operation, rasters, codes=codes, absolute=absolute, output_file=raster_output_file)
 
     def curio_raster_statistics(raster, band=1, mask=None, mask_values=None, where=None):
         """The Raster Statistics node's step: a raster's mean, median, minimum,

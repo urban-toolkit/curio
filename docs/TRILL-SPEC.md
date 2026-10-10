@@ -99,23 +99,11 @@ ids of the nodes it descends from, oldest first, ending with the node it was
 copied from. Two nodes are the same lever in two scenarios when their ids and
 these lists meet.
 
-`metadata.compareScenarios` holds a `curio.builtin/compare-scenarios` node's
-settings, written only when it has inputs or one of the settings below. `inputs`
-labels each input circle, in circle order, `{scenario?, name, color}`: the id, name
-and color of the scenario the input's node belongs to, or, for a node in no
-scenario, the node's name, a neutral color and no `scenario`. The node's `content`
-is written from them, one `(scenario, name, [!! input k !!])` entry per input handed
-to `curio_stack_scenarios`, which stacks the inputs into one table under `scenario`
-and `scenario_name`, or, in Difference, to `curio_difference_scenarios`, which
-subtracts input 0 from input 1. `chart` is `{preset?, x?, y?, aggregate?}`:
-`preset` is one of `bar`, `grouped-bar`, `line`, `scatter`, `pie`, `lollipop` and
-`table`, `x` and `y` name columns of that table, and `aggregate` is one of `mean`,
-`sum`, `median`, `min`, `max` and `count`. `mode` is `chart` or `difference`, written
-only when the user chose one; without it the node shows Difference for two rasters
-or two layers and Chart otherwise. `difference` is `{key?, value?}`: `key` is the
-column Difference matches the rows of two layers or tables on (without it,
-`osm_id` or `building_id`), passed to `curio_difference_scenarios` as `key=`, and
-`value` the column or band its map colors the difference by.
+`metadata.vegaCompare` holds a `curio.builtin/vis-vega` node's Compare scenarios
+switch, `{"enabled": true}`, written only when it is on. Each input circle is then
+one scenario, labelled by the scenario its node belongs to, and the spec reads the
+inputs stacked as one table, `scenarios`, each row carrying `scenario`,
+`scenario_name`, `scenario_color` and `scenario_order`.
 
 `metadata.editFeatures` holds a `curio.builtin/edit-features` node's edit list,
 written only when it has one of its fields. `key` is the column that identifies a

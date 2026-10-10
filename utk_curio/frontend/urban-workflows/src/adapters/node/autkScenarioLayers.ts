@@ -5,7 +5,7 @@
  *
  * The grammar colors a layer only through a named scheme (`schemeTableau10`,
  * `interpolateBuGn`, ...), so a layer cannot wear the color its scenario wears
- * in the dataflow and in Compare Scenarios' charts. autk-map does take a fixed
+ * in the dataflow and in a Vega-Lite node comparing the scenarios. autk-map does take a fixed
  * color for a layer that is not color-mapped (`layerRenderInfo.color`), so a
  * layerRef that names a scenario is drawn in that scenario's color, and the
  * map gets a legend of its own listing every such layer by its scenario's

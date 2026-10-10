@@ -7,7 +7,7 @@
     },
     "nodes": [
       {
-        "id": "5d2b8e1a-4c7f-4a36-9b0e-2f6c8a1d3e57",
+        "id": "f6a9b465-39ba-5c16-9f2f-8bac0d76e8d9",
         "type": "curio.builtin/data-loading",
         "x": 105,
         "y": 441,
@@ -21,11 +21,11 @@
         }
       },
       {
-        "id": "2e7c4a9d-6b1f-4d58-8a3e-7f0b2c5d9e61",
+        "id": "c2a1ef4e-9912-5732-8e9a-7541f4c9e67c",
         "type": "scout.routing/weather-routing",
         "x": 92,
         "y": 868,
-        "content": "\"\"\"Weather Routing: SCOUT's weather-aware routes over a roads layer.\n\nInput: the layers an Autark node loads from OpenStreetMap, whose roads layer,\ntable_osm_roads, the node reads as a GeoDataFrame of road lines (with highway,\nand oneway and maxspeed where known), or such a GeoDataFrame on its own. The\nroutes run inside its bounds.\nOutput: (routes, metrics).\n- routes: one row per route, a line through its nodes, with the route\n  (weight_type), route_index, distance_m in metres, duration_minutes and the\n  route's rain, heat, wind and humidity exposure. An Autark map draws it.\n- metrics: the same routes as a table: route, route_index, distance in km,\n  duration in minutes and the four exposures, for Compare Scenarios.\nThe Widgets tab sets the origin and destination, the mode, K, the start time\n(local time where the weather is, Chicago) and the rain and wind weights.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_routing.weather_routing import calculate_weather_route\n\n# SCOUT's WRF forecast from the Data Catalog, one dataset of five NetCDF\n# files, a variable each.\nweather = {\n    \"RAIN\": curio_data_path(\"data.scout.chicago-weather-2025-07-06\", part=\"RAIN.nc\"),\n    \"T2\": curio_data_path(\"data.scout.chicago-weather-2025-07-06\", part=\"T2.nc\"),\n    \"WSPD10\": curio_data_path(\"data.scout.chicago-weather-2025-07-06\", part=\"WSPD10.nc\"),\n    \"WDIR10\": curio_data_path(\"data.scout.chicago-weather-2025-07-06\", part=\"WDIR10.nc\"),\n    \"RH2\": curio_data_path(\"data.scout.chicago-weather-2025-07-06\", part=\"RH2.nc\"),\n}\n\nreturn calculate_weather_route(\n    [!! input_0:table_osm_roads !!],\n    weather,\n    # SCOUT's weather graph network, the Model Catalog's weather GNN.\n    curio_load_model(\"model.scout.weather-gnn\"),\n    [!! origin !!],\n    [!! destination !!],\n    mode=[!! mode !!],\n    K=int([!! K !!]),\n    time_=[!! time !!],\n    rain=[!! rain !!],\n    wind=[!! wind !!],\n)\n",
+        "content": "\"\"\"Weather Routing: SCOUT's weather-aware routes over a roads layer.\n\nInput: the layers an Autark node loads from OpenStreetMap, whose roads layer,\ntable_osm_roads, the node reads as a GeoDataFrame of road lines (with highway,\nand oneway and maxspeed where known), or such a GeoDataFrame on its own. The\nroutes run inside its bounds.\nOutput: (routes, metrics).\n- routes: one row per route, a line through its nodes, with the route\n  (weight_type), route_index, distance_m in metres, duration_minutes and the\n  route's rain, heat, wind and humidity exposure. An Autark map draws it.\n- metrics: the same routes as a table: route, route_index, distance in km,\n  duration in minutes and the four exposures, for a chart comparing the scenarios.\nThe Widgets tab sets the origin and destination, the mode, K, the start time\n(local time where the weather is, Chicago) and the rain and wind weights.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_routing.weather_routing import calculate_weather_route\n\n# SCOUT's WRF forecast from the Data Catalog, one dataset of five NetCDF\n# files, a variable each.\nweather = {\n    \"RAIN\": curio_data_path(\"data.scout.chicago-weather-2025-07-06\", part=\"RAIN.nc\"),\n    \"T2\": curio_data_path(\"data.scout.chicago-weather-2025-07-06\", part=\"T2.nc\"),\n    \"WSPD10\": curio_data_path(\"data.scout.chicago-weather-2025-07-06\", part=\"WSPD10.nc\"),\n    \"WDIR10\": curio_data_path(\"data.scout.chicago-weather-2025-07-06\", part=\"WDIR10.nc\"),\n    \"RH2\": curio_data_path(\"data.scout.chicago-weather-2025-07-06\", part=\"RH2.nc\"),\n}\n\nreturn calculate_weather_route(\n    [!! input_0:table_osm_roads !!],\n    weather,\n    # SCOUT's weather graph network, the Model Catalog's weather GNN.\n    curio_load_model(\"model.scout.weather-gnn\"),\n    [!! origin !!],\n    [!! destination !!],\n    mode=[!! mode !!],\n    K=int([!! K !!]),\n    time_=[!! time !!],\n    rain=[!! rain !!],\n    wind=[!! wind !!],\n)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Find SCOUT's two routes: the fastest, and the one its default weather weights favor.",
@@ -120,7 +120,7 @@
         }
       },
       {
-        "id": "7b3f9d2a-5e8c-4b17-9d4a-1e6f3c8b2a05",
+        "id": "9aefed8b-e3a5-52e0-a60d-d1dcd1534217",
         "type": "curio.builtin/computation-analysis",
         "x": 739,
         "y": 145,
@@ -134,11 +134,11 @@
         }
       },
       {
-        "id": "c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36",
+        "id": "50c95cc1-8a22-54b5-b9be-b3896879d2d7",
         "type": "curio.builtin/computation-analysis",
         "x": 1400,
         "y": 420,
-        "content": "# Weather Routing returns (routes, metrics): the metrics of this scenario's\n# route, its distance, duration and exposures, for Compare Scenarios.\nmetrics = input_0[1]\nreturn metrics[metrics[\"route\"] == \"fastest-route\"]\n",
+        "content": "# Weather Routing returns (routes, metrics): the metrics of this scenario's\n# route, its distance, duration and exposures, for a chart comparing the scenarios.\nmetrics = input_0[1]\nreturn metrics[metrics[\"route\"] == \"fastest-route\"]\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Take that route's metrics.",
@@ -148,7 +148,7 @@
         }
       },
       {
-        "id": "3a6c2e8f-7d1b-4f45-a9c3-6b8e0d2f5a74",
+        "id": "4433fb36-161f-5369-9703-9fd5fc8ba6ad",
         "type": "curio.builtin/computation-analysis",
         "x": 742,
         "y": 858,
@@ -160,16 +160,16 @@
           "keywords": [],
           "packageTemplateLabel": "Route",
           "copiedFrom": [
-            "7b3f9d2a-5e8c-4b17-9d4a-1e6f3c8b2a05"
+            "9aefed8b-e3a5-52e0-a60d-d1dcd1534217"
           ]
         }
       },
       {
-        "id": "e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23",
+        "id": "86e04cad-d2cb-5c94-a1bb-38a32cde7d3c",
         "type": "curio.builtin/computation-analysis",
         "x": 1394,
         "y": 1135,
-        "content": "# Weather Routing returns (routes, metrics): the metrics of this scenario's\n# route, its distance, duration and exposures, for Compare Scenarios.\nmetrics = input_0[1]\nreturn metrics[metrics[\"route\"] == \"weighted-route\"]\n",
+        "content": "# Weather Routing returns (routes, metrics): the metrics of this scenario's\n# route, its distance, duration and exposures, for a chart comparing the scenarios.\nmetrics = input_0[1]\nreturn metrics[metrics[\"route\"] == \"weighted-route\"]\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Take that route's metrics.",
@@ -177,12 +177,12 @@
           "keywords": [],
           "packageTemplateLabel": "Route metrics",
           "copiedFrom": [
-            "c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36"
+            "50c95cc1-8a22-54b5-b9be-b3896879d2d7"
           ]
         }
       },
       {
-        "id": "6c0e8a4d-3b9f-4d21-a7e5-9f2b6d1c8e40",
+        "id": "ce358c62-e1d3-5bed-a112-da3a53787822",
         "type": "curio.builtin/autk-grammar",
         "x": 2144,
         "y": -20,
@@ -196,248 +196,188 @@
         }
       },
       {
-        "id": "1f8b6d2c-4e9a-4b53-9c7f-2a5e8d0b3f16",
-        "type": "curio.builtin/compare-scenarios",
+        "id": "b6500b1e-1575-5693-b8d0-59c214aba8d7",
+        "type": "curio.builtin/vis-vega",
         "x": 2143,
         "y": 586,
-        "content": "# Compare Scenarios writes this code from its inputs: each input, under the\n# id and the name of its scenario. It is written again when they change.\nreturn curio_stack_scenarios([\n    (\"fastest\", \"Fastest route\", [!! input_0 !!]),\n    (\"weather-aware\", \"Weather-aware route\", [!! input_1 !!]),\n])\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Compare the two routes' duration, in minutes.",
         "metadata": {
           "keywords": [],
-          "packageTemplateLabel": "Duration",
-          "compareScenarios": {
-            "inputs": [
-              {
-                "scenario": "fastest",
-                "name": "Fastest route",
-                "color": "#42A5F5"
-              },
-              {
-                "scenario": "weather-aware",
-                "name": "Weather-aware route",
-                "color": "#00838F"
-              }
-            ],
-            "mode": "chart",
-            "chart": {
-              "preset": "bar",
-              "y": "duration"
-            }
-          }
-        }
+          "vegaCompare": {
+            "enabled": true
+          },
+          "packageTemplateLabel": "Duration comparison"
+        },
+        "title": "Duration comparison",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    },\n    \"y\": {\n      \"field\": \"duration\",\n      \"type\": \"quantitative\",\n      \"title\": \"Duration (min)\"\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"bar\",\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"legend\": null\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"text\",\n        \"dy\": -6,\n        \"baseline\": \"bottom\"\n      },\n      \"encoding\": {\n        \"text\": {\n          \"field\": \"duration\",\n          \"type\": \"quantitative\",\n          \"format\": \".2f\"\n        }\n      }\n    }\n  ]\n}"
       },
       {
-        "id": "4d9a7f3e-8c2b-4e16-a5d0-7b3f1e9c6a82",
-        "type": "curio.builtin/compare-scenarios",
+        "id": "f5349c92-21d6-521b-a43f-50070b72f1a3",
+        "type": "curio.builtin/vis-vega",
         "x": 2774,
         "y": 590,
-        "content": "# Compare Scenarios writes this code from its inputs: each input, under the\n# id and the name of its scenario. It is written again when they change.\nreturn curio_stack_scenarios([\n    (\"fastest\", \"Fastest route\", [!! input_0 !!]),\n    (\"weather-aware\", \"Weather-aware route\", [!! input_1 !!]),\n])\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Compare the two routes' distance, in kilometres.",
         "metadata": {
           "keywords": [],
-          "packageTemplateLabel": "Distance",
-          "compareScenarios": {
-            "inputs": [
-              {
-                "scenario": "fastest",
-                "name": "Fastest route",
-                "color": "#42A5F5"
-              },
-              {
-                "scenario": "weather-aware",
-                "name": "Weather-aware route",
-                "color": "#00838F"
-              }
-            ],
-            "mode": "chart",
-            "chart": {
-              "preset": "bar",
-              "y": "distance"
-            }
-          }
-        }
+          "vegaCompare": {
+            "enabled": true
+          },
+          "packageTemplateLabel": "Distance comparison"
+        },
+        "title": "Distance comparison",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    },\n    \"y\": {\n      \"field\": \"distance\",\n      \"type\": \"quantitative\",\n      \"title\": \"Distance (km)\"\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"bar\",\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"legend\": null\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"text\",\n        \"dy\": -6,\n        \"baseline\": \"bottom\"\n      },\n      \"encoding\": {\n        \"text\": {\n          \"field\": \"distance\",\n          \"type\": \"quantitative\",\n          \"format\": \".2f\"\n        }\n      }\n    }\n  ]\n}"
       },
       {
-        "id": "a2e6c9f4-5b1d-4f38-8d7a-0c4e9b2f5d67",
-        "type": "curio.builtin/compare-scenarios",
+        "id": "c0c8b561-fc90-5063-9579-7096b743e2a1",
+        "type": "curio.builtin/vis-vega",
         "x": 2151,
         "y": 1079,
-        "content": "# Compare Scenarios writes this code from its inputs: each input, under the\n# id and the name of its scenario. It is written again when they change.\nreturn curio_stack_scenarios([\n    (\"fastest\", \"Fastest route\", [!! input_0 !!]),\n    (\"weather-aware\", \"Weather-aware route\", [!! input_1 !!]),\n])\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Compare the two routes' rain exposure.",
         "metadata": {
           "keywords": [],
-          "packageTemplateLabel": "Rain exposure",
-          "compareScenarios": {
-            "inputs": [
-              {
-                "scenario": "fastest",
-                "name": "Fastest route",
-                "color": "#42A5F5"
-              },
-              {
-                "scenario": "weather-aware",
-                "name": "Weather-aware route",
-                "color": "#00838F"
-              }
-            ],
-            "mode": "chart",
-            "chart": {
-              "preset": "bar",
-              "y": "rain_exposure"
-            }
-          }
-        }
+          "vegaCompare": {
+            "enabled": true
+          },
+          "packageTemplateLabel": "Rain exposure comparison"
+        },
+        "title": "Rain exposure comparison",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    },\n    \"y\": {\n      \"field\": \"rain_exposure\",\n      \"type\": \"quantitative\",\n      \"title\": \"Rain exposure\"\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"bar\",\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"legend\": null\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"text\",\n        \"dy\": -6,\n        \"baseline\": \"bottom\"\n      },\n      \"encoding\": {\n        \"text\": {\n          \"field\": \"rain_exposure\",\n          \"type\": \"quantitative\",\n          \"format\": \".2f\"\n        }\n      }\n    }\n  ]\n}"
       },
       {
-        "id": "b7f3a1d8-6e4c-4a29-9b2e-5d8a0f3c7e14",
-        "type": "curio.builtin/compare-scenarios",
+        "id": "cb62b12e-822e-558b-b44c-a482b76011ec",
+        "type": "curio.builtin/vis-vega",
         "x": 2784,
         "y": 1076,
-        "content": "# Compare Scenarios writes this code from its inputs: each input, under the\n# id and the name of its scenario. It is written again when they change.\nreturn curio_stack_scenarios([\n    (\"fastest\", \"Fastest route\", [!! input_0 !!]),\n    (\"weather-aware\", \"Weather-aware route\", [!! input_1 !!]),\n])\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Compare the two routes' wind exposure.",
         "metadata": {
           "keywords": [],
-          "packageTemplateLabel": "Wind exposure",
-          "compareScenarios": {
-            "inputs": [
-              {
-                "scenario": "fastest",
-                "name": "Fastest route",
-                "color": "#42A5F5"
-              },
-              {
-                "scenario": "weather-aware",
-                "name": "Weather-aware route",
-                "color": "#00838F"
-              }
-            ],
-            "mode": "chart",
-            "chart": {
-              "preset": "bar",
-              "y": "wind_exposure"
-            }
-          }
-        }
+          "vegaCompare": {
+            "enabled": true
+          },
+          "packageTemplateLabel": "Wind exposure comparison"
+        },
+        "title": "Wind exposure comparison",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    },\n    \"y\": {\n      \"field\": \"wind_exposure\",\n      \"type\": \"quantitative\",\n      \"title\": \"Wind exposure\"\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"bar\",\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"legend\": null\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"text\",\n        \"dy\": -6,\n        \"baseline\": \"bottom\"\n      },\n      \"encoding\": {\n        \"text\": {\n          \"field\": \"wind_exposure\",\n          \"type\": \"quantitative\",\n          \"format\": \".2f\"\n        }\n      }\n    }\n  ]\n}"
       }
     ],
     "edges": [
       {
-        "id": "reactflow__edge-5d2b8e1a-4c7f-4a36-9b0e-2f6c8a1d3e57out-2e7c4a9d-6b1f-4d58-8a3e-7f0b2c5d9e61in",
-        "source": "5d2b8e1a-4c7f-4a36-9b0e-2f6c8a1d3e57",
-        "target": "2e7c4a9d-6b1f-4d58-8a3e-7f0b2c5d9e61",
+        "id": "reactflow__edge-f6a9b465-39ba-5c16-9f2f-8bac0d76e8d9out-c2a1ef4e-9912-5732-8e9a-7541f4c9e67cin",
+        "source": "f6a9b465-39ba-5c16-9f2f-8bac0d76e8d9",
+        "target": "c2a1ef4e-9912-5732-8e9a-7541f4c9e67c",
         "sourceHandle": "out",
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-5d2b8e1a-4c7f-4a36-9b0e-2f6c8a1d3e57out-6c0e8a4d-3b9f-4d21-a7e5-9f2b6d1c8e40in",
-        "source": "5d2b8e1a-4c7f-4a36-9b0e-2f6c8a1d3e57",
-        "target": "6c0e8a4d-3b9f-4d21-a7e5-9f2b6d1c8e40",
+        "id": "reactflow__edge-f6a9b465-39ba-5c16-9f2f-8bac0d76e8d9out-ce358c62-e1d3-5bed-a112-da3a53787822in",
+        "source": "f6a9b465-39ba-5c16-9f2f-8bac0d76e8d9",
+        "target": "ce358c62-e1d3-5bed-a112-da3a53787822",
         "sourceHandle": "out",
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-2e7c4a9d-6b1f-4d58-8a3e-7f0b2c5d9e61out-7b3f9d2a-5e8c-4b17-9d4a-1e6f3c8b2a05in",
-        "source": "2e7c4a9d-6b1f-4d58-8a3e-7f0b2c5d9e61",
-        "target": "7b3f9d2a-5e8c-4b17-9d4a-1e6f3c8b2a05",
+        "id": "reactflow__edge-c2a1ef4e-9912-5732-8e9a-7541f4c9e67cout-9aefed8b-e3a5-52e0-a60d-d1dcd1534217in",
+        "source": "c2a1ef4e-9912-5732-8e9a-7541f4c9e67c",
+        "target": "9aefed8b-e3a5-52e0-a60d-d1dcd1534217",
         "sourceHandle": "out",
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-2e7c4a9d-6b1f-4d58-8a3e-7f0b2c5d9e61out-c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36in",
-        "source": "2e7c4a9d-6b1f-4d58-8a3e-7f0b2c5d9e61",
-        "target": "c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36",
+        "id": "reactflow__edge-c2a1ef4e-9912-5732-8e9a-7541f4c9e67cout-50c95cc1-8a22-54b5-b9be-b3896879d2d7in",
+        "source": "c2a1ef4e-9912-5732-8e9a-7541f4c9e67c",
+        "target": "50c95cc1-8a22-54b5-b9be-b3896879d2d7",
         "sourceHandle": "out",
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-2e7c4a9d-6b1f-4d58-8a3e-7f0b2c5d9e61out-3a6c2e8f-7d1b-4f45-a9c3-6b8e0d2f5a74in",
-        "source": "2e7c4a9d-6b1f-4d58-8a3e-7f0b2c5d9e61",
-        "target": "3a6c2e8f-7d1b-4f45-a9c3-6b8e0d2f5a74",
+        "id": "reactflow__edge-c2a1ef4e-9912-5732-8e9a-7541f4c9e67cout-4433fb36-161f-5369-9703-9fd5fc8ba6adin",
+        "source": "c2a1ef4e-9912-5732-8e9a-7541f4c9e67c",
+        "target": "4433fb36-161f-5369-9703-9fd5fc8ba6ad",
         "sourceHandle": "out",
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-2e7c4a9d-6b1f-4d58-8a3e-7f0b2c5d9e61out-e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23in",
-        "source": "2e7c4a9d-6b1f-4d58-8a3e-7f0b2c5d9e61",
-        "target": "e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23",
+        "id": "reactflow__edge-c2a1ef4e-9912-5732-8e9a-7541f4c9e67cout-86e04cad-d2cb-5c94-a1bb-38a32cde7d3cin",
+        "source": "c2a1ef4e-9912-5732-8e9a-7541f4c9e67c",
+        "target": "86e04cad-d2cb-5c94-a1bb-38a32cde7d3c",
         "sourceHandle": "out",
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-7b3f9d2a-5e8c-4b17-9d4a-1e6f3c8b2a05out-6c0e8a4d-3b9f-4d21-a7e5-9f2b6d1c8e40in_1",
-        "source": "7b3f9d2a-5e8c-4b17-9d4a-1e6f3c8b2a05",
-        "target": "6c0e8a4d-3b9f-4d21-a7e5-9f2b6d1c8e40",
+        "id": "reactflow__edge-9aefed8b-e3a5-52e0-a60d-d1dcd1534217out-ce358c62-e1d3-5bed-a112-da3a53787822in_1",
+        "source": "9aefed8b-e3a5-52e0-a60d-d1dcd1534217",
+        "target": "ce358c62-e1d3-5bed-a112-da3a53787822",
         "sourceHandle": "out",
         "targetHandle": "in_1"
       },
       {
-        "id": "reactflow__edge-3a6c2e8f-7d1b-4f45-a9c3-6b8e0d2f5a74out-6c0e8a4d-3b9f-4d21-a7e5-9f2b6d1c8e40in_2",
-        "source": "3a6c2e8f-7d1b-4f45-a9c3-6b8e0d2f5a74",
-        "target": "6c0e8a4d-3b9f-4d21-a7e5-9f2b6d1c8e40",
+        "id": "reactflow__edge-4433fb36-161f-5369-9703-9fd5fc8ba6adout-ce358c62-e1d3-5bed-a112-da3a53787822in_2",
+        "source": "4433fb36-161f-5369-9703-9fd5fc8ba6ad",
+        "target": "ce358c62-e1d3-5bed-a112-da3a53787822",
         "sourceHandle": "out",
         "targetHandle": "in_2"
       },
       {
-        "id": "reactflow__edge-c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36out-1f8b6d2c-4e9a-4b53-9c7f-2a5e8d0b3f16in",
-        "source": "c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36",
-        "target": "1f8b6d2c-4e9a-4b53-9c7f-2a5e8d0b3f16",
+        "id": "reactflow__edge-50c95cc1-8a22-54b5-b9be-b3896879d2d7out-b6500b1e-1575-5693-b8d0-59c214aba8d7in",
+        "source": "50c95cc1-8a22-54b5-b9be-b3896879d2d7",
+        "target": "b6500b1e-1575-5693-b8d0-59c214aba8d7",
         "sourceHandle": "out",
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23out-1f8b6d2c-4e9a-4b53-9c7f-2a5e8d0b3f16in_1",
-        "source": "e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23",
-        "target": "1f8b6d2c-4e9a-4b53-9c7f-2a5e8d0b3f16",
+        "id": "reactflow__edge-86e04cad-d2cb-5c94-a1bb-38a32cde7d3cout-b6500b1e-1575-5693-b8d0-59c214aba8d7in_1",
+        "source": "86e04cad-d2cb-5c94-a1bb-38a32cde7d3c",
+        "target": "b6500b1e-1575-5693-b8d0-59c214aba8d7",
         "sourceHandle": "out",
         "targetHandle": "in_1"
       },
       {
-        "id": "reactflow__edge-c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36out-4d9a7f3e-8c2b-4e16-a5d0-7b3f1e9c6a82in",
-        "source": "c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36",
-        "target": "4d9a7f3e-8c2b-4e16-a5d0-7b3f1e9c6a82",
+        "id": "reactflow__edge-50c95cc1-8a22-54b5-b9be-b3896879d2d7out-f5349c92-21d6-521b-a43f-50070b72f1a3in",
+        "source": "50c95cc1-8a22-54b5-b9be-b3896879d2d7",
+        "target": "f5349c92-21d6-521b-a43f-50070b72f1a3",
         "sourceHandle": "out",
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23out-4d9a7f3e-8c2b-4e16-a5d0-7b3f1e9c6a82in_1",
-        "source": "e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23",
-        "target": "4d9a7f3e-8c2b-4e16-a5d0-7b3f1e9c6a82",
+        "id": "reactflow__edge-86e04cad-d2cb-5c94-a1bb-38a32cde7d3cout-f5349c92-21d6-521b-a43f-50070b72f1a3in_1",
+        "source": "86e04cad-d2cb-5c94-a1bb-38a32cde7d3c",
+        "target": "f5349c92-21d6-521b-a43f-50070b72f1a3",
         "sourceHandle": "out",
         "targetHandle": "in_1"
       },
       {
-        "id": "reactflow__edge-c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36out-a2e6c9f4-5b1d-4f38-8d7a-0c4e9b2f5d67in",
-        "source": "c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36",
-        "target": "a2e6c9f4-5b1d-4f38-8d7a-0c4e9b2f5d67",
+        "id": "reactflow__edge-50c95cc1-8a22-54b5-b9be-b3896879d2d7out-c0c8b561-fc90-5063-9579-7096b743e2a1in",
+        "source": "50c95cc1-8a22-54b5-b9be-b3896879d2d7",
+        "target": "c0c8b561-fc90-5063-9579-7096b743e2a1",
         "sourceHandle": "out",
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23out-a2e6c9f4-5b1d-4f38-8d7a-0c4e9b2f5d67in_1",
-        "source": "e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23",
-        "target": "a2e6c9f4-5b1d-4f38-8d7a-0c4e9b2f5d67",
+        "id": "reactflow__edge-86e04cad-d2cb-5c94-a1bb-38a32cde7d3cout-c0c8b561-fc90-5063-9579-7096b743e2a1in_1",
+        "source": "86e04cad-d2cb-5c94-a1bb-38a32cde7d3c",
+        "target": "c0c8b561-fc90-5063-9579-7096b743e2a1",
         "sourceHandle": "out",
         "targetHandle": "in_1"
       },
       {
-        "id": "reactflow__edge-c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36out-b7f3a1d8-6e4c-4a29-9b2e-5d8a0f3c7e14in",
-        "source": "c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36",
-        "target": "b7f3a1d8-6e4c-4a29-9b2e-5d8a0f3c7e14",
+        "id": "reactflow__edge-50c95cc1-8a22-54b5-b9be-b3896879d2d7out-cb62b12e-822e-558b-b44c-a482b76011ecin",
+        "source": "50c95cc1-8a22-54b5-b9be-b3896879d2d7",
+        "target": "cb62b12e-822e-558b-b44c-a482b76011ec",
         "sourceHandle": "out",
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23out-b7f3a1d8-6e4c-4a29-9b2e-5d8a0f3c7e14in_1",
-        "source": "e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23",
-        "target": "b7f3a1d8-6e4c-4a29-9b2e-5d8a0f3c7e14",
+        "id": "reactflow__edge-86e04cad-d2cb-5c94-a1bb-38a32cde7d3cout-cb62b12e-822e-558b-b44c-a482b76011ecin_1",
+        "source": "86e04cad-d2cb-5c94-a1bb-38a32cde7d3c",
+        "target": "cb62b12e-822e-558b-b44c-a482b76011ec",
         "sourceHandle": "out",
         "targetHandle": "in_1"
       }
@@ -448,8 +388,8 @@
         "name": "Fastest route",
         "color": "#42A5F5",
         "nodes": [
-          "7b3f9d2a-5e8c-4b17-9d4a-1e6f3c8b2a05",
-          "c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36"
+          "9aefed8b-e3a5-52e0-a60d-d1dcd1534217",
+          "50c95cc1-8a22-54b5-b9be-b3896879d2d7"
         ]
       },
       {
@@ -457,8 +397,8 @@
         "name": "Weather-aware route",
         "color": "#00838F",
         "nodes": [
-          "3a6c2e8f-7d1b-4f45-a9c3-6b8e0d2f5a74",
-          "e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23"
+          "4433fb36-161f-5369-9703-9fd5fc8ba6ad",
+          "86e04cad-d2cb-5c94-a1bb-38a32cde7d3c"
         ]
       }
     ],

@@ -707,95 +707,59 @@ return curio_edit_features(input_0, [
 ```
 
 A change of the list writes the code again, and the node then waits for a run. In a
-scenario, an Edit Features node is a lever, and **What differs** lists its edits.
+scenario, an Edit Features node is a lever.
 
 ### Comparing scenarios
 
-The **Compare Scenarios** node compares scenarios' outcomes on the canvas:
+A **Vega-Lite** node charts scenarios side by side when its **Compare scenarios** switch
+is on:
 
-1. Drag **Compare Scenarios** from the palette onto the canvas.
-2. Connect each scenario's outcome to one of its input circles. Each edge takes the
-   next circle, as on any node with several inputs, and each input is labelled by
-   the scenario its node belongs to.
-3. Run it. In **Chart** it stacks its inputs into one table, with the scenario's id
-   in a `scenario` column and its name in a `scenario_name` column on every row. In
-   **Difference** it subtracts one input from the other. What it makes is its
-   output: other nodes can read it, and the node can be pinned to the dashboard.
+1. Connect each scenario's outcome, a table, to one of the Vega-Lite node's input
+   circles. Each edge takes the next circle, and each input is labelled by the scenario
+   its node belongs to: its name and color, or, for a node in no scenario, the node's
+   name in gray.
+2. Open **Node settings** (the gear in the node's header) and turn on **Compare
+   scenarios**.
+3. Write the spec over the stacked table. The node stacks every input's rows into one
+   table, `scenarios`, which is the spec's data when it names none. Each row carries
+   `scenario` (the scenario's id), `scenario_name`, `scenario_color` and
+   `scenario_order` (its circle). Each input is also its own dataset, `input_0`,
+   `input_1`, and so on.
 
-The node shows **Difference** when it has two inputs that are rasters, or two that
-are layers, once the nodes feeding them have run, and **Chart** otherwise. **Compare
-as** switches it.
+An encoding on `scenario` or `scenario_name` that sets no scale of its own is drawn in
+the scenarios' colors, and one on an axis, an offset or a facet that sets no sort is
+ordered by circle:
 
-Its code is written for it, one line per input, reading the input through its chip
-under its scenario's id and name. It is written again when an input changes, a
-scenario is renamed or recolored, or the node switches between Chart and
-Difference, and the node then waits for a run.
+```json
+{
+  "mark": "bar",
+  "encoding": {
+    "x": { "field": "scenario_name", "type": "nominal" },
+    "y": { "field": "sunlight", "type": "quantitative", "aggregate": "mean" },
+    "color": { "field": "scenario_name", "type": "nominal", "legend": null }
+  }
+}
+```
 
-It stacks inputs of one kind:
+A strip above the chart lists each input's scenario, with a check when its input has
+every column the spec reads, and a cross naming what it lacks. A circle whose input
+lacks a column is outlined in red, its tooltip naming the column.
 
-- tables (a DataFrame, a GeoDataFrame, a list of records, a dict of columns, or a
-  dict of values, which is one row), keeping their rows. A column one input lacks is
-  empty in its rows.
-- values (a number, a text, true or false, or a list of them), one row each under a
-  `value` column.
+Each input is one table. An Autark node hands on every layer of its workspace, so take
+the layer to compare out of it first, with a Python node and a layer chip:
+`return [!! input_0:table_osm_roads !!]`.
 
-An Autark node hands on every layer of its workspace. From such an input the node
-reads the layer picked in **Layer**, in Chart and in Difference alike; the menu lists
-the layers every such input has.
+To map how an outcome changes between two scenarios, compute the difference and draw
+it on an Autark map:
 
-A table beside a value, a GeoDataFrame beside a plain table, two coordinate systems,
-an input with no value, an input that holds several tables, or a raster stops the run
-with a message naming the input.
-
-In Difference it takes two inputs: input 0 is the reference and input 1 the
-comparison, and every number it gives is the comparison's minus the reference's.
-
-- Two rasters are subtracted cell by cell, band by band. A cell that is nodata in
-  either is nodata in the difference. Both must lie on one grid, with the same size,
-  origin, cell size and CRS; otherwise the run stops with a message naming both. Each
-  is read as an Autark map reads a raster, at its own size, up to 2048 by 2048 cells.
-- Two layers, or two tables, are matched row by row on a stable id: `osm_id`, else
-  `building_id`, or the column picked in **Key**. Two layers with neither id are
-  matched by their shapes: rows with the same geometry are one row, and a shape that
-  repeats is matched in order. A row on both sides holds, in each
-  number column both have, the difference, and a `change` column says `changed` or
-  `unchanged`. A column of nested values, such as the `compute` values an Autark
-  compute step writes, holds the difference of each number in it. A row only in the
-  reference is `removed` and one only in the comparison `added`; their numbers are
-  empty. The other columns and the geometry are the comparison's, or the reference's
-  for a removed row. A key that is empty or repeated on one side stops the run, as
-  does a layer beside a table.
-
-A raster's difference is a raster, which an Autark map draws and a Python node reads
-as a `rasterio` dataset.
-
-The node has two tabs:
-
-- **Chart** draws the stacked table in the scenarios' colors, as **Bars**, **Grouped
-  bars**, **Lines**, **Points**, a **Pie**, **Lollipops** or a **Table**. Pick the
-  columns it reads (**X**, **Y**) and how the Y values of a group are combined
-  (**Combine**: mean, sum, median, minimum, maximum, a count of rows, or none).
-  **None** plots each row's value as it is, with the Y column as the axis title:
-  for a table of one row per scenario, such as SCOUT's shadow metrics. A
-  scenario with several rows stacks them in one bar.
-- **Difference**, in its place in Difference, maps a raster's or a layer's
-  difference, colored by a band or a number column, or by `change` (**Color by**).
-  The legend is titled with what it shows: `sunlight change` for the column
-  `sunlight`, or `change`. A raster's or a layer's colors run from the lowest
-  difference, dark purple, to the highest, yellow; a raster cell that is nodata in
-  either raster is clear. A table's difference is shown as a table, each
-  row in the color of its change.
-- **What differs** lists the levers that differ between the scenarios: for each, the
-  widget values and the code lines that changed, read against the first scenario's,
-  or, for an Edit Features node, each scenario's edits. A node and the copies made
-  from it with **Duplicate selection** or **Duplicate as scenario** are one lever. A
-  node with no copy in another scenario is listed as only in the scenarios that have
-  it, with its edits when it is an Edit Features node.
-
-Above both tabs it warns when the scenarios read different fixed context, naming the
-inputs and the context only one of them reads, when an input comes from a node in no
-scenario (its rows carry that node's name, and What differs leaves it out), and when
-two inputs come from one scenario.
+- Two rasters on one grid: a **Raster Calculator** with
+  `curio_raster_calculate("subtract", [input_1, input_0])`, the comparison minus the
+  reference, or with `absolute=True` the size of the change (see
+  [Rasters](#rasters)).
+- Two layers: a Python node that matches their rows, on an id such as `osm_id` or, for
+  two layers read from one source, on their shapes, and subtracts the columns to
+  compare. [Example 06](examples/06-autark-what-if-shadow-study.md) maps the sunlight
+  each road loses this way.
 
 The **Scenario Catalog** lists the scenarios of all your projects, each with its
 fixed context, levers and outcomes and the results its project saved. Open it from
@@ -1076,7 +1040,7 @@ keys, for a raster layer only: a layer of features is drawn without them.
 ```
 
 A `layerRef`'s `scenario`, a scenario's id, draws the layer in that
-scenario's color, the one its frame and Compare Scenarios' charts use, and
+scenario's color, the one its frame and a Vega-Lite node comparing scenarios use, and
 gives the map one discrete legend naming each scenario it draws. The color
 follows the scenario: recolor or rename it and the map changes too. Another
 of Curio's own keys; leave out `getFnv` on such a layer.
@@ -1137,6 +1101,7 @@ cell. Connect the rasters to its input circles, in order:
 |---|---|
 | `curio_raster_calculate("add", [input_0, input_1])` | input 0 plus input 1 |
 | `curio_raster_calculate("subtract", [input_0, input_1])` | input 0 minus input 1 |
+| `curio_raster_calculate("subtract", [input_0, input_1], absolute=True)` | the size of the difference, 0 where they agree |
 | `curio_raster_calculate("multiply", [input_0, input_1])` | input 0 times input 1 |
 | `curio_raster_calculate("divide", [input_0, input_1])` | input 0 over input 1; a cell divided by 0 has no value |
 | `curio_raster_calculate("choose", [input_0, input_1, input_2], codes=[21, 31])` | input 1 where input 0's class is one of the codes, input 2 elsewhere |
@@ -1151,8 +1116,8 @@ cell. Connect the rasters to its input circles, in order:
   raster keeps every digit. Its cells with no value are NaN.
 
 **Raster Statistics** gives a raster's `mean`, `median`, `min`, `max` and
-`count` over its cells with a value, as a table of one row, for example for
-**Compare Scenarios** to chart. `curio_raster_statistics(input_0, band=2)` reads
+`count` over its cells with a value, as a table of one row, for example for a
+Vega-Lite node comparing scenarios to chart. `curio_raster_statistics(input_0, band=2)` reads
 another band. A condition keeps only some cells:
 
 | call | counts |

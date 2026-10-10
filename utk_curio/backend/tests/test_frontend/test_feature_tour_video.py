@@ -1971,9 +1971,14 @@ WHATIF_DATA = "whatif-data"
 WHATIF_POOL = "whatif-pool"
 WHATIF_EDIT = "whatif-towers-edit"
 WHATIF_MAPS = ["whatif-baseline-map", "whatif-modified-map", "whatif-towers-map"]
-WHATIF_COMPARES = ["whatif-compare-chart", "whatif-compare-difference"]
+#: The comparison: the chart, the change and its map, by node type.
+WHATIF_COMPARES = [
+    ("whatif-sunlight-chart", "vis-vega"),
+    ("whatif-sunlight-change", "computation-analysis"),
+    ("whatif-sunlight-change-map", "autk-grammar"),
+]
 WHATIF_BASELINE = "s-baseline"
-WHATIF_BASELINE_NODES = ["whatif-baseline-compute", "whatif-baseline-map"]
+WHATIF_BASELINE_NODES = ["whatif-baseline-compute", "whatif-baseline-map", "whatif-baseline-roads"]
 WHATIF_TWICE = "s-twice"
 DRAWER_SCENARIOS = '[data-curio-scenario-catalog-drawer="true"]'
 
@@ -1990,11 +1995,15 @@ SHADOW_STATS = "8a914e39-4cb1-535d-9a8b-19b45f6be288"
 # FloodScenarios: three Parameter nodes, the period and the region's corners,
 # read by both scenarios' Flood Projection nodes.
 FLOOD_NAME = "FloodScenarios"
-FLOOD_PERIOD = "8f0c1e2a-5b3d-4c7e-9a61-2d4f6b8e0c13"
-FLOOD_TOPLEFT = "c1d2e3f4-0a1b-4c2d-8e3f-4a5b6c7d8e91"
-FLOOD_NO_NBS = "1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58"
-FLOOD_ALL_NBS = "2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69"
-FLOOD_COMPARES = ["7a3d9f1c-5b68-4e0a-9d4e-0f1b5a7c3d62", "9c5f1b3e-7d80-4a2c-8f6a-2b3d7c9e5f84"]
+FLOOD_PERIOD = "7e42b950-0e76-5cde-b794-4ad6a15a5a87"
+FLOOD_TOPLEFT = "5c04f860-4e09-5048-9d43-7439564159c8"
+FLOOD_NO_NBS = "9452b697-1b8f-5467-97f1-431619c3fa22"
+FLOOD_ALL_NBS = "27b90608-bddf-5c7c-b412-e6adc6a5c344"
+#: The comparison: the change in depth and the table, by node type.
+FLOOD_COMPARES = [
+    ("8bdc7401-d983-5420-b863-b9aba4c4a397", "raster-calculator"),
+    ("6e64afd6-5098-54b7-8be9-ecf587472763", "vis-vega"),
+]
 
 # Example 17: downtown Chicago's ZIP codes from one loader, on an Autark map
 # whose ZIP codes a double-click picks. The selectiontag scene adds a Python
@@ -2160,7 +2169,7 @@ def scene_scenarios(ctx: Ctx) -> None:
         ctx, timeout_ms=600000,
         settle=[(m, "autk-grammar") for m in WHATIF_MAPS]
         + [(WHATIF_EDIT, "edit-features")]
-        + [(c, "compare-scenarios") for c in WHATIF_COMPARES],
+        + WHATIF_COMPARES,
     )
     save_dataflow(page)
     page.set_viewport_size(STILL_SIZE)
@@ -2322,7 +2331,7 @@ def scene_parameter(ctx: Ctx) -> None:
     page, tour = ctx.page, ctx.tour
     _open_project(ctx, _account_project(ctx, FLOOD_NAME), [FLOOD_PERIOD, FLOOD_NO_NBS])
     tour.hush()
-    _play_all(ctx, timeout_ms=600000, settle=[(c, "compare-scenarios") for c in FLOOD_COMPARES])
+    _play_all(ctx, timeout_ms=600000, settle=FLOOD_COMPARES)
     page.set_viewport_size(STILL_SIZE)
     page.wait_for_timeout(1500)
     block = [FLOOD_PERIOD, FLOOD_TOPLEFT, FLOOD_NO_NBS, FLOOD_ALL_NBS]

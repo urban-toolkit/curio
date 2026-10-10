@@ -7,7 +7,7 @@
  *
  * Each copy records where it came from at `metadata.copiedFrom`: the
  * original's own lineage, then the original. Two nodes pair when their ids
- * and lineages meet, which is how Compare Scenarios lines up levers.
+ * and lineages meet, which is how two scenarios' levers line up.
  */
 
 export interface SpecNode {

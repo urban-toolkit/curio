@@ -43,8 +43,8 @@ The modes:
   `duration_minutes` and its `rain_exposure`, `heat_exposure`, `wind_exposure`
   and `humidity_exposure`. An Autark map draws it.
 - **metrics**: the same routes as a table: `route`, `route_index`, `distance` in
-  kilometres, `duration` in minutes and the four exposures. Compare Scenarios
-  charts it.
+  kilometres, `duration` in minutes and the four exposures. A Vega-Lite node
+  comparing scenarios charts it.
 
 A route's exposure to a factor is the sum, over its roads, of the factor's
 predicted value weighted by the factor's weight plus the road's travel time
@@ -68,7 +68,7 @@ Model Catalog model `model.scout.weather-gnn`, which the node loads with
 
 ```
 [ Autark: Loop roads ] ──► [ Weather Routing ] ──► [ Routes ] ──► [ Autark: map of the routes ]
-                                              └─► [ Route metrics ] ──► [ Compare Scenarios ]
+                                              └─► [ Route metrics ] ──► [ Vega-Lite: scenarios compared ]
 ```
 
 An Autark node that only loads data hands on its layers, each under its table
@@ -92,7 +92,7 @@ is SCOUT's weather routing example: the node set as SCOUT's example sets it
 (Default weights, midnight on 6 July 2025), over downtown Chicago's roads, the
 Data Catalog's `data.osm.chicago-downtown-roads`, which a Data Loading node loads. Two scenarios each
 keep one of its routes, the fastest and the weather-aware one; a map draws both
-in SCOUT's colors, and four Compare Scenarios charts compare them.
+in SCOUT's colors, and four Vega-Lite bar charts compare them.
 
 ## Setup
 

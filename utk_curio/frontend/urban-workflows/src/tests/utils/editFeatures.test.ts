@@ -96,7 +96,7 @@ describe("the edit list", () => {
     const node = (nodeType: string) => ({ type: CURIO_UNIVERSAL_NODE_TYPE, data: { nodeType } });
     expect(isEditFeaturesNode(node("curio.builtin/edit-features@1"))).toBe(true);
     expect(isEditFeaturesNode(node("curio.builtin/edit-features"))).toBe(true);
-    expect(isEditFeaturesNode(node("curio.builtin/compare-scenarios@1"))).toBe(false);
+    expect(isEditFeaturesNode(node("curio.builtin/vis-vega@1"))).toBe(false);
   });
 });
 

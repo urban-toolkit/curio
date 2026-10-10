@@ -4,9 +4,9 @@ This example runs the per-road sunlight shader from [Example 7](07-autark-gpu-sh
 scenarios over Boston's Back Bay: **Baseline**, with every building at its own height,
 **Twice as tall**, with every building's height doubled, and **Two towers removed**, with two
 towers taken out: 200 Clarendon, the tallest, and Raffles. The height factor is a widget on the
-shadow step, and the towers are removed by an Edit Features node. Two Compare Scenarios nodes compare them: a chart of each
-scenario's mean road sunlight on the June solstice, and a map of the sunlight each road loses when
-the buildings get twice as tall.
+shadow step, and the towers are removed by an Edit Features node. A Vega-Lite node comparing the
+scenarios charts each scenario's mean road sunlight on the June solstice, and a Python node and an
+Autark map show the sunlight each road loses when the buildings get twice as tall.
 
 > [!NOTE]
 > **WebGPU required**
@@ -26,23 +26,28 @@ flowchart LR
   TE["Two towers removed · Edit Features<br/>remove building_id 29623484, 29628154"]
   TC["Two towers removed · autk-grammar<br/>shadow WGSL, height_factor 1"]
   TM["Two towers removed · autk-grammar<br/>map · roads by sunlight"]
-  CC["Compare Scenarios<br/>Chart · mean sunlight"]
-  CD["Compare Scenarios<br/>Difference · sunlight change"]
+  BR["Baseline · Python<br/>roads"]
+  MR["Twice as tall · Python<br/>roads"]
+  TR["Two towers removed · Python<br/>roads"]
+  CC["Vega-Lite · compare scenarios<br/>mean sunlight"]
+  CD["Python<br/>sunlight change"]
+  CM["autk-grammar<br/>map · sunlight change"]
   D --> P
-  P --> BC --> BM
-  P --> MC --> MM
-  P --> TE --> TC --> TM
-  BM --> CC
-  MM --> CC
-  TM --> CC
-  BM --> CD
-  MM --> CD
+  P --> BC --> BM --> BR
+  P --> MC --> MM --> MR
+  P --> TE --> TC --> TM --> TR
+  BR --> CC
+  MR --> CC
+  TR --> CC
+  BR --> CD
+  MR --> CD
+  CD --> CM
 ```
 
 A single `data` node loads the PBF once, and a `data-pool` hands its layers to every scenario.
 The loader and the pool are the scenarios' fixed context: they sit outside all three, and all three
-read them. Each scenario's nodes are its levers: the shadow step and its map, and in Two towers
-removed the Edit Features node before them. In Twice as tall and in Two towers removed the shadow
+read them. Each scenario's nodes are its levers: the shadow step, its map and the node taking the
+map's roads, and in Two towers removed the Edit Features node before them. In Twice as tall and in Two towers removed the shadow
 step and the map are copies of their Baseline twins and name them, so the scenarios' levers are
 paired when they are compared.
 
@@ -176,36 +181,40 @@ coloured by the shader's `sunlight` output column:
 
 ## Comparing the scenarios
 
-Both Compare Scenarios nodes take Baseline's map on their first input and Twice as tall's on
-their second, and Mean sunlight takes Two towers removed's on its third, so each input is labelled
-by its scenario. A map hands on the layers its shadow step computed, all five of them, so each
-node's **Layer** menu is set to `table_osm_roads`: the roads, with their `sunlight`. Their code is
-written for them.
-
-**Mean sunlight** is in Chart: it stacks the three scenarios' roads into one table under a
-`scenario` and a `scenario_name` column, and draws a bar for each scenario's mean `sunlight`, in
-the scenarios' colours. Its **What differs** tab lists two levers: the shadow step, whose
-`height_factor` is 1 in Baseline, 2 in Twice as tall and 1 in Two towers removed, and the Edit
-Features node, only in Two towers removed, with its edit, Remove building_id 29623484, 29628154. The maps
-are alike. It warns about nothing, since the three scenarios read the same pool.
-
-**Sunlight change** is in Difference:
+A map hands on every layer its shadow step computed, all five of them. In each scenario a Python
+node takes the roads, with their `sunlight`, out of the map's layers through the layer chip:
 
 ```python
-# Compare Scenarios writes this code from its inputs: input 1 minus input 0,
-# each under the id and the name of its scenario. It is written again when
-# they change.
-return curio_difference_scenarios([
-    ("s-baseline", "Baseline", [!! input_0 !!]),
-    ("s-twice", "Twice as tall", [!! input_1 !!]),
-], layer="table_osm_roads")
+# The roads layer the Roads by sunlight map draws, each road with its minutes of sunlight.
+roads = [!! input_0:table_osm_roads !!]
+roads.metadata = {"layerType": "roads"}
+return roads
 ```
 
-The roads carry no `osm_id` or `building_id`, so Difference matches them by their shapes: both
-scenarios read the same roads from the pool. Each road holds Twice as tall's sunlight minus
-Baseline's, in `sunlight` and in the `compute` values the shadow step writes, and `change` says
-whether it changed. The map colours the roads by that difference, from the largest loss (dark
-purple) to no change (yellow).
+**Mean sunlight comparison** is a Vega-Lite node with its **Compare scenarios** switch on (Node
+settings). Baseline's roads are on its first input, Twice as tall's on its second and Two towers
+removed's on its third, so each input is one scenario. The node stacks them into one table,
+`scenarios`, every row with its `scenario_name` and `scenario_color`, and its spec draws a bar for
+each scenario's mean `sunlight`, in the scenarios' colours:
+
+```json
+"y": { "aggregate": "mean", "field": "sunlight", "type": "quantitative",
+       "title": "Mean sunlight (minutes)" }
+```
+
+**Sunlight change** is a Python node with Baseline's roads on its first input and Twice as tall's
+on its second. The roads carry no `osm_id` or `building_id`, so it matches them by their shapes:
+both scenarios read the same roads from the pool. Each road holds Twice as tall's sunlight minus
+Baseline's in `sunlight_change`:
+
+```python
+before = by_shape(input_0)[["shape", "match", "sunlight"]].rename(columns={"sunlight": "sunlight_before"})
+changed = by_shape(input_1).merge(before, on=["shape", "match"]).drop(columns=["shape", "match"])
+changed["sunlight_change"] = changed["sunlight"] - changed["sunlight_before"]
+```
+
+**Sunlight change map** is an Autark node drawing those roads coloured by `sunlight_change`, from
+the largest loss (dark purple) to no change (yellow).
 
 ## Final result
 

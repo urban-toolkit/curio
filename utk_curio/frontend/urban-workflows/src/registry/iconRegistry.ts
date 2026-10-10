@@ -22,6 +22,7 @@ import {
   faDatabase,
   faDownload,
   faEraser,
+  faHandPointer,
   faFilm,
   faMap,
   faMapLocationDot,
@@ -84,6 +85,7 @@ registerIcon('fa-solid:code-compare', faCodeCompare);
 registerIcon('fa-solid:calculator', faCalculator);
 registerIcon('fa-solid:chart-simple', faChartSimple);
 registerIcon('fa-solid:eraser', faEraser);
+registerIcon('fa-solid:hand-pointer', faHandPointer);
 registerIcon('fa-solid:street-view', faStreetView);
 registerIcon('fa-solid:wand-magic-sparkles', faWandMagicSparkles);
 // curio.media@1.

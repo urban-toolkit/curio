@@ -17,7 +17,7 @@
       "pyproj": ">=3.7.2"
     }
   },
-  "description": "SCOUT's Deep Umbra shadow model, ported from SCOUT (urban-toolkit/scout): the Accumulated Shadow node runs SCOUT's run_shadow_model on the zoom-16 height tiles Rasterize Buildings (SCOUT Raster Conversion) saved in the dataflow, keeps SCOUT's shadow tiles in the dataflow, and returns the shadow tiles joined into one raster in minutes, which an Autark map draws, with SCOUT's metrics, which Compare Scenarios charts. The model is the Model Catalog's Deep Umbra, model.scout.deep-umbra@1, its ONNX file run as it is; it ships in the Curio repository but not in the pip package.",
+  "description": "SCOUT's Deep Umbra shadow model, ported from SCOUT (urban-toolkit/scout): the Accumulated Shadow node runs SCOUT's run_shadow_model on the zoom-16 height tiles Rasterize Buildings (SCOUT Raster Conversion) saved in the dataflow, keeps SCOUT's shadow tiles in the dataflow, and returns the shadow tiles joined into one raster in minutes, which an Autark map draws, with SCOUT's metrics, which a chart comparing the scenarios draws. The model is the Model Catalog's Deep Umbra, model.scout.deep-umbra@1, its ONNX file run as it is; it ships in the Curio repository but not in the pip package.",
   "id": "scout.shadow",
   "license": "MIT",
   "name": "SCOUT Shadow",
@@ -27,7 +27,7 @@
   "templates": [
     {
       "category": "computation",
-      "description": "SCOUT's accumulated shadow simulation: Deep Umbra, a generator network, predicts for each zoom-16 map tile how much of a season's day each cell spends in shadow, from the heights of the buildings on the tile and its eight neighbours, the tile's latitude and the season. Input: Rasterize Buildings' DATAFRAME of tiles; the height tiles are read from the dataflow's computed dataset the Tiles widget names. SCOUT's run_shadow_model writes a shadow tile per height tile, kept as a computed dataset of the dataflow, and returns SCOUT's metrics (the mean and median accumulated shadow over the ground). Output: (shadow, metrics): a RASTER, the shadow tiles side by side in minutes, on the grid of the tiles' height mosaic (Mosaic Tiles), for an Autark map; and a DATAFRAME of one row, SCOUT's metrics as run_shadow_model computes them (\"Mean Acc shadow\" and \"Median Acc shadow\", in minutes over the ground), for Compare Scenarios. The model is the Model Catalog's Deep Umbra, model.scout.deep-umbra.",
+      "description": "SCOUT's accumulated shadow simulation: Deep Umbra, a generator network, predicts for each zoom-16 map tile how much of a season's day each cell spends in shadow, from the heights of the buildings on the tile and its eight neighbours, the tile's latitude and the season. Input: Rasterize Buildings' DATAFRAME of tiles; the height tiles are read from the dataflow's computed dataset the Tiles widget names. SCOUT's run_shadow_model writes a shadow tile per height tile, kept as a computed dataset of the dataflow, and returns SCOUT's metrics (the mean and median accumulated shadow over the ground). Output: (shadow, metrics): a RASTER, the shadow tiles side by side in minutes, on the grid of the tiles' height mosaic (Mosaic Tiles), for an Autark map; and a DATAFRAME of one row, SCOUT's metrics as run_shadow_model computes them (\"Mean Acc shadow\" and \"Median Acc shadow\", in minutes over the ground), for a chart comparing the scenarios. The model is the Model Catalog's Deep Umbra, model.scout.deep-umbra.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,

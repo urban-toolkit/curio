@@ -269,7 +269,7 @@ moves nodes the way the dashboard page does:
   grammar node's output pane visible under its input (`curio-notebook-split` in
   `Node.css`) without moving either pane, so a chart or map never remounts.
   `notebookOutputBox` gives an output the height its kind gets: a definite one for a
-  chart (320px), an Autark map or plot and a Compare Scenarios view (400px), which have
+  chart (320px), an Autark map or plot (400px), which have
   none of their own; a table, summary or control its own up to 360px; anything else
   360px. `useNotebookEditorHeight` (`components/editing/`) sets a code or spec editor's
   wrapper to Monaco's content height (`onDidContentSizeChange`), at least three lines,
@@ -308,56 +308,23 @@ outcomes produce.
 
 ### Comparing scenarios
 
-The Compare Scenarios node (`curio.builtin/compare-scenarios`) is a Python code
-node whose code it writes itself:
+A Vega-Lite node compares scenarios when its Compare scenarios switch is on
+(`metadata.vegaCompare`, set in Node settings, `NodeTemplateConfigModal`):
 
 - `src/utils/compare/compareInputs.ts` labels each input circle by the scenario its
-  source node is in (`metadata.compareScenarios.inputs`), and `compareCode.ts` writes
-  the code from the labels, one chip per input. `adapters/node/compareScenariosBehavior.tsx`
-  writes both again when the graph's labels differ from the stored ones, never on the
-  dashboard or a shared view, and not while a load has added the nodes but not yet
-  the edges.
-- The code calls `curio_stack_scenarios` (`utk_curio/sandbox/util/scenario_stack.py`),
-  seeded in the in-process namespace (`worker._globals_cache`) and the isolated one
-  (`zygote.build_namespace_template`). A run on the server runs the node as any
-  executable template; `compareCode.cases.json` pins the written code for Jest and
-  for `test_compare_scenarios_node.py`, which resolves it through
-  `WorkflowSpec.node_code` and runs it.
-- `components/compare/CompareChart.tsx` draws the node's own output with `useVega`,
-  with `recordsProvenance` and `forwardsInput` off: the node's provenance is its
-  code, and its run has already handed the table on. The presets are in
-  `comparePresets.ts`, and `comparePresets.cases.json` holds one spec per preset for
-  Jest and for the Vega-Lite check in `test_compare_scenarios_node.py`.
-- In Difference (`compareMode.ts`: `metadata.compareScenarios.mode`, else Difference
-  for two rasters or two layers by the `dataType` of what the circles hold) the code
-  calls `curio_difference_scenarios` (`utk_curio/sandbox/util/scenario_difference.py`)
-  instead; `compareDifference.cases.json` pins it for Jest and for
-  `test_compare_difference_node.py`. The behavior writes the code again when the
-  wanted view differs from the one the code calls, or the key from its `key=`, and
-  never while an input's kind is unknown, as after a load.
-- Two layers or tables are joined in Python. Two rasters are loaded as an Autark map
-  loads them, and an isolated child may not start Node. So the code returns a JSON
-  request (each raster's GeoTIFF bytes and `raster_meta`), and the sandbox's `/exec`
-  completes it after either path ran the code (`complete_raster_difference`):
-  `util/raster_difference.js` runs through `worker.run_js_script`, the runner
-  `execute_js_code` uses, loads both rasters with `loadGeoTiff` by `rasterLoad.ts`'s
-  `planForMeta` and returns their envelopes (`rasterWire.ts`), whose float32 bands
-  `raster_algebra.subtract_envelopes` subtracts (see [Raster algebra](#raster-algebra)).
-  `rasterLoad.ts` and `rasterWire.ts` have no imports at run time, so Node loads them
-  from `src/` by type stripping. The envelope is stored as the node's output, a JSON
-  artifact.
-- `components/compare/CompareDifference.tsx` shows the difference:
-  `CompareMap.tsx` draws a raster or a layer with `useAutkGrammarBehavior`, the
-  Autark node's own map code, on the node's `autk-grammar-map-<nodeId>` canvas, with
-  `marksNodeErrored` off and no output callback, from the document
-  `compareDifference.ts` writes; a table goes through `CompareChart`.
-- `whatDiffers.ts` reads each compared scenario's parts through `scenarioParts`,
-  pairs levers whose ids and `copiedFrom` lists meet, and compares their widget
-  values and code lines, or, for Edit Features nodes, their edit lists;
-  `contextWarnings` compares their fixed context.
-- A pinned Compare Scenarios node draws its own output, so it is its own dashboard
-  source (`SELF_DRAWN_NODE_TYPES` in `dashboardLayout.ts`, `_SELF_DRAWN_KINDS` in
-  `projects/dashboard_payload.py`), and its inputs are not walked.
+  source node is in, or by the node's name in a neutral color.
+- `src/utils/vegaCompare.ts` stacks the inputs' rows into one dataset, `scenarios`,
+  each row with `scenario`, `scenario_name`, `scenario_color` and `scenario_order`,
+  and gives an encoding on the scenario the scenarios' colors or their circle order
+  (`applyScenarioDefaults`). `hook/useVega.ts` hands it the labels (`scenarios`) and
+  adds the dataset beside each input's `input_<n>`.
+- `src/utils/vegaSpecFields.ts` reads the columns a spec asks of its data, less the
+  ones its transforms make, and `components/vega/VegaCompareStrip.tsx` shows each
+  scenario with what its input lacks of them.
+
+A difference between two scenarios is ordinary nodes: a Raster Calculator's
+`curio_raster_calculate("subtract", ..., absolute=...)` for two rasters, or a Python
+node for two layers, drawn by an Autark map.
 
 ### Editing features
 
@@ -366,7 +333,8 @@ code is written from its edit list (`metadata.editFeatures`: `key`, `layer`, `ed
 
 - `src/utils/editFeatures/editFeatures.ts` normalizes the list and writes the code,
   one call of `curio_edit_features` (`utk_curio/sandbox/util/feature_edits.py`),
-  seeded in both namespaces as the Compare Scenarios steps are.
+  seeded in the in-process namespace (`worker._globals_cache`) and the isolated one
+  (`zygote.build_namespace_template`).
   `adapters/node/editFeaturesBehavior.tsx` writes the list and the code together
   when the body changes the list, and marks the node stale.
 - `components/editFeatures/EditFeaturesBody.tsx` reads the input as the Autark map
@@ -716,10 +684,9 @@ Between nodes a raster travels as autk-db's `getRaster` collection in an envelop
 
 ### Raster algebra
 
-[`sandbox/util/raster_algebra.py`](../utk_curio/sandbox/util/raster_algebra.py) is the one implementation of operations over rasters: the Raster Calculator's `curio_raster_calculate`, Raster Statistics' `curio_raster_statistics` and Compare Scenarios' raster Difference all call it. It runs in Python, where a node's rasters are: autk-db reads every band as float32 and loads at most 2048 by 2048 cells, which is what a map draws, not what a computation needs. Rasters are combined only on one grid (`grid_differences`: size, origin, resolution, rotation, CRS, to a relative 1e-9), and a refusal names both grids in words (`describe_grid`, numbers written as JavaScript writes them). A cell is nodata where its raster holds its nodata value or a number that is not finite.
+[`sandbox/util/raster_algebra.py`](../utk_curio/sandbox/util/raster_algebra.py) is the one implementation of operations over rasters: the Raster Calculator's `curio_raster_calculate`, and Raster Statistics' `curio_raster_statistics` call it. It runs in Python, where a node's rasters are: autk-db reads every band as float32 and loads at most 2048 by 2048 cells, which is what a map draws, not what a computation needs. Rasters are combined only on one grid (`grid_differences`: size, origin, resolution, rotation, CRS, to a relative 1e-9), and a refusal names both grids in words (`describe_grid`, numbers written as JavaScript writes them). A cell is nodata where its raster holds its nodata value or a number that is not finite.
 
-- On rasterio datasets (`calculate`, `statistics`) it computes at the inputs' own number type, at least float32, and writes a result as a GeoTIFF with NaN as nodata, named after its content, where `curio_output_file` writes (in process with no media folder, beside the artifacts). Statistics are numpy's `nanmean`, `nanmedian`, `nanmin` and `nanmax` on the band's own 2-D float64 array, nodata and masked-out cells as NaN.
-- On envelopes (`subtract_envelopes`) it subtracts float32 bands as autk-db exported them: Compare Scenarios' Difference is stored as the envelope its map, a reopen and a dashboard tile read.
+- On rasterio datasets (`calculate`, `statistics`) it computes at the inputs' own number type, at least float32 (`subtract` with `absolute=True` gives the difference's size), and writes a result as a GeoTIFF with NaN as nodata, named after its content, where `curio_output_file` writes (in process with no media folder, beside the artifacts). Statistics are numpy's `nanmean`, `nanmedian`, `nanmin` and `nanmax` on the band's own 2-D float64 array, nodata and masked-out cells as NaN.
 
 `curio_load_data("<id>", bounds=(west, south, east, north))` reads a GeoTIFF's window (`rasters.read_window`): the whole cells whose centres lie inside the bounds, on the raster's own grid, every band at its own type and nodata, written as a GeoTIFF of its own. Bounds that reach past the raster, or hold no cell centre, are refused. The dataset scanners (`DATASET_PATH_CALL_RE` and `COLLECTION_CALL_RE` in `code_refs.py`, the agents' `_CATALOG_CALL_RE`, the frontend's `datasetIdsInCode`) take the id as the call's first argument, so options may follow it, and both loader generators name `bounds=None` on a GeoTIFF's line (`LOADER_OPTIONS`).
 

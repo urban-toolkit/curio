@@ -4,7 +4,7 @@ import { useEdges, useUpdateNodeInternals } from 'reactflow';
 import { useNotebookViewContext } from '../providers/flow/notebookViewContext';
 import { notebookCellBox, notebookOutputBox } from '../utils/notebookLayout';
 import { withInputCircles } from '../adapters/node/handleHelpers';
-import { growsInputCircles, inputCapacity, wiredInputSlots } from '../utils/inputSlots';
+import { growsInputCircles, inputCapacity, inputSlotOf, wiredInputSlots } from '../utils/inputSlots';
 import { NodeContainer } from './styles';
 import NodeEditor from './editing/NodeEditor';
 import DescriptionModal from './DescriptionModal';
@@ -98,9 +98,17 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   // or an edge to a new circle would have nothing to attach to.
   const growsCircles = !behavior.handlesOverride && growsInputCircles(descriptor.inputPorts);
   const wiredSlots = growsCircles ? wiredInputSlots(edges, data.nodeId) : [];
-  const baseHandles = growsCircles
+  const circles = growsCircles
     ? withInputCircles(adapter.handles, wiredSlots, inputCapacity(descriptor.inputPorts))
     : adapter.handles;
+  // A behavior may mark its circles (the Vega-Lite node, by scenario).
+  const baseHandles = growsCircles && behavior.inputCircleDecor
+    ? circles.map((h) => {
+        const slot = h.type === "target" ? inputSlotOf(h.id) : -1;
+        const decor = slot >= 0 ? behavior.inputCircleDecor!(slot) : undefined;
+        return decor ? { ...h, style: { ...(h.style ?? {}), ...(decor.style ?? {}) }, ...(decor.title ? { title: decor.title } : {}) } : h;
+      })
+    : circles;
   const circleIds = baseHandles.map((h) => h.id).join(",");
   const updateNodeInternals = useUpdateNodeInternals();
   useEffect(() => {
@@ -490,6 +498,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
             readOnly={readOnly || lockedByOther}
             floatCode={nodeState.setCode}
             contentComponent={behavior.contentComponent}
+            outputHeader={behavior.outputHeader}
           />
         ) : (
           // ``editor: "none"`` in the manifest means there's no tabbed editor

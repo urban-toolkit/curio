@@ -9,6 +9,7 @@
 export const RASTER_CALCULATOR_CODE = `# Raster Calculator: one operation over rasters on one grid, cell by cell.
 # Connect the rasters to the input circles, in order, and name the operation:
 #   "add", "subtract", "multiply" or "divide": input_0 with input_1;
+#   "subtract" with absolute=True: the size of the difference;
 #   "choose": input_1 where input_0's class is one of codes, else input_2,
 #   for example curio_raster_calculate("choose", [input_0, input_1, input_2], codes=[21, 31]).
 # A cell that is nodata in an input the operation reads is nodata in the result.

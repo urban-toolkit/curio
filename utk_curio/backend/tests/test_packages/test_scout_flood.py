@@ -9,8 +9,9 @@ Projection node hands it the Data Catalog's bundle ``data.scout.quad-cities-floo
 ``(depth, metrics)``. The shipped dataflow
 ``FloodScenarios.json`` runs it twice, with no nature-based solution (NbS) and
 with all six, on SCOUT's flood example's corners and period, and compares the
-two as SCOUT's example does: a map of each depth, a map of how much it changes,
-and a table of the median flood depth.
+two as SCOUT's example does: a map of each depth, a map of how much it changes
+(a Raster Calculator's absolute difference), and a Vega-Lite table comparing
+the scenarios' median and mean flood depth.
 
 The proof: SCOUT's own function (``fixtures/scout_flood/``, copied unchanged),
 on the bundle, gives what it gave on SCOUT's own files (``PINS``, printed by
@@ -40,7 +41,8 @@ DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "FloodScenarios.json"
 SCOUT_FUNCTION = Path(__file__).resolve().parent / "fixtures" / "scout_flood" / "flood_simulation.py"
 PYTHON = "curio.builtin/computation-analysis"
 PARAMETER = "curio.builtin/parameter"
-COMPARE = "curio.builtin/compare-scenarios"
+CALCULATOR = "curio.builtin/raster-calculator"
+VEGA = "curio.builtin/vis-vega"
 MAP = "curio.builtin/autk-grammar"
 
 DATASET_ID = "data.scout.quad-cities-flood"
@@ -410,7 +412,8 @@ def test_the_shipped_dataflow_is_scouts_flood_example():
     """Three Parameter nodes both scenarios share (the period and SCOUT's
     corners); per scenario a Flood Projection node, a node taking its depth
     for its map, and one taking SCOUT's metrics, named after the scenario; an
-    absolute difference of the two depths and a table of the two medians. No NbS has no solution chosen,
+    absolute difference of the two depths (a Raster Calculator) with its map,
+    and a Vega-Lite table of the two scenarios' metrics. No NbS has no solution chosen,
     All NbS all six, a copy of it."""
     from utk_curio.backend.app.execution.code_references import resolve_references
 
@@ -420,7 +423,7 @@ def test_the_shipped_dataflow_is_scouts_flood_example():
     counts = {}
     for n in spec["nodes"]:
         counts[n["type"]] = counts.get(n["type"], 0) + 1
-    assert counts == {PARAMETER: 3, NODE_TYPE: 2, PYTHON: 4, MAP: 2, COMPARE: 2}
+    assert counts == {PARAMETER: 3, NODE_TYPE: 2, PYTHON: 4, MAP: 3, CALCULATOR: 1, VEGA: 1}
 
     parameters = {n["metadata"]["widgets"][0]["name"]: n["metadata"]["widgets"][0] for n in _nodes(PARAMETER)}
     template = {w["name"]: w for w in _template()["widgets"]}
@@ -462,11 +465,15 @@ def test_the_shipped_dataflow_is_scouts_flood_example():
     copies = {nodes[i]["metadata"]["copiedFrom"][-1] for i in scenarios["all-nbs"]["nodes"]}
     assert copies == set(scenarios["no-nbs"]["nodes"])
 
-    compares = {n["metadata"]["compareScenarios"]["mode"]: n for n in _nodes(COMPARE)}
-    difference, table = compares["difference"], compares["chart"]
-    assert difference["metadata"]["compareScenarios"]["difference"] == {"colors": "interpolateBlues", "absolute": True}
-    assert difference["content"].endswith("], absolute=True)")
-    assert table["metadata"]["compareScenarios"]["chart"] == {"preset": "pie", "y": "median flood depth", "aggregate": "none"}
+    (difference,) = _nodes(CALCULATOR)
+    assert difference["content"].splitlines()[-1] == (
+        'return curio_raster_calculate("subtract", [input_1, input_0], absolute=True)'
+    )
+    (change_map,) = [n for n in _nodes(MAP) if into.get((n["id"], "in")) == difference["id"]]
+    (layer,) = json.loads(change_map["content"])["map"]["layerRefs"]
+    assert (layer["colorMapInterpolator"], layer["legendTitle"]) == ("interpolateBlues", "Flood depth change (m)")
+    (table,) = _nodes(VEGA)
+    assert table["metadata"]["vegaCompare"] == {"enabled": True}
     scenario_of = {i: s["id"] for s in spec["scenarios"] for i in s["nodes"]}
     for node, part in ((difference, "Depth"), (table, "Metrics")):
         sources = {h: into[(node["id"], h)] for h in ("in", "in_1")}

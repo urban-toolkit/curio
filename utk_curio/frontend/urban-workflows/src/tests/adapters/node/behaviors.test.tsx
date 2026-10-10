@@ -193,6 +193,8 @@ const BEHAVIOR_RESULT_KEYS: (keyof NodeBehaviorResult)[] = [
   'setOutputCallbackOverride',
   'outputOverride',
   'outputIdOverride',
+  'outputHeader',
+  'inputCircleDecor',
   'disablePlay',
   'dynamicHandles',
   'handlesOverride',

@@ -9,7 +9,7 @@ Output: (routes, metrics).
   (weight_type), route_index, distance_m in metres, duration_minutes and the
   route's rain, heat, wind and humidity exposure. An Autark map draws it.
 - metrics: the same routes as a table: route, route_index, distance in km,
-  duration in minutes and the four exposures, for Compare Scenarios.
+  duration in minutes and the four exposures, for a chart comparing the scenarios.
 The Widgets tab sets the origin and destination, the mode, K, the start time
 (local time where the weather is, Chicago) and the rain and wind weights.
 Ported from SCOUT, https://github.com/urban-toolkit/scout.

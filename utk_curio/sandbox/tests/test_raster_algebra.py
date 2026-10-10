@@ -1,10 +1,7 @@
 """Curio's raster algebra (``util/raster_algebra.py``) and its raster helpers
 (``util/rasters.py``): one implementation of operations over rasters.
 
-- Compare Scenarios' Difference subtracts two Autark envelopes: the comparison
-  minus the reference, cell by cell, on one grid, two grids that differ refused
-  with both named. These are the cases ``rasterArithmetic.test.ts`` held when
-  the subtraction was Curio's Autark adapter's.
+- Grids: two that differ are named in words, numbers as JavaScript writes them.
 - The Raster Calculator computes on rasterio datasets at their own number
   type, nodata as NaN; Raster Statistics gives numpy's numbers on a band.
 - ``curio_load_data("<id>", bounds=...)`` reads the cells whose centres lie in
@@ -16,7 +13,6 @@ test rather than at collection.
 """
 from __future__ import annotations
 
-import base64
 import math
 import os
 
@@ -38,129 +34,6 @@ def rasters():
     from utk_curio.sandbox.util import rasters as module
 
     return module
-
-
-# ---------------------------------------------------------------------------
-# Envelopes, as autk-db's getRaster exports them
-# ---------------------------------------------------------------------------
-
-def _envelope(values: dict, grid: dict = GRID) -> dict:
-    properties = {
-        "rasterResX": grid["width"],
-        "rasterResY": grid["height"],
-        "bands": [{"id": band, "label": band} for band in values],
-    }
-    for band, cells in values.items():
-        array = np.array([np.nan if v is None else v for v in cells], dtype="<f4")
-        properties[band] = {"float32le": base64.b64encode(array.tobytes()).decode("ascii")}
-    return {
-        "dataType": "raster",
-        "data": {
-            "type": "FeatureCollection",
-            "bbox": [-9785700, 5110100, -9785610, 5110160],
-            "grid": dict(grid),
-            "features": [{"type": "Feature", "geometry": None, "properties": properties}],
-        },
-    }
-
-
-def _cells(envelope: dict, band: str = "band_1") -> list:
-    wire = envelope["data"]["features"][0]["properties"][band]["float32le"]
-    return [None if math.isnan(v) else float(v) for v in np.frombuffer(base64.b64decode(wire), dtype="<f4")]
-
-
-class TestSubtractEnvelopes:
-    def test_the_result_is_the_comparison_minus_the_reference_positive_where_it_is_higher(self):
-        result = algebra().subtract_envelopes(
-            ("No NbS", _envelope({"band_1": [1, 2, 3, 4, 5, 6]})),
-            ("NbS", _envelope({"band_1": [1, 5, 1, 4.5, 15, 0]})),
-        )
-        assert _cells(result) == [0, 3, -2, 0.5, 10, -6]
-
-    def test_swapping_the_two_flips_every_sign(self):
-        a = ("A", _envelope({"band_1": [1, 2, 3, 4, 5, 6]}))
-        b = ("B", _envelope({"band_1": [6, 5, 4, 3, 2, 1]}))
-        assert _cells(algebra().subtract_envelopes(a, b)) == [5, 3, 1, -1, -3, -5]
-        assert _cells(algebra().subtract_envelopes(b, a)) == [-5, -3, -1, 1, 3, 5]
-
-    def test_an_absolute_difference_is_each_cells_size_of_change_whichever_is_higher(self):
-        a = ("A", _envelope({"band_1": [1, 2, 3, 4, 5, 6]}))
-        b = ("B", _envelope({"band_1": [6, 5, 4, 4, 2, 1]}))
-        assert _cells(algebra().subtract_envelopes(a, b, absolute=True)) == [5, 3, 1, 0, 3, 5]
-        assert _cells(algebra().subtract_envelopes(b, a, absolute=True)) == [5, 3, 1, 0, 3, 5]
-
-    def test_a_nodata_cell_on_either_side_is_nodata_in_the_result(self):
-        result = algebra().subtract_envelopes(
-            ("A", _envelope({"band_1": [None, 2, 3, 4, 5, 6]})),
-            ("B", _envelope({"band_1": [1, 2, None, 4, 5, 6]})),
-        )
-        assert _cells(result) == [None, 0, None, 0, 0, 0]
-
-    def test_every_band_is_subtracted_and_the_result_is_a_raster_collection_autk_map_draws(self):
-        result = algebra().subtract_envelopes(
-            ("A", _envelope({"band_1": [1] * 6, "band_2": [2] * 6})),
-            ("B", _envelope({"band_1": [3] * 6, "band_2": [0] * 6})),
-        )
-        assert _cells(result, "band_1") == [2] * 6
-        assert _cells(result, "band_2") == [-2] * 6
-        # The shape autk-map's loadCollection({type: 'raster', property}) reads.
-        assert result["dataType"] == "raster"
-        collection = result["data"]
-        assert collection["type"] == "FeatureCollection"
-        assert len(collection["bbox"]) == 4
-        assert collection["grid"] == GRID
-        (feature,) = collection["features"]
-        assert feature["geometry"] is None
-        assert feature["properties"]["rasterResX"] == 3
-        assert feature["properties"]["rasterResY"] == 2
-        assert feature["properties"]["bands"] == [{"id": "band_1", "label": "band_1"}, {"id": "band_2", "label": "band_2"}]
-
-    def test_the_difference_is_float32_of_the_exact_difference(self):
-        """Each cell is the float32 nearest the difference of the two float32
-        values, as a Float32Array holds a number."""
-        a = np.float32(0.1)
-        b = np.float32(16777217.0)
-        result = algebra().subtract_envelopes(("A", _envelope({"band_1": [float(a)] * 6})),
-                                              ("B", _envelope({"band_1": [float(b)] * 6})))
-        assert _cells(result)[0] == float(np.float32(float(b) - float(a)))
-
-    def test_it_keeps_the_references_properties_and_takes_the_comparisons_extent_and_grid(self):
-        reference = _envelope({"band_1": [1] * 6})
-        reference["data"]["features"][0]["properties"]["note"] = "from the reference"
-        comparison = _envelope({"band_1": [2] * 6}, {**GRID, "originX": GRID["originX"] + 1e-7})
-        comparison["data"]["bbox"] = [1, 2, 3, 4]
-        result = algebra().subtract_envelopes(("A", reference), ("B", comparison))
-        assert result["data"]["features"][0]["properties"]["note"] == "from the reference"
-        assert result["data"]["bbox"] == [1, 2, 3, 4]
-        assert result["data"]["grid"] == comparison["data"]["grid"]
-
-    @pytest.mark.parametrize("what,change", [
-        ("size", {"width": 2, "height": 3}),
-        ("origin", {"originX": 447030}),
-        ("resolution", {"resX": 10, "resY": -10}),
-        ("CRS", {"crs": "EPSG:26916"}),
-    ])
-    def test_grids_that_differ_are_refused_naming_both(self, what, change):
-        other = {**GRID, **change}
-        with pytest.raises(algebra().RasterAlgebraError) as refused:
-            algebra().subtract_envelopes(
-                ("Reference depth", _envelope({"band_1": [1, 2, 3, 4, 5, 6]})),
-                ("Comparison depth", _envelope({"band_1": [1, 2, 3, 4, 5, 6]}, other)),
-            )
-        describe = algebra().describe_grid
-        assert str(refused.value) == (
-            f"Comparison depth minus Reference depth cannot be computed: their grids differ in {what}. "
-            f"Reference depth is {describe(GRID)}; Comparison depth is {describe(other)}. "
-            "Put both on one grid first."
-        )
-
-    def test_bands_that_differ_are_refused_naming_both(self):
-        with pytest.raises(algebra().RasterAlgebraError) as refused:
-            algebra().subtract_envelopes(
-                ("A", _envelope({"band_1": [1, 2, 3, 4, 5, 6]})),
-                ("B", _envelope({"band_1": [1, 2, 3, 4, 5, 6], "band_2": [1, 2, 3, 4, 5, 6]})),
-            )
-        assert str(refused.value) == "B minus A cannot be computed: their bands differ. A has band_1; B has band_1, band_2."
 
 
 class TestGrids:
@@ -241,6 +114,31 @@ class TestCalculate:
         a = _raster(tmp_path / "a.tif", [[-9999.0, 2.0, np.nan, 4.0]])
         b = _raster(tmp_path / "b.tif", [[1.0, -9999.0, 3.0, 1.0]])
         assert _values(algebra().calculate("add", [a, b], output_file=out)) == [[None, None, None, 5.0]]
+
+    def test_an_absolute_subtraction_is_each_cells_size_of_change_its_nodata_kept(self, tmp_path, out):
+        a = _raster(tmp_path / "a.tif", [[1.0, 2.0, 3.0, 4.0, -9999.0]])
+        b = _raster(tmp_path / "b.tif", [[6.0, 5.0, 4.0, 4.0, 1.0]])
+        assert _values(algebra().calculate("subtract", [b, a], absolute=True, output_file=out)) == [
+            [5.0, 3.0, 1.0, 0.0, None]
+        ]
+        assert _values(algebra().calculate("subtract", [a, b], absolute=True, output_file=out)) == [
+            [5.0, 3.0, 1.0, 0.0, None]
+        ]
+        # The signed result is written under a name of its own.
+        signed = algebra().calculate("subtract", [a, b], output_file=out)
+        assert _values(signed) == [[-5.0, -3.0, -1.0, 0.0, None]]
+
+    @pytest.mark.parametrize("operation", ["add", "multiply", "divide"])
+    def test_only_subtract_takes_absolute(self, tmp_path, out, operation):
+        a = _raster(tmp_path / "a.tif", [[1.0]])
+        b = _raster(tmp_path / "b.tif", [[2.0]])
+        with pytest.raises(algebra().RasterAlgebraError, match=f"Only subtract takes absolute; {operation} takes none."):
+            algebra().calculate(operation, [a, b], absolute=True, output_file=out)
+
+    def test_absolute_is_true_or_false(self, tmp_path, out):
+        a = _raster(tmp_path / "a.tif", [[1.0]])
+        with pytest.raises(algebra().RasterAlgebraError, match="absolute is True or False"):
+            algebra().calculate("subtract", [a, a], absolute="yes", output_file=out)
 
     def test_choose_takes_input_1_where_the_class_is_one_of_the_codes_and_input_2_elsewhere(self, tmp_path, out):
         classes = _raster(tmp_path / "classes.tif", [[21, 31, 43, 0, 21]], dtype="uint8", nodata=0)

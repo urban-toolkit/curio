@@ -81,6 +81,8 @@ export interface HandleDef {
   dynamicStyle?: (data: any, edges: Edge[]) => React.CSSProperties;
   /** Override default connectable logic per-handle. */
   isConnectableOverride?: (data: any, isConnectable: boolean, edges: Edge[]) => boolean;
+  /** A tooltip for the handle on the canvas. */
+  title?: string;
 }
 
 /* ── NodeEditor configuration ──────────────────────────────────────── */
@@ -173,6 +175,16 @@ export interface NodeBehaviorResult {
    * behavior hook owns the convention (e.g. Vega uses `"vega" + nodeId`).
    */
   outputIdOverride?: string;
+  /**
+   * Shown above the output container named by `outputIdOverride`, which keeps
+   * the rest of the pane (the Vega-Lite node's Compare scenarios strip).
+   */
+  outputHeader?: React.ReactNode;
+  /**
+   * A style and a tooltip for input circle *slot*, merged into the circle a
+   * growing input draws (the Vega-Lite node colors a circle by its scenario).
+   */
+  inputCircleDecor?: (slot: number) => { style?: React.CSSProperties; title?: string } | undefined;
 }
 
 /**

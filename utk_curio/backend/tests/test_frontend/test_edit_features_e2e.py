@@ -13,9 +13,7 @@ own map code, and removed:
 3. Remove makes an edit, written into the node's code.
 4. Run, the node's output has lost the building with every part, so the count
    downstream drops.
-5. A Compare Scenarios node over both counts lists the edit in its What differs
-   tab, against no edits in Every building.
-6. The edit list is saved with the dataflow.
+5. The edit list is saved with the dataflow.
 
 It runs an Autark map, which needs WebGPU: without an adapter it skips, unless
 ``CURIO_REQUIRE_HARDWARE_WEBGPU=1`` (CI's GPU job), where it fails.
@@ -31,11 +29,11 @@ import json
 import time
 from typing import TYPE_CHECKING
 
-from .test_compare_scenarios_e2e import _OUTPUT_ARTIFACT_JS
 from .test_scenario_drop_e2e import _saved_spec
 from .test_scenarios_canvas_e2e import _require_webgpu
 from .test_widget_tags_e2e import _open_tab
 from .utils import (
+    OUTPUT_ARTIFACT_JS,
     assert_in_view,
     dismiss_toasts,
     frame_nodes,
@@ -62,7 +60,6 @@ EDIT_TYPE = "curio.builtin/edit-features"
 LOAD = "ef-load"
 EDIT, EDIT_2 = "ef-edit", "ef-edit-2"
 COUNT, COUNT_2 = "ef-count", "ef-count-2"
-COMPARE = "ef-compare"
 EVERY, LESS = "s-every", "s-less"
 
 # Building 1 in two parts, side by side on the left; building 2, one part as
@@ -115,11 +112,9 @@ def _spec() -> dict:
                 node(COUNT, "curio.builtin/computation-analysis", 1400, 0, COUNT_CODE, "Count"),
                 node(EDIT_2, EDIT_TYPE, 700, 600, EMPTY_LIST, "Edit Features", {**key_only, "copiedFrom": [EDIT]}),
                 node(COUNT_2, "curio.builtin/computation-analysis", 1400, 600, COUNT_CODE, "Count", {"copiedFrom": [COUNT]}),
-                node(COMPARE, "curio.builtin/compare-scenarios", 2100, 300, "", "Compare"),
             ],
             "edges": [
                 edge(LOAD, EDIT), edge(EDIT, COUNT), edge(LOAD, EDIT_2), edge(EDIT_2, COUNT_2),
-                edge(COUNT, COMPARE, "in"), edge(COUNT_2, COMPARE, "in_1"),
             ],
             "scenarios": [
                 {"id": EVERY, "name": "Every building", "color": "#3567c7", "nodes": [EDIT, COUNT]},
@@ -135,7 +130,7 @@ def _done(page, node_id: str, node_type: str = "") -> None:
 
 
 def _count(page, node_id: str) -> int:
-    artifact = page.evaluate(_OUTPUT_ARTIFACT_JS, node_id)
+    artifact = page.evaluate(OUTPUT_ARTIFACT_JS, node_id)
     assert artifact, f"{node_id} shows no saved output"
     stored = load_artifact_as_dict(artifact)
     assert stored["dataType"] == "int", stored
@@ -182,7 +177,7 @@ def _pick_a_building(page) -> int:
     raise AssertionError(f"no double-click on the Edit Features map picked a building: {tried}")
 
 
-def test_a_building_picked_and_removed_drops_the_count_and_is_listed_as_what_differs(
+def test_a_building_picked_and_removed_drops_the_count(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     require_project_page()
@@ -199,7 +194,7 @@ def test_a_building_picked_and_removed_drops_the_count_and_is_listed_as_what_dif
     )
     require_owner_view(page)
     token, project_id = session["token"], session["project"]["id"]
-    for node_id in (LOAD, EDIT, EDIT_2, COUNT, COUNT_2, COMPARE):
+    for node_id in (LOAD, EDIT, EDIT_2, COUNT, COUNT_2):
         node_locator(page, node_id).wait_for(state="visible", timeout=45000)
     _require_webgpu(page)
 
@@ -227,7 +222,7 @@ def test_a_building_picked_and_removed_drops_the_count_and_is_listed_as_what_dif
     assert edit.locator("[data-edit-refusal]").count() == 0
     save_node_closeup(
         page, "edit-features", EDIT_2,
-        test_name="test_a_building_picked_and_removed_drops_the_count_and_is_listed_as_what_differs",
+        test_name="test_a_building_picked_and_removed_drops_the_count",
         sweep_toasts=True,
     )
 
@@ -259,21 +254,7 @@ def test_a_building_picked_and_removed_drops_the_count_and_is_listed_as_what_dif
     )
     assert _count(page, COUNT) == 3, "the other scenario's count changed"
 
-    # 5. What differs lists the edit, against no edits in Every building.
-    compare = node_locator(page, COMPARE)
-    frame_nodes(page, [COMPARE])
-    _open_tab(page, COMPARE, "output")
-    compare.get_by_role("tab", name="What differs", exact=True).click()
-    lever = compare.locator(f'[data-compare-lever="{EDIT}"]')
-    lever.wait_for(state="visible", timeout=15000)
-    edits = lever.locator(f'[data-compare-edits="{LESS}"]').inner_text()
-    assert "One removed:" in edits and f"Remove building_id {picked}" in edits, edits
-    assert "no edits" in lever.locator(f'[data-compare-edits="{EVERY}"]').inner_text()
-    assert lever.locator("[data-compare-code]").count() == 0, "What differs lists the code lines the edit list wrote"
-    levers = compare.locator("[data-compare-lever]").evaluate_all("els => els.map((el) => el.getAttribute('data-compare-lever'))")
-    assert levers == [EDIT], f"What differs lists {levers}, not only the Edit Features node"
-
-    # 6. The edit list is saved with the dataflow.
+    # 5. The edit list is saved with the dataflow.
     save_dataflow(page)
     saved = {node["id"]: node for node in _saved_spec(current_server, token, project_id)["dataflow"]["nodes"]}
     assert saved[EDIT_2]["metadata"]["editFeatures"] == {
@@ -282,3 +263,84 @@ def test_a_building_picked_and_removed_drops_the_count_and_is_listed_as_what_dif
     }, json.dumps(saved[EDIT_2]["metadata"])
     assert saved[EDIT_2]["content"] == code
     assert saved[EDIT]["metadata"]["editFeatures"] == {"key": "building_id"}
+
+
+#: The second scenario's last node, for the Interaction test: the buildings'
+#: total height, which a nudge changes and a removal does not need to.
+TOTAL_CODE = 'return float(input_0["height"].sum())\n'
+HEIGHTS = {1: 20.0 + 35.0, 2: 50.0}
+
+
+def _total(page, node_id: str) -> float:
+    artifact = page.evaluate(OUTPUT_ARTIFACT_JS, node_id)
+    assert artifact, f"{node_id} shows no saved output"
+    stored = load_artifact_as_dict(artifact)
+    assert stored["dataType"] in ("float", "int"), stored
+    return float(stored["data"])
+
+
+def test_interaction_raises_a_building_and_updates_the_results(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """The Interaction node: a picked building raised with the arrow key, one
+    entry however often it is pressed; the node after it marked out of date;
+    Update results runs it with the edit; undo takes the edit back."""
+    require_project_page()
+    require_user_auth()
+    page.emulate_media(reduced_motion="reduce")
+    spec = _spec()
+    for node in spec["dataflow"]["nodes"]:
+        if node["id"] == COUNT_2:
+            node["content"], node["title"] = TOTAL_CODE, "Total height"
+    stub_login_and_enter_workflow(
+        page, frontend_url=app_frontend.base_url, backend_url=current_server,
+        name="Interaction", username="interaction_e2e", project_name="Interaction", project_spec=spec,
+    )
+    require_owner_view(page)
+    for node_id in (LOAD, EDIT_2, COUNT_2):
+        node_locator(page, node_id).wait_for(state="visible", timeout=45000)
+    _require_webgpu(page)
+    run_all_and_wait(page, timeout_ms=300000)
+    _done(page, EDIT_2, EDIT_TYPE)
+    _done(page, COUNT_2)
+    before = _total(page, COUNT_2)
+    assert before == sum(HEIGHTS.values())
+
+    edit = node_locator(page, EDIT_2)
+    frame_nodes(page, [EDIT_2])
+    _open_tab(page, EDIT_2, "output")
+    edit.locator('[data-edit-map-state="drawn"]').wait_for(state="attached", timeout=90000)
+    picked = _pick_a_building(page)
+
+    # Two presses of ↑ on the focused node: one entry, 2 × 3 m.
+    edit.locator("[data-edit-body]").focus()
+    page.keyboard.press("ArrowUp")
+    page.keyboard.press("ArrowUp")
+    entry = edit.locator('[data-edit-op="offset"]')
+    entry.wait_for(state="attached", timeout=10000)
+    assert edit.locator("[data-edit-list]").get_attribute("data-edit-list") == "1"
+    assert f"Raise height by 6 on building_id {picked}" in entry.inner_text()
+    # The node after it is out of date until the results are updated.
+    update = edit.get_by_test_id("interaction-update")
+    page.wait_for_function(
+        "(id) => /\\(1\\)/.test(document.querySelector(`.react-flow__node[data-id=\"${id}\"] [data-testid=\"interaction-update\"]`)?.textContent || '')",
+        arg=EDIT_2, timeout=10000,
+    )
+    update.click()
+    _done(page, EDIT_2, EDIT_TYPE)
+    _done(page, COUNT_2)
+    deadline = time.time() + 30
+    while time.time() < deadline and _total(page, COUNT_2) == before:
+        page.wait_for_timeout(500)
+    assert _total(page, COUNT_2) == before + 6 * PARTS[picked]
+
+    # Undo, and update again: back to the input's heights.
+    edit.locator("[data-edit-body]").focus()
+    page.keyboard.press("ControlOrMeta+z")
+    edit.locator('[data-edit-list="0"]').wait_for(state="attached", timeout=10000)
+    update.click()
+    _done(page, COUNT_2)
+    deadline = time.time() + 30
+    while time.time() < deadline and _total(page, COUNT_2) != before:
+        page.wait_for_timeout(500)
+    assert _total(page, COUNT_2) == before

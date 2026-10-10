@@ -9,7 +9,8 @@ tiles Rasterize Buildings (``scout.raster-conversion@1``) saved in the dataflow
 writes SCOUT's shadow tiles and returns SCOUT's metrics, where SCOUT saves them
 as a CSV. The package's own ``mosaic`` joins the shadow tiles into one raster in
 minutes, on the grid of the height mosaic; the node returns it with the metrics,
-which the shipped dataflow ``ScoutShadows.json`` charts with Compare Scenarios.
+which the shipped dataflow ``WhatIfShadows.json`` compares on a Vega-Lite pie
+and maps the change of with a Raster Calculator and an Autark map.
 
 The proof starts from SCOUT's own files, copied unchanged into
 ``fixtures/scout/`` (see its ``ATTRIBUTION.md``): SCOUT's committed height tiles
@@ -67,7 +68,7 @@ MODEL = MODEL_DIR / "files" / "deep_umbra.onnx"
 #: docstring pins.
 MODEL_SHA256 = "67afb9d2d56bd0a12164e6e651214d56860ff689728c5b6f29486f21c3cb188e"
 BUILDINGS = REPO / "datasets" / "data.scout.loop-buildings@1" / "data" / "loop-buildings.geojson"
-DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "ScoutShadows.json"
+DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "WhatIfShadows.json"
 RASTER_PACKAGE = REPO / "packages" / "scout.raster-conversion@1"
 RASTER_MODULE = "scout_raster_conversion"
 
@@ -504,14 +505,14 @@ def test_the_season_and_the_names_reach_the_call(workspace, tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
-    """``ScoutShadows.json`` is how its CI run reaches this package: its nodes
+    """``WhatIfShadows.json`` is how its CI run reaches this package: its nodes
     hold the templates' own sources and widgets, the shadow nodes reading the
     season from the one Parameter node both scenarios share. Each scenario
     saves its tiles and its shadow tiles under names of its own;
     its Accumulated Shadow reads Rasterize Buildings' table and its tiles, and
-    two nodes take its (shadow, metrics) apart. The chart reads SCOUT's
-    metrics, one value per scenario, with no aggregate, the difference and the
-    map the shadow. The model is no dataset of
+    two nodes take its (shadow, metrics) apart. The Vega-Lite pie reads SCOUT's
+    metrics, one value per scenario, the Raster Calculator and the maps the
+    shadow. The model is no dataset of
     the dataflow."""
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code, model_ids_in_code
 
@@ -568,18 +569,22 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     for node in pickers:
         assert nodes[into[(node["id"], "in")]]["type"] == NODE_TYPE
         assert node["content"].splitlines()[-1] in ("return input_0[0]", "return input_0[1]")
-    chart, difference = sorted(by_type["curio.builtin/compare-scenarios"],
-                               key=lambda n: n["metadata"]["compareScenarios"]["mode"])
-    assert chart["metadata"]["compareScenarios"]["mode"] == "chart"
-    assert chart["metadata"]["compareScenarios"]["chart"]["y"] == "Mean Acc shadow"
-    # One row per scenario: each bar is SCOUT's mean as it is.
-    assert chart["metadata"]["compareScenarios"]["chart"]["aggregate"] == "none"
+    (chart,) = by_type["curio.builtin/vis-vega"]
+    assert chart["metadata"]["vegaCompare"] == {"enabled": True}
+    # One row per scenario: each slice is SCOUT's mean as it is.
+    assert json.loads(chart["content"])["encoding"]["theta"]["field"] == "Mean Acc shadow"
+    (difference,) = by_type["curio.builtin/raster-calculator"]
+    assert difference["content"].splitlines()[-1] == (
+        'return curio_raster_calculate("subtract", [input_1, input_0], absolute=True)'
+    )
     for compare, part in ((chart, "return input_0[1]"), (difference, "return input_0[0]")):
         for handle in ("in", "in_1"):
             picker = nodes[into[(compare["id"], handle)]]
             assert picker["content"].splitlines()[-1] == part, (compare["id"], handle)
-    shadow_maps = [n for n in by_type["curio.builtin/autk-grammar"] if "Accumulated shadow" in n["content"]]
+    shadow_maps = [n for n in by_type["curio.builtin/autk-grammar"] if '"Accumulated shadow (minutes)"' in n["content"]]
     assert len(shadow_maps) == 2
+    (change_map,) = [n for n in by_type["curio.builtin/autk-grammar"] if into.get((n["id"], "in")) == difference["id"]]
+    assert '"Accumulated shadow change (minutes)"' in change_map["content"]
     for themap in shadow_maps:
         assert nodes[into[(themap["id"], "in")]]["content"].splitlines()[-1] == "return input_0[0]"
 

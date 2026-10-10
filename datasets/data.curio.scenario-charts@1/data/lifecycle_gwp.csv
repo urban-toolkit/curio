@@ -1,0 +1,13 @@
+case,stage,order,gwp
+Baseline,A1-A3,0,6.9
+Baseline,A4,1,0.6
+Baseline,A5,2,1.1
+Baseline,B4,3,1.0
+Baseline,B6,4,2.3
+Baseline,C3-C4,5,1.0
+Proposal,A1-A3,0,0.4
+Proposal,A4,1,0.6
+Proposal,A5,2,0.7
+Proposal,B4,3,0.9
+Proposal,B6,4,2.2
+Proposal,C3-C4,5,3.7

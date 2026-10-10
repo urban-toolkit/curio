@@ -1,0 +1,100 @@
+{
+  "description": "The Interaction node's expressions and edit log, read by both utils/editFeatures (Jest) and utk_curio/sandbox/util/feature_edits.py (pytest), so the map's preview and the node's run apply an edit the same way. `features` are the input's properties in order; `expected` the kept features' properties after the edits, in order.",
+  "expressions": [
+    { "expr": "height > 100", "row": { "height": 120 }, "value": true },
+    { "expr": "height > 100", "row": { "height": 80 }, "value": false },
+    { "expr": "height > 100", "row": {}, "value": false },
+    { "expr": "levels * 3.2", "row": { "levels": 10 }, "value": 32 },
+    { "expr": "levels * 3.5", "row": { "levels": 3 }, "value": 10.5 },
+    { "expr": "-height + 1", "row": { "height": 5 }, "value": -4 },
+    { "expr": "(a + b) * 2 % 5", "row": { "a": 1, "b": 2 }, "value": 1 },
+    { "expr": "a / 0", "row": { "a": 1 }, "value": null },
+    { "expr": "a + 1", "row": { "a": "x" }, "value": null },
+    { "expr": "kind + '-' + name", "row": { "kind": "tower", "name": "A" }, "value": "tower-A" },
+    { "expr": "`Mean Acc shadow` >= 100", "row": { "Mean Acc shadow": 128.6 }, "value": true },
+    { "expr": "building:levels > 2", "row": { "building:levels": 3 }, "value": true },
+    { "expr": "kind == 'tower' and not (height < 50)", "row": { "kind": "tower", "height": 60 }, "value": true },
+    { "expr": "kind == 'tower' or height > 100", "row": { "kind": "house", "height": 10 }, "value": false },
+    { "expr": "kind != 'tower'", "row": { "kind": "house" }, "value": true },
+    { "expr": "kind == 1", "row": { "kind": "1" }, "value": false },
+    { "expr": "flag == true", "row": { "flag": true }, "value": true },
+    { "expr": "missing == null", "row": {}, "value": false },
+    { "expr": "max(height, 10) + min(1, 2) + abs(-3)", "row": { "height": 4 }, "value": 14 },
+    { "expr": "round(height / 3, 1)", "row": { "height": 10 }, "value": 3.3 },
+    { "expr": "round(2.5)", "row": {}, "value": 3 },
+    { "expr": "1e2 + .5", "row": {}, "value": 100.5 },
+    { "expr": "\"a b\" == name", "row": { "name": "a b" }, "value": true }
+  ],
+  "refusals": ["", "height >", "height > > 1", "open('x')", "a ; b", "(a + 1", "a b"],
+  "edits": [
+    {
+      "name": "remove by id, then a value on another",
+      "key": "building_id",
+      "features": [
+        { "building_id": 1, "height": 10 },
+        { "building_id": 1, "height": 12 },
+        { "building_id": 2, "height": 50 },
+        { "building_id": 3, "height": 150 }
+      ],
+      "edits": [
+        { "op": "remove", "ids": [1] },
+        { "op": "set", "ids": [3], "column": "height", "value": 90 }
+      ],
+      "expected": [{ "building_id": 2, "height": 50 }, { "building_id": 3, "height": 90 }],
+      "counts": { "remove": 2, "set": 1, "restore": 0 }
+    },
+    {
+      "name": "scale where a condition holds, as the edits before left it",
+      "key": "building_id",
+      "features": [
+        { "building_id": 1, "height": 120 },
+        { "building_id": 2, "height": 80 },
+        { "building_id": 3, "height": 200 }
+      ],
+      "edits": [
+        { "op": "offset", "ids": [2], "column": "height", "value": 30 },
+        { "op": "scale", "where": "height > 100", "column": "height", "value": 0.5 }
+      ],
+      "expected": [{ "building_id": 1, "height": 60 }, { "building_id": 2, "height": 55 }, { "building_id": 3, "height": 100 }],
+      "counts": { "remove": 0, "set": 3, "restore": 0 }
+    },
+    {
+      "name": "an expression writes a new column, and skips what holds no number",
+      "key": "osm_id",
+      "features": [
+        { "osm_id": "a", "levels": 10 },
+        { "osm_id": "b", "levels": null },
+        { "osm_id": "c" }
+      ],
+      "edits": [
+        { "op": "expr", "where": "levels >= 0", "column": "height", "value": "levels * 3.2" },
+        { "op": "scale", "ids": ["b", "c"], "column": "levels", "value": 2 }
+      ],
+      "expected": [{ "osm_id": "a", "levels": 10, "height": 32 }, { "osm_id": "b", "levels": null }, { "osm_id": "c" }],
+      "counts": { "remove": 0, "set": 1, "restore": 0 }
+    },
+    {
+      "name": "a disabled edit is skipped",
+      "key": "building_id",
+      "features": [{ "building_id": 1, "height": 10 }, { "building_id": 2, "height": 20 }],
+      "edits": [
+        { "op": "remove", "ids": [1], "enabled": false, "label": "first tower" },
+        { "op": "offset", "ids": [2], "column": "height", "value": -5 }
+      ],
+      "expected": [{ "building_id": 1, "height": 10 }, { "building_id": 2, "height": 15 }],
+      "counts": { "remove": 0, "set": 1, "restore": 0 }
+    },
+    {
+      "name": "restore where reads the input",
+      "key": "building_id",
+      "features": [{ "building_id": 1, "height": 120 }, { "building_id": 2, "height": 20 }],
+      "edits": [
+        { "op": "remove", "where": "height > 100" },
+        { "op": "set", "ids": [2], "column": "height", "value": 25 },
+        { "op": "restore", "where": "height > 100" }
+      ],
+      "expected": [{ "building_id": 1, "height": 120 }, { "building_id": 2, "height": 25 }],
+      "counts": { "remove": 0, "set": 1, "restore": 1 }
+    }
+  ]
+}

@@ -68,9 +68,9 @@ function selectionLayerOf(spec: any): string | undefined {
 export type AutkBehaviorOptions = {
     /**
      * Whether a failed run marks the node errored, as an Autark node's does, so
-     * the nodes it feeds say so. A Compare Scenarios node (#662) draws its own
-     * output, the difference, through this map: a map that cannot draw says so
-     * in its body, and the node's run stands as it ran.
+     * the nodes it feeds say so. An Edit Features node (#662) draws its input
+     * through this map: a map that cannot draw says so in its body, and the
+     * node's run stands as it ran.
      */
     marksNodeErrored?: boolean;
 };
@@ -166,7 +166,7 @@ export const useAutkGrammarBehavior = (
     const scenariosRef = useRef<Scenario[]>([]);
     scenariosRef.current = scenarios ?? [];
     // A scenario recolored or renamed after the map was drawn: the map follows,
-    // as Compare Scenarios' charts do, without a run.
+    // as a Vega-Lite node comparing the scenarios does, without a run.
     const scenarioLook = JSON.stringify((scenarios ?? []).map((s) => [s.id, s.name, s.color]));
     useEffect(() => {
         if (grammarRef.current && specRef.current) {

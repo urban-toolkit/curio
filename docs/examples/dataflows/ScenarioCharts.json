@@ -1,0 +1,1074 @@
+{
+  "dataflow": {
+    "categories": {
+      "complexity": [
+        "Beginner"
+      ]
+    },
+    "nodes": [
+      {
+        "id": "d61bbcd8-9422-52ea-a928-f86c106118dd",
+        "type": "curio.builtin/data-loading",
+        "x": 100,
+        "y": 2480,
+        "content": "# Nine mock tables from the Data Catalog, one bundle: each a figure's data, its\n# rows' scenario in the case column. They come back as a tuple, in the\n# bundle's order; each scenario's node takes its rows of one of them.\nreturn curio_load_data(\"data.curio.scenario-charts\")\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the nine mock tables from the Data Catalog, one bundle.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Scenario chart data"
+        },
+        "title": "Scenario chart data"
+      },
+      {
+        "id": "e33763ac-9a36-55b7-b768-6bfbb8563b14",
+        "type": "curio.builtin/computation-analysis",
+        "x": 760,
+        "y": 0,
+        "content": "# Part 0 of the bundle, carpark_occupancy.csv: this scenario's rows, without\n# the case column, for the chart comparing the scenarios.\ntable = input_0[0]\nreturn table[table[\"case\"] == \"Weekday\"].drop(columns=\"case\").reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the Weekday rows of the carpark occupancy by hour, weekday and off day table.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Occupancy - Weekday"
+        },
+        "title": "Occupancy - Weekday"
+      },
+      {
+        "id": "ec249f41-8524-5e22-8cce-70ac00b578a2",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1320,
+        "y": 0,
+        "content": "# Part 0 of the bundle, carpark_occupancy.csv: this scenario's rows, without\n# the case column, for the chart comparing the scenarios.\ntable = input_0[0]\nreturn table[table[\"case\"] == \"Offday\"].drop(columns=\"case\").reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the Offday rows of the carpark occupancy by hour, weekday and off day table.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Occupancy - Offday"
+        },
+        "title": "Occupancy - Offday"
+      },
+      {
+        "id": "bc1c45e9-a9cd-5e82-b940-fd7ff562611f",
+        "type": "curio.builtin/vis-vega",
+        "x": 3120,
+        "y": 0,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"facet\": {\n    \"field\": \"carpark\",\n    \"type\": \"nominal\",\n    \"title\": null\n  },\n  \"columns\": 2,\n  \"spec\": {\n    \"width\": 240,\n    \"height\": 130,\n    \"encoding\": {\n      \"x\": {\n        \"field\": \"hour\",\n        \"type\": \"quantitative\",\n        \"title\": \"Hour\",\n        \"scale\": {\n          \"domain\": [\n            0,\n            23\n          ]\n        }\n      },\n      \"color\": {\n        \"field\": \"scenario_name\",\n        \"type\": \"nominal\",\n        \"title\": null\n      }\n    },\n    \"layer\": [\n      {\n        \"mark\": {\n          \"type\": \"area\",\n          \"opacity\": 0.25\n        },\n        \"encoding\": {\n          \"y\": {\n            \"field\": \"lower\",\n            \"type\": \"quantitative\",\n            \"title\": \"Occupancy\",\n            \"scale\": {\n              \"domain\": [\n                0,\n                1.05\n              ]\n            }\n          },\n          \"y2\": {\n            \"field\": \"upper\"\n          }\n        }\n      },\n      {\n        \"mark\": {\n          \"type\": \"line\",\n          \"strokeWidth\": 2,\n          \"tooltip\": true\n        },\n        \"encoding\": {\n          \"y\": {\n            \"field\": \"occupancy\",\n            \"type\": \"quantitative\"\n          }\n        }\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Compare four carparks' hourly occupancy on weekdays and off days, with the band the days spread over.",
+        "metadata": {
+          "keywords": [],
+          "vegaCompare": {
+            "enabled": true
+          },
+          "packageTemplateLabel": "Carpark occupancy"
+        },
+        "title": "Carpark occupancy"
+      },
+      {
+        "id": "fecd14c0-8b42-50f7-9488-5330d819c2c5",
+        "type": "curio.builtin/computation-analysis",
+        "x": 760,
+        "y": 620,
+        "content": "# Part 1 of the bundle, fragility_curves.csv: this scenario's rows, without\n# the case column, for the chart comparing the scenarios.\ntable = input_0[1]\nreturn table[table[\"case\"] == \"As-built\"].drop(columns=\"case\").reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the As-built rows of the bridge fragility curves, as built and retrofitted table.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Fragility - As-built"
+        },
+        "title": "Fragility - As-built"
+      },
+      {
+        "id": "5215ca3e-026a-502b-8b28-a08d5c643642",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1320,
+        "y": 620,
+        "content": "# Part 1 of the bundle, fragility_curves.csv: this scenario's rows, without\n# the case column, for the chart comparing the scenarios.\ntable = input_0[1]\nreturn table[table[\"case\"] == \"Retrofit\"].drop(columns=\"case\").reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the Retrofit rows of the bridge fragility curves, as built and retrofitted table.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Fragility - Retrofit"
+        },
+        "title": "Fragility - Retrofit"
+      },
+      {
+        "id": "c7b01595-3f30-5e2a-bfa5-a626a81cdbbd",
+        "type": "curio.builtin/vis-vega",
+        "x": 3120,
+        "y": 620,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"width\": 420,\n  \"height\": 260,\n  \"mark\": {\n    \"type\": \"line\",\n    \"strokeWidth\": 2,\n    \"tooltip\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"pga\",\n      \"type\": \"quantitative\",\n      \"title\": \"PGA [g]\"\n    },\n    \"y\": {\n      \"field\": \"probability\",\n      \"type\": \"quantitative\",\n      \"title\": \"Probability of damage\",\n      \"axis\": {\n        \"format\": \"%\"\n      }\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": null\n    },\n    \"strokeDash\": {\n      \"field\": \"damage_state\",\n      \"type\": \"nominal\",\n      \"title\": \"Damage state\",\n      \"sort\": [\n        \"Slight\",\n        \"Moderate\",\n        \"Extensive\",\n        \"Complete\"\n      ]\n    },\n    \"detail\": {\n      \"field\": \"scenario_name\"\n    }\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Compare the as-built and retrofitted bridge's probability of each damage state as the ground shakes harder.",
+        "metadata": {
+          "keywords": [],
+          "vegaCompare": {
+            "enabled": true
+          },
+          "packageTemplateLabel": "Bridge fragility curves"
+        },
+        "title": "Bridge fragility curves"
+      },
+      {
+        "id": "1d2e8b57-358d-55a7-80df-d9bf7be5d98c",
+        "type": "curio.builtin/computation-analysis",
+        "x": 760,
+        "y": 1240,
+        "content": "# Part 2 of the bundle, bridge_damage.csv: this scenario's rows, without\n# the case column, for the chart comparing the scenarios.\ntable = input_0[2]\nreturn table[table[\"case\"] == \"M5\"].drop(columns=\"case\").reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the M5 rows of the bridge damage states for M5, M6 and M7 events table.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Damage - M5"
+        },
+        "title": "Damage - M5"
+      },
+      {
+        "id": "90f6ebd9-7ed0-5521-8a39-d78250cc45c8",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1320,
+        "y": 1240,
+        "content": "# Part 2 of the bundle, bridge_damage.csv: this scenario's rows, without\n# the case column, for the chart comparing the scenarios.\ntable = input_0[2]\nreturn table[table[\"case\"] == \"M6\"].drop(columns=\"case\").reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the M6 rows of the bridge damage states for M5, M6 and M7 events table.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Damage - M6"
+        },
+        "title": "Damage - M6"
+      },
+      {
+        "id": "e89f0e2a-f5da-52f8-aea4-91c90d7de2e4",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1880,
+        "y": 1240,
+        "content": "# Part 2 of the bundle, bridge_damage.csv: this scenario's rows, without\n# the case column, for the chart comparing the scenarios.\ntable = input_0[2]\nreturn table[table[\"case\"] == \"M7\"].drop(columns=\"case\").reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the M7 rows of the bridge damage states for M5, M6 and M7 events table.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Damage - M7"
+        },
+        "title": "Damage - M7"
+      },
+      {
+        "id": "6051e133-aa48-5fa7-b3f8-cfc9e70cd14c",
+        "type": "curio.builtin/vis-vega",
+        "x": 3120,
+        "y": 1240,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"width\": 420,\n  \"height\": 260,\n  \"transform\": [\n    {\n      \"calculate\": \"max(0, datum.mean - datum.sd)\",\n      \"as\": \"lower\"\n    },\n    {\n      \"calculate\": \"datum.mean + datum.sd\",\n      \"as\": \"upper\"\n    }\n  ],\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"damage_state\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"sort\": [\n        \"Slight\",\n        \"Moderate\",\n        \"Extensive\",\n        \"Complete\"\n      ],\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    },\n    \"xOffset\": {\n      \"field\": \"scenario_name\"\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"bar\",\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"mean\",\n          \"type\": \"quantitative\",\n          \"title\": \"Proportion of bridges in damage state\"\n        },\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"title\": null\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"rule\",\n        \"strokeDash\": [\n          4,\n          3\n        ],\n        \"color\": \"#333333\"\n      },\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"lower\",\n          \"type\": \"quantitative\"\n        },\n        \"y2\": {\n          \"field\": \"upper\"\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"tick\",\n        \"color\": \"#333333\",\n        \"size\": 8,\n        \"thickness\": 1.5\n      },\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"upper\",\n          \"type\": \"quantitative\"\n        }\n      }\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Compare the share of bridges in each damage state for M5, M6 and M7 events, with one standard deviation.",
+        "metadata": {
+          "keywords": [],
+          "vegaCompare": {
+            "enabled": true
+          },
+          "packageTemplateLabel": "Bridge damage states"
+        },
+        "title": "Bridge damage states"
+      },
+      {
+        "id": "c8463128-aff3-5eb4-8122-ac8fdc878e16",
+        "type": "curio.builtin/computation-analysis",
+        "x": 760,
+        "y": 1860,
+        "content": "# Part 3 of the bundle, pga_ensemble.csv: this scenario's rows, without\n# the case column, for the chart comparing the scenarios.\ntable = input_0[3]\nreturn table[table[\"case\"] == \"M5\"].drop(columns=\"case\").reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the M5 rows of the median PGA of each simulated scenario, M5, M6 and M7 table.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "PGA - M5"
+        },
+        "title": "PGA - M5"
+      },
+      {
+        "id": "976b349f-6918-5a32-955e-671e745fc7e7",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1320,
+        "y": 1860,
+        "content": "# Part 3 of the bundle, pga_ensemble.csv: this scenario's rows, without\n# the case column, for the chart comparing the scenarios.\ntable = input_0[3]\nreturn table[table[\"case\"] == \"M6\"].drop(columns=\"case\").reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the M6 rows of the median PGA of each simulated scenario, M5, M6 and M7 table.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "PGA - M6"
+        },
+        "title": "PGA - M6"
+      },
+      {
+        "id": "cdba30bd-7eac-5b8b-be84-fe64da61bbac",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1880,
+        "y": 1860,
+        "content": "# Part 3 of the bundle, pga_ensemble.csv: this scenario's rows, without\n# the case column, for the chart comparing the scenarios.\ntable = input_0[3]\nreturn table[table[\"case\"] == \"M7\"].drop(columns=\"case\").reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the M7 rows of the median PGA of each simulated scenario, M5, M6 and M7 table.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "PGA - M7"
+        },
+        "title": "PGA - M7"
+      },
+      {
+        "id": "809fee02-329a-58e9-8505-e14996215c3e",
+        "type": "curio.builtin/vis-vega",
+        "x": 3120,
+        "y": 1860,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"width\": 320,\n  \"height\": 260,\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Earthquake magnitude\",\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"circle\",\n        \"size\": 40,\n        \"opacity\": 0.8,\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"median_pga\",\n          \"type\": \"quantitative\",\n          \"title\": \"Median PGA per scenario (g)\"\n        },\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"title\": null,\n          \"legend\": null\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"tick\",\n        \"color\": \"#111111\",\n        \"thickness\": 2,\n        \"size\": 36\n      },\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"median_pga\",\n          \"aggregate\": \"median\",\n          \"type\": \"quantitative\"\n        }\n      }\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Compare the spread of the median ground acceleration over each event's simulated scenarios.",
+        "metadata": {
+          "keywords": [],
+          "vegaCompare": {
+            "enabled": true
+          },
+          "packageTemplateLabel": "Ground-motion ensemble"
+        },
+        "title": "Ground-motion ensemble"
+      },
+      {
+        "id": "07090441-1e3d-5737-b256-cc83d5ccfecd",
+        "type": "curio.builtin/computation-analysis",
+        "x": 760,
+        "y": 2480,
+        "content": "# Part 4 of the bundle, carbon_by_distance.csv: this scenario's rows, without\n# the case column, for the chart comparing the scenarios.\ntable = input_0[4]\nreturn table[table[\"case\"] == \"Original\"].drop(columns=\"case\").reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the Original rows of the fleet carbon emission by trip distance, four priorities table.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Carbon - Original"
+        },
+        "title": "Carbon - Original"
+      },
+      {
+        "id": "f5c89e83-6fd5-5eb4-8afb-372c57439c57",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1320,
+        "y": 2480,
+        "content": "# Part 4 of the bundle, carbon_by_distance.csv: this scenario's rows, without\n# the case column, for the chart comparing the scenarios.\ntable = input_0[4]\nreturn table[table[\"case\"] == \"LCHG priority\"].drop(columns=\"case\").reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the LCHG priority rows of the fleet carbon emission by trip distance, four priorities table.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Carbon - LCHG priority"
+        },
+        "title": "Carbon - LCHG priority"
+      },
+      {
+        "id": "6ee8c783-c0de-5e47-92a4-610ba2765602",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1880,
+        "y": 2480,
+        "content": "# Part 4 of the bundle, carbon_by_distance.csv: this scenario's rows, without\n# the case column, for the chart comparing the scenarios.\ntable = input_0[4]\nreturn table[table[\"case\"] == \"BC priority\"].drop(columns=\"case\").reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the BC priority rows of the fleet carbon emission by trip distance, four priorities table.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Carbon - BC priority"
+        },
+        "title": "Carbon - BC priority"
+      },
+      {
+        "id": "52e8ee0a-6b90-5848-9056-a7c1b7d312db",
+        "type": "curio.builtin/computation-analysis",
+        "x": 2440,
+        "y": 2480,
+        "content": "# Part 4 of the bundle, carbon_by_distance.csv: this scenario's rows, without\n# the case column, for the chart comparing the scenarios.\ntable = input_0[4]\nreturn table[table[\"case\"] == \"BC priority with RB\"].drop(columns=\"case\").reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the BC priority with RB rows of the fleet carbon emission by trip distance, four priorities table.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Carbon - BC priority with RB"
+        },
+        "title": "Carbon - BC priority with RB"
+      },
+      {
+        "id": "6111c890-18d4-531f-a97e-0aa80b2c3f52",
+        "type": "curio.builtin/vis-vega",
+        "x": 3120,
+        "y": 2480,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"width\": 440,\n  \"height\": 240,\n  \"mark\": {\n    \"type\": \"bar\",\n    \"tooltip\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"distance_band\",\n      \"type\": \"ordinal\",\n      \"title\": \"Distance (km)\",\n      \"sort\": [\n        \"0-8\",\n        \"8-16\",\n        \"16-24\",\n        \"24-32\",\n        \"32-40\",\n        \">40\"\n      ],\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    },\n    \"xOffset\": {\n      \"field\": \"scenario_name\"\n    },\n    \"y\": {\n      \"field\": \"emission_kg\",\n      \"type\": \"quantitative\",\n      \"title\": \"Carbon emission (kg)\"\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"legend\": {\n        \"orient\": \"top\"\n      }\n    }\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Compare the fleet's carbon emission by trip distance under the original plan and three priorities.",
+        "metadata": {
+          "keywords": [],
+          "vegaCompare": {
+            "enabled": true
+          },
+          "packageTemplateLabel": "Carbon by trip distance"
+        },
+        "title": "Carbon by trip distance"
+      },
+      {
+        "id": "11b0c731-2031-513d-b059-e63b9b7e423e",
+        "type": "curio.builtin/computation-analysis",
+        "x": 760,
+        "y": 3100,
+        "content": "# Part 5 of the bundle, lifecycle_gwp.csv: this scenario's rows, without\n# the case column, for the chart comparing the scenarios.\ntable = input_0[5]\nreturn table[table[\"case\"] == \"Baseline\"].drop(columns=\"case\").reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the Baseline rows of the building GWP by lifecycle stage, baseline and proposal table.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "GWP - Baseline"
+        },
+        "title": "GWP - Baseline"
+      },
+      {
+        "id": "be63fbbc-332b-5a03-bd27-910e9564734d",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1320,
+        "y": 3100,
+        "content": "# Part 5 of the bundle, lifecycle_gwp.csv: this scenario's rows, without\n# the case column, for the chart comparing the scenarios.\ntable = input_0[5]\nreturn table[table[\"case\"] == \"Proposal\"].drop(columns=\"case\").reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the Proposal rows of the building GWP by lifecycle stage, baseline and proposal table.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "GWP - Proposal"
+        },
+        "title": "GWP - Proposal"
+      },
+      {
+        "id": "8897c1dd-9f19-5421-99d4-ec5a1f26ec07",
+        "type": "curio.builtin/vis-vega",
+        "x": 3120,
+        "y": 3100,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"width\": {\n    \"step\": 120\n  },\n  \"height\": 260,\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"bar\",\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"gwp\",\n          \"type\": \"quantitative\",\n          \"title\": \"GWP (kg CO2e/m2/year)\"\n        },\n        \"color\": {\n          \"field\": \"stage\",\n          \"type\": \"nominal\",\n          \"title\": \"Lifecycle stage\",\n          \"scale\": {\n            \"domain\": [\n              \"A1-A3\",\n              \"A4\",\n              \"A5\",\n              \"B4\",\n              \"B6\",\n              \"C3-C4\"\n            ],\n            \"range\": [\n              \"#0b3c49\",\n              \"#cdebf5\",\n              \"#7fb3b5\",\n              \"#f7a541\",\n              \"#fbefc8\",\n              \"#e0812b\"\n            ]\n          }\n        },\n        \"order\": {\n          \"field\": \"order\",\n          \"type\": \"quantitative\"\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"text\",\n        \"dy\": -6,\n        \"baseline\": \"bottom\",\n        \"fontWeight\": \"bold\"\n      },\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"gwp\",\n          \"aggregate\": \"sum\",\n          \"type\": \"quantitative\"\n        },\n        \"text\": {\n          \"field\": \"gwp\",\n          \"aggregate\": \"sum\",\n          \"type\": \"quantitative\",\n          \"format\": \".1f\"\n        }\n      }\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Compare the baseline's and the proposal's global warming potential, stage by stage.",
+        "metadata": {
+          "keywords": [],
+          "vegaCompare": {
+            "enabled": true
+          },
+          "packageTemplateLabel": "Lifecycle GWP"
+        },
+        "title": "Lifecycle GWP"
+      },
+      {
+        "id": "670e6b1a-4706-560e-a5d3-68248cd4da47",
+        "type": "curio.builtin/computation-analysis",
+        "x": 760,
+        "y": 3720,
+        "content": "# Part 6 of the bundle, impact_share.csv: this scenario's rows, without\n# the case column, for the chart comparing the scenarios.\ntable = input_0[6]\nreturn table[table[\"case\"] == \"Solution 1\"].drop(columns=\"case\").reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the Solution 1 rows of the structural share of two solutions' environmental impact table.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Impact - Solution 1"
+        },
+        "title": "Impact - Solution 1"
+      },
+      {
+        "id": "ac9cb674-c88c-5fc7-91ee-cd7fe6c971d6",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1320,
+        "y": 3720,
+        "content": "# Part 6 of the bundle, impact_share.csv: this scenario's rows, without\n# the case column, for the chart comparing the scenarios.\ntable = input_0[6]\nreturn table[table[\"case\"] == \"Solution 2\"].drop(columns=\"case\").reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the Solution 2 rows of the structural share of two solutions' environmental impact table.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Impact - Solution 2"
+        },
+        "title": "Impact - Solution 2"
+      },
+      {
+        "id": "ff423490-63b9-5768-85b8-67800ab9d2af",
+        "type": "curio.builtin/vis-vega",
+        "x": 3120,
+        "y": 3720,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"facet\": {\n    \"field\": \"scenario_name\",\n    \"type\": \"nominal\",\n    \"title\": null,\n    \"header\": {\n      \"labelFontSize\": 13,\n      \"labelFontWeight\": \"bold\"\n    }\n  },\n  \"spec\": {\n    \"width\": 170,\n    \"height\": 170,\n    \"transform\": [\n      {\n        \"calculate\": \"datum.component === 'Structural' ? datum.scenario_color : '#c4c4c4'\",\n        \"as\": \"slice_color\"\n      },\n      {\n        \"calculate\": \"format(datum.share, '.1f') + '%'\",\n        \"as\": \"label\"\n      }\n    ],\n    \"encoding\": {\n      \"theta\": {\n        \"field\": \"share\",\n        \"type\": \"quantitative\",\n        \"stack\": true\n      },\n      \"order\": {\n        \"field\": \"component\",\n        \"sort\": \"descending\"\n      }\n    },\n    \"layer\": [\n      {\n        \"mark\": {\n          \"type\": \"arc\",\n          \"innerRadius\": 40,\n          \"tooltip\": true\n        },\n        \"encoding\": {\n          \"color\": {\n            \"field\": \"slice_color\",\n            \"type\": \"nominal\",\n            \"scale\": null\n          }\n        }\n      },\n      {\n        \"mark\": {\n          \"type\": \"text\",\n          \"radius\": 62,\n          \"color\": \"white\",\n          \"fontWeight\": \"bold\"\n        },\n        \"encoding\": {\n          \"text\": {\n            \"field\": \"label\"\n          }\n        }\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Compare how much of each solution's environmental impact is structural.",
+        "metadata": {
+          "keywords": [],
+          "vegaCompare": {
+            "enabled": true
+          },
+          "packageTemplateLabel": "Environmental impact share"
+        },
+        "title": "Environmental impact share"
+      },
+      {
+        "id": "936bd291-5251-533b-8368-d9cd6048cc43",
+        "type": "curio.builtin/computation-analysis",
+        "x": 760,
+        "y": 4340,
+        "content": "# Part 7 of the bundle, route_criteria.csv: this scenario's rows, without\n# the case column, for the chart comparing the scenarios.\ntable = input_0[7]\nreturn table[table[\"case\"] == \"Route 1\"].drop(columns=\"case\").reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the Route 1 rows of the criteria weighing for or against three routes table.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Criteria - Route 1"
+        },
+        "title": "Criteria - Route 1"
+      },
+      {
+        "id": "44c54dc1-90c0-5c8e-a4d2-980c85018e68",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1320,
+        "y": 4340,
+        "content": "# Part 7 of the bundle, route_criteria.csv: this scenario's rows, without\n# the case column, for the chart comparing the scenarios.\ntable = input_0[7]\nreturn table[table[\"case\"] == \"Route 2\"].drop(columns=\"case\").reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the Route 2 rows of the criteria weighing for or against three routes table.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Criteria - Route 2"
+        },
+        "title": "Criteria - Route 2"
+      },
+      {
+        "id": "f3e8703f-007d-5350-896f-6421378f171e",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1880,
+        "y": 4340,
+        "content": "# Part 7 of the bundle, route_criteria.csv: this scenario's rows, without\n# the case column, for the chart comparing the scenarios.\ntable = input_0[7]\nreturn table[table[\"case\"] == \"Route 3\"].drop(columns=\"case\").reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the Route 3 rows of the criteria weighing for or against three routes table.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Criteria - Route 3"
+        },
+        "title": "Criteria - Route 3"
+      },
+      {
+        "id": "e4f0752a-856b-5d38-a180-b38e83787812",
+        "type": "curio.builtin/vis-vega",
+        "x": 3120,
+        "y": 4340,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"width\": {\n    \"step\": 115\n  },\n  \"height\": {\n    \"step\": 70\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"criterion\",\n      \"type\": \"nominal\",\n      \"sort\": [\n        \"Departure Time\",\n        \"Travel Cost\",\n        \"Road Importance\",\n        \"Intersection Number\",\n        \"Travel Distance\",\n        \"Congestion Degree\"\n      ],\n      \"title\": null,\n      \"axis\": {\n        \"orient\": \"top\",\n        \"labelAngle\": 0,\n        \"labelLimit\": 0\n      }\n    },\n    \"y\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": null\n    }\n  },\n  \"layer\": [\n    {\n      \"transform\": [\n        {\n          \"filter\": \"datum.criterion === 'Departure Time'\"\n        }\n      ],\n      \"mark\": {\n        \"type\": \"square\",\n        \"size\": 160,\n        \"xOffset\": -44,\n        \"opacity\": 1\n      },\n      \"encoding\": {\n        \"fill\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"legend\": null\n        }\n      }\n    },\n    {\n      \"transform\": [\n        {\n          \"filter\": \"datum.effect !== 0\"\n        },\n        {\n          \"calculate\": \"abs(datum.effect)\",\n          \"as\": \"strength\"\n        },\n        {\n          \"calculate\": \"datum.effect > 0 ? 'positive' : 'negative'\",\n          \"as\": \"sign\"\n        }\n      ],\n      \"mark\": {\n        \"type\": \"point\",\n        \"filled\": false,\n        \"strokeWidth\": 3,\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"size\": {\n          \"field\": \"strength\",\n          \"type\": \"quantitative\",\n          \"title\": \"Effect\",\n          \"scale\": {\n            \"domain\": [\n              0,\n              1\n            ],\n            \"range\": [\n              0,\n              1800\n            ]\n          }\n        },\n        \"stroke\": {\n          \"field\": \"sign\",\n          \"type\": \"nominal\",\n          \"title\": null,\n          \"scale\": {\n            \"domain\": [\n              \"positive\",\n              \"negative\"\n            ],\n            \"range\": [\n              \"#e4572e\",\n              \"#17605c\"\n            ]\n          }\n        }\n      }\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Compare how each criterion weighs for or against three candidate routes.",
+        "metadata": {
+          "keywords": [],
+          "vegaCompare": {
+            "enabled": true
+          },
+          "packageTemplateLabel": "Route criteria"
+        },
+        "title": "Route criteria"
+      },
+      {
+        "id": "0c09e0f4-3fac-524f-ba93-c3bb56aa7ed6",
+        "type": "curio.builtin/computation-analysis",
+        "x": 760,
+        "y": 4960,
+        "content": "# Part 8 of the bundle, green_wall.csv: this scenario's rows, without\n# the case column, for the chart comparing the scenarios.\ntable = input_0[8]\nreturn table[table[\"case\"] == \"Passive Green Wall\"].drop(columns=\"case\").reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the Passive Green Wall rows of the green-wall systems' U-value, energy savings and CO2 reduction table.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Green wall - Passive Green Wall"
+        },
+        "title": "Green wall - Passive Green Wall"
+      },
+      {
+        "id": "f3da3077-44c3-5fbd-992b-2229fd24d7a2",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1320,
+        "y": 4960,
+        "content": "# Part 8 of the bundle, green_wall.csv: this scenario's rows, without\n# the case column, for the chart comparing the scenarios.\ntable = input_0[8]\nreturn table[table[\"case\"] == \"Active Modular System\"].drop(columns=\"case\").reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the Active Modular System rows of the green-wall systems' U-value, energy savings and CO2 reduction table.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Green wall - Active Modular System"
+        },
+        "title": "Green wall - Active Modular System"
+      },
+      {
+        "id": "090c4c7f-a5be-507f-bb89-99bc42327430",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1880,
+        "y": 4960,
+        "content": "# Part 8 of the bundle, green_wall.csv: this scenario's rows, without\n# the case column, for the chart comparing the scenarios.\ntable = input_0[8]\nreturn table[table[\"case\"] == \"Intensive Planting\"].drop(columns=\"case\").reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the Intensive Planting rows of the green-wall systems' U-value, energy savings and CO2 reduction table.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Green wall - Intensive Planting"
+        },
+        "title": "Green wall - Intensive Planting"
+      },
+      {
+        "id": "0dd6163e-f1d0-5d92-903d-36c2d74bd2c6",
+        "type": "curio.builtin/vis-vega",
+        "x": 3120,
+        "y": 4960,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"width\": {\n    \"step\": 190\n  },\n  \"height\": {\n    \"step\": 38\n  },\n  \"transform\": [\n    {\n      \"calculate\": \"datum.scenario_name\",\n      \"as\": \"Scenario\"\n    },\n    {\n      \"calculate\": \"format(datum.u_value, '.2f')\",\n      \"as\": \"New U-value (W/m2K)\"\n    },\n    {\n      \"calculate\": \"format(datum.energy_savings, ',')\",\n      \"as\": \"Energy savings (kWh/year)\"\n    },\n    {\n      \"calculate\": \"format(datum.co2_reduction, ',')\",\n      \"as\": \"CO2 reduction (kg/year)\"\n    },\n    {\n      \"fold\": [\n        \"Scenario\",\n        \"New U-value (W/m2K)\",\n        \"Energy savings (kWh/year)\",\n        \"CO2 reduction (kg/year)\"\n      ],\n      \"as\": [\n        \"column\",\n        \"cell\"\n      ]\n    }\n  ],\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"column\",\n      \"type\": \"nominal\",\n      \"sort\": [\n        \"Scenario\",\n        \"New U-value (W/m2K)\",\n        \"Energy savings (kWh/year)\",\n        \"CO2 reduction (kg/year)\"\n      ],\n      \"title\": null,\n      \"axis\": {\n        \"orient\": \"top\",\n        \"labelAngle\": 0,\n        \"labelFontSize\": 12,\n        \"labelFontWeight\": \"bold\",\n        \"labelColor\": \"#333333\",\n        \"labelPadding\": 8,\n        \"labelLimit\": 0,\n        \"domain\": false,\n        \"ticks\": false\n      }\n    },\n    \"y\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"sort\": {\n        \"field\": \"scenario_order\"\n      },\n      \"axis\": null\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"rect\",\n        \"stroke\": \"#d6d9de\",\n        \"strokeWidth\": 1\n      },\n      \"encoding\": {\n        \"fill\": {\n          \"condition\": {\n            \"test\": \"datum.scenario_order % 2 === 1\",\n            \"value\": \"#f5f6f8\"\n          },\n          \"value\": \"#ffffff\"\n        }\n      }\n    },\n    {\n      \"transform\": [\n        {\n          \"filter\": \"datum.column === 'Scenario'\"\n        }\n      ],\n      \"mark\": {\n        \"type\": \"text\",\n        \"fontSize\": 13,\n        \"fontWeight\": \"bold\",\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"text\": {\n          \"field\": \"cell\",\n          \"type\": \"nominal\"\n        },\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"legend\": null\n        }\n      }\n    },\n    {\n      \"transform\": [\n        {\n          \"filter\": \"datum.column !== 'Scenario'\"\n        }\n      ],\n      \"mark\": {\n        \"type\": \"text\",\n        \"fontSize\": 13,\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"text\": {\n          \"field\": \"cell\",\n          \"type\": \"nominal\"\n        },\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"legend\": null\n        }\n      }\n    }\n  ],\n  \"config\": {\n    \"view\": {\n      \"stroke\": null\n    }\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Compare three green-wall systems' U-value, energy savings and CO2 reduction.",
+        "metadata": {
+          "keywords": [],
+          "vegaCompare": {
+            "enabled": true
+          },
+          "packageTemplateLabel": "Green wall performance"
+        },
+        "title": "Green wall performance"
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-d61bbcd8-9422-52ea-a928-f86c106118ddout-e33763ac-9a36-55b7-b768-6bfbb8563b14in",
+        "source": "d61bbcd8-9422-52ea-a928-f86c106118dd",
+        "target": "e33763ac-9a36-55b7-b768-6bfbb8563b14",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-e33763ac-9a36-55b7-b768-6bfbb8563b14out-bc1c45e9-a9cd-5e82-b940-fd7ff562611fin",
+        "source": "e33763ac-9a36-55b7-b768-6bfbb8563b14",
+        "target": "bc1c45e9-a9cd-5e82-b940-fd7ff562611f",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-d61bbcd8-9422-52ea-a928-f86c106118ddout-ec249f41-8524-5e22-8cce-70ac00b578a2in",
+        "source": "d61bbcd8-9422-52ea-a928-f86c106118dd",
+        "target": "ec249f41-8524-5e22-8cce-70ac00b578a2",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-ec249f41-8524-5e22-8cce-70ac00b578a2out-bc1c45e9-a9cd-5e82-b940-fd7ff562611fin_1",
+        "source": "ec249f41-8524-5e22-8cce-70ac00b578a2",
+        "target": "bc1c45e9-a9cd-5e82-b940-fd7ff562611f",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-d61bbcd8-9422-52ea-a928-f86c106118ddout-fecd14c0-8b42-50f7-9488-5330d819c2c5in",
+        "source": "d61bbcd8-9422-52ea-a928-f86c106118dd",
+        "target": "fecd14c0-8b42-50f7-9488-5330d819c2c5",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-fecd14c0-8b42-50f7-9488-5330d819c2c5out-c7b01595-3f30-5e2a-bfa5-a626a81cdbbdin",
+        "source": "fecd14c0-8b42-50f7-9488-5330d819c2c5",
+        "target": "c7b01595-3f30-5e2a-bfa5-a626a81cdbbd",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-d61bbcd8-9422-52ea-a928-f86c106118ddout-5215ca3e-026a-502b-8b28-a08d5c643642in",
+        "source": "d61bbcd8-9422-52ea-a928-f86c106118dd",
+        "target": "5215ca3e-026a-502b-8b28-a08d5c643642",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-5215ca3e-026a-502b-8b28-a08d5c643642out-c7b01595-3f30-5e2a-bfa5-a626a81cdbbdin_1",
+        "source": "5215ca3e-026a-502b-8b28-a08d5c643642",
+        "target": "c7b01595-3f30-5e2a-bfa5-a626a81cdbbd",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-d61bbcd8-9422-52ea-a928-f86c106118ddout-1d2e8b57-358d-55a7-80df-d9bf7be5d98cin",
+        "source": "d61bbcd8-9422-52ea-a928-f86c106118dd",
+        "target": "1d2e8b57-358d-55a7-80df-d9bf7be5d98c",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-1d2e8b57-358d-55a7-80df-d9bf7be5d98cout-6051e133-aa48-5fa7-b3f8-cfc9e70cd14cin",
+        "source": "1d2e8b57-358d-55a7-80df-d9bf7be5d98c",
+        "target": "6051e133-aa48-5fa7-b3f8-cfc9e70cd14c",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-d61bbcd8-9422-52ea-a928-f86c106118ddout-90f6ebd9-7ed0-5521-8a39-d78250cc45c8in",
+        "source": "d61bbcd8-9422-52ea-a928-f86c106118dd",
+        "target": "90f6ebd9-7ed0-5521-8a39-d78250cc45c8",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-90f6ebd9-7ed0-5521-8a39-d78250cc45c8out-6051e133-aa48-5fa7-b3f8-cfc9e70cd14cin_1",
+        "source": "90f6ebd9-7ed0-5521-8a39-d78250cc45c8",
+        "target": "6051e133-aa48-5fa7-b3f8-cfc9e70cd14c",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-d61bbcd8-9422-52ea-a928-f86c106118ddout-e89f0e2a-f5da-52f8-aea4-91c90d7de2e4in",
+        "source": "d61bbcd8-9422-52ea-a928-f86c106118dd",
+        "target": "e89f0e2a-f5da-52f8-aea4-91c90d7de2e4",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-e89f0e2a-f5da-52f8-aea4-91c90d7de2e4out-6051e133-aa48-5fa7-b3f8-cfc9e70cd14cin_2",
+        "source": "e89f0e2a-f5da-52f8-aea4-91c90d7de2e4",
+        "target": "6051e133-aa48-5fa7-b3f8-cfc9e70cd14c",
+        "sourceHandle": "out",
+        "targetHandle": "in_2"
+      },
+      {
+        "id": "reactflow__edge-d61bbcd8-9422-52ea-a928-f86c106118ddout-c8463128-aff3-5eb4-8122-ac8fdc878e16in",
+        "source": "d61bbcd8-9422-52ea-a928-f86c106118dd",
+        "target": "c8463128-aff3-5eb4-8122-ac8fdc878e16",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-c8463128-aff3-5eb4-8122-ac8fdc878e16out-809fee02-329a-58e9-8505-e14996215c3ein",
+        "source": "c8463128-aff3-5eb4-8122-ac8fdc878e16",
+        "target": "809fee02-329a-58e9-8505-e14996215c3e",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-d61bbcd8-9422-52ea-a928-f86c106118ddout-976b349f-6918-5a32-955e-671e745fc7e7in",
+        "source": "d61bbcd8-9422-52ea-a928-f86c106118dd",
+        "target": "976b349f-6918-5a32-955e-671e745fc7e7",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-976b349f-6918-5a32-955e-671e745fc7e7out-809fee02-329a-58e9-8505-e14996215c3ein_1",
+        "source": "976b349f-6918-5a32-955e-671e745fc7e7",
+        "target": "809fee02-329a-58e9-8505-e14996215c3e",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-d61bbcd8-9422-52ea-a928-f86c106118ddout-cdba30bd-7eac-5b8b-be84-fe64da61bbacin",
+        "source": "d61bbcd8-9422-52ea-a928-f86c106118dd",
+        "target": "cdba30bd-7eac-5b8b-be84-fe64da61bbac",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-cdba30bd-7eac-5b8b-be84-fe64da61bbacout-809fee02-329a-58e9-8505-e14996215c3ein_2",
+        "source": "cdba30bd-7eac-5b8b-be84-fe64da61bbac",
+        "target": "809fee02-329a-58e9-8505-e14996215c3e",
+        "sourceHandle": "out",
+        "targetHandle": "in_2"
+      },
+      {
+        "id": "reactflow__edge-d61bbcd8-9422-52ea-a928-f86c106118ddout-07090441-1e3d-5737-b256-cc83d5ccfecdin",
+        "source": "d61bbcd8-9422-52ea-a928-f86c106118dd",
+        "target": "07090441-1e3d-5737-b256-cc83d5ccfecd",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-07090441-1e3d-5737-b256-cc83d5ccfecdout-6111c890-18d4-531f-a97e-0aa80b2c3f52in",
+        "source": "07090441-1e3d-5737-b256-cc83d5ccfecd",
+        "target": "6111c890-18d4-531f-a97e-0aa80b2c3f52",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-d61bbcd8-9422-52ea-a928-f86c106118ddout-f5c89e83-6fd5-5eb4-8afb-372c57439c57in",
+        "source": "d61bbcd8-9422-52ea-a928-f86c106118dd",
+        "target": "f5c89e83-6fd5-5eb4-8afb-372c57439c57",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-f5c89e83-6fd5-5eb4-8afb-372c57439c57out-6111c890-18d4-531f-a97e-0aa80b2c3f52in_1",
+        "source": "f5c89e83-6fd5-5eb4-8afb-372c57439c57",
+        "target": "6111c890-18d4-531f-a97e-0aa80b2c3f52",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-d61bbcd8-9422-52ea-a928-f86c106118ddout-6ee8c783-c0de-5e47-92a4-610ba2765602in",
+        "source": "d61bbcd8-9422-52ea-a928-f86c106118dd",
+        "target": "6ee8c783-c0de-5e47-92a4-610ba2765602",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-6ee8c783-c0de-5e47-92a4-610ba2765602out-6111c890-18d4-531f-a97e-0aa80b2c3f52in_2",
+        "source": "6ee8c783-c0de-5e47-92a4-610ba2765602",
+        "target": "6111c890-18d4-531f-a97e-0aa80b2c3f52",
+        "sourceHandle": "out",
+        "targetHandle": "in_2"
+      },
+      {
+        "id": "reactflow__edge-d61bbcd8-9422-52ea-a928-f86c106118ddout-52e8ee0a-6b90-5848-9056-a7c1b7d312dbin",
+        "source": "d61bbcd8-9422-52ea-a928-f86c106118dd",
+        "target": "52e8ee0a-6b90-5848-9056-a7c1b7d312db",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-52e8ee0a-6b90-5848-9056-a7c1b7d312dbout-6111c890-18d4-531f-a97e-0aa80b2c3f52in_3",
+        "source": "52e8ee0a-6b90-5848-9056-a7c1b7d312db",
+        "target": "6111c890-18d4-531f-a97e-0aa80b2c3f52",
+        "sourceHandle": "out",
+        "targetHandle": "in_3"
+      },
+      {
+        "id": "reactflow__edge-d61bbcd8-9422-52ea-a928-f86c106118ddout-11b0c731-2031-513d-b059-e63b9b7e423ein",
+        "source": "d61bbcd8-9422-52ea-a928-f86c106118dd",
+        "target": "11b0c731-2031-513d-b059-e63b9b7e423e",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-11b0c731-2031-513d-b059-e63b9b7e423eout-8897c1dd-9f19-5421-99d4-ec5a1f26ec07in",
+        "source": "11b0c731-2031-513d-b059-e63b9b7e423e",
+        "target": "8897c1dd-9f19-5421-99d4-ec5a1f26ec07",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-d61bbcd8-9422-52ea-a928-f86c106118ddout-be63fbbc-332b-5a03-bd27-910e9564734din",
+        "source": "d61bbcd8-9422-52ea-a928-f86c106118dd",
+        "target": "be63fbbc-332b-5a03-bd27-910e9564734d",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-be63fbbc-332b-5a03-bd27-910e9564734dout-8897c1dd-9f19-5421-99d4-ec5a1f26ec07in_1",
+        "source": "be63fbbc-332b-5a03-bd27-910e9564734d",
+        "target": "8897c1dd-9f19-5421-99d4-ec5a1f26ec07",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-d61bbcd8-9422-52ea-a928-f86c106118ddout-670e6b1a-4706-560e-a5d3-68248cd4da47in",
+        "source": "d61bbcd8-9422-52ea-a928-f86c106118dd",
+        "target": "670e6b1a-4706-560e-a5d3-68248cd4da47",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-670e6b1a-4706-560e-a5d3-68248cd4da47out-ff423490-63b9-5768-85b8-67800ab9d2afin",
+        "source": "670e6b1a-4706-560e-a5d3-68248cd4da47",
+        "target": "ff423490-63b9-5768-85b8-67800ab9d2af",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-d61bbcd8-9422-52ea-a928-f86c106118ddout-ac9cb674-c88c-5fc7-91ee-cd7fe6c971d6in",
+        "source": "d61bbcd8-9422-52ea-a928-f86c106118dd",
+        "target": "ac9cb674-c88c-5fc7-91ee-cd7fe6c971d6",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-ac9cb674-c88c-5fc7-91ee-cd7fe6c971d6out-ff423490-63b9-5768-85b8-67800ab9d2afin_1",
+        "source": "ac9cb674-c88c-5fc7-91ee-cd7fe6c971d6",
+        "target": "ff423490-63b9-5768-85b8-67800ab9d2af",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-d61bbcd8-9422-52ea-a928-f86c106118ddout-936bd291-5251-533b-8368-d9cd6048cc43in",
+        "source": "d61bbcd8-9422-52ea-a928-f86c106118dd",
+        "target": "936bd291-5251-533b-8368-d9cd6048cc43",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-936bd291-5251-533b-8368-d9cd6048cc43out-e4f0752a-856b-5d38-a180-b38e83787812in",
+        "source": "936bd291-5251-533b-8368-d9cd6048cc43",
+        "target": "e4f0752a-856b-5d38-a180-b38e83787812",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-d61bbcd8-9422-52ea-a928-f86c106118ddout-44c54dc1-90c0-5c8e-a4d2-980c85018e68in",
+        "source": "d61bbcd8-9422-52ea-a928-f86c106118dd",
+        "target": "44c54dc1-90c0-5c8e-a4d2-980c85018e68",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-44c54dc1-90c0-5c8e-a4d2-980c85018e68out-e4f0752a-856b-5d38-a180-b38e83787812in_1",
+        "source": "44c54dc1-90c0-5c8e-a4d2-980c85018e68",
+        "target": "e4f0752a-856b-5d38-a180-b38e83787812",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-d61bbcd8-9422-52ea-a928-f86c106118ddout-f3e8703f-007d-5350-896f-6421378f171ein",
+        "source": "d61bbcd8-9422-52ea-a928-f86c106118dd",
+        "target": "f3e8703f-007d-5350-896f-6421378f171e",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-f3e8703f-007d-5350-896f-6421378f171eout-e4f0752a-856b-5d38-a180-b38e83787812in_2",
+        "source": "f3e8703f-007d-5350-896f-6421378f171e",
+        "target": "e4f0752a-856b-5d38-a180-b38e83787812",
+        "sourceHandle": "out",
+        "targetHandle": "in_2"
+      },
+      {
+        "id": "reactflow__edge-d61bbcd8-9422-52ea-a928-f86c106118ddout-0c09e0f4-3fac-524f-ba93-c3bb56aa7ed6in",
+        "source": "d61bbcd8-9422-52ea-a928-f86c106118dd",
+        "target": "0c09e0f4-3fac-524f-ba93-c3bb56aa7ed6",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-0c09e0f4-3fac-524f-ba93-c3bb56aa7ed6out-0dd6163e-f1d0-5d92-903d-36c2d74bd2c6in",
+        "source": "0c09e0f4-3fac-524f-ba93-c3bb56aa7ed6",
+        "target": "0dd6163e-f1d0-5d92-903d-36c2d74bd2c6",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-d61bbcd8-9422-52ea-a928-f86c106118ddout-f3da3077-44c3-5fbd-992b-2229fd24d7a2in",
+        "source": "d61bbcd8-9422-52ea-a928-f86c106118dd",
+        "target": "f3da3077-44c3-5fbd-992b-2229fd24d7a2",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-f3da3077-44c3-5fbd-992b-2229fd24d7a2out-0dd6163e-f1d0-5d92-903d-36c2d74bd2c6in_1",
+        "source": "f3da3077-44c3-5fbd-992b-2229fd24d7a2",
+        "target": "0dd6163e-f1d0-5d92-903d-36c2d74bd2c6",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-d61bbcd8-9422-52ea-a928-f86c106118ddout-090c4c7f-a5be-507f-bb89-99bc42327430in",
+        "source": "d61bbcd8-9422-52ea-a928-f86c106118dd",
+        "target": "090c4c7f-a5be-507f-bb89-99bc42327430",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-090c4c7f-a5be-507f-bb89-99bc42327430out-0dd6163e-f1d0-5d92-903d-36c2d74bd2c6in_2",
+        "source": "090c4c7f-a5be-507f-bb89-99bc42327430",
+        "target": "0dd6163e-f1d0-5d92-903d-36c2d74bd2c6",
+        "sourceHandle": "out",
+        "targetHandle": "in_2"
+      }
+    ],
+    "scenarios": [
+      {
+        "id": "weekday",
+        "name": "Weekday",
+        "color": "#3b6fd4",
+        "nodes": [
+          "e33763ac-9a36-55b7-b768-6bfbb8563b14"
+        ]
+      },
+      {
+        "id": "offday",
+        "name": "Offday",
+        "color": "#f59e0b",
+        "nodes": [
+          "ec249f41-8524-5e22-8cce-70ac00b578a2"
+        ]
+      },
+      {
+        "id": "as-built",
+        "name": "As-built",
+        "color": "#374151",
+        "nodes": [
+          "fecd14c0-8b42-50f7-9488-5330d819c2c5"
+        ]
+      },
+      {
+        "id": "retrofit",
+        "name": "Retrofit",
+        "color": "#2a9d8f",
+        "nodes": [
+          "5215ca3e-026a-502b-8b28-a08d5c643642"
+        ]
+      },
+      {
+        "id": "m5",
+        "name": "M5",
+        "color": "#6a4fc4",
+        "nodes": [
+          "1d2e8b57-358d-55a7-80df-d9bf7be5d98c",
+          "c8463128-aff3-5eb4-8122-ac8fdc878e16"
+        ]
+      },
+      {
+        "id": "m6",
+        "name": "M6",
+        "color": "#9ca3af",
+        "nodes": [
+          "90f6ebd9-7ed0-5521-8a39-d78250cc45c8",
+          "976b349f-6918-5a32-955e-671e745fc7e7"
+        ]
+      },
+      {
+        "id": "m7",
+        "name": "M7",
+        "color": "#f28c28",
+        "nodes": [
+          "e89f0e2a-f5da-52f8-aea4-91c90d7de2e4",
+          "cdba30bd-7eac-5b8b-be84-fe64da61bbac"
+        ]
+      },
+      {
+        "id": "original",
+        "name": "Original",
+        "color": "#7b1fa2",
+        "nodes": [
+          "07090441-1e3d-5737-b256-cc83d5ccfecd"
+        ]
+      },
+      {
+        "id": "lchg",
+        "name": "LCHG priority",
+        "color": "#ff8f00",
+        "nodes": [
+          "f5c89e83-6fd5-5eb4-8afb-372c57439c57"
+        ]
+      },
+      {
+        "id": "bc",
+        "name": "BC priority",
+        "color": "#2e9e3a",
+        "nodes": [
+          "6ee8c783-c0de-5e47-92a4-610ba2765602"
+        ]
+      },
+      {
+        "id": "bc-rb",
+        "name": "BC priority with RB",
+        "color": "#d32f2f",
+        "nodes": [
+          "52e8ee0a-6b90-5848-9056-a7c1b7d312db"
+        ]
+      },
+      {
+        "id": "baseline",
+        "name": "Baseline",
+        "color": "#0b3c49",
+        "nodes": [
+          "11b0c731-2031-513d-b059-e63b9b7e423e"
+        ]
+      },
+      {
+        "id": "proposal",
+        "name": "Proposal",
+        "color": "#e0812b",
+        "nodes": [
+          "be63fbbc-332b-5a03-bd27-910e9564734d"
+        ]
+      },
+      {
+        "id": "solution-1",
+        "name": "Solution 1",
+        "color": "#d9654b",
+        "nodes": [
+          "670e6b1a-4706-560e-a5d3-68248cd4da47"
+        ]
+      },
+      {
+        "id": "solution-2",
+        "name": "Solution 2",
+        "color": "#4a72b0",
+        "nodes": [
+          "ac9cb674-c88c-5fc7-91ee-cd7fe6c971d6"
+        ]
+      },
+      {
+        "id": "route-1",
+        "name": "Route 1",
+        "color": "#5b8db8",
+        "nodes": [
+          "936bd291-5251-533b-8368-d9cd6048cc43"
+        ]
+      },
+      {
+        "id": "route-2",
+        "name": "Route 2",
+        "color": "#8e6bbf",
+        "nodes": [
+          "44c54dc1-90c0-5c8e-a4d2-980c85018e68"
+        ]
+      },
+      {
+        "id": "route-3",
+        "name": "Route 3",
+        "color": "#c9a227",
+        "nodes": [
+          "f3e8703f-007d-5350-896f-6421378f171e"
+        ]
+      },
+      {
+        "id": "passive",
+        "name": "Passive Green Wall",
+        "color": "#6aa84f",
+        "nodes": [
+          "0c09e0f4-3fac-524f-ba93-c3bb56aa7ed6"
+        ]
+      },
+      {
+        "id": "active",
+        "name": "Active Modular System",
+        "color": "#38812f",
+        "nodes": [
+          "f3da3077-44c3-5fbd-992b-2229fd24d7a2"
+        ]
+      },
+      {
+        "id": "intensive",
+        "name": "Intensive Planting",
+        "color": "#1b5e20",
+        "nodes": [
+          "090c4c7f-a5be-507f-bb89-99bc42327430"
+        ]
+      }
+    ],
+    "packages": [],
+    "datasets": [
+      {
+        "datasetId": "data.curio.scenario-charts",
+        "dirName": "data.curio.scenario-charts@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-08T00:00:00Z"
+      }
+    ],
+    "name": "ScenarioCharts",
+    "task": "",
+    "timestamp": 1791417600000,
+    "provenance_id": "ScenarioCharts"
+  }
+}

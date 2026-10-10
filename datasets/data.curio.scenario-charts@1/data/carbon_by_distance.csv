@@ -1,0 +1,25 @@
+case,distance_band,emission_kg
+Original,0-8,2700
+Original,8-16,10200
+Original,16-24,9400
+Original,24-32,9250
+Original,32-40,4400
+Original,>40,3450
+LCHG priority,0-8,2850
+LCHG priority,8-16,10500
+LCHG priority,16-24,9650
+LCHG priority,24-32,8500
+LCHG priority,32-40,3850
+LCHG priority,>40,1900
+BC priority,0-8,2800
+BC priority,8-16,10300
+BC priority,16-24,11500
+BC priority,24-32,6850
+BC priority,32-40,3800
+BC priority,>40,2250
+BC priority with RB,0-8,2800
+BC priority with RB,8-16,10350
+BC priority with RB,16-24,11550
+BC priority with RB,24-32,6900
+BC priority with RB,32-40,4100
+BC priority with RB,>40,2250

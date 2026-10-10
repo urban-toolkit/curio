@@ -70,6 +70,8 @@ type NodeEditorProps = {
     provenance?: boolean;
     customWidgetsCallback?: any;
     contentComponent?: any;
+    /** Above the output container, which keeps the rest of the pane. */
+    outputHeader?: React.ReactNode;
     disableWidgets?: boolean; // Added prop to freeze widget buttons
 };
 
@@ -91,6 +93,7 @@ function NodeEditor({
     provenance,
     customWidgetsCallback,
     contentComponent,
+    outputHeader,
     disableWidgets,
 }: NodeEditorProps) {
     const [userCode, setUserCode] = useState<string>(""); // python or grammar with marks unresolved
@@ -174,6 +177,8 @@ function NodeEditor({
     // forcing the pane unconditionally rendered a pinned code node as an empty
     // tile with nothing reachable on it.
     const hasOutputPane = outputId != undefined || contentComponent != undefined;
+    // The Vega-Lite node's Compare scenarios strip, above its chart's mount.
+    const headed = outputId != undefined && outputHeader != undefined;
     // A notebook cell shows its input and its output at once: the output pane
     // stays visible under the input tabs (Node.css), so a run, which would
     // switch to the Output tab, leaves the input tab in place.
@@ -601,7 +606,13 @@ function NodeEditor({
                                     <Tab.Pane
                                         eventKey="output"
                                         className={split ? "curio-notebook-output" : undefined}
-                                        style={inCell ? undefined : { height: "100%", overflow: "hidden" }}
+                                        style={inCell ? undefined : {
+                                            height: "100%", overflow: "hidden",
+                                            // A header above the mount: a column, while
+                                            // the pane shows (an inline display would
+                                            // show a hidden pane).
+                                            ...(headed && activeTab === "output" ? { display: "flex", flexDirection: "column" } : {}),
+                                        }}
                                     >
                                         {outputId != undefined ? (
                                             // Vega sizes its canvas in CSS px
@@ -622,17 +633,28 @@ function NodeEditor({
                                             //
                                             // In a cell the chart needs a
                                             // definite height to fit to.
-                                            <div
-                                                id={outputId}
-                                                className="nodrag nowheel curio-vega-mount"
-                                                style={{
-                                                    textAlign: "center",
-                                                    width: "100%",
-                                                    height: inCell ? px(outputBox.height) : "100%",
-                                                    ...(inCell && outputBox.maxHeight !== undefined ? { maxHeight: px(outputBox.maxHeight) } : {}),
-                                                    overflow: "auto",
-                                                }}
-                                            ></div>
+                                            // A header (the Vega-Lite node's
+                                            // Compare scenarios strip) sits
+                                            // above the mount in a slot of its
+                                            // own, so the mount stays the same
+                                            // element with or without one: the
+                                            // chart's view and its resize
+                                            // observer hold it.
+                                            <>
+                                                {outputHeader ?? null}
+                                                <div
+                                                    id={outputId}
+                                                    className="nodrag nowheel curio-vega-mount"
+                                                    style={{
+                                                        textAlign: "center",
+                                                        width: "100%",
+                                                        height: inCell ? px(outputBox.height) : headed ? undefined : "100%",
+                                                        ...(headed && !inCell ? { flex: "1 1 0", minHeight: 0 } : {}),
+                                                        ...(inCell && outputBox.maxHeight !== undefined ? { maxHeight: px(outputBox.maxHeight) } : {}),
+                                                        overflow: "auto",
+                                                    }}
+                                                ></div>
+                                            </>
                                         ) : (
                                             // Each content component lays out
                                             // and scrolls its own body. In a

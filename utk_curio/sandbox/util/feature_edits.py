@@ -1,4 +1,4 @@
-"""The Edit Features node's step (#662).
+"""The Interaction node's step (#662; it was the Edit Features node).
 
 The node keeps a list of edits, each made on features picked on its map, and
 writes its code from that list: one call of ``curio_edit_features`` with the
@@ -7,14 +7,22 @@ identifies a feature (``key``) and, for an input that carries several layers,
 the layer they apply to. The output is a new artifact; the input is never
 changed.
 
-An edit is a dict:
+An edit is a dict with an ``op``, the features it applies to, and, for some
+ops, a ``column`` and a ``value``:
 
-- ``{"op": "remove", "ids": [...]}`` drops the features whose ``key`` is one
-  of ``ids``;
-- ``{"op": "set", "ids": [...], "column": c, "value": v}`` writes ``v`` into
-  column ``c`` of those features;
-- ``{"op": "restore", "ids": [...]}`` puts those features back as the input
-  has them, undoing the edits before it.
+- ``remove`` drops the features;
+- ``restore`` puts them back as the input has them, undoing the edits before;
+- ``set`` writes ``value`` into ``column``;
+- ``scale`` multiplies the number in ``column`` by ``value``;
+- ``offset`` adds ``value`` to the number in ``column``;
+- ``expr`` writes into ``column`` what the expression ``value`` makes of the
+  feature, e.g. ``levels * 3.2`` (``edit_expr``).
+
+The features are those whose ``key`` is one of ``ids``, or, in place of
+``ids``, those a ``where`` condition holds for, as the edits before have left
+them (``height > 100 and levels >= 30``; a restore reads the input's). An
+edit with ``"enabled": False`` is kept in the list and skipped; ``label`` names
+it for people. A number edit skips a feature whose ``column`` holds no number.
 
 Features are matched by the value of ``key``, never by their position. Every
 feature that holds an id is edited: Autark's buildings repeat ``building_id``
@@ -38,17 +46,24 @@ from __future__ import annotations
 
 import math
 
+from utk_curio.sandbox.util import edit_expr
+
 REMOVE = "remove"
 SET = "set"
 RESTORE = "restore"
-OPS = (REMOVE, SET, RESTORE)
+SCALE = "scale"
+OFFSET = "offset"
+EXPR = "expr"
+OPS = (REMOVE, SET, RESTORE, SCALE, OFFSET, EXPR)
+#: The ops that write a column.
+WRITES = (SET, SCALE, OFFSET, EXPR)
 
 #: Columns a view adds to its own rows, which identify nothing upstream. A row's
 #: position is not an id either: it changes when rows are removed upstream.
 #: Kept in sync with ``VIEW_COLUMNS`` in ``utils/references/selectionTags.ts``.
 _VIEW_COLUMNS = frozenset({"__row_index__", "__input__", "_vgsid_", "interacted", "linked"})
 
-_NAME = "Edit Features"
+_NAME = "Interaction"
 
 
 class _Layer:
@@ -204,15 +219,30 @@ def _checked_edits(edits, key):
     for position, edit in enumerate(edits or []):
         if not isinstance(edit, dict) or edit.get("op") not in OPS:
             raise ValueError(
-                f"{_NAME}: edit {position} is not a remove, set or restore. "
+                f"{_NAME}: edit {position} is not one of {', '.join(OPS)}. "
                 "The node writes its code from its edit list; edit the list in the node."
             )
-        ids = edit.get("ids")
-        if not isinstance(ids, list) or not ids:
-            raise ValueError(f"{_NAME}: edit {position} names no features.")
-        if edit["op"] == SET and (not isinstance(edit.get("column"), str) or not edit["column"]):
-            raise ValueError(f"{_NAME}: edit {position} sets a value but names no column.")
-        checked.append(edit)
+        if edit.get("enabled") is False:
+            continue
+        ids, where = edit.get("ids"), edit.get("where")
+        has_ids = isinstance(ids, list) and len(ids) > 0
+        has_where = isinstance(where, str) and where.strip() != ""
+        if has_ids == has_where:
+            raise ValueError(f"{_NAME}: edit {position} needs either the features' ids or a where condition, not both.")
+        op = edit["op"]
+        if op in WRITES and (not isinstance(edit.get("column"), str) or not edit["column"]):
+            raise ValueError(f"{_NAME}: edit {position} writes a value but names no column.")
+        if op in (SCALE, OFFSET) and edit_expr._number(edit.get("value")) is None:
+            raise ValueError(f"{_NAME}: edit {position} {op}s {edit['column']} by {edit.get('value')!r}, which is not a number.")
+        parsed = dict(edit)
+        try:
+            if has_where:
+                parsed["_where"] = edit_expr.parse(where)
+            if op == EXPR:
+                parsed["_expr"] = edit_expr.parse(str(edit.get("value") or ""))
+        except edit_expr.ExprError as exc:
+            raise ValueError(f"{_NAME}: edit {position}: {exc}.") from None
+        checked.append(parsed)
     return checked
 
 
@@ -225,41 +255,76 @@ def _report_unknown(label, key, op, ids, known):
     return 0, None
 
 
-def _edit_fc(layer: _Layer, edits, key):
-    """The layer's FeatureCollection with *edits* applied, and what changed."""
-    features = layer.fc["features"]
-    ids = [_id_key((feature or {}).get("properties", {}).get(key) if isinstance(feature, dict) else None) for feature in features]
+def _apply(rows, ids, edits, key, label):
+    """*edits* over the property dicts *rows* (one per feature, the input's):
+    the rows after them (None for a removed feature, the input's own dict for
+    an untouched one), what changed, and the columns written."""
     known = {i for i in ids if i is not None}
-    if not known and features:
-        raise ValueError(f"{_NAME}: {layer.label} has no column {key}. Pick a column its features have.")
-    state = list(features)
+    state = list(rows)
     counts = {REMOVE: set(), SET: set(), RESTORE: set()}
+    written = []
     for edit in edits:
-        wanted = {_id_key(i) for i in edit["ids"]}
-        _report_unknown(layer.label, key, edit["op"], edit["ids"], known)
-        for index, feature_id in enumerate(ids):
-            if feature_id not in wanted:
-                continue
-            if edit["op"] == REMOVE:
+        op = edit["op"]
+        if "_where" in edit:
+            source = rows if op == RESTORE else state
+            targets = [
+                i for i, row in enumerate(source)
+                if row is not None and edit_expr.truthy(edit_expr.evaluate(edit["_where"], row))
+            ]
+        else:
+            wanted = {_id_key(i) for i in edit["ids"]}
+            _report_unknown(label, key, op, edit["ids"], known)
+            targets = [i for i, feature_id in enumerate(ids) if feature_id in wanted]
+        for index in targets:
+            if op == REMOVE:
                 if state[index] is not None:
                     state[index] = None
                     counts[REMOVE].add(index)
-            elif edit["op"] == SET:
-                current = state[index]
-                if current is None:
-                    continue
-                properties = dict(current.get("properties") or {})
-                properties[edit["column"]] = edit.get("value")
-                state[index] = {**current, "properties": properties}
-                counts[SET].add(index)
-            else:
-                if state[index] is not features[index]:
-                    state[index] = features[index]
+                continue
+            if op == RESTORE:
+                if state[index] is not rows[index]:
+                    state[index] = rows[index]
                     counts[RESTORE].add(index)
                     counts[REMOVE].discard(index)
                     counts[SET].discard(index)
-    fc = {**layer.fc, "features": [feature for feature in state if feature is not None]}
-    return fc, {op: len(rows) for op, rows in counts.items()}
+                continue
+            current = state[index]
+            if current is None:
+                continue
+            column = edit["column"]
+            if op == SET:
+                value = edit.get("value")
+            elif op == EXPR:
+                value = edit_expr.evaluate(edit["_expr"], current)
+            else:
+                number = edit_expr._number(current.get(column))
+                if number is None:
+                    continue
+                by = edit_expr._number(edit["value"])
+                value = edit_expr._out(number * by if op == SCALE else number + by)
+            updated = dict(current)
+            updated[column] = value
+            state[index] = updated
+            counts[SET].add(index)
+            if column not in written:
+                written.append(column)
+    return state, {op: len(found) for op, found in counts.items()}, written
+
+
+def _edit_fc(layer: _Layer, edits, key):
+    """The layer's FeatureCollection with *edits* applied, and what changed."""
+    features = layer.fc["features"]
+    rows = [dict((feature or {}).get("properties") or {}) if isinstance(feature, dict) else {} for feature in features]
+    ids = [_id_key(row.get(key)) for row in rows]
+    if not any(i is not None for i in ids) and features:
+        raise ValueError(f"{_NAME}: {layer.label} has no column {key}. Pick a column its features have.")
+    state, counts, _ = _apply(rows, ids, edits, key, layer.label)
+    out = []
+    for feature, original, row in zip(features, rows, state):
+        if row is None:
+            continue
+        out.append(feature if row is original else {**feature, "properties": row})
+    return {**layer.fc, "features": out}, counts
 
 
 def _edit_frame(layer: _Layer, edits, key):
@@ -273,45 +338,35 @@ def _edit_frame(layer: _Layer, edits, key):
     from utk_curio.sandbox.util.codec import active_geometry_name, is_geospatial_frame
 
     geometry = active_geometry_name(frame) if is_geospatial_frame(frame) else None
-    ids = frame[key].map(_id_key)
-    known = {i for i in ids if i is not None}
-    out = frame.copy()
-    kept = pd.Series(True, index=frame.index)
-    changed = pd.Series(False, index=frame.index)
-    removed = pd.Series(False, index=frame.index)
-    restored = pd.Series(False, index=frame.index)
     for edit in edits:
-        wanted = {_id_key(i) for i in edit["ids"]}
-        _report_unknown(layer.label, key, edit["op"], edit["ids"], known)
-        mask = ids.isin(wanted)
-        if edit["op"] == REMOVE:
-            removed |= mask & kept
-            kept &= ~mask
-        elif edit["op"] == SET:
-            column = edit["column"]
-            if column == geometry:
-                raise ValueError(f"{_NAME}: {column} is the geometry of {layer.label}; a value cannot be set on it.")
-            target = mask & kept
-            if column not in out.columns:
-                out[column] = pd.Series([None] * len(out), index=out.index, dtype=object)
-            out[column] = out[column].where(~target, edit.get("value"))
-            changed |= target
-        else:
-            back = mask & (~kept | changed)
-            for column in out.columns:
-                if column == geometry:
-                    continue
-                source = frame[column] if column in frame.columns else pd.Series([None] * len(frame), index=frame.index, dtype=object)
-                out[column] = out[column].where(~mask, source)
-            restored |= back
-            removed &= ~mask
-            changed &= ~mask
-            kept |= mask
+        if edit.get("column") is not None and edit.get("column") == geometry and edit["op"] in WRITES:
+            raise ValueError(f"{_NAME}: {geometry} is the geometry of {layer.label}; a value cannot be set on it.")
+    plain = frame.drop(columns=[geometry]) if geometry else frame
+    rows = [{k: edit_expr._plain(v) for k, v in row.items()} for row in plain.to_dict("records")]
+    ids = [_id_key(row.get(key)) for row in rows]
+    state, counts, written = _apply(rows, ids, edits, key, layer.label)
+    kept = pd.Series([row is not None for row in state], index=frame.index)
+    out = frame.copy()
+    for column in written:
+        values = [row.get(column) if row is not None else None for row in state]
+        out[column] = pd.Series(values, index=frame.index, dtype=object)
+        if column in frame.columns and pd.api.types.is_numeric_dtype(frame[column]):
+            converted = pd.to_numeric(out[column], errors="coerce")
+            if converted.notna().sum() == out[column].notna().sum():
+                # A float column stays one, though 50.0 was written as 50.
+                if pd.api.types.is_float_dtype(frame[column]):
+                    converted = converted.astype(frame[column].dtype)
+                out[column] = converted
     result = out[kept]
+    # A table numbered 0, 1, 2, ... stays so: a step after this one that reads
+    # rows by position (as SCOUT's rasterizer does) must not meet the gaps the
+    # removed rows leave.
+    if isinstance(frame.index, pd.RangeIndex) and frame.index.start == 0 and frame.index.step == 1:
+        result = result.reset_index(drop=True)
     meta = getattr(frame, "metadata", None)
     if isinstance(meta, dict):
         result.__dict__["metadata"] = dict(meta)
-    return result, {REMOVE: int(removed.sum()), SET: int(changed.sum()), RESTORE: int(restored.sum())}
+    return result, counts
 
 
 def _summary(layer: _Layer, key, counts) -> str:

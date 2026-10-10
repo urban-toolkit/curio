@@ -61,12 +61,6 @@ _PASS_THROUGH_KINDS = frozenset(
 
 _AUTK_GRAMMAR_KIND = "autk-grammar"
 
-# Node kinds whose tile draws the node's own output rather than what reaches
-# it: a Compare Scenarios node (#662) charts the table its own run stacked. A
-# pinned one is its own source, so its tile draws without a run, and its inputs
-# are not walked. Mirrors ``SELF_DRAWN_NODE_TYPES`` in ``dashboardLayout.ts``.
-_SELF_DRAWN_KINDS = frozenset({"compare-scenarios"})
-
 #: How much embedded data a single dashboard may carry, measured as the UTF-8
 #: length of the serialised envelopes. Chosen to stay well inside what a browser
 #: will parse from one document without the page feeling broken; a raster layer
@@ -248,8 +242,7 @@ def dashboard_source_node_ids(spec: dict) -> Set[str]:
 
     Walks upward from every pinned node through the pass-through kinds and stops
     at the first node on each path that actually produces rows. Breadth-first
-    with a visited set, so a cycle or a diamond terminates. A pinned node that
-    draws its own output (``_SELF_DRAWN_KINDS``) is its own source instead.
+    with a visited set, so a cycle or a diamond terminates.
     """
     dataflow = (spec or {}).get("dataflow") or {}
     nodes = dataflow.get("nodes") or []
@@ -257,8 +250,8 @@ def dashboard_source_node_ids(spec: dict) -> Set[str]:
 
     by_id = {node.get("id"): node for node in nodes if node.get("id")}
     pinned_nodes = [node for node in nodes if node.get("id") and _is_pinned(node)]
-    sources: Set[str] = {node["id"] for node in pinned_nodes if _node_kind(node) in _SELF_DRAWN_KINDS}
-    pinned = [node["id"] for node in pinned_nodes if node["id"] not in sources]
+    sources: Set[str] = set()
+    pinned = [node["id"] for node in pinned_nodes]
     if not pinned:
         return sources
 

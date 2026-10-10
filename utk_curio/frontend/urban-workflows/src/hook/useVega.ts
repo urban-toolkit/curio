@@ -17,6 +17,7 @@ import { echoedCircle } from "../utils/selectionEcho";
 import type { NodeEmptyReason } from "../utils/nodeEmptyState";
 import { resolveGrammarEmptyReason } from "../utils/nodeEmptyState";
 import { clearEmptyState, writeEmptyState } from "../utils/writeEmptyState";
+import { applyScenarioDefaults, stackScenarios, type ScenarioInput } from "../utils/vegaCompare";
 
 // const schema = require('./vega-schema.json');
 const vega = require("vega");
@@ -71,8 +72,7 @@ export const useVega = ({
   upstreamErrored = false,
   hasSpec = true,
   onRedraw,
-  recordsProvenance = true,
-  forwardsInput = true,
+  scenarios = null,
 }: {
   data: any;
   code: string;
@@ -90,21 +90,16 @@ export const useVega = ({
    */
   onRedraw?: (counts: RenderCounts) => void;
   /**
-   * Whether a compile is recorded in the node's provenance, its code being the
-   * spec. A Compare Scenarios node (#662) draws its own output: its provenance
-   * is the code that made that output, and a spec there would be offered as a
-   * version of its Python.
+   * The scenario each input circle is, when the node compares scenarios
+   * (utils/vegaCompare): the spec then reads its inputs stacked as one table,
+   * `scenarios`, as well as each as its own `input_<n>`. Null when it does not.
    */
-  recordsProvenance?: boolean;
-  /**
-   * Whether a compile hands the node's input on as its output, as a chart
-   * does. A Compare Scenarios node's chart reads the node's own output, which
-   * its run has already handed on.
-   */
-  forwardsInput?: boolean;
+  scenarios?: ScenarioInput[] | null;
 }) => {
   const onRedrawRef = React.useRef(onRedraw);
   onRedrawRef.current = onRedraw;
+  const scenariosRef = React.useRef(scenarios);
+  scenariosRef.current = scenarios;
   const { showToast } = useToastContext();
   const [interactions, _setInteractions] = useState<any>({}); // {signal: {type: point/interval, data: }} // if type point data contains list of object ids. If type is interval data is an object where each key is an attribute with intervals or lists
 
@@ -399,23 +394,21 @@ export const useVega = ({
     // END COMPILE GRAMMAR
     let endTime = formatDate(new Date());
 
-    if (recordsProvenance) {
-      let typesInput: string[] = [];
+    let typesInput: string[] = [];
 
-      if (data.input != "") typesInput = data.input.dataType; // getType([data.input]);
+    if (data.input != "") typesInput = data.input.dataType; // getType([data.input]);
 
-      let typesOuput: string[] = [...typesInput];
+    let typesOuput: string[] = [...typesInput];
 
-      nodeExecProv(
-        startTime,
-        endTime,
-        workflowNameRef.current,
-        data.nodeId,
-        mapTypes(typesInput),
-        mapTypes(typesOuput),
-        code
-      );
-    }
+    nodeExecProv(
+      startTime,
+      endTime,
+      workflowNameRef.current,
+      data.nodeId,
+      mapTypes(typesInput),
+      mapTypes(typesOuput),
+      code
+    );
 
     // dev/136: the counts travel to the behavior, which decides whether this
     // was a render or an empty panel under a green badge.
@@ -434,9 +427,14 @@ export const useVega = ({
     lastValuesRef.current = values;
     heldDatasetsRef.current = prepared.datasets;
     heldInputRef.current = data.input;
-    const rowsIn = Array.isArray(values) ? values.length : undefined;
+    // Comparing scenarios: every input, stacked under its scenario, is the
+    // spec's data, and is what the chart is judged over.
+    const comparing = scenariosRef.current;
+    const stacked = comparing && prepared.datasets.length > 0 ? stackScenarios(prepared.datasets, comparing) : null;
+    const judged = stacked?.values ?? values;
+    const rowsIn = Array.isArray(judged) ? judged.length : undefined;
     // dev/137: judged over the fields the input carries; see vegaUsableRows.
-    const { usableRows, usableFields } = usableCounts(values, specObj);
+    const { usableRows, usableFields } = usableCounts(judged, specObj);
 
     if (prepared.emptyReason != null) {
       // Nothing was injected and there is nothing sensible to draw. Compiling
@@ -457,7 +455,8 @@ export const useVega = ({
 
     // Each input as the dataset its name says (`input_0`, `input_1`, ...): one
     // input as the spec's data, several as named datasets (utils/vegaInput).
-    datasetViewRef.current = injectInputs(specObj, prepared.datasets);
+    if (stacked && comparing) applyScenarioDefaults(specObj, comparing);
+    datasetViewRef.current = injectInputs(specObj, stacked ? [...prepared.datasets, stacked] : prepared.datasets);
     // Multi-view specs keep their authored size (vega-lite discards a
     // "container" injection there anyway) and the output pane scrolls; unit
     // and layer specs fill the node, unless the author sized them (#202).
@@ -666,7 +665,7 @@ export const useVega = ({
     }
 
     // replicating input to the output
-    if (forwardsInput) data.outputCallback(data.nodeId, data.input);
+    data.outputCallback(data.nodeId, data.input);
 
     // dev/136: what this render actually amounted to. Awaited last, so the
     // listeners above are attached exactly when they were before.

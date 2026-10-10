@@ -175,11 +175,6 @@ describe("other nodes shown as notebook cells", () => {
     expect(el.style.height).not.toBe("100%");
   });
 
-  test("a Compare Scenarios chart or map gets a definite 400px, as an Autark map does", () => {
-    const { container } = mount(true, contentProps("curio.builtin/compare-scenarios"));
-    expect(contentMount(container).style.height).toBe("400px");
-  });
-
   test("a package's body, sized for a node, gets a definite height rather than collapsing", () => {
     const { container } = mount(true, contentProps("acme.tools/heatmap@1"));
     expect(contentMount(container).style.height).toBe("360px");

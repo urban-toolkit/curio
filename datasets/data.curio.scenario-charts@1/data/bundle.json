@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "parts": [
+    {
+      "index": 0,
+      "label": "Carpark occupancy by hour, weekday and off day",
+      "kind": "dataframe",
+      "format": "csv",
+      "file": "data/carpark_occupancy.csv"
+    },
+    {
+      "index": 1,
+      "label": "Bridge fragility curves, as built and retrofitted",
+      "kind": "dataframe",
+      "format": "csv",
+      "file": "data/fragility_curves.csv"
+    },
+    {
+      "index": 2,
+      "label": "Bridge damage states for M5, M6 and M7 events",
+      "kind": "dataframe",
+      "format": "csv",
+      "file": "data/bridge_damage.csv"
+    },
+    {
+      "index": 3,
+      "label": "Median PGA of each simulated scenario, M5, M6 and M7",
+      "kind": "dataframe",
+      "format": "csv",
+      "file": "data/pga_ensemble.csv"
+    },
+    {
+      "index": 4,
+      "label": "Fleet carbon emission by trip distance, four priorities",
+      "kind": "dataframe",
+      "format": "csv",
+      "file": "data/carbon_by_distance.csv"
+    },
+    {
+      "index": 5,
+      "label": "Building GWP by lifecycle stage, baseline and proposal",
+      "kind": "dataframe",
+      "format": "csv",
+      "file": "data/lifecycle_gwp.csv"
+    },
+    {
+      "index": 6,
+      "label": "Structural share of two solutions' environmental impact",
+      "kind": "dataframe",
+      "format": "csv",
+      "file": "data/impact_share.csv"
+    },
+    {
+      "index": 7,
+      "label": "Criteria weighing for or against three routes",
+      "kind": "dataframe",
+      "format": "csv",
+      "file": "data/route_criteria.csv"
+    },
+    {
+      "index": 8,
+      "label": "Green-wall systems' U-value, energy savings and CO2 reduction",
+      "kind": "dataframe",
+      "format": "csv",
+      "file": "data/green_wall.csv"
+    }
+  ]
+}

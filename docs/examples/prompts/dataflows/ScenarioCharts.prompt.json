@@ -1,0 +1,560 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "ScenarioCharts",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/dataflows/ScenarioCharts.json",
+    "sha256": "5855342aabace2ae94c590b241539d55e20380e217fdf2bfe441ed3d79333ab7",
+    "walkthrough": null
+  },
+  "prompt": "Show how many kinds of scenario comparison one charting tool can draw, using the mock scenario chart tables from the Data Catalog: one bundle of tables, each shaped like a figure from the scenario-planning literature, each row's scenario in its case column. Load the bundle once. For each table, give each of its scenarios its own branch that keeps that scenario's rows, and compare the branches on a Vega-Lite chart that compares the scenarios, each drawn in its scenario's colour. The scenarios are the figures' own: Weekday and Offday for four carparks' hourly occupancy, as lines with a shaded band for the spread; As-built and Retrofit for a bridge's fragility curves over peak ground acceleration, one dash style per damage state; M5, M6 and M7 both for the share of bridges in each damage state, as grouped bars with dashed error bars of one standard deviation, and for the median ground acceleration of each event's simulated runs, as dots with a black median tick; Original, LCHG priority, BC priority and BC priority with RB for a fleet's carbon emission by trip distance, as grouped bars; Baseline and Proposal for a building's global warming potential, one stacked bar each coloured by lifecycle stage with its total on top; Solution 1 and Solution 2 for the structural share of their environmental impact, a donut each with the structural slice in the scenario's colour; Route 1, Route 2 and Route 3 for how six criteria weigh for or against each route, as open circles sized by strength, red for and teal against, with a square in the route's colour; and Passive Green Wall, Active Modular System and Intensive Planting in a table of U-value, energy savings and CO2 reduction. A scenario that appears in two comparisons is the same scenario in both.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.curio.scenario-charts"
+    ],
+    "packages": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis3",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis4",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis5",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis6",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis7",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis8",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis9",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis10",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis11",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis12",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis13",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis14",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis15",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis16",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis17",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis18",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis19",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis20",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis21",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis22",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis23",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis24",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization4",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization5",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization6",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization7",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization8",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization9",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "analysis1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis3",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis4",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "analysis5",
+        "to": "visualization5",
+        "kind": "data"
+      },
+      {
+        "from": "analysis6",
+        "to": "visualization6",
+        "kind": "data"
+      },
+      {
+        "from": "analysis7",
+        "to": "visualization7",
+        "kind": "data"
+      },
+      {
+        "from": "analysis8",
+        "to": "visualization8",
+        "kind": "data"
+      },
+      {
+        "from": "analysis9",
+        "to": "visualization9",
+        "kind": "data"
+      },
+      {
+        "from": "analysis10",
+        "to": "visualization1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis11",
+        "to": "visualization2",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis12",
+        "to": "visualization3",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis13",
+        "to": "visualization4",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis14",
+        "to": "visualization5",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis15",
+        "to": "visualization6",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis16",
+        "to": "visualization7",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis17",
+        "to": "visualization8",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis18",
+        "to": "visualization9",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis19",
+        "to": "visualization5",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "analysis20",
+        "to": "visualization6",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "analysis21",
+        "to": "visualization7",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "analysis22",
+        "to": "visualization8",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "analysis23",
+        "to": "visualization9",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "analysis24",
+        "to": "visualization9",
+        "kind": "data",
+        "slot": 3
+      },
+      {
+        "from": "loader1",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis3",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis4",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis5",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis6",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis7",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis8",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis9",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis10",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis11",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis12",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis13",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis14",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis15",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis16",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis17",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis18",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis19",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis20",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis21",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis22",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis23",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis24",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.curio.scenario-charts"
+      ],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T0",
+    "needs": [],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5-5 from the example JSON, 2026-10-08",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "sourceLicences": [
+      {
+        "datasetId": "data.curio.scenario-charts",
+        "licence": "MIT (this repository)"
+      }
+    ],
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the data is mock tables written by scripts/build_scenario_charts_example.py, shaped like published figures but invented."
+  },
+  "notes": "One Data Loading node loads the data.curio.scenario-charts bundle, a tuple of nine tables. One Python node per table and scenario keeps that scenario's rows (input_0[k] filtered on case), each in its dataflow scenario, and nine Vega-Lite nodes with the Compare scenarios switch (metadata.vegaCompare) read the stacked scenarios table: an uncertainty band, fragility curves, grouped bars with error bars, a strip plot, grouped bars, a stacked bar, donuts, a bubble matrix and a table. M5, M6 and M7 each feed two charts."
+}

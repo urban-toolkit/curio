@@ -178,7 +178,7 @@ const NATURAL_HEIGHT_KINDS: ReadonlySet<string> = new Set([
   "curio.builtin/parameter",
   "curio.builtin/spatial-join",
 ]);
-const MAP_KINDS: ReadonlySet<string> = new Set([NodeType.AUTK_GRAMMAR, "curio.builtin/compare-scenarios"]);
+const MAP_KINDS: ReadonlySet<string> = new Set([NodeType.AUTK_GRAMMAR]);
 
 export interface NotebookOutputBox {
   height?: number;
@@ -188,8 +188,7 @@ export interface NotebookOutputBox {
 
 /**
  * The box a cell's output goes in, by the node's kind: a Vega-Lite chart's
- * mount is 320px, an Autark map or plot (and a Compare Scenarios chart or
- * difference map) 400px. Kinds whose body has a height of its own take it, up
+ * mount is 320px, an Autark map or plot 400px. Kinds whose body has a height of its own take it, up
  * to 360px. Anything else, a package's body made to fill a node, is 360px.
  */
 export function notebookOutputBox(nodeType: string): NotebookOutputBox {

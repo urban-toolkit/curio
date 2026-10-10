@@ -184,11 +184,6 @@ EXAMPLE_09_MAP = "6c4aa6a8-45eb-480e-bb3d-3fd54d13325b"
 EXAMPLE_08_SCATTER = "niteroi-plot"
 EXAMPLE_08_MAP = "niteroi-map"
 
-#: Compare Scenarios (#662) runs its inputs through Python behind its own play
-#: button, but it has no legacy category, so ``NodeSpec.has_play_button`` is
-#: False for it. The canvas tests play it and check it by its type.
-COMPARE_SCENARIOS = "curio.builtin/compare-scenarios"
-
 #: Raster Calculator and Raster Statistics (#738) run their code behind their
 #: own play button too, with no legacy category: example 24's Raster
 #: Statistics node is played and must end Done like any other.
@@ -202,59 +197,8 @@ EDIT_FEATURES = "curio.builtin/edit-features"
 def _plays(node: NodeSpec) -> bool:
     """Whether the canvas gives *node* a play button that the run clicks."""
     return (
-        node.has_play_button or node.type == COMPARE_SCENARIOS or node.type in RASTER_TOOLS
-        or node.type == EDIT_FEATURES
+        node.has_play_button or node.type in RASTER_TOOLS or node.type == EDIT_FEATURES
     )
-
-
-#: A Compare Scenarios node's view and where its drawing stands: ``[mode,
-#: state, problem]``, from its chart, or its map in Difference.
-_COMPARE_VIEW_JS = """(id) => {
-    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
-    const body = node && node.querySelector("[data-compare-mode]");
-    if (!body) return null;
-    const mode = body.getAttribute("data-compare-mode");
-    const kind = mode === "difference" ? "map" : "chart";
-    const view = node.querySelector(`[data-compare-${kind}-state]`);
-    const problem = node.querySelector(`[data-compare-${kind}-problem]`);
-    return [
-        mode,
-        view ? view.getAttribute(`data-compare-${kind}-state`) : null,
-        problem ? problem.textContent : "",
-    ];
-}"""
-
-
-def _assert_compare_view_drew(page, node_id: str) -> None:
-    """A Compare Scenarios node that ran shows its view drawn: its chart
-    compiled with no problem and painted, or its difference map drawn."""
-    try:
-        page.wait_for_function(
-            "(id) => { const view = (" + _COMPARE_VIEW_JS + ")(id);"
-            " return !!view && !!view[1] && view[1] !== 'drawing'; }",
-            arg=node_id,
-            timeout=90000,
-        )
-    except PlaywrightTimeoutError:
-        pass
-    view = page.evaluate(_COMPARE_VIEW_JS, node_id)
-    assert view and view[1] == "drawn", (
-        f"Compare Scenarios node {node_id}: its view ended {view!r}"
-    )
-    if view[0] == "difference":
-        assert_autark_map_drawn(
-            page, node_id, timeout=60000, attach_as=f"{node_id}'s difference map"
-        )
-    else:
-        assert_vega_canvas_rendered(page, node_id)
-
-
-#: Where an Edit Features node's map stands: "drawing", "drawn" or "problem".
-_EDIT_MAP_STATE_JS = """(id) => {
-    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
-    const map = node && node.querySelector("[data-edit-map-state]");
-    return map ? map.getAttribute("data-edit-map-state") : null;
-}"""
 
 
 def _assert_edit_map_drew(page, node_id: str) -> None:
@@ -1270,10 +1214,6 @@ class TestWorkflowCanvas:
                 )
             # text mode: no output tab → nothing further to assert.
 
-        # A Compare Scenarios node shows the view it drew from its inputs.
-        for node in self.spec.nodes:
-            if node.type == COMPARE_SCENARIOS:
-                _assert_compare_view_drew(self.page, node.id)
         # An Edit Features node shows its input drawn on its own map.
         for node in self.spec.nodes:
             if node.type == EDIT_FEATURES:
@@ -1301,15 +1241,15 @@ class TestWorkflowCanvas:
 
         # Each map opens framed on the layers it draws (#773): not a speck in
         # the middle of the map, nor a crop past its edges. That is every
-        # Autark map, and the maps Compare Scenarios and Edit Features draw
-        # with the Autark node's map code. Checked once every close-up is
+        # Autark map, and the map Edit Features draws with the Autark node's
+        # map code. Checked once every close-up is
         # taken, and for every map before failing on one.
         maps = [
             node.id for node in self._drawing_autark_nodes()
             if "map" in json.loads(self.spec.node_code(node, "json"))
         ] + [
             node.id for node in self.spec.nodes
-            if node.type in (COMPARE_SCENARIOS, EDIT_FEATURES)
+            if node.type == EDIT_FEATURES
             and self.page.locator(f"#autk-grammar-map-{node.id}").count()
         ]
         unframed = [

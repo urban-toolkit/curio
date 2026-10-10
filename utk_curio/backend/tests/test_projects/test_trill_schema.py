@@ -376,20 +376,6 @@ REJECTED = {
     "selection tag named as a reference": lambda d: _node(d)["metadata"].update(
         selections=[{"name": "selection picked", "node": "n2", "column": "osm_id", "ids": []}]
     ),
-    # #662: a Compare Scenarios node labels each input by name and hex color.
-    "compare label without a color": lambda d: _node(d)["metadata"].update(
-        compareScenarios={"inputs": [{"scenario": "s1", "name": "Baseline"}]}
-    ),
-    "compare label color as a name": lambda d: _node(d)["metadata"].update(
-        compareScenarios={"inputs": [{"scenario": "s1", "name": "Baseline", "color": "green"}]}
-    ),
-    "compare label with a field the format does not have": lambda d: _node(d)["metadata"].update(
-        compareScenarios={"inputs": [{"name": "Baseline", "color": "#2a9d8f", "slot": 0}]}
-    ),
-    "compare labels written empty": lambda d: _node(d)["metadata"].update(compareScenarios={"inputs": []}),
-    "compare chart the node does not draw": lambda d: _node(d)["metadata"].update(
-        compareScenarios={"chart": {"preset": "radar"}}
-    ),
     # #662: an Edit Features node's edits each name what they do and to which
     # features; a set names its column and its value.
     "feature edit the node does not make": lambda d: _node(d)["metadata"].update(
@@ -452,16 +438,6 @@ ACCEPTED = {
         {"name": "nothing_yet", "node": "n2", "column": "building_id", "ids": []},
         {"name": "many", "node": "n2", "column": "osm_id", "count": 25000},
     ]),
-    # A Compare Scenarios node (#662): an input in no scenario has no id.
-    "compare labels, one in no scenario, and a chart": lambda d: _node(d)["metadata"].update(
-        compareScenarios={
-            "inputs": [
-                {"scenario": "s1", "name": "Baseline", "color": "#2a9d8f"},
-                {"name": "Python Computation", "color": "#8a8f98"},
-            ],
-            "chart": {"preset": "lollipop", "y": "sunlight", "aggregate": "median"},
-        }
-    ),
     # An Edit Features node (#662): a remove, a set to null and a restore, by
     # ids that are numbers and texts, on one layer of several.
     "feature edits of every kind": lambda d: _node(d)["metadata"].update(
@@ -623,27 +599,19 @@ WRITER_SHAPES = {
              "collapsed": True, "box": {"x": 1, "y": 302}},
         ],
     ),
-    # Written by TrillGenerator for a Compare Scenarios node fed by two
-    # scenarios (#662): its code, its labels and its chart.
-    "canvas save with a Compare Scenarios node": _flow(
+    # Written by TrillGenerator for a Vega-Lite node comparing two scenarios
+    # (#662): its spec and its Compare scenarios switch.
+    "canvas save with a Vega-Lite node comparing scenarios": _flow(
         nodes=[
             AGENT_NODE,
             {**AGENT_NODE, "id": "n1-copy", "metadata": {"copiedFrom": [AGENT_NODE["id"]]}},
             {
                 "id": "cmp",
-                "type": "curio.builtin/compare-scenarios@1",
+                "type": "curio.builtin/vis-vega@1",
                 "x": 700,
                 "y": 0,
-                "content": "return curio_stack_scenarios([])\n",
-                "metadata": {
-                    "compareScenarios": {
-                        "inputs": [
-                            {"scenario": "s1", "name": "Baseline", "color": "#2a9d8f"},
-                            {"scenario": "s2", "name": "Twice as tall", "color": "#e76f51"},
-                        ],
-                        "chart": {"preset": "bar", "y": "sunlight", "aggregate": "mean"},
-                    }
-                },
+                "content": '{"mark": "bar", "encoding": {"x": {"field": "scenario_name"}}}',
+                "metadata": {"vegaCompare": {"enabled": True}},
             },
         ],
         edges=[

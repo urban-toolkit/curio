@@ -8,6 +8,7 @@ fails test by test rather than at collection.
 """
 from __future__ import annotations
 
+import json
 import math
 import re
 import textwrap
@@ -110,6 +111,23 @@ def test_a_raster_calculator_chooses_by_class(workspace):
     _output, result = run_in_process(code, (classes, nbs, no_nbs), CALCULATOR, workspace)
     try:
         assert result.read(1).tolist() == [[1.0, 20.0, 30.0]]
+    finally:
+        result.close()
+
+
+@pytest.mark.parametrize("example", ["FloodScenarios", "WhatIfShadows"])
+def test_an_examples_raster_calculator_maps_the_absolute_change_between_its_scenarios(workspace, example):
+    """The code SCOUT's flood and shadow examples map the change between their
+    scenarios with: input 1 minus input 0, as its size."""
+    flow = json.loads((REPO / "docs" / "examples" / "dataflows" / f"{example}.json").read_text(encoding="utf-8"))
+    (node,) = [n for n in flow["dataflow"]["nodes"] if n["type"] == CALCULATOR]
+    reference = _raster(workspace / "reference.tif", [[1.0, 2.0], [-9999.0, 4.0]])
+    comparison = _raster(workspace / "comparison.tif", [[0.5, 2.0], [3.0, 6.0]])
+    _output, result = run_in_process(node["content"], (reference, comparison), CALCULATOR, workspace)
+    try:
+        cells = result.read(1)
+        assert cells[0].tolist() == [0.5, 0.0]
+        assert math.isnan(cells[1, 0]) and cells[1, 1] == 2.0
     finally:
         result.close()
 

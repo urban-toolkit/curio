@@ -62,7 +62,7 @@ def test_the_rail_lists_the_tests(app_frontend: "FrontendPage", frontend_server:
     _sign_up(page, frontend_server)
 
     # #662: 27 with the Scenarios, BuildingRasters, FloodScenarios,
-    # ScoutShadows, WeatherRouting and NetCDF test dataflows.
+    # WhatIfShadows, WeatherRouting and NetCDF test dataflows.
     _rail_entry(page, "Tests", 27).click()
 
     expect(project_card(page, FIXTURE)).to_have_count(1, timeout=10000)

@@ -238,11 +238,11 @@ class TestRefusals:
 
     @pytest.mark.parametrize("edit", [{"op": "delete", "ids": [1]}, {"op": "remove", "ids": []}, {"op": "set", "ids": [1], "value": 2}, "remove 1"])
     def test_an_edit_the_node_does_not_make_is_refused(self, edit):
-        with pytest.raises(ValueError, match=r"Edit Features: edit 0 "):
+        with pytest.raises(ValueError, match=r"Interaction: edit 0 "):
             _edit(_records(), [edit], **BUILDINGS)
 
     def test_no_input_says_so(self):
-        with pytest.raises(ValueError, match=r"Edit Features has no input"):
+        with pytest.raises(ValueError, match=r"Interaction has no input"):
             _edit(None, REMOVE_1, **BUILDINGS)
 
 
@@ -374,3 +374,79 @@ def test_an_autark_layer_reaching_python_keeps_its_name_and_type():
     # A table without a layer name is left as parseInput reads it.
     plain = _resolve_outputs_elem({"dataType": "geodataframe", "data": _buildings()})
     assert getattr(plain, "metadata", None) is None
+
+
+#: The expressions and edit logs the map's preview and this step share
+#: (``utils/editFeatures/applyEdits.cases.json``).
+APPLY_CASES = json.loads(
+    (REPO_ROOT / "utk_curio/frontend/urban-workflows/src/utils/editFeatures/applyEdits.cases.json").read_text(encoding="utf-8")
+)
+
+
+@pytest.mark.parametrize("case", APPLY_CASES["expressions"], ids=lambda c: c["expr"])
+def test_an_expression_reads_a_feature_as_the_preview_does(case):
+    from utk_curio.sandbox.util import edit_expr
+
+    assert edit_expr.evaluate(edit_expr.parse(case["expr"]), case["row"]) == case["value"]
+
+
+@pytest.mark.parametrize("text", APPLY_CASES["refusals"])
+def test_what_is_not_an_expression_is_refused(text):
+    from utk_curio.sandbox.util import edit_expr
+
+    with pytest.raises(edit_expr.ExprError):
+        edit_expr.parse(text)
+
+
+@pytest.mark.parametrize("case", APPLY_CASES["edits"], ids=lambda c: c["name"])
+def test_an_edit_log_is_applied_as_the_preview_applies_it(case, capsys):
+    fc = {"type": "FeatureCollection", "features": [
+        {"type": "Feature", "geometry": {"type": "Point", "coordinates": [i, 0]}, "properties": props}
+        for i, props in enumerate(case["features"])
+    ]}
+    out = _edit({"dataType": "geodataframe", "data": fc}, case["edits"], key=case["key"])
+    assert [f["properties"] for f in out["data"]["features"]] == case["expected"]
+    counts = case["counts"]
+    said = capsys.readouterr().out
+    for op, word in (("remove", "removed"), ("set", "changed"), ("restore", "restored")):
+        if counts[op]:
+            assert f"{counts[op]} {word}" in said, said
+
+
+def test_a_where_or_an_expression_that_is_not_one_is_refused():
+    with pytest.raises(ValueError, match=r"Interaction: edit 0: "):
+        _edit(_records(), [{"op": "remove", "where": "height >"}], **BUILDINGS)
+    with pytest.raises(ValueError, match=r"Interaction: edit 0: "):
+        _edit(_records(), [{"op": "expr", "ids": [1], "column": "h", "value": "open('x')"}], **BUILDINGS)
+    with pytest.raises(ValueError, match=r"not a number"):
+        _edit(_records(), [{"op": "scale", "ids": [1], "column": "height", "value": "x"}], **BUILDINGS)
+
+
+def test_a_table_is_scaled_and_keeps_its_numbers():
+    frame = gpd.GeoDataFrame({"osm_id": [10, 11], "height": [100.0, 40.0]}, geometry=[Point(0, 0), Point(1, 1)], crs=3395)
+    table = _edit(frame, [{"op": "scale", "where": "height > 50", "column": "height", "value": 0.5}], key="osm_id")
+    assert table["height"].tolist() == [50.0, 40.0]
+    assert str(table["height"].dtype).startswith("float")
+
+
+def test_whatif_interactive_removes_what_whatif_shadows_removes():
+    """WhatIfShadowsInteractive's Interaction node hands on the buildings
+    WhatIfShadows' transformation does: SCOUT's B layer, the Loop without its
+    15 high-rise buildings, still marked as buildings."""
+    flows = REPO_ROOT / "docs/examples/dataflows"
+    source = json.loads((flows / "WhatIfShadows.json").read_text(encoding="utf-8"))["dataflow"]
+    copy = json.loads((flows / "WhatIfShadowsInteractive.json").read_text(encoding="utf-8"))["dataflow"]
+    (transformation,) = [n for n in source["nodes"] if "REMOVED = [" in (n.get("content") or "")]
+    (interaction,) = [n for n in copy["nodes"] if n["type"] == "curio.builtin/edit-features"]
+    buildings = gpd.read_file(REPO_ROOT / "datasets/data.scout.loop-buildings@1/data/loop-buildings.geojson")
+    buildings.__dict__["metadata"] = {"layerType": "buildings"}  # as curio_load_data marks it
+
+    scope = {}
+    exec("def run(input_0):\n" + textwrap.indent(transformation["content"], "    "), scope)
+    expected = scope["run"](buildings.copy())
+    settings = interaction["metadata"]["editFeatures"]
+    out = _edit(buildings, settings["edits"], key=settings["key"])  # a copy would drop the metadata
+
+    assert len(expected) == len(buildings) - 15
+    assert out.equals(expected)
+    assert out.metadata == {"layerType": "buildings"}

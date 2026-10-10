@@ -51,6 +51,7 @@
   "06-autark-what-if-shadow-study": {
     "tags": [
       "Autark",
+      "Vega-Lite",
       "GPU compute"
     ],
     "data_type": [
@@ -326,7 +327,8 @@
   },
   "dataflows/FloodScenarios": {
     "tags": [
-      "Autark"
+      "Autark",
+      "Vega-Lite"
     ],
     "data_type": [
       "Geometries",
@@ -437,6 +439,12 @@
       "OpenStreetMap"
     ]
   },
+  "dataflows/ScenarioCharts": {
+    "tags": [
+      "Vega-Lite"
+    ],
+    "data_type": []
+  },
   "dataflows/Scenarios": {
     "tags": [
       "Vega-Lite",
@@ -444,14 +452,6 @@
     ],
     "data_type": [
       "Tables"
-    ]
-  },
-  "dataflows/ScoutShadows": {
-    "tags": [
-      "Autark"
-    ],
-    "data_type": [
-      "Geometries"
     ]
   },
   "dataflows/SimpleView": {
@@ -473,10 +473,29 @@
   },
   "dataflows/WeatherRouting": {
     "tags": [
-      "Autark"
+      "Autark",
+      "Vega-Lite"
     ],
     "data_type": [
       "Tables",
+      "Geometries"
+    ]
+  },
+  "dataflows/WhatIfShadows": {
+    "tags": [
+      "Autark",
+      "Vega-Lite"
+    ],
+    "data_type": [
+      "Geometries"
+    ]
+  },
+  "dataflows/WhatIfShadowsInteractive": {
+    "tags": [
+      "Autark",
+      "Vega-Lite"
+    ],
+    "data_type": [
       "Geometries"
     ]
   },

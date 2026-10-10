@@ -210,77 +210,103 @@
         }
       },
       {
-        "id": "whatif-compare-chart",
-        "type": "curio.builtin/compare-scenarios",
-        "x": 3728,
-        "y": 1135,
-        "title": "Mean sunlight",
-        "content": "# Compare Scenarios writes this code from its inputs: each input, under the\n# id and the name of its scenario. It is written again when they change.\nreturn curio_stack_scenarios([\n    (\"s-baseline\", \"Baseline\", [!! input_0 !!]),\n    (\"s-twice\", \"Twice as tall\", [!! input_1 !!]),\n    (\"s-towers\", \"Two towers removed\", [!! input_2 !!]),\n], layer=\"table_osm_roads\")\n",
+        "id": "whatif-baseline-roads",
+        "type": "curio.builtin/computation-analysis",
+        "x": 2830,
+        "y": 0,
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Chart each scenario's mean road sunlight, in the scenarios' colours, and list what differs between them.",
+        "goal": "Take the roads and their sunlight from the Baseline map.",
         "metadata": {
           "keywords": [],
-          "compareScenarios": {
-            "inputs": [
-              {
-                "scenario": "s-baseline",
-                "name": "Baseline",
-                "color": "#3567c7"
-              },
-              {
-                "scenario": "s-twice",
-                "name": "Twice as tall",
-                "color": "#e86a3c"
-              },
-              {
-                "scenario": "s-towers",
-                "name": "Two towers removed",
-                "color": "#2f8f4a"
-              }
-            ],
-            "chart": {
-              "preset": "bar",
-              "y": "sunlight",
-              "aggregate": "mean"
-            },
-            "mode": "chart",
-            "layer": "table_osm_roads"
-          }
-        }
+          "packageTemplateLabel": "Roads - Baseline"
+        },
+        "title": "Roads - Baseline",
+        "content": "# The roads layer the Roads by sunlight map draws, each road with its minutes of sunlight.\nroads = [!! input_0:table_osm_roads !!]\nroads.metadata = {\"layerType\": \"roads\"}\nreturn roads\n"
       },
       {
-        "id": "whatif-compare-difference",
-        "type": "curio.builtin/compare-scenarios",
-        "x": 2948,
-        "y": 525,
-        "title": "Sunlight change",
-        "content": "# Compare Scenarios writes this code from its inputs: input 1 minus input 0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"s-baseline\", \"Baseline\", [!! input_0 !!]),\n    (\"s-twice\", \"Twice as tall\", [!! input_1 !!]),\n], layer=\"table_osm_roads\")\n",
+        "id": "whatif-modified-roads",
+        "type": "curio.builtin/computation-analysis",
+        "x": 2830,
+        "y": 460,
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Map, road by road, Twice as tall's sunlight minus Baseline's: the sunlight each road loses where the taller buildings' shadows reach it.",
+        "goal": "Take the roads and their sunlight from the Twice as tall map.",
         "metadata": {
           "keywords": [],
-          "compareScenarios": {
-            "inputs": [
-              {
-                "scenario": "s-baseline",
-                "name": "Baseline",
-                "color": "#3567c7"
-              },
-              {
-                "scenario": "s-twice",
-                "name": "Twice as tall",
-                "color": "#e86a3c"
-              }
-            ],
-            "mode": "difference",
-            "difference": {
-              "value": "sunlight"
-            },
-            "layer": "table_osm_roads"
+          "packageTemplateLabel": "Roads - Twice as tall",
+          "copiedFrom": [
+            "whatif-baseline-roads"
+          ]
+        },
+        "title": "Roads - Twice as tall",
+        "content": "# The roads layer the Roads by sunlight map draws, each road with its minutes of sunlight.\nroads = [!! input_0:table_osm_roads !!]\nroads.metadata = {\"layerType\": \"roads\"}\nreturn roads\n"
+      },
+      {
+        "id": "whatif-towers-roads",
+        "type": "curio.builtin/computation-analysis",
+        "x": 3710,
+        "y": 1025,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the roads and their sunlight from the Two towers removed map.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Roads - Two towers removed",
+          "copiedFrom": [
+            "whatif-baseline-roads"
+          ]
+        },
+        "title": "Roads - Two towers removed",
+        "content": "# The roads layer the Roads by sunlight map draws, each road with its minutes of sunlight.\nroads = [!! input_0:table_osm_roads !!]\nroads.metadata = {\"layerType\": \"roads\"}\nreturn roads\n"
+      },
+      {
+        "id": "whatif-sunlight-chart",
+        "type": "curio.builtin/vis-vega",
+        "x": 4420,
+        "y": 1025,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Chart the roads' mean sunlight in every scenario.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Mean sunlight comparison",
+          "vegaCompare": {
+            "enabled": true
           }
-        }
+        },
+        "title": "Mean sunlight comparison",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    },\n    \"y\": {\n      \"aggregate\": \"mean\",\n      \"field\": \"sunlight\",\n      \"type\": \"quantitative\",\n      \"title\": \"Mean sunlight (minutes)\"\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"bar\",\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"legend\": null\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"text\",\n        \"dy\": -6,\n        \"baseline\": \"bottom\"\n      },\n      \"encoding\": {\n        \"text\": {\n          \"aggregate\": \"mean\",\n          \"field\": \"sunlight\",\n          \"type\": \"quantitative\",\n          \"format\": \".1f\"\n        }\n      }\n    }\n  ]\n}"
+      },
+      {
+        "id": "whatif-sunlight-change",
+        "type": "curio.builtin/computation-analysis",
+        "x": 3560,
+        "y": 230,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take each road's change in sunlight from Baseline to Twice as tall.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Sunlight change"
+        },
+        "title": "Sunlight change",
+        "content": "# Each road's change in sunlight from Baseline (input_0) to Twice as tall\n# (input_1), in minutes. Both read the same roads from the pool, and the roads\n# have no id, so a road is matched by its shape (a shape that repeats, in order).\ndef by_shape(roads):\n    keyed = roads.copy()\n    keyed[\"shape\"] = keyed.geometry.to_wkb()\n    keyed[\"match\"] = keyed.groupby(\"shape\").cumcount()\n    return keyed\n\nbefore = by_shape(input_0)[[\"shape\", \"match\", \"sunlight\"]].rename(columns={\"sunlight\": \"sunlight_before\"})\nchanged = by_shape(input_1).merge(before, on=[\"shape\", \"match\"]).drop(columns=[\"shape\", \"match\"])\nchanged[\"sunlight_change\"] = changed[\"sunlight\"] - changed[\"sunlight_before\"]\nchanged.metadata = {\"layerType\": \"roads\"}\nreturn changed\n"
+      },
+      {
+        "id": "whatif-sunlight-change-map",
+        "type": "curio.builtin/autk-grammar",
+        "x": 4260,
+        "y": 230,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map where the roads' sunlight changes when every building is twice as tall.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Sunlight change map"
+        },
+        "title": "Sunlight change map",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"isPick\": true,\n        \"isColorMap\": true,\n        \"getFnv\": \"sunlight_change\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"legendTitle\": \"Sunlight change (minutes)\"\n      }\n    ]\n  }\n}"
       }
     ],
     "edges": [
@@ -325,39 +351,67 @@
         "target": "whatif-towers-map"
       },
       {
-        "id": "reactflow__edge-whatif-baseline-mapout-whatif-compare-chartin",
+        "id": "reactflow__edge-whatif-baseline-mapout-whatif-baseline-roadsin",
         "source": "whatif-baseline-map",
-        "target": "whatif-compare-chart",
+        "target": "whatif-baseline-roads",
         "sourceHandle": "out",
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-whatif-modified-mapout-whatif-compare-chartin_1",
+        "id": "reactflow__edge-whatif-modified-mapout-whatif-modified-roadsin",
         "source": "whatif-modified-map",
-        "target": "whatif-compare-chart",
+        "target": "whatif-modified-roads",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-whatif-towers-mapout-whatif-towers-roadsin",
+        "source": "whatif-towers-map",
+        "target": "whatif-towers-roads",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-whatif-baseline-roadsout-whatif-sunlight-chartin",
+        "source": "whatif-baseline-roads",
+        "target": "whatif-sunlight-chart",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-whatif-modified-roadsout-whatif-sunlight-chartin_1",
+        "source": "whatif-modified-roads",
+        "target": "whatif-sunlight-chart",
         "sourceHandle": "out",
         "targetHandle": "in_1"
       },
       {
-        "id": "reactflow__edge-whatif-towers-mapout-whatif-compare-chartin_2",
-        "source": "whatif-towers-map",
-        "target": "whatif-compare-chart",
+        "id": "reactflow__edge-whatif-towers-roadsout-whatif-sunlight-chartin_2",
+        "source": "whatif-towers-roads",
+        "target": "whatif-sunlight-chart",
         "sourceHandle": "out",
         "targetHandle": "in_2"
       },
       {
-        "id": "reactflow__edge-whatif-baseline-mapout-whatif-compare-differencein",
-        "source": "whatif-baseline-map",
-        "target": "whatif-compare-difference",
+        "id": "reactflow__edge-whatif-baseline-roadsout-whatif-sunlight-changein",
+        "source": "whatif-baseline-roads",
+        "target": "whatif-sunlight-change",
         "sourceHandle": "out",
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-whatif-modified-mapout-whatif-compare-differencein_1",
-        "source": "whatif-modified-map",
-        "target": "whatif-compare-difference",
+        "id": "reactflow__edge-whatif-modified-roadsout-whatif-sunlight-changein_1",
+        "source": "whatif-modified-roads",
+        "target": "whatif-sunlight-change",
         "sourceHandle": "out",
         "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-whatif-sunlight-changeout-whatif-sunlight-change-mapin",
+        "source": "whatif-sunlight-change",
+        "target": "whatif-sunlight-change-map",
+        "sourceHandle": "out",
+        "targetHandle": "in"
       }
     ],
     "scenarios": [
@@ -368,7 +422,8 @@
         "description": "Every building at its own height.",
         "nodes": [
           "whatif-baseline-compute",
-          "whatif-baseline-map"
+          "whatif-baseline-map",
+          "whatif-baseline-roads"
         ]
       },
       {
@@ -378,7 +433,8 @@
         "description": "Every building twice as tall.",
         "nodes": [
           "whatif-modified-compute",
-          "whatif-modified-map"
+          "whatif-modified-map",
+          "whatif-modified-roads"
         ]
       },
       {
@@ -389,7 +445,8 @@
         "nodes": [
           "whatif-towers-edit",
           "whatif-towers-compute",
-          "whatif-towers-map"
+          "whatif-towers-map",
+          "whatif-towers-roads"
         ]
       }
     ],
@@ -398,6 +455,6 @@
     "timestamp": 1748990000000,
     "provenance_id": "DefaultWorkflow",
     "packages": [],
-    "description": "A what-if shadow study for Boston's Back Bay as three scenarios over one fixed context, built on Example 7's per-road sunlight shader. A data node loads the PBF once and a data pool hands the layers to every scenario. In each, the shader adds up every road's minutes of June-solstice sunlight with the buildings' heights scaled by a height_factor widget: 1 in Baseline, 2 in Twice as tall, and 1 in Two towers removed, where an Edit Features node first removes two towers, 200 Clarendon and Raffles, by their building_id. A map shows each scenario's roads by sunlight, and two Compare Scenarios nodes compare them: a chart of each scenario's mean road sunlight, and a map of the sunlight each road loses in Twice as tall."
+    "description": "A what-if shadow study for Boston's Back Bay as three scenarios over one fixed context, built on Example 7's per-road sunlight shader. A data node loads the PBF once and a data pool hands the layers to every scenario. In each, the shader adds up every road's minutes of June-solstice sunlight with the buildings' heights scaled by a height_factor widget: 1 in Baseline, 2 in Twice as tall, and 1 in Two towers removed, where an Edit Features node first removes two towers, 200 Clarendon and Raffles, by their building_id. A map shows each scenario's roads by sunlight, and a Python node per scenario takes them: a Vega-Lite node comparing the scenarios charts each scenario's mean road sunlight, and a Python node and an Autark map show the sunlight each road loses in Twice as tall."
   }
 }

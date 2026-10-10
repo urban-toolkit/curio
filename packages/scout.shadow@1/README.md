@@ -77,8 +77,8 @@ it as `input_0`:
 The metrics are SCOUT's own, one row with `Mean Acc shadow` and
 `Median Acc shadow`: the minutes of shadow over the ground (the cells with no
 building), computed by `run_shadow_model` from Deep Umbra's predictions before
-they are written as 8-bit tiles. A **Compare Scenarios** node charts them side
-by side.
+they are written as 8-bit tiles. A Vega-Lite node comparing scenarios charts
+them side by side.
 
 Deep Umbra predicts each tile from the tile and its eight neighbours, so a tile
 at the edge sees no buildings beyond it.
@@ -99,7 +99,7 @@ A pip install downloads the model from GitHub the first time the node runs.
 ```
 [ Buildings ] ──► [ Rasterize Buildings ] ──► [ Accumulated Shadow ] ──► input_0[0] ──► [ Autark: map of the shadow ]
                             │                          │
-                            ▼                          └──────────► input_0[1] ──► [ Compare Scenarios ]
+                            ▼                          └──────────► input_0[1] ──► [ Vega-Lite: scenarios compared ]
                      [ Mosaic Tiles ] ──► [ Autark: map of the heights ]
 ```
 
@@ -109,9 +109,10 @@ mosaic, on the same grid as the shadow.
 
 [Example 24](../../docs/examples/24-scout-building-rasters.md) maps the shadow
 of SCOUT's Chicago Loop buildings. The test dataflow
-[ScoutShadows](../../docs/examples/dataflows/ScoutShadows.json) compares SCOUT's
+[WhatIfShadows](../../docs/examples/dataflows/WhatIfShadows.json) compares SCOUT's
 two building sets of the Chicago Loop as two scenarios: the buildings as they
-are, and with 15 of them removed.
+are, and with 15 of them removed, on a Vega-Lite pie of the mean accumulated
+shadow and a map of a Raster Calculator's absolute change in shadow.
 
 ## Setup
 

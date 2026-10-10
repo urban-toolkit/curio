@@ -1,0 +1,694 @@
+{
+  "dataflow": {
+    "categories": {
+      "complexity": [
+        "Beginner"
+      ]
+    },
+    "nodes": [
+      {
+        "id": "ba7b9145-46d8-5209-893e-30aa8af3e4ef",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 695,
+        "content": "gdf = curio_load_data(\"data.scout.loop-buildings\")\n\n# Mark the frame as buildings, so an Autark map extrudes each footprint\n# to its height.\ngdf.metadata = {\"layerType\": \"buildings\"}\nreturn gdf\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load SCOUT's 123 Chicago Loop buildings with their heights.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Buildings"
+      },
+      {
+        "id": "612ac316-8ee5-5437-bbda-c8583e81ed3c",
+        "type": "curio.builtin/parameter",
+        "x": 82,
+        "y": 385,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "The season both scenarios' shadow runs in.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "season",
+              "type": "choice",
+              "label": "Season",
+              "default": "summer",
+              "options": {
+                "choices": [
+                  "spring",
+                  "summer",
+                  "winter"
+                ],
+                "display": "radio"
+              }
+            }
+          ]
+        },
+        "title": "Season"
+      },
+      {
+        "id": "0143e82a-7b14-504b-b059-e2834c8ac1c3",
+        "type": "scout.raster-conversion/rasterize-buildings",
+        "x": 1290,
+        "y": 0,
+        "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: the 256 by 256 tiles SCOUT writes, 8-bit gray where 255 is the maximum\nheight, in EPSG:3395, saved as one of this dataflow's computed datasets, under\nthe name the \"Save tiles as\" widget gives (\"tiles\"); and a table of them, one\nrow per tile: zoom, x, y and the maximum height. Mosaic Tiles, given the same\nname, puts the tiles together into one raster.\nThe Widgets tab sets the height column, the zoom level, the maximum height and\nthe name.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_raster_conversion.convert_to_raster import convert_raster\nfrom scout_raster_conversion.mosaic import tile_table\n\ntiles = curio_save_folder([!! tiles !!])\nconvert_raster(input_0, [!! attribute !!], int([!! zoom !!]), tiles, max_height=float([!! max_height !!]))\nreturn tile_table(tiles, int([!! zoom !!]), float([!! max_height !!]))\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Rasterize the existing buildings into zoom-16 height tiles.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "attribute",
+              "type": "text",
+              "label": "Height column",
+              "default": "height"
+            },
+            {
+              "name": "zoom",
+              "type": "number",
+              "label": "Zoom level",
+              "default": 16,
+              "options": {
+                "min": 1,
+                "max": 20,
+                "step": 1
+              }
+            },
+            {
+              "name": "max_height",
+              "type": "number",
+              "label": "Maximum height",
+              "default": 550,
+              "options": {
+                "min": 1,
+                "step": 1,
+                "units": "m"
+              }
+            },
+            {
+              "name": "tiles",
+              "type": "text",
+              "label": "Save tiles as",
+              "default": "tiles"
+            }
+          ],
+          "packageTemplateLabel": "Rasterize Buildings - Existing"
+        },
+        "title": "Rasterize Buildings - Existing"
+      },
+      {
+        "id": "ea641dfb-1c44-5261-ad6d-7816086d8422",
+        "type": "scout.raster-conversion/mosaic-tiles",
+        "x": 1935,
+        "y": 0,
+        "content": "\"\"\"Mosaic Tiles: the tiles Rasterize Buildings saved, side by side in one raster.\n\nInput: Rasterize Buildings' table of tiles, whose zoom and maximum height say\nhow to put them together. The tiles are the computed dataset of this dataflow\nthat the \"Tiles\" widget names (\"tiles\"), the name Rasterize Buildings saved\nthem under.\nOutput: one raster in EPSG:3395, each cell a height in metres (a tile's gray\nlevel times the maximum height over 255). A tile with no building near it is\n0, the ground. An Autark map draws it as input_0, band band_1; SCOUT's Deep\nUmbra shadow model (Accumulated Shadow) reads it.\n\"\"\"\nfrom scout_raster_conversion.mosaic import mosaic\n\nreturn mosaic(\n    curio_computed_path([!! tiles !!]),\n    int(input_0[\"zoom\"].iloc[0]),\n    float(input_0[\"max_height\"].iloc[0]),\n    curio_output_file,\n)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Put the tiles Rasterize Buildings saved together into one height raster in metres.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "tiles",
+              "type": "text",
+              "label": "Tiles",
+              "default": "tiles"
+            }
+          ],
+          "packageTemplateLabel": "Mosaic Tiles - Existing"
+        },
+        "title": "Mosaic Tiles - Existing"
+      },
+      {
+        "id": "6086b922-b194-5525-affd-b987dabe7356",
+        "type": "scout.shadow/accumulated-shadow",
+        "x": 2580,
+        "y": 0,
+        "content": "\"\"\"Accumulated Shadow: SCOUT's Deep Umbra shadow model.\n\nInput: Rasterize Buildings' table of tiles (scout.raster-conversion). The\nheight tiles themselves are this dataflow's computed dataset the \"Tiles\"\nwidget names, the name Rasterize Buildings saved them under (\"tiles\").\nOutput: (shadow, metrics).\n- shadow: the accumulated shadow in minutes, one raster in EPSG:3395 on the\n  grid of the tiles' height mosaic (Mosaic Tiles), made from the shadow tiles\n  SCOUT's run_shadow_model writes. An Autark map draws it, band band_1.\n- metrics: SCOUT's metrics as its run_shadow_model computes them, one row:\n  \"Mean Acc shadow\" and \"Median Acc shadow\", the minutes of shadow over the\n  ground (the cells with no building), for a chart comparing the scenarios.\nThe shadow tiles are kept as a computed dataset of this dataflow, under the\nname the \"Save shadows as\" widget gives.\nThe Widgets tab sets the season and the names. The model is the Model\nCatalog's Deep Umbra, model.scout.deep-umbra, its ONNX file run as it is.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_shadow.deep_umbra import run_shadow_model\nfrom scout_shadow.mosaic import mosaic\n\nshadows = curio_save_folder([!! shadows !!])\nmetrics = run_shadow_model(\n    curio_computed_path([!! tiles !!]),\n    [!! @season !!],\n    shadows,\n    model_path=curio_load_model(\"model.scout.deep-umbra\").entry,\n)\nreturn mosaic(shadows, [!! @season !!], curio_output_file), metrics\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Predict the existing buildings' accumulated shadow with Deep Umbra.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Accumulated Shadow - Existing",
+          "widgets": [
+            {
+              "name": "tiles",
+              "type": "text",
+              "label": "Tiles",
+              "default": "tiles"
+            },
+            {
+              "name": "shadows",
+              "type": "text",
+              "label": "Save shadows as",
+              "default": "shadows"
+            }
+          ]
+        },
+        "title": "Accumulated Shadow - Existing"
+      },
+      {
+        "id": "9631bad8-4827-5c59-9e0e-57cb937daac7",
+        "type": "curio.builtin/data-transformation",
+        "x": 645,
+        "y": 960,
+        "content": "# The 15 buildings SCOUT's high-rise shadow case removes: SCOUT's\n# B_buildings is this layer without them.\nREMOVED = [8, 10, 12, 13, 14, 18, 19, 31, 34, 51, 66, 77, 82, 106, 122]\nremaining = input_0[~input_0[\"building_id\"].isin(REMOVED)].reset_index(drop=True)\n# Filtering drops the frame's metadata: mark it as buildings again, so an\n# Autark map extrudes each footprint to its height.\nremaining.metadata = {\"layerType\": \"buildings\"}\nreturn remaining",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Remove the 15 buildings SCOUT's high-rise case removes.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Data Transformation - Towers removed"
+        },
+        "title": "Data Transformation - Towers removed"
+      },
+      {
+        "id": "7b7141d3-60ba-5be3-a1a4-e23b8b981e31",
+        "type": "scout.raster-conversion/rasterize-buildings",
+        "x": 1290,
+        "y": 960,
+        "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: the 256 by 256 tiles SCOUT writes, 8-bit gray where 255 is the maximum\nheight, in EPSG:3395, saved as one of this dataflow's computed datasets, under\nthe name the \"Save tiles as\" widget gives (\"tiles\"); and a table of them, one\nrow per tile: zoom, x, y and the maximum height. Mosaic Tiles, given the same\nname, puts the tiles together into one raster.\nThe Widgets tab sets the height column, the zoom level, the maximum height and\nthe name.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_raster_conversion.convert_to_raster import convert_raster\nfrom scout_raster_conversion.mosaic import tile_table\n\ntiles = curio_save_folder([!! tiles !!])\nconvert_raster(input_0, [!! attribute !!], int([!! zoom !!]), tiles, max_height=float([!! max_height !!]))\nreturn tile_table(tiles, int([!! zoom !!]), float([!! max_height !!]))\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Rasterize the remaining buildings into zoom-16 height tiles.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "attribute",
+              "type": "text",
+              "label": "Height column",
+              "default": "height"
+            },
+            {
+              "name": "zoom",
+              "type": "number",
+              "label": "Zoom level",
+              "default": 16,
+              "options": {
+                "min": 1,
+                "max": 20,
+                "step": 1
+              }
+            },
+            {
+              "name": "max_height",
+              "type": "number",
+              "label": "Maximum height",
+              "default": 550,
+              "options": {
+                "min": 1,
+                "step": 1,
+                "units": "m"
+              }
+            },
+            {
+              "name": "tiles",
+              "type": "text",
+              "label": "Save tiles as",
+              "default": "tiles",
+              "value": "tiles-towers-removed"
+            }
+          ],
+          "copiedFrom": [
+            "0143e82a-7b14-504b-b059-e2834c8ac1c3"
+          ],
+          "packageTemplateLabel": "Rasterize Buildings - Towers removed"
+        },
+        "title": "Rasterize Buildings - Towers removed"
+      },
+      {
+        "id": "86ddf168-5745-55e0-9f29-20b75a9329bf",
+        "type": "scout.raster-conversion/mosaic-tiles",
+        "x": 1935,
+        "y": 960,
+        "content": "\"\"\"Mosaic Tiles: the tiles Rasterize Buildings saved, side by side in one raster.\n\nInput: Rasterize Buildings' table of tiles, whose zoom and maximum height say\nhow to put them together. The tiles are the computed dataset of this dataflow\nthat the \"Tiles\" widget names (\"tiles\"), the name Rasterize Buildings saved\nthem under.\nOutput: one raster in EPSG:3395, each cell a height in metres (a tile's gray\nlevel times the maximum height over 255). A tile with no building near it is\n0, the ground. An Autark map draws it as input_0, band band_1; SCOUT's Deep\nUmbra shadow model (Accumulated Shadow) reads it.\n\"\"\"\nfrom scout_raster_conversion.mosaic import mosaic\n\nreturn mosaic(\n    curio_computed_path([!! tiles !!]),\n    int(input_0[\"zoom\"].iloc[0]),\n    float(input_0[\"max_height\"].iloc[0]),\n    curio_output_file,\n)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Put the tiles Rasterize Buildings saved together into one height raster in metres.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "tiles",
+              "type": "text",
+              "label": "Tiles",
+              "default": "tiles",
+              "value": "tiles-towers-removed"
+            }
+          ],
+          "copiedFrom": [
+            "ea641dfb-1c44-5261-ad6d-7816086d8422"
+          ],
+          "packageTemplateLabel": "Mosaic Tiles - Towers removed"
+        },
+        "title": "Mosaic Tiles - Towers removed"
+      },
+      {
+        "id": "3bd9ca02-2391-52cb-94ce-8bd862128574",
+        "type": "scout.shadow/accumulated-shadow",
+        "x": 2580,
+        "y": 960,
+        "content": "\"\"\"Accumulated Shadow: SCOUT's Deep Umbra shadow model.\n\nInput: Rasterize Buildings' table of tiles (scout.raster-conversion). The\nheight tiles themselves are this dataflow's computed dataset the \"Tiles\"\nwidget names, the name Rasterize Buildings saved them under (\"tiles\").\nOutput: (shadow, metrics).\n- shadow: the accumulated shadow in minutes, one raster in EPSG:3395 on the\n  grid of the tiles' height mosaic (Mosaic Tiles), made from the shadow tiles\n  SCOUT's run_shadow_model writes. An Autark map draws it, band band_1.\n- metrics: SCOUT's metrics as its run_shadow_model computes them, one row:\n  \"Mean Acc shadow\" and \"Median Acc shadow\", the minutes of shadow over the\n  ground (the cells with no building), for a chart comparing the scenarios.\nThe shadow tiles are kept as a computed dataset of this dataflow, under the\nname the \"Save shadows as\" widget gives.\nThe Widgets tab sets the season and the names. The model is the Model\nCatalog's Deep Umbra, model.scout.deep-umbra, its ONNX file run as it is.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_shadow.deep_umbra import run_shadow_model\nfrom scout_shadow.mosaic import mosaic\n\nshadows = curio_save_folder([!! shadows !!])\nmetrics = run_shadow_model(\n    curio_computed_path([!! tiles !!]),\n    [!! @season !!],\n    shadows,\n    model_path=curio_load_model(\"model.scout.deep-umbra\").entry,\n)\nreturn mosaic(shadows, [!! @season !!], curio_output_file), metrics\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Predict the remaining buildings' accumulated shadow with Deep Umbra.",
+        "metadata": {
+          "keywords": [],
+          "copiedFrom": [
+            "6086b922-b194-5525-affd-b987dabe7356"
+          ],
+          "packageTemplateLabel": "Accumulated Shadow - Towers removed",
+          "widgets": [
+            {
+              "name": "tiles",
+              "type": "text",
+              "label": "Tiles",
+              "default": "tiles",
+              "value": "tiles-towers-removed"
+            },
+            {
+              "name": "shadows",
+              "type": "text",
+              "label": "Save shadows as",
+              "default": "shadows",
+              "value": "shadows-towers-removed"
+            }
+          ]
+        },
+        "title": "Accumulated Shadow - Towers removed"
+      },
+      {
+        "id": "c68aeed6-9cfd-5759-b15e-76fe3563051b",
+        "type": "curio.builtin/vis-vega",
+        "x": 3870,
+        "y": 410,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Chart SCOUT's mean accumulated shadow of both scenarios.",
+        "metadata": {
+          "keywords": [],
+          "vegaCompare": {
+            "enabled": true
+          },
+          "packageTemplateLabel": "Mean accumulated shadow comparison"
+        },
+        "title": "Mean accumulated shadow comparison",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"title\": \"Mean accumulated shadow (min)\",\n  \"encoding\": {\n    \"theta\": {\n      \"field\": \"Mean Acc shadow\",\n      \"type\": \"quantitative\",\n      \"stack\": true\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"legend\": null\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"arc\",\n        \"outerRadius\": 110,\n        \"tooltip\": true\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"text\",\n        \"radius\": 135\n      },\n      \"encoding\": {\n        \"text\": {\n          \"field\": \"Mean Acc shadow\",\n          \"type\": \"quantitative\",\n          \"format\": \".2f\"\n        }\n      }\n    }\n  ]\n}"
+      },
+      {
+        "id": "7465bb33-9916-53fe-806b-90becc9aa805",
+        "type": "curio.builtin/raster-calculator",
+        "x": 3870,
+        "y": 910,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the size of the change in the accumulated shadow between the two scenarios, cell by cell.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Accumulated shadow change"
+        },
+        "title": "Accumulated shadow change",
+        "content": "# The size of the change from Existing (input_0) to Towers removed (input_1),\n# cell by cell: 0 where they agree.\nreturn curio_raster_calculate(\"subtract\", [input_1, input_0], absolute=True)\n"
+      },
+      {
+        "id": "40039de4-5651-5ddf-9915-ab56972e35cc",
+        "type": "curio.builtin/autk-grammar",
+        "x": 4520,
+        "y": 910,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map where the accumulated shadow changes when the towers are removed.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Accumulated shadow change map"
+        },
+        "title": "Accumulated shadow change map",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"legendTitle\": \"Accumulated shadow change (minutes)\"\n      }\n    ]\n  }\n}"
+      },
+      {
+        "id": "c43cf253-1b54-5e18-8fb5-393817d22389",
+        "type": "curio.builtin/autk-grammar",
+        "x": 645,
+        "y": 430,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"legendTitle\": \"Building height (m)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the existing buildings in 3D, coloured by height.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Buildings in 3D - Existing"
+        },
+        "title": "Buildings in 3D - Existing"
+      },
+      {
+        "id": "a9c39074-cc27-5df9-9f6c-0fe4599b35b0",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1935,
+        "y": 430,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"legendTitle\": \"Building height (m)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the existing buildings' rasterized heights on a map.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Rasterized heights - Existing"
+        },
+        "title": "Rasterized heights - Existing"
+      },
+      {
+        "id": "93184132-1d8a-563b-bd05-f8fc9e5d64f0",
+        "type": "curio.builtin/autk-grammar",
+        "x": 3225,
+        "y": 430,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"legendTitle\": \"Accumulated shadow (minutes)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the existing buildings' accumulated shadow on a map.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Shadow map - Existing"
+        },
+        "title": "Shadow map - Existing"
+      },
+      {
+        "id": "a568ff77-e88d-5a19-936d-5988aeebe5b3",
+        "type": "curio.builtin/autk-grammar",
+        "x": 645,
+        "y": 1390,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"legendTitle\": \"Building height (m)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the remaining buildings in 3D, coloured by height.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Buildings in 3D - Towers removed"
+        },
+        "title": "Buildings in 3D - Towers removed"
+      },
+      {
+        "id": "13c5544b-f368-5a5f-9f88-103fdd0caa61",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1935,
+        "y": 1390,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"legendTitle\": \"Building height (m)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the remaining buildings' rasterized heights on a map.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Rasterized heights - Towers removed"
+        },
+        "title": "Rasterized heights - Towers removed"
+      },
+      {
+        "id": "a9d15f3f-f8ce-58b1-91a2-545fefaebcf4",
+        "type": "curio.builtin/autk-grammar",
+        "x": 3225,
+        "y": 1390,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"legendTitle\": \"Accumulated shadow (minutes)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the remaining buildings' accumulated shadow on a map.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Shadow map - Towers removed"
+        },
+        "title": "Shadow map - Towers removed"
+      },
+      {
+        "id": "dfc77348-ce30-5c66-ba39-28944edd5b54",
+        "type": "curio.builtin/computation-analysis",
+        "x": 3225,
+        "y": 0,
+        "content": "# Accumulated Shadow returns (shadow, metrics): these are SCOUT's metrics, \"Mean Acc shadow\" and\n# \"Median Acc shadow\" over the ground, as its run_shadow_model computed them.\nreturn input_0[1]\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take SCOUT's metrics of the existing buildings' shadow from Accumulated Shadow.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Shadow metrics - Existing"
+        },
+        "title": "Shadow metrics - Existing"
+      },
+      {
+        "id": "c0c2c860-6e5e-5606-84b9-9f685450ba00",
+        "type": "curio.builtin/computation-analysis",
+        "x": 2580,
+        "y": 430,
+        "content": "# Accumulated Shadow returns (shadow, metrics): these are the shadow in minutes, a raster, for the maps.\nreturn input_0[0]\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the existing buildings' shadow raster from Accumulated Shadow.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Shadow raster - Existing"
+        },
+        "title": "Shadow raster - Existing"
+      },
+      {
+        "id": "9f9ba8b1-7d6c-5001-97a5-e8b7e3c8d065",
+        "type": "curio.builtin/computation-analysis",
+        "x": 3225,
+        "y": 960,
+        "content": "# Accumulated Shadow returns (shadow, metrics): these are SCOUT's metrics, \"Mean Acc shadow\" and\n# \"Median Acc shadow\" over the ground, as its run_shadow_model computed them.\nreturn input_0[1]\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take SCOUT's metrics of the remaining buildings' shadow from Accumulated Shadow.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Shadow metrics - Towers removed"
+        },
+        "title": "Shadow metrics - Towers removed"
+      },
+      {
+        "id": "3e37e26a-268b-51de-a494-249116b148ea",
+        "type": "curio.builtin/computation-analysis",
+        "x": 2580,
+        "y": 1390,
+        "content": "# Accumulated Shadow returns (shadow, metrics): these are the shadow in minutes, a raster, for the maps.\nreturn input_0[0]\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the remaining buildings' shadow raster from Accumulated Shadow.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Shadow raster - Towers removed"
+        },
+        "title": "Shadow raster - Towers removed"
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-ba7b9145-46d8-5209-893e-30aa8af3e4efout-0143e82a-7b14-504b-b059-e2834c8ac1c3in",
+        "source": "ba7b9145-46d8-5209-893e-30aa8af3e4ef",
+        "target": "0143e82a-7b14-504b-b059-e2834c8ac1c3",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-ba7b9145-46d8-5209-893e-30aa8af3e4efout-9631bad8-4827-5c59-9e0e-57cb937daac7in",
+        "source": "ba7b9145-46d8-5209-893e-30aa8af3e4ef",
+        "target": "9631bad8-4827-5c59-9e0e-57cb937daac7",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-9631bad8-4827-5c59-9e0e-57cb937daac7out-7b7141d3-60ba-5be3-a1a4-e23b8b981e31in",
+        "source": "9631bad8-4827-5c59-9e0e-57cb937daac7",
+        "target": "7b7141d3-60ba-5be3-a1a4-e23b8b981e31",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-0143e82a-7b14-504b-b059-e2834c8ac1c3out-6086b922-b194-5525-affd-b987dabe7356in",
+        "source": "0143e82a-7b14-504b-b059-e2834c8ac1c3",
+        "target": "6086b922-b194-5525-affd-b987dabe7356",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-7b7141d3-60ba-5be3-a1a4-e23b8b981e31out-3bd9ca02-2391-52cb-94ce-8bd862128574in",
+        "source": "7b7141d3-60ba-5be3-a1a4-e23b8b981e31",
+        "target": "3bd9ca02-2391-52cb-94ce-8bd862128574",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-ba7b9145-46d8-5209-893e-30aa8af3e4efout-c43cf253-1b54-5e18-8fb5-393817d22389in",
+        "source": "ba7b9145-46d8-5209-893e-30aa8af3e4ef",
+        "target": "c43cf253-1b54-5e18-8fb5-393817d22389",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-ea641dfb-1c44-5261-ad6d-7816086d8422out-a9c39074-cc27-5df9-9f6c-0fe4599b35b0in",
+        "source": "ea641dfb-1c44-5261-ad6d-7816086d8422",
+        "target": "a9c39074-cc27-5df9-9f6c-0fe4599b35b0",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-9631bad8-4827-5c59-9e0e-57cb937daac7out-a568ff77-e88d-5a19-936d-5988aeebe5b3in",
+        "source": "9631bad8-4827-5c59-9e0e-57cb937daac7",
+        "target": "a568ff77-e88d-5a19-936d-5988aeebe5b3",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-86ddf168-5745-55e0-9f29-20b75a9329bfout-13c5544b-f368-5a5f-9f88-103fdd0caa61in",
+        "source": "86ddf168-5745-55e0-9f29-20b75a9329bf",
+        "target": "13c5544b-f368-5a5f-9f88-103fdd0caa61",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-0143e82a-7b14-504b-b059-e2834c8ac1c3out-ea641dfb-1c44-5261-ad6d-7816086d8422in",
+        "source": "0143e82a-7b14-504b-b059-e2834c8ac1c3",
+        "sourceHandle": "out",
+        "target": "ea641dfb-1c44-5261-ad6d-7816086d8422",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-7b7141d3-60ba-5be3-a1a4-e23b8b981e31out-86ddf168-5745-55e0-9f29-20b75a9329bfin",
+        "source": "7b7141d3-60ba-5be3-a1a4-e23b8b981e31",
+        "sourceHandle": "out",
+        "target": "86ddf168-5745-55e0-9f29-20b75a9329bf",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-6086b922-b194-5525-affd-b987dabe7356out-dfc77348-ce30-5c66-ba39-28944edd5b54in",
+        "source": "6086b922-b194-5525-affd-b987dabe7356",
+        "target": "dfc77348-ce30-5c66-ba39-28944edd5b54",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-6086b922-b194-5525-affd-b987dabe7356out-c0c2c860-6e5e-5606-84b9-9f685450ba00in",
+        "source": "6086b922-b194-5525-affd-b987dabe7356",
+        "target": "c0c2c860-6e5e-5606-84b9-9f685450ba00",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-c0c2c860-6e5e-5606-84b9-9f685450ba00out-93184132-1d8a-563b-bd05-f8fc9e5d64f0in",
+        "source": "c0c2c860-6e5e-5606-84b9-9f685450ba00",
+        "target": "93184132-1d8a-563b-bd05-f8fc9e5d64f0",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-c0c2c860-6e5e-5606-84b9-9f685450ba00out-7465bb33-9916-53fe-806b-90becc9aa805in",
+        "source": "c0c2c860-6e5e-5606-84b9-9f685450ba00",
+        "target": "7465bb33-9916-53fe-806b-90becc9aa805",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-dfc77348-ce30-5c66-ba39-28944edd5b54out-c68aeed6-9cfd-5759-b15e-76fe3563051bin",
+        "source": "dfc77348-ce30-5c66-ba39-28944edd5b54",
+        "target": "c68aeed6-9cfd-5759-b15e-76fe3563051b",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-3bd9ca02-2391-52cb-94ce-8bd862128574out-9f9ba8b1-7d6c-5001-97a5-e8b7e3c8d065in",
+        "source": "3bd9ca02-2391-52cb-94ce-8bd862128574",
+        "target": "9f9ba8b1-7d6c-5001-97a5-e8b7e3c8d065",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-3bd9ca02-2391-52cb-94ce-8bd862128574out-3e37e26a-268b-51de-a494-249116b148eain",
+        "source": "3bd9ca02-2391-52cb-94ce-8bd862128574",
+        "target": "3e37e26a-268b-51de-a494-249116b148ea",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-3e37e26a-268b-51de-a494-249116b148eaout-a9d15f3f-f8ce-58b1-91a2-545fefaebcf4in",
+        "source": "3e37e26a-268b-51de-a494-249116b148ea",
+        "target": "a9d15f3f-f8ce-58b1-91a2-545fefaebcf4",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-3e37e26a-268b-51de-a494-249116b148eaout-7465bb33-9916-53fe-806b-90becc9aa805in_1",
+        "source": "3e37e26a-268b-51de-a494-249116b148ea",
+        "target": "7465bb33-9916-53fe-806b-90becc9aa805",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-9f9ba8b1-7d6c-5001-97a5-e8b7e3c8d065out-c68aeed6-9cfd-5759-b15e-76fe3563051bin_1",
+        "source": "9f9ba8b1-7d6c-5001-97a5-e8b7e3c8d065",
+        "target": "c68aeed6-9cfd-5759-b15e-76fe3563051b",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-7465bb33-9916-53fe-806b-90becc9aa805out-40039de4-5651-5ddf-9915-ab56972e35ccin",
+        "source": "7465bb33-9916-53fe-806b-90becc9aa805",
+        "target": "40039de4-5651-5ddf-9915-ab56972e35cc",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      }
+    ],
+    "scenarios": [
+      {
+        "id": "existing",
+        "name": "Existing",
+        "color": "#2a9d8f",
+        "nodes": [
+          "0143e82a-7b14-504b-b059-e2834c8ac1c3",
+          "ea641dfb-1c44-5261-ad6d-7816086d8422",
+          "6086b922-b194-5525-affd-b987dabe7356",
+          "c43cf253-1b54-5e18-8fb5-393817d22389",
+          "a9c39074-cc27-5df9-9f6c-0fe4599b35b0",
+          "93184132-1d8a-563b-bd05-f8fc9e5d64f0",
+          "dfc77348-ce30-5c66-ba39-28944edd5b54",
+          "c0c2c860-6e5e-5606-84b9-9f685450ba00"
+        ]
+      },
+      {
+        "id": "towers-removed",
+        "name": "Towers removed",
+        "color": "#e76f51",
+        "nodes": [
+          "9631bad8-4827-5c59-9e0e-57cb937daac7",
+          "7b7141d3-60ba-5be3-a1a4-e23b8b981e31",
+          "86ddf168-5745-55e0-9f29-20b75a9329bf",
+          "3bd9ca02-2391-52cb-94ce-8bd862128574",
+          "a568ff77-e88d-5a19-936d-5988aeebe5b3",
+          "13c5544b-f368-5a5f-9f88-103fdd0caa61",
+          "a9d15f3f-f8ce-58b1-91a2-545fefaebcf4",
+          "9f9ba8b1-7d6c-5001-97a5-e8b7e3c8d065",
+          "3e37e26a-268b-51de-a494-249116b148ea"
+        ]
+      }
+    ],
+    "packages": [
+      "scout.raster-conversion@1",
+      "scout.shadow@1"
+    ],
+    "datasets": [
+      {
+        "datasetId": "data.scout.loop-buildings",
+        "dirName": "data.scout.loop-buildings@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-05T00:00:00Z"
+      }
+    ],
+    "name": "WhatIfShadows",
+    "task": "",
+    "timestamp": 1791244800000,
+    "provenance_id": "WhatIfShadows"
+  }
+}

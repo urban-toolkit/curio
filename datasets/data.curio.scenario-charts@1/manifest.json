@@ -1,0 +1,37 @@
+{
+  "id": "data.curio.scenario-charts",
+  "name": "Scenario Chart Gallery (mock)",
+  "version": "1.0.0",
+  "format": "bundle",
+  "description": "Mock data for nine kinds of scenario comparison, shaped like figures from the scenario-planning literature, one bundle of nine CSV tables, each row's scenario in its case column: carpark_occupancy.csv (carpark occupancy by hour, weekday and off day); fragility_curves.csv (bridge fragility curves, as built and retrofitted); bridge_damage.csv (bridge damage states for m5, m6 and m7 events); pga_ensemble.csv (median pga of each simulated scenario, m5, m6 and m7); carbon_by_distance.csv (fleet carbon emission by trip distance, four priorities); lifecycle_gwp.csv (building gwp by lifecycle stage, baseline and proposal); impact_share.csv (structural share of two solutions' environmental impact); route_criteria.csv (criteria weighing for or against three routes); green_wall.csv (green-wall systems' u-value, energy savings and co2 reduction). The ScenarioCharts test dataflow loads it and compares each table's scenarios on a Vega-Lite node. The values are invented, not measured.",
+  "publisher": "Curio",
+  "license": "MIT (this repository)",
+  "tags": [
+    "scenarios",
+    "mock",
+    "vega-lite",
+    "uncertainty",
+    "csv"
+  ],
+  "dataFile": "data/bundle.json",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "Curio example data",
+  "rowCount": null,
+  "featureCount": null,
+  "schema": null,
+  "createdAt": "2026-10-08T00:00:00Z",
+  "updatedAt": "2026-10-08T00:00:00Z",
+  "sourceUpdatedAt": null,
+  "sourceEncoding": null,
+  "groupId": null,
+  "layerName": null,
+  "producerNodeId": null,
+  "producerNodeType": null,
+  "producerDataflowId": null,
+  "producerDataflowName": null,
+  "upstreamInputs": null,
+  "discoverySource": null,
+  "collection": null
+}

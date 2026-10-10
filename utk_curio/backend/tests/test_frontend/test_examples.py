@@ -34,9 +34,10 @@ EXAMPLE_INVARIANTS = [
      {"curio.builtin/computation-analysis": 3, "curio.builtin/vis-vega": 2}, False),
     ("05-vega-lite-multi-view-drilldown.json", 27, 22,
      {"curio.builtin/data-loading": 5, "curio.builtin/vis-vega": 2}, False),
-    ("06-autark-what-if-shadow-study.json", 11, 13,
-     {"curio.builtin/autk-grammar": 7, "curio.builtin/data-pool": 1,
-      "curio.builtin/compare-scenarios": 2, "curio.builtin/edit-features": 1}, False),
+    ("06-autark-what-if-shadow-study.json", 15, 17,
+     {"curio.builtin/autk-grammar": 8, "curio.builtin/data-pool": 1,
+      "curio.builtin/computation-analysis": 4, "curio.builtin/vis-vega": 1,
+      "curio.builtin/edit-features": 1}, False),
     ("07-autark-gpu-shader.json", 5, 6,
      {"curio.builtin/autk-grammar": 4, "curio.builtin/data-pool": 1}, True),
     ("08-autark-spatial-join-regression.json", 7, 8,
@@ -261,8 +262,9 @@ def test_example_06_is_three_scenarios_over_one_context():
     code, and the one value that differs is the shadow step's ``height_factor``
     widget, 1 against 2, which its spec reads as a uniform. Two towers removed
     is an Edit Features node that removes two towers, 200 Clarendon and
-    Raffles, by their ``building_id``, before copies of Baseline's two nodes
-    with factor 1."""
+    Raffles, by their ``building_id``, before copies of Baseline's three nodes
+    with factor 1. Each scenario's last node takes its map's roads, which a
+    Vega-Lite node comparing the scenarios charts and a Python node subtracts."""
     path = os.path.join(EXAMPLES_DIR, "06-autark-what-if-shadow-study.json")
     with open(path, "r", encoding="utf-8") as f:
         flow = json.load(f)["dataflow"]
@@ -273,16 +275,18 @@ def test_example_06_is_three_scenarios_over_one_context():
         "the shipped scenarios open expanded, so every node shows on the canvas"
     )
     outside = set(nodes) - set(baseline["nodes"]) - set(twice["nodes"]) - set(towers["nodes"])
-    assert outside == {"whatif-data", "whatif-pool", "whatif-compare-chart", "whatif-compare-difference"}
-    assert len(baseline["nodes"]) == len(twice["nodes"]) == 2
+    assert outside == {
+        "whatif-data", "whatif-pool", "whatif-sunlight-chart", "whatif-sunlight-change", "whatif-sunlight-change-map",
+    }
+    assert len(baseline["nodes"]) == len(twice["nodes"]) == 3
     for original, copy in zip(baseline["nodes"], twice["nodes"]):
         assert nodes[copy]["metadata"].get("copiedFrom") == [original], copy
         assert nodes[copy]["content"] == nodes[original]["content"], (
             f"{copy} holds other code than its twin {original}"
         )
-    # Two towers removed: its Edit Features node, then copies of Baseline's two.
+    # Two towers removed: its Edit Features node, then copies of Baseline's three.
     edit, *copies = towers["nodes"]
-    assert copies == ["whatif-towers-compute", "whatif-towers-map"]
+    assert copies == ["whatif-towers-compute", "whatif-towers-map", "whatif-towers-roads"]
     for original, copy in zip(baseline["nodes"], copies):
         assert nodes[copy]["metadata"].get("copiedFrom") == [original], copy
         assert nodes[copy]["content"] == nodes[original]["content"], (
@@ -309,27 +313,22 @@ def test_example_06_is_three_scenarios_over_one_context():
     assert (
         factor("whatif-baseline-compute"), factor("whatif-modified-compute"), factor("whatif-towers-compute"),
     ) == (1, 2, 1)
-    # Both comparisons read the roads layer of what each scenario's map draws,
-    # and Difference matches the roads by their shapes (they carry no id). The
-    # chart compares the three scenarios; Difference, Twice as tall's change.
-    expected_sources = {
-        "whatif-compare-chart": ["whatif-baseline-map", "whatif-modified-map", "whatif-towers-map"],
-        "whatif-compare-difference": ["whatif-baseline-map", "whatif-modified-map"],
-    }
-    for compare, expected in expected_sources.items():
-        settings = nodes[compare]["metadata"]["compareScenarios"]
-        assert settings["layer"] == "table_osm_roads", compare
-        assert 'layer="table_osm_roads")' in nodes[compare]["content"], compare
-        sources = sorted(edge["source"] for edge in flow["edges"] if edge["target"] == compare)
-        assert sources == expected, compare
-    chart = nodes["whatif-compare-chart"]
-    assert [(label["scenario"], label["name"], label["color"]) for label in chart["metadata"]["compareScenarios"]["inputs"]] == [
-        (s["id"], s["name"], s["color"]) for s in (baseline, twice, towers)
+    # Each scenario's roads come out of its map's layers; the chart compares the
+    # three scenarios, and the change is Twice as tall's against Baseline's,
+    # the roads matched by their shapes (they carry no id).
+    for scenario in (baseline, twice, towers):
+        roads = scenario["nodes"][-1]
+        assert "[!! input_0:table_osm_roads !!]" in nodes[roads]["content"], roads
+        assert [e["source"] for e in flow["edges"] if e["target"] == roads] == [scenario["nodes"][-2]]
+    chart = nodes["whatif-sunlight-chart"]
+    assert chart["metadata"]["vegaCompare"] == {"enabled": True}
+    into = {(e["target"], e.get("targetHandle")): e["source"] for e in flow["edges"]}
+    assert [into[("whatif-sunlight-chart", h)] for h in ("in", "in_1", "in_2")] == [
+        s["nodes"][-1] for s in (baseline, twice, towers)
     ]
-    assert '("s-towers", "Two towers removed", [!! input_2 !!]),' in chart["content"]
-    third = [e for e in flow["edges"] if e["target"] == "whatif-compare-chart" and e["source"] == "whatif-towers-map"]
-    assert [e.get("targetHandle") for e in third] == ["in_2"]
-    assert "key" not in nodes["whatif-compare-difference"]["metadata"]["compareScenarios"].get("difference", {})
+    assert [into[("whatif-sunlight-change", h)] for h in ("in", "in_1")] == [baseline["nodes"][-1], twice["nodes"][-1]]
+    assert "to_wkb()" in nodes["whatif-sunlight-change"]["content"]
+    assert into[("whatif-sunlight-change-map", "in")] == "whatif-sunlight-change"
     shader = nodes["whatif-baseline-compute"]["content"]
     assert '"height_factor": [!! height_factor !!]' in shader
     assert "let height = height_factor * bld_height[bi];" in shader

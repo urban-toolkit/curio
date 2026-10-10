@@ -163,6 +163,28 @@ def load_artifact_as_dict(artifact_id: str) -> dict:
     return result
 
 
+def fetch_raster(artifact_id: str):
+    """A raster artifact, a Python node's ``rasterio`` dataset, as the GeoTIFF
+    the sandbox serves an Autark map: ``(bands, rows, columns)`` values with
+    NaN for nodata, and the profile (``crs``, ``transform``, ``width``, ...)."""
+    import numpy as np
+    import rasterio
+    import requests as _req
+
+    resp = _req.get(
+        f'{sandbox_base_url()}/raster',
+        params={'fileName': artifact_id},
+        headers=sandbox_auth_header(),
+        timeout=(SANDBOX_CONNECT_TIMEOUT_S, SANDBOX_GET_TIMEOUT_S),
+    )
+    _explain_sandbox_auth_failure(resp, f'/raster fileName={artifact_id}')
+    if not resp.ok:
+        raise AssertionError(f"sandbox /raster fileName={artifact_id} -> {resp.status_code}\n{resp.text[:2000]}")
+    with rasterio.MemoryFile(resp.content) as memory, memory.open() as dataset:
+        values = dataset.read(masked=True).astype("float64").filled(np.nan)
+        return values, dict(dataset.profile)
+
+
 
 def _catalog_dataset_paths(code: str) -> dict[str, str]:
     """Map every ``curio_data_path("<id>")`` in *code* to its data file.
@@ -293,7 +315,7 @@ def execute_workflow_programmatically(
 
         # A Python node reading such a node has no input here, so it has no
         # ground truth either; the browser run is checked without one (#662:
-        # example 06's Compare Scenarios nodes read its Autark maps). Any other
+        # example 06's roads nodes read its Autark maps). Any other
         # missing upstream is still the KeyError below.
         unrun = [uid for uid in spec.upstream_nodes(node.id) if uid not in outputs]
         if unrun and all(uid in browser_only for uid in unrun):

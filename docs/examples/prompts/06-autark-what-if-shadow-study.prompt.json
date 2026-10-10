@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/06-autark-what-if-shadow-study.json",
-    "sha256": "32f85ef6bdda4178c9c6ede75719eccd678f0ae6006a869e4bbcefce2089e059",
+    "sha256": "3b99d38bc0a0b0552a88c65848a15ba9ee082e2dc7fd936778a793487fd8a973",
     "walkthrough": "docs/examples/06-autark-what-if-shadow-study.md"
   },
-  "prompt": "I want a what-if shadow study for the Back Bay area of Boston, set up as three scenarios I can compare. The OSM extract is a file in this checkout at docs/examples/data/back_bay.osm.pbf. Load its layers in the browser with Autark once, and hand them to every scenario through a shared fan-out. In each scenario a GPU shader adds up every road segment's minutes of sunlight over the June solstice, with the building heights scaled by a height factor I set in a widget: 1 in a scenario called Baseline, 2 in a copy of it called Twice as tall, and 1 in a third copy called Two towers removed, where the buildings first lose two towers, 200 Clarendon and Raffles (building_id 29623484 and 29628154), every part of each. Show each scenario's roads on its own 3D map coloured by sunlight. Then compare the scenarios' roads: a bar chart of the three scenarios' mean road sunlight, and a map of how much sunlight each road loses in Twice as tall.",
+  "prompt": "I want a what-if shadow study for the Back Bay area of Boston, set up as three scenarios I can compare. The OSM extract is a file in this checkout at docs/examples/data/back_bay.osm.pbf. Load its layers in the browser with Autark once, and hand them to every scenario through a shared fan-out. In each scenario a GPU shader adds up every road segment's minutes of sunlight over the June solstice, with the building heights scaled by a height factor I set in a widget: 1 in a scenario called Baseline, 2 in a copy of it called Twice as tall, and 1 in a third copy called Two towers removed, where the buildings first lose two towers, 200 Clarendon and Raffles (building_id 29623484 and 29628154), every part of each. Show each scenario's roads on its own 3D map coloured by sunlight. Then take each scenario's roads out of its map, and compare them: a Vega-Lite bar chart that compares the three scenarios' mean road sunlight, each bar in its scenario's colour, and a map of how much sunlight each road loses in Twice as tall, matching the roads by their shapes.",
   "context": null,
   "required": {
     "datasets": [],
@@ -69,15 +69,36 @@
       },
       {
         "ref": "visualization8",
-        "type": "curio.builtin/compare-scenarios",
+        "type": "curio.builtin/autk-grammar",
         "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
-        "ref": "visualization9",
-        "type": "curio.builtin/compare-scenarios",
-        "role": "visualization",
+        "ref": "analysis2",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis3",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis4",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
         "executable": true,
         "hasContent": true
       },
@@ -94,6 +115,13 @@
         "role": "transform",
         "executable": true,
         "hasContent": true
+      },
+      {
+        "ref": "visualization9",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
       }
     ],
     "edges": [
@@ -104,49 +132,64 @@
       },
       {
         "from": "visualization2",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "visualization3",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "visualization4",
+        "to": "analysis3",
+        "kind": "data"
+      },
+      {
+        "from": "visualization6",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "visualization7",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "visualization8",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "analysis4",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization9",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "analysis4",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization9",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis3",
         "to": "visualization9",
         "kind": "data",
         "slot": 2
       },
       {
-        "from": "visualization3",
-        "to": "visualization8",
-        "kind": "data"
-      },
-      {
-        "from": "visualization3",
-        "to": "visualization9",
-        "kind": "data"
-      },
-      {
-        "from": "visualization4",
-        "to": "visualization8",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "visualization4",
-        "to": "visualization9",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "visualization5",
-        "to": "visualization3",
-        "kind": "data"
-      },
-      {
-        "from": "visualization6",
-        "to": "visualization4",
-        "kind": "data"
-      },
-      {
-        "from": "visualization7",
-        "to": "visualization2",
-        "kind": "data"
-      },
-      {
-        "from": "pool1",
+        "from": "analysis4",
         "to": "visualization5",
         "kind": "data"
       },
@@ -157,12 +200,17 @@
       },
       {
         "from": "pool1",
+        "to": "visualization7",
+        "kind": "data"
+      },
+      {
+        "from": "pool1",
         "to": "transform1",
         "kind": "data"
       },
       {
         "from": "transform1",
-        "to": "visualization7",
+        "to": "visualization8",
         "kind": "data"
       }
     ],
@@ -215,5 +263,5 @@
     "licence": "MIT (this repository)",
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
   },
-  "notes": "The Autark steps run in the browser, and the Python steps in the sandbox: the Edit Features step between the pool and a shadow step, and the Compare Scenarios steps after the maps. GPU shader work, so execution is opt-in."
+  "notes": "The Autark steps run in the browser, and the Python steps in the sandbox: the Edit Features step between the pool and a shadow step, the steps taking each map's roads, and the step taking the change in sunlight. GPU shader work, so execution is opt-in."
 }

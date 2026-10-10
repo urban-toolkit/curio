@@ -469,14 +469,18 @@ def _netcdf_expectations(data_file: Path) -> dict[str, str]:
 
 # A bundle is a node's several outputs kept as one dataset: ``curio_load_data``
 # gives them back in the container ``bundle.json`` records, here a tuple of
-# rasters (``data.scout.quad-cities-flood``) or of NetCDF datasets
-# (``data.scout.chicago-weather-2025-07-06``). An xarray Dataset cannot cross an
+# rasters (``data.scout.quad-cities-flood``), of NetCDF datasets
+# (``data.scout.chicago-weather-2025-07-06``) or of tables
+# (``data.curio.scenario-charts``). An xarray Dataset cannot cross an
 # edge, so the loader describes each part, in order: its kind, its shape and how
 # many of its values are finite, proof that the values were read.
 _BUNDLE_LOADER_SUFFIX = '''import numpy as np
 import pandas as pd
 
 def describe(value):
+    if isinstance(value, pd.DataFrame):
+        numbers = value.select_dtypes("number").to_numpy(dtype="float64")
+        return "table", "%dx%d" % value.shape, int(np.isfinite(numbers).sum())
     if hasattr(value, "data_vars"):
         names = list(value.data_vars)
         shape = "x".join(str(n) for n in value[names[0]].shape)
@@ -517,7 +521,8 @@ def _bundle_expectations(data_file: Path) -> dict[str, str]:
         table = namespace["describe_bundle"](bundle)
     finally:
         for part in parts:
-            part.close()
+            if hasattr(part, "close"):
+                part.close()
     assert len(table), f"{data_file} lists no part"
     assert int(table["finite"].sum()) > 0, f"{data_file} holds no finite value"
     return {

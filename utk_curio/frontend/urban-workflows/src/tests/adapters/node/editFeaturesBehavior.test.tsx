@@ -15,11 +15,6 @@ jest.mock("../../../providers/FlowProvider", () => ({
   useFlowContext: () => require("react").useContext(mockFlowContext),
 }));
 
-// Only what a failed run says, from the Compare Scenarios node.
-jest.mock("../../../adapters/node/compareScenariosBehavior", () => ({
-  failureLine: (content: unknown) => String(content ?? ""),
-}));
-
 // The input, as the Autark map reads it: its layers by table name.
 let mockSources: any[] = [];
 jest.mock("../../../utils/autkInput", () => ({
@@ -68,11 +63,11 @@ function nodeState(output = { code: "", content: "" }): UseNodeStateReturn {
   return { output, setOutput: jest.fn(), code: "", setCode: jest.fn() } as unknown as UseNodeStateReturn;
 }
 
-function mount(editFeatures: unknown, state = nodeState()) {
+function mount(editFeatures: unknown, state = nodeState(), extraFlow: Record<string, any> = {}) {
   const updateDataNode = jest.fn();
   const markNodeStale = jest.fn();
   const live = { nodeId: NODE, input: INPUT, editFeatures, defaultCode: editFeaturesCode(undefined), code: editFeaturesCode(undefined) };
-  const flow = { nodes: [{ id: NODE, data: live }], edges: [], updateDataNode, markNodeStale };
+  const flow = { nodes: [{ id: NODE, data: live }], edges: [], updateDataNode, markNodeStale, ...extraFlow };
   function Host() {
     const behavior = useEditFeaturesBehavior(live as unknown as NodeBehaviorData, state);
     return <>{behavior.contentComponent}</>;
@@ -197,4 +192,80 @@ test("a layer with no column that identifies its features is refused, and nothin
   expect(refusal.textContent).toMatch(/has no column that identifies its features/);
   expect(screen.queryByTestId("autark-map")).toBeNull();
   expect(screen.queryByTestId("edit-features-remove")).toBeNull();
+});
+
+
+describe("Interaction", () => {
+  /** The node feeds a rasterizer, which feeds a model; a chart is linked by an interaction edge only. */
+  const DOWNSTREAM = {
+    edges: [
+      { source: NODE, target: "rasterize", sourceHandle: "out", targetHandle: "in" },
+      { source: "rasterize", target: "model", sourceHandle: "out", targetHandle: "in" },
+      { source: NODE, target: "chart", sourceHandle: "in/out", targetHandle: "in/out" },
+    ],
+    nodeExecStatus: { [NODE]: "executed", rasterize: "executed", model: "executed", chart: "executed" },
+  };
+
+  test("an edit makes every node after it stale, and Update results runs them", async () => {
+    const playNodesUpTo = jest.fn();
+    const { markNodeStale } = mount(
+      { key: "building_id", layer: "table_osm_buildings" },
+      nodeState({ code: "success", content: "" }),
+      { ...DOWNSTREAM, playNodesUpTo },
+    );
+    await screen.findByTestId("autark-map");
+    pick([2]);
+    fireEvent.click(screen.getByTestId("edit-features-remove"));
+    expect(markNodeStale.mock.calls.map((c) => c[0]).sort()).toEqual([NODE, "model", "rasterize"]);
+    fireEvent.click(screen.getByTestId("interaction-update"));
+    expect(playNodesUpTo).toHaveBeenCalledWith([NODE, "rasterize", "model"]);
+  });
+
+  test("the keyboard: Delete removes the pick, the arrows nudge its height, Esc clears it", async () => {
+    const { updateDataNode } = mount({ key: "building_id", layer: "table_osm_buildings" });
+    await screen.findByTestId("autark-map");
+    const body = document.querySelector("[data-edit-body]") as HTMLElement;
+    pick([2]);
+    fireEvent.keyDown(body, { key: "ArrowUp" });
+    expect(updateDataNode).toHaveBeenLastCalledWith(NODE, expect.objectContaining({
+      editFeatures: { key: "building_id", layer: "table_osm_buildings", edits: [{ op: "offset", ids: [136], column: "height", value: 3 }] },
+    }));
+    fireEvent.keyDown(body, { key: "Delete" });
+    expect(updateDataNode).toHaveBeenLastCalledWith(NODE, expect.objectContaining({
+      editFeatures: { key: "building_id", layer: "table_osm_buildings", edits: [{ op: "remove", ids: [136] }] },
+    }));
+    pick([0]);
+    fireEvent.keyDown(body, { key: "Escape" });
+    expect(document.querySelector("[data-edit-picked]")!.getAttribute("data-edit-picked")).toBe("");
+  });
+
+  test("a condition says how many features it picks, and applies to all of them", async () => {
+    const { updateDataNode } = mount({ key: "building_id", layer: "table_osm_buildings" });
+    await screen.findByTestId("autark-map");
+    fireEvent.change(screen.getByTestId("interaction-where"), { target: { value: "height >= 60" } });
+    expect(screen.getByTestId("interaction-matching").textContent).toBe("3 match");
+    fireEvent.change(screen.getByTestId("interaction-where-op"), { target: { value: "scale" } });
+    fireEvent.change(screen.getByTestId("interaction-where-column"), { target: { value: "height" } });
+    fireEvent.change(screen.getByTestId("interaction-where-value"), { target: { value: "0.5" } });
+    fireEvent.click(screen.getByTestId("interaction-where-apply"));
+    expect(updateDataNode).toHaveBeenLastCalledWith(NODE, expect.objectContaining({
+      editFeatures: { key: "building_id", layer: "table_osm_buildings", edits: [{ op: "scale", where: "height >= 60", column: "height", value: 0.5 }] },
+    }));
+    fireEvent.change(screen.getByTestId("interaction-where"), { target: { value: "height >" } });
+    expect(screen.getByTestId("interaction-where-apply")).toBeDisabled();
+  });
+
+  test("an entry switched off is kept, and the map draws the layer as the log leaves it", async () => {
+    const { updateDataNode } = mount({ key: "building_id", layer: "table_osm_buildings", edits: [{ op: "remove", ids: [119] }] });
+    await screen.findByTestId("autark-map");
+    // The preview: building 119 removed, so only 136 is drawn.
+    await waitFor(() => {
+      const drawn = mockMapData.input?.data?.find?.((l: any) => l.layerName === "table_osm_buildings");
+      expect(drawn?.data.features.map((f: any) => f.properties.building_id)).toEqual([136]);
+    });
+    fireEvent.click(screen.getByLabelText("Use edit 1"));
+    expect(updateDataNode).toHaveBeenLastCalledWith(NODE, expect.objectContaining({
+      editFeatures: { key: "building_id", layer: "table_osm_buildings", edits: [{ op: "remove", ids: [119], enabled: false }] },
+    }));
+  });
 });

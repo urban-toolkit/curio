@@ -1,0 +1,19 @@
+case,criterion,order,effect
+Route 1,Departure Time,0,0.05
+Route 1,Travel Cost,1,0.45
+Route 1,Road Importance,2,0.7
+Route 1,Intersection Number,3,-0.15
+Route 1,Travel Distance,4,-0.15
+Route 1,Congestion Degree,5,0.05
+Route 2,Departure Time,0,0.35
+Route 2,Travel Cost,1,0.0
+Route 2,Road Importance,2,0.7
+Route 2,Intersection Number,3,0.0
+Route 2,Travel Distance,4,0.0
+Route 2,Congestion Degree,5,0.35
+Route 3,Departure Time,0,0.0
+Route 3,Travel Cost,1,0.45
+Route 3,Road Importance,2,0.0
+Route 3,Intersection Number,3,-0.75
+Route 3,Travel Distance,4,-0.5
+Route 3,Congestion Degree,5,0.0

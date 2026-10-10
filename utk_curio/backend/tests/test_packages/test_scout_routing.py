@@ -98,7 +98,7 @@ EXAMPLE_SCENARIOS = {
     "fastest": ("Fastest route", "#42A5F5", "fastest-route"),
     "weather-aware": ("Weather-aware route", "#00838F", "weighted-route"),
 }
-#: Each Compare Scenarios chart's metric, in the dataflow's order.
+#: Each comparison chart's metric, in the dataflow's order.
 EXAMPLE_CHARTS = ["duration", "distance", "rain_exposure", "wind_exposure"]
 
 
@@ -635,24 +635,21 @@ def test_the_shipped_dataflow_runs_scouts_example():
     assert copies == set(fastest["nodes"])
 
 
-def test_the_shipped_dataflows_compare_nodes_chart_the_four_metrics():
+def test_the_shipped_dataflows_charts_compare_the_four_metrics():
     """As in SCOUT's example, the two routes are compared on four bar charts,
-    one per metric: each a Compare Scenarios node holding the code it writes
-    for its two inputs (``utils/compare/compareCode.ts``), the fastest route in
-    circle 0 and the weather-aware one in circle 1, one bar per scenario."""
+    one per metric: each a Vega-Lite node comparing the scenarios
+    (``metadata.vegaCompare``), the fastest route in circle 0 and the
+    weather-aware one in circle 1, one bar per scenario."""
     spec = _dataflow()
-    entries = ('    ("fastest", "Fastest route", [!! input_0 !!]),\n'
-               '    ("weather-aware", "Weather-aware route", [!! input_1 !!]),\n])\n')
-    compares = [n for n in spec["nodes"] if n["type"] == "curio.builtin/compare-scenarios"]
-    labels = [{"scenario": sid, "name": name, "color": color} for sid, (name, color, _r) in EXAMPLE_SCENARIOS.items()]
+    charts = [n for n in spec["nodes"] if n["type"] == "curio.builtin/vis-vega"]
     scenario_of = {i: s["id"] for s in spec["scenarios"] for i in s["nodes"]}
     charted = []
-    for node in compares:
-        settings = node["metadata"]["compareScenarios"]
-        assert settings["inputs"] == labels and settings["mode"] == "chart"
-        assert node["content"].endswith(f"return curio_stack_scenarios([\n{entries}"), node["content"]
-        assert settings["chart"]["preset"] == "bar"
-        charted.append(settings["chart"]["y"])
+    for node in charts:
+        assert node["metadata"]["vegaCompare"] == {"enabled": True}
+        chart = json.loads(node["content"])
+        assert chart["encoding"]["x"]["field"] == "scenario_name"
+        assert [layer["mark"]["type"] for layer in chart["layer"]] == ["bar", "text"]
+        charted.append(chart["encoding"]["y"]["field"])
         sources = {e["targetHandle"]: e["source"] for e in spec["edges"] if e["target"] == node["id"]}
         assert {handle: scenario_of[s] for handle, s in sources.items()} == {"in": "fastest", "in_1": "weather-aware"}
         assert all("input_0[1]" in _node(spec, s)["content"] for s in sources.values())
