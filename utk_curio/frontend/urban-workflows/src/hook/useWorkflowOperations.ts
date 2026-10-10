@@ -134,6 +134,10 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // a version snapshot carries them.
     const [scenarios, setScenariosState] = useState<Scenario[]>([]);
     const scenariosRef = useRef<Scenario[]>([]);
+    // #845: "Run stale nodes automatically" (``dataflow.autoRun``), saved with
+    // the dataflow, off by default, read through a ref as the categories are.
+    const [autoRun, setAutoRunState] = useState(false);
+    const autoRunRef = useRef(false);
     // ``packages`` is the current project's lockfile (``spec.dataflow.packages``).
     // The authoritative copy lives in ``projectPackagesStore`` so non-React
     // code (palette filter, registry bootstrap) can read it without context.
@@ -258,6 +262,16 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         markDirty();
     }, [setScenariosQuietly, markDirty]);
 
+    // And the auto-run toggle.
+    const setAutoRunQuietly = useCallback((on: boolean) => {
+        autoRunRef.current = on;
+        setAutoRunState(on);
+    }, []);
+    const setAutoRun = useCallback((on: boolean) => {
+        setAutoRunQuietly(on);
+        markDirty();
+    }, [setAutoRunQuietly, markDirty]);
+
     // beforeunload guard
     useEffect(() => {
         if (!projectDirty) return;
@@ -362,7 +376,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setNodes((prevNodes: Node[]) => updateNodeData(prevNodes, nodeId, () => ({ ...newData })));
     }, [setNodes]);
 
-    const loadParsedTrill = async (workflowName: string, task: string, loaded_nodes: any, loaded_edges: any, provenance?: boolean, merge?: boolean, incomingPackages?: string[], incomingDescription?: string, incomingDatasets?: any[], incomingCategories?: HandCategories, incomingScenarios?: unknown, fit?: boolean) => {
+    const loadParsedTrill = async (workflowName: string, task: string, loaded_nodes: any, loaded_edges: any, provenance?: boolean, merge?: boolean, incomingPackages?: string[], incomingDescription?: string, incomingDatasets?: any[], incomingCategories?: HandCategories, incomingScenarios?: unknown, fit?: boolean, incomingAutoRun?: boolean) => {
         if (!merge) {
             TrillGenerator.reset();
             // Before the replay below, whose version snapshots carry them.
@@ -377,6 +391,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             // Absent = keep: a provenance revert loads a version snapshot, which
             // carries no categories, and must not clear the dataflow's.
             if (incomingCategories !== undefined) setWorkflowCategories(incomingCategories);
+            // The auto-run toggle the same way (#845).
+            if (incomingAutoRun !== undefined) setAutoRunQuietly(incomingAutoRun);
             // `task` is the dataflow's goal. It has always been a spec field
             // and has always been accepted here, but nothing applied it, so a
             // saved goal was silently dropped on every open.
@@ -977,7 +993,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // where it seeds the new project's refs (dev/81). On an update the
         // backend owns dataflow.datasets and ignores whatever is sent here —
         // syncDatasetsFromSavedSpec re-aligns the mirror from the response.
-        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, workflowGoalRef.current, currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current, workflowCategoriesRef.current, scenariosRef.current);
+        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, workflowGoalRef.current, currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current, workflowCategoriesRef.current, scenariosRef.current, autoRunRef.current);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
 
@@ -1329,7 +1345,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // Save-a-copy is a CREATE: the serialized datasets section seeds the new
         // project's refs (dev/81) — read from the ref so the copy carries the
         // latest installed datasets.
-        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, workflowGoalRef.current, currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current, workflowCategoriesRef.current, scenariosRef.current);
+        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, workflowGoalRef.current, currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current, workflowCategoriesRef.current, scenariosRef.current, autoRunRef.current);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
 
@@ -1426,12 +1442,13 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setServerCategories({});
         setWorkflowCategories({});
         setScenariosQuietly([]);
+        setAutoRunQuietly(false);
         setProjectDirty(false);
         setProjectSavedAt(null);
         setNodeExecStatus({});
         setDataflowDatasets([]);
         setViewerMode("owner");
-    }, [setWorkflowName, setWorkflowDescription]);
+    }, [setWorkflowName, setWorkflowDescription, setAutoRunQuietly]);
 
     // Both marks return the SAME state object when the node is already in the
     // target status. CodeEditor calls markNodeStale on every keystroke, and an
@@ -1478,6 +1495,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         scenarios,
         // For the run's save rule, which must read the list as it is now.
         scenariosRef,
+        autoRun,
+        setAutoRun,
         packages,
         setPackages,
         addPackage,

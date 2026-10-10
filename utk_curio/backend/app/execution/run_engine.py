@@ -1,9 +1,11 @@
-"""A dataflow run on the server: Run All, or a node's play button, with no
-browser needed.
+"""A dataflow run on the server: Run All, a node's play button, or an
+automatic run after a widget or Parameter change (#845), with no browser
+needed.
 
 :func:`plan_run` decides what runs, as Run All and ``playNodesUpTo`` decide it
-on the canvas: every node, or one node and the ancestors whose outputs the
-canvas could not reuse, in the levels ``run_plan.topological_levels`` gives.
+on the canvas: every node, or one or several nodes and the ancestors whose
+outputs the canvas could not reuse, in the levels
+``run_plan.topological_levels`` gives.
 :func:`run_events` walks the plan level by level, as ``usePlayAll`` does:
 
 - every node of a level starts at once; the sandbox's own pool sets how many
@@ -71,6 +73,7 @@ class Plan:
     unplanned: dict
     reuse: dict
     target_node_id: Optional[str] = None
+    target_node_ids: list = field(default_factory=list)
 
 
 def node_label(node: dict, labels: Optional[dict] = None) -> str:
@@ -96,17 +99,18 @@ def plan_run(
     spec_dict: dict,
     *,
     target_node_id: Optional[str] = None,
+    target_node_ids: Optional[list] = None,
     reuse: Optional[dict] = None,
     templates: Optional[dict] = None,
     labels: Optional[dict] = None,
 ) -> Plan:
     """What a run of *spec_dict* executes.
 
-    Without *target_node_id*, every node. With it, the node and its ancestors,
-    less the ancestors in *reuse* (``{nodeId: output}``): the outputs a canvas
-    still holds for nodes it judged need no new run. The target always runs.
-    *labels* (``node_names.template_labels``) name each step as its node's
-    header does.
+    Without a target, every node. With *target_node_id*, or several nodes in
+    *target_node_ids*, those nodes and their ancestors, less the ancestors in
+    *reuse* (``{nodeId: output}``): the outputs a canvas still holds for nodes
+    it judged need no new run. A target always runs. *labels*
+    (``node_names.template_labels``) name each step as its node's header does.
     """
     spec = parse_workflow_dict(spec_dict, templates=templates)
     saved = {
@@ -114,15 +118,17 @@ def plan_run(
         if isinstance(n, dict) and n.get("id")
     }
     all_ids = [n.id for n in spec.nodes]
+    targets = [target_node_id] if target_node_id else list(target_node_ids or [])
     kept_reuse: dict = {}
-    if target_node_id:
-        if target_node_id not in saved:
-            raise PlanError(f"node {target_node_id!r} is not in the dataflow")
-        wanted = ancestors(target_node_id, spec.edges)
+    if targets:
+        for node_id in targets:
+            if node_id not in saved:
+                raise PlanError(f"node {node_id!r} is not in the dataflow")
+        wanted = set().union(*(ancestors(node_id, spec.edges) for node_id in targets))
         kept_reuse = {
             node_id: {k: v for k, v in ref.items() if k in _INPUT_KEYS}
             for node_id, ref in (reuse or {}).items()
-            if node_id in wanted and node_id != target_node_id and _is_ref(ref)
+            if node_id in wanted and node_id not in targets and _is_ref(ref)
         }
         run_ids = [n for n in all_ids if n in wanted and n not in kept_reuse]
     else:
@@ -153,6 +159,7 @@ def plan_run(
     return Plan(
         spec=spec, steps=steps, levels=levels, unplanned=unplanned,
         reuse=kept_reuse, target_node_id=target_node_id or None,
+        target_node_ids=[] if target_node_id else targets,
     )
 
 

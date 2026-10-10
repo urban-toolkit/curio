@@ -7,11 +7,12 @@ ORM rows, so replaying them is safe.
 
 Retention runs on every new run, per dataflow: a run is deleted once it is
 older than ``RETENTION_DAYS`` and not among the newest ``KEEP_PER_KIND`` runs
-of its kind (whole dataflow, or a single node) for that dataflow. An active
+of its kind (whole dataflow, or some of its nodes) for that dataflow. An active
 run is never deleted.
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Iterable, List, Optional
 from uuid import uuid4
@@ -75,6 +76,7 @@ def create_run(
     user_id: int,
     trigger: str,
     target_node_id: Optional[str] = None,
+    target_node_ids: Optional[Iterable[str]] = None,
     rerun_of: Optional[str] = None,
     spec_revision: Optional[int] = None,
     boot_id: Optional[str] = None,
@@ -83,8 +85,10 @@ def create_run(
     """Insert a queued run with one pending step per entry of *steps*.
 
     Each step is a dict with ``node_id`` and optionally ``label``,
-    ``node_type``, ``level`` and ``role``. Prunes the dataflow's old runs.
+    ``node_type``, ``level`` and ``role``. *target_node_ids* are the nodes a
+    run of several nodes runs. Prunes the dataflow's old runs.
     """
+    targets = [str(node_id) for node_id in (target_node_ids or [])]
     _check(trigger, TRIGGERS, "trigger")
     step_specs = []
     for step in steps:
@@ -108,6 +112,7 @@ def create_run(
             user_id=user_id,
             trigger=trigger,
             target_node_id=target_node_id or None,
+            target_node_ids=json.dumps(targets) if targets else None,
             rerun_of=rerun_of,
             spec_revision=spec_revision,
             status="queued",
@@ -164,9 +169,13 @@ def list_user_runs(
 
 def _of_kind(query, whole_dataflow: Optional[bool]):
     if whole_dataflow is True:
-        return query.filter(DataflowRun.target_node_id.is_(None))
+        return query.filter(
+            db.and_(DataflowRun.target_node_id.is_(None), DataflowRun.target_node_ids.is_(None))
+        )
     if whole_dataflow is False:
-        return query.filter(DataflowRun.target_node_id.isnot(None))
+        return query.filter(
+            db.or_(DataflowRun.target_node_id.isnot(None), DataflowRun.target_node_ids.isnot(None))
+        )
     return query
 
 

@@ -414,6 +414,21 @@ in again, the nodes whose **Save output dataset** toggle is on do.
 Guests, viewers of a shared dataflow, and a Curio started with `--no-project`
 run dataflows in the browser, and a run stops when its tab closes.
 
+### Running stale nodes automatically
+
+**View > Run stale nodes automatically** turns on running after a change. A
+change to a widget's value or a Parameter node's value then runs the nodes that
+use it and the nodes below them, half a second after the last change, as a run
+on the server. Moving a slider runs them once, after it stops. A change made
+during a run waits for it to end, then runs once. **Run All** shows a small
+bolt while it is on.
+
+- The setting is saved with the dataflow and is off for a new one.
+- Code you type, a new connection, and a selection in a chart do not start a
+  run: the nodes they change wait for **Run** or **Run All**.
+- It is offered where a run goes on the server: not to guests, viewers of a
+  shared dataflow, a Curio started with `--no-project`, or a dashboard.
+
 ## Widgets
 
 A widget is a value a node's code reads that you set in a form, without editing
@@ -462,7 +477,8 @@ replaced by its value:
   runs as `"Season: winter"`.
 
 Values are saved with the dataflow. Changing one marks the node as needing a
-new run, so **Run** and **Run All** run it again. A name the node has no widget
+new run, so **Run** and **Run All** run it again, or the change runs it (see
+[Running stale nodes automatically](#running-stale-nodes-automatically)). A name the node has no widget
 for, or a marker in the older `[!! name$TYPE$default !!]` form, stops the run
 with a message naming it; the **Widgets** tab lists them too.
 
@@ -484,7 +500,8 @@ that several nodes read.
 3. Set the value in the Parameter node.
 
 A Parameter node has no edges, and it lists the nodes whose code uses it.
-Changing its value marks those nodes as needing a new run. **Edit** renames it,
+Changing its value marks those nodes as needing a new run, or runs them when
+the dataflow runs stale nodes automatically. **Edit** renames it,
 and their code follows the new name. A reference to a name no Parameter node
 has, or that two Parameter nodes have, stops the run with a message naming it.
 Pinned to the dashboard, a Parameter node shows its value.

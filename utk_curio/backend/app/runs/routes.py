@@ -18,7 +18,7 @@ def _error(exc: RunError):
 
 
 def _kind(value):
-    """``?kind=all`` is whole-dataflow runs, ``node`` single-node runs."""
+    """``?kind=all`` is whole-dataflow runs, ``node`` runs of one or several nodes."""
     return {"all": True, "node": False}.get(value)
 
 
@@ -36,9 +36,17 @@ def _paging():
 def start_run(project_id: str):
     body = request.get_json(silent=True) or {}
     target = body.get("target")
+    targets = body.get("targets")
     reuse = body.get("reuse")
     if target is not None and not isinstance(target, str):
         return jsonify({"error": "'target' must be a node id"}), 400
+    if targets is not None and (
+        not isinstance(targets, list) or not targets
+        or not all(isinstance(node_id, str) and node_id for node_id in targets)
+    ):
+        return jsonify({"error": "'targets' must list node ids"}), 400
+    if target is not None and targets is not None:
+        return jsonify({"error": "Send 'target' or 'targets', not both"}), 400
     if reuse is not None and not isinstance(reuse, dict):
         return jsonify({"error": "'reuse' must map node ids to outputs"}), 400
     revision = body.get("specRevision")
@@ -47,7 +55,8 @@ def start_run(project_id: str):
     try:
         run = service.start_run(
             g.user, get_current_token(), project_id,
-            target_node_id=target or None, reuse=reuse, spec_revision=revision,
+            target_node_id=target or None, target_node_ids=targets, reuse=reuse,
+            spec_revision=revision,
         )
     except RunError as exc:
         return _error(exc)

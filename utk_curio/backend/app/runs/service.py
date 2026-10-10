@@ -98,6 +98,7 @@ def run_payload(run: DataflowRun, *, steps: bool = False, current: Optional[dict
         "projectName": run.project.name if run.project is not None else None,
         "trigger": run.trigger,
         "targetNodeId": run.target_node_id,
+        "targetNodeIds": run.target_ids,
         "wholeDataflow": run.whole_dataflow,
         "rerunOf": run.rerun_of,
         "specRevision": run.spec_revision,
@@ -224,13 +225,15 @@ def start_run(
     project_id: str,
     *,
     target_node_id: Optional[str] = None,
+    target_node_ids: Optional[list] = None,
     reuse: Optional[dict] = None,
     spec_revision: Optional[int] = None,
     trigger: Optional[str] = None,
     rerun_of: Optional[str] = None,
 ) -> DataflowRun:
-    """Run *project_id*'s saved dataflow, or one node of it, on a thread of its
-    own. Refused for a user who may not save it, for a revision that is not the
+    """Run *project_id*'s saved dataflow, one node of it, or several nodes
+    (*target_node_ids*: an automatic run, #845), on a thread of its own.
+    Refused for a user who may not save it, for a revision that is not the
     saved one, while the dataflow already runs, and past the account's cap."""
     from flask import current_app
 
@@ -261,7 +264,7 @@ def start_run(
         )
     try:
         plan = plan_run(
-            spec, target_node_id=target_node_id, reuse=reuse,
+            spec, target_node_id=target_node_id, target_node_ids=target_node_ids, reuse=reuse,
             templates=roster_templates(ukey, project_id),
             labels=template_labels(ukey, project_id),
         )
@@ -277,8 +280,9 @@ def start_run(
     run = runs_repo.create_run(
         project_id=project_id,
         user_id=user.id,
-        trigger=trigger or ("node" if target_node_id else "all"),
+        trigger=trigger or ("node" if target_node_id else "auto" if plan.target_node_ids else "all"),
         target_node_id=target_node_id,
+        target_node_ids=plan.target_node_ids,
         rerun_of=rerun_of,
         spec_revision=current,
         boot_id=jobs.BOOT_ID,
@@ -446,11 +450,13 @@ def cancel_run(user, run_id: str) -> DataflowRun:
 
 
 def rerun(user, token: Optional[str], run_id: str) -> DataflowRun:
-    """Run what *run_id* ran again: the whole dataflow, or the same node."""
+    """Run what *run_id* ran again: the whole dataflow, the same node, or the
+    same nodes."""
     run = get_run(user, run_id)
     return start_run(
         user, token, run.project_id,
-        target_node_id=run.target_node_id, trigger="rerun", rerun_of=run.id,
+        target_node_id=run.target_node_id, target_node_ids=run.target_ids,
+        trigger="rerun", rerun_of=run.id,
     )
 
 

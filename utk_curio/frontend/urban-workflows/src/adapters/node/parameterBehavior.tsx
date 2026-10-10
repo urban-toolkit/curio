@@ -37,7 +37,7 @@ function labelOf(data: any, fallback: string): string {
 }
 
 function ParameterBody({ data }: { data: any }) {
-  const { nodes, updateDataNode, markNodeStale, markDirty, dashboardOn } = useFlowContext();
+  const { nodes, updateDataNode, markNodeStale, markDirty, requestAutoRun, dashboardOn } = useFlowContext();
   const all: any[] = nodes ?? [];
   const held = normalizeWidgets(data.widgets);
   const widget: WidgetDef | null = held[0] ?? null;
@@ -77,6 +77,8 @@ function ParameterBody({ data }: { data: any }) {
     if (JSON.stringify(change.value) === committedKey) return;
     write([{ ...widget, value: change.value }, ...held.slice(1)]);
     markUsersStale(widget.name);
+    // #845: with auto-run on, the nodes that use it run on their own.
+    requestAutoRun?.(nodesUsingShared(all, widget.name).map((node) => node.id));
   };
   const flushRef = useRef(flush);
   flushRef.current = flush;

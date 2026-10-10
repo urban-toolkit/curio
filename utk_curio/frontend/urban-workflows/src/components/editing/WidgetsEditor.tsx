@@ -36,6 +36,8 @@ type WidgetsEditorProps = {
     /** #662: the node's widgets, declared here and saved at metadata.widgets. */
     widgets: WidgetDef[];
     onWidgetsChange: (widgets: WidgetDef[]) => void;
+    /** #845: a widget's value changed, not its declaration. */
+    onValueChange?: () => void;
     /** The language the node's code is written in, which decides how a value is written into it. */
     language: CodeLanguage;
     /** A reference that cannot be resolved: the run ends with this message. */
@@ -73,6 +75,7 @@ function WidgetsEditor({
     markersDirty,
     widgets,
     onWidgetsChange,
+    onValueChange,
     language,
     onResolveError,
     inputs = NO_INPUTS,
@@ -114,8 +117,10 @@ function WidgetsEditor({
         [userCode, scope, language],
     );
 
-    const setValue = (name: string, value: any) =>
+    const setValue = (name: string, value: any) => {
         onWidgetsChange(widgets.map((w) => (w.name === name ? { ...w, value } : w)));
+        onValueChange?.();
+    };
 
     const saveEdited = (previous: WidgetDef, next: WidgetDef) => {
         // The set value survives an edit that keeps it valid.

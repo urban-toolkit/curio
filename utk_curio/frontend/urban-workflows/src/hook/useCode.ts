@@ -394,7 +394,8 @@ export function useCode(): IUseCode {
             // reach loadParsedTrill identically from there down.
             markDirty();
         } else if(suggestionType == undefined) {
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], trill.dataflow.categories || {}, trill.dataflow.scenarios ?? [], options?.fit);
+            // #845: a dataflow without the key has auto-run off.
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], trill.dataflow.categories || {}, trill.dataflow.scenarios ?? [], options?.fit, trill.dataflow.autoRun === true);
             if (trill.nodeProvenance) loadNodeProvenance(rekeyNodeProvenance(trill.nodeProvenance, nodes.map((n) => n.id)));
             if (trill.dataflowProvenance) TrillGenerator.loadDataflowProvenance(trill.dataflowProvenance);
         } else {
