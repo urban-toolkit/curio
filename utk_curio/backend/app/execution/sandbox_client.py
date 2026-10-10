@@ -9,13 +9,21 @@ run on a thread of its own, reads it as the sandbox being unavailable.
 
 from __future__ import annotations
 
+import contextlib
 import os
+import threading
 
 import requests
 
 from utk_curio.backend.app.execution.sandbox_auth import sandbox_headers
 
 _sandbox_session = requests.Session()
+
+# Without isolation the sandbox runs one Python node at a time, behind its
+# process-wide _exec_lock (sandbox/app/worker.py), and answers nothing until a
+# run ends. A request that waited there spent its timeout waiting (#863), so
+# the backend's Python runs take the same turns here, before they are sent.
+_in_process_turn = threading.Lock()
 
 # Sandbox address
 api_address = 'http://' + os.getenv('FLASK_SANDBOX_HOST', '127.0.0.1')
@@ -34,6 +42,23 @@ class SandboxTransportError(Exception):
         super().__init__(payload.get('message') or payload.get('error'))
         self.payload = payload
         self.status = status
+
+
+def exec_turn():
+    """Wait here for the sandbox to be free before sending a Python ``/exec``.
+
+    Without isolation the sandbox would make the request wait for its turn,
+    and the request's timeout would count that wait; taken here, the timeout
+    starts when the sandbox can run the node, so it covers the node's own run.
+    Nothing runs one at a time that did not already: with isolation every node
+    has a child of its own and this waits for nothing, and ``/execJs`` never
+    takes it.
+    """
+    from utk_curio.backend.app.discovery.infrastructure.media_dirs import isolation_on
+
+    if isolation_on():
+        return contextlib.nullcontext()
+    return _in_process_turn
 
 
 def sandbox_request(method: str, path: str, *, label: str, timeout: int, **kwargs) -> requests.Response:

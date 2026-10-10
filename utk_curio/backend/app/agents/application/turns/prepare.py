@@ -127,8 +127,21 @@ def _prepare_run(
         # the fenced system turn a refusal of them falls back to.
         "native_tools": native_tools,
         "fenced_system": fenced_system,
+        # #867: a follow-up such as "go ahead" acts on what this message asked.
+        "previous_message": _previous_user_text(prior),
     }
     return coord, session_id, messages, run_policy, wants_title, pins, loop_ctx
+
+
+def _previous_user_text(prior: list) -> str | None:
+    """The text of the user's turn before this run's message, or None."""
+    for turn in reversed(prior or []):
+        if (
+            isinstance(turn, dict) and turn.get("role") == "user"
+            and isinstance(turn.get("text"), str) and not turn.get("error")
+        ):
+            return turn["text"]
+    return None
 
 
 def _resolve_run_target(user_key: str, project_id: str, attachment_id: str) -> tuple[dict, dict, str]:
