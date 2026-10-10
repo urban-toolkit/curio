@@ -358,10 +358,11 @@ Curio ships with **no default LLM endpoint**. Until an operator sets a Deploymen
 | `CURIO_SOLVE_BATCH_DEADLINE` | `--solve-batch-deadline` | Seconds a Solve batch may run in all. Default 2700. |
 | `CURIO_VALIDATION_EXEC_TIMEOUT` | `--validation-exec-timeout` | Seconds one node may run when an agent validates code. Default 300. |
 | `CURIO_VALIDATION_NODE_LIMIT` | `--validation-node-limit` | How many nodes one validation run may execute. Upstream nodes whose earlier output is reused do not count. Default 25. |
+| `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH` | `--allow-publish` (default), `--no-allow-publish` | Allows or forbids **Publish** and **Unpublish** of agents, as it does for node packages and datasets. When forbidden, both are refused and their buttons are hidden on `/catalog/agents`. |
 
-Run `python curio.py start --help` for the current list. A flag writes its variable only when passed, so a value already in the environment is not cleared by a start that omits it.
+Run `python curio.py start --help` for the current list. A flag writes its variable only when passed, so a value already in the environment is not cleared by a start that omits it. `--allow-publish` is the exception: `curio.py start` sets it on every start.
 
-**Anyone signed in can publish.** Agent publishing has no on/off switch. The only restriction is ownership: you may publish only definitions you imported. On a multi-tenant deployment, any signed-in user can publish an agent they wrote into the shared catalog.
+**On a multi-user install, start with `--no-allow-publish`.** Otherwise any signed-in user can publish an agent they imported into the shared catalog.
 
 **The usage record needs no care.** The per-day files under `.curio/users/<key>/agents/ledger/` are append-only and rotate by date. Deleting a day's file loses that day's history and nothing else, and nothing expires the files automatically.
 
