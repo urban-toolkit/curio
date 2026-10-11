@@ -220,6 +220,8 @@ One command starts all Curio services, runs unit tests and Playwright E2E tests,
 python curio.py test
 ```
 
+It first deletes the checkout's `.curio/` folder, where local projects and data live, along with the frontend's `node_modules/`, `dist/` and `build/`, so keep work you care about in another clone. `--use-existing` skips that cleanup and uses servers that are already running, started with `python curio.py start --deploy --testing --with-examples`.
+
 Common shortcuts:
 
 ```bash
@@ -253,7 +255,7 @@ playwright install chromium
 ### Backend and Sandbox Tests
 
 ```bash
-pytest utk_curio/backend/tests/
+pytest utk_curio/backend/tests/ --ignore=utk_curio/backend/tests/test_frontend
 pytest utk_curio/sandbox/tests/
 ```
 
@@ -352,7 +354,7 @@ pytest utk_curio/backend/tests/test_frontend/
 # watch the browser while tests run
 pytest utk_curio/backend/tests/test_frontend/ --headed
 
-# use already-running servers (e.g. docker compose)
+# use servers already started with --deploy --testing --with-examples (e.g. docker-compose.ci.yml)
 CURIO_E2E_USE_EXISTING=1 pytest utk_curio/backend/tests/test_frontend/
 ```
 

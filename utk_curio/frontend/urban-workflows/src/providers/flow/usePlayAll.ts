@@ -101,7 +101,7 @@ export function usePlayAll({
                 const ids = [...state.pending].join(", ");
                 showToast(
                     `${stuck} node(s) didn't finish in time (${ids}); continuing with the rest ` +
-                    "of the run. Use the Run All button to cancel a run that is stuck.",
+                    "of the run. Use the stop button to cancel a run that is stuck.",
                     "warning",
                 );
             }
@@ -198,7 +198,7 @@ export function usePlayAll({
             // Say so. A silent no-op here is indistinguishable from a dead
             // button, which is how #271 was reported.
             showToast(
-                "A run is already in progress. Wait for it to finish, or cancel it from the Run All button.",
+                "A run is already in progress. Wait for it to finish, or cancel it with the stop button.",
                 "info",
             );
             return;
@@ -237,7 +237,7 @@ export function usePlayAll({
         // orphans the level already in flight.
         if (playAllStateRef.current != null) {
             showToast(
-                "A run is already in progress. Wait for it to finish, or cancel it from the Run All button.",
+                "A run is already in progress. Wait for it to finish, or cancel it with the stop button.",
                 "info",
             );
             return;
@@ -262,7 +262,7 @@ export function usePlayAll({
     ): boolean {
         if (playAllStateRef.current != null) {
             showToast(
-                "A run is already in progress. Wait for it to finish, or cancel it from the Run All button.",
+                "A run is already in progress. Wait for it to finish, or cancel it with the stop button.",
                 "info",
             );
             return false;

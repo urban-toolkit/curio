@@ -1656,7 +1656,6 @@ def scene_provenance(ctx: Ctx) -> None:
     tour.beat(1500)
     tour.say(
         "Versions of the dataflow, as a graph",
-        "Tracked in the dataflow itself, so it travels with the file.",
         hold=3200,
     )
     tour.hush()

@@ -68,7 +68,7 @@ The system is designed around three principles:
                        │ HTTP (REST)
 ┌──────────────────────▼──────────────────────────────┐
 │  Backend (Flask / Python)                            │
-│  Auth, provenance DB, file serving, proxy to sandbox │
+│  Auth, user DB, file serving, proxy to sandbox      │
 │  Port: 5002                                         │
 └──────────────────────┬──────────────────────────────┘
                        │ HTTP (REST)
@@ -82,7 +82,7 @@ The system is designed around three principles:
 | Tier | Location | Responsibility |
 |---|---|---|
 | Frontend | `utk_curio/frontend/urban-workflows/` | Workflow canvas, editors, visualizations, state management |
-| Backend | `utk_curio/backend/` | REST API, user auth, provenance database, file storage |
+| Backend | `utk_curio/backend/` | REST API, user auth, user and project database, file storage |
 | Sandbox | `utk_curio/sandbox/` | Isolated Python execution, data serialization |
 
 The backend and sandbox both run as Flask servers. The frontend never talks directly to the sandbox, all execution requests are routed through the backend, which then proxies to the sandbox. This keeps the sandbox unexposed to browser clients.
