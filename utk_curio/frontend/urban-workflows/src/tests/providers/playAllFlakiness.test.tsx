@@ -99,6 +99,9 @@ jest.mock('vega', () => ({}), { virtual: true });
 jest.mock('vega-lite', () => ({}), { virtual: true });
 
 import FlowProvider, { useFlowContext } from '../../providers/FlowProvider';
+import { PythonInterpreter } from '../../PythonInterpreter';
+import { NodeType } from '../../constants';
+import { holdNextReply } from '../_support/heldReply';
 
 // Captures the live FlowContext so the test can call the real orchestration API.
 type FlowApi = ReturnType<typeof useFlowContext>;
@@ -290,6 +293,83 @@ describe('Play All orchestration — flakiness vectors', () => {
       );
     } finally {
       jest.useRealTimers();
+    }
+  });
+
+  test('the stall watchdog leaves a node whose run the backend still holds (#888)', async () => {
+    // A node that waited for its turn or a free slot before it ran can take
+    // longer than the watchdog without being stuck: the backend still answers
+    // it, with its own timeout (#863).
+    const realFetch = (global as any).fetch;
+    const fetchMock = jest.fn();
+    (global as any).fetch = fetchMock;
+    jest.useFakeTimers();
+    try {
+      renderFlow();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      await act(async () => {
+        api.addNode(makeNode('A'), undefined, false);
+        api.addNode(makeNode('A2'), undefined, false);
+        api.addNode(makeNode('B'), undefined, false);
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      await act(async () => {
+        api.onEdgesChange([
+          { type: 'add', item: { id: 'A->B', source: 'A', target: 'B', sourceHandle: 'out', targetHandle: 'in' } } as any,
+          { type: 'add', item: { id: 'A2->B', source: 'A2', target: 'B', sourceHandle: 'out', targetHandle: 'in' } } as any,
+        ]);
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        api.playAllNodes();
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      // A finishes. A2 sent its run, which the backend holds while it waits
+      // for its turn and then runs.
+      const reply = holdNextReply(fetchMock, {
+        stdout: [], stderr: '', output: { path: 'after-the-wait', dataType: 'int' },
+      });
+      new PythonInterpreter().interpretCode(
+        'return 1', 'return 1', '', [], jest.fn(),
+        NodeType.COMPUTATION_ANALYSIS, 'A2', 'workflow-1', jest.fn(),
+      );
+      await act(async () => {
+        api.signalNodeExecDone('A');
+      });
+
+      // The watchdog's time passes with A2's run still open: B is held back
+      // and no node is reported as not finishing.
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(STALL_TIMEOUT_MS + 1);
+      });
+      expect(triggerExecOf('B')).toBe(0);
+      expect(mockShowToast).not.toHaveBeenCalledWith(
+        expect.stringContaining("didn't finish"),
+        'warning',
+      );
+
+      // The backend answers, A2 finishes, and the run moves on to B.
+      await act(async () => {
+        reply.release();
+        await jest.advanceTimersByTimeAsync(0);
+      });
+      await act(async () => {
+        api.signalNodeExecDone('A2');
+      });
+      expect(triggerExecOf('B')).toBe(1);
+    } finally {
+      jest.useRealTimers();
+      (global as any).fetch = realFetch;
     }
   });
 
