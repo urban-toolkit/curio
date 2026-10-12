@@ -46,7 +46,7 @@ SENSITIVE_PATHS = (
     ("models", "the Model Catalog's shipped models, staged into a child that runs one"),
     (".curio/fetched", "the catalog files a pip install downloaded, staged into a child that reads one"),
     (".curio/nodejs", "the Node.js packages a pip install's sandbox runs"),
-    (".env", "the deployment's secrets, including SECRET_KEY"),
+    (".env", "the deployment's keys and tokens"),
     (".curio/discovery", "the operator's source manifests: each names a folder or host the server reads"),
 )
 

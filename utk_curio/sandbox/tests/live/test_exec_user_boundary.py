@@ -358,8 +358,8 @@ def test_another_users_dataset_cannot_be_read_by_absolute_path():
 
 
 def test_the_deployment_secret_cannot_be_read():
-    """``.env`` carries SECRET_KEY, which forges sessions. Unlike the paths
-    above it is a plain file with no directory to hide behind, so it is
+    """``.env`` can hold the deployment's keys and tokens: the sandbox token
+    and the LLM keys. Unlike the paths above it is a plain file with no directory to hide behind, so it is
     hardened by mode. The workflow plants one, world-readable, before the
     stack boots; a missing one fails, since a test that silently proves
     nothing is worse than an absent one."""
