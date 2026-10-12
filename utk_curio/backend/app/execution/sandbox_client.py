@@ -9,7 +9,6 @@ run on a thread of its own, reads it as the sandbox being unavailable.
 
 from __future__ import annotations
 
-import contextlib
 import os
 import threading
 
@@ -19,11 +18,12 @@ from utk_curio.backend.app.execution.sandbox_auth import sandbox_headers
 
 _sandbox_session = requests.Session()
 
-# Without isolation the sandbox runs one Python node at a time, behind its
-# process-wide _exec_lock (sandbox/app/worker.py), and answers nothing until a
-# run ends. A request that waited there spent its timeout waiting (#863), so
-# the backend's Python runs take the same turns here, before they are sent.
-_in_process_turn = threading.Lock()
+# The sandbox takes so many runs at once and makes the others wait inside it,
+# answering nothing until a run ends, so a request that waited there spent its
+# timeout waiting (#863, #889). The backend's runs take as many turns here,
+# before they are sent: one set per endpoint and size, made on first use.
+_turns: dict[tuple[str, int], threading.BoundedSemaphore] = {}
+_turns_lock = threading.Lock()
 
 # Sandbox address
 api_address = 'http://' + os.getenv('FLASK_SANDBOX_HOST', '127.0.0.1')
@@ -44,21 +44,34 @@ class SandboxTransportError(Exception):
         self.status = status
 
 
-def exec_turn():
-    """Wait here for the sandbox to be free before sending a Python ``/exec``.
+def exec_turn(endpoint: str) -> threading.BoundedSemaphore:
+    """Wait here for the sandbox to have room for a run on *endpoint*
+    (``/exec`` or ``/execJs``) before the request is sent.
 
-    Without isolation the sandbox would make the request wait for its turn,
-    and the request's timeout would count that wait; taken here, the timeout
-    starts when the sandbox can run the node, so it covers the node's own run.
-    Nothing runs one at a time that did not already: with isolation every node
-    has a child of its own and this waits for nothing, and ``/execJs`` never
-    takes it.
+    The sandbox would make the request wait for its place, and the request's
+    timeout would count that wait; taken here, the timeout starts when the
+    sandbox can run the node, so it covers the node's own run. There are as
+    many turns as the sandbox has places, counted where the sandbox counts
+    them, so as many runs as before are in the sandbox at once:
+
+    - ``/exec`` without isolation: one, the sandbox's ``_exec_lock``;
+    - ``/exec`` with isolation: ``CURIO_EXEC_PARALLELISM``, its isolated slots;
+    - ``/execJs``, in both modes: ``CURIO_JS_PARALLELISM``, its Node slots.
     """
     from utk_curio.backend.app.discovery.infrastructure.media_dirs import isolation_on
+    from utk_curio.sandbox import concurrency
 
-    if isolation_on():
-        return contextlib.nullcontext()
-    return _in_process_turn
+    if endpoint == "/execJs":
+        places = concurrency.js_parallelism()
+    elif isolation_on():
+        places = concurrency.exec_parallelism()
+    else:
+        places = 1
+    with _turns_lock:
+        turn = _turns.get((endpoint, places))
+        if turn is None:
+            turn = _turns[(endpoint, places)] = threading.BoundedSemaphore(places)
+    return turn
 
 
 def sandbox_request(method: str, path: str, *, label: str, timeout: int, **kwargs) -> requests.Response:

@@ -26,7 +26,7 @@ import collections
 import os
 import threading
 
-from utk_curio.sandbox import metrics
+from utk_curio.sandbox import concurrency, metrics
 from utk_curio.sandbox.isolation import protocol, supervisor
 from utk_curio.sandbox.isolation.protocol import ProtocolError
 from utk_curio.sandbox.isolation.supervisor import IsolatedExecutionError
@@ -338,24 +338,6 @@ def execute_isolated(
             supervisor.cleanup_scratch(scratch_dir)
 
 
-def _default_parallelism() -> int:
-    """How many isolated nodes may run at once when nobody says otherwise.
-
-    Two was a single-user default and it is what a multi-user instance queues
-    behind: at fifty simultaneous users the stress tiers measured a p95 of
-    161s for a node that takes under a second on an idle stack, almost all of
-    it spent waiting for a slot. Sizing to the host instead means a machine
-    with cores to spare uses them.
-
-    Capped at 8 because the real ceiling is memory, not CPU: peak usage is
-    roughly this times ``CURIO_EXEC_MEMORY_MB`` (4096 by default), so an
-    uncapped count on a 64-core box would promise far more memory than it has.
-    An operator who knows their workload raises it with --exec-parallelism.
-    """
-    cores = os.cpu_count() or 2
-    return max(2, min(cores // 2, 8))
-
-
 class IsolationConfig:
     """Everything resolved once at sandbox startup for the isolated path."""
 
@@ -387,7 +369,8 @@ class IsolationConfig:
 
         limits = dict(supervisor.DEFAULT_LIMITS)
         limits["memory_mb"] = _int("CURIO_EXEC_MEMORY_MB", limits["memory_mb"])
-        parallelism = _int("CURIO_EXEC_PARALLELISM", _default_parallelism())
+        # The backend sizes its turns from the same count (#889).
+        parallelism = concurrency.exec_parallelism(env)
         # RLIMIT_NPROC is per real UID on Linux, not per process, and every
         # isolated child runs as the same execution user -- so this number is
         # a budget the concurrent children SHARE, not one each. At parallelism

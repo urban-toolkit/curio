@@ -27,6 +27,7 @@ import time
 
 from utk_curio.common.backend_address import backend_base_url
 from utk_curio.common.redaction import redact
+from utk_curio.sandbox.concurrency import js_parallelism
 from utk_curio.sandbox.util.node_runtime import (
     OVERPASS_USER_AGENT,
     node_env,
@@ -137,30 +138,8 @@ class _ExecLock:
 _exec_lock = _ExecLock()
 
 
-def _default_js_parallelism() -> int:
-    """How many Node subprocesses may run at once.
-
-    Not a lock: JS nodes are meant to run in parallel, and this leaves them
-    doing so. It is a ceiling on how many at once, which the route had none of
-    -- one Node process per request, each loading autk-db and its own DuckDB.
-    A hundred simultaneous Autark loads peaked the CI container at 51 GB and
-    1313 processes, which is how a machine dies rather than queues.
-
-    Half the cores, floor 2, cap 16: an Autark PBF load is CPU- and
-    memory-heavy, and the work the child does is what costs, not the pipe.
-    ``CURIO_JS_PARALLELISM`` overrides it.
-    """
-    try:
-        configured = int(os.environ.get("CURIO_JS_PARALLELISM", ""))
-    except (TypeError, ValueError):
-        configured = 0
-    if configured > 0:
-        return configured
-    cores = os.cpu_count() or 2
-    return max(2, min(cores // 2, 16))
-
-
-# Bounded, not serialized. Sized on first use so the env is fully populated.
+# Bounded, not serialized. Sized on first use so the env is fully populated,
+# from the count the backend sizes its JavaScript turns from (#889).
 _js_slots: "threading.BoundedSemaphore | None" = None
 _js_slots_lock = threading.Lock()
 
@@ -169,7 +148,7 @@ def _js_slot() -> "threading.BoundedSemaphore":
     global _js_slots
     with _js_slots_lock:
         if _js_slots is None:
-            _js_slots = threading.BoundedSemaphore(_default_js_parallelism())
+            _js_slots = threading.BoundedSemaphore(js_parallelism())
         return _js_slots
 
 # Module bindings created by user `import` statements, keyed by session. This is

@@ -11,7 +11,6 @@ request.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import time
 from dataclasses import dataclass
@@ -260,10 +259,10 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
     else:
         endpoint = '/execJs'
     t1 = time.perf_counter()
-    # A Python node waits for its turn before the request is sent, so the
-    # timeout covers its run and not its wait (#863). A waiting node is not
-    # counted as running.
-    with exec_turn() if language == "python" else contextlib.nullcontext():
+    # A node waits for its turn before the request is sent, so the timeout
+    # covers its run and not its wait for the sandbox (#863, #889). A waiting
+    # node is not counted as running.
+    with exec_turn(endpoint):
         t_turn = time.perf_counter()
         # The gauge wraps only the sandbox round trip, which is where a node
         # actually spends its time. Counting the surrounding parse and JSON work
