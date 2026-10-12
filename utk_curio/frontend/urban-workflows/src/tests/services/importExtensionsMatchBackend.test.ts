@@ -6,8 +6,9 @@ import { IMPORTABLE_DATASET_EXTENSIONS } from "../../services/datasetCatalog/dat
  * The import picker and the server must agree on what can be imported.
  *
  * `IMPORTABLE_DATASET_EXTENSIONS` feeds the file picker's `accept` attribute.
- * The server decides for real, from `SUPPORTED_SUFFIXES` plus the two
- * converted-on-import formats. The two lists were kept in step by a comment
+ * The server decides for real, from `SUPPORTED_SUFFIXES` less the suffixes it
+ * refuses on their own (`IMPORT_REFUSED_SUFFIXES`), plus the formats it
+ * converts on import. The two lists were kept in step by a comment
  * saying "keep in lockstep with the backend" and nothing else, so drift in
  * either direction was invisible until a user hit it: a file the picker offers
  * and the server rejects reads as a broken upload, and one the server would
@@ -33,28 +34,42 @@ function pythonList(source: string, name: string): string[] {
   );
 }
 
+/** The suffixes the server converts on import rather than storing verbatim. */
+const CONVERTED = ["OSM_PBF_SUFFIXES", "GPKG_SUFFIXES", "ZIPPED_SHAPEFILE_SUFFIXES"];
+
 describe("the import picker matches the server", () => {
   const source = fs.readFileSync(CONSTANTS_PY, "utf8");
+  const refused = pythonList(source, "IMPORT_REFUSED_SUFFIXES");
+  const storedAlone = pythonList(source, "SUPPORTED_SUFFIXES").filter(
+    (suffix) => !refused.includes(suffix),
+  );
 
-  it("offers every suffix the server stores directly", () => {
-    for (const suffix of pythonList(source, "SUPPORTED_SUFFIXES")) {
+  it("offers every suffix the server stores directly from a file alone", () => {
+    for (const suffix of storedAlone) {
       expect(IMPORTABLE_DATASET_EXTENSIONS).toContain(suffix);
     }
   });
 
   it("offers every suffix the server converts on import", () => {
-    for (const name of ["OSM_PBF_SUFFIXES", "GPKG_SUFFIXES"]) {
+    for (const name of CONVERTED) {
       for (const suffix of pythonList(source, name)) {
         expect(IMPORTABLE_DATASET_EXTENSIONS).toContain(suffix);
       }
     }
   });
 
+  it("offers no suffix the server refuses on its own", () => {
+    // #877: a .shp cannot be read without its .dbf and .shx; it comes zipped.
+    expect(refused).toContain(".shp");
+    for (const suffix of refused) {
+      expect(IMPORTABLE_DATASET_EXTENSIONS).not.toContain(suffix);
+    }
+  });
+
   it("offers nothing the server would refuse", () => {
     const accepted = new Set([
-      ...pythonList(source, "SUPPORTED_SUFFIXES"),
-      ...pythonList(source, "OSM_PBF_SUFFIXES"),
-      ...pythonList(source, "GPKG_SUFFIXES"),
+      ...storedAlone,
+      ...CONVERTED.flatMap((name) => pythonList(source, name)),
     ]);
     for (const offered of IMPORTABLE_DATASET_EXTENSIONS) {
       // ".osm.pbf" is a compound spelling of ".pbf", which the server matches by

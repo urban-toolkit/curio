@@ -468,6 +468,46 @@ beta,2
     ).to_have_count(1, timeout=20000)
 
 
+def test_a_lone_shapefile_is_refused_with_how_to_zip_it(
+    app_frontend: "FrontendPage", current_server: str, page, tmp_path,
+):
+    """#877: the picker offers a .zip and no .shp, and a .shp picked anyway is
+    refused with an error toast that says to zip it with its .dbf and .shx."""
+    require_project_page()
+    require_user_auth()
+    _enter_dataflow(
+        page, app_frontend, current_server,
+        username="datacat_lone_shp", project="Data Catalog Lone Shapefile",
+    )
+    # Refused by its name, so its bytes need not be a whole shapefile.
+    source = tmp_path / "roads.shp"
+    source.write_bytes(b"\x00\x00\x27\x0a" + b"\x00" * 96)
+
+    drawer = _open_drawer_from_menu(page)
+    expect(_card(drawer, DATASET_ID)).to_have_count(1, timeout=15000)
+    accept = drawer.locator('input[type="file"]').get_attribute("accept").split(",")
+    assert ".zip" in accept and ".shp" not in accept, accept
+
+    with page.expect_response(
+        lambda r: r.url.endswith("/api/datasets/import") and r.request.method == "POST",
+        timeout=60000,
+    ) as refused:
+        with page.expect_file_chooser() as chooser:
+            drawer.get_by_role("button", name="Import dataset").click()
+        chooser.value.set_files(str(source))
+    assert refused.value.status == 400, refused.value.text()
+    message = refused.value.json()["error"]
+    for words in ("roads.shp", ".dbf", ".shx", ".zip"):
+        assert words in message, message
+
+    toast = '[aria-label="Notifications"] [role="alert"]'
+    expect(page.locator(toast)).to_contain_text(message, timeout=20000)
+    save_workflow_test_screenshot(
+        page, "data-catalog-import-lone-shp",
+        test_name="test_a_lone_shapefile_is_refused_with_how_to_zip_it",
+        clip_selector=toast,
+    )
+
 
 def test_quick_filters_cover_every_populated_format(
     app_frontend: "FrontendPage", current_server: str, page
