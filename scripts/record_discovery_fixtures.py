@@ -170,14 +170,13 @@ def record_storage(slug_filter: str | None, index: dict) -> None:
         # different URL whenever the resources do not share one.
         for spec in manifest.resources:
             scan.scan(manifest, provider, specs=[spec])
-        url_for = getattr(provider, "object_url", None) or provider.file_url
         for group in result.groups:
             for found in group.files:
                 ext = found.relpath.rsplit(".", 1)[-1].lower()
                 head = SYNTHETIC_HEADS.get(ext)
                 if head is None:
                     continue
-                index[f"{url_for(found.relpath)} {PROBE_RANGE}"] = {
+                index[f"{provider.file_url(found.relpath)} {PROBE_RANGE}"] = {
                     "file": head,
                     "status": 206,
                     "headers": {"Content-Type": "application/octet-stream"},
