@@ -108,7 +108,7 @@ There are three places you work with datasets, and they are **not** interchangea
 
 **I want to use a catalog dataset in my dataflow.** Open the dataflow, then click **Data Catalog** in the top bar. Find the dataset and click **Add to project**. It now appears in the left Tools panel's **Data Catalog** dropdown. Drag it onto the canvas to get a Data Loading node wired to it ([part 3](#3-using-a-dataset-in-a-dataflow)).
 
-**I want to use a file from my computer.** Open the drawer and click **Import dataset** in the footer. Pick the file (`.csv`, `.geojson`, `.json`, `.parquet`, `.tif`, `.tiff`, `.onnx`, `.nc`, `.pbf`, `.gpkg`). Import only registers the dataset in your account: click **Add to project** on it to add it to the open dataflow.
+**I want to use a file from my computer.** Open the drawer and click **Import dataset** in the footer. Pick the file (`.csv`, `.geojson`, `.json`, `.parquet`, `.tif`, `.tiff`, `.onnx`, `.nc`, `.pbf`, `.gpkg`, or a `.zip` holding one shapefile). Import only registers the dataset in your account: click **Add to project** on it to add it to the open dataflow.
 
 **I want a dataset from an open data portal.** Download it from the [Discovery Catalog](DISCOVERY-CATALOG.md). It lands here as an imported dataset.
 
@@ -283,11 +283,11 @@ A dataset's details have four tabs: **Overview**, **Schema**, **Table Preview**,
 | `.json` | `json` |
 | `.parquet` | `parquet` |
 | `.tif`, `.tiff` | `geotiff` |
-| `.shp` | `shp` |
 | `.onnx` | `onnx` |
 | `.nc` | `netcdf` (classic, 64-bit offset, 64-bit data or NetCDF-4) |
 | `.pbf`, `.osm.pbf` | **converted** (see below) |
 | `.gpkg` | **converted** (see below) |
+| `.zip` holding one shapefile | **converted** (see below) |
 
 Anything else is rejected with *"Unsupported dataset format"*.
 
@@ -319,6 +319,12 @@ A `.gpkg` is handled the same way, since a GeoPackage can hold any number of lay
 A GeoPackage holding exactly one layer is imported as an ordinary parquet dataset with no group. GeoPackage import needs the same geospatial extras, plus GDAL's GPKG driver.
 
 A group whose layers all came from the Discovery Catalog, such as an OpenStreetMap download of several layers, reads as each of its layers does: their format, their tags, and the **Downloaded from** section naming the source.
+
+### Zipped shapefiles
+
+A shapefile is imported as a `.zip` holding its `.shp` with the `.dbf` and `.shx`, and its `.prj` and `.cpg` when there are. It becomes one GeoParquet dataset named after the zip, reprojected to EPSG:4326 when its `.prj` names another CRS. A zipped shapefile from the [Discovery Catalog](DISCOVERY-CATALOG.md) is read the same way.
+
+A `.shp` on its own is refused: *"A shapefile cannot be read from roads.shp alone. Zip roads.shp with its .dbf and .shx (and its .prj, when there is one) and import the .zip."* A zip missing the `.dbf` or `.shx` is refused too (*"'roads.shp' needs its .shx beside it in the archive"*), and so is a zip that holds no shapefile.
 
 ### NetCDF variables as one group
 

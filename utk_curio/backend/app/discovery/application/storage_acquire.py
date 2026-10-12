@@ -24,6 +24,7 @@ from typing import Any, Callable
 
 from utk_curio.backend.app.common.safe_paths import validate_component
 from utk_curio.backend.app.common.user_storage import user_key_segment, users_base
+from utk_curio.backend.app.datasets.install.shapefile import shapefile_to_parquet
 from utk_curio.backend.app.discovery.application import combine_tables
 from utk_curio.backend.app.discovery.application import index_collection
 from utk_curio.backend.app.discovery.application import scan as scanning
@@ -538,7 +539,7 @@ class StorageAcquire:
                 return self._install_path(staged, filename, fmt, title=title, discovery_source=discovery_source)
             if fmt == "shp":
                 parquet = work / (Path(filename).stem + ".parquet")
-                _shapefile_to_parquet(staged, parquet)
+                shapefile_to_parquet(staged, parquet)
                 return self._install_path(
                     parquet, parquet.name, "parquet", title=title, discovery_source=discovery_source
                 )
@@ -653,14 +654,4 @@ def _filename(relpath: str) -> str:
         suffix = ""
     stem = secure_filename(last[: len(last) - len(suffix)]) or "data"
     return validate_component(stem[: 120 - len(suffix)] + suffix, field="file name")
-
-
-def _shapefile_to_parquet(shp: Path, dest: Path) -> None:
-    """Convert a shapefile with its siblings to GeoParquet in EPSG:4326."""
-    import geopandas as gpd
-
-    frame = gpd.read_file(shp)
-    if frame.crs is not None and frame.crs.to_epsg() != 4326:
-        frame = frame.to_crs(4326)
-    frame.to_parquet(dest)
 

@@ -2,7 +2,8 @@
 
 A portal often ships data zipped: a gzipped CSV (LODES), a GeoTIFF tile in a
 zip (GHSL), a zipped shapefile (TIGER/Line), a GTFS feed. :func:`unpack` reads
-the archive the download staged and says what it holds:
+the archive the download staged and says what it holds (Import dataset reads a
+zipped shapefile with it too, ``datasets/application/mutations.py``):
 
 - a ``.gz`` is one file, named as the archive less ``.gz``;
 - a ``.zip`` holding exactly one data file (CSV, GeoJSON, JSON, Parquet or
@@ -28,6 +29,7 @@ from pathlib import Path
 from typing import Callable
 
 from utk_curio.backend.app.common import safe_archive
+from utk_curio.backend.app.datasets.install.shapefile import shapefile_to_parquet
 from utk_curio.backend.app.discovery.application.storage_acquire import MAX_LOCAL_FILE_BYTES
 from utk_curio.backend.app.discovery.domain import formats
 from utk_curio.backend.app.discovery.domain.errors import UnsupportedFormatError
@@ -278,6 +280,18 @@ def _extract_shapefile(zf, shp: _Member, members, work: Path, budget, check) -> 
     for suffix, member in parts.items():
         _copy(zf, member.info, folder / f"data{suffix}", budget, check)
     return Shapefile(path=target, name=shp.name)
+
+
+def convert_shapefile(shapefile: Shapefile, dest: Path) -> int:
+    """An unpacked *shapefile* as GeoParquet in EPSG:4326 at *dest*, and how
+    many features it holds. A shapefile the reader cannot read is refused in
+    the reader's own words."""
+    try:
+        return shapefile_to_parquet(shapefile.path, dest)
+    except Exception as exc:  # noqa: BLE001 - the reader's own words
+        raise UnsupportedFormatError(
+            f"the shapefile {shapefile.name!r} could not be read ({exc})"
+        ) from exc
 
 
 def _copy(zf, info: zipfile.ZipInfo, dest: Path, budget, check) -> None:

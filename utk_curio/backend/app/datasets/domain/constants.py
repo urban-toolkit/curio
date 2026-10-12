@@ -44,6 +44,15 @@ OSM_PBF_SUFFIXES = (".pbf",)
 # layer on the way in rather than stored verbatim (see ``install/gpkg.py``).
 GPKG_SUFFIXES = (".gpkg",)
 
+# A zip holding one shapefile. Not in SUPPORTED_SUFFIXES either: the importer
+# unpacks it with the Discovery Catalog's reader (``discovery/application/
+# archives.py``) and converts the shapefile to one GeoParquet dataset.
+ZIPPED_SHAPEFILE_SUFFIXES = (".zip",)
+
+# Stored formats the importer refuses as a file on their own. A ``.shp`` cannot
+# be read without its ``.dbf`` and ``.shx``, so a shapefile is imported zipped.
+IMPORT_REFUSED_SUFFIXES = (".shp",)
+
 # The per-layer datasets from one multi-layer import share a ``group_id`` with
 # one of these prefixes (e.g. ``osm.x1a2b3c4d``, ``gpkg.x9f8e7d6c``, and
 # ``gtfs.x5e6f7a8b`` for the tables of a GTFS feed the Discovery Catalog

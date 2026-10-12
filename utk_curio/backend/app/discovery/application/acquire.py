@@ -255,17 +255,8 @@ class DiscoveryAcquire:
                     return {"dataset": dataset, "alreadyPresent": False, "unchanged": False}
                 if isinstance(unpacked, archives.Shapefile):
                     _offers(allowed, "parquet", "a zipped shapefile")
-                    from utk_curio.backend.app.discovery.application.storage_acquire import (
-                        _shapefile_to_parquet,
-                    )
-
                     source_path = work / "shapefile.parquet"
-                    try:
-                        _shapefile_to_parquet(unpacked.path, source_path)
-                    except Exception as exc:  # noqa: BLE001 - the reader's own words
-                        raise UnsupportedFormatError(
-                            f"the shapefile {unpacked.name!r} could not be read ({exc})"
-                        ) from exc
+                    archives.convert_shapefile(unpacked, source_path)
                     fmt_detected = "parquet"
                     filename = safe_remote_filename(
                         f"{Path(unpacked.name).stem}.parquet", fallback="shapefile.parquet"

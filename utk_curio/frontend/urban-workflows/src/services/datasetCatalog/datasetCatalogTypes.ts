@@ -19,10 +19,11 @@ export type DatasetSortMode = "recent" | "name";
 
 /**
  * File extensions the dataset importer can ingest. Mirrors the backend
- * ``SUPPORTED_SUFFIXES`` (``datasets/domain/constants.py``) plus the two
- * multi-layer formats the backend converts on import rather than storing
- * verbatim: OSM PBF (``install/osm_pbf.py``) and GeoPackage
- * (``install/gpkg.py``).
+ * ``SUPPORTED_SUFFIXES`` (``datasets/domain/constants.py``) less
+ * ``IMPORT_REFUSED_SUFFIXES`` (a ``.shp`` alone), plus the formats the backend
+ * converts on import rather than storing verbatim: OSM PBF
+ * (``install/osm_pbf.py``), GeoPackage (``install/gpkg.py``) and a zip holding
+ * one shapefile (``install/shapefile.py``).
  *
  * Kept in lockstep with the backend by ``importExtensionsMatchBackend.test.ts``,
  * which reads the Python and compares. Offering a file the server then rejects,
@@ -35,12 +36,12 @@ export const IMPORTABLE_DATASET_EXTENSIONS = [
   ".parquet",
   ".tif",
   ".tiff",
-  ".shp",
   ".onnx",
   ".nc",
   ".pbf",
   ".osm.pbf",
   ".gpkg",
+  ".zip",
 ] as const;
 
 /** ``accept`` attribute for the Data Catalog import picker. */

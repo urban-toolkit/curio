@@ -21,10 +21,12 @@ from utk_curio.backend.app.datasets.infrastructure.catalog_utils import (
 from utk_curio.backend.app.datasets.domain.constants import (
     GPKG_GROUP_ID_PREFIX,
     GPKG_SUFFIXES,
+    IMPORT_REFUSED_SUFFIXES,
     JUNK_SOURCE_LABELS,
     OSM_PBF_SUFFIXES,
     SUPPORTED_SUFFIXES,
     TEXT_FORMATS,
+    ZIPPED_SHAPEFILE_SUFFIXES,
     is_layer_group_id,
 )
 from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
@@ -112,6 +114,11 @@ class CatalogMutations:
         if not filename:
             raise DatasetCatalogError("No file selected")
         suffix = Path(filename).suffix.lower()
+        if suffix in IMPORT_REFUSED_SUFFIXES:
+            raise DatasetCatalogError(
+                f"A shapefile cannot be read from {filename} alone. Zip {filename} with its "
+                ".dbf and .shx (and its .prj, when there is one) and import the .zip."
+            )
         file_bytes = file.read()
         provenance = remote_provenance(discovery_source, file_bytes)
         if provenance is not None:
@@ -133,6 +140,12 @@ class CatalogMutations:
         # the same route rather than becoming a stored format of its own (#268).
         if suffix in GPKG_SUFFIXES:
             return self._import_gpkg_layers(
+                file_bytes, filename, title=title, source_updated_at=source_updated_at,
+                discovery_source=provenance,
+            )
+
+        if suffix in ZIPPED_SHAPEFILE_SUFFIXES:
+            return self._import_zipped_shapefile(
                 file_bytes, filename, title=title, source_updated_at=source_updated_at,
                 discovery_source=provenance,
             )
@@ -448,6 +461,48 @@ class CatalogMutations:
         primary = items[0]
         primary["importedDatasetCount"] = len(items)
         return primary
+
+    def _import_zipped_shapefile(
+        self,
+        zip_bytes: bytes,
+        filename: str,
+        *,
+        title: str | None = None,
+        source_updated_at: str | None = None,
+        discovery_source: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Import a zip holding one shapefile as one GeoParquet dataset, read by
+        the code the Discovery Catalog reads a downloaded zipped shapefile with."""
+        import tempfile
+
+        from utk_curio.backend.app.discovery.application import archives
+        from utk_curio.backend.app.discovery.domain.errors import UnsupportedFormatError
+
+        base = filename[: -len(".zip")] if filename.lower().endswith(".zip") else filename
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            archive = work / "archive.zip"
+            archive.write_bytes(zip_bytes)
+            try:
+                unpacked = archives.unpack("zip", archive, name=filename, work=work)
+                if not isinstance(unpacked, archives.Shapefile):
+                    raise DatasetCatalogError(
+                        f"{filename} holds no shapefile. A .zip is imported when it holds one "
+                        "shapefile: its .shp with the .dbf and .shx."
+                    )
+                parquet = work / "shapefile.parquet"
+                feature_count = archives.convert_shapefile(unpacked, parquet)
+            except UnsupportedFormatError as exc:
+                raise DatasetCatalogError(str(exc)) from exc
+            return self._install_imported_path(
+                parquet,
+                secure_filename(f"{Path(unpacked.name).stem}.parquet") or "shapefile.parquet",
+                "parquet",
+                title=title.strip() if title and title.strip() else base or "shapefile",
+                source_updated_at=source_updated_at,
+                discovery_source=discovery_source,
+                feature_count=feature_count,
+            )
 
     def publish_dataset(self, dataset_id: str, metadata: dict[str, Any], *, dataflow_id: str | None = None, live_outputs: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         from utk_curio.backend.app.datasets.infrastructure.storage import catalog_root

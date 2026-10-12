@@ -1795,7 +1795,7 @@ def chapter_data(run: StressRun) -> None:
         ("Shapefile", _shapefile_bundle()),
     ]
     for label, path in imports:
-        with run.step(f"Import a {label} file", may_fail=(label == "Shapefile")):
+        with run.step(f"Import a {label} file"):
             if not path or not os.path.exists(path):
                 run.note(f"no {label} sample available at {path}",
                          step=f"Import a {label} file", severity="warning")
@@ -2000,21 +2000,21 @@ def _catalog_dataset_ids(run: StressRun) -> set[str]:
 
 
 def _shapefile_bundle() -> str:
-    """Write a small shapefile to the scratch area; the repo ships none.
+    """Write a small zipped shapefile to the scratch area; the repo ships none.
 
-    Returns the path to the ``.shp`` itself. Not a zip: both
-    IMPORTABLE_DATASET_EXTENSIONS (frontend) and SUPPORTED_SUFFIXES (backend)
-    list ``.shp`` and neither accepts ``.zip``, so a zipped bundle is refused
-    with "Unsupported dataset format: .zip" - correctly. Whether a lone .shp is
-    usable without its .dbf/.shx sidecars is exactly what this exercises.
+    Returns the path to the ``.zip`` holding the ``.shp`` with its ``.dbf``,
+    ``.shx``, ``.prj`` and ``.cpg``: Import dataset takes a shapefile zipped
+    and refuses a ``.shp`` alone (#877).
     """
     target_dir = os.path.join(out_dir(), "fixtures")
     os.makedirs(target_dir, exist_ok=True)
     work = os.path.join(target_dir, "stress_points")
-    shp = os.path.join(work, "stress_points.shp")
-    if os.path.exists(shp):
-        return shp
+    bundle = os.path.join(target_dir, "stress_points.zip")
+    if os.path.exists(bundle):
+        return bundle
     try:
+        import zipfile
+
         import geopandas as gpd
         from shapely.geometry import Point
 
@@ -2025,8 +2025,11 @@ def _shapefile_bundle() -> str:
             crs="EPSG:4326",
         )
         os.makedirs(work, exist_ok=True)
-        frame.to_file(shp)
-        return shp
+        frame.to_file(os.path.join(work, "stress_points.shp"))
+        with zipfile.ZipFile(bundle, "w") as zf:
+            for name in sorted(os.listdir(work)):
+                zf.write(os.path.join(work, name), name)
+        return bundle
     except Exception as exc:  # noqa: BLE001 - a missing sample is not a defect
         log(f"[stress] could not synthesise a shapefile: {exc}")
         return ""
