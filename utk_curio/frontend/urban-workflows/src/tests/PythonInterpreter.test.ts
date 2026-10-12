@@ -1,5 +1,6 @@
 import { PythonInterpreter } from '../PythonInterpreter';
 import { NodeType } from '../constants';
+import { holdNextReply } from './_support/heldReply';
 
 const flushPromises = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 
@@ -244,6 +245,37 @@ describe('PythonInterpreter', () => {
 
             expect(callback).toHaveBeenCalledTimes(1);
             expect(callback.mock.calls[0][0].stderr).toContain('invalid JSON');
+        });
+    });
+
+    describe('a run that waited for its turn (#888)', () => {
+        // The backend answers every run, and its own timeout covers the node's
+        // run, not its wait for a turn or a free slot (#863, #889). So the
+        // reply can come long after the request was sent, past the backend's
+        // own 600 s, and the node must still get it.
+        const HELD_MS = 900_000;
+
+        test('a reply that comes after the backend\'s 600 s still reaches the node', async () => {
+            jest.useFakeTimers();
+            try {
+                const reply = holdNextReply(global.fetch as jest.Mock, {
+                    stdout: [],
+                    stderr: '',
+                    output: { path: 'after-the-wait', dataType: 'int' },
+                });
+                const callback = jest.fn();
+                run(callback);
+
+                await jest.advanceTimersByTimeAsync(HELD_MS);
+                reply.release();
+                await jest.advanceTimersByTimeAsync(0);
+
+                expect(callback).toHaveBeenCalledTimes(1);
+                expect(callback.mock.calls[0][0].stderr).toBe('');
+                expect(callback.mock.calls[0][0].output.path).toBe('after-the-wait');
+            } finally {
+                jest.useRealTimers();
+            }
         });
     });
 });

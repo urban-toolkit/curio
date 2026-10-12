@@ -6,6 +6,7 @@ import type { Edge, Node, ReactFlowInstance } from "reactflow";
 import type { useToastContext } from "../ToastProvider";
 import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
 import { upstreamErroredMessage } from "../../utils/nodeEmptyState";
+import { nodeRunIsOpen } from "../../utils/nodeRunRequest";
 import type { NodeExecOutcome } from "./flowTypes";
 import { computeTopologicalLevels, directedEdgesOf, nodesToRunUpTo } from "./runLevels";
 
@@ -33,8 +34,9 @@ export interface PlayAllState {
 // produce) would never run. This watchdog bounds that: if NO node in the active
 // level makes progress for this long, the run force-advances past the stuck
 // node(s) with a warning. The timer resets on every completion, so a level full
-// of legitimately-slow nodes is fine as long as they keep finishing. Sized to
-// the client execution ceiling so a single genuinely-running node isn't cut off.
+// of legitimately-slow nodes is fine as long as they keep finishing, and a node
+// whose run the backend still holds is never counted as stuck (#888). Sized to
+// the backend's timeout for one run.
 const PLAY_ALL_STALL_TIMEOUT_MS = 600_000;
 
 export function usePlayAll({
@@ -96,16 +98,22 @@ export function usePlayAll({
             playAllStallTimerRef.current = null;
             const state = playAllStateRef.current;
             if (!state) return;
-            const stuck = state.pending.size;
-            if (stuck > 0) {
-                const ids = [...state.pending].join(", ");
+            // A node whose run the backend still holds is waiting for its turn
+            // or running, not stuck: the backend answers it, and its timeout
+            // counts only the run (#888). The level waits on for it.
+            const stuck = [...state.pending].filter((id) => !nodeRunIsOpen(id));
+            if (stuck.length > 0) {
                 showToast(
-                    `${stuck} node(s) didn't finish in time (${ids}); continuing with the rest ` +
+                    `${stuck.length} node(s) didn't finish in time (${stuck.join(", ")}); continuing with the rest ` +
                     "of the run. Use the stop button to cancel a run that is stuck.",
                     "warning",
                 );
             }
-            state.pending = new Set();
+            stuck.forEach((id) => state.pending.delete(id));
+            if (state.pending.size > 0) {
+                armPlayAllStallTimer();
+                return;
+            }
             advancePlayAll(state);
         }, PLAY_ALL_STALL_TIMEOUT_MS);
     }

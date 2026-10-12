@@ -229,7 +229,7 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
         os.environ["CURIO_EXEC_PARALLELISM"] = str(exec_parallelism)
     if exec_timeout:
         # Must stay under the backend's SANDBOX_EXEC_TIMEOUT (600s), or the
-        # browser gives up before the sandbox can report the real reason.
+        # backend gives up before the sandbox can report the real reason.
         if int(exec_timeout) >= 600:
             log_warning(
                 f"--exec-timeout {exec_timeout}s is at or above the backend's "
