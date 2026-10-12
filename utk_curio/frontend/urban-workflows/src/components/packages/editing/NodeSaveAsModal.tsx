@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useReactFlow, useStore } from "reactflow";
 import ModalShell from "../../ModalShell";
 import { packagesApi, triggerBlobDownload, dependencyFailureNotice, withRestartNotice } from "../../../services/packages";
@@ -83,11 +83,31 @@ export function NodeSaveAsModal({
     return canvasTemplateLabelFromNode(canvasNode, desc);
   }, [canvasNode]);
 
+  // The defaults (the first writable package, "<node label> package") follow
+  // the node and the package list until the person changes the destination or
+  // the name. The package list follows the node registry, which grows while
+  // packages load, and re-applying the defaults on every change threw away a
+  // destination just chosen and a name being typed. Each opening starts over.
+  const editedRef = useRef(false);
   useEffect(() => {
-    if (!show) return;
+    if (show) editedRef.current = false;
+  }, [show]);
+
+  useEffect(() => {
+    if (!show || editedRef.current) return;
     setTargetKey(packageOptions[0]?.sectionKey ?? SAVE_AS_NEW_PACK);
     setNewPackageName(`${nodeLabel} package`);
   }, [show, nodeLabel, packageOptions]);
+
+  const chooseTarget = useCallback((key: string) => {
+    editedRef.current = true;
+    setTargetKey(key);
+  }, []);
+
+  const typeName = useCallback((name: string) => {
+    editedRef.current = true;
+    setNewPackageName(name);
+  }, []);
 
   const willReplace = useMemo(() => {
     if (targetKey === SAVE_AS_NEW_PACK) return false;
@@ -248,9 +268,9 @@ export function NodeSaveAsModal({
           idPrefix="save-as"
           options={packageOptions}
           targetKey={targetKey}
-          onTargetKey={setTargetKey}
+          onTargetKey={chooseTarget}
           newPackageName={newPackageName}
-          onNewPackageName={setNewPackageName}
+          onNewPackageName={typeName}
           busy={busy}
         >
           {willReplace ? (
