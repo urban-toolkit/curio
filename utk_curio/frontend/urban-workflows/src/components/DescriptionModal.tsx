@@ -23,7 +23,8 @@ type DescriptionModalProps = {
  * A kind with one port reads as it always has: its cardinality, then the types
  * it takes. A kind with several says how many there are and lists each one's
  * types, so Spatial Join's two inputs do not read as "Input number: 1" and one
- * input taking GEODATAFRAME twice (#528).
+ * input taking GEODATAFRAME twice (#528). Inputs are numbered from 0, as their
+ * circles and their chips (`[!! input 0 !!]`) are.
  */
 export function describePorts(
     ports: readonly { cardinality?: string; types: readonly string[] }[],
@@ -43,7 +44,8 @@ export function describePorts(
         ...ports.map((port, index) => {
             const connections =
                 port.cardinality && port.cardinality !== "1" ? ` (${port.cardinality})` : "";
-            return `${side} ${index + 1}${connections}: ${port.types.join(", ")}`;
+            const number = side === "Input" ? index : index + 1;
+            return `${side} ${number}${connections}: ${port.types.join(", ")}`;
         }),
     ];
 }

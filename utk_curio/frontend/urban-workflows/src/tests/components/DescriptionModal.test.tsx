@@ -5,6 +5,11 @@
  * two inputs of cardinality "1", read "Input number: 1" with
  * "GEODATAFRAME, GEODATAFRAME" as the types of that one input, while its own
  * description spoke of two input handles.
+ *
+ * The inputs are numbered from 0, as their circles, their chips
+ * (`[!! input 0 !!]`) and the Spatial Join's own text count them (#576
+ * follow-up): its body says input 0 and input 1, so the description must not
+ * call them Input 1 and Input 2.
  */
 import React from 'react';
 import { render, screen } from '@testing-library/react';
@@ -29,14 +34,14 @@ const mockDescriptor = {
 jest.mock('../../registry', () => ({ getNodeDescriptor: () => mockDescriptor }));
 
 describe('describePorts', () => {
-  test('several ports: the count, then each port with its types', () => {
+  test('several ports: the count, then each port with its types, numbered from 0 as the circles are', () => {
     expect(describePorts(mockDescriptor.inputPorts, 'Input'))
-      .toEqual(['Input number: 2', 'Input 1: GEODATAFRAME', 'Input 2: GEODATAFRAME']);
+      .toEqual(['Input number: 2', 'Input 0: GEODATAFRAME', 'Input 1: GEODATAFRAME']);
   });
 
   test("a port's cardinality shows when it is not one connection", () => {
     expect(describePorts([{ cardinality: '[1,n]', types: ['DATAFRAME'] }, { types: ['JSON'] }], 'Input'))
-      .toEqual(['Input number: 2', 'Input 1 ([1,n]): DATAFRAME', 'Input 2: JSON']);
+      .toEqual(['Input number: 2', 'Input 0 ([1,n]): DATAFRAME', 'Input 1: JSON']);
   });
 
   test('one port reads as it always has', () => {
@@ -60,8 +65,9 @@ describe('DescriptionModal', () => {
       />,
     );
     expect(screen.getByText('Input number: 2')).toBeInTheDocument();
+    expect(screen.getByText('Input 0: GEODATAFRAME')).toBeInTheDocument();
     expect(screen.getByText('Input 1: GEODATAFRAME')).toBeInTheDocument();
-    expect(screen.getByText('Input 2: GEODATAFRAME')).toBeInTheDocument();
+    expect(screen.queryByText('Input 2: GEODATAFRAME')).toBeNull();
     expect(screen.getByText('Output number: 1')).toBeInTheDocument();
     expect(screen.queryByText('Input number: 1')).toBeNull();
   });
