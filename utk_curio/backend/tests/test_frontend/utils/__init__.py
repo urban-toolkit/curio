@@ -166,6 +166,8 @@ from .canvas_authoring import (  # noqa: F401
     activate_header_icon,
     play_node,
     wait_for_node_settled,
+    watch_node_run,
+    wait_for_node_run_to_end,
     wait_for_node_done,
     run_node_and_wait,
     set_canvas_zoom,

@@ -1010,6 +1010,71 @@ def wait_for_node_settled(page, node_id: str, *, node_type: str = "",
     ) or "idle"
 
 
+# Record whether a node goes "running", so a wait can tell the run a click
+# started from the result the node showed before it (#892). A map that drew when
+# the page opened still reads "done" after the click, until the click's run
+# reaches it, and ``wait_for_node_settled`` returns on that old "done".
+#
+# Observed on the body, with child lists as well as the attribute, because a
+# re-render can replace the node's status element with one born "running".
+_WATCH_NODE_RUN_JS = """(nodeId) => {
+    const watches = window.__curioNodeRunWatch || (window.__curioNodeRunWatch = {});
+    if (watches[nodeId]) watches[nodeId].observer.disconnect();
+    const watch = { started: false };
+    const selector = `.react-flow__node[data-id="${nodeId}"] [data-curio-node-status]`;
+    watch.observer = new MutationObserver(() => {
+        const el = document.querySelector(selector);
+        if (el && el.getAttribute('data-curio-node-status') === 'running') watch.started = true;
+    });
+    watch.observer.observe(document.body, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ['data-curio-node-status'],
+    });
+    watches[nodeId] = watch;
+}"""
+
+# The status, once the watched node has started a run and settled. It is
+# returned by the same check that saw it settle, never read a second time.
+_NODE_RUN_ENDED_JS = """(nodeId) => {
+    const watch = (window.__curioNodeRunWatch || {})[nodeId];
+    if (!watch || !watch.started) return false;
+    const el = document.querySelector(
+        `.react-flow__node[data-id="${nodeId}"] [data-curio-node-status]`
+    );
+    const status = el && el.getAttribute('data-curio-node-status');
+    return status === 'done' || status === 'error' ? status : false;
+}"""
+
+
+def watch_node_run(page, node_id: str) -> None:
+    """Start recording whether a node runs. Call BEFORE the click that runs it."""
+    page.evaluate(_WATCH_NODE_RUN_JS, node_id)
+
+
+def wait_for_node_run_to_end(page, node_id: str, *, node_type: str = "",
+                             timeout_ms: int | None = None) -> str:
+    """Wait for the run :func:`watch_node_run` saw start, and return ``"done"`` or ``"error"``.
+
+    Use it where the node already shows a result from before the click. Polls on
+    a timer, not on animation frames, which a loaded GPU runner can withhold.
+    """
+    budget = timeout_ms or node_execution_timeout_ms(node_type)
+    try:
+        handle = page.wait_for_function(_NODE_RUN_ENDED_JS, arg=node_id, timeout=budget, polling=100)
+    except PlaywrightTimeoutError:
+        started = page.evaluate(
+            "(nodeId) => !!((window.__curioNodeRunWatch || {})[nodeId] || {}).started", node_id
+        )
+        raise AssertionError(
+            f"Node {node_id} ({node_type or 'unknown type'}) "
+            + ("started a run that did not end" if started else "never started a run")
+            + f" within {budget} ms of watch_node_run"
+        ) from None
+    return handle.json_value()
+
+
 def wait_for_node_done(page, node_id: str, *, node_type: str = "",
                        timeout_ms: int | None = None) -> None:
     """Block until a node reports success, and fail loudly if it errors.
