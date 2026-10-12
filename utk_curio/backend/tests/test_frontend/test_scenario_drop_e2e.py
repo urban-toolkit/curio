@@ -59,8 +59,10 @@ from .utils import (
     set_node_code,
     stub_login_and_enter_workflow,
     wait_for_drawer_closed,
+    wait_for_node_run_to_end,
     wait_for_node_settled,
     wait_for_run_guard_released,
+    watch_node_run,
 )
 from .utils.canvas_authoring import CANVAS_DROP_TARGET, _DRAG_TO_CANVAS_JS, connect_nodes
 
@@ -423,8 +425,11 @@ def test_a_scenario_dragged_into_another_project_brings_its_results_and_its_own_
     connect_nodes(page, OWN, scale)
     sent, outputs, stop = _record_python_runs(page)
     _scenario_menu(page, "Show scenarios")
+    # The map still shows the result it drew when the page opened, so wait for
+    # its own run, which starts when the lever's new output reaches it (#892).
+    watch_node_run(page, map_copy)
     page.get_by_test_id(f"scenario-card-{dropped['id']}").get_by_role("button", name="Run scenario").click()
-    status = wait_for_node_settled(page, map_copy, node_type="autk-grammar", timeout_ms=180000)
+    status = wait_for_node_run_to_end(page, map_copy, node_type="autk-grammar", timeout_ms=180000)
     wait_for_run_guard_released(page, timeout_ms=60000)
     stop()
     assert status == "done", read_node_error_text(node_locator(page, map_copy))
