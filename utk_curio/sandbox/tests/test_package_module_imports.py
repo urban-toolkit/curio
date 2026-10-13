@@ -136,10 +136,11 @@ def test_the_exec_route_hands_the_modules_to_the_run(workspace, tmp_path):
             "code": CALLER, "file_path": "", "nodeType": PACKAGE_NODE, "dataType": "",
             "save_dataset": False, "package_modules": _spec(sources, "building_height"),
         })
+        # The reply streams while the run runs (#889): read it in process.
+        body = response.get_json()
     finally:
         api._isolation_state = previous
     assert response.status_code == 200, response.data
-    body = response.get_json()
     assert body["stderr"] == "", body["stderr"]
     assert load_from_duckdb(body["output"]["path"]) == 42
 
@@ -199,10 +200,11 @@ def test_the_exec_route_hands_several_packages_modules_to_the_run(workspace, tmp
             "code": DEPENDENT_CALLER, "file_path": "", "nodeType": PACKAGE_NODE, "dataType": "",
             "save_dataset": False, "package_modules": _two_packages(tmp_path),
         })
+        # The reply streams while the run runs (#889): read it in process.
+        body = response.get_json()
     finally:
         api._isolation_state = previous
     assert response.status_code == 200, response.data
-    body = response.get_json()
     assert body["stderr"] == "", body["stderr"]
     assert load_from_duckdb(body["output"]["path"]) == "42 m"
 

@@ -4,7 +4,7 @@ import json
 import sys
 import geopandas as gpd
 import pandas as pd
-from utk_curio.sandbox import metrics
+from utk_curio.sandbox import metrics, run_place
 from utk_curio.sandbox.app import app, cache
 from utk_curio.sandbox.app.auth import require_sandbox_token
 from utk_curio.sandbox.app.utils.cache import make_key
@@ -619,14 +619,27 @@ def get_raster():
     )
 
 
+def _reply_when_run(route, node_type, run):
+    """Answer a node run at once and keep the connection busy while it waits
+    for its place (#889, ``sandbox/run_place.py``). The run holds the DuckDB
+    connection itself, as ``holds_duckdb`` would: the route returns first."""
+    return Response(
+        run_place.reply_when_run(run, _json_body, route=route, node_type=str(node_type)),
+        mimetype='application/json',
+    )
+
+
+def _json_body(result):
+    """The bytes ``jsonify`` has always sent for a run's result."""
+    with app.app_context():
+        return jsonify(result).get_data()
+
+
 @app.route('/exec', methods=['POST'])
 @require_sandbox_token
-@holds_duckdb
 # @cache.cached(make_cache_key=make_key)
 def exec():
-    import time
     import sys
-    t0 = time.perf_counter()
 
     if request.json.get('code') is None:
         abort(400, "Code was not included in the post request")
@@ -697,44 +710,42 @@ def exec():
     print(f"[sandbox /exec] received  node={node_type}", file=sys.__stderr__, flush=True)
     isolated = _isolated_runner()
     metrics.record_dispatch(isolated is not None)
-    if isolated is not None:
-        run, config = isolated
-        # launch_dir is passed to both paths in the same position: it is the
-        # child's working directory, so node code addressing a file relatively
-        # finds it where the in-process path would.
-        result = run(
-            code, str(file_path), str(node_type), str(data_type), launch_dir,
-            session_id=session_id, save_dataset=bool(save_dataset),
-            dataset_paths=dataset_paths, user_key=user_key, config=config,
-            secrets=secrets, collections=collections, media_dir=media_dir, models=models,
-            dataset_formats=dataset_formats, package_modules=package_modules,
+
+    def run():
+        if isolated is not None:
+            run_isolated, config = isolated
+            # launch_dir is passed to both paths in the same position: it is the
+            # child's working directory, so node code addressing a file relatively
+            # finds it where the in-process path would.
+            result = run_isolated(
+                code, str(file_path), str(node_type), str(data_type), launch_dir,
+                session_id=session_id, save_dataset=bool(save_dataset),
+                dataset_paths=dataset_paths, user_key=user_key, config=config,
+                secrets=secrets, collections=collections, media_dir=media_dir, models=models,
+                dataset_formats=dataset_formats, package_modules=package_modules,
+            )
+        else:
+            result = execute_code(
+                code, str(file_path), str(node_type), str(data_type), launch_dir,
+                session_id=session_id, save_dataset=bool(save_dataset),
+                dataset_paths=dataset_paths, secrets=secrets, collections=collections, media_dir=media_dir,
+                models=models, dataset_formats=dataset_formats, package_modules=package_modules,
+            )
+
+        # A Compare Scenarios node's code hands two rasters back as a request: they
+        # are subtracted here, in this process's Node, whichever path ran the code.
+        from utk_curio.sandbox.util.scenario_difference import complete_raster_difference
+
+        return complete_raster_difference(
+            result, node_type=str(node_type), session_id=session_id, launch_dir=launch_dir,
         )
-    else:
-        result = execute_code(
-            code, str(file_path), str(node_type), str(data_type), launch_dir,
-            session_id=session_id, save_dataset=bool(save_dataset),
-            dataset_paths=dataset_paths, secrets=secrets, collections=collections, media_dir=media_dir,
-            models=models, dataset_formats=dataset_formats, package_modules=package_modules,
-        )
 
-    # A Compare Scenarios node's code hands two rasters back as a request: they
-    # are subtracted here, in this process's Node, whichever path ran the code.
-    from utk_curio.sandbox.util.scenario_difference import complete_raster_difference
-
-    result = complete_raster_difference(
-        result, node_type=str(node_type), session_id=session_id, launch_dir=launch_dir,
-    )
-
-    print(f"[sandbox /exec] finished  total={time.perf_counter()-t0:.3f}s  node={node_type}", file=sys.__stderr__, flush=True)
-    return jsonify(result)
+    return _reply_when_run('/exec', node_type, run)
 
 @app.route('/execJs', methods=['POST'])
 @require_sandbox_token
-@holds_duckdb
 def exec_js():
-    import time
     import sys
-    t0 = time.perf_counter()
 
     if request.json.get('code') is None:
         abort(400, "Code was not included in the post request")
@@ -752,11 +763,12 @@ def exec_js():
     print(f"[sandbox /execJs] received  node={node_type}", file=sys.__stderr__, flush=True)
     # JS has no isolated path at all, so this is always an in-process dispatch.
     metrics.record_dispatch(False)
-    result = execute_js_code(
-        code, str(file_path), str(node_type), str(data_type), launch_dir,
-        session_id=session_id, save_dataset=bool(save_dataset),
-    )
 
-    print(f"[sandbox /execJs] finished  total={time.perf_counter()-t0:.3f}s  node={node_type}", file=sys.__stderr__, flush=True)
-    return jsonify(result)
+    def run():
+        return execute_js_code(
+            code, str(file_path), str(node_type), str(data_type), launch_dir,
+            session_id=session_id, save_dataset=bool(save_dataset),
+        )
+
+    return _reply_when_run('/execJs', node_type, run)
 

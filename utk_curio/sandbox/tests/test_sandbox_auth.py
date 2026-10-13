@@ -101,6 +101,8 @@ class TestGuardedRoutes(SandboxAuthTestCase):
                         path, headers={auth.TOKEN_HEADER: TOKEN}, **kwargs
                     )
                     self.assertNotEqual(response.status_code, 401, path)
+                    # A run streams its reply (#889): read it so the run ends here.
+                    response.get_data()
 
 
 class TestUnauthenticatedFallback(SandboxAuthTestCase):

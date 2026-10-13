@@ -27,6 +27,7 @@ import time
 
 from utk_curio.common.backend_address import backend_base_url
 from utk_curio.common.redaction import redact
+from utk_curio.sandbox import run_place
 from utk_curio.sandbox.util.node_runtime import (
     OVERPASS_USER_AGENT,
     node_env,
@@ -610,6 +611,8 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
 
     # _exec_lock serializes sys.stdout mutation and os.chdir.
     with _exec_lock.hold("exec_in_process"):
+        # The run has its place: its reply goes quiet until it ends (#889).
+        run_place.took_place()
         t0 = time.perf_counter()
         original_dir = os.getcwd()
         if launch_dir:
@@ -978,6 +981,8 @@ def run_js_script(code, input_data, *, cwd, node_type, t0=None, node_flags=(), n
         if queued > 1.0:
             print(f"[execJs] waited {queued:.1f}s for a slot  node={node_type}",
                   file=_sys.__stderr__, flush=True)
+        # The run has its place: its reply goes quiet until it ends (#889).
+        run_place.took_place()
         try:
             return _run_node_holding_slot()
         finally:

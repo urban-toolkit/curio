@@ -195,30 +195,35 @@ _SANDBOX_REJECTED = (
 def _http_exec(endpoint: str, payload: dict) -> dict:
     """POST one node execution to the sandbox; raises on transport failure
     (the caller maps that to an INFRASTRUCTURE outcome, never a node error).
-    Carries the sandbox shared secret like the API bridge does."""
-    import contextlib
+    Carries the sandbox shared secret like the API bridge does.
 
+    The sandbox keeps the connection busy while the run waits for its place,
+    so the timeout covers the run and not the wait (#863, #889)."""
     import requests as _req
 
-    from utk_curio.backend.app.execution.sandbox_client import exec_turn
+    from utk_curio.backend.app.execution.sandbox_client import read_timed_out
 
     seconds = exec_timeout_s()
     try:
-        # A Python run waits for its turn as a node run does, so the timeout
-        # covers the run and not the wait (#863).
-        with exec_turn() if endpoint == "/exec" else contextlib.nullcontext():
-            resp = _req.post(
-                f"{_sandbox_url()}{endpoint}",
-                json=payload,
-                headers=sandbox_headers(),
-                timeout=(SANDBOX_CONNECT_TIMEOUT_S, seconds),
-            )
-    except _req.exceptions.Timeout as exc:  # dev/115: the node's behaviour, not ours
-        raise ExecutionTimeout(seconds) from exc
+        resp = _req.post(
+            f"{_sandbox_url()}{endpoint}",
+            json=payload,
+            headers=sandbox_headers(),
+            timeout=(SANDBOX_CONNECT_TIMEOUT_S, seconds),
+        )
+    except (_req.exceptions.Timeout, _req.exceptions.ConnectionError) as exc:
+        if read_timed_out(exc):  # dev/115: the node's behaviour, not ours
+            raise ExecutionTimeout(seconds) from exc
+        raise
     if resp.status_code == 401:
         raise RuntimeError(_SANDBOX_REJECTED.format(path=endpoint))
     resp.raise_for_status()
-    return resp.json()
+    body = resp.json()
+    if isinstance(body, dict) and body.get("error"):
+        # The sandbox failed the run itself, after its status had gone out (#889).
+        raise RuntimeError(f"the sandbox failed the run on {endpoint}: "
+                           f"{body['error']}: {body.get('message')}")
+    return body
 
 
 def _resolve_input(spec: WorkflowSpec, node_id: str, outputs: dict) -> tuple[str, str]:

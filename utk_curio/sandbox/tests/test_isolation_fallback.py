@@ -243,7 +243,7 @@ class TestExecStillWorksWhenIsolationIsUnavailable(unittest.TestCase):
         mode.reset_warning_state()
 
     def _post(self):
-        return self.client.post(
+        response = self.client.post(
             "/exec",
             json={
                 "code": "    return 6 * 7\n",
@@ -253,6 +253,10 @@ class TestExecStillWorksWhenIsolationIsUnavailable(unittest.TestCase):
                 "save_dataset": False,
             },
         )
+        # The reply streams while the run runs (#889): read it while the
+        # caller's environment still holds.
+        response.get_data()
+        return response
 
     def test_requesting_fork_on_an_unsupported_platform_still_runs_the_node(self):
         if sys.platform.startswith("linux"):

@@ -2,7 +2,10 @@
 no request, does what Play's ``/processPythonCode`` does: the same sandbox
 request as the same account and session, the same installed dataset, the same
 journal record and the same monitor counts. A node queued behind another in a
-sandbox without isolation still has its whole timeout for its own run (#863).
+sandbox without isolation still has its whole timeout for its own run (#863),
+and so does one that waits for a free isolated or JavaScript slot (#889): the
+sandbox keeps a waiting run's connection busy, and the backend holds no run
+back.
 
 ``node_exec`` is imported inside each test, so a checkout without it fails each
 test on its own instead of failing the whole collection.
@@ -10,9 +13,10 @@ test on its own instead of failing the whole collection.
 
 from __future__ import annotations
 
-import contextlib
+import io
 import json
 import os
+import socket
 import threading
 import time
 import uuid
@@ -22,6 +26,8 @@ from unittest.mock import MagicMock
 
 import pytest
 import requests
+from urllib3.exceptions import ReadTimeoutError
+from urllib3.response import HTTPResponse
 
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     auth_headers,
@@ -97,26 +103,68 @@ def _on_thread(app, fn):
 RUN_SECONDS = 2.0
 SHORT_TIMEOUT = 3
 
+#: How often the modelled sandbox sends a space while a run waits for its
+#: place. The sandbox's own interval is ``run_place.KEEPALIVE_SECONDS``; what
+#: the model needs is one well within the read timeout, which
+#: ``test_a_waiting_runs_reply_sends_well_within_every_read_timeout`` pins for
+#: the real one.
+KEEPALIVE_SECONDS = 0.5
+
+
+class _Gaps:
+    """A reply's bytes as requests reads them: the gap since the last byte
+    must fit the read timeout. Past the headers, requests raises a gap that
+    does not as ``ConnectionError`` around urllib3's ``ReadTimeoutError``
+    (``Response.iter_content``)."""
+
+    def __init__(self, read_timeout):
+        self.read_timeout = read_timeout
+        self.last = time.monotonic()
+
+    def byte(self):
+        now = time.monotonic()
+        if now - self.last > self.read_timeout:
+            raise requests.ConnectionError(ReadTimeoutError(None, None, "Read timed out."))
+        self.last = now
+
 
 class _TimedSandbox:
     """The sandbox as the backend's HTTP client meets it, over both clients
     (``sandbox_client``'s session and the ``requests.post`` of
     ``runner._http_exec``).
 
-    It sends nothing until a run ends, so a request's read timeout counts from
-    the moment the request was sent. *in_process* is a sandbox without
-    isolation: one Python ``/exec`` runs at a time, behind ``_exec_lock``, while
-    ``/execJs`` runs in parallel. With *meet*, every request first waits at that
+    It replies as the sandbox's ``/exec`` and ``/execJs`` do (#889; the
+    sandbox's ``test_exec_reply_while_queued.py`` proves the real routes do):
+    at once, then a space every ``KEEPALIVE_SECONDS`` while the run waits for
+    its place, one more when the run takes it, then nothing until the run ends,
+    then the JSON. Every gap between those bytes must fit the read timeout.
+
+    The places: *in_process* is a sandbox without isolation, where one Python
+    ``/exec`` runs at a time, behind ``_exec_lock``. With isolation, *slots*
+    children run at once (``IsolationConfig.slot()``), and *js_slots* Node
+    processes run at once in both modes (``worker._js_slot``); left unset,
+    those runs overlap freely. With *meet*, every request first waits at that
     barrier, which only requests in the sandbox at the same time can pass.
     """
 
-    def __init__(self, monkeypatch, *, in_process=True, run_seconds=RUN_SECONDS, meet=None):
+    def __init__(self, monkeypatch, *, in_process=True, run_seconds=RUN_SECONDS, meet=None,
+                 slots=None, js_slots=None):
         self.in_process = in_process
         self.run_seconds = run_seconds
         self.meet = meet
         self.arrived = threading.Event()
         self.running = threading.Event()
-        self._exec_lock = threading.Lock()
+        python_slots = 1 if in_process else slots
+        self._slots = {
+            "/exec": threading.BoundedSemaphore(python_slots) if python_slots else None,
+            "/execJs": threading.BoundedSemaphore(js_slots) if js_slots else None,
+        }
+        self._arrived = 0
+        self._started = 0
+        self._running = 0
+        #: How many runs were running in the sandbox as each request arrived.
+        self.running_at_arrival = []
+        self._changed = threading.Condition()
         monkeypatch.setattr(
             "utk_curio.backend.app.execution.sandbox_client._sandbox_session",
             SimpleNamespace(post=self.post),
@@ -124,18 +172,49 @@ class _TimedSandbox:
         monkeypatch.setattr(requests, "post", self.post)
 
     def post(self, url, timeout=None, **_kwargs):
-        sent = time.monotonic()
+        read_timeout = timeout[1] if isinstance(timeout, tuple) else timeout
+        with self._changed:
+            self._arrived += 1
+            self.running_at_arrival.append(self._running)
+            self._changed.notify_all()
         self.arrived.set()
+        reply = _Gaps(read_timeout)  # the sandbox answers at once
         if self.meet is not None:
             self.meet.wait()
-        serialized = self.in_process and url.endswith("/exec")
-        with self._exec_lock if serialized else contextlib.nullcontext():
-            self.running.set()
-            time.sleep(self.run_seconds)
-        read_timeout = timeout[1] if isinstance(timeout, tuple) else timeout
-        if time.monotonic() - sent > read_timeout:
-            raise requests.ReadTimeout(f"no reply within {read_timeout}s")
+        slot = self._slots["/execJs" if url.endswith("/execJs") else "/exec"]
+        if slot is not None:
+            while not slot.acquire(timeout=KEEPALIVE_SECONDS):
+                reply.byte()  # a space while the run waits for its place
+        try:
+            reply.byte()  # one when the run takes it
+            self._run()
+        finally:
+            if slot is not None:
+                slot.release()
+        reply.byte()  # the JSON
         return _Reply({"stdout": [], "stderr": "", "output": {"path": "art-863", "dataType": "int"}})
+
+    def _run(self):
+        with self._changed:
+            self._started += 1
+            self._running += 1
+            self._changed.notify_all()
+        self.running.set()
+        try:
+            time.sleep(self.run_seconds)
+        finally:
+            with self._changed:
+                self._running -= 1
+
+    def wait_started(self, count):
+        """Whether *count* runs have started in the sandbox, within ten seconds."""
+        with self._changed:
+            return self._changed.wait_for(lambda: self._started >= count, timeout=10)
+
+    def wait_arrived(self, count):
+        """Whether *count* requests have reached the sandbox, within ten seconds."""
+        with self._changed:
+            return self._changed.wait_for(lambda: self._arrived >= count, timeout=10)
 
 
 def _python_run(user, token):
@@ -345,3 +424,448 @@ def test_javascript_runs_still_overlap_without_isolation(app, user_and_token, mo
 
     _finished(first)
     _finished(second)
+
+
+#: How many runs at once the #889 tests give the sandbox, for isolated Python
+#: children and for Node processes alike.
+SLOTS = 2
+
+#: A host with six cores. Unset, ``CURIO_EXEC_PARALLELISM`` and
+#: ``CURIO_JS_PARALLELISM`` are half the host's cores, from 2 (docs/USAGE.md),
+#: so this host runs three of each at once.
+SIX_CORES = 6
+DEFAULT_SLOTS_ON_SIX_CORES = 3
+
+
+def _slotted_sandbox(monkeypatch, *, slots=SLOTS, isolation="fork", **kwargs):
+    """The sandbox with *slots* isolated children and *slots* Node processes at
+    once, and the environment ``curio.py`` starts both servers with saying so.
+    The backend reads neither count: it holds no run back (#889)."""
+    monkeypatch.setenv("CURIO_ISOLATION", isolation)
+    monkeypatch.setenv("CURIO_EXEC_PARALLELISM", str(slots))
+    monkeypatch.setenv("CURIO_JS_PARALLELISM", str(slots))
+    return _TimedSandbox(monkeypatch, in_process=False, slots=slots, js_slots=slots, **kwargs)
+
+
+def _sandbox_on_six_cores(monkeypatch, **kwargs):
+    """The sandbox on a six-core host with no slot counts set, as a deploy that
+    passes neither ``--exec-parallelism`` nor ``--js-parallelism`` runs it."""
+    monkeypatch.setattr(os, "cpu_count", lambda: SIX_CORES)
+    monkeypatch.setenv("CURIO_ISOLATION", "fork")
+    monkeypatch.delenv("CURIO_EXEC_PARALLELISM", raising=False)
+    monkeypatch.delenv("CURIO_JS_PARALLELISM", raising=False)
+    return _TimedSandbox(
+        monkeypatch, in_process=False,
+        slots=DEFAULT_SLOTS_ON_SIX_CORES, js_slots=DEFAULT_SLOTS_ON_SIX_CORES, **kwargs,
+    )
+
+
+def _validated(result):
+    """The reply of a validation run that must not have timed out."""
+    from utk_curio.backend.app.execution.runner import ExecutionTimeout
+
+    try:
+        reply = result()
+    except ExecutionTimeout as exc:
+        pytest.fail(f"the validation run timed out while it waited for the sandbox: {exc}")
+    assert reply["output"] == {"path": "art-863", "dataType": "int"}
+    return reply
+
+
+def test_an_isolated_node_queued_for_a_free_slot_still_finishes(app, user_and_token, monkeypatch):
+    """#889: with isolation the sandbox runs ``CURIO_EXEC_PARALLELISM`` children
+    at once, and a run that finds every slot busy waits inside the sandbox. A
+    node sent while every slot runs must still have its whole timeout for its
+    own run."""
+    from utk_curio.backend.app.execution import node_exec
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    _user_dir_key(user)  # load the row on this thread before the runs read it
+    monkeypatch.setattr(node_exec, "SANDBOX_EXEC_TIMEOUT", SHORT_TIMEOUT)
+    sandbox = _slotted_sandbox(monkeypatch)
+
+    running = [_start_on_thread(app, _python_run(user, token)) for _ in range(SLOTS)]
+    assert sandbox.wait_started(SLOTS)
+    queued = _start_on_thread(app, _python_run(user, token))
+
+    for result in (*running, queued):
+        _finished(result)
+
+
+def test_a_validation_run_queued_for_a_free_slot_still_finishes(app, user_and_token, monkeypatch):
+    """#889: Solve's validation runs (``runner._http_exec``) take the same
+    isolated slots, so one sent while every slot runs a node keeps its whole
+    timeout (``CURIO_VALIDATION_EXEC_TIMEOUT``) for its own run."""
+    from utk_curio.backend.app.execution import node_exec, runner
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    _user_dir_key(user)  # load the row on this thread before the runs read it
+    monkeypatch.setattr(node_exec, "SANDBOX_EXEC_TIMEOUT", SHORT_TIMEOUT)
+    monkeypatch.setenv("CURIO_VALIDATION_EXEC_TIMEOUT", str(SHORT_TIMEOUT))
+    sandbox = _slotted_sandbox(monkeypatch)
+
+    running = [_start_on_thread(app, _python_run(user, token)) for _ in range(SLOTS)]
+    assert sandbox.wait_started(SLOTS)
+    validation = _start_on_thread(app, lambda: runner._http_exec("/exec", {"code": "    return 1"}))
+
+    for result in running:
+        _finished(result)
+    _validated(validation)
+
+
+@pytest.mark.parametrize("isolation", ["off", "fork"])
+def test_a_javascript_node_queued_for_a_free_slot_still_finishes(app, user_and_token, monkeypatch, isolation):
+    """#889: in both modes the sandbox runs ``CURIO_JS_PARALLELISM`` Node
+    processes at once (``worker._js_slot``), so a JavaScript node sent while
+    every slot runs must still have its whole timeout for its own run."""
+    from utk_curio.backend.app.execution import node_exec
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    _user_dir_key(user)  # load the row on this thread before the runs read it
+    monkeypatch.setattr(node_exec, "SANDBOX_EXEC_TIMEOUT", SHORT_TIMEOUT)
+    sandbox = _slotted_sandbox(monkeypatch, isolation=isolation)
+
+    running = [_start_on_thread(app, _js_run(user, token)) for _ in range(SLOTS)]
+    assert sandbox.wait_started(SLOTS)
+    queued = _start_on_thread(app, _js_run(user, token))
+
+    for result in (*running, queued):
+        _finished(result)
+
+
+def test_a_javascript_validation_run_queued_for_a_free_slot_still_finishes(app, user_and_token, monkeypatch):
+    """#889: a JavaScript validation run takes the same Node slots as a node,
+    so one sent while every slot runs keeps its whole timeout too."""
+    from utk_curio.backend.app.execution import node_exec, runner
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    _user_dir_key(user)  # load the row on this thread before the runs read it
+    monkeypatch.setattr(node_exec, "SANDBOX_EXEC_TIMEOUT", SHORT_TIMEOUT)
+    monkeypatch.setenv("CURIO_VALIDATION_EXEC_TIMEOUT", str(SHORT_TIMEOUT))
+    sandbox = _slotted_sandbox(monkeypatch)
+
+    running = [_start_on_thread(app, _js_run(user, token)) for _ in range(SLOTS)]
+    assert sandbox.wait_started(SLOTS)
+    validation = _start_on_thread(app, lambda: runner._http_exec("/execJs", {"code": "return 1;"}))
+
+    for result in running:
+        _finished(result)
+    _validated(validation)
+
+
+@pytest.mark.parametrize("make_run", [_python_run, _js_run], ids=["python", "javascript"])
+def test_a_run_queued_for_a_default_slot_still_finishes(app, user_and_token, monkeypatch, make_run):
+    """#889: with no slot counts set, the sandbox sizes its slots from the
+    host's cores. A run sent while every one of them runs must still have its
+    whole timeout for its own run."""
+    from utk_curio.backend.app.execution import node_exec
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    _user_dir_key(user)  # load the row on this thread before the runs read it
+    monkeypatch.setattr(node_exec, "SANDBOX_EXEC_TIMEOUT", SHORT_TIMEOUT)
+    sandbox = _sandbox_on_six_cores(monkeypatch)
+
+    running = [_start_on_thread(app, make_run(user, token)) for _ in range(DEFAULT_SLOTS_ON_SIX_CORES)]
+    assert sandbox.wait_started(DEFAULT_SLOTS_ON_SIX_CORES)
+    queued = _start_on_thread(app, make_run(user, token))
+
+    for result in (*running, queued):
+        _finished(result)
+
+
+@pytest.mark.parametrize("counts", ["set", "default"])
+@pytest.mark.parametrize("make_run", [_python_run, _js_run], ids=["python", "javascript"])
+def test_as_many_runs_as_slots_are_in_the_sandbox_at_once(app, user_and_token, monkeypatch, make_run, counts):
+    """#889 keeps parallelism: the backend holds no run back, so three slots
+    still take three runs at the same time, whether the counts are set or come
+    from the host's cores."""
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    _user_dir_key(user)  # load the row on this thread before the runs read it
+    slots = DEFAULT_SLOTS_ON_SIX_CORES
+    meet = threading.Barrier(slots, timeout=10)
+    if counts == "set":
+        _slotted_sandbox(monkeypatch, slots=slots, run_seconds=0, meet=meet)
+    else:
+        _sandbox_on_six_cores(monkeypatch, run_seconds=0, meet=meet)
+
+    runs = [_start_on_thread(app, make_run(user, token)) for _ in range(slots)]
+
+    for result in runs:
+        _finished(result)
+
+
+#: The sandbox's three queues: ``_exec_lock`` for a Python run without
+#: isolation, an isolated slot for one with isolation, a Node slot for a
+#: JavaScript run.
+QUEUES = ["exec_lock", "isolated_slot", "node_slot"]
+
+
+def _sandbox_with_one_place(monkeypatch, queue, **kwargs):
+    """The sandbox with a single place in *queue*."""
+    if queue == "isolated_slot":
+        monkeypatch.setenv("CURIO_ISOLATION", "fork")
+        return _TimedSandbox(monkeypatch, in_process=False, slots=1, **kwargs)
+    monkeypatch.setenv("CURIO_ISOLATION", "off")
+    return _TimedSandbox(monkeypatch, js_slots=1, **kwargs)
+
+
+def _validation_run(endpoint):
+    from utk_curio.backend.app.execution import runner
+
+    code = "return 1;" if endpoint == "/execJs" else "    return 1"
+    return lambda: runner._http_exec(endpoint, {"code": code})
+
+
+def _run_in(queue, kind, user, token):
+    """A node run (Play, a server run) or a validation run (Solve) that waits
+    in *queue*."""
+    endpoint = "/execJs" if queue == "node_slot" else "/exec"
+    if kind == "validation":
+        return _validation_run(endpoint)
+    return (_js_run if endpoint == "/execJs" else _python_run)(user, token)
+
+
+def _ended(kind, result):
+    return _validated(result) if kind == "validation" else _finished(result)
+
+
+def _timed_out(kind, result):
+    """A run that must have ended as a timeout, as a sandbox that never
+    answers does: a 504 ``sandbox_timeout`` for a node, ``ExecutionTimeout``
+    for a validation run."""
+    from utk_curio.backend.app.execution.runner import ExecutionTimeout
+    from utk_curio.backend.app.execution.sandbox_client import SandboxTransportError
+
+    if kind == "validation":
+        with pytest.raises(ExecutionTimeout) as caught:
+            result()
+        assert caught.value.seconds == SHORT_TIMEOUT
+        return
+    with pytest.raises(SandboxTransportError) as caught:
+        result()
+    assert caught.value.status == 504, caught.value.payload
+    assert caught.value.payload["error"] == "sandbox_timeout"
+    assert caught.value.payload["timeout_seconds"] == SHORT_TIMEOUT
+
+
+def _short_timeouts(monkeypatch):
+    from utk_curio.backend.app.execution import node_exec
+
+    monkeypatch.setattr(node_exec, "SANDBOX_EXEC_TIMEOUT", SHORT_TIMEOUT)
+    monkeypatch.setenv("CURIO_VALIDATION_EXEC_TIMEOUT", str(SHORT_TIMEOUT))
+
+
+@pytest.mark.parametrize("kind", ["node", "validation"])
+@pytest.mark.parametrize("queue", QUEUES)
+def test_a_run_waits_for_its_place_inside_the_sandbox(app, user_and_token, monkeypatch, queue, kind):
+    """#889: the backend holds no run back, so the three queues work the same
+    way. A run sent while its queue's one place is taken reaches the sandbox at
+    once and waits there, where the reply keeps its connection busy. (#875 held
+    a Python run without isolation in the backend instead.)"""
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    _user_dir_key(user)  # load the row on this thread before the runs read it
+    _short_timeouts(monkeypatch)
+    sandbox = _sandbox_with_one_place(monkeypatch, queue)
+
+    first = _start_on_thread(app, _run_in(queue, kind, user, token))
+    assert sandbox.wait_started(1)
+    queued = _start_on_thread(app, _run_in(queue, kind, user, token))
+    assert sandbox.wait_arrived(2)
+
+    for result in (first, queued):
+        _ended(kind, result)
+    assert sandbox.running_at_arrival == [0, 1], (
+        "the run waited outside the sandbox while its place was taken"
+    )
+
+
+@pytest.mark.parametrize("queue", QUEUES)
+def test_a_node_waiting_for_its_place_counts_as_in_flight(app, user_and_token, monkeypatch, queue):
+    """#889: a node whose run waits in the sandbox counts in the monitor's
+    ``inFlight``, the same way in all three queues: its request is out, as an
+    isolated or JavaScript node's always was. (#875 left a Python node without
+    isolation out of the count while the backend held it back.)"""
+    from utk_curio.backend.app.monitor import counters
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    _user_dir_key(user)  # load the row on this thread before the runs read it
+    _short_timeouts(monkeypatch)
+    sandbox = _sandbox_with_one_place(monkeypatch, queue)
+    before = counters.snapshot()["inFlight"]
+
+    first = _start_on_thread(app, _run_in(queue, "node", user, token))
+    assert sandbox.wait_started(1)
+    queued = _start_on_thread(app, _run_in(queue, "node", user, token))
+    assert sandbox.wait_arrived(2)
+    in_flight = counters.snapshot()["inFlight"] - before
+
+    for result in (first, queued):
+        _finished(result)
+    assert in_flight == 2, "the waiting node was not counted as in flight"
+
+
+@pytest.mark.parametrize("queue", QUEUES)
+def test_a_run_behind_two_others_still_finishes(app, user_and_token, monkeypatch, queue):
+    """#889: a run's wait for its place can outlast its whole timeout. Here a
+    node waits behind two runs (4 s) with a 3 s timeout; the reply's spaces
+    keep its connection busy for as long as the wait lasts."""
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    _user_dir_key(user)  # load the row on this thread before the runs read it
+    _short_timeouts(monkeypatch)
+    sandbox = _sandbox_with_one_place(monkeypatch, queue)
+
+    first = _start_on_thread(app, _run_in(queue, "node", user, token))
+    assert sandbox.wait_started(1)
+    second = _start_on_thread(app, _run_in(queue, "node", user, token))
+    assert sandbox.wait_arrived(2)
+    third = _start_on_thread(app, _run_in(queue, "node", user, token))
+
+    for result in (first, second, third):
+        _finished(result)
+
+
+@pytest.mark.parametrize("kind", ["node", "validation"])
+@pytest.mark.parametrize("queue", QUEUES)
+def test_a_queued_run_longer_than_its_timeout_still_times_out(app, user_and_token, monkeypatch, queue, kind):
+    """#889 takes the wait out of a run's timeout, not the run: a run that
+    waited for its place and then runs past its timeout still ends as a
+    timeout, the same error a sandbox that never answers gives. The sandbox
+    answers at once now, so requests raises it while it reads the body."""
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    _user_dir_key(user)  # load the row on this thread before the runs read it
+    _short_timeouts(monkeypatch)
+    sandbox = _sandbox_with_one_place(monkeypatch, queue, run_seconds=SHORT_TIMEOUT + 0.5)
+
+    first = _start_on_thread(app, _run_in(queue, kind, user, token))
+    assert sandbox.wait_started(1)
+    queued = _start_on_thread(app, _run_in(queue, kind, user, token))
+
+    for result in (first, queued):
+        _timed_out(kind, result)
+
+
+#: What the sandbox sends when it fails a run itself, after the status has
+#: gone out (``sandbox/run_place.py``).
+_SANDBOX_ERROR = {
+    "error": "RuntimeError",
+    "message": "the run broke",
+    "stdout": [],
+    "stderr": "Sandbox error: RuntimeError: the run broke",
+    "output": {"path": "", "dataType": "str"},
+}
+
+
+@pytest.mark.parametrize("make_run", [_python_run, _js_run], ids=["python", "javascript"])
+def test_a_sandbox_error_in_the_reply_fails_the_node_as_the_sandbox_s_error(
+    app, user_and_token, monkeypatch, make_run,
+):
+    """#889: the sandbox's status goes out before the run, so an error the
+    sandbox itself hits comes back in the JSON body, named under ``error``. A
+    node reads it as it read the sandbox's 500 before: a 500 that says the
+    sandbox failed, in the sandbox's words."""
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    _user_dir_key(user)  # load the row on this thread before the run reads it
+    monkeypatch.setattr(
+        "utk_curio.backend.app.execution.node_exec.sandbox_request",
+        lambda method, path, **kwargs: _Reply(dict(_SANDBOX_ERROR)),
+    )
+
+    reply, status = _on_thread(app, make_run(user, token))
+    assert status == 500, reply
+    assert reply["stderr"].startswith("Sandbox error") and "the run broke" in reply["stderr"], reply
+    assert reply["output"] == {}, reply
+
+
+@pytest.mark.parametrize("endpoint", ["/exec", "/execJs"])
+def test_a_sandbox_error_in_the_reply_is_an_infrastructure_failure_for_a_validation_run(monkeypatch, endpoint):
+    """#889: Solve's validation run reads the sandbox's own error as it read
+    the sandbox's 500 before: a failure of the sandbox, which the runner
+    reports as ``infrastructure``, never as the node's failure or a timeout."""
+    from utk_curio.backend.app.execution import runner
+
+    monkeypatch.setattr(requests, "post", lambda url, **kwargs: _Reply(dict(_SANDBOX_ERROR)))
+
+    with pytest.raises(Exception) as caught:
+        _validation_run(endpoint)()
+    assert not isinstance(caught.value, runner.ExecutionTimeout)
+    assert "the run broke" in str(caught.value)
+
+
+def test_a_reply_cut_short_says_the_sandbox_could_not_be_reached(app, user_and_token, monkeypatch):
+    """#889: the sandbox's reply streams now, and one that stops before its
+    JSON (the sandbox died during the run) is the sandbox being unreachable:
+    the routes' 502, not an unhandled error."""
+    from utk_curio.backend.app.execution import node_exec, sandbox_client
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    _user_dir_key(user)  # load the row on this thread before the run reads it
+    session = MagicMock()
+    session.post.side_effect = requests.exceptions.ChunkedEncodingError("Connection broken: IncompleteRead")
+    monkeypatch.setattr(sandbox_client, "_sandbox_session", session)
+
+    run = node_exec.NodeRun(code="    return 1", node_type="DATA_LOADING")
+    with pytest.raises(sandbox_client.SandboxTransportError) as caught:
+        _on_thread(app, lambda: node_exec.execute_python_node(user, token, run))
+    assert caught.value.status == 502
+    assert caught.value.payload["error"] == "sandbox_unreachable"
+    assert caught.value.payload["path"] == "/exec"
+
+
+class _StalledBody(io.RawIOBase):
+    """A reply body that stalls past the read timeout, as a socket does."""
+
+    def readable(self):
+        return True
+
+    def readinto(self, buffer):
+        raise socket.timeout("timed out")
+
+
+def test_requests_reads_a_stalled_reply_body_as_a_timeout():
+    """#889: once the sandbox has answered, a stall is a gap inside the body,
+    and requests reports it as a ``ConnectionError`` around urllib3's
+    ``ReadTimeoutError`` rather than as ``requests.Timeout``.
+    ``sandbox_client.read_timed_out`` is what node runs and validation runs
+    both ask, so it must know that shape. No socket: a real
+    ``requests.Response`` reads a urllib3 response whose body stalls."""
+    from utk_curio.backend.app.execution import sandbox_client
+
+    response = requests.Response()
+    response.status_code = 200
+    response.raw = HTTPResponse(body=_StalledBody(), status=200, preload_content=False)
+    with pytest.raises(requests.RequestException) as caught:
+        response.content
+
+    assert sandbox_client.read_timed_out(caught.value), repr(caught.value)
+    assert sandbox_client.read_timed_out(requests.ReadTimeout("no headers in time"))
+    assert not sandbox_client.read_timed_out(requests.ConnectionError("connection refused"))
+
+
+def test_a_waiting_runs_reply_sends_well_within_every_read_timeout(monkeypatch):
+    """#889: while a run waits for its place, the sandbox sends a space every
+    ``run_place.KEEPALIVE_SECONDS``. Each gap must fit the read timeout with
+    room to spare: a node's (``SANDBOX_EXEC_TIMEOUT``) and a validation run's
+    (``CURIO_VALIDATION_EXEC_TIMEOUT``, 300 s unless set)."""
+    from utk_curio.backend.app.execution import node_exec, runner
+    from utk_curio.sandbox import run_place
+
+    monkeypatch.delenv("CURIO_VALIDATION_EXEC_TIMEOUT", raising=False)
+    for read_timeout in (node_exec.SANDBOX_EXEC_TIMEOUT, runner.exec_timeout_s()):
+        assert run_place.KEEPALIVE_SECONDS * 10 <= read_timeout, read_timeout
