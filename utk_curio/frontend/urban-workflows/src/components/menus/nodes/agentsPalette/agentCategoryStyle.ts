@@ -1,9 +1,11 @@
 import {
   faCircleNodes,
   faClipboardCheck,
+  faComment,
   faCube,
   faDatabase,
   faDiagramProject,
+  faLink,
   faRobot,
 } from "@fortawesome/free-solid-svg-icons";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
@@ -98,4 +100,28 @@ export function agentCategoryKey(category: string | null | undefined): AgentPale
 /** The glyph for a category-ish string, with the same fallback. */
 export function agentCategoryIcon(category: string | null | undefined): IconDefinition {
   return AGENT_CATEGORY_ICON[agentCategoryKey(category)];
+}
+
+/**
+ * Agents drawn with a glyph of their own instead of their category's, keyed by
+ * agent id (the coordinate without its version). Chat and the Connection
+ * Builder are both `node` agents and would otherwise look exactly like the
+ * other three: Chat talks, so a speech balloon; the Connection Builder works on
+ * a connection, so a link (the icon of its workshop slide).
+ */
+export const AGENT_ICON_OVERRIDE: Readonly<Record<string, IconDefinition>> = {
+  "agent.chat-agent": faComment,
+  "agent.connection-builder": faLink,
+};
+
+/**
+ * The glyph for one agent: its own when it has one, else its category's.
+ * *ref* is a dirName or coordinate (`agent.chat-agent@1.0.0`) or a bare id.
+ */
+export function agentIcon(
+  ref: string | null | undefined,
+  category: string | null | undefined,
+): IconDefinition {
+  const id = ref ? ref.split("@")[0] : "";
+  return AGENT_ICON_OVERRIDE[id] ?? agentCategoryIcon(category);
 }

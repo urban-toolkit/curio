@@ -3,7 +3,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faRobot } from "@fortawesome/free-solid-svg-icons";
 import { attachmentDisplayName, type AgentAttachment } from "../../../services/agents";
 import {
-  agentCategoryIcon,
+  agentIcon,
   agentCategoryKey,
 } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
 import styles from "./AgentAvatarBadge.module.css";
@@ -37,7 +37,7 @@ export const AgentAvatarBadge: React.FC<{
         {/* The category glyph, not the generic robot: several agents can be
             attached to one canvas, and on the canvas the badge is all there
             is to tell them apart. */}
-        <FontAwesomeIcon icon={agentCategoryIcon(attachment.category)} className={styles.icon} />
+        <FontAwesomeIcon icon={agentIcon(attachment.coord, attachment.category)} className={styles.icon} />
         {attachment.liveJob?.status === "running" ? (
           // dev/115 (docs/11:178): the dock's running dot — this agent's Solve
           // is running in the background; opening the chat re-attaches.
