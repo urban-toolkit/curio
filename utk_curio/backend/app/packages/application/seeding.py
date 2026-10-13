@@ -62,7 +62,13 @@ from utk_curio.backend.app.packages.repositories import (
     defaults as defaults_io,
     seed_state,
 )
-from utk_curio.backend.app.packages.repositories.archive import _build_integrity
+from utk_curio.backend.app.packages.domain.model_block import MODELS_DIR
+from utk_curio.backend.app.packages.repositories.archive import (
+    _build_integrity,
+    is_weight_path,
+    refresh_package_integrity,
+    without_weights,
+)
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 from utk_curio.backend.app.packages.repositories.publisher_record import RECORD_FILENAME
 from utk_curio.backend.app.packages.repositories.store import (
@@ -70,6 +76,7 @@ from utk_curio.backend.app.packages.repositories.store import (
     user_packages_dir,
 )
 from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
+from utk_curio.backend.app.packages.application import model_packages as packages_model_packages
 from utk_curio.backend.app.packages.application.store_install import _purge_stale_staging
 
 log = logging.getLogger(__name__)
@@ -202,6 +209,9 @@ def _package_is_healthy(dest: Path) -> bool:
     treated as unhealthy. Marking it so would re-seed on every request for
     any package that ships without one — reinstating the per-request
     destruction this whole change exists to remove.
+
+    A model package's weight that the pip package leaves out counts as
+    present: it is downloaded the first time a node needs it.
     """
     if not dest.is_dir():
         return False
@@ -225,9 +235,19 @@ def _package_is_healthy(dest: Path) -> bool:
         # a request path is what ``CURIO_VERIFY_PACKAGES`` would be for.
         if not isinstance(rel, str) or not rel or ".." in Path(rel).parts:
             return False
-        if not (dest / rel).is_file():
+        if not (dest / rel).is_file() and not _left_out_weight(dest.name, rel):
             return False
     return True
+
+
+def _left_out_weight(dir_name: str, rel: str) -> bool:
+    """Whether *rel*, in package *dir_name*, is a model package's weight the
+    pip package leaves out (``datasets/infrastructure/left_out_files.py``)."""
+    if not is_weight_path(rel):
+        return False
+    from utk_curio.backend.app.datasets.infrastructure import left_out_files
+
+    return left_out_files.is_left_out(f"packages/{dir_name}/{rel}")
 
 
 def _integrity_map(package_root: Path) -> dict[str, str] | None:
@@ -301,12 +321,16 @@ def _store_copy_is_stale(src: Path, dest: Path, fixture_mtime: float) -> bool:
     (:func:`_package_is_healthy`).
 
     Conservative on doubt: if either side cannot be read, nothing is touched.
+
+    A model package's weights are compared on neither side: a user's copy
+    holds none (:func:`_swap_in_package`), and a weight a pip install has not
+    fetched yet is not a change.
     """
     catalog = _catalog_content_map(src, fixture_mtime)
     installed = _integrity_map(dest)
     if catalog is None or installed is None:
         return False
-    return catalog != installed
+    return without_weights(catalog) != without_weights(installed)
 
 
 def _refresh_decision(
@@ -415,11 +439,22 @@ def _swap_in_package(src: Path, dest: Path, dest_base: Path) -> bool:
         # other user's store and leave a file the store's own integrity map
         # does not describe. ``integrity.json`` does travel — it is the store
         # copy's own map, and :func:`_store_copy_is_stale` reads it.
+        #
+        # Nor do a model package's weights: they are read where they ship
+        # (``model_packages``), so the copy's map is rewritten to describe the
+        # copy without them.
+        leave_out_weights = packages_model_packages.is_model_package(src)
 
-        shutil.copytree(
-            src, new_tree,
-            ignore=lambda _dir, names: [n for n in names if n == RECORD_FILENAME],
-        )
+        def ignored(directory: str, names: list[str]) -> list[str]:
+            at_root = Path(directory) == src
+            return [
+                name for name in names
+                if name == RECORD_FILENAME or (leave_out_weights and at_root and name == MODELS_DIR)
+            ]
+
+        shutil.copytree(src, new_tree, ignore=ignored)
+        if leave_out_weights:
+            refresh_package_integrity(new_tree)
         moved_aside = False
         if dest.exists():
             os.replace(dest, displaced)

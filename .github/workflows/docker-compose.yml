@@ -41,6 +41,8 @@ on:
       - 'discovery/**'
       - 'models/**'
       - 'docs/examples/**'
+      # The example model package the image copies and the tests run.
+      - 'docs/bring-your-own-model/**'
       - 'vendor/**'
       # The schemas the test suite validates those examples against:
       # a schema edit can break the corpus without touching the corpus.
@@ -90,6 +92,8 @@ on:
       - 'discovery/**'
       - 'models/**'
       - 'docs/examples/**'
+      # The example model package the image copies and the tests run.
+      - 'docs/bring-your-own-model/**'
       - 'vendor/**'
       # The schemas the test suite validates those examples against:
       # a schema edit can break the corpus without touching the corpus.
@@ -1229,6 +1233,10 @@ jobs:
               mkdir -p "$release/$folder"
               cp -R "$folder/." "$release/$folder/"
             done
+            # And a model package's folder, as a pip install fetches its weight
+            # into: the example model package's.
+            mkdir -p "$release/packages/model.example.local-relief@1"
+            cp -R "docs/bring-your-own-model/model.example.local-relief@1/." "$release/packages/model.example.local-relief@1/"
             # A pip install's sandbox Node.js packages (node_runtime.nodejs_dir),
             # which the boot's hardening closes too.
             mkdir -p .curio/nodejs/node_modules

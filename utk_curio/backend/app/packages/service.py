@@ -85,6 +85,9 @@ from utk_curio.backend.app.packages.application.store_install import (
 from utk_curio.backend.app.packages.application.starters import (
     generate_package_starters,
 )
+from utk_curio.backend.app.packages.application.model_packages import (
+    resolve_model_dirs,
+)
 
 # The names other features take from the package (memo dev/143 B5: the agents, the
 # projects service, the launcher and the testing routes import THESE from here, never
@@ -196,4 +199,5 @@ __all__ = [
     "input_capacity",
     "per_user_node_envs",
     "user_node_overlay_dir",
+    "resolve_model_dirs",
 ]

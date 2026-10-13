@@ -2,10 +2,16 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
   "title": "Curio Node Package Manifest (v4)",
-  "description": "Schema for a Curio node-package manifest.json. A package ships in a directory named '<packageId>@<major>' containing this manifest, an optional README.md / LICENSE, an optional sources/ directory with one starter file per kind, and (after install) an integrity.json with SHA-256 hashes of every shipped file. The pre-installed 'curio.builtin' package ships with the app and provides the default 14 node kinds; third-party packages install via the catalog drawer or by importing a `.curio.zip` archive.",
+  "description": "Schema for a Curio node-package manifest.json. A package ships in a directory named '<packageId>@<major>' containing this manifest, an optional README.md / LICENSE, an optional sources/ directory with one starter file per kind, and (after install) an integrity.json with SHA-256 hashes of every shipped file. The pre-installed 'curio.builtin' package ships with the app and provides the default 14 node kinds; third-party packages install via the catalog drawer or by importing a `.curio.zip` archive. A package of kind 'model' also ships its weights under models/ and says how to run them in 'model'.",
   "type": "object",
   "required": ["id", "version", "name", "publisher", "compatibility", "templates"],
   "additionalProperties": true,
+  "if": {
+    "required": ["kind"],
+    "properties": { "kind": { "const": "model" } }
+  },
+  "then": { "required": ["model"] },
+  "else": { "not": { "required": ["model"] } },
   "properties": {
     "$schema": {
       "type": "string",
@@ -25,7 +31,14 @@
     "name": { "type": "string", "minLength": 1, "description": "Human-readable package name shown in the catalog drawer." },
     "publisher": { "type": "string", "description": "Human-readable publisher name shown alongside the package." },
     "description": { "type": "string", "description": "Short description shown in catalog cards." },
-    "license": { "type": ["string", "null"], "description": "SPDX-style license identifier (e.g. 'MIT'); null for unspecified." },
+    "license": { "type": ["string", "null"], "description": "SPDX-style license identifier (e.g. 'MIT'); null for unspecified. For a model package, the license of its code; 'model.license' is the weights'." },
+    "kind": {
+      "type": "string",
+      "enum": ["node", "model"],
+      "default": "node",
+      "description": "'node' for a package of nodes, or 'model' for a package that also ships a model's weights under models/, described by 'model'. Model packages show in the Model Catalog."
+    },
+    "model": { "$ref": "#/$defs/model" },
     "readOnly": {
       "type": "boolean",
       "default": false,
@@ -140,6 +153,61 @@
     }
   },
   "$defs": {
+    "model": {
+      "type": "object",
+      "description": "How to run the weights a model package ships: what curio_load_model(\"<packageId>\") reads.",
+      "required": ["type", "runtime", "entry", "license"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["semantic-segmentation", "image-to-image", "node-regression"],
+          "description": "'semantic-segmentation': one label per pixel. 'image-to-image': images in, an image out. 'node-regression': a graph in (node features and edges), values for each node out. The node that runs an image-to-image or node-regression model feeds it itself (model.run)."
+        },
+        "runtime": {
+          "type": "string",
+          "enum": ["onnx", "transformers"],
+          "description": "'onnx': one .onnx file, with any external data beside it. 'transformers': a checkpoint folder from_pretrained reads."
+        },
+        "entry": {
+          "type": "string",
+          "pattern": "^models/[^/\\\\]+(/[^/\\\\]+)*$",
+          "description": "The .onnx file, or the checkpoint folder, under models/."
+        },
+        "input": { "$ref": "#/$defs/modelInput" },
+        "labels": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "description": "The class of each output channel. An onnx segmentation model names them; a Transformers checkpoint may leave them to its config.json."
+        },
+        "sizeBytes": { "type": "integer", "minimum": 0, "description": "The size of the weights in bytes." },
+        "discoverySource": {
+          "type": "object",
+          "maxProperties": 16,
+          "description": "Where a model downloaded from the Discovery Catalog came from."
+        },
+        "license": { "type": "string", "minLength": 1, "description": "The weights' license." },
+        "licenseFile": { "type": "string", "description": "Package-relative path of the weights' license text." },
+        "publisher": { "type": "string", "description": "Who published the weights." },
+        "homepage": { "type": "string", "pattern": "^https://", "description": "Where the weights are described." }
+      }
+    },
+    "modelInput": {
+      "type": "object",
+      "description": "An ONNX image model's input: width x height in NCHW (or NHWC, for an image-to-image model), as uint8 pixels or as float32 scaled by 'scale' and then normalized by 'mean' and 'std'.",
+      "required": ["width", "height"],
+      "additionalProperties": false,
+      "properties": {
+        "width": { "type": "integer", "minimum": 8, "maximum": 8192 },
+        "height": { "type": "integer", "minimum": 8, "maximum": 8192 },
+        "dtype": { "type": "string", "enum": ["uint8", "float32"] },
+        "layout": { "type": "string", "enum": ["NCHW", "NHWC"] },
+        "scale": { "type": "number", "exclusiveMinimum": 0 },
+        "mean": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+        "std": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 }
+      }
+    },
     "lineageCoord": {
       "type": "object",
       "required": ["packageId", "major"],

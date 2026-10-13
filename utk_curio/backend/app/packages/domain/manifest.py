@@ -21,6 +21,12 @@ from datetime import (
 from pathlib import Path
 
 from utk_curio.backend.app.packages.domain import backend_contract
+from utk_curio.backend.app.packages.domain.model_block import (
+    KINDS,
+    ModelBlock,
+    ModelBlockError,
+    parse_model_block,
+)
 from utk_curio.backend.app.packages.domain.package_channel import normalize_distribution_channel
 from utk_curio.backend.app.packages.domain.package_id import (
     PACKAGE_DIR_RE,
@@ -417,6 +423,10 @@ class PackageManifest:
     # backend/ plus declared handlers, executed ONLY by the package backend
     # sandbox (never imported into the host process).
     backend: BackendManifest | None = None
+    # ``node``, or ``model`` for a package that ships weights under models/
+    # and says how to run them in ``model`` (domain/model_block.py).
+    kind: str = "node"
+    model: ModelBlock | None = None
 
     @property
     def dir_name(self) -> str:
@@ -545,6 +555,8 @@ def package_manifest_from_dict(raw: object, *, manifest_path: Path, dir_name: st
                 f"({sorted(declared_handlers)})"
             )
 
+    kind, model = _parse_kind_and_model(raw, where=str(manifest_path))
+
     return PackageManifest(
         package_id=package_id,
         major=major,
@@ -565,5 +577,31 @@ def package_manifest_from_dict(raw: object, *, manifest_path: Path, dir_name: st
         created_at_ms=created_at_ms,
         behavior_script=behavior_script,
         backend=backend,
+        kind=kind,
+        model=model,
     )
+
+
+def _parse_kind_and_model(raw: dict, *, where: str) -> tuple[str, ModelBlock | None]:
+    """``kind`` (``node`` when absent) and the ``model`` block a model
+    package must declare and a node package may not."""
+    kind = raw.get("kind", "node")
+    if kind not in KINDS:
+        raise ManifestError(f"{where}.kind must be one of {list(KINDS)}, got {kind!r}")
+    block = raw.get("model")
+    if kind == "node":
+        if block is not None:
+            raise ManifestError(
+                f"{where}.model: only a model package (kind 'model') has a model block"
+            )
+        return kind, None
+    if block is None:
+        raise ManifestError(
+            f"{where}: a model package declares its model in a 'model' block "
+            "(type, runtime, entry under models/, license)"
+        )
+    try:
+        return kind, parse_model_block(block)
+    except ModelBlockError as exc:
+        raise ManifestError(f"{where}.model: {exc}") from exc
 

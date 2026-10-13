@@ -16,7 +16,7 @@ import tempfile
 import time
 import zipfile
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from utk_curio.backend.app.common import safe_archive
 from utk_curio.backend.app.common.safe_paths import (
@@ -24,6 +24,7 @@ from utk_curio.backend.app.common.safe_paths import (
     PathTraversalError,
 )
 from utk_curio.backend.app.packages.domain.manifest import PackageManifest
+from utk_curio.backend.app.packages.domain.model_block import MODELS_DIR
 from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 from utk_curio.backend.app.packages.repositories.publisher_record import RECORD_FILENAME
@@ -68,6 +69,23 @@ _MAX_FILE_BYTES: int = 32 * 1024 * 1024
 _MAX_TOTAL_BYTES: int = 128 * 1024 * 1024
 
 
+# A model package (kind ``model``) ships its weights under ``models/``, and a
+# file of it may reach 2 GiB; the whole package may hold that plus a node
+# package's budget for everything else (``_model_caps``, read at call time so
+# a patched cap bites).
+_MAX_MODEL_FILE_BYTES: int = 2 * 1024 * 1024 * 1024
+
+
+# The most bytes of ``manifest.json`` read to learn an archive's kind before
+# anything is extracted.
+_MAX_MANIFEST_BYTES: int = 1024 * 1024
+
+
+def _model_caps() -> tuple[int, int]:
+    """``(per-file, total)`` caps of a model package's archive."""
+    return _MAX_MODEL_FILE_BYTES, _MAX_MODEL_FILE_BYTES + _MAX_TOTAL_BYTES
+
+
 class InstallerError(ValueError):
     """Raised when an archive fails any structural / manifest check."""
 
@@ -109,8 +127,9 @@ def _safe_member_path(raw_name: str) -> tuple[str, ...]:
     return tuple(parts)
 
 
-def _check_allowed_layout(segments: tuple[str, ...]) -> None:
-    """Reject members that don't belong in any of the allowed buckets."""
+def _check_allowed_layout(segments: tuple[str, ...], *, kind: str = "node") -> None:
+    """Reject members that don't belong in any of the allowed buckets.
+    ``models/`` is a bucket of a model package (*kind* ``model``) only."""
     head = segments[0]
     if len(segments) == 1:
         if head not in _ALLOWED_TOP_FILES:
@@ -120,11 +139,37 @@ def _check_allowed_layout(segments: tuple[str, ...]) -> None:
                 f"{sorted(_ALLOWED_TOP_DIRS)}"
             )
         return
+    if head == MODELS_DIR:
+        if kind != "model":
+            raise InstallerError(
+                f"archive top-level directory {MODELS_DIR!r} is not allowed in a node package: "
+                f"only a model package (manifest kind 'model') ships weights under {MODELS_DIR}/"
+            )
+        return
     if head not in _ALLOWED_TOP_DIRS:
         raise InstallerError(
             f"archive top-level directory {head!r} is not allowed; expected one of "
-            f"{sorted(_ALLOWED_TOP_DIRS)}"
+            f"{sorted(_ALLOWED_TOP_DIRS)}, or {MODELS_DIR!r} in a model package"
         )
+
+
+def archive_kind(zf: zipfile.ZipFile) -> str:
+    """The kind an archive's ``manifest.json`` declares, read before anything
+    is extracted: ``model``, or ``node`` for anything else (no manifest, one
+    too big to read here, invalid JSON), which the manifest's own validation
+    then refuses after extraction with its own message."""
+    try:
+        info = zf.getinfo("manifest.json")
+    except KeyError:
+        return "node"
+    if info.file_size > _MAX_MANIFEST_BYTES:
+        return "node"
+    try:
+        with zf.open(info, "r") as handle:
+            raw = json.loads(handle.read(_MAX_MANIFEST_BYTES + 1).decode("utf-8"))
+    except (ValueError, OSError, RuntimeError, NotImplementedError, zipfile.BadZipFile):
+        return "node"
+    return "model" if isinstance(raw, dict) and raw.get("kind") == "model" else "node"
 
 
 def _hash_file(path: Path) -> str:
@@ -185,6 +230,17 @@ def _build_integrity(package_root: Path) -> dict[str, str]:
     return integrity
 
 
+def is_weight_path(rel: str) -> bool:
+    """Whether *rel*, a package-relative path, is under a model package's ``models/``."""
+    return rel.split("/", 1)[0] == MODELS_DIR
+
+
+def without_weights(integrity: dict[str, str]) -> dict[str, str]:
+    """*integrity* without the files under ``models/``: what a user's copy of a
+    shipped model package holds, whose weights are read where they ship."""
+    return {rel: digest for rel, digest in integrity.items() if not is_weight_path(rel)}
+
+
 def _touch_manifest_for_install_recency(package_root: Path, *, mtime: float | None = None) -> None:
     """Bump ``manifest.json`` mtime so clients can expose ``installUpdatedAtMs`` (diagnostic).
 
@@ -216,29 +272,35 @@ def _extract_into(zf: zipfile.ZipFile, target: Path) -> int:
     has already passed :func:`_safe_member_path`) or exceeds the size
     caps: first by the sizes the archive declares, then by the bytes
     actually written, which :func:`safe_archive.copy_member` counts.
+
+    The caps and the allowed folders are the archive's kind's
+    (:func:`archive_kind`): a model package may ship ``models/`` and files up
+    to :data:`_MAX_MODEL_FILE_BYTES`.
     """
     target.mkdir(parents=True, exist_ok=True)
+    kind = archive_kind(zf)
     # Read at call time, so a cap patched on this module still bites.
+    max_file, max_total = _model_caps() if kind == "model" else (_MAX_FILE_BYTES, _MAX_TOTAL_BYTES)
     budget = safe_archive.Budget(
-        safe_archive.Caps(max_member_bytes=_MAX_FILE_BYTES, max_total_bytes=_MAX_TOTAL_BYTES)
+        safe_archive.Caps(max_member_bytes=max_file, max_total_bytes=max_total)
     )
     written = 0
     for info in zf.infolist():
         if info.is_dir():
             continue
         segments = _safe_member_path(info.filename)
-        _check_allowed_layout(segments)
+        _check_allowed_layout(segments, kind=kind)
 
-        if info.file_size > _MAX_FILE_BYTES:
+        if info.file_size > max_file:
             raise InstallerError(
                 f"archive member {info.filename!r} exceeds per-file limit "
-                f"({info.file_size} > {_MAX_FILE_BYTES} bytes)"
+                f"({info.file_size} > {max_file} bytes)"
             )
         written += info.file_size
-        if written > _MAX_TOTAL_BYTES:
+        if written > max_total:
             raise InstallerError(
                 f"archive total uncompressed size exceeds "
-                f"{_MAX_TOTAL_BYTES} bytes"
+                f"{max_total} bytes"
             )
 
         dest = target.joinpath(*segments)
@@ -297,15 +359,68 @@ def load_package_manifest_from_dir(package_root: Path) -> PackageManifest:
     # ``WinError 3`` on every destination path at once. The ".validate-" prefix
     # is deliberately not ``_STAGING_PREFIX``, so ``_purge_stale_staging``
     # leaves it alone.
+    #
+    # Only the manifest is copied: the validator reads nothing else, and a model
+    # package's weights may run to gigabytes.
     side_parent = Path(
         tempfile.mkdtemp(prefix=".validate-", dir=str(package_root.parent))
     )
     try:
         validate_root = side_parent / expected
-        shutil.copytree(package_root, validate_root)
+        validate_root.mkdir()
+        shutil.copyfile(manifest_path, validate_root / "manifest.json")
         return load_package_manifest(validate_root)
     finally:
         shutil.rmtree(side_parent, ignore_errors=True)
+
+
+def _package_members(
+    source_dir: Path, *, leave_out_weights: bool = False, weights_dir: Path | None = None,
+) -> list[tuple[str, Path]]:
+    """``(member name, file)`` for every file an archive of *source_dir* holds,
+    sorted by name: its content, bookkeeping left out
+    (:func:`is_non_content_filename`). *leave_out_weights* leaves out
+    ``models/``; *weights_dir*, a folder holding the package's ``models/``,
+    gives the weights instead of *source_dir*'s own."""
+    members: dict[str, Path] = {}
+    for entry in sorted(source_dir.rglob("*")):
+        if not entry.is_file() or is_non_content_filename(entry.name):
+            continue
+        rel = entry.relative_to(source_dir).as_posix()
+        if (leave_out_weights or weights_dir is not None) and is_weight_path(rel):
+            continue
+        members[rel] = entry
+    if weights_dir is not None and not leave_out_weights:
+        for entry in sorted((weights_dir / MODELS_DIR).rglob("*")):
+            if entry.is_file() and not entry.is_symlink() and not is_non_content_filename(entry.name):
+                members[entry.relative_to(weights_dir).as_posix()] = entry
+    # In path order, as the walk itself sorts.
+    return sorted(members.items(), key=lambda member: PurePosixPath(member[0]))
+
+
+def _write_package_zip(sink, members: list[tuple[str, Path]]) -> None:
+    with zipfile.ZipFile(sink, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for name, entry in members:
+            zf.write(entry, arcname=name)
+
+
+def zip_package_tree_to(
+    source_dir: Path, target: Path, *, leave_out_weights: bool = False, weights_dir: Path | None = None,
+) -> Path:
+    """Write the deterministic ``.curio.zip`` of *source_dir* to *target*, file by
+    file, so a model package's weights stream through disk and never sit in
+    memory. The same members as :func:`zip_package_tree`; *leave_out_weights*
+    and *weights_dir* are :func:`_package_members`'. Returns *target*."""
+    target = Path(target)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    members = _package_members(source_dir, leave_out_weights=leave_out_weights, weights_dir=weights_dir)
+    try:
+        with open(target, "wb") as sink:
+            _write_package_zip(sink, members)
+    except BaseException:
+        target.unlink(missing_ok=True)
+        raise
+    return target
 
 
 def zip_package_tree(source_dir: Path) -> bytes:
@@ -328,15 +443,9 @@ def zip_package_tree(source_dir: Path) -> bytes:
 
     Shared by the catalog install (which re-zips a catalog directory to reuse
     the sideload validator) and the export routes, so the two cannot drift
-    apart in what they emit.
+    apart in what they emit. Those routes write it to disk with
+    :func:`zip_package_tree_to`, the same members through the same writer.
     """
     buf = io.BytesIO()
-    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for entry in sorted(source_dir.rglob("*")):
-            if not entry.is_file():
-                continue
-            if is_non_content_filename(entry.name):
-                continue
-            rel = entry.relative_to(source_dir).as_posix()
-            zf.write(entry, arcname=rel)
+    _write_package_zip(buf, _package_members(source_dir))
     return buf.getvalue()
