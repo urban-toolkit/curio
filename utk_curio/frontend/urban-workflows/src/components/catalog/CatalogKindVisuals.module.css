@@ -20,7 +20,7 @@
 /* The source glyph is tinted rather than neutral, because it is also the
    FALLBACK a source with no icon renders in the grid - where the neutral
    treatment would read as a missing image rather than a deliberate mark. */
-.kindIcon_discovery {
+.kindIcon_source {
   background: var(--curio-kind-source-bg);
   color: var(--curio-kind-source-on-tint);
 }
