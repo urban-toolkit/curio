@@ -302,12 +302,14 @@ class CurioModel:
     """
 
     def __init__(self, model_id: str, folder: str):
+        from utk_curio.sandbox.util.models import model_spec
+
         self.id = model_id
         self.folder = folder
         path = os.path.join(folder, "manifest.json")
         try:
             with open(path, encoding="utf-8") as handle:
-                self.manifest = json.load(handle)
+                self.manifest = model_spec(json.load(handle))
         except (OSError, ValueError) as exc:
             raise RuntimeError(f"Model '{model_id}' has no readable manifest: {exc}") from exc
         self._runner = None

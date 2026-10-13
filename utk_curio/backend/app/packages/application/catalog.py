@@ -27,8 +27,9 @@ from utk_curio.backend.app.packages.schemas.responses import package_payload
 log = logging.getLogger(__name__)
 
 
-def installed_package_payloads(user_key: str) -> list[dict]:
-    """Every readable package in the user's store as a payload, newest ``createdAt`` first."""
+def installed_package_payloads(user_key: str, kind: str | None = None) -> list[dict]:
+    """Every readable package in the user's store as a payload, newest ``createdAt`` first;
+    only the packages of *kind* (``node`` or ``model``) when it is given."""
     out: list[dict] = []
     # Enumeration + manifests + mtimes under ONE seed-lock hold (memo dev/99):
     # the payloads are detached dicts, so nothing live leaves the lock.
@@ -39,6 +40,8 @@ def installed_package_payloads(user_key: str) -> list[dict]:
             except ManifestError as exc:
                 log.warning("Skipping malformed package %s: %s", package_path.name, exc)
                 continue
+            if kind is not None and manifest.kind != kind:
+                continue
             out.append(package_payload(manifest, package_mtime_path=package_path))
     # Newest ``manifest.createdAt`` first - canonical authoring time / ordering.
     out.sort(
@@ -47,13 +50,13 @@ def installed_package_payloads(user_key: str) -> list[dict]:
     return out
 
 
-def catalog_listing(user_key: str) -> dict:
+def catalog_listing(user_key: str, kind: str | None = None) -> dict:
     """The catalog scan from ``<repo_root>/packages/``: ``{"packages", "families", "catalogCollisions"}``.
 
     Items share the shape of :func:`installed_package_payloads` (the catalog UI can
     render either feed identically), plus ``installed`` (is it in this user's store)
     and ``publishable`` (may THIS user withdraw it — the same question as "is this the
-    user's own package").
+    user's own package"). Only the packages of *kind* when it is given.
     """
     with package_seed_lock(user_key):  # memo dev/99: no transient "not installed"
         installed_coords = {p.name for p in list_user_packages(user_key)}
@@ -70,6 +73,8 @@ def catalog_listing(user_key: str) -> dict:
             manifest = load_package_manifest(entry)
         except ManifestError as exc:
             log.warning("Skipping malformed fixture %s: %s", entry.name, exc)
+            continue
+        if kind is not None and manifest.kind != kind:
             continue
         payload = package_payload(manifest, package_mtime_path=entry)
         payload["installed"] = manifest.dir_name in installed_coords

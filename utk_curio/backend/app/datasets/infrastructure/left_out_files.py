@@ -1,12 +1,15 @@
 """The catalog files the pip package leaves out, fetched from GitHub on first use.
 
-The repository holds every file of the Data Catalog (``datasets/``) and the
-Model Catalog (``models/``). PyPI takes no file over 100 MiB, so the pip
-package (the sdist, and the wheel built from it) leaves out the big ones,
-named in ``left_out_files.json`` beside this module. Each is the data file of
-a dataset or the entry of a model; the small files of its folder (the
-manifest, a parquet's decode sidecar, a license) still ship. ``MANIFEST.in``
-excludes exactly the listed files, which ``test_left_out_files`` checks.
+The repository holds every file of the Data Catalog (``datasets/``), the
+Model Catalog (``models/``) and the model packages (``packages/<dir>/models/``).
+PyPI takes no file over 100 MiB, so the pip package (the sdist, and the wheel
+built from it) leaves out the big ones, named in ``left_out_files.json``
+beside this module. Each is the data file of a dataset, the entry of a model
+or the weight a model package's ``model`` block names; the small files of its
+folder (the manifest, a parquet's decode sidecar, a license, a package's code)
+still ship. ``MANIFEST.in`` excludes exactly the listed files, which
+``test_left_out_files`` checks. A model package's weight must also match the
+sha256 its package's ``integrity.json`` names (``fetch``'s *expected_sha256*).
 
 The release build records each listed file's size and sha256, and the commit
 the package is built from: ``scripts/record_left_out_files.py`` writes
@@ -194,13 +197,16 @@ def failures():
         _failures.reset(token)
 
 
-def fetch(repo_path: str, shipped: Path) -> Path:
+def fetch(repo_path: str, shipped: Path, *, expected_sha256: str | None = None) -> Path:
     """The file to read for *repo_path*, a path in the repository.
 
     *shipped* is where the package holds it. When it is there it is the
     answer, and nothing is fetched. Otherwise *repo_path* is a file the
     package leaves out, and the answer is its fetched copy, downloaded now
-    when this is the first read. Raises :class:`LeftOutFileUnavailable`.
+    when this is the first read. *expected_sha256*, when given, is a second
+    digest the download must have besides the record's: the one a model
+    package's ``integrity.json`` names for its weight. Raises
+    :class:`LeftOutFileUnavailable`.
     """
     shipped = Path(shipped)
     if shipped.is_file():
@@ -238,7 +244,7 @@ def fetch(repo_path: str, shipped: Path) -> Path:
         # Another reader may have placed it while this one waited.
         if not target.is_file():
             _remove_other_releases(record.commit)
-            _download(repo_path, entry, record.commit, Path(shipped), target)
+            _download(repo_path, entry, record.commit, Path(shipped), target, expected_sha256=expected_sha256)
     return target
 
 
@@ -277,7 +283,10 @@ def _remove_other_releases(commit: str) -> None:
         shutil.rmtree(entry.path, ignore_errors=True)
 
 
-def _download(repo_path: str, entry: RecordedFile, commit: str, shipped: Path, target: Path) -> None:
+def _download(
+    repo_path: str, entry: RecordedFile, commit: str, shipped: Path, target: Path,
+    *, expected_sha256: str | None = None,
+) -> None:
     url = source_url(commit, repo_path)
     root = fetched_root(commit)
     partial_dir = root / ".partial"
@@ -305,6 +314,11 @@ def _download(repo_path: str, entry: RecordedFile, commit: str, shipped: Path, t
                 f"the file GitHub sent ({result.bytes_written:,} bytes, sha256 {result.sha256}) is "
                 f"not the one this release recorded ({entry.size:,} bytes, sha256 {entry.sha256})"
             )))
+        if expected_sha256 is not None and result.sha256 != expected_sha256.lower():
+            raise _unavailable(repo_path, _could_not_download(repo_path, url, target, (
+                f"the file GitHub sent (sha256 {result.sha256}) is not the one its package's "
+                f"integrity.json names (sha256 {expected_sha256})"
+            )))
         os.chmod(partial, 0o644)
         _copy_folder(repo_path, shipped, root, partial_dir)
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -315,8 +329,8 @@ def _download(repo_path: str, entry: RecordedFile, commit: str, shipped: Path, t
 
 def _copy_folder(repo_path: str, shipped: Path, root: Path, partial_dir: Path) -> None:
     """Copy the files of *repo_path*'s catalog folder that the package holds
-    (``datasets/<dir>`` or ``models/<dir>``) to the same place under *root*,
-    so the folder there reads as the folder in a clone."""
+    (``datasets/<dir>``, ``models/<dir>`` or ``packages/<dir>``) to the same
+    place under *root*, so the folder there reads as the folder in a clone."""
     parts = PurePosixPath(repo_path).parts
     folder = PurePosixPath(*parts[:2]).as_posix()
     shipped_folder = shipped

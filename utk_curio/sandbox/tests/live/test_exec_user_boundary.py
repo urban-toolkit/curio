@@ -709,3 +709,42 @@ def test_scouts_shadow_model_runs_as_the_exec_user(model_folder):
     # onnxruntime's thread count above 16.
     assert abs(float(mean) - 128.63593) <= 0.1, mean
     assert result["output"]["dataType"] == "raster", result["output"]
+
+
+#: Local Relief, the example model package: in the image beside the guide that
+#: brings a model to Curio, and where a pip install would download a model
+#: package's weight, copied there by the job's seed step.
+LOCAL_RELIEF = "model.example.local-relief"
+
+
+@pytest.mark.parametrize("model_folder", [
+    LAUNCH_DIR + "/docs/bring-your-own-model/" + LOCAL_RELIEF + "@1",
+    FETCHED_RELEASE + "/packages/" + LOCAL_RELIEF + "@1",
+], ids=["in the image", "fetched"])
+def test_a_model_packages_weights_run_as_the_exec_user(model_folder):
+    """``curio_load_model`` on a model package, as the execution user: the
+    package's folder is staged as a model folder is, its manifest's model block
+    names the graph under ``models/``, and onnxruntime runs it. A 25 m tower
+    on flat ground stands 24 m above the mean of its 5 by 5 cells."""
+    body = textwrap.indent(textwrap.dedent("""
+        import numpy as np
+
+        model = curio_load_model("model.example.local-relief")
+        heights = np.zeros((9, 9), dtype=np.float32)
+        heights[4, 4] = 25.0
+        (relief,) = model.run({"height": heights[np.newaxis, np.newaxis]})
+        print(round(float(relief[0, 0, 4, 4]), 4))
+        print(model.folder.startswith(%r))
+    """ % model_folder).strip("\n"), "    ")
+    result = assert_ran(_request("/exec", {
+        "code": body + "\n",
+        "file_path": "",
+        "nodeType": "model.example.local-relief/local-relief",
+        "dataType": "",
+        "user_key": USER_KEY,
+        "save_dataset": False,
+        "models": {LOCAL_RELIEF: model_folder},
+    }), "running Local Relief")
+    relief, given_the_source = printed(result).splitlines()[-2:]
+    assert relief == "24.0", relief
+    assert given_the_source == "False", "the child was handed the package's own folder, not a staged copy"

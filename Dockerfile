@@ -50,6 +50,9 @@ COPY discovery/ discovery/
 COPY models/ models/
 COPY docs/examples/ docs/examples/
 COPY docs/schemas/ docs/schemas/
+# Local Relief, the example model package beside the guide that brings a model
+# to Curio, which the tests run; the wheel leaves it out.
+COPY docs/bring-your-own-model/ docs/bring-your-own-model/
 COPY utk_curio/ utk_curio/
 # DuckDB's spatial and json extensions, which the backend seeds into
 # ~/.duckdb for node runs and serves to the browser worker (#318). Without

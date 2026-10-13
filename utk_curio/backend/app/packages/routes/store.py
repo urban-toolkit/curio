@@ -7,7 +7,7 @@ call the use case and serialize (``schemas.responses``); every exception is mapp
 
 from __future__ import annotations
 
-from flask import Response, current_app, jsonify, request
+from flask import Response, current_app, jsonify, request, send_file
 
 from utk_curio.backend.app.users.dependencies import require_auth
 from utk_curio.backend.app.packages.domain.package_id import PackageIdError
@@ -31,10 +31,12 @@ from utk_curio.backend.app.packages.schemas.responses import package_payload
 @require_auth
 @_map_package_errors
 def list_installed_packages():
-    """Every package in the caller's store, newest ``createdAt`` first."""
+    """Every package in the caller's store, newest ``createdAt`` first;
+    ``?kind=node`` or ``?kind=model`` keeps that kind."""
+    kind = requests.package_kind(request.args)
     key = user_key()
     packages_seeding.ensure_user_seeded(key)
-    return jsonify({"packages": packages_catalog.installed_package_payloads(key)}), 200
+    return jsonify({"packages": packages_catalog.installed_package_payloads(key, kind)}), 200
 
 
 @packages_bp.route("/upload", methods=["POST"])
@@ -43,7 +45,9 @@ def list_installed_packages():
 def upload_package():
     """Sideload a ``.curio.zip`` for the current user (multipart field ``file``;
     ``?replace=true`` overwrites an installed coordinate). The archive is read
-    into memory once (the installer caps it at 128 MiB uncompressed). Installs
+    from the upload's own stream, which the server spools to disk, so a model
+    package's weights never sit in memory (the installer caps a node package at
+    128 MiB uncompressed, a model package at its weights plus that). Installs
     the manifest's declared python deps too, and says whether they import — a
     sideloaded package's libraries used to be nobody's job."""
     packages_provisioning.assert_may_install()
@@ -52,7 +56,7 @@ def upload_package():
     replace = request.args.get("replace", "false").lower() == "true"
     try:
         result = packages_store_install.install_package_from_archive(
-            key, upload.stream.read(), replace=replace,
+            key, upload.stream, replace=replace,
         )
     except (InstallerError, PackageIdError) as exc:
         # Logged, not only returned. The reason reaches the browser and stops
@@ -110,9 +114,17 @@ def patch_package_metadata(dir_name: str):
 @require_auth
 @_map_package_errors
 def download_package_archive(dir_name: str):
-    """Re-export as a deterministic ``.curio.zip`` — the store copy, else the catalog copy (#275)."""
-    body = packages_store_install.archive_for_download(user_key(), dir_name)
-    response = Response(body, mimetype="application/zip")
+    """Re-export as a deterministic ``.curio.zip``: the store copy, else the catalog copy (#275).
+
+    Written to a file and streamed from it, which is removed once the response
+    is sent: a model package carries its weights."""
+    path, cleanup = packages_store_install.archive_file_for_download(user_key(), dir_name)
+    try:
+        response = send_file(path, mimetype="application/zip", max_age=0)
+    except Exception:
+        cleanup()
+        raise
+    response.call_on_close(cleanup)
     response.headers["Content-Disposition"] = f'attachment; filename="{dir_name}.curio.zip"'
     return response
 

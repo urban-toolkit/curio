@@ -11,6 +11,7 @@ from pathlib import Path
 
 from utk_curio.backend.app.packages.domain.catalog_family import family_key_for_manifest
 from utk_curio.backend.app.packages.domain.manifest import PackageManifest
+from utk_curio.backend.app.packages.domain.model_block import model_block_dict
 
 
 README_MAX_BYTES = 64 * 1024  # 64 KiB cap on README content surfaced via payload.
@@ -100,6 +101,9 @@ def package_payload(manifest: PackageManifest, *, package_mtime_path: Path | Non
         **({"readOnly": True} if manifest.read_only else {}),
         "createdAtMs": manifest.created_at_ms,
         **({"behaviorScript": manifest.behavior_script} if manifest.behavior_script else {}),
+        # ``model`` packages ship weights and show in the Model Catalog.
+        "kind": manifest.kind,
+        **({"model": model_block_dict(manifest.model)} if manifest.model is not None else {}),
     }
     if manifest.created_at_iso:
         payload["createdAt"] = manifest.created_at_iso

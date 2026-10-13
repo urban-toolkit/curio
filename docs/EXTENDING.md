@@ -492,7 +492,7 @@ The smallest possible package adds one template plus its behavior hook. Use this
      ...
    }
    ```
-   `behaviorScript` is a path relative to the package directory. The archive validator only accepts a small set of top-level dirs (see [`archive.py::_ALLOWED_TOP_DIRS`](../utk_curio/backend/app/packages/repositories/archive.py): `sources`, `starters`, `grammars`, `widgets`, `icons`, `scripts`, `backend`); the bundle goes under `scripts/` so it survives the catalog round-trip. Curio's package registry bootstrap fetches the file with the user's Bearer token and injects the response body as an inline `<script>` BEFORE building descriptors, so the behavior keys are registered by the time `getBehavior('my-node')` looks them up.
+   `behaviorScript` is a path relative to the package directory. The archive validator only accepts a small set of top-level dirs (see [`archive.py::_ALLOWED_TOP_DIRS`](../utk_curio/backend/app/packages/repositories/archive.py): `sources`, `starters`, `grammars`, `widgets`, `icons`, `scripts`, `backend`, and `models` in a model package); the bundle goes under `scripts/` so it survives the catalog round-trip. Curio's package registry bootstrap fetches the file with the user's Bearer token and injects the response body as an inline `<script>` BEFORE building descriptors, so the behavior keys are registered by the time `getBehavior('my-node')` looks them up.
 
 6. **Wire up the build.** Add an entry to [`utk_curio/frontend/urban-workflows/webpack.packages.config.js`](../utk_curio/frontend/urban-workflows/webpack.packages.config.js)'s `PACKAGE_ENTRIES` list. `scripts/new_package.py --with-ui` prints the row ready to paste:
    ```js

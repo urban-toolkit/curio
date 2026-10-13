@@ -74,6 +74,31 @@ export interface PackageDependencies {
   js: Record<string, string>;
 }
 
+/** How a model package's weights run: its manifest's `model` block. */
+export interface ModelBlockPayload {
+  type: "semantic-segmentation" | "image-to-image" | "node-regression";
+  runtime: "onnx" | "transformers";
+  /** The weights under `models/`. */
+  entry: string;
+  labels: string[];
+  sizeBytes: number;
+  /** The weights' license; the package's `license` is its code's. */
+  license: string;
+  publisher: string;
+  input?: {
+    width: number;
+    height: number;
+    dtype: "uint8" | "float32";
+    layout: "NCHW" | "NHWC";
+    scale: number;
+    mean?: number[];
+    std?: number[];
+  };
+  licenseFile?: string;
+  homepage?: string;
+  discoverySource?: Record<string, unknown>;
+}
+
 export interface PackagePayload {
   packageId: string;
   major: number;
@@ -117,6 +142,10 @@ export interface PackagePayload {
   readOnly?: boolean;
   /** The package's own interface bundle (``scripts/behaviors.js``), when it ships one. */
   behaviorScript?: string;
+  /** `model` for a model package, which ships its weights under `models/`; else `node`. */
+  kind?: "node" | "model";
+  /** A model package's `model` block. */
+  model?: ModelBlockPayload;
   /**
    * Catalog endpoint only - whether THIS user published it, and may therefore
    * withdraw it. The peer of `AgentCard.publishable`.

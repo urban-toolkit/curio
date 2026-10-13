@@ -14,8 +14,9 @@ from utk_curio.backend.app.packages.repositories import (
     catalog_dir as packages_catalog_dir,
     publisher_record,
 )
-from utk_curio.backend.app.packages.repositories.archive import InstallResult, zip_package_tree
+from utk_curio.backend.app.packages.repositories.archive import InstallResult
 from utk_curio.backend.app.packages.repositories.store import package_dir
+from utk_curio.backend.app.packages.application import store_install as packages_store_install
 
 NOT_THE_PUBLISHER_MESSAGE = (
     "Only the account that published this package can remove it "
@@ -41,7 +42,9 @@ def publish_installed_to_catalog(
 
     The store directory goes over as it is, through the same archive the
     Export button downloads: README, LICENSE, ``scripts/``, ``backend/``,
-    declared version ranges and every manifest key arrive unchanged (#433).
+    declared version ranges and every manifest key arrive unchanged (#433),
+    and a model package's weights with them. The archive is written to disk
+    and read from there, never held in memory.
     Records who published it — without that the catalog is a global tree with
     no recorded owner, so nothing could tell a package the user authored from
     one that shipped with the deployment (see repositories/publisher_record.py).
@@ -54,11 +57,16 @@ def publish_installed_to_catalog(
         raise PackageServiceError(f"package {dir_name} is not installed", 404)
     catalog = packages_catalog_dir.catalog_root()
     _refuse_replacing_someone_elses(catalog, dir_name, user_key)
-    result = packages_catalog_dir.publish_package_archive_to_catalog_dir(
-        zip_package_tree(source),
-        catalog,
-        replace=replace,
-    )
+    with packages_store_install.staging_scratch(user_key) as scratch:
+        zipped = packages_store_install.export_package_archive_to(
+            user_key, dir_name, scratch / "package.curio.zip",
+        )
+        with open(zipped, "rb") as stream:
+            result = packages_catalog_dir.publish_package_archive_to_catalog_dir(
+                stream,
+                catalog,
+                replace=replace,
+            )
     catalog_path = catalog / result.manifest.dir_name
     publisher_record.record_publisher(catalog, result.manifest.dir_name, user_key)
     return result, catalog_path

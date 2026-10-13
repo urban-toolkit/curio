@@ -28,7 +28,7 @@ import shutil
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import Any, Mapping
+from typing import IO, Any, Mapping
 
 from utk_curio.backend.app.packages.repositories import staging as build_staging
 from utk_curio.backend.app.packages.builder.compiler import BUNDLE_ARCHIVE_PATH
@@ -133,14 +133,20 @@ def assemble_archive(
     return buf.getvalue(), integrity
 
 
-def validate_archive(archive: bytes) -> PackageManifest:
+def validate_archive(archive: bytes | IO[bytes]) -> PackageManifest:
     """Prove the produced archive installs: the installer's own extraction
     guards + manifest validation, on a throwaway directory (dev/89 §3.8 —
-    the same path Apply uses, so 'validated' and 'installable' cannot drift)."""
+    the same path Apply uses, so 'validated' and 'installable' cannot drift).
+    *archive* is its bytes, or a binary stream read from its start."""
+    if isinstance(archive, (bytes, bytearray)):
+        source: IO[bytes] = io.BytesIO(archive)
+    else:
+        source = archive
+        source.seek(0)
     side = Path(tempfile.mkdtemp(prefix="curio-build-validate-"))
     try:
         try:
-            with zipfile.ZipFile(io.BytesIO(archive), mode="r") as zf:
+            with zipfile.ZipFile(source, mode="r") as zf:
                 _extract_into(zf, side)
             return load_package_manifest_from_dir(side)
         except (InstallerError, zipfile.BadZipFile) as exc:

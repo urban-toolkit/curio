@@ -104,11 +104,13 @@ class _TransformersRunner:
 
 
 def load_runner(model_dir: str):
-    """The runner a model's manifest names."""
+    """The runner a model's manifest names (``models.model_spec``)."""
+    from utk_curio.sandbox.util.models import model_spec
+
     path = os.path.join(str(model_dir), "manifest.json")
     try:
         with open(path, encoding="utf-8") as handle:
-            manifest = json.load(handle)
+            manifest = model_spec(json.load(handle))
     except (OSError, ValueError) as exc:
         raise RuntimeError(f"{model_dir} is not a Model Catalog model: {exc}") from exc
     runtime = manifest.get("runtime")

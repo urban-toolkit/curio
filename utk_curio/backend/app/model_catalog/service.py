@@ -99,8 +99,10 @@ def resolve_exec_models(code: str, user=None) -> dict[str, str]:
     """``{modelId: folder}`` for the models *code* runs as ``curio_load_model("<id>")``.
 
     Shared by ``/processPythonCode`` and the agent runtime's runs through a
-    node, as collections are. *user* defaults to the request's. Fail-open:
-    the sandbox's ``curio_load_model`` names a model that is not there.
+    node, as collections are. *user* defaults to the request's. A model
+    package answers first (``packages.service.resolve_model_dirs``), then
+    this catalog's models. Fail-open: the sandbox's ``curio_load_model``
+    names a model that is not there.
     """
     from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
 
@@ -114,11 +116,21 @@ def resolve_exec_models(code: str, user=None) -> dict[str, str]:
             user = getattr(g, "user", None) if has_request_context() else None
         except Exception:  # noqa: BLE001 - no Flask, no user
             user = None
+    resolved: dict[str, str] = {}
     try:
-        return ModelCatalogService(user).resolve_execution_dirs(ids)
+        from utk_curio.backend.app.packages.service import resolve_model_dirs
+
+        resolved = resolve_model_dirs(_user_key(user), ids)
+    except Exception as exc:  # noqa: BLE001 - resolution must never fail the execution
+        print(f"[exec] model package resolution failed: {exc}", flush=True)
+    rest = [model_id for model_id in ids if model_id not in resolved]
+    if not rest:
+        return resolved
+    try:
+        return {**ModelCatalogService(user).resolve_execution_dirs(rest), **resolved}
     except Exception as exc:  # noqa: BLE001 - resolution must never fail the execution
         print(f"[exec] model resolution failed: {exc}", flush=True)
-        return {}
+        return resolved
 
 
 class ModelCatalogService:

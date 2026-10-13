@@ -379,6 +379,47 @@ class TestTheChildCanReachItsScratchDirectory(unittest.TestCase):
             )
 
     @posix_only
+    def test_a_model_packages_weights_are_closed_and_a_staged_copy_stays_readable(self):
+        """A shipped model package's weights, ``packages/<dir>/models/``, reach a
+        child only as the hardlinks ``stage_model_dirs`` makes: hardening
+        closes each such folder and leaves the files' modes, so the staged
+        copy stays readable, and the package's code beside it stays open."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            package = os.path.join(tmp, "packages", "model.example.local-relief@1")
+            weights = os.path.join(package, "models")
+            sources = os.path.join(package, "sources")
+            os.makedirs(weights)
+            os.makedirs(sources)
+            for directory in (weights, sources):
+                os.chmod(directory, 0o755)
+            source = os.path.join(weights, "local_relief.onnx")
+            with open(source, "wb") as handle:
+                handle.write(b"graph")
+            os.chmod(source, 0o644)
+            exposed = hardening.audit(tmp, uid=1001, gid=1001)
+            self.assertTrue(
+                any("packages/model.example.local-relief@1/models" in finding for finding in exposed),
+                exposed,
+            )
+
+            scratch = os.path.join(tmp, "scratch")
+            os.makedirs(scratch)
+            staged = os.path.join(scratch, "local_relief.onnx")
+            os.link(source, staged)
+
+            result = hardening.harden_paths(tmp)
+
+            self.assertIn("packages/model.example.local-relief@1/models", result["changed"])
+            mode = stat.S_IMODE(os.stat(weights).st_mode)
+            self.assertEqual(mode, hardening.DIRECTORY_MODE)
+            self.assertFalse(self._traversable(mode, 0, 1001))
+            self.assertTrue(stat.S_IMODE(os.stat(staged).st_mode) & stat.S_IROTH)
+            self.assertEqual(stat.S_IMODE(os.stat(sources).st_mode), 0o755)
+            self.assertEqual(hardening.audit(tmp, uid=1001, gid=1001), [])
+
+    @posix_only
     def test_the_sandboxs_nodejs_packages_are_closed_to_node_code(self):
         """Hardening closes ``.curio/nodejs``, the Node.js packages a pip
         install's sandbox runs as its own user: the execution account cannot

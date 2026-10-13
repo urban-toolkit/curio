@@ -28,10 +28,11 @@ from utk_curio.backend.app.packages.schemas import requests
 def list_catalog_packages():
     """The catalog scan from ``<repo_root>/packages/``: rows in the installed-list
     shape plus ``installed`` and ``publishable``, with ``families`` and
-    ``catalogCollisions``."""
+    ``catalogCollisions``; ``?kind=node`` or ``?kind=model`` keeps that kind."""
+    kind = requests.package_kind(request.args)
     key = user_key()
     packages_seeding.ensure_user_seeded(key)
-    return jsonify(packages_catalog.catalog_listing(key)), 200
+    return jsonify(packages_catalog.catalog_listing(key, kind)), 200
 
 
 @packages_bp.route("/catalog/install", methods=["POST"])

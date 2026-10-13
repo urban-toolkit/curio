@@ -11,9 +11,20 @@ from typing import Any, Mapping
 
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
 from utk_curio.backend.app.packages.domain import backend_contract as bc
+from utk_curio.backend.app.packages.domain.model_block import KINDS
 from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
 
 PACKAGES_BODY_SHAPE = "body must be {'packages': [<dirName>, ...]}"
+
+
+def package_kind(args: Mapping[str, Any]) -> str | None:
+    """The ``?kind=`` a listing is filtered by: ``node``, ``model``, or None for every package."""
+    kind = args.get("kind")
+    if kind is None or kind == "":
+        return None
+    if kind not in KINDS:
+        raise PackageServiceError(f"kind must be one of {list(KINDS)}, got {kind!r}")
+    return kind
 
 
 def catalog_dir_name(body: Mapping[str, Any]) -> str:
