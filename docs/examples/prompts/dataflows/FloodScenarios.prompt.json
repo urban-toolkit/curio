@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/FloodScenarios.json",
-    "sha256": "eb0bf8c9ada47856ac54f6532240b267c2bec7bb6a9706e2073ee4ff6186bd82",
+    "sha256": "6e49229b8cf9719c5fde6426f29bfa06e0691bab2a5abd17f85af4643944f2fb",
     "walkthrough": null
   },
   "prompt": "Compare two scenarios of SCOUT's Quad Cities flood projection over the same small area: one with no nature-based solutions, and a copy of it with all six solutions in place. Three shared settings hold the projection period, 2020 to 2040, and the area's top-left and bottom-right corners. Read only that area of the solutions' class raster and of the period's flood depth with and without the solutions. In each scenario, take the depth with the solutions where a cell's class is one of the chosen solutions and the depth without them elsewhere, then the median and mean of that depth. Map how much the solutions change the depth, the second scenario minus the first, and chart each scenario's median flood depth.",
