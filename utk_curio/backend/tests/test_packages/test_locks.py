@@ -287,6 +287,7 @@ _ACCOUNTED_ENUMERATORS = {
                                               "any_package_declares"},
     "app/packages/builder/deps.py": {"installed_manifests"},  # lock owner
     "app/packages/application/function_nodes.py": {"package_functions"},  # lock owner
+    "app/packages/application/model_packages.py": {"find_model_package"},  # lock owner
 }
 
 

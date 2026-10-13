@@ -82,7 +82,8 @@ def _highest(folders, want_id: str, want_major: str) -> tuple[PackageManifest, P
 
 def find_model_package(user_key: str | None, model_id: str) -> tuple[PackageManifest, Path] | None:
     """The model package *model_id* names (``<id>`` or ``<id>@<major>``): the
-    user's copy before the catalog's, the highest major of each."""
+    user's copy before the catalog's, the highest major of each. A lock
+    owner: it reads the user's store under the seed lock (memo dev/99)."""
     want_id, _, want_major = str(model_id).partition("@")
     if want_major and not want_major.isdigit():
         return None

@@ -593,14 +593,19 @@ def test_the_packages_service_resolves_model_ids(catalog):
 
 def test_the_wheel_leaves_local_relief_out(monkeypatch):
     """``MANIFEST.in``, applied as setuptools applies it, ships no file of the
-    guide's folder; the Docker image copies it (the next test)."""
+    guide's folder; the Docker image copies it (the next test). setuptools
+    first adds every Python module of the folders it packages, ``docs/``
+    among them, so the export script must be taken out again, not only left
+    out of the includes."""
     from setuptools._distutils.filelist import FileList
 
     monkeypatch.chdir(REPO)
     files = sorted(path.relative_to(REPO).as_posix() for path in GUIDE.rglob("*") if path.is_file())
     assert f"docs/bring-your-own-model/{DIR}/{WEIGHT}" in files
+    assert "docs/bring-your-own-model/export_local_relief.py" in files
     listed = FileList()
     listed.set_allfiles(files)
+    listed.files = [path for path in files if path.endswith(".py")]
     for line in (REPO / "MANIFEST.in").read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if line and not line.startswith("#"):
