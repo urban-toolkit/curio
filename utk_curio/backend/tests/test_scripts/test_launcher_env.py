@@ -371,7 +371,7 @@ def _shared_packages_root():
     return catalog_dir.catalog_root()
 
 
-@pytest.mark.parametrize("input_0, env_name, reader", [
+@pytest.mark.parametrize("arg, env_name, reader", [
     ("discovery_root", "CURIO_DISCOVERY_ROOT", _shipped_discovery_root),
     ("models_root", "CURIO_MODELS_ROOT", _shipped_models_root),
     ("packages_root", "CURIO_PACKAGES_ROOT", _shared_packages_root),
@@ -407,7 +407,7 @@ def _validation_node_limit():
     return runner.validation_node_limit()
 
 
-@pytest.mark.parametrize("input_0, env_name, value, reader", [
+@pytest.mark.parametrize("arg, env_name, value, reader", [
     ("solve_max_attempts", "CURIO_SOLVE_MAX_ATTEMPTS", 12, lambda: _budget("solve_max_attempts")),
     ("solve_node_budget", "CURIO_SOLVE_NODE_BUDGET", 300, lambda: _budget("solve_node_budget_s")),
     ("solve_session_deadline", "CURIO_SOLVE_SESSION_DEADLINE", 600, lambda: _budget("solve_session_deadline_s")),
