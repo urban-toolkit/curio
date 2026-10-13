@@ -24,6 +24,30 @@
       "code": "# Compare Scenarios writes this code from its inputs: input_1 minus input_0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"s-base\", \"Baseline\", [!! input_0 !!]),\n    (\"s-tall\", \"Twice as tall\", [!! input_1 !!]),\n])\n"
     },
     {
+      "name": "two scenarios, each difference its size",
+      "key": "segment",
+      "absolute": true,
+      "inputs": [
+        {
+          "slot": 0,
+          "label": {
+            "scenario": "s-base",
+            "name": "Baseline",
+            "color": "#2a9d8f"
+          }
+        },
+        {
+          "slot": 1,
+          "label": {
+            "scenario": "s-tall",
+            "name": "Twice as tall",
+            "color": "#e76f51"
+          }
+        }
+      ],
+      "code": "# Compare Scenarios writes this code from its inputs: the size of input_1\n# minus input_0, each under the id and the name of its scenario. It is\n# written again when they change.\nreturn curio_difference_scenarios([\n    (\"s-base\", \"Baseline\", [!! input_0 !!]),\n    (\"s-tall\", \"Twice as tall\", [!! input_1 !!]),\n], absolute=True, key=\"segment\")\n"
+    },
+    {
       "name": "two scenarios joined on a key",
       "key": "segment",
       "inputs": [

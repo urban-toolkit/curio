@@ -22,7 +22,13 @@ import { automaticMode, inputKind, inputKinds, resolveMode, wantedMode, type Inp
 import { normalizeCompareSettings, type CompareInputLabel } from "../../utils/compare/compareSettings";
 import { resolveReferences } from "../../utils/references/codeReferences";
 
-type CodeCase = { name: string; key?: string; inputs: { slot: number; label: CompareInputLabel }[]; code: string };
+type CodeCase = {
+  name: string;
+  key?: string;
+  absolute?: boolean;
+  inputs: { slot: number; label: CompareInputLabel }[];
+  code: string;
+};
 
 const BASE = { scenario: "s-base", name: "Baseline", color: "#2a9d8f" };
 const TALL = { scenario: "s-tall", name: "Twice as tall", color: "#e76f51" };
@@ -94,7 +100,13 @@ describe("the view the node picks", () => {
 
 describe("the code it writes in Difference", () => {
   test.each((cases.cases as CodeCase[]).map((c) => [c.name, c] as const))("%s", (_name, c) => {
-    expect(differenceCode(c.inputs, c.key)).toBe(c.code);
+    expect(differenceCode(c.inputs, c.key, undefined, c.absolute)).toBe(c.code);
+  });
+
+  test("one case gives each difference's size", () => {
+    expect((cases.cases as CodeCase[]).filter((c) => c.absolute).map((c) => c.name)).toEqual([
+      "two scenarios, each difference its size",
+    ]);
   });
 
   test("calls the sandbox's difference step", () => {
@@ -141,5 +153,15 @@ describe("the node's settings", () => {
   test("drop a view the node does not have and an empty key, so nothing is written", () => {
     expect(normalizeCompareSettings({ mode: "map", difference: { key: "", value: " " } })).toBeUndefined();
     expect(normalizeCompareSettings({ difference: "osm_id" })).toBeUndefined();
+  });
+
+  test("keep absolute when it is true, and drop it otherwise", () => {
+    expect(normalizeCompareSettings({ mode: "difference", difference: { key: "osm_id", absolute: true } })).toEqual({
+      mode: "difference",
+      difference: { key: "osm_id", absolute: true },
+    });
+    expect(normalizeCompareSettings({ difference: { absolute: true } })).toEqual({ difference: { absolute: true } });
+    expect(normalizeCompareSettings({ difference: { absolute: false } })).toBeUndefined();
+    expect(normalizeCompareSettings({ difference: { absolute: "yes" } })).toBeUndefined();
   });
 });

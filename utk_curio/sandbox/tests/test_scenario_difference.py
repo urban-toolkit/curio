@@ -1,7 +1,8 @@
 """The Compare Scenarios node's difference step (#662), ``curio_difference_scenarios``.
 
 In Difference the node compares two inputs, a reference (input_0) and a
-comparison (input_1), and every number it gives is comparison minus reference.
+comparison (input_1), and every number it gives is comparison minus reference,
+or, with ``absolute=True``, the size of that difference.
 
 - Two layers or two tables are joined on a stable id (``osm_id`` or
   ``building_id``, or a key the node names): rows on both sides hold the
@@ -42,9 +43,9 @@ def difference():
     return module
 
 
-def _diff(reference, comparison, key=None):
+def _diff(reference, comparison, key=None, **options):
     return difference().difference_scenarios(
-        [("s-base", "Baseline", reference), ("s-tall", "Twice as tall", comparison)], key=key,
+        [("s-base", "Baseline", reference), ("s-tall", "Twice as tall", comparison)], key=key, **options,
     )
 
 
@@ -86,6 +87,38 @@ def _raster(path, values, *, transform=None, crs="EPSG:32616", nodata=-9999.0):
         transform=transform or Affine(100.0, 0.0, 447000.0, 0.0, -100.0, 4637000.0),
     ) as target:
         target.write(values, 1)
+    return rasterio.open(path)
+
+
+#: SCOUT's whole flood grid, width by height: past the 2048 by 2048 cells an
+#: Autark map once loaded, within the 4096 by 4096 it loads now.
+FLOOD_GRID = (2592, 2064)
+RAMP_NODATA = -9999.0
+
+
+def _ramp_values(factor):
+    """A ramp on the flood grid times *factor*, rows north to south: below 0
+    west of its middle column, above 0 east of it, and 4 by 4 nodata cells in
+    its north-west corner."""
+    width, height = FLOOD_GRID
+    rows, cols = np.mgrid[0:height, 0:width]
+    values = ((cols - width // 2) * 0.01 + rows * 0.001) * factor
+    values[:4, :4] = RAMP_NODATA
+    return values.astype("float32")
+
+
+def _ramp(path, factor):
+    """The ramp as a GeoTIFF of 10 m cells in UTM zone 16N, opened."""
+    import rasterio
+    from affine import Affine
+
+    width, height = FLOOD_GRID
+    with rasterio.open(
+        path, "w", driver="GTiff", width=width, height=height, count=1, dtype="float32",
+        crs="EPSG:32616", nodata=RAMP_NODATA, compress="DEFLATE",
+        transform=Affine(10.0, 0.0, 447000.0, 0.0, -10.0, 4637000.0),
+    ) as target:
+        target.write(_ramp_values(factor), 1)
     return rasterio.open(path)
 
 
@@ -251,6 +284,59 @@ class TestLayersJoinedOnAStableId:
         pd.testing.assert_frame_equal(comparison, before[1])
 
 
+class TestAbsoluteDifference:
+    """With ``absolute=True`` every number the difference gives is the size of
+    the comparison's minus the reference's, ``|b - a|``, whichever is higher:
+    0 where they agree. What is matched, and how rows are marked, stays."""
+
+    def test_a_layers_numbers_are_each_differences_size(self):
+        reference = _roads([1, 2, 3, 4], [5.0, 6.0, 7.0, 1.0])
+        comparison = _roads([2, 3, 4, 5], [3.0, 7.5, 1.0, 2.0])
+        out = _diff(reference, comparison, absolute=True)
+        assert out["osm_id"].tolist() == [1, 2, 3, 4, 5]
+        assert out["change"].tolist() == ["removed", "changed", "changed", "unchanged", "added"]
+        assert _numbers(out["sunlight"]) == [None, 3.0, 0.5, 0.0, None]
+        # Without it the sign stays.
+        assert _numbers(_diff(reference, comparison)["sunlight"]) == [None, -3.0, 0.5, 0.0, None]
+
+    def test_a_tables_numbers_on_a_key_are_each_differences_size_nested_ones_too(self):
+        reference = pd.DataFrame({
+            "segment": ["r1", "r2"], "sunlight": [6.0, 2.0],
+            "compute": [{"shade": {"hours": 4.0}, "label": "a"}, {"shade": {"hours": 1.0}, "label": "b"}],
+        })
+        comparison = pd.DataFrame({
+            "segment": ["r1", "r2"], "sunlight": [2.5, 5.0],
+            "compute": [{"shade": {"hours": 1.5}, "label": "a"}, {"shade": {"hours": 3.0}, "label": "b"}],
+        })
+        out = _diff(reference, comparison, key="segment", absolute=True)
+        assert type(out) is pd.DataFrame
+        assert out["segment"].tolist() == ["r1", "r2"]
+        assert _numbers(out["sunlight"]) == [3.5, 3.0]
+        assert out["compute"].tolist() == [
+            {"shade": {"hours": 2.5}, "label": "a"},
+            {"shade": {"hours": 2.0}, "label": "b"},
+        ]
+        assert out["change"].tolist() == ["changed", "changed"]
+
+    def test_two_rasters_ask_the_sandbox_for_the_size_of_their_difference(self, tmp_path):
+        reference = _raster(tmp_path / "a.tif", [[1.0, 2.0]])
+        comparison = _raster(tmp_path / "b.tif", [[3.0, 0.5]])
+        request = _diff(reference, comparison, absolute=True)
+        assert difference().is_raster_request(request)
+        assert request["absolute"] is True
+        assert json.loads(json.dumps(request, allow_nan=False)) == request
+        assert "absolute" not in _diff(reference, comparison)
+
+    def test_through_autark_each_cell_is_the_size_of_its_change_and_nodata_stays_nodata(self, tmp_path):
+        a = _raster(tmp_path / "a.tif", [[1.0, 2.0], [3.0, 4.0]])
+        b = _raster(tmp_path / "b.tif", [[11.0, -2.0], [3.0, -9999.0]])
+        envelope = difference().subtract_in_autark(_diff(a, b, absolute=True), cwd=str(tmp_path))
+        assert _as_lists(_band(envelope)) == [[10.0, 4.0], [0.0, None]]
+        # Whichever input is the reference.
+        envelope = difference().subtract_in_autark(_diff(b, a, absolute=True), cwd=str(tmp_path))
+        assert _as_lists(_band(envelope)) == [[10.0, 4.0], [0.0, None]]
+
+
 class TestLayersWithNoIdJoinedOnTheirShapes:
     """Two layers with neither ``osm_id`` nor ``building_id`` (an Autark data
     load's roads) are matched by their shapes: equal geometries are one row,
@@ -405,13 +491,24 @@ class TestTheRasterRequest:
 
         path = tmp_path / "large.tif"
         with rasterio.open(
-            path, "w", driver="GTiff", width=2049, height=2048, count=1, dtype="uint8",
+            path, "w", driver="GTiff", width=4097, height=4096, count=1, dtype="uint8",
             crs="EPSG:32616", transform=Affine(10.0, 0.0, 447000.0, 0.0, -10.0, 4637000.0), compress="DEFLATE",
         ) as target:
-            target.write(np.zeros((2048, 2049), dtype="uint8"), 1)
+            target.write(np.zeros((4096, 4097), dtype="uint8"), 1)
         large = rasterio.open(path)
-        with pytest.raises(ValueError, match=r"input_1 \(Twice as tall\) is 2049 by 2048 cells, more than an Autark map loads"):
+        with pytest.raises(ValueError) as refused:
             _diff(rasterio.open(FIXTURE), large)
+        assert str(refused.value) == (
+            "Compare Scenarios: input_1 (Twice as tall) is 4097 by 4096 cells, more than an Autark map loads "
+            "at its own size (16777216 cells, 8192 on a side). Crop it in the node that makes it, "
+            "for example with a rasterio window read, and run that node again."
+        )
+
+    def test_scouts_whole_flood_grid_2592_by_2064_comes_back_as_a_request(self, tmp_path):
+        reference = _ramp(tmp_path / "reference.tif", 1)
+        request = _diff(reference, _ramp(tmp_path / "comparison.tif", 2))
+        assert difference().is_raster_request(request)
+        assert (request["comparison"]["meta"]["width"], request["comparison"]["meta"]["height"]) == FLOOD_GRID
 
     def test_the_size_it_refuses_is_the_size_an_autark_map_refuses(self):
         text = RASTER_LOAD_TS.read_text(encoding="utf-8")
@@ -491,6 +588,30 @@ class TestRastersSubtractedThroughAutark:
         bare = _raster(tmp_path / "bare.tif", [[1.0]], crs=None)
         with pytest.raises(difference().RasterDifferenceFailed, match=r"input_1 \(Twice as tall\) has no CRS, so Autark cannot place it"):
             self._subtract(a, bare, tmp_path)
+
+    def test_scouts_whole_flood_grid_is_subtracted_and_each_cells_size_given(self, tmp_path):
+        """Two rasters of 2592 by 2064 cells, the size of SCOUT's flood grid,
+        go the whole way: their GeoTIFFs through Node, autk-db's export back,
+        and the difference's size cell by cell, nodata kept."""
+        reference = _ramp(tmp_path / "reference.tif", 1)
+        comparison = _ramp(tmp_path / "comparison.tif", 2)
+        request = _diff(reference, comparison, absolute=True)
+        envelope = difference().subtract_in_autark(request, cwd=str(tmp_path))
+        width, height = FLOOD_GRID
+        assert envelope["data"]["grid"] == {
+            "crs": "EPSG:32616", "width": width, "height": height,
+            "originX": 447000, "originY": 4637000, "resX": 10, "resY": -10,
+        }
+        # Twice the ramp less the ramp is the ramp, west of its middle below 0.
+        ramp = _ramp_values(1)
+        expected = np.abs(np.where(ramp == RAMP_NODATA, np.nan, ramp)).astype("float32")
+        cells = _band(envelope)
+        assert cells.shape == (height, width)
+        assert np.array_equal(cells, expected, equal_nan=True)
+        # The south-west corner fell by 10.897, the north-east one rose by 12.95.
+        assert float(cells[height - 1, 0]) == pytest.approx(10.897, abs=1e-4)
+        assert float(cells[0, width - 1]) == pytest.approx(12.95, abs=1e-4)
+        assert int(np.isnan(cells).sum()) == 16
 
 
 # ---------------------------------------------------------------------------

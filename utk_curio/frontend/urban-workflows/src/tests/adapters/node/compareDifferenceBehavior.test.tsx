@@ -352,3 +352,67 @@ describe("its body in Difference", () => {
     expect(mockAutk).not.toHaveBeenCalled();
   });
 });
+
+describe("each difference's size, absolute", () => {
+  const ran = { code: "success", content: "Saved to file: diff-1" };
+  const ABSOLUTE = differenceCode(INPUTS, undefined, undefined, true);
+  const inDifference = (difference?: Record<string, unknown>, code = DIFFERENCE) => ({
+    inputSlots: holding("raster"),
+    code,
+    defaultCode: code,
+    compareScenarios: { inputs: [BASE, TALL], mode: "difference", ...(difference ? { difference } : {}) },
+  });
+
+  test("Change offers the difference or its size before any run, for a table too, and keeps Absolute", () => {
+    mount({ ...inDifference(), inputSlots: holding("dataframe") });
+    const select = screen.getByRole("combobox", { name: "Change" }) as HTMLSelectElement;
+    expect(Array.from(select.options).map((option) => [option.value, option.textContent])).toEqual([
+      ["signed", "input_1 minus input_0"],
+      ["absolute", "Absolute, |input_1 minus input_0|"],
+    ]);
+    expect(select.value).toBe("signed");
+    fireEvent.change(select, { target: { value: "absolute" } });
+    expect(mockUpdateDataNode).toHaveBeenCalledWith(
+      COMPARE,
+      expect.objectContaining({
+        compareScenarios: { inputs: [BASE, TALL], mode: "difference", difference: { absolute: true } },
+      }),
+    );
+    expect(mockMarkDirty).toHaveBeenCalled();
+  });
+
+  test("a change of it rewrites the code, and a node that had run goes stale", () => {
+    const state = nodeState({ code: "success" });
+    const { view } = mount(inDifference(), state);
+    expect(mockUpdateDataNode).not.toHaveBeenCalled();
+    // Absolute picked: the node's settings say so, and its code follows.
+    const picked = graph(inDifference({ absolute: true }));
+    mockFlow = flowOf(picked);
+    view.rerender(<Harness data={picked.nodes.find((n) => n.id === COMPARE)!.data} state={state} />);
+    expect(writtenCode()).toContain("], absolute=True)\n");
+    expect(writtenCode()).toBe(ABSOLUTE);
+    expect(state.setCode).toHaveBeenCalledWith(ABSOLUTE);
+    expect(mockMarkNodeStale).toHaveBeenCalledWith(COMPARE);
+    // And back to the difference itself: the code loses it.
+    mockUpdateDataNode.mockReset();
+    const back = graph(inDifference(undefined, ABSOLUTE));
+    mockFlow = flowOf(back);
+    view.rerender(<Harness data={back.nodes.find((n) => n.id === COMPARE)!.data} state={state} />);
+    expect(writtenCode()).toBe(DIFFERENCE);
+  });
+
+  test("code already written for it is left as it is, and its map's legend says absolute change", async () => {
+    mockFrames["diff-1"] = [{
+      dataType: "raster",
+      payload: { envelope: { dataType: "raster", data: { features: [{ properties: { bands: [{ id: "band_1" }] } }] } } },
+      schema: null,
+      geometryName: null,
+    }];
+    mount(inDifference({ absolute: true }, ABSOLUTE), nodeState(ran));
+    expect(mockUpdateDataNode).not.toHaveBeenCalled();
+    await screen.findByTestId("autark-map");
+    await waitFor(() => expect(mockApply).toHaveBeenCalled());
+    expect(JSON.parse(mockApply.mock.calls.at(-1)![0]).map.layerRefs[0].legendTitle).toBe("band_1 absolute change");
+    expect((screen.getByRole("combobox", { name: "Change" }) as HTMLSelectElement).value).toBe("absolute");
+  });
+});

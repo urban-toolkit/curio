@@ -70,3 +70,34 @@ describe("the layer read from an Autark node's several", () => {
     expect(difference).toBe(differenceCode(two.inputs, "k", "roads"));
   });
 });
+
+describe("each difference's size, absolute", () => {
+  const [two] = cases.cases as CodeCase[];
+  // Read through the module, so a checkout without it fails test by test.
+  const { absoluteOfCode, compareCode, differenceCode, keyOfCode, layerOfCode } = writer;
+
+  test("the difference code writes absolute=True after the layer and before the key, and all read back", () => {
+    const code = differenceCode(two.inputs, "osm_id", "roads", true);
+    expect(code.endsWith('], layer="roads", absolute=True, key="osm_id")\n')).toBe(true);
+    expect(absoluteOfCode(code)).toBe(true);
+    expect(keyOfCode(code)).toBe("osm_id");
+    expect(layerOfCode(code)).toBe("roads");
+    expect(differenceCode(two.inputs, undefined, undefined, true).endsWith("], absolute=True)\n")).toBe(true);
+  });
+
+  test("without it the code is as before, and reads back as not absolute", () => {
+    const code = differenceCode(two.inputs, "osm_id");
+    expect(code).not.toContain("absolute");
+    expect(absoluteOfCode(code)).toBe(false);
+    expect(differenceCode(two.inputs, "osm_id", undefined, false)).toBe(code);
+  });
+
+  test("compareCode writes absolute from the node's difference settings, in Difference only", () => {
+    const difference = compareCode("difference", two.inputs, { key: "k", absolute: true });
+    expect(difference).toBe(differenceCode(two.inputs, "k", undefined, true));
+    expect(absoluteOfCode(difference)).toBe(true);
+    const chart = compareCode("chart", two.inputs, { absolute: true });
+    expect(chart).toBe(stackCode(two.inputs));
+    expect(absoluteOfCode(chart)).toBe(false);
+  });
+});

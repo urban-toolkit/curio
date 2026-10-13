@@ -83,6 +83,14 @@ class TestSubtractEnvelopes:
         assert _cells(algebra().subtract_envelopes(a, b)) == [5, 3, 1, -1, -3, -5]
         assert _cells(algebra().subtract_envelopes(b, a)) == [-5, -3, -1, 1, 3, 5]
 
+    def test_absolute_gives_each_cells_size_of_change_whichever_is_higher(self):
+        a = ("A", _envelope({"band_1": [1, 2, 3, 4, 5, None], "band_2": [0, 0, 0, 0, 0, 0]}))
+        b = ("B", _envelope({"band_1": [6, 5, 4, 4, 2, 1], "band_2": [-1, 1, -2.5, 2.5, 0, 0]}))
+        for reference, comparison in ((a, b), (b, a)):
+            result = algebra().subtract_envelopes(reference, comparison, absolute=True)
+            assert _cells(result) == [5, 3, 1, 0, 3, None]
+            assert _cells(result, "band_2") == [1, 1, 2.5, 2.5, 0, 0]
+
     def test_a_nodata_cell_on_either_side_is_nodata_in_the_result(self):
         result = algebra().subtract_envelopes(
             ("A", _envelope({"band_1": [None, 2, 3, 4, 5, 6]})),
