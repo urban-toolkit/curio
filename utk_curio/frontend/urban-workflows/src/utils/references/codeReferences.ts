@@ -546,7 +546,8 @@ export function describeEmptyInputs(slots: number[], inputs: InputScope[]): stri
 }
 
 /** Where Python or JavaScript *code* names an input by typing its name,
- * `input_1`: outside strings, comments and references. */
+ * `input_1`: outside strings, comments and references, or inside the braces
+ * of a Python f-string or a JavaScript template literal, where it is code. */
 export function inputNamesIn(code: string, language: CodeLanguage): { start: number; end: number; slot: number }[] {
   if (language === "json") return [];
   const refs = findReferences(code);
@@ -559,10 +560,116 @@ export function inputNamesIn(code: string, language: CodeLanguage): { start: num
     if (refs.some((r) => start < r.end && end > r.start)) continue;
     found.push({ start, end, inner: match[1] });
   }
-  const contexts = referenceContexts(code, found, language);
+  const inCode = readsNamesAt(code, found.map((f) => f.start), language);
   return found
-    .filter((_, index) => contexts[index].kind === "code")
+    .filter((_, index) => inCode[index])
     .map((f) => ({ start: f.start, end: f.end, slot: Number(f.inner) }));
+}
+
+type ScanFrame =
+  | { kind: "code" | "comment" | "block" | "spec" }
+  | { kind: "string"; quote: string; interpolates: boolean }
+  | { kind: "expression"; depth: number };
+
+/** The prefix of the Python string whose quote is at *quoteAt*: `f`, `rf`,
+ * `b`, ..., or "" for none. */
+function pythonStringPrefix(code: string, quoteAt: number): string {
+  let start = quoteAt;
+  while (start > 0 && quoteAt - start < 2 && /[A-Za-z]/.test(code[start - 1])) start -= 1;
+  if (start > 0 && /[\w$]/.test(code[start - 1])) return "";
+  const prefix = code.slice(start, quoteAt);
+  return /^(?:[rRbBuUfF]|[fF][rR]|[rR][fF]|[bB][rR]|[rR][bB])$/.test(prefix) ? prefix : "";
+}
+
+/**
+ * Whether each of *offsets* (ascending) in *code* is where the code reads
+ * names: outside strings and comments, or inside the `{...}` of a Python
+ * f-string (its format spec's own `{...}` included) or the `${...}` of a
+ * JavaScript template literal, at any depth. An f-string's `{{` and `}}`
+ * are text.
+ */
+function readsNamesAt(code: string, offsets: number[], language: CodeLanguage): boolean[] {
+  const result: boolean[] = [];
+  const stack: ScanFrame[] = [{ kind: "code" }];
+  let i = 0;
+  while (result.length < offsets.length) {
+    const top = stack[stack.length - 1];
+    while (result.length < offsets.length && offsets[result.length] <= i) {
+      result.push(top.kind === "code" || top.kind === "expression");
+    }
+    if (i >= code.length) break;
+    const ch = code[i];
+    if (top.kind === "code" || top.kind === "expression") {
+      if (language === "python" && ch === "#") {
+        stack.push({ kind: "comment" });
+      } else if (language === "javascript" && (code.startsWith("//", i) || code.startsWith("/*", i))) {
+        stack.push({ kind: code[i + 1] === "/" ? "comment" : "block" });
+        i += 1;
+      } else if (ch === '"' || ch === "'" || (language === "javascript" && ch === "`")) {
+        const triple = language === "python" && code.startsWith(ch.repeat(3), i);
+        const quote = triple ? ch.repeat(3) : ch;
+        const interpolates = language === "python" ? /f/i.test(pythonStringPrefix(code, i)) : ch === "`";
+        stack.push({ kind: "string", quote, interpolates });
+        i += quote.length;
+        continue;
+      } else if (top.kind === "expression") {
+        if (ch === "(" || ch === "[" || ch === "{") {
+          top.depth += 1;
+        } else if ((ch === ")" || ch === "]") && top.depth > 0) {
+          top.depth -= 1;
+        } else if (ch === "}") {
+          if (top.depth > 0) top.depth -= 1;
+          else stack.pop();
+        } else if (language === "python" && ch === ":" && top.depth === 0) {
+          stack.push({ kind: "spec" });
+        }
+      }
+      i += 1;
+      continue;
+    }
+    if (top.kind === "comment") {
+      if (ch === "\n") stack.pop();
+    } else if (top.kind === "block") {
+      if (code.startsWith("*/", i)) {
+        stack.pop();
+        i += 1;
+      }
+    } else if (top.kind === "spec") {
+      if (ch === "{") {
+        stack.push({ kind: "expression", depth: 0 });
+      } else if (ch === "}") {
+        // The end of the spec is the end of its replacement field.
+        stack.pop();
+        stack.pop();
+      }
+    } else if (top.kind === "string") {
+      if (ch === "\\") {
+        // A backslash keeps the next character in the string, but not a brace
+        // that opens a replacement field.
+        i += top.interpolates && (code[i + 1] === "{" || code[i + 1] === "}") ? 1 : 2;
+        continue;
+      }
+      if (top.interpolates && language === "python" && (code.startsWith("{{", i) || code.startsWith("}}", i))) {
+        i += 2;
+        continue;
+      }
+      if (top.interpolates && (language === "python" ? ch === "{" : code.startsWith("${", i))) {
+        stack.push({ kind: "expression", depth: 0 });
+        i += language === "python" ? 1 : 2;
+        continue;
+      }
+      if (code.startsWith(top.quote, i)) {
+        stack.pop();
+        i += top.quote.length;
+        continue;
+      }
+      // An unterminated one-line string ends with its line.
+      if (ch === "\n" && top.quote.length === 1 && top.quote !== "`") stack.pop();
+    }
+    i += 1;
+  }
+  while (result.length < offsets.length) result.push(false);
+  return result;
 }
 
 /**
