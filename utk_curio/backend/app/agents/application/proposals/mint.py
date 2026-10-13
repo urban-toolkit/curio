@@ -392,7 +392,11 @@ def _mint_package_draft_apply(
     try:
         request = build_models.parse_build_request(params)
     except (build_models.BuildRequestError, ValueError) as exc:
-        return "refused", f"invalid build request: {exc}", None
+        # A parameter refusal (dev/105 D2): the request was rejected before any
+        # store or build work, so the correction does not spend a tool round.
+        # A weak model fixes one field per attempt (JSON, engine, publisher,
+        # a node's x/y); counted, those used up the run before a valid draft.
+        return agents_tool_rounds._refuse_params(f"invalid build request: {exc}")
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
         return "refused", "no saved project spec is available", None

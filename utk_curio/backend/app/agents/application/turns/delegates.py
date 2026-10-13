@@ -887,58 +887,8 @@ def _extract_draft_params_verbose(child_text: str) -> tuple[dict | None, str]:
     dev/54.
     """
 
-    if not isinstance(child_text, str) or not child_text.strip():
-        return None, "the delegate replied with no text at all"
-    candidates: list[str] = []
-    stripped = child_text.strip()
-    if stripped.startswith("{"):
-        candidates.append(stripped)
-    for match in _re2.finditer(
-            r"```(?:json|curio\.v1)?\s*\n(.*?)```", child_text, _re2.DOTALL):
-        candidates.append(match.group(1).strip())
-    if not candidates:
-        return None, (
-            "no JSON build request found in the reply: it must be ONE JSON "
-            "object, either the whole reply or a single ```json fenced block. "
-            "Prose describing the package is not a build request"
-        )
-    decode_errors: list[str] = []
-    shape_errors: list[str] = []
-    for candidate in candidates:
-        try:
-            payload = _json.loads(candidate)
-        except (ValueError, TypeError) as exc:
-            decode_errors.append(str(exc))
-            continue
-        if not isinstance(payload, dict):
-            shape_errors.append(f"the JSON is a {type(payload).__name__}, not an object")
-            continue
-        tool_req = payload.get("toolRequest")
-        if (isinstance(tool_req, dict)
-                and tool_req.get("tool") == "package.draft.apply"
-                and isinstance(tool_req.get("params"), dict)):
-            payload = tool_req["params"]  # dev/90 A7: unwrap, never execute
-        wrapped = payload.get("packageDraft")
-        inner = wrapped if isinstance(wrapped, dict) else payload
-        if (isinstance(inner, dict) and inner.get("mode") in ("create", "extend")
-                and isinstance(inner.get("manifest"), dict)):
-            return inner, ""
-        keys = ", ".join(sorted(k for k in inner if isinstance(k, str))[:12]) or "none"
-        shape_errors.append(
-            "the JSON parsed but is not a build request — it must carry "
-            f"\"mode\" ('create' or 'extend') and a \"manifest\" object (top-level "
-            f"keys were: {keys})"
-        )
-    if decode_errors and not shape_errors:
-        # The overwhelmingly common weak-model failure: a long body containing
-        # an embedded source file, cut off mid-string. Say so explicitly —
-        # "invalid JSON" alone does not tell the model what to do differently.
-        return None, (
-            f"the JSON did not parse ({decode_errors[0]}). If the reply was cut "
-            "off mid-object, re-emit the COMPLETE build request and keep the "
-            "file bodies short enough to finish"
-        )
-    return None, (shape_errors or decode_errors)[0]
+    _, params, why_not = content.extract_package_draft_attempt(child_text)
+    return params, why_not
 
 
 def _notes_from_delegate_inputs(inputs: dict) -> list[dict] | None:

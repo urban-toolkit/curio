@@ -235,7 +235,7 @@ def _handle_tool_reply(
         # scan every fence, wherever the model put it.
         stripped, raw = content.extract_tool_request_attempt(reply)
         if raw is None:
-            return "none", parts, None, None
+            return _handle_draft_reply(granted, reply, parts, rounds_used)
         if isinstance(raw, str):
             # Broken JSON: claim it only when it names a granted tool, so a
             # malformed block about something else stays the model's text.
@@ -262,6 +262,48 @@ def _handle_tool_reply(
     if visible_override is None:
         visible_override, _ = content.split_tail(reply)
     return "cap", list(parts) + [_tool_cap_card(errors)], visible_override, None
+
+
+def _handle_draft_reply(
+    granted: list, reply: str, parts: list, rounds_used: int,
+) -> tuple[str, list, str | None, dict | None]:
+    """A Package Builder reply that IS the build request, without its wrapper.
+
+    Asked directly, a model following the Package Builder's output contract
+    often replies with the bare request (``{"mode", "manifest", ...}`` in a
+    ```json block, the shape a delegated Package Builder is asked for) instead
+    of a ``package.draft.apply`` toolRequest. The delegated route has always
+    read that shape; a direct chat left it as inert text, so the same agent
+    succeeded when the Researcher called it and never produced a review card
+    when the user did. Same parser as the delegated route
+    (``content.extract_package_draft_attempt``), and only for a run granted
+    ``package.draft.apply``: the recovered request then takes the ordinary
+    path (grant check, mint, round accounting) like any other.
+    """
+    if "package.draft.apply" not in granted:
+        return "none", parts, None, None
+    stripped, draft, why_not = content.extract_package_draft_attempt(reply)
+    if draft is not None:
+        request, request_errors = content.parse_tool_request_verbose(
+            {"tool": "package.draft.apply", "params": draft})
+        if request is not None:
+            return "request", parts, stripped, request
+        errors = request_errors
+    elif '"manifest"' in reply and '"mode"' in reply and "```" in reply:
+        # A draft-shaped block that does not parse: say why instead of
+        # leaving a whole package as chat text.
+        errors = [why_not]
+    else:
+        return "none", parts, None, None
+    errors = errors + [_TOOL_FENCE_GUIDANCE]
+    if rounds_used < MAX_TOOL_ROUNDS:
+        return "correct", errors, None, None
+    # As for a broken toolRequest at the cap (#245): the prose stays, the
+    # package source does not render as chat; the card says why.
+    visible = re.sub(r"```[A-Za-z0-9.\-]*\s*\n.*?```",
+                      lambda m: "" if '"manifest"' in m.group(0) else m.group(0),
+                      reply, flags=re.DOTALL).strip()
+    return "cap", list(parts) + [_tool_cap_card(errors)], visible, None
 
 
 # How many tool executions one run may make (memo dev/41): total provider
