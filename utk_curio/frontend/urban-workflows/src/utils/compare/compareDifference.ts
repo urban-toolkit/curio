@@ -35,9 +35,13 @@ export function differenceTableName(value: DifferenceValue | undefined): string 
   return /^[A-Za-z_]/.test(name) ? name : `_${name}`;
 }
 
-/** The map's legend title (a layerRef's `legendTitle`): `<band or column> change`, or `change`. */
-export function differenceLegendTitle(value: DifferenceValue): string {
-  return value.value === CHANGE_FIELD ? CHANGE_FIELD : `${value.value} change`;
+/**
+ * The map's legend title (a layerRef's `legendTitle`): `<band or column> change`,
+ * `<band or column> absolute change` when the difference is its size, or `change`.
+ */
+export function differenceLegendTitle(value: DifferenceValue, absolute = false): string {
+  if (value.value === CHANGE_FIELD) return CHANGE_FIELD;
+  return absolute ? `${value.value} absolute change` : `${value.value} change`;
 }
 
 /**
@@ -94,12 +98,12 @@ export function resolveValue(wanted: string | undefined, values: readonly Differ
 /**
  * The Autark document that draws the difference, one raster or layer colored
  * by *value*, read as the table `differenceTableName` names, its legend titled
- * by `differenceLegendTitle`.
+ * by `differenceLegendTitle` (*absolute* when the difference is its size).
  */
-export function differenceMapDoc(value: DifferenceValue | undefined): Record<string, unknown> {
+export function differenceMapDoc(value: DifferenceValue | undefined, absolute = false): Record<string, unknown> {
   const table = differenceTableName(value);
   if (!value) return { map: { layerRefs: [{ dataRef: table }] } };
-  const legendTitle = differenceLegendTitle(value);
+  const legendTitle = differenceLegendTitle(value, absolute);
   if (value.categorical) {
     return {
       map: {

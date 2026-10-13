@@ -452,13 +452,13 @@ def _wire_values(envelope: dict, band: str):
     return np.frombuffer(base64.b64decode(wire[WIRE_BAND_KEY]), dtype="<f4")
 
 
-def subtract_envelopes(reference: tuple, comparison: tuple) -> dict:
+def subtract_envelopes(reference: tuple, comparison: tuple, absolute: bool = False) -> dict:
     """``comparison`` minus ``reference``, cell by cell and band by band, each a
     ``(name, envelope)``: the envelope of the difference, positive where the
-    comparison is higher. A cell that is nodata (NaN) in either is nodata in
-    the result. The result keeps the reference's properties and takes the
-    comparison's extent and grid. Refused, naming both, when their grids or
-    their bands differ."""
+    comparison is higher, or, with *absolute*, of its size, 0 where they agree.
+    A cell that is nodata (NaN) in either is nodata in the result. The result
+    keeps the reference's properties and takes the comparison's extent and
+    grid. Refused, naming both, when their grids or their bands differ."""
     np = _np()
     reference_name, a = reference
     comparison_name, b = comparison
@@ -480,7 +480,8 @@ def subtract_envelopes(reference: tuple, comparison: tuple) -> dict:
     for band in ids:
         base = _wire_values(a, band).astype("float64")
         other = _wire_values(b, band).astype("float64")
-        result = (other - base).astype("<f4")
+        difference = other - base
+        result = (np.abs(difference) if absolute else difference).astype("<f4")
         properties[band] = {WIRE_BAND_KEY: base64.b64encode(result.tobytes()).decode("ascii")}
     return {
         "dataType": "raster",

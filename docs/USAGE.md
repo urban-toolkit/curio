@@ -758,11 +758,14 @@ with a message naming the input.
 
 In Difference it takes two inputs: input_0 is the reference and input_1 the
 comparison, and every number it gives is the comparison's minus the reference's.
+With **Change** set to **Absolute**, every number it gives is the size of that
+difference, whichever input is higher: 0 where nothing changed. Its code then
+passes `absolute=True` to `curio_difference_scenarios`.
 
 - Two rasters are subtracted cell by cell, band by band. A cell that is nodata in
   either is nodata in the difference. Both must lie on one grid, with the same size,
   origin, cell size and CRS; otherwise the run stops with a message naming both. Each
-  is read as an Autark map reads a raster, at its own size, up to 2048 by 2048 cells.
+  is read as an Autark map reads a raster, at its own size, up to 4096 by 4096 cells.
 - Two layers, or two tables, are matched row by row on a stable id: `osm_id`, else
   `building_id`, or the column picked in **Key**. Two layers with neither id are
   matched by their shapes: rows with the same geometry are one row, and a shape that
@@ -786,8 +789,10 @@ The node has two tabs:
   (**Combine**: mean, sum, median, minimum, maximum, or a count of rows).
 - **Difference**, in its place in Difference, maps a raster's or a layer's
   difference, colored by a band or a number column, or by `change` (**Color by**).
-  The legend is titled with what it shows: `sunlight change` for the column
-  `sunlight`, or `change`. A raster's or a layer's colors run from the lowest
+  **Change** picks the difference itself (input_1 minus input_0) or its size
+  (**Absolute**). The legend is titled with what it shows: `sunlight change` for the
+  column `sunlight`, `sunlight absolute change` for its size, or `change`. A raster's
+  or a layer's colors run from the lowest
   difference, dark purple, to the highest, yellow; a raster cell that is nodata in
   either raster is clear. A table's difference is shown as a table, each
   row in the color of its change.
@@ -1021,7 +1026,7 @@ edges (see [Linking charts](#linking-charts)).
   or 0 when the GeoTIFF names no nodata. A raster with
   a `colorMapInterpolator` shows its legend, with that scheme and range;
   `"isColorMap": false` hides the legend and keeps the colours. It is drawn at
-  its own size, cell for cell, up to 2048 by 2048 cells and 8192 on a side. A
+  its own size, cell for cell, up to 4096 by 4096 cells and 8192 on a side. A
   larger one is not drawn and the node says so:
   crop it in the node that makes it, for example with a rasterio window read or
   the `bounds` of `curio_load_data` (see the [Data Catalog](DATA-CATALOG.md)).

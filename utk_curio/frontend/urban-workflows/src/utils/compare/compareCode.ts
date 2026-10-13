@@ -26,6 +26,13 @@ export const DIFFERENCE_CODE_NOTE = [
   "# they change.",
 ];
 
+/** The note when the code gives each difference's size. */
+export const ABSOLUTE_CODE_NOTE = [
+  "# Compare Scenarios writes this code from its inputs: the size of input_1",
+  "# minus input_0, each under the id and the name of its scenario. It is",
+  "# written again when they change.",
+];
+
 type CodeInput = { slot: number; label: CompareInputLabel };
 
 function entryLine(input: CodeInput): string {
@@ -48,13 +55,20 @@ export function stackCode(inputs: readonly CodeInput[], layer?: string): string 
 
 /**
  * The difference code for these inputs, in circle order, joining rows on
- * *key* and reading *layer* from an Autark node's several. The key comes last,
- * as `keyOfCode` reads it.
+ * *key*, reading *layer* from an Autark node's several, and, when *absolute*,
+ * giving each difference's size. The key comes last, as `keyOfCode` reads it.
  */
-export function differenceCode(inputs: readonly CodeInput[], key?: string, layer?: string): string {
-  const args = `${layerArgument(layer)}${key ? `, key=${widgetLiteral(key, "python")}` : ""}`;
-  if (inputs.length === 0) return [...DIFFERENCE_CODE_NOTE, `return ${DIFFERENCE_HELPER}([]${args})`, ""].join("\n");
-  return [...DIFFERENCE_CODE_NOTE, `return ${DIFFERENCE_HELPER}([`, ...inputs.map(entryLine), `]${args})`, ""].join("\n");
+export function differenceCode(
+  inputs: readonly CodeInput[],
+  key?: string,
+  layer?: string,
+  absolute?: boolean,
+): string {
+  const note = absolute ? ABSOLUTE_CODE_NOTE : DIFFERENCE_CODE_NOTE;
+  const args = `${layerArgument(layer)}${absolute ? ", absolute=True" : ""}`
+    + `${key ? `, key=${widgetLiteral(key, "python")}` : ""}`;
+  if (inputs.length === 0) return [...note, `return ${DIFFERENCE_HELPER}([]${args})`, ""].join("\n");
+  return [...note, `return ${DIFFERENCE_HELPER}([`, ...inputs.map(entryLine), `]${args})`, ""].join("\n");
 }
 
 /** The code for *mode*: the stacking code for Chart, the difference code for Difference. */
@@ -64,7 +78,9 @@ export function compareCode(
   difference?: CompareDifference,
   layer?: string,
 ): string {
-  return mode === "difference" ? differenceCode(inputs, difference?.key, layer) : stackCode(inputs, layer);
+  return mode === "difference"
+    ? differenceCode(inputs, difference?.key, layer, difference?.absolute === true)
+    : stackCode(inputs, layer);
 }
 
 /** The view *code* was written for, by the step it calls, or null for code that calls neither. */
@@ -88,6 +104,11 @@ function literalOf(match: RegExpExecArray | null): string | undefined {
 /** The key the difference code joins rows on, or undefined when it names none. */
 export function keyOfCode(code: string): string | undefined {
   return literalOf(KEY_RE.exec(code));
+}
+
+/** Whether the difference code gives each difference's size: it passes `absolute=True`. */
+export function absoluteOfCode(code: string): boolean {
+  return /\babsolute=True\b/.test(code);
 }
 
 const LAYER_RE = /\blayer=("(?:[^"\\]|\\.)*")[,)]/;
