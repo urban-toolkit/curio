@@ -14,7 +14,7 @@ Ported from SCOUT, https://github.com/urban-toolkit/scout.
 from scout_raster_conversion.node_outputs import rasterize_buildings
 
 return rasterize_buildings(
-    arg,
+    input_0,
     attribute=[!! attribute !!],
     zoom=int([!! zoom !!]),
     max_height=float([!! max_height !!]),

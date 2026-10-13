@@ -1,7 +1,7 @@
 """Turning a node's references into code (#662): ``[!! season !!]`` names a
-widget, ``[!! input 1 !!]`` an input (by circle, counted from 0),
-``[!! input 1.height !!]`` a column of that input, ``[!! input 1:roads !!]``
-(or ``[!! input 1:roads.height !!]``) a layer an input carries,
+widget, ``[!! input_1 !!]`` an input (by circle, counted from 0),
+``[!! input_1.height !!]`` a column of that input, ``[!! input_1:roads !!]``
+(or ``[!! input_1:roads.height !!]``) a layer an input carries,
 ``[!! @season !!]`` a shared tag: the widget of the Parameter node named
 ``season``, and ``[!! selection picked !!]`` one of the node's selection tags:
 the ids of the rows a view's selection picks, which the node holds at
@@ -16,11 +16,11 @@ A widget, shared or selection reference standing on its own becomes a literal
 of the language (a selection's ids are a list); inside a string literal it
 becomes the value's text, escaped for that string;
 inside a comment, the plain text. A column reference is written like a text
-value: its name. In Python and JavaScript an input reference becomes ``arg``
-when the node has one input and ``arg[i]`` when it has several, ``i`` being its
-place in circle order, and a layer reference the call that picks the layer out
-of it, ``curio_layer(arg[i], "roads", 1)`` (the sandbox's
-``util/input_layers.py``, and ``js_wrapper.mjs``); in a Vega-Lite or Autark spec
+value: its name. In Python and JavaScript an input reference becomes the name
+the code reads that circle's input by, ``input_<circle>`` (the sandbox binds one
+variable per wired circle, ``util/input_names.py``), and a layer reference the
+call that picks the layer out of it, ``curio_layer(input_1, "roads", 1)`` (the
+sandbox's ``util/input_layers.py``, and ``js_wrapper.mjs``); in a Vega-Lite or Autark spec
 an input reference is the name the input is read by, ``input_<i>``, and a layer
 reference the layer's name, written like a text value. An input of one frame
 with no layer name is that layer, whatever the reference names, in a spec as in
@@ -28,6 +28,9 @@ code: there its layer reference is ``input_<i>`` too. One frame whose value
 names its layer is found by that name.
 Numbers are written the way JavaScript's ``String()`` writes them, so a value
 prints the same in both.
+
+A chip spelled the old way, ``[!! input 1 !!]``, is refused with a message
+naming its new spelling.
 """
 
 from __future__ import annotations
@@ -39,9 +42,20 @@ from typing import Iterable
 #: A reference as written. Kept in sync with ``REFERENCE_PATTERN``.
 REFERENCE_RE = re.compile(r"\[!!\s*(.*?)\s*!!\]")
 
-#: What stands inside an input, layer or column reference. Kept in sync with
+#: What stands inside an input, layer or column reference: ``input_1``,
+#: ``input_1.height``, ``input_1:roads``, ``input_1:roads.height``, or
+#: ``input_?`` once its edge was deleted. Kept in sync with
 #: ``INPUT_REFERENCE_PATTERN`` in ``codeReferences.ts``.
-INPUT_REFERENCE_RE = re.compile(r"^input\s+(\d+|\?)(?::([^.]+))?(?:\.(.+))?$")
+INPUT_REFERENCE_RE = re.compile(r"^input_(\d+|\?)(?::([^.]+))?(?:\.(.+))?$")
+
+#: What stood inside an input reference before, ``input 1`` with a space,
+#: refused naming its new spelling. Kept in sync with
+#: ``LEGACY_INPUT_REFERENCE_PATTERN`` in ``codeReferences.ts`` and the
+#: sandbox's ``util/input_names.py``.
+LEGACY_INPUT_REFERENCE_RE = re.compile(r"^input\s+(\d+|\?)((?:[:.].*)?)$")
+
+#: An input's name and nothing else, which no widget takes.
+INPUT_NAME_ONLY_RE = re.compile(r"^input_\d+$")
 
 #: What a shared reference starts with. Kept in sync with ``SHARED_PREFIX`` in
 #: ``codeReferences.ts``.
@@ -159,7 +173,7 @@ def widget_literal(value, language: str) -> str:
 def parse_reference(inner: str) -> dict:
     """``{"kind": "widget", "name"}``, ``{"kind": "shared", "name"}``,
     ``{"kind": "selection", "name"}`` or ``{"kind": "input", "slot",
-    "layer"?, "column"?}``; ``slot`` is None for ``input ?``, the input whose
+    "layer"?, "column"?}``; ``slot`` is None for ``input_?``, the input whose
     edge was deleted."""
     m = INPUT_REFERENCE_RE.match(inner)
     if not m:
@@ -204,20 +218,35 @@ def reference_text(inner: str) -> str:
 
 
 def references_as_names(code: object) -> str:
-    """*code* with each reference written as the plain name ``arg``, so code
-    that reads its inputs, widgets or tags through references parses as
+    """*code* with each reference written as the plain name ``input_0``, so
+    code that reads its inputs, widgets or tags through references parses as
     Python. For a reader of what the code imports or defines, not of what its
     references hold: the package builder's import scan (#707)."""
-    return REFERENCE_RE.sub("arg", code if isinstance(code, str) else "")
+    return REFERENCE_RE.sub("input_0", code if isinstance(code, str) else "")
 
 
 def input_reference_inner(slot: int | None, column: str | None = None, layer: str | None = None) -> str:
     """What stands inside a reference to input *slot*, to one of its layers, or
     to a column of either; ``inputReferenceInner`` in ``codeReferences.ts``."""
     return (
-        f"input {'?' if slot is None else slot}"
+        f"input_{'?' if slot is None else slot}"
         + (f":{layer}" if layer is not None else "")
         + (f".{column}" if column is not None else "")
+    )
+
+
+def legacy_reference_message(reference: str, inner: str) -> str | None:
+    """Why *reference* is refused when it names an input the old way,
+    ``input 1`` with a space, naming its new spelling; else None. The
+    sandbox's ``util/input_names.py`` and ``legacyReferenceMessage`` in
+    ``codeReferences.ts`` say the same."""
+    m = LEGACY_INPUT_REFERENCE_RE.match(inner)
+    if not m:
+        return None
+    new = reference_text(f"input_{m.group(1)}{m.group(2)}")
+    return (
+        f"{reference} names an input the old way, which Curio no longer reads. "
+        f"Write {new}: each input circle is its own variable, input_0, input_1, and so on."
     )
 
 
@@ -230,7 +259,7 @@ def missing_layer_message(reference: str, slot, layer: str, names) -> str:
     ``js_wrapper.mjs``."""
     names = list(names)
     has = f"Its layers are {', '.join(names)}." if names else "It carries no named layers."
-    return f"{reference}: input {slot} has no layer {layer}. {has}"
+    return f"{reference}: input_{slot} has no layer {layer}. {has}"
 
 
 def _text_of(value, language: str) -> str:
@@ -372,6 +401,9 @@ def reference_problem(
 ) -> str | None:
     """Why *reference* cannot be resolved against *widgets*, *inputs*, the
     *shared* tags and the node's *selections*, standing in *context*, or None."""
+    legacy = legacy_reference_message(reference, inner)
+    if legacy:
+        return legacy
     parsed = parse_reference(inner)
     if parsed["kind"] == "selection":
         name = parsed["name"]
@@ -409,7 +441,7 @@ def reference_problem(
         found = next((i for i in inputs if i.get("slot") == slot), None)
         if found is None:
             return (
-                f"{reference}: input {slot} has no edge. Connect one to that circle, "
+                f"{reference}: input_{slot} has no edge. Connect one to that circle, "
                 "or drag one of this node's input chips here."
             )
         if "layer" in parsed:
@@ -421,7 +453,7 @@ def reference_problem(
             # columns are the frame's.
             columns = layer.get("columns") if layer else found.get("columns") if layers is None else None
             if "column" in parsed and isinstance(columns, list) and parsed["column"] not in columns:
-                return f"{reference}: layer {parsed['layer']} of input {slot} has no column {parsed['column']}."
+                return f"{reference}: layer {parsed['layer']} of input_{slot} has no column {parsed['column']}."
             if "column" not in parsed and language != "json" and context[0] != "code":
                 return f"{reference} is an input, not text. Use it outside quotes and comments."
             return None
@@ -431,7 +463,7 @@ def reference_problem(
                 if isinstance(layers, list) and len(layers) > 1:
                     names = ", ".join(str(l.get("name")) for l in layers)
                     return (
-                        f"{reference}: input {slot} carries several layers ({names}). "
+                        f"{reference}: input_{slot} carries several layers ({names}). "
                         "Drag one of its layer chips here."
                     )
                 return None
@@ -440,7 +472,7 @@ def reference_problem(
             return None
         columns = found.get("columns")
         if isinstance(columns, list) and parsed["column"] not in columns:
-            return f"{reference}: input {slot} has no column {parsed['column']}."
+            return f"{reference}: input_{slot} has no column {parsed['column']}."
         return None
     if "$" in inner:
         return (
@@ -587,6 +619,9 @@ def check_widget_def(definition: dict, others=(), parameter: bool = False) -> st
     name = definition.get("name")
     if not isinstance(name, str) or not WIDGET_NAME_RE.match(name):
         return "A name is letters, digits and underscores, and does not start with a digit."
+    # ``input_<k>`` names one of the node's inputs, in its code as in its chips.
+    if INPUT_NAME_ONLY_RE.match(name):
+        return f"{name} names one of the node's inputs. Pick another name."
     if any(isinstance(w, dict) and w.get("name") == name for w in others):
         return f"Another Parameter node is named {name}." if parameter else f"This node already has a widget named {name}."
     kind = definition.get("type")
@@ -700,7 +735,7 @@ def _resolved_text(
             # it carries, by the name the input is read by.
             layer = None if _is_one_frame_input(inputs[index]) else parsed.get("layer")
             return _write_text(layer if layer is not None else f"{INPUT_TABLE_PREFIX}{index}", context, language)
-        value = "arg" if len(inputs) == 1 else f"arg[{index}]"
+        value = f"input_{parsed['slot']}"
         if "layer" in parsed:
             return f"{LAYER_HELPER}({value}, {widget_literal(parsed['layer'], language)}, {parsed['slot']})"
         return value

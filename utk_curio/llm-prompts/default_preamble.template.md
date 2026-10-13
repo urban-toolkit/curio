@@ -36,7 +36,7 @@ To pass data forward from a node controllable through python code it is necessar
     return variable1
 ```
 
-To use incoming data in a node controllable through python code, read each input through its input chip: `{{inputs.chip:0}}` is the input on circle 0, `{{inputs.chip:1}}` the one on circle 1, and so on. A chip becomes the input's value when the node runs, so a node with two inputs can combine them like:
+To use incoming data in a node controllable through python code, read each input through its input chip: `{{inputs.chip:0}}` is the input on circle 0, `{{inputs.chip:1}}` the one on circle 1, and so on. Each input circle is its own variable, named after the circle, so the chip becomes `input_0`, `input_1`, ... when the node runs, and a node with two inputs can combine them like:
 
 ```python
     combining_previous_inputs = {{inputs.chip:0}} + {{inputs.chip:1}}
@@ -44,12 +44,12 @@ To use incoming data in a node controllable through python code, read each input
     return combining_previous_inputs
 ```
 
-Where a column name is written, a column chip such as `{{inputs.chip:0.population}}` becomes the quoted name of that column of input 0. A chip is code, never text: do not put an input chip inside a string or a comment. If the previous box outputs a tuple, its input is that tuple and can be indexed like any tuple.
+Where a column name is written, a column chip such as `{{inputs.chip:0.population}}` becomes the quoted name of that column of input_0. A chip is code, never text: do not put an input chip inside a string or a comment. If the previous box outputs a tuple, its input is that tuple and can be indexed like any tuple.
 
-But if the previous node outputs a single data like, but not limited to, a dataframe or number or text, 'arg' will contain that value not a indexable list.
+But if the previous node outputs a single data like, but not limited to, a dataframe or number or text, its input will contain that value, not an indexable list.
 
 ```python
-    return arg
+    return {{inputs.chip:0}}
 ```
 
 Every data received from a node controllable through grammar is automatically passed forward to its output connection. 

@@ -45,6 +45,7 @@ import os
 import sys
 
 from utk_curio.common.redaction import redact
+from utk_curio.sandbox.util import input_names
 from utk_curio.sandbox.util.secrets import make_curio_secret, shape_secrets
 from utk_curio.sandbox.util.user_code import compile_user_code
 
@@ -530,48 +531,10 @@ def serialize_output(value, scratch_dir, *, slot="out"):
 # Running the node
 # ---------------------------------------------------------------------------
 
-# What a node that reads `arg` with no input delivered fails with: the same
-# text as ``worker.NO_INPUT_MESSAGE``, kept here for the reason
-# ``_code_reads_arg`` below is.
-NO_INPUT_MESSAGE = (
-    "This node received no input but its code references `arg`. "
-    "An upstream node has not run yet, failed, or is not wired "
-    "to this node's input handle. Check the nodes feeding this "
-    "one: fix any that show an error, run them until each shows "
-    "'Done', then run this node again."
-)
-
-
-def _code_reads_arg(code):
-    """Whether the node's code actually *reads* the ``arg`` parameter.
-
-    Mirrors ``worker._code_reads_arg`` for the same reason
-    ``_hoisted_import_statements`` mirrors ``worker._hoist_user_imports``: the
-    child is a forked process and keeps its own copy rather than importing the
-    in-process module.
-
-    The tripwire below used to ask ``'arg' in code``, a substring test over the
-    whole source. That fires on any occurrence of those three letters - a word
-    in a comment, a URL query string, or an identifier such as ``target``,
-    ``large``, ``margin`` or ``args`` - so a deliberately input-free loader like
-    ``gpd.read_file(<url>)`` was refused for referencing an input it never
-    mentions (#273). The in-process path was fixed; this one was not, so the
-    original bug survived on exactly the deployments that run isolated.
-    """
-    import ast
-
-    try:
-        tree = ast.parse("def userCode(arg):" + chr(10) + code)
-    except SyntaxError:
-        # Unreachable in practice; fall back to the old test rather than
-        # deciding that a node we cannot parse is input-free.
-        return "arg" in code
-    return any(
-        isinstance(node, ast.Name)
-        and node.id == "arg"
-        and isinstance(node.ctx, ast.Load)
-        for node in ast.walk(tree)
-    )
+# A node's code is the body of a function whose parameters are the inputs it
+# reads, input_0, input_1, ...: ``util/input_names.py``, which the in-process
+# worker binds them through too, so the two paths agree on every name and say
+# the same thing when code reads an input none arrived on, or an old name.
 
 
 def _hoisted_import_statements(code, skip=()):
@@ -681,6 +644,12 @@ def run_node(request, namespace_factory):
                 output_dir=scratch_dir,
             )
 
+            # Code that still reads `arg` or `input`, or holds a chip spelled
+            # [!! input 0 !!], is told what to write instead, as in process.
+            legacy = input_names.legacy_input_problem(code)
+            if legacy:
+                raise RuntimeError(legacy)
+
             # Replay this session's earlier imports so an upstream node's
             # `import numpy as np` is visible here, matching the in-process
             # behaviour (#158). A statement that no longer resolves is skipped:
@@ -720,13 +689,18 @@ def run_node(request, namespace_factory):
 
             argument = rasters_for_python(argument, scratch_dir)
 
-            # Same tripwire as the in-process path, and the same AST walk: a
-            # node that never reads an input is not refused for merely
-            # containing the letters "arg" (#273).
-            if argument is None and _code_reads_arg(code):
-                raise RuntimeError(NO_INPUT_MESSAGE)
+            # Each wired circle k is the code's input_k, as in process, and
+            # code that reads an input none arrived on is told which circle,
+            # by the same AST walk (#273).
+            inputs = input_names.split_inputs(
+                argument, input_names.parse_slots(request.get("input_slots")),
+                request.get("data_type") or "",
+            )
+            missing = input_names.missing_input(code, inputs)
+            if missing:
+                raise RuntimeError(missing)
 
-            result = namespace["userCode"](argument)
+            result = namespace["userCode"](**inputs)
             output_descriptor = serialize_output(result, scratch_dir)
             ok = True
     except BaseException:  # noqa: BLE001 - mirrors execute_code's catch-all

@@ -1,5 +1,9 @@
 """A node's code as the sandbox defines it: the ``userCode`` function.
 
+The function's one line of header takes each input the code reads as a
+parameter of its name, ``input_0``, ``input_1``, ...
+(``input_names.user_code_header``).
+
 Node code reads files by paths relative to the folder it runs in, and the
 dataflows Curio ships read their example data at ``docs/examples/data/...``.
 A clone, the Docker image and CI run node code in a folder that holds
@@ -21,6 +25,7 @@ import os
 from pathlib import PurePosixPath
 
 from utk_curio import shipped
+from utk_curio.sandbox.util.input_names import user_code_header
 
 #: The folder of Curio's that node code reads by a path relative to it.
 DOCS = "docs"
@@ -60,14 +65,14 @@ class _ShippedDocs(ast.NodeTransformer):
 
 def compile_user_code(code, cwd):
     """What the sandbox executes to define ``userCode`` from *code*, a node's
-    code indented for ``def userCode(arg):``, run in the folder *cwd*.
+    code indented as a function's body, run in the folder *cwd*.
 
     That is the source itself, or, when a literal in it reads a file Curio
     ships (see the module docstring), the source compiled with that literal
     pointed at the file. The compiled code keeps the source's line numbers
     and its ``<string>`` file name, and code that does not compile is handed
     back as it is, so it fails as it always has."""
-    source = f"def userCode(arg):\n{code}"
+    source = f"{user_code_header(code)}\n{code}"
     if DOCS + "/" not in code:
         return source
     try:

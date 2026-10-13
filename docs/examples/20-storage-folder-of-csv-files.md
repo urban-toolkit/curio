@@ -32,8 +32,8 @@ earlier rows hold nothing there. This example reads the committed copies,
 ```mermaid
 flowchart LR
   R[`Data Loading`<br/>the readings] --> C[`Vega-Lite`<br/>PM2.5 over time]
-  R -->|input 0| J[`Python Computation`<br/>mean per station]
-  S[`Data Loading`<br/>the stations] -->|input 1| J
+  R -->|input_0| J[`Python Computation`<br/>mean per station]
+  S[`Data Loading`<br/>the stations] -->|input_1| J
   J --> P[`Vega-Lite`<br/>stations by mean]
 ```
 
@@ -98,7 +98,7 @@ input circle and the stations on its second, and its code reads each through an
 input chip (see [Several inputs](../USAGE.md#several-inputs)):
 
 ```python
-readings, stations = [!! input 0 !!], [!! input 1 !!]
+readings, stations = [!! input_0 !!], [!! input_1 !!]
 
 means = readings.groupby("sensor", as_index=False)["pm25"].mean()
 return stations.merge(means, on="sensor")

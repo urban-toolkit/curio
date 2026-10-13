@@ -116,8 +116,8 @@ const SPEC = {
     task: '',
     nodes: [
       { id: 'load', type: 'curio.builtin/data-loading', content: 'return gpd.read_file(p)', x: 0, y: 0 },
-      { id: 'shape', type: 'curio.builtin/data-transformation', content: 'return arg', x: 900, y: 0 },
-      { id: 'chart', type: 'curio.builtin/data-transformation', content: 'return arg', x: 1800, y: 0 },
+      { id: 'shape', type: 'curio.builtin/data-transformation', content: 'return input_0', x: 900, y: 0 },
+      { id: 'chart', type: 'curio.builtin/data-transformation', content: 'return input_0', x: 1800, y: 0 },
     ],
     edges: [
       { id: 'load->shape', source: 'load', target: 'shape' },

@@ -80,16 +80,23 @@ class TestWhetherTheInputsHadRows:
 class TestTheDiagnosis:
     def test_it_names_the_row_counts_the_columns_and_their_VALUES(self):
         rows = [
-            {"goal": "Chicago Boundaries", "argIndex": 0, "schema": BOUNDARIES},
-            {"goal": "Population Data", "argIndex": 1, "schema": POPULATION},
+            {"goal": "Chicago Boundaries", "circle": 0, "schema": BOUNDARIES},
+            {"goal": "Population Data", "circle": 1, "schema": POPULATION},
         ]
         text = rs.refusal_text(
             summary=JOINED_EMPTY, upstream_outputs=rows, output_data_type="geodataframe",
         )
         assert text.startswith("the code ran but produced an EMPTY result — 0 rows")
         assert "geodataframe" in text
-        assert "arg[0] 'Chicago Boundaries'" in text and "2 rows" in text
-        assert "arg[1] 'Population Data'" in text and "3 rows" in text
+        assert "input_0 'Chicago Boundaries'" in text and "2 rows" in text
+        assert "input_1 'Population Data'" in text and "3 rows" in text
+        # Gathered by a pool on one circle, each is an item of that circle's list.
+        gathered = rs.refusal_text(
+            summary=JOINED_EMPTY, output_data_type="geodataframe",
+            upstream_outputs=[dict(row, circle=0, argIndex=i) for i, row in enumerate(rows)],
+        )
+        assert "input_0[0] 'Chicago Boundaries'" in gathered
+        assert "input_0[1] 'Population Data'" in gathered
         # The VALUES are the point: the column names looked joinable.
         assert "area_numbe int e.g. 32" in text
         assert "tract_id str e.g. '17031010100'" in text
@@ -142,7 +149,7 @@ class TestNullColumnsAreEmptinessToo:
              "median_income": None},
         ],
     }
-    BOUNDARIES_IN = [{"goal": "Chicago Boundaries", "argIndex": 0, "schema": BOUNDARIES}]
+    BOUNDARIES_IN = [{"goal": "Chicago Boundaries", "circle": 0, "schema": BOUNDARIES}]
 
     def test_the_owners_join_is_reported_by_its_null_columns(self):
         assert rs.null_columns(self.JOINED) == ["population", "median_income"]

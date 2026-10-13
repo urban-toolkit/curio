@@ -395,11 +395,13 @@ def _upstream_outputs_for(
     the owner's join that guessed ``community_area`` three times).
 
     So the walk goes THROUGH a node that produced nothing, into its own
-    upstreams, in circle order (``in``, ``in_1``, ...), which is the order of
-    ``arg`` the child reads through its chips, and each row carries ``argIndex`` when it
-    arrived that way. ``schema_fn`` (optional) turns a recorded artifact into
-    the columns and dtypes it holds; an artifact it cannot describe leaves the
-    row without a schema rather than with a guess.
+    upstreams, in circle order (``in``, ``in_1``, ...). Each row carries the
+    ``circle`` of this node its value arrives on, which the child reads as
+    ``input_<circle>``, and ``argIndex`` when it is one of several values a
+    node with no code gathered on that circle (``input_<circle>[argIndex]``).
+    ``schema_fn`` (optional) turns a recorded artifact into the columns and
+    dtypes it holds; an artifact it cannot describe leaves the row without a
+    schema rather than with a guess.
     """
     if not wave_outputs:
         return []
@@ -410,9 +412,10 @@ def _upstream_outputs_for(
     except Exception:
         return []
 
-    def _row(nid: str, arg_index: int | None) -> dict:
+    def _row(nid: str, circle: int, arg_index: int | None) -> dict:
         record = wave_outputs[nid]
         row = {k: v for k, v in record.items() if k != "output"}
+        row["circle"] = circle
         if arg_index is not None:
             row["argIndex"] = arg_index
         if schema_fn is not None:
@@ -426,27 +429,33 @@ def _upstream_outputs_for(
                     row["schema"] = schema
         return row
 
-    def _walk(target: str, arg_index: int | None, depth: int) -> list[dict]:
+    def _walk(target: str, circle: int | None, arg_index: int | None, depth: int) -> list[dict]:
         if depth > agents_budgets._UPSTREAM_WALK_MAX_DEPTH:
             return []
         try:
             ups = graph.upstream_nodes(target)
+            circles = graph.input_slots(target)
         except Exception:
             return []
         rows: list[dict] = []
-        indexed = len(ups) > 1
         for index, up in enumerate(ups):
-            slot = index if indexed else arg_index
+            if circle is None:
+                # This node's own circles: each value is the input of its circle.
+                here, item = (circles[index] if index < len(circles) else index), None
+            else:
+                # Through a node with no code: several values gather, in order,
+                # on the one circle of this node it feeds.
+                here, item = circle, (index if len(ups) > 1 else arg_index)
             if up in wave_outputs:
-                rows.append(_row(up, slot))
+                rows.append(_row(up, here, item))
             else:
                 # A node with no recorded output of its own (a pool, or one
-                # that has not run): look through it, keeping the slot
-                # order the child will index by.
-                rows.extend(_walk(up, slot, depth + 1))
+                # that has not run): look through it, keeping the order the
+                # child will read by.
+                rows.extend(_walk(up, here, item, depth + 1))
         return rows
 
-    return _walk(node_id, None, 0)[:agents_budgets._UPSTREAM_ROWS_MAX]
+    return _walk(node_id, None, None, 0)[:agents_budgets._UPSTREAM_ROWS_MAX]
 
 
 _VANISHED_INPUT_MARKERS = (

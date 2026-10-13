@@ -440,6 +440,9 @@ class VirtualUser:
             payload_input = {"dataType": "outputs", "data": input_ref["path"]}
         else:
             payload_input = {"path": input_ref["path"], "dataType": input_ref["dataType"]}
+        # The wired circles, as the canvas sends them: each circle k is the
+        # code's input_k.
+        slots = self.workflow.input_slots(node.id) if input_ref.get("path") else []
 
         body = self._call(
             "POST", endpoint, node_id=node.id, timeout=timeout,
@@ -450,6 +453,7 @@ class VirtualUser:
                 "nodeType": node.raw_type,
                 "nodeId": node.id,
                 **({"dataflowId": self.project_id} if self.project_id else {}),
+                **({"inputSlots": slots} if slots else {}),
                 "saveOutputDataset": False,
             },
         )

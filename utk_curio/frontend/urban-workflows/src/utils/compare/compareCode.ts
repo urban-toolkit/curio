@@ -21,7 +21,7 @@ export const STACK_CODE_NOTE = [
 ];
 
 export const DIFFERENCE_CODE_NOTE = [
-  "# Compare Scenarios writes this code from its inputs: input 1 minus input 0,",
+  "# Compare Scenarios writes this code from its inputs: input_1 minus input_0,",
   "# each under the id and the name of its scenario. It is written again when",
   "# they change.",
 ];

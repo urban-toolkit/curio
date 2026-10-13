@@ -151,13 +151,13 @@ class TestRunThroughNode:
 
     def test_a_node_with_several_inputs_receives_them_in_circle_order(self, tmp_curio):
         """#662: fan-in goes straight into the node that reads it, one circle per
-        edge, and ``arg`` is assembled in circle order. ``a``'s edge kept the id
+        edge, and its inputs are handed over in circle order. ``a``'s edge kept the id
         it had on circle 2 before the canvas renumbered it onto ``in``: the
         handle, not the id, says which circle it feeds."""
         import ast
 
         spec = _spec(
-            [_node("a"), _node("b"), _node("c", content="return [!! input 1 !!]")],
+            [_node("a"), _node("b"), _node("c", content="return [!! input_1 !!]")],
             [{"id": "reactflow__edge-aout-cin_2", "source": "a", "target": "c",
               "targetHandle": "in"},
              {"id": "reactflow__edge-bout-cin_1", "source": "b", "target": "c",
@@ -173,8 +173,41 @@ class TestRunThroughNode:
             report["nodes"]["a"]["output"]["path"],
             report["nodes"]["b"]["output"]["path"],
         ], c_payload["file_path"]
-        # The chip names circle 1, which is b's: arg[1] in the sent code.
-        assert "return arg[1]" in c_payload["code"] and "[!!" not in c_payload["code"]
+        # The chip names circle 1, which is b's: input_1 in the sent code.
+        assert "return input_1" in c_payload["code"] and "[!!" not in c_payload["code"]
+        assert c_payload["input_slots"] == [0, 1]
+
+    def test_each_node_names_the_circles_its_inputs_are_on(self, tmp_curio):
+        """A node reads the edge on circle k as ``input_k``: the payload names
+        the wired circles, so a lone edge on ``in_3`` is ``input_3``."""
+        spec = _spec(
+            [_node("a"), _node("b"), _node("c", content="return input_0, input_3"),
+             _node("d", content="return input_3")],
+            [{"id": "e1", "source": "a", "target": "c", "targetHandle": "in"},
+             {"id": "e2", "source": "b", "target": "c", "targetHandle": "in_3"},
+             {"id": "e3", "source": "c", "target": "d", "targetHandle": "in_3"}],
+        )
+        exec_fn = _RecordingExec()
+        report = runner.run_through_node(KEY, PID, spec, "d", exec_fn=exec_fn)
+        assert report["ok"] is True, report
+        payloads = dict(zip(report["order"], (call[1] for call in exec_fn.calls)))
+        assert payloads["c"]["input_slots"] == [0, 3]
+        assert payloads["d"]["input_slots"] == [3]
+        assert "input_slots" not in payloads["a"]
+
+    def test_inputs_gathered_by_a_pool_arrive_on_the_one_circle_it_feeds(self, tmp_curio):
+        spec = _spec(
+            [_node("a"), _node("b"), _node("pool", "curio.builtin/data-pool", ""), _node("c")],
+            [{"id": "e1", "source": "a", "target": "pool", "targetHandle": "in"},
+             {"id": "e2", "source": "b", "target": "pool", "targetHandle": "in_1"},
+             {"id": "e3", "source": "pool", "target": "c", "targetHandle": "in"}],
+        )
+        exec_fn = _RecordingExec()
+        report = runner.run_through_node(KEY, PID, spec, "c", exec_fn=exec_fn)
+        assert report["ok"] is True, report
+        c_payload = exec_fn.calls[-1][1]
+        assert c_payload["dataType"] == "outputs"
+        assert c_payload["input_slots"] == [0]
 
     def test_a_pass_through_node_with_several_inputs_forwards_them_in_circle_order(self, tmp_curio):
         """A Data Pool (or a Vega-Lite chart) takes any number of inputs and runs
@@ -202,7 +235,7 @@ class TestRunThroughNode:
     def test_the_multi_input_example_runs_both_loaders_into_one_node(self, tmp_curio):
         """The shipped example that replaced Merge.json: two loaders feed the
         computation node directly on circles ``in`` and ``in_1``, and the node
-        below it reads ``arg`` as the frame that node returned."""
+        below it reads ``input_0`` as the tuple that node returned."""
         import ast
         import json
         from pathlib import Path
@@ -504,7 +537,7 @@ class TestDev118EmptyUpstream:
     def test_the_target_may_be_empty_only_through_its_candidate(self, tmp_curio):
         rec = _RecordingExec()
         spec = _spec([_node("a"), _node("t", content="")], [{"id": "e1", "source": "a", "target": "t"}])
-        report = runner.run_through_node(KEY, PID, spec, "t", exec_fn=rec, candidate_content="return arg", strict_upstream=True)
+        report = runner.run_through_node(KEY, PID, spec, "t", exec_fn=rec, candidate_content="return input_0", strict_upstream=True)
         assert report["ok"] is True and "upstreamEmpty" not in {k for k, v in report.items() if v}
         # A reused empty upstream never reaches the check either.
         rec2 = _RecordingExec()
@@ -696,8 +729,8 @@ class TestArtifactPreviewIsBounded:
 class TestInputSlotOrderIsTheHandle:
     """dev/128, from a field failure: dataflow `00708324` reported
     *"ed1a326f · solved · pass after 1 round"* and then failed on Play with
-    ``KeyError: 'tract_id'``, because validation assembled ``arg`` as
-    ``[population, boundaries]`` while the canvas assembles it as
+    ``KeyError: 'tract_id'``, because validation handed the node its inputs as
+    ``[population, boundaries]`` while the canvas hands them over as
     ``[boundaries, population]``.
 
     The cause was reading the slot from the edge's ID: the canvas encodes it
@@ -717,7 +750,7 @@ class TestInputSlotOrderIsTheHandle:
             "nodes": [
                 {"id": "b", "type": "curio.builtin/data-loading", "content": "return 1"},
                 {"id": "p", "type": "curio.builtin/data-loading", "content": "return 2"},
-                {"id": "t", "type": "curio.builtin/data-transformation", "content": "return arg"},
+                {"id": "t", "type": "curio.builtin/data-transformation", "content": "return input_0"},
             ],
             "edges": [
                 {"id": "b396ed2d-3679-4b38-bbf7-5829d1db082c", "source": "b",
@@ -821,7 +854,7 @@ class TestInputSlotOrderIsTheHandle:
 
         monkeypatch.setattr(runner, "_http_exec", _exec)
         report = runner.run_through_node(
-            "1", "p-1", self.AGENT_SPEC, "t", candidate_content="return arg",
+            "1", "p-1", self.AGENT_SPEC, "t", candidate_content="return input_0",
         )
         assert report["ok"], report
         target = seen[-1]

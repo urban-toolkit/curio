@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/DataPool_AutkMap.json",
-    "sha256": "87286f834f3a9c82b3dd65d3ba493b14317166faac2048c665f852659e44a3eb",
+    "sha256": "a1c8b517ace06ef1a2610c63423d425112b41bd512c59793d25b47d8fff3618c",
     "walkthrough": null
   },
   "prompt": "Build three synthetic city-block squares around the Chicago Loop as polygons with a numeric value, route them through a fan-out so more than one view could read them, and render them on an Autark map coloured by that value.",

@@ -79,12 +79,12 @@ LOAD_CODE = (
     ")\n"
 )
 PARTS = {1: 2, 2: 1}
-COUNT_CODE = "return len(arg)\n"
+COUNT_CODE = "return len(input_0)\n"
 EMPTY_LIST = (
     "# Edit Features writes this code from its edit list: each edit, in the\n"
     "# order it was made, on the features whose key is one of its ids. It is\n"
     "# written again when the list changes.\n"
-    'return curio_edit_features(arg, [], key="building_id")\n'
+    'return curio_edit_features(input_0, [], key="building_id")\n'
 )
 
 #: Where a double-click is tried on the map, as fractions of its drawing.

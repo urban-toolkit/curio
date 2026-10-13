@@ -214,37 +214,37 @@ export function framesFromPayload(value: any, opts: RasterOptions = {}): {
   if (value == null || value === "") return { frames, refs, skipped };
 
   // Peel generic envelopes (`dict`, `list`, ...) until a shape this reads.
-  let arg: any = value;
+  let payload: any = value;
   while (
-    isObject(arg)
-    && typeof arg.dataType === "string"
-    && arg.dataType !== "outputs"
-    && !(opts.rasters && arg.dataType === "raster")
-    && !FRAME_TYPES.has(arg.dataType)
-    && "data" in arg
+    isObject(payload)
+    && typeof payload.dataType === "string"
+    && payload.dataType !== "outputs"
+    && !(opts.rasters && payload.dataType === "raster")
+    && !FRAME_TYPES.has(payload.dataType)
+    && "data" in payload
   ) {
-    arg = arg.data;
+    payload = payload.data;
   }
-  if (arg == null) return { frames, refs, skipped };
+  if (payload == null) return { frames, refs, skipped };
   // A dict of frames is read as a tuple of them is, each named after its key.
-  arg = keyedFramesAsOutputs(arg) ?? arg;
+  payload = keyedFramesAsOutputs(payload) ?? payload;
 
-  if (isObject(arg) && FRAME_TYPES.has(arg.dataType)) {
-    if (arg.data != null) {
-      frames.push(frameOf(arg.dataType, arg.data, arg, null, { fromBundle: false, index: 0 }));
+  if (isObject(payload) && FRAME_TYPES.has(payload.dataType)) {
+    if (payload.data != null) {
+      frames.push(frameOf(payload.dataType, payload.data, payload, null, { fromBundle: false, index: 0 }));
     }
     return { frames, refs, skipped };
   }
 
-  if (isObject(arg) && arg.dataType === "raster") {
-    const frame = rasterFrame(arg, opts, { fromBundle: false, index: 0 });
+  if (isObject(payload) && payload.dataType === "raster") {
+    const frame = rasterFrame(payload, opts, { fromBundle: false, index: 0 });
     if (frame) frames.push(frame);
     else skipped.push("raster at position 0");
     return { frames, refs, skipped };
   }
 
-  if (isObject(arg) && arg.dataType === "outputs" && Array.isArray(arg.data)) {
-    arg.data.forEach((item: any, index: number) => {
+  if (isObject(payload) && payload.dataType === "outputs" && Array.isArray(payload.data)) {
+    payload.data.forEach((item: any, index: number) => {
       const raster = rasterFrame(item, opts, { fromBundle: true, index, circle: index, part: index });
       if (isObject(item) && typeof item.path === "string" && item.path) {
         refs.push({ index, ref: item });
@@ -260,8 +260,8 @@ export function framesFromPayload(value: any, opts: RasterOptions = {}): {
   }
 
   // A layer array from an upstream Autark node: `{name, type, geojson}` records.
-  if (Array.isArray(arg)) {
-    arg.forEach((item: any, index: number) => {
+  if (Array.isArray(payload)) {
+    payload.forEach((item: any, index: number) => {
       const fc = asFeatureCollection(item);
       if (!fc) {
         skipped.push(`an item at position ${index}`);
@@ -280,7 +280,7 @@ export function framesFromPayload(value: any, opts: RasterOptions = {}): {
   }
 
   // A bare FeatureCollection, or `{geojson: FeatureCollection}`.
-  const fc = asFeatureCollection(arg);
+  const fc = asFeatureCollection(payload);
   if (fc) frames.push(frameOf("geodataframe", fc, null, null, { fromBundle: false, index: 0 }));
   return { frames, refs, skipped };
 }

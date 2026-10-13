@@ -90,9 +90,9 @@ export interface Draft {
 // `utk_curio/backend/app/packages/builder/factory.py` — the backend matches this exact
 // string to detect "user did not edit this template, keep on-disk source."
 export const STARTER_CODE =
-  "# `arg` holds the upstream input (a single value, or a list when\n" +
-  "# multiple input ports are wired). Return the value to send downstream.\n" +
-  "return arg\n";
+  "# `input_0` holds what the edge on input circle 0 delivers (input_1, input_2,\n" +
+  "# ... for more circles). Return the value to send downstream.\n" +
+  "return input_0\n";
 
 export function factoryUiMakeId(): string {
   return Math.random().toString(36).slice(2, 10);

@@ -70,7 +70,7 @@ def _spec() -> dict:
         {"id": READS_ID, "type": PYTHON, "x": 700, "y": 80,
          "content": "value = [!! @factor !!]\nprint(f'<<A {value * 10}>>')\nreturn value * 10\n"},
         {"id": BELOW_ID, "type": PYTHON, "x": 1320, "y": 80,
-         "content": "print(f'<<B {arg + 1}>>')\nreturn arg + 1\n"},
+         "content": "print(f'<<B {input_0 + 1}>>')\nreturn input_0 + 1\n"},
         {"id": APART_ID, "type": PYTHON, "x": 700, "y": 520,
          "content": "print('<<C ran>>')\nreturn 1\n"},
     ]

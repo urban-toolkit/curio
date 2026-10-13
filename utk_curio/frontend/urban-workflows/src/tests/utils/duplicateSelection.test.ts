@@ -21,7 +21,7 @@ const spec: { nodes: SpecNode[]; edges: SpecEdge[] } = {
       type: "curio.builtin/computation-analysis",
       x: 600,
       y: 0,
-      content: "return arg * [!! factor !!]",
+      content: "return input_0 * [!! factor !!]",
       metadata: { widgets: [{ name: "factor", type: "number", default: 1, value: 2 }], copiedFrom: ["root"] },
     },
     { id: "map", type: "curio.builtin/autk-grammar", x: 900, y: 0, content: "{}", dashboardPinned: true, dashboardX: 1, dashboardY: 2 },
@@ -53,7 +53,7 @@ describe("duplicateSelection", () => {
       ["copy-2", 900, 400],
     ]);
     // Everything else is the original's: code, type, widgets and their values.
-    expect(copy.nodes[0].content).toBe("return arg * [!! factor !!]");
+    expect(copy.nodes[0].content).toBe("return input_0 * [!! factor !!]");
     expect(copy.nodes[0].type).toBe("curio.builtin/computation-analysis");
     expect(copy.nodes[0].metadata!.widgets).toEqual(spec.nodes[2].metadata!.widgets);
     expect(copy.nodes[0].metadata!.widgets).not.toBe(spec.nodes[2].metadata!.widgets);

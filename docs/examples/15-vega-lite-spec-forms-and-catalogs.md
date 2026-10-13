@@ -66,7 +66,7 @@ GeoParquet, read with `gpd.read_parquet`. The spec is no different from the
 geojson one.
 
 The join is a node, not code. `Spatial Join` takes the green-roof points on
-input 0, its upper, blue circle, and the ZIP polygons on input 1, its lower,
+input_0, its upper, blue circle, and the ZIP polygons on input_1, its lower,
 green circle, and pairs each point with the polygon it intersects. Its output
 is set to counts, so the ZIP polygons come out, each with a `point_count`: how
 many roofs it holds. A ZIP drawn as two polygons gets a count for each. The

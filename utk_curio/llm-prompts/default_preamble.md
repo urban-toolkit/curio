@@ -205,15 +205,15 @@ A node's "type" is the id of the template it was made from. A run that can place
 - Data Pool: The Data Pool is responsible for storing data that can be interacted by all connected visualizations. Interactions can also be propagated to other Data Pools.
 - Python Computation: The Computation Analysis box is the generic box responsible for performing any kinds of computations.
 - Data Summary: The Data Summary node computes descriptive statistics and schema information (shape, dtypes, missing values, describe) for a DataFrame.
-- JS Computation: Run JavaScript via Node.js. Input from the previous node is available as `arg`. Use `return` to pass output downstream.
+- JS Computation: Run JavaScript via Node.js. Each input circle is its own variable, named after the circle: input_0, input_1, and so on. Use `return` to pass output downstream.
 - Vega-Lite: The Vega box is responsible for visualizing 2D plots.
 - Simple View: Displays incoming data: a table for DataFrames and GeoDataFrames, or a card per row when the frame carries an image column, showing the image beside that row's values. Other values pass through.
 - Autark: Grammar-driven urban analytics. Write an UrbanSpec (JSON) covering data loading (OSM, CSV, GeoJSON), GPU compute, map rendering of layers and rasters, and/or plot rendering in one declarative spec.
 - Spatial Join: Pairs the rows of two inputs whose shapes meet, such as points and the polygons they fall in. Connect them to the blue circle at the top and the green circle at the bottom, then pick how the shapes meet: intersects, within, contains, touches, overlaps, crosses or nearest. The output is one row per pair, with the bottom input's columns added, or the bottom input's rows with their count of pairs.
 - Parameter: One value any node can use. Give it a name, a type and a default. Its tag then shows under Shared in every node's Widgets tab and above every code editor; drag it into a node's code to use the value there. Changing the value makes the nodes that use it run again, and renaming it updates their code. It has no edges, and it lists the nodes that use it.
-- Compare Scenarios: Compares scenarios. Connect each scenario's outcome to its own input circle: each input is labelled by the scenario its node belongs to, and the node stacks the inputs into one table, with the scenario's id and name on every row. That table is its output. Its Chart tab draws the table in the scenarios' colors, as bars, grouped bars, lines, points, a pie, lollipops or a table. In Difference it takes two inputs and subtracts input 0 from input 1: two rasters cell by cell, two layers or two tables row by row, matched on a stable id (osm_id or building_id, or a key you pick), with rows only one side has marked removed or added. The difference is its output, drawn on a map. It shows Difference for two rasters or two layers and a Chart otherwise, and you can switch. Its What differs tab lists what changed between the scenarios: widget values and code lines. It warns when the scenarios read different context.
-- Raster Calculator: One operation over rasters on one grid, cell by cell. Connect the rasters to its input circles, in order; its code names the operation: add, subtract, multiply or divide input 0 and input 1, or choose, which takes input 1 where input 0's class is one of the codes it names and input 2 elsewhere. A cell that is nodata in an input the operation reads there is nodata in the result, and rasters on different grids are refused. The output is the result, a raster an Autark map draws.
-- Raster Statistics: The mean, median, minimum, maximum and count of a raster's cells, nodata left out, as a table of one row. Its code can keep only the cells that meet a condition, such as a value under 1.08, on the raster itself or on a second raster on input 1, on the same grid, used as a mask: a test of the mask's values or a set of them. Compare Scenarios charts the table.
+- Compare Scenarios: Compares scenarios. Connect each scenario's outcome to its own input circle: each input is labelled by the scenario its node belongs to, and the node stacks the inputs into one table, with the scenario's id and name on every row. That table is its output. Its Chart tab draws the table in the scenarios' colors, as bars, grouped bars, lines, points, a pie, lollipops or a table. In Difference it takes two inputs and subtracts input_0 from input_1: two rasters cell by cell, two layers or two tables row by row, matched on a stable id (osm_id or building_id, or a key you pick), with rows only one side has marked removed or added. The difference is its output, drawn on a map. It shows Difference for two rasters or two layers and a Chart otherwise, and you can switch. Its What differs tab lists what changed between the scenarios: widget values and code lines. It warns when the scenarios read different context.
+- Raster Calculator: One operation over rasters on one grid, cell by cell. Connect the rasters to its input circles, in order; its code names the operation: add, subtract, multiply or divide input_0 and input_1, or choose, which takes input_1 where input_0's class is one of the codes it names and input_2 elsewhere. A cell that is nodata in an input the operation reads there is nodata in the result, and rasters on different grids are refused. The output is the result, a raster an Autark map draws.
+- Raster Statistics: The mean, median, minimum, maximum and count of a raster's cells, nodata left out, as a table of one row. Its code can keep only the cells that meet a condition, such as a value under 1.08, on the raster itself or on a second raster on input_1, on the same grid, used as a mask: a test of the mask's values or a set of them. Compare Scenarios charts the table.
 - Edit Features: Removes features, or changes them, by hand. Connect a layer, or the layers an Autark node hands on, and pick the layer to edit and the column that identifies a feature: osm_id or building_id, or another column whose values differ in every feature. A layer with no such column is refused. Double-click features on its map to pick them, then Remove them, Set a column to a value on them, or Restore them as the input has them. Its edits are a list, applied in order by that column, never by a feature's place, and its output is the edited layer, with the other layers as they came. A building's parts share its building_id, so an edit by building_id applies to the whole building. Compare Scenarios lists the edits in its What differs tab.
 
 A node that accepts more than one connection takes each one on its own input circle, numbered from 0 in the order they were connected. An edge names the circle it connects to in "targetHandle": "in", "in_1", "in_2", ..., circle 0 first.
@@ -253,20 +253,20 @@ To pass data forward from a node controllable through python code it is necessar
     return variable1
 ```
 
-To use incoming data in a node controllable through python code, read each input through its input chip: `[!! input 0 !!]` is the input on circle 0, `[!! input 1 !!]` the one on circle 1, and so on. A chip becomes the input's value when the node runs, so a node with two inputs can combine them like:
+To use incoming data in a node controllable through python code, read each input through its input chip: `[!! input_0 !!]` is the input on circle 0, `[!! input_1 !!]` the one on circle 1, and so on. Each input circle is its own variable, named after the circle, so the chip becomes `input_0`, `input_1`, ... when the node runs, and a node with two inputs can combine them like:
 
 ```python
-    combining_previous_inputs = [!! input 0 !!] + [!! input 1 !!]
+    combining_previous_inputs = [!! input_0 !!] + [!! input_1 !!]
 
     return combining_previous_inputs
 ```
 
-Where a column name is written, a column chip such as `[!! input 0.population !!]` becomes the quoted name of that column of input 0. A chip is code, never text: do not put an input chip inside a string or a comment. If the previous box outputs a tuple, its input is that tuple and can be indexed like any tuple.
+Where a column name is written, a column chip such as `[!! input_0.population !!]` becomes the quoted name of that column of input_0. A chip is code, never text: do not put an input chip inside a string or a comment. If the previous box outputs a tuple, its input is that tuple and can be indexed like any tuple.
 
-But if the previous node outputs a single data like, but not limited to, a dataframe or number or text, 'arg' will contain that value not a indexable list.
+But if the previous node outputs a single data like, but not limited to, a dataframe or number or text, its input will contain that value, not an indexable list.
 
 ```python
-    return arg
+    return [!! input_0 !!]
 ```
 
 Every data received from a node controllable through grammar is automatically passed forward to its output connection. 
@@ -373,7 +373,7 @@ Output supported:
 
 Make sure to pay attention to the compatibility between output and input of the nodes.
 
-Number of connections each node accepts into its inputs. A node that accepts more than one takes each connection on its own input circle, and its code reads each through its input chip (`[!! input 0 !!]`, `[!! input 1 !!]`, ...). To give a node that accepts 1 more than one data unit, output a tuple with multiple values from the previous node:
+Number of connections each node accepts into its inputs. A node that accepts more than one takes each connection on its own input circle, and its code reads each through its input chip (`[!! input_0 !!]`, `[!! input_1 !!]`, ...). To give a node that accepts 1 more than one data unit, output a tuple with multiple values from the previous node:
 
 - Data Export: 1
 - Data Transformation: any number

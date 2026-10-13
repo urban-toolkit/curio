@@ -198,7 +198,7 @@ describe('playNodesUpTo — stale ancestors', () => {
   test('skips an ancestor whose code still matches what it ran', async () => {
     renderFlow();
     await flush();
-    await seed([ranNode('A', 'return 1'), ranNode('B', 'return arg')], [['A', 'B']]);
+    await seed([ranNode('A', 'return 1'), ranNode('B', 'return input_0')], [['A', 'B']]);
 
     await act(async () => {
       api.playNodesUpTo('B');
@@ -214,7 +214,7 @@ describe('playNodesUpTo — stale ancestors', () => {
     renderFlow();
     await flush();
     await seed(
-      [ranNode('A', 'return 2', 'return 1'), ranNode('B', 'return arg')],
+      [ranNode('A', 'return 2', 'return 1'), ranNode('B', 'return input_0')],
       [['A', 'B']],
     );
 
@@ -234,8 +234,8 @@ describe('playNodesUpTo — stale ancestors', () => {
     await seed(
       [
         ranNode('A', 'return 2', 'return 1'), // edited
-        ranNode('B', 'return arg'), // clean, but fed by A
-        ranNode('C', 'return arg'), // the target
+        ranNode('B', 'return input_0'), // clean, but fed by A
+        ranNode('C', 'return input_0'), // the target
       ],
       [
         ['A', 'B'],
@@ -264,7 +264,7 @@ describe('playNodesUpTo — stale ancestors', () => {
   test('a second play while one is running is ignored', async () => {
     renderFlow();
     await flush();
-    await seed([ranNode('A', 'return 2', 'return 1'), ranNode('B', 'return arg')], [['A', 'B']]);
+    await seed([ranNode('A', 'return 2', 'return 1'), ranNode('B', 'return input_0')], [['A', 'B']]);
 
     await act(async () => {
       api.playNodesUpTo('B');
@@ -316,7 +316,7 @@ describe('playNodesUpTo: Data Pool, alone and fed through several circles (#479)
         ranNode('A', 'return 1'),
         ...(fanIn ? [ranNode('A2', 'return 2')] : []),
         emitterNode('M', type, circles),
-        ranNode('B', 'return arg'),
+        ranNode('B', 'return input_0'),
       ],
       [
         ['A', 'M', 'in'],

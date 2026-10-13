@@ -5,7 +5,7 @@ Chicago Loop's roads from the committed OpenStreetMap extract, a start-time
 Parameter node, and two scenarios, "Avoid rain" and "Avoid wind" (its copy),
 each holding the ``scout.routing@1`` package's Weather Routing node with its
 weights, which reads the Autark node's roads layer through its layer chip
-``[!! input 0:table_osm_roads !!]``, then a node that takes its routes and one
+``[!! input_0:table_osm_roads !!]``, then a node that takes its routes and one
 that takes their metrics. An
 Autark map draws both scenarios' routes over the roads; four Compare Scenarios
 nodes chart each route's duration, distance, rain exposure and wind exposure by

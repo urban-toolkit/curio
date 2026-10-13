@@ -112,7 +112,7 @@ function spec() {
       task: '',
       nodes: [
         node(PRODUCER, 0, "utci_list = [[31.5, float('nan')], [33.0, 34.5]]\nutci_shape = [2, 2]\nreturn (utci_list, utci_shape)\n"),
-        node(CONSUMER, 645, "utci_list = [!! input 0 !!][0]\nutci_shape = [!! input 0 !!][1]\nreturn f'{utci_shape[0]} by {utci_shape[1]}'\n"),
+        node(CONSUMER, 645, "utci_list = [!! input_0 !!][0]\nutci_shape = [!! input_0 !!][1]\nreturn f'{utci_shape[0]} by {utci_shape[1]}'\n"),
       ],
       edges: [{
         id: `${PRODUCER}->${CONSUMER}`, source: PRODUCER, target: CONSUMER,

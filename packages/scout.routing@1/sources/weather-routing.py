@@ -26,7 +26,7 @@ weather = {
 }
 
 return calculate_weather_route(
-    [!! input 0:table_osm_roads !!],
+    [!! input_0:table_osm_roads !!],
     weather,
     # SCOUT's weather graph network, the Model Catalog's weather GNN.
     curio_load_model("model.scout.weather-gnn"),

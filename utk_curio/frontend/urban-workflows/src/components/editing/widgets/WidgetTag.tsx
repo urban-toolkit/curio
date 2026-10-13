@@ -163,7 +163,7 @@ function ColumnTags({
   onInsert: (inner: string) => void;
   disabled: boolean;
 }) {
-  const owner = layer !== undefined ? `layer ${layer} of input ${slot}` : `input ${slot}`;
+  const owner = layer !== undefined ? `layer ${layer} of input_${slot}` : `input_${slot}`;
   const shown = columns.filter((c) => c.toLowerCase().includes(filter.trim().toLowerCase()));
   return (
     <>
@@ -217,7 +217,7 @@ function InputTags({
         className={styles.inputTag}
         mime={INPUT_REF_MIME}
         inner={inputReferenceInner(input.slot)}
-        text={`input ${input.slot}`}
+        text={`input_${input.slot}`}
         title={input.label ? `From ${input.label}` : undefined}
         dataAttributes={{ "data-input-tag": String(input.slot) }}
         onInsert={onInsert}
@@ -227,7 +227,7 @@ function InputTags({
         type="button"
         className={styles.expand}
         aria-expanded={open}
-        aria-label={`${open ? "Hide" : "Show"} the columns of input ${input.slot}`}
+        aria-label={`${open ? "Hide" : "Show"} the columns of input_${input.slot}`}
         onClick={() => setOpen(!open)}
       >
         {open ? "▾" : "▸"}
@@ -246,7 +246,7 @@ function InputTags({
               type="search"
               className={styles.columnFilter}
               placeholder="Filter columns"
-              aria-label={`Filter the columns of input ${input.slot}`}
+              aria-label={`Filter the columns of input_${input.slot}`}
               value={filter}
               onChange={(event) => setFilter(event.target.value)}
             />
@@ -259,7 +259,7 @@ function InputTags({
                     mime={INPUT_REF_MIME}
                     inner={inputReferenceInner(input.slot, undefined, layer.name)}
                     text={layer.name}
-                    title={`Layer of input ${input.slot}`}
+                    title={`Layer of input_${input.slot}`}
                     dataAttributes={{ "data-layer-tag": layer.name }}
                     onInsert={onInsert}
                     disabled={disabled}

@@ -105,9 +105,9 @@ class TestLayoutAndInputs:
         assert ".curio" not in str(workspace.root)
 
     def test_inputs_become_read_only(self, workspace, unprivileged_worker):
-        populate_inputs(workspace, {"sources/a.py": b"return arg\n"})
+        populate_inputs(workspace, {"sources/a.py": b"return input_0\n"})
         target = workspace.input_dir / "sources" / "a.py"
-        assert target.read_bytes() == b"return arg\n"
+        assert target.read_bytes() == b"return input_0\n"
         result = _run(
             workspace,
             "import os\n"
@@ -115,7 +115,7 @@ class TestLayoutAndInputs:
             "open(p, 'a').write('tamper')\n",
         )
         assert result.status == "failed"  # PermissionError inside the worker
-        assert target.read_bytes() == b"return arg\n"
+        assert target.read_bytes() == b"return input_0\n"
 
     def test_inputs_populate_only_once(self, workspace):
         populate_inputs(workspace, {"sources/a.py": b"x"})

@@ -68,14 +68,14 @@ LOAD_CODE = (
     "import pandas as pd\n"
     'return pd.DataFrame({"segment": ["r1", "r2", "r3", "r4"], "sunlight": [6.0, 5.0, 7.0, 4.0]})\n'
 )
-SHADE_CODE = 'df = arg.copy()\ndf["sunlight"] = df["sunlight"] / [!! factor !!]\nreturn df\n'
-TALL_CODE = 'df = arg.copy()\ndf["sunlight"] = df["sunlight"] / [!! factor !!]\ndf = df.round(2)\nreturn df\n'
-CLIP_CODE = 'df = arg.copy()\ndf["sunlight"] = df["sunlight"].clip(lower=0)\nreturn df\n'
+SHADE_CODE = 'df = input_0.copy()\ndf["sunlight"] = df["sunlight"] / [!! factor !!]\nreturn df\n'
+TALL_CODE = 'df = input_0.copy()\ndf["sunlight"] = df["sunlight"] / [!! factor !!]\ndf = df.round(2)\nreturn df\n'
+CLIP_CODE = 'df = input_0.copy()\ndf["sunlight"] = df["sunlight"].clip(lower=0)\nreturn df\n'
 
 # The lines the node writes for its two inputs (utils/compare/compareCode.ts).
 ENTRY_LINES = (
-    '    ("s-base", "Baseline", [!! input 0 !!]),',
-    '    ("s-tall", "Twice as tall", [!! input 1 !!]),',
+    '    ("s-base", "Baseline", [!! input_0 !!]),',
+    '    ("s-tall", "Twice as tall", [!! input_1 !!]),',
 )
 
 
@@ -308,7 +308,7 @@ def test_two_scenarios_are_stacked_charted_and_compared(
     warning = node_locator(page, COMPARE).locator("[data-compare-warning]")
     warning.first.wait_for(state="attached", timeout=10000)
     assert warning.all_inner_texts() == [
-        "Input 1 (Twice as tall) and input 0 (Baseline) read different context: only input 1 reads Roads 2050."
+        "input_1 (Twice as tall) and input_0 (Baseline) read different context: only input_1 reads Roads 2050."
     ], warning.all_inner_texts()
     _assert_chart_drew(page, COMPARE, "lollipop")
 

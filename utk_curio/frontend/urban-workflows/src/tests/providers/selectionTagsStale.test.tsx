@@ -20,7 +20,7 @@ const ROWS = [
   { osm_id: 103, height: 50 },
   { osm_id: 104, height: 20 },
 ];
-const CODE = "return arg[arg.osm_id.isin([!! selection picked !!])]";
+const CODE = "return input_0[input_0.osm_id.isin([!! selection picked !!])]";
 const TAG: SelectionTag = { name: "picked", node: "chart", column: "osm_id", ids: [101] };
 
 const brush = (low: number, high: number) => ({
@@ -45,7 +45,7 @@ function setup() {
         executedCode: runKeyWithShared(CODE, undefined, [], [TAG]),
       },
     },
-    { id: "reader", data: { nodeId: "reader", code: "return arg", output: { code: "success" }, executedCode: "return arg" } },
+    { id: "reader", data: { nodeId: "reader", code: "return input_0", output: { code: "success" }, executedCode: "return input_0" } },
   ];
   const edges: any[] = [{ id: "e1", source: "counter", target: "reader", sourceHandle: "out", targetHandle: "in" }];
   const reactFlow: any = { getNodes: () => nodes };

@@ -69,7 +69,7 @@ const DIFFERENCE = differenceCode(INPUTS);
 const node = (id: string, data: Record<string, unknown> = {}) => ({
   id,
   type: "__curioUniversalNode",
-  data: { nodeId: id, nodeType: "curio.builtin/computation-analysis@1", code: "return arg", ...data },
+  data: { nodeId: id, nodeType: "curio.builtin/computation-analysis@1", code: "return input_0", ...data },
 });
 const edge = (source: string, target: string, targetHandle = "in") => ({
   id: `${source}-${target}-${targetHandle}`, source, target, sourceHandle: "out", targetHandle,
@@ -196,7 +196,7 @@ describe("the view it picks, and the code it writes for it", () => {
   });
 
   test("code written by hand is left until an input changes", () => {
-    mount({ inputSlots: holding("raster"), code: "return arg[1]", defaultCode: "return arg[1]" });
+    mount({ inputSlots: holding("raster"), code: "return input_0[1]", defaultCode: "return input_0[1]" });
     expect(mockUpdateDataNode).not.toHaveBeenCalled();
   });
 });
@@ -345,7 +345,7 @@ describe("its body in Difference", () => {
   test("a failed run says why, where the map goes", () => {
     const failed = {
       code: "error",
-      content: "Compare Scenarios: input 1 (Twice as tall) minus input 0 (Baseline) cannot be computed: their grids differ in size.",
+      content: "Compare Scenarios: input_1 (Twice as tall) minus input_0 (Baseline) cannot be computed: their grids differ in size.",
     };
     const { view } = mount({ inputSlots: holding("raster"), code: DIFFERENCE }, nodeState(failed));
     expect(view.container.querySelector("[data-compare-run-error]")!.textContent).toBe(failed.content);

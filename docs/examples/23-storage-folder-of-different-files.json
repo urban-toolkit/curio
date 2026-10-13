@@ -57,7 +57,7 @@
         "type": "curio.builtin/computation-analysis",
         "x": 645,
         "y": 215,
-        "content": "import geopandas as gpd\nimport pandas as pd\n\nroads, parks = [!! input 0 !!], [!! input 1 !!]\nroads = roads.assign(layer=\"road\")\nparks = parks.assign(layer=\"park\")\n\nreturn gpd.GeoDataFrame(pd.concat([parks, roads], ignore_index=True), crs=roads.crs)\n",
+        "content": "import geopandas as gpd\nimport pandas as pd\n\nroads, parks = [!! input_0 !!], [!! input_1 !!]\nroads = roads.assign(layer=\"road\")\nparks = parks.assign(layer=\"park\")\n\nreturn gpd.GeoDataFrame(pd.concat([parks, roads], ignore_index=True), crs=roads.crs)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Stack the two layers into one GeoDataFrame.",

@@ -72,7 +72,7 @@ def by_reading(container, stream, rate):
             wanted = at + EVERY_SECONDS
 
 
-media = arg
+media = input_0
 videos = media[media["kind"] == "video"]
 rows = []
 geometries = []

@@ -7,8 +7,8 @@
  * description spoke of two input handles.
  *
  * The inputs are numbered from 0, as their circles, their chips
- * (`[!! input 0 !!]`) and the Spatial Join's own text count them (#576
- * follow-up): its body says input 0 and input 1, so the description must not
+ * (`[!! input_0 !!]`) and the Spatial Join's own text count them (#576
+ * follow-up): its body says input_0 and input_1, so the description must not
  * call them Input 1 and Input 2.
  */
 import React from 'react';

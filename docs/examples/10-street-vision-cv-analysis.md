@@ -67,7 +67,7 @@ and ``overlay_url`` shows the image tinted by class.
 model = curio_load_model("model.curio.ddrnet23-slim")
 classes = ["vegetation", "terrain", "sky", "road", "sidewalk", "building"]
 
-return curio_segment(arg, model, classes)
+return curio_segment(input_0, model, classes)
 ```
 
 Each row comes back with the results first: `dominant_class` and `dominant_pct`, then `vegetation_pct`, `terrain_pct` and the other classes asked for, each as a share of all the photo's pixels, then `overlay_url` and `segment_error` (empty unless the photo could not be read). Every input column follows, so the photo keeps its place and its credit.
@@ -111,7 +111,7 @@ The Spatial Join adds every column of the neighborhoods to each photo it pairs w
 # `pri_neigh`.
 import geopandas as gpd
 
-gdf = arg.rename(columns={"pri_neigh": "neighborhood"})
+gdf = input_0.rename(columns={"pri_neigh": "neighborhood"})
 # __dict__, not plain assignment: pandas warns about creating a column via
 # a new attribute name, and that warning lands in this node's output with
 # an absolute site-packages path. NOT gdf.attrs, and do not just delete the
@@ -123,7 +123,7 @@ return gdf
 
 ## Step 5: Pair each photo with its neighborhood and chart it (`Spatial Join`, `Vega-Lite`)
 
-The Spatial Join node (built-in, in `curio.builtin@1`) has two input circles on its left edge, each a hollow ring that fills in once wired: **input 0** (the upper, blue one) and **input 1** (the lower, green one). Wire the `Simple View` output to the blue circle and the `Data Transformation` output to the green circle, and run them. The operation stays at **intersects** and the output at **One row per pair**, the defaults.
+The Spatial Join node (built-in, in `curio.builtin@1`) has two input circles on its left edge, each a hollow ring that fills in once wired: **input_0** (the upper, blue one) and **input_1** (the lower, green one). Wire the `Simple View` output to the blue circle and the `Data Transformation` output to the green circle, and run them. The operation stays at **intersects** and the output at **One row per pair**, the defaults.
 
 The node emits one row per photo and neighborhood that meet: the photo's own columns, with the neighborhood's columns (`neighborhood`, `sec_neigh`, `shape_area`, `shape_len`) added. A photo outside every neighborhood has no pair and is left out; every one of the 40 sample photos has one.
 
@@ -223,7 +223,7 @@ this node. Until then it runs DDRNet23-Slim, the model that ships with Curio.
 model = curio_load_model("model.curio.ddrnet23-slim")
 classes = None  # every class the model names
 
-return curio_segment(arg, model, classes)
+return curio_segment(input_0, model, classes)
 ```
 
 To give it a model of its own:

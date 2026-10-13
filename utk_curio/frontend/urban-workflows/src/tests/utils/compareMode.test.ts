@@ -85,7 +85,7 @@ describe("the view the node picks", () => {
     expect(resolveMode(undefined, [null, null], differenceCode(TWO))).toEqual({ mode: "difference", chosen: false });
     expect(resolveMode(undefined, [null, null], stackCode(TWO))).toEqual({ mode: "chart", chosen: false });
     // Code written by hand, or none: Chart.
-    expect(resolveMode(undefined, [], "return arg")).toEqual({ mode: "chart", chosen: false });
+    expect(resolveMode(undefined, [], "return input_0")).toEqual({ mode: "chart", chosen: false });
     expect(resolveMode(undefined, [], undefined)).toEqual({ mode: "chart", chosen: false });
     expect(resolveMode(undefined, ["layer", "layer"], stackCode(TWO))).toEqual({ mode: "difference", chosen: false });
     expect(resolveMode({ mode: "difference" }, ["table", "table"], stackCode(TWO))).toEqual({ mode: "difference", chosen: true });
@@ -101,13 +101,13 @@ describe("the code it writes in Difference", () => {
     expect(differenceCode([])).toContain(`return ${DIFFERENCE_HELPER}([])`);
   });
 
-  test("its chips read the inputs as any Python node's do: arg[0] the reference, arg[1] the comparison", () => {
+  test("its chips read the inputs as any Python node's do: input_0 the reference, input_1 the comparison", () => {
     const [two] = cases.cases as CodeCase[];
     const scope = { widgets: [], shared: [], inputs: [{ slot: 0 }, { slot: 1 }] };
     const resolved = resolveReferences(two.code, scope, "python");
     expect(resolved.problems).toEqual([]);
-    expect(resolved.code).toContain('("s-base", "Baseline", arg[0]),');
-    expect(resolved.code).toContain('("s-tall", "Twice as tall", arg[1]),');
+    expect(resolved.code).toContain('("s-base", "Baseline", input_0),');
+    expect(resolved.code).toContain('("s-tall", "Twice as tall", input_1),');
   });
 
   test("is the code of the view, keyed by the view", () => {
@@ -119,7 +119,7 @@ describe("the code it writes in Difference", () => {
   test("says which view and which key it was written for", () => {
     expect(modeOfCode(differenceCode(TWO, "segment"))).toBe("difference");
     expect(modeOfCode(stackCode(TWO))).toBe("chart");
-    expect(modeOfCode("return arg")).toBeNull();
+    expect(modeOfCode("return input_0")).toBeNull();
     expect(keyOfCode(differenceCode(TWO, 'the "id"'))).toBe('the "id"');
     expect(keyOfCode(differenceCode(TWO))).toBeUndefined();
     expect(keyOfCode(stackCode(TWO))).toBeUndefined();

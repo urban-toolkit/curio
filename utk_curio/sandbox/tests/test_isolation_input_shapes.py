@@ -80,7 +80,7 @@ class TestBuildInputSpec(unittest.TestCase):
 
         Staging the envelope as a plain artifact would hand user code the
         wrapper object -- the exact bug _expand_outputs_wrapper prevents
-        in-process ("arg is not iterable").
+        in-process ("input_0 is not iterable").
         """
         self.staging.read_outputs_wrapper.return_value = [{"path": "a1"}]
 

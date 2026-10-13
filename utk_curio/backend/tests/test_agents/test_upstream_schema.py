@@ -5,7 +5,7 @@ as its own upstream was a node with no code (then a Merge Flow, gone with #662),
 which is written but never executed, so dev/118's list of "upstreams that
 passed" was EMPTY. These tests pin both halves of the fix: the summary of a
 preview, and the walk that looks through a node with no output of its own (a
-pool) in `arg` order.
+pool) in the order its circles are read.
 """
 
 from __future__ import annotations
@@ -61,8 +61,8 @@ class TestSummarize:
         assert s["sampleRows"][0]["geometry"] == "<MultiPolygon>"
 
     def test_several_inputs_are_summarized_part_by_part_in_order(self):
-        # This is what a node with several input circles receives as `arg`
-        # (and what a pool with several inputs hands on), in circle order.
+        # This is what a pool with several inputs hands on, in circle order,
+        # and what a node's one circle then holds as a list.
         s = us.summarize({"dataType": "outputs", "data": [BOUNDARIES, POPULATION]})
         assert s["kind"] == "parts"
         assert [p["kind"] for p in s["parts"]] == ["geotable", "table"]
@@ -150,16 +150,19 @@ class TestTheWalkThroughAPool:
                   "wave": 1, "output": {"path": "art-p", "dataType": "dataframe"}},
         }
 
-    def test_it_looks_through_the_pool_in_arg_order(self):
+    def test_it_looks_through_the_pool_in_list_order(self):
         rows = session._upstream_outputs_for(self.SPEC, "a", self._wave_outputs())
         # dev/118 returned [] here: the pool holds no output of its own.
         assert [r["nodeId"] for r in rows] == ["b", "p"]
-        assert [r["argIndex"] for r in rows] == [0, 1]
+        # Both reach the node's one circle as a list: input_0[0], input_0[1].
+        assert [(r["circle"], r["argIndex"]) for r in rows] == [(0, 0), (0, 1)]
 
     def test_a_node_with_several_circles_reads_them_in_circle_order(self):
         rows = session._upstream_outputs_for(self.DIRECT_SPEC, "a", self._wave_outputs())
         assert [r["nodeId"] for r in rows] == ["b", "p"]
-        assert [r["argIndex"] for r in rows] == [0, 1]
+        # Each is its own circle's input, input_0 and input_1.
+        assert [r["circle"] for r in rows] == [0, 1]
+        assert all("argIndex" not in r for r in rows)
 
     def test_each_row_carries_the_columns_its_frame_holds(self):
         previews = {"art-b": BOUNDARIES, "art-p": POPULATION}
@@ -196,6 +199,7 @@ class TestTheWalkThroughAPool:
         rows = session._upstream_outputs_for(spec, "a", self._wave_outputs())
         assert [r["nodeId"] for r in rows] == ["b"]
         assert "argIndex" not in rows[0]
+        assert rows[0]["circle"] == 0
 
     def test_the_walk_is_depth_bounded(self):
         # A chain of pools longer than the bound resolves nothing rather than
@@ -235,9 +239,9 @@ class TestTheSchemaReachesTheChildOnEveryRound:
 
         rows = [
             {"nodeId": "b", "goal": "Boundaries", "outputDataType": "geodataframe",
-             "argIndex": 0, "schema": us.summarize(BOUNDARIES)},
+             "circle": 0, "schema": us.summarize(BOUNDARIES)},
             {"nodeId": "p", "goal": "Population", "outputDataType": "dataframe",
-             "argIndex": 1, "schema": us.summarize(POPULATION)},
+             "circle": 1, "schema": us.summarize(POPULATION)},
         ]
         node = {"id": "a", "type": CA, "goal": "Calculate Density", "content": ""}
         exec_fn = _Exec(fail_markers=("bad",))
@@ -248,7 +252,7 @@ class TestTheSchemaReachesTheChildOnEveryRound:
         assert len(inputs) >= 2, "at least one correction ran"
         for frame in inputs:
             got = frame["upstreamOutputs"]
-            assert [r["argIndex"] for r in got] == [0, 1]
+            assert [r["circle"] for r in got] == [0, 1]
             assert "community" in [c["name"] for c in got[0]["schema"]["columns"]]
             assert "community_area_name" in [c["name"] for c in got[1]["schema"]["columns"]]
         # And the correction still gets what failed, as before.

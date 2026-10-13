@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/ScoutShadows.json",
-    "sha256": "4456c551ebb4cb3daf681bdbcb4a57e54b8b586300a8eb13a2f9e138f44fac62",
+    "sha256": "2d49a43bff1e903339305cbab635508dc4c45615f120529fa294315d5b096782",
     "walkthrough": null
   },
   "prompt": "Compare two scenarios of SCOUT's high-rise shadow case on the Chicago Loop. Load SCOUT's Loop buildings from the Data Catalog; in one scenario keep them as they are, in the other first take out the 15 buildings SCOUT's second scenario removes, by their building ids. In both, turn the buildings' heights into a zoom 16 height raster with SCOUT's building rasterizer, run SCOUT's Deep Umbra shadow model on it, with one season setting both scenarios share, set to summer, and take the accumulated shadow's mean and median over the ground, where the height raster is under 1.08 m. Then chart the two scenarios' mean accumulated shadow side by side, and map how the shadow changes when the buildings are removed. The rasterizer and the shadow model are not part of the standard node set, so whatever provides them needs installing first.",

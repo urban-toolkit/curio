@@ -83,7 +83,7 @@ POS_TRANSFORM = (760, 150)
 # value itself - so a result assertion has to print what it wants to check.
 ROW_MARKER = "CURIO_E2E_ROWS"
 TRANSFORM_CODE = (
-    "df = arg\n"
+    "df = input_0\n"
     f'print("{ROW_MARKER}", len(df))\n'
     "return df.head(2)\n"
 )
@@ -229,7 +229,7 @@ def test_build_and_run_dataflow_from_scratch(
 
     # 6. RUN, and check the result rather than just the status. The loader's
     #    artifact line proves the CSV reached DuckDB; the transformation's
-    #    printed row count proves the data actually crossed the edge as ``arg``.
+    #    printed row count proves the data actually crossed the edge as ``input_0``.
     loader_output = run_node_and_wait(page, loader_id, node_type=LOADER_TYPE)
     assert "Saved to file:" in loader_output, loader_output
 

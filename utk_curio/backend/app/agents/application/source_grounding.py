@@ -330,11 +330,11 @@ def _scan_python(code: str) -> list[SourceRef] | None:
                 if child is not node:
                     fstring_children.add(id(child))
         elif isinstance(node, ast.Call) and _is_dataset_path_call(node):
-            arg = node.args[0] if node.args else None
-            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                call_ids.add(id(arg))
+            first = node.args[0] if node.args else None
+            if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                call_ids.add(id(first))
                 refs.append(SourceRef(
-                    "catalog-id", arg.value.strip(), max(1, getattr(node, "lineno", 1) - offset),
+                    "catalog-id", first.value.strip(), max(1, getattr(node, "lineno", 1) - offset),
                     call=_call_name(node),
                 ))
             # ``curio_load_data("<id>", part="RAIN.nc")`` names a file inside
@@ -467,11 +467,11 @@ def _secret_call_name(node: ast.AST) -> str | None:
     name = func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else None
     if name != "curio_secret" or not node.args:
         return None
-    arg = node.args[0]
-    if isinstance(arg, ast.Constant) and isinstance(arg.value, str) and SECRET_CALL_RE.match(
-        f'curio_secret("{arg.value}")'
+    first = node.args[0]
+    if isinstance(first, ast.Constant) and isinstance(first.value, str) and SECRET_CALL_RE.match(
+        f'curio_secret("{first.value}")'
     ):
-        return arg.value
+        return first.value
     return None
 
 

@@ -95,8 +95,8 @@ RASTER_CODE = (
 
 # The lines the node writes in Difference and in Chart (utils/compare/compareCode.ts).
 ENTRY_LINES = (
-    '    ("s-base", "Baseline", [!! input 0 !!]),',
-    '    ("s-tall", "Twice as tall", [!! input 1 !!]),',
+    '    ("s-base", "Baseline", [!! input_0 !!]),',
+    '    ("s-tall", "Twice as tall", [!! input_1 !!]),',
 )
 DIFFERENCE_LINES = ("return curio_difference_scenarios([", *ENTRY_LINES)
 STACK_LINES = ("return curio_stack_scenarios([", *ENTRY_LINES)

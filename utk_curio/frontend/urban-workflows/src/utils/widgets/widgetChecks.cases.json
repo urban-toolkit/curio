@@ -16,7 +16,9 @@
     {"name":"a number whose step is 0","def":{"name":"w","type":"number","default":2,"options":{"step":0}},"expected":"The step must be above 0."},
     {"name":"a number whose default is out of its bounds","def":{"name":"w","type":"number","default":9,"options":{"min":0.5,"max":4}},"expected":"Enter a number from 0.5 to 4."},
     {"name":"a checkbox group whose default repeats a choice","def":{"name":"w","type":"checkbox-group","default":["a","a"],"options":{"choices":["a","b"]}},"expected":"Pick among the choices, each at most once."},
-    {"name":"a location","def":{"name":"here","type":"location","default":{"lat":41.88,"lon":-87.63}},"expected":null}
+    {"name":"a location","def":{"name":"here","type":"location","default":{"lat":41.88,"lon":-87.63}},"expected":null},
+    {"name":"the name an input is read by","def":{"name":"input_2","type":"number","default":1},"expected":"input_2 names one of the node's inputs. Pick another name."},
+    {"name":"a Parameter node named as an input is read","def":{"name":"input_0","type":"text","default":""},"parameter":true,"expected":"input_0 names one of the node's inputs. Pick another name."}
   ],
   "values": [
     {"name":"a number","widget":{"type":"number"},"value":2.5,"expected":null},

@@ -63,7 +63,7 @@ NODE_TYPE = "curio.builtin/computation-analysis"
 
 SOURCE_CODE = "factor = \nreturn factor * 10\n"
 SOURCE_WITH_REFERENCE = "factor = [!! factor !!]\nreturn factor * 10\n"
-READER_CODE = "print(f'<<{arg}>>')\nreturn arg\n"
+READER_CODE = "print(f'<<{input_0}>>')\nreturn input_0\n"
 
 # Where a drop lands just past the text of the editor's first line, from
 # Monaco's own layout of that line (scaled to the editor's box on screen, so a

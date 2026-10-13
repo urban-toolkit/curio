@@ -217,7 +217,7 @@ class TestProbingPhase:
     def test_plain_draft_skips_probing(self, tmp_curio, manifest_dict):
         request = parse_build_request({
             "mode": "create", "manifest": manifest_dict(),
-            "files": {"starters/demo-kind/Default.py": {"text": "return arg\n"}},
+            "files": {"starters/demo-kind/Default.py": {"text": "return input_0\n"}},
         })
         job = run_build("guest", request, toolchain=None, preview_runner=None)
         assert job.phase == "ready"

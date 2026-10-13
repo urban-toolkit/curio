@@ -18,6 +18,7 @@ export class PythonInterpreter {
         dataflowId?: string | null,
         saveOutputDataset = false,
         nodeName?: string,
+        inputSlots?: number[],
     ) {
         const callbackError = (message: string) => {
             callback({
@@ -39,7 +40,7 @@ export class PythonInterpreter {
         console.log("unifiedLines", unifiedLines);
 
         // Diagnostic: surface what the frontend is actually sending as the
-        // node's input. Useful when chasing "arg is None" bugs in package /
+        // node's input. Useful when chasing "input_0 is None" bugs in package /
         // several-input scenarios: the most common cause is `data.input`
         // never being updated by `applyNewOutput` before Run fires.
         // Strip large blobs so the console stays readable.
@@ -62,6 +63,8 @@ export class PythonInterpreter {
                 nodeId: nodeId,
                 ...(dataflowId ? { dataflowId } : {}),
                 ...(nodeName ? { nodeName } : {}),
+                // The wired circles: the value on circle k is the code's input_k.
+                ...(inputSlots && inputSlots.length > 0 ? { inputSlots } : {}),
                 saveOutputDataset,
             },
             nodeId,

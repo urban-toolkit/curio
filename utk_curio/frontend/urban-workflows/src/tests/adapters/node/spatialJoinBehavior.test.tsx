@@ -1,7 +1,7 @@
 /**
  * The Spatial Join pairs its two inputs by an operation (#576).
  *
- * Input 0 arrives on the `in` circle and input 1 on `in_1`, and that is the
+ * input_0 arrives on the `in` circle and input_1 on `in_1`, and that is the
  * order they are joined in, whatever their geometry: the node used to sort
  * them into points and polygons by geometry type, so two polygon inputs never
  * joined. The body picks the operation and the output, both persisted on the
@@ -155,7 +155,7 @@ beforeEach(() => {
 });
 
 describe('which input is which (#576)', () => {
-  test('the inputs follow the circles, not their geometry: polygons on input 0 are the left side', async () => {
+  test('the inputs follow the circles, not their geometry: polygons on input_0 are the left side', async () => {
     const fetchMock = mockFetch(joined([]));
     const { rerender } = renderJoin();
 
@@ -179,7 +179,7 @@ describe('which input is which (#576)', () => {
   });
 
   test('one input on both circles joins with itself', async () => {
-    // Example 25's touches flow: the neighborhoods on input 0 and input 1.
+    // Example 25's touches flow: the neighborhoods on input_0 and input_1.
     const fetchMock = mockFetch(joined([]));
     const { rerender } = renderJoin();
 
@@ -245,7 +245,7 @@ describe('what the body says (#576)', () => {
     mockFetch(joined([]));
     const { result } = renderHook(() => useSpatialJoinBehavior(makeData(), makeNodeState()));
     const body = readBody(result.current.contentComponent);
-    expect(body.status).toMatch(/input 0 to the blue circle and input 1 to the green circle/);
+    expect(body.status).toMatch(/input_0 to the blue circle and input_1 to the green circle/);
     expect(body.statusSwatches).toEqual(['#3b82f6', '#22c55e']);
   });
 
@@ -253,20 +253,20 @@ describe('what the body says (#576)', () => {
     mockFetch(joined([]));
     const { result, rerender } = renderJoin();
     const before = readBody(result.current.contentComponent);
-    expect(before.labelText).toBe('Pair each input 0 row with the input 1 rows it');
+    expect(before.labelText).toBe('Pair each input_0 row with the input_1 rows it');
     expect(before.labelSwatches).toEqual(['#3b82f6', '#22c55e']);
 
     await feed(rerender);
     expect(readBody(result.current.contentComponent).labelSwatches).toEqual(['#3b82f6', '#22c55e']);
   });
 
-  test('a pairs answer says how many pairs and how many input 0 rows matched', async () => {
+  test('a pairs answer says how many pairs and how many input_0 rows matched', async () => {
     const pair = { type: 'Feature', geometry: POINTS.features[0].geometry, properties: { name: 'photo-1.jpg', pri_neigh: 'Loop' } };
     mockFetch(joined([pair, pair, pair], { pairs: 3, matched_left: 2, left_rows: 5 }));
     const { result, rerender } = renderJoin();
     await feed(rerender);
 
-    await waitFor(() => expect(readBody(result.current.contentComponent).status).toBe('3 pairs: 2 of 5 input 0 rows matched.'));
+    await waitFor(() => expect(readBody(result.current.contentComponent).status).toBe('3 pairs: 2 of 5 input_0 rows matched.'));
   });
 
   test('one pair is one pair', async () => {
@@ -274,16 +274,16 @@ describe('what the body says (#576)', () => {
     const { result, rerender } = renderJoin();
     await feed(rerender);
 
-    await waitFor(() => expect(readBody(result.current.contentComponent).status).toBe('1 pair: 1 of 3 input 0 rows matched.'));
+    await waitFor(() => expect(readBody(result.current.contentComponent).status).toBe('1 pair: 1 of 3 input_0 rows matched.'));
   });
 
-  test('a counts answer says how many input 1 rows have pairs', async () => {
+  test('a counts answer says how many input_1 rows have pairs', async () => {
     mockFetch(joined(POLYGONS.features, { output: 'counts', pairs: 7, matched_right: 2, right_rows: 4 }));
     const { result, rerender } = renderJoin({ spatialJoin: { output: 'counts' } });
     await feed(rerender);
 
     await waitFor(() => expect(readBody(result.current.contentComponent).status).toBe(
-      '2 of 4 input 1 rows have pairs (7 in all); each row carries point_count.',
+      '2 of 4 input_1 rows have pairs (7 in all); each row carries point_count.',
     ));
   });
 
@@ -300,7 +300,7 @@ describe('what the body says (#576)', () => {
 
     const { container } = render(<>{result.current.contentComponent}</>);
     expect(container.querySelector('[data-curio-spatial-join-warning]')!.textContent).toBe(warning);
-    expect(container.querySelector('[data-curio-spatial-join-status]')!.textContent).toBe('0 pairs: 0 of 1 input 0 rows matched.');
+    expect(container.querySelector('[data-curio-spatial-join-status]')!.textContent).toBe('0 pairs: 0 of 1 input_0 rows matched.');
   });
 
   test('a run with an input missing is told which one', async () => {
@@ -311,7 +311,7 @@ describe('what the body says (#576)', () => {
     await act(async () => { await (result.current.sendCodeOverride as () => Promise<void>)(); });
     const last = (nodeState.setOutput as jest.Mock).mock.calls.at(-1)[0];
     expect(last.code).toBe('error');
-    expect(last.content).toBe('The Spatial Join has no input 1 to join: connect it and run the nodes feeding it.');
+    expect(last.content).toBe('The Spatial Join has no input_1 to join: connect it and run the nodes feeding it.');
   });
 });
 
@@ -343,7 +343,7 @@ describe('inputs that take time, and runs (#576 keeps #151 and #792)', () => {
   });
 
   test('a second input arriving while the first still resolves does not lose the first', async () => {
-    // Input 1 first, input 0 right behind it, while input 1's artifact is
+    // input_1 first, input_0 right behind it, while input_1's artifact is
     // still downloading: a cancel-on-new-input cleanup dropped it and the join
     // waited forever for an input it had been handed.
     const { fetchData } = require('../../../services/api');
@@ -394,7 +394,7 @@ describe('inputs that take time, and runs (#576 keeps #151 and #792)', () => {
     rerender({ ports: { in: points, in_1: { path: 'polygons-artifact', dataType: 'geodataframe' } } });
     await waitFor(() => expect(fetchData).toHaveBeenCalledWith('polygons-artifact'));
 
-    // The run asks while input 1 is still downloading.
+    // The run asks while input_1 is still downloading.
     let done = false;
     let run: Promise<void> = Promise.resolve();
     act(() => { run = (result.current.sendCodeOverride as () => Promise<void>)().then(() => { done = true; }); });

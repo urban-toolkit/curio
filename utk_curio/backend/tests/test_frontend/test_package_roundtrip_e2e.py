@@ -87,7 +87,7 @@ LOADER_TYPE = "curio.builtin/data-loading"
 # value itself - so a result assertion has to print what it wants to check.
 HEAD_MARKER = "E2E_HEAD_ROWS"
 HEAD_CODE = (
-    "df = arg\n"
+    "df = input_0\n"
     f'print("{HEAD_MARKER}", len(df))\n'
     "return df.head(2)\n"
 )

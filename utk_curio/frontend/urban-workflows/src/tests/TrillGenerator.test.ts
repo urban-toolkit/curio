@@ -223,7 +223,7 @@ describe("TrillGenerator node header (#412)", () => {
       inputPorts: [{ id: "k3j9x0a1", types: ["DATAFRAME"], cardinality: "1" }],
       outputPorts: [{ id: "p0q8w2e4", types: ["DATAFRAME", "JSON"], cardinality: "[1,n]" }],
       sourceFilename: "clean.py",
-      sourceCode: "return arg.dropna()",
+      sourceCode: "return input_0.dropna()",
     };
     const spec = TrillGenerator.generateTrill(
       [
@@ -233,7 +233,7 @@ describe("TrillGenerator node header (#412)", () => {
           data: {
             nodeId: "configured-1",
             nodeType: "curio.builtin/computation-analysis",
-            code: "return arg.dropna()",
+            code: "return input_0.dropna()",
             packageTemplateLabel: "Clean the parcels",
             packageTemplateConfig: config,
           },
@@ -265,9 +265,9 @@ describe("TrillGenerator node header (#412)", () => {
       sourceFilename: "clean.py",
     });
     // The code is the node's content, once.
-    expect(byId["configured-1"].content).toBe("return arg.dropna()");
+    expect(byId["configured-1"].content).toBe("return input_0.dropna()");
     // The live node keeps its own copy untouched.
-    expect(config.sourceCode).toBe("return arg.dropna()");
+    expect(config.sourceCode).toBe("return input_0.dropna()");
     expect(config.inputPorts[0].id).toBe("k3j9x0a1");
     expect(byId["plain-1"].metadata).toBeUndefined();
   });

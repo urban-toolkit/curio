@@ -22,7 +22,7 @@ def _auth(token):
 
 def _node(node_id, node_type=CODE, **fields):
     # The marker names the node in the sandbox request, which carries no id.
-    return {"id": node_id, "type": node_type, "content": f"# node {node_id}\nreturn arg", **fields}
+    return {"id": node_id, "type": node_type, "content": f"# node {node_id}\nreturn input_0", **fields}
 
 
 def _edge(source, target):
@@ -147,6 +147,23 @@ class TestARunGoesOnWithNoBrowser:
         assert steps["b"]["stdoutTail"] == "ran b" and steps["b"]["codeSha256"]
         # b read a's output, as Play would have sent it.
         assert sandbox.bodies["b"]["file_path"] == "art-a"
+
+    def test_each_step_names_the_circles_its_inputs_are_on(self, client, user_and_token, sandbox):
+        """A node reads the edge on circle k as ``input_k``, so each step tells
+        the sandbox which circles its inputs are on, as Play does."""
+        user, token = user_and_token
+        edges = [
+            {"id": "a-c", "source": "a", "target": "c", "targetHandle": "in"},
+            {"id": "b-c", "source": "b", "target": "c", "targetHandle": "in_3"},
+            {"id": "b-d", "source": "b", "target": "d", "targetHandle": "in_2"},
+        ]
+        project_id, _ = _create(client, token, [_node("a"), _node("b"), _node("c"), _node("d")], edges)
+        run_id = _start(client, token, project_id).get_json()["id"]
+        _wait(run_id)
+
+        assert sandbox.bodies["c"]["input_slots"] == [0, 3]
+        assert sandbox.bodies["d"]["input_slots"] == [2]
+        assert "input_slots" not in sandbox.bodies["a"]
 
     def test_its_artifacts_carry_the_starting_session_and_nothing_stores_it(self, client, db, user_and_token, sandbox):
         from utk_curio.backend.app.runs import jobs
@@ -551,8 +568,8 @@ class TestACanvasOpenedLater:
         assert steps["a"]["codeCurrent"] is True and steps["b"]["codeCurrent"] is True
 
         # b's code changes and is saved; a's only moves, which is not a change.
-        edited = [{**_node("a"), "content": "    # node a\n    return arg\n"},
-                  {**_node("b"), "content": "# node b\nreturn arg * 2"}]
+        edited = [{**_node("a"), "content": "    # node a\n    return input_0\n"},
+                  {**_node("b"), "content": "# node b\nreturn input_0 * 2"}]
         saved = client.put(f"/api/projects/{project_id}", data=json.dumps({
             "name": "Run routes",
             "spec": {"dataflow": {"name": "Run routes", "nodes": edited, "edges": [_edge("a", "b")]}},
@@ -664,7 +681,7 @@ class TestAPackageNodesModules:
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, mode="w") as zf:
             zf.writestr("manifest.json", json.dumps(manifest))
-            zf.writestr("sources/caller.py", "return arg\n")
+            zf.writestr("sources/caller.py", "return input_0\n")
             zf.writestr("sources/building_height/convert_to_raster.py", "FACTOR = 2\n")
         install_package_from_archive(key, buf.getvalue())
 

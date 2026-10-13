@@ -60,28 +60,28 @@ def workspace(tmp_path, monkeypatch):
 
 def run_in_process(code, inputs, node_type, workspace):
     """Run *code* on *inputs* as a Python node's play does: one raster, or a
-    tuple of them, one per input circle, which reach the node as a list of
-    their outputs. ``(output, the value it holds)``."""
+    tuple of them, one per input circle, each the code's input_k for its
+    circle k. ``(output, the value it holds)``."""
     from utk_curio.sandbox.app.worker import _worker_init, execute_code
     from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
 
     _worker_init()
     if isinstance(inputs, tuple):
         file_path = repr([save_to_duckdb(value, node_id=f"upstream-{i}") for i, value in enumerate(inputs)])
-        data_type = "outputs"
+        data_type, slots = "outputs", list(range(len(inputs)))
     else:
-        file_path, data_type = save_to_duckdb(inputs, node_id="upstream"), "raster"
+        file_path, data_type, slots = save_to_duckdb(inputs, node_id="upstream"), "raster", [0]
     result = execute_code(
         textwrap.indent(code, "    "), file_path, node_type, data_type,
-        save_dataset=False, media_dir=str(workspace / "media"),
+        save_dataset=False, media_dir=str(workspace / "media"), input_slots=slots,
     )
     assert result["stderr"] == "", result["stderr"]
     return result["output"], load_from_duckdb(result["output"]["path"])
 
 
 def test_the_starters_call_curios_raster_algebra():
-    assert 'return curio_raster_calculate("subtract", arg)' in starter("RASTER_CALCULATOR_CODE")
-    assert "return curio_raster_statistics(arg)" in starter("RASTER_STATISTICS_CODE")
+    assert 'return curio_raster_calculate("subtract", [input_0, input_1])' in starter("RASTER_CALCULATOR_CODE")
+    assert "return curio_raster_statistics(input_0, mask=input_1)" in starter("RASTER_STATISTICS_CODE")
 
 
 def test_a_raster_calculator_runs_its_starter_on_two_inputs(workspace):
@@ -104,7 +104,8 @@ def test_a_raster_calculator_chooses_by_class(workspace):
     nbs = _raster(workspace / "nbs.tif", [[1.0, 2.0, 3.0]])
     no_nbs = _raster(workspace / "no_nbs.tif", [[10.0, 20.0, 30.0]])
     code = starter("RASTER_CALCULATOR_CODE").replace(
-        'curio_raster_calculate("subtract", arg)', 'curio_raster_calculate("choose", arg, codes=[21, 31])'
+        'curio_raster_calculate("subtract", [input_0, input_1])',
+        'curio_raster_calculate("choose", [input_0, input_1, input_2], codes=[21, 31])',
     )
     _output, result = run_in_process(code, (classes, nbs, no_nbs), CALCULATOR, workspace)
     try:
@@ -135,7 +136,7 @@ def test_the_steps_run_in_an_isolated_child(tmp_path):
     def run(code, node_type):
         manifest = child.run_node({
             "code": textwrap.indent(code, "    "), "node_type": node_type, "data_type": "outputs",
-            "scratch_dir": str(scratch), "input": inputs, "session_imports": [], "limits": {},
+            "scratch_dir": str(scratch), "input": inputs, "input_slots": [0, 1], "session_imports": [], "limits": {},
         }, zygote.build_namespace_template)
         assert manifest["ok"], manifest["stderr"]
         return manifest
@@ -152,7 +153,7 @@ def test_the_steps_run_in_an_isolated_child(tmp_path):
         assert written.read(1).tolist() == [[4.0, 5.0]]
 
     stats_code = starter("RASTER_STATISTICS_CODE").replace(
-        "curio_raster_statistics(arg)", "curio_raster_statistics(arg[0], where=lambda value: value > 6)"
+        "curio_raster_statistics(input_0, mask=input_1)", "curio_raster_statistics(input_0, where=lambda value: value > 6)"
     )
     counted = run(stats_code, STATISTICS)
     child.write_result(counted, str(scratch))

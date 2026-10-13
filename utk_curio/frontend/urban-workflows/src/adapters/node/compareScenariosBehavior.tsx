@@ -3,8 +3,8 @@
  * growing input circles, stacked by its Python code into one table under each
  * input's scenario, which is its output; a chart of that table in the
  * scenarios' colors, drawn by the Vega-Lite node's code; and a What differs
- * tab over the scenarios' levers. In Difference, its code subtracts input 0
- * from input 1 instead, and the difference, its output, is drawn on a map by
+ * tab over the scenarios' levers. In Difference, its code subtracts input_0
+ * from input_1 instead, and the difference, its output, is drawn on a map by
  * the Autark node's code (a table difference as a table).
  *
  * Its code is written for it: one line per input, reading the input through

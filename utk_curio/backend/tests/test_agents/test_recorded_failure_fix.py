@@ -89,6 +89,6 @@ class TestTheLoopStartsFromTheRecordedFailure:
 
         node = {"id": "n1", "type": CA, "goal": "Densities", "content": ""}
         events, outcome, inputs = _rounds(
-            app, node, replies=["return arg"], exec_fn=_Exec(),
+            app, node, replies=["return input_0"], exec_fn=_Exec(),
         )
         assert not any("starting from the code" in line for line in outcome["roundsTrace"])

@@ -497,7 +497,7 @@ def test_purge_stale_staging_spares_a_fresh_dir_it_was_not_told_to_keep(tmp_curi
     orphan = base / "stage-orphan"
     for d in (live, orphan):
         (d / "sources").mkdir(parents=True)
-        (d / "sources" / "default.py").write_text("return arg", encoding="utf-8")
+        (d / "sources" / "default.py").write_text("return input_0", encoding="utf-8")
     _make_orphan(orphan)
 
     # No keep at all - the seeder's call shape.
@@ -518,7 +518,7 @@ def test_seeder_spares_an_in_flight_install(tmp_curio):
     base.mkdir(parents=True, exist_ok=True)
     live = base / "stage-live"
     (live / "sources").mkdir(parents=True)
-    (live / "sources" / "default.py").write_text("return arg", encoding="utf-8")
+    (live / "sources" / "default.py").write_text("return input_0", encoding="utf-8")
 
     seed_dev_packages(user_key="guest")
 

@@ -4,7 +4,7 @@
  *
  * #603: a Python Computation node fed by a Data Loading node that had just
  * failed still went to the sandbox with no input, and came back with
- * "This node received no input but its code references `arg`", a message
+ * a message saying it had received no input, a message
  * about wiring. The node now asks the question a chart or a Data Pool already
  * asks (hook/useGrammarInputState): did a node wired into me fail? If so it
  * says so, by name, and does not run.
@@ -85,7 +85,7 @@ jest.mock("../../../hook/usePackageBackendRun", () => ({
 import CodeEditor from "../../../components/editing/CodeEditor";
 
 const PYTHON = "curio.builtin/computation-analysis";
-const CODE = "sp = arg['sp_units']\nreturn sp";
+const CODE = "sp = input_0['sp_units']\nreturn sp";
 
 /** The upstream node, failed: wired into n1 and marked errored. */
 function upstreamFailed() {
@@ -150,7 +150,7 @@ describe("a code node fed by a failed node (#603)", () => {
         expect(reason).toBeDefined();
         expect(reason.content).toContain("The node feeding this one");
         expect(reason.content).toContain("Load parcels");
-        expect(reason.content).not.toContain("received no input");
+        expect(reason.content).not.toContain("nothing arrived");
     });
 
     test("reports itself failed, so the runner stops below it too", () => {
@@ -167,6 +167,22 @@ describe("a code node fed by a failed node (#603)", () => {
         };
         const { interpretCode } = play();
         expect(interpretCode).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe("a code node's run names the circles its inputs are on", () => {
+    test("so the sandbox reads the edge on circle k as input_k", () => {
+        mockFlow = {
+            edges: [
+                { id: "a->n1", source: "a", target: "n1", targetHandle: "in" },
+                { id: "b->n1", source: "b", target: "n1", targetHandle: "in_3" },
+                { id: "n1->c", source: "n1", target: "c", targetHandle: "in_2" },
+            ],
+            nodeExecStatus: { a: "executed", b: "executed" },
+        };
+        const { interpretCode } = play({ replacedCode: "return input_0, input_3" });
+        expect(interpretCode).toHaveBeenCalledTimes(1);
+        expect(interpretCode.mock.calls[0][12]).toEqual([0, 3]);
     });
 });
 

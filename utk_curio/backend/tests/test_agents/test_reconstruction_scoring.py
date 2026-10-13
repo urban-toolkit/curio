@@ -94,7 +94,7 @@ class TestEquivalentGraphsPass:
         rebuilt = _spec(
             [
                 _node("uuid-9", VEGA, content="{\"mark\": \"bar\"}", x=880, y=12),
-                _node("uuid-3", TRANSFORM, content="df = arg\nreturn df", x=440),
+                _node("uuid-3", TRANSFORM, content="df = input_0\nreturn df", x=440),
                 _node("uuid-1", LOADER, content="import pandas\nreturn pandas.DataFrame()"),
             ],
             [_edge("uuid-3", "uuid-9"), _edge("uuid-1", "uuid-3")],

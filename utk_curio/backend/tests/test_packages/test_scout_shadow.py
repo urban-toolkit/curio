@@ -314,7 +314,7 @@ def _statistics_code() -> str:
 
 def run_statistics(shadow, heights, workspace) -> tuple[float, float]:
     """The dataflow's Raster Statistics node, its code as written, on *shadow*
-    (input 0) and *heights* (input 1, the mask): ``(mean, median)``."""
+    (input_0) and *heights* (input_1, the mask): ``(mean, median)``."""
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
     result = _execute(_statistics_code(), (shadow, heights), STATISTICS_TYPE, workspace, data_type="outputs")
@@ -698,8 +698,8 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     """``ScoutShadows.json`` is how its CI run reaches this package: its nodes
     hold the templates' own sources and widgets, the shadow nodes reading the
     season from the one Parameter node both scenarios share; each scenario's
-    Raster Statistics node reads its shadow on input 0 and its heights, the
-    mask, on input 1; the chart reads the statistics, the difference the shadows.
+    Raster Statistics node reads its shadow on input_0 and its heights, the
+    mask, on input_1; the chart reads the statistics, the difference the shadows.
     The model is no dataset of the dataflow: the shadow nodes' code names it,
     and the Model Catalog holds it."""
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code, model_ids_in_code
@@ -742,7 +742,7 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
         assert heights["type"] == "curio.builtin/computation-analysis"
         assert into[(shadow["id"], "in")] == heights["id"]
         assert nodes[into[(heights["id"], "in")]]["type"] == "scout.raster-conversion/rasterize-buildings"
-        assert heights["content"].rstrip().endswith("return arg[0]")
+        assert heights["content"].rstrip().endswith("return input_0[0]")
     chart, difference = sorted(by_type["curio.builtin/compare-scenarios"],
                                key=lambda n: n["metadata"]["compareScenarios"]["mode"])
     assert chart["metadata"]["compareScenarios"]["mode"] == "chart"
@@ -768,11 +768,12 @@ def test_the_two_scenarios_are_scouts_two_building_sets(tmp_path):
                  if nodes[n]["type"] == "curio.builtin/data-transformation"]
     assert f"REMOVED = {REMOVED_IDS}" in remove["content"]
 
-    namespace: dict = {}
-    exec("def remove(arg):\n" + textwrap.indent(remove["content"], "    "), namespace)
+    from utk_curio.sandbox.util.input_names import call_as_node
+
     buildings = gpd.read_file(BUILDINGS)
     assert list(buildings["building_id"]) == list(range(123))
-    layers = {"A": buildings, "B": namespace["remove"](buildings)}
+    removed = call_as_node(textwrap.indent(remove["content"], "    "), {}, buildings, [0])
+    layers = {"A": buildings, "B": removed}
     assert len(layers["B"]) == 108
 
     with staged(tmp_path, RASTER_PACKAGE / "sources", RASTER_MODULE, "convert_to_raster") as (convert,):

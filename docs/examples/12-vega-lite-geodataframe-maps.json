@@ -21,7 +21,7 @@
         "type": "curio.builtin/data-transformation",
         "x": 645,
         "y": 0,
-        "content": "gdf = arg\n\n# A second geometry column. Centroids are taken in a projected CRS so they land\n# in the right place, then brought back to lon/lat.\ngdf[\"centroid\"] = gdf.to_crs(3395).geometry.centroid.to_crs(4326)\n\nreturn gdf",
+        "content": "gdf = input_0\n\n# A second geometry column. Centroids are taken in a projected CRS so they land\n# in the right place, then brought back to lon/lat.\ngdf[\"centroid\"] = gdf.to_crs(3395).geometry.centroid.to_crs(4326)\n\nreturn gdf",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

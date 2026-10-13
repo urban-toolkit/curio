@@ -79,11 +79,11 @@ describe("inserting a reference", () => {
     const event = {
       clientX: 1,
       clientY: 2,
-      dataTransfer: { types: [INPUT_REF_MIME], getData: (t: string) => (t === INPUT_REF_MIME ? "input 1.area" : "") },
+      dataTransfer: { types: [INPUT_REF_MIME], getData: (t: string) => (t === INPUT_REF_MIME ? "input_1.area" : "") },
     } as unknown as DragEvent;
     expect(isReferenceDrag(event)).toBe(true);
     expect(dropReference(editor, event)).toBe(true);
-    expect(editor.executeEdits.mock.calls[0][1][0].text).toBe("[!! input 1.area !!]");
+    expect(editor.executeEdits.mock.calls[0][1][0].text).toBe("[!! input_1.area !!]");
   });
 
   test("other drags are left alone", () => {
@@ -118,18 +118,18 @@ describe("chips", () => {
   });
 
   test("an input chip names the node that feeds it", () => {
-    const [input, column] = referenceMarks("a = [!! input 0 !!]\nb = [!! input 0.length !!]", withInputs, "python");
+    const [input, column] = referenceMarks("a = [!! input_0 !!]\nb = [!! input_0.length !!]", withInputs, "python");
     expect(input.kind).toBe("input");
-    expect(input.hover).toBe("input 0, from Roads (geodataframe)");
+    expect(input.hover).toBe("input_0, from Roads (geodataframe)");
     expect(chipClass(input)).toBe("curio-input-ref");
-    expect(column.hover).toBe("column length of input 0, from Roads (float64)");
+    expect(column.hover).toBe("column length of input_0, from Roads (float64)");
   });
 
   test("an input chip with no edge, or for a column the input lacks, is a problem chip", () => {
-    const [missing, column] = referenceMarks("[!! input 4 !!] [!! input 0.width !!]", withInputs, "python");
-    expect(missing.problem).toMatch(/input 4 has no edge/);
+    const [missing, column] = referenceMarks("[!! input_4 !!] [!! input_0.width !!]", withInputs, "python");
+    expect(missing.problem).toMatch(/input_4 has no edge/);
     expect(chipClass(missing)).toBe("curio-input-ref-problem");
-    expect(column.problem).toMatch(/input 0 has no column width/);
+    expect(column.problem).toMatch(/input_0 has no column width/);
   });
 });
 

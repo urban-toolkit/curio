@@ -1,7 +1,7 @@
 """The Compare Scenarios node's difference step (#662).
 
-In Difference the node compares exactly two inputs: input 0 is the reference
-and input 1 the comparison, and every number it gives is comparison minus
+In Difference the node compares exactly two inputs: input_0 is the reference
+and input_1 the comparison, and every number it gives is comparison minus
 reference. Its code calls ``curio_difference_scenarios`` with one
 ``(scenario id, scenario name, input)`` entry per input, as the stacking step
 (``scenario_stack.py``) takes them, and reads its inputs the same way.
@@ -473,7 +473,7 @@ def _load_in_autark(request: dict, *, cwd, node_type) -> dict:
 
     try:
         result_json, _logs, stderr_lines = run_js_script(
-            program_text(), request, cwd=cwd or os.getcwd(), node_type=node_type,
+            program_text(), {"input_0": request}, cwd=cwd or os.getcwd(), node_type=node_type,
             t0=time.perf_counter(), node_flags=_NODE_FLAGS,
         )
     except FileNotFoundError as exc:

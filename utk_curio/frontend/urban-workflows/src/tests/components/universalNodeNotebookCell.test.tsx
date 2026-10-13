@@ -7,7 +7,7 @@
  * its right edge where the bar draws the connections: inputs at fixed offsets
  * from the top, the interaction dot halfway, the output anchored to the bottom,
  * so they follow the cell as it grows. Each input dot carries the number its
- * `[!! input k !!]` chips use and names what feeds it, the cardinality markers
+ * `[!! input_k !!]` chips use and names what feeds it, the cardinality markers
  * at the box's edges are gone, and the outcome strip sits in the cell's flow.
  * On the canvas nothing of this applies.
  * Harness as in universalNodeSkipped.test.tsx.
@@ -209,8 +209,8 @@ describe("a node shown as a notebook cell", () => {
     await mount(true);
     expect(screen.getByTestId("handle-in")).toHaveTextContent("0");
     expect(screen.getByTestId("handle-in_1")).toHaveTextContent("1");
-    expect(screen.getByTestId("handle-in")).toHaveAttribute("title", "input 0 · Load roads");
-    expect(screen.getByTestId("handle-in_1")).toHaveAttribute("title", "input 1");
+    expect(screen.getByTestId("handle-in")).toHaveAttribute("title", "input_0 · Load roads");
+    expect(screen.getByTestId("handle-in_1")).toHaveAttribute("title", "input_1");
     expect(screen.getByTestId("handle-out")).toHaveAttribute("title", "output");
   });
 

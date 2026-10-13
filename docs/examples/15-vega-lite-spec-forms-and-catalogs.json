@@ -50,7 +50,7 @@
         "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Count the green roofs inside each ZIP polygon. The roofs on input 0 (the top circle), the ZIP polygons on input 1 (the bottom circle); the node is set to the counts output, so each ZIP polygon comes out with a point_count.",
+        "goal": "Count the green roofs inside each ZIP polygon. The roofs on input_0 (the top circle), the ZIP polygons on input_1 (the bottom circle); the node is set to the counts output, so each ZIP polygon comes out with a point_count.",
         "metadata": {
           "keywords": [],
           "spatialJoin": {

@@ -215,7 +215,7 @@ def _guest_draft() -> dict:
                 "source": "sources/demo.py",
             }],
         },
-        "sources": {"demo": {"filename": "demo.py", "code": "import numpy\nreturn arg\n"}},
+        "sources": {"demo": {"filename": "demo.py", "code": "import numpy\nreturn input_0\n"}},
     }
 
 

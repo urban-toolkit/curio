@@ -208,7 +208,7 @@ POS_LOADER = (150, 150)
 POS_TRANSFORM = (760, 150)
 
 TRANSFORM_CODE = (
-    "df = arg\n"
+    "df = input_0\n"
     'df["income_per_capita"] = (df["median_income"] / df["population"]).round(2)\n'
     'print(df.sort_values("median_income", ascending=False).to_string(index=False))\n'
     "return df\n"
@@ -1118,7 +1118,7 @@ def scene_build(ctx: Ctx) -> None:
 
     tour.say(
         "Connect them",
-        "The upstream result arrives in the next node as `arg`.",
+        "The upstream result arrives in the next node as `input_0`.",
         hold=2000,
     )
     connect_nodes(page, loader_id, transform_id)
@@ -2041,7 +2041,7 @@ ZIPS_MAP = "eb39411d-d742-52c8-93aa-1424997ead25"
 ZIPS_BARS = "dfdcf935-96c9-5dcf-bb44-90376fbafad8"
 PICKED_CODE = (
     "picked = \n"
-    'zips = arg[arg["zip"].isin(picked)]\n'
+    'zips = input_0[input_0["zip"].isin(picked)]\n'
     'print("Picked:", ", ".join(zips["zip"]))\n'
     "return zips\n"
 )

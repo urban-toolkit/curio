@@ -104,13 +104,13 @@ EXAMPLE_INVARIANTS = [
 #: Examples whose flows meet in one node, and how many nodes take several data
 #: inputs. Each such node reads its inputs in circle order (``in``, ``in_1``,
 #: ...), so its edges must name every circle from the first, once each: a gap or
-#: a repeat changes which input the node's ``[!! input N !!]`` chips read.
+#: a repeat changes which input the node's ``[!! input_N !!]`` chips read.
 FAN_IN_NODES = {
     "04-vega-lite-multi-flow-dashboard.json": 3,
     "06-autark-what-if-shadow-study.json": 2,
     "08-autark-spatial-join-regression.json": 1,
     "09-heterogeneous-data-linked-views.json": 2,
-    # #576: a Spatial Join takes input 0 on "in" and input 1 on "in_1".
+    # #576: a Spatial Join takes input_0 on "in" and input_1 on "in_1".
     "10-street-vision-cv-analysis.json": 2,
     "15-vega-lite-spec-forms-and-catalogs.json": 1,
     "20-storage-folder-of-csv-files.json": 1,
@@ -232,7 +232,7 @@ def _circle_index(handle) -> int:
 def test_example_flows_meet_on_input_circles(basename, expected_fan_in):
     """Each node that takes several data edges takes them on its circles
     ``in``, ``in_1``, ... ``in_<k-1>``, one edge per circle, with no gap: the
-    same order the canvas draws and the chips ``[!! input N !!]`` read."""
+    same order the canvas draws and the chips ``[!! input_N !!]`` read."""
     with open(os.path.join(EXAMPLES_DIR, basename), "r", encoding="utf-8") as f:
         wf = json.load(f)
     types = {n["id"]: n["type"] for n in wf["dataflow"]["nodes"]}
@@ -327,7 +327,7 @@ def test_example_06_is_three_scenarios_over_one_context():
     assert [(label["scenario"], label["name"], label["color"]) for label in chart["metadata"]["compareScenarios"]["inputs"]] == [
         (s["id"], s["name"], s["color"]) for s in (baseline, twice, towers)
     ]
-    assert '("s-towers", "Two towers removed", [!! input 2 !!]),' in chart["content"]
+    assert '("s-towers", "Two towers removed", [!! input_2 !!]),' in chart["content"]
     third = [e for e in flow["edges"] if e["target"] == "whatif-compare-chart" and e["source"] == "whatif-towers-map"]
     assert [e.get("targetHandle") for e in third] == ["in_2"]
     assert "key" not in nodes["whatif-compare-difference"]["metadata"]["compareScenarios"].get("difference", {})

@@ -13,7 +13,7 @@ jest.mock("uuid", () => {
   return { v4: () => `id-${++calls}` };
 });
 
-import { mergeImportCells, notebookToTrill, SETUP_NODE_TITLE } from "../NotebookConvertor";
+import { mergeImportCells, notebookToTrill, SETUP_NODE_TITLE, trillToNotebook, type TrillSpec } from "../NotebookConvertor";
 import { NodeType } from "../constants";
 
 type Analysis = {
@@ -199,10 +199,10 @@ describe("notebookToTrill", () => {
     expect(byId[dataflow.edges[0].target].title).toBe("out");
   });
 
-  it("reads several inputs as arg[k], each edge on its own circle (#160)", async () => {
-    // A node with several inputs gets them as `arg[k]`, k in circle order.
-    // The cell used to say "# multiple inputs available via arg", and its
-    // edges named no circle, so both landed on circle 0.
+  it("reads several inputs as input_k, each edge on its own circle (#160)", async () => {
+    // A node with several inputs gets them as `input_k`, k its circle.
+    // The cell used to put every input in one variable, and its edges named
+    // no circle, so both landed on circle 0.
     stubAnalyzer(
       [{ last_var: "a" }, { last_var: "b" }, { last_var: "c" }],
       [[0, 2], [1, 2]],
@@ -216,12 +216,50 @@ describe("notebookToTrill", () => {
     const byId = Object.fromEntries(dataflow.nodes.map((n) => [n.id, n]));
     const sum = dataflow.nodes.find((n) => n.title === "c")!;
     const lines = (sum.content ?? "").split("\n");
-    expect(lines).toContain("a = arg[0]");
-    expect(lines).toContain("b = arg[1]");
+    expect(lines).toContain("a = input_0");
+    expect(lines).toContain("b = input_1");
     const circles = Object.fromEntries(
       dataflow.edges.map((e) => [byId[e.source].title, e.targetHandle]),
     );
     expect(circles).toEqual({ a: "in", b: "in_1" });
+  });
+
+  it("reads one input as input_0 and several as input_k, k each edge's circle", async () => {
+    stubAnalyzer(
+      [{ last_var: "a" }, { last_var: "b" }, { last_var: "c" }, { last_var: "d" }],
+      [[0, 2], [1, 2], [2, 3]],
+    );
+
+    const { dataflow } = await notebookToTrill(
+      notebook("a = 1", "b = 2", "c = a + b", "d = c * 2"),
+      "http://backend",
+    );
+
+    const byTitle = Object.fromEntries(dataflow.nodes.map((n) => [n.title, n]));
+    expect((byTitle.c.content ?? "").split("\n")).toEqual(
+      expect.arrayContaining(["a = input_0", "b = input_1"]),
+    );
+    expect((byTitle.d.content ?? "").split("\n")[0]).toBe("c = input_0");
+    for (const node of dataflow.nodes) expect(node.content ?? "").not.toMatch(/\barg\b/);
+  });
+
+  it("a notebook imported and exported again passes each upstream as the input_k it was read by", async () => {
+    stubAnalyzer(
+      [{ last_var: "a" }, { last_var: "b" }, { last_var: "c" }],
+      [[0, 2], [1, 2]],
+    );
+    const { dataflow } = await notebookToTrill(notebook("a = 1", "b = 2", "c = a + b"), "http://backend");
+
+    const exported = trillToNotebook({ dataflow } as unknown as TrillSpec);
+
+    const sum = dataflow.nodes.find((n) => n.title === "c")!;
+    const [a, b] = ["a", "b"].map((title) => dataflow.nodes.find((n) => n.title === title)!.id.replace(/[^a-zA-Z0-9]/g, "_"));
+    const fn = `node_${sum.id.replace(/[^a-zA-Z0-9]/g, "_")}`;
+    const cell = exported.cells.find((c) => c.cell_type === "code" && c.source.includes(`def ${fn}(`))!;
+    expect(cell.source).toContain(`def ${fn}(input_0=None, input_1=None):`);
+    expect(cell.source).toContain("    a = input_0");
+    expect(cell.source).toContain("    b = input_1");
+    expect(cell.source.split("\n").pop()).toMatch(new RegExp(`= ${fn}\\(input_0=\\w+_${a}, input_1=\\w+_${b}\\)$`));
   });
 
   it("titles nodes from the variable they produce", async () => {

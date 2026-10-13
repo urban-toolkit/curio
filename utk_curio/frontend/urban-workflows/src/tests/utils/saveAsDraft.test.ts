@@ -82,8 +82,8 @@ describe("buildFactoryInstallEnvelope", () => {
   };
 
   it("omits `replace` entirely when it is not requested", () => {
-    for (const arg of [undefined, false]) {
-      const envelope = buildFactoryInstallEnvelope(draft(), arg as boolean | undefined);
+    for (const flag of [undefined, false]) {
+      const envelope = buildFactoryInstallEnvelope(draft(), flag as boolean | undefined);
       expect("replace" in envelope).toBe(false);
     }
   });

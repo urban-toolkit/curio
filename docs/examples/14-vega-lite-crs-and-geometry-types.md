@@ -41,7 +41,7 @@ anywhere without editing paths.
 ## Any coordinate system
 
 ```python
-gdf = arg
+gdf = input_0
 
 return gdf.to_crs(3395)
 ```
@@ -62,7 +62,7 @@ from shapely.geometry import (
     Polygon,
 )
 
-gdf = arg
+gdf = input_0
 square = Polygon([(-87.8, 41.9), (-87.8, 42.0), (-87.7, 42.0), (-87.7, 41.9)])
 patch = Polygon([(-87.55, 41.9), (-87.55, 42.0), (-87.45, 42.0), (-87.45, 41.9)])
 
