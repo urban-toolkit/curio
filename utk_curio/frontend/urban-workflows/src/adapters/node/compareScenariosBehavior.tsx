@@ -23,7 +23,7 @@ import type { NodeBehaviorHook } from "../../registry/types";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { CompareScenariosBody } from "../../components/compare/CompareScenariosBody";
 import { compareInputs, labelsNeedWriting } from "../../utils/compare/compareInputs";
-import { compareCode, keyOfCode, layerOfCode, modeOfCode, stackCode } from "../../utils/compare/compareCode";
+import { absoluteOfCode, compareCode, keyOfCode, layerOfCode, modeOfCode, stackCode } from "../../utils/compare/compareCode";
 import { inputKinds, wantedMode } from "../../utils/compare/compareMode";
 import { normalizeCompareSettings, type CompareSettings } from "../../utils/compare/compareSettings";
 import type { Scenario } from "../../utils/scenarios/scenarioModel";
@@ -62,11 +62,16 @@ export const useCompareScenariosBehavior: NodeBehaviorHook = (data, nodeState) =
   const inputs = compareInputs(data.nodeId, nodes, edges, scenarios);
   const inputsKey = JSON.stringify(inputs.map((input) => [input.slot, input.label]));
   // What the code is written for besides the labels: the view the node wants,
-  // the key Difference joins rows on, and the layer it reads from an Autark
-  // node's several.
+  // the key Difference joins rows on, whether it gives each difference's size,
+  // and the layer it reads from an Autark node's several.
   const wanted = normalizeCompareSettings((data as any).compareScenarios);
   const kinds = inputKinds((data as any).inputSlots, inputs.map((input) => input.slot));
-  const modeKey = JSON.stringify([wantedMode(wanted, kinds), wanted?.difference?.key ?? null, wanted?.layer ?? null]);
+  const modeKey = JSON.stringify([
+    wantedMode(wanted, kinds),
+    wanted?.difference?.key ?? null,
+    wanted?.difference?.absolute === true,
+    wanted?.layer ?? null,
+  ]);
   // Nothing is written where nobody can save it: the dashboard, a shared view.
   const writable = !flow?.dashboardOn && flow?.viewerMode !== "shared";
 
@@ -82,7 +87,9 @@ export const useCompareScenariosBehavior: NodeBehaviorHook = (data, nodeState) =
     const mode = wantedMode(stored, inputKinds(live.inputSlots, inputs.map((input) => input.slot))) ?? written ?? "chart";
     const relabel = labelsNeedWriting(stored?.inputs, inputs, edges.length > 0);
     const switched = written !== null && written !== mode;
-    const rekeyed = written === "difference" && mode === "difference" && keyOfCode(current) !== stored?.difference?.key;
+    const rekeyed = written === "difference" && mode === "difference"
+      && (keyOfCode(current) !== stored?.difference?.key
+        || absoluteOfCode(current) !== (stored?.difference?.absolute === true));
     const relayered = written !== null && layerOfCode(current) !== stored?.layer;
     if (!relabel && !switched && !rekeyed && !relayered) return;
     const code = compareCode(mode, inputs, stored?.difference, stored?.layer);

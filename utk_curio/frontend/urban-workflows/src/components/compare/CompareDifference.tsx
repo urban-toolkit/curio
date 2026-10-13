@@ -1,6 +1,7 @@
 /**
- * The Compare Scenarios node's Difference view (#662): what it joins rows on
- * and what its map colors by, and the difference itself, the node's output
+ * The Compare Scenarios node's Difference view (#662): what it joins rows on,
+ * whether it gives each difference's size (Change), what its map colors by,
+ * and the difference itself, the node's output
  * (`utk_curio/sandbox/util/scenario_difference.py`). A raster or a layer is
  * drawn on a map by the Autark node's map code (`CompareMap`), a table by the
  * Vega-Lite node's (`CompareChart`), as the Chart view draws its chart.
@@ -165,6 +166,14 @@ function Select({
 
 const AUTOMATIC_KEY = "";
 
+/** What Change offers: the difference itself, input_1 minus input_0, or its size. */
+const SIGNED = "signed";
+const ABSOLUTE = "absolute";
+const CHANGE_OPTIONS = [
+  { value: SIGNED, text: "Signed" },
+  { value: ABSOLUTE, text: "Absolute" },
+];
+
 export function CompareDifference({
   nodeData,
   output,
@@ -235,7 +244,7 @@ export function CompareDifference({
   } else if (drawn.kind === "table") {
     stage = <CompareChart nodeData={nodeData} stacked={drawn.ref} specText={JSON.stringify(differenceTableSpec(drawn.names))} />;
   } else {
-    const docText = JSON.stringify(differenceMapDoc(value));
+    const docText = JSON.stringify(differenceMapDoc(value, settings?.absolute === true));
     stage = (
       <Suspense fallback={<NodeEmptyState reason="not-run" hint="Loading the map." />}>
         <CompareMap nodeId={nodeData.nodeId} difference={drawn.ref} docText={docText} />
@@ -256,6 +265,13 @@ export function CompareDifference({
               onChange={(key) => set({ key })}
             />
           ) : null}
+          <Select
+            label="Change"
+            value={settings?.absolute ? ABSOLUTE : SIGNED}
+            disabled={!editable}
+            options={CHANGE_OPTIONS}
+            onChange={(next) => set({ absolute: next === ABSOLUTE })}
+          />
           {values.length > 0 ? (
             <Select
               label="Color by"

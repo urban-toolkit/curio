@@ -84,6 +84,7 @@ export default function CompareMap({
       className={styles.map}
       data-compare-map-state={drawn ? "drawn" : problem ? "problem" : "drawing"}
       data-compare-map-color={coloredBy(docText)}
+      data-compare-map-path={difference.path}
     >
       <div className={styles.mapCanvas}>{contentComponent}</div>
       {problem ? (

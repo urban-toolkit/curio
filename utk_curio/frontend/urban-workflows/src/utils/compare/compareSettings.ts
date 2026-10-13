@@ -9,8 +9,9 @@
  *   reads as x and y, and the aggregate that combines the y values.
  * - `mode`, Chart or Difference, once the user has chosen one; without it the
  *   node picks (`compareMode.ts`).
- * - `difference`, what Difference joins rows on (`key`) and what its map
- *   colors by (`value`).
+ * - `difference`, what Difference joins rows on (`key`), what its map
+ *   colors by (`value`), and whether it gives each difference's size
+ *   (`absolute`).
  * - `layer`, the layer it reads from an input that is an Autark node's
  *   several layers (a compute step hands on its workspace's every layer).
  *
@@ -48,6 +49,8 @@ export interface CompareDifference {
   key?: string;
   /** The column, or the band, the map colors by; absent means the first number. */
   value?: string;
+  /** Each difference's size, |comparison - reference|; absent means comparison minus reference. */
+  absolute?: boolean;
 }
 
 export interface CompareSettings {
@@ -92,6 +95,7 @@ function normalizeDifference(raw: unknown): CompareDifference | undefined {
   const difference: CompareDifference = {};
   if (nonEmpty(entry.key)) difference.key = entry.key;
   if (nonEmpty(entry.value)) difference.value = entry.value;
+  if (entry.absolute === true) difference.absolute = true;
   return Object.keys(difference).length > 0 ? difference : undefined;
 }
 
