@@ -1,0 +1,72 @@
+{
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
+  "compatibility": {
+    "curioRuntime": ">=0.5.0",
+    "major": 1
+  },
+  "createdAt": "2026-10-07T00:00:00Z",
+  "dependencies": {
+    "js": {},
+    "packages": {},
+    "python": {
+      "onnxruntime": ">=1.17"
+    }
+  },
+  "description": "The example model package: for each cell of a building-height raster, how many metres it stands above the mean height of the 5 by 5 cells around it. Its model is a PyTorch module exported to ONNX by export_local_relief.py, beside this folder: one float32 input, height, and one output, relief, each 1 by 1 by rows by columns, rows and columns free.",
+  "id": "model.example.local-relief",
+  "kind": "model",
+  "license": "MIT",
+  "model": {
+    "entry": "models/local_relief.onnx",
+    "homepage": "https://github.com/urban-toolkit/curio",
+    "input": {
+      "dtype": "float32",
+      "height": 64,
+      "layout": "NCHW",
+      "scale": 1.0,
+      "width": 64
+    },
+    "labels": [],
+    "license": "MIT",
+    "publisher": "Curio",
+    "runtime": "onnx",
+    "sizeBytes": 2394,
+    "type": "image-to-image"
+  },
+  "name": "Local Relief (example)",
+  "permissions": [],
+  "publisher": "Curio",
+  "templates": [
+    {
+      "behavior": "code",
+      "category": "computation",
+      "description": "How many metres each cell of a building-height raster stands above the mean of the 5 by 5 cells around it. Input: a height raster in metres. Output: a raster on the same grid.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": false,
+      "iconRef": "fa-solid:city",
+      "id": "local-relief",
+      "inputPorts": [
+        {
+          "cardinality": "1",
+          "types": [
+            "RASTER"
+          ]
+        }
+      ],
+      "label": "Local Relief",
+      "outputPorts": [
+        {
+          "cardinality": "1",
+          "types": [
+            "RASTER"
+          ]
+        }
+      ],
+      "source": "sources/local-relief.py"
+    }
+  ],
+  "version": "1.0.0"
+}

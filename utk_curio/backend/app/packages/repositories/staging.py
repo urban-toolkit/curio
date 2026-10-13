@@ -16,17 +16,24 @@ Staging is idempotent by construction (same bytes → same digest → same file)
 and expiring: :func:`sweep_expired` removes artifacts past their TTL so an
 abandoned proposal's bytes do not live forever (dev/89 §6: an expired
 artifact marks the proposal expired — Apply never rebuilds silently).
+
+An artifact goes in from its bytes or from a file, and comes back out as a
+file opened and verified through the same handle (:func:`open_artifact`), so
+an archive never has to sit in memory whole.
 """
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import logging
 import os
 import re
+import shutil
 import time
 from pathlib import Path
+from typing import IO, Iterator
 
 from utk_curio.backend.app.packages.repositories.store import (
     _user_key_segment,
@@ -70,30 +77,56 @@ def _meta_path(user_key: str, digest: str) -> Path:
     return user_build_staging_dir(user_key) / f"{digest}.meta.json"
 
 
-def stage_artifact(user_key: str, data: bytes) -> str:
-    """Store *data* content-addressed; returns its SHA-256 digest.
+def _stream_digest(handle: IO[bytes]) -> str:
+    digest = hashlib.sha256()
+    for block in iter(lambda: handle.read(1024 * 1024), b""):
+        digest.update(block)
+    return digest.hexdigest()
+
+
+def stage_artifact(user_key: str, data: bytes | os.PathLike) -> str:
+    """Store the archive *data* content-addressed; returns its SHA-256 digest.
+
+    *data* is the archive's bytes, or the path of a file holding them, which
+    is hashed and copied in chunks.
 
     Idempotent: restaging identical bytes refreshes the metadata timestamp
     (extending the TTL) without rewriting the artifact. The write is atomic
     (tmp file + ``os.replace``) so a crash never leaves a partial artifact
     under a valid digest name.
     """
-    if not isinstance(data, (bytes, bytearray)) or not data:
+    if isinstance(data, (bytes, bytearray)):
+        size = len(data)
+        digest = hashlib.sha256(data).hexdigest() if data else ""
+        source = None
+    else:
+        try:
+            source = Path(data)
+            size = source.stat().st_size if source.is_file() else 0
+        except (TypeError, OSError):
+            size, source = 0, None
+        digest = ""
+        if size:
+            with open(source, "rb") as handle:
+                digest = _stream_digest(handle)
+    if not size:
         raise StagingError("artifact must be non-empty bytes")
-    if len(data) > MAX_ARTIFACT_BYTES:
+    if size > MAX_ARTIFACT_BYTES:
         raise StagingError(
-            f"artifact exceeds the staging limit ({len(data)} > {MAX_ARTIFACT_BYTES} bytes)"
+            f"artifact exceeds the staging limit ({size} > {MAX_ARTIFACT_BYTES} bytes)"
         )
-    digest = hashlib.sha256(data).hexdigest()
     base = user_build_staging_dir(user_key)
     base.mkdir(parents=True, exist_ok=True)
     target = _artifact_path(user_key, digest)
     if not target.is_file():
         tmp = base / f".tmp-{digest}"
-        tmp.write_bytes(bytes(data))
+        if source is None:
+            tmp.write_bytes(bytes(data))
+        else:
+            shutil.copyfile(source, tmp)
         os.replace(tmp, target)
     _meta_path(user_key, digest).write_text(
-        json.dumps({"createdAt": time.time(), "bytes": len(data)}),
+        json.dumps({"createdAt": time.time(), "bytes": size}),
         encoding="utf-8",
     )
     return digest
@@ -103,31 +136,44 @@ def has_artifact(user_key: str, digest: str) -> bool:
     return _artifact_path(user_key, _validate_digest(digest)).is_file()
 
 
-def read_artifact(user_key: str, digest: str) -> bytes:
-    """Read one staged artifact, verifying its content hash on every read.
+@contextlib.contextmanager
+def open_artifact(user_key: str, digest: str) -> Iterator[IO[bytes]]:
+    """One staged artifact, open for reading, its content hash verified
+    through the same handle the caller then reads, from the start.
 
     Raises :class:`StagingError` when the artifact is absent (expired or never
-    staged) or when the stored bytes no longer hash to *digest* — the corrupt
+    staged) or when the stored bytes no longer hash to *digest*: the corrupt
     file is removed so it can never be promoted (dev/89 §3.10: Apply installs
     only the exact reviewed digest).
     """
     digest = _validate_digest(digest)
     path = _artifact_path(user_key, digest)
-    if not path.is_file():
+    try:
+        handle = open(path, "rb")
+    except OSError:
         raise StagingError(
-            f"artifact {digest} is not staged (expired or never built) — "
+            f"artifact {digest} is not staged (expired or never built); "
             "rebuild from the immutable request"
-        )
-    data = path.read_bytes()
-    actual = hashlib.sha256(data).hexdigest()
-    if actual != digest:
-        path.unlink(missing_ok=True)
-        _meta_path(user_key, digest).unlink(missing_ok=True)
-        raise StagingError(
-            f"artifact {digest} failed integrity verification (stored bytes "
-            f"hash to {actual}) — removed; rebuild from the immutable request"
-        )
-    return data
+        ) from None
+    with handle:
+        actual = _stream_digest(handle)
+        if actual == digest:
+            handle.seek(0)
+            yield handle
+            return
+    path.unlink(missing_ok=True)
+    _meta_path(user_key, digest).unlink(missing_ok=True)
+    raise StagingError(
+        f"artifact {digest} failed integrity verification (stored bytes "
+        f"hash to {actual}), so it was removed; rebuild from the immutable request"
+    )
+
+
+def read_artifact(user_key: str, digest: str) -> bytes:
+    """Read one staged artifact, verifying its content hash on every read
+    (:func:`open_artifact`)."""
+    with open_artifact(user_key, digest) as handle:
+        return handle.read()
 
 
 def discard_artifact(user_key: str, digest: str) -> bool:

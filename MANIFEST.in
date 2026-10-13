@@ -44,6 +44,10 @@ include docs/examples/data/niteroi_lst_verao_2001_2024.tif
 include docs/examples/data/access_score.geojson
 recursive-include docs/examples/data/ImageTest *
 
+# The example model package and its export script, which Curio does not read:
+# setuptools would otherwise add the script as a module of docs/.
+prune docs/bring-your-own-model
+
 recursive-include utk_curio/backend *
 recursive-include utk_curio/sandbox *
 recursive-include utk_curio/frontend *

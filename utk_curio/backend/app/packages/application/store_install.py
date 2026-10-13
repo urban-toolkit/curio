@@ -8,6 +8,7 @@ every caller, and import order between siblings cannot matter.
 
 from __future__ import annotations
 
+import contextlib
 import io
 import json
 import logging
@@ -16,7 +17,7 @@ import tempfile
 import time
 import zipfile
 from pathlib import Path
-from typing import IO
+from typing import IO, Callable, Iterator
 
 from utk_curio.backend.app.common.safe_paths import is_within
 from utk_curio.backend.app.packages.domain.manifest import ManifestError
@@ -30,7 +31,7 @@ from utk_curio.backend.app.packages.repositories.archive import (
     InstallerError,
     InstallResult,
     load_package_manifest_from_dir,
-    zip_package_tree,
+    zip_package_tree_to,
     _build_integrity,
     _extract_into,
     _touch_manifest_for_install_recency,
@@ -48,6 +49,7 @@ from utk_curio.backend.app.packages.infrastructure import backend_runtime as pac
 from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
 from utk_curio.backend.app.packages.infrastructure.pip_runner import PipInstallError
 from utk_curio.backend.app.packages.application import (
+    model_packages as packages_model_packages,
     provisioning as packages_provisioning,
     store_reads as packages_store_reads,
 )
@@ -359,22 +361,65 @@ def install_package_from_directory(
 
     The implementation funnels through :func:`install_package_from_archive`
     so the manifest validator, size caps, and integrity-hash writer are
-    all the same code path the sideload uses.
+    all the same code path the sideload uses. The archive is written to disk
+    and read from there, never held in memory.
+
+    A model package's copy leaves out its ``models/``: shipped weights are
+    read where they ship (``model_packages``), never copied into a store.
     """
     if not source_dir.is_dir():
         raise InstallerError(f"catalog source {source_dir} is not a directory")
-    return install_package_from_archive(
-        user_key, zip_package_tree(source_dir), replace=replace, from_catalog=True,
-    )
+    with staging_scratch(user_key) as scratch:
+        zipped = zip_package_tree_to(
+            source_dir, scratch / "package.curio.zip",
+            leave_out_weights=packages_model_packages.is_model_package(source_dir),
+        )
+        with open(zipped, "rb") as stream:
+            return install_package_from_archive(user_key, stream, replace=replace, from_catalog=True)
 
 
-def export_package_archive(
+def _new_staging_folder(user_key: str) -> Path:
+    """A new folder for one archive on its way in or out. It is under the
+    user's ``.package-staging/``, on the store's file system and named as an
+    install's staging is, so a crash leaves nothing the next install's sweep
+    (:func:`_purge_stale_staging`) does not remove."""
+    base = user_package_staging_dir(user_key)
+    base.mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix=_STAGING_PREFIX, dir=str(base)))
+
+
+@contextlib.contextmanager
+def staging_scratch(user_key: str) -> Iterator[Path]:
+    """:func:`_new_staging_folder`, removed afterwards."""
+    folder = _new_staging_folder(user_key)
+    try:
+        yield folder
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
+def _export_source(user_key: str, dir_name: str, catalog_root: Path | None) -> Path:
+    target = package_dir(user_key, dir_name)
+    if target.is_dir():
+        return target
+    if catalog_root is not None:
+        base = catalog_root.resolve()
+        candidate = (base / dir_name).resolve()
+        if is_within(candidate, base) and (candidate / "manifest.json").is_file():
+            return candidate
+        raise InstallerError(f"package {dir_name} is neither installed nor in the catalog")
+    raise InstallerError(f"package {dir_name} is not installed")
+
+
+def export_package_archive_to(
     user_key: str,
     dir_name: str,
+    target: Path,
     *,
     catalog_root: Path | None = None,
-) -> bytes:
-    """Repackage a package back into a deterministic ``.curio.zip`` zip.
+) -> Path:
+    """Repackage a package back into a deterministic ``.curio.zip``, written
+    to *target*, file by file. Returns *target*.
 
     Useful for the factory ("Export package" button) and for migrating an
     installed package from one user to another. The archive layout matches
@@ -387,17 +432,28 @@ def export_package_archive(
     details -> Export" on every row it lists, and a row the user had not added
     answered ``package X is not installed`` - true, and useless from a page
     whose whole point is that the package is right there (#275).
+
+    A model package goes out with its weights: a user's copy of a shipped one
+    holds none, so they come from where they ship, downloaded first on a pip
+    install (``model_packages.export_weights_folder``, which raises
+    :class:`~.model_packages.ModelWeightsUnavailable`).
     """
-    target = package_dir(user_key, dir_name)
-    if target.is_dir():
-        return zip_package_tree(target)
-    if catalog_root is not None:
-        base = catalog_root.resolve()
-        candidate = (base / dir_name).resolve()
-        if is_within(candidate, base) and (candidate / "manifest.json").is_file():
-            return zip_package_tree(candidate)
-        raise InstallerError(f"package {dir_name} is neither installed nor in the catalog")
-    raise InstallerError(f"package {dir_name} is not installed")
+    source = _export_source(user_key, dir_name, catalog_root)
+    weights = packages_model_packages.export_weights_folder(source)
+    return zip_package_tree_to(source, target, weights_dir=weights)
+
+
+def export_package_archive(
+    user_key: str,
+    dir_name: str,
+    *,
+    catalog_root: Path | None = None,
+) -> bytes:
+    """:func:`export_package_archive_to`'s archive, as bytes."""
+    with tempfile.TemporaryDirectory(prefix="curio-export-") as folder:
+        return export_package_archive_to(
+            user_key, dir_name, Path(folder) / "package.curio.zip", catalog_root=catalog_root,
+        ).read_bytes()
 
 
 def _ensure_user_store_install(user_key: str, dir_name: str) -> InstallOutcome:
@@ -531,14 +587,27 @@ def remove_package(user_key: str, dir_name: str) -> None:
     packages_backend_runtime.remove_backend_residue(user_key, dir_name)
 
 
-def archive_for_download(user_key: str, dir_name: str) -> bytes:
-    """The archive a download answers with: the user's store copy, else the
-    committed catalog copy (the catalog page exports every row it lists, #275).
-    A package in neither place — or a malformed name — is a 404: to the
-    caller it is not there."""
+def archive_file_for_download(user_key: str, dir_name: str) -> tuple[Path, Callable[[], None]]:
+    """The archive a download answers with, written to a file: the user's store
+    copy, else the committed catalog copy (the catalog page exports every row
+    it lists, #275). Returns the file and the call that removes it, which the
+    route makes once the response is sent. A package in neither place, or a
+    malformed name, is a 404: to the caller it is not there. A model
+    package's weights that cannot be had is a 502 saying why."""
+    folder = _new_staging_folder(user_key)
+
+    def cleanup() -> None:
+        shutil.rmtree(folder, ignore_errors=True)
+
     try:
-        return export_package_archive(
-            user_key, dir_name, catalog_root=packages_catalog_dir.catalog_root(),
+        path = export_package_archive_to(
+            user_key, dir_name, folder / "package.curio.zip",
+            catalog_root=packages_catalog_dir.catalog_root(),
         )
     except (InstallerError, PackageIdError) as exc:
+        cleanup()
         raise PackageServiceError(str(exc), 404) from exc
+    except BaseException:
+        cleanup()
+        raise
+    return path, cleanup

@@ -31,19 +31,22 @@ scoping in the parent is what keeps artifacts apart, and that is not something a
 child can reach at all.
 """
 
+import glob
 import os
 import stat as stat_module
 import sys
 
 # Paths the execution user must not be able to read, relative to the launch
 # directory. Each is (relative path, "why it matters") so a log line or a test
-# failure explains itself.
+# failure explains itself. A ``*`` in a path stands for every folder there
+# (``expand``).
 SENSITIVE_PATHS = (
     ("instance", "the user database: password hashes and session tokens"),
     (".curio/data", "the artifact store: every session's data"),
     (".curio/users", "every user's imported datasets, projects and packages"),
     ("datasets", "the shared Data Catalog's published files"),
     ("models", "the Model Catalog's shipped models, staged into a child that runs one"),
+    ("packages/*/models", "a shipped model package's weights, staged into a child that runs one"),
     (".curio/fetched", "the catalog files a pip install downloaded, staged into a child that reads one"),
     (".curio/nodejs", "the Node.js packages a pip install's sandbox runs"),
     (".env", "the deployment's keys and tokens"),
@@ -70,7 +73,9 @@ SENSITIVE_PATHS = (
 # The files keep whatever mode they had, which is exactly what the hardlink
 # needs. Copying instead of linking would allow per-copy permissions, at the
 # cost of duplicating a multi-gigabyte raster for every node run.
-HARDLINK_SOURCES = frozenset({".curio/data", ".curio/users", "datasets", "models", ".curio/fetched"})
+HARDLINK_SOURCES = frozenset({
+    ".curio/data", ".curio/users", "datasets", "models", "packages/*/models", ".curio/fetched",
+})
 
 # What we want each of those to be. Owner-only: no read, no list, no traverse.
 DIRECTORY_MODE = 0o700
@@ -118,6 +123,18 @@ def describe_exposure(path, path_stat, *, uid, gid, reason):
     return None
 
 
+def expand(launch_dir, relative):
+    """The paths *relative* names under *launch_dir*, relative to it: itself,
+    or for a pattern with a ``*`` every existing folder it matches, sorted."""
+    if "*" not in relative:
+        return [relative]
+    matches = glob.glob(os.path.join(glob.escape(str(launch_dir)), relative))
+    return sorted(
+        os.path.relpath(match, launch_dir).replace(os.sep, "/")
+        for match in matches if os.path.isdir(match)
+    )
+
+
 def audit(launch_dir, *, uid, gid, paths=SENSITIVE_PATHS):
     """Report every sensitive path the execution user can still read.
 
@@ -126,17 +143,18 @@ def audit(launch_dir, *, uid, gid, paths=SENSITIVE_PATHS):
     yet, and warning about a directory that does not exist would be noise.
     """
     findings = []
-    for relative, reason in paths:
-        target = os.path.join(launch_dir, relative)
-        try:
-            path_stat = os.stat(target)
-        except OSError:
-            continue
-        finding = describe_exposure(
-            relative, path_stat, uid=uid, gid=gid, reason=reason
-        )
-        if finding:
-            findings.append(finding)
+    for pattern, reason in paths:
+        for relative in expand(launch_dir, pattern):
+            target = os.path.join(launch_dir, relative)
+            try:
+                path_stat = os.stat(target)
+            except OSError:
+                continue
+            finding = describe_exposure(
+                relative, path_stat, uid=uid, gid=gid, reason=reason
+            )
+            if finding:
+                findings.append(finding)
     return findings
 
 
@@ -166,23 +184,24 @@ def harden_paths(launch_dir, *, paths=SENSITIVE_PATHS, recurse_files=True):
         return {"changed": [], "failed": [], "skipped": "not a POSIX host"}
 
     changed, failed = [], []
-    for relative, _reason in paths:
-        target = os.path.join(launch_dir, relative)
-        if not os.path.exists(target):
-            continue
-        if os.path.isdir(target):
-            (changed if _tighten(target, DIRECTORY_MODE) else failed).append(relative)
-            # Tightening the contents of a hardlink source would tighten the
-            # staged copies the child must read; the 0700 above already makes
-            # everything under it unreachable by path. See HARDLINK_SOURCES.
-            if recurse_files and relative not in HARDLINK_SOURCES:
-                for root, directories, files in os.walk(target):
-                    for name in directories:
-                        _tighten(os.path.join(root, name), DIRECTORY_MODE)
-                    for name in files:
-                        _tighten(os.path.join(root, name), FILE_MODE)
-        else:
-            (changed if _tighten(target, FILE_MODE) else failed).append(relative)
+    for pattern, _reason in paths:
+        for relative in expand(launch_dir, pattern):
+            target = os.path.join(launch_dir, relative)
+            if not os.path.exists(target):
+                continue
+            if os.path.isdir(target):
+                (changed if _tighten(target, DIRECTORY_MODE) else failed).append(relative)
+                # Tightening the contents of a hardlink source would tighten the
+                # staged copies the child must read; the 0700 above already makes
+                # everything under it unreachable by path. See HARDLINK_SOURCES.
+                if recurse_files and pattern not in HARDLINK_SOURCES:
+                    for root, directories, files in os.walk(target):
+                        for name in directories:
+                            _tighten(os.path.join(root, name), DIRECTORY_MODE)
+                        for name in files:
+                            _tighten(os.path.join(root, name), FILE_MODE)
+            else:
+                (changed if _tighten(target, FILE_MODE) else failed).append(relative)
     return {"changed": changed, "failed": failed, "skipped": None}
 
 

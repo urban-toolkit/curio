@@ -1815,8 +1815,8 @@ File ingestion is **not** here - it lives in the datasets blueprint as `POST /ap
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/api/packages` | GET | List the user's installed packages |
-| `/api/packages/catalog` | GET | List packages available in the catalog source |
+| `/api/packages` | GET | List the user's installed packages (`?kind=node` or `?kind=model` keeps one kind) |
+| `/api/packages/catalog` | GET | List packages available in the catalog source (`?kind=` as above) |
 | `/api/packages/projects/<id>` | GET | Read a project's per-project lockfile |
 | `/api/packages/projects/<id>/install` | POST | Install a package into a project (copies files, pip-installs `manifest.dependencies.python`) |
 | `/api/packages/projects/<id>/<dirName>` | DELETE | Uninstall a package from a project (ref-counted prune + pip uninstall of unique deps) |

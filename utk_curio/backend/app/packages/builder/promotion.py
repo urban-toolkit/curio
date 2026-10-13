@@ -31,12 +31,13 @@ Apply endpoint calls after the user reviews a ``ready`` build:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
 import time
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 from utk_curio.backend.app.packages.repositories import seed_state
 from utk_curio.backend.app.packages.repositories import staging as build_staging
@@ -44,7 +45,7 @@ from utk_curio.backend.app.packages.builder.extension import installed_package_d
 from utk_curio.backend.app.packages.builder.packager import PackagerError, validate_archive
 from utk_curio.backend.app.packages.repositories.staging import StagingError
 from utk_curio.backend.app.packages.application.store_install import (
-    export_package_archive,
+    export_package_archive_to,
     install_package_from_archive,
     uninstall_package,
 )
@@ -164,13 +165,13 @@ def promote(
         existing = _existing_journal(user_key, target, artifact_digest)
         if existing is not None:
             return existing
-        archive, manifest = _verified_artifact(user_key, target, artifact_digest)
-        installed_digest = _checked_base(user_key, target, base_digest)
-        journal = _open_journal(target, artifact_digest, base_digest, project_id)
-        _save_journal(user_key, journal)
-        if installed_digest is not None:
-            _back_up_prior(user_key, journal, installed_digest)
-        _install_artifact(user_key, journal, archive, replace=installed_digest is not None)
+        with _verified_artifact(user_key, target, artifact_digest) as (archive, manifest):
+            installed_digest = _checked_base(user_key, target, base_digest)
+            journal = _open_journal(target, artifact_digest, base_digest, project_id)
+            _save_journal(user_key, journal)
+            if installed_digest is not None:
+                _back_up_prior(user_key, journal, installed_digest)
+            _install_artifact(user_key, journal, archive, replace=installed_digest is not None)
         _pin_backend_entry(user_key, journal)
         _provision_dependencies(user_key, journal, manifest)
         _post_apply_probe(user_key, journal, manifest)
@@ -196,23 +197,27 @@ def _existing_journal(user_key: str, target: str, artifact_digest: str) -> dict[
     return None
 
 
+@contextlib.contextmanager
 def _verified_artifact(user_key: str, target: str, artifact_digest: str):
     """Exact digest: read back from content-addressed staging (verify-on-read),
-    re-validated through the installer path, resolving to the promoted target."""
-    try:
-        archive = build_staging.read_artifact(user_key, artifact_digest)
-    except StagingError as exc:
-        raise PromotionError(
-            f"staged artifact unavailable: {exc}", 410) from exc
-    try:
-        manifest = validate_archive(archive)
-    except PackagerError as exc:
-        raise PromotionError(str(exc), 422) from exc
-    if manifest.dir_name != target:
-        raise PromotionError(
-            f"reviewed artifact resolves to {manifest.dir_name!r} but the "
-            f"proposal targets {target!r} — refused", 409)
-    return archive, manifest
+    re-validated through the installer path, resolving to the promoted target.
+    Yields the artifact open (the handle its digest was verified through, so
+    the bytes installed are the bytes verified) and its manifest."""
+    with contextlib.ExitStack() as stack:
+        try:
+            archive = stack.enter_context(build_staging.open_artifact(user_key, artifact_digest))
+        except StagingError as exc:
+            raise PromotionError(
+                f"staged artifact unavailable: {exc}", 410) from exc
+        try:
+            manifest = validate_archive(archive)
+        except PackagerError as exc:
+            raise PromotionError(str(exc), 422) from exc
+        if manifest.dir_name != target:
+            raise PromotionError(
+                f"reviewed artifact resolves to {manifest.dir_name!r} but the "
+                f"proposal targets {target!r}: refused", 409)
+        yield archive, manifest
 
 
 def _checked_base(user_key: str, target: str, base_digest: str | None) -> str | None:
@@ -258,8 +263,7 @@ def _open_journal(
 
 def _back_up_prior(user_key: str, journal: dict[str, Any], installed_digest: str) -> None:
     """Compensation held: the prior editable package is exported BEFORE the replace."""
-    backup = export_package_archive(user_key, journal["target"])
-    _backup_path(user_key, journal["artifactDigest"]).write_bytes(backup)
+    export_package_archive_to(user_key, journal["target"], _backup_path(user_key, journal["artifactDigest"]))
     journal["backupHeld"] = True
     journal["priorDigest"] = installed_digest
     # Where the prior copy came from goes back with it: restoring a catalog
@@ -271,7 +275,7 @@ def _back_up_prior(user_key: str, journal: dict[str, Any], installed_digest: str
     _save_journal(user_key, journal)
 
 
-def _install_artifact(user_key: str, journal: dict[str, Any], archive: bytes, *, replace: bool) -> None:
+def _install_artifact(user_key: str, journal: dict[str, Any], archive: IO[bytes], *, replace: bool) -> None:
     try:
         install_package_from_archive(user_key, archive, replace=replace)
     except InstallerError as exc:
@@ -486,7 +490,8 @@ def _rollback_locked(user_key: str, journal: dict[str, Any], reason: str) -> Non
             backup_file = _backup_path(user_key, journal["artifactDigest"])
             if not backup_file.is_file():
                 raise PromotionError(f"backup for {target} is missing", 500)
-            install_package_from_archive(user_key, backup_file.read_bytes(), replace=True)
+            with open(backup_file, "rb") as backup:
+                install_package_from_archive(user_key, backup, replace=True)
             if "priorSeedRecord" in journal:
                 seed_state.put(user_key, target, journal["priorSeedRecord"])
         elif _has_step(journal, "installed"):
