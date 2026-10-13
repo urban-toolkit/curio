@@ -112,10 +112,12 @@ subtracts input_0 from input_1. `chart` is `{preset?, x?, y?, aggregate?}`:
 `table`, `x` and `y` name columns of that table, and `aggregate` is one of `mean`,
 `sum`, `median`, `min`, `max` and `count`. `mode` is `chart` or `difference`, written
 only when the user chose one; without it the node shows Difference for two rasters
-or two layers and Chart otherwise. `difference` is `{key?, value?}`: `key` is the
-column Difference matches the rows of two layers or tables on (without it,
-`osm_id` or `building_id`), passed to `curio_difference_scenarios` as `key=`, and
-`value` the column or band its map colors the difference by.
+or two layers and Chart otherwise. `difference` is `{key?, value?, absolute?}`:
+`key` is the column Difference matches the rows of two layers or tables on (without
+it, `osm_id` or `building_id`), passed to `curio_difference_scenarios` as `key=`,
+`value` the column or band its map colors the difference by, and `absolute`, when
+`true`, gives each difference's size instead of input_1 minus input_0, passed as
+`absolute=True`.
 
 `metadata.editFeatures` holds a `curio.builtin/edit-features` node's edit list,
 written only when it has one of its fields. `key` is the column that identifies a

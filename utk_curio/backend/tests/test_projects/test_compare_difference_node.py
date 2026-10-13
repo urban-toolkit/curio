@@ -94,8 +94,9 @@ def test_the_schema_lists_the_modes_the_frontend_offers():
         {"inputs": LABELS, "mode": "difference", "difference": {"key": "osm_id", "value": "sunlight"}},
         {"mode": "chart", "chart": {"preset": "bar"}},
         {"inputs": LABELS, "difference": {"value": "band_1"}},
+        {"inputs": LABELS, "mode": "difference", "difference": {"absolute": True}},
     ],
-    ids=["difference with a key and a value", "chart chosen", "a value alone"],
+    ids=["difference with a key and a value", "chart chosen", "a value alone", "each difference's size"],
 )
 def test_the_schema_takes_a_chosen_view_and_what_difference_joins_on(settings):
     assert _errors(_doc(copy.deepcopy(settings))) == []
@@ -166,7 +167,14 @@ def test_the_written_difference_code_runs_as_a_server_run_resolves_it():
         out = _run(resolved, [reference, comparison], [input["slot"] for input in case["inputs"]])
         assert out[key].tolist() == ["a", "b", "c"], case["name"]
         assert out["change"].tolist() == ["removed", "changed", "added"], case["name"]
-        assert [None if pd.isna(v) else v for v in out["sunlight"]] == [None, -2.5, None], case["name"]
+        # 2.5 less 5: the difference, or with absolute=True its size.
+        change = 2.5 if case.get("absolute") else -2.5
+        assert [None if pd.isna(v) else v for v in out["sunlight"]] == [None, change, None], case["name"]
+
+
+def test_a_case_gives_each_differences_size():
+    cases = _read_json("compareDifference.cases.json")["cases"]
+    assert [case["name"] for case in cases if case.get("absolute")] == ["two scenarios, each difference its size"]
 
 
 def test_the_difference_code_for_no_inputs_asks_for_two():

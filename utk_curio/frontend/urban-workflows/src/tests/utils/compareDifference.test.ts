@@ -106,6 +106,19 @@ describe("the Autark document that draws it", () => {
     expect(title(differenceMapDoc(undefined))).toBeUndefined();
   });
 
+  test("an absolute difference's legend says so; its change, a category, has no size", () => {
+    const band = { value: "band_1", text: "band_1", categorical: false };
+    const title = (doc: any) => doc.map.layerRefs[0].title;
+    expect(title(differenceMapDoc(band, true))).toBe("band_1 absolute change");
+    expect(title(differenceMapDoc(band, false))).toBe("band_1 change");
+    const change = differenceValues("layer", LAYER).find((v) => v.value === "change");
+    expect(title(differenceMapDoc(change, true))).toBe("change");
+    // Only the title moves: the same band, table and colors.
+    const { title: _absolute, ...rest } = (differenceMapDoc(band, true) as any).map.layerRefs[0];
+    const { title: _signed, ...signed } = (differenceMapDoc(band) as any).map.layerRefs[0];
+    expect(rest).toEqual(signed);
+  });
+
   test("a layer, by a number column, from dark purple (lowest) to yellow (highest)", () => {
     const [sunlight] = differenceValues("layer", LAYER);
     expect(differenceMapDoc(sunlight)).toEqual({
