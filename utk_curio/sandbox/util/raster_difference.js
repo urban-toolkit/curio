@@ -1,7 +1,7 @@
 // The Autark half of a Compare Scenarios node's Difference of two rasters
 // (#662), run in the sandbox's Node process as an Autark data section is:
 // js_wrapper.mjs wraps it, so this is the body of the function it calls with
-// `arg`, the request scenario_difference.py made: each raster's GeoTIFF bytes
+// `input_0`, the request scenario_difference.py made: each raster's GeoTIFF bytes
 // (base64), its label and the description the raster route serves beside its
 // bytes.
 //
@@ -19,7 +19,7 @@ const db = new AutkDb();
 await db.init();
 const envelopes = {};
 for (const role of ['reference', 'comparison']) {
-  const side = arg[role];
+  const side = input_0[role];
   const plan = planForMeta(side.label, side.meta);
   if ('refused' in plan) throw new Error(plan.refused);
   const bytes = Buffer.from(side.geotiff, 'base64');

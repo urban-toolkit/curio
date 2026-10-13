@@ -286,10 +286,10 @@ export function contextWarnings(
     const onlyTheirs = contexts[0].filter((id) => !mine.has(id));
     if (onlyMine.length === 0 && onlyTheirs.length === 0) return;
     const parts: string[] = [];
-    if (onlyMine.length > 0) parts.push(`only input ${other.slot} reads ${listOf(namesOf(onlyMine, nodes))}`);
-    if (onlyTheirs.length > 0) parts.push(`only input ${reference.slot} reads ${listOf(namesOf(onlyTheirs, nodes))}`);
+    if (onlyMine.length > 0) parts.push(`only input_${other.slot} reads ${listOf(namesOf(onlyMine, nodes))}`);
+    if (onlyTheirs.length > 0) parts.push(`only input_${reference.slot} reads ${listOf(namesOf(onlyTheirs, nodes))}`);
     warnings.push(
-      `Input ${other.slot} (${other.scenario.name}) and input ${reference.slot} (${reference.scenario.name}) read different context: ${parts.join("; ")}.`,
+      `input_${other.slot} (${other.scenario.name}) and input_${reference.slot} (${reference.scenario.name}) read different context: ${parts.join("; ")}.`,
     );
   });
   return warnings;

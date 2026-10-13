@@ -20,8 +20,8 @@ RASTER = "docs/examples/data/niteroi_lst_verao_2001_2024.tif"
 
 
 def _node(body):
-    """*body* as the sandbox receives a node's code: indented for
-    ``def userCode(arg):``."""
+    """*body* as the sandbox receives a node's code: indented for the
+    ``def userCode(...)`` header it is the body of."""
     return textwrap.indent(textwrap.dedent(body), "    ")
 
 
@@ -117,7 +117,7 @@ def test_a_folder_that_holds_the_path_reads_its_own_file(launch):
 
 
 def test_a_traceback_gives_the_line_of_the_code_as_written(launch):
-    """Line 1 is ``def userCode(arg):``, so the raise on the code's third
+    """Line 1 is the ``def userCode(...)`` header, so the raise on the code's third
     line is line 4, as it is for code that reads no shipped file."""
     code = _node(f"""\
         with open({RASTER!r}, 'rb') as f:

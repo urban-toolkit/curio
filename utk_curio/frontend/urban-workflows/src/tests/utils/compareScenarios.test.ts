@@ -31,7 +31,7 @@ function node(id: string, extra: Record<string, unknown> = {}) {
   return {
     id,
     type: "__curioUniversalNode",
-    data: { nodeId: id, nodeType: "curio.builtin/computation-analysis@1", code: "return arg", ...extra },
+    data: { nodeId: id, nodeType: "curio.builtin/computation-analysis@1", code: "return input_0", ...extra },
   } as any;
 }
 
@@ -59,13 +59,13 @@ const factor = (value: number) => [{ name: "factor", type: "number", default: 1,
 function twoScenarios() {
   const nodes = [
     node("load", { title: "Loader" }),
-    node("scale", { title: "Scale", widgets: factor(1), code: "gdf = arg.copy()\ngdf['h'] = gdf['h'] * [!! factor !!]\nreturn gdf" }),
+    node("scale", { title: "Scale", widgets: factor(1), code: "gdf = input_0.copy()\ngdf['h'] = gdf['h'] * [!! factor !!]\nreturn gdf" }),
     node("chart", { title: "Sunlight" }),
     node("scale-2", {
       title: "Scale",
       widgets: factor(2),
       copiedFrom: ["scale"],
-      code: "gdf = arg.copy()\ngdf['h'] = gdf['h'] * [!! factor !!]\ngdf = gdf[gdf['h'] > 0]\nreturn gdf",
+      code: "gdf = input_0.copy()\ngdf['h'] = gdf['h'] * [!! factor !!]\ngdf = gdf[gdf['h'] > 0]\nreturn gdf",
     }),
     node("chart-2", { title: "Sunlight", copiedFrom: ["chart"] }),
     node(COMPARE, { nodeType: "curio.builtin/compare-scenarios@1", title: "Compare" }),
@@ -101,7 +101,7 @@ describe("compareInputs", () => {
     const inputs = compareInputs(COMPARE, nodes, [...edges, edge("load", COMPARE, "in_2")], scenarios);
     expect(inputs[2]).toEqual({ slot: 2, source: "load", scenario: null, label: { name: "Loader", color: NO_SCENARIO_COLOR } });
     expect(labelWarnings(inputs)).toEqual([
-      "Input 2 comes from Loader, which is in no scenario: its rows carry the node's name, and What differs leaves it out.",
+      "input_2 comes from Loader, which is in no scenario: its rows carry the node's name, and What differs leaves it out.",
     ]);
   });
 
@@ -288,19 +288,19 @@ describe("contextWarnings", () => {
     const all = [...nodes, second];
     const compared = comparedScenarios(compareInputs(COMPARE, all, rewired, scenarios));
     expect(contextWarnings(compared, all, rewired)).toEqual([
-      "Input 1 (Twice as tall) and input 0 (Baseline) read different context: only input 1 reads Loader 2020; only input 0 reads Loader.",
+      "input_1 (Twice as tall) and input_0 (Baseline) read different context: only input_1 reads Loader 2020; only input_0 reads Loader.",
     ]);
   });
 
   test("a Parameter node one scenario's code names is context too", () => {
     const { nodes, edges, scenarios } = twoScenarios();
     const all = [
-      ...nodes.map((n) => (n.id === "scale-2" ? node("scale-2", { ...n.data, code: "return arg * [!! @season !!]" }) : n)),
+      ...nodes.map((n) => (n.id === "scale-2" ? node("scale-2", { ...n.data, code: "return input_0 * [!! @season !!]" }) : n)),
       parameter("season", "season", 2),
     ];
     const compared = comparedScenarios(compareInputs(COMPARE, all, edges, scenarios));
     expect(contextWarnings(compared, all, edges)).toEqual([
-      "Input 1 (Twice as tall) and input 0 (Baseline) read different context: only input 1 reads Parameter season.",
+      "input_1 (Twice as tall) and input_0 (Baseline) read different context: only input_1 reads Parameter season.",
     ]);
   });
 
@@ -310,6 +310,6 @@ describe("contextWarnings", () => {
     const rewired = [...edges.filter((e) => !(e.source === "load" && e.target === "scale-2")), edge("lzzz", "scale-2")];
     const all = [...nodes, twin];
     const compared = comparedScenarios(compareInputs(COMPARE, all, rewired, scenarios));
-    expect(contextWarnings(compared, all, rewired)[0]).toContain("only input 1 reads Loader (lzzz); only input 0 reads Loader (load)");
+    expect(contextWarnings(compared, all, rewired)[0]).toContain("only input_1 reads Loader (lzzz); only input_0 reads Loader (load)");
   });
 });

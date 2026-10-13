@@ -153,7 +153,7 @@ def test_the_headless_runner_sends_them_too(tmp_curio):
 
     spec = {"dataflow": {"nodes": [
         {"id": "a", "type": "curio.builtin/computation-analysis", "content": "return 1"},
-        {"id": "b", "type": NODE_TYPE, "content": "return arg"},
+        {"id": "b", "type": NODE_TYPE, "content": "return input_0"},
     ], "edges": [{"id": "e1", "source": "a", "target": "b"}]}}
     roster = {
         "curio.builtin/computation-analysis": {"executable": True, "engine": "python"},

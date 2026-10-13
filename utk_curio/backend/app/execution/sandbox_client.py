@@ -50,7 +50,7 @@ def read_timed_out(exc: Exception) -> bool:
     if isinstance(exc, requests.Timeout):
         return True
     return isinstance(exc, requests.ConnectionError) and any(
-        isinstance(arg, ReadTimeoutError) for arg in exc.args
+        isinstance(cause, ReadTimeoutError) for cause in exc.args
     )
 
 

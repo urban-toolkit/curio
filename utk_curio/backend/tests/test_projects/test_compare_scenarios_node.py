@@ -98,12 +98,14 @@ def _spec_for(case: dict) -> dict:
     return {"dataflow": {"name": "Compare", "nodes": nodes, "edges": edges}}
 
 
-def _run(code: str, arg):
+def _run(code: str, value, slots):
+    """*code* run as the sandbox runs a node: *value* split over the wired
+    circles *slots*, each the code's input_k."""
+    from utk_curio.sandbox.util.input_names import call_as_node
     from utk_curio.sandbox.util.scenario_stack import stack_scenarios
 
     namespace = {"curio_stack_scenarios": stack_scenarios}
-    exec("def userCode(arg):\n" + textwrap.indent(code, "    "), namespace)
-    return namespace["userCode"](arg)
+    return call_as_node(textwrap.indent(code, "    "), namespace, value, slots)
 
 
 def test_the_written_code_runs_as_a_server_run_resolves_it():
@@ -119,8 +121,8 @@ def test_the_written_code_runs_as_a_server_run_resolves_it():
         resolved = workflow.node_code(compare, "python")
         assert "[!!" not in resolved, f"{case['name']}: a chip was left in the code:\n{resolved}"
         frames = [pd.DataFrame({"value": [input["slot"] * 10]}) for input in case["inputs"]]
-        arg = frames[0] if len(frames) == 1 else frames
-        stacked = _run(resolved, arg)
+        value = frames[0] if len(frames) == 1 else frames
+        stacked = _run(resolved, value, [input["slot"] for input in case["inputs"]])
         expected = [
             [input["label"].get("scenario"), input["label"]["name"], input["slot"] * 10] for input in case["inputs"]
         ]
@@ -147,4 +149,4 @@ def test_the_code_for_no_inputs_asks_for_them():
     cases = _read_json("compareCode.cases.json")["cases"]
     empty = next(case for case in cases if not case["inputs"])
     with pytest.raises(ValueError, match="has no inputs"):
-        _run(empty["code"], None)
+        _run(empty["code"], None, [])

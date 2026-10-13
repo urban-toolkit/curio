@@ -59,7 +59,7 @@ buildings, so it raises each footprint to its `height`:
   "map": {
     "layerRefs": [
       {
-        "dataRef": "[!! input 0 !!]",
+        "dataRef": "[!! input_0 !!]",
         "getFnv": "height",
         "getFnvType": "quantitative",
         "colorMapInterpolator": "interpolateViridis",
@@ -95,7 +95,7 @@ Ported from SCOUT, https://github.com/urban-toolkit/scout.
 from scout_raster_conversion.node_outputs import rasterize_buildings
 
 return rasterize_buildings(
-    arg,
+    input_0,
     attribute=[!! attribute !!],
     zoom=int([!! zoom !!]),
     max_height=float([!! max_height !!]),
@@ -129,7 +129,7 @@ An Autark map reads the first part of the node's output, the raster, as
   "map": {
     "layerRefs": [
       {
-        "dataRef": "[!! input 0 !!]",
+        "dataRef": "[!! input_0 !!]",
         "getFnv": "band_1",
         "colorMapInterpolator": "interpolateViridis",
         "isColorMap": false
@@ -152,7 +152,7 @@ since Raster Statistics reads rasters only:
 
 ```python
 # Rasterize Buildings returns (mosaic, tiles): the height mosaic.
-return arg[0]
+return input_0[0]
 ```
 
 Accumulated Shadow runs Deep Umbra on every tile of that height raster. Its
@@ -166,7 +166,7 @@ its (mosaic, tiles) output: building heights in metres in EPSG:3395 on the
 zoom-16 tile grid.
 Output: the accumulated shadow in minutes, a raster on the input's grid. An
 Autark map draws it as input_0, band band_1. A Raster Statistics node gives its
-mean and median over the ground: the heights on its input 1 as the mask, with
+mean and median over the ground: the heights on its input_1 as the mask, with
 where=lambda height: height < 1.08.
 The Widgets tab sets the season. The model is the Model Catalog's Deep Umbra,
 model.scout.deep-umbra.
@@ -175,7 +175,7 @@ Ported from SCOUT, https://github.com/urban-toolkit/scout.
 from scout_shadow.node_outputs import accumulated_shadow, open_model
 
 model = open_model(lambda: curio_load_model("model.scout.deep-umbra"))
-return accumulated_shadow(arg, season=[!! season !!], model=model, output_file=curio_output_file)
+return accumulated_shadow(input_0, season=[!! season !!], model=model, output_file=curio_output_file)
 ```
 
 | Widget | Default | What it sets |
@@ -192,17 +192,17 @@ is in shadow.
 
 ## Sum it up over the ground
 
-Raster Statistics reads the shadow on its input 0 and the heights on its
-input 1, as the mask: SCOUT's metrics count the ground, the cells Deep Umbra
+Raster Statistics reads the shadow on its input_0 and the heights on its
+input_1, as the mask: SCOUT's metrics count the ground, the cells Deep Umbra
 reads as gray level 0, a height under 1.08 m.
 
 ```python
 # Raster Statistics: the mean, median, minimum, maximum and count of a
 # raster's cells, nodata left out, as a table of one row.
-# Input 0 is the accumulated shadow in minutes, input 1 the heights it was
+# input_0 is the accumulated shadow in minutes, input_1 the heights it was
 # predicted from, as the mask: SCOUT's metrics count the ground, the cells
 # Deep Umbra reads as gray level 0, a height under 1.08 m.
-return curio_raster_statistics(arg, where=lambda height: height < 1.08)
+return curio_raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)
 ```
 
 In summer the ground of these blocks is in shadow 128.6 minutes on average,
@@ -219,7 +219,7 @@ A third Autark map reads the shadow raster as `input_0`:
   "map": {
     "layerRefs": [
       {
-        "dataRef": "[!! input 0 !!]",
+        "dataRef": "[!! input_0 !!]",
         "getFnv": "band_1",
         "colorMapInterpolator": "interpolateReds",
         "legendTitle": "Accumulated shadow (minutes)"

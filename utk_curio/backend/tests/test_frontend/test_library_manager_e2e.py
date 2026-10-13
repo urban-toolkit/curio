@@ -70,10 +70,8 @@ SPEC_PLACEHOLDER = "e.g. numpy or scikit-learn==1.4.0"
 # 525x350 spacing rule that governs the multi-node tests does not apply.
 POS_NODE = (150, 150)
 
-# ``worker.py`` refuses code that mentions ``arg`` when no input is wired, and
-# that guard is a plain substring test - any occurrence at all (even inside a
-# word like "large" or "target") would make both runs fail the same way and
-# quietly void the test.
+# ``worker.py`` refuses code that reads ``input_0`` when no input is wired,
+# which would make both runs fail the same way and quietly void the test.
 MARKER = "CURIO_E2E_TITLE"
 NODE_CODE = (
     f"from {LIB} import {LIB}\n"
@@ -81,7 +79,7 @@ NODE_CODE = (
     f'print("{MARKER}", result)\n'
     "return [result]\n"
 )
-assert "arg" not in NODE_CODE, "worker.py refuses code containing 'arg' with no input"
+assert "input_0" not in NODE_CODE, "worker.py refuses code that reads input_0 with no input"
 
 _NET_FAIL_RE = re.compile(
     r"Could not find a version|Temporary failure in name resolution|ProxyError|"

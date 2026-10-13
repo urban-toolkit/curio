@@ -38,7 +38,7 @@ def _kind(template_id: str = "demo-kind") -> dict:
     }
 
 
-def _stage_build(manifest_dict, *, version="1.0.0", body="return arg\n",
+def _stage_build(manifest_dict, *, version="1.0.0", body="return input_0\n",
                  python_deps=None, user_key="guest") -> str:
     """Assemble + stage one valid built archive; returns its digest."""
     manifest = manifest_dict(kinds=[_kind()], version=version,

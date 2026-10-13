@@ -40,7 +40,7 @@ def _request(package_id: str = "ai.test.demo", note: str = "v1"):
         "target": f"{package_id}@1",
         "manifest": {"id": package_id, "compatibility": {"major": 1},
                      "templates": [{"id": "demo-kind"}]},
-        "files": {"sources/demo.py": {"text": f"# {note}\nreturn arg\n"}},
+        "files": {"sources/demo.py": {"text": f"# {note}\nreturn input_0\n"}},
     })
 
 

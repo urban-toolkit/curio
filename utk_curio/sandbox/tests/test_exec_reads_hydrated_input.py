@@ -47,7 +47,7 @@ class ExecReadsHydratedInputTestCase(unittest.TestCase):
 
     def exec_on(self, file_path, session_id):
         response = self.client.post("/exec", json={
-            "code": textwrap.indent("return int(arg['n'].sum())\n", "    "),
+            "code": textwrap.indent("return int(input_0['n'].sum())\n", "    "),
             "file_path": file_path,
             "nodeType": "DATA_TRANSFORMATION",
             "dataType": "dataframe",

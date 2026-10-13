@@ -1,7 +1,7 @@
 """The ``curio.media@1`` nodes, run the way the canvas runs them.
 
-Each template's source is indented and wrapped in ``def userCode(arg):`` as
-``PythonInterpreter.ts`` does, and fed the rows ``curio_load_collection`` returns
+Each template's source is indented as ``PythonInterpreter.ts`` does and run as
+the sandbox runs it (``input_names.call_as_node``), fed the rows ``curio_load_collection`` returns
 for the example storage source's collections, so the input is what a Data
 Loading node would hand it.
 """
@@ -32,11 +32,11 @@ def node_source(name: str, **settings) -> str:
     return code
 
 
-def run_node(name: str, arg, namespace: dict, **settings):
+def run_node(name: str, value, namespace: dict, **settings):
+    from utk_curio.sandbox.util.input_names import call_as_node
+
     body = "\n".join("    " + line for line in node_source(name, **settings).splitlines())
-    ns = dict(namespace)
-    exec(f"def userCode(arg):\n{body}", ns)  # noqa: S102 - the canvas does exactly this
-    return ns["userCode"](arg)
+    return call_as_node(body, dict(namespace), value, [0])
 
 
 def collection_rows(manifest, resource_id: str, tmp_path: Path):
@@ -161,9 +161,10 @@ def test_the_uhvi_zonal_node_reads_a_mosaic(collection):
     zones = gpd.GeoDataFrame({"zone": ["left"]}, geometry=[zone], crs=mosaic.crs)
     code = (REPO / "packages" / "ai.utk.uhvi@1" / "sources" / "uhvi-zonal.py").read_text(encoding="utf-8")
     body = "\n".join("    " + line for line in code.splitlines())
-    ns: dict = {}
-    exec(f"def userCode(arg):\n{body}", ns)  # noqa: S102 - the canvas does exactly this
-    out = ns["userCode"]([mosaic, zones])
+    from utk_curio.sandbox.util.input_names import call_as_node
+
+    # The raster on circle 0 and the zones on circle 1.
+    out = call_as_node(body, {}, [mosaic, zones], [0, 1])
     band = mosaic.read(1).astype(float)
     inside = geometry_mask([zone], transform=mosaic.transform, invert=True, out_shape=band.shape)
     assert out["uhvi_mean"].iloc[0] == pytest.approx(float(np.mean(band[inside])))

@@ -15,6 +15,7 @@ from shapely import wkt
 
 from utk_curio.sandbox.app.worker import _worker_init, execute_code, execute_js_code, chdir_locked
 from utk_curio.sandbox.util import package_modules as package_modules_util
+from utk_curio.sandbox.util.input_names import parse_slots
 from utk_curio.sandbox.util.secrets import shape_secrets
 from utk_curio.sandbox.util.db import connection_in_use
 
@@ -649,6 +650,8 @@ def exec():
     node_type  = request.json['nodeType']
     data_type  = request.json['dataType']
     session_id = request.json.get('session_id') or None
+    # The wired circles, in circle order: which input_k each value is.
+    input_slots = parse_slots(request.json.get('input_slots'))
     save_dataset = request.json.get('save_dataset', True)
     if isinstance(save_dataset, str):
         save_dataset = save_dataset.strip().lower() not in ('0', 'false', 'no', 'off')
@@ -723,6 +726,7 @@ def exec():
                 dataset_paths=dataset_paths, user_key=user_key, config=config,
                 secrets=secrets, collections=collections, media_dir=media_dir, models=models,
                 dataset_formats=dataset_formats, package_modules=package_modules,
+                input_slots=input_slots,
             )
         else:
             result = execute_code(
@@ -730,6 +734,7 @@ def exec():
                 session_id=session_id, save_dataset=bool(save_dataset),
                 dataset_paths=dataset_paths, secrets=secrets, collections=collections, media_dir=media_dir,
                 models=models, dataset_formats=dataset_formats, package_modules=package_modules,
+                input_slots=input_slots,
             )
 
         # A Compare Scenarios node's code hands two rasters back as a request: they
@@ -755,6 +760,8 @@ def exec_js():
     node_type  = request.json['nodeType']
     data_type  = request.json['dataType']
     session_id = request.json.get('session_id') or None
+    # The wired circles, in circle order: which input_k each value is.
+    input_slots = parse_slots(request.json.get('input_slots'))
     save_dataset = request.json.get('save_dataset', True)
     if isinstance(save_dataset, str):
         save_dataset = save_dataset.strip().lower() not in ('0', 'false', 'no', 'off')
@@ -767,7 +774,7 @@ def exec_js():
     def run():
         return execute_js_code(
             code, str(file_path), str(node_type), str(data_type), launch_dir,
-            session_id=session_id, save_dataset=bool(save_dataset),
+            session_id=session_id, save_dataset=bool(save_dataset), input_slots=input_slots,
         )
 
     return _reply_when_run('/execJs', node_type, run)

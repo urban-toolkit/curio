@@ -1,8 +1,7 @@
 """Playwright E2E for #603: a failed node stops the node it feeds.
 
-The report: a Python Computation node reading ``arg['sp_units']`` failed with
-"This node received no input but its code references `arg`", although its
-input was wired. The Data Loading node feeding it had failed a moment earlier
+The report: a Python Computation node reading its input's ``sp_units`` failed
+with a message saying it had received no input, although its input was wired. The Data Loading node feeding it had failed a moment earlier
 in the same Run All. The runner went on to the next level anyway, so the
 downstream node was sent to the sandbox with nothing, and its message pointed
 at the wiring rather than at the node that actually failed. And the failed
@@ -45,7 +44,7 @@ COMPUTE_ID = "upstream-failure-compute"
 
 LOADER_CODE = 'raise RuntimeError("upstream boom")\n'
 # Reads its input the way the reporter's node did.
-COMPUTE_CODE = "sp = arg['sp_units']\nreturn sp\n"
+COMPUTE_CODE = "sp = input_0['sp_units']\nreturn sp\n"
 
 
 def _node(node_id: str, node_type: str, x: int, content: str) -> dict:
@@ -117,7 +116,7 @@ def test_a_failed_node_stops_the_node_it_feeds(
     # 2. It names the node that failed, and does not blame its wiring.
     assert "The node feeding this one" in reason, reason
     assert "Data Loading" in reason, reason
-    assert "received no input" not in reason, reason
+    assert "nothing arrived" not in reason, reason
 
     # 3. The failed node's strip leads with its exception, not the header of
     #    the traceback.

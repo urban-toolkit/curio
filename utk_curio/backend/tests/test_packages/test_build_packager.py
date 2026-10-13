@@ -58,7 +58,7 @@ def _request(manifest_dict, *, files=None, dependencies=None):
         "target": "ai.test.demo@1",
         "manifest": _full_manifest(manifest_dict),
         "files": files if files is not None else {
-            "starters/note-kind/Default.js": {"text": "return arg\n"},
+            "starters/note-kind/Default.js": {"text": "return input_0\n"},
             "README.md": {"text": "# Note\n"},
         },
         "dependencies": dependencies or {},

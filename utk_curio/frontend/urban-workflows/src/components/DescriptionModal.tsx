@@ -24,7 +24,7 @@ type DescriptionModalProps = {
  * it takes. A kind with several says how many there are and lists each one's
  * types, so Spatial Join's two inputs do not read as "Input number: 1" and one
  * input taking GEODATAFRAME twice (#528). Inputs are numbered from 0, as their
- * circles and their chips (`[!! input 0 !!]`) are.
+ * circles and their chips (`[!! input_0 !!]`) are.
  */
 export function describePorts(
     ports: readonly { cardinality?: string; types: readonly string[] }[],

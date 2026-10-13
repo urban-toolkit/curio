@@ -138,12 +138,14 @@ def _spec_for(case: dict) -> dict:
     return {"dataflow": {"name": "Compare", "nodes": nodes, "edges": edges}}
 
 
-def _run(code: str, arg):
+def _run(code: str, value, slots=None):
+    """*code* run as the sandbox runs a node: *value* split over the wired
+    circles *slots*, each the code's input_k."""
+    from utk_curio.sandbox.util.input_names import call_as_node
     from utk_curio.sandbox.util.scenario_difference import difference_scenarios
 
     namespace = {"curio_difference_scenarios": difference_scenarios}
-    exec("def userCode(arg):\n" + textwrap.indent(code, "    "), namespace)
-    return namespace["userCode"](arg)
+    return call_as_node(textwrap.indent(code, "    "), namespace, value, slots)
 
 
 def test_the_written_difference_code_runs_as_a_server_run_resolves_it():
@@ -161,7 +163,7 @@ def test_the_written_difference_code_runs_as_a_server_run_resolves_it():
         key = case.get("key", "osm_id")
         reference = pd.DataFrame({key: ["a", "b"], "sunlight": [6.0, 5.0]})
         comparison = pd.DataFrame({key: ["b", "c"], "sunlight": [2.5, 1.0]})
-        out = _run(resolved, [reference, comparison])
+        out = _run(resolved, [reference, comparison], [input["slot"] for input in case["inputs"]])
         assert out[key].tolist() == ["a", "b", "c"], case["name"]
         assert out["change"].tolist() == ["removed", "changed", "added"], case["name"]
         assert [None if pd.isna(v) else v for v in out["sunlight"]] == [None, -2.5, None], case["name"]

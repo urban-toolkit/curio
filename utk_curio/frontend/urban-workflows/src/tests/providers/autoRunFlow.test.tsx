@@ -170,7 +170,7 @@ async function settle() {
   });
 }
 
-const CODE = 'return arg[arg.osm_id.isin([!! selection picked !!])]';
+const CODE = 'return input_0[input_0.osm_id.isin([!! selection picked !!])]';
 const TAG = { name: 'picked', node: 'chart', column: 'osm_id', ids: [101] };
 
 async function renderFlow(value: UserContextValue, { dashboardOn = false } = {}) {

@@ -48,6 +48,9 @@ class NodeRun:
     dataflow_id: str | None = None
     node_name: str | None = None
     save_output_dataset: bool = bool(CURIO_DEFAULT_SAVE_NODE_OUTPUT)
+    # The wired circles, in circle order: the value on circle k is the code's
+    # input_k (sandbox/util/input_names.py).
+    input_slots: tuple[int, ...] | None = None
 
     @classmethod
     def from_request_json(cls, body: dict) -> "NodeRun":
@@ -62,7 +65,19 @@ class NodeRun:
             dataflow_id=body.get('dataflowId') or None,
             node_name=body.get('nodeName') or None,
             save_output_dataset=bool(save_output_dataset),
+            input_slots=parse_input_slots(body.get('inputSlots')),
         )
+
+
+def parse_input_slots(raw) -> tuple[int, ...] | None:
+    """A request's ``inputSlots``: the wired circles, or None when absent or malformed."""
+    if not isinstance(raw, (list, tuple)) or not raw:
+        return None
+    try:
+        slots = tuple(int(s) for s in raw)
+    except (TypeError, ValueError):
+        return None
+    return slots if all(0 <= s <= 255 for s in slots) else None
 
 
 def parse_input_ref(req_input: dict | None) -> dict:
@@ -220,6 +235,8 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         "session_id": session_token,
         "save_dataset": run.save_output_dataset,
     }
+    if run.input_slots:
+        body["input_slots"] = list(run.input_slots)
     if language == "python":
         from utk_curio.backend.app.datasets.infrastructure import left_out_files
 

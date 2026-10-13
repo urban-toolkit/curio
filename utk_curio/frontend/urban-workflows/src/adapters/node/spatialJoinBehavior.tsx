@@ -11,13 +11,13 @@ import { inputSlotOf, isDataEdge, slotHandleId } from '../../utils/inputSlots';
  * Spatial Join behavior: pair the rows of two inputs whose shapes meet (#576).
  *
  * Backs the generic `spatial-join` node in curio.builtin@1. Its two input
- * circles are the ones every node has: `in` is input 0 (the top circle, blue)
- * and `in_1` is input 1 (the bottom circle, green). Input 0 is the left side of
- * the join and input 1 the right, whatever geometry each holds: the inputs
+ * circles are the ones every node has: `in` is input_0 (the top circle, blue)
+ * and `in_1` is input_1 (the bottom circle, green). input_0 is the left side of
+ * the join and input_1 the right, whatever geometry each holds: the inputs
  * follow the circles, never their geometry type.
  *
- * The body picks the operation (how input 0's shape must meet input 1's) and
- * the output (one row per pair, or input 1's rows with a count), persisted at
+ * The body picks the operation (how input_0's shape must meet input_1's) and
+ * the output (one row per pair, or input_1's rows with a count), persisted at
  * `metadata.spatialJoin` so they survive a save. The node POSTs both inputs to
  * the `/spatial_join` backend route, which runs geopandas `sjoin`, when both
  * have arrived.
@@ -29,15 +29,15 @@ export type SpatialJoinPredicate =
   'intersects' | 'within' | 'contains' | 'touches' | 'overlaps' | 'crosses' | 'nearest';
 export type SpatialJoinOutput = 'pairs' | 'counts';
 
-/** The operations, as the words that finish "Pair each input 0 row with the input 1 rows it ...". */
+/** The operations, as the words that finish "Pair each input_0 row with the input_1 rows it ...". */
 const PREDICATES: ReadonlyArray<{ value: SpatialJoinPredicate; words: string; hint: string }> = [
   { value: 'intersects', words: 'intersects', hint: 'The shapes share at least one point. A point on an edge counts.' },
-  { value: 'within', words: 'is within', hint: "Input 0's shape lies inside input 1's. A point on the edge is not within." },
-  { value: 'contains', words: 'contains', hint: "Input 0's shape holds input 1's. A point on the edge is not contained." },
+  { value: 'within', words: 'is within', hint: "input_0's shape lies inside input_1's. A point on the edge is not within." },
+  { value: 'contains', words: 'contains', hint: "input_0's shape holds input_1's. A point on the edge is not contained." },
   { value: 'touches', words: 'touches', hint: 'The shapes meet only along their edges. A point on an edge touches.' },
   { value: 'overlaps', words: 'overlaps', hint: 'Two shapes of one kind share part of themselves, and neither holds the other.' },
   { value: 'crosses', words: 'crosses', hint: 'A line runs through the other shape, partly inside and partly outside it.' },
-  { value: 'nearest', words: 'is nearest to', hint: 'The closest input 1 row, with the distance in meters as a distance column.' },
+  { value: 'nearest', words: 'is nearest to', hint: 'The closest input_1 row, with the distance in meters as a distance column.' },
 ];
 
 /** The saved operation, or intersects, the default the backend also assumes. */
@@ -46,7 +46,7 @@ export function resolvePredicate(data: any): SpatialJoinPredicate {
   return PREDICATES.some(p => p.value === raw) ? raw : 'intersects';
 }
 
-/** Which shape the node emits: one row per pair (default) or input 1's rows with a count. */
+/** Which shape the node emits: one row per pair (default) or input_1's rows with a count. */
 export function resolveOutputMode(data: any): SpatialJoinOutput {
   return data?.spatialJoin?.output === 'counts' ? 'counts' : 'pairs';
 }
@@ -314,7 +314,7 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
       nodeState.setOutput({ ...outcomeRef.current });
       return;
     }
-    const missing = [!slotsRef.current[0] && 'input 0', !slotsRef.current[1] && 'input 1'].filter(Boolean);
+    const missing = [!slotsRef.current[0] && 'input_0', !slotsRef.current[1] && 'input_1'].filter(Boolean);
     nodeState.setOutput({
       code: 'error',
       content: missing.length
@@ -329,14 +329,14 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
     const green = <><HandleSwatch color={INPUT_1_COLOR} />green circle</>;
     const status: React.ReactNode = lastResult
       ? lastResult.output === 'counts'
-        ? `${lastResult.matchedRight} of ${lastResult.rightRows} input 1 rows have pairs (${lastResult.pairs} in all); each row carries point_count.`
-        : `${plural(lastResult.pairs, 'pair')}: ${lastResult.matchedLeft} of ${lastResult.leftRows} input 0 rows matched.`
+        ? `${lastResult.matchedRight} of ${lastResult.rightRows} input_1 rows have pairs (${lastResult.pairs} in all); each row carries point_count.`
+        : `${plural(lastResult.pairs, 'pair')}: ${lastResult.matchedLeft} of ${lastResult.leftRows} input_0 rows matched.`
       : !slots[0] && !slots[1]
-        ? <>Connect input 0 to the {blue} and input 1 to the {green}, then run the nodes feeding this one.</>
+        ? <>Connect input_0 to the {blue} and input_1 to the {green}, then run the nodes feeding this one.</>
         : !slots[0]
-          ? <>Waiting for input 0 ({blue}).</>
+          ? <>Waiting for input_0 ({blue}).</>
           : !slots[1]
-            ? <>Waiting for input 1 ({green}).</>
+            ? <>Waiting for input_1 ({green}).</>
             : 'Joining…';
     const operation = PREDICATES.find(p => p.value === predicate)!;
     return (
@@ -348,8 +348,8 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
         <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           {/* Each input wears its circle, whatever the status line says. */}
           <span data-curio-spatial-join-operation-label="true">
-            Pair each <HandleSwatch color={INPUT_0_COLOR} />input 0 row with the{' '}
-            <HandleSwatch color={INPUT_1_COLOR} />input 1 rows it
+            Pair each <HandleSwatch color={INPUT_0_COLOR} />input_0 row with the{' '}
+            <HandleSwatch color={INPUT_1_COLOR} />input_1 rows it
           </span>
           <select
             value={predicate}
@@ -369,13 +369,13 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
             onChange={e => commitOutputMode(e.target.value === 'counts' ? 'counts' : 'pairs')}
             style={{ padding: '3px 6px', fontSize: 12 }}
           >
-            <option value="pairs">One row per pair, with input 1&apos;s columns</option>
-            <option value="counts">Input 1&apos;s rows, each with a count of its pairs</option>
+            <option value="pairs">One row per pair, with input_1&apos;s columns</option>
+            <option value="counts">input_1&apos;s rows, each with a count of its pairs</option>
           </select>
           <span style={{ opacity: 0.7, fontSize: 11 }}>
             {outputMode === 'counts'
-              ? <>Each input 1 row comes out with <code>point_count</code>, the input 0 rows paired with it.</>
-              : <>An input 1 column whose name input 0 already has comes in as <code>{'<column>_right'}</code>.</>}
+              ? <>Each input_1 row comes out with <code>point_count</code>, the input_0 rows paired with it.</>
+              : <>An input_1 column whose name input_0 already has comes in as <code>{'<column>_right'}</code>.</>}
           </span>
         </label>
         <span data-curio-spatial-join-status="true" style={{ opacity: 0.85 }}>{status}</span>

@@ -29,7 +29,7 @@ function plan(overrides: Partial<ScenarioCopyPlan> = {}): ScenarioCopyPlan {
     outcomes: [{ nodeId: "map", label: "Autk grammar", sources: ["scale"] }],
     dataflow: {
       nodes: [
-        { id: "scale", type: "curio.builtin/computation-analysis@1", x: 600, y: 100, content: "return arg", metadata: { copiedFrom: ["first"] } },
+        { id: "scale", type: "curio.builtin/computation-analysis@1", x: 600, y: 100, content: "return input_0", metadata: { copiedFrom: ["first"] } },
         { id: "map", type: "curio.builtin/autk-grammar@1", x: 1200, y: 100, content: "{}" },
       ],
       edges: [

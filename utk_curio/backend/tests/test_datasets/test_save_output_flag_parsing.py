@@ -35,7 +35,7 @@ def _post(client, token, route, flag):
     return client.post(
         route,
         data=json.dumps({
-            "code": "    return arg\n",
+            "code": "    return input_0\n",
             "nodeType": "PYTHON_COMPUTATION",
             "input": {"path": "", "dataType": "str"},
             "saveOutputDataset": flag,

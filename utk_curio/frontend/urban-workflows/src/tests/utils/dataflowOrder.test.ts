@@ -81,9 +81,9 @@ describe("dataflowOrder", () => {
     const spec = {
       dataflow: {
         nodes: [
-          { id: "chart", type: "curio.builtin/computation-analysis", x: 0, y: 0, content: "return arg" },
+          { id: "chart", type: "curio.builtin/computation-analysis", x: 0, y: 0, content: "return input_0" },
           { id: "load", type: "curio.builtin/computation-analysis", x: 0, y: 0, content: "return 1" },
-          { id: "pool", type: "curio.builtin/computation-analysis", x: 0, y: 0, content: "return arg" },
+          { id: "pool", type: "curio.builtin/computation-analysis", x: 0, y: 0, content: "return input_0" },
         ],
         edges: [
           { id: "e1", source: "load", target: "pool" },

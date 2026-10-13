@@ -13,8 +13,8 @@ flowchart LR
   L --> A[`Data Transformation`<br/>daily by season] --> AV[`Vega-Lite`<br/>seasonal line]
 
   L --> B1[`Data Transformation`<br/>monthly heatmap]
-  A -->|input 0| BC[`Python Computation`<br/>merge daily + monthly]
-  B1 -->|input 1| BC --> BT[`Data Transformation`<br/>typecast] --> BV[`Vega-Lite`<br/>heatmap + line concat]
+  A -->|input_0| BC[`Python Computation`<br/>merge daily + monthly]
+  B1 -->|input_1| BC --> BT[`Data Transformation`<br/>typecast] --> BV[`Vega-Lite`<br/>heatmap + line concat]
 
   L --> C[`Data Transformation`<br/>yearly + season] --> CV[`Vega-Lite`<br/>stacked area]
 
@@ -22,13 +22,13 @@ flowchart LR
 
   L --> E1[`Data Transformation`<br/>cameras per intersection]
   L --> E2[`Data Transformation`<br/>% reduction over time]
-  E1 -->|input 0| EC[`Python Computation`<br/>join camera + reduction]
-  E2 -->|input 1| EC --> ET[`Data Transformation`<br/>typecast] --> EV[`Vega-Lite`<br/>boxplot + bar concat]
+  E1 -->|input_0| EC[`Python Computation`<br/>join camera + reduction]
+  E2 -->|input_1| EC --> ET[`Data Transformation`<br/>typecast] --> EV[`Vega-Lite`<br/>boxplot + bar concat]
 
   L --> F1[`Data Transformation`<br/>year tag]
   L --> F2[`Data Transformation`<br/>per-intersection lat/lon]
-  F1 -->|input 0| FC[`Python Computation`<br/>spatial aggregates]
-  F2 -->|input 1| FC --> FT[`Data Transformation`<br/>typecast] --> FV[`Vega-Lite`<br/>map + bar concat with brush]
+  F1 -->|input_0| FC[`Python Computation`<br/>spatial aggregates]
+  F2 -->|input_1| FC --> FT[`Data Transformation`<br/>typecast] --> FV[`Vega-Lite`<br/>map + bar concat with brush]
 ```
 
 ## Data
@@ -63,7 +63,7 @@ Parse the date, derive month / year / season, then sum violations per day and ta
 ```python
 import pandas as pd
 
-df = arg.copy()
+df = input_0.copy()
 df['VIOLATION DATE'] = pd.to_datetime(df['VIOLATION DATE'])
 df['Year'] = df['VIOLATION DATE'].dt.year
 df['Month'] = df['VIOLATION DATE'].dt.month
@@ -113,8 +113,8 @@ A second `Data Transformation` aggregates by `(Year, Month)` for the heatmap. Bo
 ```python
 import pandas as pd
 
-df_trend = pd.DataFrame([!! input 0 !!])
-heatmap_data = pd.DataFrame([!! input 1 !!])
+df_trend = pd.DataFrame([!! input_0 !!])
+heatmap_data = pd.DataFrame([!! input_1 !!])
 
 df_trend['VIOLATION DATE'] = pd.to_datetime(df_trend['VIOLATION DATE'])
 
@@ -172,7 +172,7 @@ Group by `(INTERSECTION, Year)`, rank within each year, and keep rank ≤ 3. Ren
 
 ## Branch E: Camera count vs. compliance (two inputs → concat view)
 
-Two `Data Transformation` nodes feed one `Python Computation` node: the first, on its first input circle, counts unique cameras per intersection and bins them into `1 / 2 / 3 / 4+`; the second, on its second circle, computes the percent reduction in violations between each intersection's first and last year. The node joins `[!! input 0 !!]` and `[!! input 1 !!]` on `INTERSECTION`, and after a cleanup pass the result drives an `hconcat` of a boxplot (violation distribution per camera-count bin) and a per-intersection bar chart (percent reduction), wired together through a `cameraFilter` param so picking a bin filters the bar chart:
+Two `Data Transformation` nodes feed one `Python Computation` node: the first, on its first input circle, counts unique cameras per intersection and bins them into `1 / 2 / 3 / 4+`; the second, on its second circle, computes the percent reduction in violations between each intersection's first and last year. The node joins `[!! input_0 !!]` and `[!! input_1 !!]` on `INTERSECTION`, and after a cleanup pass the result drives an `hconcat` of a boxplot (violation distribution per camera-count bin) and a per-intersection bar chart (percent reduction), wired together through a `cameraFilter` param so picking a bin filters the bar chart:
 
 ```json
 {
@@ -242,7 +242,7 @@ Two `Data Transformation` nodes feed one `Python Computation` node: the first, o
 
 ## Branch F: Spatial brush ↔ top-N bar (two inputs → concat view)
 
-The final branch feeds two `Data Transformation` outputs into one `Python Computation` node: a year-tagged copy of the data on its first input circle and the per-intersection totals on its second. The node aggregates `[!! input 0 !!]` per `(INTERSECTION, LATITUDE, LONGITUDE)` into total violations and a camera-count bin, and the branch renders an `hconcat` of a circle map (left) and a bar chart of the top 15 intersections (right). A Vega-Lite `interval` selection on the map filters the bar chart in real time:
+The final branch feeds two `Data Transformation` outputs into one `Python Computation` node: a year-tagged copy of the data on its first input circle and the per-intersection totals on its second. The node aggregates `[!! input_0 !!]` per `(INTERSECTION, LATITUDE, LONGITUDE)` into total violations and a camera-count bin, and the branch renders an `hconcat` of a circle map (left) and a bar chart of the top 15 intersections (right). A Vega-Lite `interval` selection on the map filters the bar chart in real time:
 
 ```json
 {

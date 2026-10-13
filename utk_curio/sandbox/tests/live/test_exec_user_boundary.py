@@ -97,9 +97,9 @@ def run_node(code, *, file_path="", data_type="", user_key=USER_KEY,
     """Execute *code* as a Python node and return the sandbox's response.
 
     ``code`` is written here as an ordinary top-level snippet and indented on
-    the way out, because the worker drops it into ``def userCode(arg):`` --
-    see ``worker.execute_code``. Its input, when there is one, arrives as
-    ``arg``.
+    the way out, because the worker drops it under the ``def userCode(...)``
+    header -- see ``worker.execute_code``. Its input, when there is one,
+    arrives as ``input_0``.
     """
     body = textwrap.indent(textwrap.dedent(code).strip("\n"), "    ")
     return _request("/exec", {
@@ -109,6 +109,7 @@ def run_node(code, *, file_path="", data_type="", user_key=USER_KEY,
         "dataType": data_type,
         "user_key": user_key,
         "save_dataset": save_dataset,
+        **({"input_slots": [0]} if file_path else {}),
     })
 
 
@@ -196,8 +197,8 @@ def test_a_staged_dataframe_input_reaches_the_child():
     )
 
     consumed = assert_ran(run_node("""
-        print(len(arg))
-        print(int(arg["n"].sum()))
+        print(len(input_0))
+        print(int(input_0["n"].sum()))
     """, file_path=artifact_id, data_type=produced["output"]["dataType"]),
         "consuming the staged dataframe")
 
@@ -683,10 +684,10 @@ def test_scouts_shadow_model_runs_as_the_exec_user(model_folder):
         from scout_shadow.node_outputs import accumulated_shadow, open_model
 
         model = open_model(lambda: curio_load_model("model.scout.deep-umbra"))
-        shadow = accumulated_shadow(arg, "summer", model, curio_output_file)
+        shadow = accumulated_shadow(input_0, "summer", model, curio_output_file)
         # What the dataflow's Raster Statistics node computes: the shadow over
         # the ground, the heights as the mask.
-        metrics = curio_raster_statistics((shadow, arg), where=lambda height: height < 1.08)
+        metrics = curio_raster_statistics((shadow, input_0), where=lambda height: height < 1.08)
         print(shadow.crs.to_epsg(), shadow.width, shadow.height)
         print(round(float(metrics["mean"].iloc[0]), 2))
         return shadow

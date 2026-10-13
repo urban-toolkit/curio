@@ -40,7 +40,7 @@ def test_rehashes_an_edited_source_file(tmp_path):
     source = next(root.glob("sources/*.py"))
     before = _hashes(root)
 
-    source.write_text("# edited\nreturn arg\n", encoding="utf-8")
+    source.write_text("# edited\nreturn input_0\n", encoding="utf-8")
     assert regen_integrity.main([str(root)]) == 0
 
     after = _hashes(root)

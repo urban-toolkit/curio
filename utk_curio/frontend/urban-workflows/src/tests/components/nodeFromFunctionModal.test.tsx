@@ -119,7 +119,7 @@ const WRITTEN = {
   },
   source: {
     filename: "scale-it.py",
-    code: "from fn_scale.ops import scale\n\nreturn scale(\n    value=[!! input 0 !!],\n    factor=[!! factor !!],\n    label='scaled',\n)\n",
+    code: "from fn_scale.ops import scale\n\nreturn scale(\n    value=[!! input_0 !!],\n    factor=[!! factor !!],\n    label='scaled',\n)\n",
   },
   package: { dirName: SOURCE_DIR, packageId: "ai.test.fnsrc", major: 1, readOnly: false },
   dependency: { [SOURCE_DIR]: "*" },
@@ -180,7 +180,7 @@ describe("New node from a Python function", () => {
     // Only a parameter with a default offers it.
     expect(within(screen.getByLabelText("What value is given")).queryByRole("option", { name: /^Its default/ })).toBeNull();
     expect(screen.getByText("Number, starting at 2")).toBeInTheDocument();
-    expect(screen.getByText("The node's input 0.")).toBeInTheDocument();
+    expect(screen.getByText("The node's input_0.")).toBeInTheDocument();
     expect(screen.getByLabelText("Node name")).toHaveValue("Scale");
     expect(screen.getByLabelText("Destination package")).toHaveValue("__save_as_new__");
   });

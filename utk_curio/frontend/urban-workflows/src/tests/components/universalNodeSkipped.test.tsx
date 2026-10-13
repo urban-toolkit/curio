@@ -110,7 +110,7 @@ function data(extra: Record<string, unknown> = {}) {
     nodeId: "n1",
     nodeType: PYTHON,
     input: "",
-    code: "return arg['sp_units']",
+    code: "return input_0['sp_units']",
     // What an earlier, successful run left behind.
     output: { code: "success", content: "Saved to file: old" },
     ...extra,

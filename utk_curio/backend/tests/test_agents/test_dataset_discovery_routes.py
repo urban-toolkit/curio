@@ -81,7 +81,7 @@ class _Harness:
             if f'"nodeId": "{getattr(self, "load", "?")}"' in frame:
                 self.dl_calls.append(frame)
                 return dl_script[min(len(self.dl_calls) - 1, len(dl_script) - 1)]
-            return "df = arg[0]\nreturn df.describe()"
+            return "df = input_0[0]\nreturn df.describe()"
 
         monkeypatch.setattr(
             'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run

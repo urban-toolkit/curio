@@ -35,7 +35,7 @@ const part = (over: Partial<AgentSolveAttemptsPart> = {}): AgentSolveAttemptsPar
       verdict: "fail",
       kind: "execution-error",
       error: "KeyError: 'community_area' · at .../pandas/core/generic.py:1776 in _get_label_or_level_values",
-      code: "boundaries = arg[0]\npopulation = arg[1]\nmerged = boundaries.merge(population, on='community_area')",
+      code: "boundaries = input_0\npopulation = input_1\nmerged = boundaries.merge(population, on='community_area')",
       durationMs: 4120,
     },
     {

@@ -288,11 +288,11 @@ def test_the_code_the_node_writes_runs_its_edits(case):
     """Each code ``editFeaturesCode.cases.json`` holds (Jest checks the node
     writes it) runs as a Python node's code does, with the helper in scope."""
     from utk_curio.sandbox.util.feature_edits import edit_features
+    from utk_curio.sandbox.util.input_names import call_as_node
 
     assert case["code"] is not None, case["name"]
     namespace = {"curio_edit_features": edit_features}
-    exec(f"def userCode(arg):\n{textwrap.indent(case['code'], '    ')}", namespace)
-    out = namespace["userCode"](_records())
+    out = call_as_node(textwrap.indent(case["code"], "    "), namespace, _records(), [0])
     buildings = out if isinstance(out, list) else out["data"]
     fc = buildings[1]["geojson"] if isinstance(out, list) else buildings[1]["data"]
     assert _ids(fc) == case["kept"]

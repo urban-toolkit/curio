@@ -64,7 +64,7 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
   // it. Without this, UniversalNode sees no `sendCode` for the pool and calls
   // signalNodeExecDone immediately — the next topological level then runs
   // before the pool's async fetch has propagated output to its children, and
-  // downstream code nodes crash on `arg=None`.
+  // downstream code nodes crash on `input_0=None`.
   const inflightRef = useRef<Promise<any> | null>(null);
   // True once any feature has been marked interacted="1" so that a subsequent
   // "clear brush" (UNDETERMINED signal) still resets features to "0".

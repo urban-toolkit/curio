@@ -104,10 +104,10 @@ settings, written only when it has inputs or one of the settings below. `inputs`
 labels each input circle, in circle order, `{scenario?, name, color}`: the id, name
 and color of the scenario the input's node belongs to, or, for a node in no
 scenario, the node's name, a neutral color and no `scenario`. The node's `content`
-is written from them, one `(scenario, name, [!! input k !!])` entry per input handed
+is written from them, one `(scenario, name, [!! input_k !!])` entry per input handed
 to `curio_stack_scenarios`, which stacks the inputs into one table under `scenario`
 and `scenario_name`, or, in Difference, to `curio_difference_scenarios`, which
-subtracts input 0 from input 1. `chart` is `{preset?, x?, y?, aggregate?}`:
+subtracts input_0 from input_1. `chart` is `{preset?, x?, y?, aggregate?}`:
 `preset` is one of `bar`, `grouped-bar`, `line`, `scatter`, `pie`, `lollipop` and
 `table`, `x` and `y` name columns of that table, and `aggregate` is one of `mean`,
 `sum`, `median`, `min`, `max` and `count`. `mode` is `chart` or `difference`, written
@@ -141,8 +141,8 @@ edge. There is no `"Data"` value.
 
 `sourceHandle` and `targetHandle` name the concrete ports. A node whose one input
 port takes several edges has a circle per edge: `in` is the first, then `in_1`,
-`in_2`, and so on. Its code reads circle N as `[!! input N !!]`, and the order of the
-circles is the order of `arg`. When the handles are absent, the reader infers a
+`in_2`, and so on. Its code reads circle N as `input_N`, or through its chip
+`[!! input_N !!]`. When the handles are absent, the reader infers a
 circle from an `in_N` suffix of `edge.id`, which cannot recover a named port such as
 the ones a package template declares.
 

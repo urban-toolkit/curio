@@ -307,7 +307,7 @@ REJECTED = {
         }
     ),
     "node settings carrying a code copy": lambda d: _node(d)["metadata"].update(
-        packageTemplateConfig={"hasCode": True, "sourceCode": "return arg"}
+        packageTemplateConfig={"hasCode": True, "sourceCode": "return input_0"}
     ),
     # The value the old widget built from "Merge (AND)", which matched no mode (#581).
     "data pool mode that is no resolution type": lambda d: _node(d)["metadata"].update(

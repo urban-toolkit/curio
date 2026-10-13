@@ -208,7 +208,7 @@ describe("a layer chip in the spec reads the frame its input carries (#662)", ()
       { dataType: "geodataframe", data: geoPayload },
     ];
     const spec = resolvedSpec(
-      '{"layer": [{"mark": "bar"}, {"data": {"name": [!! input 1:zips !!]}, "mark": "geoshape"}]}',
+      '{"layer": [{"mark": "bar"}, {"data": {"name": [!! input_1:zips !!]}, "mark": "geoshape"}]}',
       slots,
     );
     const { datasets, emptyReason } = await prepareVegaInputs({ dataType: "outputs", data: slots }, spec);
@@ -222,7 +222,7 @@ describe("a layer chip in the spec reads the frame its input carries (#662)", ()
   test("with one input, a view that names it through a layer chip reads its rows", async () => {
     const input = { dataType: "dataframe", data: framePayload };
     const spec = resolvedSpec(
-      '{"layer": [{"data": {"name": [!! input 0:zips !!]}, "mark": "bar", "encoding": {"x": {"field": "zip"}}}]}',
+      '{"layer": [{"data": {"name": [!! input_0:zips !!]}, "mark": "bar", "encoding": {"x": {"field": "zip"}}}]}',
       [input],
     );
     const { datasets } = await prepareVegaInputs(input, spec);

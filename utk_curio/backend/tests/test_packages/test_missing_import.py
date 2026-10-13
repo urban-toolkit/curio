@@ -93,7 +93,7 @@ def test_reads_a_real_traceback_from_the_sandbox_worker():
     "ImportError: cannot import name 'foo' from 'bar'",
     "ImportError: DLL load failed while importing _ssl",
     "ValueError: not a number",
-    "NameError: name 'arg' is not defined",
+    "NameError: name 'input_0' is not defined",
 ])
 def test_ignores_failures_an_install_would_not_fix(last_line):
     assert detect(_traceback(last_line)) is None

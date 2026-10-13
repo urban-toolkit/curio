@@ -18,6 +18,7 @@ export class JavaScriptInterpreter {
         dataflowId?: string | null,
         saveOutputDataset = false,
         nodeName?: string,
+        inputSlots?: number[],
     ) {
         const callbackError = (message: string) => {
             callback({
@@ -39,6 +40,8 @@ export class JavaScriptInterpreter {
                 nodeId: nodeId,
                 ...(dataflowId ? { dataflowId } : {}),
                 ...(nodeName ? { nodeName } : {}),
+                // The wired circles: the value on circle k is the code's input_k.
+                ...(inputSlots && inputSlots.length > 0 ? { inputSlots } : {}),
                 saveOutputDataset,
             },
             nodeId,

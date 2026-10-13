@@ -147,7 +147,7 @@ def build_namespace_template():
         "curio_difference_scenarios": difference_scenarios,
         # The Edit Features node's code applies its edit list with it (#662).
         "curio_edit_features": edit_features,
-        # A layer chip, [!! input 0:roads !!], reads one layer of an input with it.
+        # A layer chip, [!! input_0:roads !!], reads one layer of an input with it.
         "curio_layer": curio_layer,
         # The three store helpers the in-process path also seeds are replaced
         # by stubs. See _unavailable_under_isolation.

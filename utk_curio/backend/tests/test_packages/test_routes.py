@@ -462,7 +462,7 @@ def test_an_agent_drafted_node_type_installs_the_deps_it_derived_from_the_source
 
     created = create_template_package(_user_dir_key(user), project, {
         "label": "Shapely buffer", "engine": "python",
-        "content": "import shapely\nreturn arg\n",
+        "content": "import shapely\nreturn input_0\n",
     })
 
     assert pip_spy == [{"shapely": "*"}]
@@ -641,9 +641,9 @@ def test_save_as_package_from_a_node_whose_code_holds_chips_lists_its_libraries(
     draft["sources"]["demo"]["code"] = (
         "import numpy as np\n"
         "from shapely.geometry import box\n"
-        "frame = [!! input 0 !!]\n"
-        "roads = [!! input 1:roads !!]\n"
-        "area = frame[[!! input 0.area !!]]\n"
+        "frame = [!! input_0 !!]\n"
+        "roads = [!! input_1:roads !!]\n"
+        "area = frame[[!! input_0.area !!]]\n"
         "scale = [!! factor !!] * [!! @season !!]\n"
         "picked = [!! selection picked !!]\n"
         "return np.asarray(area) * scale\n"
@@ -769,7 +769,7 @@ def test_save_as_into_an_installed_package_keeps_everything_it_does_not_change(
                     "handlers": [{"name": "count", "timeoutClass": "quick"}]},
     }
     base_files = {
-        "sources/demo.py": "import numpy\nreturn arg\n",
+        "sources/demo.py": "import numpy\nreturn input_0\n",
         "README.md": "# Save into\n",
         "LICENSE": "MIT License\n",
         "scripts/behaviors.js": "/* the package's own interface */\n",
@@ -790,7 +790,7 @@ def test_save_as_into_an_installed_package_keeps_everything_it_does_not_change(
         "manifest": {**modelled, "templates": [existing, added]},
         "sources": {
             "demo": {"filename": "demo.py", "code": _STARTER_CODE_SENTINEL},
-            "added": {"filename": "added.py", "code": "import shapely\nreturn arg\n"},
+            "added": {"filename": "added.py", "code": "import shapely\nreturn input_0\n"},
         },
         "readme": "", "license_text": "", "replace": True,
     }
@@ -800,7 +800,7 @@ def test_save_as_into_an_installed_package_keeps_everything_it_does_not_change(
     root = package_dir(_user_dir_key(user), "ai.test.saveinto@1")
     for rel, body in base_files.items():
         assert (root / rel).read_text() == body, f"{rel} did not survive the save"
-    assert (root / "sources" / "added.py").read_text() == "import shapely\nreturn arg\n"
+    assert (root / "sources" / "added.py").read_text() == "import shapely\nreturn input_0\n"
     saved = json.loads((root / "manifest.json").read_text())
     assert saved["behaviorScript"] == "scripts/behaviors.js"
     assert saved["backend"] == manifest["backend"]
@@ -1188,7 +1188,7 @@ def test_publish_copies_the_installed_package_as_it_is(client, user_and_token, m
     }
     archive = _zip({
         "manifest.json": json.dumps(manifest),
-        "sources/demo.py": "import numpy\nreturn arg\n",
+        "sources/demo.py": "import numpy\nreturn input_0\n",
         "README.md": "# Rich\n",
         "LICENSE": "MIT License\n",
         "scripts/behaviors.js": "/* the package's own interface */\n",

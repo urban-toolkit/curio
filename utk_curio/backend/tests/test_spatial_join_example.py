@@ -54,10 +54,11 @@ def _frame(node_id: str):
     flow = _dataflow()
     node = next(n for n in flow["nodes"] if n["id"] == node_id)
     sources = [e["source"] for e in flow["edges"] if e["target"] == node_id]
-    arg = _frame(sources[0]) if sources else None
+    from utk_curio.sandbox.util.input_names import call_as_node
+
+    value = _frame(sources[0]) if sources else None
     scope = {"curio_data_path": _data_path, "curio_load_data": _load_data}
-    exec("def _node(arg):\n" + textwrap.indent(node["content"], "    "), scope)
-    return scope["_node"](arg)
+    return call_as_node(textwrap.indent(node["content"], "    "), scope, value, [0] if sources else None)
 
 
 def _geojson(gdf) -> dict:
@@ -96,7 +97,7 @@ def _rows(body: dict, key: str, value) -> list:
 
 
 def test_intersects_pairs_every_green_roof_with_its_neighborhood(client):
-    """#576: points on input 0, polygons on input 1, the default operation."""
+    """#576: points on input_0, polygons on input_1, the default operation."""
     body = _join(client, JOIN_INTERSECTS)
     assert _counts(body) == {"predicate": "intersects", "output": "pairs", "pairs": 359,
                              "matched_left": 359, "left_rows": 359, "matched_right": 69, "right_rows": 98}
@@ -104,7 +105,7 @@ def test_intersects_pairs_every_green_roof_with_its_neighborhood(client):
 
 
 def test_within_counts_the_sidewalk_labels_in_each_neighborhood(client):
-    """#576: the counts output, input 1's rows each with point_count."""
+    """#576: the counts output, input_1's rows each with point_count."""
     body = _join(client, JOIN_WITHIN)
     assert _counts(body) == {"predicate": "within", "output": "counts", "pairs": 235,
                              "matched_left": 235, "left_rows": 400, "matched_right": 61, "right_rows": 98}
@@ -113,7 +114,7 @@ def test_within_counts_the_sidewalk_labels_in_each_neighborhood(client):
 
 
 def test_contains_takes_the_polygons_on_input_0(client):
-    """#576: a polygon on input 0 joins; it was an HTTP 500 on the points side."""
+    """#576: a polygon on input_0 joins; it was an HTTP 500 on the points side."""
     body = _join(client, JOIN_CONTAINS)
     assert _counts(body) == {"predicate": "contains", "output": "pairs", "pairs": 235,
                              "matched_left": 61, "left_rows": 98, "matched_right": 235, "right_rows": 400}
@@ -145,7 +146,7 @@ def test_overlaps_pairs_each_neighborhood_with_the_zip_codes_it_straddles(client
 
 
 def test_crosses_pairs_each_zip_border_with_the_neighborhoods_it_runs_through(client):
-    """#576: lines on input 0, polygons on input 1."""
+    """#576: lines on input_0, polygons on input_1."""
     body = _join(client, JOIN_CROSSES)
     assert _counts(body) == {"predicate": "crosses", "output": "pairs", "pairs": 311,
                              "matched_left": 61, "left_rows": 61, "matched_right": 94, "right_rows": 98}

@@ -1,8 +1,8 @@
 """The Spatial Join pairs two inputs by an operation, on geopandas sjoin (#576).
 
-Input 0 (the node's top circle) is the left side of the join and input 1 (the
+input_0 (the node's top circle) is the left side of the join and input_1 (the
 bottom circle) the right, whatever geometry each holds. The output is one row
-per matching pair, input 0's row with input 1's columns added, or input 1's
+per matching pair, input_0's row with input_1's columns added, or input_1's
 rows with a count. A point on an edge follows shapely's rule for each
 operation. Every test goes through ``POST /spatial_join``, as the node does.
 
@@ -82,7 +82,7 @@ def test_one_row_per_pair_with_input_1s_columns_and_the_counts_in_metadata(clien
     body = _join(client, POINTS, SQUARES)
     rows = [f for f in body["features"] if f["properties"]["point"] == "in A and B"]
     assert sorted(f["properties"]["square"] for f in rows) == ["A", "B"]
-    # The geometry of a pair is input 0's.
+    # The geometry of a pair is input_0's.
     assert all(f["geometry"] == {"type": "Point", "coordinates": [1.5, 1.5]} for f in rows)
     assert body["metadata"] == {
         "name": "spatial_join_result", "output": "pairs", "predicate": "intersects",
@@ -92,7 +92,7 @@ def test_one_row_per_pair_with_input_1s_columns_and_the_counts_in_metadata(clien
 
 def test_a_polygon_on_input_0_joins_instead_of_failing(client):
     """#576: a polygon on the points side was an HTTP 500. Inputs follow the
-    circles now, so polygons on input 0 contain the points on input 1."""
+    circles now, so polygons on input_0 contain the points on input_1."""
     body = _join(client, SQUARES, POINTS, predicate="contains")
     # The point on A's edge is not contained: the polygon does not hold its boundary.
     assert _pairs(body, "square", "point") == [("A", "in A and B"), ("A", "inside A"), ("B", "in A and B")]
@@ -128,7 +128,7 @@ def test_nearest_pairs_each_row_with_the_closest_and_says_how_far_in_meters(clie
 
 
 def test_a_column_input_0_already_has_comes_in_with_right(client):
-    """#576: input 1's columns never overwrite input 0's."""
+    """#576: input_1's columns never overwrite input_0's."""
     photo = _fc([_point(0.5, 0.5, name="photo-1.jpg", kind="photo")])
     area = _fc([_box(0, 0, 2, 2, name="Loop", zone="Z1")])
     body = _join(client, photo, area)
@@ -171,10 +171,10 @@ def test_an_input_that_is_not_geodata_is_a_400_naming_its_circle(client):
     table = {"dataType": "dataframe", "data": {"a": [1, 2]}}
     left = client.post("/spatial_join", json={"left": table, "right": SQUARES})
     assert left.status_code == 400
-    assert "Input 0 is not geodata" in left.get_json()["error"]
+    assert "input_0 is not geodata" in left.get_json()["error"]
     right = client.post("/spatial_join", json={"left": POINTS, "right": [1, 2]})
     assert right.status_code == 400
-    assert "Input 1 is not geodata" in right.get_json()["error"]
+    assert "input_1 is not geodata" in right.get_json()["error"]
 
 
 def test_an_unknown_operation_or_output_is_a_400_listing_the_choices(client):
@@ -189,7 +189,7 @@ def test_an_unknown_operation_or_output_is_a_400_listing_the_choices(client):
 
 def test_input_1_in_another_crs_is_reprojected_to_input_0s(client):
     """#576: the sandbox writes a GeoDataFrame's CRS as the collection's crs
-    member; input 1 in web mercator still pairs with input 0 in degrees."""
+    member; input_1 in web mercator still pairs with input_0 in degrees."""
     from pyproj import Transformer
 
     to_mercator = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
@@ -200,6 +200,6 @@ def test_input_1_in_another_crs_is_reprojected_to_input_0s(client):
                  crs="urn:ogc:def:crs:EPSG::4326")
     body = _join(client, photos, area)
     assert _pairs(body, "photo", "area") == [("in", "Loop")]
-    # The pairs keep input 0's coordinates, and say which system they are in.
+    # The pairs keep input_0's coordinates, and say which system they are in.
     assert body["features"][0]["geometry"]["coordinates"] == [-87.65, 41.85]
     assert body["crs"]["properties"]["name"] == "urn:ogc:def:crs:EPSG::4326"

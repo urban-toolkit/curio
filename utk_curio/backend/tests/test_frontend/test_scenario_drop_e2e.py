@@ -93,7 +93,7 @@ def _grid_code(scale: int) -> str:
     )
 
 
-SCALE_CODE = 'gdf = arg.copy()\ngdf["pop"] = gdf["pop"] * 2\nreturn gdf\n'
+SCALE_CODE = 'gdf = input_0.copy()\ngdf["pop"] = gdf["pop"] * 2\nreturn gdf\n'
 MAP_CONTENT = json.dumps({"map": {"layerRefs": [{
     "dataRef": "input_0",
     "getFnv": "pop",

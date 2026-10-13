@@ -225,9 +225,9 @@ export function CompareDifference({
       </p>
     );
   } else if (!connected) {
-    stage = <NodeEmptyState reason="disconnected" hint="Connect two scenarios' outcomes: input 0 is the reference, input 1 the comparison." />;
+    stage = <NodeEmptyState reason="disconnected" hint="Connect two scenarios' outcomes: input_0 is the reference, input_1 the comparison." />;
   } else if (!output) {
-    stage = <NodeEmptyState reason="not-run" hint="Run this node to subtract input 0 from input 1." />;
+    stage = <NodeEmptyState reason="not-run" hint="Run this node to subtract input_0 from input_1." />;
   } else if (!read) {
     stage = <NodeEmptyState reason="not-run" hint="Reading the difference." />;
   } else if (!drawn) {

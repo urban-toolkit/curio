@@ -70,7 +70,7 @@
         "type": "curio.builtin/computation-analysis",
         "x": 645,
         "y": 430,
-        "content": "readings, stations = [!! input 0 !!], [!! input 1 !!]\n\nmeans = readings.groupby(\"sensor\", as_index=False)[\"pm25\"].mean()\nreturn stations.merge(means, on=\"sensor\")\n",
+        "content": "readings, stations = [!! input_0 !!], [!! input_1 !!]\n\nmeans = readings.groupby(\"sensor\", as_index=False)[\"pm25\"].mean()\nreturn stations.merge(means, on=\"sensor\")\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Average each sensor and join it to its station.",

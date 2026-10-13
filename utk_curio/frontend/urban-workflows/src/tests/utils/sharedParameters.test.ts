@@ -38,7 +38,7 @@ describe("the reference", () => {
   test("[!! @name !!] is a shared reference, not a widget or an input", () => {
     expect(parseReference("@season")).toEqual({ kind: "shared", name: "season" });
     expect(parseReference("season")).toEqual({ kind: "widget", name: "season" });
-    expect(parseReference("input 0")).toEqual({ kind: "input", slot: 0 });
+    expect(parseReference("input_0")).toEqual({ kind: "input", slot: 0 });
   });
 
   test("the names a code uses, each once", () => {

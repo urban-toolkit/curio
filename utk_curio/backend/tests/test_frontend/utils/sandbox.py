@@ -334,6 +334,10 @@ def execute_workflow_programmatically(
                 "models": resolution["models"],
                 **({"package_modules": resolution["packageModules"]}
                    if resolution["packageModules"] else {}),
+                # The wired circles, as the backend's runner sends them: each
+                # circle k is the code's input_k.
+                **({"input_slots": spec.input_slots(node.id)}
+                   if spec.input_slots(node.id) else {}),
             },
             headers=sandbox_auth_header(),
             timeout=120,

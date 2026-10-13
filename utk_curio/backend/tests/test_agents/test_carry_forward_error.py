@@ -21,10 +21,10 @@ from utk_curio.backend.tests.test_agents._solve_session import _bound_session_by
 
 TRACEBACK = (
     "Traceback (most recent call last):\n"
-    '  File "<node>", line 2, in <module>\n    df = arg.head()\n'
+    '  File "<node>", line 2, in <module>\n    df = input_0.head()\n'
     "AttributeError: 'list' object has no attribute 'head'\n"
 )
-FAILED_CODE = "df = arg.head()\nreturn df"
+FAILED_CODE = "df = input_0.head()\nreturn df"
 
 
 class TestCarryForwardPayload:
@@ -33,7 +33,7 @@ class TestCarryForwardPayload:
             "status": "failed",
             "attempts": [
                 {"round": 1, "verdict": "fail", "kind": "input-contract",
-                 "detail": "arg is a list", "code": "df = arg\nreturn df"},
+                 "detail": "input_0 is a list", "code": "df = input_0\nreturn df"},
                 {"round": 2, "verdict": "fail", "kind": "execution-error",
                  "detail": "AttributeError", "stderrTail": TRACEBACK, "code": FAILED_CODE},
             ],
@@ -53,7 +53,7 @@ class TestCarryForwardPayload:
         carry = rounds._carry_forward_error({"attempts": [
             {"verdict": "fail", "kind": "source-missing", "detail": "I cannot invent a URL",
              "code": "I cannot invent a URL", "codeIsProse": True},
-            {"verdict": "pass", "detail": "", "code": "return arg[0]"},
+            {"verdict": "pass", "detail": "", "code": "return input_0[0]"},
         ]})
         assert carry["code"] == ""  # never handed back as code to correct
         assert carry["error"] == "I cannot invent a URL"
@@ -90,7 +90,7 @@ class TestTheLoopStartsFromTheCarriedError:
 
         node = {"id": "n1", "type": CA, "goal": "head of the frame", "content": ""}
         return _rounds(
-            app, node, replies=["df = arg[0]\nreturn df.head()"],
+            app, node, replies=["df = input_0[0]\nreturn df.head()"],
             exec_fn=_Exec(), carry_forward=carry,
         )
 
@@ -99,7 +99,7 @@ class TestTheLoopStartsFromTheCarriedError:
             app, {"code": FAILED_CODE, "error": TRACEBACK, "kind": "execution-error"}
         )
         assert outcome["verdict"] == "pass"
-        assert inputs[0]["previousAttempt"].startswith("df = arg.head()")
+        assert inputs[0]["previousAttempt"].startswith("df = input_0.head()")
         assert "'list' object has no attribute 'head'" in inputs[0]["validationError"]
         assert any(
             line.startswith("carrying forward the previous attempt's error")

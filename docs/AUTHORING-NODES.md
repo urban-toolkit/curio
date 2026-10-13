@@ -72,8 +72,10 @@ built-in nodes, with nothing extra to declare.
 ### From the canvas
 
 1. Drop a **Data Transformation** node on the canvas and write your Python in
-   the **Code** view. `arg` is the upstream node's output; whatever you `return`
-   becomes this node's output. Run it until it does what you want.
+   the **Code** view. What the edge on input circle 0 delivers is `input_0`, on
+   circle 1 `input_1`, and so on (see [Input names](USAGE.md#input-names)).
+   Whatever you `return` becomes this node's output. Run it until it does what
+   you want.
 2. Click the **cog** on the node header to open **Node settings**. Set the label,
    the port types, and the editor mode.
 3. Click **Save as package node…**, pick **New package…** as the destination
@@ -127,7 +129,7 @@ place each one in the source as `[!! name !!]`:
 ```
 
 ```python
-return arg.rolling([!! window !!]).agg([!! method !!])
+return input_0.rolling([!! window !!]).agg([!! method !!])
 ```
 
 A node dropped from the palette starts with these widgets and their defaults.
@@ -141,13 +143,13 @@ A template does not declare selection tags: each names a view of one dataflow,
 so it is added on the canvas, in the node's **Widgets** tab.
 
 The source can also read its input through input chips
-([Several inputs](USAGE.md#several-inputs)): `[!! input 0 !!]` is the input,
-`[!! input 0.height !!]` a column's name, and `[!! input 0:table_osm_roads !!]`
+([Several inputs](USAGE.md#several-inputs)): `[!! input_0 !!]` is the input,
+`[!! input_0.height !!]` a column's name, and `[!! input_0:table_osm_roads !!]`
 one layer of the several an Autark node hands on, as a GeoDataFrame in Python
 and a FeatureCollection in JavaScript:
 
 ```python
-roads = [!! input 0:table_osm_roads !!]
+roads = [!! input_0:table_osm_roads !!]
 return roads[roads["highway"] == "primary"]
 ```
 
@@ -174,7 +176,7 @@ packages/me.heights@1/
 ```python
 from building_height.convert_to_raster import convert_raster
 
-return convert_raster(arg, zoom=[!! zoom !!])
+return convert_raster(input_0, zoom=[!! zoom !!])
 ```
 
 - A module is a `.py` file, or a folder of `.py` files, directly in `sources/`,

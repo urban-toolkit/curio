@@ -24,17 +24,17 @@ POPULATION = {
     "sampleRows": [{"tract_id": "17031010100", "population": 4521}],
 }
 UPSTREAMS = [
-    {"goal": "Chicago Boundaries", "argIndex": 0, "outputDataType": "geodataframe",
+    {"goal": "Chicago Boundaries", "circle": 0, "outputDataType": "geodataframe",
      "schema": BOUNDARIES},
-    {"goal": "Population Data", "argIndex": 1, "outputDataType": "dataframe",
+    {"goal": "Population Data", "circle": 1, "outputDataType": "dataframe",
      "schema": POPULATION},
 ]
 
 #: The owner's join, verbatim in shape: the keys cannot match.
-BAD_JOIN = ("joined = arg[0].merge(arg[1], left_on='area_numbe', "
+BAD_JOIN = ("joined = input_0.merge(input_1, left_on='area_numbe', "
             "right_on='tract_id')\nreturn joined")
 #: A join on values of the same kind.
-GOOD_JOIN = ("joined = arg[0].merge(arg[1], left_on='community', "
+GOOD_JOIN = ("joined = input_0.merge(input_1, left_on='community', "
              "right_on='community')\nreturn joined")
 
 
@@ -86,7 +86,7 @@ class TestAnEmptyResultIsAFailedRound:
         assert "EMPTY result" in error
         assert "area_numbe int e.g. 32" in error
         assert "tract_id str e.g. '17031010100'" in error
-        assert inputs[1]["previousAttempt"].startswith("joined = arg[0].merge")
+        assert inputs[1]["previousAttempt"].startswith("joined = input_0.merge")
 
     def test_when_no_round_produces_rows_nothing_is_written(self, app, tmp_curio):
         exec_fn, summary_fn = _summaries()
@@ -172,9 +172,9 @@ class TestAJoinThatProducedNullsIsEmptyToo:
     plots below were empty.
     """
 
-    LEFT_JOIN = ("joined = arg[0].merge(arg[1], left_on='area_numbe', "
+    LEFT_JOIN = ("joined = input_0.merge(input_1, left_on='area_numbe', "
                  "right_on='tract_id', how='left')\nreturn joined")
-    REAL_JOIN = ("joined = arg[0].merge(arg[1], left_on='community', "
+    REAL_JOIN = ("joined = input_0.merge(input_1, left_on='community', "
                  "right_on='community')\nreturn joined")
 
     def _summaries(self):
@@ -224,7 +224,7 @@ class TestAJoinThatProducedNullsIsEmptyToo:
         exec_fn, summary_fn = self._summaries()
         upstream_nulls = [
             UPSTREAMS[0],
-            {"goal": "Population Data", "argIndex": 1, "schema": {
+            {"goal": "Population Data", "circle": 1, "schema": {
                 "kind": "table", "rowCount": 3,
                 "columns": [{"name": "population", "dtype": "unknown"}],
                 "sampleRows": [{"population": None}],
@@ -253,15 +253,15 @@ class TestReturnNoneIsNotAnOutput:
     OWNERS_NODE = """import pandas as pd
 import geopandas as gpd
 
-# Access inputs via arg based on inputContract
-gdf_boundaries = arg[0]
-df_population = arg[1]
+# Access inputs by circle based on inputContract
+gdf_boundaries = input_0
+df_population = input_1
 
 # These IDs do not match in type or scale (area_numbe is small int, tract_id is long census id).
 # A join is not possible with the provided columns.
 
 return None"""
-    REAL = "joined = arg[0].merge(arg[1], on='community')\nreturn joined"
+    REAL = "joined = input_0.merge(input_1, on='community')\nreturn joined"
 
     def _exec_typing_none(self):
         produced: list = []

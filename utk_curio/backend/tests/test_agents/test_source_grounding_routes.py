@@ -547,7 +547,7 @@ class TestSyntheticData:
         _, token = user_and_token
         _install(client, token, project, NB)
         att = _attach(client, token, project, NB)
-        _script(monkeypatch, [_create_tail("df = arg[0]\nreturn df.describe()", node_type=CA), "Proposed."])
+        _script(monkeypatch, [_create_tail("df = input_0[0]\nreturn df.describe()", node_type=CA), "Proposed."])
         [proposal] = _proposals(_run(client, token, project, att, "summarize the upstream frame"))
         assert "source" not in proposal
 
@@ -604,7 +604,7 @@ class TestSolveSourceGrounding:
         def child(frame):
             if f'"nodeType": "{DL}"' in frame:
                 return 'import pandas as pd\ndf = pd.read_csv("heat_tracts.csv")\nreturn df'
-            return "df = arg[0]\nreturn df.describe()"
+            return "df = input_0[0]\nreturn df.describe()"
 
         # dev/115: Solve now RUNS data-loading candidates; a fake sandbox that
         # passes keeps this test about grounding (the gate refuses before any run).

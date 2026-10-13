@@ -20,7 +20,7 @@ function node(id: string, extra: Record<string, unknown> = {}) {
   return {
     id,
     type: "__curioUniversalNode",
-    data: { nodeId: id, nodeType: "curio.builtin/computation-analysis@1", code: "return len(arg)", ...extra },
+    data: { nodeId: id, nodeType: "curio.builtin/computation-analysis@1", code: "return len(input_0)", ...extra },
   } as any;
 }
 

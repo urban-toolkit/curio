@@ -61,7 +61,7 @@ NO_ROWS = (
 #: these, so the document below is genuinely VALID and its emptiness is the
 #: only thing wrong with it (rows whose `density` is null, say).
 UPSTREAM = [{
-    "goal": "Chicago Data Pool", "argIndex": 0, "outputDataType": "dataframe",
+    "goal": "Chicago Data Pool", "circle": 0, "outputDataType": "dataframe",
     "schema": {"kind": "table", "rowCount": 12,
                "columns": [{"name": "community", "dtype": "str"},
                            {"name": "density", "dtype": "float"}],

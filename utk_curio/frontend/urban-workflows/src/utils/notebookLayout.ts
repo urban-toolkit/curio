@@ -200,7 +200,7 @@ export function notebookOutputBox(nodeType: string): NotebookOutputBox {
   return { height: OUTPUT_CAP, overflow: "auto" };
 }
 
-/** What an input dot is called: the number `[!! input k !!]` uses, or a named input's name. */
+/** What an input dot is called: the number `[!! input_k !!]` uses, or a named input's name. */
 export function notebookInputLabel(handleId: string): string {
   const slot = inputSlotOf(handleId);
   return slot >= 0 ? String(slot) : handleId.replace(/^in_/, "");

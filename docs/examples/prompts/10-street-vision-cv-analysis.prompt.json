@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/10-street-vision-cv-analysis.json",
-    "sha256": "bf0f9c786213ff936f0dc82d212674308f9a5ac363b8e0ff0da73cd8cbd85435",
+    "sha256": "af6f7c0d6364fe66da5ab62cf016237e3d74c32096be67bb054273c04ed18f42",
     "walkthrough": "docs/examples/10-street-vision-cv-analysis.md"
   },
   "prompt": "I want to measure street-level greenery around Lincoln Park in Chicago from street photos. Load the Mapillary street photo sample from the Data Catalog and run a semantic segmentation over the photos with the model that ships with Curio, to get each photo's per-class pixel shares and its dominant class, and show me the photos beside their overlays. Separately, load the official Chicago neighborhood polygons from the Data Catalog, rename their name column to what the join step expects, and tag each photo with the neighborhood it falls in through a spatial join. Then show me a map of the neighborhoods colored by dominant class and a bar chart of photos per neighborhood by dominant class. Also run a second segmentation over the same photos, the one I will point at a Hugging Face model, with its own photo view, spatial join and bar chart. The segmentation step is not part of the standard node set, so whatever provides it needs installing first.",

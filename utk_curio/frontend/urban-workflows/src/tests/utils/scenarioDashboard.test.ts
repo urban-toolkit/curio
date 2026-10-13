@@ -20,7 +20,7 @@ function node(id: string, at: { x: number; y: number }, extra: Record<string, un
     id,
     type: "__curioUniversalNode",
     position: at,
-    data: { nodeId: id, nodeType: NodeType.COMPUTATION_ANALYSIS, code: "return arg", ...extra },
+    data: { nodeId: id, nodeType: NodeType.COMPUTATION_ANALYSIS, code: "return input_0", ...extra },
   } as any;
 }
 
@@ -110,8 +110,8 @@ describe("the columns", () => {
     const nodes = [
       parameter("season", "season", { x: 0, y: 900 }),
       node("load", { x: 0, y: 0 }),
-      node("a", { x: 600, y: 0 }, { code: "return arg * [!! @season !!]" }),
-      node("b", { x: 600, y: 600 }, { code: "return arg * [!! @season !!] * 2" }),
+      node("a", { x: 600, y: 0 }, { code: "return input_0 * [!! @season !!]" }),
+      node("b", { x: 600, y: 600 }, { code: "return input_0 * [!! @season !!] * 2" }),
     ];
     const edges = [edge("load", "a"), edge("load", "b")];
     const scenarios = [
@@ -135,7 +135,7 @@ describe("the columns", () => {
     const nodes = [
       node("load", { x: 0, y: 0 }),
       parameter("height", "height", { x: 600, y: 600 }),
-      node("a", { x: 600, y: 0 }, { code: "return arg * [!! @height !!]" }),
+      node("a", { x: 600, y: 0 }, { code: "return input_0 * [!! @height !!]" }),
       node("b", { x: 600, y: 1200 }),
     ];
     const edges = [edge("load", "a"), edge("load", "b")];

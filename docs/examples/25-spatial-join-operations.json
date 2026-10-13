@@ -71,7 +71,7 @@
         "type": "curio.builtin/data-transformation",
         "x": 645,
         "y": 50,
-        "content": "# Each ZIP's border as a line, for the crosses operation.\ngdf = arg[[\"zip\", \"geometry\"]].copy()\ngdf[\"geometry\"] = gdf.boundary\n\nreturn gdf\n",
+        "content": "# Each ZIP's border as a line, for the crosses operation.\ngdf = input_0[[\"zip\", \"geometry\"]].copy()\ngdf[\"geometry\"] = gdf.boundary\n\nreturn gdf\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Turn each ZIP polygon into its border line.",

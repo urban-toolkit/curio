@@ -563,7 +563,7 @@ def oracle_attempt(
         if intent.get("outputKind")
     }
     # #662: the runner dispatches a node's code with its chips resolved
-    # (`[!! input 0 !!]` goes out as `arg[0]`), so the declared content is
+    # (`[!! input_0 !!]` goes out as `input_0`), so the declared content is
     # matched in that form, resolved against the example's own circles.
     # Matched as written, fixture 08's JS join (whose code reads its inputs
     # through chips) fell through to the word heuristic below and was

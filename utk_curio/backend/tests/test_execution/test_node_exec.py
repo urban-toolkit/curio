@@ -328,6 +328,31 @@ def test_a_javascript_node_on_a_thread_runs_as_play_does(app, client, user_and_t
     assert after["javascript"] - before["javascript"] == 1
 
 
+def test_the_wired_circles_ride_to_the_sandbox_as_input_slots(app, client, user_and_token, monkeypatch):
+    """A node reads the edge on circle k as ``input_k``: Play names the wired
+    circles, ``inputSlots``, and both routes hand them to the sandbox."""
+    user, token = user_and_token
+    project_id = create_project(client, token, name="Input slots")
+    sent = []
+    _fake_sandbox(monkeypatch, {"path": "art-slots", "dataType": "int"}, sent)
+
+    for route, code in (("/processPythonCode", "    return input_3\n"), ("/processJavaScriptCode", "return input_3;")):
+        body = {
+            "code": code, "nodeType": "curio.builtin/computation-analysis", "nodeId": "slots-node",
+            "dataflowId": project_id, "input": {"path": "", "dataType": "outputs"},
+            "saveOutputDataset": False, "inputSlots": [0, 3],
+        }
+        reply = client.post(route, data=json.dumps(body), headers=auth_headers(token))
+        assert reply.status_code == 200, reply.get_data(as_text=True)
+    plain = _play_body("plain-node", project_id, saveOutputDataset=False)
+    without = client.post("/processPythonCode", data=json.dumps(plain), headers=auth_headers(token))
+    assert without.status_code == 200, without.get_data(as_text=True)
+
+    assert [(path, body.get("input_slots")) for path, body in sent] == [
+        ("/exec", [0, 3]), ("/execJs", [0, 3]), ("/exec", None),
+    ]
+
+
 def test_a_sandbox_that_does_not_answer_raises_the_routes_error(app, user_and_token, monkeypatch):
     from utk_curio.backend.app.execution import node_exec, sandbox_client
     from utk_curio.backend.app.projects.services import _user_dir_key

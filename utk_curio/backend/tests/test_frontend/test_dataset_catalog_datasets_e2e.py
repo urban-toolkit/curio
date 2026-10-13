@@ -301,7 +301,7 @@ def test_dataset_loads_and_feeds_a_consumer(
     set_node_code(page, transform_id, plan.transform_code)
 
     # 4. RUN. The loader's artifact line proves the file reached DuckDB; the
-    #    consumer's markers prove the *content* crossed the edge as ``arg``.
+    #    consumer's markers prove the *content* crossed the edge as ``input_0``.
     loader_output = run_node_and_wait(page, loader_id, node_type=LOADER_TYPE)
     assert "Saved to file:" in loader_output, loader_output
 

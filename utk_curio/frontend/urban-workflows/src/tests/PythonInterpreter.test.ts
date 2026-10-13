@@ -72,7 +72,7 @@ describe('PythonInterpreter', () => {
         expect(options.headers.Authorization).toBe('Bearer test-token');
     });
 
-    test('indents the user code so it lands inside def userCode(arg)', async () => {
+    test('indents the user code so it lands inside the userCode function', async () => {
         (global.fetch as jest.Mock).mockResolvedValueOnce({
             ok: true,
             json: async () => ({
@@ -98,9 +98,28 @@ describe('PythonInterpreter', () => {
 
         const [, options] = (global.fetch as jest.Mock).mock.calls[0];
         const body = JSON.parse(options.body);
-        // The sandbox wraps this as `def userCode(arg):\n<code>`, so every
+        // The sandbox wraps this as `def userCode(...):\n<code>`, so every
         // line has to arrive already indented.
         expect(body.code).toBe('    x = 1\n    return x\n');
+    });
+
+    test('names the wired circles, so the sandbox binds each edge to its input_k', async () => {
+        const reply = {
+            ok: true,
+            json: async () => ({ stdout: [], stderr: '', output: { path: 'abc', dataType: 'int' } }),
+        };
+        (global.fetch as jest.Mock).mockResolvedValueOnce(reply).mockResolvedValueOnce(reply);
+        const send = interpreter.interpretCode.bind(interpreter) as (...args: unknown[]) => void;
+        const args = ['return input_3', 'return input_3', '', [], jest.fn(), NodeType.COMPUTATION_ANALYSIS,
+            'node-1', 'workflow-1', mockNodeExecProv, 'flow-1', false, 'Node'];
+
+        send(...args, [0, 3]);
+        send(...args);
+        await flushPromises();
+
+        const bodies = (global.fetch as jest.Mock).mock.calls.map(([, options]) => JSON.parse(options.body));
+        expect(bodies[0].inputSlots).toEqual([0, 3]);
+        expect('inputSlots' in bodies[1]).toBe(false);
     });
 
     describe('isolated-execution failures surface as node errors', () => {

@@ -50,7 +50,7 @@ import pandas as pd
 import geopandas as gpd
 import numpy as np
 
-gdf = arg
+gdf = input_0
 
 processed_gdf = gdf[['label_type', 'severity', 'neighborhood', 'geometry', 'agree_count', 'disagree_count']]
 
@@ -87,7 +87,7 @@ The first branch groups the cleaned features by `label_type` and computes the co
 import pandas as pd
 import numpy as np
 
-gdf = arg
+gdf = input_0
 
 feature_stats = gdf.groupby('label_type').agg(
     count=('label_type', 'count'),
@@ -115,7 +115,7 @@ The second branch is structurally identical to Step 3, but groups by `neighborho
 import pandas as pd
 import numpy as np
 
-gdf = arg
+gdf = input_0
 
 neighborhood_stats = gdf.groupby('neighborhood').agg(
     count=('label_type', 'count'),

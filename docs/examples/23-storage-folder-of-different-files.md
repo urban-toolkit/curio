@@ -26,8 +26,8 @@ reads the committed copies, **Example roads** and **Example parks**.
 
 ```mermaid
 flowchart LR
-  R[`Data Loading`<br/>the roads] -->|input 0| C[`Python Computation`<br/>one GeoDataFrame]
-  P[`Data Loading`<br/>the parks] -->|input 1| C
+  R[`Data Loading`<br/>the roads] -->|input_0| C[`Python Computation`<br/>one GeoDataFrame]
+  P[`Data Loading`<br/>the parks] -->|input_1| C
   C --> V[`Vega-Lite`<br/>parks and roads]
 ```
 
@@ -64,7 +64,7 @@ input chip (see [Several inputs](../USAGE.md#several-inputs)):
 import geopandas as gpd
 import pandas as pd
 
-roads, parks = [!! input 0 !!], [!! input 1 !!]
+roads, parks = [!! input_0 !!], [!! input_1 !!]
 roads = roads.assign(layer="road")
 parks = parks.assign(layer="park")
 

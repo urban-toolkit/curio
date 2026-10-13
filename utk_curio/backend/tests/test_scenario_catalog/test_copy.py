@@ -29,7 +29,7 @@ def _headers(token):
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
-def _node(node_id, kind="computation-analysis", content="return arg", x=0, **extra):
+def _node(node_id, kind="computation-analysis", content="return input_0", x=0, **extra):
     return {"id": node_id, "type": f"curio.builtin/{kind}@1", "content": content, "x": x, "y": 0, **extra}
 
 
@@ -221,7 +221,7 @@ def test_a_package_the_target_lacks_is_added(client, user_and_token):
     _, token = user_and_token
     nodes = [
         _node("load", "data-loading", "return 1"),
-        {"id": "a", "type": "curio.example-ui/column-filter@1", "content": "return arg", "x": 300, "y": 0},
+        {"id": "a", "type": "curio.example-ui/column-filter@1", "content": "return input_0", "x": 300, "y": 0},
     ]
     edges = [{"id": "e1", "source": "load", "target": "a", "sourceHandle": "out", "targetHandle": "in"}]
     source, target = _source_and_target(client, token, _spec("Shadows", [{**BASELINE, "nodes": ["a"]}], nodes, edges))
@@ -242,7 +242,7 @@ def test_what_the_account_cannot_provide_is_refused_naming_it(client, user_and_t
     nodes = [
         _node("load", "data-loading", "return 1"),
         {
-            "id": "a", "type": "acme.missing/thing@1", "content": "return arg", "x": 300, "y": 0,
+            "id": "a", "type": "acme.missing/thing@1", "content": "return input_0", "x": 300, "y": 0,
             "metadata": {"datasetRefs": ["data.nowhere"], "modelRefs": [{"id": "model.nowhere"}]},
         },
     ]

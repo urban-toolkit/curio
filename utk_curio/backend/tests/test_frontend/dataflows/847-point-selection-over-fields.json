@@ -33,7 +33,7 @@
         "in": "DATAFRAME",
         "out": "DATAFRAME",
         "goal": "The units the selection tag says were picked in Pick units.",
-        "content": "# The selection tag \"picked\" holds the unit_id of each unit picked in the\n# Pick units chart. It should hold exactly the units you clicked.\npicked = [!! selection picked !!]\nprint(\"The tag holds:\", picked)\nunits = arg\nreturn units[units[\"unit_id\"].isin(picked)]\n",
+        "content": "# The selection tag \"picked\" holds the unit_id of each unit picked in the\n# Pick units chart. It should hold exactly the units you clicked.\npicked = [!! selection picked !!]\nprint(\"The tag holds:\", picked)\nunits = input_0\nreturn units[units[\"unit_id\"].isin(picked)]\n",
         "metadata": {
           "selections": [
             {"name": "picked", "node": "pick", "column": "unit_id", "ids": []}

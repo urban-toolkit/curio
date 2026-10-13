@@ -75,7 +75,7 @@ which gives it as a GeoDataFrame:
 
 ```python
 return calculate_weather_route(
-    [!! input 0:table_osm_roads !!],
+    [!! input_0:table_osm_roads !!],
     ...
 )
 ```

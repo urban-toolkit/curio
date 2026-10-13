@@ -1,8 +1,8 @@
 """Spatial Join: pair the rows of two GeoJSON inputs whose shapes meet (#576).
 
 Backs the ``/spatial_join`` endpoint in ``app/api/routes.py``, which in turn
-powers the Spatial Join node in ``curio.builtin@1``. Input 0 is the left side
-of the join and input 1 the right, as geopandas names them: ``sjoin`` finds
+powers the Spatial Join node in ``curio.builtin@1``. input_0 is the left side
+of the join and input_1 the right, as geopandas names them: ``sjoin`` finds
 the pairs for every operation but ``nearest``, which is ``sjoin_nearest``.
 
 geopandas is imported inside the functions, so this module stays importable on
@@ -17,9 +17,9 @@ OUTPUTS = ("pairs", "counts")
 DEFAULT_PREDICATE = "intersects"
 DEFAULT_OUTPUT = "pairs"
 
-#: What a clashing input 1 column is renamed with, so no input 0 column is overwritten.
+#: What a clashing input_1 column is renamed with, so no input_0 column is overwritten.
 RIGHT_SUFFIX = "_right"
-#: The column the counts output gives each input 1 row.
+#: The column the counts output gives each input_1 row.
 COUNT_COLUMN = "point_count"
 #: The column ``nearest`` adds: the distance between the pair, in meters.
 DISTANCE_COLUMN = "distance"
@@ -37,12 +37,12 @@ def spatial_join(
     predicate: str = DEFAULT_PREDICATE,
     output: str = DEFAULT_OUTPUT,
 ) -> Dict[str, Any]:
-    """Join *left_fc* (input 0) to *right_fc* (input 1) by *predicate*.
+    """Join *left_fc* (input_0) to *right_fc* (input_1) by *predicate*.
 
-    ``output="pairs"`` gives one feature per matching pair: input 0's row and
-    geometry, with input 1's columns added (``<column>_right`` on a clash).
-    ``output="counts"`` gives input 1's features, each with ``point_count``,
-    the number of input 0 rows paired with it.
+    ``output="pairs"`` gives one feature per matching pair: input_0's row and
+    geometry, with input_1's columns added (``<column>_right`` on a clash).
+    ``output="counts"`` gives input_1's features, each with ``point_count``,
+    the number of input_0 rows paired with it.
 
     A point on a polygon's edge follows shapely's rule for the operation: it
     intersects and touches the polygon, and is not within it.
@@ -51,10 +51,10 @@ def spatial_join(
         raise JoinInputError(f"The operation must be one of {', '.join(PREDICATES)}; got {predicate!r}.")
     if output not in OUTPUTS:
         raise JoinInputError(f"The output must be one of {', '.join(OUTPUTS)}; got {output!r}.")
-    left_features = _features(left_fc, "Input 0")
-    right_features = _features(right_fc, "Input 1")
-    left = _frame(left_features, left_fc, "Input 0")
-    right = _frame(right_features, right_fc, "Input 1")
+    left_features = _features(left_fc, "input_0")
+    right_features = _features(right_fc, "input_1")
+    left = _frame(left_features, left_fc, "input_0")
+    right = _frame(right_features, right_fc, "input_1")
     if right.crs != left.crs:
         right = right.to_crs(left.crs)
 
@@ -137,7 +137,7 @@ def _frame(features: List[dict], fc: dict, name: str):
 
 
 def _pairs(left, right, predicate: str) -> List[Tuple[int, int, Optional[float]]]:
-    """``(input 0 row, input 1 row, distance)`` for every matching pair, in input 0's order."""
+    """``(input_0 row, input_1 row, distance)`` for every matching pair, in input_0's order."""
     import geopandas as gpd
 
     left = left[left.geometry.notna() & ~left.geometry.is_empty]
@@ -147,7 +147,7 @@ def _pairs(left, right, predicate: str) -> List[Tuple[int, int, Optional[float]]
     if predicate == "nearest":
         # In degrees the nearest polygon is the wrong one away from the
         # equator, and a distance in degrees means nothing to anyone: measure
-        # in the UTM zone of input 0, in meters.
+        # in the UTM zone of input_0, in meters.
         metric = left.estimate_utm_crs()
         joined = gpd.sjoin_nearest(
             left.to_crs(metric), right.to_crs(metric), how="inner", distance_col=DISTANCE_COLUMN,
@@ -168,7 +168,7 @@ def _pair_features(
     pairs: List[Tuple[int, int, Optional[float]]],
     with_distance: bool,
 ) -> List[dict]:
-    """One feature per pair: input 0's row and geometry, input 1's columns added.
+    """One feature per pair: input_0's row and geometry, input_1's columns added.
 
     Built from the features as they came, so every value keeps its JSON form.
     """
