@@ -89,8 +89,8 @@ class TestJournalStore:
         assert statuses["b"]["status"] == "error"
 
     def test_normalized_sha_survives_transport_indentation(self):
-        flush = "import x\nreturn x.f(arg)"
-        indented = "    import x\n    return x.f(arg)"
+        flush = "import x\nreturn x.f(input_0)"
+        indented = "    import x\n    return x.f(input_0)"
         assert (
             runtime_journal.normalized_code_sha256(flush)
             == runtime_journal.normalized_code_sha256(indented)

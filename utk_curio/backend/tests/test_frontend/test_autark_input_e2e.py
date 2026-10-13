@@ -363,9 +363,9 @@ def test_a_map_draws_a_layer_from_each_of_its_inputs(
             node(plain, "curio.builtin/data-loading", 0, 0, UNTYPED_BUILDINGS),
             node(buildings, "curio.builtin/data-loading", 0, 520, TYPED_BUILDINGS),
             node(alone, "curio.builtin/autk-grammar", 645, 0,
-                 '{"map": {"layerRefs": [{"dataRef": [!! input 0 !!]}]}}'),
+                 '{"map": {"layerRefs": [{"dataRef": [!! input_0 !!]}]}}'),
             node(both, "curio.builtin/autk-grammar", 645, 520,
-                 '{"map": {"layerRefs": [{"dataRef": [!! input 0 !!]}, {"dataRef": [!! input 1 !!]}]}}'),
+                 '{"map": {"layerRefs": [{"dataRef": [!! input_0 !!]}, {"dataRef": [!! input_1 !!]}]}}'),
         ],
         "edges": [edge(plain, alone, "in"), edge(plain, both, "in"), edge(buildings, both, "in_1")],
     }}
@@ -394,10 +394,10 @@ def test_a_layer_chip_draws_the_one_frame_its_input_carries(
     """#662: a layer chip in an Autark document works as it does in code. An
     input that carries one frame with no layer name, here the GeoDataFrame a
     Python node returns, is that layer whatever the chip names, so
-    ``[!! input 0:anything !!]`` names the table the frame is read by and the
+    ``[!! input_0:anything !!]`` names the table the frame is read by and the
     map draws the grid."""
     chip_map = json.dumps({"map": {"layerRefs": [{
-        "dataRef": "[!! input 0:anything !!]",
+        "dataRef": "[!! input_0:anything !!]",
         "getFnv": "pop",
         "getFnvType": "quantitative",
         "colorMapInterpolator": "interpolateViridis",

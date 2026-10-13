@@ -24,7 +24,7 @@ TRACEBACK = (
     '  File "<node>", line 2, in <module>\n    df = arg.head()\n'
     "AttributeError: 'list' object has no attribute 'head'\n"
 )
-FAILED_CODE = "df = arg.head()\nreturn df"
+FAILED_CODE = "df = input_0.head()\nreturn df"
 
 
 class TestCarryForwardPayload:
@@ -33,7 +33,7 @@ class TestCarryForwardPayload:
             "status": "failed",
             "attempts": [
                 {"round": 1, "verdict": "fail", "kind": "input-contract",
-                 "detail": "arg is a list", "code": "df = arg\nreturn df"},
+                 "detail": "arg is a list", "code": "df = input_0\nreturn df"},
                 {"round": 2, "verdict": "fail", "kind": "execution-error",
                  "detail": "AttributeError", "stderrTail": TRACEBACK, "code": FAILED_CODE},
             ],
@@ -99,7 +99,7 @@ class TestTheLoopStartsFromTheCarriedError:
             app, {"code": FAILED_CODE, "error": TRACEBACK, "kind": "execution-error"}
         )
         assert outcome["verdict"] == "pass"
-        assert inputs[0]["previousAttempt"].startswith("df = arg.head()")
+        assert inputs[0]["previousAttempt"].startswith("df = input_0.head()")
         assert "'list' object has no attribute 'head'" in inputs[0]["validationError"]
         assert any(
             line.startswith("carrying forward the previous attempt's error")

@@ -79,7 +79,7 @@ def _plain_request(manifest_dict):
     return parse_build_request({
         "mode": "create", "target": "ai.test.demo@1",
         "manifest": _manifest(manifest_dict, [_plain_kind()]),
-        "files": {"starters/demo-kind/Default.py": {"text": "return arg\n"}},
+        "files": {"starters/demo-kind/Default.py": {"text": "return input_0\n"}},
     })
 
 
@@ -88,7 +88,7 @@ def _behavior_request(manifest_dict, *, marker: str = "//A"):
         "mode": "create", "target": "ai.test.demo@1",
         "manifest": _manifest(manifest_dict, [_note_kind()]),
         "files": {
-            "starters/note-kind/Default.js": {"text": "return arg\n"},
+            "starters/note-kind/Default.js": {"text": "return input_0\n"},
             "sources/note.tsx": {"text": f'import {{marked}} from "marked"\n{marker}\n'},
         },
         "behaviorEntries": ["sources/note.tsx"],

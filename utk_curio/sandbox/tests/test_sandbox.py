@@ -157,7 +157,7 @@ class TestSandbox(unittest.TestCase):
         """Unit-test execute_js_code() directly."""
         from utk_curio.sandbox.app.worker import execute_js_code, _worker_init
         _worker_init()
-        result = execute_js_code('return arg * 2;', '', 'JS_COMPUTATION', '', session_id=None)
+        result = execute_js_code('return 21 * 2;', '', 'JS_COMPUTATION', '', session_id=None)
         self.assertIn('output', result)
         self.assertEqual(result['stderr'], '')
 
@@ -176,14 +176,14 @@ class TestSandbox(unittest.TestCase):
 
     @_SKIP_NO_NODE
     def test_exec_js_receives_input_from_duckdb(self):
-        """JS code receives Python-DuckDB-stored input via the arg parameter."""
+        """JS code receives Python-DuckDB-stored input as input_0."""
         from utk_curio.sandbox.app.worker import execute_js_code, _worker_init
         from utk_curio.sandbox.util.parsers import save_to_duckdb, load_from_duckdb
         from utk_curio.sandbox.util.db import init_db
         _worker_init()
         init_db()
         artifact_id = save_to_duckdb(10, node_id='JS_COMPUTATION', session_id=None)
-        result = execute_js_code('return arg + 1;', artifact_id, 'JS_COMPUTATION', 'int', session_id=None)
+        result = execute_js_code('return input_0 + 1;', artifact_id, 'JS_COMPUTATION', 'int', session_id=None)
         self.assertEqual(result['stderr'], '')
         value = load_from_duckdb(result['output']['path'], session_id=None)
         self.assertEqual(value, 11)
@@ -485,7 +485,7 @@ class TestProjDataDir(unittest.TestCase):
         self.assertEqual(load_result['stderr'], '', msg=load_result['stderr'])
 
         reproject_code = (
-            "    gdf = arg\n"
+            "    gdf = input_0\n"
             "    return gdf.set_crs(32632).to_crs(3395)\n"
         )
         reproject_result = execute_code(
@@ -504,7 +504,7 @@ if __name__ == "__main__":
     unittest.main()
 
 class TestNoInputTripwire(unittest.TestCase):
-    """The ``arg``-without-input guard names the upstream failure (#276).
+    """The guard for code that reads an input none arrived on names the upstream failure (#276).
 
     A downstream node whose upstream just failed used to report only that it
     "received no input", which reads as a wiring problem and sent the reporter
@@ -522,7 +522,7 @@ class TestNoInputTripwire(unittest.TestCase):
         from utk_curio.sandbox.app.worker import execute_code
 
         result = execute_code(
-            "    return arg.head()\n",
+            "    return input_0.head()\n",
             file_path='',
             node_type='DATA_TRANSFORMATION',
             data_type='',
@@ -531,24 +531,42 @@ class TestNoInputTripwire(unittest.TestCase):
         )
 
         stderr = result['stderr']
-        self.assertIn("received no input but its code references `arg`", stderr)
-        self.assertIn("has not run yet, failed, or is not wired", stderr)
+        self.assertIn("reads `input_0`, but nothing arrived on input circle 0", stderr)
+        self.assertIn("no edge is wired to that circle, or the node feeding it has not run", stderr)
         self.assertIn("fix any that show an error", stderr)
         self.assertEqual(result['output']['path'], '')
 
-    def test_a_loader_that_never_reads_arg_is_not_refused(self):
-        """A standalone loader may contain the letters "arg" and still run (#273).
+    def test_code_that_reads_the_old_name_is_told_the_new_one(self):
+        """`input` and `arg` are gone: reading one names input_0 instead of
+        reaching Python's built-in input()."""
+        from utk_curio.sandbox.app.worker import execute_code
 
-        The guard used to be ``'arg' in code``, a substring test, so an
-        input-free Data Loading node was refused for ordinary words like
-        ``target`` or a URL query parameter. Every name below contains the
-        substring; none of them reads the input.
+        for name in ("input", "arg"):
+            result = execute_code(
+                f"    return {name}.head()\n",
+                file_path='',
+                node_type='DATA_TRANSFORMATION',
+                data_type='',
+                launch_dir=_REPO_ROOT,
+                session_id=None,
+            )
+            self.assertIn(f"reads `{name}`, which Curio no longer defines", result['stderr'])
+            self.assertIn("input_0", result['stderr'])
+
+    def test_a_loader_that_never_reads_an_input_is_not_refused(self):
+        """A standalone loader may contain the letters of an input's name and
+        still run (#273).
+
+        The guard used to be a substring test, so an input-free Data Loading
+        node was refused for ordinary words like ``target`` or a URL query
+        parameter. Every name below contains such letters; none of them reads
+        an input.
         """
         from utk_curio.sandbox.app.worker import execute_code
 
         code = (
             "    target = 2\n"
-            "    large_margin = 3  # arguably enough\n"
+            "    large_margin = 3  # arguably enough, no input_0 here\n"
             "    return target * large_margin\n"
         )
         result = execute_code(
@@ -561,31 +579,35 @@ class TestNoInputTripwire(unittest.TestCase):
         )
 
         # Not asserting an empty stderr: this returns an int, which Data Loading's
-        # own output validation rejects. The claim here is only that the no-input
-        # tripwire did not fire.
-        self.assertNotIn("received no input", result['stderr'])
+        # own output validation rejects. The claim here is only that neither the
+        # no-input tripwire nor the old-name refusal fired.
+        self.assertNotIn("nothing arrived", result['stderr'])
+        self.assertNotIn("no longer defines", result['stderr'])
 
-    def test_binding_arg_without_reading_it_is_not_refused(self):
-        """Binding ``arg`` is a Store, not a read, so it needs no input (#273)."""
+    def test_binding_an_input_name_without_reading_it_is_not_refused(self):
+        """Binding a name is a Store, not a read: ``input_0 = 7`` needs no
+        input, and ``arg = 7`` makes ``arg`` the code's own (#273)."""
         from utk_curio.sandbox.app.worker import execute_code
 
-        result = execute_code(
-            "    arg = 7\n    return 7\n",
-            file_path='',
-            node_type='DATA_TRANSFORMATION',
-            data_type='',
-            launch_dir=_REPO_ROOT,
-            session_id=None,
-        )
+        for code in ("    input_0 = 7\n    return 7\n", "    arg = 7\n    return arg\n"):
+            result = execute_code(
+                code,
+                file_path='',
+                node_type='DATA_TRANSFORMATION',
+                data_type='',
+                launch_dir=_REPO_ROOT,
+                session_id=None,
+            )
 
-        self.assertNotIn("received no input", result['stderr'])
+            self.assertNotIn("nothing arrived", result['stderr'])
+            self.assertNotIn("no longer defines", result['stderr'])
 
-    def test_the_guard_still_fires_for_code_that_reads_arg(self):
-        """Reading the input is still detected, however it is spelled (#276)."""
-        from utk_curio.sandbox.app.worker import _code_reads_arg
+    def test_the_guard_still_fires_for_code_that_reads_an_input(self):
+        """Reading an input is still detected, however it is spelled (#276)."""
+        from utk_curio.sandbox.util.input_names import input_names_read
 
-        self.assertTrue(_code_reads_arg("    return arg.head()\n"))
-        self.assertTrue(_code_reads_arg("    for row in arg:\n        pass\n"))
-        self.assertTrue(_code_reads_arg("    return [x for x in arg]\n"))
-        self.assertFalse(_code_reads_arg("    return 'targets and arguments'\n"))
-        self.assertFalse(_code_reads_arg("    # arg is not used here\n    return 1\n"))
+        self.assertEqual(input_names_read("    return input_0.head()\n"), [0])
+        self.assertEqual(input_names_read("    for row in input_2:\n        pass\n"), [2])
+        self.assertEqual(input_names_read("    return [x for x in input_1]\n"), [1])
+        self.assertEqual(input_names_read("    return 'input_0 and input_1'\n"), [])
+        self.assertEqual(input_names_read("    # input_0 is not used here\n    return 1\n"), [])

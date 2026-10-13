@@ -1109,7 +1109,7 @@ class TestSessionRealData:
             connect_nodes(page, loader_id, transform_id)
             set_node_code(
                 page, transform_id,
-                "df = arg.copy()\n"
+                "df = input_0.copy()\n"
                 "print('columns:', list(df.columns))\n"
                 "print('rows:', len(df))\n"
                 "num = [c for c in df.columns if 'income' in c.lower()]\n"
@@ -1516,7 +1516,7 @@ class TestSessionExtending:
             connect_nodes(page, loader_id, transform_id)
             set_node_code(
                 page, transform_id,
-                "df = arg.copy()\n"
+                "df = input_0.copy()\n"
                 "df['rank'] = df['b'].rank(ascending=False).astype(int)\n"
                 "print(df.sort_values('rank').to_string(index=False))\n"
                 "return df\n",
@@ -1971,8 +1971,8 @@ class TestSessionAbuse:
             connect_nodes(page, loader, middle)
             connect_nodes(page, middle, tail)
             set_node_code(page, loader, QUICKSTART_LOADER)
-            set_node_code(page, middle, "df = arg.copy()\ndf['c'] = df['b'] * 2\nreturn df\n")
-            set_node_code(page, tail, "df = arg\nprint('tail sees', list(df.columns))\nreturn df\n")
+            set_node_code(page, middle, "df = input_0.copy()\ndf['c'] = df['b'] * 2\nreturn df\n")
+            set_node_code(page, tail, "df = input_0\nprint('tail sees', list(df.columns))\nreturn df\n")
             run_and_report(s, tail, label="the chain's tail",
                            node_type="curio.builtin/data-transformation")
             _fit_view(page)

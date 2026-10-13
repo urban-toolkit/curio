@@ -53,7 +53,7 @@ PARAMETER_TYPE = "curio.builtin/parameter"
 A_TEMPLATE = "factor = \nprint(f'<<A {factor * 10}>>')\nreturn factor * 10\n"
 A_WITH_TAG = "factor = [!! @factor !!]\nprint(f'<<A {factor * 10}>>')\nreturn factor * 10\n"
 B_CODE = "value = [!! @factor !!]\nprint(f'<<B {value}>>')\nreturn value\n"
-READER_CODE = "print(f'<<R {arg}>>')\nreturn arg\n"
+READER_CODE = "print(f'<<R {input_0}>>')\nreturn input_0\n"
 
 # A code node is 525x350 at zoom 1: the two it feeds and the one below it
 # leave each facing handle clear, and the Parameter node sits apart.

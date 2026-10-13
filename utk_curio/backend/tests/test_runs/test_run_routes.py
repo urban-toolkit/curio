@@ -568,8 +568,8 @@ class TestACanvasOpenedLater:
         assert steps["a"]["codeCurrent"] is True and steps["b"]["codeCurrent"] is True
 
         # b's code changes and is saved; a's only moves, which is not a change.
-        edited = [{**_node("a"), "content": "    # node a\n    return arg\n"},
-                  {**_node("b"), "content": "# node b\nreturn arg * 2"}]
+        edited = [{**_node("a"), "content": "    # node a\n    return input_0\n"},
+                  {**_node("b"), "content": "# node b\nreturn input_0 * 2"}]
         saved = client.put(f"/api/projects/{project_id}", data=json.dumps({
             "name": "Run routes",
             "spec": {"dataflow": {"name": "Run routes", "nodes": edited, "edges": [_edge("a", "b")]}},
@@ -681,7 +681,7 @@ class TestAPackageNodesModules:
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, mode="w") as zf:
             zf.writestr("manifest.json", json.dumps(manifest))
-            zf.writestr("sources/caller.py", "return arg\n")
+            zf.writestr("sources/caller.py", "return input_0\n")
             zf.writestr("sources/building_height/convert_to_raster.py", "FACTOR = 2\n")
         install_package_from_archive(key, buf.getvalue())
 

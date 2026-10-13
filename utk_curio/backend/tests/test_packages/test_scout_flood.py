@@ -338,7 +338,7 @@ def test_each_scenario_chooses_by_scouts_classes_and_takes_the_statistics():
         resolved, problems = resolve_references(code, calculator["metadata"]["widgets"], "python")
         assert problems == [], (calculator["id"], problems)
         assert _literal_dict(_function_body(resolved), "NBS_CLASSES") == _scout_classes()
-    assert "return curio_raster_calculate(\"choose\", arg, codes=codes)" in code
+    assert "return curio_raster_calculate(\"choose\", input_0, codes=codes)" in code
     assert {n["content"] for n in _nodes(STATISTICS)} == {_starter("RASTER_STATISTICS_CODE")}
 
     loaders = {}
@@ -387,7 +387,7 @@ def test_the_shipped_dataflows_compare_nodes_hold_the_code_they_write():
     No NbS in circle 0 and NbS in circle 1 (``utils/compare/compareCode.ts``):
     one in Difference, NbS minus No NbS, and one charting the median depth."""
     spec = _dataflow()
-    entries = '    ("no-nbs", "No NbS", [!! input 0 !!]),\n    ("nbs", "NbS", [!! input 1 !!]),\n])\n'
+    entries = '    ("no-nbs", "No NbS", [!! input_0 !!]),\n    ("nbs", "NbS", [!! input_1 !!]),\n])\n'
     compares = {n["metadata"]["compareScenarios"]["mode"]: n for n in _nodes(COMPARE)}
     assert set(compares) == {"difference", "chart"}
     labels = [

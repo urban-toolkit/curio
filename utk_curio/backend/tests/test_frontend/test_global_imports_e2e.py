@@ -89,7 +89,7 @@ def test_a_library_imported_upstream_is_usable_downstream(
         page, downstream,
         # No import line. Pre-fix this raised NameError: name 'e2e_np' is not defined.
         f'print("{CROSS_MARKER}", e2e_np.mean(arg))\n'
-        "return float(e2e_np.mean(arg))\n",
+        "return float(e2e_np.mean(input_0))\n",
     )
 
     run_node_and_wait(page, upstream, node_type=ANALYSIS_TYPE)

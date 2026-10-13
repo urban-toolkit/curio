@@ -91,15 +91,15 @@ CONTENT = {
     ),
     "shadow length per building": (
         "import math\n\n"
-        "buildings = [!! input 0 !!].copy()\n"
+        "buildings = [!! input_0 !!].copy()\n"
         "buildings['height_m'] = buildings['height_m'] * [!! height_factor !!]\n"
         "buildings['shadow_m'] = buildings['height_m'] / math.tan(math.radians(35))\n"
         "return buildings\n"
     ),
     "mean shadow of each scenario": (
         "import pandas as pd\n\n"
-        "real = [!! input 0 !!]['shadow_m'].mean()\n"
-        "taller = [!! input 1 !!]['shadow_m'].mean()\n"
+        "real = [!! input_0 !!]['shadow_m'].mean()\n"
+        "taller = [!! input_1 !!]['shadow_m'].mean()\n"
         f"print('{MEANS_MARKER}', real, taller)\n"
         "return pd.DataFrame({\n"
         "    'scenario': ['Real heights', 'Twice as tall'],\n"

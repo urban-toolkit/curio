@@ -701,10 +701,10 @@ def test_both_scenarios_dragged_into_an_empty_project_read_one_context(
     code = ""
     while time.time() < deadline:
         code = read_node_code(page, compare)
-        if '"Baseline", [!! input 0 !!]' in code and '"Twice as tall", [!! input 1 !!]' in code:
+        if '"Baseline", [!! input_0 !!]' in code and '"Twice as tall", [!! input_1 !!]' in code:
             break
         page.wait_for_timeout(250)
-    assert '"Twice as tall", [!! input 1 !!]' in code, f"the node did not label its inputs by scenario:\n{code}"
+    assert '"Twice as tall", [!! input_1 !!]' in code, f"the node did not label its inputs by scenario:\n{code}"
 
     # The two read one context, and only height_factor differs.
     frame_nodes(page, [compare])

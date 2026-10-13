@@ -365,7 +365,7 @@ class TestADependentPackagesNodeGetsTheModulesItDependsOn:
         from utk_curio.backend.app.packages.builder.deps import merge_declared_and_detected
 
         request = TestThePackageBuilderLeavesTheOwnModulesOut._request({
-            "sources/caller.py": "import numpy\nfrom building_height.convert import convert\nreturn convert(arg)\n",
+            "sources/caller.py": "import numpy\nfrom building_height.convert import convert\nreturn convert(input_0)\n",
         })
         python, _js, _findings = merge_declared_and_detected(request, (), frozenset({"building_height"}))
         assert sorted(python) == ["numpy"]
@@ -419,7 +419,7 @@ class TestThePackageBuilderLeavesTheOwnModulesOut:
         from utk_curio.backend.app.packages.builder.deps import merge_declared_and_detected
 
         request = self._request({
-            "sources/caller.py": "import numpy\nfrom scripts.convert import convert\nreturn convert(arg)\n",
+            "sources/caller.py": "import numpy\nfrom scripts.convert import convert\nreturn convert(input_0)\n",
             "sources/scripts/convert.py": "import shapely\nimport scripts.scale\nfrom .scale import FACTOR\n",
             "sources/scripts/scale.py": "FACTOR = 2\n",
         })
@@ -430,7 +430,7 @@ class TestThePackageBuilderLeavesTheOwnModulesOut:
     def test_a_module_the_extended_package_keeps_is_not_a_dependency(self):
         from utk_curio.backend.app.packages.builder.deps import merge_declared_and_detected
 
-        request = self._request({"sources/caller.py": "from scripts.convert import convert\nreturn convert(arg)\n"})
+        request = self._request({"sources/caller.py": "from scripts.convert import convert\nreturn convert(input_0)\n"})
         python, _js, _findings = merge_declared_and_detected(request, ("sources/scripts/convert.py",))
         assert python == {}
 

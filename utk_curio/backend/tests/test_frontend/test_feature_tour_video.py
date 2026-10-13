@@ -208,7 +208,7 @@ POS_LOADER = (150, 150)
 POS_TRANSFORM = (760, 150)
 
 TRANSFORM_CODE = (
-    "df = arg\n"
+    "df = input_0\n"
     'df["income_per_capita"] = (df["median_income"] / df["population"]).round(2)\n'
     'print(df.sort_values("median_income", ascending=False).to_string(index=False))\n'
     "return df\n"

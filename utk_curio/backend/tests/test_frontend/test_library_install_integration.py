@@ -59,7 +59,7 @@ PY_CODE = (
     "    import inflection\n"
     "    return [inflection.camelize('hello_world')]\n"
 )
-assert "arg" not in PY_CODE, "worker.py refuses code containing 'arg' with no input"
+assert "input_0" not in PY_CODE, "worker.py refuses code containing 'arg' with no input"
 
 _NET_FAIL_RE = re.compile(
     r"Could not find a version|Temporary failure in name resolution|ProxyError|"

@@ -157,7 +157,7 @@ class TestRunThroughNode:
         import ast
 
         spec = _spec(
-            [_node("a"), _node("b"), _node("c", content="return [!! input 1 !!]")],
+            [_node("a"), _node("b"), _node("c", content="return [!! input_1 !!]")],
             [{"id": "reactflow__edge-aout-cin_2", "source": "a", "target": "c",
               "targetHandle": "in"},
              {"id": "reactflow__edge-bout-cin_1", "source": "b", "target": "c",
@@ -536,7 +536,7 @@ class TestDev118EmptyUpstream:
     def test_the_target_may_be_empty_only_through_its_candidate(self, tmp_curio):
         rec = _RecordingExec()
         spec = _spec([_node("a"), _node("t", content="")], [{"id": "e1", "source": "a", "target": "t"}])
-        report = runner.run_through_node(KEY, PID, spec, "t", exec_fn=rec, candidate_content="return arg", strict_upstream=True)
+        report = runner.run_through_node(KEY, PID, spec, "t", exec_fn=rec, candidate_content="return input_0", strict_upstream=True)
         assert report["ok"] is True and "upstreamEmpty" not in {k for k, v in report.items() if v}
         # A reused empty upstream never reaches the check either.
         rec2 = _RecordingExec()
@@ -749,7 +749,7 @@ class TestInputSlotOrderIsTheHandle:
             "nodes": [
                 {"id": "b", "type": "curio.builtin/data-loading", "content": "return 1"},
                 {"id": "p", "type": "curio.builtin/data-loading", "content": "return 2"},
-                {"id": "t", "type": "curio.builtin/data-transformation", "content": "return arg"},
+                {"id": "t", "type": "curio.builtin/data-transformation", "content": "return input_0"},
             ],
             "edges": [
                 {"id": "b396ed2d-3679-4b38-bbf7-5829d1db082c", "source": "b",
@@ -853,7 +853,7 @@ class TestInputSlotOrderIsTheHandle:
 
         monkeypatch.setattr(runner, "_http_exec", _exec)
         report = runner.run_through_node(
-            "1", "p-1", self.AGENT_SPEC, "t", candidate_content="return arg",
+            "1", "p-1", self.AGENT_SPEC, "t", candidate_content="return input_0",
         )
         assert report["ok"], report
         target = seen[-1]

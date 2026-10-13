@@ -1,8 +1,8 @@
 """Code references in the headless runner (#662).
 
 A node's widgets live at ``metadata.widgets`` and its code places each one as a
-``[!! name !!]`` reference; its inputs are placed as ``[!! input 1 !!]`` and
-their columns as ``[!! input 1.height !!]``; its selection tags, at
+``[!! name !!]`` reference; its inputs are placed as ``[!! input_1 !!]`` and
+their columns as ``[!! input_1.height !!]``; its selection tags, at
 ``metadata.selections``, as ``[!! selection name !!]``. The browser resolves them in
 ``src/utils/references/codeReferences.ts``; the runner resolves them in
 ``execution/code_references.py``. Both read the same table of cases, so a
@@ -100,7 +100,7 @@ class TestTheSharedCases:
         cases = _cases()
         for language in ("python", "javascript", "json"):
             codes = " ".join(c["code"] for c in cases if c["language"] == language)
-            assert "[!! input 0" in codes or "[!! input 1" in codes, language
+            assert "[!! input_0" in codes or "[!! input_1" in codes, language
 
     def test_the_table_has_layer_references_in_every_language(self):
         """A layer chip resolves in Python and JavaScript code too, not only in
@@ -252,16 +252,16 @@ class TestThePatternsAreShared:
 
 class TestResolveCodeReferences:
     def test_an_input_is_arg_alone_or_indexed(self):
-        assert resolve_code_references("return [!! input 0 !!]", (), "python", [0]) == "return arg"
-        assert resolve_code_references("return [!! input 1 !!]", (), "python", [0, 1]) == "return arg[1]"
+        assert resolve_code_references("return [!! input_0 !!]", (), "python", [0]) == "return input_0"
+        assert resolve_code_references("return [!! input_1 !!]", (), "python", [0, 1]) == "return arg[1]"
 
     def test_an_input_with_no_edge_is_refused(self):
         with pytest.raises(_reference_error()) as exc:
-            resolve_code_references("return [!! input 2 !!]", (), "python", [0, 1])
+            resolve_code_references("return [!! input_2 !!]", (), "python", [0, 1])
         assert "input 2 has no edge" in str(exc.value)
 
     def test_a_column_is_its_name_without_the_data(self):
-        assert resolve_code_references("s = arg[[!! input 0.area !!]]", (), "python", [0]) == 's = arg["area"]'
+        assert resolve_code_references("s = arg[[!! input_0.area !!]]", (), "python", [0]) == 's = arg["area"]'
 
     def test_a_reference_takes_the_set_value(self):
         widgets = [{"name": "factor", "type": "number", "default": 1, "value": 3}]
@@ -272,7 +272,7 @@ class TestResolveCodeReferences:
         assert resolve_code_references("x = [!! factor !!]", widgets) == "x = 1"
 
     def test_code_without_references_is_unchanged(self):
-        assert resolve_code_references("return arg") == "return arg"
+        assert resolve_code_references("return input_0") == "return input_0"
 
     def test_an_old_marker_is_refused_naming_the_new_way(self):
         with pytest.raises(_reference_error()) as exc:
@@ -374,7 +374,7 @@ class TestTheRunner:
     def test_an_unknown_name_upstream_blocks_the_target(self, tmp_curio):
         rec = _RecordingExec()
         spec = _spec(
-            [_node("a", "return [!! missing !!]", FACTOR), _node("b", "return arg")],
+            [_node("a", "return [!! missing !!]", FACTOR), _node("b", "return input_0")],
             [{"id": "e1", "source": "a", "target": "b"}],
         )
         report = runner.run_through_node(KEY, PID, spec, "b", exec_fn=rec)
@@ -390,7 +390,7 @@ FAN_IN = _spec(
     [
         _node("a", "return 1", node_type="curio.builtin/data-loading"),
         _node("b", "return 2", node_type="curio.builtin/data-loading"),
-        _node("t", "return [!! input 1 !!]"),
+        _node("t", "return [!! input_1 !!]"),
     ],
     [
         {"id": "e-b", "source": "b", "target": "t", "sourceHandle": "out", "targetHandle": "in_1"},
@@ -418,7 +418,7 @@ class TestSeveralInputs:
 
     def test_a_chip_for_an_input_with_no_edge_fails_the_node_without_the_sandbox(self, tmp_curio):
         rec = _RecordingExec()
-        spec = _spec([_node("t", "return [!! input 0 !!]")])
+        spec = _spec([_node("t", "return [!! input_0 !!]")])
         report = runner.run_through_node(KEY, PID, spec, "t", exec_fn=rec)
         assert rec.calls == []
         assert report["ok"] is False and report["blocker"] == "t"
@@ -437,7 +437,7 @@ class TestLayerChips:
         spec = _spec(
             [
                 _node("osm", "{}", node_type="curio.builtin/data-loading"),
-                _node("t", "roads = [!! input 0:table_osm_roads !!]\nreturn roads[[!! input 0:table_osm_roads.highway !!]]"),
+                _node("t", "roads = [!! input_0:table_osm_roads !!]\nreturn roads[[!! input_0:table_osm_roads.highway !!]]"),
             ],
             [{"id": "e", "source": "osm", "target": "t", "sourceHandle": "out", "targetHandle": "in"}],
         )
@@ -445,7 +445,7 @@ class TestLayerChips:
         assert report["ok"] is True, report
         assert LAYER_HELPER == "curio_layer"
         # The runner indents the node's code into its function body.
-        assert '    roads = curio_layer(arg, "table_osm_roads", 0)\n    return roads["highway"]' in rec.calls[-1][1]["code"]
+        assert '    roads = curio_layer(input_0, "table_osm_roads", 0)\n    return roads["highway"]' in rec.calls[-1][1]["code"]
 
     def test_a_javascript_node_gets_the_same_call(self, tmp_curio):
         rec = _RecordingExec()
@@ -453,7 +453,7 @@ class TestLayerChips:
             [
                 _node("a", "return 1", node_type="curio.builtin/data-loading"),
                 _node("b", "return 2", node_type="curio.builtin/data-loading"),
-                _node("j", "return [!! input 1:roads !!];", node_type="curio.builtin/js-computation"),
+                _node("j", "return [!! input_1:roads !!];", node_type="curio.builtin/js-computation"),
             ],
             [
                 {"id": "e-a", "source": "a", "target": "j", "sourceHandle": "out", "targetHandle": "in"},

@@ -83,7 +83,7 @@ def _node_code(module: str) -> str:
     # is a plain substring test - any occurrence at all would turn every run
     # into the same misleading error and quietly void these tests.
     code = f"    import {module}\n    return [1]\n"
-    assert "arg" not in code, "worker.py refuses code containing 'arg' with no input"
+    assert "input_0" not in code, "worker.py refuses code containing 'arg' with no input"
     return code
 
 

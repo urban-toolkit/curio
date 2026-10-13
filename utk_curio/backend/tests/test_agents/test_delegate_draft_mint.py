@@ -48,7 +48,7 @@ def _draft(color="pink"):
                 "defaultTemplate": "starters/note-kind/Default.py",
             }],
         },
-        "files": {"starters/note-kind/Default.py": {"text": "return arg\n"}},
+        "files": {"starters/note-kind/Default.py": {"text": "return input_0\n"}},
         "nodes": [{
             "templateId": "note-kind", "title": "Note",
             "content": "# Findings", "appearance": {"backgroundColor": color},

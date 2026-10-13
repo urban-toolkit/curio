@@ -56,7 +56,7 @@ if TYPE_CHECKING:
 
 TILE = "#tile-computation-analysis"
 NODE_TYPE = "curio.builtin/computation-analysis"
-READER_CODE = "print(f'<<{arg}>>')\nreturn arg\n"
+READER_CODE = "print(f'<<{input_0}>>')\nreturn input_0\n"
 
 SHADOW_DIR = "scout.shadow@1"
 MODULE = "scout_shadow.deep_umbra"

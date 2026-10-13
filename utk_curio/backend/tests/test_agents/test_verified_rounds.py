@@ -590,7 +590,7 @@ class TestSameBatchReuse:
     silent retry without reuse, never a round."""
 
     def _chain(self):
-        node_a = {"id": "a", "type": CA, "goal": "prep", "content": "df = arg\nreturn df"}
+        node_a = {"id": "a", "type": CA, "goal": "prep", "content": "df = input_0\nreturn df"}
         node_t = {"id": "t", "type": CA, "goal": "stats", "content": ""}
         spec = {"dataflow": {"nodes": [node_a, node_t], "edges": [{"id": "e1", "source": "a", "target": "t"}],
                              "name": "wf", "task": "stats"}}

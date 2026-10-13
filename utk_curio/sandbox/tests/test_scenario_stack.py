@@ -52,7 +52,7 @@ class TestStacking:
         ])
         assert list(out.columns) == ["scenario", "scenario_name", "segment", "sunlight", "shade"]
         assert pd.isna(out.loc[0, "shade"]) and out.loc[1, "shade"] == 0.5
-        assert "input 0 (Baseline) has no shade" in capsys.readouterr().out
+        assert "input_0 (Baseline) has no shade" in capsys.readouterr().out
 
     def test_values_are_one_row_each_under_value(self):
         out = _stack([("s-base", "Baseline", 5), ("s-tall", "Twice as tall", 3.5)])
@@ -94,7 +94,7 @@ class TestStacking:
         b = gpd.GeoDataFrame({"v": [2]}, geometry=[Point(1, 1)])
         out = _stack([("s-base", "B", a), ("s-tall", "T", b)])
         assert out.crs.to_string() == "EPSG:4326"
-        assert "input 1 (T) names no coordinate system" in capsys.readouterr().out
+        assert "input_1 (T) names no coordinate system" in capsys.readouterr().out
 
     def test_a_layer_an_autark_node_hands_on_is_read_as_a_geodataframe(self):
         layer = {
@@ -124,33 +124,33 @@ class TestRefusals:
         with pytest.raises(ValueError) as caught:
             _stack([("s-base", "Baseline", _frame([1.0])), ("s-tall", "Twice as tall", 3.5)])
         assert str(caught.value) == (
-            "Compare Scenarios stacks inputs of one kind, and these differ: input 0 (Baseline) is a table, "
-            "input 1 (Twice as tall) is a value. Connect outcomes of the same kind."
+            "Compare Scenarios stacks inputs of one kind, and these differ: input_0 (Baseline) is a table, "
+            "input_1 (Twice as tall) is a value. Connect outcomes of the same kind."
         )
 
     def test_a_geodataframe_beside_a_plain_table(self):
         geo = gpd.GeoDataFrame({"v": [1]}, geometry=[Point(0, 0)], crs="EPSG:4326")
-        with pytest.raises(ValueError, match=r"input 0 \(B\) is a GeoDataFrame, input 1 \(T\) is a table"):
+        with pytest.raises(ValueError, match=r"input_0 \(B\) is a GeoDataFrame, input_1 \(T\) is a table"):
             _stack([("s-base", "B", geo), ("s-tall", "T", _frame([1.0]))])
 
     def test_two_coordinate_systems(self):
         a = gpd.GeoDataFrame({"v": [1]}, geometry=[Point(0, 0)], crs="EPSG:4326")
         b = gpd.GeoDataFrame({"v": [2]}, geometry=[Point(1, 1)], crs="EPSG:3857")
-        with pytest.raises(ValueError, match=r"input 0 \(B\) is in EPSG:4326, input 1 \(T\) is in EPSG:3857"):
+        with pytest.raises(ValueError, match=r"input_0 \(B\) is in EPSG:4326, input_1 \(T\) is in EPSG:3857"):
             _stack([("s-base", "B", a), ("s-tall", "T", b)])
 
     def test_an_input_with_no_value(self):
-        with pytest.raises(ValueError, match=r"input 1 \(T\) has no value. Run the node that feeds it"):
+        with pytest.raises(ValueError, match=r"input_1 \(T\) has no value. Run the node that feeds it"):
             _stack([("s-base", "B", 1), ("s-tall", "T", None)])
 
     def test_an_input_that_carries_several_tables(self):
-        with pytest.raises(ValueError, match=r"input 0 \(B\) carries 2 tables"):
+        with pytest.raises(ValueError, match=r"input_0 \(B\) carries 2 tables"):
             _stack([("s-base", "B", (_frame([1.0]), _frame([2.0])))])
 
     def test_an_autark_nodes_layers_with_no_layer_named_are_listed(self):
         with pytest.raises(
             ValueError,
-            match=r"input 0 \(B\) carries 2 layers \(table_osm_buildings, table_osm_roads\)\. "
+            match=r"input_0 \(B\) carries 2 layers \(table_osm_buildings, table_osm_roads\)\. "
                   r"Pick the one to compare in the node's Layer menu\.",
         ):
             _stack([("s-base", "B", autark_layers([5.0]))])
@@ -160,7 +160,7 @@ class TestRefusals:
 
         with pytest.raises(
             ValueError,
-            match=r"input 0 \(B\) has no layer table_osm_water\. Its layers are table_osm_buildings, table_osm_roads\.",
+            match=r"input_0 \(B\) has no layer table_osm_water\. Its layers are table_osm_buildings, table_osm_roads\.",
         ):
             stack_scenarios([("s-base", "B", autark_layers([5.0]))], layer="table_osm_water")
 
@@ -172,7 +172,7 @@ class TestRefusals:
             def read(self):
                 return None
 
-        with pytest.raises(ValueError, match=r"input 0 \(B\) is a raster"):
+        with pytest.raises(ValueError, match=r"input_0 \(B\) is a raster"):
             _stack([("s-base", "B", Raster())])
 
     def test_a_column_the_stacked_table_adds_itself(self):

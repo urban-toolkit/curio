@@ -106,7 +106,7 @@ class TestMerge:
 
     def test_detected_undeclared_defaults_to_star_with_warning(self):
         request = _request(
-            files={"sources/calc.py": {"text": "import pandas\nreturn arg\n"}},
+            files={"sources/calc.py": {"text": "import pandas\nreturn input_0\n"}},
         )
         py, _, findings = merge_declared_and_detected(request)
         assert py["pandas"] == {"constraint": "*", "source": "detected"}
@@ -114,10 +114,10 @@ class TestMerge:
         assert findings[0].severity == "warn"
 
     def test_a_source_that_reads_its_input_through_a_chip_reports_its_imports(self):
-        """#707: ``[!! input 0 !!]`` is not Python, so the scan could not parse
+        """#707: ``[!! input_0 !!]`` is not Python, so the scan could not parse
         a source holding one and reported no import at all."""
         request = _request(
-            files={"sources/calc.py": {"text": "import numpy\nx = [!! input 0 !!]\nreturn x\n"}},
+            files={"sources/calc.py": {"text": "import numpy\nx = [!! input_0 !!]\nreturn x\n"}},
         )
         py, _, findings = merge_declared_and_detected(request)
         assert py["numpy"] == {"constraint": "*", "source": "detected"}

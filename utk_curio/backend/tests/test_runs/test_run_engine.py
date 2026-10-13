@@ -15,7 +15,7 @@ CODE = "curio.builtin/computation-analysis"
 DATA_SPEC = json.dumps({"data": [{"type": "osm"}]})
 
 
-def node(node_id, node_type=CODE, content="return arg", **fields):
+def node(node_id, node_type=CODE, content="return input_0", **fields):
     return {"id": node_id, "type": node_type, "content": content, **fields}
 
 
@@ -92,7 +92,7 @@ class TestPlayShapesEachNode:
 
     def test_several_inputs_arrive_as_one_bundle_in_circle_order(self):
         recorder, _, _ = run(spec(
-            [node("a"), node("b"), node("c", content="return [!! input 0 !!], [!! input 1 !!]")],
+            [node("a"), node("b"), node("c", content="return [!! input_0 !!], [!! input_1 !!]")],
             # The second circle's edge first: circle order, not edge order, decides.
             [edge("a", "c", "in_1"), edge("b", "c", "in")],
         ))
@@ -145,7 +145,7 @@ class TestPlayShapesEachNode:
         assert "the selection holds 25000 ids" in finished["a"]["stderrTail"]
 
     def test_a_reference_that_cannot_resolve_fails_the_node_without_the_sandbox(self):
-        recorder, _, finished = run(spec([node("a", content="return [!! input 1 !!]")]))
+        recorder, _, finished = run(spec([node("a", content="return [!! input_1 !!]")]))
         assert "a" not in recorder.calls
         assert finished["a"]["status"] == "error" and finished["a"]["stderrTail"]
 

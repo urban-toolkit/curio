@@ -31,7 +31,7 @@ def _request_payload(**overrides) -> dict:
             "templates": [{"id": "demo-kind"}, {"id": "note-kind"}],
         },
         "files": {
-            "sources/demo-kind.py": {"text": "return arg\n"},
+            "sources/demo-kind.py": {"text": "return input_0\n"},
             "sources/note.tsx": {"text": "export const x = 1\n"},
             "README.md": {"text": "# Demo\n"},
         },
@@ -224,7 +224,7 @@ class TestRequestDigest:
     def test_changes_with_content(self):
         base = request_digest(parse_build_request(_request_payload()))
         changed_file = parse_build_request(_request_payload(files={
-            "sources/demo-kind.py": {"text": "return arg  # changed\n"},
+            "sources/demo-kind.py": {"text": "return input_0  # changed\n"},
             "sources/note.tsx": {"text": "export const x = 1\n"},
             "README.md": {"text": "# Demo\n"},
         }))

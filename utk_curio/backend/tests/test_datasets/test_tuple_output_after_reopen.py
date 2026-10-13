@@ -490,7 +490,7 @@ def test_get_serves_a_dict_of_frames_under_its_keys(client, user_and_token, reop
 #: What a node downstream does with its input, and what it returns.
 USED_AS = {
     list: (
-        "frames = arg\n"
+        "frames = input_0\n"
         "frames.append(frames[1].head(1))\n"
         "return [len(frame) for frame in frames]\n",
         [2, 3, 1],

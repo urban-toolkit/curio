@@ -316,12 +316,12 @@ class TestDataflowReadProjection:
         spec = {"dataflow": {"nodes": [
             {"id": "load", "type": "curio.builtin/data-loading", "content": "return 1"},
             {"id": "a", "type": "curio.builtin/computation-analysis",
-             "content": "return arg * [!! factor !!] * [!! @season !!]",
+             "content": "return input_0 * [!! factor !!] * [!! @season !!]",
              "metadata": {"widgets": [{"name": "factor", "type": "number", "default": 1, "value": 2}]}},
             {"id": "b", "type": "curio.builtin/vis-vega", "content": "{}"},
             {"id": "p", "type": "curio.builtin/parameter",
              "metadata": {"widgets": [{"name": "season", "type": "text", "default": "winter"}]}},
-            {"id": "a2", "type": "curio.builtin/computation-analysis", "content": "return arg",
+            {"id": "a2", "type": "curio.builtin/computation-analysis", "content": "return input_0",
              "metadata": {"copiedFrom": ["a"]}},
         ], "edges": [
             {"id": "e1", "source": "load", "target": "a"},

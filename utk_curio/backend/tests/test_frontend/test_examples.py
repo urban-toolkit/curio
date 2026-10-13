@@ -327,7 +327,7 @@ def test_example_06_is_three_scenarios_over_one_context():
     assert [(label["scenario"], label["name"], label["color"]) for label in chart["metadata"]["compareScenarios"]["inputs"]] == [
         (s["id"], s["name"], s["color"]) for s in (baseline, twice, towers)
     ]
-    assert '("s-towers", "Two towers removed", [!! input 2 !!]),' in chart["content"]
+    assert '("s-towers", "Two towers removed", [!! input_2 !!]),' in chart["content"]
     third = [e for e in flow["edges"] if e["target"] == "whatif-compare-chart" and e["source"] == "whatif-towers-map"]
     assert [e.get("targetHandle") for e in third] == ["in_2"]
     assert "key" not in nodes["whatif-compare-difference"]["metadata"]["compareScenarios"].get("difference", {})

@@ -83,7 +83,7 @@ POS_TRANSFORM = (760, 150)
 # value itself - so a result assertion has to print what it wants to check.
 ROW_MARKER = "CURIO_E2E_ROWS"
 TRANSFORM_CODE = (
-    "df = arg\n"
+    "df = input_0\n"
     f'print("{ROW_MARKER}", len(df))\n'
     "return df.head(2)\n"
 )

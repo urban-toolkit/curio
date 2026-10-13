@@ -301,7 +301,7 @@ class TestNodeCreateWidgets:
         user, token = user_and_token
         helper = routes.TestNodeCreate()
         reply = helper._create_tail_json(
-            content="return arg * [!! factor !!]", widgets=[{"name": "factor", "type": "number", "default": 2}],
+            content="return input_0 * [!! factor !!]", widgets=[{"name": "factor", "type": "number", "default": 2}],
         )
         att_id, _ = helper._setup(client, user=user, token=token, project_id=alice_project, monkeypatch=monkeypatch,
                                   replies=[reply, "Proposed: review it above."])

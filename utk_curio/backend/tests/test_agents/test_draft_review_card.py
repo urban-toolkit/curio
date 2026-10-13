@@ -43,7 +43,7 @@ def _request(*, nodes=None, files=None):
                 "inputPorts": [], "outputPorts": [],
             }],
         },
-        "files": files or {"starters/card-kind/Default.py": {"text": "return arg\n"}},
+        "files": files or {"starters/card-kind/Default.py": {"text": "return input_0\n"}},
         **({"nodes": nodes} if nodes else {}),
     })
 

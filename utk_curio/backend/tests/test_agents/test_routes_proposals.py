@@ -838,7 +838,7 @@ class TestNodeTemplateCreate:
         monkeypatch.setattr(pip_runner, "import_failures", lambda deps: imports)
         att_id, _ = self._setup(
             client, user, token, project_id, monkeypatch,
-            replies=[self._template_tail(content="import shapely\nreturn arg\n"),
+            replies=[self._template_tail(content="import shapely\nreturn input_0\n"),
                      "Proposed - review it above."],
         )
         proposal = self._proposal_from_run(self._run(client, token, project_id, att_id))
@@ -2424,7 +2424,7 @@ class TestPackageBuilderTools:
                 }],
             },
             "files": {
-                f"starters/{template_id}/Default.py": {"text": "return arg\n"},
+                f"starters/{template_id}/Default.py": {"text": "return input_0\n"},
             },
             "nodes": [{
                 "templateId": template_id,

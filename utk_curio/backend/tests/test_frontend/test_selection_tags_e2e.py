@@ -95,7 +95,7 @@ SCATTER_SPEC = """{
   "config": {"axis": {"grid": false}}
 }"""
 
-COUNTER_START = "print('<<waiting>>')\nreturn arg\n"
+COUNTER_START = "print('<<waiting>>')\nreturn input_0\n"
 COUNTER_CODE = (
     "ids = \n"
     'rows = arg[arg["osm_id"].isin(ids)]\n'
@@ -103,7 +103,7 @@ COUNTER_CODE = (
     "return rows\n"
 )
 COUNTER_WITH_TAG = COUNTER_CODE.replace("ids = \n", "ids = [!! selection picked !!]\n", 1)
-READER_CODE = "print(f'<<R {len(arg)}>>')\nreturn arg\n"
+READER_CODE = "print(f'<<R {len(input_0)}>>')\nreturn input_0\n"
 
 
 def _node(node_id: str, node_type: str, x: int, y: int, content: str) -> dict:

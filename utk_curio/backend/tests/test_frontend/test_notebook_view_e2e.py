@@ -119,7 +119,7 @@ PRODUCER_CODE = (
     "return pd.DataFrame({'category': categories, 'count': counts})\n"
 )
 #: Prints the frame, several lines, so a run grows the cell.
-TRANSFORM_CODE = "print(len(arg))\nprint(arg)\nreturn arg\n"
+TRANSFORM_CODE = "print(len(input_0))\nprint(input_0)\nreturn input_0\n"
 EXTRA_CODE = "return 1\n"
 CHART_SPEC = json.dumps({
     "$schema": "https://vega.github.io/schema/vega-lite/v6.json",

@@ -34,7 +34,7 @@ SCENARIOS = {
     "a fan-in on two circles": (
         spec(
             [node("a", content="return 1"), node("b", content="return 2"),
-             node("c", content="return [!! input 0 !!] + [!! input 1 !!]")],
+             node("c", content="return [!! input_0 !!] + [!! input_1 !!]")],
             [edge("a", "c", "in_1"), edge("b", "c", "in")],
         ),
         "c",

@@ -70,9 +70,9 @@ UP_B_CODE = "return 31\n"
 # swapped its inputs, and one that only checked a value would pass on a node
 # that dropped the other.
 DOWN_CODE = (
-    "a = [!! input 0 !!]\n"
-    "b = [!! input 1 !!]\n"
-    "count = len(arg) if isinstance(arg, (list, tuple)) else 1\n"
+    "a = [!! input_0 !!]\n"
+    "b = [!! input_1 !!]\n"
+    "count = len(input_0) if isinstance(input_0, (list, tuple)) else 1\n"
     f'print("{MARKER}", count, int(a), int(b), int(a) + int(b))\n'
     "return int(a) + int(b)\n"
 )

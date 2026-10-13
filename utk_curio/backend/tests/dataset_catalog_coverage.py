@@ -147,7 +147,7 @@ class FormatPlan:
     loader_suffix: str | None = None
 
 
-_CSV_TRANSFORM = '''df = arg
+_CSV_TRANSFORM = '''df = input_0
 print("CURIO_E2E_ROWS=%d;" % len(df))
 print("CURIO_E2E_COLS=%s;" % ",".join(map(str, df.columns)))
 return df
@@ -171,7 +171,7 @@ def _csv_expectations(data_file: Path) -> dict[str, str]:
 # the coordinates.
 _GEOJSON_TRANSFORM = '''import pandas as pd
 
-gdf = arg
+gdf = input_0
 bounds = gdf.geometry.bounds
 widths = (bounds["maxx"] - bounds["minx"]).tolist()
 print("CURIO_E2E_FEATURES=%d;" % len(gdf))
@@ -232,7 +232,7 @@ def _geojson_expectations(data_file: Path) -> dict[str, str]:
 # actually decoding the columns.
 _PARQUET_TRANSFORM = '''import pandas as pd
 
-df = arg
+df = input_0
 cols = [str(c) for c in df.columns]
 head = cols[:8]
 print("CURIO_E2E_ROWS=%d;" % len(df))
@@ -315,7 +315,7 @@ def _parquet_expectations(data_file: Path) -> dict[str, str]:
 _GEOTIFF_TRANSFORM = '''import numpy as np
 import pandas as pd
 
-src = arg
+src = input_0
 bands = list(range(1, src.count + 1))
 valid = []
 for band in bands:
@@ -397,7 +397,7 @@ def _geotiff_expectations(data_file: Path) -> dict[str, str]:
 # the index.
 _COLLECTION_TRANSFORM = '''import os
 
-media = arg
+media = input_0
 print("CURIO_E2E_ROWS=%d;" % len(media))
 print("CURIO_E2E_KINDS=%s;" % ",".join(sorted(set(media["kind"]))))
 print("CURIO_E2E_READABLE=%d;" % sum(1 for p in media["path"] if p and os.path.isfile(p)))
@@ -436,7 +436,7 @@ return pd.DataFrame({
 })
 '''
 
-_NETCDF_TRANSFORM = '''df = arg
+_NETCDF_TRANSFORM = '''df = input_0
 print("CURIO_E2E_VARIABLES=%s;" % ",".join(v + ":" + s for v, s in zip(df["variable"], df["shape"])))
 print("CURIO_E2E_DIMS=%s;" % ",".join(df["dims"]))
 print("CURIO_E2E_FINITE=%d;" % int(df["finite"].sum()))
