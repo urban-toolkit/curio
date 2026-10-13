@@ -87,7 +87,7 @@ describe("the Autark document that draws it", () => {
       map: {
         layerRefs: [{
           dataRef: "band_1_change",
-          legendTitle: "band_1 change",
+          title: "band_1 change",
           getFnv: "band_1",
           getFnvType: "quantitative",
           colorMapInterpolator: "interpolateViridis",
@@ -98,7 +98,7 @@ describe("the Autark document that draws it", () => {
 
   test("its legend is titled with what it is colored by, as written, and change", () => {
     const value = (name: string) => ({ value: name, text: name, categorical: false });
-    const title = (doc: any) => doc.map.layerRefs[0].legendTitle;
+    const title = (doc: any) => doc.map.layerRefs[0].title;
     expect(title(differenceMapDoc(value("Road sunlight (h)")))).toBe("Road sunlight (h) change");
     expect(title(differenceMapDoc(value("band_2")))).toBe("band_2 change");
     const change = differenceValues("layer", LAYER).find((v) => v.value === "change");
@@ -112,7 +112,7 @@ describe("the Autark document that draws it", () => {
       map: {
         layerRefs: [{
           dataRef: "sunlight_change",
-          legendTitle: "sunlight change",
+          title: "sunlight change",
           getFnv: "sunlight",
           getFnvType: "quantitative",
           colorMapInterpolator: "interpolateViridis",
@@ -127,7 +127,7 @@ describe("the Autark document that draws it", () => {
       map: {
         layerRefs: [{
           dataRef: "change",
-          legendTitle: "change",
+          title: "change",
           getFnv: "change",
           getFnvType: "categorical",
           colorMapInterpolator: "schemeTableau10",

@@ -1001,6 +1001,32 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         expect(grammarMock().AutkGrammar.mock.calls.length).toBe(constructed);
       });
 
+      // A layer's title is its id in autk-map (autk-grammar 4.2). The grammar
+      // finds the layer of a table under its title (`mapLayer`), so Curio names
+      // the table, never the title.
+      test('guard: a selection lights up a titled layer by its table, which the grammar finds under its title', async () => {
+        const highlightOnMap = jest.fn();
+        const clearHighlightOnMap = jest.fn();
+        grammarMock().AutkGrammar.mockImplementationOnce(() => ({
+          run: jest.fn().mockResolvedValue(undefined), data: {}, highlightOnMap, clearHighlightOnMap,
+        }));
+        const base = makeMockData({ outputCallback: jest.fn(), input: INPUT } as any);
+        const state = makeMockNodeState();
+        const { result, rerender } = renderHook(
+          ({ d }: { d: any }) => useAutkGrammarBehavior(d, state),
+          { initialProps: { d: base } },
+        );
+        const titled = JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0', title: 'Sensors' }] } });
+        await act(async () => { await result.current.applyGrammar!(titled); });
+
+        const selection = [{ nodeId: 'bar', details: { highlight: { type: 'POINT', data: [2], priority: 1 } }, priority: 1 }];
+        await act(async () => { rerender({ d: { ...base, interactions: selection } }); });
+
+        await waitFor(() => expect(highlightOnMap).toHaveBeenCalledWith('input_0', [2]));
+        const named = [...highlightOnMap.mock.calls, ...clearHighlightOnMap.mock.calls].map((call) => call[0]);
+        expect(named).not.toContain('Sensors');
+      });
+
       test("a plot's own selection back through a pool is left alone; another chart's is applied", async () => {
         const setPlotSelection = jest.fn();
         const clearHighlightOnPlot = jest.fn();

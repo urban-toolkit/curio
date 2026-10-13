@@ -299,13 +299,15 @@ def _shipped_autk_documents() -> list:
 
 
 def _draws_a_legend(ref: dict) -> bool:
-    """Whether a map layer shows a legend: autk-grammar turns the legend on for a
-    layer that colours by a column (``getFnv``) or names a scheme
-    (``colorMapInterpolator``), and ``"isColorMap": false`` hides it
-    (``recolorRasters`` keeps it hidden on a raster)."""
-    if ref.get("isColorMap") is False:
+    """Whether a map layer may show a legend: autk-grammar turns the legend on
+    for a layer that colours by a column (``getFnv``) or names a scheme
+    (``colorMapInterpolator``), and ``"isColorMap"`` decides when it is written.
+    A layer drawn in one ``color``, or in its ``scenario``'s, shows none."""
+    if "isColorMap" in ref:
+        return ref["isColorMap"] is True
+    if ref.get("color") or ref.get("scenario"):
         return False
-    return bool(ref.get("getFnv") or ref.get("colorMapInterpolator") or ref.get("isColorMap"))
+    return bool(ref.get("getFnv") or ref.get("colorMapInterpolator"))
 
 
 class TestShippedAutarkDocuments:
@@ -317,10 +319,10 @@ class TestShippedAutarkDocuments:
         assert refused == {}
 
     def test_every_shipped_legend_names_what_it_shows(self):
-        """#771: autk-map titles a legend with its layer's table, so a map of a
-        node's input read ``input_0`` and an OpenStreetMap layer its table
-        (``table_osm_roads``). Every shipped layer that shows a legend names
-        it with ``legendTitle`` (#747)."""
+        """#771: autk-map titles a legend with its layer's id, the layer's table
+        unless it has a title, so a map of a node's input read ``input_0`` and
+        an OpenStreetMap layer its table (``table_osm_roads``). Every shipped
+        layer that shows a legend names it with autk-grammar's ``title``."""
         untitled, legends = [], 0
         for where, content in _shipped_autk_documents():
             maps = json.loads(content).get("map") or []
@@ -329,7 +331,7 @@ class TestShippedAutarkDocuments:
                     if not _draws_a_legend(ref):
                         continue
                     legends += 1
-                    title = ref.get("legendTitle")
+                    title = ref.get("title")
                     if not isinstance(title, str) or not title.strip() or re.fullmatch(r"input_\d+", title.strip()):
                         untitled.append(f"{where} {ref.get('dataRef')} (colours by {ref.get('getFnv')!r})")
         assert legends >= 23

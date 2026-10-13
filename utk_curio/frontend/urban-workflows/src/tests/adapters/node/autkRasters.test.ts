@@ -403,6 +403,118 @@ describe("recolorRasters", () => {
   });
 });
 
+// What replaces recolorRasters: autk-grammar 4.2 colors a raster's cells in its
+// scheme itself (`updateColorMap`, with `colorMapCenter` and `colorMapReverse`)
+// and takes autk-map's transfer function on a raster layer (`transferFunction`).
+// Curio writes that transfer function into every raster layer it draws, and
+// keeps #718's edge bleed, run after the grammar's run on the layer the
+// grammar's lookup finds (`mapLayer`), whatever its title.
+describe("withOpaqueRasters", () => {
+  const RASTER = { type: CURIO_RASTER_SOURCE, outputTableName: "input_0" };
+  const OPAQUE = { opacityMin: 1, opacityMax: 1 };
+
+  test("repro: a layer of a raster the node loads is drawn with every cell that has a value opaque, as SCOUT draws its tiles", () => {
+    const { withOpaqueRasters } = require("../../../adapters/node/autkRasters");
+    const spec = {
+      data: [RASTER, { type: "geojson", outputTableName: "table_osm_roads" }],
+      map: { layerRefs: [{ dataRef: "input_0", getFnv: "band_1" }, { dataRef: "table_osm_roads" }] },
+    };
+    const drawn = withOpaqueRasters(spec);
+    expect(drawn.map.layerRefs).toEqual([
+      { dataRef: "input_0", getFnv: "band_1", transferFunction: OPAQUE },
+      { dataRef: "table_osm_roads" },
+    ]);
+    expect(drawn.data).toBe(spec.data);
+    // The document the node holds is not changed.
+    expect(spec.map.layerRefs[0]).toEqual({ dataRef: "input_0", getFnv: "band_1" });
+  });
+
+  test("repro: a heatmap the document computes is a raster too", () => {
+    const { withOpaqueRasters } = require("../../../adapters/node/autkRasters");
+    const spec = {
+      data: [{ type: "heatmap", outputTableName: "noise_density" }],
+      map: { layerRefs: [{ dataRef: "noise_density", colorMapInterpolator: "interpolateReds" }] },
+    };
+    expect(withOpaqueRasters(spec).map.layerRefs[0].transferFunction).toEqual(OPAQUE);
+  });
+
+  test("repro: what a layer writes of the transfer function is kept, and the rest is opaque", () => {
+    const { withOpaqueRasters } = require("../../../adapters/node/autkRasters");
+    const spec = {
+      data: [RASTER],
+      map: [{ layerRefs: [{ dataRef: "input_0", transferFunction: { opacityMin: 0.2, gamma: 2 } }] }],
+    };
+    // A list of one map is that map.
+    expect(withOpaqueRasters(spec).map[0].layerRefs[0].transferFunction).toEqual({ opacityMin: 0.2, opacityMax: 1, gamma: 2 });
+  });
+
+  test("guard: a document that draws no raster is handed on as it is", () => {
+    const { withOpaqueRasters } = require("../../../adapters/node/autkRasters");
+    const roads = { data: [{ type: "geojson", outputTableName: "roads" }], map: { layerRefs: [{ dataRef: "roads" }] } };
+    expect(withOpaqueRasters(roads)).toBe(roads);
+    const plot = { data: [RASTER], plot: { dataRef: "input_0", mark: "bar" } };
+    expect(withOpaqueRasters(plot)).toBe(plot);
+  });
+});
+
+describe("bleedRasterEdges", () => {
+  // A map as autk-map keeps it: its layers by id, one raster here whose two
+  // cells are a red cell with a value and a cell with no data.
+  function rasterMap(layerId: string, typeLayer = "raster") {
+    const layer: any = {
+      layerInfo: { id: layerId, typeLayer },
+      rasterResX: 2,
+      rasterResY: 1,
+      rasterData: new Float32Array([200, 10, 10, 255, 0, 0, 0, 0]),
+      makeLayerDataDirty: jest.fn(),
+    };
+    const map = {
+      layerManager: { searchByLayerId: (id: string) => (id === layerId ? layer : null) },
+      requestRender: jest.fn(),
+    };
+    return { map, layer };
+  }
+
+  test("repro: a titled raster's clear cells take a neighbor's color: the grammar's lookup finds the layer under its title", () => {
+    const { bleedRasterEdges } = require("../../../adapters/node/autkRasters");
+    const { map, layer } = rasterMap("Accumulated shadow (minutes)");
+    const spec = { map: { layerRefs: [{ dataRef: "input_0", title: "Accumulated shadow (minutes)", getFnv: "band_1" }] } };
+    bleedRasterEdges(grammarThatRan(spec, map), spec);
+    expect(Array.from(layer.rasterData)).toEqual([200, 10, 10, 255, 200, 10, 10, 0]);
+  });
+
+  test("repro: the cells written in place are marked for the GPU, then the map is asked for a frame", () => {
+    const { bleedRasterEdges } = require("../../../adapters/node/autkRasters");
+    const { map, layer } = rasterMap("input_0");
+    let cellsWhenAsked: number[] = [];
+    map.requestRender.mockImplementation(() => { cellsWhenAsked = Array.from(layer.rasterData); });
+    const spec = { map: { layerRefs: [{ dataRef: "input_0", colorMapInterpolator: "interpolateReds" }] } };
+    bleedRasterEdges(grammarThatRan(spec, map), spec);
+    // autk-map uploads a layer's cells only when they are marked, and draws on demand.
+    expect(layer.makeLayerDataDirty).toHaveBeenCalled();
+    expect(map.requestRender).toHaveBeenCalled();
+    expect(layer.makeLayerDataDirty.mock.invocationCallOrder[0]).toBeLessThan(map.requestRender.mock.invocationCallOrder[0]);
+    expect(cellsWhenAsked).toEqual([200, 10, 10, 255, 200, 10, 10, 0]);
+  });
+
+  test("guard: a layer that is not a raster is left as drawn", () => {
+    const { bleedRasterEdges } = require("../../../adapters/node/autkRasters");
+    const { map, layer } = rasterMap("buildings", "buildings");
+    const spec = { map: { layerRefs: [{ dataRef: "buildings", getFnv: "height" }] } };
+    bleedRasterEdges(grammarThatRan(spec, map), spec);
+    expect(layer.makeLayerDataDirty).not.toHaveBeenCalled();
+    expect(map.requestRender).not.toHaveBeenCalled();
+  });
+
+  test("guard: a grammar that drew no map, or has no lookup, is no error", () => {
+    const { bleedRasterEdges } = require("../../../adapters/node/autkRasters");
+    const spec = { map: { layerRefs: [{ dataRef: "input_0" }] } };
+    expect(() => bleedRasterEdges({}, spec)).not.toThrow();
+    expect(() => bleedRasterEdges(grammarThatRan(spec), spec)).not.toThrow();
+    expect(() => bleedRasterEdges(grammarThatRan({ plot: {} }), { plot: {} })).not.toThrow();
+  });
+});
+
 describe("bleedIntoClearCells", () => {
   // Four values a cell: red, green, blue, alpha.
   const cell = (rgba: Float32Array, i: number) => Array.from(rgba.slice(i * 4, i * 4 + 4));
