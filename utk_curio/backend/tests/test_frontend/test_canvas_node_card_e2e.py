@@ -2,7 +2,7 @@
 
 A node on the canvas is a card: Play first in its header, then its title, its
 pills and its run status, then its tools (the editor's tabs, Save output, info,
-pin, comments, delete and minimize), which show only while the pointer is over
+pin, comments, minimize and delete), which show only while the pointer is over
 the node or the node is selected. There is no row under the body: the body
 reaches the node's bottom edge. The canvas keeps what a cell lacks: the node
 still resizes and still minimizes.
@@ -13,6 +13,8 @@ What each test pins:
   tools after them; nothing runs under the body, which fills the node;
 * the tools are out of sight (opacity 0) until the pointer is over the node or
   the node is selected;
+* Delete node is the last tool, with Minimize right before it; on a read-only
+  canvas, which has no Delete node, Minimize is the last tool;
 * the Code pill, now in the header, still switches the node's tabs;
 * the resize handle still resizes the node and saves its size, and Minimize
   (among the tools) still folds the node into its chip, which a click opens
@@ -186,6 +188,21 @@ _TOOLS_OPACITY_JS = """(id) => {
     return tools ? Number(getComputedStyle(tools).opacity) : null;
 }"""
 
+#: A node's tools in the order they sit: the titles of their buttons, the
+#: title of the group's last child, and how many Delete node buttons the node
+#: has. Null when the node has no tools.
+_TOOLS_ORDER_JS = """(id) => {
+    const box = document.getElementById(`${id}resizable`);
+    const tools = box && box.querySelector(':scope > .curio-node-header > .curio-node-tools');
+    if (!tools) return null;
+    const last = tools.lastElementChild;
+    return {
+        titles: Array.from(tools.querySelectorAll('button')).map((b) => b.getAttribute('title') || ''),
+        last: last ? (last.getAttribute('title') || last.tagName.toLowerCase()) : null,
+        deletes: box.querySelectorAll('[title="Delete node"]').length,
+    };
+}"""
+
 
 #: The empty stretch of a node's header, between its pills and its status or
 #: tools: where a click selects the node and does nothing else (the title of a
@@ -262,6 +279,25 @@ def _wait_tools(page, node_id: str, opacity: int, why: str) -> None:
             f"{node_id}'s tools should be at opacity {opacity} {why}: "
             f"{page.evaluate(_TOOLS_OPACITY_JS, node_id)}"
         ) from None
+
+
+def _wait_tools_end_with(page, node_id: str, ending: list, canvas: str) -> dict:
+    """The node's tools once their last buttons carry the titles in
+    ``ending``, in that order, with nothing drawn after the last one."""
+    condition = (
+        "(id) => { const t = (" + _TOOLS_ORDER_JS + ")(id); if (!t) return false;"
+        " const end = " + json.dumps(ending) + ";"
+        " return t.last === end[end.length - 1]"
+        " && end.every((title, k) => t.titles[t.titles.length - end.length + k] === title); }"
+    )
+    try:
+        page.wait_for_function(condition, arg=node_id, timeout=10000)
+    except PlaywrightTimeoutError:
+        raise AssertionError(
+            f"{node_id}'s tools on {canvas} do not end with {ending}: "
+            f"{page.evaluate(_TOOLS_ORDER_JS, node_id)}"
+        ) from None
+    return page.evaluate(_TOOLS_ORDER_JS, node_id)
 
 
 def _selected(page, node_id: str) -> bool:
@@ -415,6 +451,19 @@ def test_the_tools_show_only_under_the_pointer_or_on_a_selected_node(
     _pointer_off_the_nodes(page)
     _wait_tools(page, PRODUCER, 1, "while it is selected")
     _wait_tools(page, CHART, 0, "while another node is selected")
+
+
+def test_delete_node_is_the_last_tool_with_minimize_before_it(
+    app_frontend: "FrontendPage", current_server, page,
+):
+    require_project_page()
+    require_user_auth()
+    _enter(page, app_frontend, current_server, prefix="card_order")
+
+    for node_id in NODES:
+        _wait_for_header(page, node_id)
+        tools = _wait_tools_end_with(page, node_id, ["Minimize", "Delete node"], "the owner's canvas")
+        assert tools["deletes"] == 1, f"{node_id} should have one Delete node button: {tools}"
 
 
 def test_the_code_pill_in_the_header_still_switches_tabs(
@@ -612,6 +661,18 @@ def test_on_a_read_only_canvas_a_double_click_inside_the_editor_leaves_the_view(
     require_project_page()
     _enter_read_only(page, app_frontend, current_server, prefix="card_ro_nozoom")
     _double_click_the_editor_keeps_the_view(page, "a read-only canvas")
+
+
+def test_on_a_read_only_canvas_minimize_is_the_last_tool(
+    app_frontend: "FrontendPage", current_server, page,
+):
+    require_project_page()
+    _enter_read_only(page, app_frontend, current_server, prefix="card_ro_order")
+
+    for node_id in NODES:
+        _wait_for_header(page, node_id)
+        tools = _wait_tools_end_with(page, node_id, ["Minimize"], "a read-only canvas")
+        assert tools["deletes"] == 0, f"{node_id} has a Delete node button on a read-only canvas: {tools}"
 
 
 def test_on_a_read_only_canvas_a_corner_drag_leaves_the_node_size(
