@@ -5,9 +5,11 @@ import {
   AGENT_CATEGORY_FALLBACK,
   AGENT_CATEGORY_ICON,
   AGENT_CATEGORY_KEYS,
+  AGENT_ICON_OVERRIDE,
   AGENT_KIND_ICON,
   agentCategoryIcon,
   agentCategoryKey,
+  agentIcon,
 } from "../../components/menus/nodes/agentsPalette/agentCategoryStyle";
 import { AGENT_CATEGORIES } from "../../generated/agentCategories";
 
@@ -213,5 +215,32 @@ describe("agent category stylesheets", () => {
     expect(read("components/packages/publishing/PackageCard.module.css")).not.toContain(
       ".cardAccent",
     );
+  });
+});
+
+
+describe("agentIcon", () => {
+  // Chat and the Connection Builder are `node` agents: without a glyph of their
+  // own they look exactly like the Node Content Builder and the Node Researcher.
+  it("draws Chat as a speech balloon and the Connection Builder as a link", () => {
+    const { faComment, faLink } = require("@fortawesome/free-solid-svg-icons");
+    expect(agentIcon("agent.chat-agent@1.0.0", "node")).toBe(faComment);
+    expect(agentIcon("agent.connection-builder@1.0.0", "node")).toBe(faLink);
+    expect(agentIcon("agent.chat-agent", "node")).toBe(faComment);
+  });
+
+  it("keeps the category glyph for every other agent", () => {
+    expect(agentIcon("agent.node-content-builder@1.0.0", "node")).toBe(agentCategoryIcon("node"));
+    expect(agentIcon("agent.dataflow-builder@1.0.0", "canvas")).toBe(agentCategoryIcon("canvas"));
+    expect(agentIcon("user.my-chat-agent@1.0.0", "node")).toBe(agentCategoryIcon("node"));
+  });
+
+  it("falls back to the category for a missing ref", () => {
+    expect(agentIcon(undefined, "data")).toBe(agentCategoryIcon("data"));
+    expect(agentIcon("", null)).toBe(agentCategoryIcon(null));
+  });
+
+  it("only overrides agents that exist in the roster", () => {
+    expect(Object.keys(AGENT_ICON_OVERRIDE).sort()).toEqual(["agent.chat-agent", "agent.connection-builder"]);
   });
 });
