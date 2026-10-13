@@ -345,6 +345,15 @@ describe('deleting an edge, with inputs read as input_k', () => {
     expect(dataOf('t').code).toBe('x = input_0\ny = [!! input_?.area !!] + [!! input_? !!]\nz = [!! input_1 !!]  # input_2');
   });
 
+  test("a typed name inside an f-string's braces follows its circle, and the f-string's text stays", async () => {
+    await fanIn('curio.builtin/computation-analysis@1', 'x = input_0\nmsg = f"input_2 has {len(input_2)} rows"');
+    await connect('a', 't');
+    await connect('b', 't');
+    await connect('c', 't');
+    await deleteEdges([api.edges.find((e: any) => e.source === 'b')!.id]);
+    expect(dataOf('t').code).toBe('x = input_0\nmsg = f"input_2 has {len(input_1)} rows"');
+  });
+
   test("a node's only edge goes without rewriting the input it names, so the next edge is read by it", async () => {
     const code = 'gdf = input_0.copy()\nx = [!! input_0 !!]';
     await fanIn('curio.builtin/computation-analysis@1', code);

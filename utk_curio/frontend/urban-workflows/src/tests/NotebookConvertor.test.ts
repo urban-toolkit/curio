@@ -229,4 +229,18 @@ describe("trillToNotebook with inputs named input_k", () => {
     expect(cell.source).toContain("    return input_0, input_1, input_2");
     expect(cell.source.split("\n").pop()).toBe("result_m = node_m(input_0=data_b, input_2=data_a)");
   });
+
+  it("an input_k read only inside an f-string's braces is a parameter too, as the sandbox makes it", () => {
+    const nb = trillToNotebook(
+      spec(
+        [
+          { id: "a", type: NodeType.DATA_LOADING, content: "return 1\n" },
+          { id: "m", type: NodeType.COMPUTATION_ANALYSIS, content: 'return f"{input_0} and {input_1}, not input_2"\n' },
+        ],
+        [["a", "m"]]
+      )
+    );
+    const cell = codeCells(nb).find((c) => c.source.includes("node_m"))!;
+    expect(cell.source).toContain("def node_m(input_0=None, input_1=None):");
+  });
 });

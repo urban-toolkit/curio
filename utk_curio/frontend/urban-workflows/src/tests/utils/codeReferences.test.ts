@@ -234,6 +234,79 @@ describe("inputs named input_k", () => {
   });
 });
 
+describe("closing up circles, with names inside f-strings", () => {
+  test("a name inside an f-string's braces follows its circle, and the f-string's text does not", () => {
+    const code = 'msg = f"input_2 is {input_2}, not {input_1}"';
+    expect(renumberInputReferences(code, 1)).toBe('msg = f"input_2 is {input_1}, not {[!! input_? !!]}"');
+  });
+
+  test("single and triple quotes, and every f-string prefix", () => {
+    const code = [
+      "a = f'{input_2}'",
+      'b = f"""total {input_2}"""',
+      "c = f'''{input_2} of\n{input_3}'''",
+      String.raw`d = rf"{input_2}\d+"`,
+      "e = fr'{input_2}'",
+      'g = Rf"{input_2}"',
+      'h = F"{input_2}"',
+    ].join("\n");
+    expect(renumberInputReferences(code, 1)).toBe([
+      "a = f'{input_1}'",
+      'b = f"""total {input_1}"""',
+      "c = f'''{input_1} of\n{input_2}'''",
+      String.raw`d = rf"{input_1}\d+"`,
+      "e = fr'{input_1}'",
+      'g = Rf"{input_1}"',
+      'h = F"{input_1}"',
+    ].join("\n"));
+  });
+
+  test("names in nested format specs, and in strings inside the braces' expression", () => {
+    const code = [
+      'a = f"{input_2:>{input_3}}"',
+      'b = f"{value:{input_2}.{input_3}f}"',
+      `c = f"{input_2['name']} and {input_3["x"]!r:>10}"`,
+      `d = f"{len(input_2)} rows, {d['input_2']}"`,
+    ].join("\n");
+    expect(renumberInputReferences(code, 1)).toBe([
+      'a = f"{input_1:>{input_2}}"',
+      'b = f"{value:{input_1}.{input_2}f}"',
+      `c = f"{input_1['name']} and {input_2["x"]!r:>10}"`,
+      `d = f"{len(input_1)} rows, {d['input_2']}"`,
+    ].join("\n"));
+  });
+
+  test("plain strings, an f-string's escaped braces and comments keep the name as written", () => {
+    const code = [
+      's = "input_2"',
+      "t = 'input_2'",
+      'u = r"input_2"',
+      'v = b"input_2"',
+      'w = """input_2"""',
+      'x = f"{{input_2}}"',
+      'y = f"{{input_2}} {input_2}"',
+      '# f"{input_2}"',
+    ].join("\n");
+    expect(renumberInputReferences(code, 1)).toBe([
+      's = "input_2"',
+      "t = 'input_2'",
+      'u = r"input_2"',
+      'v = b"input_2"',
+      'w = """input_2"""',
+      'x = f"{{input_2}}"',
+      'y = f"{{input_2}} {input_1}"',
+      '# f"{input_2}"',
+    ].join("\n"));
+  });
+
+  test("a JavaScript template literal's ${...} follows its circle, and its text does not", () => {
+    const code = "const s = `input_2 has ${input_2.length} rows, ${`${input_3}`}`;\nconst t = 'input_2';";
+    expect(renumberInputReferences(code, 1, "javascript")).toBe(
+      "const s = `input_2 has ${input_1.length} rows, ${`${input_2}`}`;\nconst t = 'input_2';",
+    );
+  });
+});
+
 describe("literals", () => {
   test("Python spells booleans and nothing its own way", () => {
     expect(widgetLiteral(true, "python")).toBe("True");
