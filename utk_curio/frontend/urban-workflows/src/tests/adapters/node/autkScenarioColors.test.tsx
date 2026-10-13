@@ -62,7 +62,9 @@ test("repro: after the box's color changes, the next run draws the layer in the 
   await node.run({ map: { layerRefs: [{ dataRef: 'input_0', scenario: 'fastest' }] } });
   expect(drawnLayers()[0].color).toBe('#e15759');
 
+  // The flow holds the new color, and its nodes render again with it.
   mockScenarios.current = [{ ...FASTEST, color: '#59a14f' }, WEATHER];
+  node.rerender();
   await node.run({ map: { layerRefs: [{ dataRef: 'input_0', scenario: 'fastest' }] } });
 
   expect(mockRuns).toHaveLength(2);
