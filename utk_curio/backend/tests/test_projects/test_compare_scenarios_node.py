@@ -149,4 +149,4 @@ def test_the_code_for_no_inputs_asks_for_them():
     cases = _read_json("compareCode.cases.json")["cases"]
     empty = next(case for case in cases if not case["inputs"])
     with pytest.raises(ValueError, match="has no inputs"):
-        _run(empty["code"], None)
+        _run(empty["code"], None, [])
