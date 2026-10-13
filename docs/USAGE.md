@@ -528,7 +528,7 @@ The reference becomes the list of the selected rows' ids, each once:
 
 ```python
 picked = [!! selection buildings !!]
-return arg[arg["osm_id"].isin(picked)]
+return input_0[input_0["osm_id"].isin(picked)]
 ```
 
 runs as `picked = [101, 104]` when two buildings are selected, and as
@@ -552,13 +552,13 @@ In code and in a Vega-Lite or Autark spec, each input is a chip:
 1. The strip above the code shows a tag for each input: **input 0**,
    **input 1**, and so on. Hover one to see which node feeds it.
 2. Drag a tag into the code, or click it to insert it at the cursor. It appears
-   as a green chip, written `[!! input 1 !!]`.
+   as a green chip, written `[!! input_1 !!]`.
 3. Click the arrow beside an input's tag to list its columns, once the node that
    feeds it has run. Drag a column's tag where a column name goes; it is written
-   `[!! input 1.population !!]`.
+   `[!! input_1.population !!]`.
 4. An input that carries several layers (an upstream Autark node's tables)
-   lists a tag for each layer, `[!! input 1:table_osm_roads !!]`, followed by
-   that layer's columns, `[!! input 1:table_osm_roads.lanes !!]`. A layer is
+   lists a tag for each layer, `[!! input_1:table_osm_roads !!]`, followed by
+   that layer's columns, `[!! input_1:table_osm_roads.lanes !!]`. A layer is
    named as the Autark node names its table.
 
 When the node runs:
@@ -566,7 +566,7 @@ When the node runs:
 - In Python and JavaScript, an input chip becomes the input: `arg` when the node
   has one input, and `arg[1]` when it has several, counted in circle order.
 - In Python and JavaScript, a layer chip becomes that layer of the input:
-  `roads = [!! input 0:table_osm_roads !!]` runs as
+  `roads = [!! input_0:table_osm_roads !!]` runs as
   `roads = curio_layer(arg, "table_osm_roads", 0)`, which gives a GeoDataFrame
   in Python and a GeoJSON FeatureCollection in JavaScript. An input that is one
   frame with no layer name, such as a GeoDataFrame a Python node returns, is
@@ -577,16 +577,16 @@ When the node runs:
   [Vega-Lite node](#vega-lite-node) and [Autark node](#autark-node)). A layer
   chip becomes the layer's name. On an input that is one frame with no layer
   name, such as a GeoDataFrame a Python node returns, it is that frame, as in
-  code: `"dataRef": [!! input 0:roads !!]` becomes `"dataRef": "input_0"`. A
+  code: `"dataRef": [!! input_0:roads !!]` becomes `"dataRef": "input_0"`. A
   GeoDataFrame that names its layer only in `gdf.metadata` is that frame too,
   whatever the chip names.
-- A column chip becomes the column's name: `df[[!! input 0.population !!]]` runs
-  as `df["population"]`, `"field": [!! input 0.population !!]` as
+- A column chip becomes the column's name: `df[[!! input_0.population !!]]` runs
+  as `df["population"]`, `"field": [!! input_0.population !!]` as
   `"field": "population"`, and inside a quoted text it is the plain name.
 
 A node with several inputs runs once every one of them has a value. Deleting an
 edge closes the gap: the circles below it move up one, and their chips in the
-code are renumbered. A chip for the deleted input becomes `[!! input ? !!]` and
+code are renumbered. A chip for the deleted input becomes `[!! input_? !!]` and
 stops the run until you replace it. A chip for a circle with no edge, or for a
 column its input does not have, is drawn in red and stops the run with a message
 naming it.
@@ -678,7 +678,7 @@ reported in the node's output, and the run goes on.
 The edit list is saved with the dataflow, and the node's code is written from it:
 
 ```python
-return curio_edit_features(arg, [
+return curio_edit_features(input_0, [
     {"op": "remove", "ids": [29623484, 29628154]},
     {"op": "set", "ids": [42], "column": "height", "value": 30},
 ], key="building_id", layer="table_osm_buildings")
@@ -812,7 +812,7 @@ a lookup draws another input by naming it, written with that input's chip:
 {
   "layer": [
     {"mark": "bar", "encoding": {"x": {"field": "month"}, "y": {"field": "rain", "type": "quantitative"}}},
-    {"data": {"name": [!! input 1 !!]}, "mark": "rule",
+    {"data": {"name": [!! input_1 !!]}, "mark": "rule",
      "encoding": {"y": {"field": "normal", "type": "quantitative"}}}
   ]
 }
@@ -957,7 +957,7 @@ edges (see [Linking charts](#linking-charts)).
 
 - Each input is the table `input_0`, `input_1`, and so on, in the order of the
   node's input circles: a `GeoDataFrame`, a GeoJSON FeatureCollection, or a
-  `DataFrame` with a geometry column. An input chip, `[!! input 1 !!]`, writes
+  `DataFrame` with a geometry column. An input chip, `[!! input_1 !!]`, writes
   the name for you. A frame that arrives under its own name (a Data Pool tab, a
   compute step's layer) keeps that name, and `input_<k>` also names it.
 - Several layers keep their own names: a Python tuple, a Python dict of frames
@@ -1159,7 +1159,7 @@ page scrolls.
   and scrolls inside past it.
 - **Connections** run in the bar to the right of the cells. Each cell has its dots on its
   right edge: its inputs at the top, numbered as their chips are (dot 0 is
-  `[!! input 0 !!]`), its interaction dot halfway down, and its output at the bottom.
+  `[!! input_0 !!]`), its interaction dot halfway down, and its output at the bottom.
   The dots follow their cell as it grows. Hover a dot to see what feeds it. Selecting
   a cell rings it in its kind's color and darkens its connections.
 - **Editing.** Nodes and connections are added and removed on the canvas: the notebook

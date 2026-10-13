@@ -419,6 +419,10 @@ def run_through_node(
             # Validation runs never auto-install computed datasets.
             "save_dataset": False,
         }
+        # Which input_k each value of the input is, as Play sends it.
+        input_slots = spec.input_slots(node.id)
+        if input_slots:
+            payload["input_slots"] = list(input_slots)
         if session_id:
             payload["session_id"] = session_id
         if dataset_paths:

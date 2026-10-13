@@ -36,12 +36,12 @@ band in minutes. An Autark map draws it as `input_0`:
 ```
 
 SCOUT's metrics, the mean and median accumulated shadow over the ground, come
-from a **Raster Statistics** node (`curio.builtin@1`): the shadow on its input 0,
-the heights on its input 1 as the mask, and the ground where Deep Umbra reads
+from a **Raster Statistics** node (`curio.builtin@1`): the shadow on its input_0,
+the heights on its input_1 as the mask, and the ground where Deep Umbra reads
 gray level 0, a height under 1.08 m:
 
 ```python
-return curio_raster_statistics(arg, where=lambda height: height < 1.08)
+return curio_raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)
 ```
 
 Deep Umbra predicts each tile from the tile and its eight neighbours, so a tile
@@ -67,7 +67,7 @@ A pip install downloads the model from GitHub the first time the node runs.
 ```
 
 The Height mosaic node is a Python node that keeps the mosaic of Rasterize
-Buildings' `(mosaic, tiles)` (`return arg[0]`), since Raster Statistics reads
+Buildings' `(mosaic, tiles)` (`return input_0[0]`), since Raster Statistics reads
 rasters only.
 
 [Example 24](../../docs/examples/24-scout-building-rasters.md) maps the shadow

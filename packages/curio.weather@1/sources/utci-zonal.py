@@ -2,9 +2,9 @@
 
 Its input circles, in order:
 
-* input 0: rasterio dataset (carries the CRS / transform).
-* input 1: ``(utci_list, utci_shape)`` from the ``utci-compute`` step.
-* input 2: census polygon GeoDataFrame.
+* input_0: rasterio dataset (carries the CRS / transform).
+* input_1: ``(utci_list, utci_shape)`` from the ``utci-compute`` step.
+* input_2: census polygon GeoDataFrame.
 
 We rebuild the UTCI grid from the list-of-lists + shape, scale the
 raster transform to match the (downsampled) grid, replace NaNs with an
@@ -16,10 +16,10 @@ and attach the per-polygon mean back to the GeoDataFrame.
 import numpy as np
 from rasterstats import zonal_stats
 
-dataset = [!! input 0 !!]
-utci_list = [!! input 1 !!][0]
-utci_shape = [!! input 1 !!][1]
-gdf = [!! input 2 !!]
+dataset = [!! input_0 !!]
+utci_list = [!! input_1 !!][0]
+utci_shape = [!! input_1 !!][1]
+gdf = [!! input_2 !!]
 
 utci = np.asarray(utci_list, dtype=float)
 if utci.ndim != 2:

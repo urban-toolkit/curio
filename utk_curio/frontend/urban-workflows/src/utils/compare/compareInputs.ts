@@ -81,7 +81,7 @@ export function labelWarnings(inputs: readonly CompareInput[]): string[] {
   for (const input of inputs) {
     if (input.scenario === null) {
       warnings.push(
-        `Input ${input.slot} comes from ${input.label.name}, which is in no scenario: its rows carry the node's name, and What differs leaves it out.`,
+        `input_${input.slot} comes from ${input.label.name}, which is in no scenario: its rows carry the node's name, and What differs leaves it out.`,
       );
     }
   }

@@ -1,9 +1,9 @@
-"""A layer chip in Python code (#662): ``[!! input 0:table_osm_roads !!]``
+"""A layer chip in Python code (#662): ``[!! input_0:table_osm_roads !!]``
 reads one layer of the several an input carries, an Autark node's tables.
 
 The browser and the headless runner write the chip as a call to this helper,
-``curio_layer(arg, "table_osm_roads", 0)`` (``arg[1]`` when the node has
-several inputs; the last argument is the input's circle). The node's code
+``curio_layer(input_0, "table_osm_roads", 0)`` (``input_1`` for circle 1; the
+last argument is the input's circle). The node's code
 calls it by name, in process and under isolation. The JavaScript twin is
 ``curio_layer`` in ``js_wrapper.mjs``.
 
@@ -38,7 +38,7 @@ def missing_layer_message(slot, layer: str, names) -> str:
     ``codeReferences.ts`` and ``js_wrapper.mjs``."""
     names = list(names)
     has = f"Its layers are {', '.join(names)}." if names else "It carries no named layers."
-    return f"[!! input {slot}:{layer} !!]: input {slot} has no layer {layer}. {has}"
+    return f"[!! input_{slot}:{layer} !!]: input_{slot} has no layer {layer}. {has}"
 
 
 def _items(value) -> list:

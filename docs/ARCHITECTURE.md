@@ -683,12 +683,12 @@ The `autk-grammar` node consumes upstream data differently from Python nodes: it
 **1. A frame per input, `input_<k>`.** Each input frame (e.g. a Python GeoDataFrame from a computation node, or one routed through a Data Pool) is injected as one source named after its input, `input_0`, `input_1`, ... in circle order; an input chip writes the name:
 
 ```json
-"map": { "layerRefs": [{ "dataRef": "[!! input 0 !!]", "getFnv": "mean", "getFnvType": "quantitative" }] }
+"map": { "layerRefs": [{ "dataRef": "[!! input_0 !!]", "getFnv": "mean", "getFnvType": "quantitative" }] }
 ```
 
 A layer chip on such an input writes the same name, whatever layer it names: one frame is that layer, as `curio_layer` reads it in code. The resolver (`isOneFrameInput` in `codeReferences.ts`, `_is_one_frame_input` in `code_references.py`) knows an input is one frame from its data type, a DataFrame or GeoDataFrame, with no layers listed, since a spec is written before the run, often before the input's columns are read. When the input's value names its frame's layer (`layerName`, as a layer a Data Pool passes on inline does), the chip must name that layer, as in code (`knownLayers`, `_known_layers`), and still writes `input_<k>`, which a one-layer input answers to (case 2). A layer chip on any other input writes the layer's name: the layer array an Autark data node hands on arrives as a `list`, and the single layer an Autark compute step hands on as a `dict`, both read by their layers' names. The same holds for a Vega-Lite spec, whose datasets are `input_<k>`. A GeoDataFrame that names its layer only in its `metadata` is named in code alone: the reference does not carry that name, so a spec reads such a frame whatever the chip names.
 
-**2. Layer array, named layer references.** A multi-layer array (emitted by an upstream data-only `autk-grammar` node, e.g. one whose `data` block loads an OSM/PBF stack with `autoLoadLayers`) exposes each layer under its own table name, so the spec can target layers individually, with layer chips (`[!! input 0:table_osm_roads !!]`) or by name. An input holding one named layer also answers to `input_<k>`, always with its own layer. A name two inputs bring is the first input's layer; the second input's is still its `input_<k>` when it is that input's only layer, and is left out otherwise, as the node's message says:
+**2. Layer array, named layer references.** A multi-layer array (emitted by an upstream data-only `autk-grammar` node, e.g. one whose `data` block loads an OSM/PBF stack with `autoLoadLayers`) exposes each layer under its own table name, so the spec can target layers individually, with layer chips (`[!! input_0:table_osm_roads !!]`) or by name. An input holding one named layer also answers to `input_<k>`, always with its own layer. A name two inputs bring is the first input's layer; the second input's is still its `input_<k>` when it is that input's only layer, and is left out otherwise, as the node's message says:
 
 ```json
 "map": { "layerRefs": [{ "dataRef": "table_osm_buildings" }, { "dataRef": "table_osm_roads" }] }
@@ -1225,7 +1225,7 @@ Some contracts are read on both sides of the stack: by Python and TypeScript, or
   | `agent.name:<agent id>` | A built-in agent's display name | `builtin.BUILTIN_AGENTS` |
   | `template.label:<package id>/<template id>` | A built-in template's label | The built-in manifest |
   | `inputs.handles` | The handles of a node's input circles, `"in", "in_1", "in_2", ...` | `workflow_spec.slot_handle_id` |
-  | `inputs.chip:<k>`, `inputs.chip:<k>.<column>` | The chip node code reads input *k* by, or a column of it, `[!! input 0 !!]` | `code_references.reference_text` |
+  | `inputs.chip:<k>`, `inputs.chip:<k>.<column>` | The chip node code reads input *k* by, or a column of it, `[!! input_0 !!]` | `code_references.reference_text` |
   | `builtin.not_code` | The built-in templates whose nodes hold no Python or JavaScript code, one per line | The built-in manifest, by the rule `builtin.control` uses |
   | `note.palette` | The colour names a node's appearance accepts | `node_appearance.NAMED_COLORS` |
   | `egress.calls_per_run` | The web calls one run may make | `egress_policy.MAX_CALLS_PER_RUN` |

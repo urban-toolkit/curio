@@ -671,7 +671,7 @@ def builtin_lists(manifest: dict) -> dict[str, str]:
 # A built-in prompt that states something the code owns is a template:
 # ``<stem>.template.md`` in ``PROMPTS_DIR``, rendered to ``<stem>.md`` beside it.
 # The template holds the hand-written text, and each fact the code owns is a
-# marker, ``{{field}}`` or ``{{field:arg}}``, that ``render_prompt`` fills from
+# marker, ``{{field}}`` or ``{{field:argument}}``, that ``render_prompt`` fills from
 # ``PROMPT_FIELDS``. Each field is one small function that reads its source
 # when the prompt is rendered, so a change there reaches the prompt through
 # the generator, never through a hand edit.
@@ -771,7 +771,7 @@ def _input_handles(_src: _Sources) -> str:
 
 
 def _input_chip(_src: _Sources, text: str) -> str:
-    """The chip node code reads an input by: ``0`` is input 0, ``0.height``
+    """The chip node code reads an input by: ``0`` is input_0, ``0.height``
     a column of it (``reference_text``)."""
     from utk_curio.backend.app.execution.code_references import (
         input_reference_inner,
@@ -853,15 +853,22 @@ def _runtime_block_keys(_src: _Sources) -> str:
     return "{" + ", ".join(RUNTIME_BLOCK_KEYS) + "}"
 
 
-def _input_kind_list(_src: _Sources) -> str:
-    """The ``inputContract`` kind of an ``arg`` that is a list, quoted."""
-    from utk_curio.backend.app.agents.domain.input_contract import KIND_LIST
+def _input_kind_several(_src: _Sources) -> str:
+    """The ``inputContract`` kind of several circles, one value each, quoted."""
+    from utk_curio.backend.app.agents.domain.input_contract import KIND_SEVERAL
 
-    return json.dumps(KIND_LIST)
+    return json.dumps(KIND_SEVERAL)
+
+
+def _input_kind_gathered(_src: _Sources) -> str:
+    """The ``inputContract`` kind of one circle holding several edges' values, quoted."""
+    from utk_curio.backend.app.agents.domain.input_contract import KIND_GATHERED
+
+    return json.dumps(KIND_GATHERED)
 
 
 def _input_kind_single(_src: _Sources) -> str:
-    """The ``inputContract`` kind of an ``arg`` that is one value, quoted."""
+    """The ``inputContract`` kind of one circle that is one value, quoted."""
     from utk_curio.backend.app.agents.domain.input_contract import KIND_SINGLE
 
     return json.dumps(KIND_SINGLE)
@@ -1013,7 +1020,8 @@ PROMPT_FIELDS: dict[str, PromptField] = {
     "egress.calls_per_run": PromptField(_web_calls_per_run),
     "candidates.rows_per_lane": PromptField(_rows_per_lane),
     "node_context.runtime_keys": PromptField(_runtime_block_keys),
-    "input_contract.list": PromptField(_input_kind_list),
+    "input_contract.several": PromptField(_input_kind_several),
+    "input_contract.gathered": PromptField(_input_kind_gathered),
     "input_contract.single": PromptField(_input_kind_single),
     "vega.runtime_field": PromptField(_vega_runtime_field, takes_arg=True),
     "backend.handler_pattern": PromptField(_handler_pattern),
@@ -1042,14 +1050,14 @@ def render_template(text: str, name: str = "the template") -> str:
     sources = _Sources()
 
     def fill(match: re.Match) -> str:
-        key, arg = match.group(1), match.group(2)
+        key, argument = match.group(1), match.group(2)
         field = PROMPT_FIELDS.get(key)
         if field is None:
             raise PromptTemplateError(f"{name} names {match.group(0)}, which no prompt field defines")
-        if field.takes_arg != (arg is not None):
+        if field.takes_arg != (argument is not None):
             needs = "an argument after a colon" if field.takes_arg else "no argument"
             raise PromptTemplateError(f"{name} names {match.group(0)}, but {key} takes {needs}")
-        return field.render(sources, arg) if field.takes_arg else field.render(sources)
+        return field.render(sources, argument) if field.takes_arg else field.render(sources)
 
     text = _MARKER_RE.sub(fill, text)
     if "{{" in text:

@@ -182,6 +182,7 @@ def execute_isolated(
     models=None,
     dataset_formats=None,
     package_modules=None,
+    input_slots=None,
 ):
     """Run one node in an isolated child. Returns the standard response dict.
 
@@ -201,6 +202,9 @@ def execute_isolated(
     the packages it depends on. The package store is out of the
     child's reach, so they are staged into the scratch directory, as models
     are, and the child makes that folder importable for the run.
+
+    *input_slots* are the wired circles, in circle order: the value on circle k
+    is the code's ``input_k``, as in process.
 
     *user_key* switches the child into that user's own work directory instead:
     persistent, writable, owned by the execution user, and the one place an
@@ -269,6 +273,7 @@ def execute_isolated(
             limits=config.limits,
             wall_timeout=config.wall_timeout,
             secrets=secrets,
+            input_slots=input_slots,
         )
 
         client = supervisor.ZygoteClient(config.socket_path)

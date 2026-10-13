@@ -71,9 +71,9 @@ SCHEMA_URL = (
 
 _PYTHON_TEMPLATE = r'''"""__LABEL__ — Python node.
 
-``arg`` holds whatever the upstream port produced. With one upstream node wired
-it is that node's output directly; with several (typically through a Merge
-Flow) it is a list in edge order.
+``input_0`` holds whatever the edge on input circle 0 delivers, ``input_1`` the
+edge on circle 1, and so on: one variable per circle. A tuple an upstream node
+returns is one value, so its items are ``input_0[0]``, ``input_0[1]``, ...
 
 Whatever you ``return`` becomes this node's output, and the port types declared
 in manifest.json tell Curio how to carry it downstream.
@@ -81,7 +81,7 @@ in manifest.json tell Curio how to carry it downstream.
 
 import pandas as pd
 
-df = arg if isinstance(arg, pd.DataFrame) else pd.DataFrame(arg)
+df = input_0 if isinstance(input_0, pd.DataFrame) else pd.DataFrame(input_0)
 
 # Replace this with your own transformation.
 df = df.copy()

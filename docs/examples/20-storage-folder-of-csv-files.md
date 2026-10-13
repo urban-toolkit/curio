@@ -98,7 +98,7 @@ input circle and the stations on its second, and its code reads each through an
 input chip (see [Several inputs](../USAGE.md#several-inputs)):
 
 ```python
-readings, stations = [!! input 0 !!], [!! input 1 !!]
+readings, stations = [!! input_0 !!], [!! input_1 !!]
 
 means = readings.groupby("sensor", as_index=False)["pm25"].mean()
 return stations.merge(means, on="sensor")

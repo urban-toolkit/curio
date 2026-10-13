@@ -25,7 +25,7 @@
         "metadata": {
           "keywords": []
         },
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input 0 !!]\",\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"legendTitle\": \"Building height (m)\"\n      }\n    ]\n  }\n}"
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"legendTitle\": \"Building height (m)\"\n      }\n    ]\n  }\n}"
       },
       {
         "id": "333949c8-983a-5cdb-845b-04abe06c2dc7",
@@ -68,7 +68,7 @@
             }
           ]
         },
-        "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: (mosaic, tiles).\n- mosaic: one raster in EPSG:3395, each cell a height in metres. An Autark map\n  draws it as input_0, band band_1.\n- tiles: one row per map tile, with zoom, x, y and png, the 8-bit grayscale\n  PNG (base64) SCOUT's Deep Umbra shadow model reads, where 255 is the\n  maximum height.\nThe Widgets tab sets the height column, the zoom level and the maximum height.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_raster_conversion.node_outputs import rasterize_buildings\n\nreturn rasterize_buildings(\n    arg,\n    attribute=[!! attribute !!],\n    zoom=int([!! zoom !!]),\n    max_height=float([!! max_height !!]),\n    output_file=curio_output_file,\n)\n"
+        "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: (mosaic, tiles).\n- mosaic: one raster in EPSG:3395, each cell a height in metres. An Autark map\n  draws it as input_0, band band_1.\n- tiles: one row per map tile, with zoom, x, y and png, the 8-bit grayscale\n  PNG (base64) SCOUT's Deep Umbra shadow model reads, where 255 is the\n  maximum height.\nThe Widgets tab sets the height column, the zoom level and the maximum height.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_raster_conversion.node_outputs import rasterize_buildings\n\nreturn rasterize_buildings(\n    input_0,\n    attribute=[!! attribute !!],\n    zoom=int([!! zoom !!]),\n    max_height=float([!! max_height !!]),\n    output_file=curio_output_file,\n)\n"
       },
       {
         "id": "ebac4811-abcc-50fe-a61a-cc9c9ac8c011",
@@ -81,7 +81,7 @@
         "metadata": {
           "keywords": []
         },
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input 0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"isColorMap\": false\n      }\n    ]\n  }\n}"
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"isColorMap\": false\n      }\n    ]\n  }\n}"
       },
       {
         "id": "b34c8c82-a802-53db-a1fd-c7758626fed4",
@@ -94,7 +94,7 @@
         "metadata": {
           "keywords": []
         },
-        "content": "# Rasterize Buildings returns (mosaic, tiles): the height mosaic.\nreturn arg[0]"
+        "content": "# Rasterize Buildings returns (mosaic, tiles): the height mosaic.\nreturn input_0[0]"
       },
       {
         "id": "45abcfa2-7705-50d4-adf2-db8f556a59c6",
@@ -123,7 +123,7 @@
             }
           ]
         },
-        "content": "\"\"\"Accumulated Shadow: SCOUT's Deep Umbra shadow model.\n\nInput: the height mosaic of Rasterize Buildings (scout.raster-conversion), or\nits (mosaic, tiles) output: building heights in metres in EPSG:3395 on the\nzoom-16 tile grid.\nOutput: the accumulated shadow in minutes, a raster on the input's grid. An\nAutark map draws it as input_0, band band_1. A Raster Statistics node gives its\nmean and median over the ground: the heights on its input 1 as the mask, with\nwhere=lambda height: height < 1.08.\nThe Widgets tab sets the season. The model is the Model Catalog's Deep Umbra,\nmodel.scout.deep-umbra.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_shadow.node_outputs import accumulated_shadow, open_model\n\nmodel = open_model(lambda: curio_load_model(\"model.scout.deep-umbra\"))\nreturn accumulated_shadow(arg, season=[!! season !!], model=model, output_file=curio_output_file)\n"
+        "content": "\"\"\"Accumulated Shadow: SCOUT's Deep Umbra shadow model.\n\nInput: the height mosaic of Rasterize Buildings (scout.raster-conversion), or\nits (mosaic, tiles) output: building heights in metres in EPSG:3395 on the\nzoom-16 tile grid.\nOutput: the accumulated shadow in minutes, a raster on the input's grid. An\nAutark map draws it as input_0, band band_1. A Raster Statistics node gives its\nmean and median over the ground: the heights on its input 1 as the mask, with\nwhere=lambda height: height < 1.08.\nThe Widgets tab sets the season. The model is the Model Catalog's Deep Umbra,\nmodel.scout.deep-umbra.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_shadow.node_outputs import accumulated_shadow, open_model\n\nmodel = open_model(lambda: curio_load_model(\"model.scout.deep-umbra\"))\nreturn accumulated_shadow(input_0, season=[!! season !!], model=model, output_file=curio_output_file)\n"
       },
       {
         "id": "8a914e39-4cb1-535d-9a8b-19b45f6be288",
@@ -136,7 +136,7 @@
         "metadata": {
           "keywords": []
         },
-        "content": "# Raster Statistics: the mean, median, minimum, maximum and count of a\n# raster's cells, nodata left out, as a table of one row.\n# Input 0 is the accumulated shadow in minutes, input 1 the heights it was\n# predicted from, as the mask: SCOUT's metrics count the ground, the cells\n# Deep Umbra reads as gray level 0, a height under 1.08 m.\nreturn curio_raster_statistics(arg, where=lambda height: height < 1.08)\n"
+        "content": "# Raster Statistics: the mean, median, minimum, maximum and count of a\n# raster's cells, nodata left out, as a table of one row.\n# Input 0 is the accumulated shadow in minutes, input 1 the heights it was\n# predicted from, as the mask: SCOUT's metrics count the ground, the cells\n# Deep Umbra reads as gray level 0, a height under 1.08 m.\nreturn curio_raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)\n"
       },
       {
         "id": "6cef8611-e3ec-52d4-9caf-aa5d6cff3d6a",
@@ -149,7 +149,7 @@
         "metadata": {
           "keywords": []
         },
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input 0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"legendTitle\": \"Accumulated shadow (minutes)\"\n      }\n    ]\n  }\n}"
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"legendTitle\": \"Accumulated shadow (minutes)\"\n      }\n    ]\n  }\n}"
       }
     ],
     "edges": [

@@ -20,7 +20,7 @@
         "type": "curio.builtin/computation-analysis",
         "x": 1941.9145253062723,
         "y": 320.3326344850798,
-        "content": "import statistics\r\n\r\nreturn statistics.median(arg)",
+        "content": "import statistics\r\n\r\nreturn statistics.median(input_0)",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

@@ -92,7 +92,7 @@ return gdf
 
 ## Step 4: Compute UTCI on the raster grid (`Python Computation`)
 
-The raster goes into this node's first input circle and the meteo table into its second; the code reads them as `[!! input 0 !!]` and `[!! input 1 !!]` (see [Several inputs](../USAGE.md#several-inputs)). Read the noon weather row and call `pythermalcomfort.models.utci` to produce a UTCI value per pixel. Two non-obvious details in this node:
+The raster goes into this node's first input circle and the meteo table into its second; the code reads them as `[!! input_0 !!]` and `[!! input_1 !!]` (see [Several inputs](../USAGE.md#several-inputs)). Read the noon weather row and call `pythermalcomfort.models.utci` to produce a UTCI value per pixel. Two non-obvious details in this node:
 
 - `data.filled(np.nan)` collapses the rasterio MaskedArray to a plain float array with NaN for nodata, regardless of the raster's nodata sentinel.
 - `limit_inputs=False` keeps UTCI valid when `tr − tdb > 30` (common at noon in Milan, where MRT is regularly 60 to 70 °C while air temperature stays around 30 °C). With the default `limit_inputs=True`, those pixels would silently come back as NaN and the map would render half-empty.
@@ -106,8 +106,8 @@ import numpy as np
 from pythermalcomfort import models
 from rasterio.warp import Resampling
 
-src = [!! input 0 !!]
-sensor = [!! input 1 !!]
+src = [!! input_0 !!]
+sensor = [!! input_1 !!]
 
 timestamp = 12
 
@@ -147,7 +147,7 @@ return (utci_list, utci_shape)
 
 ## Step 5: Spatially join UTCI into census polygons (`Python Computation`)
 
-The node's three input circles take the original raster (for its CRS / transform), the UTCI tuple from Step 4, and the census polygons from Step 3, read as `[!! input 0 !!]`, `[!! input 1 !!]` and `[!! input 2 !!]`. Run `rasterstats.zonal_stats` to compute per-polygon UTCI statistics and attach the mean to each polygon.
+The node's three input circles take the original raster (for its CRS / transform), the UTCI tuple from Step 4, and the census polygons from Step 3, read as `[!! input_0 !!]`, `[!! input_1 !!]` and `[!! input_2 !!]`. Run `rasterstats.zonal_stats` to compute per-polygon UTCI statistics and attach the mean to each polygon.
 
 ```python
 # Step 5 - Zonal Statistics
@@ -155,10 +155,10 @@ The node's three input circles take the original raster (for its CRS / transform
 from rasterstats import zonal_stats
 import numpy as np
 
-dataset = [!! input 0 !!]
-utci_list = [!! input 1 !!][0]
-utci_shape = [!! input 1 !!][1]
-gdf = [!! input 2 !!]
+dataset = [!! input_0 !!]
+utci_list = [!! input_1 !!][0]
+utci_shape = [!! input_1 !!][1]
+gdf = [!! input_2 !!]
 
 utci = np.asarray(utci_list, dtype=float)
 shape = utci_shape
@@ -199,7 +199,7 @@ Note the assignment goes through ``__dict__['metadata']`` instead of plain attri
 ```python
 import geopandas as gpd
 
-gdf = arg
+gdf = input_0
 filtered_gdf = gdf.set_crs(32632)
 filtered_gdf = filtered_gdf.to_crs(3395)
 filtered_gdf = filtered_gdf[filtered_gdf['mean'] > 0]
@@ -214,7 +214,7 @@ The pool keeps the joined `census` table in shared memory so the next three view
 ## Step 8: Thematic map of UTCI (`autk-grammar`)
 
 The map is an `autk-grammar` node with just a `map` block. The census polygons routed in from the Data
-Pool are the node's first input, the table `input_0`, written with the input chip `[!! input 0 !!]`;
+Pool are the node's first input, the table `input_0`, written with the input chip `[!! input_0 !!]`;
 the layer is coloured by the UTCI `mean` column and picking is enabled so the linked scatterplot can
 highlight selected tracts. No JavaScript and no explicit data block, so the grammar reads the upstream
 GeoDataFrame directly. This is the single-frame case of Autark's two upstream-referencing mechanisms; see
@@ -224,7 +224,7 @@ GeoDataFrame directly. This is the single-frame case of Autark's two upstream-re
 {
   "map": {
     "layerRefs": [
-      { "dataRef": "[!! input 0 !!]", "getFnv": "mean", "getFnvType": "quantitative", "defaultFnv": 0, "isPick": true,
+      { "dataRef": "[!! input_0 !!]", "getFnv": "mean", "getFnvType": "quantitative", "defaultFnv": 0, "isPick": true,
         "legendTitle": "Mean UTCI (°C)" }
     ]
   }
@@ -261,7 +261,7 @@ A Vega-Lite scatter of `gt_65` vs `mean` UTCI. The interval selection on this vi
 Add a `Data Transformation` node that drops everything but `gt_65`, then a Vega-Lite boxplot reading from it. This view summarises the distribution of older-adult counts independent of UTCI; with the Interaction edges from Step 11 wired up, brushing on the map or scatter narrows the boxplot to the selected polygons.
 
 ```python
-gdf = arg
+gdf = input_0
 return gdf.loc[:, ["gt_65"]]
 ```
 

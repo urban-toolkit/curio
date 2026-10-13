@@ -49,7 +49,7 @@ A `Data Transformation` turns each ZIP polygon into its border, a line:
 
 ```python
 # Each ZIP's border as a line, for the crosses operation.
-gdf = arg[["zip", "geometry"]].copy()
+gdf = input_0[["zip", "geometry"]].copy()
 gdf["geometry"] = gdf.boundary
 
 return gdf

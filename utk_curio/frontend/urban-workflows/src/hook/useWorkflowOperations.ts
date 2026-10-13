@@ -1192,7 +1192,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             const outOfScope = scope ? all.filter((w) => !scope.has(w.node_id)) : [];
             // Filtered out, not discarded: these are real backend warnings, just
             // not about anything this run touched. One formatted STRING (not an
-            // object arg) so the message survives console capture verbatim.
+            // object argument) so the message survives console capture verbatim.
             if (outOfScope.length > 0) {
                 console.warn(
                     `[curio] ${outOfScope.length} dataset install warning(s) for ` +

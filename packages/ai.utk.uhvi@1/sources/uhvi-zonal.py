@@ -7,13 +7,10 @@ from rasterio.features import geometry_mask
 # `rasterio.io.DatasetReader`, not a dict of arrays. Read the band lazily
 # here so the upstream loader stays cheap.
 #
-# `arg` is whatever the upstream port produced. Curio normalises it to:
-#   * a list/tuple of two items if two upstream nodes are wired, one on
-#     each input circle, or
-#   * a single artifact if only one upstream is wired.
-# Sort the two inputs by Python type rather than by wire order so the
-# downstream contract is stable regardless of how the user dragged the
-# edges.
+# The raster and the polygons arrive on the node's two input circles,
+# input_0 and input_1 (a circle with no edge is None). Sort them by Python
+# type rather than by circle so the downstream contract is stable regardless
+# of how the user dragged the edges.
 def _sort_inputs(received):
     items = list(received) if isinstance(received, (list, tuple)) else [received]
     raster = next((x for x in items if isinstance(x, rasterio.io.DatasetReader)), None)
@@ -25,7 +22,7 @@ def _sort_inputs(received):
         )
     return raster, polygons
 
-src, gdf = _sort_inputs(arg)
+src, gdf = _sort_inputs([x for x in (input_0, input_1) if x is not None])
 
 values = src.read(1).astype(float)
 nodata = src.nodata

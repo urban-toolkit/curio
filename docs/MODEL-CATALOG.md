@@ -93,7 +93,7 @@ A node's code loads its model with `curio_load_model("<id>")`. **Image Segmentat
 model = curio_load_model("model.curio.ddrnet23-slim")
 classes = ["vegetation", "terrain", "sky", "road", "sidewalk", "building"]
 
-return curio_segment(arg, model, classes)
+return curio_segment(input_0, model, classes)
 ```
 
 `curio_segment` reads a collection's rows, each with a `path`, as a Data Loading node gives them for images from the Data or Discovery Catalog. Each row comes back with the results as its first columns:

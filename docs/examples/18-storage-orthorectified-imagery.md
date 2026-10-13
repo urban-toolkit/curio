@@ -96,7 +96,7 @@ opened.
 Filter to one year first: the two years cover the same ground, and a mosaic holds one of them.
 
 ```python
-tiles = arg
+tiles = input_0
 
 return tiles[tiles["year"] == 2024]
 ```
@@ -109,7 +109,7 @@ RASTER, so the next node receives an open raster:
 ```python
 import pandas as pd
 
-mosaic = arg
+mosaic = input_0
 pixels = mosaic.read()
 
 return pd.DataFrame({
