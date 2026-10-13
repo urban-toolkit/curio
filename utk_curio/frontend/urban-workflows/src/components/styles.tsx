@@ -601,10 +601,6 @@ export const NodeContainer = ({
             title="Comments"
             onActivate={() => setShowComments(!showComments)}
         />
-        <NodeDeleteTool
-            style={{ ...headerIconStyle, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
-            onDelete={onDelete}
-        />
         {updateTemplate != undefined && code != undefined && templateData.id != undefined && templateData.custom && code != templateData.code ? (
             <HeaderIconButton
                 icon={faFloppyDisk}
@@ -825,7 +821,8 @@ export const NodeContainer = ({
 
                         {/* The run status, at the right, which pushes the
                             tools (the editor's tabs, Save output, the icons
-                            and, on the canvas, Minimize) right after it. */}
+                            and, on the canvas, Minimize and Delete node)
+                            right after it. */}
                         <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", flexShrink: 0 }}>
                             {sendCodeToWidgets != undefined ? (
                                 <NodeRunControls {...runControls} part="status" />
@@ -847,6 +844,13 @@ export const NodeContainer = ({
                                     onActivate={() => setMinimized(true)}
                                 />
                             ) : null}
+                            {/* Delete node comes last. It shows only where the
+                                viewer deletes nodes, so not in a notebook cell
+                                or on a read-only canvas. */}
+                            <NodeDeleteTool
+                                style={{ ...headerIconStyle, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
+                                onDelete={onDelete}
+                            />
                         </span>
                     </div>
                     </>
