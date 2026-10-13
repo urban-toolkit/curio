@@ -2,7 +2,7 @@
   "sha256": {
     "README.md": "717f0e1841e05efcd74497239c57bb7e7a8cb572c89e23fc1653aa1f7230185e",
     "manifest.json": "96df91f52a92ed59f83a59e1c1092ed8e243449a8eb8c66d6b1780ba9c1b2451",
-    "sources/rasterize-buildings.py": "c073be14e078792cf64f455864dc3717681da37241fca07a31224a233830c7a1",
+    "sources/rasterize-buildings.py": "ffe2d0f96a453c72ab71b7b84ead927b24d761050792eec76a3e52b64ff10103",
     "sources/scout_raster_conversion/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "sources/scout_raster_conversion/convert_to_raster.py": "9e5e844214f628735e362d23004b375e2ea825e55c7321bf026ad7fdcdd577ff",
     "sources/scout_raster_conversion/node_outputs.py": "da13cee842fd0dcea13bd457456247a673d8ef284c1ba960b3f81a19405b7f30"

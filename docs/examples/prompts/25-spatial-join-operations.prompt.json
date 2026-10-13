@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/25-spatial-join-operations.json",
-    "sha256": "c278b1d11ab33d089950a3c3e1e36982259f6de4b6ffd61cba0dcfb9fde7fa0c",
+    "sha256": "838b97b306203e9ecfeb1574855bfc38473afa3c5b4f15f6c14151d9340f8f4c",
     "walkthrough": null
   },
   "prompt": "From the Data Catalog, load Chicago's green roofs, a sample of Project Sidewalk labels spread across the city, the city's neighborhoods and its ZIP codes, and show every kind of spatial join side by side: the neighborhood each green roof is in; a map of how many sidewalk labels lie within each neighborhood; the labels each neighborhood contains, by type; which neighborhoods border each other; which ZIP codes each neighborhood overlaps; which neighborhoods each ZIP border runs through; and how far each green roof is from the nearest sidewalk label. Add two small squares that share an edge and three points, one inside a square, one on the shared edge and one outside both, and show that the point on the edge meets both squares but lies within neither.",

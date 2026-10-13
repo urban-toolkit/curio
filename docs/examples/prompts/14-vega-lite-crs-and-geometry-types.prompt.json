@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/14-vega-lite-crs-and-geometry-types.json",
-    "sha256": "3c7569483eb2306cef7cce988a86888a719a678f3aeda5c40b9f388f06cc6736",
+    "sha256": "af5a9e3f644a498748fc81e7f124d039cece1dac7117c72d370d142020408c78",
     "walkthrough": "docs/examples/14-vega-lite-crs-and-geometry-types.md"
   },
   "prompt": "Take the Chicago ZIP boundary polygons from the Data Catalog and reproject them into several different coordinate systems, and also derive point and line geometries from them. Draw every one of those frames on a map, with the same map spec for every coordinate system, so I can confirm the coordinate system does not change what I have to write, and make sure the lines show up too.",
