@@ -26,7 +26,7 @@ import collections
 import os
 import threading
 
-from utk_curio.sandbox import metrics
+from utk_curio.sandbox import metrics, run_place
 from utk_curio.sandbox.isolation import protocol, supervisor
 from utk_curio.sandbox.isolation.protocol import ProtocolError
 from utk_curio.sandbox.isolation.supervisor import IsolatedExecutionError
@@ -276,6 +276,8 @@ def execute_isolated(
         # concurrency. Nesting rather than merging keeps the limiter unaware of
         # the monitor, so bookkeeping can never affect whether work runs.
         with metrics.slot(), config.slot():
+            # The run has its place: its reply goes quiet until it ends (#889).
+            run_place.took_place()
             exit_code, signal_number, timed_out = client.run(
                 request, wall_timeout=config.wall_timeout
             )

@@ -123,6 +123,8 @@ class TestDatasetPathResolver(unittest.TestCase):
             "save_dataset": False,
         })
         self.assertEqual(response.status_code, 200)
+        # The status goes out before the run (#889): a failure would be here.
+        self.assertNotIn("error", response.get_json())
 
     def test_falsy_values_are_dropped(self):
         # An empty path would resolve to the process CWD; the id must instead
