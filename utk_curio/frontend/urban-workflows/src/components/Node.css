@@ -86,7 +86,7 @@
 }
 
 /* A node's tools (the editor's tabs, Save output, the gear, info, pin,
-   comments and, on the canvas, delete and minimize) show while the pointer is
+   comments and, on the canvas, minimize and delete) show while the pointer is
    over the node, or the node is selected or holds the focus, as a Jupyter
    cell's toolbar does. Play, the title, the kind and the run status always
    show. The same on the canvas and in a notebook cell. */
