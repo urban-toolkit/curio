@@ -5,13 +5,12 @@
  * other browse pages; only kind-keyed rules live here, the split
  * ModelCatalogBrowseCard.module.css uses.
  *
- * The strip wears the scenario's own colour, the one its boxes wear on the
- * canvas, so the strip is the key between this card and that project. The
- * card sets `--scenario-color` on itself; the dataflow kind colour stands in
- * should it ever be missing.
+ * ONE key, not one per scenario: on this page every card is a scenario. The
+ * scenario's own colour, the one its boxes wear on the canvas, is the square
+ * before the card's name. See --curio-kind-scenario-fg.
  */
 
-.strip_scenario { background: var(--scenario-color, var(--curio-kind-dataflow-fg)); }
+.strip_scenario { background: var(--curio-kind-scenario-fg); }
 
 /* The project's graph, at a fixed height: a box sized by its contents would
    let the drawing's 100% height grow the card past what it shows. */
@@ -26,4 +25,4 @@
    this module: CSS modules hash per file, so the shared `.cardActive` cannot
    satisfy it. Both classes are applied together and agree. */
 .cardActive { box-shadow: var(--curio-shadow-browse-card-raised); }
-.cardActive.card_scenario { border-color: var(--scenario-color, var(--curio-kind-dataflow-fg)); }
+.cardActive.card_scenario { border-color: var(--curio-kind-scenario-fg); }

@@ -12,8 +12,7 @@
 .kindIcon_dataset,
 .kindIcon_package,
 .kindIcon_dataflow,
-.kindIcon_agent,
-.kindIcon_scenario {
+.kindIcon_agent {
   background: var(--curio-surface-muted);
   color: var(--curio-text-primary);
 }
@@ -31,6 +30,14 @@
 .kindIcon_model {
   background: var(--curio-kind-model-bg);
   color: var(--curio-kind-model-on-tint);
+}
+
+/* Tinted to match the scenario cards, whose strips all wear this kind's
+   colour: the page header, the drawers and the details view name the kind in
+   the colour its cards wear. */
+.kindIcon_scenario {
+  background: var(--curio-kind-scenario-bg);
+  color: var(--curio-kind-scenario-on-tint);
 }
 
 .size_sm {
