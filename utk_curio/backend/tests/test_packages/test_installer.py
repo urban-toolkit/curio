@@ -96,6 +96,28 @@ def test_install_rejects_disallowed_top_level(tmp_curio, manifest_dict):
         install_package_from_archive("guest", buf.getvalue())
 
 
+def test_install_refuses_models_for_a_node_package_and_keeps_them_for_a_model_package(tmp_curio, manifest_dict):
+    """``models/`` holds a model package's weights, and only a model package
+    may ship one."""
+    def archive(manifest):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, mode="w") as zf:
+            zf.writestr("manifest.json", json.dumps(manifest))
+            zf.writestr("models/m.onnx", b"graph")
+        return buf.getvalue()
+
+    with pytest.raises(InstallerError, match="model package"):
+        install_package_from_archive("guest", archive(manifest_dict()))
+    assert not package_dir("guest", "ai.test.demo@1").exists()
+
+    model = dict(manifest_dict(package_id="ai.test.model"), kind="model", model={
+        "type": "node-regression", "runtime": "onnx", "entry": "models/m.onnx", "license": "MIT",
+    })
+    result = install_package_from_archive("guest", archive(model))
+    assert result.manifest.kind == "model"
+    assert (package_dir("guest", "ai.test.model@1") / "models" / "m.onnx").read_bytes() == b"graph"
+
+
 def test_install_rejects_missing_manifest(tmp_curio):
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, mode="w") as zf:

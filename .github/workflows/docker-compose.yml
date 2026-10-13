@@ -1357,6 +1357,7 @@ jobs:
             "$tests/test_discovery/test_shipped_sources.py::test_the_wheel_ships_the_catalog" \
             "$tests/test_discovery/test_shipped_sources.py::test_the_ci_container_is_pointed_at_the_recorded_corpus" \
             "$tests/test_model_catalog/test_model_catalog.py::TestItShips::test_the_image_and_the_wheel_carry_models" \
+            "$tests/test_packages/test_model_packages.py::test_the_image_copies_local_relief" \
             "$tests/test_scripts/test_launcher_node_version.py::test_node_version_declarations_agree"
 
       - name: 📤 Upload the results for the CI report

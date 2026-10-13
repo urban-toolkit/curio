@@ -82,16 +82,23 @@ def _only_locks(root: Path) -> bool:
 
 def test_the_list_names_catalog_files_the_repository_holds():
     """Each listed file is in the repository, and is the data file of a Data
-    Catalog dataset or the entry of a Model Catalog model: the one big file of
-    its folder, whose small files (manifest, sidecars) still ship."""
+    Catalog dataset, the entry of a Model Catalog model or the weight a model
+    package's ``model`` block names: the one big file of its folder, whose
+    small files (manifest, sidecars, code) still ship."""
     files = listed()
     assert files and len(files) == len(set(files)), files
     for repo_path in files:
         assert (REPO / repo_path).is_file(), repo_path
         kind, folder, *rest = repo_path.split("/")
-        assert kind in ("datasets", "models") and rest, repo_path
+        assert kind in ("datasets", "models", "packages") and rest, repo_path
         manifest = json.loads((REPO / kind / folder / "manifest.json").read_text(encoding="utf-8"))
-        named = manifest.get("dataFile") if kind == "datasets" else manifest.get("entry")
+        if kind == "datasets":
+            named = manifest.get("dataFile")
+        elif kind == "models":
+            named = manifest.get("entry")
+        else:
+            assert manifest.get("kind") == "model", repo_path
+            named = manifest["model"]["entry"]
         assert "/".join(rest) == named, (repo_path, named)
 
 
