@@ -1998,7 +1998,7 @@ class TestPlanFanInValidation:
     ]
 
     #: A computation node plus the Spatial Join's shape: two input ports, one
-    #: edge each, on the circles "in" (input 0) and "in_1" (input 1).
+    #: edge each, on the circles "in" (input_0) and "in_1" (input_1).
     TWO_PORT_TEMPLATES = BOUNDED_TEMPLATES[:1] + [
         {"id": "spatial-join", "label": "Spatial Join",
          "category": "data", "engine": "python", "editor": "none", "hasCode": False,
@@ -2179,9 +2179,9 @@ class TestPlanFanInValidation:
         assert "edges[1].toHandle" not in feedback
 
     def test_two_edges_into_a_two_port_node_take_its_two_circles(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        # #576: the Spatial Join's inputs follow its circles, "in" for input 0
-        # and "in_1" for input 1. A plan that names no circle put both of its
-        # edges on "in", so the join had input 0 twice and no input 1.
+        # #576: the Spatial Join's inputs follow its circles, "in" for input_0
+        # and "in_1" for input_1. A plan that names no circle put both of its
+        # edges on "in", so the join had input_0 twice and no input_1.
         from utk_curio.backend.app.projects import storage as projects_storage
         from utk_curio.backend.app.projects.services import _user_dir_key
 

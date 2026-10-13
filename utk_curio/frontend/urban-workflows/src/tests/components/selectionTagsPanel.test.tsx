@@ -141,7 +141,7 @@ describe("the Selections part of a node's Widgets tab", () => {
     const sendReplacedCode = jest.fn();
     const onResolveError = jest.fn();
     const tags: SelectionTag[] = [{ name: "heights", node: CHART.id, column: "osm_id", ids: [102, 103] }];
-    const code = "picked = [!! selection heights !!]\nreturn arg[arg['osm_id'].isin(picked)]";
+    const code = "picked = [!! selection heights !!]\nreturn input_0[input_0['osm_id'].isin(picked)]";
     const make = (markersDirty: boolean) => (
       <WidgetsEditor
         {...props}
@@ -157,7 +157,7 @@ describe("the Selections part of a node's Widgets tab", () => {
     const view = render(make(false));
     act(() => view.rerender(make(true)));
     expect(onResolveError).not.toHaveBeenCalled();
-    expect(sendReplacedCode).toHaveBeenCalledWith("picked = [102, 103]\nreturn arg[arg['osm_id'].isin(picked)]");
+    expect(sendReplacedCode).toHaveBeenCalledWith("picked = [102, 103]\nreturn input_0[input_0['osm_id'].isin(picked)]");
   });
 });
 

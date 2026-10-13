@@ -204,7 +204,7 @@ class TestPriorOutputs:
 
         spec = _spec([_node("a"), _node("t")], [{"id": "e1", "source": "a", "target": "t"}])
         result = validation.validate_candidate(
-            KEY, PID, spec, "t", "df = arg[0]\nreturn df", exec_fn=_fn,
+            KEY, PID, spec, "t", "df = input_0[0]\nreturn df", exec_fn=_fn,
             prior_outputs={"a": {"path": "art-a", "dataType": "dataframe"}},
         )
         assert result["verdict"] == "pass"

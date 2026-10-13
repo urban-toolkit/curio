@@ -483,7 +483,8 @@ for, or a marker in the older `[!! name$TYPE$default !!]` form, stops the run
 with a message naming it; the **Widgets** tab lists them too.
 
 Widgets are not connections: a value you set is not data from another node. Data
-from the node's inputs reaches its code as `arg`, or through input chips (see
+from the node's inputs reaches its code as `input_0`, `input_1`, and so on, one
+variable per input circle, or through input chips (see
 [Several inputs](#several-inputs)).
 
 ### Shared values: the Parameter node
@@ -549,8 +550,8 @@ dict's tab is named after its key.
 
 In code and in a Vega-Lite or Autark spec, each input is a chip:
 
-1. The strip above the code shows a tag for each input: **input 0**,
-   **input 1**, and so on. Hover one to see which node feeds it.
+1. The strip above the code shows a tag for each input: **input_0**,
+   **input_1**, and so on. Hover one to see which node feeds it.
 2. Drag a tag into the code, or click it to insert it at the cursor. It appears
    as a green chip, written `[!! input_1 !!]`.
 3. Click the arrow beside an input's tag to list its columns, once the node that
@@ -563,11 +564,12 @@ In code and in a Vega-Lite or Autark spec, each input is a chip:
 
 When the node runs:
 
-- In Python and JavaScript, an input chip becomes the input: `arg` when the node
-  has one input, and `arg[1]` when it has several, counted in circle order.
+- In Python and JavaScript, an input chip becomes the variable that holds that
+  circle's input: `[!! input_1 !!]` runs as `input_1` (see
+  [Input names](#input-names)).
 - In Python and JavaScript, a layer chip becomes that layer of the input:
   `roads = [!! input_0:table_osm_roads !!]` runs as
-  `roads = curio_layer(arg, "table_osm_roads", 0)`, which gives a GeoDataFrame
+  `roads = curio_layer(input_0, "table_osm_roads", 0)`, which gives a GeoDataFrame
   in Python and a GeoJSON FeatureCollection in JavaScript. An input that is one
   frame with no layer name, such as a GeoDataFrame a Python node returns, is
   that layer. An input with several frames needs one of that name; if it has
@@ -583,13 +585,42 @@ When the node runs:
 - A column chip becomes the column's name: `df[[!! input_0.population !!]]` runs
   as `df["population"]`, `"field": [!! input_0.population !!]` as
   `"field": "population"`, and inside a quoted text it is the plain name.
+- In Python and JavaScript you can also type an input's name instead of
+  dragging its chip: `input_0`, `input_1`, and so on, the names a Vega-Lite or
+  Autark spec reads its inputs by too. `roads = input_1.to_crs(3857)` reads
+  the input on circle 1. Because `input_0` names an input, no widget can take
+  that name.
 
 A node with several inputs runs once every one of them has a value. Deleting an
 edge closes the gap: the circles below it move up one, and their chips in the
-code are renumbered. A chip for the deleted input becomes `[!! input_? !!]` and
-stops the run until you replace it. A chip for a circle with no edge, or for a
-column its input does not have, is drawn in red and stops the run with a message
-naming it.
+code are renumbered, and so are typed names such as `input_2`. A chip or typed
+name for the deleted input becomes `[!! input_? !!]` and stops the run until
+you replace it. Deleting the edge of a node's only input, or of its last, moves
+no circle, so the code is kept as written, and the next edge into that circle
+is read by it. A chip for a circle with no edge, or for a column its input does
+not have, is drawn in red and stops the run with a message naming it.
+
+### Input names
+
+In Python and JavaScript, each input circle is its own variable, named after the
+circle:
+
+| Circle | Variable | Holds |
+|---|---|---|
+| 0 (`in`) | `input_0` | what the edge on circle 0 delivers |
+| 1 (`in_1`) | `input_1` | what the edge on circle 1 delivers |
+| k (`in_k`) | `input_k` | and so on |
+
+A circle's variable keeps its name when another edge is connected, so code that
+reads `input_0.crs` keeps working beside a second input. A circle with no edge
+is `None` (`undefined` in JavaScript), which lets a node take an optional
+input, such as the mask on a Raster Statistics node's circle 1. Code that reads
+its inputs when none has arrived stops with a message naming the circle.
+
+A tuple a Python node returns leaves by its one output circle, so it is one
+input: on circle 1 it is `input_1`, and `input_1[0]` is its first item. Several
+edges into one circle, as a port that takes many has, are that circle's list,
+in edge order.
 
 ## Scenarios
 
@@ -725,7 +756,7 @@ A table beside a value, a GeoDataFrame beside a plain table, two coordinate syst
 an input with no value, an input that holds several tables, or a raster stops the run
 with a message naming the input.
 
-In Difference it takes two inputs: input 0 is the reference and input 1 the
+In Difference it takes two inputs: input_0 is the reference and input_1 the
 comparison, and every number it gives is the comparison's minus the reference's.
 
 - Two rasters are subtracted cell by cell, band by band. A cell that is nodata in
@@ -1065,31 +1096,31 @@ The first matching rule wins:
 ## Spatial Join node
 
 The `Spatial Join` node pairs the rows of two GeoDataFrames whose shapes meet.
-It has two input circles: **input 0**, the upper, blue one, and **input 1**,
-the lower, green one. Input 0 is the left side of the join and input 1 the
+It has two input circles: **input_0**, the upper, blue one, and **input_1**,
+the lower, green one. input_0 is the left side of the join and input_1 the
 right. Either circle takes points, lines or polygons, and one node can feed
 both.
 
-Its body reads as a sentence, *Pair each input 0 row with the input 1 rows
+Its body reads as a sentence, *Pair each input_0 row with the input_1 rows
 it ...*, finished by the operation you pick. A point on an edge follows
 [shapely](https://shapely.readthedocs.io/)'s rule for each:
 
-| Operation | Pairs input 0's shape with input 1's when | A point on a polygon's edge |
+| Operation | Pairs input_0's shape with input_1's when | A point on a polygon's edge |
 |---|---|---|
 | intersects (the default) | they share at least one point | pairs |
-| within | input 0's lies inside input 1's | does not pair |
-| contains | input 0's holds input 1's | is not contained |
+| within | input_0's lies inside input_1's | does not pair |
+| contains | input_0's holds input_1's | is not contained |
 | touches | they meet only along their edges | pairs |
 | overlaps | two shapes of one kind share part of themselves, and neither holds the other | |
 | crosses | a line runs through the other shape, partly inside and partly outside it | |
-| nearest | input 1's is the closest to input 0's, ties included | |
+| nearest | input_1's is the closest to input_0's, ties included | |
 
 The output is one of:
-- **One row per pair**, the default: input 0's row and shape, with input 1's
-  columns added. A column whose name input 0 already has comes in as
+- **One row per pair**, the default: input_0's row and shape, with input_1's
+  columns added. A column whose name input_0 already has comes in as
   `<column>_right`. A row with no pair is left out. `nearest` also adds
   `distance`, in meters.
-- **Counts**: input 1's rows, each with `point_count`, the number of input 0
+- **Counts**: input_1's rows, each with `point_count`, the number of input_0
   rows paired with it.
 
 When an operation can never match the shapes given, such as polygons within
@@ -1110,15 +1141,15 @@ cell. Connect the rasters to its input circles, in order:
 
 | operation | result |
 |---|---|
-| `curio_raster_calculate("add", arg)` | input 0 plus input 1 |
-| `curio_raster_calculate("subtract", arg)` | input 0 minus input 1 |
-| `curio_raster_calculate("multiply", arg)` | input 0 times input 1 |
-| `curio_raster_calculate("divide", arg)` | input 0 over input 1; a cell divided by 0 has no value |
-| `curio_raster_calculate("choose", arg, codes=[21, 31])` | input 1 where input 0's class is one of the codes, input 2 elsewhere |
+| `curio_raster_calculate("add", [input_0, input_1])` | input_0 plus input_1 |
+| `curio_raster_calculate("subtract", [input_0, input_1])` | input_0 minus input_1 |
+| `curio_raster_calculate("multiply", [input_0, input_1])` | input_0 times input_1 |
+| `curio_raster_calculate("divide", [input_0, input_1])` | input_0 over input_1; a cell divided by 0 has no value |
+| `curio_raster_calculate("choose", [input_0, input_1, input_2], codes=[21, 31])` | input_1 where input_0's class is one of the codes, input_2 elsewhere |
 
 - A cell with no value (the raster's nodata, or a number that is not finite) in
   an input the operation reads there has no value in the result. In `choose`, a
-  class with no value is no class, so its cell takes input 2.
+  class with no value is no class, so its cell takes input_2.
 - The rasters must share their size, origin, cell size and CRS; otherwise the
   node stops and describes both grids. Bands are computed one by one; a class
   raster of one band applies to every band.
@@ -1127,15 +1158,15 @@ cell. Connect the rasters to its input circles, in order:
 
 **Raster Statistics** gives a raster's `mean`, `median`, `min`, `max` and
 `count` over its cells with a value, as a table of one row, for example for
-**Compare Scenarios** to chart. `curio_raster_statistics(arg, band=2)` reads
+**Compare Scenarios** to chart. `curio_raster_statistics(input_0, band=2)` reads
 another band. A condition keeps only some cells:
 
 | call | counts |
 |---|---|
-| `curio_raster_statistics(arg, where=lambda value: value < 1.08)` | the cells whose value is under 1.08 |
-| `curio_raster_statistics(arg, where=lambda value: (value >= 2) & (value < 5))` | the cells from 2 up to 5 |
-| `curio_raster_statistics(arg, mask_values=[0])` | with a second raster on input 1, on the same grid: the cells where its value is 0 |
-| `curio_raster_statistics(arg, where=lambda height: height < 1.08)` | with a second raster on input 1: the cells where its value is under 1.08 |
+| `curio_raster_statistics(input_0, where=lambda value: value < 1.08)` | the cells whose value is under 1.08 |
+| `curio_raster_statistics(input_0, where=lambda value: (value >= 2) & (value < 5))` | the cells from 2 up to 5 |
+| `curio_raster_statistics(input_0, mask=input_1, mask_values=[0])` | with a second raster on input_1, on the same grid: the cells where its value is 0 |
+| `curio_raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)` | with a second raster on input_1: the cells where its value is under 1.08 |
 
 `where` receives the values as an array, with NaN for a cell with no value, and
 a cell with no value is never counted.

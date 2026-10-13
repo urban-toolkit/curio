@@ -98,7 +98,7 @@ SCATTER_SPEC = """{
 COUNTER_START = "print('<<waiting>>')\nreturn input_0\n"
 COUNTER_CODE = (
     "ids = \n"
-    'rows = arg[arg["osm_id"].isin(ids)]\n'
+    'rows = input_0[input_0["osm_id"].isin(ids)]\n'
     "print(f\"<<N {len(rows)} {sorted(rows['osm_id'].tolist())}>>\")\n"
     "return rows\n"
 )

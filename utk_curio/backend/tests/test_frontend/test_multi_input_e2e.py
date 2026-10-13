@@ -9,12 +9,12 @@ This drives the whole path in a browser:
    first one made, and a third, empty circle appears.
 2. The input tags and a column tag are dragged into the code, where each lands
    at its drop point as a chip.
-3. A run reads both inputs: ``[!! input_0 !!]`` is ``arg[0]``,
-   ``[!! input_1 !!]`` is ``arg[1]``, and the column chip is the column's name.
+3. A run reads both inputs: ``[!! input_0 !!]`` is ``input_0``,
+   ``[!! input_1 !!]`` is ``input_1``, and the column chip is the column's name.
 4. Deleting the first producer closes the gap: the second producer's edge moves
    to circle 0, and the code is renumbered, the deleted input's chip becoming
    ``[!! input_? !!]``. With that line gone, a run reads the one input left as
-   ``arg``.
+   ``input_0``.
 5. Save and reopen: the circles and the chips are back.
 
 Before, a node held one input, and a second edge was refused.
@@ -77,7 +77,7 @@ T_WITH_CHIPS = (
     "print(f'<<{a}|{total}>>')\n"
     "return total\n"
 )
-# What deleting the first producer leaves: input 1 is now input 0.
+# What deleting the first producer leaves: input_1 is now input_0.
 T_RENUMBERED = (
     "a = [!! input_? !!]\n"
     "b = [!! input_0 !!]\n"
@@ -294,7 +294,7 @@ def test_a_node_reads_several_inputs_through_chips(
     strip.locator('[data-input-tag="1"]').wait_for(state="visible", timeout=10000)
     _drag_tag_to_line_end(page, t, '[data-input-tag="0"]', 1)
     _drag_tag_to_line_end(page, t, '[data-input-tag="1"]', 2)
-    strip.get_by_label("Show the columns of input 1").click()
+    strip.get_by_label("Show the columns of input_1").click()
     strip.locator('[data-column-tag="population"]').wait_for(state="visible", timeout=30000)
     _drag_tag_to_line_end(page, t, '[data-column-tag="population"]', 3)
     _wait_for_code(page, t, "[!! input_1.population !!]")

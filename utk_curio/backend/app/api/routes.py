@@ -557,25 +557,25 @@ def get_loaded_files_metadata(folder_path):
 def spatial_join():
     """Pair the rows of two GeoJSON inputs whose shapes meet (#576).
 
-    Backs the Spatial Join node in curio.builtin@1. Input 0 (the node's top
-    circle) is the left side of the join and input 1 (the bottom circle) the
+    Backs the Spatial Join node in curio.builtin@1. input_0 (the node's top
+    circle) is the left side of the join and input_1 (the bottom circle) the
     right; either takes any geometry. The work is in ``common/spatial.py``,
     on geopandas ``sjoin`` and ``sjoin_nearest``.
 
     Request body:
         {
-          "left":      FeatureCollection, input 0,
-          "right":     FeatureCollection, input 1,
+          "left":      FeatureCollection, input_0,
+          "right":     FeatureCollection, input_1,
           "predicate": optional, one of intersects (default), within,
                        contains, touches, overlaps, crosses, nearest:
-                       how input 0's shape must meet input 1's,
+                       how input_0's shape must meet input_1's,
           "output":    optional, "pairs" (default) or "counts".
         }
 
     Response: a FeatureCollection. "pairs" gives one feature per matching
-    pair, input 0's row and geometry with input 1's columns added
+    pair, input_0's row and geometry with input_1's columns added
     (``<column>_right`` on a clash, plus ``distance`` in meters for
-    nearest); "counts" gives input 1's features, each with ``point_count``.
+    nearest); "counts" gives input_1's features, each with ``point_count``.
     ``metadata`` says how many pairs and matched rows there are, and carries
     ``warnings`` when an operation can never match the shapes given.
 

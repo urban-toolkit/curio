@@ -13,8 +13,8 @@ flowchart LR
   L --> A[`Data Transformation`<br/>daily by season] --> AV[`Vega-Lite`<br/>seasonal line]
 
   L --> B1[`Data Transformation`<br/>monthly heatmap]
-  A -->|input 0| BC[`Python Computation`<br/>merge daily + monthly]
-  B1 -->|input 1| BC --> BT[`Data Transformation`<br/>typecast] --> BV[`Vega-Lite`<br/>heatmap + line concat]
+  A -->|input_0| BC[`Python Computation`<br/>merge daily + monthly]
+  B1 -->|input_1| BC --> BT[`Data Transformation`<br/>typecast] --> BV[`Vega-Lite`<br/>heatmap + line concat]
 
   L --> C[`Data Transformation`<br/>yearly + season] --> CV[`Vega-Lite`<br/>stacked area]
 
@@ -22,13 +22,13 @@ flowchart LR
 
   L --> E1[`Data Transformation`<br/>cameras per intersection]
   L --> E2[`Data Transformation`<br/>% reduction over time]
-  E1 -->|input 0| EC[`Python Computation`<br/>join camera + reduction]
-  E2 -->|input 1| EC --> ET[`Data Transformation`<br/>typecast] --> EV[`Vega-Lite`<br/>boxplot + bar concat]
+  E1 -->|input_0| EC[`Python Computation`<br/>join camera + reduction]
+  E2 -->|input_1| EC --> ET[`Data Transformation`<br/>typecast] --> EV[`Vega-Lite`<br/>boxplot + bar concat]
 
   L --> F1[`Data Transformation`<br/>year tag]
   L --> F2[`Data Transformation`<br/>per-intersection lat/lon]
-  F1 -->|input 0| FC[`Python Computation`<br/>spatial aggregates]
-  F2 -->|input 1| FC --> FT[`Data Transformation`<br/>typecast] --> FV[`Vega-Lite`<br/>map + bar concat with brush]
+  F1 -->|input_0| FC[`Python Computation`<br/>spatial aggregates]
+  F2 -->|input_1| FC --> FT[`Data Transformation`<br/>typecast] --> FV[`Vega-Lite`<br/>map + bar concat with brush]
 ```
 
 ## Data

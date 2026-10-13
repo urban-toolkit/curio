@@ -374,7 +374,7 @@ export function NodeFromFunctionModal({
                           />
                         ) : null}
                         {state.use === "input" ? (
-                          <p className={own.parameterHint}>The node&apos;s input {inputSlot(p.name)}.</p>
+                          <p className={own.parameterHint}>The node&apos;s input_{inputSlot(p.name)}.</p>
                         ) : null}
                       </li>
                     );

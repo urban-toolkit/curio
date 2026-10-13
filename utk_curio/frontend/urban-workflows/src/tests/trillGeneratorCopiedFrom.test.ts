@@ -10,7 +10,7 @@ const node = (id: string, data: Record<string, unknown> = {}) => ({
   id,
   type: "curio.builtin/computation-analysis",
   position: { x: 0, y: 0 },
-  data: { nodeId: id, code: "return arg", ...data },
+  data: { nodeId: id, code: "return input_0", ...data },
 });
 
 describe("metadata.copiedFrom", () => {

@@ -199,10 +199,10 @@ describe("notebookToTrill", () => {
     expect(byId[dataflow.edges[0].target].title).toBe("out");
   });
 
-  it("reads several inputs as arg[k], each edge on its own circle (#160)", async () => {
-    // A node with several inputs gets them as `arg[k]`, k in circle order.
-    // The cell used to say "# multiple inputs available via arg", and its
-    // edges named no circle, so both landed on circle 0.
+  it("reads several inputs as input_k, each edge on its own circle (#160)", async () => {
+    // A node with several inputs gets them as `input_k`, k its circle.
+    // The cell used to put every input in one variable, and its edges named
+    // no circle, so both landed on circle 0.
     stubAnalyzer(
       [{ last_var: "a" }, { last_var: "b" }, { last_var: "c" }],
       [[0, 2], [1, 2]],
@@ -216,8 +216,8 @@ describe("notebookToTrill", () => {
     const byId = Object.fromEntries(dataflow.nodes.map((n) => [n.id, n]));
     const sum = dataflow.nodes.find((n) => n.title === "c")!;
     const lines = (sum.content ?? "").split("\n");
-    expect(lines).toContain("a = arg[0]");
-    expect(lines).toContain("b = arg[1]");
+    expect(lines).toContain("a = input_0");
+    expect(lines).toContain("b = input_1");
     const circles = Object.fromEntries(
       dataflow.edges.map((e) => [byId[e.source].title, e.targetHandle]),
     );

@@ -392,7 +392,7 @@ class TestVerdicts:
         assert "no external source" in ok.source["label"]
 
     def test_computation_node_without_sources_has_no_source_block(self):
-        verdict = sg.check_grounding("df = arg[0]\nreturn df.describe()", "python", _ctx())
+        verdict = sg.check_grounding("df = input_0[0]\nreturn df.describe()", "python", _ctx())
         assert verdict.ok and verdict.source is None
 
     def test_computation_node_opening_a_file_is_still_checked(self):

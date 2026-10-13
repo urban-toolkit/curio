@@ -18,12 +18,12 @@ flowchart LR
   W[`Data Loading`<br/>meteo CSV]
   S[`Data Loading`<br/>census polygons]
 
-  R -->|input 0| U[`Python Computation`<br/>UTCI]
-  W -->|input 1| U
+  R -->|input_0| U[`Python Computation`<br/>UTCI]
+  W -->|input_1| U
 
-  R -->|input 0| Z[`Python Computation`<br/>zonal stats]
-  U -->|input 1| Z
-  S -->|input 2| Z
+  R -->|input_0| Z[`Python Computation`<br/>zonal stats]
+  U -->|input_1| Z
+  S -->|input_2| Z
   Z --> T[`Data Transformation`<br/>reproject + filter] --> P[`Data Pool`]
 
   P --> M[autk-grammar<br/>thematic map + picking]

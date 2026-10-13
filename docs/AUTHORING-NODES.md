@@ -72,8 +72,10 @@ built-in nodes, with nothing extra to declare.
 ### From the canvas
 
 1. Drop a **Data Transformation** node on the canvas and write your Python in
-   the **Code** view. `arg` is the upstream node's output; whatever you `return`
-   becomes this node's output. Run it until it does what you want.
+   the **Code** view. What the edge on input circle 0 delivers is `input_0`, on
+   circle 1 `input_1`, and so on (see [Input names](USAGE.md#input-names)).
+   Whatever you `return` becomes this node's output. Run it until it does what
+   you want.
 2. Click the **cog** on the node header to open **Node settings**. Set the label,
    the port types, and the editor mode.
 3. Click **Save as package node…**, pick **New package…** as the destination

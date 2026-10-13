@@ -606,7 +606,7 @@ def test_the_shipped_dataflow_runs_the_template_with_the_shared_start_time():
         assert problems == [], problems
         assert 'time_="2025-07-06T12:00:00"' in code
         pickers = sorted(nodes[i]["content"].splitlines()[-1] for i in scenario["nodes"] if i != routing["id"])
-        assert pickers == ["return arg[0]", "return arg[1]"]
+        assert pickers == ["return input_0[0]", "return input_0[1]"]
     assert weights == EXAMPLE_WEIGHTS
     (avoid_rain, avoid_wind) = spec["scenarios"]
     copies = {nodes[i]["metadata"]["copiedFrom"][-1] for i in avoid_wind["nodes"]}
@@ -683,7 +683,7 @@ def test_the_templates_layer_chip_reads_autarks_layer_array():
                                          inputs=[{"slot": 0, "layers": [{"name": "table_osm_buildings"}]}])
     assert problems == [{
         "reference": "[!! input_0:table_osm_roads !!]",
-        "message": "[!! input_0:table_osm_roads !!]: input 0 has no layer table_osm_roads. "
+        "message": "[!! input_0:table_osm_roads !!]: input_0 has no layer table_osm_roads. "
                    "Its layers are table_osm_buildings.",
     }]
 
@@ -837,7 +837,7 @@ def test_the_node_routes_over_autarks_roads_as_the_example_does(workspace, scena
 def test_the_node_routes_over_a_roads_frame_on_its_own_as_before(workspace):
     """A roads GeoDataFrame with no layer name, as a Python node or Data
     Loading hands roads on, is the layer the template's chip reads: the node
-    routes over it as it did when its code read ``arg``, to the same routes."""
+    routes over it as it did when its code read ``input_0`` alone, to the same routes."""
     rain, wind = EXAMPLE_WEIGHTS["avoid-rain"]
     _art_id, (routes, metrics) = run_node(workspace, frame=True, mode="Custom weights", rain=rain, wind=wind)
     assert routes.crs.to_epsg() == 4326
@@ -853,8 +853,8 @@ def test_the_example_picks_each_part(workspace):
     nodes = {n["id"]: n for n in _dataflow()["nodes"]}
     pickers = {nodes[e["target"]]["content"].splitlines()[-1]: nodes[e["target"]]["content"]
                for e in _dataflow()["edges"] if nodes[e["source"]]["type"] == NODE_TYPE}
-    picked_routes = _execute(pickers["return arg[0]"], art_id, PYTHON_TYPE, "file", workspace)
-    picked_metrics = _execute(pickers["return arg[1]"], art_id, PYTHON_TYPE, "file", workspace)
+    picked_routes = _execute(pickers["return input_0[0]"], art_id, PYTHON_TYPE, "file", workspace)
+    picked_metrics = _execute(pickers["return input_0[1]"], art_id, PYTHON_TYPE, "file", workspace)
     assert picked_routes["stderr"] == "" and picked_metrics["stderr"] == ""
     assert picked_routes["output"]["dataType"] == "geodataframe", picked_routes["output"]
     assert picked_metrics["output"]["dataType"] == "dataframe", picked_metrics["output"]

@@ -169,7 +169,7 @@ describe("a tag over the cap", () => {
 
 describe("a new selection marks the node stale", () => {
   const tag: SelectionTag = { name: "picked", node: "chart", column: "osm_id", ids: [101] };
-  const code = "return arg[arg.osm_id.isin([!! selection picked !!])]";
+  const code = "return input_0[input_0.osm_id.isin([!! selection picked !!])]";
 
   test("its run key follows the ids its code names", () => {
     const before = runKeyWithShared(code, [], [], [tag]);
@@ -179,7 +179,7 @@ describe("a new selection marks the node stale", () => {
   });
 
   test("code that names no selection tag keeps the key it had", () => {
-    expect(runKeyWithShared("return arg", [], [], [tag])).toBe(runKeyWithShared("return arg", [], []));
+    expect(runKeyWithShared("return input_0", [], [], [tag])).toBe(runKeyWithShared("return input_0", [], []));
   });
 
   test("only a selection the user made counts, not a chart declaring its selects", () => {

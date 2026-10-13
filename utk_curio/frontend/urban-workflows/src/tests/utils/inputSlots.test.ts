@@ -19,7 +19,7 @@ describe('slots held per circle (growing nodes)', () => {
   ];
 
   test('the wired circles read their values in circle order', () => {
-    // Positional, as the sandbox's `arg[0]`, `arg[1]` are: the edge into
+    // By circle, as the sandbox's `input_0`, `input_1` are: the edge into
     // circle 1 is listed first, and the bundle still starts with circle 0.
     const input = [{ id: 'raster' }, { id: 'csv' }];
     expect(nodeInputFromSlots(input, wiredInputSlots([edges[1], edges[0]], 't'))).toEqual({

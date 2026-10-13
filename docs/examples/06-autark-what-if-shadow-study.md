@@ -192,7 +192,7 @@ are alike. It warns about nothing, since the three scenarios read the same pool.
 **Sunlight change** is in Difference:
 
 ```python
-# Compare Scenarios writes this code from its inputs: input 1 minus input 0,
+# Compare Scenarios writes this code from its inputs: input_1 minus input_0,
 # each under the id and the name of its scenario. It is written again when
 # they change.
 return curio_difference_scenarios([

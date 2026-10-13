@@ -2,8 +2,8 @@
  * A node that fails stops the nodes after it, in Run All and in a node's own
  * Play (#603).
  *
- * The report: a Python Computation node reading `arg['sp_units']` failed with
- * "This node received no input but its code references `arg`", although its
+ * The report: a Python Computation node reading its input's `sp_units` failed
+ * with "This node received no input but its code reads it", although its
  * input was wired. The node feeding it had failed a moment earlier in the same
  * run, and the runner went on to the next level anyway, so the downstream node
  * ran on nothing and reported a wiring problem instead of the real one.

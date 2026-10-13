@@ -85,7 +85,7 @@
         "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Pair each photo with the neighborhood it falls in, adding the neighborhood's columns. Wire Simple View to input 0 (the top circle) and Data Transformation to input 1 (the bottom circle).",
+        "goal": "Pair each photo with the neighborhood it falls in, adding the neighborhood's columns. Wire Simple View to input_0 (the top circle) and Data Transformation to input_1 (the bottom circle).",
         "metadata": {
           "keywords": []
         }
@@ -150,7 +150,7 @@
         "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Pair the second model's photos with their neighborhood. Wire Simple View to input 0 (the top circle) and Data Transformation to input 1 (the bottom circle).",
+        "goal": "Pair the second model's photos with their neighborhood. Wire Simple View to input_0 (the top circle) and Data Transformation to input_1 (the bottom circle).",
         "metadata": {
           "keywords": []
         }

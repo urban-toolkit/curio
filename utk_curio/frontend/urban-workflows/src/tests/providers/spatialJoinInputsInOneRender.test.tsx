@@ -136,7 +136,7 @@ beforeAll(() => {
     category: 'data',
     label: 'Spatial Join',
     icon: faCircle,
-    // As the shipped manifest declares them: input 0 and input 1, one edge each.
+    // As the shipped manifest declares them: input_0 and input_1, one edge each.
     inputPorts: [
       { types: [SupportedType.GEODATAFRAME], cardinality: '1' },
       { types: [SupportedType.GEODATAFRAME], cardinality: '1' },
@@ -249,7 +249,7 @@ async function addEdge(source: string, target: string, targetHandle: string) {
   await flush();
 }
 
-/** A join with *points* wired to input 0, its blue circle, and *polygons* to input 1, its green one. */
+/** A join with *points* wired to input_0, its blue circle, and *polygons* to input_1, its green one. */
 async function openJoin(points: { id: string; type: string }, polygons: { id: string; type: string }) {
   render(
     <ReactFlowProvider>
@@ -379,9 +379,9 @@ describe('a Spatial Join whose two inputs land in one render', () => {
 });
 
 describe("a Spatial Join's circles keep their inputs (#576)", () => {
-  test('deleting input 0 leaves input 1 on its own circle', async () => {
+  test('deleting input_0 leaves input_1 on its own circle', async () => {
     // A growing node closes its circles up when an edge goes; a node with
-    // several ports must not, or input 1 would become the join's left side.
+    // several ports must not, or input_1 would become the join's left side.
     await openJoin(ROUTE.points, ROUTE.polygons);
     const doomed = api.edges.filter((e: any) => e.targetHandle === 'in');
     await act(async () => {

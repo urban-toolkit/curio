@@ -21,7 +21,7 @@ function node(id: string, extra: Record<string, unknown> = {}) {
     id,
     type: "__curioUniversalNode",
     position: { x: 0, y: 0 },
-    data: { nodeId: id, nodeType: NodeType.COMPUTATION_ANALYSIS, code: "return arg", ...extra },
+    data: { nodeId: id, nodeType: NodeType.COMPUTATION_ANALYSIS, code: "return input_0", ...extra },
   } as any;
 }
 
@@ -71,7 +71,7 @@ describe("scenarioParts", () => {
   test("a context reached only through a shared tag is found, though no edge leads from it", () => {
     const withTag = [
       ...nodes.filter((n) => n.id !== "a"),
-      node("a", { code: "return arg * [!! @season !!]" }),
+      node("a", { code: "return input_0 * [!! @season !!]" }),
       parameter("season-node", "season"),
       parameter("unused-node", "height"),
     ];

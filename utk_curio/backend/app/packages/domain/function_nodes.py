@@ -6,7 +6,7 @@ parameters' names, kinds, defaults and annotations. Each parameter then gets
 one use: a widget, a fixed value, one of the node's inputs, or its own
 default. :func:`template_code` writes the template's code, which imports the
 function and returns its call, with ``[!! name !!]`` for a widget and
-``[!! input k !!]`` for an input, the references a node's code holds (#662).
+``[!! input_k !!]`` for an input, the references a node's code holds (#662).
 """
 
 from __future__ import annotations
@@ -101,15 +101,15 @@ class FunctionSignature:
                 "parameters": [p.to_json() for p in self.parameters]}
 
 
-def _parameter(arg: ast.arg, kind: str, default: ast.expr | None) -> Parameter:
-    annotation = ast.unparse(arg.annotation) if arg.annotation is not None else None
+def _parameter(node_arg: ast.arg, kind: str, default: ast.expr | None) -> Parameter:
+    annotation = ast.unparse(node_arg.annotation) if node_arg.annotation is not None else None
     if default is None:
-        return Parameter(arg.arg, kind, annotation)
+        return Parameter(node_arg.arg, kind, annotation)
     try:
         value, literal = ast.literal_eval(default), True
     except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
         value, literal = None, False
-    return Parameter(arg.arg, kind, annotation, True, ast.unparse(default), value, literal)
+    return Parameter(node_arg.arg, kind, annotation, True, ast.unparse(default), value, literal)
 
 
 def _doc(node: ast.AST) -> str:
@@ -132,10 +132,10 @@ def _signature(node: ast.FunctionDef | ast.AsyncFunctionDef) -> FunctionSignatur
     positional = [*args.posonlyargs, *args.args]
     defaults = [None] * (len(positional) - len(args.defaults)) + list(args.defaults)
     params = [
-        _parameter(arg, POSITIONAL_ONLY if i < len(args.posonlyargs) else POSITIONAL, default)
-        for i, (arg, default) in enumerate(zip(positional, defaults))
+        _parameter(node_arg, POSITIONAL_ONLY if i < len(args.posonlyargs) else POSITIONAL, default)
+        for i, (node_arg, default) in enumerate(zip(positional, defaults))
     ]
-    params += [_parameter(arg, KEYWORD_ONLY, d) for arg, d in zip(args.kwonlyargs, args.kw_defaults)]
+    params += [_parameter(node_arg, KEYWORD_ONLY, d) for node_arg, d in zip(args.kwonlyargs, args.kw_defaults)]
     return FunctionSignature(node.name, tuple(params), _doc(node), problem)
 
 

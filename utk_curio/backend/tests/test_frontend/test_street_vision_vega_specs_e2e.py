@@ -152,7 +152,7 @@ def _spec() -> dict:
                       _shipped_spec(SECOND_BARS_NODE)),
             ],
             "edges": [
-                # The photos on input 0, the neighborhoods on input 1 (#576).
+                # The photos on input_0, the neighborhoods on input_1 (#576).
                 _edge(POINTS_ID, JOIN_ID, "in"),
                 _edge(POLYGONS_ID, JOIN_ID, "in_1"),
                 _edge(JOIN_ID, MAP_ID, "in"),
@@ -236,7 +236,7 @@ def test_the_street_vision_vega_specs_draw_from_a_spatial_join(
     # one of the 61 points matched.
     status = node_locator(page, JOIN_ID).locator("[data-curio-spatial-join-status]")
     status.wait_for(state="visible", timeout=30000)
-    assert status.inner_text() == "61 pairs: 61 of 61 input 0 rows matched.", status.inner_text()
+    assert status.inner_text() == "61 pairs: 61 of 61 input_0 rows matched.", status.inner_text()
 
     # The map: a geoshape layer over the joined points, coloured by the
     # per-polygon dominant class, which the spec works out itself since #576.

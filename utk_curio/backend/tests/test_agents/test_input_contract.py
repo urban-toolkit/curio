@@ -1,12 +1,12 @@
-"""dev/128: the shape of `arg`, stated and enforced.
+"""dev/128: the shape of a node's inputs, stated and enforced.
 
-The owner's sentence is the specification — *"The merge node always outputs a
-list called `arg`, where each item in this list corresponds to the linked nodes
-in the order of their connections to the input handles of the merge node. Your
-attempts always used `arg` alone; when I changed it to `arg[0]`, it worked
-correctly."*, and the graph below is theirs, from dataflow `623b6620`, with
-the Merge Flow gone (#662): both loaders now feed the analysis node straight,
-each on its own input circle, and its code reads them through input chips.
+The owner's dataflow is the specification: two loaders fed a merge, and the
+code generated for the node after it read the merge's list of inputs as one
+frame until the owner indexed it by hand. The graph below is theirs, from
+dataflow `623b6620`, with the Merge Flow gone (#662): both loaders feed the
+analysis node straight, each on its own input circle, which its code reads as
+``input_0`` and ``input_1``. Through a pool, the node's one circle holds both
+as a list, and that is where reading the list as a frame is refused.
 """
 
 from __future__ import annotations
@@ -31,8 +31,9 @@ MULTI_INPUT_SPEC = {
     }
 }
 
-# The owner's own code, before their edit.
-ARG_AS_A_FRAME = """import geopandas as gpd
+# The owner's own code, before their edit: the list on the node's one circle
+# read as a frame.
+LIST_AS_A_FRAME = """import geopandas as gpd
 
 gdf = input_0
 
@@ -45,12 +46,12 @@ return gdf
 
 
 class TestArgShape:
-    def test_a_node_with_several_inputs_is_a_list_in_circle_order(self):
+    def test_a_node_with_several_inputs_reads_each_in_circle_order(self):
         shape = ic.arg_shape(MULTI_INPUT_SPEC, "a")
-        assert shape["kind"] == ic.KIND_LIST
+        assert shape["kind"] == ic.KIND_SEVERAL
         assert shape["length"] == 2
-        assert shape["via"] == "a"  # the node's own circles, no node between
-        assert [s["argIndex"] for s in shape["slots"]] == [0, 1]
+        assert "via" not in shape  # the node's own circles, no node between
+        assert [s["circle"] for s in shape["slots"]] == [0, 1]
         assert [s["goal"] for s in shape["slots"]] == [
             "Chicago Community Boundaries", "Population Data",
         ]
@@ -115,16 +116,17 @@ class TestArgShape:
             ],
         }}
         shape = ic.arg_shape(spec, "a")
-        assert shape["kind"] == ic.KIND_LIST and shape["length"] == 2
+        assert shape["kind"] == ic.KIND_GATHERED and shape["length"] == 2
         assert shape["via"] == "pool"
         assert [s["upstreamNodeId"] for s in shape["slots"]] == ["b", "p"]
         # The node has one input, the pool's list: its items are read by index.
+        assert [s["argIndex"] for s in shape["slots"]] == [0, 1]
         assert [s["chip"] for s in shape["slots"]] == ["[!! input_0 !!][0]", "[!! input_0 !!][1]"]
 
     def test_a_slot_is_read_by_the_chip_of_its_circle_not_its_position(self):
         # A plan can wire circles with a gap (`in`, `in_3`). The chip names the
-        # circle, so the second input is `[!! input 3 !!]`, which the run turns
-        # into arg[1]; `[!! input 1 !!]` would name a circle with no edge.
+        # circle, so the second input is `[!! input_3 !!]`, which runs as
+        # input_3; `[!! input_1 !!]` would name a circle with no edge.
         spec = {"dataflow": {
             "nodes": MULTI_INPUT_SPEC["dataflow"]["nodes"],
             "edges": [
@@ -134,15 +136,13 @@ class TestArgShape:
         }}
         shape = ic.arg_shape(spec, "a")
         assert shape["circles"] == [0, 3]
-        assert [(s["argIndex"], s["circle"], s["chip"]) for s in shape["slots"]] == [
-            (0, 0, "[!! input_0 !!]"), (1, 3, "[!! input_3 !!]"),
+        assert [(s["circle"], s["chip"]) for s in shape["slots"]] == [
+            (0, "[!! input_0 !!]"), (3, "[!! input_3 !!]"),
         ]
         assert "[!! input_3 !!] = Population Data" in ic.describe(shape)
+        # Each circle holds one value, so any of its attributes may be read.
         assert ic.check("gdf = [!! input_3 !!]\nreturn gdf.crs", shape) is None
-        violation = ic.check("pop = [!! input_3 !!]\nreturn input_0.crs", shape)
-        assert violation == {"attribute": "crs", "name": "input_0", "line": 2}
-        refusal = ic.refusal_text(shape, violation)
-        assert "([!! input_0 !!], [!! input_3 !!], ...)" in refusal
+        assert ic.check("pop = [!! input_3 !!]\nreturn input_0.crs", shape) is None
 
     def test_one_input_on_a_later_circle_is_read_by_that_circles_chip(self):
         spec = {"dataflow": {
@@ -150,20 +150,23 @@ class TestArgShape:
             "edges": [{"id": "e0", "source": "p", "target": "a", "targetHandle": "in_1"}],
         }}
         assert ic.describe(ic.arg_shape(spec, "a")) == (
-            "[!! input_1 !!] (arg) IS the value Population Data returned"
+            "[!! input_1 !!] IS the value Population Data returned"
         )
 
     def test_describe_reads_as_a_sentence(self):
         line = ic.describe(ic.arg_shape(MULTI_INPUT_SPEC, "a"))
-        assert line.startswith("arg is a list of 2 inputs: ")
+        assert line.startswith("2 inputs, one per circle: ")
         assert "[!! input_0 !!] = Chicago Community Boundaries" in line
         assert "[!! input_1 !!] = Population Data" in line
+        gathered = ic.describe(ic.arg_shape(POOL_SPEC, "a"))
+        assert gathered.startswith("input_0 is a list of 2 inputs: ")
+        assert "[!! input_0 !!][1] = Population Data" in gathered
         single = {"dataflow": {
             "nodes": MULTI_INPUT_SPEC["dataflow"]["nodes"],
             "edges": [{"id": "e", "source": "b", "target": "a", "targetHandle": "in"}],
         }}
         assert ic.describe(ic.arg_shape(single, "a")) == (
-            "[!! input_0 !!] (arg) IS the value Chicago Community Boundaries returned"
+            "[!! input_0 !!] IS the value Chicago Community Boundaries returned"
         )
         assert ic.describe(ic.arg_shape(MULTI_INPUT_SPEC, "b")) == "this node has no input"
         assert ic.describe(None) == ""
@@ -185,8 +188,8 @@ class TestTheKinds:
     """A node reads each input circle as its own variable, ``input_k``. Its
     inputs are ``single`` (one circle), ``several`` (several circles, one value
     each) or ``gathered`` (one circle that a pool hands several edges' values
-    on, as a list). ``list``, the kind of the one ``arg`` there once was, is
-    refused."""
+    on, as a list). ``list``, the kind of the one input variable a node once
+    had, is refused."""
 
     def test_the_kinds_are_single_several_gathered_and_none(self):
         assert (ic.KIND_SINGLE, ic.KIND_SEVERAL, ic.KIND_GATHERED, ic.KIND_NONE) == (
@@ -242,7 +245,7 @@ class TestTheKinds:
         text = ic.refusal_text(shape, ic.check("return input_0.crs", shape))
         assert "`input_0` is a LIST of them" in text
         assert "[!! input_0 !!][0] = Chicago Community Boundaries" in text
-        assert "input_0" not in text
+        assert "arg" not in text
 
     def test_list_is_refused(self):
         listed = {"kind": "list", "length": 2, "circles": [0], "slots": []}
@@ -290,33 +293,35 @@ class TestWithSchemas:
 
 
 class TestCheck:
+    """Only a gathered input is judged: its one circle holds a list."""
+
     def _shape(self):
-        return ic.arg_shape(MULTI_INPUT_SPEC, "a")
+        return ic.arg_shape(POOL_SPEC, "a")
 
     def test_the_owners_code_is_refused_and_the_refusal_names_the_slots(self):
-        violation = ic.check(ARG_AS_A_FRAME, self._shape())
+        violation = ic.check(LIST_AS_A_FRAME, self._shape())
         assert violation == {"attribute": "crs", "name": "gdf", "line": 5}
         text = ic.refusal_text(ic.with_schemas(self._shape(), TestWithSchemas.ROWS), violation)
         assert text.startswith(
-            "input contract refused: this node has 2 inputs, so `arg` is a LIST "
-            "of them in circle order: "
+            "input contract refused: 2 inputs reach this node on one circle, so `input_0` is a LIST "
+            "of them in order: "
         )
-        assert "[!! input_0 !!] = Chicago Community Boundaries" in text
-        assert "[!! input_1 !!] = Population Data" in text
+        assert "[!! input_0 !!][0] = Chicago Community Boundaries" in text
+        assert "[!! input_0 !!][1] = Population Data" in text
         assert "community" in text  # the columns of the slot it should have used
         assert "Your code used `gdf.crs (line 5)`: a list has no attribute 'crs'" in text
-        assert "Read the input you need through its chip ([!! input_0 !!], [!! input_1 !!], ...)" in text
-        assert "`arg` alone is the list itself" in text
+        assert "Read the input you need by its index ([!! input_0 !!][0], [!! input_0 !!][1], ...)" in text
+        assert "`input_0` alone is the list itself" in text
         assert "merge" not in text.lower()
 
-    def test_direct_attribute_access_on_arg_is_refused(self):
+    def test_direct_attribute_access_on_the_list_is_refused(self):
         for code in ("return input_0.crs", "x = input_0.merge(y)", "print(input_0.columns)"):
             assert ic.check(code, self._shape()), code
 
     def test_legitimate_list_uses_are_never_refused(self):
         for code in (
-            "gdf = arg[0]\nreturn gdf.to_crs(3395)",
-            "return arg[0].crs",  # an attribute of a SUBSCRIPT
+            "gdf = input_0[0]\nreturn gdf.to_crs(3395)",
+            "return input_0[0].crs",  # an attribute of a SUBSCRIPT
             "for frame in input_0:\n    print(frame.shape)",
             "return len(input_0)",
             "import pandas as pd\nreturn pd.concat(input_0)",
@@ -325,51 +330,56 @@ class TestCheck:
         ):
             assert ic.check(code, self._shape()) is None, code
 
-    def test_a_single_shape_refuses_nothing(self):
+    def test_a_single_or_several_shape_refuses_nothing(self):
         single = {"kind": ic.KIND_SINGLE, "nodeId": "b", "goal": "Boundaries"}
         assert ic.check("return input_0.crs", single) is None
-        assert ic.check("return arg[0]", single) is None
+        assert ic.check("return input_0[0]", single) is None
+        several = ic.arg_shape(MULTI_INPUT_SPEC, "a")
+        assert ic.check(LIST_AS_A_FRAME, several) is None
+        assert ic.check("return input_1.merge(input_0)", several) is None
 
     def test_a_rebound_name_is_still_the_list(self):
         code = "gdf = input_0\nother = gdf\nreturn other.to_crs(3395)"
         assert ic.check(code, self._shape())["attribute"] == "to_crs"
 
     def test_a_name_bound_to_a_slot_is_not_the_list(self):
-        code = "gdf = arg[1]\nreturn gdf.to_crs(3395)"
+        code = "gdf = input_0[1]\nreturn gdf.to_crs(3395)"
         assert ic.check(code, self._shape()) is None
 
     def test_a_syntax_error_is_not_this_gates_business(self):
         assert ic.check("def broken(:\n  pass", self._shape()) is None
 
-    def test_code_without_arg_cannot_violate_a_contract_about_it(self):
+    def test_code_without_the_input_cannot_violate_a_contract_about_it(self):
         assert ic.check("import pandas as pd\nreturn pd.DataFrame()", self._shape()) is None
         assert ic.check("", self._shape()) is None
         assert ic.check(None, self._shape()) is None
 
-    def test_code_reading_its_inputs_through_chips_is_never_refused(self):
-        # The way the prompts teach it: each chip becomes arg[k] at run time,
-        # an attribute of a SUBSCRIPT.
+    def test_code_reading_its_slots_through_chips_is_never_refused(self):
+        # The way the prompts teach it: each slot's chip reads one item of the
+        # list, an attribute of a SUBSCRIPT.
         for code in (
-            "gdf = [!! input_0 !!]\nif gdf.crs is None:\n    gdf = gdf.set_crs(4326)\nreturn gdf",
-            "return [!! input_1 !!].merge([!! input_0 !!], on=[!! input_0.community !!])",
-            "frames = [[!! input_0 !!], [!! input_1 !!]]\nreturn len(input_0), frames[0].crs",
+            "gdf = [!! input_0 !!][0]\nif gdf.crs is None:\n    gdf = gdf.set_crs(4326)\nreturn gdf",
+            "return [!! input_0 !!][1].merge([!! input_0 !!][0], on='community')",
+            "frames = [[!! input_0 !!][0], [!! input_0 !!][1]]\nreturn len(input_0), frames[0].crs",
         ):
             assert ic.check(code, self._shape()) is None, code
 
     def test_chips_do_not_hide_an_attribute_of_the_list(self):
         # The code is judged as it runs: chips resolved, it still parses, and
-        # `arg.crs` beside them is the owner's mistake again.
-        code = "gdf = [!! input_0 !!]\npop = [!! input_1 !!]\nreturn input_0.crs"
+        # `input_0.crs` beside them is the owner's mistake again.
+        code = "first = [!! input_0 !!][0]\npop = [!! input_0 !!][1]\nreturn input_0.crs"
         assert ic.check(code, self._shape()) == {"attribute": "crs", "name": "input_0", "line": 3}
-        rebound = "frames = input_0\nfirst = [!! input_0 !!]\nreturn frames.to_crs(3395)"
+        rebound = "frames = input_0\nfirst = [!! input_0 !!][0]\nreturn frames.to_crs(3395)"
         assert ic.check(rebound, self._shape())["attribute"] == "to_crs"
+        through_its_chip = "gdf = [!! input_0 !!]\nreturn gdf.crs"
+        assert ic.check(through_its_chip, self._shape()) == {"attribute": "crs", "name": "gdf", "line": 2}
 
     def test_widget_references_do_not_turn_the_gate_off(self):
         # #662: a widget or shared tag is a value when the node runs. Left in
-        # place, the code did not parse and the gate let `arg.crs` through.
+        # place, the code did not parse and the gate let the list's `.crs` through.
         code = "factor = [!! factor !!]\nseason = [!! @season !!]\nreturn input_0.crs"
         assert ic.check(code, self._shape()) == {"attribute": "crs", "name": "input_0", "line": 3}
-        fine = "gdf = [!! input_0 !!]\ngdf['h'] = gdf['h'] * [!! factor !!]\nreturn gdf"
+        fine = "gdf = [!! input_0 !!][0]\ngdf['h'] = gdf['h'] * [!! factor !!]\nreturn gdf"
         assert ic.check(fine, self._shape()) is None
 
 
@@ -385,13 +395,16 @@ class TestTheGateInTheLoop:
                  "content": "return 1"},
                 {"id": "p", "type": "curio.builtin/data-loading", "goal": "Population",
                  "content": "return 2"},
+                {"id": "pool", "type": "curio.builtin/data-pool", "goal": "Pool", "content": ""},
                 {"id": "t", "type": "curio.builtin/data-transformation", "goal": "Densities",
                  "content": ""},
             ],
-            # Both loaders straight into the node, one circle each (#662).
+            # Both loaders into a pool, the pool into the node: the node's one
+            # circle holds both, as a list.
             "edges": [
-                {"id": "u1", "source": "b", "target": "t", "targetHandle": "in"},
-                {"id": "u2", "source": "p", "target": "t", "targetHandle": "in_1"},
+                {"id": "u1", "source": "b", "target": "pool", "targetHandle": "in"},
+                {"id": "u2", "source": "p", "target": "pool", "targetHandle": "in_1"},
+                {"id": "u3", "source": "pool", "target": "t", "targetHandle": "in"},
             ],
         }
     }
@@ -399,17 +412,17 @@ class TestTheGateInTheLoop:
     def _rounds(self, app, **kw):
         from utk_curio.backend.tests.test_agents.test_verified_rounds import _Exec, _rounds
 
-        node = self.SPEC["dataflow"]["nodes"][2]
+        node = self.SPEC["dataflow"]["nodes"][3]
         return _rounds(app, node, exec_fn=kw.pop("exec_fn", None) or _Exec(),
                        spec=self.SPEC, **kw)
 
-    def test_arg_as_a_frame_is_refused_without_running_and_the_fix_passes(self, app, tmp_curio):
+    def test_a_list_read_as_a_frame_is_refused_without_running_and_the_fix_passes(self, app, tmp_curio):
         from utk_curio.backend.tests.test_agents.test_verified_rounds import _Exec
 
         exec_fn = _Exec()
         events, outcome, inputs = self._rounds(
             app,
-            replies=[ARG_AS_A_FRAME, "gdf = [!! input_0 !!]\nreturn gdf.to_crs(3395)"],
+            replies=[LIST_AS_A_FRAME, "gdf = [!! input_0 !!][0]\nreturn gdf.to_crs(3395)"],
             exec_fn=exec_fn,
         )
         assert outcome["verdict"] == "pass"
@@ -421,27 +434,48 @@ class TestTheGateInTheLoop:
         ran = [c["code"] for c in exec_fn.calls]
         assert not any("set_crs" in code for code in ran), ran
         assert sum("to_crs(3395)" in code for code in ran) == 1
-        # The fix read circle 0 through its chip, and ran as arg[0].
-        assert any("gdf = arg[0]" in code for code in ran), ran
+        # The fix read the first item through its slot's chip, and ran as input_0[0].
+        assert any("gdf = input_0[0]" in code for code in ran), ran
         assert not any("[!! input" in code for code in ran), ran
-        # The refused round kept its code, so the trail shows arg, then the chip.
+        # The refused round kept its code, so the trail shows the list, then the chip.
         assert outcome["attempts"][0]["code"].startswith("import geopandas")
         # And the correction was told exactly what was wrong.
         error = inputs[1]["validationError"]
-        assert "this node has 2 inputs, so `arg` is a LIST of them in circle order" in error
-        assert "[!! input_0 !!] = Boundaries" in error
-        assert "[!! input_1 !!] = Population" in error
+        assert "2 inputs reach this node on one circle, so `input_0` is a LIST of them in order" in error
+        assert "[!! input_0 !!][0] = Boundaries" in error
+        assert "[!! input_0 !!][1] = Population" in error
 
     def test_the_contract_rides_the_first_generation_and_every_correction(self, app, tmp_curio):
         events, outcome, inputs = self._rounds(
-            app, replies=[ARG_AS_A_FRAME, "gdf = [!! input_0 !!]\nreturn gdf"],
+            app, replies=[LIST_AS_A_FRAME, "gdf = [!! input_0 !!][0]\nreturn gdf"],
         )
         assert len(inputs) == 2
         for frame in inputs:
             contract = frame["inputContract"]
-            assert contract["kind"] == "list" and contract["length"] == 2
+            assert contract["kind"] == "gathered" and contract["length"] == 2
             assert [s["argIndex"] for s in contract["slots"]] == [0, 1]
             assert [s["goal"] for s in contract["slots"]] == ["Boundaries", "Population"]
+
+    def test_a_node_with_several_circles_reads_each_and_is_never_gated(self, app, tmp_curio):
+        from utk_curio.backend.tests.test_agents.test_verified_rounds import _Exec, _rounds
+
+        nodes = [n for n in self.SPEC["dataflow"]["nodes"] if n["id"] != "pool"]
+        spec = {"dataflow": {
+            "name": "wf", "task": "compare neighborhoods", "nodes": nodes,
+            # Both loaders straight into the node, one circle each (#662).
+            "edges": [
+                {"id": "u1", "source": "b", "target": "t", "targetHandle": "in"},
+                {"id": "u2", "source": "p", "target": "t", "targetHandle": "in_1"},
+            ],
+        }}
+        events, outcome, inputs = _rounds(
+            app, nodes[2], replies=["return input_0.merge(input_1)"], exec_fn=_Exec(), spec=spec,
+        )
+        assert outcome["verdict"] == "pass"
+        assert [a["kind"] for a in outcome["attempts"]] == ["executed"]
+        contract = inputs[0]["inputContract"]
+        assert contract["kind"] == "several" and contract["circles"] == [0, 1]
+        assert [s["chip"] for s in contract["slots"]] == ["[!! input_0 !!]", "[!! input_1 !!]"]
 
     def test_a_node_with_a_single_upstream_is_never_gated(self, app, tmp_curio):
         from utk_curio.backend.tests.test_agents.test_verified_rounds import _Exec, _rounds

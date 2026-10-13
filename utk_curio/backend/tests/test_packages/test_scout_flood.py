@@ -274,9 +274,12 @@ def _scout_classes() -> dict:
 
 
 def _function_body(code: str) -> str:
-    """A node's code as the sandbox runs it, the body of ``userCode``, made a
-    module body for ast."""
-    return "def userCode(arg):\n" + textwrap.indent(code, "    ")
+    """A node's code as the sandbox runs it, the body of ``userCode`` under its
+    header, made a module body for ast."""
+    from utk_curio.sandbox.util.input_names import user_code_header
+
+    body = textwrap.indent(code, "    ")
+    return f"{user_code_header(body)}\n{body}"
 
 
 def test_the_dataflow_is_made_of_curios_own_nodes():

@@ -57,7 +57,7 @@ class TestParseRequest:
         assert req.mode == "create"
         assert req.target == "ai.test.demo@1"
         assert req.base_digest is None
-        assert req.files["sources/demo-kind.py"] == b"return arg\n"
+        assert req.files["sources/demo-kind.py"] == b"return input_0\n"
         assert req.behavior_entries == ("sources/note.tsx",)
         assert req.dependencies["python"] == {"pandas": ">=2.0"}
         assert req.preview_templates == ("note-kind",)

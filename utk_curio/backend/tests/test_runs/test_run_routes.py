@@ -22,7 +22,7 @@ def _auth(token):
 
 def _node(node_id, node_type=CODE, **fields):
     # The marker names the node in the sandbox request, which carries no id.
-    return {"id": node_id, "type": node_type, "content": f"# node {node_id}\nreturn arg", **fields}
+    return {"id": node_id, "type": node_type, "content": f"# node {node_id}\nreturn input_0", **fields}
 
 
 def _edge(source, target):

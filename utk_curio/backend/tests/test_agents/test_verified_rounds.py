@@ -77,7 +77,7 @@ def _rounds(app, node, *, replies, exec_fn, start_from_current=False, spec=None,
 
     def _delegate(inputs):
         delegate_inputs.append(inputs)
-        reply = script.pop(0) if script else "df = arg[0]\nreturn df"
+        reply = script.pop(0) if script else "df = input_0[0]\nreturn df"
         return "ok", reply, {"executionId": f"child-{len(delegate_inputs)}"}
 
     with app.test_request_context():
@@ -94,7 +94,7 @@ def _rounds(app, node, *, replies, exec_fn, start_from_current=False, spec=None,
 
 class TestVerifiedRounds:
     def test_start_from_current_passing_content_generates_nothing(self, app, tmp_curio):
-        node = {"id": "n1", "type": CA, "goal": "stats", "content": "df = arg[0]\nreturn df.describe()"}
+        node = {"id": "n1", "type": CA, "goal": "stats", "content": "df = input_0[0]\nreturn df.describe()"}
         exec_fn = _Exec()
         events, outcome, inputs = _rounds(app, node, replies=[], exec_fn=exec_fn, start_from_current=True)
         assert outcome["verdict"] == "pass" and outcome["rounds"] == 1
@@ -108,7 +108,7 @@ class TestVerifiedRounds:
         node = {"id": "n1", "type": CA, "goal": "stats", "content": "bad_current()\nreturn 1"}
         exec_fn = _Exec(fail_markers=("bad_current",))
         events, outcome, inputs = _rounds(
-            app, node, replies=["df = arg[0]\nreturn df"], exec_fn=exec_fn, start_from_current=True,
+            app, node, replies=["df = input_0[0]\nreturn df"], exec_fn=exec_fn, start_from_current=True,
         )
         assert outcome["verdict"] == "pass" and outcome["rounds"] == 2
         assert len(inputs) == 1
@@ -157,7 +157,7 @@ class TestVerifiedRounds:
         exec_fn = _Exec(fail_markers=("raise_for_status",),
                         stderr="requests.exceptions.HTTPError: 400 Client Error: Bad Request for url")
         events, outcome, inputs = _rounds(
-            app, node, replies=[code, "df = arg[0]\nreturn df"], exec_fn=exec_fn,
+            app, node, replies=[code, "df = input_0[0]\nreturn df"], exec_fn=exec_fn,
         )
         assert outcome["verdict"] == "pass" and outcome["rounds"] == 2
         evidence = inputs[1]["urlEvidence"]
@@ -317,7 +317,7 @@ class TestFieldFixes20260908:
     def test_prose_decline_predicate(self):
         assert rounds._is_prose_decline("No verified URL covers ACS indicators.")
         assert not rounds._is_prose_decline("df = pd.read_csv('x.csv')\nreturn df")
-        assert not rounds._is_prose_decline("return arg[0]")
+        assert not rounds._is_prose_decline("return input_0[0]")
         assert not rounds._is_prose_decline("import pandas as pd")
         assert not rounds._is_prose_decline("")
         assert not rounds._is_prose_decline("x " * 300)
@@ -600,7 +600,7 @@ class TestSameBatchReuse:
         node_t, spec = self._chain()
         exec_fn = _Exec()
         events, outcome, inputs = _rounds(
-            app, node_t, replies=["df = arg[0]\nreturn df.describe()"], exec_fn=exec_fn, spec=spec,
+            app, node_t, replies=["df = input_0[0]\nreturn df.describe()"], exec_fn=exec_fn, spec=spec,
             prior_outputs_fn=lambda: {"a": {"path": "art-a", "dataType": "dataframe"}},
         )
         assert outcome["verdict"] == "pass" and outcome["rounds"] == 1
@@ -621,7 +621,7 @@ class TestSameBatchReuse:
             return {"stdout": [], "stderr": "", "output": {"path": "art-x", "dataType": "dataframe"}}
 
         events, outcome, inputs = _rounds(
-            app, node_t, replies=["df = arg[0]\nreturn df.describe()"], exec_fn=_exec, spec=spec,
+            app, node_t, replies=["df = input_0[0]\nreturn df.describe()"], exec_fn=_exec, spec=spec,
             prior_outputs_fn=lambda: {"a": {"path": "art-gone", "dataType": "dataframe"}},
         )
         assert outcome["verdict"] == "pass" and outcome["rounds"] == 1  # not a round
@@ -636,7 +636,7 @@ class TestSameBatchReuse:
         node_t, spec = self._chain()
         exec_fn = _Exec(fail_markers=("bad_stats",), stderr="NameError: bad_stats")
         events, outcome, inputs = _rounds(
-            app, node_t, replies=["bad_stats()", "df = arg[0]\nreturn df.describe()"], exec_fn=exec_fn, spec=spec,
+            app, node_t, replies=["bad_stats()", "df = input_0[0]\nreturn df.describe()"], exec_fn=exec_fn, spec=spec,
             prior_outputs_fn=lambda: {"a": {"path": "art-a", "dataType": "dataframe"}},
         )
         assert outcome["verdict"] == "pass" and outcome["rounds"] == 2
@@ -655,7 +655,7 @@ class TestEmptyUpstreamWaits:
         spec = {"dataflow": {"nodes": [{"id": "a", "type": DL, "goal": "load", "content": ""}, node_t],
                              "edges": [{"id": "e1", "source": "a", "target": "t"}], "name": "wf", "task": "t"}}
         exec_fn = _Exec()
-        events, outcome, inputs = _rounds(app, node_t, replies=["df = arg[0]\nreturn df"], exec_fn=exec_fn, spec=spec)
+        events, outcome, inputs = _rounds(app, node_t, replies=["df = input_0[0]\nreturn df"], exec_fn=exec_fn, spec=spec)
         assert outcome["verdict"] == "fail" and outcome["rounds"] == 1 and len(inputs) == 1
         assert outcome["evidence"]["kind"] == "upstream-blocker" and outcome["evidence"]["upstreamEmpty"] is True
         assert exec_fn.calls == []  # nothing ran
@@ -843,7 +843,7 @@ class TestVerifiedSolve:
         plan = {"goal": "heat by tract", "nodes": nodes, "edges": edges}
         return "Plan.\n```curio.v1\n" + json.dumps({"dataflowPlan": plan}) + "\n```"
 
-    def _setup(self, client, user, token, monkeypatch, *, dl_replies, ca_reply="df = arg[0]\nreturn df.describe()",
+    def _setup(self, client, user, token, monkeypatch, *, dl_replies, ca_reply="df = input_0[0]\nreturn df.describe()",
                with_stats=True, exec_outcomes=None, exec_raises=None, ca_replies=None, ca_gate=None):
         """Applied plan with a data-loading node; scripted children keyed by
         the delegated frame; a fake sandbox keyed by content markers."""
@@ -1086,7 +1086,7 @@ class TestVerifiedSolve:
         user, token = user_and_token
         ctx = self._setup(
             client, user, token, monkeypatch, dl_replies=[self.LOADER],
-            ca_replies=["bad_stats(arg[0])\nreturn 1", "df = arg[0]\nreturn df.describe()"],
+            ca_replies=["bad_stats(input_0[0])\nreturn 1", "df = input_0[0]\nreturn df.describe()"],
             exec_outcomes={"bad_stats": "Traceback: NameError: bad_stats"},
         )
         events = self._stream(client, token, ctx)
@@ -1380,7 +1380,7 @@ class TestSolveNode:
             if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
-            return script[min(len(calls) - 1, len(script) - 1)] if script else "df = arg[0]\nreturn df"
+            return script[min(len(calls) - 1, len(script) - 1)] if script else "df = input_0[0]\nreturn df"
 
         monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         payloads: list = []
@@ -1749,7 +1749,7 @@ class TestAttemptTrailCarriesTheCodeAndTheBound:
                              "edges": [{"id": "e1", "source": "a", "target": "t"}],
                              "name": "wf", "task": "t"}}
         events, outcome, inputs = _rounds(
-            app, node_t, replies=["df = arg[0]\nreturn df"], exec_fn=_Exec(), spec=spec,
+            app, node_t, replies=["df = input_0[0]\nreturn df"], exec_fn=_Exec(), spec=spec,
         )
         assert outcome["stoppedBy"] == "blocker"
 

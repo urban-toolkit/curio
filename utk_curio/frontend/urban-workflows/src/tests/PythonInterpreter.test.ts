@@ -72,7 +72,7 @@ describe('PythonInterpreter', () => {
         expect(options.headers.Authorization).toBe('Bearer test-token');
     });
 
-    test('indents the user code so it lands inside def userCode(arg)', async () => {
+    test('indents the user code so it lands inside the userCode function', async () => {
         (global.fetch as jest.Mock).mockResolvedValueOnce({
             ok: true,
             json: async () => ({
@@ -98,7 +98,7 @@ describe('PythonInterpreter', () => {
 
         const [, options] = (global.fetch as jest.Mock).mock.calls[0];
         const body = JSON.parse(options.body);
-        // The sandbox wraps this as `def userCode(arg):\n<code>`, so every
+        // The sandbox wraps this as `def userCode(...):\n<code>`, so every
         // line has to arrive already indented.
         expect(body.code).toBe('    x = 1\n    return x\n');
     });

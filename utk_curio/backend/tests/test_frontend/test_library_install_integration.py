@@ -48,18 +48,17 @@ from .utils import api_json, load_artifact_as_dict, require_user_auth
 
 LIB = "inflection"
 
-# The sandbox wraps user code as ``def userCode(arg):`` and the frontend indents
-# it before posting, so the payload arrives pre-indented.
+# The sandbox wraps user code in a ``def userCode(...)`` function and the
+# frontend indents it before posting, so the payload arrives pre-indented.
 #
-# ``worker.py`` also refuses code that mentions ``arg`` when no input is wired,
-# and that guard is a plain substring test - any occurrence at all (even inside
-# a word like "large" or "target") would turn both runs into the same misleading
-# error and quietly void this test.
+# ``worker.py`` also refuses code that reads ``input_0`` when no input is
+# wired, which would turn both runs into the same misleading error and quietly
+# void this test.
 PY_CODE = (
     "    import inflection\n"
     "    return [inflection.camelize('hello_world')]\n"
 )
-assert "input_0" not in PY_CODE, "worker.py refuses code containing 'arg' with no input"
+assert "input_0" not in PY_CODE, "worker.py refuses code that reads input_0 with no input"
 
 _NET_FAIL_RE = re.compile(
     r"Could not find a version|Temporary failure in name resolution|ProxyError|"

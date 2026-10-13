@@ -15,23 +15,23 @@ flowchart LR
   E[Data Loading<br/>three points]
 
   Z --> B
-  R -->|input 0| J1[intersects] --> V1[roofs per neighborhood]
-  N -->|input 1| J1
-  S -->|input 0| J2[within, counts] --> V2[labels per neighborhood, map]
-  N -->|input 1| J2
-  N -->|input 0| J3[contains] --> V3[labels by type]
-  S -->|input 1| J3
-  N -->|input 0 and input 1| J4[touches] --> V4[bordering neighborhoods]
-  N -->|input 0| J5[overlaps] --> V5[ZIP codes per neighborhood]
-  Z -->|input 1| J5
-  B -->|input 0| J6[crosses] --> V6[ZIP borders per neighborhood]
-  N -->|input 1| J6
-  R -->|input 0| J7[nearest] --> V7[distance histogram]
-  S -->|input 1| J7
-  E -->|input 0| J8[intersects] --> T8[Simple View]
-  Q -->|input 1| J8
-  E -->|input 0| J9[within] --> T9[Simple View]
-  Q -->|input 1| J9
+  R -->|input_0| J1[intersects] --> V1[roofs per neighborhood]
+  N -->|input_1| J1
+  S -->|input_0| J2[within, counts] --> V2[labels per neighborhood, map]
+  N -->|input_1| J2
+  N -->|input_0| J3[contains] --> V3[labels by type]
+  S -->|input_1| J3
+  N -->|input_0 and input_1| J4[touches] --> V4[bordering neighborhoods]
+  N -->|input_0| J5[overlaps] --> V5[ZIP codes per neighborhood]
+  Z -->|input_1| J5
+  B -->|input_0| J6[crosses] --> V6[ZIP borders per neighborhood]
+  N -->|input_1| J6
+  R -->|input_0| J7[nearest] --> V7[distance histogram]
+  S -->|input_1| J7
+  E -->|input_0| J8[intersects] --> T8[Simple View]
+  Q -->|input_1| J8
+  E -->|input_0| J9[within] --> T9[Simple View]
+  Q -->|input_1| J9
 ```
 
 ## Data
@@ -57,20 +57,20 @@ return gdf
 
 ## How the node joins
 
-The `Spatial Join` node has two input circles: **input 0** (the upper, blue one) and **input 1** (the lower, green one). Input 0 is the left side of the join, and either circle takes any shapes. The body reads as a sentence, *Pair each input 0 row with the input 1 rows it ...*, finished by the operation you pick.
+The `Spatial Join` node has two input circles: **input_0** (the upper, blue one) and **input_1** (the lower, green one). input_0 is the left side of the join, and either circle takes any shapes. The body reads as a sentence, *Pair each input_0 row with the input_1 rows it ...*, finished by the operation you pick.
 
 Its output is either:
-- **one row per pair**, input 0's row and shape with input 1's columns added. A column whose name input 0 already has comes in as `<column>_right`.
-- **counts**: input 1's rows, each with `point_count`, the number of input 0 rows paired with it.
+- **one row per pair**, input_0's row and shape with input_1's columns added. A column whose name input_0 already has comes in as `<column>_right`.
+- **counts**: input_1's rows, each with `point_count`, the number of input_0 rows paired with it.
 
 ## The flows
 
 1. **intersects** (the default): each green roof with the neighborhood it lies in. 359 pairs: every roof is in a neighborhood. The bars show the 15 neighborhoods with the most roofs.
 2. **within**, with the **counts** output: the neighborhoods, each with `point_count`, the sidewalk labels within it. 61 of the 98 neighborhoods hold at least one of the 400 labels; the map colours each neighborhood by its count.
-3. **contains**, with polygons on input 0: each neighborhood with every sidewalk label it contains, 235 pairs. The bars show the labels of the 12 neighborhoods with the most, by label type.
-4. **touches**, with the neighborhoods on both circles: each neighborhood with the ones it borders, 484 pairs. Both inputs have the same columns, so input 1's arrive as `pri_neigh_right`, `sec_neigh_right` and so on. A neighborhood never touches itself, since their insides meet.
+3. **contains**, with polygons on input_0: each neighborhood with every sidewalk label it contains, 235 pairs. The bars show the labels of the 12 neighborhoods with the most, by label type.
+4. **touches**, with the neighborhoods on both circles: each neighborhood with the ones it borders, 484 pairs. Both inputs have the same columns, so input_1's arrive as `pri_neigh_right`, `sec_neigh_right` and so on. A neighborhood never touches itself, since their insides meet.
 5. **overlaps**: each neighborhood with the ZIP codes it straddles, 311 pairs. Both inputs carry `shape_area` and `shape_len`, so the ZIP's come in as `shape_area_right` and `shape_len_right`.
-6. **crosses**, with lines on input 0: each ZIP border with the neighborhoods it runs through, partly inside and partly outside them.
+6. **crosses**, with lines on input_0: each ZIP border with the neighborhoods it runs through, partly inside and partly outside them.
 7. **nearest**: each green roof with the sidewalk label closest to it, and a `distance` column in meters. The histogram shows how far the roofs are from the nearest label.
 
 ## A point on an edge
@@ -82,7 +82,7 @@ The last two flows join three points to two squares that share their middle edge
 | intersects | pairs with both squares |
 | touches | pairs with both squares |
 | within | pairs with neither square |
-| contains, with the squares on input 0 | neither square contains it |
+| contains, with the squares on input_0 | neither square contains it |
 
 So the Simple View after **intersects** lists `on the edge` twice, once with each square, and the one after **within** lists only `inside`, with the west square.
 

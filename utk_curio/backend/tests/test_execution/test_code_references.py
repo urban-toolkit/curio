@@ -86,6 +86,7 @@ class TestTheSharedCases:
             "It carries no named layers",
             "carries several layers",
             "the edge for this input was deleted",
+            "names an input the old way",
             "has no column",
             "no Parameter node is named",
             "Parameter nodes are named",
@@ -109,7 +110,7 @@ class TestTheSharedCases:
         for language in ("python", "javascript", "json"):
             resolved = [
                 c for c in cases
-                if c["language"] == language and re.search(r"\[!! input \d+:[^.\s]+ !!\]", c["code"])
+                if c["language"] == language and re.search(r"\[!! input_\d+:[^.\s]+ !!\]", c["code"])
                 and not c.get("problems")
             ]
             assert resolved, f"no layer reference resolves in a {language} case"
@@ -186,11 +187,37 @@ class TestThePatternsAreShared:
         )
         assert written and written.group(1) == INPUT_REFERENCE_RE.pattern
 
-    def test_an_input_reference_is_never_a_widget_name(self):
-        from utk_curio.backend.app.execution.code_references import INPUT_REFERENCE_RE, WIDGET_NAME_RE
+    def test_the_old_input_reference_pattern(self):
+        from utk_curio.backend.app.execution.code_references import LEGACY_INPUT_REFERENCE_RE
 
-        for inner in ("input 0", "input 12", "input 0.height", "input ?", "input ?.a"):
+        written = re.search(
+            r"LEGACY_INPUT_REFERENCE_PATTERN = String\.raw`(.*?)`", self._ts("codeReferences.ts", REFERENCES_DIR)
+        )
+        assert written and written.group(1) == LEGACY_INPUT_REFERENCE_RE.pattern
+
+    def test_an_input_reference_is_never_a_widget_name(self):
+        from utk_curio.backend.app.execution.code_references import (
+            INPUT_REFERENCE_RE,
+            check_widget_def,
+            parse_reference,
+        )
+
+        for inner in ("input_0", "input_12", "input_0.height", "input_?", "input_?.a"):
             assert INPUT_REFERENCE_RE.match(inner), inner
+            assert parse_reference(inner)["kind"] == "input", inner
+        # An input's name is a widget name's shape, so no widget may take it.
+        assert check_widget_def({"name": "input_12", "type": "number", "default": 1}) is not None
+
+    def test_an_old_input_reference_is_neither_an_input_nor_a_widget(self):
+        from utk_curio.backend.app.execution.code_references import (
+            INPUT_REFERENCE_RE,
+            LEGACY_INPUT_REFERENCE_RE,
+            WIDGET_NAME_RE,
+        )
+
+        for inner in ("input 0", "input 12", "input 0.height", "input ?", "input 0:roads.lanes"):
+            assert LEGACY_INPUT_REFERENCE_RE.match(inner), inner
+            assert not INPUT_REFERENCE_RE.match(inner), inner
             assert not WIDGET_NAME_RE.match(inner), inner
 
     def test_the_selection_reference_pattern(self):
@@ -251,17 +278,24 @@ class TestThePatternsAreShared:
 
 
 class TestResolveCodeReferences:
-    def test_an_input_is_arg_alone_or_indexed(self):
+    def test_an_input_is_the_name_of_its_circle(self):
         assert resolve_code_references("return [!! input_0 !!]", (), "python", [0]) == "return input_0"
-        assert resolve_code_references("return [!! input_1 !!]", (), "python", [0, 1]) == "return arg[1]"
+        assert resolve_code_references("return [!! input_1 !!]", (), "python", [0, 1]) == "return input_1"
+        assert resolve_code_references("return [!! input_3 !!]", (), "python", [3]) == "return input_3"
 
     def test_an_input_with_no_edge_is_refused(self):
         with pytest.raises(_reference_error()) as exc:
             resolve_code_references("return [!! input_2 !!]", (), "python", [0, 1])
-        assert "input 2 has no edge" in str(exc.value)
+        assert "input_2 has no edge" in str(exc.value)
+
+    def test_an_old_chip_is_refused_naming_its_new_spelling(self):
+        with pytest.raises(_reference_error()) as exc:
+            resolve_code_references("return [!! input 1 !!]", (), "python", [0, 1])
+        assert "names an input the old way" in str(exc.value)
+        assert "Write [!! input_1 !!]" in str(exc.value)
 
     def test_a_column_is_its_name_without_the_data(self):
-        assert resolve_code_references("s = arg[[!! input_0.area !!]]", (), "python", [0]) == 's = arg["area"]'
+        assert resolve_code_references("s = input_0[[!! input_0.area !!]]", (), "python", [0]) == 's = input_0["area"]'
 
     def test_a_reference_takes_the_set_value(self):
         widgets = [{"name": "factor", "type": "number", "default": 1, "value": 3}]
@@ -385,7 +419,7 @@ class TestTheRunner:
 
 
 #: Two loaders into one Python node, on circles 0 and 1, listed in the
-#: opposite order: the circle decides where each lands in ``arg``.
+#: opposite order: the circle decides which input_k each is.
 FAN_IN = _spec(
     [
         _node("a", "return 1", node_type="curio.builtin/data-loading"),
@@ -405,12 +439,13 @@ class TestSeveralInputs:
         assert spec.upstream_nodes("t") == ["a", "b"]
         assert spec.input_slots("t") == [0, 1]
 
-    def test_the_sandbox_gets_both_inputs_and_the_chip_as_arg_indexed(self, tmp_curio):
+    def test_the_sandbox_gets_both_inputs_and_the_chip_as_its_circles_name(self, tmp_curio):
         rec = _RecordingExec()
         report = runner.run_through_node(KEY, PID, FAN_IN, "t", exec_fn=rec)
         assert report["ok"] is True
         payload = rec.calls[-1][1]
-        assert "return arg[1]" in payload["code"]
+        assert "return input_1" in payload["code"]
+        assert payload["input_slots"] == [0, 1]
         assert payload["dataType"] == "outputs"
         a_path = report["nodes"]["a"]["output"]["path"]
         b_path = report["nodes"]["b"]["output"]["path"]
@@ -422,12 +457,12 @@ class TestSeveralInputs:
         report = runner.run_through_node(KEY, PID, spec, "t", exec_fn=rec)
         assert rec.calls == []
         assert report["ok"] is False and report["blocker"] == "t"
-        assert "input 0 has no edge" in report["nodes"]["t"]["stderrTail"]
+        assert "input_0 has no edge" in report["nodes"]["t"]["stderrTail"]
 
 
 class TestLayerChips:
-    """``[!! input k:layer !!]`` in Python and JavaScript code: the call that
-    picks the layer out of input k when the node runs, ``curio_layer`` in the
+    """``[!! input_k:layer !!]`` in Python and JavaScript code: the call that
+    picks the layer out of input_k when the node runs, ``curio_layer`` in the
     sandbox (``util/input_layers.py``, ``util/js_wrapper.mjs``)."""
 
     def test_the_sandbox_gets_the_layer_chip_as_the_call_that_picks_it(self, tmp_curio):
@@ -464,7 +499,7 @@ class TestLayerChips:
         assert report["ok"] is True, report
         endpoint, payload = rec.calls[-1]
         assert endpoint == "/execJs"
-        assert 'return curio_layer(arg[1], "roads", 1);' in payload["code"]
+        assert 'return curio_layer(input_1, "roads", 1);' in payload["code"]
 
     def test_the_names_and_the_missing_layer_message_are_the_sandboxs(self):
         """The resolver, the browser and both sandbox helpers name one call and

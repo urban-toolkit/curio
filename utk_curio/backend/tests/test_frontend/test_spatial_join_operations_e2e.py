@@ -2,8 +2,8 @@
 
 ``docs/examples/25-spatial-join-operations.json`` has one Spatial Join per case:
 - intersects, within (with the counts output), contains with polygons on
-  input 0, touches with one loader on both circles, overlaps, crosses with
-  lines on input 0, and nearest;
+  input_0, touches with one loader on both circles, overlaps, crosses with
+  lines on input_0, and nearest;
 - two joins over a point on a shared edge, which show the boundary rule.
 
 Each test opens the example, plays one flow's chart (which runs its loaders
@@ -49,23 +49,23 @@ EXAMPLE = os.path.join(REPO_ROOT, "docs", "examples", "25-spatial-join-operation
 #: Each case: its join, the view the join feeds, and the join's status line.
 CASES = {
     "intersects": ("3269d5de-21d6-57e4-b811-e3ee90a27f49", "bb22d6d9-2c09-52a1-9ab5-e84f0155c0a6",
-                   "359 pairs: 359 of 359 input 0 rows matched."),
+                   "359 pairs: 359 of 359 input_0 rows matched."),
     "within-counts": ("5ed28c6e-270b-54d5-85e8-3b5973552eab", "e9cc1cea-8afa-5709-9223-58523a7886d3",
-                       "61 of 98 input 1 rows have pairs (235 in all); each row carries point_count."),
+                       "61 of 98 input_1 rows have pairs (235 in all); each row carries point_count."),
     "contains": ("e9c18033-f81d-527c-9624-7bdfb40123ec", "117943b9-497b-528c-b829-edfc95805a7a",
-                 "235 pairs: 61 of 98 input 0 rows matched."),
+                 "235 pairs: 61 of 98 input_0 rows matched."),
     "touches": ("6e954c1d-9f2d-5e24-9144-22ddefc5d1fd", "9a85441a-9e12-5f7a-9336-9cbbe0dc2be9",
-                "484 pairs: 98 of 98 input 0 rows matched."),
+                "484 pairs: 98 of 98 input_0 rows matched."),
     "overlaps": ("292f8f9c-9fd8-57a3-8617-cf9aaad9225b", "4f09ca31-ec7b-5a81-bee0-9ce3555e37a6",
-                 "311 pairs: 94 of 98 input 0 rows matched."),
+                 "311 pairs: 94 of 98 input_0 rows matched."),
     "crosses": ("d604f407-ecab-5495-a9d2-f777300c306d", "1ad71c29-3824-52a3-9896-f9091462f436",
-                "311 pairs: 61 of 61 input 0 rows matched."),
+                "311 pairs: 61 of 61 input_0 rows matched."),
     "nearest": ("0165bd33-0850-5d3e-9b86-fdfb7f359ac5", "3ec2adff-8f58-5e83-9055-f8918f7aa108",
-                "359 pairs: 359 of 359 input 0 rows matched."),
+                "359 pairs: 359 of 359 input_0 rows matched."),
     "edge-intersects": ("4e8407e1-d56b-59ea-ac6e-c61bdc73e308", "e469f1ae-c258-5ead-a240-a7d15e9832a9",
-                               "3 pairs: 2 of 3 input 0 rows matched."),
+                               "3 pairs: 2 of 3 input_0 rows matched."),
     "edge-within": ("ae8ddaa2-f7ff-596f-b229-7789206ad513", "2bcc7dbd-c511-576d-a450-7bda1fe4b642",
-                           "1 pair: 1 of 3 input 0 rows matched."),
+                           "1 pair: 1 of 3 input_0 rows matched."),
 }
 
 

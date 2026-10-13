@@ -7,7 +7,7 @@
 - The widget a parameter suggests, from its annotation or its default, in the
   Widgets tab's own shape: every suggestion passes the tab's check.
 - The written template: its code imports the function and returns its call,
-  with ``[!! name !!]`` for a widget, ``[!! input k !!]`` for an input and a
+  with ``[!! name !!]`` for a widget, ``[!! input_k !!]`` for an input and a
   literal for a fixed value.
 - The listing and the template the routes answer with, read from the store.
 - The template runs: added to a new package through the factory install, its
@@ -346,12 +346,12 @@ class TestTheTemplateCode:
                 "value": {"use": "default"}, "factor": {"use": "default"}, "label": {"use": "default"},
             })
 
-    def test_a_function_named_arg_does_not_hide_the_input(self):
+    def test_a_function_named_as_an_input_does_not_hide_the_input(self):
         from utk_curio.backend.app.packages.domain.function_nodes import read_function, template_code
 
-        fn = read_function("def arg(x):\n    return x\n", "m", "input_0")
+        fn = read_function("def input_0(x):\n    return x\n", "m", "input_0")
         assert template_code("m", fn, {"x": {"use": "input", "slot": 0}}) == (
-            "from m import arg as arg_function\n\nreturn arg_function(x=[!! input_0 !!])\n"
+            "from m import input_0 as input_0_function\n\nreturn input_0_function(x=[!! input_0 !!])\n"
         )
 
     def test_the_code_is_a_node_body_once_its_references_resolve(self):
@@ -370,7 +370,7 @@ class TestTheTemplateCode:
             code, [{"name": "factor", "type": "number", "default": 2, "value": 3}], "python", input_slots=[0],
         )
         assert "factor=3" in resolved and "value=input_0" in resolved
-        ast.parse("def node(arg):\n" + textwrap.indent(resolved, "    "))
+        ast.parse("def node(input_0=None):\n" + textwrap.indent(resolved, "    "))
 
 
 # ---------------------------------------------------------------------------

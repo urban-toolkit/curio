@@ -18,8 +18,8 @@ It is a Curio port of the upstream Autark use case at
 
 ```mermaid
 flowchart LR
-  OSM[autk-grammar data<br/>Niterói OSM PBF] -->|input 0| JOIN[js-computation<br/>DuckDB raster spatial join]
-  RASTER[data-loading<br/>24-band LST GeoTIFF] -->|input 1| JOIN
+  OSM[autk-grammar data<br/>Niterói OSM PBF] -->|input_0| JOIN[js-computation<br/>DuckDB raster spatial join]
+  RASTER[data-loading<br/>24-band LST GeoTIFF] -->|input_1| JOIN
   JOIN --> OLS[autk-grammar<br/>OLS regression]
   OLS --> POOL[data-pool]
   POOL --> MAP[autk-grammar<br/>thematic 3D map]

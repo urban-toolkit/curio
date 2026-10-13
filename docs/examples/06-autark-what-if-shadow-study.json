@@ -255,7 +255,7 @@
         "x": 2948,
         "y": 525,
         "title": "Sunlight change",
-        "content": "# Compare Scenarios writes this code from its inputs: input 1 minus input 0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"s-baseline\", \"Baseline\", [!! input_0 !!]),\n    (\"s-twice\", \"Twice as tall\", [!! input_1 !!]),\n], layer=\"table_osm_roads\")\n",
+        "content": "# Compare Scenarios writes this code from its inputs: input_1 minus input_0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"s-baseline\", \"Baseline\", [!! input_0 !!]),\n    (\"s-twice\", \"Twice as tall\", [!! input_1 !!]),\n], layer=\"table_osm_roads\")\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Map, road by road, Twice as tall's sunlight minus Baseline's: the sunlight each road loses where the taller buildings' shadows reach it.",

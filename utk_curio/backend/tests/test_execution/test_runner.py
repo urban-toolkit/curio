@@ -151,7 +151,7 @@ class TestRunThroughNode:
 
     def test_a_node_with_several_inputs_receives_them_in_circle_order(self, tmp_curio):
         """#662: fan-in goes straight into the node that reads it, one circle per
-        edge, and ``arg`` is assembled in circle order. ``a``'s edge kept the id
+        edge, and its inputs are handed over in circle order. ``a``'s edge kept the id
         it had on circle 2 before the canvas renumbered it onto ``in``: the
         handle, not the id, says which circle it feeds."""
         import ast
@@ -173,8 +173,9 @@ class TestRunThroughNode:
             report["nodes"]["a"]["output"]["path"],
             report["nodes"]["b"]["output"]["path"],
         ], c_payload["file_path"]
-        # The chip names circle 1, which is b's: arg[1] in the sent code.
-        assert "return arg[1]" in c_payload["code"] and "[!!" not in c_payload["code"]
+        # The chip names circle 1, which is b's: input_1 in the sent code.
+        assert "return input_1" in c_payload["code"] and "[!!" not in c_payload["code"]
+        assert c_payload["input_slots"] == [0, 1]
 
     def test_each_node_names_the_circles_its_inputs_are_on(self, tmp_curio):
         """A node reads the edge on circle k as ``input_k``: the payload names
@@ -234,7 +235,7 @@ class TestRunThroughNode:
     def test_the_multi_input_example_runs_both_loaders_into_one_node(self, tmp_curio):
         """The shipped example that replaced Merge.json: two loaders feed the
         computation node directly on circles ``in`` and ``in_1``, and the node
-        below it reads ``arg`` as the frame that node returned."""
+        below it reads ``input_0`` as the tuple that node returned."""
         import ast
         import json
         from pathlib import Path
@@ -728,8 +729,8 @@ class TestArtifactPreviewIsBounded:
 class TestInputSlotOrderIsTheHandle:
     """dev/128, from a field failure: dataflow `00708324` reported
     *"ed1a326f · solved · pass after 1 round"* and then failed on Play with
-    ``KeyError: 'tract_id'``, because validation assembled ``arg`` as
-    ``[population, boundaries]`` while the canvas assembles it as
+    ``KeyError: 'tract_id'``, because validation handed the node its inputs as
+    ``[population, boundaries]`` while the canvas hands them over as
     ``[boundaries, population]``.
 
     The cause was reading the slot from the edge's ID: the canvas encodes it

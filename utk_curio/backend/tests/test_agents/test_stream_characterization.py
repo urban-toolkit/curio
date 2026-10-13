@@ -186,7 +186,7 @@ class TestSolveBatchStream:
         h = _tvr.TestVerifiedSolve()
         ctx = h._setup(
             client, user, token, monkeypatch, dl_replies=[h.LOADER],
-            ca_replies=["bad_stats(arg[0])\nreturn 1", "df = arg[0]\nreturn df.describe()"],
+            ca_replies=["bad_stats(input_0[0])\nreturn 1", "df = input_0[0]\nreturn df.describe()"],
             exec_outcomes={"bad_stats": "Traceback: NameError: bad_stats"},
         )
         # The stats node passes in its second round. One sandbox run of 1.2 s

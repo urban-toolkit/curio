@@ -129,8 +129,9 @@ def summarize(preview: object) -> dict | None:
 
     Handles the three shapes the sandbox's ``parseOutput`` produces for node
     output: a dataframe (columns → lists), a geodataframe (GeoJSON), and
-    ``outputs``, a tuple/list, which is what a node with several inputs
-    receives as ``arg``. Anything else yields its ``dataType`` alone: honest
+    ``outputs``, a tuple/list, which is what a pool with several inputs hands
+    on: the list a node's one circle then holds. Anything else yields its
+    ``dataType`` alone: honest
     absence beats a description of a shape this module does not know.
     """
     if not isinstance(preview, dict):

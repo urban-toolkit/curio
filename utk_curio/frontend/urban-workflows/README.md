@@ -3,7 +3,7 @@
 Every python code must have a final return with the data to be exported.
 
 "userCode" is a reserved keyword.  
-"arg" is a reserved keyword.
+`input_0`, `input_1`, and so on are the node's inputs, one per input circle.
 
 Supported return types:
 

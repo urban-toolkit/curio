@@ -123,7 +123,7 @@
             }
           ]
         },
-        "content": "\"\"\"Accumulated Shadow: SCOUT's Deep Umbra shadow model.\n\nInput: the height mosaic of Rasterize Buildings (scout.raster-conversion), or\nits (mosaic, tiles) output: building heights in metres in EPSG:3395 on the\nzoom-16 tile grid.\nOutput: the accumulated shadow in minutes, a raster on the input's grid. An\nAutark map draws it as input_0, band band_1. A Raster Statistics node gives its\nmean and median over the ground: the heights on its input 1 as the mask, with\nwhere=lambda height: height < 1.08.\nThe Widgets tab sets the season. The model is the Model Catalog's Deep Umbra,\nmodel.scout.deep-umbra.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_shadow.node_outputs import accumulated_shadow, open_model\n\nmodel = open_model(lambda: curio_load_model(\"model.scout.deep-umbra\"))\nreturn accumulated_shadow(input_0, season=[!! season !!], model=model, output_file=curio_output_file)\n"
+        "content": "\"\"\"Accumulated Shadow: SCOUT's Deep Umbra shadow model.\n\nInput: the height mosaic of Rasterize Buildings (scout.raster-conversion), or\nits (mosaic, tiles) output: building heights in metres in EPSG:3395 on the\nzoom-16 tile grid.\nOutput: the accumulated shadow in minutes, a raster on the input's grid. An\nAutark map draws it as input_0, band band_1. A Raster Statistics node gives its\nmean and median over the ground: the heights on its input_1 as the mask, with\nwhere=lambda height: height < 1.08.\nThe Widgets tab sets the season. The model is the Model Catalog's Deep Umbra,\nmodel.scout.deep-umbra.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_shadow.node_outputs import accumulated_shadow, open_model\n\nmodel = open_model(lambda: curio_load_model(\"model.scout.deep-umbra\"))\nreturn accumulated_shadow(input_0, season=[!! season !!], model=model, output_file=curio_output_file)\n"
       },
       {
         "id": "8a914e39-4cb1-535d-9a8b-19b45f6be288",
@@ -136,7 +136,7 @@
         "metadata": {
           "keywords": []
         },
-        "content": "# Raster Statistics: the mean, median, minimum, maximum and count of a\n# raster's cells, nodata left out, as a table of one row.\n# Input 0 is the accumulated shadow in minutes, input 1 the heights it was\n# predicted from, as the mask: SCOUT's metrics count the ground, the cells\n# Deep Umbra reads as gray level 0, a height under 1.08 m.\nreturn curio_raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)\n"
+        "content": "# Raster Statistics: the mean, median, minimum, maximum and count of a\n# raster's cells, nodata left out, as a table of one row.\n# input_0 is the accumulated shadow in minutes, input_1 the heights it was\n# predicted from, as the mask: SCOUT's metrics count the ground, the cells\n# Deep Umbra reads as gray level 0, a height under 1.08 m.\nreturn curio_raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)\n"
       },
       {
         "id": "6cef8611-e3ec-52d4-9caf-aa5d6cff3d6a",

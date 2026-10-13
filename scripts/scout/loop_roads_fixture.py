@@ -6,7 +6,7 @@ OpenStreetMap extract `docs/examples/data/chicago_loop.osm.pbf`. Such a section
 runs in the sandbox, through autk-db in Node (`run_js_script`, as the canvas runs
 it), and hands on its layer array, `[{name, type, geojson}]` in autk-db's
 EPSG:3395, each FeatureCollection naming that CRS. The Weather Routing nodes read
-the roads layer through their layer chip, `[!! input 0:table_osm_roads !!]`,
+the roads layer through their layer chip, `[!! input_0:table_osm_roads !!]`,
 which runs as `curio_layer` (`utk_curio/sandbox/util/input_layers.py`) and gives
 it as a GeoDataFrame.
 

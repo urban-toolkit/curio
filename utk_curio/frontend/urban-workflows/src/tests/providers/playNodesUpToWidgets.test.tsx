@@ -119,8 +119,8 @@ const plainNode = (id: string) =>
     data: {
       nodeId: id,
       nodeType: 'curio.builtin/data-loading',
-      code: 'return arg',
-      executedCode: 'return arg',
+      code: 'return input_0',
+      executedCode: 'return input_0',
       output: { code: 'success', content: '' },
     },
   }) as any;

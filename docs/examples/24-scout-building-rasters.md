@@ -166,7 +166,7 @@ its (mosaic, tiles) output: building heights in metres in EPSG:3395 on the
 zoom-16 tile grid.
 Output: the accumulated shadow in minutes, a raster on the input's grid. An
 Autark map draws it as input_0, band band_1. A Raster Statistics node gives its
-mean and median over the ground: the heights on its input 1 as the mask, with
+mean and median over the ground: the heights on its input_1 as the mask, with
 where=lambda height: height < 1.08.
 The Widgets tab sets the season. The model is the Model Catalog's Deep Umbra,
 model.scout.deep-umbra.
@@ -192,14 +192,14 @@ is in shadow.
 
 ## Sum it up over the ground
 
-Raster Statistics reads the shadow on its input 0 and the heights on its
-input 1, as the mask: SCOUT's metrics count the ground, the cells Deep Umbra
+Raster Statistics reads the shadow on its input_0 and the heights on its
+input_1, as the mask: SCOUT's metrics count the ground, the cells Deep Umbra
 reads as gray level 0, a height under 1.08 m.
 
 ```python
 # Raster Statistics: the mean, median, minimum, maximum and count of a
 # raster's cells, nodata left out, as a table of one row.
-# Input 0 is the accumulated shadow in minutes, input 1 the heights it was
+# input_0 is the accumulated shadow in minutes, input_1 the heights it was
 # predicted from, as the mask: SCOUT's metrics count the ground, the cells
 # Deep Umbra reads as gray level 0, a height under 1.08 m.
 return curio_raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)

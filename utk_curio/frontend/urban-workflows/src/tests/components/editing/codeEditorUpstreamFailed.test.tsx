@@ -4,7 +4,7 @@
  *
  * #603: a Python Computation node fed by a Data Loading node that had just
  * failed still went to the sandbox with no input, and came back with
- * "This node received no input but its code references `arg`", a message
+ * a message saying it had received no input, a message
  * about wiring. The node now asks the question a chart or a Data Pool already
  * asks (hook/useGrammarInputState): did a node wired into me fail? If so it
  * says so, by name, and does not run.
@@ -85,7 +85,7 @@ jest.mock("../../../hook/usePackageBackendRun", () => ({
 import CodeEditor from "../../../components/editing/CodeEditor";
 
 const PYTHON = "curio.builtin/computation-analysis";
-const CODE = "sp = arg['sp_units']\nreturn sp";
+const CODE = "sp = input_0['sp_units']\nreturn sp";
 
 /** The upstream node, failed: wired into n1 and marked errored. */
 function upstreamFailed() {
@@ -150,7 +150,7 @@ describe("a code node fed by a failed node (#603)", () => {
         expect(reason).toBeDefined();
         expect(reason.content).toContain("The node feeding this one");
         expect(reason.content).toContain("Load parcels");
-        expect(reason.content).not.toContain("received no input");
+        expect(reason.content).not.toContain("nothing arrived");
     });
 
     test("reports itself failed, so the runner stops below it too", () => {

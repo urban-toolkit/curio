@@ -134,17 +134,17 @@ describe("modelNodeForCanvas", () => {
   const segmentation = {
     nodeType: "curio.streetvision/image-segmentation@1",
     label: "Image Segmentation",
-    code: 'model = curio_load_model("model.curio.ddrnet23-slim")\nreturn curio_segment(arg, model)',
+    code: 'model = curio_load_model("model.curio.ddrnet23-slim")\nreturn curio_segment(input_0, model)',
     packageName: "Street Vision",
   };
   const loader = { nodeType: "curio.builtin/data-loading", label: "Data Loading", code: undefined };
-  const transform = { nodeType: "x.pkg/transform@1", label: "Transform", code: "return arg" };
+  const transform = { nodeType: "x.pkg/transform@1", label: "Transform", code: "return input_0" };
 
   test("a model dropped on the canvas becomes the first template that runs one", () => {
     const node = modelNodeForCanvas([loader, transform, segmentation], segformer);
     expect(node).toEqual({
       ...segmentation,
-      code: 'model = curio_load_model("imported.xabc123def456")\nreturn curio_segment(arg, model)',
+      code: 'model = curio_load_model("imported.xabc123def456")\nreturn curio_segment(input_0, model)',
       modelRefs: [{ id: segformer.id, name: segformer.name }],
     });
   });
@@ -167,7 +167,7 @@ describe("modelNodeForCanvas", () => {
     const shadows = {
       nodeType: "scout.shadow/accumulated-shadow",
       label: "Accumulated Shadow",
-      code: 'model = open_model(lambda: curio_load_model("model.scout.deep-umbra"))\nreturn accumulated_shadow(arg, season="summer", model=model, output_file=curio_output_file)',
+      code: 'model = open_model(lambda: curio_load_model("model.scout.deep-umbra"))\nreturn accumulated_shadow(input_0, season="summer", model=model, output_file=curio_output_file)',
       packageName: "SCOUT Shadow",
     };
     expect(modelNodeForCanvas([segmentation, shadows], deepUmbra)?.nodeType).toBe(shadows.nodeType);

@@ -342,7 +342,7 @@ def test_a_map_draws_a_layer_from_each_of_its_inputs(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     """#662: an Autark node takes several edges, and its document reads each
-    input as the table ``input_<k>``, written as the chip ``[!! input k !!]``.
+    input as the table ``input_<k>``, written as the chip ``[!! input_k !!]``.
     One loader's footprints feed two maps; a second loader, the same footprints
     named buildings, feeds the second map's second circle. That map draws both
     layers, so it differs from the map of the first input alone, which has the

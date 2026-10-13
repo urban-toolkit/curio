@@ -35,7 +35,7 @@ const FULL: CanvasTemplateConfig = {
         { id: "z7y6x5w4", types: ["JSON"], cardinality: "[1,n]" },
     ],
     sourceFilename: "clean.py",
-    sourceCode: "return arg.dropna()",
+    sourceCode: "return input_0.dropna()",
 };
 
 describe("canvasTemplateConfigToSpec", () => {
@@ -60,7 +60,7 @@ describe("canvasTemplateConfigToSpec", () => {
         expect(canvasTemplateConfigToSpec(null)).toBeUndefined();
         expect(canvasTemplateConfigToSpec("code")).toBeUndefined();
         expect(canvasTemplateConfigToSpec([])).toBeUndefined();
-        expect(canvasTemplateConfigToSpec({ sourceCode: "return arg" })).toBeUndefined();
+        expect(canvasTemplateConfigToSpec({ sourceCode: "return input_0" })).toBeUndefined();
     });
 });
 

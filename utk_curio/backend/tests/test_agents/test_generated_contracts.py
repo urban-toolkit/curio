@@ -254,7 +254,8 @@ class TestThePromptFacts:
 
         text = contracts.render_prompt("new_content_prompt")
         assert "{" + ", ".join(node_context.RUNTIME_BLOCK_KEYS) + "}" in text
-        assert f'If its "kind" is "{input_contract.KIND_LIST}", ' in text
+        assert f'If its "kind" is "{input_contract.KIND_SEVERAL}", ' in text
+        assert f'If its "kind" is "{input_contract.KIND_GATHERED}", ' in text
         assert f'If its "kind" is "{input_contract.KIND_SINGLE}", ' in text
         # A field Curio adds to the rows is named here, so a new one fails
         # until the prompt says what it holds.
