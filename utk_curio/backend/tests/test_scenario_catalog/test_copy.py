@@ -1,7 +1,10 @@
 """Dragging a scenario into another project (#662): what the server does.
 
 A drop asks first what it copies (``GET .../copy?target=``), which changes
-nothing and says why the drop cannot be made, if it cannot. The canvas picks
+nothing and says why the drop cannot be made, if it cannot. A context with no
+saved output is listed to run first (``toRun``): the canvas runs it on the
+server, in its own project, and asks again; one only the browser can make is
+refused, naming the node. The canvas picks
 the copies' ids; then ``POST .../copy`` adds the packages the levers need and
 copies each saved output the drop brings to its copy, the target's own:
 
@@ -17,6 +20,8 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+
+import pytest
 
 from utk_curio.backend.app.datasets.domain.manifest import load_dataset_manifest
 from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
@@ -118,6 +123,7 @@ def test_the_plan_names_the_levers_the_context_and_the_outcomes_saved_outputs(cl
     assert resp.status_code == 200, resp.get_data(as_text=True)
     plan = resp.get_json()
     assert plan["problems"] == []
+    assert plan["toRun"] == []
     assert plan["scenario"] == {"id": "s1", "name": "Baseline", "color": "#2a9d8f", "description": ""}
     assert plan["project"] == {"id": source, "name": "Shadows"}
     assert plan["levers"] == ["a", "chart"]
@@ -187,17 +193,178 @@ def test_the_copy_is_the_targets_own_and_a_reload_restores_it(client, user_and_t
     assert (_shared() / saved["load"]).read_text(encoding="utf-8") == "id,height\n1,10\n"
 
 
-def test_a_context_without_a_saved_output_is_refused_naming_it(client, user_and_token):
+def test_a_context_without_a_saved_output_is_listed_to_run_first(client, user_and_token):
     user, token = user_and_token
     source, target = _source_and_target(client, token)
 
     plan = _plan(client, token, source, target).get_json()
-    [problem] = plan["problems"]
-    assert "Data Loading" in problem and "Shadows" in problem and "no saved output" in problem
 
+    assert plan["problems"] == []
+    assert plan["toRun"] == [{"nodeId": "load", "label": "Data Loading"}]
+    # Until it has run there, nothing is copied.
+    resp = _copy(client, token, source, target, [{"source": "load", "node": "loader-1"}])
+    assert resp.status_code == 409
+    error = resp.get_json()["error"]
+    assert "Data Loading" in error and "Shadows" in error and "no saved output" in error
+    assert not dataset_dir(_user_dir_key_of(user), f"{computed_dataset_id('loader-1', target)}@1").exists()
+
+
+_OSM_SPEC = json.dumps({"data": [{
+    "type": "osm",
+    "pbfFileUrl": "docs/examples/data/back_bay.osm.pbf",
+    "outputTableName": "table_osm",
+    "autoLoadLayers": {"layers": ["roads"]},
+}]})
+
+
+def test_a_context_only_the_browser_can_make_is_still_refused_naming_it(client, user_and_token):
+    _, token = user_and_token
+    nodes = [
+        _node("osm", "autk-grammar", _OSM_SPEC, title="Back Bay layers"),
+        _node("a", x=300),
+    ]
+    edges = [{"id": "e1", "source": "osm", "target": "a", "sourceHandle": "out", "targetHandle": "in"}]
+    source, target = _source_and_target(client, token, _spec("Shadows", [{**BASELINE, "nodes": ["a"]}], nodes, edges))
+
+    plan = _plan(client, token, source, target).get_json()
+
+    assert plan["toRun"] == []
+    [problem] = plan["problems"]
+    assert "Back Bay layers" in problem and "Shadows" in problem and "browser" in problem
     resp = _copy(client, token, source, target, [])
     assert resp.status_code == 409
     assert resp.get_json()["error"] == problem
+
+
+def test_a_context_fed_by_a_node_only_the_browser_runs_is_refused_naming_that_node(client, user_and_token):
+    _, token = user_and_token
+    nodes = [
+        _node("osm", "autk-grammar", _OSM_SPEC, title="Back Bay layers"),
+        _node("roads", content="return input_0", x=300, title="Roads"),
+        _node("a", x=600),
+    ]
+    edges = [
+        {"id": "e1", "source": "osm", "target": "roads", "sourceHandle": "out", "targetHandle": "in"},
+        {"id": "e2", "source": "roads", "target": "a", "sourceHandle": "out", "targetHandle": "in"},
+    ]
+    source, target = _source_and_target(client, token, _spec("Shadows", [{**BASELINE, "nodes": ["a"]}], nodes, edges))
+
+    plan = _plan(client, token, source, target).get_json()
+
+    assert plan["toRun"] == []
+    [problem] = plan["problems"]
+    assert "Roads" in problem and "Back Bay layers" in problem and "browser" in problem
+
+
+def test_where_runs_on_the_server_are_refused_a_missing_output_stays_a_problem(client, user_and_token, monkeypatch):
+    from utk_curio.backend.app.users import capabilities
+
+    monkeypatch.setattr(capabilities, "run_refusal", lambda user: "Runs on the server are not available here.")
+    _, token = user_and_token
+    source, target = _source_and_target(client, token)
+
+    plan = _plan(client, token, source, target).get_json()
+
+    assert plan["toRun"] == []
+    [problem] = plan["problems"]
+    assert "Data Loading" in problem and "Shadows" in problem and "no saved output" in problem
+
+
+class _Sandbox:
+    """Answers a run's ``/exec`` as the sandbox does, with an output file in
+    the shared data folder: ``id,height`` rows named after the node."""
+
+    def __init__(self):
+        self.ran: list[str] = []
+
+    def __call__(self, method, path, **kwargs):
+        body = json.loads(kwargs["data"])
+        node_id = body["code"].split("# node ", 1)[1].split("\n", 1)[0]
+        self.ran.append(node_id)
+        filename = f"run_{node_id}.csv"
+        (_shared() / filename).write_text("id,height\n1,10\n", encoding="utf-8")
+
+        class Reply:
+            status_code = 200
+            text = ""
+
+            def json(_self):
+                return {"stdout": [], "stderr": "", "output": {"path": filename, "dataType": "dataframe"}}
+
+        return Reply()
+
+
+class TestAContextRunsOnTheServerFirst:
+    """A run on the server writes from threads of its own, so this database is
+    a file, as in the run tests: each thread gets its own connection."""
+
+    @pytest.fixture()
+    def app(self, tmp_path):
+        from utk_curio.backend.app import create_app
+        from utk_curio.backend.extensions import db as _db
+        from utk_curio.backend.tests._unit_fixtures import TestConfig
+        from utk_curio.sandbox.util.db import release_connection
+
+        class FileConfig(TestConfig):
+            SQLALCHEMY_DATABASE_URI = f"sqlite:///{tmp_path / 'copy.db'}"
+
+        release_connection()
+        shared = tmp_path / ".curio" / "data"
+        shared.mkdir(parents=True)
+        previous = {key: os.environ.get(key) for key in ("CURIO_LAUNCH_CWD", "CURIO_SHARED_DATA")}
+        os.environ["CURIO_LAUNCH_CWD"] = str(tmp_path)
+        os.environ["CURIO_SHARED_DATA"] = str(shared)
+        application = create_app(FileConfig)
+        with application.app_context():
+            _db.create_all()
+            yield application
+            _db.session.remove()
+            _db.drop_all()
+            _db.engine.dispose()
+        release_connection()
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+    def test_after_a_run_of_those_nodes_the_plan_is_clean_and_the_copy_brings_the_output(
+        self, client, user_and_token, monkeypatch,
+    ):
+        from utk_curio.backend.app.runs import jobs
+        from utk_curio.backend.extensions import db
+
+        jobs.REGISTRY.reset()
+        sandbox = _Sandbox()
+        monkeypatch.setattr("utk_curio.backend.app.execution.node_exec.sandbox_request", sandbox)
+        user, token = user_and_token
+        nodes = [
+            _node("load", "data-loading", "# node load\nreturn 1"),
+            _node("a", content="# node a\nreturn input_0", x=300),
+            _node("chart", "vis-vega", "{}", x=600),
+        ]
+        source, target = _source_and_target(client, token, _spec("Shadows", [BASELINE], nodes))
+        plan = _plan(client, token, source, target).get_json()
+        targets = [entry["nodeId"] for entry in plan["toRun"]]
+        assert targets == ["load"], plan
+
+        started = client.post(f"/api/projects/{source}/runs", data=json.dumps({"targets": targets}), headers=_headers(token))
+        assert started.status_code == 202, started.get_data(as_text=True)
+        job = jobs.REGISTRY.get_job(started.get_json()["id"])
+        job.thread.join(timeout=30)
+        assert not job.thread.is_alive()
+        db.session.rollback()  # see what the run's threads committed
+        run = client.get(f"/api/runs/{started.get_json()['id']}", headers=_headers(token)).get_json()
+        assert run["status"] == "succeeded", run
+        assert sandbox.ran == ["load"], "a run of the context ran more than the context"
+
+        plan = _plan(client, token, source, target).get_json()
+        assert plan["problems"] == [] and plan["toRun"] == [], plan
+        assert plan["context"][0]["source"]["datasetId"] == computed_dataset_id("load", source)
+        resp = _copy(client, token, source, target, [{"source": "load", "node": "loader-1"}])
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        assert _copied_data(_user_dir_key_of(user), "loader-1", target) == "id,height\n1,10\n"
+        assert resp.get_json()["datasets"]["loader-1"]["id"] == computed_dataset_id("loader-1", target)
 
 
 def test_only_the_scenarios_saved_outputs_are_copied_to_fresh_ids(client, user_and_token):
