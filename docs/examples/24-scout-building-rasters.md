@@ -63,15 +63,15 @@ buildings, so it raises each footprint to its `height`:
         "getFnv": "height",
         "getFnvType": "quantitative",
         "colorMapInterpolator": "interpolateViridis",
-        "legendTitle": "Building height (m)"
+        "title": "Building height (m)"
       }
     ]
   }
 }
 ```
 
-`legendTitle` is Curio's own key, not the grammar's: it titles the legend,
-which would otherwise read `input_0`, the table the input became.
+`title` names the layer in the legend, which would otherwise read `input_0`,
+the table the input became.
 
 ## Rasterize them
 
@@ -222,7 +222,7 @@ A third Autark map reads the shadow raster as `input_0`:
         "dataRef": "[!! input_0 !!]",
         "getFnv": "band_1",
         "colorMapInterpolator": "interpolateReds",
-        "legendTitle": "Accumulated shadow (minutes)"
+        "title": "Accumulated shadow (minutes)"
       }
     ]
   }

@@ -307,6 +307,9 @@ def render_autk_region(schema: dict, label: str) -> str:
     interpolators = _definition(
         schema, layer_spec.get("properties", {}).get("colorMapInterpolator", {}).get("$ref", "")
     ).get("enum", [])
+    # What "title" does in a map; the grammar's note on which adapters read it is left out.
+    layer_title = layer_spec.get("properties", {}).get("title", {}).get("description", "")
+    layer_title = layer_title.split(" Read by the ", 1)[0]
 
     lines = [
         f"{label} nodes ({AUTK_TEMPLATE}) are controlled through grammar: their content "
@@ -341,7 +344,8 @@ def render_autk_region(schema: dict, label: str) -> str:
         # document may name both; a node draws one view.
         f'- "map": {AUTK_ONE_VIEW} Requires {_every(_definition(schema, "MapSpec").get("required", []))}, '
         f'and each entry of "{layers}" requires {_every(layer_required)}. '
-        f'"colorMapInterpolator" is one of {_either(interpolators)}.',
+        f'"colorMapInterpolator" is one of {_either(interpolators)}. '
+        f'A layer that shows a legend names it with "title": {layer_title}'.rstrip(),
         f'- "plot": {AUTK_ONE_VIEW} Every plot requires '
         f'{_every(_plot_required(schema))}; "mark" selects the rest:',
     ]
@@ -472,13 +476,13 @@ AUTK_STARTER_LADDER: tuple[StarterRule, ...] = (
     ),
     StarterRule(
         "geometry+quantitative", "map",
-        'a layer colored by the first quantitative column, with "getFnv": that column, '
+        'a layer colored by the first quantitative column, with "title" and "getFnv": that column, '
         '"getFnvType": "quantitative" and "colorMapInterpolator": "interpolateViridis"',
         columns=_roles(quantitative=1), layers=CountRange(1, 1),
     ),
     StarterRule(
         "geometry+nominal", "map",
-        'a layer colored by the first nominal column, with "getFnv": that column, '
+        'a layer colored by the first nominal column, with "title" and "getFnv": that column, '
         '"getFnvType": "categorical" and "colorMapInterpolator": "schemeTableau10"',
         columns=_roles(nominal=1), layers=CountRange(1, 1),
     ),

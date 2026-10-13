@@ -80,7 +80,7 @@ and pickable.
   { "dataRef": "table_osm_parks" },
   { "dataRef": "table_osm_water" },
   { "dataRef": "table_osm_buildings", "isPick": true, "getFnv": "height", "getFnvType": "quantitative", "defaultFnv": 10,
-    "legendTitle": "Building height (m)" },
+    "title": "Building height (m)" },
   { "dataRef": "table_osm_roads" }
 ]}
 ```

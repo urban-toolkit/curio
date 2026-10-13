@@ -57,6 +57,7 @@ export const AUTK_STARTER_BUILDERS: Record<
   "geometry+quantitative": ([layer]) => ({
     layerRefs: [{
       dataRef: layer.name,
+      title: layer.columns.quantitative[0],
       getFnv: layer.columns.quantitative[0],
       getFnvType: "quantitative",
       colorMapInterpolator: "interpolateViridis",
@@ -65,6 +66,7 @@ export const AUTK_STARTER_BUILDERS: Record<
   "geometry+nominal": ([layer]) => ({
     layerRefs: [{
       dataRef: layer.name,
+      title: layer.columns.nominal[0],
       getFnv: layer.columns.nominal[0],
       getFnvType: "categorical",
       colorMapInterpolator: "schemeTableau10",

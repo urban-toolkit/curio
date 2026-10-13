@@ -35,15 +35,14 @@ export function differenceTableName(value: DifferenceValue | undefined): string 
   return /^[A-Za-z_]/.test(name) ? name : `_${name}`;
 }
 
-/** The map's legend title (a layerRef's `legendTitle`): `<band or column> change`, or `change`. */
+/** The map's legend title (a layerRef's `title`): `<band or column> change`, or `change`. */
 export function differenceLegendTitle(value: DifferenceValue): string {
   return value.value === CHANGE_FIELD ? CHANGE_FIELD : `${value.value} change`;
 }
 
 /**
  * A raster's or a layer's difference, from its lowest value (dark purple) to
- * its highest (yellow). Sequential, since autk-grammar takes no domain that
- * would centre a diverging scheme on zero.
+ * its highest (yellow).
  */
 export const DIFFERENCE_INTERPOLATOR = "interpolateViridis";
 
@@ -99,13 +98,13 @@ export function resolveValue(wanted: string | undefined, values: readonly Differ
 export function differenceMapDoc(value: DifferenceValue | undefined): Record<string, unknown> {
   const table = differenceTableName(value);
   if (!value) return { map: { layerRefs: [{ dataRef: table }] } };
-  const legendTitle = differenceLegendTitle(value);
+  const title = differenceLegendTitle(value);
   if (value.categorical) {
     return {
       map: {
         layerRefs: [{
           dataRef: table,
-          legendTitle,
+          title,
           getFnv: value.value,
           getFnvType: "categorical",
           colorMapInterpolator: "schemeTableau10",
@@ -118,7 +117,7 @@ export function differenceMapDoc(value: DifferenceValue | undefined): Record<str
     map: {
       layerRefs: [{
         dataRef: table,
-        legendTitle,
+        title,
         getFnv: value.value,
         getFnvType: "quantitative",
         colorMapInterpolator: DIFFERENCE_INTERPOLATOR,

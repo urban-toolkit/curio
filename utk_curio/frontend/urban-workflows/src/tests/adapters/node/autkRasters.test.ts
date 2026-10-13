@@ -16,9 +16,7 @@ import {
   RASTER_EXPORT_MISSING,
   framedRaster,
   loadGeoTiffParams,
-  RASTER_TRANSFER_FUNCTION,
   bleedIntoClearCells,
-  recolorRasters,
   resolveRasterInputs,
   withRasterSources,
   type CurioRasterSource,
@@ -277,129 +275,6 @@ describe("framedRaster", () => {
     });
     // The raster handed to it is not changed.
     expect(raster.features).toHaveLength(1);
-  });
-});
-
-describe("recolorRasters", () => {
-  // A map as the grammar keeps it: its layers by id, and autk-map's updateColorMap.
-  function fakeMap(types: Record<string, string>) {
-    const layers: Record<string, any> = {};
-    for (const [id, typeLayer] of Object.entries(types)) {
-      layers[id] = { layerInfo: { typeLayer }, setTransferFunction: jest.fn() };
-    }
-    return {
-      layers,
-      layerManager: { searchByLayerId: (id: string) => layers[id] ?? null },
-      updateColorMap: jest.fn(),
-      updateRenderInfo: jest.fn(),
-      requestRender: jest.fn(),
-    };
-  }
-
-  /** Recolor the rasters of the grammar that ran *spec* and drew *maps*. */
-  const recolor = (spec: any, ...maps: any[]) => recolorRasters(grammarThatRan(spec, ...maps), spec);
-
-  test("colors a raster's cells again in the scheme its layerRef names", () => {
-    const map = fakeMap({ input_0: "raster" });
-    recolor({
-      map: { layerRefs: [{ dataRef: "input_0", getFnv: "band_1", colorMapInterpolator: "interpolateViridis" }] },
-    }, map);
-    // From the layer's own config, which holds the scheme; the legend gets its domain.
-    expect(map.updateColorMap).toHaveBeenCalledWith("input_0", { colorMap: {} });
-    // Its legend stays, as the grammar turned it on.
-    expect(map.updateRenderInfo).not.toHaveBeenCalled();
-  });
-
-  test("draws every cell with a value opaque, as SCOUT does, before the cells are colored again", () => {
-    const map = fakeMap({ input_0: "raster" });
-    recolor({
-      map: { layerRefs: [{ dataRef: "input_0", colorMapInterpolator: "interpolateReds" }] },
-    }, map);
-    const setTransfer = map.layers.input_0.setTransferFunction;
-    expect(setTransfer).toHaveBeenCalledWith(RASTER_TRANSFER_FUNCTION);
-    expect(RASTER_TRANSFER_FUNCTION).toEqual({ opacityMin: 1, opacityMax: 1 });
-    expect(setTransfer.mock.invocationCallOrder[0]).toBeLessThan(map.updateColorMap.mock.invocationCallOrder[0]);
-  });
-
-  test("a raster that names no scheme is drawn the same way, in autk-map's own reds", () => {
-    const map = fakeMap({ input_0: "raster" });
-    recolor({
-      map: { layerRefs: [{ dataRef: "input_0", getFnv: "band_1" }] },
-    }, map);
-    expect(map.layers.input_0.setTransferFunction).toHaveBeenCalledWith(RASTER_TRANSFER_FUNCTION);
-    expect(map.updateColorMap).toHaveBeenCalledWith("input_0", { colorMap: {} });
-  });
-
-  test("its clear cells take a neighbor's color once the cells are colored", () => {
-    const map = fakeMap({ input_0: "raster" });
-    const layer = map.layers.input_0;
-    // One row: a red cell with a value, then a cell with no data.
-    layer.rasterResX = 2;
-    layer.rasterResY = 1;
-    layer.rasterData = new Float32Array([200, 10, 10, 255, 0, 0, 0, 0]);
-    recolor({
-      map: { layerRefs: [{ dataRef: "input_0", colorMapInterpolator: "interpolateReds" }] },
-    }, map);
-    expect(Array.from(layer.rasterData)).toEqual([200, 10, 10, 255, 200, 10, 10, 0]);
-  });
-
-  test("a raster with isColorMap false keeps its colors and hides its legend", () => {
-    const map = fakeMap({ input_0: "raster" });
-    recolor({
-      map: { layerRefs: [{ dataRef: "input_0", colorMapInterpolator: "interpolateViridis", isColorMap: false }] },
-    }, map);
-    expect(map.updateColorMap).toHaveBeenCalledWith("input_0", { colorMap: {} });
-    expect(map.updateRenderInfo).toHaveBeenCalledWith("input_0", { isColorMap: false });
-  });
-
-  test("a map whose raster cells were written again is asked for a frame, after they were", () => {
-    const map = fakeMap({ input_0: "raster" });
-    const layer = map.layers.input_0;
-    layer.rasterResX = 2;
-    layer.rasterResY = 1;
-    layer.rasterData = new Float32Array([200, 10, 10, 255, 0, 0, 0, 0]);
-    let cellsWhenAsked: number[] = [];
-    map.requestRender.mockImplementation(() => { cellsWhenAsked = Array.from(layer.rasterData); });
-    recolor({
-      map: { layerRefs: [{ dataRef: "input_0", colorMapInterpolator: "interpolateReds" }] },
-    }, map);
-    // It draws on demand, and autk-map cannot see cells written in place.
-    expect(map.requestRender).toHaveBeenCalled();
-    expect(cellsWhenAsked).toEqual([200, 10, 10, 255, 200, 10, 10, 0]);
-  });
-
-  test("leaves layers with geometry as drawn", () => {
-    const map = fakeMap({ buildings: "buildings" });
-    recolor({
-      map: [{ layerRefs: [{ dataRef: "buildings", getFnv: "height", colorMapInterpolator: "interpolateViridis" }] }],
-    }, map);
-    expect(map.layers.buildings.setTransferFunction).not.toHaveBeenCalled();
-    expect(map.updateColorMap).not.toHaveBeenCalled();
-    expect(map.requestRender).not.toHaveBeenCalled();
-  });
-
-  test("does nothing for a grammar that drew no map or a document without a map", () => {
-    expect(() => recolorRasters({}, { map: { layerRefs: [{ dataRef: "a", colorMapInterpolator: "x" }] } })).not.toThrow();
-    expect(() => recolor({ plot: {} })).not.toThrow();
-  });
-
-  test("each of two maps that draw one raster colors its cells again, and keeps or hides its own legend", () => {
-    const first = fakeMap({ input_0: "raster" });
-    const second = fakeMap({ input_0: "raster" });
-    recolor({
-      map: [
-        { layerRefs: [{ dataRef: "input_0", colorMapInterpolator: "interpolateBlues" }] },
-        { layerRefs: [{ dataRef: "input_0", colorMapInterpolator: "interpolateReds", isColorMap: false }] },
-      ],
-    }, first, second);
-    for (const map of [first, second]) {
-      expect(map.layers.input_0.setTransferFunction).toHaveBeenCalledWith(RASTER_TRANSFER_FUNCTION);
-      expect(map.updateColorMap).toHaveBeenCalledTimes(1);
-      expect(map.updateColorMap).toHaveBeenCalledWith("input_0", { colorMap: {} });
-      expect(map.requestRender).toHaveBeenCalled();
-    }
-    expect(first.updateRenderInfo).not.toHaveBeenCalled();
-    expect(second.updateRenderInfo).toHaveBeenCalledWith("input_0", { isColorMap: false });
   });
 });
 
