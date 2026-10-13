@@ -91,6 +91,7 @@ import FlowProvider, { useFlowContext } from '../../providers/FlowProvider';
 import { CURIO_UNIVERSAL_NODE_TYPE, NodeType, SupportedType } from '../../constants';
 import { registerNode } from '../../registry/nodeRegistry';
 import type { NodeDescriptor } from '../../registry/types';
+import { resolveReferences } from '../../utils/references/codeReferences';
 
 function descriptor(id: string, inputCardinality: string | null): NodeDescriptor {
   return {
@@ -325,5 +326,49 @@ describe('deleting an edge closes the gap', () => {
     await deleteEdges([api.edges.find((e: any) => e.source === 'b')!.id]);
     expect(dataOf('t').code).toBe('x = [!! input 0 !!]');
     expect(mockBroadcastNodeUpdated).not.toHaveBeenCalled();
+  });
+});
+
+describe('deleting an edge, with inputs read as input_k', () => {
+  const scope = (slots: number[]) => ({ widgets: [], inputs: slots.map((slot) => ({ slot })), shared: [] });
+
+  test('later circles move up, and their chips and typed names follow', async () => {
+    await fanIn(
+      'curio.builtin/computation-analysis@1',
+      'x = input_0\ny = [!! input_1.area !!] + input_1\nz = [!! input_2 !!]  # input_2',
+    );
+    await connect('a', 't');
+    await connect('b', 't');
+    await connect('c', 't');
+    await deleteEdges([api.edges.find((e: any) => e.source === 'b')!.id]);
+    expect([handleOf('a'), handleOf('c')]).toEqual(['in', 'in_1']);
+    expect(dataOf('t').code).toBe('x = input_0\ny = [!! input_?.area !!] + [!! input_? !!]\nz = [!! input_1 !!]  # input_2');
+  });
+
+  test("a node's only edge goes without rewriting the input it names, so the next edge is read by it", async () => {
+    const code = 'gdf = input_0.copy()\nx = [!! input_0 !!]';
+    await fanIn('curio.builtin/computation-analysis@1', code);
+    await connect('a', 't');
+    await deleteEdges([api.edges.find((e: any) => e.source === 'a')!.id]);
+    expect(dataOf('t').code).toBe(code);
+    await connect('b', 't');
+    expect(handleOf('b')).toBe('in');
+    expect(dataOf('t').code).toBe(code);
+    expect(resolveReferences(dataOf('t').code, scope([0]), 'python')).toEqual({
+      code: 'gdf = input_0.copy()\nx = input_0',
+      problems: [],
+    });
+  });
+
+  test('the last of several edges goes without rewriting, so the next edge on its circle is read by it', async () => {
+    const code = 'a = input_0\nb = [!! input_1 !!]';
+    await fanIn('curio.builtin/computation-analysis@1', code);
+    await connect('a', 't');
+    await connect('b', 't');
+    await deleteEdges([api.edges.find((e: any) => e.source === 'b')!.id]);
+    expect(dataOf('t').code).toBe(code);
+    await connect('c', 't');
+    expect(handleOf('c')).toBe('in_1');
+    expect(resolveReferences(dataOf('t').code, scope([0, 1]), 'python').code).toBe('a = input_0\nb = input_1');
   });
 });

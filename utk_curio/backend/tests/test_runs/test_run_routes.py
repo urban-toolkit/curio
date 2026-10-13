@@ -148,6 +148,23 @@ class TestARunGoesOnWithNoBrowser:
         # b read a's output, as Play would have sent it.
         assert sandbox.bodies["b"]["file_path"] == "art-a"
 
+    def test_each_step_names_the_circles_its_inputs_are_on(self, client, user_and_token, sandbox):
+        """A node reads the edge on circle k as ``input_k``, so each step tells
+        the sandbox which circles its inputs are on, as Play does."""
+        user, token = user_and_token
+        edges = [
+            {"id": "a-c", "source": "a", "target": "c", "targetHandle": "in"},
+            {"id": "b-c", "source": "b", "target": "c", "targetHandle": "in_3"},
+            {"id": "b-d", "source": "b", "target": "d", "targetHandle": "in_2"},
+        ]
+        project_id, _ = _create(client, token, [_node("a"), _node("b"), _node("c"), _node("d")], edges)
+        run_id = _start(client, token, project_id).get_json()["id"]
+        _wait(run_id)
+
+        assert sandbox.bodies["c"]["input_slots"] == [0, 3]
+        assert sandbox.bodies["d"]["input_slots"] == [2]
+        assert "input_slots" not in sandbox.bodies["a"]
+
     def test_its_artifacts_carry_the_starting_session_and_nothing_stores_it(self, client, db, user_and_token, sandbox):
         from utk_curio.backend.app.runs import jobs
         from utk_curio.backend.app.runs.models import DataflowRun, DataflowRunStep

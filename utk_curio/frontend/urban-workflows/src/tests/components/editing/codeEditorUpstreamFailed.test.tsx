@@ -170,6 +170,22 @@ describe("a code node fed by a failed node (#603)", () => {
     });
 });
 
+describe("a code node's run names the circles its inputs are on", () => {
+    test("so the sandbox reads the edge on circle k as input_k", () => {
+        mockFlow = {
+            edges: [
+                { id: "a->n1", source: "a", target: "n1", targetHandle: "in" },
+                { id: "b->n1", source: "b", target: "n1", targetHandle: "in_3" },
+                { id: "n1->c", source: "n1", target: "c", targetHandle: "in_2" },
+            ],
+            nodeExecStatus: { a: "executed", b: "executed" },
+        };
+        const { interpretCode } = play({ replacedCode: "return input_0, input_3" });
+        expect(interpretCode).toHaveBeenCalledTimes(1);
+        expect(interpretCode.mock.calls[0][12]).toEqual([0, 3]);
+    });
+});
+
 describe("every failed run is reported the same way", () => {
     test("a sandbox failure tells the runner it failed", () => {
         play({ result: { output: { path: "" }, stdout: [], stderr: "Traceback (most recent call last):\nRuntimeError: boom" } });

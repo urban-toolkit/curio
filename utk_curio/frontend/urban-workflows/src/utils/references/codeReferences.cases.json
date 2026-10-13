@@ -700,6 +700,138 @@
       "selections": [{"name": "picked", "node": "chart", "column": "osm_id", "count": 25000}],
       "expected": "{\"oneOf\": [!! selection picked !!]}",
       "problems": ["[!! selection picked !!]: the selection holds 25000 ids, more than the 10000 a selection tag takes. Select fewer rows in its view."]
+    },
+    {
+      "name": "an input chip is the name its circle is read by",
+      "language": "python",
+      "code": "df = [!! input_0 !!]",
+      "widgets": [],
+      "inputs": [{"slot": 0}],
+      "expected": "df = input_0"
+    },
+    {
+      "name": "each input chip is its own circle's name, whatever circles the others are on",
+      "language": "python",
+      "code": "a = [!! input_0 !!]\nc = [!! input_2 !!]",
+      "widgets": [],
+      "inputs": [{"slot": 2}, {"slot": 0}, {"slot": 1}],
+      "expected": "a = input_0\nc = input_2"
+    },
+    {
+      "name": "an input chip after a circle with no edge keeps its circle's name",
+      "language": "python",
+      "code": "b = [!! input_2 !!]",
+      "widgets": [],
+      "inputs": [{"slot": 1}, {"slot": 2}],
+      "expected": "b = input_2"
+    },
+    {
+      "name": "a JavaScript input chip is the name its circle is read by",
+      "language": "javascript",
+      "code": "const n = [!! input_1 !!].length;",
+      "widgets": [],
+      "inputs": [{"slot": 0}, {"slot": 1}],
+      "expected": "const n = input_1.length;"
+    },
+    {
+      "name": "a column chip beside an input read by its name is the column's name",
+      "language": "python",
+      "code": "s = input_0[[!! input_0.population !!]]",
+      "widgets": [],
+      "inputs": [{"slot": 0, "columns": ["population", "area"]}],
+      "expected": "s = input_0[\"population\"]"
+    },
+    {
+      "name": "a layer chip picks its layer out of its circle's input",
+      "language": "python",
+      "code": "a = [!! input_2:roads !!]  # [!! input_2:roads.lanes !!]",
+      "widgets": [],
+      "inputs": [{"slot": 1}, {"slot": 2, "layers": [{"name": "roads", "columns": ["lanes"]}, {"name": "buildings"}]}],
+      "expected": "a = curio_layer(input_2, \"roads\", 2)  # lanes"
+    },
+    {
+      "name": "a JavaScript layer chip picks its layer out of its circle's input",
+      "language": "javascript",
+      "code": "const roads = [!! input_0:table_osm_roads !!];",
+      "widgets": [],
+      "inputs": [{"slot": 0}],
+      "expected": "const roads = curio_layer(input_0, \"table_osm_roads\", 0);"
+    },
+    {
+      "name": "input and column chips in a spec are the names they are read by",
+      "language": "json",
+      "code": "{\"data\": {\"name\": [!! input_0 !!]}, \"title\": \"Mean [!! input_1.zip !!]\"}",
+      "widgets": [],
+      "inputs": [{"slot": 0}, {"slot": 1}],
+      "expected": "{\"data\": {\"name\": \"input_0\"}, \"title\": \"Mean zip\"}"
+    },
+    {
+      "name": "an input chip whose circle has no edge names that circle",
+      "language": "python",
+      "code": "x = [!! input_3 !!]",
+      "widgets": [],
+      "inputs": [{"slot": 0}, {"slot": 1}],
+      "expected": "x = [!! input_3 !!]",
+      "problems": ["[!! input_3 !!]: input_3 has no edge. Connect one to that circle, or drag one of this node's input chips here."]
+    },
+    {
+      "name": "the chip of a deleted input reads input_?",
+      "language": "python",
+      "code": "x = [!! input_? !!]; y = [!! input_?.area !!]",
+      "widgets": [],
+      "inputs": [{"slot": 0}],
+      "expected": "x = [!! input_? !!]; y = [!! input_?.area !!]",
+      "problems": [
+        "[!! input_? !!]: the edge for this input was deleted. Drag one of this node's input chips here.",
+        "[!! input_?.area !!]: the edge for this input was deleted. Drag one of this node's input chips here."
+      ]
+    },
+    {
+      "name": "a column chip names its input by its circle when the column is missing",
+      "language": "python",
+      "code": "x = [!! input_0.missing !!]",
+      "widgets": [],
+      "inputs": [{"slot": 0, "columns": ["a"]}],
+      "expected": "x = [!! input_0.missing !!]",
+      "problems": ["[!! input_0.missing !!]: input_0 has no column missing."]
+    },
+    {
+      "name": "an input chip is an input even beside a widget of its name",
+      "language": "python",
+      "code": "x = [!! input_0 !!]",
+      "widgets": [{"name": "input_0", "type": "number", "default": 5}],
+      "inputs": [{"slot": 0}],
+      "expected": "x = input_0"
+    },
+    {
+      "name": "an input chip spelled the old way is refused, naming its new spelling",
+      "language": "python",
+      "code": "df = [!! input 0 !!]\nh = df[[!! input 1.height !!]]",
+      "widgets": [],
+      "inputs": [{"slot": 0}, {"slot": 1, "columns": ["height"]}],
+      "expected": "df = [!! input 0 !!]\nh = df[[!! input 1.height !!]]",
+      "problems": [
+        "[!! input 0 !!] names an input the old way, which Curio no longer reads. Write [!! input_0 !!]: each input circle is its own variable, input_0, input_1, and so on.",
+        "[!! input 1.height !!] names an input the old way, which Curio no longer reads. Write [!! input_1.height !!]: each input circle is its own variable, input_0, input_1, and so on."
+      ]
+    },
+    {
+      "name": "a JavaScript layer chip spelled the old way is refused, naming its new spelling",
+      "language": "javascript",
+      "code": "const roads = [!! input 0:roads !!];",
+      "widgets": [],
+      "inputs": [{"slot": 0}],
+      "expected": "const roads = [!! input 0:roads !!];",
+      "problems": ["[!! input 0:roads !!] names an input the old way, which Curio no longer reads. Write [!! input_0:roads !!]: each input circle is its own variable, input_0, input_1, and so on."]
+    },
+    {
+      "name": "a spec's input chip spelled the old way is refused, naming its new spelling",
+      "language": "json",
+      "code": "{\"data\": {\"name\": [!! input 1 !!]}}",
+      "widgets": [],
+      "inputs": [{"slot": 0}, {"slot": 1}],
+      "expected": "{\"data\": {\"name\": [!! input 1 !!]}}",
+      "problems": ["[!! input 1 !!] names an input the old way, which Curio no longer reads. Write [!! input_1 !!]: each input circle is its own variable, input_0, input_1, and so on."]
     }
   ]
 }

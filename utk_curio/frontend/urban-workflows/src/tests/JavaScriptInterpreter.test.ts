@@ -60,6 +60,25 @@ describe('JavaScriptInterpreter', () => {
         expect(url).not.toContain('/processPythonCode');
     });
 
+    test('names the wired circles, so the sandbox binds each edge to its input_k', async () => {
+        const reply = {
+            ok: true,
+            json: async () => ({ stdout: [], stderr: '', output: { path: 'abc', dataType: 'int' } }),
+        };
+        (global.fetch as jest.Mock).mockResolvedValueOnce(reply).mockResolvedValueOnce(reply);
+        const send = interpreter.interpretCode.bind(interpreter) as (...args: unknown[]) => void;
+        const args = ['return input_3;', 'return input_3;', '', [], jest.fn(), NodeType.JS_COMPUTATION,
+            'node-1', 'workflow-1', mockNodeExecProv, 'flow-1', false, 'Node'];
+
+        send(...args, [0, 3]);
+        send(...args);
+        await flushPromises();
+
+        const bodies = (global.fetch as jest.Mock).mock.calls.map(([, options]) => JSON.parse(options.body));
+        expect(bodies[0].inputSlots).toEqual([0, 3]);
+        expect('inputSlots' in bodies[1]).toBe(false);
+    });
+
     test('calls callback with response JSON on success', async () => {
         const fakeResponse = {
             stdout: ['hello'],

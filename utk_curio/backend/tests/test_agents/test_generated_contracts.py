@@ -10,6 +10,7 @@ prevent, so it fails here.
 from __future__ import annotations
 
 import difflib
+import re
 from pathlib import Path
 
 import pytest
@@ -261,6 +262,23 @@ class TestThePromptFacts:
             assert f'"{name}"' in text, name
         with pytest.raises(contracts.PromptTemplateError, match="not_a_field"):
             contracts.render_template("{{vega.runtime_field:not_a_field}}")
+
+    def test_the_input_kinds_and_names_are_the_runtimes(self):
+        """A node reads circle k as ``input_k``: the prompt states the three
+        input kinds, and no prompt teaches ``arg`` or the old chip spelling."""
+        from utk_curio.backend.app.agents.domain import input_contract
+
+        text = contracts.render_prompt("new_content_prompt")
+        for kind in (input_contract.KIND_SINGLE, input_contract.KIND_SEVERAL, input_contract.KIND_GATHERED):
+            assert f'If its "kind" is "{kind}", ' in text, kind
+        assert 'If its "kind" is "list"' not in text
+        prompts = Path(contracts.__file__).resolve().parents[4] / "llm-prompts"
+        texts = {stem: contracts.render_prompt(stem) for stem in contracts.PROMPT_TEMPLATES}
+        texts.update({path.name: path.read_text(encoding="utf-8") for path in sorted(prompts.glob("*.md"))})
+        assert len(texts) > len(contracts.PROMPT_TEMPLATES)
+        for name, rendered in texts.items():
+            assert not re.search(r"(?<![\w.$])arg(?![\w$])", rendered), name
+            assert not re.search(r"\[!!\s*input\s+[\d?]", rendered), name
 
     def test_the_package_contract_is_the_backend_contracts(self):
         from utk_curio.backend.app.packages.domain import backend_contract as bc

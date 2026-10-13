@@ -169,6 +169,97 @@ class TestArgShape:
         assert ic.describe(None) == ""
 
 
+POOL_SPEC = {"dataflow": {
+    "nodes": MULTI_INPUT_SPEC["dataflow"]["nodes"] + [
+        {"id": "pool", "type": "curio.builtin/data-pool", "goal": "Pool"},
+    ],
+    "edges": [
+        {"id": "e0", "source": "p", "target": "pool", "targetHandle": "in_1"},
+        {"id": "e1", "source": "b", "target": "pool", "targetHandle": "in"},
+        {"id": "e2", "source": "pool", "target": "a", "targetHandle": "in"},
+    ],
+}}
+
+
+class TestTheKinds:
+    """A node reads each input circle as its own variable, ``input_k``. Its
+    inputs are ``single`` (one circle), ``several`` (several circles, one value
+    each) or ``gathered`` (one circle that a pool hands several edges' values
+    on, as a list). ``list``, the kind of the one ``arg`` there once was, is
+    refused."""
+
+    def test_the_kinds_are_single_several_gathered_and_none(self):
+        assert (ic.KIND_SINGLE, ic.KIND_SEVERAL, ic.KIND_GATHERED, ic.KIND_NONE) == (
+            "single", "several", "gathered", "none",
+        )
+        assert ic.KINDS == ("single", "several", "gathered", "none")
+
+    def test_several_circles_are_several_each_read_by_its_own_name(self):
+        shape = ic.arg_shape(MULTI_INPUT_SPEC, "a")
+        assert shape["kind"] == "several"
+        assert shape["circles"] == [0, 1]
+        assert [(s["circle"], s["chip"], s["goal"]) for s in shape["slots"]] == [
+            (0, "[!! input_0 !!]", "Chicago Community Boundaries"),
+            (1, "[!! input_1 !!]", "Population Data"),
+        ]
+        assert "via" not in shape
+        assert all("argIndex" not in s for s in shape["slots"])
+        assert ic.describe(shape) == (
+            "2 inputs, one per circle: [!! input_0 !!] = Chicago Community Boundaries; "
+            "[!! input_1 !!] = Population Data"
+        )
+
+    def test_one_circle_is_single(self):
+        spec = {"dataflow": {
+            "nodes": MULTI_INPUT_SPEC["dataflow"]["nodes"],
+            "edges": [{"id": "e0", "source": "p", "target": "a", "targetHandle": "in_1"}],
+        }}
+        shape = ic.arg_shape(spec, "a")
+        assert shape["kind"] == "single"
+        assert ic.describe(shape) == "[!! input_1 !!] IS the value Population Data returned"
+
+    def test_a_pool_of_several_on_one_circle_is_gathered(self):
+        shape = ic.arg_shape(POOL_SPEC, "a")
+        assert shape["kind"] == "gathered"
+        assert shape["via"] == "pool" and shape["length"] == 2
+        assert [s["chip"] for s in shape["slots"]] == ["[!! input_0 !!][0]", "[!! input_0 !!][1]"]
+        assert ic.describe(shape).startswith("input_0 is a list of 2 inputs: [!! input_0 !!][0] = ")
+
+    def test_several_inputs_read_by_name_are_never_refused(self):
+        shape = ic.arg_shape(MULTI_INPUT_SPEC, "a")
+        for code in (
+            "gdf = input_0\nreturn gdf.to_crs(3395)",
+            "return input_1.merge(input_0, on=[!! input_0.community !!])",
+            "gdf = [!! input_0 !!]\nreturn gdf.crs",
+        ):
+            assert ic.check(code, shape) is None, code
+
+    def test_an_attribute_of_a_gathered_list_is_refused(self):
+        shape = ic.arg_shape(POOL_SPEC, "a")
+        assert ic.check("gdf = input_0\nreturn gdf.crs", shape) == {"attribute": "crs", "name": "gdf", "line": 2}
+        assert ic.check("gdf = [!! input_0 !!]\nreturn gdf.crs", shape)["attribute"] == "crs"
+        assert ic.check("return input_0[1].crs", shape) is None
+        text = ic.refusal_text(shape, ic.check("return input_0.crs", shape))
+        assert "`input_0` is a LIST of them" in text
+        assert "[!! input_0 !!][0] = Chicago Community Boundaries" in text
+        assert "arg" not in text
+
+    def test_list_is_refused(self):
+        listed = {"kind": "list", "length": 2, "circles": [0], "slots": []}
+        for read in (
+            lambda: ic.check("return input_0.crs", listed),
+            lambda: ic.describe(listed),
+            lambda: ic.refusal_text(listed, {"attribute": "crs", "name": "input_0", "line": 1}),
+            lambda: ic.with_schemas(listed, TestWithSchemas.ROWS),
+        ):
+            try:
+                read()
+            except ValueError as refused:
+                assert '"several"' in str(refused) and '"gathered"' in str(refused), refused
+            else:
+                raise AssertionError("an input contract of kind list was not refused")
+
+
 class TestWithSchemas:
     ROWS = [
         {"nodeId": "b", "schema": {"kind": "geotable", "rowCount": 77,

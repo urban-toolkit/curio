@@ -176,6 +176,38 @@ class TestRunThroughNode:
         # The chip names circle 1, which is b's: arg[1] in the sent code.
         assert "return arg[1]" in c_payload["code"] and "[!!" not in c_payload["code"]
 
+    def test_each_node_names_the_circles_its_inputs_are_on(self, tmp_curio):
+        """A node reads the edge on circle k as ``input_k``: the payload names
+        the wired circles, so a lone edge on ``in_3`` is ``input_3``."""
+        spec = _spec(
+            [_node("a"), _node("b"), _node("c", content="return input_0, input_3"),
+             _node("d", content="return input_3")],
+            [{"id": "e1", "source": "a", "target": "c", "targetHandle": "in"},
+             {"id": "e2", "source": "b", "target": "c", "targetHandle": "in_3"},
+             {"id": "e3", "source": "c", "target": "d", "targetHandle": "in_3"}],
+        )
+        exec_fn = _RecordingExec()
+        report = runner.run_through_node(KEY, PID, spec, "d", exec_fn=exec_fn)
+        assert report["ok"] is True, report
+        payloads = dict(zip(report["order"], (call[1] for call in exec_fn.calls)))
+        assert payloads["c"]["input_slots"] == [0, 3]
+        assert payloads["d"]["input_slots"] == [3]
+        assert "input_slots" not in payloads["a"]
+
+    def test_inputs_gathered_by_a_pool_arrive_on_the_one_circle_it_feeds(self, tmp_curio):
+        spec = _spec(
+            [_node("a"), _node("b"), _node("pool", "curio.builtin/data-pool", ""), _node("c")],
+            [{"id": "e1", "source": "a", "target": "pool", "targetHandle": "in"},
+             {"id": "e2", "source": "b", "target": "pool", "targetHandle": "in_1"},
+             {"id": "e3", "source": "pool", "target": "c", "targetHandle": "in"}],
+        )
+        exec_fn = _RecordingExec()
+        report = runner.run_through_node(KEY, PID, spec, "c", exec_fn=exec_fn)
+        assert report["ok"] is True, report
+        c_payload = exec_fn.calls[-1][1]
+        assert c_payload["dataType"] == "outputs"
+        assert c_payload["input_slots"] == [0]
+
     def test_a_pass_through_node_with_several_inputs_forwards_them_in_circle_order(self, tmp_curio):
         """A Data Pool (or a Vega-Lite chart) takes any number of inputs and runs
         nothing: what it hands down is the bundle of its inputs, in circle order."""

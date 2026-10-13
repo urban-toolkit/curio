@@ -185,3 +185,48 @@ describe("trillToNotebook", () => {
     expect(serializeNotebook(nb)).toContain("node_b");
   });
 });
+
+describe("trillToNotebook with inputs named input_k", () => {
+  it("a source takes no inputs", () => {
+    const nb = trillToNotebook(spec([{ id: "n", type: NodeType.DATA_LOADING, content: "return 1\n" }]));
+    const source = codeCells(nb)[0].source;
+    expect(source).toContain("def node_n():");
+    expect(source).toContain("data_n = node_n()");
+  });
+
+  it("passes the upstream value as input_0", () => {
+    const nb = trillToNotebook(
+      spec(
+        [
+          { id: "src", type: NodeType.DATA_LOADING, content: "return 1\n" },
+          { id: "dst", type: NodeType.COMPUTATION_ANALYSIS, content: "return input_0 + 1\n" },
+        ],
+        [["src", "dst"]]
+      )
+    );
+    const downstream = codeCells(nb).find((c) => c.source.includes("node_dst"))!;
+    expect(downstream.source).toContain("def node_dst(input_0=None):");
+    expect(downstream.source).toContain("result_dst = node_dst(input_0=data_src)");
+  });
+
+  it("passes each input as its circle's input_k, and an input_k with no edge is None", () => {
+    // `a` feeds circle 2 and `b` circle 0, against the edge list's order.
+    const nb = trillToNotebook(
+      spec(
+        [
+          { id: "a", type: NodeType.DATA_LOADING, content: "return 1\n" },
+          { id: "b", type: NodeType.DATA_LOADING, content: "return 2\n" },
+          { id: "m", type: NodeType.COMPUTATION_ANALYSIS, content: "return input_0, input_1, [!! input_2 !!]\n" },
+        ],
+        [
+          ["a", "m", "in_2"],
+          ["b", "m", "in"],
+        ]
+      )
+    );
+    const cell = codeCells(nb).find((c) => c.source.includes("node_m"))!;
+    expect(cell.source).toContain("def node_m(input_0=None, input_1=None, input_2=None):");
+    expect(cell.source).toContain("    return input_0, input_1, input_2");
+    expect(cell.source.split("\n").pop()).toBe("result_m = node_m(input_0=data_b, input_2=data_a)");
+  });
+});

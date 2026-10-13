@@ -184,6 +184,56 @@ describe("closing up circles", () => {
   });
 });
 
+describe("inputs named input_k", () => {
+  test("a chip names its circle as the code reads it", () => {
+    expect(parseReference("input_2")).toEqual({ kind: "input", slot: 2 });
+    expect(parseReference("input_2.pop.2020")).toEqual({ kind: "input", slot: 2, column: "pop.2020" });
+    expect(parseReference("input_0:roads.lanes")).toEqual({ kind: "input", slot: 0, layer: "roads", column: "lanes" });
+    expect(parseReference("input_?")).toEqual({ kind: "input", slot: null });
+  });
+
+  test("a chip spelled the old way is refused, naming its new spelling", () => {
+    const { code, problems } = resolveReferences(
+      "x = [!! input 0 !!] + [!! input 1:roads.lanes !!]",
+      { widgets: [], inputs: [{ slot: 0 }, { slot: 1 }], shared: [] },
+      "python",
+    );
+    expect(code).toBe("x = [!! input 0 !!] + [!! input 1:roads.lanes !!]");
+    expect(problems.map((p) => p.message)).toEqual([
+      "[!! input 0 !!] names an input the old way, which Curio no longer reads. Write [!! input_0 !!]: "
+        + "each input circle is its own variable, input_0, input_1, and so on.",
+      "[!! input 1:roads.lanes !!] names an input the old way, which Curio no longer reads. Write [!! input_1:roads.lanes !!]: "
+        + "each input circle is its own variable, input_0, input_1, and so on.",
+    ]);
+  });
+
+  test("closing up circles renumbers chips and typed names alike, and leaves strings, comments and other names", () => {
+    const code = "a = input_0\nb = [!! input_1.area !!] + input_1\nc = [!! input_2 !!] + input_2  # input_2\n"
+      + "s = 'input_2'\nx = obj.input_2 + my_input_2 + input_2x";
+    expect(renumberInputReferences(code, 1)).toBe(
+      "a = input_0\nb = [!! input_?.area !!] + [!! input_? !!]\nc = [!! input_1 !!] + input_1  # input_2\n"
+        + "s = 'input_2'\nx = obj.input_2 + my_input_2 + input_2x",
+    );
+  });
+
+  test("after closing up, the chips and names read the inputs they named", () => {
+    // Inputs 0, 1 and 2 feed the node; input 1 is deleted, so input 2 is now
+    // input 1, and the code reads it as input_1.
+    const code = renumberInputReferences("return [!! input_2 !!], input_2", 1);
+    const { code: resolved } = resolveReferences(
+      code,
+      { widgets: [], inputs: [{ slot: 0 }, { slot: 1 }], shared: [] },
+      "python",
+    );
+    expect(resolved).toBe("return input_1, input_1");
+  });
+
+  test("an empty input is named as the code reads it, with the node that feeds it", () => {
+    const message = describeEmptyInputs([1], [{ slot: 0 }, { slot: 1, label: "Parcels" }]);
+    expect(message).toBe("input_1 (from Parcels) has no value yet. Run the node that feeds it.");
+  });
+});
+
 describe("literals", () => {
   test("Python spells booleans and nothing its own way", () => {
     expect(widgetLiteral(true, "python")).toBe("True");
