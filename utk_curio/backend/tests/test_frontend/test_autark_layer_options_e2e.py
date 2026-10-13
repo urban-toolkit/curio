@@ -260,7 +260,6 @@ def test_raster_cells_and_legend_labels_follow_the_scheme(
     legend = _legend(page, plain, 2)
     assert _label_values(legend) == [0, 63], legend["labels"]
     assert _distance(_rgb(legend["colors"][0]), VIRIDIS_LOW) < 20, legend["colors"][:1]
-    save_node_closeup(page, CLOSEUP_STEM, plain, test_name="raster_scheme", sweep_toasts=True)
 
     _draw(page, reversed_, "a raster in reversed viridis")
     image = _canvas(page, reversed_)
@@ -269,6 +268,10 @@ def test_raster_cells_and_legend_labels_follow_the_scheme(
     assert _label_values(legend) == [63, 0], legend["labels"]
     # The bar keeps the scheme's order: its first color is the highest value's.
     assert _distance(_rgb(legend["colors"][0]), VIRIDIS_LOW) < 20, legend["colors"][:1]
+
+    # The close-ups come once every map is checked, so a missing baseline
+    # never hides a map that drew wrong.
+    save_node_closeup(page, CLOSEUP_STEM, plain, test_name="raster_scheme", sweep_toasts=True)
     save_node_closeup(page, CLOSEUP_STEM, reversed_, test_name="raster_scheme_reversed", sweep_toasts=True)
 
 
