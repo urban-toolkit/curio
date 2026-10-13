@@ -341,7 +341,7 @@ def test_each_scenario_chooses_by_scouts_classes_and_takes_the_statistics():
         resolved, problems = resolve_references(code, calculator["metadata"]["widgets"], "python")
         assert problems == [], (calculator["id"], problems)
         assert _literal_dict(_function_body(resolved), "NBS_CLASSES") == _scout_classes()
-    assert "return curio_raster_calculate(\"choose\", input_0, codes=codes)" in code
+    assert "return curio_raster_calculate(\"choose\", [input_0, input_1, input_2], codes=codes)" in code
     assert {n["content"] for n in _nodes(STATISTICS)} == {_starter("RASTER_STATISTICS_CODE")}
 
     loaders = {}
