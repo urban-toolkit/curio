@@ -143,7 +143,7 @@ class VerifiedRounds:
         self.secrets = None
         self._seed_from_recorded_failure()
         self._seed_from_carry_forward()
-        # dev/128: what this node's inputs ARE — a fact of the graph, computed
+        # dev/128: what this node's inputs ARE, a fact of the graph, computed
         # once (it cannot change mid-loop), handed to the child as an input, and
         # enforced before the sandbox. The owner's report: a node fed several
         # inputs as one list treated the list as a frame.
@@ -427,8 +427,8 @@ class VerifiedRounds:
 
     def _input_contract_gate(self):
         """dev/128: the shape gate, beside the DEC-072 source gate and before
-        the sandbox. A gathered input, a list, used as a frame is provably wrong —
-        a list has no such attribute — so the round fails HERE, for free,
+        the sandbox. A gathered input, a list, used as a frame is provably wrong
+        (a list has no such attribute), so the round fails HERE, for free,
         with the slot table as its correction instead of a library's
         AttributeError three minutes later."""
         violation = input_contract.check(self.candidate, self.arg_contract)

@@ -263,8 +263,8 @@ def _chip(position) -> str:
 
 
 def _names_bound_to(tree: ast.AST, names: set[str]) -> set[str]:
-    """*names*, and the names assigned DIRECTLY from one of them — ``gdf =
-    input_0`` — and, in turn, from those.
+    """*names*, and the names assigned DIRECTLY from one of them (``gdf =
+    input_0``), and, in turn, from those.
 
     A name bound to ``input_0[0]`` is not one of these: it holds a slot, which
     is the correct form.
@@ -313,7 +313,7 @@ def check(code: object, shape: dict | None) -> dict | None:
         if not isinstance(node, ast.Attribute):
             continue
         value = node.value
-        # `input_0[0].crs` is an attribute of a SUBSCRIPT — correct, never refused.
+        # `input_0[0].crs` is an attribute of a SUBSCRIPT: correct, never refused.
         if isinstance(value, ast.Name) and value.id in bound:
             return {
                 "attribute": node.attr,
