@@ -1,9 +1,8 @@
 import { NodeType } from "./constants";
 import { NodeTemplateId } from "./registry/types";
 import { recordExecProvenance } from "./utils/executionResult";
-import { getToken } from "./utils/authApi";
-import { backendUrl } from "./utils/backendUrl";
 import { executionInputRef } from "./utils/flowOutputRef";
+import { runNodeOnBackend } from "./utils/nodeRunRequest";
 
 export class JavaScriptInterpreter {
     public interpretCode(
@@ -30,15 +29,9 @@ export class JavaScriptInterpreter {
 
         const startedAt = new Date();
 
-        const _token = getToken();
-        const url = backendUrl() + "/processJavaScriptCode";
-        const fetchStartedAt = performance.now();
-        const CLIENT_TIMEOUT_MS = 180_000;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), CLIENT_TIMEOUT_MS);
-        fetch(url, {
-            method: "POST",
-            body: JSON.stringify({
+        runNodeOnBackend(
+            "/processJavaScriptCode",
+            {
                 code: userCode,
                 input: executionInputRef(input),
                 inputTypes: inputTypes,
@@ -47,33 +40,9 @@ export class JavaScriptInterpreter {
                 ...(dataflowId ? { dataflowId } : {}),
                 ...(nodeName ? { nodeName } : {}),
                 saveOutputDataset,
-            }),
-            headers: {
-                "Content-type": "application/json; charset=UTF-8",
-                ...(_token ? { "Authorization": `Bearer ${_token}` } : {}),
             },
-            signal: controller.signal,
-        })
-            .then(async (response) => {
-                let json: any = null;
-                try {
-                    json = await response.json();
-                } catch (error: any) {
-                    throw new Error(
-                        `Backend returned invalid JSON (${response.status}): ${error?.message || String(error)}`
-                    );
-                }
-
-                if (!response.ok) {
-                    throw new Error(
-                        json?.stderr || `Backend execution failed with status ${response.status}`
-                    );
-                }
-
-                return json;
-            })
-            .then((json) => {
-                clearTimeout(timeoutId);
+            nodeId,
+            (json) => {
                 recordExecProvenance(nodeExecProv, {
                     startedAt,
                     finishedAt: new Date(),
@@ -85,35 +54,8 @@ export class JavaScriptInterpreter {
                 });
 
                 callback(json);
-            })
-            .catch((error: any) => {
-                clearTimeout(timeoutId);
-                const elapsedMs = Math.round(performance.now() - fetchStartedAt);
-                const elapsedStr = `${(elapsedMs / 1000).toFixed(1)}s`;
-                const name: string = error?.name || "Error";
-                const baseMsg: string = error?.message || String(error);
-                const causeMsg: string | undefined =
-                    error?.cause && (error.cause.message || String(error.cause));
-
-                let summary: string;
-                if (name === "AbortError") {
-                    summary =
-                        `Execution timed out after ${elapsedStr} ` +
-                        `(client timeout = ${CLIENT_TIMEOUT_MS / 1000}s).\n` +
-                        `URL: ${url}\n` +
-                        `The backend or sandbox is still running but the browser stopped waiting. ` +
-                        `Check the backend log for this request.`;
-                } else {
-                    summary =
-                        `${name}: ${baseMsg}\n` +
-                        `URL: ${url}\n` +
-                        `Elapsed: ${elapsedStr}\n` +
-                        `This is a transport error (browser <-> backend), not your autkdb code. ` +
-                        `Likely causes: backend crashed mid-response, connection reset, CORS, ` +
-                        `or backend not reachable.`;
-                    if (causeMsg) summary += `\nCause: ${causeMsg}`;
-                }
-                callbackError(summary);
-            });
+            },
+            callbackError,
+        );
     }
 }

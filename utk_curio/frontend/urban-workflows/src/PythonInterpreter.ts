@@ -1,9 +1,8 @@
 import { NodeType } from "./constants";
 import { NodeTemplateId } from "./registry/types";
 import { recordExecProvenance } from "./utils/executionResult";
-import { getToken } from "./utils/authApi";
-import { backendUrl } from "./utils/backendUrl";
 import { executionInputRef } from "./utils/flowOutputRef";
+import { runNodeOnBackend } from "./utils/nodeRunRequest";
 
 export class PythonInterpreter {
     public interpretCode(
@@ -53,18 +52,9 @@ export class PythonInterpreter {
             console.log(`[PythonInterpreter] node=${nodeType} id=${nodeId} input=<unserializable>`);
         }
 
-        const _token = getToken();
-        const url = backendUrl() + "/processPythonCode";
-        const fetchStartedAt = performance.now();
-        // Mirror the JavaScriptInterpreter: cap the wait so a stuck node fails
-        // with a clear "execution timed out" message instead of hanging forever.
-        // 600 s matches the backend's SANDBOX_EXEC_TIMEOUT.
-        const CLIENT_TIMEOUT_MS = 600_000;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), CLIENT_TIMEOUT_MS);
-        fetch(url, {
-            method: "POST",
-            body: JSON.stringify({
+        runNodeOnBackend(
+            "/processPythonCode",
+            {
                 code: unifiedLines,
                 input: executionInputRef(input), // new
                 inputTypes: inputTypes, // new
@@ -73,38 +63,9 @@ export class PythonInterpreter {
                 ...(dataflowId ? { dataflowId } : {}),
                 ...(nodeName ? { nodeName } : {}),
                 saveOutputDataset,
-            }),
-            headers: {
-                "Content-type": "application/json; charset=UTF-8",
-                ...(_token ? { "Authorization": `Bearer ${_token}` } : {}),
             },
-            signal: controller.signal,
-        })
-            .then(async (response) => {
-                let json: any = null;
-                try {
-                    json = await response.json();
-                } catch (error: any) {
-                    throw new Error(
-                        `Backend returned invalid JSON (${response.status}): ${error?.message || String(error)}`
-                    );
-                }
-
-                if (!response.ok) {
-                    // Backend now returns clean JSON for sandbox timeouts /
-                    // connection errors (see _sandbox_call in routes.py).
-                    if (json?.error === "sandbox_timeout" || json?.error === "sandbox_unreachable") {
-                        throw new Error(json.message || `Backend execution failed with status ${response.status}`);
-                    }
-                    throw new Error(
-                        json?.stderr || `Backend execution failed with status ${response.status}`
-                    );
-                }
-
-                return json;
-            })
-            .then((json) => {
-                clearTimeout(timeoutId);
+            nodeId,
+            (json) => {
                 recordExecProvenance(nodeExecProv, {
                     startedAt,
                     finishedAt: new Date(),
@@ -116,37 +77,8 @@ export class PythonInterpreter {
                 });
 
                 callback(json);
-            })
-            .catch((error: any) => {
-                clearTimeout(timeoutId);
-                const elapsedMs = Math.round(performance.now() - fetchStartedAt);
-                const elapsedStr = `${(elapsedMs / 1000).toFixed(1)}s`;
-                const name: string = error?.name || "Error";
-                const baseMsg: string = error?.message || String(error);
-                const causeMsg: string | undefined =
-                    error?.cause && (error.cause.message || String(error.cause));
-
-                let summary: string;
-                if (name === "AbortError") {
-                    summary =
-                        `Execution timed out after ${elapsedStr} ` +
-                        `(client timeout = ${CLIENT_TIMEOUT_MS / 1000}s).\n` +
-                        `URL: ${url}\n` +
-                        `The backend or sandbox is still running but the browser stopped waiting. ` +
-                        `Check the backend log for this request.`;
-                } else if (/Failed to fetch|NetworkError/i.test(baseMsg)) {
-                    summary =
-                        `Transport error: ${baseMsg}\n` +
-                        `URL: ${url}\n` +
-                        `Elapsed: ${elapsedStr}\n` +
-                        `The backend dropped the connection mid-flight. ` +
-                        `Likely causes: backend crashed, sandbox unreachable, or the response exceeded a server-side limit. ` +
-                        `Check the backend log.`;
-                    if (causeMsg) summary += `\nCause: ${causeMsg}`;
-                } else {
-                    summary = baseMsg;
-                }
-                callbackError(summary);
-            });
+            },
+            callbackError,
+        );
     }
 }

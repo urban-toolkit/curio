@@ -1255,7 +1255,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
 
     // ── In-flight install placeholders ────────────────────────────────────────
     // Upper bound on how long a placeholder can linger if its clear never fires
-    // (crashed/aborted run). Matches the client execution timeout ceiling.
+    // (crashed/aborted run). Matches the backend's timeout for one node run.
     const PENDING_INSTALL_TIMEOUT_MS = 600_000;
     // How long a FAILED placeholder stays on screen before it is dropped. Long
     // enough to be noticed beside its toast, short enough not to look like a row.
