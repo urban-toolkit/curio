@@ -789,8 +789,8 @@ The node has two tabs:
   (**Combine**: mean, sum, median, minimum, maximum, or a count of rows).
 - **Difference**, in its place in Difference, maps a raster's or a layer's
   difference, colored by a band or a number column, or by `change` (**Color by**).
-  **Change** picks the difference itself (input_1 minus input_0) or its size
-  (**Absolute**). The legend is titled with what it shows: `sunlight change` for the
+  **Change** picks **Signed**, input_1 minus input_0, or **Absolute**, its size.
+  The legend is titled with what it shows: `sunlight change` for the
   column `sunlight`, `sunlight absolute change` for its size, or `change`. A raster's
   or a layer's colors run from the lowest
   difference, dark purple, to the highest, yellow; a raster cell that is nodata in

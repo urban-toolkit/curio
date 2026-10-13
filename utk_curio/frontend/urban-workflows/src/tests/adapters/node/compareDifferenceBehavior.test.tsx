@@ -367,8 +367,8 @@ describe("each difference's size, absolute", () => {
     mount({ ...inDifference(), inputSlots: holding("dataframe") });
     const select = screen.getByRole("combobox", { name: "Change" }) as HTMLSelectElement;
     expect(Array.from(select.options).map((option) => [option.value, option.textContent])).toEqual([
-      ["signed", "input_1 minus input_0"],
-      ["absolute", "Absolute, |input_1 minus input_0|"],
+      ["signed", "Signed"],
+      ["absolute", "Absolute"],
     ]);
     expect(select.value).toBe("signed");
     fireEvent.change(select, { target: { value: "absolute" } });

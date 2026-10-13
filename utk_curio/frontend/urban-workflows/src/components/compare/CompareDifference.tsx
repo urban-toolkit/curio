@@ -166,12 +166,12 @@ function Select({
 
 const AUTOMATIC_KEY = "";
 
-/** What Change offers: the difference itself, or its size. */
+/** What Change offers: the difference itself, input_1 minus input_0, or its size. */
 const SIGNED = "signed";
 const ABSOLUTE = "absolute";
 const CHANGE_OPTIONS = [
-  { value: SIGNED, text: "input_1 minus input_0" },
-  { value: ABSOLUTE, text: "Absolute, |input_1 minus input_0|" },
+  { value: SIGNED, text: "Signed" },
+  { value: ABSOLUTE, text: "Absolute" },
 ];
 
 export function CompareDifference({
