@@ -20,6 +20,10 @@ CASES_FILE = (
 RENDER_SPEC = json.dumps({"map": {"layerRefs": []}})
 DATA_SPEC = json.dumps({"data": [{"type": "osm"}]})
 COMPUTE_SPEC = json.dumps({"compute": [{"shader": "x"}]})
+#: A data section and a compute step over it: the browser computes.
+DATA_AND_COMPUTE_SPEC = json.dumps({"data": [{"type": "osm"}], "compute": [{"shader": "x"}]})
+#: No data of its own to load: the node reads its input, in the browser.
+EMPTY_DATA_SPEC = json.dumps({"data": []})
 
 
 def _cases():
@@ -70,8 +74,10 @@ def test_ancestors_follow_data_edges_only():
     ("curio.builtin/vis-simple", "", "forward"),
     ("curio.builtin/data-export", "", "forward"),
     ("curio.builtin/autk-grammar", RENDER_SPEC, "forward"),
-    ("curio.builtin/autk-grammar", DATA_SPEC, "browser"),
+    ("curio.builtin/autk-grammar", DATA_SPEC, "run"),
     ("curio.builtin/autk-grammar", COMPUTE_SPEC, "browser"),
+    ("curio.builtin/autk-grammar", DATA_AND_COMPUTE_SPEC, "browser"),
+    ("curio.builtin/autk-grammar", EMPTY_DATA_SPEC, "browser"),
     ("curio.builtin/spatial-join", "", "browser"),
 ])
 def test_each_kind_has_the_role_the_canvas_gives_it(node_type, content, role):

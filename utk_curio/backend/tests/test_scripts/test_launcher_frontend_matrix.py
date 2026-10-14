@@ -24,6 +24,10 @@ import pytest
 from utk_curio.cli import frontend_build, services
 from utk_curio.cli.frontend_build import NODE_MAJOR
 
+#: The Autark data compiler a build writes beside the page
+#: (``common/autk_data_compiler.COMPILER_NAME``).
+COMPILER_NAME = "autk-data-compile.cjs"
+
 OTHER_MAJOR = NODE_MAJOR - 2
 BUILD_SCRIPT = {"scripts": {"build": "webpack --mode production && npm run build:packages"}}
 
@@ -38,6 +42,7 @@ def _make(root, dist, tree, *, source=True):
         (root / "dist").mkdir(exist_ok=True)
         (root / "dist" / "index.html").write_text("<html></html>", encoding="utf-8")
         (root / "dist" / "bundle.js").write_text("the bundle", encoding="utf-8")
+        (root / "dist" / COMPILER_NAME).write_text("the Autark data compiler", encoding="utf-8")
         mode = "production" if dist == "current" else "development"
         (root / "dist" / frontend_build.BUILD_STAMP).write_text(f"{mode}\n", encoding="utf-8")
     if tree != "absent":

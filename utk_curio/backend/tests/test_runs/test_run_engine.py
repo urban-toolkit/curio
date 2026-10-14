@@ -12,7 +12,10 @@ import threading
 import pytest
 
 CODE = "curio.builtin/computation-analysis"
+AUTARK = "curio.builtin/autk-grammar"
 DATA_SPEC = json.dumps({"data": [{"type": "osm"}]})
+#: An Autark compute step: only the browser makes its layers.
+COMPUTE_SPEC = json.dumps({"compute": [{"shader": "x"}]})
 
 
 def node(node_id, node_type=CODE, content="return input_0", **fields):
@@ -207,14 +210,15 @@ class TestNodesTheServerDoesNotRun:
 
     def test_data_only_the_browser_makes_leaves_the_run_needing_the_canvas(self):
         recorder, events, finished = run(spec(
-            [node("osm", "curio.builtin/autk-grammar", DATA_SPEC,
-                  metadata={"packageTemplateLabel": "Load OSM"}),
+            [node("shade", AUTARK, COMPUTE_SPEC,
+                  metadata={"packageTemplateLabel": "Shade roads"}),
              node("count"), node("chart", "curio.builtin/vis-vega", "{}")],
-            [edge("osm", "count"), edge("count", "chart")],
+            [edge("shade", "count"), edge("count", "chart")],
         ))
-        assert finished["osm"]["status"] == "browser"
+        assert finished["shade"]["status"] == "browser"
+        assert "shade" not in recorder.calls
         assert finished["count"]["status"] == "waiting"
-        assert '"Load OSM"' in finished["count"]["skipReason"]
+        assert '"Shade roads"' in finished["count"]["skipReason"]
         assert finished["chart"]["status"] == "waiting"
         assert "count" not in recorder.calls
         assert outcome(events)["status"] == "needs_canvas"
@@ -225,6 +229,107 @@ class TestNodesTheServerDoesNotRun:
         ))
         assert finished["chart"]["status"] == "forwarded"
         assert outcome(events)["status"] == "succeeded"
+
+
+class TestAnAutarkNodeThatOnlyLoadsData:
+    """It runs on the server: its document, references resolved, reaches
+    *execute* as JavaScript on no input (``runs/service`` compiles it as the
+    browser does), and a failed attempt is tried once more, as
+    ``runDataInBackend`` tries it."""
+
+    LOAD = {"type": "osm", "pbfFileUrl": "[!! @extract !!]", "outputTableName": "table_osm",
+            "autoLoadLayers": {"layers": ["roads"]}}
+
+    def test_it_runs_as_its_document_with_its_references_resolved(self):
+        recorder, events, finished = run(spec([
+            node("p", "curio.builtin/parameter@1", "", metadata={"widgets": [
+                {"name": "extract", "type": "text", "default": "",
+                 "value": "docs/examples/data/back_bay.osm.pbf"},
+            ]}),
+            node("osm", AUTARK, json.dumps({"data": [self.LOAD]})),
+        ]))
+        call = recorder.calls["osm"]
+        assert call["engine"] == "javascript"
+        assert json.loads(call["code"]) == {
+            "data": [{**self.LOAD, "pbfFileUrl": "docs/examples/data/back_bay.osm.pbf"}],
+        }
+        assert call["input"] is None
+        assert finished["osm"]["status"] == "ok"
+        assert finished["osm"]["output"] == {"path": "art-osm", "dataType": "dataframe"}
+        assert outcome(events)["status"] == "succeeded"
+
+    def test_its_document_goes_as_written_and_reads_no_input_even_when_wired(self):
+        # As the browser posts it: input '' and no circles, since a document
+        # that loads its own data does not read its input.
+        recorder, _, finished = run(spec(
+            [node("a"), node("osm", AUTARK, DATA_SPEC)], [edge("a", "osm")],
+        ))
+        assert recorder.calls["osm"]["code"] == DATA_SPEC
+        assert recorder.calls["osm"]["input"] is None
+        assert finished["osm"]["status"] == "ok"
+
+    def test_what_it_feeds_through_a_pool_reads_its_layers(self):
+        recorder, events, finished = run(spec(
+            [node("osm", AUTARK, DATA_SPEC), node("pool", "curio.builtin/data-pool", ""), node("count")],
+            [edge("osm", "pool"), edge("pool", "count")],
+        ))
+        assert finished["osm"]["status"] == "ok"
+        assert finished["pool"]["status"] == "forwarded"
+        assert recorder.calls["count"]["input"] == {"path": "art-osm", "dataType": "dataframe"}
+        assert outcome(events)["status"] == "succeeded"
+
+    def test_a_failed_attempt_is_tried_once_more(self):
+        attempts = []
+
+        def second_try_works(step):
+            attempts.append(step.node_id)
+            if attempts.count("osm") == 2:
+                recorder.fail.discard("osm")
+
+        recorder = Recorder(fail={"osm"}, on_call=second_try_works)
+        _, events, finished = run(spec(
+            [node("osm", AUTARK, DATA_SPEC), node("count")], [edge("osm", "count")],
+        ), recorder)
+        assert attempts.count("osm") == 2
+        assert finished["osm"]["status"] == "ok"
+        assert finished["count"]["status"] == "ok"
+        assert recorder.calls["count"]["input"] == {"path": "art-osm", "dataType": "dataframe"}
+        assert outcome(events)["status"] == "succeeded"
+
+    def test_a_sandbox_that_could_not_be_asked_is_asked_once_more(self):
+        attempts = []
+
+        def second_try_reaches(step):
+            attempts.append(step.node_id)
+            if attempts.count("osm") == 2:
+                recorder.unreachable.discard("osm")
+
+        recorder = Recorder(unreachable={"osm"}, on_call=second_try_reaches)
+        _, _, finished = run(spec([node("osm", AUTARK, DATA_SPEC)]), recorder)
+        assert attempts == ["osm", "osm"]
+        assert finished["osm"]["status"] == "ok"
+
+    def test_a_second_failure_stands(self):
+        attempts = []
+        recorder = Recorder(fail={"osm"}, on_call=lambda step: attempts.append(step.node_id))
+        _, events, finished = run(spec(
+            [node("osm", AUTARK, DATA_SPEC), node("count")], [edge("osm", "count")],
+        ), recorder)
+        assert attempts == ["osm", "osm"]
+        assert finished["osm"]["status"] == "error"
+        assert "ZeroDivisionError" in finished["osm"]["stderrTail"]
+        assert finished["count"]["status"] == "skipped"
+        assert "count" not in recorder.calls
+        assert outcome(events)["status"] == "failed"
+
+    def test_any_other_node_is_tried_once(self):
+        attempts = []
+        recorder = Recorder(fail={"a", "j"}, on_call=lambda step: attempts.append(step.node_id))
+        _, _, finished = run(spec(
+            [node("a"), node("j", "curio.builtin/js-computation", "return 1;")],
+        ), recorder)
+        assert sorted(attempts) == ["a", "j"]
+        assert finished["a"]["status"] == "error" and finished["j"]["status"] == "error"
 
 
 class TestRunningUpToANode:
