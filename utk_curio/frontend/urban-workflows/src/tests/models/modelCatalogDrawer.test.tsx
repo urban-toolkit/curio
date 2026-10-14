@@ -30,6 +30,11 @@ import {
   rasterConversionPackage,
 } from "../_support/modelPackages";
 
+// The drawer reaches the node registry, whose built-in behaviors load Vega's
+// ESM build: mocked virtually, as testing-gotchas prescribes.
+jest.mock("vega", () => ({}), { virtual: true });
+jest.mock("vega-lite", () => ({}), { virtual: true });
+
 const mockApi = {
   catalog: jest.fn(),
   listInstalled: jest.fn(),
