@@ -1094,27 +1094,28 @@ class TestDataflowPlanMint:
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
         """`REQ-ORCH-001` is untouched: only requiresAgents members are
-        repaired. A merely PREFERRED delegate still reaches the user as a
+        repaired. A merely PREFERRED delegate (the Researcher, which the
+        Dataflow Builder asks to check a fact) still reaches the user as a
         reviewed install proposal."""
         user, token = user_and_token
         att_id, _ = self._setup(
             client, user, token, alice_project, monkeypatch,
             replies=[
-                '```curio.v1\n{"delegateRequest": {"capability": "connection.propose", '
-                '"inputs": {"subtask": "connect these"}}}\n```',
+                '```curio.v1\n{"delegateRequest": {"capability": "research.verify", '
+                '"inputs": {"intent": "check the dataset id"}}}\n```',
                 "I asked for an install.",
             ],
         )
         body = self._run(client, token, alice_project, att_id).get_json()
         proposal = next(p for p in body["content"] if p["type"] == "proposal")
         assert proposal["tool"] == "project.install"
-        assert proposal["pins"]["coord"] == "agent.connection-builder@1.0.0"
+        assert proposal["pins"]["coord"] == "agent.researcher@1.0.0"
         installed = {
             a["dirName"] for a in client.get(
                 f"/api/agents/projects/{alice_project}", headers=_auth(token)
             ).get_json()["agents"]
         }
-        assert "agent.connection-builder@1.0.0" not in installed
+        assert "agent.researcher@1.0.0" not in installed
 
     def test_unavailable_template_yields_error_card_not_proposal(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
@@ -1136,7 +1137,7 @@ class TestDataflowPlanMint:
         user, token = user_and_token
         att_id, _ = self._setup(
             client, user, token, alice_project, monkeypatch,
-            coord="agent.chat-agent@1.0.0",
+            coord="agent.researcher@1.0.0",
             replies=["idea!\n" + self._plan_tail()],
         )
         body = self._run(client, token, alice_project, att_id).get_json()

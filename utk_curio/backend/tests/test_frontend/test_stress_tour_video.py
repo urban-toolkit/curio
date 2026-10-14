@@ -2215,7 +2215,8 @@ def chapter_agents(run: StressRun) -> None:
             run.note("no reachable point on any edge for a connection attach",
                      step="Attach an agent to a connection", severity="warning")
         else:
-            drag_agent_to(run, _first_coord(installed, "connection-builder"),
+            # The Node Builder is the agent that accepts a connection too.
+            drag_agent_to(run, _first_coord(installed, "node-builder"),
                           lambda: edge_client_point(page))
             expect_attach_toast(run, "the connection")
 
@@ -2230,8 +2231,8 @@ def chapter_agents(run: StressRun) -> None:
 
     with run.step("Attach every remaining agent, so all of them can be asked"):
         # The three drags above are the gesture worth filming, but the chat
-        # panel cycles ATTACHMENTS - so with three attachments only three of the
-        # seven agents would ever be asked anything. The rest are attached
+        # panel cycles ATTACHMENTS - so with those attachments only two of the
+        # four agents would ever be asked anything. The rest are attached
         # through the same REST endpoint the drop handler calls, picking the
         # first target kind each agent's manifest accepts (the API refuses an
         # incompatible one with a 400 naming what it does accept).
@@ -2244,7 +2245,6 @@ def chapter_agents(run: StressRun) -> None:
         edge_id = edges[0] if edges else None
         already = {
             _first_coord(installed, "node-builder"),
-            _first_coord(installed, "connection-builder"),
             _first_coord(installed, "dataflow-builder"),
         }
         attached, refused = list(already), []

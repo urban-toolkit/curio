@@ -571,12 +571,17 @@ class TestDelegationTailAndBudget:
         assert "research.verify \N{EM DASH} handled by Researcher" in system
 
     def test_non_delegating_agent_gets_no_delegation_paragraph(self, client, user_and_token, tmp_curio, monkeypatch):
+        from utk_curio.backend.tests._support.agent_routes import _write_reader
+
         user, token = user_and_token
         pid = _project(client, token)
-        client.post(f"/api/agents/projects/{pid}/install", json={"coord": "agent.chat-agent@1.0.0"}, headers=_auth(token))
+        # Every card delegates something, so a made-up agent with no
+        # delegates stands in.
+        coord = _write_reader(user)
+        client.post(f"/api/agents/projects/{pid}/install", json={"coord": coord}, headers=_auth(token))
         att_id = client.post(
             f"/api/agents/projects/{pid}/attachments",
-            json={"coord": "agent.chat-agent@1.0.0", "target": {"kind": "canvas"}},
+            json={"coord": coord, "target": {"kind": "canvas"}},
             headers=_auth(token),
         ).get_json()["attachmentId"]
         calls = []
@@ -747,15 +752,19 @@ class TestCapabilityFirstResolution:
         return builtin.get_builtin_manifest(self.DFB)
 
     def test_non_delegates_to_installed_template_resolves(self, client, user_and_token, tmp_curio):
-        # Chat declares conversation.respond and is NOT in dataflow-builder's
-        # delegatesTo — capability-first finds it once installed.
+        # The Researcher declares research.notes.compose, which the Dataset
+        # Finder's delegatesTo does NOT delegate (its entry for the Researcher
+        # is scoped to research.verify): capability-first finds it once
+        # installed.
         user, token = user_and_token
         key = _user_dir_key(user)
         pid = _project(client, token)
-        client.post(f"/api/agents/projects/{pid}/install", json={"coord": "agent.chat-agent@1.0.0"}, headers=_auth(token))
-        r = delegation.resolve(key, pid, self._manifest(), "conversation.respond")
+        df = builtin.get_builtin_manifest("agent.dataset-finder@1.0.0")
+        assert not df.delegates("agent.researcher", "research.notes.compose")
+        client.post(f"/api/agents/projects/{pid}/install", json={"coord": RS}, headers=_auth(token))
+        r = delegation.resolve(key, pid, df, "research.notes.compose")
         assert r.outcome == "ok"
-        assert r.coord == "agent.chat-agent@1.0.0"
+        assert r.coord == RS
 
     def test_delegates_to_preference_still_wins(self, client, user_and_token, tmp_curio):
         # For dataflow-builder, node.build is declared by node-builder (in its
@@ -777,10 +786,11 @@ class TestCapabilityFirstResolution:
         key = _user_dir_key(user)
         pid_a = _project(client, token)
         pid_b = _project(client, token)
-        client.post(f"/api/agents/projects/{pid_b}/install", json={"coord": "agent.chat-agent@1.0.0"}, headers=_auth(token))
-        r = delegation.resolve(key, pid_a, self._manifest(), "conversation.respond")
+        df = builtin.get_builtin_manifest("agent.dataset-finder@1.0.0")
+        client.post(f"/api/agents/projects/{pid_b}/install", json={"coord": RS}, headers=_auth(token))
+        r = delegation.resolve(key, pid_a, df, "research.notes.compose")
         assert r.outcome == "not-installed"
-        assert r.coord == "agent.chat-agent@1.0.0"
+        assert r.coord == RS
 
     def test_missing_delegates_to_entry_still_preferred_over_fallback_absence(self, client, user_and_token, tmp_curio):
         # Nothing installed declares dataset.discover, but dataset-finder (a

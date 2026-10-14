@@ -149,8 +149,8 @@ class TestSolve:
         assert {(c["coord"], c["capability"]) for c in children} == {(self.WRITER, "node.content.generate")}
         assert all(p["type"] != "proposal" for p in solve_turn.get("content") or [])
         mode_prompt = builtin.read_prompt_text(self.WRITER, "node.content.generate").strip()
-        chat_prompt = builtin.read_prompt_text(self.WRITER, "instruction").strip()
-        assert prompts and all(mode_prompt in p and chat_prompt not in p for p in prompts)
+        chat_instruction = builtin.read_prompt_text(self.WRITER, "instruction").strip()
+        assert prompts and all(mode_prompt in p and chat_instruction not in p for p in prompts)
 
     def _child_config(self, client, token, label="Child", model="child-model"):
         body = {"label": label, "apiType": "openai_compatible", "baseUrl": "https://llm.example.com/v1",

@@ -68,8 +68,8 @@ class TestGlobalCatalog:
         resp = client.get("/api/agents/catalog", headers=_auth(token))
         assert resp.status_code == 200
         agents = resp.get_json()["agents"]
-        # The seven catalog cards; the internal built-ins run only as delegates.
-        assert len(agents) == 7
+        # The four catalog cards; the internal built-ins run only as delegates.
+        assert len(agents) == 4
         assert all(a["scope"] == "browse" and a["provenance"]["trust"] == "built-in" for a in agents)
         assert all(a["inCatalog"] is True for a in agents)
         ids = {a["id"] for a in agents}
@@ -79,19 +79,21 @@ class TestGlobalCatalog:
     def test_import_a_builtin(self, client, user_and_token, tmp_curio):
         # A built-in resolves without being written to the user store first.
         _, token = user_and_token
-        coord = "agent.chat-agent@1.0.0"
+        coord = "agent.researcher@1.0.0"
         r = client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
         assert r.status_code == 201, r.get_data(as_text=True)
         imports_listed = client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]
         assert [a["dirName"] for a in imports_listed] == [coord]
         # And the catalog now marks it imported.
         cat = client.get("/api/agents/catalog", headers=_auth(token)).get_json()["agents"]
-        chat = next(a for a in cat if a["id"] == "agent.chat-agent")
-        assert chat["imported"] is True
+        researcher = next(a for a in cat if a["id"] == "agent.researcher")
+        assert researcher["imported"] is True
 
     def test_install_a_builtin_into_project(self, client, user_and_token, tmp_curio, alice_project):
+        # The Researcher requires no other agent, so the install writes one
+        # coordinate.
         _, token = user_and_token
-        coord = "agent.connection-builder@1.0.0"
+        coord = "agent.researcher@1.0.0"
         r = client.post(
             f"/api/agents/projects/{alice_project}/install",
             json={"coord": coord},
@@ -102,8 +104,8 @@ class TestGlobalCatalog:
         cat = client.get(
             f"/api/agents/catalog?projectId={alice_project}", headers=_auth(token)
         ).get_json()["agents"]
-        builder = next(a for a in cat if a["id"] == "agent.connection-builder")
-        assert builder["installedInProject"] is True
+        researcher = next(a for a in cat if a["id"] == "agent.researcher")
+        assert researcher["installedInProject"] is True
 
     def test_an_internal_agent_is_never_imported_or_installed(
         self, client, user_and_token, tmp_curio, alice_project
@@ -140,10 +142,10 @@ class TestPublish:
     def test_publish_builtin_rejected(self, client, user_and_token, tmp_curio):
         # A built-in is not an owned store-backed import → cannot be published.
         _, token = user_and_token
-        client.post("/api/agents/imports", json={"coord": "agent.connection-builder@1.0.0"}, headers=_auth(token))
+        client.post("/api/agents/imports", json={"coord": "agent.researcher@1.0.0"}, headers=_auth(token))
         r = client.post(
             "/api/agents/publications",
-            json={"coord": "agent.connection-builder@1.0.0"},
+            json={"coord": "agent.researcher@1.0.0"},
             headers=_auth(token),
         )
         assert r.status_code == 400
@@ -156,11 +158,11 @@ class TestPublish:
 
     def test_publishable_flag_owned_vs_builtin(self, client, user_and_token, tmp_curio):
         user, token = user_and_token
-        client.post("/api/agents/imports", json={"coord": "agent.connection-builder@1.0.0"}, headers=_auth(token))
+        client.post("/api/agents/imports", json={"coord": "agent.researcher@1.0.0"}, headers=_auth(token))
         coord = _write_def(user, "agent.my-custom", "1.0.0")
         client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
         by_id = {a["id"]: a for a in client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]}
-        assert by_id["agent.connection-builder"]["publishable"] is False  # built-in
+        assert by_id["agent.researcher"]["publishable"] is False  # built-in
         assert by_id["agent.my-custom"]["publishable"] is True  # owned store-backed
 
     def test_unpublish(self, client, user_and_token, tmp_curio):

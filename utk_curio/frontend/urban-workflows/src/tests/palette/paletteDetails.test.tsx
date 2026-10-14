@@ -155,10 +155,10 @@ describe("an agent palette row", () => {
   test("opens the agent's details, not the whole catalog drawer", () => {
     const onOpen = jest.fn();
     const agent: any = {
-      id: "agent.chat-agent",
+      id: "agent.researcher",
       version: "1.0.0",
-      dirName: "agent.chat-agent@1.0.0",
-      name: "Chat",
+      dirName: "agent.researcher@1.0.0",
+      name: "Researcher",
       category: "node",
       purpose: "assistant for a node or the canvas",
       capabilities: [],
@@ -169,7 +169,7 @@ describe("an agent palette row", () => {
       requiresAgents: [],
     };
     render(<AgentPaletteRow agent={agent} onOpen={onOpen} />);
-    fireEvent.click(screen.getByRole("button", { name: "View Chat details" }));
+    fireEvent.click(screen.getByRole("button", { name: "View Researcher details" }));
     expect(screen.getByRole("dialog", { name: "Agent details" })).toBeInTheDocument();
     expect(onOpen).not.toHaveBeenCalled();
   });

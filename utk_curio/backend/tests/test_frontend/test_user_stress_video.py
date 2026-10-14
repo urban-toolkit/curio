@@ -53,14 +53,17 @@ from .usertest import (
 )
 from .utils import (
     EXPORT_DOWNLOAD_TIMEOUT_MS,
+    NODE_ONLY_AGENT,
     REPO_ROOT,
     accept_confirm_dialog,
     activate_header_icon,
+    api_json,
     canvas_nodes,
     close_tools_palette,
     connect_nodes,
     dismiss_toasts,
     drag_to_canvas,
+    ensure_node_only_agent,
     node_locator,
     open_new_workflow,
     open_tools_palette,
@@ -106,8 +109,9 @@ from .test_feature_tour_video import (  # noqa: E402
 )
 
 
-#: A node-only agent: the drop onto the canvas below must be refused.
-AGENT_NODE_ONLY = "agent.connection-builder@1.0.0"  # the one card with no canvas target
+#: A node-only agent: the drop onto the canvas below must be refused. Every
+#: card accepts the canvas, so a made-up one is uploaded to the account.
+AGENT_NODE_ONLY = NODE_ONLY_AGENT
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("CURIO_STRESS") != "1",
@@ -1679,13 +1683,23 @@ class TestSessionExtending:
             clear_canvas_overlays(page)
 
         # --- agents --------------------------------------------------------
-        with s.step("Add two agents to the dataflow",
-                    "One that attaches to a node or a connection, and a canvas agent.",
+        with s.step("Add agents to the dataflow",
+                    "One that attaches to nodes only, one that also takes a "
+                    "connection, and a canvas agent.",
                     chapter="Agents"):
+            # The node-only agent is the account's own, so it goes in through
+            # the API; the two cards go in through the drawer, whose installs
+            # refresh the palette.
+            token = page.evaluate(
+                "() => (document.cookie.match(/(?:^|; )session_token=([^;]*)/) || [])[1] || ''"
+            )
+            project_id = page.url.rstrip("/").rsplit("/", 1)[-1]
+            api_json(
+                f"{s.backend}/api/agents/projects/{project_id}/install", token,
+                method="POST", payload={"coord": ensure_node_only_agent(s.backend, token)},
+            )
             drawer = _open_agent_drawer(ctx)
-            # The node agent and the connection agent are one card now (the
-            # only card with no canvas target), so it is added once.
-            for coord in dict.fromkeys((AGENT_NODE_ONLY, AGENT_CONNECTION, AGENT_BUILDER)):
+            for coord in (AGENT_CONNECTION, AGENT_BUILDER):
                 _add_agent(ctx, drawer, coord, hold=700)
             drawer.get_by_role("button", name="Close Agent Catalog drawer").click()
             s.tour.beat(900)
@@ -1724,7 +1738,7 @@ class TestSessionExtending:
                     "a node-only agent was accepted onto the canvas",
                     severity="bug",
                     detail_full=(
-                        "agent.connection-builder declares no canvas target, so the "
+                        f"{AGENT_NODE_ONLY} declares no canvas target, so the "
                         f"canvas drop should have been refused. The app said: {said!r}"
                     ),
                 )

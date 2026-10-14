@@ -50,17 +50,17 @@ describe("agentsApi", () => {
   });
 
   it("installToProject() POSTs the coord to the install path", () => {
-    agentsApi.installToProject("p1", "agent.chat-agent@1.0.0");
+    agentsApi.installToProject("p1", "agent.researcher@1.0.0");
     expect(mockFetch).toHaveBeenCalledWith("/api/agents/projects/p1/install", {
       method: "POST",
-      body: JSON.stringify({ coord: "agent.chat-agent@1.0.0" }),
+      body: JSON.stringify({ coord: "agent.researcher@1.0.0" }),
     });
   });
 
   it("uninstallFromProject() DELETEs the escaped coord under the project", () => {
-    agentsApi.uninstallFromProject("p1", "agent.chat-agent@1.0.0");
+    agentsApi.uninstallFromProject("p1", "agent.researcher@1.0.0");
     expect(mockFetch).toHaveBeenCalledWith(
-      "/api/agents/projects/p1/agent.chat-agent%401.0.0",
+      "/api/agents/projects/p1/agent.researcher%401.0.0",
       { method: "DELETE" },
     );
   });

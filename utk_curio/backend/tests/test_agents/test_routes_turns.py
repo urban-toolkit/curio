@@ -29,8 +29,9 @@ from utk_curio.backend.tests.test_agents.test_routes_proposals import (
 
 
 class TestRun:
-    def _attach_builtin(self, client, token, project_id, coord="agent.chat-agent@1.0.0"):
-        # Chat is dual-compatible (node + canvas), so a canvas attachment is valid.
+    def _attach_builtin(self, client, token, project_id, coord="agent.researcher@1.0.0"):
+        # The Researcher is dual-compatible (node + canvas), so a canvas
+        # attachment is valid.
         client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
         r = client.post(
             f"/api/agents/projects/{project_id}/attachments",
@@ -66,12 +67,12 @@ class TestRun:
         assert msgs[0]["role"] == "system"
         # dev/06 parity: the system turn composes the preamble + instruction,
         # exactly as every legacy call site did.
-        preamble = builtin.read_prompt_text("agent.chat-agent@1.0.0", "system")
-        instruction = builtin.read_instruction_text("agent.chat-agent@1.0.0")
+        preamble = builtin.read_prompt_text("agent.researcher@1.0.0", "system")
+        instruction = builtin.read_instruction_text("agent.researcher@1.0.0")
         from utk_curio.backend.app.agents.domain import content as content_mod
 
         # dev/39: the runtime-owned structured-tail instruction composes last,
-        # followed by the read tools the chat agent is granted.
+        # followed by the tools the agent is granted, the read tools first.
         assert msgs[0]["content"].startswith(
             f"{preamble}\n\n{instruction}\n\n{content_mod.TAIL_INSTRUCTION}"
         )
@@ -101,7 +102,7 @@ class TestRun:
 class TestStreamRun:
     """SSE run path (memo dev/22): deltas → done, persistence parity with run."""
 
-    def _attach_builtin(self, client, token, project_id, coord="agent.chat-agent@1.0.0"):
+    def _attach_builtin(self, client, token, project_id, coord="agent.researcher@1.0.0"):
         client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
         r = client.post(
             f"/api/agents/projects/{project_id}/attachments",
@@ -233,9 +234,14 @@ class TestStreamRun:
 class TestExecutionRecords:
     """Execution records on agent turns (memo dev/37): every completed run
     pins its DEC-031 reproducibility inputs and Actual usage on the transcript
-    — the transcript IS the run history."""
+    — the transcript IS the run history.
 
-    def _attach_builtin(self, client, token, project_id, coord="agent.chat-agent@1.0.0"):
+    The Dataset Finder runs these: its grants are a fixed list the records
+    can pin exactly."""
+
+    COORD = "agent.dataset-finder@1.0.0"
+
+    def _attach_builtin(self, client, token, project_id, coord=COORD):
         client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
         r = client.post(
             f"/api/agents/projects/{project_id}/attachments",
@@ -315,7 +321,7 @@ class TestExecutionRecords:
         assert execution["usage"] == {"inputTokens": 12, "outputTokens": 34}
         assert isinstance(execution["durationMs"], int) and execution["durationMs"] >= 0
         pins = execution["pins"]
-        assert pins["coord"] == "agent.chat-agent@1.0.0"
+        assert pins["coord"] == self.COORD
         assert pins["intentEdited"] is False
         # Built-in roster manifests carry no prompt digest — tolerated null.
         assert pins["promptSha256"] is None
@@ -324,8 +330,11 @@ class TestExecutionRecords:
         assert pins["model"] == DEFAULT_LLM_MODEL
         assert pins["llm"] == {"configId": None, "label": "Deployment default",
                                "baseUrlHost": "127.0.0.1:9", "source": "deployment"}
-        # dev/39: granted tools are pinned; the registry ships empty.
-        assert pins["tools"] == ["dataflow.read", "node.read", "node.runtime.read"]
+        # dev/39: granted tools are pinned, every one, in the declared order.
+        assert pins["tools"] == [
+            "catalog.search", "discovery.sources", "discovery.search", "discovery.acquire",
+            "dataset.install", "dataflow.read",
+        ]
         # One pin left: the run caps and the budget it used to record are gone.
         assert pins["policy"] == {
             "maxOutputTokens": policy.DEPLOYMENT_MAX_OUTPUT_TOKENS,
@@ -361,7 +370,7 @@ class TestExecutionRecords:
         execution = turns[1]["execution"]
         assert execution["status"] == "error"
         assert execution["usage"] is None
-        assert execution["pins"]["coord"] == "agent.chat-agent@1.0.0"
+        assert execution["pins"]["coord"] == self.COORD
 
     def test_edited_intent_is_pinned(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         self._mock_provider(monkeypatch)
@@ -407,7 +416,7 @@ class TestExecutionRecords:
         execution = turns[1]["execution"]
         assert execution["status"] == "ok"
         assert execution["usage"] == {"inputTokens": 7, "outputTokens": 9}
-        assert execution["pins"]["coord"] == "agent.chat-agent@1.0.0"
+        assert execution["pins"]["coord"] == self.COORD
         # The SSE envelope correlates with the persisted record (memo dev/37):
         # execution first, done enriched with the same id and Actual usage.
         assert events[0] == ("execution", {"executionId": execution["executionId"]})
@@ -876,7 +885,7 @@ class TestToolLoop:
         _, token = user_and_token
         self._save_node(client, token, alice_project, {"id": "n1", "type": "CODE", "content": "print(1)"})
         att_id = self._install_attach(
-            client, token, alice_project, "agent.chat-agent@1.0.0",
+            client, token, alice_project, "agent.researcher@1.0.0",
             {"kind": "node", "targetId": "n1"},
         )
         r = client.post(
@@ -991,9 +1000,9 @@ class TestToolLoop:
             lambda c, m, **kw: "Ungranted Title",
         )
         _, token = user_and_token
-        # The Researcher is not granted node.runtime.read.
+        # The Dataset Finder is not granted node.runtime.read.
         att_id = self._install_attach(
-            client, token, alice_project, "agent.researcher@1.0.0", {"kind": "canvas"},
+            client, token, alice_project, "agent.dataset-finder@1.0.0", {"kind": "canvas"},
         )
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
@@ -1053,11 +1062,11 @@ class TestToolLoop:
 
         monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         _, token = user_and_token
-        # The Researcher declares no node.runtime.read, so it is not granted.
-        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.researcher@1.0.0"}, headers=_auth(token))
+        # The Dataset Finder declares no node.runtime.read, so it is not granted.
+        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.dataset-finder@1.0.0"}, headers=_auth(token))
         att_id = client.post(
             f"/api/agents/projects/{alice_project}/attachments",
-            json={"coord": "agent.researcher@1.0.0", "target": {"kind": "canvas"}},
+            json={"coord": "agent.dataset-finder@1.0.0", "target": {"kind": "canvas"}},
             headers=_auth(token),
         ).get_json()["attachmentId"]
         r = client.post(
@@ -1096,7 +1105,7 @@ class TestToolLoop:
         _, token = user_and_token
         self._save_node(client, token, alice_project, {"id": "n1", "content": "x"})
         att_id = self._install_attach(
-            client, token, alice_project, "agent.chat-agent@1.0.0",
+            client, token, alice_project, "agent.researcher@1.0.0",
             {"kind": "node", "targetId": "n1"},
         )
         r = client.post(
@@ -1216,7 +1225,7 @@ class TestStructuredContent:
     TAIL = '```curio.v1\n{"suggestedPrompts": {"primary": "Next step", "alternatives": ["Alt"]}}\n```'
     PARTS = [{"type": "suggestedPrompts", "primary": "Next step", "alternatives": ["Alt"]}]
 
-    def _attach_builtin(self, client, token, project_id, coord="agent.chat-agent@1.0.0"):
+    def _attach_builtin(self, client, token, project_id, coord="agent.researcher@1.0.0"):
         client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
         r = client.post(
             f"/api/agents/projects/{project_id}/attachments",
@@ -1409,7 +1418,7 @@ class TestRunsAreRecordedNotRationed:
     here: runs are recorded, never refused.
     """
 
-    def _attach_builtin(self, client, token, project_id, coord="agent.chat-agent@1.0.0"):
+    def _attach_builtin(self, client, token, project_id, coord="agent.researcher@1.0.0"):
         client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
         r = client.post(
             f"/api/agents/projects/{project_id}/attachments",
@@ -1505,7 +1514,7 @@ class TestOutputCapReachesTheProvider:
     now rather than something a user can override.
     """
 
-    COORD = "agent.chat-agent@1.0.0"
+    COORD = "agent.researcher@1.0.0"
 
     def _install_and_attach(self, client, token, project_id):
         client.post(
@@ -2439,13 +2448,14 @@ class TestRosterGrantCoverage:
     def test_an_agent_with_no_roster_grant_still_gets_none(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
-        """The gate widened, it did not dissolve: the chat agent proposes
-        nothing and needs no template vocabulary."""
+        """The gate widened, it did not dissolve: the Dataset Finder places no
+        template (its one proposal installs a dataset) and needs no template
+        vocabulary."""
         helper = TestDataflowPlanMint()
         user, token = user_and_token
         att_id, calls = helper._setup(
             client, user, token, alice_project, monkeypatch,
-            replies=["chatting"], coord="agent.chat-agent@1.0.0",
+            replies=["chatting"], coord="agent.dataset-finder@1.0.0",
         )
         helper._run(client, token, alice_project, att_id)
         assert "Available node templates" not in calls[0][0]["content"]
@@ -2640,7 +2650,7 @@ class TestPlanCorrectionRounds:
         helper = TestDataflowPlanMint()
         att_id, calls = helper._setup(
             client, user, token, alice_project, monkeypatch,
-            coord="agent.chat-agent@1.0.0",
+            coord="agent.researcher@1.0.0",
             replies=["idea!\n" + self._bad_json_tail()],
         )
         body = helper._run(client, token, alice_project, att_id).get_json()
@@ -3083,7 +3093,7 @@ class TestFenceAgnosticPlanRecognition:
         helper = TestDataflowPlanMint()
         att_id, calls = helper._setup(
             client, user, token, alice_project, monkeypatch,
-            coord="agent.chat-agent@1.0.0",
+            coord="agent.researcher@1.0.0",
             replies=[self._json_fence_reply()],
         )
         body = helper._run(client, token, alice_project, att_id).get_json()

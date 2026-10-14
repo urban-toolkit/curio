@@ -60,7 +60,7 @@ import { AgentDockOverlay } from "../../components/agents/attach/AgentDockOverla
 function attachment(id: string, name: string): any {
   return {
     attachmentId: id,
-    coord: "agent.chat-agent@1.0.0",
+    coord: "agent.researcher@1.0.0",
     target: { kind: "canvas" },
     sessionId: `s-${id}`,
     revision: 1,

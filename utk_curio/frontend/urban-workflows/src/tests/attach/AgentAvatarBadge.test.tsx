@@ -5,7 +5,7 @@ import { AgentAvatarBadge } from "../../components/agents/attach/AgentAvatarBadg
 function attachment(over: Partial<any> = {}): any {
   return {
     attachmentId: "att-1",
-    coord: "agent.chat-agent@1.0.0",
+    coord: "agent.researcher@1.0.0",
     target: { kind: "canvas" },
     sessionId: "s1",
     revision: 1,
@@ -13,7 +13,7 @@ function attachment(over: Partial<any> = {}): any {
     intentEdited: false,
     title: null,
     titleEdited: false,
-    name: "Chat",
+    name: "Researcher",
     category: "node",
     hooks: ["node", "canvas"],
     ...over,
@@ -26,7 +26,7 @@ describe("AgentAvatarBadge", () => {
       <AgentAvatarBadge attachment={attachment()} active={false} onOpen={jest.fn()} onDetach={jest.fn()} />,
     );
     // The name is shown only in the tooltip label (the chip itself is an icon).
-    const tooltip = screen.getByText("Chat");
+    const tooltip = screen.getByText("Researcher");
     expect(tooltip).toBeInTheDocument();
     expect(tooltip).toHaveAttribute("aria-hidden", "true");
   });
@@ -35,7 +35,7 @@ describe("AgentAvatarBadge", () => {
     const { rerender } = render(
       <AgentAvatarBadge attachment={attachment()} active={false} onOpen={jest.fn()} onDetach={jest.fn()} />,
     );
-    const chip = screen.getByRole("button", { name: /Open chat with Chat/ });
+    const chip = screen.getByRole("button", { name: /Open chat with Researcher/ });
     const badge = chip.parentElement as HTMLElement;
     expect(badge.className).not.toMatch(/badgeActive/);
     rerender(
@@ -53,12 +53,12 @@ describe("AgentAvatarBadge", () => {
         onDetach={jest.fn()}
       />,
     );
-    expect(screen.getByText("Chat: Dataset Import Help")).toBeInTheDocument();
+    expect(screen.getByText("Researcher: Dataset Import Help")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Open chat with Chat: Dataset Import Help" }),
+      screen.getByRole("button", { name: "Open chat with Researcher: Dataset Import Help" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Detach Chat: Dataset Import Help" }),
+      screen.getByRole("button", { name: "Detach Researcher: Dataset Import Help" }),
     ).toBeInTheDocument();
   });
 
@@ -68,9 +68,9 @@ describe("AgentAvatarBadge", () => {
     render(
       <AgentAvatarBadge attachment={attachment()} active={false} onOpen={onOpen} onDetach={onDetach} />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /Open chat with Chat/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Open chat with Researcher/ }));
     expect(onOpen).toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: /Detach Chat/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Detach Researcher/ }));
     expect(onDetach).toHaveBeenCalled();
   });
 });
@@ -83,7 +83,7 @@ describe("AgentAvatarBadge — dev/115 the running dot", () => {
         active={false} onOpen={jest.fn()} onDetach={jest.fn()}
       />,
     );
-    expect(screen.getByRole("img", { name: "Chat is solving in the background" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Researcher is solving in the background" })).toBeInTheDocument();
     rerender(
       <AgentAvatarBadge
         attachment={attachment({ liveJob: { executionId: "e1", kind: "solve-batch", status: "done", startedAt: 1 } })}

@@ -129,13 +129,13 @@ describe("attachAgentOnDrop with a connection target", () => {
     await attachAgentOnDrop({
       projectId: null,
       target,
-      agentCoord: "agent.connection-builder@1.0.0",
+      agentCoord: "agent.node-builder@1.0.0",
       saveProject,
       attach,
     });
 
     expect(saveProject).toHaveBeenCalled();
-    expect(attach).toHaveBeenCalledWith("p1", "agent.connection-builder@1.0.0", target);
+    expect(attach).toHaveBeenCalledWith("p1", "agent.node-builder@1.0.0", target);
   });
 
   it("still skips the flush for a canvas target", async () => {
@@ -145,7 +145,7 @@ describe("attachAgentOnDrop with a connection target", () => {
     await attachAgentOnDrop({
       projectId: "p1",
       target: { kind: "canvas" },
-      agentCoord: "agent.chat-agent@1.0.0",
+      agentCoord: "agent.researcher@1.0.0",
       saveProject,
       attach,
     });
@@ -156,14 +156,13 @@ describe("attachAgentOnDrop with a connection target", () => {
 
 describe("the connectionSide fragment", () => {
   it("names both ends in the vocabulary the prompt expects", () => {
-    // new_connection_prompt.md expects to be "informed if the nodes you are
-    // suggesting will be connected into the input or output of the node", so
-    // the fragment speaks in inputs and outputs rather than source/target.
-    // Before edge attach existed, connectionSide had no producer at all and
-    // Connection Builder's declared read composed to nothing.
+    // The agent on a connection suggests nodes for its input side or its
+    // output side, so the fragment speaks in inputs and outputs rather than
+    // source/target. Before edge attach existed, connectionSide had no
+    // producer at all and the declared read composed to nothing.
     const attachment: any = {
       attachmentId: "att-1",
-      coord: "agent.connection-builder@1.0.0",
+      coord: "agent.node-builder@1.0.0",
       target: { kind: "connection", targetId: "edge-7" },
       reads: ["connectionSide"],
     };
@@ -182,7 +181,7 @@ describe("the connectionSide fragment", () => {
   it("composes nothing when the edge is gone", () => {
     const attachment: any = {
       attachmentId: "att-1",
-      coord: "agent.connection-builder@1.0.0",
+      coord: "agent.node-builder@1.0.0",
       target: { kind: "connection", targetId: "edge-missing" },
       reads: ["connectionSide"],
     };

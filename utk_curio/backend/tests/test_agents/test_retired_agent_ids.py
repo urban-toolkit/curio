@@ -10,6 +10,11 @@ trees.
 Three more left on 2026-10-14, each taken over by a card that runs its prompt
 as a mode: the Node Builder writes node content, the Researcher checks facts,
 and the Package Builder recommends packages.
+
+Three more left later that day, when the catalog went down to four cards: the
+Researcher took over Chat, and the Node Builder took over the Connection
+Builder and the Package Builder. Every id that went to Chat or the Package
+Builder now names their successor.
 """
 
 from __future__ import annotations
@@ -28,11 +33,14 @@ SKIP_DIRS = {"node_modules", "__pycache__", ".pytest_cache"}
 # Each retired id, built from parts so this file does not match itself, and
 # the built-in that took over its work.
 RETIRED = {
-    "agent." + "node-explainer": "agent.chat-agent",
-    "agent." + "debug-agent": "agent.chat-agent",
+    "agent." + "node-explainer": "agent.researcher",
+    "agent." + "debug-agent": "agent.researcher",
     "agent." + "node-content-builder": "agent.node-builder",
     "agent." + "node-researcher": "agent.researcher",
-    "agent." + "package-recommendation": "agent.package-builder",
+    "agent." + "package-recommendation": "agent.node-builder",
+    "agent." + "chat-agent": "agent.researcher",
+    "agent." + "connection-builder": "agent.node-builder",
+    "agent." + "package-builder": "agent.node-builder",
 }
 
 
