@@ -228,7 +228,7 @@ describe("its body in Difference", () => {
     await screen.findByTestId("autark-map");
     const [data, state, options] = mockAutk.mock.calls.at(-1)!;
     // The node's own canvas, autk-grammar-map-<its id>, over its own output,
-    // read as the table the document names; its legendTitle titles the legend.
+    // read as the table the document names; its title titles the legend.
     expect(data.nodeId).toBe(COMPARE);
     expect(data.input).toEqual({ path: "diff-1", layerName: "band_1_change" });
     expect(data.outputCallback).toBeUndefined();
@@ -241,7 +241,7 @@ describe("its body in Difference", () => {
       map: {
         layerRefs: [{
           dataRef: "band_1_change",
-          legendTitle: "band_1 change",
+          title: "band_1 change",
           getFnv: "band_1",
           getFnvType: "quantitative",
           colorMapInterpolator: "interpolateViridis",
@@ -270,7 +270,7 @@ describe("its body in Difference", () => {
     await waitFor(() => expect(mockApply).toHaveBeenCalled());
     expect(JSON.parse(mockApply.mock.calls.at(-1)![0]).map.layerRefs[0]).toEqual({
       dataRef: "sunlight_change", getFnv: "sunlight", getFnvType: "quantitative", colorMapInterpolator: "interpolateViridis",
-      legendTitle: "sunlight change",
+      title: "sunlight change",
     });
     expect(mockAutk.mock.calls.at(-1)![0].input).toEqual({
       path: "diff-1", dataType: "geodataframe", layerName: "sunlight_change",
@@ -412,7 +412,7 @@ describe("each difference's size, absolute", () => {
     expect(mockUpdateDataNode).not.toHaveBeenCalled();
     await screen.findByTestId("autark-map");
     await waitFor(() => expect(mockApply).toHaveBeenCalled());
-    expect(JSON.parse(mockApply.mock.calls.at(-1)![0]).map.layerRefs[0].legendTitle).toBe("band_1 absolute change");
+    expect(JSON.parse(mockApply.mock.calls.at(-1)![0]).map.layerRefs[0].title).toBe("band_1 absolute change");
     expect((screen.getByRole("combobox", { name: "Change" }) as HTMLSelectElement).value).toBe("absolute");
   });
 });

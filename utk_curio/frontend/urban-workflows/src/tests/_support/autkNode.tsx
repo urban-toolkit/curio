@@ -22,6 +22,8 @@ export type MountedAutkNode = {
   lastOutput: () => any;
   /** What the node tells the nodes it is linked to. */
   interactions: jest.Mock;
+  /** Render the node again, as a change in the flow it reads does. */
+  rerender: () => void;
 };
 
 /** Mount the node *nodeId*, its input reading *features* (one row when none is given). */
@@ -49,13 +51,14 @@ export function mountAutkNode(nodeId: string, features?: unknown): MountedAutkNo
     apply = behavior.applyGrammar as (spec: string) => Promise<void>;
     return <>{behavior.contentComponent}</>;
   };
-  render(<Probe />);
+  const mounted = render(<Probe />);
   return {
     run: async (spec) => {
       await act(async () => { await apply(JSON.stringify(spec)); });
     },
     lastOutput: () => setOutput.mock.calls[setOutput.mock.calls.length - 1]?.[0],
     interactions,
+    rerender: () => act(() => { mounted.rerender(<Probe />); }),
   };
 }
 

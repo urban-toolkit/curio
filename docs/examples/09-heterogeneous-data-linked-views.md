@@ -225,7 +225,7 @@ GeoDataFrame directly. This is the single-frame case of Autark's two upstream-re
   "map": {
     "layerRefs": [
       { "dataRef": "[!! input_0 !!]", "getFnv": "mean", "getFnvType": "quantitative", "defaultFnv": 0, "isPick": true,
-        "legendTitle": "Mean UTCI (°C)" }
+        "title": "Mean UTCI (°C)" }
     ]
   }
 }

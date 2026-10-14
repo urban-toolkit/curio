@@ -343,6 +343,24 @@
   --curio-kind-model-bg: #EEF0D5;
   --curio-kind-model-on-tint: #525810;
 
+  /* A Scenario Catalog SCENARIO, for the /catalog/scenarios cards and the
+     scenario kind icon. One colour for every scenario, for the source's
+     reason: on that page every card IS a scenario. A scenario's own colour,
+     the one its boxes wear on the canvas, is not a kind: every project hands
+     its scenarios the same few colours in turn, so as a strip it repeated
+     across projects and keyed nothing. It is the square before the card's
+     name instead.
+
+     The hue (110deg, a dark leaf green) sits in the widest gap left: 44deg
+     between OSM's green (93) and GeoJSON's (137), 17deg from the first and
+     27deg from the second. Both are dataset formats and do not appear on the
+     scenario page; the scenario green that shares GeoJSON's hex is only ever
+     a square beside a name. 6.7:1 on white, so the white strip label holds
+     at 6.0:1, and 6.7:1 for the on-tint text over the tint. */
+  --curio-kind-scenario-fg: #2E6822;
+  --curio-kind-scenario-bg: #DEF0DA;
+  --curio-kind-scenario-on-tint: #285C1E;
+
   /* ── Semantic roles ────────────────────────────────────────────────────
      Named for what they mean, so a role can change without dragging a category
      colour with it. Each points at the raw accent palette below; before this

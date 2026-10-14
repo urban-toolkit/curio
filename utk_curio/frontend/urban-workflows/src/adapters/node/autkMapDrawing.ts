@@ -7,7 +7,7 @@
  * after every change it can observe (its camera, its layers, its style, a
  * pick, a window resize). Curio asks a map for a frame with its
  * `requestRender()` after it changes the map itself: `frameMaps` after it
- * moves the camera, and `recolorRasters` after it writes a raster's cells in
+ * moves the camera, and `bleedRasterEdges` after it writes a raster's cells in
  * place, which autk-map cannot observe. A map that nothing changes draws
  * nothing, whether it shows, sits out of view or is hidden in a collapsed
  * scenario.

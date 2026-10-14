@@ -33,7 +33,7 @@
         "type": "curio.builtin/autk-grammar",
         "x": 645,
         "y": 430,
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_surface\"\n      },\n      {\n        \"dataRef\": \"table_osm_parks\"\n      },\n      {\n        \"dataRef\": \"table_osm_water\"\n      },\n      {\n        \"dataRef\": \"table_osm_buildings\",\n        \"isPick\": true,\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 10,\n        \"legendTitle\": \"Building height (m)\"\n      },\n      {\n        \"dataRef\": \"table_osm_roads\"\n      }\n    ]\n  }\n}",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_surface\"\n      },\n      {\n        \"dataRef\": \"table_osm_parks\"\n      },\n      {\n        \"dataRef\": \"table_osm_water\"\n      },\n      {\n        \"dataRef\": \"table_osm_buildings\",\n        \"isPick\": true,\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 10,\n        \"title\": \"Building height (m)\"\n      },\n      {\n        \"dataRef\": \"table_osm_roads\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Render the layer stack and colour buildings by height.",

@@ -1058,13 +1058,11 @@ a run is going, and a selection only highlights it (see
 press play or run the dataflow. Without WebGPU nothing is drawn on its own;
 pressing play says why.
 
-### Legend titles
+### Layer titles and colors
 
-A `layerRef`'s `legendTitle` titles the legend of its layer, on a vector or a
-raster layer. Without one, a layer of the node's input (`input_0`) is titled
-with the column it is coloured by (`getFnv`), and a table the document loads
-itself keeps the table's name (`table_osm_roads`). `legendTitle` is Curio's own
-key, not the Autark grammar's.
+A `layerRef`'s `title` names its layer in the legend. Without one, the legend
+reads the layer's table: `input_0` for the node's input, `table_osm_roads` for
+a table the document loads. Two layers of one map cannot have the same title.
 
 ```json
 {
@@ -1072,15 +1070,26 @@ key, not the Autark grammar's.
     "layerRefs": [
       {
         "dataRef": "input_0",
+        "title": "Building height (m)",
         "getFnv": "height",
         "getFnvType": "quantitative",
-        "colorMapInterpolator": "interpolateViridis",
-        "legendTitle": "Building height (m)"
+        "colorMapInterpolator": "interpolateViridis"
       }
     ]
   }
 }
 ```
+
+A layer can also be drawn in one `color` (`"#d62728"`), with no legend. A
+line layer takes a `width` in meters, and a polygon layer a `stroke` color, or
+`"stroke": false` for no outline. A raster layer takes `colorMapReverse` to
+run its scheme from its highest value to its lowest, `colorMapCenter` to put a
+value at the middle of its scheme, and `transferFunction` for how opaque its
+cells are; every cell with a value is opaque unless it says otherwise.
+
+A layer that names a scenario of the dataflow by its id, `"scenario":
+"weather-aware"`, is drawn in that scenario's color, the color of its box.
+`scenario` is Curio's own key, not the Autark grammar's.
 
 ### The starter document
 
@@ -1095,8 +1104,8 @@ The first matching rule wins:
 | the input has | you get |
 |---|---|
 | two or more layers with geometry | a map with one layer per table |
-| one layer with a quantitative column | a map coloured by the first quantitative column, `interpolateViridis` |
-| one layer with a nominal column | a map coloured by the first nominal column, `schemeTableau10` |
+| one layer with a quantitative column | a map coloured by the first quantitative column, `interpolateViridis`, its legend titled with the column |
+| one layer with a nominal column | a map coloured by the first nominal column, `schemeTableau10`, its legend titled with the column |
 | one layer with geometry only | a plain map |
 | no geometry, or only rasters | the editor stays empty |
 
