@@ -67,6 +67,7 @@ from .utils import (
     require_user_auth,
     run_node_and_wait,
     save_dataflow,
+    set_canvas_zoom,
     stub_login_and_enter_workflow,
 )
 
@@ -169,18 +170,23 @@ def _new_node(page, before: set[str], *, timeout: float = 30000) -> str:
     return created[0]
 
 
-#: An empty point of the canvas left of the open drawer, under its scrim: no
-#: node there, clear of the tool rail on the left, of the drawer and of the
-#: toasts in the bottom right. The first candidate is the other drop tests'
-#: point, 320 by 220 px from the canvas's top-left corner.
+#: A point of the canvas left of the open drawer, under its scrim, where a new
+#: node (as big as the nodes already there) lies clear of them: so the two
+#: nodes' circles can be wired. Clear of the tool rail on the left (which ends
+#: 170 px from the canvas's left edge), of the drawer and of the toasts in the
+#: bottom right.
 _FREE_POINT_JS = r"""([pane, drawer]) => {
     const box = document.querySelector(pane).getBoundingClientRect();
     const panel = document.querySelector(drawer).getBoundingClientRect();
     const nodes = [...document.querySelectorAll(".react-flow__node")].map((n) => n.getBoundingClientRect());
-    const right = Math.min(box.right, panel.left) - 80;
-    for (let y = box.top + 220; y < box.bottom - 160; y += 40) {
-        for (let x = box.left + 320; x < right; x += 40) {
-            const clear = nodes.every((r) => x < r.left - 60 || x > r.right + 60 || y < r.top - 60 || y > r.bottom + 60);
+    const w = Math.max(0, ...nodes.map((r) => r.width));
+    const h = Math.max(0, ...nodes.map((r) => r.height));
+    const right = Math.min(box.right, panel.left) - 60;
+    for (let y = box.top + 140; y < box.bottom - 160; y += 20) {
+        for (let x = box.left + 200; x + w < right; x += 20) {
+            const clear = nodes.every(
+                (r) => x + w < r.left - 30 || x > r.right + 30 || y + h < r.top - 30 || y > r.bottom + 30,
+            );
             if (clear) return [x - box.left, y - box.top];
         }
     }
@@ -275,6 +281,9 @@ def test_a_model_card_dropped_on_the_canvas_adds_its_package_and_becomes_its_nod
         dir_name, template = SHIPPED_CARDS[card]
         name = _manifest(dir_name)["name"]
     model_id = dir_name.split("@")[0]
+    if card == "ddrnet":
+        # Room beside the photos for DDRNet's node, so the two can be wired.
+        set_canvas_zoom(page, 0.5)
 
     drawer = _open_drawer(page, "Model Catalog", MODEL_DRAWER)
     node = _drop_card_and_add(page, drawer, dir_name, name)

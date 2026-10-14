@@ -16,8 +16,13 @@ import { act, render } from "@testing-library/react";
 
 import { usePackageCardDrop, type PackageCardDrop } from "../../components/packages/usePackageCardDrop";
 import { usePackageAddRequests, type PackageAddRequest } from "../../services/packages/packageAddRequests";
+import * as fs from "fs";
+import * as path from "path";
+
 import { ddrnetPackage, deepUmbraPackage, importedModelPackage } from "../_support/modelPackages";
-import { read } from "../_support/workflowPaths";
+
+/** A source file under `src/`. */
+const read = (rel: string) => fs.readFileSync(path.join(__dirname, "..", "..", rel), "utf8");
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const {
