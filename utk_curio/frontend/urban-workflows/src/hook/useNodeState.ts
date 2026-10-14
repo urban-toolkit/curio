@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { NodeType } from '../constants';
 import { NodeTemplateId } from '../registry/types';
 import { ICodeDataContent, MissingModuleNotice } from '../types';
@@ -29,6 +29,8 @@ export function useNodeState(data: any, nodeType: NodeTemplateId) {
   const { editUserStarter } = useStarterContext();
   const { user } = useUserContext();
   const { projectId, nodes } = useFlowContext();
+  // The run key of the outcome the node holds, as the effect below last set it.
+  const executedCodeRef = useRef<string | undefined>(data.executedCode);
 
   useEffect(() => {
     data.code = code;
@@ -56,6 +58,7 @@ export function useNodeState(data: any, nodeType: NodeTemplateId) {
     if (output?.code === 'success') {
       data.executedCode = runKeyWithShared(code, data.widgets, sharedWidgetsOf(nodes ?? []), data.selections);
     }
+    executedCodeRef.current = data.executedCode;
     // dev/135: the node instance already held its own outcome here — and only
     // here, in memory, so an agent asked about a node that had just failed in
     // the BROWSER was told `never-executed` (the owner's `a29d1ad8`). This is
@@ -71,6 +74,15 @@ export function useNodeState(data: any, nodeType: NodeTemplateId) {
     });
     if (report) void reportNodeRuntime(report);
   }, [output]);
+
+  // The flow replaces a node's data with a copy whenever it changes a field
+  // (an input arriving, a step of a run on the server). A copy made before the
+  // effect above ran holds the outcome from before it, so the outcome and its
+  // run key go onto every new copy.
+  useEffect(() => {
+    if (data.output !== output) data.output = output;
+    if (data.executedCode !== executedCodeRef.current) data.executedCode = executedCodeRef.current;
+  }, [data]);
 
   useEffect(() => {
     if (data.templateId != undefined) {
