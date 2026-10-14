@@ -203,14 +203,21 @@ function readFragment(
 
 /**
  * Compose the run's grounded context for one attachment, or `null` when the
- * agent declares nothing composable (e.g. the chat agent).
+ * agent declares nothing composable (e.g. only `userMessage`).
+ *
+ * An attachment that reads both `targetContext` and `dataflowContext` (the
+ * Researcher) gets the whole dataflow once: away from a node, `targetContext`
+ * already IS the live Trill, so `dataflowContext` composes nothing there. On a
+ * node, `targetContext` is that node's snapshot and both compose.
  */
 export function composeAgentRunContext(
   attachment: AgentAttachment,
   canvas: AgentCanvasState,
 ): string | null {
   const reads = attachment.reads ?? [];
+  const targetIsTheDataflow = reads.includes("targetContext") && targetNodeId(attachment) == null;
   const fragments = reads
+    .filter((read) => !(read === "dataflowContext" && targetIsTheDataflow))
     .map((read) => readFragment(read, attachment, canvas))
     .filter((f): f is string => f != null);
   return fragments.length ? fragments.join("\n") : null;

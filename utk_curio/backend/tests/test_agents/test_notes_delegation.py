@@ -371,9 +371,11 @@ class TestPromptsCarryTheDelegationContract:
             assert marker in text, marker
 
     def test_researcher_prompt_carries_the_delegate_posture(self):
+        # The posture is the notes mode's, the prompt a delegated
+        # research.notes.compose runs; the Researcher's chat carries none of it.
         from utk_curio.backend.app.agents.domain import builtin
 
-        text = builtin.read_prompt_text("agent.researcher@1.0.0", "instruction")
+        text = builtin.read_prompt_text("agent.researcher@1.0.0", "research.notes.compose")
         for marker in (
             "[delegated task from",
             "inputs.searchResults",
