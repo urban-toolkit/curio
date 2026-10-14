@@ -196,13 +196,15 @@ describe("composite producers (dev/67-2 — the composites stop running blind)",
     const att = attachment({
       coord: "agent.node-builder@1.0.0",
       target: { kind: "canvas" },
-      reads: ["nodeIntent", "targetContext", "externalSelection"],
+      reads: ["nodeIntent", "targetContext", "externalSelection", "connectionSide"],
     });
     const context = composeAgentRunContext(att, wiredCanvas);
     expect(context).toContain("Current Trill:");
     expect(context).toContain('"source":"n1"');
     // nodeIntent has no node target; externalSelection rides the prompt.
     expect(context).not.toContain("Node intent:");
+    // connectionSide names a side only on a connection target.
+    expect(context).not.toContain("Connection:");
   });
 
   it("Node Builder on a node target composes the node snapshot + intent", () => {

@@ -826,8 +826,11 @@ class TestRunContext:
             f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
         ).get_json()["attachments"]
         # The Node Builder's declared reads, verbatim: its chat's own, not its
-        # content mode's (dev/67-2).
-        assert cards[0]["reads"] == ["nodeIntent", "targetContext", "externalSelection"]
+        # content mode's (dev/67-2), with the connection side its chat reads
+        # when it is dropped on a connection.
+        assert cards[0]["reads"] == [
+            "nodeIntent", "targetContext", "externalSelection", "connectionSide",
+        ]
 
 
 class TestToolLoop:
@@ -2184,12 +2187,12 @@ class TestReuseLadder:
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
         """The section names a door; only a run that can open it is shown one.
-        The Node Builder creates nodes but cannot enlist packages."""
+        The Dataflow Builder creates nodes but cannot enlist packages."""
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
         key = _user_dir_key(user)
-        helper = TestNodeCreate()
+        helper = TestDataflowPlanMint()
         att_id, calls = helper._setup(
             client, user=user, token=token, project_id=alice_project,
             monkeypatch=monkeypatch, replies=["ok"],
@@ -2967,13 +2970,20 @@ class TestToolRequestRecovery:
 
     def test_ungranted_tool_is_not_claimed(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         # A request naming a tool this run does not hold stays the model's text.
+        # The run holds a tool, so the grant check is what decides: a made-up
+        # agent whose one tool is node.create, without package.install.
         import json as _json
 
         user, token = user_and_token
         block = _json.dumps({"toolRequest": {"tool": "package.install",
                                              "params": {"dirName": "x@1"}}})
-        r, calls, _, _ = self._run(client, user, token, alice_project, monkeypatch,
-                                   replies=[f"Consider:\n\n```json\n{block}\n```"])
+        helper = TestDataflowPlanMint()
+        coord = TestRosterGrantCoverage._write_one_tool_agent(user, "node.create")
+        att_id, calls = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=[f"Consider:\n\n```json\n{block}\n```"], coord=coord,
+        )
+        r = helper._run(client, token, alice_project, att_id)
         assert len(calls) == 1
         assert "package.install" in r.get_json()["reply"]
 
