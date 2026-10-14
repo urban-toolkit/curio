@@ -52,7 +52,6 @@ from .utils import (
     save_dataflow,
     set_node_code,
     stub_login_and_enter_workflow,
-    wait_for_node_done,
     wait_for_node_run_to_end,
     watch_node_run,
 )
@@ -135,12 +134,17 @@ def _executed(page, node_id: str):
 
 
 def _rerun(page, shadow: str, statistics: str) -> None:
-    """Run the statistics node, which runs the stale shadow node first."""
+    """Run the statistics node, which runs the stale shadow node first. Both
+    show a result from the run before, so each is watched from before the
+    click until a run of its own has ended."""
     watch_node_run(page, shadow)
+    watch_node_run(page, statistics)
     play_node(page, statistics)
-    status = wait_for_node_run_to_end(page, shadow, node_type=SHADOW_TYPE, timeout_ms=RERUN_MS)
-    assert status == "done", f"the shadow node ran again and ended {status}: {read_node_error_text(node_locator(page, shadow))}"
-    wait_for_node_done(page, statistics, node_type=STATISTICS_TYPE, timeout_ms=RERUN_MS)
+    for node_id, node_type in ((shadow, SHADOW_TYPE), (statistics, STATISTICS_TYPE)):
+        status = wait_for_node_run_to_end(page, node_id, node_type=node_type, timeout_ms=RERUN_MS)
+        assert status == "done", (
+            f"{node_type} ran again and ended {status}: {read_node_error_text(node_locator(page, node_id))}"
+        )
 
 
 def test_the_season_and_an_added_widget_reach_deep_umbra_and_survive_a_reopen(
