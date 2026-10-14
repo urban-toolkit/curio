@@ -1,4 +1,5 @@
 import {
+  faBookOpen,
   faCircleNodes,
   faClipboardCheck,
   faComment,
@@ -107,11 +108,14 @@ export function agentCategoryIcon(category: string | null | undefined): IconDefi
  * agent id (the coordinate without its version). Chat and the Connection
  * Builder are both `node` agents and would otherwise look exactly like the
  * other three: Chat talks, so a speech balloon; the Connection Builder works on
- * a connection, so a link (the icon of its workshop slide).
+ * a connection, so a link (the icon of its workshop slide). The Researcher, also
+ * a `node` agent, researches and writes its findings up as notes: an open book,
+ * as its workshop slide draws it (not the Node Researcher, which keeps its own).
  */
 export const AGENT_ICON_OVERRIDE: Readonly<Record<string, IconDefinition>> = {
   "agent.chat-agent": faComment,
   "agent.connection-builder": faLink,
+  "agent.researcher": faBookOpen,
 };
 
 /**
