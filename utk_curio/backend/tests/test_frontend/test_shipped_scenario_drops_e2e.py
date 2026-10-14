@@ -15,7 +15,8 @@ dataflow:
    output that run saved.
 2. Run scenario ends with every outcome done.
 3. Expanded, every outcome shows its output: a map drawn, a chart drawn, or
-   the result of a code node. A frame is taken.
+   the result of a code node. Each map gets a close-up, and a frame of the
+   whole dataflow is taken.
 
 A test whose dataflow has an Autark node runs on the GPU runner
 (``runner_split.SHIPPED_DROPS_MODULE``), the others on the CPU runners.
@@ -61,6 +62,7 @@ from .utils import (
     require_user_auth,
     save_dataflow,
     save_dataflow_and_settle_header,
+    save_node_closeup,
     save_workflow_test_screenshot,
     stub_login_and_enter_workflow,
     wait_for_drawer_closed,
@@ -258,6 +260,11 @@ def test_a_shipped_scenario_drops_from_a_project_never_run_and_runs(
         if node_type.startswith(AUTARK):
             frame_nodes(page, [node_id])
             assert_autark_map_drawn(page, node_id, timeout=60000, attach_as=f"{name}: {outcome['label']}")
+            # A map's own close-up: in the full page it is a thumbnail.
+            save_node_closeup(
+                page, f"shipped-drop-{Path(dataflow).stem}-{_slug(name)}-{outcome['nodeId']}", node_id,
+                test_name=TEST_NAME, sweep_toasts=True,
+            )
         elif node_type.startswith(VEGA):
             frame_nodes(page, [node_id])
             assert_vega_canvas_rendered(page, node_id)
