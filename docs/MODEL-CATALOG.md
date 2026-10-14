@@ -42,7 +42,7 @@ The manifest says which runtime runs the model (**ONNX** or **Transformers**), i
 
 DDRNet23-Slim is about 23 MB and labels a street photo in a fraction of a second on a CPU. A new **Image Segmentation** node runs it.
 
-Deep Umbra and the weather GNN are model packages: a package that holds a model's weights, the node that runs it and that node's code. Each package's code is MIT; its weights keep their own license.
+Deep Umbra and the weather GNN are model packages: each holds the model's weights, the node that runs it and that node's code. Each package's code is MIT; its weights keep their own license.
 
 Deep Umbra, [SCOUT](https://github.com/urban-toolkit/scout)'s shadow model, is about 10.5 MB. Its package, `model.scout.deep-umbra@1`, has the **Accumulated Shadow** node, which runs it on a raster of building heights ([example 24](examples/24-scout-building-rasters.md)). A pip install downloads its weights from GitHub the first time a node runs it ([Installation from pip](USAGE.md#installation-from-pip)).
 
