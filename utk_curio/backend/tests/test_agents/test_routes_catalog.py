@@ -68,8 +68,8 @@ class TestGlobalCatalog:
         resp = client.get("/api/agents/catalog", headers=_auth(token))
         assert resp.status_code == 200
         agents = resp.get_json()["agents"]
-        # The ten catalog cards; the internal built-ins run only as delegates.
-        assert len(agents) == 10
+        # The seven catalog cards; the internal built-ins run only as delegates.
+        assert len(agents) == 7
         assert all(a["scope"] == "browse" and a["provenance"]["trust"] == "built-in" for a in agents)
         assert all(a["inCatalog"] is True for a in agents)
         ids = {a["id"] for a in agents}
