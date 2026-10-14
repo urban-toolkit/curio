@@ -36,10 +36,8 @@ A package is a folder with a `manifest.json` (the contract), an optional `source
 | `curio.builtin@1` | The 16 default node kinds (Data Loading, Python/JS Computation, Vega-Lite, Autark, Raster Calculator, Edit Features, and so on). Installed for every user, **read-only** (you can save edits as a new package but cannot overwrite the originals), and cannot be uninstalled. |
 | `ai.utk.uhvi@1`, `curio.weather@1` | Example packages you can install from the catalog drawer to see the package workflow end to end. Both are plain Python nodes. `curio.weather@1` is also installed for you when Curio starts with `--with-examples`; you can still uninstall it. |
 | `curio.example-ui@1` | A minimal node with its **own interface** rather than a code editor: no API keys and no Python dependencies. The one to read and fork for custom-UI nodes; see [AUTHORING-NODES.md](AUTHORING-NODES.md). |
-| `model.curio.ddrnet23-slim@1` | DDRNet23-Slim, which labels street photos with the 19 Cityscapes classes, as a model package of the [Model Catalog](MODEL-CATALOG.md): its weights and one **Image Segmentation** code node, which runs the model over a collection's images and reports each class's share of every image. A model added from the Discovery Catalog's Hugging Face models gets the same node. Read-only, depends only on `onnxruntime`, and installed with the example that declares it ([example 10](examples/10-street-vision-cv-analysis.md)). See its [README](../packages/model.curio.ddrnet23-slim@1/README.md). |
 | `scout.raster-conversion@1` | SCOUT's building rasterizer, ported from [SCOUT](https://github.com/urban-toolkit/scout): one **Rasterize Buildings** code node turns a buildings layer into the height tiles SCOUT's Deep Umbra shadow model reads, and a mosaic of them an Autark map draws. Read-only, depends on `datashader`, `spatialpandas`, `dask`, `rasterio`, `geopandas`, `numpy`, `pandas`, `pillow`, `pyarrow`, `pyproj` and `shapely`, and installed when Curio starts with `--with-examples`. See its [README](../packages/scout.raster-conversion@1/README.md). |
-| `model.scout.deep-umbra@1` | Deep Umbra, SCOUT's shadow model, ported from [SCOUT](https://github.com/urban-toolkit/scout), as a model package of the [Model Catalog](MODEL-CATALOG.md): its weights and one **Accumulated Shadow** code node, which runs Deep Umbra on the zoom-16 tiles of that height mosaic and returns the accumulated shadow in minutes, a raster on the same grid that an Autark map draws and a Raster Statistics node sums up over the ground. A pip install downloads the weights the first time the node runs. Read-only, depends on `onnxruntime`, `rasterio`, `numpy` and `pyproj`, and installed when Curio starts with `--with-examples`. See its [README](../packages/model.scout.deep-umbra@1/README.md). |
-| `model.scout.weather-gnn@1` | SCOUT's weather graph network and weather-aware routing, ported from [SCOUT](https://github.com/urban-toolkit/scout), as a model package of the [Model Catalog](MODEL-CATALOG.md): its weights and one **Weather Routing** code node, which finds routes between two points over a roads layer, weighing each road by the weather the network predicts on it from the WRF forecast in the Data Catalog, and gives the routes for an Autark map and their duration, distance and rain and wind exposure for Compare Scenarios. Read-only, depends on `osmnx`, `networkx`, `netCDF4`, `scipy`, `scikit-learn`, `onnxruntime`, `geopandas`, `numpy`, `pandas` and `shapely`, and installed when Curio starts with `--with-examples`. See its [README](../packages/model.scout.weather-gnn@1/README.md). |
+The Node Catalog's drawer and page list node packages only. Model packages (kind `model`), such as the `model.curio.ddrnet23-slim@1`, `model.scout.deep-umbra@1` and `model.scout.weather-gnn@1` that ship with Curio, are the [Model Catalog](MODEL-CATALOG.md)'s: you add, remove and publish them there, the same way.
 
 You can install any number of other packages, your own or archives shared by others.
 
@@ -60,10 +58,10 @@ The palette reads the open project's lockfile, so two projects open in different
 
 ## 2. Surfaces and workflows
 
-There are two places you manage packages:
+There are two places you manage node packages:
 
 - **The drawer**, inside the canvas, works on the open project only. Open it from the **Node Catalog** button in the top bar, or from the **Node Catalog** dropdown in the left Tools panel and **Browse Node Catalog +**. Its two tabs are **Browse all** and **In project**.
-- **The `/catalog/nodes` page**, reached from `/projects` and the **Node Catalog** tab, works on your whole account: a package added here goes into every project you have and every new one. It has status and category filters, a details drawer, and no remove button. The **Data Catalog**, **Agent Catalog**, **Discovery Catalog** and **Model Catalog** tabs beside it are the other four catalogs.
+- **The `/catalog/nodes` page**, reached from `/projects` and the **Node Catalog** tab, works on your whole account: a package added here goes into every project you have and every new one. It has status and category filters and a details drawer. The **Data Catalog**, **Agent Catalog**, **Discovery Catalog** and **Model Catalog** tabs beside it are the other four catalogs.
 
 ### Action matrix
 
@@ -73,6 +71,7 @@ There are two places you manage packages:
 | **Add to all projects** | `/catalog/nodes` | Your defaults and every project's lockfile, plus your package store | The package appears in every project's palette, and new projects start with it. |
 | **Update** (drawer), **Update all projects** (`/catalog/nodes`) | Shown when the shared catalog has a higher version than your copy | Your store copy, replaced by the catalog's version | Every project that uses the package gets the new version. A package with its own interface runs the new one after you reload the page. |
 | **Remove from project** | Drawer | This project's lockfile; also your store copy and defaults entry, when no other project uses the package | The package leaves this project's palette. |
+| **Remove from account** | The `/catalog/nodes` details drawer, for a package of your own that no project uses | Your store copy and defaults entry | A confirmation first, then the package leaves your account. |
 | **New node from a Python function** | Drawer | A new package, or one of yours, and this project's lockfile | A node that calls the function appears in this project's palette ([part 4](#new-node-from-a-python-function)). |
 | **Publish** | The Tools panel's **Node Catalog** dropdown, or the `/catalog/nodes` details drawer | The shared catalog | Every user on this install can browse the package. The button is hidden when the operator turns publishing off. |
 
@@ -82,7 +81,7 @@ There are two places you manage packages:
 
 **I want a package in all my projects, present and future.** On `/catalog/nodes`, find the package and click **Add to all projects**. It appears in every existing project's palette at once, and every project you create from then on starts with it.
 
-**I want to remove a package.** `/catalog/nodes` has no remove button. Open each project that has the package and use **Remove from project** in the drawer. When you remove it from the last one, Curio deletes your installed copy and drops the package from your defaults, so new projects stop getting it.
+**I want to remove a package.** Open each project that has the package and use **Remove from project** in the drawer. When you remove it from the last one, Curio deletes your installed copy and drops the package from your defaults, so new projects stop getting it.
 
 **I want other users on this install to be able to add a package I built.** Build it with **Save as package node** ([part 4](#4-creating-a-package-from-a-canvas-node)), then click **Publish** on it in the Tools panel's **Node Catalog** dropdown or in the `/catalog/nodes` details drawer.
 

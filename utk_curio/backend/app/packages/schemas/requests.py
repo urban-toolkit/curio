@@ -27,6 +27,12 @@ def package_kind(args: Mapping[str, Any]) -> str | None:
     return kind
 
 
+def query_flag(args: Mapping[str, Any], name: str) -> bool:
+    """A ``?<name>=true`` switch (the listing's ``usage``, the removal's
+    ``unusedOnly``); off when absent or anything else."""
+    return str(args.get(name, "")).lower() == "true"
+
+
 def catalog_dir_name(body: Mapping[str, Any]) -> str:
     """``dirName`` for a catalog install: present and well-formed."""
     dir_name = body.get("dirName")

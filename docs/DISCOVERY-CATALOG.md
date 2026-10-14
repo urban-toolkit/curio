@@ -112,7 +112,7 @@ A storage source is read when it is first opened, and again when its listing is 
 | **Rescan** | A storage source's page | Nothing | The source is read again, and its rows show what it holds. |
 | **Cache files** | A bucket collection's details, in the Data Catalog | Your account's media folder | Its files are copied to the Curio machine, so nodes can read them. |
 | **Add to Model Catalog** | A Hugging Face models row | Your Model Catalog gains a model | A progress bar, then *"Added `<name>` to your Model Catalog."* with **View model**. A guest on a `--deploy` instance is refused before anything downloads. |
-| **View model** | A row marked **In your Model Catalog** | Nothing | The model's details, in the Model Catalog. |
+| **View model** | A row marked **In your Model Catalog** | Nothing | The `/catalog/models` page, with the model's details open; on the canvas, the Model Catalog drawer. |
 | **Set a token** | **API Settings**, **API keys** tab | Your account | The source's card reads **Token set**. |
 
 ### Workflows
@@ -262,10 +262,10 @@ A Direct URL link to a `.parquet` file, and a bucket or Hugging Face row of `par
 
 - **What Curio runs.** Semantic segmentation models, as ONNX graphs or as Transformers checkpoints with safetensors weights. A model with only `.bin` weights is refused, since loading those runs code from the model; so is a model of another task, one whose `config.json` names no labels, and one larger than 2 GB. The row says why.
 - **The files.** Curio downloads the model's files as they are at the commit the Hub lists, with its `config.json` and `preprocessor_config.json`, which say how to read an image and what each class is called.
-- **What lands.** A model package in your store: the model's files, and an **Image Segmentation** node that runs it, whose code loads the model by its id.
+- **What lands.** A model package in your store: the model's files, and an **Image Segmentation** node that runs it, whose code loads the model by its id. The Model Catalog lists it under **Browse all**, and **Add to project** there adds it to a dataflow, with its node.
 - **Libraries.** An ONNX model needs `onnxruntime`, and a Transformers model `torch`, `transformers` and `safetensors`, which Curio installs when the model is added, the way a node package's libraries install. When they do not install, the model is kept and the message says why. An account that may not install libraries cannot add a model.
 - **Gated models.** A model whose page asks you to accept its terms downloads once you have accepted them on Hugging Face and saved your Hugging Face token.
-- **Adding again.** A row marked **In your Model Catalog** offers **View model**; adding it again keeps the model you have.
+- **Adding again.** A row says **In your Model Catalog** while your account holds the model package downloaded from it, and offers **View model**, which opens the model's details on the `/catalog/models` page (on the canvas, the Model Catalog drawer). Adding it again keeps the model you have.
 
 ### Adding from a storage source
 

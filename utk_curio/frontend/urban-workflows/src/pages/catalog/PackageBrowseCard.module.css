@@ -31,6 +31,20 @@
 .cardActive.card_vis         { border-color: var(--curio-category-vis-fg); }
 .cardActive.card_package     { border-color: var(--curio-category-package-fg); }
 
+/* A model package, on the Model Catalog's page: ONE key, the model kind's
+   colour, not one per runtime or type; the runtime is the strip's neutral
+   badge. See --curio-kind-model-fg. */
+.strip_model             { background: var(--curio-kind-model-fg); }
+.cardActive.card_model   { border-color: var(--curio-kind-model-fg); }
+
+/* A model card's weights license: wraps, so it reads in full. */
+.weightsLicense {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--curio-text-meta);
+}
+
 .tagUpdate {
   background: var(--curio-role-update-bg);
   color: var(--curio-role-update-fg);

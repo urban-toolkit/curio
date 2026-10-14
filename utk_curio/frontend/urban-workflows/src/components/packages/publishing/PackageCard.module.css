@@ -123,6 +123,11 @@
     text-overflow: ellipsis;
 }
 
+/* A meta line that wraps rather than cut off: a model card's weights license. */
+.cardMetaWrap {
+    white-space: normal;
+}
+
 .connBadge {
     flex-shrink: 0;
     border-radius: 8px;

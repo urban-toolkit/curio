@@ -74,6 +74,11 @@ export interface PackageDependencies {
   js: Record<string, string>;
 }
 
+/** `model` for a model package, which ships its weights under `models/` and
+ *  shows in the Model Catalog; `node` for every other package, which shows in
+ *  the Node Catalog. */
+export type PackageKind = "node" | "model";
+
 /** How a model package's weights run: its manifest's `model` block. */
 export interface ModelBlockPayload {
   type: "semantic-segmentation" | "image-to-image" | "node-regression";
@@ -97,6 +102,9 @@ export interface ModelBlockPayload {
   licenseFile?: string;
   homepage?: string;
   discoverySource?: Record<string, unknown>;
+  /** Listings only: a pip install has left the weights out and no node has
+   *  fetched them yet, so the first run downloads them. */
+  downloadsOnFirstUse?: boolean;
 }
 
 export interface PackagePayload {
@@ -143,9 +151,16 @@ export interface PackagePayload {
   /** The package's own interface bundle (``scripts/behaviors.js``), when it ships one. */
   behaviorScript?: string;
   /** `model` for a model package, which ships its weights under `models/`; else `node`. */
-  kind?: "node" | "model";
+  kind?: PackageKind;
   /** A model package's `model` block. */
   model?: ModelBlockPayload;
+  /** Listings only: the Python modules the package ships under `sources/`,
+   *  which its nodes import (`deep_umbra`). */
+  modules?: string[];
+  /** The store listing asked with `usage` only: whether one of the account's
+   *  dataflows uses the package (its lockfile names it). A catalog page offers
+   *  Remove from account only when this is `false`. */
+  inUse?: boolean;
   /**
    * Catalog endpoint only - whether THIS user published it, and may therefore
    * withdraw it. The peer of `AgentCard.publishable`.

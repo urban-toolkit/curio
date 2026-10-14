@@ -4,14 +4,14 @@ import { faBrain } from "@fortawesome/free-solid-svg-icons";
 import { useReactFlow } from "reactflow";
 
 import {
-  MODEL_RUNTIME_LABEL,
   beginModelDrag,
   endModelDrag,
+  isModelPackage,
   nodeLinkedModelIds,
   writeModelDragData,
-  type ModelRow,
-} from "../../../../services/modelCatalog";
-import { modelLabelCount } from "../../../models/catalog/modelFacts";
+  type PackagePayload,
+} from "../../../../services/packages";
+import { modelLabelCount, modelRuntimeLabel } from "../../../models/catalog/modelFacts";
 import { focusLinkedNodes } from "../../../../utils/focusDatasetNodes";
 import { useNotebookViewContext } from "../../../../providers/flow/notebookViewContext";
 import { useToastContext } from "../../../../providers/ToastProvider";
@@ -20,41 +20,43 @@ import packageStyles from "../toolsMenuPackagePalette/ToolsMenuPackagePalette.mo
 import rowStyles from "./ModelPaletteRow.module.css";
 
 /**
- * One model in the MODELS palette. Mirrors the Datasets and Agents rows
- * (reusing the shared `packageKind*` classes): a draggable avatar writing the
- * model drag so a node can take it, a meta button showing the name, the id
- * and two chips, and the way into the details. The meta button selects the
- * canvas nodes that run this model, as a dataset row selects the nodes that
- * load its dataset.
+ * One model package in the MODELS palette. Mirrors the Datasets and Agents
+ * rows (reusing the shared `packageKind*` classes): a draggable avatar writing
+ * the model drag so a node can take it, a meta button showing the name, the
+ * package folder and two chips, and the way into the details. The meta button
+ * selects the canvas nodes that run this model, as a dataset row selects the
+ * nodes that load its dataset.
  */
 export const ModelPaletteRow = memo(function ModelPaletteRow({
   model,
   onOpenDetails,
 }: {
-  model: ModelRow;
-  onOpenDetails: (model: ModelRow) => void;
+  model: PackagePayload;
+  onOpenDetails: (model: PackagePayload) => void;
 }) {
   const reactFlow = useReactFlow();
   const { reveal } = useNotebookViewContext();
   const { showToast } = useToastContext();
+  const modelId = model.packageId;
 
   const selectOnCanvas = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
       e.preventDefault();
       const isLinked = (n: { id: string; data: any }) =>
-        nodeLinkedModelIds(n.data).includes(model.id);
+        nodeLinkedModelIds(n.data).includes(modelId);
       if (focusLinkedNodes(reactFlow, isLinked, reveal) === 0) {
         showToast("No nodes on the canvas use this model", "info");
       }
     },
-    [model.id, reactFlow, showToast, reveal],
+    [modelId, reactFlow, showToast, reveal],
   );
+  if (!isModelPackage(model)) return null;
 
   return (
     // The cross-surface identity attribute, matching data-dataset-id on a
     // dataset row and data-agent-coord on an agent one.
-    <div className={packageStyles.packageKindRow} data-model-id={model.id}>
+    <div className={packageStyles.packageKindRow} data-model-id={modelId}>
       <div
         className={`${packageStyles.packageKindRowDrag} ${rowStyles.avatar_model}`}
         draggable
@@ -76,7 +78,7 @@ export const ModelPaletteRow = memo(function ModelPaletteRow({
         <span className={rowStyles.modelId}>{model.dirName}</span>
         <span className={rowStyles.pills}>
           <span className={`${packageStyles.packageKindCategoryChip} ${rowStyles.chip_model}`}>
-            {MODEL_RUNTIME_LABEL[model.runtime] ?? model.runtime}
+            {modelRuntimeLabel(model)}
           </span>
           <span className={packageStyles.packageKindCategoryChip}>{modelLabelCount(model)}</span>
         </span>

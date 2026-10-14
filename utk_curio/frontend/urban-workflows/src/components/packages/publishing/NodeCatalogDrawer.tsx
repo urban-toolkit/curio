@@ -9,6 +9,7 @@ import {
   setCurrentProjectPackages,
 } from "../../../registry/projectPackagesStore";
 import {
+  catalogAndOwnPackages,
   isNewerPackageVersion,
   matchesSearch,
   restartNotice,
@@ -16,7 +17,8 @@ import {
   usePackageCatalog,
   withRestartNotice,
 } from "../../../services/packages";
-import type { DrawerTab, PackagePayload, SortMode } from "../../../services/packages";
+import type { DrawerTab, PackageKind, PackagePayload, SortMode } from "../../../services/packages";
+import type { CatalogItemKind } from "../../catalog/CatalogKindVisuals";
 import { InstallPermissionsDialog } from "./InstallPermissionsDialog";
 import { DrawerHeader } from "./DrawerHeader";
 import { DrawerTabs } from "./DrawerTabs";
@@ -46,9 +48,46 @@ export interface NodeCatalogDrawerProps {
   /** Seeds the search box on open, so a caller that already knows which
    *  package the user needs can land them on it (#233). */
   initialSearch?: string;
+  /** Which catalog this drawer is: the Node Catalog (`node`, the default) or
+   *  the Model Catalog (`model`), the same drawer over model packages. */
+  packageKind?: PackageKind;
 }
 
 const BUILTIN_PACKAGE_DIR = `${BUILTIN_PACKAGE_ID}@1`;
+
+/** What each catalog's drawer says; everything else is the same drawer. */
+const DRAWER_COPY: Record<PackageKind, {
+  title: string;
+  titleId: string;
+  subtitle: string;
+  kindIcon: CatalogItemKind;
+  rootAttribute: string;
+  searchPlaceholder?: string;
+  sortAriaLabel?: string;
+  noneInProject: string;
+  noneMatch: string;
+}> = {
+  node: {
+    title: "Node Catalog",
+    titleId: "node-catalog-drawer-title",
+    subtitle: "Node packages available in this project.",
+    kindIcon: "package",
+    rootAttribute: "data-curio-node-catalog-drawer",
+    noneInProject: "No packages added to this project yet.",
+    noneMatch: "No packages match the current filters.",
+  },
+  model: {
+    title: "Model Catalog",
+    titleId: "model-catalog-title",
+    subtitle: "Model packages available in this project. Drag a model onto a node that runs one.",
+    kindIcon: "model",
+    rootAttribute: "data-curio-model-catalog-drawer",
+    searchPlaceholder: "Search models, publishers, tags…",
+    sortAriaLabel: "Sort models",
+    noneInProject: "No models added to this project yet.",
+    noneMatch: "No models match the current filters.",
+  },
+};
 
 /**
  * The in-canvas Node Catalog drawer (memo dev/143, F4): a rendering surface over
@@ -57,19 +96,24 @@ const BUILTIN_PACKAGE_DIR = `${BUILTIN_PACKAGE_ID}@1`;
  * `usePackageCatalog({ kind: "project" })`, shared with the Node Catalog page;
  * this file keeps only presentation state (tab, search, sort, pin, the detail
  * modal and the confirmation slot) and the render tree, which is unchanged.
+ *
+ * The Model Catalog drawer is this drawer with `packageKind="model"`: the same
+ * tabs, Add, Remove, Import, details and restart notice, over model packages.
  */
 export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   presented,
   onRequestClose,
   onExitComplete,
   initialSearch = "",
+  packageKind = "node",
 }) => {
+  const copy = DRAWER_COPY[packageKind];
   const drawerRef = useRef<HTMLElement>(null);
   const dragThrough = useDrawerDragThrough();
 
   // The drawer is *per-project*: Install/Uninstall write to the current
   // project's lockfile (see docs/NODE-CATALOG.md).
-  const { projectId, packages: projectPackages, saveCurrentProject } = useFlowContext();
+  const { projectId, packages: projectPackages, saveCurrentProject, projectDirty } = useFlowContext();
   const { showToast } = useToastContext();
 
   const [tab, setTab] = useState<DrawerTab>("browse");
@@ -105,7 +149,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
 
   const {
     installed, catalogByDir, catalog, catalogPublishedDirs, busy, cardActionDir, actionError, restartNoticeText,
-    installCandidate, installMode, conflictReport, effectiveProjectId, ensureProjectId,
+    installCandidate, installMode, conflictReport, effectiveProjectId, ensureProjectId, kindOfDir,
     reload, reportActionError, dismissActionError, dismissRestartNotice,
     probeInstall: onInstall,
     probeUpdate: onUpdate,
@@ -114,6 +158,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     uninstallFromProject: performUninstall,
   } = usePackageCatalog({
     scope: { kind: "project", projectId },
+    packageKind,
     showToast,
     onEnsureProject,
     beforeReload: getPackagesRevision,
@@ -134,8 +179,14 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     // by construction, so its absence can only mean "the lockfile has not
     // arrived yet", which used to render an "Add" button for something present
     // and un-removable.
-    () => new Set([...projectPackages, BUILTIN_PACKAGE_DIR]),
-    [projectPackages],
+    //
+    // The lockfile names packages of both kinds; each drawer counts and lists
+    // its own (a package neither listing knows is a node package, the
+    // manifest's default).
+    () => new Set(
+      [...projectPackages, BUILTIN_PACKAGE_DIR].filter((dirName) => kindOfDir(dirName) === packageKind),
+    ),
+    [projectPackages, kindOfDir, packageKind],
   );
 
   /** dirNames in the user store (for the "Installed" tab listing + update detection). */
@@ -173,8 +224,11 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   }, [presented, pinned, onRequestClose]);
 
   const filteredCatalog = useMemo(
-    () => sortPackages(catalog.filter((p) => matchesSearch(p, search)), sort),
-    [catalog, search, sort],
+    // Browse all: the shared catalog and the account's own packages (imported,
+    // published or downloaded), which no catalog lists, so any of them can be
+    // added to this dataflow. The Node Catalog page lists the same rows.
+    () => sortPackages(catalogAndOwnPackages(catalog, installed).filter((p) => matchesSearch(p, search)), sort),
+    [catalog, installed, search, sort],
   );
 
   const filteredInstalled = useMemo(
@@ -277,13 +331,13 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
         // dialog to assistive tech while sliding away. Its two siblings
         // (DatasetCatalogDrawer, AgentCatalogDrawer) have always had it.
         aria-hidden={!presented}
-        data-curio-node-catalog-drawer="true"
+        {...{ [copy.rootAttribute]: "true" }}
         {...dragThrough}
       >
         <button
           type="button"
           className={shell.scrim}
-          aria-label="Close Node Catalog drawer"
+          aria-label={`Close ${copy.title} drawer`}
           onClick={() => {
             if (!pinned) onRequestClose();
           }}
@@ -293,7 +347,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
           className={shell.drawer}
           role="dialog"
           aria-modal="true"
-          aria-labelledby="node-catalog-drawer-title"
+          aria-labelledby={copy.titleId}
           tabIndex={-1}
           onTransitionEnd={handleDrawerTransitionEnd}
         >
@@ -301,6 +355,11 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
             pinned={pinned}
             onPinToggle={() => setPinned((v) => !v)}
             onClose={onRequestClose}
+            kind={copy.kindIcon}
+            title={copy.title}
+            titleId={copy.titleId}
+            subtitle={copy.subtitle}
+            closeAriaLabel={`Close ${copy.title} drawer`}
           />
 
           <PackageSearchRow
@@ -308,6 +367,8 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
             sort={sort}
             onSearchChange={setSearch}
             onSortChange={(value) => setSort(value as SortMode)}
+            placeholder={copy.searchPlaceholder}
+            sortAriaLabel={copy.sortAriaLabel}
           />
 
           <DrawerTabs
@@ -346,9 +407,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
             {tab === "installed" ? (
               filteredInstalled.length === 0 ? (
                 <div className={shell.empty}>
-                  {projectInstalledDirs.size === 0
-                    ? "No packages added to this project yet."
-                    : "No packages match the current filters."}
+                  {projectInstalledDirs.size === 0 ? copy.noneInProject : copy.noneMatch}
                 </div>
               ) : (
                 /* The SAME card as the Browse tab next door, in the same card
@@ -381,7 +440,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
             ) : (
               <>
                 {filteredCatalog.length === 0 ? (
-                  <div className={shell.empty}>No packages match the current filters.</div>
+                  <div className={shell.empty}>{copy.noneMatch}</div>
                 ) : (
                   <div className={shell.cardList}>
                     {filteredCatalog.map((pkg) => {
@@ -436,23 +495,28 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
             busy={anyBusy}
             onSideload={(file) => void onPickArchive(file)}
           >
-            <button
-              type="button"
-              className={footerStyles.footerGhost}
-              disabled={anyBusy}
-              onClick={() => setFunctionOpen(true)}
-            >
-              <FontAwesomeIcon icon={faFileCode} aria-hidden /> New node from a Python function
-            </button>
+            {/* A node, not a model, is written from a Python function. */}
+            {packageKind === "node" ? (
+              <button
+                type="button"
+                className={footerStyles.footerGhost}
+                disabled={anyBusy}
+                onClick={() => setFunctionOpen(true)}
+              >
+                <FontAwesomeIcon icon={faFileCode} aria-hidden /> New node from a Python function
+              </button>
+            ) : null}
           </DrawerFooter>
         </aside>
       </div>
 
-      <NodeFromFunctionModal
-        show={functionOpen}
-        onClose={() => setFunctionOpen(false)}
-        onSaved={() => void reload()}
-      />
+      {packageKind === "node" ? (
+        <NodeFromFunctionModal
+          show={functionOpen}
+          onClose={() => setFunctionOpen(false)}
+          onSaved={() => void reload()}
+        />
+      ) : null}
 
       {/* The card's "View details". The Node Catalog was the only one of the
           three with no detail view anywhere; `PackageDetailModal` is that view,
@@ -461,6 +525,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
         <PackageDetailModal
           pkg={detailPkg}
           isPublished={catalogPublishedDirs.has(detailPkg.dirName)}
+          unsavedChanges={projectDirty}
           onClose={() => setDetailPkg(null)}
         />
       ) : null}

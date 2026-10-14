@@ -66,7 +66,7 @@ jest.mock("../../services/datasetCatalog", () => ({
   hasDatasetDrag: () => false,
   readDatasetDragPayload: () => null,
 }));
-jest.mock("../../services/modelCatalog", () => ({
+jest.mock("../../services/packages/modelApplication", () => ({
   hasModelDrag: () => false,
   modelNodeForCanvas: () => null,
   readModelDragPayload: () => null,

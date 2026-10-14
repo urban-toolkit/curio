@@ -65,7 +65,7 @@ curio/
 │   │   ├── app/agents/domain/contracts.py  # The single source of every generated contract (see Generated Files)
 │   │   ├── app/agents/schemas/             # The vendored Autark grammar schema (see Vendored Autark Schema)
 │   │   ├── app/discovery/                  # The Discovery Catalog: portal, storage, service and model sources
-│   │   ├── app/model_catalog/              # The Model Catalog: models a node runs, shipped or downloaded
+│   │   ├── app/packages/                   # The Node and Model Catalogs: node packages, and model packages with their weights
 │   │   ├── migrations/                     # Alembic migrations
 │   │   └── tests/                          # pytest files for backend (+ test_frontend/ for Playwright E2E)
 │   ├── llm-prompts/                        # Built-in agent prompts; each X.md with an X.template.md beside it is generated

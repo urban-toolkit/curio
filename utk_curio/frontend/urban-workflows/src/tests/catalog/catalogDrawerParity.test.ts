@@ -21,7 +21,8 @@ const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8");
 
 /**
  * The drawers whose item can be PUBLISHED to the shared catalog, so the
- * publish-pill assertions apply to them.
+ * publish-pill assertions apply to them. The package drawer is the Model
+ * Catalog's too: a model is a package, published as any package is.
  */
 const DRAWERS = [
   "pages/catalog/PackageBrowseDrawer.tsx",
@@ -40,21 +41,25 @@ const DRAWERS = [
  * what this list is for; forcing a publish pill onto it to satisfy a loop
  * would be inventing a control to pass a test.
  *
- * A model is absent for the same reason: shipped models come with Curio and
- * downloaded ones from the Discovery Catalog, and neither is published back
- * into a shared catalog.
- *
- * So is a scenario: it is a selection saved inside one project, and the
- * catalog only reads it.
+ * A scenario is absent too: it is a selection saved inside one project, and
+ * the catalog only reads it.
  */
 const ALL_DRAWERS = [
   ...DRAWERS,
   "pages/discovery/DiscoveryCatalogBrowseDrawer.tsx",
-  "pages/models/ModelCatalogBrowseDrawer.tsx",
   "pages/scenarios/ScenarioCatalogBrowseDrawer.tsx",
 ];
 
 describe("catalog drawer parity", () => {
+  test("the Model Catalog page's drawer is the package drawer, on the Node Catalog's page", () => {
+    // A model is a package (kind `model`): the Model Catalog page is the Node
+    // Catalog page over model packages, so its side drawer is the package
+    // drawer every assertion here covers.
+    expect(read("pages/models/ModelCatalogBrowse.tsx")).toMatch(/<NodeCatalogBrowse\s+packageKind="model"/);
+    expect(read("pages/catalog/NodeCatalogBrowse.tsx")).toMatch(/<PackageBrowseDrawer\b/);
+    expect(fs.existsSync(path.join(SRC, "pages/models/ModelCatalogBrowseDrawer.tsx"))).toBe(false);
+  });
+
   test("every browse drawer is built from the shared drawer body", () => {
     for (const drawer of ALL_DRAWERS) {
       expect(read(drawer)).toMatch(/<CatalogBrowseDrawerBody\b/);

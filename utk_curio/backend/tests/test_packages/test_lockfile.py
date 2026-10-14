@@ -715,3 +715,57 @@ def test_uninstall_leaves_other_packages_in_the_lockfile_alone(
 
     after = packages_services.get_project_lockfile(user_key, alice_project)
     assert after == others
+
+
+# ---------------------------------------------------------------------------
+# Remove from account (the Node and Model Catalog pages)
+# ---------------------------------------------------------------------------
+
+def _store_rows(client, token, query: str = "") -> dict:
+    resp = client.get(f"/api/packages{query}", headers=_auth(token))
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    return {row["dirName"]: row for row in resp.get_json()["packages"]}
+
+
+class TestRemoveFromAccount:
+    """A catalog page removes a package from the account only while no
+    dataflow uses it, which it decides as the prune after Remove from project
+    does: a dataflow uses a package its lockfile names."""
+
+    def test_the_store_listing_says_which_packages_a_dataflow_uses(
+        self, client, user_and_token, alice_project,
+    ):
+        user, token = user_and_token
+        user_key = _user_key_for(user)
+        store_install.install_from_catalog(user_key, UHVI_DIR, replace=False)
+        assert _store_rows(client, token, "?usage=true")[UHVI_DIR]["inUse"] is False
+
+        packages_services.install_to_project(user_key, alice_project, UHVI_DIR)
+        assert _store_rows(client, token, "?usage=true")[UHVI_DIR]["inUse"] is True
+        # Without the flag the listing reads no dataflow.
+        assert "inUse" not in _store_rows(client, token)[UHVI_DIR]
+
+    def test_a_package_a_dataflow_uses_is_refused(self, client, user_and_token, alice_project):
+        user, token = user_and_token
+        user_key = _user_key_for(user)
+        packages_services.install_to_project(user_key, alice_project, UHVI_DIR)
+
+        resp = client.delete(f"/api/packages/{UHVI_DIR}?unusedOnly=true", headers=_auth(token))
+        assert resp.status_code == 409, resp.get_data(as_text=True)
+        assert (package_dir(user_key, UHVI_DIR) / "manifest.json").is_file()
+        assert UHVI_DIR in packages_services.get_project_lockfile(user_key, alice_project)
+
+    def test_a_package_no_dataflow_uses_leaves_the_store_and_the_defaults(
+        self, client, user_and_token,
+    ):
+        """Add to all projects before the account has a dataflow puts the
+        package in the store and the defaults, and in no lockfile."""
+        user, token = user_and_token
+        user_key = _user_key_for(user)
+        packages_services.install_to_defaults(user, UHVI_DIR)
+        assert UHVI_DIR in defaults_io.load_defaults(user_key)
+
+        resp = client.delete(f"/api/packages/{UHVI_DIR}?unusedOnly=true", headers=_auth(token))
+        assert resp.status_code == 204, resp.get_data(as_text=True)
+        assert not (user_packages_dir(user_key) / UHVI_DIR).is_dir()
+        assert UHVI_DIR not in defaults_io.load_defaults(user_key)

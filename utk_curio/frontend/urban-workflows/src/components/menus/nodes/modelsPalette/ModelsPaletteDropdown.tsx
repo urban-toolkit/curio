@@ -4,8 +4,8 @@ import { faBrain, faChevronLeft, faChevronRight } from "@fortawesome/free-solid-
 
 import { useFlowContext } from "../../../../providers/FlowProvider";
 import { useModelCatalogDrawer } from "../../../../providers/modelCatalog";
-import { useModelCatalog, type ModelRow } from "../../../../services/modelCatalog";
-import { ModelDetailModal } from "../../../models/catalog/ModelDetailModal";
+import { useModelPackages, type PackagePayload } from "../../../../services/packages";
+import { PackageDetailModal } from "../../../packages/publishing/PackageDetailModal";
 import { PaletteDragHint } from "../PaletteDragHint";
 import { PaletteAccordion } from "../paletteAccordion";
 import { TOOLS_PALETTE_DROPDOWN_ATTR, TOOLS_PALETTE_PANEL_ATTR } from "../toolsPaletteDismiss";
@@ -15,12 +15,10 @@ import styles from "./ModelsPalette.module.css";
 /**
  * The Model Catalog tools-panel palette. Shares the Datasets, Packages and
  * Agents pattern (dark vertical trigger card, dark dropdown panel, catalog
- * footer), differing only in content: every model this account can run, as
+ * footer), differing only in content: every model package this account can
+ * use (the catalog's and its own, read through the packages service), as
  * draggable rows to drop onto a node, and "Browse Model Catalog +" to open the
- * drawer.
- *
- * Not per project, unlike its peers: a model is not installed into a dataflow,
- * a node names it in its code, so every model is available in every dataflow.
+ * drawer, where a model is added to the dataflow.
  */
 export const ModelsPaletteDropdown = memo(function ModelsPaletteDropdown({
   open,
@@ -35,10 +33,10 @@ export const ModelsPaletteDropdown = memo(function ModelsPaletteDropdown({
   const { openModelCatalogDrawer } = useModelCatalogDrawer();
   // Fetched with the rail, as the other palettes are, so the trigger's count
   // is right before the palette is first opened.
-  const catalog = useModelCatalog();
-  const models = catalog.data.items;
+  const catalog = useModelPackages();
+  const models = catalog.models;
   const total = models.length;
-  const [detailModel, setDetailModel] = useState<ModelRow | null>(null);
+  const [detailModel, setDetailModel] = useState<PackagePayload | null>(null);
 
   // No Escape / outside-click dismissal on purpose: the palette stays open
   // until its own trigger is clicked again (or another palette claims the
@@ -91,7 +89,7 @@ export const ModelsPaletteDropdown = memo(function ModelsPaletteDropdown({
               ) : total > 0 ? (
                 models.map((model) => (
                   <ModelPaletteRow
-                    key={`${model.origin}:${model.id}`}
+                    key={model.dirName}
                     model={model}
                     onOpenDetails={setDetailModel}
                   />
@@ -114,9 +112,8 @@ export const ModelsPaletteDropdown = memo(function ModelsPaletteDropdown({
         </div>
       ) : null}
       {detailModel ? (
-        <ModelDetailModal
-          modelId={detailModel.id}
-          fallbackModel={detailModel}
+        <PackageDetailModal
+          pkg={detailModel}
           unsavedChanges={projectDirty}
           onClose={() => setDetailModel(null)}
         />

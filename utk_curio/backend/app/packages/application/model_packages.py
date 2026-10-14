@@ -18,11 +18,12 @@ A package the store does not hold gives the node no model, and the sandbox's
   time it is needed into ``.curio/fetched/<commit>/packages/<dir>/``, checked
   against the release's record and against the package's ``integrity.json``.
 
-The Model Catalog lists the model packages one account can add or run
-(:func:`list_model_packages`): the catalog's, and those imported, published or
-downloaded into the account's store. A model downloaded from the Discovery
-Catalog becomes a model package in the user's store
-(:func:`install_downloaded_model`). A template that ships no ``source`` opens
+The Model Catalog lists the model packages through the package listings,
+filtered to kind ``model``; each says whether its weights download on first use
+(:func:`weights_on_first_use`), and the text of its weights' license is served
+from the account's copy or the catalog's (:func:`weights_license_text`). A
+model downloaded from the Discovery Catalog becomes a model package in the
+user's store (``model_downloads``). A template that ships no ``source`` opens
 with the cell Curio writes for its model's type (:func:`model_default_cell`).
 """
 
@@ -41,7 +42,7 @@ from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
 from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
 from utk_curio.backend.app.packages.repositories import catalog_dir as packages_catalog_dir
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
-from utk_curio.backend.app.packages.repositories.store import list_user_packages
+from utk_curio.backend.app.packages.repositories.store import list_user_packages, package_dir
 
 log = logging.getLogger(__name__)
 
@@ -207,6 +208,46 @@ def local_weights_folder(manifest: PackageManifest, folder: Path) -> Path | None
     if catalog_manifest is None or catalog_manifest.model.entry != manifest.model.entry:
         return None
     return shipped.resolve() if holds_weights(shipped, catalog_manifest) else None
+
+
+def weights_on_first_use(manifest: PackageManifest, folder: Path) -> bool:
+    """Whether a node's first run downloads the weights of the model package
+    *manifest* in *folder*: neither the folder nor the catalog's copy holds
+    them, because a pip install leaves them out, and none has been fetched
+    yet. Nothing is downloaded to say so."""
+    if local_weights_folder(manifest, folder) is not None:
+        return False
+    from utk_curio.backend.app.datasets.infrastructure import left_out_files
+
+    prefix = f"packages/{manifest.dir_name}/{MODELS_DIR}/"
+    left_out = [repo_path for repo_path in left_out_files.left_out_paths() if repo_path.startswith(prefix)]
+    if not left_out:
+        return False
+    try:
+        record = left_out_files.read_record()
+    except ValueError:
+        record = None
+    if record is None:
+        return True
+    root = left_out_files.fetched_root(record.commit)
+    return not all((root / repo_path).is_file() for repo_path in left_out)
+
+
+def weights_license_text(user_key: str, dir_name: str) -> str:
+    """The text of the weights license of the model package *dir_name* (its
+    model block's ``licenseFile``): from *user_key*'s copy when it holds the
+    file, else from the catalog's. A 404 for a node package, for weights with
+    no license file, and for a package neither holds."""
+    if not PACKAGE_DIR_RE.match(str(dir_name)):
+        raise PackageServiceError(f"no package {dir_name!r}", 404)
+    for folder in (package_dir(user_key, dir_name), packages_catalog_dir.catalog_root() / dir_name):
+        manifest = _model_manifest(folder)
+        if manifest is None or not manifest.model.license_file:
+            continue
+        path = (folder / manifest.model.license_file).resolve()
+        if path.is_file() and folder.resolve() in path.parents:
+            return path.read_text(encoding="utf-8", errors="replace")
+    raise PackageServiceError(f"{dir_name} has no weights license text", 404)
 
 
 def _graph_inputs(manifest: PackageManifest, folder: Path):
