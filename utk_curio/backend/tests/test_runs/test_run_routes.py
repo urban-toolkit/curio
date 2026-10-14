@@ -521,9 +521,10 @@ class TestWhatARunSaves:
 class TestNodesTheBrowserRuns:
     def test_a_tab_finishes_what_waited_for_it(self, client, user_and_token, sandbox):
         user, token = user_and_token
-        osm = {"id": "osm", "type": "curio.builtin/autk-grammar",
-               "content": json.dumps({"data": [{"type": "osm"}]})}
-        project_id, _ = _create(client, token, [osm, _node("count")], [_edge("osm", "count")])
+        # An Autark compute step: only the browser makes its layers.
+        shade = {"id": "shade", "type": "curio.builtin/autk-grammar",
+                 "content": json.dumps({"compute": [{"shader": "x"}]})}
+        project_id, _ = _create(client, token, [shade, _node("count")], [_edge("shade", "count")])
         run_id = _start(client, token, project_id).get_json()["id"]
         _wait(run_id)
         assert _get(client, token, run_id)["status"] == "needs_canvas"
@@ -534,7 +535,7 @@ class TestNodesTheBrowserRuns:
                 data=json.dumps({"status": status}), headers=_auth(token),
             )
 
-        assert report("osm", "ok").status_code == 200
+        assert report("shade", "ok").status_code == 200
         done = report("count", "ok").get_json()
         assert done["status"] == "succeeded" and done["counts"]["waiting"] == 0
 
@@ -543,14 +544,14 @@ class TestNodesTheBrowserRuns:
         # would be overwritten by it.
         user, token = user_and_token
         sandbox.hold = {"slow"}
-        osm = {"id": "osm", "type": "curio.builtin/autk-grammar",
-               "content": json.dumps({"data": [{"type": "osm"}]})}
-        project_id, _ = _create(client, token, [osm, _node("slow")])
+        shade = {"id": "shade", "type": "curio.builtin/autk-grammar",
+                 "content": json.dumps({"compute": [{"shader": "x"}]})}
+        project_id, _ = _create(client, token, [shade, _node("slow")])
         run_id = _start(client, token, project_id).get_json()["id"]
         assert sandbox.started.wait(timeout=10)
 
         early = client.post(
-            f"/api/runs/{run_id}/steps/osm", data=json.dumps({"status": "ok"}), headers=_auth(token),
+            f"/api/runs/{run_id}/steps/shade", data=json.dumps({"status": "ok"}), headers=_auth(token),
         )
         assert early.status_code == 409
         sandbox.release()
