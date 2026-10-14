@@ -13,12 +13,18 @@ helpers let a test run those installs with the real pip and no network:
   the way any catalog package is.
 
 ``offline_catalog_package`` does all three and undoes them.
+
+Each test of an install path has a test package and a library of its own
+(``offline_package``), so each proves its own install from scratch, even after
+an earlier test on the same backend imported another test library.
 """
 
 from __future__ import annotations
 
 import base64
+import json
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Iterator
 
@@ -29,15 +35,59 @@ from .db_stubs import api_json
 #: Test packages: never in the shipped catalog, planted for one test at a time.
 TEST_PACKAGES_DIR = Path(__file__).resolve().parents[1] / "packages"
 
-#: The library ``test.wheelhouse-probe@1`` declares.
-WHEELHOUSE_PROBE = WheelLibrary(
-    dist="curio-wheelhouse-probe",
-    version="1.0.0",
-    module="curio_wheelhouse_probe",
-    message="curio-wheelhouse-probe 1.0.0 imported from the test wheelhouse",
-)
-#: One node, ``probe``, which imports the library and prints its message.
-WHEELHOUSE_PROBE_PACKAGE = "test.wheelhouse-probe@1"
+
+def wheelhouse_library(dist: str, version: str) -> WheelLibrary:
+    """The test library *dist*, a ``curio-wheelhouse-*`` name: its module is the
+    name with underscores, and holds a message that names the library."""
+    return WheelLibrary(
+        dist=dist,
+        version=version,
+        module=dist.replace("-", "_"),
+        message=f"{dist} {version} imported from the test wheelhouse",
+    )
+
+
+@dataclass(frozen=True)
+class OfflineNode:
+    """One node of a test package."""
+
+    #: ``<package id>/<template id>``, which a canvas node's type starts with.
+    type: str
+    label: str
+    #: Its code, from the package's sources.
+    code: str
+
+
+@dataclass(frozen=True)
+class OfflinePackage:
+    """A test package from ``packages/``, as its manifest declares it."""
+
+    dir_name: str
+    name: str
+    #: The one library it declares, which exists only as a test wheel.
+    library: WheelLibrary
+    #: Its nodes, in the manifest's order.
+    nodes: tuple[OfflineNode, ...]
+
+
+def offline_package(dir_name: str) -> OfflinePackage:
+    """The test package ``packages/<dir_name>``, read from its manifest."""
+    root = TEST_PACKAGES_DIR / dir_name
+    manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    [(dist, version)] = manifest["dependencies"]["python"].items()
+    return OfflinePackage(
+        dir_name=dir_name,
+        name=manifest["name"],
+        library=wheelhouse_library(dist, version),
+        nodes=tuple(
+            OfflineNode(
+                type=f"{manifest['id']}/{template['id']}",
+                label=template["label"],
+                code=(root / template["source"]).read_text(encoding="utf-8"),
+            )
+            for template in manifest["templates"]
+        ),
+    )
 
 
 def _testing_post(backend_url: str, route: str, payload: dict) -> dict:

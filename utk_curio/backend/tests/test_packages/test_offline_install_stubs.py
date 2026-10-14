@@ -6,8 +6,8 @@ It needs a wheelhouse the backend's pip reads instead of an index
 (``/api/testing/wheelhouse``), and the test package in the shared catalog
 (``/api/testing/catalog-package``). These tests hold each door to that: the
 staged wheel is what pip installs with no index, everything is put back
-afterwards, nothing but a test library or a test package gets through, and the
-test package is one the catalog accepts.
+afterwards, nothing but a test library or a test package gets through, and
+every test package is one the catalog accepts, with a library of its own.
 """
 
 from __future__ import annotations
@@ -32,8 +32,11 @@ LIB = WheelLibrary(
     message="curio-wheelhouse-unit 1.0.0 imported from the test wheelhouse",
 )
 PIP_KEYS = ("PIP_NO_INDEX", "PIP_FIND_LINKS", "PIP_DISABLE_PIP_VERSION_CHECK")
+TEST_PACKAGES = Path(__file__).resolve().parents[1] / "test_frontend" / "packages"
+#: One test package per e2e test of an install path, each with its own library.
+TEST_PACKAGE_DIRS = sorted(path.name for path in TEST_PACKAGES.iterdir() if path.is_dir())
 TEST_PACKAGE_DIR = "test.wheelhouse-probe@1"
-TEST_PACKAGE = Path(__file__).resolve().parents[1] / "test_frontend" / "packages" / TEST_PACKAGE_DIR
+TEST_PACKAGE = TEST_PACKAGES / TEST_PACKAGE_DIR
 
 
 def _post(client, route: str, **body):
@@ -51,12 +54,20 @@ def _wheel(library: WheelLibrary = LIB) -> dict:
     }
 
 
-def _test_package_files() -> dict:
+def _test_package_files(dir_name: str = TEST_PACKAGE_DIR) -> dict:
+    root = TEST_PACKAGES / dir_name
     return {
-        path.relative_to(TEST_PACKAGE).as_posix(): path.read_text(encoding="utf-8")
-        for path in sorted(TEST_PACKAGE.rglob("*"))
+        path.relative_to(root).as_posix(): path.read_text(encoding="utf-8")
+        for path in sorted(root.rglob("*"))
         if path.is_file()
     }
+
+
+def _own_library(dir_name: str) -> str:
+    """The library a test package declares: ``test.wheelhouse-<name>@1``
+    declares ``curio-wheelhouse-<name>``, which no other package declares."""
+    name = dir_name.removeprefix("test.wheelhouse-").split("@")[0]
+    return f"curio-wheelhouse-{name}"
 
 
 @pytest.fixture(autouse=True)
@@ -120,24 +131,39 @@ def test_only_a_test_library_reaches_the_wheelhouse(client):
     assert _post(client, "wheelhouse", action="status", names=["numpy"]).status_code == 400
 
 
-def test_the_test_package_plants_as_a_catalog_package_and_is_removed(client, catalog):
+def test_the_e2e_tests_have_a_test_package_each():
+    # The card drop, its menu, the guest refusal, the lockfile and the catalog page.
+    assert TEST_PACKAGE_DIRS == [
+        "test.wheelhouse-catalog@1",
+        "test.wheelhouse-guest@1",
+        "test.wheelhouse-lockfile@1",
+        "test.wheelhouse-pair@1",
+        "test.wheelhouse-probe@1",
+    ]
+
+
+@pytest.mark.parametrize("dir_name", TEST_PACKAGE_DIRS)
+def test_each_test_package_plants_as_a_catalog_package_with_a_library_of_its_own_and_is_removed(
+    client, catalog, dir_name,
+):
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
     planted = _post(
         client, "catalog-package",
-        action="plant", dirName=TEST_PACKAGE_DIR, files=_test_package_files(),
+        action="plant", dirName=dir_name, files=_test_package_files(dir_name),
     )
 
     assert planted.status_code == 200, planted.get_json()
-    manifest = load_package_manifest(catalog / TEST_PACKAGE_DIR)
-    assert manifest.dir_name == TEST_PACKAGE_DIR
-    # The library the e2e suite's wheel carries (utils/offline_install.py).
-    assert manifest.python_deps == {"curio-wheelhouse-probe": "1.0.0"}
-    assert (catalog / TEST_PACKAGE_DIR / "integrity.json").is_file()
+    manifest = load_package_manifest(catalog / dir_name)
+    assert manifest.dir_name == dir_name
+    # The library the e2e suite's wheel carries (utils/offline_install.py),
+    # which no other test package declares.
+    assert manifest.python_deps == {_own_library(dir_name): "1.0.0"}
+    assert (catalog / dir_name / "integrity.json").is_file()
 
-    removed = _post(client, "catalog-package", action="remove", dirName=TEST_PACKAGE_DIR)
+    removed = _post(client, "catalog-package", action="remove", dirName=dir_name)
 
-    assert removed.get_json() == {"removed": TEST_PACKAGE_DIR, "present": False}
+    assert removed.get_json() == {"removed": dir_name, "present": False}
 
 
 def test_only_a_test_package_is_planted_or_removed(client, catalog):

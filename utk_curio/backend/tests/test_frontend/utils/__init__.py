@@ -204,8 +204,10 @@ from .node_drawings import (  # noqa: F401
 )
 from .offline_install import (  # noqa: F401
     TEST_PACKAGES_DIR,
-    WHEELHOUSE_PROBE,
-    WHEELHOUSE_PROBE_PACKAGE,
+    OfflineNode,
+    OfflinePackage,
+    offline_package,
+    wheelhouse_library,
     stage_wheelhouse,
     library_installed,
     restore_wheelhouse,

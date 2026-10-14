@@ -164,12 +164,8 @@ describe("PackageCard - dragged onto the canvas", () => {
     } as unknown as DataTransfer;
   }
   const card = (container: HTMLElement) => container.querySelector("article[data-pkg-dir]") as HTMLElement;
-
-  it("drags a card whose package has one node, carrying that node", () => {
-    const { container } = render(
-      <PackageCard {...base} pkg={pkg({ templates: [{ id: "me.demo/demo@1", label: "Demo Node" }] } as never)} />,
-    );
-    expect(card(container)).toHaveAttribute("draggable", "true");
+  /** What a drag of the card carries, as a copy. */
+  const dragged = (container: HTMLElement) => {
     const dataTransfer = fakeDataTransfer();
     fireEvent.dragStart(card(container), { dataTransfer });
     expect(dataTransfer.effectAllowed).toBe("copy");
@@ -177,21 +173,41 @@ describe("PackageCard - dragged onto the canvas", () => {
     // alone and not the whole suite.
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { readPackageCardDragPayload } = require("../../services/packages/packageCardDrag");
-    expect(readPackageCardDragPayload(dataTransfer)).toMatchObject({
-      dirName: "me.demo@1",
-      nodeType: "me.demo/demo@1",
-      nodeLabel: "Demo Node",
-    });
+    const payload = readPackageCardDragPayload(dataTransfer);
     fireEvent.dragEnd(card(container));
+    return payload;
+  };
+
+  it("drags a card whose package has one node, carrying that node", () => {
+    const { container } = render(
+      <PackageCard {...base} pkg={pkg({ templates: [{ id: "me.demo/demo@1", label: "Demo Node" }] } as never)} />,
+    );
+    expect(card(container)).toHaveAttribute("draggable", "true");
+    expect(dragged(container)).toMatchObject({
+      dirName: "me.demo@1",
+      nodes: [{ nodeType: "me.demo/demo@1", label: "Demo Node" }],
+    });
   });
 
-  it("does not drag a card whose package has several nodes", () => {
+  it("drags a card whose package has several nodes, carrying them all for the drop's menu", () => {
     const { container } = render(
       <PackageCard
         {...base}
         pkg={pkg({ templates: [{ id: "me.demo/a@1", label: "A" }, { id: "me.demo/b@1", label: "B" }] } as never)}
       />,
     );
+    expect(card(container)).toHaveAttribute("draggable", "true");
+    expect(dragged(container)).toMatchObject({
+      dirName: "me.demo@1",
+      nodes: [
+        { nodeType: "me.demo/a@1", label: "A" },
+        { nodeType: "me.demo/b@1", label: "B" },
+      ],
+    });
+  });
+
+  it("does not drag a card whose package has no node", () => {
+    const { container } = render(<PackageCard {...base} pkg={pkg({ templates: [] } as never)} />);
     expect(card(container)).not.toHaveAttribute("draggable");
   });
 });

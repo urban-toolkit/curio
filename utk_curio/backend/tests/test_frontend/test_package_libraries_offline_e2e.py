@@ -3,11 +3,14 @@
 A package declares its libraries (``dependencies.python``); they are never
 Curio's own dependencies. They install when the package is added, when a
 dataflow whose lockfile names it is opened, or at launch for the packages the
-shipped examples declare (``--with-examples``). Each test below adds
-``test.wheelhouse-probe@1``, a test package kept beside these tests
-(``packages/``), along one path, and checks that the library was not
-installed before, that pip installed it, and that the package's node runs and
-prints the message the library holds.
+shipped examples declare (``--with-examples``). Each test below adds a test
+package kept beside these tests (``packages/``) along one path, and checks that
+the library was not installed before, that pip installed it, and that the
+package's node runs and prints the message the library holds.
+
+Each test has a package and a library of its own, so each proves its own
+install from scratch, even after an earlier test on the same backend imported
+another test library.
 
 Offline by construction: the library is a wheel of a few hundred bytes the
 test builds, staged in the backend's own wheelhouse, and the backend's pip
@@ -17,12 +20,16 @@ reads that and no index (``PIP_NO_INDEX`` with ``PIP_FIND_LINKS``, as
 
 * A node card dragged from the Node Catalog drawer onto the canvas opens the
   Add review, which lists the library; after the confirm the node appears and
-  runs. A hosted guest's drop is refused and no node appears: guests never
-  install.
+  runs (``test.wheelhouse-probe@1``).
+* A card of a package with two nodes opens a menu of them at the drop point.
+  Escape closes it and makes no node; the node picked appears after the Add
+  review and runs (``test.wheelhouse-pair@1``).
+* A hosted guest's drop is refused before any menu, and no node appears:
+  guests never install (``test.wheelhouse-guest@1``).
 * Loading a dataflow whose lockfile names the package adds it, and Run All
-  runs its node.
+  runs its node (``test.wheelhouse-lockfile@1``).
 * Add on the Node Catalog page installs the library, and the node dropped from
-  the palette runs.
+  the palette runs (``test.wheelhouse-catalog@1``).
 
 Run::
 
@@ -39,9 +46,7 @@ from playwright.sync_api import expect
 
 from .utils import (
     CANVAS_DROP_TARGET,
-    TEST_PACKAGES_DIR,
-    WHEELHOUSE_PROBE,
-    WHEELHOUSE_PROBE_PACKAGE,
+    OfflinePackage,
     allow_guest_login_env,
     api_json,
     canvas_node_type,
@@ -52,6 +57,7 @@ from .utils import (
     library_installed,
     node_locator,
     offline_catalog_package,
+    offline_package,
     open_new_workflow,
     open_tools_palette,
     read_node_output_text,
@@ -71,15 +77,18 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-LIB = WHEELHOUSE_PROBE
-PKG_DIR = WHEELHOUSE_PROBE_PACKAGE
-PKG_NAME = "Wheelhouse Probe"
-NODE_TYPE = "test.wheelhouse-probe/probe"
-PROBE_CODE = (TEST_PACKAGES_DIR / PKG_DIR / "sources" / "probe.py").read_text(encoding="utf-8")
+#: One test package, and one library, per test.
+#: The card drop, whose two frames are approved: keep the package as it is.
+PROBE = offline_package("test.wheelhouse-probe@1")
+#: Two nodes: its card's drop opens a menu of them.
+PAIR = offline_package("test.wheelhouse-pair@1")
+#: Two nodes too, so a hosted guest's refusal comes before any menu.
+GUEST = offline_package("test.wheelhouse-guest@1")
+LOCKFILE = offline_package("test.wheelhouse-lockfile@1")
+CATALOG = offline_package("test.wheelhouse-catalog@1")
 
 BAR = "header[data-curio-menu-bar]"
 NODE_DRAWER = '[data-curio-node-catalog-drawer="true"]'
-CARD = f'article[data-pkg-dir="{PKG_DIR}"]'
 ADD_REVIEW = '[data-curio-add-review="true"]'
 NOTIFICATIONS = '[aria-label="Notifications"]'
 #: Where a card from the drawer is dropped, from the canvas's top-left corner:
@@ -87,17 +96,42 @@ NOTIFICATIONS = '[aria-label="Notifications"]'
 UNDER_THE_SCRIM = (320.0, 220.0)
 #: The frames of the drop: the Add review, and the node after the install.
 DROP_STEM = "package-card-drop"
+#: The frames of the menu: open at the drop point, and the node picked.
+MENU_STEM = "package-card-menu"
 
-GUEST_REFUSAL = (
-    f"Adding {PKG_NAME} is not available for guest users, because every guest shares "
-    f"one account. Sign in with an account to add it."
-)
+
+def _offline(server: str, package: OfflinePackage):
+    """*package* in this backend's catalog, its library only in the wheelhouse."""
+    return offline_catalog_package(server, package.dir_name, [package.library])
 
 
 @pytest.fixture()
 def probe_package(current_server: str):
-    """The test package in this backend's catalog, its library only in the wheelhouse."""
-    with offline_catalog_package(current_server, PKG_DIR, [LIB]):
+    with _offline(current_server, PROBE):
+        yield
+
+
+@pytest.fixture()
+def pair_package(current_server: str):
+    with _offline(current_server, PAIR):
+        yield
+
+
+@pytest.fixture()
+def guest_package(current_server: str):
+    with _offline(current_server, GUEST):
+        yield
+
+
+@pytest.fixture()
+def lockfile_package(current_server: str):
+    with _offline(current_server, LOCKFILE):
+        yield
+
+
+@pytest.fixture()
+def catalog_package(current_server: str):
+    with _offline(current_server, CATALOG):
         yield
 
 
@@ -133,10 +167,14 @@ def _store_dirs(server: str, token: str) -> list[str]:
     return [p.get("dirName") for p in api_json(f"{server}/api/packages", token)["packages"]]
 
 
-def _assert_not_added_yet(server: str, token: str) -> None:
+def _assert_not_added_yet(server: str, token: str, package: OfflinePackage) -> None:
     store = _store_dirs(server, token)
-    assert PKG_DIR not in store, f"{PKG_DIR} is in this account's store before the test adds it: {store}"
-    assert not library_installed(server, LIB), f"{LIB.dist} is installed before the test adds {PKG_DIR}"
+    assert package.dir_name not in store, (
+        f"{package.dir_name} is in this account's store before the test adds it: {store}"
+    )
+    assert not library_installed(server, package.library), (
+        f"{package.library.dist} is installed before the test adds {package.dir_name}"
+    )
 
 
 def _node_ids(page) -> set[str]:
@@ -163,6 +201,15 @@ def _record_package_writes(page) -> list[str]:
     return sent
 
 
+def _adds(writes: list[str]) -> list[str]:
+    """The requests that add a package to a dataflow or an account."""
+    return [w for w in writes if w.endswith("/install") or "/api/packages/defaults" in w]
+
+
+def _card(package: OfflinePackage) -> str:
+    return f'article[data-pkg-dir="{package.dir_name}"]'
+
+
 def _open_node_catalog_drawer(page):
     page.locator(BAR).get_by_role("button", name="Node Catalog", exact=True).click()
     drawer = page.locator(NODE_DRAWER)
@@ -170,20 +217,40 @@ def _open_node_catalog_drawer(page):
     return drawer
 
 
-def _add_review(page):
+def _add_review(page, package: OfflinePackage):
     return page.get_by_role("dialog").filter(
-        has=page.get_by_role("heading", name=f'Add "{PKG_NAME}"', exact=True)
+        has=page.get_by_role("heading", name=f'Add "{package.name}"', exact=True)
     )
 
 
-def _assert_lists_the_library(review) -> None:
-    expect(review.locator("code", has_text=f"python · {LIB.dist}")).to_be_visible(timeout=10000)
-    expect(review.locator("code").filter(has_text=LIB.version)).to_have_count(1)
+def _node_menu(page, package: OfflinePackage):
+    """The menu of *package*'s nodes a drop of its card opens."""
+    return page.get_by_role("menu", name=f"{package.name} nodes", exact=True)
 
 
-def _assert_the_node_ran_the_library(page, node_id: str) -> None:
+def _node_menu_selector(package: OfflinePackage) -> str:
+    return f'[data-curio-card-context-menu="true"][aria-label="{package.name} nodes"]'
+
+
+def _guest_refusal(package: OfflinePackage) -> str:
+    return (
+        f"Adding {package.name} is not available for guest users, because every guest shares "
+        f"one account. Sign in with an account to add it."
+    )
+
+
+def _assert_lists_the_library(review, package: OfflinePackage) -> None:
+    library = package.library
+    expect(review.locator("code", has_text=f"python · {library.dist}")).to_be_visible(timeout=10000)
+    expect(review.locator("code").filter(has_text=library.version)).to_have_count(1)
+
+
+def _assert_the_node_ran_the_library(page, node_id: str, package: OfflinePackage, *, shows: str = "") -> None:
+    """The node's output holds the library's message, and *shows* when given."""
+    library = package.library
     output = read_node_output_text(page, node_id)
-    assert LIB.message in output, f"the node's output does not show {LIB.module} imported: {output!r}"
+    assert library.message in output, f"the node's output does not show {library.module} imported: {output!r}"
+    assert shows in output, f"the node's output is not the one of the node it should be: {output!r}"
 
 
 def _enter_as_hosted_guest(page, base_url: str) -> None:
@@ -218,14 +285,24 @@ def _expand_palette_package(anchor) -> None:
     expect(details).to_have_attribute("open", "", timeout=10000)
 
 
+def _expect_project_install(page):
+    """The confirmed Add review's install of the package into this dataflow."""
+    return page.expect_response(
+        lambda r: "/api/packages/projects/" in r.url and r.url.endswith("/install")
+        and r.request.method == "POST",
+        timeout=180000,
+    )
+
+
 def test_a_node_card_dropped_from_the_drawer_opens_the_add_review_and_its_node_runs_with_the_library(
     app_frontend: "FrontendPage", current_server: str, page, probe_package,
 ):
     session = _enter_canvas(page, app_frontend, current_server, kind="drop")
-    _assert_not_added_yet(current_server, session["token"])
+    _assert_not_added_yet(current_server, session["token"], PROBE)
+    [probe] = PROBE.nodes
 
     drawer = _open_node_catalog_drawer(page)
-    card = drawer.locator(CARD)
+    card = drawer.locator(_card(PROBE))
     expect(card).to_have_count(1, timeout=30000)
     expect(card).to_have_attribute("draggable", "true")
     writes = _record_package_writes(page)
@@ -234,52 +311,129 @@ def test_a_node_card_dropped_from_the_drawer_opens_the_add_review_and_its_node_r
     drop = drag_with_the_mouse_onto_canvas(page, card.locator("h3"), at=UNDER_THE_SCRIM)
 
     assert drop["onCanvas"], f"the card's drop landed on {drop['droppedOn']}, not on the canvas"
-    review = _add_review(page)
+    review = _add_review(page, PROBE)
     expect(review).to_be_visible(timeout=30000)
-    _assert_lists_the_library(review)
+    _assert_lists_the_library(review, PROBE)
     # The review comes first: nothing is added, installed or created before it.
-    adds = [w for w in writes if w.endswith("/install") or "/api/packages/defaults" in w]
-    assert (sorted(_node_ids(page) - before), adds) == ([], []), (
+    assert (sorted(_node_ids(page) - before), _adds(writes)) == ([], []), (
         f"the drop made nodes or added the package before the review was confirmed: {writes}"
     )
     save_workflow_test_screenshot(
         page, DROP_STEM, test_name="add-review", fit_reactflow=False, clip_selector=ADD_REVIEW,
     )
 
-    with page.expect_response(
-        lambda r: "/api/packages/projects/" in r.url and r.url.endswith("/install")
-        and r.request.method == "POST",
-        timeout=180000,
-    ) as added:
+    with _expect_project_install(page) as added:
         review.get_by_role("button", name="Add to project", exact=True).click()
     response = added.value
     assert response.status == 201, f"{response.status}: {response.text()[:600]}"
     assert not response.json().get("importErrors"), response.json()
-    assert library_installed(current_server, LIB), f"{PKG_DIR} was added and pip never installed {LIB.dist}"
+    assert library_installed(current_server, PROBE.library), (
+        f"{PROBE.dir_name} was added and pip never installed {PROBE.library.dist}"
+    )
 
     node = _new_node(page, before)
-    assert (canvas_node_type(page, node) or "").startswith(NODE_TYPE), canvas_node_type(page, node)
+    assert (canvas_node_type(page, node) or "").startswith(probe.type), canvas_node_type(page, node)
     expect(review).to_have_count(0)
 
     # The drawer's scrim lies over the canvas: close it, then frame and run the node.
     page.keyboard.press("Escape")
     wait_for_drawer_closed(page, NODE_DRAWER)
     save_node_closeup(page, DROP_STEM, node, test_name="node", sweep_toasts=True)
-    run_node_and_wait(page, node, node_type=NODE_TYPE)
-    _assert_the_node_ran_the_library(page, node)
+    run_node_and_wait(page, node, node_type=probe.type)
+    _assert_the_node_ran_the_library(page, node, PROBE)
 
 
-def test_a_hosted_guest_dropping_a_node_card_is_refused_and_no_node_appears(
-    app_frontend: "FrontendPage", current_server: str, page, probe_package,
+def test_a_card_of_a_package_with_two_nodes_opens_a_menu_of_them_and_the_node_picked_runs_with_the_library(
+    app_frontend: "FrontendPage", current_server: str, page, pair_package,
+):
+    session = _enter_canvas(page, app_frontend, current_server, kind="menu")
+    _assert_not_added_yet(current_server, session["token"], PAIR)
+    first, second = PAIR.nodes
+
+    drawer = _open_node_catalog_drawer(page)
+    card = drawer.locator(_card(PAIR))
+    expect(card).to_have_count(1, timeout=30000)
+    expect(card).to_have_attribute("draggable", "true")
+    writes = _record_package_writes(page)
+    before = _node_ids(page)
+    menu = _node_menu(page, PAIR)
+
+    # Escape closes the menu alone: no node, nothing asked of the package
+    # routes, and the drawer under it stays open.
+    drop = drag_with_the_mouse_onto_canvas(page, card.locator("h3"), at=UNDER_THE_SCRIM)
+    assert drop["onCanvas"], f"the card's drop landed on {drop['droppedOn']}, not on the canvas"
+    expect(menu).to_be_visible(timeout=10000)
+    page.keyboard.press("Escape")
+    expect(menu).to_have_count(0)
+    expect(drawer).to_have_attribute("aria-hidden", "false")
+    expect(_add_review(page, PAIR)).to_have_count(0)
+    assert (sorted(_node_ids(page) - before), writes) == ([], []), (
+        f"Escape on the menu made nodes or reached the package routes: {writes}"
+    )
+
+    # Dropped again: the menu at the drop point lists the package's nodes.
+    drop = drag_with_the_mouse_onto_canvas(page, card.locator("h3"), at=UNDER_THE_SCRIM)
+    assert drop["onCanvas"], f"the card's drop landed on {drop['droppedOn']}, not on the canvas"
+    expect(menu).to_be_visible(timeout=10000)
+    expect(menu.get_by_role("menuitem")).to_have_text([first.label, second.label])
+    x, y = drop["target"]
+    box = menu.bounding_box()
+    assert box is not None and abs(box["x"] - x) <= 2 and abs(box["y"] - y) <= 2, (
+        f"the menu opened at {box}, not at the drop point ({x:.0f}, {y:.0f})"
+    )
+    assert (sorted(_node_ids(page) - before), writes) == ([], []), (
+        f"the drop made nodes or reached the package routes before a node was picked: {writes}"
+    )
+    # Off the menu, so no row is captured under the pointer.
+    page.mouse.move(x - 80, y - 80)
+    save_workflow_test_screenshot(
+        page, MENU_STEM, test_name="open", fit_reactflow=False, clip_selector=_node_menu_selector(PAIR),
+    )
+
+    # The second node: a drop that made the first node whatever the pick
+    # would fail here.
+    menu.get_by_role("menuitem", name=second.label, exact=True).click()
+    expect(menu).to_have_count(0)
+    review = _add_review(page, PAIR)
+    expect(review).to_be_visible(timeout=30000)
+    _assert_lists_the_library(review, PAIR)
+    assert (sorted(_node_ids(page) - before), _adds(writes)) == ([], []), (
+        f"the pick made nodes or added the package before the review was confirmed: {writes}"
+    )
+
+    with _expect_project_install(page) as added:
+        review.get_by_role("button", name="Add to project", exact=True).click()
+    response = added.value
+    assert response.status == 201, f"{response.status}: {response.text()[:600]}"
+    assert not response.json().get("importErrors"), response.json()
+    assert library_installed(current_server, PAIR.library), (
+        f"{PAIR.dir_name} was added and pip never installed {PAIR.library.dist}"
+    )
+
+    node = _new_node(page, before)
+    assert (canvas_node_type(page, node) or "").startswith(second.type), canvas_node_type(page, node)
+    expect(review).to_have_count(0)
+
+    # The drawer's scrim lies over the canvas: close it, then frame and run the node.
+    page.keyboard.press("Escape")
+    wait_for_drawer_closed(page, NODE_DRAWER)
+    save_node_closeup(page, MENU_STEM, node, test_name="node", sweep_toasts=True)
+    run_node_and_wait(page, node, node_type=second.type)
+    _assert_the_node_ran_the_library(page, node, PAIR, shows=f"second: {PAIR.library.message}")
+
+
+def test_a_hosted_guest_dropping_a_node_card_is_refused_before_any_menu_and_no_node_appears(
+    app_frontend: "FrontendPage", current_server: str, page, guest_package,
 ):
     require_project_page()
     require_user_auth()
     assert allow_guest_login_env(), "this stack turns guest login off, so it has no hosted guest to refuse"
+    assert len(GUEST.nodes) > 1, "the guest's package must have several nodes, whose drop opens a menu"
     page.emulate_media(reduced_motion="reduce")
     _enter_as_hosted_guest(page, app_frontend.base_url)
 
     drawer = _open_node_catalog_drawer(page)
-    card = drawer.locator(CARD)
+    card = drawer.locator(_card(GUEST))
     expect(card).to_have_count(1, timeout=30000)
     expect(card).to_have_attribute("draggable", "true")
     writes = _record_package_writes(page)
@@ -288,42 +442,44 @@ def test_a_hosted_guest_dropping_a_node_card_is_refused_and_no_node_appears(
     drop = drag_with_the_mouse_onto_canvas(page, card.locator("h3"), at=UNDER_THE_SCRIM)
 
     assert drop["onCanvas"], f"the card's drop landed on {drop['droppedOn']}, not on the canvas"
-    expect(page.locator(NOTIFICATIONS).get_by_text(GUEST_REFUSAL)).to_be_visible(timeout=10000)
-    expect(_add_review(page)).to_have_count(0)
+    expect(page.locator(NOTIFICATIONS).get_by_text(_guest_refusal(GUEST))).to_be_visible(timeout=10000)
+    expect(_node_menu(page, GUEST)).to_have_count(0)
+    expect(_add_review(page, GUEST)).to_have_count(0)
     assert (sorted(_node_ids(page) - before), writes) == ([], []), (
         f"a hosted guest's drop made nodes or reached the package routes: {writes}"
     )
-    assert not library_installed(current_server, LIB)
+    assert not library_installed(current_server, GUEST.library)
 
 
 def test_loading_a_dataflow_whose_lockfile_names_the_package_adds_it_and_run_all_runs_its_node(
-    app_frontend: "FrontendPage", current_server: str, page, tmp_path, probe_package,
+    app_frontend: "FrontendPage", current_server: str, page, tmp_path, lockfile_package,
 ):
     session = _enter_canvas(page, app_frontend, current_server, kind="lockfile")
     token = session["token"]
-    _assert_not_added_yet(current_server, token)
+    _assert_not_added_yet(current_server, token, LOCKFILE)
+    [probe] = LOCKFILE.nodes
 
     node_id = "offline-probe-node"
     spec = {
         "dataflow": {
-            "name": "Names the wheelhouse probe",
+            "name": "Names the wheelhouse lockfile probe",
             "task": "",
             "nodes": [{
                 "id": node_id,
-                "type": NODE_TYPE,
+                "type": probe.type,
                 "x": 400,
                 "y": 300,
-                "content": PROBE_CODE,
+                "content": probe.code,
                 "in": "DEFAULT",
                 "out": "DEFAULT",
                 "goal": "",
                 "metadata": {"keywords": []},
             }],
             "edges": [],
-            "packages": [PKG_DIR],
+            "packages": [LOCKFILE.dir_name],
         }
     }
-    spec_file = tmp_path / "names-the-wheelhouse-probe.json"
+    spec_file = tmp_path / "names-the-wheelhouse-lockfile-probe.json"
     spec_file.write_text(json.dumps(spec), encoding="utf-8")
 
     with page.expect_response(
@@ -333,19 +489,21 @@ def test_loading_a_dataflow_whose_lockfile_names_the_package_adds_it_and_run_all
         _load_dataflow(page, str(spec_file))
     response = installed.value
     assert response.ok, f"{response.status}: {response.text()[:600]}"
-    assert response.json()["installedPackages"] == [PKG_DIR], response.json()
-    expect(page.locator(NOTIFICATIONS)).to_contain_text(f"Installed {PKG_DIR}.", timeout=30000)
-    assert library_installed(current_server, LIB), f"{PKG_DIR} was added and pip never installed {LIB.dist}"
-    assert PKG_DIR in _store_dirs(current_server, token)
+    assert response.json()["installedPackages"] == [LOCKFILE.dir_name], response.json()
+    expect(page.locator(NOTIFICATIONS)).to_contain_text(f"Installed {LOCKFILE.dir_name}.", timeout=30000)
+    assert library_installed(current_server, LOCKFILE.library), (
+        f"{LOCKFILE.dir_name} was added and pip never installed {LOCKFILE.library.dist}"
+    )
+    assert LOCKFILE.dir_name in _store_dirs(current_server, token)
 
     # The node is the package's own once the registry knows the package.
     node_locator(page, node_id).locator(".monaco-editor").first.wait_for(state="attached", timeout=60000)
     run_all_and_wait(page)
-    _assert_the_node_ran_the_library(page, node_id)
+    _assert_the_node_ran_the_library(page, node_id, LOCKFILE)
 
 
 def test_adding_the_package_on_the_catalog_page_installs_its_library_and_its_node_runs_from_the_palette(
-    app_frontend: "FrontendPage", current_server: str, page, probe_package,
+    app_frontend: "FrontendPage", current_server: str, page, catalog_package,
 ):
     require_project_page()
     require_user_auth()
@@ -357,20 +515,21 @@ def test_adding_the_package_on_the_catalog_page_installs_its_library_and_its_nod
         username=_username("catalog"),
         name="Offline Catalog User",
     )
-    _assert_not_added_yet(current_server, session["token"])
+    _assert_not_added_yet(current_server, session["token"], CATALOG)
+    [probe] = CATALOG.nodes
 
     page.goto(f"{app_frontend.base_url}/catalog/nodes")
     page.wait_for_load_state("domcontentloaded")
-    card = page.locator(CARD)
+    card = page.locator(_card(CATALOG))
     expect(card).to_have_count(1, timeout=30000)
     card.click()
     add = page.get_by_role("button", name="Add to all projects", exact=True)
     expect(add).to_be_visible(timeout=15000)
     with page.expect_response(lambda r: r.url.endswith("/api/packages/resolve"), timeout=30000):
         add.click()
-    review = _add_review(page)
+    review = _add_review(page, CATALOG)
     expect(review).to_be_visible(timeout=15000)
-    _assert_lists_the_library(review)
+    _assert_lists_the_library(review, CATALOG)
 
     with page.expect_response(
         lambda r: r.url.endswith("/api/packages/defaults") and r.request.method == "POST",
@@ -380,7 +539,9 @@ def test_adding_the_package_on_the_catalog_page_installs_its_library_and_its_nod
     response = added.value
     assert response.status == 201, f"{response.status}: {response.text()[:600]}"
     assert not response.json().get("importErrors"), response.json()
-    assert library_installed(current_server, LIB), f"{PKG_DIR} was added and pip never installed {LIB.dist}"
+    assert library_installed(current_server, CATALOG.library), (
+        f"{CATALOG.dir_name} was added and pip never installed {CATALOG.library.dist}"
+    )
 
     # A new dataflow starts with the account's packages: the node is in its palette.
     page.goto(f"{app_frontend.base_url}/projects")
@@ -388,14 +549,14 @@ def test_adding_the_package_on_the_catalog_page_installs_its_library_and_its_nod
     open_new_workflow(page)
     _wait_for_canvas(page)
     open_tools_palette(page, "packages")
-    anchor = page.locator(f'#packages-palette [data-pkg-palette-coords~="{PKG_DIR}"]')
+    anchor = page.locator(f'#packages-palette [data-pkg-palette-coords~="{CATALOG.dir_name}"]')
     expect(anchor).to_have_count(1, timeout=30000)
     _expand_palette_package(anchor)
-    row = anchor.locator("div:has(> [data-pkg-template-id])").filter(has_text=PKG_NAME)
+    row = anchor.locator("div:has(> [data-pkg-template-id])").filter(has_text=probe.label)
     expect(row).to_have_count(1, timeout=20000)
     node = drag_to_canvas(page, row, at=(150, 150))
     close_tools_palette(page, "packages")
 
-    assert (canvas_node_type(page, node) or "").startswith(NODE_TYPE), canvas_node_type(page, node)
-    run_node_and_wait(page, node, node_type=NODE_TYPE)
-    _assert_the_node_ran_the_library(page, node)
+    assert (canvas_node_type(page, node) or "").startswith(probe.type), canvas_node_type(page, node)
+    run_node_and_wait(page, node, node_type=probe.type)
+    _assert_the_node_ran_the_library(page, node, CATALOG)
