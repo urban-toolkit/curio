@@ -73,12 +73,17 @@ def test_a_server_run_loads_example_06s_layers_and_its_pool_shows_them(
     for node_id in (DATA, POOL):
         node_locator(page, node_id).wait_for(state="visible", timeout=45000)
 
-    # Every node run the page itself sends while the loader runs.
+    # Every Autark data load the page itself sends while the loader runs, by
+    # node id. The loader is the only node of this run.
     sent: list[str] = []
 
     def _request(request) -> None:
-        if request.method == "POST" and "/process" in request.url and request.url.endswith("Code"):
-            sent.append(request.url.rsplit("/", 1)[-1] + " " + str(request.post_data or "")[:300])
+        if request.method != "POST" or not request.url.endswith("/processJavaScriptCode"):
+            return
+        try:
+            sent.append(str(json.loads(request.post_data or "{}").get("nodeId")))
+        except ValueError:
+            sent.append("?")
 
     page.on("request", _request)
     try:
@@ -94,9 +99,7 @@ def test_a_server_run_loads_example_06s_layers_and_its_pool_shows_them(
     assert (loader["role"], loader["status"], loader["outputType"]) == ("run", "ok", "list"), loader
     assert loader["outputPath"], loader
     assert run["status"] == "succeeded", run["status"]
-    assert not [line for line in sent if line.startswith("processJavaScriptCode") and DATA in line], (
-        f"the page ran the loader itself: {sent}"
-    )
+    assert sent == [], f"the page sent Autark data loads itself, for {sent}"
 
     # Done, with the tables it loaded, as its own run in the browser says it.
     node = node_locator(page, DATA)
