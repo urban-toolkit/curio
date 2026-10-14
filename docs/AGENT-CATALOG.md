@@ -39,13 +39,15 @@ Agent ids always begin with **`agent.`**, which keeps them apart from node packa
 
 ### What ships with Curio
 
-**Eleven agents ship with Curio.** Eight of them are the catalog: **Chat**, **Dataflow Builder**, **Dataset Finder**, **Node Builder**, **Package Builder**, **Package Recommendation**, **Researcher** and **Connection Builder**. Chat is the one agent for conversation: it explains a node or the whole dataflow, diagnoses errors, and helps you define what to build.
+**Ten agents ship with Curio.** Seven of them are the catalog: **Chat**, **Dataflow Builder**, **Dataset Finder**, **Node Builder**, **Package Builder**, **Researcher** and **Connection Builder**. Chat is the one agent for conversation: it explains a node or the whole dataflow, diagnoses errors, and helps you define what to build.
 
 **Node Builder** also writes a node's content. The model decides when: your message goes to Node Builder's chat prompt, and when the node's code or spec needs writing, the model asks for its content [mode](#modes), whose prompt runs as a second call. You review the change it writes.
 
 **Researcher** also checks facts. Ask it whether a dataset id, an endpoint or a field name is real, and it answers in its chat with what it verified, one labeled finding per line, and places no notes. When Node Builder or Dataset Finder needs a fact checked, Researcher's checking mode answers it as a second call.
 
-The other three work only on behalf of those eight: the **Dataflow Planner** plans, refreshes and checks a dataflow's tasks and extracts and binds the keywords that describe it, the **Dataflow Reader** explains a whole dataflow and suggests its next steps, and the **Generated Content Evaluator** checks generated node content against its goal. They are never listed, added or attached, and a catalog agent can delegate to one without it being added to the dataflow.
+**Package Builder** also recommends packages. In its chat it reuses first: a catalog package that already does what you need is proposed for install, for your review, before anything new is authored. When Connection Builder, Node Builder or Dataflow Builder needs packages recommended, Package Builder's recommendation mode answers as a second call, from the packages your account has.
+
+The other three work only on behalf of those seven: the **Dataflow Planner** plans, refreshes and checks a dataflow's tasks and extracts and binds the keywords that describe it, the **Dataflow Reader** explains a whole dataflow and suggests its next steps, and the **Generated Content Evaluator** checks generated node content against its goal. They are never listed, added or attached, and a catalog agent can delegate to one without it being added to the dataflow.
 
 Every agent declares one **category**, which the browse page's rail counts:
 
@@ -55,7 +57,7 @@ Every agent declares one **category**, which the browse page's rail counts:
 | `canvas` | The whole dataflow: planning, explanation, suggestion. |
 | `data` | Datasets and data shape. |
 | `evaluate` | Review, validation, and scoring. No catalog agent ships in it; the Generated Content Evaluator does. |
-| `package` | Node packages: recommending and resolving them. |
+| `package` | Node packages: recommending, resolving and authoring them. |
 
 Each category has its own colour and glyph in the interface, so a card is identifiable at a glance.
 

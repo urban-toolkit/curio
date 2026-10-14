@@ -1,4 +1,4 @@
-"""Built-in agent definitions: the eleven agents Curio ships with, eight of them catalog cards.
+"""Built-in agent definitions: the ten agents Curio ships with, seven of them catalog cards.
 
 Data-driven roster generated from the canonical prompt→agent map (plan memo
 ``dev/06``) over the existing prompt files in ``utk_curio/llm-prompts/*.md``,
@@ -169,7 +169,7 @@ def _merged(agent_id: str, name: str, category: str, purpose: str,
 
 
 # The prompt-agent migrations (dev/06 canonical map) plus the P5 composites
-# (dev/48) and the package-authoring agents: eleven in all, eight of them
+# (dev/48) and the package-authoring agents: ten in all, seven of them
 # catalog cards (``in_catalog``), which is what docs/AGENT-CATALOG.md quotes
 # and test_prompt_assets parametrizes over.
 BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
@@ -199,9 +199,10 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      reads=("workflowGoal", "nodeId", "subtask", "connectionSide", "dataflowContext"),
                      # dev/16 §3.3 addendum via dev/84 (deviation D4): the one
                      # migrated manifest that gains delegatesTo — a proposed
-                     # connection's required packages surface as reviewed
-                     # proposals. Its connection.propose capability is unchanged.
-                     delegates_to=("agent.package-recommendation",),
+                     # connection's required packages are recommended by the
+                     # Package Builder's package.recommend mode. Its
+                     # connection.propose capability is unchanged.
+                     delegates_to=(("agent.package-builder", ("package.recommend",)),),
                      worked_examples=True),
     # The planning and keyword agents, merged: six capabilities that shared
     # their tools (none), delegates (none), review and execution, each still
@@ -259,12 +260,11 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                                    ("agent.dataflow-planner", ("execution.followup.plan",)),
                                    # dev/67-4: checking a fact the node needs.
                                    ("agent.researcher", ("research.verify",)),
-                                   # dev/84: a built node's required packages.
-                                   "agent.package-recommendation",
-                                   # dev/89: no suitable template anywhere →
-                                   # the package.create-or-extend intent goes
-                                   # to the authoring specialist (reuse/catalog
-                                   # discovery stays ahead in preference order).
+                                   # dev/84: a built node's required packages
+                                   # (package.recommend, listed first); dev/89:
+                                   # no suitable template anywhere, so the
+                                   # package.create-or-extend intent goes to
+                                   # its authoring capabilities.
                                    "agent.package-builder",
                                    # dev/86 (DEC-055): optional post-generation
                                    # semantic check — advisory, never approval.
@@ -316,7 +316,7 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
     # The third P5 composite (memo dev/52; spec dev/15 §3.4 + dev/49 DR-1…5).
     # Plan → Revise → Solve → Run: additive graph-level plan proposals, the
     # persisted builder session, and the authenticated Solve batch (DEC-048).
-    # Deviation recorded: agent.package-recommendation deferred (dev/16).
+    # Deviation recorded: the package recommendation step deferred (dev/16).
     BuiltinAgentSpec("agent.dataflow-builder", "Dataflow Builder", "canvas",
                      "Plan a connected dataflow from a goal as one reviewable proposal; "
                      "solve unresolved nodes through delegated specialists. Never mutates "
@@ -340,12 +340,11 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                                        "workflow.plan.create", "execution.followup.plan",
                                        "workflow.plan.refresh", "workflow.coherence.validate")),
                                    ("agent.dataflow-reader", ("workflow.suggest", "dataflow.explain")),
-                                   # dev/84: the "Recommend packages" plan step.
-                                   "agent.package-recommendation",
-                                   # dev/89: package-scale plan steps — one
-                                   # coherent new or extended multi-template
-                                   # package, instead of repeated single-
-                                   # template rewrites.
+                                   # dev/84: the "Recommend packages" plan step
+                                   # (package.recommend); dev/89: package-scale
+                                   # plan steps, one coherent new or extended
+                                   # multi-template package instead of
+                                   # repeated single-template rewrites.
                                    "agent.package-builder",
                                    # dev/86 (DEC-055): optional post-generation
                                    # semantic check — advisory, never approval.
@@ -370,23 +369,6 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      # dev/115 (DEC-073): Solve is a detached background job.
                      execution="background",
                      worked_examples=True),
-    # The fourteenth releasable built-in (memo dev/84; spec dev/16 / DEC-035).
-    # Net-new instruction. Deviations recorded in the memo: roster-generated
-    # manifest (foreground, no settingsDefaults); the dev/16 installedPackages
-    # read is served by packages.catalog's installed flags, not a new fragment.
-    # Identify/suggest/reviewed-install only — never installs, never authors.
-    BuiltinAgentSpec("agent.package-recommendation", "Package Recommendation", "package",
-                     "Identify and recommend the node packages a task, node, or dataflow "
-                     "needs; surface each required-but-uninstalled package as a reviewed "
-                     "install proposal against the existing Nodes Catalog. Never installs "
-                     "anything itself and never authors a package.",
-                     "package_recommendation_instruction.md",
-                     ("package.recommend", "package.identify"), ("recommendation",),
-                     targets=("node", "canvas"),
-                     reads=("mission", "targetContext", "installedTemplates"),
-                     tools=("packages.catalog", "packages.resolve", "package.install",
-                            "dataflow.read"),
-                     review_policy="review-before-apply"),
     # The DEC-055 authored built-in (memo dev/85 resolved OQ-007; impl dev/86).
     # The advisory semantic-validation layer over the empirical stack: judges
     # generated content against its goal/assumptions/journal evidence and
@@ -406,29 +388,39 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      tools=("node.read", "node.runtime.read", "dataflow.read"),
                      in_catalog=False),
     # The twentieth built-in (memo dev/89). Net-new instruction. The package
-    # AUTHORING specialist, deliberately separate from Package Recommendation
-    # (dev/89 §3): recommendation stays catalog-grounded discovery + reviewed
-    # install; authoring owns the package artifact — new or extended packages,
-    # template definitions, behavior source, dependencies, assets, integrity —
-    # always as a reviewed draft. Node Builder's template fallback and Dataflow
-    # Builder's package-scale plan steps delegate the package.create-or-extend
-    # intent here, which resolves to these capabilities. package.draft.apply
-    # is the ONE authoring mutate contract (dev/89 commit 8): requesting it
-    # runs the isolated build service and mints the reviewed draft proposal;
-    # Apply promotes the exact reviewed artifact digest.
+    # specialist. Its chat reuses first: it proposes installing an existing
+    # catalog package (the reviewed package.install lane of dev/84) before it
+    # authors anything. Authoring owns the package artifact (new or extended
+    # packages, template definitions, behavior source, dependencies, assets,
+    # integrity), always as a reviewed draft. Another agent's
+    # package.recommend runs as its mode, a delegated call with no tools over
+    # the existingPackages the runtime passes, listed before the authoring
+    # capabilities so reuse stays ahead of authoring. Node Builder's template
+    # fallback and Dataflow Builder's package-scale plan steps delegate the
+    # package.create-or-extend intent here, which resolves to the authoring
+    # capabilities. package.draft.apply is the ONE authoring mutate contract
+    # (dev/89 commit 8): requesting it runs the isolated build service and
+    # mints the reviewed draft proposal; Apply promotes the exact reviewed
+    # artifact digest.
     BuiltinAgentSpec("agent.package-builder", "Package Builder", "package",
-                     "Author a new node package or extend an installed editable one — "
-                     "templates, custom JS behavior, dependencies, assets, integrity — "
-                     "as one reviewed, installable draft. Never installs, never "
-                     "publishes, never touches read-only packages.",
+                     "Recommend the node packages a task needs and propose installing one "
+                     "for your review, or author a new node package or extend an installed "
+                     "editable one (templates, custom JS behavior, dependencies, assets, "
+                     "integrity) as one reviewed, installable draft. Never installs "
+                     "anything itself, never publishes, never touches read-only packages.",
                      "package_build_instruction.md",
-                     ("package.build", "package.extend", "node.kind.author"),
+                     ("package.recommend", "package.build", "package.extend",
+                      "node.kind.author"),
                      ("authoring",),
                      targets=("node", "canvas"),
                      reads=("packageIntent", "targetContext", "installedTemplates"),
-                     tools=("packages.catalog", "packages.resolve", "dataflow.read",
-                            "package.draft.apply"),
-                     review_policy="review-before-apply"),
+                     # package.install: the chat proposes installing a package
+                     # that already fits, as a reviewed proposal.
+                     tools=("packages.catalog", "packages.resolve", "package.install",
+                            "dataflow.read", "package.draft.apply"),
+                     review_policy="review-before-apply",
+                     modes=(BuiltinMode("package.recommend", "package_recommendation_instruction.md",
+                                        ("mission", "targetContext", "existingPackages")),)),
     # The twenty-first built-in (memo dev/90). Net-new instruction. The NOTES
     # scenario owner: turns findings into post-it style note nodes. It also
     # checks facts (dev/67-4 web VERIFICATION): asked in its chat, it answers

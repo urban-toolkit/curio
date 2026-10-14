@@ -1197,8 +1197,22 @@ _REUSE_EVIDENCE_MAX_TEMPLATES = 8
 _REUSE_EVIDENCE_DESC_CHARS = 200
 
 
-def _authoring_reuse_evidence(user_key: str, project_id: str) -> dict | None:
-    """What already exists, for a TOOL-LESS authoring delegate (memo dev/94).
+#: What a delegated ``package.recommend`` is told about ``existingPackages``:
+#: its candidates are these rows and nothing else.
+_RECOMMEND_EVIDENCE_NOTE = (
+    "Packages that exist for this user: the only packages you may recommend. "
+    "installedInProject false means the caller must enlist the package before "
+    "its templates can be used; a need none of these rows meets is a finding, "
+    "not a recommendation."
+)
+
+
+def _authoring_reuse_evidence(
+    user_key: str, project_id: str, *, note: str | None = None
+) -> dict | None:
+    """What already exists, for a TOOL-LESS authoring delegate (memo dev/94),
+    and, under *note*, for a delegated ``package.recommend``, which has no
+    catalog tool either.
 
     The Package Builder's instruction opens with "Reuse first. Before authoring
     anything, read packages.catalog … never a duplicate package" — and it holds
@@ -1267,7 +1281,7 @@ def _authoring_reuse_evidence(user_key: str, project_id: str) -> dict | None:
     if not packages:
         return None
     return {
-        "note": (
+        "note": note or (
             "Packages that already exist for this user. If one of these already "
             "satisfies the requested need, say so and author nothing — name its "
             "dirName so the caller can use it (installedInProject false means the "
@@ -1294,6 +1308,15 @@ def _enriched_delegate_inputs(
         url = inputs.get("url") or inputs.get("endpoint")
         if isinstance(url, str) and url.strip():
             return {**inputs, "verification": verify.verify_external_source(url)}
+        return inputs
+    if capability == "package.recommend":
+        # A tool-less recommendation recommends from the packages that exist:
+        # the same rows an authoring delegate is shown, as its only candidates.
+        if "existingPackages" not in inputs:
+            evidence = _authoring_reuse_evidence(
+                user_key, project_id, note=_RECOMMEND_EVIDENCE_NOTE)
+            if evidence:
+                inputs = {**inputs, "existingPackages": evidence}
         return inputs
     if capability in PACKAGE_AUTHORING_CAPABILITIES:
         # dev/90 A8: tool-less authoring delegates get the build-request
