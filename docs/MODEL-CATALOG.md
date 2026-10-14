@@ -42,16 +42,20 @@ The manifest says which runtime runs the model (**ONNX** or **Transformers**), i
 
 DDRNet23-Slim is about 23 MB and labels a street photo in a fraction of a second on a CPU. A new **Image Segmentation** node runs it.
 
-Deep Umbra, [SCOUT](https://github.com/urban-toolkit/scout)'s shadow model, is about 10.5 MB. The **Accumulated Shadow** node of the SCOUT Shadow package (`scout.shadow@1`) runs it on a raster of building heights ([example 24](examples/24-scout-building-rasters.md)). A pip install downloads it from GitHub the first time a node runs it ([Installation from pip](USAGE.md#installation-from-pip)).
+Deep Umbra and the weather GNN are model packages: a package that holds a model's weights, the node that runs it and that node's code. Each package's code is MIT; its weights keep their own license.
 
-The weather GNN, SCOUT's weather graph network, is about 52 KB. The **Weather Routing** node of the SCOUT Routing package (`scout.routing@1`) runs it on the road graph it builds from a roads layer, to weigh each road by the weather before routing ([the WeatherRouting test dataflow](examples/dataflows/WeatherRouting.json)).
+Deep Umbra, [SCOUT](https://github.com/urban-toolkit/scout)'s shadow model, is about 10.5 MB. Its package, `model.scout.deep-umbra@1`, has the **Accumulated Shadow** node, which runs it on a raster of building heights ([example 24](examples/24-scout-building-rasters.md)). A pip install downloads its weights from GitHub the first time a node runs it ([Installation from pip](USAGE.md#installation-from-pip)).
+
+The weather GNN, SCOUT's weather graph network, is about 52 KB. Its package, `model.scout.weather-gnn@1`, has the **Weather Routing** node, which runs it on the road graph it builds from a roads layer, to weigh each road by the weather before routing ([the WeatherRouting test dataflow](examples/dataflows/WeatherRouting.json)).
 
 ### Storage layers
 
 | Layer | On disk | Written by |
 |---|---|---|
 | **Shipped models** | `<repo_root>/models/<modelId>@<major>/`, or the directory `--models-root` names | The release. Nothing in the app writes here, and a shipped model cannot be deleted. |
+| **Shipped model packages** | `<repo_root>/packages/<packageId>@<major>/`, the weights under its `models/` | The release. Nothing in the app writes here, and a shipped model package cannot be deleted. |
 | **Your models** | `.curio/users/<user-key>/models/` | **Add to Model Catalog** in the Discovery Catalog. |
+| **Your model packages** | `.curio/users/<user-key>/packages/<packageId>@<major>/` | Importing a model package's archive, or publishing one. |
 | **A node's model** | The node's code, `curio_load_model("<id>")`, saved with the dataflow | A drop on the node, or what you type. |
 
 ---
@@ -72,7 +76,7 @@ A model's details show its **Identifier**, **Version**, **Runtime**, **Input**, 
 | **View license** | The details | Nothing | The model's license text. |
 | **Drag onto a node** | The **Model Catalog** dropdown or the canvas drawer | The node's code | The node's `curio_load_model(...)` line names the model. A node whose code calls no `curio_load_model` says *This node does not run a model*. |
 | **Drag onto the canvas** | The **Model Catalog** dropdown or the canvas drawer | The dataflow | A new node where you drop it, its `curio_load_model(...)` line naming the model: the node made for that model (**Accumulated Shadow** for Deep Umbra, **Weather Routing** for the weather GNN), else an **Image Segmentation** node. When no node in the dataflow runs a model, nothing is added and a message names the package to add from the Node Catalog. |
-| **Delete** | A model you added: its card or the drawer | Your Model Catalog loses the model | A confirmation first; nodes that name it fail the next time they run. A shipped model offers no **Delete**. |
+| **Delete** | A model you added: its card or the drawer | Your Model Catalog loses the model | A confirmation first; nodes that name it fail the next time they run. A model package of your own also leaves every dataflow that lists it. A shipped model offers no **Delete**. |
 | **Add to Model Catalog** | A **Hugging Face models** row, in the Discovery Catalog | Your Model Catalog gains a model | A progress bar, then *"Added `<name>` to your Model Catalog."* with **View model**. |
 
 ### Workflows
@@ -164,6 +168,6 @@ A dataflow names its models by id. Someone you share it with runs a shipped mode
 ## See also
 
 - [`docs/DISCOVERY-CATALOG.md`](DISCOVERY-CATALOG.md#adding-a-model): adding a model from Hugging Face.
-- [`docs/NODE-CATALOG.md`](NODE-CATALOG.md): the Street Vision package and its Image Segmentation node, and the SCOUT Shadow package and its Accumulated Shadow node.
+- [`docs/NODE-CATALOG.md`](NODE-CATALOG.md): the Street Vision package and its Image Segmentation node, and the packages Curio ships.
 - [`docs/examples/10-street-vision-cv-analysis.md`](examples/10-street-vision-cv-analysis.md): two models over the same street photos.
 - [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#model-catalog): how models are stored, staged for a run, and resolved.
