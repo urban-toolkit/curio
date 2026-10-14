@@ -61,6 +61,7 @@ from .utils import (
     require_user_auth,
     run_all_and_wait,
     save_dataflow,
+    save_dataflow_and_settle_header,
     save_workflow_test_screenshot,
     set_node_code,
     stub_login_and_enter_workflow,
@@ -708,6 +709,9 @@ def test_a_scenario_from_a_project_never_run_runs_its_context_there_and_drops(
     assert plan["problems"] == [] and [n["nodeId"] for n in plan.get("toRun", [])] == [LOADER], (
         f"the drop would not run the context first: {plan['problems']}, to run {plan.get('toRun')}"
     )
+    # Saved before each frame, so the header shows the save whatever the
+    # autosave reached (#584).
+    save_dataflow_and_settle_header(page)
     save_workflow_test_screenshot(
         page, "scenario-drop-never-run-before",
         test_name="test_a_scenario_from_a_project_never_run_runs_its_context_there_and_drops",
@@ -739,6 +743,7 @@ def test_a_scenario_from_a_project_never_run_runs_its_context_there_and_drops(
     restored = {o["node_id"]: o["filename"] for o in copied.value.json()["outputs"]}
     assert loader_copy in restored, f"the drop restored {restored}, not the context's output"
     assert _status(page, loader_copy) == "done", "the context arrived without the output its run saved"
+    save_dataflow_and_settle_header(page)
     save_workflow_test_screenshot(
         page, "scenario-drop-never-run-after",
         test_name="test_a_scenario_from_a_project_never_run_runs_its_context_there_and_drops",
@@ -746,7 +751,6 @@ def test_a_scenario_from_a_project_never_run_runs_its_context_there_and_drops(
     )
 
     # The box's outcome reads that output: Run scenario runs the lever on it.
-    save_dataflow(page)
     [dropped] = _saved_spec(current_server, token, target)["dataflow"]["scenarios"]
     sent, _outputs, stop = _record_python_runs(page)
     _scenario_menu(page, "Show scenarios")

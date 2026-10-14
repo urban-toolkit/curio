@@ -60,6 +60,7 @@ from .utils import (
     require_project_page,
     require_user_auth,
     save_dataflow,
+    save_dataflow_and_settle_header,
     save_workflow_test_screenshot,
     stub_login_and_enter_workflow,
     wait_for_drawer_closed,
@@ -246,6 +247,9 @@ def test_a_shipped_scenario_drops_from_a_project_never_run_and_runs(
             f"{outcome['label']} ({node_id}) ended {status}: {read_node_error_text(node_locator(page, node_id))}"
         )
     wait_for_run_guard_released(page, timeout_ms=60000)
+    # The panel lies over the right of the canvas, where the outcomes are.
+    _scenario_menu(page, "Hide scenarios")
+    page.get_by_test_id("scenarios-panel").wait_for(state="detached", timeout=10000)
 
     # 3. Expanded, each outcome shows its output.
     _expand(page, dropped["id"], members)
@@ -262,6 +266,8 @@ def test_a_shipped_scenario_drops_from_a_project_never_run_and_runs(
             assert output and output["code"] == "success" and "Saved to file:" in output["content"], (
                 f"{outcome['label']} ({node_id}) shows no output: {output}"
             )
+    # Saved first, so the header shows the save whatever the autosave reached (#584).
+    save_dataflow_and_settle_header(page)
     save_workflow_test_screenshot(
         page, f"shipped-drop-{Path(dataflow).stem}-{_slug(name)}", test_name=TEST_NAME, sweep_toasts=True,
     )
