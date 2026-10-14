@@ -104,6 +104,13 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
         >
           {pkg.description || "\u00a0"}
         </p>
+        {/* The weights' license, in full on a line of its own, above the
+            chips, which keep their place at the foot of the body. */}
+        {model ? (
+          <p className={styles.weightsLicense} title="Weights license" data-curio-weights-license="true">
+            {model.model.license || "Unknown license"}
+          </p>
+        ) : null}
         {/* See DataCatalogBrowseCard: aims the #333 baseline at the claim. */}
         <div className={browseStyles.tagRow} data-curio-tag-row="true">
           {model ? (
@@ -125,12 +132,6 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
             </span>
           ) : null}
         </div>
-        {/* The weights' license, in full on a line of its own. */}
-        {model ? (
-          <p className={styles.weightsLicense} title="Weights license" data-curio-weights-license="true">
-            {model.model.license || "Unknown license"}
-          </p>
-        ) : null}
       </div>
 
       {model ? (
