@@ -30,6 +30,7 @@ import json
 import stat
 import subprocess
 import sys
+import textwrap
 import threading
 import time
 from pathlib import Path
@@ -51,6 +52,16 @@ SIDEWALK = "datasets/data.projectsidewalk.chicago-labels@1/data/chicago-labels.p
 SIDEWALK_FOLDER = "datasets/data.projectsidewalk.chicago-labels@1"
 MRT = "datasets/data.utk.milan-mrt@1/data/milan-mrt.tif"
 RED_LIGHT = "datasets/data.cityofchicago.red-light-violations@1/data/red-light-violations.parquet"
+#: SCOUT's seven flood rasters, whole, which the FloodScenarios test dataflow reads.
+FLOOD = [
+    "datasets/data.scout.flood-nbs-classes@1/data/flood-nbs-classes.tif",
+    *(
+        f"datasets/data.scout.flood-depth-{period}-{kind}@1/data/flood-depth-{period}-{kind}.tif"
+        for period in ("2020-2040", "2050-2080", "2080-2100")
+        for kind in ("nbs", "no-nbs")
+    ),
+]
+FLOOD_DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "FloodScenarios.json"
 #: What a test's GitHub serves for SIDEWALK: small, so the fetch tests are quick.
 PAYLOAD = b"PAR1" + bytes(range(256)) * 64 + b"PAR1"
 CLONE = "https://github.com/urban-toolkit/curio"
@@ -562,3 +573,54 @@ def test_a_failed_download_fails_the_node_with_what_failed_and_how_to_get_the_fi
     for words in (MRT, url_of(MRT), "Network is unreachable", CLONE):
         assert words in reply["stderr"], reply["stderr"]
     assert "body" not in captured
+
+
+def test_scouts_flood_rasters_are_downloaded_the_first_time_the_flood_dataflows_loaders_run(
+    client, user_and_token, tmp_path, monkeypatch
+):
+    """SCOUT's seven flood rasters are in the repository and out of the pip
+    package. On a pip install's catalog, the first run of each of the
+    FloodScenarios dataflow's Data Loading nodes downloads the rasters its code
+    names, each once, and hands the sandbox the files where they were placed;
+    a second run downloads nothing."""
+    from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
+    from utk_curio.backend.app.execution.code_references import resolve_references
+
+    assert set(FLOOD) <= set(listed()), sorted(set(FLOOD) - set(listed()))
+    module = _module()
+    _, token = user_and_token
+    root = tmp_path / "site-packages"
+    for repo_path in FLOOD:
+        catalog_copy("/".join(repo_path.split("/")[:2]), root)
+    monkeypatch.setenv("CURIO_CATALOG_ROOT", str(root / "datasets"))
+    monkeypatch.setattr(module, "RECORD_PATH", write_record(tmp_path / "record.json", FLOOD))
+    assert not any((root / repo_path).exists() for repo_path in FLOOD)
+    github = FakeGitHub().serve(monkeypatch)
+    captured = _capture_sandbox(monkeypatch)
+
+    spec = json.loads(FLOOD_DATAFLOW.read_text(encoding="utf-8"))["dataflow"]
+    shared = [n["metadata"]["widgets"][0] for n in spec["nodes"] if n["type"] == "curio.builtin/parameter"]
+    codes = []
+    for loader in (n for n in spec["nodes"] if n["type"] == "curio.builtin/data-loading"):
+        code, problems = resolve_references(loader["content"], [], "python", shared=shared)
+        assert problems == [], problems
+        codes.append(textwrap.indent(code, "    "))
+    fetched = []
+    for code in codes:
+        resp = _run_code(client, token, code)
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        paths = captured["body"]["dataset_paths"]
+        assert sorted(paths) == sorted(dataset_ids_in_code(code)), paths
+        for dataset_id, path in paths.items():
+            (repo_path,) = [p for p in FLOOD if p.startswith(f"datasets/{dataset_id}@1/")]
+            assert Path(path) == module.fetched_root(COMMIT) / repo_path
+            assert Path(path).read_bytes() == (REPO / repo_path).read_bytes()
+            fetched.append(repo_path)
+    assert sorted(fetched) == sorted(FLOOD)
+    assert sorted(github.urls) == sorted(url_of(repo_path) for repo_path in FLOOD)
+
+    # Run again: every raster is where it was placed, and nothing is downloaded.
+    for code in codes:
+        resp = _run_code(client, token, code)
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert len(github.urls) == len(FLOOD)

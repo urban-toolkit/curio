@@ -53,8 +53,8 @@
               "type": "location",
               "label": "Top-left corner",
               "default": {
-                "lat": 41.4669317349186,
-                "lon": -90.48363204845099
+                "lat": 41.6242105,
+                "lon": -90.6879323
               }
             }
           ],
@@ -78,8 +78,8 @@
               "type": "location",
               "label": "Bottom-right corner",
               "default": {
-                "lat": 41.44098884583301,
-                "lon": -90.4576891593654
+                "lat": 41.4150156,
+                "lon": -90.4252158
               }
             }
           ],
@@ -183,6 +183,20 @@
         }
       },
       {
+        "id": "b8e2f6a4-1c3d-4e5f-9a7b-3c4d5e6f7a81",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1950,
+        "y": 450,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateBlues\",\n        \"title\": \"Flood depth (m)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map the flood depth.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Flood depth map"
+        }
+      },
+      {
         "id": "2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69",
         "type": "curio.builtin/raster-calculator",
         "x": 1300,
@@ -250,11 +264,28 @@
         }
       },
       {
+        "id": "c9f3a7b5-2d4e-4f60-8b9c-4d5e6f7a8b92",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1950,
+        "y": 1350,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateBlues\",\n        \"title\": \"Flood depth (m)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map the flood depth.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Flood depth map",
+          "copiedFrom": [
+            "b8e2f6a4-1c3d-4e5f-9a7b-3c4d5e6f7a81"
+          ]
+        }
+      },
+      {
         "id": "7a3d9f1c-5b68-4e0a-9d4e-0f1b5a7c3d62",
         "type": "curio.builtin/compare-scenarios",
         "x": 2650,
         "y": 0,
-        "content": "# Compare Scenarios writes this code from its inputs: input_1 minus input_0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"no-nbs\", \"No NbS\", [!! input_0 !!]),\n    (\"nbs\", \"NbS\", [!! input_1 !!]),\n])\n",
+        "content": "# Compare Scenarios writes this code from its inputs: the size of input_1\n# minus input_0, each under the id and the name of its scenario. It is\n# written again when they change.\nreturn curio_difference_scenarios([\n    (\"no-nbs\", \"No NbS\", [!! input_0 !!]),\n    (\"nbs\", \"NbS\", [!! input_1 !!]),\n], absolute=True)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Map how much the nature-based solutions change the flood depth.",
@@ -274,7 +305,10 @@
                 "color": "#2a9d8f"
               }
             ],
-            "mode": "difference"
+            "mode": "difference",
+            "difference": {
+              "absolute": true
+            }
           }
         }
       },
@@ -370,6 +404,20 @@
         "targetHandle": "in"
       },
       {
+        "id": "reactflow__edge-1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58out-b8e2f6a4-1c3d-4e5f-9a7b-3c4d5e6f7a81in",
+        "source": "1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58",
+        "target": "b8e2f6a4-1c3d-4e5f-9a7b-3c4d5e6f7a81",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69out-c9f3a7b5-2d4e-4f60-8b9c-4d5e6f7a8b92in",
+        "source": "2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69",
+        "target": "c9f3a7b5-2d4e-4f60-8b9c-4d5e6f7a8b92",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
         "id": "reactflow__edge-1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58out-7a3d9f1c-5b68-4e0a-9d4e-0f1b5a7c3d62in",
         "source": "1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58",
         "target": "7a3d9f1c-5b68-4e0a-9d4e-0f1b5a7c3d62",
@@ -405,7 +453,8 @@
         "color": "#e76f51",
         "nodes": [
           "1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58",
-          "5e1b7d9a-3f46-4c8a-9b2c-7d9f3e5a1b40"
+          "5e1b7d9a-3f46-4c8a-9b2c-7d9f3e5a1b40",
+          "b8e2f6a4-1c3d-4e5f-9a7b-3c4d5e6f7a81"
         ]
       },
       {
@@ -414,7 +463,8 @@
         "color": "#2a9d8f",
         "nodes": [
           "2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69",
-          "6f2c8e0b-4a57-4d9b-8c3d-9e0a4f6b2c51"
+          "6f2c8e0b-4a57-4d9b-8c3d-9e0a4f6b2c51",
+          "c9f3a7b5-2d4e-4f60-8b9c-4d5e6f7a8b92"
         ]
       }
     ],
