@@ -72,17 +72,35 @@ describe("combining nothing, none", () => {
 });
 
 describe("a pie writes each slice's value on it", () => {
-  test("in white, over its arcs, reading what its slices measure, and stacked by scenario as the arcs are", () => {
+  test("in white, over its arcs, reading what its slices measure", () => {
     const drawn = compareChartSpec(resolveChart({ preset: "pie", aggregate: "count" }, columns), labels, columns);
     const spec = (drawn as { spec: any }).spec;
     expect(spec.encoding.theta).toEqual({ aggregate: "count", type: "quantitative", title: "Rows", stack: true });
     expect(spec.layer).toHaveLength(2);
     const [arcs, values] = spec.layer;
     expect(arcs).toEqual({ mark: { type: "arc", tooltip: true } });
-    expect(values.mark.type).toBe("text");
+    expect(values.mark).toMatchObject({ type: "text", fill: "white" });
     expect(values.encoding.text).toEqual({ aggregate: "count", type: "quantitative", title: "Rows", format: ",.3~f" });
-    expect(values.encoding.color).toEqual({ value: "white" });
-    expect(values.encoding.detail).toEqual({ field: "scenario_name", type: "nominal" });
+  });
+
+  test("stacked by the arcs' own color field, so each value sits on its own slice", () => {
+    // Vega-Lite orders a stack by the color channel's scale domain, and one by
+    // any other channel (detail) by name: a value layer that stacked by detail
+    // put Twice as tall's value on Baseline's slice. The text layer sets no
+    // color or detail of its own, so it stacks on the color field it inherits.
+    for (const aggregate of ["sum", "count", "none"] as const) {
+      const drawn = compareChartSpec(resolveChart({ preset: "pie", aggregate }, columns), labels, columns);
+      const spec = (drawn as { spec: any }).spec;
+      expect(spec.encoding.color).toEqual({
+        field: "scenario_name",
+        type: "nominal",
+        title: "Scenario",
+        scale: { domain: ["Baseline", "Twice as tall"], range: ["#2a9d8f", "#e76f51"] },
+      });
+      for (const layer of spec.layer) {
+        expect(Object.keys(layer.encoding ?? {}).filter((channel) => channel !== "text")).toEqual([]);
+      }
+    }
   });
 });
 

@@ -223,8 +223,9 @@ export function compareChartSpec(
         },
       };
     case "pie": {
-      // Each slice, and its value written inside it: the text stacks by the
-      // same scenario as the arcs, so it sits on its own slice.
+      // Each slice, and its value written inside it in white. The text keeps
+      // the arcs' color field, so Vega-Lite stacks it in the arcs' own order
+      // and it sits on its own slice; the mark's fill paints it white.
       const value = measure(y, chart.aggregate);
       return {
         spec: {
@@ -233,12 +234,8 @@ export function compareChartSpec(
           layer: [
             { mark: { type: "arc", tooltip: true } },
             {
-              mark: { type: "text", radius: { expr: "min(width, height) / 3" }, fontWeight: "bold" },
-              encoding: {
-                text: { ...value, format: ",.3~f" },
-                color: { value: "white" },
-                detail: { field: SCENARIO_NAME_FIELD, type: "nominal" },
-              },
+              mark: { type: "text", radius: { expr: "min(width, height) / 3" }, fontWeight: "bold", fill: "white" },
+              encoding: { text: { ...value, format: ",.3~f" } },
             },
           ],
         },

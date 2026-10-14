@@ -382,7 +382,8 @@
               "radius": {
                 "expr": "min(width, height) / 3"
               },
-              "fontWeight": "bold"
+              "fontWeight": "bold",
+              "fill": "white"
             },
             "encoding": {
               "text": {
@@ -391,13 +392,6 @@
                 "aggregate": "sum",
                 "title": "sum of hour",
                 "format": ",.3~f"
-              },
-              "color": {
-                "value": "white"
-              },
-              "detail": {
-                "field": "scenario_name",
-                "type": "nominal"
               }
             }
           }
