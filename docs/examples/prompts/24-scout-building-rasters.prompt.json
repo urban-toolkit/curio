@@ -162,7 +162,8 @@
       "ref": "analysis3",
       "mustMention": [
         "shadow"
-      ]
+      ],
+      "outputKind": "raster"
     }
   ],
   "execution": {

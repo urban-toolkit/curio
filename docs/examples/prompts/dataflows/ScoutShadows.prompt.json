@@ -248,13 +248,15 @@
       "ref": "analysis5",
       "mustMention": [
         "shadow"
-      ]
+      ],
+      "outputKind": "raster"
     },
     {
       "ref": "analysis6",
       "mustMention": [
         "shadow"
-      ]
+      ],
+      "outputKind": "raster"
     }
   ],
   "execution": {
