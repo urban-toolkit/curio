@@ -23,6 +23,11 @@ A third drops a scenario into an empty dataflow near the canvas's right edge,
 where its box hangs past the edge: once the view stops moving, the box is in
 sight (#769).
 
+A fourth drops a scenario from a project saved but never run, so its context
+has no saved output: the drop runs that context on the server, in its own
+project, and then brings it, with nothing run by the page. Run scenario then
+runs the lever on the context it brought.
+
 The first runs an Autark node, which needs WebGPU: without an adapter it
 skips, unless ``CURIO_REQUIRE_HARDWARE_WEBGPU=1`` (CI's GPU job), where it
 fails.
@@ -56,6 +61,8 @@ from .utils import (
     require_user_auth,
     run_all_and_wait,
     save_dataflow,
+    save_dataflow_and_settle_header,
+    save_workflow_test_screenshot,
     set_node_code,
     stub_login_and_enter_workflow,
     wait_for_drawer_closed,
@@ -646,3 +653,114 @@ def test_a_scenario_dropped_into_an_empty_dataflow_keeps_its_box_in_sight(
             f"box {state['boxes']}, in sight {state['sight']}, "
             f"viewport {state['viewport']}, drawn {state['drawn']}"
         ) from None
+
+
+def _record_run_starts(page, project_id: str) -> list:
+    """The bodies of the run requests the page sends for *project_id* from now on."""
+    bodies: list = []
+
+    def _request(request) -> None:
+        if request.method == "POST" and request.url.endswith(f"/api/projects/{project_id}/runs"):
+            try:
+                bodies.append(json.loads(request.post_data or "{}"))
+            except ValueError:
+                bodies.append(request.post_data)
+
+    page.on("request", _request)
+    return bodies
+
+
+def test_a_scenario_from_a_project_never_run_runs_its_context_there_and_drops(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """The source is saved and never run, so the scenario's context has no
+    saved output. The drop runs it on the server, in the source project, then
+    brings it with its output; the page runs nothing for the drop. Run
+    scenario then runs the lever on that output. The source has no map, so it
+    runs without WebGPU."""
+    require_project_page()
+    require_user_auth()
+    page.emulate_media(reduced_motion="reduce")
+    session = stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Scenario Drop Run",
+        username="scenario_drop_run_e2e",
+        project_name="Elsewhere",
+        project_spec=_dataflow("Elsewhere", [_node(OWN, "curio.builtin/data-loading", 0, _grid_code(7))]),
+    )
+    require_owner_view(page)
+    token = session["token"]
+    target = session["project"]["id"]
+    node_locator(page, OWN).wait_for(state="visible", timeout=45000)
+
+    # A project saved and never run: its context has nothing saved yet.
+    loader = {**_node(LOADER, "curio.builtin/data-loading", 0, _grid_code(1)), "title": "Grid"}
+    source = _create_project(current_server, token, "Heights", _dataflow(
+        "Heights",
+        [loader, _node(SCALE, "curio.builtin/computation-analysis", 645, SCALE_CODE)],
+        [{"id": "e-load-scale", "source": LOADER, "target": SCALE, "sourceHandle": "out", "targetHandle": "in"}],
+        [{"id": SCENARIO, "name": "Twice as tall", "color": "#e86a3c", "nodes": [SCALE]}],
+    ))
+    details = api_json(f"{current_server}/api/scenarios/{source}/{SCENARIO}", token)
+    assert details["context"][0]["results"] == [], details["context"]
+    plan = api_json(f"{current_server}/api/scenarios/{source}/{SCENARIO}/copy?target={target}", token)
+    assert plan["problems"] == [] and [n["nodeId"] for n in plan.get("toRun", [])] == [LOADER], (
+        f"the drop would not run the context first: {plan['problems']}, to run {plan.get('toRun')}"
+    )
+    # Saved before each frame, so the header shows the save whatever the
+    # autosave reached (#584).
+    save_dataflow_and_settle_header(page)
+    save_workflow_test_screenshot(
+        page, "scenario-drop-never-run-before",
+        test_name="test_a_scenario_from_a_project_never_run_runs_its_context_there_and_drops",
+    )
+
+    # The drop runs the context in Heights, then brings it.
+    started = _record_run_starts(page, source)
+    sent, _outputs, stop = _record_python_runs(page)
+    _open_scenario_catalog(page)
+    with page.expect_response(
+        lambda r: r.request.method == "POST" and r.url.endswith(f"/api/scenarios/{source}/{SCENARIO}/copy"),
+        timeout=240000,
+    ) as copied:
+        _drag_scenario_onto_canvas(page, source, SCENARIO)
+        _toast(page, "Running Grid in Heights for Twice as tall")
+    assert copied.value.ok, copied.value.text()
+    _toast(page, 'Added "Twice as tall" from Heights.')
+    page.keyboard.press("Escape")
+    wait_for_drawer_closed(page, '[data-curio-scenario-catalog-drawer="true"]')
+    stop()
+    assert started == [{"targets": [LOADER]}], f"the drop sent {started} to run the source's context"
+    assert sent == [], f"the page ran {sent}: the context runs on the server, in its own project"
+    details = api_json(f"{current_server}/api/scenarios/{source}/{SCENARIO}", token)
+    assert [r["nodeId"] for r in details["context"][0]["results"]] == [LOADER], details["context"]
+
+    copies = _copies(page)
+    assert sorted(copies) == sorted([LOADER, SCALE]), copies
+    loader_copy, scale = copies[LOADER], copies[SCALE]
+    restored = {o["node_id"]: o["filename"] for o in copied.value.json()["outputs"]}
+    assert loader_copy in restored, f"the drop restored {restored}, not the context's output"
+    assert _status(page, loader_copy) == "done", "the context arrived without the output its run saved"
+    save_dataflow_and_settle_header(page)
+    save_workflow_test_screenshot(
+        page, "scenario-drop-never-run-after",
+        test_name="test_a_scenario_from_a_project_never_run_runs_its_context_there_and_drops",
+        sweep_toasts=True,
+    )
+
+    # The box's outcome reads that output: Run scenario runs the lever on it.
+    [dropped] = _saved_spec(current_server, token, target)["dataflow"]["scenarios"]
+    sent, _outputs, stop = _record_python_runs(page)
+    _scenario_menu(page, "Show scenarios")
+    watch_node_run(page, scale)
+    page.get_by_test_id(f"scenario-card-{dropped['id']}").get_by_role("button", name="Run scenario").click()
+    status = wait_for_node_run_to_end(page, scale, timeout_ms=180000)
+    wait_for_run_guard_released(page, timeout_ms=60000)
+    stop()
+    assert status == "done", read_node_error_text(node_locator(page, scale))
+    assert [node for node, _ in sent] == [scale], f"Run scenario sent {sent}: only its lever should run"
+    assert dict(sent)[scale] == restored[loader_copy], (
+        f"the lever read {dict(sent)[scale]!r}, not the context's output {restored[loader_copy]!r}"
+    )

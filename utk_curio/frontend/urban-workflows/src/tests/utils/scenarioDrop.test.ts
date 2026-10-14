@@ -38,6 +38,7 @@ function plan(overrides: Partial<ScenarioCopyPlan> = {}): ScenarioCopyPlan {
       ],
     },
     packages: [],
+    toRun: [],
     problems: [],
     ...overrides,
   };

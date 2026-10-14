@@ -49,6 +49,20 @@ class ClassificationTest(unittest.TestCase):
         self.assertFalse(runner_split.walk_needs_webgpu(
             SimpleNamespace(example="01-vega-lite-chained-transforms.json", run=plain)))
 
+    def test_a_shipped_scenario_drop_runs_where_its_dataflow_needs(self):
+        def drop(dataflow):
+            return SimpleNamespace(
+                get_closest_marker=lambda name: None,
+                module=SimpleNamespace(
+                    __name__="utk_curio.backend.tests.test_frontend.test_shipped_scenario_drops_e2e"),
+                callspec=SimpleNamespace(params={"dataflow": dataflow, "scenario": "s"}),
+            )
+
+        self.assertTrue(runner_split.item_needs_webgpu(
+            drop("docs/examples/06-autark-what-if-shadow-study.json")))
+        self.assertFalse(runner_split.item_needs_webgpu(
+            drop("docs/examples/dataflows/FloodScenarios.json")))
+
     def test_a_test_that_needs_the_parallel_stack_is_on_utk(self):
         marked = SimpleNamespace(
             get_closest_marker=lambda name: object() if name == "needs_parallel" else None)

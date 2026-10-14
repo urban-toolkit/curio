@@ -109,6 +109,11 @@ export interface ScenarioCopyPlan {
   dataflow: { nodes: SpecNodeShape[]; edges: SpecEdgeShape[] };
   /** Packages the target project gets. */
   packages: string[];
+  /**
+   * The context nodes with no saved output, which a run on the server makes
+   * in the scenario's project before the copy; empty when every one has one.
+   */
+  toRun: { nodeId: string; label: string }[];
   /** Why the scenario cannot be dropped there; empty when it can. */
   problems: string[];
 }
