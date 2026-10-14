@@ -91,7 +91,7 @@ EXAMPLE_INVARIANTS = [
       "curio.builtin/vis-vega": 1}, False),
     ("24-scout-building-rasters.json", 8, 8,
      {"curio.builtin/data-loading": 1, "scout.raster-conversion/rasterize-buildings": 1,
-      "curio.builtin/computation-analysis": 1, "scout.shadow/accumulated-shadow": 1,
+      "curio.builtin/computation-analysis": 1, "model.scout.deep-umbra/accumulated-shadow": 1,
       "curio.builtin/raster-statistics": 1, "curio.builtin/autk-grammar": 3}, False),
     # #576: one Spatial Join per operation, plus two over a point on an edge.
     ("25-spatial-join-operations.json", 25, 28,

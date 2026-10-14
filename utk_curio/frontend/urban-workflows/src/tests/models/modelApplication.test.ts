@@ -19,6 +19,7 @@ import {
 } from "../../services/modelCatalog";
 import { TrillGenerator } from "../../TrillGenerator";
 import { downloadedModel, shippedModel } from "../_support/modelRows";
+import { read } from "../_support/workflowPaths";
 
 const ddrnet = { id: "model.curio.ddrnet23-slim", name: "DDRNet23-Slim (street scenes)" };
 const segformer = { id: "imported.xabc123def456", name: "SegFormer B0 (ADE20K)" };
@@ -163,14 +164,23 @@ describe("modelNodeForCanvas", () => {
   });
 
   test("a model with a node of its own becomes that node, wherever it is in the list", () => {
-    const deepUmbra = { id: "model.scout.deep-umbra", name: "Deep Umbra (accumulated shadows)" };
+    // Deep Umbra's model package and its Accumulated Shadow node, as they ship.
+    const folder = "packages/model.scout.deep-umbra@1";
+    const manifest = JSON.parse(read(`${folder}/manifest.json`));
+    const [template] = manifest.templates;
+    const deepUmbra = { id: manifest.id, name: manifest.name };
     const shadows = {
-      nodeType: "scout.shadow/accumulated-shadow",
-      label: "Accumulated Shadow",
-      code: 'model = open_model(lambda: curio_load_model("model.scout.deep-umbra"))\nreturn accumulated_shadow(input_0, season="summer", model=model, output_file=curio_output_file)',
-      packageName: "SCOUT Shadow",
+      nodeType: `${manifest.id}/${template.id}`,
+      label: template.label,
+      code: read(`${folder}/${template.source}`),
+      packageName: manifest.name,
     };
-    expect(modelNodeForCanvas([segmentation, shadows], deepUmbra)?.nodeType).toBe(shadows.nodeType);
+    expect(shadows.nodeType).toBe("model.scout.deep-umbra/accumulated-shadow");
+    const node = modelNodeForCanvas([segmentation, shadows], deepUmbra);
+    expect(node?.nodeType).toBe(shadows.nodeType);
+    // The package's own cell, which already names its model.
+    expect(node?.code).toBe(shadows.code);
+    expect(node?.modelRefs).toEqual([{ id: "model.scout.deep-umbra", name: manifest.name }]);
     // Any other model still goes to the first template that runs one.
     expect(modelNodeForCanvas([segmentation, shadows], segformer)?.nodeType).toBe(segmentation.nodeType);
   });

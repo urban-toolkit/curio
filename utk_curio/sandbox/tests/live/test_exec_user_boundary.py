@@ -544,27 +544,28 @@ def test_scouts_rasterizer_runs_as_the_exec_user():
     assert result["output"]["dataType"] == "outputs", result["output"]
 
 
-#: ``scout.routing@1``'s modules, the Data Catalog files its node reads and its
-#: weather GNN (a Model Catalog model), in the image. ``WeatherRouting.json``
-#: declares the package, so the stack's ``--with-examples`` boot installs its
-#: libraries.
-ROUTING_SOURCES = LAUNCH_DIR + "/packages/scout.routing@1/sources"
+#: The weather GNN's model package in the image: its module, which the node
+#: imports, and its weights; and the Data Catalog files its node reads.
+#: ``WeatherRouting.json`` declares the package, so the stack's
+#: ``--with-examples`` boot installs its libraries.
+WEATHER_GNN = "model.scout.weather-gnn"
+WEATHER_GNN_PACKAGE = LAUNCH_DIR + "/packages/" + WEATHER_GNN + "@1"
+ROUTING_SOURCES = WEATHER_GNN_PACKAGE + "/sources"
 ROUTING_DATASETS = {
     "data.scout.wrf-" + name.lower(): "/datasets/data.scout.wrf-%s@1/data/%s.nc" % (name.lower(), name)
     for name in ("RAIN", "T2", "WSPD10", "WDIR10", "RH2")
 }
-WEATHER_GNN = "model.scout.weather-gnn"
 
 
 def test_scouts_weather_routing_runs_as_the_exec_user():
     """The Weather Routing node's code, as the execution user: osmnx builds the
     road graph of a grid of Loop streets, netCDF4 reads the WRF group's staged
-    files, onnxruntime runs the Model Catalog's weather GNN, staged as a model
+    files, onnxruntime runs the package's weather GNN, staged as a model
     folder is, and networkx finds the routes."""
     body = textwrap.indent(textwrap.dedent("""
         import geopandas as gpd
         from shapely.geometry import LineString
-        from scout_routing.weather_routing import calculate_weather_route
+        from weather_routing import calculate_weather_route
 
         xs = [-87.636, -87.632, -87.628, -87.624]
         ys = [41.876, 41.878, 41.880, 41.882]
@@ -583,13 +584,13 @@ def test_scouts_weather_routing_runs_as_the_exec_user():
     result = assert_ran(_request("/exec", {
         "code": body + "\n",
         "file_path": "",
-        "nodeType": "scout.routing/weather-routing",
+        "nodeType": "model.scout.weather-gnn/weather-routing",
         "dataType": "",
         "user_key": USER_KEY,
         "save_dataset": False,
         "dataset_paths": {dataset_id: LAUNCH_DIR + path for dataset_id, path in ROUTING_DATASETS.items()},
-        "package_modules": {"root": ROUTING_SOURCES, "names": ["scout_routing"]},
-        "models": {WEATHER_GNN: LAUNCH_DIR + "/models/" + WEATHER_GNN + "@1"},
+        "package_modules": {"root": ROUTING_SOURCES, "names": ["weather_routing"]},
+        "models": {WEATHER_GNN: WEATHER_GNN_PACKAGE},
     }), "routing over a grid of Loop streets")
     names, numbers = printed(result).splitlines()[-2:]
     assert names == "fastest-route,weighted-route", names
@@ -597,19 +598,18 @@ def test_scouts_weather_routing_runs_as_the_exec_user():
     assert result["output"]["dataType"] == "outputs", result["output"]
 
 
-#: ``scout.shadow@1``'s modules and SCOUT's Deep Umbra model (a Model Catalog
-#: model), in the image; a shipped test dataflow (``ScoutShadows.json``)
-#: declares the package.
-SHADOW_SOURCES = LAUNCH_DIR + "/packages/scout.shadow@1/sources"
+#: Deep Umbra's model package in the image: its module and its weights; a
+#: shipped test dataflow (``ScoutShadows.json``) declares the package.
 DEEP_UMBRA = "model.scout.deep-umbra"
+SHADOW_SOURCES = LAUNCH_DIR + "/packages/" + DEEP_UMBRA + "@1/sources"
 #: SCOUT's committed height tiles of its high-rise example's first scenario.
 SCOUT_A_RASTERS = LAUNCH_DIR + "/utk_curio/backend/tests/test_packages/fixtures/scout/A_rasters"
 
 #: The files a pip install downloaded for one release, where it keeps them
-#: (``datasets/infrastructure/left_out_files.py``): Deep Umbra's folder and the
-#: Milan raster's, each file copied from the checkout by the job's seed step
-#: before the stack boots, so the boot's hardening closes ``.curio/fetched``
-#: as it closes ``models/``.
+#: (``datasets/infrastructure/left_out_files.py``): Deep Umbra's package folder
+#: and the Milan raster's folder, each file copied from the checkout by the
+#: job's seed step before the stack boots, so the boot's hardening closes
+#: ``.curio/fetched`` as it closes ``models/``.
 FETCHED_RELEASE = LAUNCH_DIR + "/.curio/fetched/0123456789abcdef0123456789abcdef01234567"
 FETCHED_RASTER = FETCHED_RELEASE + "/datasets/data.utk.milan-mrt@1/data/milan-mrt.tif"
 #: The checkout this module runs from, on the runner: the bytes the release holds.
@@ -652,18 +652,18 @@ def test_a_fetched_dataset_reaches_the_child_only_as_a_staged_link():
 
 
 @pytest.mark.parametrize("model_folder", [
-    LAUNCH_DIR + "/models/" + DEEP_UMBRA + "@1",
-    FETCHED_RELEASE + "/models/" + DEEP_UMBRA + "@1",
+    LAUNCH_DIR + "/packages/" + DEEP_UMBRA + "@1",
+    FETCHED_RELEASE + "/packages/" + DEEP_UMBRA + "@1",
 ], ids=["shipped", "fetched"])
 def test_scouts_shadow_model_runs_as_the_exec_user(model_folder):
-    """The Accumulated Shadow node's code, as the execution user, on the height
+    """The Accumulated Shadow node's cell, as the execution user, on the height
     mosaic a Rasterize Buildings run hands on (here of SCOUT's committed tiles):
-    the Model Catalog model reaches the child staged as a model folder is,
-    onnxruntime opens it
-    and runs it there under the stack's limits, and the node returns its shadow
-    raster, whose mean over the ground is SCOUT's mean accumulated shadow for
-    these tiles, 128.6 minutes. The model's folder is the shipped one, or the
-    one a pip install downloads Deep Umbra's graph into."""
+    the model package reaches the child staged as a model folder is,
+    onnxruntime opens its weights
+    and runs them there under the stack's limits, and the node returns its
+    shadow raster, whose mean over the ground is SCOUT's mean accumulated
+    shadow for these tiles, 128.6 minutes. The model's folder is the shipped
+    package, or the one a pip install downloads Deep Umbra's weights into."""
     heights = textwrap.indent(textwrap.dedent("""
         import rasterio
         from scout_raster_conversion.node_outputs import read_tiles, write_mosaic
@@ -681,10 +681,9 @@ def test_scouts_shadow_model_runs_as_the_exec_user(model_folder):
     }), "writing SCOUT's tiles as one mosaic")
     assert produced["output"]["dataType"] == "raster", produced["output"]
     body = textwrap.indent(textwrap.dedent("""
-        from scout_shadow.node_outputs import accumulated_shadow, open_model
-
-        model = open_model(lambda: curio_load_model("model.scout.deep-umbra"))
-        shadow = accumulated_shadow(input_0, "summer", model, curio_output_file)
+        from deep_umbra import accumulated_shadow
+        model = curio_load_model("model.scout.deep-umbra")
+        shadow = accumulated_shadow(input_0, season="summer", model=model, output_file=curio_output_file)
         # What the dataflow's Raster Statistics node computes: the shadow over
         # the ground, the heights as the mask.
         metrics = curio_raster_statistics((shadow, input_0), where=lambda height: height < 1.08)
@@ -695,11 +694,11 @@ def test_scouts_shadow_model_runs_as_the_exec_user(model_folder):
     result = assert_ran(_request("/exec", {
         "code": body + "\n",
         "file_path": produced["output"]["path"],
-        "nodeType": "scout.shadow/accumulated-shadow",
+        "nodeType": "model.scout.deep-umbra/accumulated-shadow",
         "dataType": produced["output"]["dataType"],
         "user_key": USER_KEY,
         "save_dataset": False,
-        "package_modules": {"root": SHADOW_SOURCES, "names": ["scout_shadow"]},
+        "package_modules": {"root": SHADOW_SOURCES, "names": ["deep_umbra"]},
         "models": {DEEP_UMBRA: model_folder},
     }), "running Deep Umbra")
     grid, mean = printed(result).splitlines()[-2:]
