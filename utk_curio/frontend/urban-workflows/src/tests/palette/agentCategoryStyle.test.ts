@@ -229,8 +229,16 @@ describe("agentIcon", () => {
     expect(agentIcon("agent.chat-agent", "node")).toBe(faComment);
   });
 
+  // The Researcher is a `node` agent too; its workshop slide draws it as an open book.
+  it("draws the Researcher as an open book", () => {
+    const { faBookOpen } = require("@fortawesome/free-solid-svg-icons");
+    expect(agentIcon("agent.researcher@1.0.0", "node")).toBe(faBookOpen);
+    expect(agentIcon("agent.researcher", "node")).toBe(faBookOpen);
+  });
+
   it("keeps the category glyph for every other agent", () => {
     expect(agentIcon("agent.node-content-builder@1.0.0", "node")).toBe(agentCategoryIcon("node"));
+    expect(agentIcon("agent.node-researcher@1.0.0", "evaluate")).toBe(agentCategoryIcon("evaluate"));
     expect(agentIcon("agent.dataflow-builder@1.0.0", "canvas")).toBe(agentCategoryIcon("canvas"));
     expect(agentIcon("user.my-chat-agent@1.0.0", "node")).toBe(agentCategoryIcon("node"));
   });
@@ -241,6 +249,10 @@ describe("agentIcon", () => {
   });
 
   it("only overrides agents that exist in the roster", () => {
-    expect(Object.keys(AGENT_ICON_OVERRIDE).sort()).toEqual(["agent.chat-agent", "agent.connection-builder"]);
+    expect(Object.keys(AGENT_ICON_OVERRIDE).sort()).toEqual([
+      "agent.chat-agent",
+      "agent.connection-builder",
+      "agent.researcher",
+    ]);
   });
 });
