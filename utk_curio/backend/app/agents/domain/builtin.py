@@ -1,4 +1,4 @@
-"""Built-in agent definitions: the thirteen agents Curio ships with, ten of them catalog cards.
+"""Built-in agent definitions: the twelve agents Curio ships with, nine of them catalog cards.
 
 Data-driven roster generated from the canonical prompt→agent map (plan memo
 ``dev/06``) over the existing prompt files in ``utk_curio/llm-prompts/*.md``,
@@ -134,9 +134,9 @@ class BuiltinAgentSpec:
     # A merged agent's modes, one per capability. Empty for an agent with one
     # instruction for everything it does.
     modes: tuple[BuiltinMode, ...] = field(default_factory=tuple)
-    # Instructions a run selects in place of the agent's own in one situation,
-    # as (prompts key, file): the Autark document under its reply schema
-    # (``reply_schemas.AUTK_PROMPT_KEY``).
+    # Instructions a run selects in place of its instruction or a mode's in
+    # one situation, as (prompts key, file): the Autark document under its
+    # reply schema (``reply_schemas.AUTK_PROMPT_KEY``).
     variant_prompts: tuple[tuple[str, str], ...] = field(default_factory=tuple)
     # Whether a run of this agent, under its instruction or a variant, gets
     # worked examples (``turns/examples``). A mode decides for itself.
@@ -169,7 +169,7 @@ def _merged(agent_id: str, name: str, category: str, purpose: str,
 
 
 # The prompt-agent migrations (dev/06 canonical map) plus the P5 composites
-# (dev/48) and the package-authoring agents: thirteen in all, ten of them
+# (dev/48) and the package-authoring agents: twelve in all, nine of them
 # catalog cards (``in_catalog``), which is what docs/AGENT-CATALOG.md quotes
 # and test_prompt_assets parametrizes over.
 BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
@@ -186,16 +186,6 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      targets=("node", "canvas"),
                      reads=("userMessage", "nodeContext", "dataflowContext"),
                      tools=("dataflow.read", "node.read", "node.runtime.read")),
-    BuiltinAgentSpec("agent.node-content-builder", "Node Content Builder", "node",
-                     "Generate node content for a target.",
-                     "new_content_prompt.md", ("node.content.generate",), ("authoring",),
-                     reads=("dataflowContext", "nodeId", "subtask", "workflowGoal"),
-                     # models.search: a node that runs a model loads one
-                     # this account has, by the catalog's own loader line.
-                     tools=("dataflow.read", "node.read", "node.content.write",
-                            "node.runtime.read", "models.search"),
-                     variant_prompts=((AUTK_PROMPT_KEY, "new_content_autk_prompt.md"),),
-                     worked_examples=True),
     BuiltinAgentSpec("agent.connection-builder", "Connection Builder", "node",
                      "Suggest and create valid node connections.",
                      "new_connection_prompt.md", ("connection.propose",), ("authoring",),
@@ -251,15 +241,19 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      targets=("node", "canvas"),
                      reads=("mission", "nodeContext"),
                      tools=("web.search", "web.fetch", "node.read")),
-    # The first P5 composite (memo dev/48; spec dev/15 §3.4). Net-new
-    # instruction — no migrated prompt source. dev/15 deviations recorded in
-    # the memo: "connection" target and agent.package-recommendation deferred.
+    # The first P5 composite (memo dev/48; spec dev/15 §3.4). Its chat runs
+    # its own instruction; content for a node runs as its
+    # node.content.generate mode, which its chat asks for through the entry
+    # naming itself, and Solve and validate ask for by capability. The mode
+    # is a delegated call with no tools, under the Autark prompt for an
+    # Autark document.
     BuiltinAgentSpec("agent.node-builder", "Node Builder", "node",
                      "Create computation, transform, visualization, or data-fetch nodes as "
-                     "reviewable proposals — or modify an existing node through a reviewed "
-                     "content replacement; delegates content generation to Node Content Builder.",
+                     "reviewable proposals, or modify an existing node through a reviewed "
+                     "content replacement; writes node content in its own content mode.",
                      "node_build_instruction.md",
-                     ("node.build", "dataset.fetch.author"), ("authoring",),
+                     ("node.build", "dataset.fetch.author", "node.content.generate"),
+                     ("authoring",),
                      # dev/67-6: node targets lift the dev/48 canvas-only
                      # limitation — the modify-existing posture attaches to
                      # the node it modifies.
@@ -270,10 +264,10 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      # the resolved path); the grounding gate refuses any
                      # other file the code opens. models.search does the same
                      # for a node that runs a model.
-                     tools=("dataflow.read", "node.create", "node.template.create",
+                     tools=("dataflow.read", "node.read", "node.create", "node.template.create",
                             "node.runtime.read", "node.content.write", "catalog.search",
                             "models.search"),
-                     delegates_to=("agent.node-content-builder",
+                     delegates_to=(("agent.node-builder", ("node.content.generate",)),
                                    ("agent.dataflow-planner", ("execution.followup.plan",)),
                                    "agent.node-researcher",
                                    # dev/84: a built node's required packages.
@@ -297,6 +291,10 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      # not a preference.
                      requires_agents=("agent.dataset-finder",),
                      review_policy="review-before-apply",
+                     modes=(BuiltinMode("node.content.generate", "new_content_prompt.md",
+                                        ("dataflowContext", "nodeId", "subtask", "workflowGoal"),
+                                        worked_examples=True),),
+                     variant_prompts=((AUTK_PROMPT_KEY, "new_content_autk_prompt.md"),),
                      worked_examples=True),
     # The second P5 composite (memo dev/50; spec dev/15 §3.4 + docs/06). Two-
     # lane discovery: catalog picks → reviewed dataset.install; external picks
@@ -320,7 +318,7 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      # just stops being the only answer.
                      tools=("catalog.search", "discovery.sources", "discovery.search",
                             "discovery.acquire", "dataset.install", "dataflow.read"),
-                     delegates_to=("agent.node-builder",
+                     delegates_to=(("agent.node-builder", ("node.build", "dataset.fetch.author")),
                                    ("agent.dataflow-reader", ("workflow.suggest",)),
                                    ("agent.dataflow-planner", ("workflow.keyword.bind",)),
                                    "agent.node-researcher"),
@@ -343,12 +341,11 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      # any worked example, beside the ones a run is given.
                      tools=("dataflow.read", "dataflow.plan.write",
                             "node.runtime.read", "node.create", "examples.read"),
-                     # dev/73: node-content-builder listed so node.content.generate
-                     # is OFFERED in the delegation paragraph — the chat path for
+                     # dev/73: the Node Builder's node.content.generate is
+                     # OFFERED in the delegation paragraph, the chat path for
                      # "change this node's content" (the runtime mints the review
                      # at that node's own agent; plans stay content-free).
                      delegates_to=("agent.dataset-finder", "agent.node-builder",
-                                   "agent.node-content-builder",
                                    "agent.connection-builder",
                                    ("agent.dataflow-planner", (
                                        "workflow.plan.create", "execution.followup.plan",
@@ -370,16 +367,16 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                                    # — runtime-gathered search inputs, schema
                                    # reply, reviewed note sequence.
                                    "agent.researcher"),
-                     # dev/106: Solve/Validate hard-invoke node.content.generate.
+                     # dev/106: Solve/Validate hard-invoke node.content.generate,
+                     # the Node Builder's content mode.
                      # dev/126: and resolution hard-invokes dataset.discover for
                      # a data-loading node, while every plan-created node is
-                     # given a Node Builder at the user's Apply — both server
-                     # paths, neither a model choice, so both are required
+                     # given a Node Builder at the user's Apply: server
+                     # paths, none a model choice, so both are required
                      # (DEC-068's own criterion) instead of merely preferred.
                      # The install proposal for a required agent that the owner
                      # hit mid-conversation (memo dev/126 §0) cannot recur.
-                     requires_agents=("agent.node-content-builder",
-                                      "agent.dataset-finder", "agent.node-builder"),
+                     requires_agents=("agent.dataset-finder", "agent.node-builder"),
                      review_policy="review-before-apply",
                      # dev/115 (DEC-073): Solve is a detached background job.
                      execution="background",

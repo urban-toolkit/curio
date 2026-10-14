@@ -264,7 +264,7 @@ REGISTRY: dict[str, ToolContract] = {
             "origin": _text("A dataset origin."),
         }),
     ),
-    # Consumers: agent.node-builder and agent.node-content-builder. Grounds a
+    # Consumer: agent.node-builder, in its chat and its content mode. Grounds a
     # node that runs a model in the model packages this account holds (the
     # packages domain owns the data and the loader line; this module owns
     # none of its own).

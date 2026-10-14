@@ -1313,9 +1313,9 @@ For the full guide, covering runtimes, libraries, the manifest, and sharing a da
 
 ## Agent Catalog
 
-Agents are AI assistants you attach to your dataflow. The catalog lists ten:
+Agents are AI assistants you attach to your dataflow. The catalog lists nine:
 **Chat**, which explains a node or the whole dataflow, diagnoses errors and
-helps you define what to build, and nine that build dataflows and nodes, find
+helps you define what to build, and eight that build dataflows and nodes, find
 data, connect nodes, research, and recommend or author packages. Each agent
 answers with the LLM configuration chosen for it on the **Agent configuration**
 tab of **API Settings** (above), else your default.

@@ -39,9 +39,11 @@ Agent ids always begin with **`agent.`**, which keeps them apart from node packa
 
 ### What ships with Curio
 
-**Thirteen agents ship with Curio.** Ten of them are the catalog: **Chat**, **Dataflow Builder**, **Dataset Finder**, **Node Builder**, **Node Content Builder**, **Node Researcher**, **Package Builder**, **Package Recommendation**, **Researcher** and **Connection Builder**. Chat is the one agent for conversation: it explains a node or the whole dataflow, diagnoses errors, and helps you define what to build.
+**Twelve agents ship with Curio.** Nine of them are the catalog: **Chat**, **Dataflow Builder**, **Dataset Finder**, **Node Builder**, **Node Researcher**, **Package Builder**, **Package Recommendation**, **Researcher** and **Connection Builder**. Chat is the one agent for conversation: it explains a node or the whole dataflow, diagnoses errors, and helps you define what to build.
 
-The other three work only on behalf of those ten: the **Dataflow Planner** plans, refreshes and checks a dataflow's tasks and extracts and binds the keywords that describe it, the **Dataflow Reader** explains a whole dataflow and suggests its next steps, and the **Generated Content Evaluator** checks generated node content against its goal. They are never listed, added or attached, and a catalog agent can delegate to one without it being added to the dataflow.
+**Node Builder** also writes a node's content. The model decides when: your message goes to Node Builder's chat prompt, and when the node's code or spec needs writing, the model asks for its content [mode](#modes), whose prompt runs as a second call. You review the change it writes.
+
+The other three work only on behalf of those nine: the **Dataflow Planner** plans, refreshes and checks a dataflow's tasks and extracts and binds the keywords that describe it, the **Dataflow Reader** explains a whole dataflow and suggests its next steps, and the **Generated Content Evaluator** checks generated node content against its goal. They are never listed, added or attached, and a catalog agent can delegate to one without it being added to the dataflow.
 
 Every agent declares one **category**, which the browse page's rail counts:
 
@@ -148,7 +150,7 @@ Each attachment has its own chat transcript and its own **intent**, the editable
 
 When an agent proposes a change to your dataflow, it does not apply it. The proposal appears as a **review card**, and applying it is a separate click, which first checks that the target has not changed since the proposal. Dismissing it leaves nothing behind.
 
-A reply of Node Builder, Dataflow Builder or Node Content Builder that carries no review card says **No changes were made to the canvas** under it. A web address the egress policy refused shows its reason under the reply. So does any other tool call that failed, unless a later call of the same tool in that reply succeeded.
+A reply of Node Builder or Dataflow Builder that carries no review card says **No changes were made to the canvas** under it. A web address the egress policy refused shows its reason under the reply. So does any other tool call that failed, unless a later call of the same tool in that reply succeeded.
 
 ### Required agents
 
@@ -220,7 +222,7 @@ The **Agent configuration** tab chooses which configuration answers. Its **Defau
 
 A choice that names nothing, such as a removed configuration or a Deployment default the operator withdrew, refuses the run with **Open API Settings**, which opens the **Agent configuration** tab on that agent's row; it never falls back to another configuration. Removing a configuration sends the agents chosen for it back to the default, and its confirmation names them.
 
-A Solve of the Dataflow Builder runs on the Builder's configuration, and writes each node's content through Node Content Builder and each source through Dataset Finder, each on its own choice. The choices a Solve needs are checked before it starts, and one that names nothing refuses it. After a dataset selection, the node is built on its builder's configuration, not the Dataset Finder's.
+A Solve of the Dataflow Builder runs on the Builder's configuration, and writes each node's content through Node Builder's content mode and each source through Dataset Finder, each on its own choice. The choices a Solve needs are checked before it starts, and one that names nothing refuses it. After a dataset selection, the node is built on its builder's configuration, not the Dataset Finder's.
 
 The choice is per account, for every version of the agent and every project. A shared project carries none, so it runs on the configurations of whoever runs it. An agent's details show what it runs on, with **Change in API Settings**, which opens the **Agent configuration** tab on its row; a reply's status line says, on hover, which configuration and model answered it; and a delegated task in the chat names what the delegate ran on.
 
