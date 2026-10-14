@@ -44,7 +44,7 @@ TILE_NAMES = [
     "16_16815_24356.png",
 ]
 #: What #718's Autark raster path loads at its own size (utils/raster/rasterLoad.ts).
-AUTARK_MAX_CELLS = 2048 * 2048
+AUTARK_MAX_CELLS = 4096 * 4096
 AUTARK_MAX_SIDE = 8192
 
 
@@ -270,7 +270,7 @@ def _tile_corner(x, y, zoom):
 def test_the_mosaic_is_a_raster_the_autark_node_loads(workspace):
     """What #718's raster route serves for the tuple's first part, and what
     the Autark node then requires of it: an EPSG CRS, a north-up grid, at
-    most 2048 by 2048 cells and 8192 on a side."""
+    most 4096 by 4096 cells and 8192 on a side."""
     from rasterio.io import MemoryFile
 
     from utk_curio.sandbox.util.rasters import serve_raster
