@@ -40,7 +40,7 @@ export function packageIdFromNodeType(nodeType: unknown): string | null {
   return packageId.includes(".") ? packageId : null;
 }
 
-/** A readable name for a package id: `curio.streetvision` -> `Streetvision`. */
+/** A readable name for a package id: `curio.weather` -> `Weather`. */
 export function packageDisplayName(packageId: string): string {
   const tail = packageId.split(".").pop() || packageId;
   return tail
@@ -208,9 +208,9 @@ export function UnresolvedNode({
         onClick={(event) => {
           event.stopPropagation();
           // Land on the package rather than the whole catalog. Install is
-          // deliberately the user's click: a package like Street Vision pulls
-          // ~3 GB of torch, which is not something opening a dataflow should
-          // start on its own.
+          // deliberately the user's click: a package whose model runs on
+          // Transformers pulls ~3 GB of torch, which is not something opening
+          // a dataflow should start on its own.
           openNodeCatalogDrawer({ search: packageId });
         }}
         style={{

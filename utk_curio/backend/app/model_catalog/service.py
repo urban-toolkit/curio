@@ -1,40 +1,20 @@
-"""The Model Catalog: the models Curio ships, and the ones a person downloaded.
+"""The Model Catalog: the model packages one account can add or run.
 
-Read the way the Data Catalog reads datasets, with fewer verbs. A shipped
-model is used where it is, so there is no install. A downloaded model arrives
-from the Discovery Catalog, which hands its folder over here as it hands a
-dataset to the Data Catalog. A person may delete their own downloads, never a
-shipped model. Models are few and each is one manifest, so a listing reads
-the manifests; there is no index table.
-
-The model packages (a node package of kind ``model``, with its weights) are
-listed here too, until the Model Catalog reads packages itself: the ones
-Curio ships, and those imported or published into a person's store
+A model is a node package of kind ``model``, with its weights. The catalog
+lists the ones Curio ships, and those imported, published or downloaded from
+the Discovery Catalog into a person's store
 (``packages.service.list_model_packages``). Their details and license read
 their ``model`` block, and a person's own is deleted as the Node Catalog
 removes a package. A node reaches their weights through
-``packages.service.resolve_model_dirs``.
+``packages.service.resolve_model_dirs``, from the person's store only.
 """
 
 from __future__ import annotations
 
-import json
-import os
-import shutil
-import uuid
 from pathlib import Path
 from typing import Any
 
-from utk_curio.backend.app.common.record_clock import utc_now
-from utk_curio.backend.app.model_catalog.domain.manifest import (
-    ModelInput,
-    ModelManifest,
-    ModelManifestError,
-    load_manifest,
-    manifest_dict,
-    parse_manifest,
-)
-from utk_curio.backend.app.model_catalog.infrastructure import storage
+from utk_curio.backend.app.model_catalog.domain.manifest import ModelInput, ModelManifest
 
 
 class ModelCatalogError(Exception):
@@ -102,49 +82,6 @@ def model_row(manifest: ModelManifest, *, origin: str, folder: Path) -> dict[str
     return row
 
 
-def loader_line(model_id: str) -> str:
-    """The line node code loads *model_id* with, as ``resolve_exec_models`` finds it."""
-    return f'model = curio_load_model("{model_id}")'
-
-
-def resolve_exec_models(code: str, user=None) -> dict[str, str]:
-    """``{modelId: folder}`` for the models *code* runs as ``curio_load_model("<id>")``.
-
-    Shared by ``/processPythonCode`` and the agent runtime's runs through a
-    node, as collections are. *user* defaults to the request's. A model
-    package answers first (``packages.service.resolve_model_dirs``), then
-    this catalog's models. Fail-open: the sandbox's ``curio_load_model``
-    names a model that is not there.
-    """
-    from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
-
-    ids = model_ids_in_code(code)
-    if not ids:
-        return {}
-    if user is None:
-        try:
-            from flask import g, has_request_context
-
-            user = getattr(g, "user", None) if has_request_context() else None
-        except Exception:  # noqa: BLE001 - no Flask, no user
-            user = None
-    resolved: dict[str, str] = {}
-    try:
-        from utk_curio.backend.app.packages.service import resolve_model_dirs
-
-        resolved = resolve_model_dirs(_user_key(user), ids)
-    except Exception as exc:  # noqa: BLE001 - resolution must never fail the execution
-        print(f"[exec] model package resolution failed: {exc}", flush=True)
-    rest = [model_id for model_id in ids if model_id not in resolved]
-    if not rest:
-        return resolved
-    try:
-        return {**ModelCatalogService(user).resolve_execution_dirs(rest), **resolved}
-    except Exception as exc:  # noqa: BLE001 - resolution must never fail the execution
-        print(f"[exec] model resolution failed: {exc}", flush=True)
-        return resolved
-
-
 class ModelCatalogService:
     def __init__(self, user) -> None:
         self.user = user
@@ -152,32 +89,11 @@ class ModelCatalogService:
 
     # ── reading ────────────────────────────────────────────────────────────
 
-    def _entries(self, *, packages: bool = True) -> list[tuple[ModelManifest, str, Path]]:
-        """Every model this account can use: its downloads, then the shipped
-        ones, then (with *packages*) the model packages.
-
-        A folder whose manifest cannot be read is left out, as the Data Catalog
-        leaves out a dataset it cannot read; it is named in the server log.
-        """
-        found: list[tuple[ModelManifest, str, Path]] = []
-        folders = []
-        if self.user_key:
-            folders += [(folder, "downloaded") for folder in storage.list_user_models(self.user_key)]
-        folders += [(folder, "shipped") for folder in storage.list_shipped_models()]
-        for folder, origin in folders:
-            try:
-                found.append((load_manifest(folder), origin, folder))
-            except ModelManifestError as exc:
-                print(f"[model catalog] {folder.name} skipped: {exc}", flush=True)
-        if packages:
-            found += self._package_entries()
-        return found
-
-    def _package_entries(self) -> list[tuple[ModelManifest, str, Path]]:
-        """The model packages this account can run, as this catalog's entries:
-        one in the account's store with its own weights is ``downloaded``,
-        one that ships with Curio ``shipped`` (a store copy of it holds no
-        weights, so it is the shipped one)."""
+    def _entries(self) -> list[tuple[ModelManifest, str, Path]]:
+        """The model packages this account can add or run, as this catalog's
+        entries: one in the account's store with its own weights is
+        ``downloaded``, one that ships with Curio ``shipped`` (a store copy of
+        it holds no weights, so it is the shipped one)."""
         from utk_curio.backend.app.packages.service import list_model_packages
 
         return [
@@ -206,12 +122,12 @@ class ModelCatalogService:
         items.sort(key=lambda item: (item["origin"] != "shipped", item["name"].lower()))
         return {"items": items}
 
-    def _find(self, model_id: str, *, packages: bool = True) -> tuple[ModelManifest, str, Path]:
-        """The model *model_id* names (``<id>`` or ``<id>@<major>``): a download
-        before a shipped one, the highest major of each."""
+    def _find(self, model_id: str) -> tuple[ModelManifest, str, Path]:
+        """The model *model_id* names (``<id>`` or ``<id>@<major>``): a person's
+        own before a shipped one, the highest major of each."""
         want_id, _, want_major = str(model_id).partition("@")
         matches = [
-            entry for entry in self._entries(packages=packages)
+            entry for entry in self._entries()
             if entry[0].id == want_id and (not want_major or str(entry[0].major) == want_major)
         ]
         if not matches:
@@ -232,25 +148,6 @@ class ModelCatalogService:
             raise ModelCatalogError(f"{manifest.name} has no license text", 404)
         return path.read_text(encoding="utf-8", errors="replace")
 
-    def resolve_dir(self, model_id: str) -> Path:
-        """The folder a node reads *model_id* from, one of this catalog's own
-        model folders: a model package's weights resolve through
-        ``packages.service.resolve_model_dirs``. Server side only."""
-        _manifest, _origin, folder = self._find(model_id, packages=False)
-        return folder
-
-    def resolve_execution_dirs(self, model_ids: list[str]) -> dict[str, str]:
-        """``{modelId: folder}`` for the ids a node's code names that this
-        account can use; an unknown id is left out, and the node's
-        ``curio_load_model`` names it."""
-        out: dict[str, str] = {}
-        for model_id in model_ids:
-            try:
-                out[model_id] = str(self.resolve_dir(model_id))
-            except ModelCatalogError:
-                continue
-        return out
-
     def find_by_discovery_resource(self, source_id: str, resource_id: str) -> dict[str, Any] | None:
         """A model this account already downloaded from that source row."""
         for manifest, origin, folder in self._entries():
@@ -261,47 +158,6 @@ class ModelCatalogService:
         return None
 
     # ── changing ───────────────────────────────────────────────────────────
-
-    def install_downloaded(
-        self, folder: Path, manifest: dict[str, Any], *, replace: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Add a downloaded model: *folder* holds its files as *manifest*'s
-        ``entry`` names them, and is consumed.
-
-        *replace* is the row of a model this account already downloaded from
-        the same source row: a refresh. The new files take its place under its
-        id, so a node naming that id runs them, and no second copy is kept
-        (#623)."""
-        if not self.user_key:
-            raise ModelCatalogError("sign in to add a model", 401)
-        now = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
-        created = now
-        if replace is not None:
-            model_id = str(replace["id"])
-            created = str(replace.get("createdAt") or now)
-        else:
-            model_id = f"imported.x{uuid.uuid4().hex[:12]}"
-        raw = {**manifest, "id": model_id, "compatibility": {"major": 1}, "createdAt": created, "updatedAt": now}
-        size = sum(p.stat().st_size for p in Path(folder).rglob("*") if p.is_file())
-        raw["sizeBytes"] = size
-        parsed = parse_manifest(raw)
-        target = storage.user_model_dir(self.user_key, parsed.dir_name)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        staging = target.with_name(f".{target.name}.part")
-        shutil.rmtree(staging, ignore_errors=True)
-        shutil.move(str(folder), str(staging))
-        (staging / "manifest.json").write_text(json.dumps(manifest_dict(parsed), indent=2) + "\n", encoding="utf-8")
-        if target.exists():
-            # A refresh: swap the folders, then drop the old one.
-            retired = target.with_name(f".{target.name}.old")
-            shutil.rmtree(retired, ignore_errors=True)
-            os.replace(target, retired)
-            os.replace(staging, target)
-            shutil.rmtree(retired, ignore_errors=True)
-        else:
-            os.replace(staging, target)
-        loaded = load_manifest(target)
-        return model_row(loaded, origin="downloaded", folder=target)
 
     def model_refusal(self) -> str | None:
         """Why this account may not add a model, or ``None``: the rule a
@@ -319,35 +175,15 @@ class ModelCatalogService:
 
         return package_install_refusal(self.user)
 
-    def install_dependencies(self, model_id: str) -> dict[str, Any]:
-        """Install the libraries *model_id*'s runtime needs, by the path a
-        package's ``dependencies.python`` takes (``provision_declared_deps``):
-        the shared interpreter, or this account's own node libraries under
-        isolation. A pip failure is reported, not raised, and the model stays."""
-        manifest, _origin, _folder = self._find(model_id)
-        if not manifest.python_deps:
-            return {"importErrors": {}}
-        from types import SimpleNamespace
-
-        from utk_curio.backend.app.packages.application.provisioning import provision_declared_deps
-
-        # The routing rule reads a package's backend surface and templates; a
-        # model has neither, so its libraries go where node code finds them.
-        declaration = SimpleNamespace(python_deps=dict(manifest.python_deps), backend=None, templates=())
-        return provision_declared_deps(self.user_key or "-", manifest.dir_name, declaration)
-
     def delete_model(self, model_id: str) -> dict[str, Any]:
+        """Remove a model package of this account's own, as the Node Catalog
+        removes a package: from the store, and from every dataflow's lockfile
+        that names it. One that ships with Curio is refused."""
         manifest, origin, folder = self._find(model_id)
-        if origin != "downloaded":
+        if origin != "downloaded" or not self._is_store_package(folder):
             raise ModelCatalogError(f"{manifest.name} ships with Curio and cannot be deleted", 403)
-        if self._is_store_package(folder):
-            # A model package of the account's own goes as the Node Catalog
-            # removes a package: from the store, and from every dataflow's
-            # lockfile that names it.
-            from utk_curio.backend.app.packages.service import detach_from_all_projects, remove_package
+        from utk_curio.backend.app.packages.service import detach_from_all_projects, remove_package
 
-            remove_package(self.user_key, manifest.dir_name)
-            detach_from_all_projects(self.user_key, manifest.dir_name)
-        else:
-            shutil.rmtree(folder)
+        remove_package(self.user_key, manifest.dir_name)
+        detach_from_all_projects(self.user_key, manifest.dir_name)
         return {"deleted": manifest.id}

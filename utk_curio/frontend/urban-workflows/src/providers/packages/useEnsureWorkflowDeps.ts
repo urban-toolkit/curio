@@ -47,10 +47,11 @@ export function useEnsureWorkflowDeps() {
         try {
           const probe = await packagesApi.checkWorkflowDeps(packages);
           // Anything the backend defers is missing but must not be installed
-          // as a side effect of opening a dataflow - `curio.streetvision` is
-          // ~3 GB of torch, and the example that needs it says so in its own
-          // setup notes. The canvas names it on the node instead, with an
-          // Install button, so the user makes that call knowingly (#233).
+          // as a side effect of opening a dataflow - a package whose libraries
+          // run to gigabytes, such as torch, and the example that needs it
+          // says so in its own setup notes. The canvas names it on the node
+          // instead, with an Install button, so the user makes that call
+          // knowingly (#233).
           const deferred = new Set(probe.deferred ?? []);
           needed = probe.packages.filter((dirName) => !deferred.has(dirName));
           broken = probe.broken ?? [];

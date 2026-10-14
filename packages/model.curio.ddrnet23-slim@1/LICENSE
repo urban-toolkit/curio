@@ -1,7 +1,7 @@
 DDRNet23-Slim, semantic segmentation of street scenes (Cityscapes classes)
 
 Files in this folder:
-  files/ddrnet23_slim.onnx and files/ddrnet23_slim.data are the w8a8 ONNX
+  models/ddrnet23_slim.onnx and models/ddrnet23_slim.data are the w8a8 ONNX
   export published by Qualcomm AI Hub Models, release v0.63.0
   (https://huggingface.co/qualcomm/DDRNet23-Slim, licensed MIT on that page,
   whose LICENSE file reads: "The license of the original trained model can be

@@ -5,8 +5,12 @@ template (the renamed-from-``kind`` concept). Each template manifest may carry
 an optional ``source`` field — a package-relative path to a single starter
 file (any extension: ``.py``, ``.js``, ``.vl.json``, etc.). When present, the
 file content becomes one ``Starter`` entry keyed on the package's canonical
-template id ``<packageId>/<templateId>@<major>``. Templates without ``source``
-(e.g. structural built-ins) contribute no starter, and the editor opens empty.
+template id ``<packageId>/<templateId>@<major>``, named for the file.
+
+A model package's template without ``source`` opens with the cell Curio
+writes for the package's model type (``model_packages.model_default_cell``),
+named for the template's id. Other templates without ``source`` (e.g.
+structural built-ins) contribute no starter, and the editor opens empty.
 """
 
 from __future__ import annotations
@@ -14,6 +18,7 @@ from __future__ import annotations
 import logging
 import uuid
 
+from utk_curio.backend.app.packages.application.model_packages import model_default_cell
 from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
 from utk_curio.backend.app.packages.domain.manifest import ManifestError
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
@@ -40,7 +45,8 @@ def _starter_object(canonical_id: str, name: str, code: str) -> dict:
 def generate_package_starters(user_key: str) -> list[dict]:
     """Return ``Starter`` objects for every installed package of *user_key*.
 
-    At most one starter per template: the template's optional ``source`` file.
+    At most one starter per template: the template's optional ``source`` file,
+    or, for a model package's template without one, its model's default cell.
 
     The whole read — enumeration, manifests, source files — is one snapshot
     under the per-user seed lock (memo dev/99): the returned starters carry
@@ -61,6 +67,11 @@ def _generate_unlocked(user_key: str) -> list[dict]:
 
         for template in manifest.templates:
             if not template.source:
+                if manifest.kind == "model" and manifest.model is not None:
+                    out.append(_starter_object(
+                        manifest.canonical_for(template.template_id), template.template_id,
+                        model_default_cell(manifest, package_path),
+                    ))
                 continue
             parts = [p for p in template.source.replace("\\", "/").split("/") if p]
             try:

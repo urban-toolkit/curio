@@ -301,14 +301,6 @@ def main():
         ),
     )
     parser.add_argument(
-        "--models-root", default=None, metavar="PATH",
-        help=(
-            "Directory the shipped Model Catalog models are read from (sets "
-            "CURIO_MODELS_ROOT). Defaults to <repo_root>/models/. Models a "
-            "user adds stay in that user's own store."
-        ),
-    )
-    parser.add_argument(
         "--packages-root", default=None, metavar="PATH",
         help=(
             "Directory the shared Node Catalog is read from and published to "
@@ -523,7 +515,6 @@ def main():
         agent_search_url=args.agent_search_url,
         backend_url=args.backend_url,
         discovery_root=args.discovery_root,
-        models_root=args.models_root,
         packages_root=args.packages_root,
         save_node_outputs=args.save_node_outputs,
         solve_max_attempts=args.solve_max_attempts,

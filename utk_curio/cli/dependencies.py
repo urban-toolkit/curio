@@ -326,7 +326,7 @@ def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
     # Catalog walk is scoped to ``curio.builtin@*`` by default — the
     # catalog lists every *available* package, but only the built-in is
     # auto-seeded for every user. Other catalog entries (UHVI,
-    # weather, streetvision, …) are opt-in via the /catalog drawer;
+    # weather, the model packages, …) are opt-in via the /catalog drawer;
     # their deps come along when the user installs them, via the
     # per-user-store walk below. When example seeding is on
     # (--with-examples => CURIO_SEED_EXAMPLES=1), also walk the

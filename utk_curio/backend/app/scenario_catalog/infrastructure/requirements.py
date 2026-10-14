@@ -1,6 +1,7 @@
 """What a dropped scenario's levers need in the dataflow they arrive in: their
-packages, added the way the Node Catalog adds one to a project, and the
-datasets and models they read, which the account must hold (#662)."""
+packages, added the way the Node Catalog adds one to a project, the datasets
+they read, which the account must hold (#662), and the models they run. A
+model is a model package, so it is added as a node's package is."""
 from __future__ import annotations
 
 
@@ -86,11 +87,17 @@ def dataset_problem(user, dataset_id: str) -> str | None:
     return None
 
 
-def model_problem(user, model_id: str) -> str | None:
-    from utk_curio.backend.app.model_catalog.service import ModelCatalogError, ModelCatalogService
+def model_package_dir(user_key: str, model_id: str) -> str | None:
+    """The dirName of the model package *model_id* names (``<id>`` or
+    ``<id>@<major>``): the account's own or a copy in its store, else the
+    catalog's, the highest major of them. ``None`` when neither has one."""
+    from utk_curio.backend.app.packages import service as packages
 
-    try:
-        ModelCatalogService(user).get_model(model_id)
-    except ModelCatalogError:
-        return f"the model {model_id}, which is not in your Model Catalog"
-    return None
+    want_id, _, want_major = str(model_id).partition("@")
+    candidates = [listed.manifest for listed in packages.held_model_packages(user_key)]
+    candidates += [listed.manifest for listed in packages.list_model_packages(user_key)]
+    found = [
+        manifest for manifest in candidates
+        if manifest.package_id == want_id and (not want_major or str(manifest.major) == want_major)
+    ]
+    return max(found, key=lambda manifest: manifest.major).dir_name if found else None

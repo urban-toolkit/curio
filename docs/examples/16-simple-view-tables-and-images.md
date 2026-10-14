@@ -158,7 +158,7 @@ A value that points at Curio's own backend, like
 `/api/datasets/<dataset id>/media/<file_id>?variant=original`, is fetched with your session rather
 than handed straight to the browser. Those routes resolve *which* user is asking
 from the request, and an image tag cannot say. This example does not need that
-path, but the Street Vision example relies on it to show segmentation overlays.
+path, but the street-vision example (example 10) relies on it to show segmentation overlays.
 
 ## Expected output
 

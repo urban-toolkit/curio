@@ -140,7 +140,7 @@ The generated Python is one line, `curio_load_data("<datasetId>")` (`curio_load_
 | `parquet` | A GeoDataFrame when the file has geometry, otherwise a DataFrame, with JSON-encoded object columns restored → `df` |
 | `json` | The parsed document, compressed or plain → `data` |
 | `geotiff` | An open rasterio dataset → `src` |
-| `onnx` | An onnxruntime `InferenceSession` on the CPU → `session`. onnxruntime comes with the Street Vision package. |
+| `onnx` | An onnxruntime `InferenceSession` on the CPU → `session`. onnxruntime comes with a model that runs on ONNX, such as DDRNet23-Slim, when it is added. |
 | `netcdf` | An xarray `Dataset`, read with netCDF4 → `ds` |
 | `bundle` | Every part, in the tuple, list or dict the producing node returned → `bundle`. `part="<file>"` reads one part. |
 | OSM, GeoPackage or GTFS group | A `layers` dict, one `curio_load_data` per layer |

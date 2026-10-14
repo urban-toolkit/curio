@@ -4,7 +4,7 @@
     "curioRuntime": ">=0.5.0",
     "major": 1
   },
-  "createdAt": "2026-05-25T00:00:00Z",
+  "createdAt": "2026-10-01T00:00:00Z",
   "dependencies": {
     "js": {},
     "packages": {},
@@ -12,15 +12,39 @@
       "onnxruntime": ">=1.17"
     }
   },
-  "description": "Street-level computer vision: the Image Segmentation node labels every pixel of street photos with a model from the Model Catalog, and reports each class's share of every image. Images come from the Data or Discovery Catalog (Mapillary, Google Street View); models from the Model Catalog, where DDRNet23-Slim ships with Curio and Hugging Face models are added from the Discovery Catalog.",
-  "id": "curio.streetvision",
+  "description": "Labels every pixel of a street photo with one of the 19 Cityscapes classes: road, sidewalk, building, vegetation, terrain, sky, cars, people and more. Small and fast: it runs on a CPU with onnxruntime, about a fifth of a second per image, and needs no download.",
+  "id": "model.curio.ddrnet23-slim",
+  "kind": "model",
   "license": "MIT",
-  "name": "Street Vision",
+  "model": {
+    "entry": "models/ddrnet23_slim.onnx",
+    "homepage": "https://huggingface.co/qualcomm/DDRNet23-Slim",
+    "input": {
+      "dtype": "uint8",
+      "height": 1024,
+      "layout": "NCHW",
+      "scale": 1.0,
+      "width": 2048
+    },
+    "labels": [
+      "road", "sidewalk", "building", "wall", "fence", "pole", "traffic light", "traffic sign",
+      "vegetation", "terrain", "sky", "person", "rider", "car", "truck", "bus", "train",
+      "motorcycle", "bicycle"
+    ],
+    "license": "MIT; trained on Cityscapes",
+    "licenseFile": "LICENSE",
+    "publisher": "DDRNet authors; ONNX export by Qualcomm AI Hub Models (v0.63.0, w8a8)",
+    "runtime": "onnx",
+    "sizeBytes": 23076949,
+    "type": "semantic-segmentation"
+  },
+  "name": "DDRNet23-Slim (street scenes)",
   "permissions": [],
   "publisher": "Curio",
   "readOnly": true,
   "templates": [
     {
+      "behavior": "code",
       "category": "computation",
       "description": "Label every pixel of each image with a Model Catalog model: drag a model onto the node to choose it. Input: a collection's rows, each with a path (Data Loading on street-level images). Output: the same rows with one column per class asked for (its share of the image's pixels, in percent), dominant_class, dominant_pct and an overlay_url a Simple View shows.",
       "editor": "code",
@@ -37,16 +61,14 @@
         }
       ],
       "label": "Image Segmentation",
-      "behavior": "code",
       "outputPorts": [
         {
           "cardinality": "1",
           "types": ["GEODATAFRAME"]
         }
       ],
-      "source": "sources/image-segmentation.py",
       "paletteOrder": 0
     }
   ],
-  "version": "1.2.0"
+  "version": "1.0.0"
 }

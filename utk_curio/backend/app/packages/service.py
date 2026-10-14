@@ -88,9 +88,16 @@ from utk_curio.backend.app.packages.application.starters import (
 )
 from utk_curio.backend.app.packages.application.model_packages import (
     ListedModelPackage,
+    held_model_packages,
     list_model_packages,
+    model_default_cell,
     resolve_model_dirs,
 )
+from utk_curio.backend.app.packages.application.model_downloads import (
+    install_downloaded_model,
+    install_downloaded_model_deps,
+)
+from utk_curio.backend.app.packages.domain.default_cells import model_loader_line, model_template
 
 # The names other features take from the package (memo dev/143 B5: the agents, the
 # projects service, the launcher and the testing routes import THESE from here, never
@@ -204,6 +211,12 @@ __all__ = [
     "per_user_node_envs",
     "user_node_overlay_dir",
     "ListedModelPackage",
+    "held_model_packages",
     "list_model_packages",
+    "model_default_cell",
     "resolve_model_dirs",
+    "install_downloaded_model",
+    "install_downloaded_model_deps",
+    "model_loader_line",
+    "model_template",
 ]

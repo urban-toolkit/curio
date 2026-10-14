@@ -48,6 +48,10 @@ export interface NodePackageMeta {
   publisher?: string;
   /** Package-relative path to the optional starter source file (any extension). */
   source?: string;
+  /** For a model package's template without `source`: the name of the starter
+   *  the backend writes for it (its template id), the default cell of its
+   *  model's type. */
+  defaultCellStarter?: string;
   lineage?: NodePackageLineage;
   /** When true, the package rejects factory-install / Save-As writes (manifest `readOnly`). */
   readOnly?: boolean;

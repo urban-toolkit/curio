@@ -53,7 +53,7 @@ export const PackageCard: React.FC<PackageCardProps> = ({
 }) => {
   const cardBusy = busy || cardActionDir === pkg.dirName;
   // Author actions (Publish / Unpublish) are suppressed on read-only
-  // packages (e.g. ``curio.builtin@1``, ``curio.streetvision@1``) — the
+  // packages (e.g. ``curio.builtin@1``, ``model.curio.ddrnet23-slim@1``): the
   // backend rejects modify/publish there anyway, so don't tempt users with
   // buttons that 4xx. The Published BADGE still renders (it's
   // informational, not destructive).

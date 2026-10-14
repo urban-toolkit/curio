@@ -73,7 +73,7 @@ discovery/
 | **A collection's files** | Where the source keeps them | Nobody. Curio reads them in place. |
 | **A service's images**, from Mapillary or Google Street View | Your Data Catalog store, with the collection | **Download**. |
 | **A bucket collection's cached files** | Your account's media folder | **Cache files**, up to a per-account limit. |
-| **Added models** | Your Model Catalog store, `.curio/users/<user-key>/models/` | **Add to Model Catalog**. |
+| **Added models** | Your package store, each model as a model package with its weights and an **Image Segmentation** node | **Add to Model Catalog**. |
 
 ---
 
@@ -262,7 +262,8 @@ A Direct URL link to a `.parquet` file, and a bucket or Hugging Face row of `par
 
 - **What Curio runs.** Semantic segmentation models, as ONNX graphs or as Transformers checkpoints with safetensors weights. A model with only `.bin` weights is refused, since loading those runs code from the model; so is a model of another task, one whose `config.json` names no labels, and one larger than 2 GB. The row says why.
 - **The files.** Curio downloads the model's files as they are at the commit the Hub lists, with its `config.json` and `preprocessor_config.json`, which say how to read an image and what each class is called.
-- **Libraries.** A Transformers model needs `torch`, `transformers` and `safetensors`, which Curio installs when the model is added, the way a node package's libraries install. When they do not install, the model is kept and the message says why. An account that may not install libraries cannot add a Transformers model; an ONNX model needs nothing more.
+- **What lands.** A model package in your store: the model's files, and an **Image Segmentation** node that runs it, whose code loads the model by its id.
+- **Libraries.** An ONNX model needs `onnxruntime`, and a Transformers model `torch`, `transformers` and `safetensors`, which Curio installs when the model is added, the way a node package's libraries install. When they do not install, the model is kept and the message says why. An account that may not install libraries cannot add a model.
 - **Gated models.** A model whose page asks you to accept its terms downloads once you have accepted them on Hugging Face and saved your Hugging Face token.
 - **Adding again.** A row marked **In your Model Catalog** offers **View model**; adding it again keeps the model you have.
 

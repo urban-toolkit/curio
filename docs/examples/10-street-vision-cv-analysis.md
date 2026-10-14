@@ -6,7 +6,7 @@ It runs two routes over the same photos. Route 1 uses **DDRNet23-Slim**, the mod
 
 > [!NOTE]
 > **Setup required**
-> The example declares the **Street Vision** package, which Curio installs when you open it; the package brings `onnxruntime`. The photos and DDRNet23-Slim ship with Curio, so route 1 runs as it opens. Route 2 needs a model from the Discovery Catalog: see [Step 6](#step-6-a-second-model-from-hugging-face).
+> The example declares DDRNet23-Slim's model package, which Curio installs when you open it; the package brings `onnxruntime` and the **Image Segmentation** node. The photos and DDRNet23-Slim ship with Curio, so route 1 runs as it opens. Route 2 needs a model from the Discovery Catalog: see [Step 6](#step-6-a-second-model-from-hugging-face).
 
 ## Pipeline overview
 
@@ -48,7 +48,7 @@ return photos
 
 ## Step 2: Label every pixel (`Image Segmentation`)
 
-The node comes from the Street Vision package. Its code names a model in the Model Catalog and the classes to report:
+The node comes from DDRNet23-Slim's model package. Its code names a model in the Model Catalog and the classes to report:
 
 ```python
 """Label every pixel of each image with a Model Catalog model.
@@ -229,7 +229,7 @@ return curio_segment(input_0, model, classes)
 To give it a model of its own:
 
 1. Open the **Discovery Catalog** and choose **Hugging Face models**. It lists image segmentation models Curio can run.
-2. Find a model, for example `openmmlab/upernet-convnext-tiny` (ADE20K's 150 classes, MIT license), and click **Add to Model Catalog**. Curio downloads it, and installs `torch` and `transformers` when the model needs them.
+2. Find a model, for example `openmmlab/upernet-convnext-tiny` (ADE20K's 150 classes, MIT license), and click **Add to Model Catalog**. Curio downloads it, and installs the libraries its runtime needs: `onnxruntime`, or `torch` and `transformers`.
 3. Back on the canvas, open **Model Catalog** in the left Tools panel and drag the model onto this node. Its `curio_load_model(...)` line now names the new model.
 4. Run the node. The `Simple View`, Spatial Join and bar chart after it show the new model's classes.
 
