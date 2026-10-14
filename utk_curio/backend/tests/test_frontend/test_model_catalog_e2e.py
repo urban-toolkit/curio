@@ -18,6 +18,7 @@ Frames: the drawer, the details and the page.
 from __future__ import annotations
 
 import zipfile
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -49,7 +50,7 @@ SHIPPED_MODELS = (DDRNET, DEEP_UMBRA, WEATHER_GNN)
 
 LOCAL_RELIEF_ID = "model.example.local-relief"
 LOCAL_RELIEF = f"{LOCAL_RELIEF_ID}@1"
-LOCAL_RELIEF_FOLDER = REPO_ROOT / "docs" / "bring-your-own-model" / LOCAL_RELIEF
+LOCAL_RELIEF_FOLDER = Path(REPO_ROOT) / "docs" / "bring-your-own-model" / LOCAL_RELIEF
 
 RUN_NODE = "runs-local-relief"
 RELIEF_MARKER = "LOCAL_RELIEF_RAN"

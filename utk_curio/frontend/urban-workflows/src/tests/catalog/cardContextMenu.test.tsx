@@ -23,12 +23,14 @@ import { CardContextMenu } from "../../components/catalog/CardContextMenu";
 const SRC = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8");
 
+/** The Model Catalog's grid and cards are the Node Catalog's
+ *  (`pages/models/ModelCatalogBrowse.tsx` renders `NodeCatalogBrowse` with
+ *  `packageKind="model"`, checked in catalogDrawerParity.test.ts). */
 const GRIDS = [
   "pages/projects/ProjectsList.tsx",
   "pages/catalog/NodeCatalogBrowse.tsx",
   "pages/dataCatalog/DataCatalogBrowse.tsx",
   "pages/agents/AgentCatalogBrowse.tsx",
-  "pages/models/ModelCatalogBrowse.tsx",
   "pages/scenarios/ScenarioCatalogBrowse.tsx",
 ];
 
@@ -36,7 +38,6 @@ const CARDS = [
   "pages/catalog/PackageBrowseCard.tsx",
   "pages/dataCatalog/DataCatalogBrowseCard.tsx",
   "pages/agents/AgentCatalogBrowseCard.tsx",
-  "pages/models/ModelCatalogBrowseCard.tsx",
   "pages/scenarios/ScenarioCatalogBrowseCard.tsx",
 ];
 

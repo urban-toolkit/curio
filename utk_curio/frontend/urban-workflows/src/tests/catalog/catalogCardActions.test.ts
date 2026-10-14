@@ -8,11 +8,11 @@
  * both exist so a card's menu and its detail drawer cannot drift apart the way
  * the projects page's two surfaces once did (#221).
  */
+import * as cardActions from "../../components/catalog/catalogCardActions";
 import {
   agentCardActions,
   datasetCardActions,
   discoverySourceCardActions,
-  modelCardActions,
   packageCardActions,
   scenarioCardActions,
 } from "../../components/catalog/catalogCardActions";
@@ -88,25 +88,20 @@ describe("catalog card actions", () => {
     ).toEqual(["add-by-link", "view-details"]);
   });
 
-  test("a shipped model offers only its details", () => {
-    // It has no action: it cannot be deleted and is not added to a project.
-    // Same rule as an installed, current package.
-    expect(modelCardActions({ deletable: false }).map((a) => a.id)).toEqual(["view-details"]);
-  });
-
-  test("a downloaded model offers Delete, then its details", () => {
-    expect(modelCardActions({ deletable: true }).map((a) => a.id)).toEqual([
-      "delete",
-      "view-details",
-    ]);
-  });
-
-  test("a model's Delete is the one real deletion, and is painted as one", () => {
-    // It removes the model's files from the account, unlike "Remove from all
-    // projects", which leaves the catalog copy alone.
-    const del = modelCardActions({ deletable: true }).find((a) => a.id === "delete");
-    expect(del?.destructive).toBe(true);
-    expect(modelCardActions({ deletable: false }).some((a) => a.destructive)).toBe(false);
+  test("a model is a package: its card offers a package's actions, and no Delete of its own", () => {
+    // The Model Catalog is the Node Catalog's page over model packages, so a
+    // model's menu is the package one: Add to all projects, Update, then its
+    // details. A model leaves the account as a node package does, through
+    // Remove in each dataflow, never through a Delete of its own.
+    expect((cardActions as Record<string, unknown>).modelCardActions).toBeUndefined();
+    for (const state of [
+      { isInstalled: false, hasUpdate: false },
+      { isInstalled: true, hasUpdate: true },
+      { isInstalled: true, hasUpdate: false },
+    ]) {
+      const ids: string[] = packageCardActions(state).map((a) => a.id);
+      expect(ids).not.toContain("delete");
+    }
   });
 
   test("a scenario offers its source project, then its details", () => {
@@ -134,7 +129,7 @@ describe("catalog card actions", () => {
       ...packageCardActions({ isInstalled: false, hasUpdate: false }),
       ...packageCardActions({ isInstalled: true, hasUpdate: true }),
       ...discoverySourceCardActions({ browsable: true }),
-      ...modelCardActions({ deletable: true }),
+      ...packageCardActions({ isInstalled: true, hasUpdate: false }),
       ...scenarioCardActions(),
     ];
     // Widened on purpose: the two ids are not in `CatalogCardActionId` at all,
@@ -162,8 +157,8 @@ describe("catalog card actions", () => {
       agentCardActions({ imported: true }),
       packageCardActions({ isInstalled: false, hasUpdate: false }),
       discoverySourceCardActions({ browsable: true }),
-      modelCardActions({ deletable: true }),
-      modelCardActions({ deletable: false }),
+      packageCardActions({ isInstalled: true, hasUpdate: true }),
+      packageCardActions({ isInstalled: true, hasUpdate: false }),
       scenarioCardActions(),
     ]) {
       expect(list[list.length - 1].id).toBe("view-details");
@@ -177,7 +172,7 @@ describe("catalog card actions", () => {
       ...agentCardActions({ imported: false }),
       ...packageCardActions({ isInstalled: true, hasUpdate: true }),
       ...discoverySourceCardActions({ browsable: true }),
-      ...modelCardActions({ deletable: true }),
+      ...packageCardActions({ isInstalled: false, hasUpdate: false }),
       ...scenarioCardActions(),
     ]) {
       expect(action.label.trim()).not.toBe("");

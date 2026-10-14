@@ -66,6 +66,8 @@ jest.mock("../../registry/packageRegistryBootstrap", () => ({
   refreshPackageRegistry: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock("../../registry/projectPackagesStore", () => ({
+  // The node registry subscribes to the store at import.
+  ...jest.requireActual("../../registry/projectPackagesStore"),
   applyProjectLockfile: jest.fn(() => false),
   getPackagesRevision: jest.fn(() => 0),
   setCurrentProjectPackages: jest.fn(),
