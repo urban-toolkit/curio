@@ -4,9 +4,10 @@ A run on the server compiles an Autark node whose document only loads data
 with the browser's own compiler (``utk_curio/common/autk_data_compiler.py``,
 the frontend's ``dist/autk-data-compile.cjs``) and posts it to ``/execJs``, as
 the node's own run in the browser does. This runs that compiled JavaScript for
-the loaders of examples 06 (Back Bay) and 07 (Chicago Loop) through
-``execute_js_code`` and pins what it hands on with autk-db 4.1.0: each layer's
-name, type, feature count and CRS, and its first feature's keys.
+the loaders of examples 06 (Back Bay), 07 (Chicago Loop), 08 (Niterói) and 11
+(Lower Manhattan) through ``execute_js_code`` and pins what it hands on with
+autk-db 4.1.0: each layer's name, type, feature count and CRS, and its first
+feature's keys.
 
 No socket: the extract is served from disk by a ``fetch`` placed before the
 compiled code, which refuses every other request, at the address the sandbox
@@ -33,8 +34,8 @@ BACK_BAY = [
     ("table_osm_surface", "surface", 1, EPSG_3395, WITHOUT_ID),
     ("table_osm_parks", "parks", 116, EPSG_3395, WITH_ID),
     ("table_osm_water", "water", 8, EPSG_3395, WITH_ID),
-    ("table_osm_roads", "roads", 741, EPSG_3395, WITH_ID),
-    ("table_osm_buildings", "buildings", 2121, EPSG_3395, WITHOUT_ID),
+    ("table_osm_roads", "roads", 736, EPSG_3395, WITH_ID),
+    ("table_osm_buildings", "buildings", 2120, EPSG_3395, WITHOUT_ID),
 ]
 CHICAGO_LOOP = [
     ("table_osm_surface", "surface", 1, EPSG_3395, WITHOUT_ID),
@@ -42,6 +43,21 @@ CHICAGO_LOOP = [
     ("table_osm_water", "water", 52, EPSG_3395, WITH_ID),
     ("table_osm_roads", "roads", 2098, EPSG_3395, WITH_ID),
     ("table_osm_buildings", "buildings", 1507, EPSG_3395, WITHOUT_ID),
+]
+#: The land of Niterói: its coastline splits the surface.
+NITEROI = [
+    ("table_osm_surface", "surface", 14, EPSG_3395, WITHOUT_ID),
+    ("table_osm_parks", "parks", 755, EPSG_3395, WITH_ID),
+    ("table_osm_water", "water", 88, EPSG_3395, WITH_ID),
+    ("table_osm_roads", "roads", 8604, EPSG_3395, WITH_ID),
+]
+#: Battery Park City and the Financial District, a surface each.
+LOWER_MANHATTAN = [
+    ("table_osm_surface", "surface", 2, EPSG_3395, WITHOUT_ID),
+    ("table_osm_parks", "parks", 284, EPSG_3395, WITH_ID),
+    ("table_osm_water", "water", 41, EPSG_3395, WITH_ID),
+    ("table_osm_roads", "roads", 766, EPSG_3395, WITH_ID),
+    ("table_osm_buildings", "buildings", 2321, EPSG_3395, WITHOUT_ID),
 ]
 
 #: Put before the compiled code: serves the one extract the document loads,
@@ -71,7 +87,9 @@ def _loader_content(example: str, node_id: str) -> str:
 @pytest.mark.parametrize("example, node_id, extract, layers", [
     ("06-autark-what-if-shadow-study.json", "whatif-data", "docs/examples/data/back_bay.osm.pbf", BACK_BAY),
     ("07-autark-gpu-shader.json", "sh-data", "docs/examples/data/chicago_loop.osm.pbf", CHICAGO_LOOP),
-], ids=["back_bay", "chicago_loop"])
+    ("08-autark-spatial-join-regression.json", "niteroi-osm", "docs/examples/data/niteroi.osm.pbf", NITEROI),
+    ("11-autark-pbf-loading.json", "pbf-load", "docs/examples/data/lower_mnt.osm.pbf", LOWER_MANHATTAN),
+], ids=["back_bay", "chicago_loop", "niteroi", "lower_mnt"])
 def test_the_server_compiled_load_hands_on_the_layers(example, node_id, extract, layers, tmp_path, monkeypatch):
     from utk_curio.cli import dependencies
     from utk_curio.common.autk_data_compiler import compile_data_spec

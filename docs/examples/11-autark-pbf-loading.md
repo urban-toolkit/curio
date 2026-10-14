@@ -32,8 +32,8 @@ interaction edge (see [Linking charts](../USAGE.md#linking-charts)).
 
 ## Data
 
-`docs/examples/data/lower_mnt.osm.pbf` is a pre-extracted OpenStreetMap extract for Lower Manhattan
-(regenerate with `scripts/build_example_pbfs.py`).
+`docs/examples/data/lower_mnt.osm.pbf` is an OpenStreetMap extract for Lower Manhattan (© OpenStreetMap
+contributors, ODbL 1.0), built by `scripts/build_example_pbfs.py`.
 
 ## Step 1: Load the OSM layer stack from a PBF (`pbf-load`)
 

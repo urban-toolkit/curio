@@ -35,8 +35,8 @@ route brushes through the pool to the matching roads.
 
 ## Data
 
-`docs/examples/data/chicago_loop.osm.pbf` is an OSM extract for the Chicago Loop (regenerate with
-`scripts/build_example_pbfs.py`).
+`docs/examples/data/chicago_loop.osm.pbf` is an OpenStreetMap extract for the Chicago Loop (© OpenStreetMap
+contributors, ODbL 1.0).
 
 ## Step 1: Load OSM from a PBF (`sh-data`)
 
