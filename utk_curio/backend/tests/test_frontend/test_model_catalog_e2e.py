@@ -30,6 +30,7 @@ from .utils import (
     EXPORT_DOWNLOAD_TIMEOUT_MS,
     REPO_ROOT,
     accept_confirm_dialog,
+    dismiss_toasts,
     require_owner_view,
     require_project_page,
     require_user_auth,
@@ -340,6 +341,8 @@ def test_a_model_no_dataflow_uses_leaves_the_account_from_the_page(
         chooser.value.set_files(str(_local_relief_archive(tmp_path / "local-relief.curio.zip")))
     card = _card(grid, LOCAL_RELIEF)
     expect(card).to_have_count(1, timeout=30000)
+    # The import's toast sits bottom right, over the drawer's buttons.
+    dismiss_toasts(page)
 
     drawer = page.locator('[data-curio-browse-drawer="true"]')
     remove = drawer.get_by_role("button", name="Remove from account", exact=True)

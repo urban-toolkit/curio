@@ -295,7 +295,9 @@ describe("Remove from account, on both catalog pages", () => {
     await waitFor(() =>
       expect(mockApi.uninstall).toHaveBeenCalledWith("imported.xabc123def456@1", { unusedOnly: true }),
     );
-    expect(mockShowToast).toHaveBeenCalledWith("Removed SegFormer B0 (ADE20K) from your account.", "success");
+    await waitFor(() =>
+      expect(mockShowToast).toHaveBeenCalledWith("Removed SegFormer B0 (ADE20K) from your account.", "success"),
+    );
     // The page asks the store which packages a dataflow uses.
     expect(mockApi.listInstalled).toHaveBeenCalledWith(undefined, { usage: true });
   });
