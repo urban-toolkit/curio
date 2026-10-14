@@ -231,6 +231,15 @@ def _delegation_task_text(capability: str, inputs: dict) -> str:
     return " · ".join(parts)[:480]
 
 
+def _is_own_mode_without_a_node(
+    coord: str, parent_coord: str, inputs: dict, node_id: str | None
+) -> bool:
+    """Whether a delegated task is the parent agent's own mode, for no node."""
+    same_agent = coord.split("@", 1)[0] == (parent_coord or "").split("@", 1)[0]
+    target_node = node_id or (inputs or {}).get("nodeId")
+    return same_agent and not (isinstance(target_node, str) and target_node)
+
+
 def _run_delegate_traced(
     user_key: str,
     project_id: str,
@@ -251,12 +260,16 @@ def _run_delegate_traced(
     turn, runs the child, writes the result turn (bounded reply + a
     structured trace card + the child's execution record), and returns the
     home id alongside the classic tuple. Exactly two turns per task; every
-    trace step is best-effort — no delegation ever fails over it."""
+    trace step is best-effort: no delegation ever fails over it.
+
+    An agent that hands work to one of its own modes and names no node opens
+    no chat of its own: like an internal agent's, its record rides the
+    parent's turn."""
     home_attachment_id: str | None = None
     home_session_id: str | None = None
     try:
         spec = projects_storage.read_spec(user_key, project_id)
-        if spec is not None:
+        if spec is not None and not _is_own_mode_without_a_node(coord, parent_coord, inputs, node_id):
             home, created = _delegation_home(
                 spec, coord, capability, inputs, node_id=node_id, create=home_create,
                 user_key=user_key,

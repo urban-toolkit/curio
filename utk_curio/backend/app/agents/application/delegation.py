@@ -160,7 +160,8 @@ def visible_capability_entries(user_key: str, parent: AgentManifest) -> list[tup
     entries: list[tuple[str, str]] = []
     seen: set[str] = set()
     for agent_id in parent.delegates_to:
-        _, m = find_visible(user_key, agent_id)
+        # An entry for the agent itself names its own modes: it is visible.
+        _, m = (None, parent) if agent_id == parent.agent_id else find_visible(user_key, agent_id)
         if m is None:
             continue
         for cap in m.capability_ids:

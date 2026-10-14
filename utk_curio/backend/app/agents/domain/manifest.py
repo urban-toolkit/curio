@@ -285,6 +285,29 @@ class AgentManifest:
         return tuple(dict.fromkeys([*self.inputs_required_config, *own]))
 
 
+def _check_self_entry(
+    scope_ids: tuple[str, ...] | None,
+    capabilities: list[CapabilityDeclaration],
+    *,
+    where: str,
+) -> None:
+    """A ``delegatesTo`` entry naming the agent itself hands work to its own
+    modes: it must name its capabilities, and each must be one of the agent's
+    modes (a capability with an ``instruction`` of its own)."""
+    if scope_ids is None:
+        raise AgentManifestError(
+            f"{where} names the agent itself: an entry for the agent itself must name "
+            "the capabilities it delegates, each one of its own modes"
+        )
+    modes = {c.id for c in capabilities if c.instruction}
+    outside = [c for c in scope_ids if c not in modes]
+    if outside:
+        raise AgentManifestError(
+            f"{where} names the agent itself, so each of its capabilities must be one of "
+            f"the agent's own modes; {outside} are not"
+        )
+
+
 def parse_agent_manifest(raw: object, *, where: str = "manifest") -> AgentManifest:
     """Validate an already-parsed manifest object and return an ``AgentManifest``."""
     if not isinstance(raw, dict):
@@ -344,7 +367,7 @@ def parse_agent_manifest(raw: object, *, where: str = "manifest") -> AgentManife
                 f"{where}.delegatesTo[{i}] {d_id!r} must be an agent id matching {AGENT_ID_RE.pattern}"
             )
         if d_id == agent_id:
-            raise AgentManifestError(f"{where}.delegatesTo must not reference the agent itself")
+            _check_self_entry(scope_ids, capabilities, where=f"{where}.delegatesTo[{i}]")
         if d_id in delegates_to:
             raise AgentManifestError(f"{where}.delegatesTo: duplicate {d_id!r}")
         delegates_to.append(d_id)

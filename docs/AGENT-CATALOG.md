@@ -293,7 +293,7 @@ A minimal, complete manifest:
 | `capabilities` | Yes | Non-empty list of `{ id, contractVersion }`: the contracts this agent implements. A capability that also names an `instruction` is a mode; see [Modes](#modes). |
 | `provenance` | Yes | `{ publisher, license?, trust? }`; `trust` is one of `built-in`, `global`, `imported`. |
 | `purpose`, `roles` | | One-line description and display roles. |
-| `delegatesTo` | | Other `agent.` ids this agent may call, in preference order. An entry `{ "id", "capabilities": [...] }` delegates only those capabilities of that agent. A preference only: it grants nothing and never adds or imports anything. |
+| `delegatesTo` | | Other `agent.` ids this agent may call, in preference order. An entry `{ "id", "capabilities": [...] }` delegates only those capabilities of that agent. An entry may name the agent itself only in that form, with capabilities that are its own [modes](#modes). A preference only: it grants nothing and never adds or imports anything. |
 | `requiresAgents` | | A subset of `delegatesTo`: the agents this one cannot work without. See [Required agents](#required-agents). |
 | `prompts` | | Prompt files by package-relative `path`, `sha256`, and declared `variables`. Absolute paths and `..` are rejected. |
 | `compatibleTargets` | | Where the agent can attach: `{ kind: node\|canvas\|connection, requires: [...] }`. For `node`, `requires` lists the node kinds it accepts, such as `data-loading`; empty means any node. |
@@ -332,6 +332,14 @@ A capability can run an instruction of its own. Add the prompt under `prompts` a
 ```
 
 When another agent delegates `node.output.interpret`, the run uses `prompts/interpret_output.md` in place of the `instruction` prompt, and receives the [catalog settings](#catalog-settings) named in that capability's `requiredConfig` as well as those in `inputs.requiredConfig`. An attached run, and a delegated run of a capability without an `instruction` of its own, uses the `instruction` prompt. A setting key Curio does not define is skipped.
+
+An agent can also hand work to one of its own modes. List the agent itself in `delegatesTo`, naming only those capabilities:
+
+```json
+"delegatesTo": [{ "id": "agent.my-explainer", "capabilities": ["node.output.interpret"] }]
+```
+
+A chat with the agent then runs the `instruction` prompt, and when the model asks for `node.output.interpret`, that mode runs as a second call, with no tools, and its answer comes back to the chat. A task for no node opens no chat of its own: it shows in the agent's reply.
 
 A definition that declares `node.content.generate` may also declare an `autk-grammar` prompt. A run that writes an Autark document on a provider that takes a reply schema uses it in place of the capability's instruction, and holds the reply to the Autark schema. Without that prompt, its runs are never held to the schema.
 
