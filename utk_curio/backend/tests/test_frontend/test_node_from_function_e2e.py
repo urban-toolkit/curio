@@ -2,9 +2,10 @@
 
 SCOUT's Compute Catalog, the Curio way. The Node Catalog drawer's **New node
 from a Python function** lists the functions of the modules installed
-packages ship. This picks ``season_factor`` in ``scout_shadow.deep_umbra``,
-a module of the shipped, read-only ``scout.shadow@1`` package, gives its one
-parameter a text widget, and creates the node in a new package. Then:
+packages ship. This picks ``season_factor`` in ``deep_umbra.deep_umbra``, a
+module of the shipped, read-only model package ``model.scout.deep-umbra@1``,
+gives its one parameter a text widget, and creates the node in a new package.
+Then:
 
 1. The node is in the palette with no reload, and its code imports the
    function and calls it with the widget's reference.
@@ -58,12 +59,12 @@ TILE = "#tile-computation-analysis"
 NODE_TYPE = "curio.builtin/computation-analysis"
 READER_CODE = "print(f'<<{input_0}>>')\nreturn input_0\n"
 
-SHADOW_DIR = "scout.shadow@1"
-MODULE = "scout_shadow.deep_umbra"
+SHADOW_DIR = "model.scout.deep-umbra@1"
+MODULE = "deep_umbra.deep_umbra"
 FUNCTION = "season_factor"
 LABEL = "Season factor"
 WRITTEN_CODE = (
-    "from scout_shadow.deep_umbra import season_factor\n"
+    "from deep_umbra.deep_umbra import season_factor\n"
     "\n"
     "return season_factor(season=[!! season !!])\n"
 )
@@ -218,7 +219,7 @@ def test_a_function_in_a_shipped_package_becomes_a_node_that_runs(
         created = package["dirName"]
         # The function's package is a dependency, not a library to pip-install.
         assert package["dependencies"]["packages"] == {SHADOW_DIR: "*"}, package["dependencies"]
-        assert "scout_shadow" not in package["dependencies"]["python"], package["dependencies"]
+        assert "deep_umbra" not in package["dependencies"]["python"], package["dependencies"]
         expect(dialog).to_have_count(0, timeout=30000)
 
         drawer.locator("header").get_by_role("button", name="Close Node Catalog drawer").click()

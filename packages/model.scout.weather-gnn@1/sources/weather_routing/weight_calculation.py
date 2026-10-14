@@ -4,7 +4,7 @@ Ported from SCOUT (https://github.com/urban-toolkit/scout),
 backend/models/routing/scripts/weight_calculation.py. What changed:
 
 - The graph network runs as an ONNX model through onnxruntime (``gnn_predict``),
-  the Model Catalog's model.scout.weather-gnn, in place of SCOUT's torch
+  this package's weights, model.scout.weather-gnn, in place of SCOUT's torch
   ``NodeRegressor`` loaded from rain_model.pth. Its inputs are the arrays SCOUT
   hands torch, as numpy arrays.
 - The edge weights are stored as Python floats. SCOUT computes them in float32
@@ -36,8 +36,8 @@ ZONE_MINUTES = 15
 
 
 def gnn_predict(model, x, edge_index):
-    """The graph network's five weather values at each node: the Model
-    Catalog's model.scout.weather-gnn, as ``curio_load_model`` returns it, run
+    """The graph network's five weather values at each node: this package's
+    model, model.scout.weather-gnn, as ``curio_load_model`` returns it, run
     on SCOUT's node features and edges. Its one output is ``prediction``."""
     (prediction,) = model.run({"x": x, "edge_index": edge_index})
     return prediction

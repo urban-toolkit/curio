@@ -1227,9 +1227,10 @@ jobs:
             # What a pip install keeps after downloading the files its package
             # leaves out (left_out_files.py): one release's folder under
             # .curio/fetched, which the boot's hardening closes as it closes
-            # models/. The boundary suite reads both files through staging.
+            # models/. The boundary suite reads both through staging: the
+            # Milan raster, and Deep Umbra's model package with its weights.
             release=.curio/fetched/0123456789abcdef0123456789abcdef01234567
-            for folder in "datasets/data.utk.milan-mrt@1" "models/model.scout.deep-umbra@1"; do
+            for folder in "datasets/data.utk.milan-mrt@1" "packages/model.scout.deep-umbra@1"; do
               mkdir -p "$release/$folder"
               cp -R "$folder/." "$release/$folder/"
             done

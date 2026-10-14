@@ -5,8 +5,8 @@ graph, `backend/data/osm/processed/chicago/roads.pkl.gz` (40 MB, a pickled
 networkx MultiDiGraph of 637,237 nodes and 741,271 edges), with five WRF weather
 files under `backend/models/routing/weather_data/` (393 MB). This script writes
 two cuts: the weather into the Data Catalog, each dataset with its manifest,
-and the roads as the scout.routing proof's test fixture (a Curio road graph
-comes from a Curio roads layer, so SCOUT's graph is not a dataset):
+and the roads as the model.scout.weather-gnn proof's test fixture (a Curio road
+graph comes from a Curio roads layer, so SCOUT's graph is not a dataset):
 
 - Weather, the NetCDF group `netcdf.scout-wrf`: the five variables (RAIN, T2, RH2,
   WSPD10, WDIR10), `data.scout.wrf-<variable>`, each still a NetCDF file of its
@@ -339,8 +339,8 @@ def weather_description(name, steps, cells, lat, lon):
         f"steps, 2025-07-06 00:00 to 2025-07-08 00:00 UTC, on its 1 km Lambert conformal grid, cut to the "
         f"{cells[0]} by {cells[1]} cells around SCOUT's Chicago road graph (latitude {lat[0]:.2f} to "
         f"{lat[1]:.2f}, longitude {lon[0]:.2f} to {lon[1]:.2f}). One of the five variables of the SCOUT WRF "
-        f"group the scout.routing package reads; its global attribute timezone ({TIMEZONE}) is the time zone "
-        f"the package reads a start time in. From SCOUT, {SCOUT_URL}, {ROUTING}/weather_data/{name}.nc, "
+        f"group the model.scout.weather-gnn package reads; its global attribute timezone ({TIMEZONE}) is the time "
+        f"zone the package reads a start time in. From SCOUT, {SCOUT_URL}, {ROUTING}/weather_data/{name}.nc, "
         f"{PERMISSION}."
     )
 

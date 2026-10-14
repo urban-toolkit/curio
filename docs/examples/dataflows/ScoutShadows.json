@@ -95,10 +95,10 @@
       },
       {
         "id": "f7786d1f-9f64-5bbe-b007-dff18db386c6",
-        "type": "scout.shadow/accumulated-shadow",
+        "type": "model.scout.deep-umbra/accumulated-shadow",
         "x": 1935,
         "y": 58,
-        "content": "\"\"\"Accumulated Shadow: SCOUT's Deep Umbra shadow model.\n\nInput: the height mosaic of Rasterize Buildings (scout.raster-conversion), or\nits (mosaic, tiles) output: building heights in metres in EPSG:3395 on the\nzoom-16 tile grid.\nOutput: the accumulated shadow in minutes, a raster on the input's grid. An\nAutark map draws it as input_0, band band_1. A Raster Statistics node gives its\nmean and median over the ground: the heights on its input_1 as the mask, with\nwhere=lambda height: height < 1.08.\nThe Widgets tab sets the season. The model is the Model Catalog's Deep Umbra,\nmodel.scout.deep-umbra.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_shadow.node_outputs import accumulated_shadow, open_model\n\nmodel = open_model(lambda: curio_load_model(\"model.scout.deep-umbra\"))\nreturn accumulated_shadow(input_0, season=[!! @season !!], model=model, output_file=curio_output_file)\n",
+        "content": "from deep_umbra import accumulated_shadow\nmodel = curio_load_model(\"model.scout.deep-umbra\")\nreturn accumulated_shadow(input_0, season=[!! @season !!], model=model, output_file=curio_output_file)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Predict the existing buildings' accumulated shadow with Deep Umbra.",
@@ -196,10 +196,10 @@
       },
       {
         "id": "a2c5b8ed-658d-52ea-8e5b-18041d9385de",
-        "type": "scout.shadow/accumulated-shadow",
+        "type": "model.scout.deep-umbra/accumulated-shadow",
         "x": 2580,
         "y": 430,
-        "content": "\"\"\"Accumulated Shadow: SCOUT's Deep Umbra shadow model.\n\nInput: the height mosaic of Rasterize Buildings (scout.raster-conversion), or\nits (mosaic, tiles) output: building heights in metres in EPSG:3395 on the\nzoom-16 tile grid.\nOutput: the accumulated shadow in minutes, a raster on the input's grid. An\nAutark map draws it as input_0, band band_1. A Raster Statistics node gives its\nmean and median over the ground: the heights on its input_1 as the mask, with\nwhere=lambda height: height < 1.08.\nThe Widgets tab sets the season. The model is the Model Catalog's Deep Umbra,\nmodel.scout.deep-umbra.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_shadow.node_outputs import accumulated_shadow, open_model\n\nmodel = open_model(lambda: curio_load_model(\"model.scout.deep-umbra\"))\nreturn accumulated_shadow(input_0, season=[!! @season !!], model=model, output_file=curio_output_file)\n",
+        "content": "from deep_umbra import accumulated_shadow\nmodel = curio_load_model(\"model.scout.deep-umbra\")\nreturn accumulated_shadow(input_0, season=[!! @season !!], model=model, output_file=curio_output_file)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Predict the remaining buildings' accumulated shadow with Deep Umbra.",
@@ -440,8 +440,8 @@
       }
     ],
     "packages": [
-      "scout.raster-conversion@1",
-      "scout.shadow@1"
+      "model.scout.deep-umbra@1",
+      "scout.raster-conversion@1"
     ],
     "datasets": [
       {

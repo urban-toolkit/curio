@@ -3,9 +3,10 @@
 SCOUT (https://github.com/urban-toolkit/scout) predicts accumulated shadow with a
 TensorFlow generator restored from
 `backend/compute/accumulated_shadow_simulation/tf_model/ckpt-44`. Curio runs the
-same generator as an ONNX file through onnxruntime: the Model Catalog model
-`model.scout.deep-umbra@1`, which the package `scout.shadow@1` runs, so Curio's
-environment never takes TensorFlow. This script made that file once, from a
+same generator as an ONNX file through onnxruntime: the weights of the model
+package `model.scout.deep-umbra@1` (`models/deep_umbra.onnx`), which its
+Accumulated Shadow node runs, so Curio's environment never takes TensorFlow.
+This script made that file once, from a
 SCOUT checkout, and checks it, and the package's port of SCOUT's code, against
 SCOUT's own code and SCOUT's committed results.
 
@@ -52,7 +53,7 @@ What it does:
      made with scrambled moving averages gives the same output, so the file
      cannot be using the moving averages;
    - the inputs the package's port builds with numpy and Pillow
-     (`packages/scout.shadow@1/sources/scout_shadow/deep_umbra.py`), against
+     (`packages/model.scout.deep-umbra@1/sources/deep_umbra/deep_umbra.py`), against
      SCOUT's TensorFlow-built inputs;
    - the tiles and the mean and median accumulated shadow the port's
      `run_shadow_model` writes with onnxruntime, against SCOUT's committed
@@ -83,7 +84,7 @@ import numpy as np
 from PIL import Image
 
 REPO = Path(__file__).resolve().parents[2]
-PORT_SOURCES = REPO / "packages" / "scout.shadow@1" / "sources"
+PORT = REPO / "packages" / "model.scout.deep-umbra@1" / "sources" / "deep_umbra" / "deep_umbra.py"
 
 SCOUT_COMMIT = "b98369e50b2972c0fc22180f56da0ac99a98a545"
 MODEL_DIR = "backend/compute/accumulated_shadow_simulation"
@@ -142,13 +143,15 @@ MODE_SEPARATION = 0.5  # ONNX against TensorFlow training=False must differ by m
 
 
 def load_port():
-    """The package's port of SCOUT's ``deep_umbra.py``, ``scout_shadow.deep_umbra``,
-    imported without writing bytecode into ``packages/``."""
+    """The package's port of SCOUT's ``deep_umbra.py`` (``deep_umbra.deep_umbra``),
+    loaded from its file alone: the package's module also imports the node's
+    input and output code, which needs Curio, and this environment is SCOUT's.
+    No bytecode is written into ``packages/``."""
     sys.dont_write_bytecode = True
-    sys.path.insert(0, str(PORT_SOURCES))
-    from scout_shadow import deep_umbra
-
-    return deep_umbra
+    spec = importlib.util.spec_from_file_location("deep_umbra_port", PORT)
+    port = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(port)
+    return port
 
 
 def port_inputs(port, folder, season, zoom, i, j):

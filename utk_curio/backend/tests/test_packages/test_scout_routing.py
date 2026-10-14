@@ -1,4 +1,9 @@
-"""``scout.routing@1``: SCOUT's weather-aware routing in Curio (#662, step 20).
+"""``model.scout.weather-gnn@1``: SCOUT's weather-aware routing in Curio (#662, step 20).
+
+The weather GNN is a model package: its weights under ``models/``, its node
+(Weather Routing, with its widgets) and its module ``weather_routing``. The
+package's license is its code's, MIT; the model block holds the weights'
+license, SCOUT's permission.
 
 The proof: the package's port of SCOUT's routing, on the cut of SCOUT's own road
 graph and the Data Catalog's SCOUT WRF group, gives what SCOUT's own
@@ -6,8 +11,8 @@ graph and the Data Catalog's SCOUT WRF group, gives what SCOUT's own
 ``scripts/scout/reference_routing.py`` in SCOUT's stack (``fixtures/scout_routing/``,
 see its ``ATTRIBUTION.md``). For each of SCOUT's eight recorded runs the weather
 GNN's input is the same bit for bit, the routes are the same node for node, and
-the metrics agree within 1e-3, with the GNN run as the Model Catalog's ONNX
-model ``model.scout.weather-gnn`` instead of torch. SCOUT's run starts at the weather
+the metrics agree within 1e-3, with the GNN run as the package's ONNX weights,
+``model.scout.weather-gnn``, instead of torch. SCOUT's run starts at the weather
 step SCOUT read (``time_index``), so the proof feeds that step.
 
 SCOUT's bugs the port fixes, each test pairing what SCOUT's run recorded with
@@ -43,10 +48,15 @@ from types import SimpleNamespace
 import pytest
 
 REPO = Path(__file__).resolve().parents[4]
-PACKAGE = REPO / "packages" / "scout.routing@1"
+GNN_ID = "model.scout.weather-gnn"
+PACKAGE = REPO / "packages" / f"{GNN_ID}@1"
 SOURCES = PACKAGE / "sources"
-MODULE = "scout_routing"
-NODE_TYPE = "scout.routing/weather-routing"
+MODULE = "weather_routing"
+NODE_TYPE = "model.scout.weather-gnn/weather-routing"
+#: The weights' license and publisher, in the model block; the code is MIT.
+WEIGHTS_LICENSE = "Used with the permission of SCOUT's authors"
+WEIGHTS_PUBLISHER = "SCOUT (urban-toolkit/scout)"
+SCOUT = "https://github.com/urban-toolkit/scout"
 PYTHON_TYPE = "curio.builtin/computation-analysis"
 DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "WeatherRouting.json"
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scout_routing"
@@ -63,8 +73,6 @@ WEATHER_IDS = {
     "WDIR10": "data.scout.wrf-wdir10",
     "RH2": "data.scout.wrf-rh2",
 }
-GNN_ID = "model.scout.weather-gnn"
-GNN_DIR = REPO / "models" / f"{GNN_ID}@1"
 SCOUT_COMMIT = "b98369e50b2972c0fc22180f56da0ac99a98a545"
 #: SCOUT's recorded runs, each one process (``loader-time`` is two calls in one).
 CASES = ["default", "custom-k1", "custom-k2", "custom-k3", "single-factor", "default-later",
@@ -92,9 +100,12 @@ EXAMPLE = {
 EXAMPLE_WEIGHTS = {"avoid-rain": (0.85834, 0.01657), "avoid-wind": (0.01657, 0.85834)}
 
 
+def _manifest() -> dict:
+    return json.loads((PACKAGE / "manifest.json").read_text(encoding="utf-8"))
+
+
 def _template() -> dict:
-    manifest = json.loads((PACKAGE / "manifest.json").read_text(encoding="utf-8"))
-    (template,) = manifest["templates"]
+    (template,) = _manifest()["templates"]
     return template
 
 
@@ -121,16 +132,15 @@ def _weather() -> dict:
 
 
 def _gnn_file() -> Path:
-    manifest = json.loads((GNN_DIR / "manifest.json").read_text(encoding="utf-8"))
-    return GNN_DIR / manifest["entry"]
+    return PACKAGE / _manifest()["model"]["entry"]
 
 
 def _model():
     """The weather GNN as the node gets it: what ``curio_load_model`` returns
-    for ``model.scout.weather-gnn``."""
+    for ``model.scout.weather-gnn``, the package's folder."""
     from utk_curio.sandbox.util.catalog_helpers import CurioModel
 
-    return CurioModel(GNN_ID, str(GNN_DIR))
+    return CurioModel(GNN_ID, str(PACKAGE))
 
 
 def _scout_graph():
@@ -517,22 +527,69 @@ def test_the_template_declares_the_widgets_its_source_reads():
 
 def test_the_template_reads_the_wrf_group_and_the_gnn_by_id():
     """The weather is the Data Catalog's WRF group, read by dataset id; the GNN
-    is a Model Catalog model, named by a literal ``curio_load_model`` call."""
+    is the package's own model, named by its id in a literal
+    ``curio_load_model`` call, and the code is the package's module's."""
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code, model_ids_in_code
-    from utk_curio.backend.app.model_catalog.domain.manifest import load_manifest
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
-    assert sorted(dataset_ids_in_code(_source())) == sorted(WEATHER_IDS.values())
-    assert model_ids_in_code(_source()) == [GNN_ID]
+    source = _source()
+    assert source.startswith(f"from {MODULE} import calculate_weather_route\n"), source
+    assert f'model = curio_load_model("{GNN_ID}")\n' in source
+    assert sorted(dataset_ids_in_code(source)) == sorted(WEATHER_IDS.values())
+    assert model_ids_in_code(source) == [GNN_ID]
     for name, dataset_id in WEATHER_IDS.items():
         manifest = json.loads((REPO / "datasets" / f"{dataset_id}@1" / "manifest.json").read_text(encoding="utf-8"))
         assert (manifest["format"], manifest["groupId"], manifest["layerName"]) == ("netcdf", "netcdf.scout-wrf", name)
         assert (manifest["publisher"], manifest["license"]) == ("SCOUT (urban-toolkit/scout)", "")
         assert "used with the permission of SCOUT's authors" in manifest["description"]
-    gnn = load_manifest(GNN_DIR)
-    assert (gnn.runtime, gnn.task, gnn.labels, gnn.input) == ("onnx", "node-regression", (), None)
-    assert gnn.publisher == "SCOUT (urban-toolkit/scout)"
-    assert "SCOUT's authors" in gnn.license
+    manifest = load_package_manifest(PACKAGE)
+    gnn = manifest.model
+    assert (manifest.package_id, manifest.kind) == (GNN_ID, "model")
+    assert (gnn.runtime, gnn.type, gnn.entry, gnn.labels, gnn.input) == (
+        "onnx", "node-regression", "models/weather_gnn.onnx", (), None,
+    )
+    assert gnn.size_bytes == _gnn_file().stat().st_size
     assert not (REPO / "datasets" / "data.scout.weather-gnn@1").exists()
+
+
+def test_the_package_is_a_model_package_whose_code_and_weights_have_their_own_licenses():
+    """The package's license is its code's, MIT, published by Curio, which
+    ported it; its model block holds the weights' license, SCOUT's permission,
+    with SCOUT as their publisher. It is read-only, it validates against the
+    node-package schema, and the package and Model Catalog folders it replaces
+    are gone."""
+    from jsonschema import Draft202012Validator
+
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+
+    schema = json.loads((REPO / "docs" / "schemas" / "node-package.v4.json").read_text(encoding="utf-8"))
+    Draft202012Validator(schema).validate(_manifest())
+    manifest = load_package_manifest(PACKAGE)
+    assert (manifest.package_id, manifest.kind, manifest.license, manifest.publisher, manifest.read_only) == (
+        GNN_ID, "model", "MIT", "Curio", True,
+    )
+    gnn = manifest.model
+    assert (gnn.license, gnn.publisher, gnn.homepage) == (WEIGHTS_LICENSE, WEIGHTS_PUBLISHER, SCOUT)
+    # The date the catalogs show: the day SCOUT's ports and models shipped.
+    assert _manifest()["createdAt"] == "2026-10-05T00:00:00Z"
+    assert not (REPO / "packages" / "scout.routing@1").exists()
+    assert not (REPO / "models" / f"{GNN_ID}@1").exists()
+
+
+def test_its_module_is_weather_routing_and_exports_the_cells_call(tmp_path):
+    """The plumbing is the package's one module, ``weather_routing`` (SCOUT's
+    routing, road graph and weights), with ``calculate_weather_route``, which
+    the cell imports, exported by the module itself."""
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+    from utk_curio.backend.app.packages.repositories.python_modules import module_names
+
+    assert module_names(PACKAGE, load_package_manifest(PACKAGE)) == frozenset({MODULE})
+    assert sorted(path.name for path in (SOURCES / MODULE).glob("*.py")) == [
+        "__init__.py", "calculate_isochrones.py", "road_graph.py", "weather_routing.py", "weight_calculation.py",
+    ]
+    with scout_routing(tmp_path) as m:
+        package = importlib.import_module(MODULE)
+        assert package.calculate_weather_route is m.routing.calculate_weather_route
 
 
 def test_the_gnn_takes_any_road_graph():
@@ -552,7 +609,7 @@ def test_the_gnn_takes_any_road_graph():
 
 
 def test_the_package_declares_the_libraries_it_imports():
-    manifest = json.loads((PACKAGE / "manifest.json").read_text(encoding="utf-8"))
+    manifest = _manifest()
     assert (manifest["license"], manifest["publisher"]) == ("MIT", "Curio")
     assert sorted(manifest["dependencies"]["python"]) == [
         "geopandas", "netCDF4", "networkx", "numpy", "onnxruntime", "osmnx", "pandas",
@@ -581,7 +638,8 @@ def test_the_shipped_dataflow_runs_the_template_with_the_shared_start_time():
     from utk_curio.backend.app.execution.code_references import resolve_references
 
     spec = _dataflow()
-    assert spec["packages"] == ["scout.routing@1"]
+    # The lockfile names the model package, so opening the dataflow adds it.
+    assert spec["packages"] == [f"{GNN_ID}@1"]
     assert sorted(ref["datasetId"] for ref in spec["datasets"]) == sorted(WEATHER_IDS.values())
     nodes = {n["id"]: n for n in spec["nodes"]}
     (parameter,) = [n for n in spec["nodes"] if n["type"] == "curio.builtin/parameter"]
@@ -779,11 +837,13 @@ def _loop_roads_frame_artifact():
 def run_node(workspace, *, fails=False, frame=False, **values):
     """Run the node's template, its widgets at *values*, on the Autark layers
     holding the Loop's roads (with *frame*, on the roads as one GeoDataFrame)
-    in the sandbox, in process, with the datasets and the model its code names
-    resolved: ``(artifact id, (routes, metrics))``, or with *fails* the node's
-    error text."""
+    in the sandbox, in process, with the datasets its code names resolved and
+    the model resolved as the backend resolves it for a run
+    (``packages.service.resolve_model_dirs``): ``(artifact id, (routes,
+    metrics))``, or with *fails* the node's error text."""
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code, model_ids_in_code
     from utk_curio.backend.app.execution.code_references import resolve_references
+    from utk_curio.backend.app.packages.service import resolve_model_dirs
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
     code, problems = resolve_references(_source(), _with_values(**values), "python", inputs=[{"slot": 0}])
@@ -792,7 +852,7 @@ def run_node(workspace, *, fails=False, frame=False, **values):
     result = _execute(
         code, artifact, NODE_TYPE, data_type, workspace,
         dataset_paths={i: str(_data_file(i)) for i in dataset_ids_in_code(code)},
-        models={i: str(REPO / "models" / f"{i}@1") for i in model_ids_in_code(code)},
+        models=resolve_model_dirs(None, model_ids_in_code(code)),
         package_modules={"root": str(SOURCES), "names": [MODULE]},
     )
     if fails:

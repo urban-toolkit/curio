@@ -4,8 +4,8 @@ The shipped test dataflow ``ScoutShadows.json``: SCOUT's Chicago Loop buildings
 (the Data Catalog dataset ``data.scout.loop-buildings``) and a season Parameter
 node are the fixed context. In "Existing", Rasterize Buildings
 (``scout.raster-conversion@1``) draws them into a zoom-16 height mosaic,
-Accumulated Shadow (``scout.shadow@1``) runs SCOUT's Deep Umbra model (the
-Model Catalog model ``model.scout.deep-umbra``) on it, in the season both scenarios share,
+Accumulated Shadow, the node of the model package ``model.scout.deep-umbra@1``,
+runs SCOUT's Deep Umbra model on it, in the season both scenarios share,
 and Raster Statistics (``curio.builtin@1``) takes the shadow's mean and median
 over the ground, the heights as its mask. "Towers removed" first removes the 15
 buildings SCOUT's second scenario removes. Two Compare Scenarios nodes read the
@@ -60,10 +60,10 @@ if TYPE_CHECKING:
     from .utils import FrontendPage
 
 DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "ScoutShadows.json"
-SHADOW_TYPE = "scout.shadow/accumulated-shadow"
+SHADOW_TYPE = "model.scout.deep-umbra/accumulated-shadow"
 STATISTICS_TYPE = "curio.builtin/raster-statistics"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
-PACKAGES = ("scout.raster-conversion@1", "scout.shadow@1")
+PACKAGES = ("model.scout.deep-umbra@1", "scout.raster-conversion@1")
 #: SCOUT's A_shadows_metric.csv and B_shadows_metric.csv.
 SCOUT_MEANS = {"existing": 128.63593, "towers-removed": 106.73111}
 

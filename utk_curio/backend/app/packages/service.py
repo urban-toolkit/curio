@@ -79,6 +79,7 @@ from utk_curio.backend.app.packages.builder.factory import FactoryError
 from utk_curio.backend.app.packages.application.store_install import (
     install_package_from_archive,
     install_package_from_directory,
+    remove_package,
     uninstall_package,
     export_package_archive,
 )
@@ -86,6 +87,8 @@ from utk_curio.backend.app.packages.application.starters import (
     generate_package_starters,
 )
 from utk_curio.backend.app.packages.application.model_packages import (
+    ListedModelPackage,
+    list_model_packages,
     resolve_model_dirs,
 )
 
@@ -146,6 +149,7 @@ __all__ = [
     "seed_dev_packages",
     "install_package_from_archive",
     "install_package_from_directory",
+    "remove_package",
     "uninstall_package",
     "export_package_archive",
     "agent_catalog_overview",
@@ -199,5 +203,7 @@ __all__ = [
     "input_capacity",
     "per_user_node_envs",
     "user_node_overlay_dir",
+    "ListedModelPackage",
+    "list_model_packages",
     "resolve_model_dirs",
 ]

@@ -354,7 +354,7 @@ class TestTheChildCanReachItsScratchDirectory(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             fetched = os.path.join(tmp, ".curio", "fetched")
-            files = os.path.join(fetched, "0" * 40, "models", "model.scout.deep-umbra@1", "files")
+            files = os.path.join(fetched, "0" * 40, "packages", "model.scout.deep-umbra@1", "models")
             os.makedirs(files)
             os.chmod(fetched, 0o755)
             source = os.path.join(files, "deep_umbra.onnx")

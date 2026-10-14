@@ -104,6 +104,14 @@ def _shipped_templates() -> set[str]:
     }
 
 
+def _shipped_model_ids() -> set[str]:
+    """The Model Catalog's models: those of its own folder, and the model
+    packages (kind ``model``), whose package id is the id node code loads."""
+    return {m["id"] for _d, m in _manifests("models")} | {
+        m["id"] for _d, m in _manifests("packages") if m.get("kind") == "model"
+    }
+
+
 def _injected_helpers() -> set[str]:
     """The ``curio_*`` names node code can call: the catalog helpers the sandbox
     installs (the renamed ones only raise), ``curio_secret``, which both
@@ -244,7 +252,7 @@ def test_every_helper_it_names_is_injected(name):
 def test_every_dataset_and_model_it_loads_ships(name):
     text = _text(name)
     datasets = {m["id"] for _d, m in _manifests("datasets")}
-    models = {m["id"] for _d, m in _manifests("models")}
+    models = _shipped_model_ids()
     missing = sorted(
         [i for _q, i in DATASET_PATH_CALL_RE.findall(text) if i not in datasets]
         + [i for _q, i in MODEL_CALL_RE.findall(text) if i not in models]
@@ -329,7 +337,7 @@ def test_every_helper_a_used_dataflow_names_is_injected(entry):
 def test_every_dataset_and_model_a_used_dataflow_loads_ships(entry):
     text = _node_text(entry)
     datasets = {m["id"] for _d, m in _manifests("datasets")}
-    models = {m["id"] for _d, m in _manifests("models")}
+    models = _shipped_model_ids()
     missing = sorted(
         [i for _q, i in DATASET_PATH_CALL_RE.findall(text) if i not in datasets]
         + [i for _q, i in MODEL_CALL_RE.findall(text) if i not in models]

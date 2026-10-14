@@ -3,7 +3,8 @@
 The shipped test dataflow ``WeatherRouting.json``: an Autark node that loads the
 Chicago Loop's roads from the committed OpenStreetMap extract, a start-time
 Parameter node, and two scenarios, "Avoid rain" and "Avoid wind" (its copy),
-each holding the ``scout.routing@1`` package's Weather Routing node with its
+each holding the Weather Routing node of the model package
+``model.scout.weather-gnn@1`` with its
 weights, which reads the Autark node's roads layer through its layer chip
 ``[!! input_0:table_osm_roads !!]``, then a node that takes its routes and one
 that takes their metrics. An
@@ -63,8 +64,8 @@ if TYPE_CHECKING:
     from .utils import FrontendPage
 
 DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "WeatherRouting.json"
-PACKAGE_DIR = "scout.routing@1"
-ROUTING_TYPE = "scout.routing/weather-routing"
+PACKAGE_DIR = "model.scout.weather-gnn@1"
+ROUTING_TYPE = "model.scout.weather-gnn/weather-routing"
 AUTARK_TYPE = "curio.builtin/autk-grammar"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
 SCENARIOS = {"avoid-rain": ("Avoid rain", "#2a9d8f"), "avoid-wind": ("Avoid wind", "#e76f51")}

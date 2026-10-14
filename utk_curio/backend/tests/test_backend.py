@@ -460,7 +460,7 @@ class TestMissingModuleReporting(unittest.TestCase):
         }
         mock_session.post.return_value = mock_response
         # The premise, stated rather than assumed of the environment: nothing
-        # installed provides sklearn (scout.routing@1 installs scikit-learn).
+        # installed provides sklearn (model.scout.weather-gnn@1 installs scikit-learn).
         with patch(
             "utk_curio.backend.app.packages.infrastructure.pip_runner.distributions_for_module",
             return_value=[],

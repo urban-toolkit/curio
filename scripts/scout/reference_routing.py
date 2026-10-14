@@ -5,7 +5,7 @@ SCOUT (https://github.com/urban-toolkit/scout) routes with
 This script runs that function, unchanged, in a throwaway environment with
 SCOUT's stack (the one export_weather_gnn.py lists), on the road graph and
 weather that crop_routing_data.py cuts, and records what it returns and the files
-it writes as the JSON fixture Curio's `scout.routing@1` proof compares with.
+it writes as the JSON fixture Curio's `model.scout.weather-gnn@1` proof compares with.
 
 SCOUT's function reads fixed paths under its backend folder, so the script lays
 one out per run, in a work folder:

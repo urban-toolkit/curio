@@ -21,17 +21,28 @@
       "shapely": ">=2.0"
     }
   },
-  "description": "SCOUT's weather-aware routing, ported from SCOUT (urban-toolkit/scout): the Weather Routing node finds routes between two points over a roads layer, weighing each road by the weather SCOUT's graph network predicts on it from a WRF forecast, and gives each route's duration, distance and rain and wind exposure.",
-  "id": "scout.routing",
+  "description": "SCOUT's weather graph network and weather-aware routing, ported from SCOUT (urban-toolkit/scout): two GraphSAGE layers and a linear head predict the rain, temperature, humidity and wind at every node of a road graph from a WRF forecast. Its Weather Routing node weighs each road of a roads layer by them and finds routes between two points, with each route's duration, distance and rain and wind exposure. The weights are SCOUT's rain_model.pth, exported to ONNX by scripts/scout/export_weather_gnn.py.",
+  "id": "model.scout.weather-gnn",
+  "kind": "model",
   "license": "MIT",
-  "name": "SCOUT Routing",
+  "model": {
+    "entry": "models/weather_gnn.onnx",
+    "homepage": "https://github.com/urban-toolkit/scout",
+    "labels": [],
+    "license": "Used with the permission of SCOUT's authors",
+    "publisher": "SCOUT (urban-toolkit/scout)",
+    "runtime": "onnx",
+    "sizeBytes": 52437,
+    "type": "node-regression"
+  },
+  "name": "SCOUT weather GNN (weather at road nodes)",
   "permissions": [],
   "publisher": "Curio",
   "readOnly": true,
   "templates": [
     {
       "category": "computation",
-      "description": "SCOUT's weather-aware routing. Input: the layers an Autark node loads from OpenStreetMap, whose roads layer, table_osm_roads, the node reads through its layer chip as a GeoDataFrame of road lines (with highway, and oneway and maxspeed where known), or such a GeoDataFrame on its own. The routes run inside its bounds. The node predicts the rain, temperature, humidity and wind at every road node with SCOUT's weather graph network (the Model Catalog's model.scout.weather-gnn) from the WRF forecast in the Data Catalog (the SCOUT WRF group) at the start time, weighs each road by them, and finds the mode's routes: Default weights, the fastest route and the weather-weighted one; Custom weights, the K routes that weigh rain most, the K that weigh wind most, and the fastest; Single-factor weights, one route per factor, and the fastest. Output: (routes, metrics): a GeoDataFrame with one line per route and its distance_m (metres), duration_minutes and rain, heat, wind and humidity exposure, which an Autark map draws; and the same routes as a table, with distance in km and duration in minutes, which Compare Scenarios charts.",
+      "description": "SCOUT's weather-aware routing. Input: the layers an Autark node loads from OpenStreetMap, whose roads layer, table_osm_roads, the node reads through its layer chip as a GeoDataFrame of road lines (with highway, and oneway and maxspeed where known), or such a GeoDataFrame on its own. The routes run inside its bounds. The node predicts the rain, temperature, humidity and wind at every road node with this package's weather graph network, model.scout.weather-gnn, from the WRF forecast in the Data Catalog (the SCOUT WRF group) at the start time, weighs each road by them, and finds the mode's routes: Default weights, the fastest route and the weather-weighted one; Custom weights, the K routes that weigh rain most, the K that weigh wind most, and the fastest; Single-factor weights, one route per factor, and the fastest. Output: (routes, metrics): a GeoDataFrame with one line per route and its distance_m (metres), duration_minutes and rain, heat, wind and humidity exposure, which an Autark map draws; and the same routes as a table, with distance in km and duration in minutes, which Compare Scenarios charts. The Widgets tab sets the origin and destination, the mode, K, the start time (local time where the weather is, Chicago) and the rain and wind weights.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,

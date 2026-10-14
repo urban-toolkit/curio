@@ -1,13 +1,14 @@
 """Deep Umbra on a pip install: listed, then fetched the first time a node runs it.
 
-The pip package leaves out Deep Umbra's graph (``models/model.scout.deep-umbra@1/
-files/deep_umbra.onnx``, one of the files ``datasets/infrastructure/
-left_out_files.json`` lists) and keeps its manifest. So a pip install's Model
-Catalog lists the model, and a node that runs it gets a folder holding both
-the manifest and the graph, fetched from GitHub on that first run, as
-``curio_load_model`` and the isolated sandbox's staging read a model folder.
+The pip package leaves out Deep Umbra's weights (``packages/model.scout.deep-umbra@1/
+models/deep_umbra.onnx``, one of the files ``datasets/infrastructure/
+left_out_files.json`` lists) and keeps the rest of its model package. So a pip
+install's Model Catalog lists the model, and a node that runs it gets a folder
+holding the package's manifest and the weights, fetched from GitHub on that
+first run, as ``curio_load_model`` and the isolated sandbox's staging read a
+model folder.
 
-No test opens a socket (``FakeGitHub``); the module under test is imported
+No test opens a socket (``FakeGitHub``); the code under test is imported
 inside each test.
 """
 
@@ -28,8 +29,8 @@ from utk_curio.backend.tests._support.left_out_files import (
 )
 
 MODEL_ID = "model.scout.deep-umbra"
-FOLDER = "models/model.scout.deep-umbra@1"
-GRAPH = f"{FOLDER}/files/deep_umbra.onnx"
+FOLDER = "packages/model.scout.deep-umbra@1"
+WEIGHTS = f"{FOLDER}/models/deep_umbra.onnx"
 CLONE = "https://github.com/urban-toolkit/curio"
 
 
@@ -40,17 +41,16 @@ def auth(user_and_token):
 
 
 @pytest.fixture()
-def pip_models(tmp_path, monkeypatch):
-    """The Model Catalog as a pip install has it: Deep Umbra's folder without
-    its graph, and the release's record of the graph."""
+def pip_packages(tmp_path, monkeypatch):
+    """The package catalog as a pip install has it: Deep Umbra's model package
+    without its weights, and the release's record of them."""
     from utk_curio.backend.app.datasets.infrastructure import left_out_files
-    from utk_curio.backend.app.model_catalog.infrastructure import storage
 
     root = tmp_path / "site-packages"
     catalog_copy(FOLDER, root)
-    monkeypatch.setenv(storage.ENV_ROOT, str(root / "models"))
-    monkeypatch.setattr(left_out_files, "RECORD_PATH", write_record(tmp_path / "record.json", [GRAPH]))
-    assert (root / FOLDER / "manifest.json").is_file() and not (root / GRAPH).exists()
+    monkeypatch.setenv("CURIO_PACKAGES_ROOT", str(root / "packages"))
+    monkeypatch.setattr(left_out_files, "RECORD_PATH", write_record(tmp_path / "record.json", [WEIGHTS]))
+    assert (root / FOLDER / "manifest.json").is_file() and not (root / WEIGHTS).exists()
     return root
 
 
@@ -79,7 +79,7 @@ def _run(client, auth):
     })
 
 
-def test_the_model_catalog_lists_a_left_out_model_before_fetching_it(pip_models, monkeypatch):
+def test_the_model_catalog_lists_a_left_out_model_before_fetching_it(pip_packages, monkeypatch):
     from utk_curio.backend.app.model_catalog.service import ModelCatalogService
 
     github = FakeGitHub().serve(monkeypatch)
@@ -88,13 +88,13 @@ def test_the_model_catalog_lists_a_left_out_model_before_fetching_it(pip_models,
 
     assert MODEL_ID in items, sorted(items)
     assert items[MODEL_ID]["origin"] == "shipped"
-    assert items[MODEL_ID]["sizeBytes"] == (REPO / GRAPH).stat().st_size
+    assert items[MODEL_ID]["sizeBytes"] == (REPO / WEIGHTS).stat().st_size
     assert github.urls == []
 
 
-def test_a_node_fetches_a_left_out_model_into_a_folder_it_loads(client, auth, pip_models, monkeypatch):
+def test_a_node_fetches_a_left_out_model_into_a_folder_it_loads(client, auth, pip_packages, monkeypatch):
     from utk_curio.backend.app.datasets.infrastructure import left_out_files
-    from utk_curio.backend.app.model_catalog.domain.manifest import load_manifest
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
     github = FakeGitHub().serve(monkeypatch)
     sent = _capture_sandbox(monkeypatch)
@@ -107,15 +107,15 @@ def test_a_node_fetches_a_left_out_model_into_a_folder_it_loads(client, auth, pi
     folder = Path(sent[0]["models"][MODEL_ID])
     assert sent[1]["models"][MODEL_ID] == str(folder)
     assert folder == left_out_files.fetched_root(COMMIT) / FOLDER
-    assert (folder / "files" / "deep_umbra.onnx").read_bytes() == (REPO / GRAPH).read_bytes()
+    assert (folder / "models" / "deep_umbra.onnx").read_bytes() == (REPO / WEIGHTS).read_bytes()
     assert (folder / "manifest.json").read_bytes() == (REPO / FOLDER / "manifest.json").read_bytes()
-    manifest = load_manifest(folder)
-    assert (manifest.id, manifest.entry) == (MODEL_ID, "files/deep_umbra.onnx")
+    manifest = load_package_manifest(folder)
+    assert (manifest.package_id, manifest.model.entry) == (MODEL_ID, "models/deep_umbra.onnx")
     # Fetched on the first run only.
-    assert github.urls == [url_of(GRAPH)]
+    assert github.urls == [url_of(WEIGHTS)]
 
 
-def test_a_failed_model_download_fails_the_node_with_what_failed(client, auth, pip_models, monkeypatch):
+def test_a_failed_model_download_fails_the_node_with_what_failed(client, auth, pip_packages, monkeypatch):
     """The node fails with the download's own error, and the sandbox is not
     asked to run it."""
     FakeGitHub(fail=OSError("Network is unreachable")).serve(monkeypatch)
@@ -126,6 +126,6 @@ def test_a_failed_model_download_fails_the_node_with_what_failed(client, auth, p
     assert resp.status_code == 200, resp.get_data(as_text=True)
     reply = resp.get_json()
     assert not reply["output"].get("path"), reply
-    for words in (GRAPH, url_of(GRAPH), "Network is unreachable", CLONE):
+    for words in (WEIGHTS, url_of(WEIGHTS), "Network is unreachable", CLONE):
         assert words in reply["stderr"], reply["stderr"]
     assert sent == []

@@ -81,6 +81,29 @@ def test_the_resolver_names_a_missing_model():
         model_folder("b")
 
 
+def test_a_missing_model_says_where_a_model_that_ships_comes_from():
+    """The backend gives no folder for a model it cannot have, among them a
+    model that ships with Curio whose weights a pip install could not
+    download: the message says how a pip install gets them and where a clone
+    holds them, after the drag, and names no folder to copy by hand."""
+    with pytest.raises(RuntimeError) as raised:
+        make_model_folder({})("model.scout.deep-umbra")
+    message = str(raised.value)
+    assert message.startswith(
+        "Model 'model.scout.deep-umbra' is not available in this environment - "
+        "drag a model from the Model Catalog onto this node, then run it again. "
+    ), message
+    for words in (
+        "this Curio could not give it to the node",
+        "A pip install downloads",
+        "from GitHub the first time a node runs it",
+        "raw.githubusercontent.com",
+        "a clone of https://github.com/urban-toolkit/curio holds them in packages/",
+    ):
+        assert words in message, message
+    assert "copy" not in message, message
+
+
 def test_a_staged_name_is_joined_to_scratch(scratch):
     assert make_model_folder({"a": "model_0"}, base=str(scratch))("a") == os.path.join(str(scratch), "model_0")
 

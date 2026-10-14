@@ -35,9 +35,6 @@ from utk_curio.sandbox.util.rasters import mosaic_rasters, tile_bounds
 
 from .deep_umbra import TILE, predict_shadow, season_factor, shadow_fraction
 
-#: The Model Catalog model that is Deep Umbra, an ONNX graph.
-MODEL_ID = "model.scout.deep-umbra"
-
 #: What Deep Umbra was trained on: zoom-16 tiles where 255 is 550 m.
 DEEP_UMBRA_ZOOM = 16
 DEEP_UMBRA_MAX_HEIGHT = 550.0
@@ -52,14 +49,6 @@ EQUATOR_METRES = 2.0 * math.pi * 6378137.0
 #: How far, in cells, a raster's corner may sit from a tile corner.
 GRID_SLACK = 0.01
 
-MISSING_MODEL = (
-    f"Accumulated Shadow runs SCOUT's Deep Umbra model, the Model Catalog model "
-    f"{MODEL_ID}@1, and this Curio could not give it to the node. A pip install "
-    "downloads it from GitHub the first time the node runs, which needs this machine "
-    "to reach raw.githubusercontent.com; a clone of https://github.com/urban-toolkit/curio "
-    f"holds it in models/{MODEL_ID}@1. Then run this node again."
-)
-
 NOT_A_HEIGHT_RASTER = (
     "Accumulated Shadow reads a raster of building heights: connect the output of "
     "Rasterize Buildings (scout.raster-conversion), or a raster of heights in metres "
@@ -67,18 +56,6 @@ NOT_A_HEIGHT_RASTER = (
 )
 
 _TO_4326 = Transformer.from_crs(3395, 4326, always_xy=True)
-
-
-def open_model(load):
-    """The Deep Umbra model *load* returns, or :data:`MISSING_MODEL` when the
-    backend gave the node no folder for it. *load* is the node's
-    ``lambda: curio_load_model("model.scout.deep-umbra")``."""
-    try:
-        return load()
-    except RuntimeError as error:
-        if f"'{MODEL_ID}' is not available" not in str(error):
-            raise
-        raise RuntimeError(MISSING_MODEL) from None
 
 
 def _is_raster(value):
