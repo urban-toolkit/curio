@@ -148,3 +148,50 @@ describe("PackageCard - no publish control", () => {
     expect(button("Remove from project")).toBeTruthy();
   });
 });
+
+describe("PackageCard - dragged onto the canvas", () => {
+  // jsdom has no DataTransfer.
+  function fakeDataTransfer() {
+    const store = new Map<string, string>();
+    return {
+      effectAllowed: "",
+      dropEffect: "",
+      get types() {
+        return Array.from(store.keys());
+      },
+      setData: (type: string, value: string) => void store.set(type, value),
+      getData: (type: string) => store.get(type) ?? "",
+    } as unknown as DataTransfer;
+  }
+  const card = (container: HTMLElement) => container.querySelector("article[data-pkg-dir]") as HTMLElement;
+
+  it("drags a card whose package has one node, carrying that node", () => {
+    const { container } = render(
+      <PackageCard {...base} pkg={pkg({ templates: [{ id: "me.demo/demo@1", label: "Demo Node" }] } as never)} />,
+    );
+    expect(card(container)).toHaveAttribute("draggable", "true");
+    const dataTransfer = fakeDataTransfer();
+    fireEvent.dragStart(card(container), { dataTransfer });
+    expect(dataTransfer.effectAllowed).toBe("copy");
+    // Required here, not imported, so the module's absence fails this test
+    // alone and not the whole suite.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { readPackageCardDragPayload } = require("../../services/packages/packageCardDrag");
+    expect(readPackageCardDragPayload(dataTransfer)).toMatchObject({
+      dirName: "me.demo@1",
+      nodeType: "me.demo/demo@1",
+      nodeLabel: "Demo Node",
+    });
+    fireEvent.dragEnd(card(container));
+  });
+
+  it("does not drag a card whose package has several nodes", () => {
+    const { container } = render(
+      <PackageCard
+        {...base}
+        pkg={pkg({ templates: [{ id: "me.demo/a@1", label: "A" }, { id: "me.demo/b@1", label: "B" }] } as never)}
+      />,
+    );
+    expect(card(container)).not.toHaveAttribute("draggable");
+  });
+});
