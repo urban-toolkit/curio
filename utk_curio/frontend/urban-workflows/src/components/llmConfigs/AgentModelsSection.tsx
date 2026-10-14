@@ -4,7 +4,7 @@ import styles from "./LlmConfigs.module.css";
 import type { LlmAgentRow, LlmListing } from "../../api/llmConfigsApi";
 
 /** The agents a Solve of the Dataflow Builder always runs, by name. */
-const SOLVE_RUNS = "Node Content Builder and Dataset Finder";
+const SOLVE_RUNS = "Node Builder and Dataset Finder";
 
 /** What "Default" means for this account right now. */
 function defaultLabel(listing: LlmListing): string {

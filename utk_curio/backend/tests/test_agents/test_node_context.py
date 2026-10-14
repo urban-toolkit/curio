@@ -182,8 +182,8 @@ class TestTheRunAndTheRenderTogether:
         assert runtime["render"]["status"] == "error"
         assert runtime["render"]["kind"] == "empty-render:no-input-rows"
         assert "0 rows" in runtime["render"]["message"]
-        # Both blocks carry only keys the Node Content Builder's instruction
-        # lists (``RUNTIME_BLOCK_KEYS``), in that order.
+        # Both blocks carry only keys the instruction of the Node Builder's
+        # content mode lists (``RUNTIME_BLOCK_KEYS``), in that order.
         order = node_context.RUNTIME_BLOCK_KEYS
         assert list(runtime) == [key for key in order if key in runtime]
         assert list(runtime["render"]) == [key for key in order if key in runtime["render"]]

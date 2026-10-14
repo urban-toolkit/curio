@@ -7,7 +7,7 @@ mirrored constant-for-constant — the frontend behavior's color logic. No
 caller re-implements color rules; forking this logic is the bug the memo
 forbids.
 
-Contract (dev/89 §3 "Node Researcher DOD profile"):
+Contract (dev/89 §3, the research notes' definition-of-done profile):
 
 * Named palette — ``yellow`` (default), ``pink``, ``blue``, ``green``,
   ``orange``, ``lavender`` — mapped centrally to design-token hex values.

@@ -27,9 +27,12 @@ class TestSolve:
     """dev/52 Solve (DEC-048): one authenticated batch, per-node digest
     guards, bounded children with all dev/48 guarantees, subset retry."""
 
-    NCB = "agent.node-content-builder@1.0.0"
+    #: Who writes a Solve's node content: the Node Builder, in its
+    #: node.content.generate mode.
+    WRITER = "agent.node-builder@1.0.0"
+    DFB = "agent.dataflow-builder@1.0.0"
 
-    def _applied_plan(self, client, user, token, project_id, monkeypatch, replies=None, install_ncb=True):
+    def _applied_plan(self, client, user, token, project_id, monkeypatch, replies=None, install_writer=True):
         helper = TestDataflowPlanMint()
         att_id, calls = helper._setup(client, user, token, project_id, monkeypatch, replies=replies)
         # dev/118 (DEC-075): Solve now RUNS every executable node. These
@@ -40,15 +43,15 @@ class TestSolve:
             lambda endpoint, payload: {"stdout": [], "stderr": "",
                                        "output": {"path": "art-1", "dataType": "dataframe"}},
         )
-        if install_ncb:
-            client.post(f"/api/agents/projects/{project_id}/install", json={"coord": self.NCB}, headers=_auth(token))
+        if install_writer:
+            client.post(f"/api/agents/projects/{project_id}/install", json={"coord": self.WRITER}, headers=_auth(token))
         else:
-            # dev/106: installing the Builder now brings the NCB along; the
-            # missing-specialist state is a legacy/hand-edited lockfile.
+            # dev/106: installing the Builder brings the Node Builder along;
+            # the missing-specialist state is a legacy/hand-edited lockfile.
             # dev/126: and DEC-080 repairs exactly that at the next action, so
             # a test about the reviewed install lane must also stand in for the
             # one case the repair cannot fix (see _block_closure_repair).
-            _drop_from_lockfile(user, project_id, self.NCB)
+            _drop_from_lockfile(user, project_id, self.WRITER)
             self._release_repair = _block_closure_repair(monkeypatch)
         r = helper._run(client, token, project_id, att_id)
         proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
@@ -102,6 +105,53 @@ class TestSolve:
             for d in solve_turn["execution"]["delegations"]
         )
 
+    def test_solve_needs_only_the_dataflow_builder_and_the_node_builder(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """Node content is the Node Builder's own mode, so a dataflow holding
+        just the two solves its computation nodes: every child is the Node
+        Builder running its content prompt, and nothing asks for an install."""
+        from utk_curio.backend.app.agents.domain import builtin
+        from utk_curio.backend.app.agents.infrastructure import providers
+        from utk_curio.backend.app.agents.repositories import project_agents
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        att_id, applied, _ = self._applied_plan(client, user, token, alice_project, monkeypatch)
+        key = _user_dir_key(user)
+        spec = projects_storage.read_spec(key, alice_project)
+        project_agents.set_project_agents(spec, [self.DFB, self.WRITER])
+        projects_storage.write_spec(key, alice_project, spec)
+        _block_closure_repair(monkeypatch)  # the two stay the two
+        prompts = []
+        inner = providers.run_chat_turn
+
+        def _recording(config, messages, **kwargs):
+            prompts.append(messages[0]["content"])
+            return inner(config, messages, **kwargs)
+
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _recording)
+        resp = self._solve(client, token, alice_project, att_id)
+        assert resp.status_code == 200, resp.get_json()
+        body = resp.get_json()
+        assert {r["status"] for r in body["results"].values()} == {"solved"}
+        assert "reason" not in body
+        spec = projects_storage.read_spec(key, alice_project)
+        assert sorted(project_agents.project_agents(spec)) == sorted([self.DFB, self.WRITER])
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        solve_turn = next(t for t in reversed(turns) if (t.get("text") or "").startswith("Solved"))
+        children = solve_turn["execution"]["delegations"]
+        assert len(children) == len(applied["nodes"])
+        assert {(c["coord"], c["capability"]) for c in children} == {(self.WRITER, "node.content.generate")}
+        assert all(p["type"] != "proposal" for p in solve_turn.get("content") or [])
+        mode_prompt = builtin.read_prompt_text(self.WRITER, "node.content.generate").strip()
+        chat_prompt = builtin.read_prompt_text(self.WRITER, "instruction").strip()
+        assert prompts and all(mode_prompt in p and chat_prompt not in p for p in prompts)
+
     def _child_config(self, client, token, label="Child", model="child-model"):
         body = {"label": label, "apiType": "openai_compatible", "baseUrl": "https://llm.example.com/v1",
                 "apiKey": "sk-child-key-0123456789", "model": model}
@@ -135,7 +185,7 @@ class TestSolve:
         user, token = user_and_token
         att_id, _, _ = self._applied_plan(client, user, token, alice_project, monkeypatch)
         child_config = self._child_config(client, token)
-        client.put("/api/agents/llm/assignments", json={"agent.node-content-builder": child_config},
+        client.put("/api/agents/llm/assignments", json={"agent.node-builder": child_config},
                    headers=_auth(token))
         seen = self._record_models(monkeypatch)
         resp = self._solve(client, token, alice_project, att_id)
@@ -161,7 +211,7 @@ class TestSolve:
         user, token = user_and_token
         att_id, _, _ = self._applied_plan(client, user, token, alice_project, monkeypatch)
         child_config = self._child_config(client, token)
-        client.put("/api/agents/llm/assignments", json={"agent.node-content-builder": child_config},
+        client.put("/api/agents/llm/assignments", json={"agent.node-builder": child_config},
                    headers=_auth(token))
         store = llm_configs.default_store()
         doc = store.read(_user_dir_key(user))
@@ -170,7 +220,7 @@ class TestSolve:
         seen = self._record_models(monkeypatch)
         resp = self._solve(client, token, alice_project, att_id)
         assert resp.status_code == 400
-        assert resp.get_json()["remedy"] == {"kind": "llm-config", "agentId": "agent.node-content-builder"}
+        assert resp.get_json()["remedy"] == {"kind": "llm-config", "agentId": "agent.node-builder"}
         assert seen == []
         cards = client.get(
             f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
@@ -187,13 +237,13 @@ class TestSolve:
         user, token = user_and_token
         att_id, _, _ = self._applied_plan(client, user, token, alice_project, monkeypatch)
         child_config = self._child_config(client, token)
-        client.put("/api/agents/llm/assignments", json={"agent.node-content-builder": child_config},
+        client.put("/api/agents/llm/assignments", json={"agent.node-builder": child_config},
                    headers=_auth(token))
 
         def _clear_after_first(n):
             if n == 1:  # the user clears the choice while the first node is generated
                 llm_configs.default_store().set_choice(
-                    _user_dir_key(user), "agent.node-content-builder", None
+                    _user_dir_key(user), "agent.node-builder", None
                 )
 
         seen = self._record_models(monkeypatch, on_call=_clear_after_first)
@@ -275,7 +325,7 @@ class TestSolve:
     def test_missing_specialist_fails_batch_with_one_install_proposal(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         att_id, applied, _ = self._applied_plan(
-            client, user, token, alice_project, monkeypatch, install_ncb=False,
+            client, user, token, alice_project, monkeypatch, install_writer=False,
         )
         body = self._solve(client, token, alice_project, att_id).get_json()
         assert all(r["status"] == "failed" for r in body["results"].values())
@@ -290,7 +340,7 @@ class TestSolve:
         # dev/106 D1: the proposal RIDES THE SOLVE TURN — the assertion whose
         # absence let an invisible proposal ship. One reason line, not six.
         assert body["reason"].startswith("specialist not installed")
-        assert "Node Content Builder" in body["reason"]
+        assert "Node Builder (agent.node-builder@1.0.0)" in body["reason"]
         turns = client.get(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
             headers=_auth(token),
@@ -308,7 +358,7 @@ class TestSolve:
         # The migration path for every pre-dev/106 project (edge 8).
         user, token = user_and_token
         att_id, applied, _ = self._applied_plan(
-            client, user, token, alice_project, monkeypatch, install_ncb=False,
+            client, user, token, alice_project, monkeypatch, install_writer=False,
         )
         body = self._solve(client, token, alice_project, att_id).get_json()
         failed = [nid for nid, r in body["results"].items() if r["status"] == "failed"]
@@ -327,7 +377,7 @@ class TestSolve:
         )
         assert r.status_code == 200, r.get_data(as_text=True)
         installed = client.get(f"/api/agents/projects/{alice_project}", headers=_auth(token)).get_json()["agents"]
-        assert self.NCB in {a["dirName"] for a in installed}
+        assert self.WRITER in {a["dirName"] for a in installed}
         retry = self._solve(client, token, alice_project, att_id, node_ids=failed).get_json()
         assert {r["status"] for r in retry["results"].values()} == {"solved"}
         assert "reason" not in retry
@@ -336,7 +386,7 @@ class TestSolve:
     def test_refused_install_mint_is_never_claimed_as_awaiting_review(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         att_id, applied, _ = self._applied_plan(
-            client, user, token, alice_project, monkeypatch, install_ncb=False,
+            client, user, token, alice_project, monkeypatch, install_writer=False,
         )
         monkeypatch.setattr(
             'utk_curio.backend.app.agents.application.proposals.mint._mint_project_install',
@@ -668,7 +718,7 @@ class TestProposeModeSolve:
         )
         client.post(
             f"/api/agents/projects/{alice_project}/install",
-            json={"coord": "agent.node-content-builder@1.0.0"}, headers=_auth(token),
+            json={"coord": "agent.node-builder@1.0.0"}, headers=_auth(token),
         )
         r = helper._run(client, token, alice_project, att_id)
         proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
@@ -992,7 +1042,7 @@ class TestSimulationDriver:
         )
         client.post(
             f"/api/agents/projects/{project_id}/install",
-            json={"coord": "agent.node-content-builder@1.0.0"}, headers=_auth(token),
+            json={"coord": "agent.node-builder@1.0.0"}, headers=_auth(token),
         )
         r = helper._run(client, token, project_id, att_id)
         proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
@@ -1188,7 +1238,7 @@ class TestValidateNode:
         )
         client.post(
             f"/api/agents/projects/{project_id}/install",
-            json={"coord": "agent.node-content-builder@1.0.0"}, headers=_auth(token),
+            json={"coord": "agent.node-builder@1.0.0"}, headers=_auth(token),
         )
         r = helper._run(client, token, project_id, att_id)
         proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
@@ -1382,7 +1432,7 @@ class TestSolveTraceHome:
         att_id, _ = helper._setup(
             client, user, token, project_id, monkeypatch, replies=replies,
         )
-        for coord in ("agent.node-content-builder@1.0.0", "agent.node-builder@1.0.0"):
+        for coord in ("agent.node-builder@1.0.0",):
             client.post(
                 f"/api/agents/projects/{project_id}/install",
                 json={"coord": coord}, headers=_auth(token),
@@ -1473,7 +1523,7 @@ class TestSolveTraceHome:
             client, user, token, alice_project, monkeypatch,
             replies=["Plan.\n" + helper._plan_tail(), "print('generated')"],
         )
-        for coord in ("agent.node-content-builder@1.0.0", "agent.node-builder@1.0.0"):
+        for coord in ("agent.node-builder@1.0.0",):
             client.post(
                 f"/api/agents/projects/{alice_project}/install",
                 json={"coord": coord}, headers=_auth(token),

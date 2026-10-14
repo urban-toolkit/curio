@@ -673,7 +673,7 @@ class TestRunContext:
     live-canvas inputs ride one provider message per send — fresh every time,
     never persisted, byte-identical runs without it."""
 
-    def _attach(self, client, token, project_id, coord="agent.node-content-builder@1.0.0"):
+    def _attach(self, client, token, project_id, coord="agent.node-builder@1.0.0"):
         r = client.put(
             f"/api/projects/{project_id}",
             json={"name": "p", "spec": {"dataflow": {"nodes": [{"id": "n1", "content": "x"}], "edges": [], "packages": []}}, "outputs": []},
@@ -816,8 +816,9 @@ class TestRunContext:
         cards = client.get(
             f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
         ).get_json()["attachments"]
-        # The dev/38 grounded mapping for Node Content Builder, verbatim.
-        assert cards[0]["reads"] == ["dataflowContext", "nodeId", "subtask", "workflowGoal"]
+        # The Node Builder's declared reads, verbatim: its chat's own, not its
+        # content mode's (dev/67-2).
+        assert cards[0]["reads"] == ["nodeIntent", "targetContext", "externalSelection"]
 
 
 class TestToolLoop:
@@ -943,8 +944,9 @@ class TestToolLoop:
             lambda c, m, **kw: "Fetch Title",
         )
         _, token = user_and_token
+        # The Researcher checks a fact in its own chat, with web.fetch.
         att_id = self._install_attach(
-            client, token, alice_project, "agent.node-researcher@1.0.0", {"kind": "canvas"},
+            client, token, alice_project, "agent.researcher@1.0.0", {"kind": "canvas"},
         )
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
@@ -977,7 +979,7 @@ class TestToolLoop:
         def _fake_stream(config, messages, usage_out=None, **kwargs):
             calls.append(messages)
             if len(calls) == 1:
-                yield '```curio.v1\n{"toolRequest": {"tool": "dataflow.read", "params": {}}}\n```'
+                yield '```curio.v1\n{"toolRequest": {"tool": "node.runtime.read", "params": {}}}\n```'
             else:
                 yield "Done without it."
 
@@ -989,9 +991,9 @@ class TestToolLoop:
             lambda c, m, **kw: "Ungranted Title",
         )
         _, token = user_and_token
-        # Node Researcher is not granted dataflow.read.
+        # The Researcher is not granted node.runtime.read.
         att_id = self._install_attach(
-            client, token, alice_project, "agent.node-researcher@1.0.0", {"kind": "canvas"},
+            client, token, alice_project, "agent.researcher@1.0.0", {"kind": "canvas"},
         )
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
@@ -999,7 +1001,7 @@ class TestToolLoop:
         )
         events = self._sse_events(r)
         tool_result = next(p for k, p in events if k == "tool_result")
-        assert tool_result == {"tool": "dataflow.read", "status": "refused"}
+        assert tool_result == {"tool": "node.runtime.read", "status": "refused"}
         assert "not granted" in calls[1][-1]["content"]
         turns = client.get(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
@@ -1046,16 +1048,16 @@ class TestToolLoop:
                 return "Title"
             calls.append(messages)
             if len(calls) == 1:
-                return '```curio.v1\n{"toolRequest": {"tool": "dataflow.read", "params": {}}}\n```'
+                return '```curio.v1\n{"toolRequest": {"tool": "node.runtime.read", "params": {}}}\n```'
             return "Done without it."
 
         monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         _, token = user_and_token
-        # Chat agent declares no tools → nothing granted.
-        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.node-researcher@1.0.0"}, headers=_auth(token))
+        # The Researcher declares no node.runtime.read, so it is not granted.
+        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.researcher@1.0.0"}, headers=_auth(token))
         att_id = client.post(
             f"/api/agents/projects/{alice_project}/attachments",
-            json={"coord": "agent.node-researcher@1.0.0", "target": {"kind": "canvas"}},
+            json={"coord": "agent.researcher@1.0.0", "target": {"kind": "canvas"}},
             headers=_auth(token),
         ).get_json()["attachmentId"]
         r = client.post(
@@ -1146,7 +1148,7 @@ class TestToolLoop:
         user, token = user_and_token
         self._save_node(client, token, alice_project, {"id": "n1", "content": "original"})
         att_id = self._install_attach(
-            client, token, alice_project, "agent.node-content-builder@1.0.0",
+            client, token, alice_project, "agent.node-builder@1.0.0",
             {"kind": "node", "targetId": "n1"},
         )
         r = client.post(
@@ -1578,8 +1580,8 @@ class TestOutputCapReachesTheProvider:
 class TestReuseLadder:
     """dev/93 D4 — the reuse ladder: reuse → ENLIST → author.
 
-    The live failure this class pins: a Researcher asked "what's the weather
-    in Paris?" reported "there is no installed notes template on your canvas"
+    The live failure this class pins: a Researcher asked one research question
+    and reported "there is no installed notes template on your canvas"
     and delegated package authoring TWICE in one run, producing two
     near-duplicate packages — while a perfectly good notes package sat in the
     user's store, invisible because this project's lockfile did not name it
@@ -1628,7 +1630,8 @@ class TestReuseLadder:
             monkeypatch=monkeypatch, replies=replies,
         )
 
-    def _run(self, client, token, project_id, att_id, message="what's the weather in Paris?"):
+    def _run(self, client, token, project_id, att_id,
+             message="how much do cool roofs lower summer surface temperatures in Chicago?"):
         return client.post(
             f"/api/agents/projects/{project_id}/attachments/{att_id}/run",
             json={"message": message}, headers=_auth(token),
@@ -2399,16 +2402,21 @@ class TestRosterGrantCoverage:
                 "leave it with no template vocabulary at all"
             )
 
-    def test_package_recommendation_run_carries_the_roster(
+    def test_the_package_install_lane_run_carries_the_roster(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
-        """It holds package.install and no node.create, so before commit 4 it
-        was the agent that would have been stranded."""
+        """The agent that proposes installing a package holds package.install
+        and no node.create, so before commit 4 it was the agent that would have
+        been stranded. That is the Package Builder's chat now."""
+        from utk_curio.backend.app.agents.domain import builtin
+
+        spec = builtin.get_builtin_spec("agent.package-builder@1.0.0")
+        assert "package.install" in spec.tools and "node.create" not in spec.tools
         helper = TestDataflowPlanMint()
         user, token = user_and_token
         att_id, calls = helper._setup(
             client, user, token, alice_project, monkeypatch,
-            replies=["noted"], coord="agent.package-recommendation@1.0.0",
+            replies=["noted"], coord="agent.package-builder@1.0.0",
         )
         helper._run(client, token, alice_project, att_id)
         assert "Available node templates" in calls[0][0]["content"]
@@ -3235,23 +3243,26 @@ class TestVerifiedDiscovery:
         user, token = user_and_token
         r = client.post(
             f"/api/agents/projects/{alice_project}/install",
-            json={"coord": "agent.node-researcher@1.0.0"}, headers=_auth(token),
+            json={"coord": "agent.researcher@1.0.0"}, headers=_auth(token),
         )
         assert r.status_code == 201
+        from utk_curio.backend.app.agents.application import tools
         from utk_curio.backend.app.agents.domain import builtin
 
-        m = builtin.get_builtin_manifest("agent.node-researcher@1.0.0")
-        assert [t.id for t in m.tools] == ["web.search", "web.fetch", "node.read"]
-        assert m.capability_ids == ["research.verify", "research.summarize"]
+        m = builtin.get_builtin_manifest("agent.researcher@1.0.0")
+        granted = tools.resolve_grants(m.tools)
+        for tool in ("web.search", "web.fetch", "node.read"):
+            assert tool in granted, tool
+        assert m.capability_ids == ["research.notes.compose", "research.verify"]
 
 
 class TestPackageRecommendationTools:
     """dev/84 — packages.catalog grounds recommendations in the real Nodes
     Catalog; package.install is the reviewed mutation over the existing
     package install flow (permissions dialog client-side, conflict re-check
-    and lockfile write server-side)."""
+    and lockfile write server-side). Both are the Package Builder's chat."""
 
-    COORD = "agent.package-recommendation@1.0.0"
+    COORD = "agent.package-builder@1.0.0"
     PKG = "curio.weather@1"
 
     @pytest.fixture(autouse=True)

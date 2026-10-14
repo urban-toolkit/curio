@@ -30,7 +30,8 @@ from utk_curio.backend.tests.test_agents.test_document_validation import (
 )
 from utk_curio.backend.tests.test_agents.test_verified_rounds import _drive, _Exec
 
-NCB = "agent.node-content-builder@1.0.0"
+#: Node content is the Node Builder's node.content.generate mode.
+NB = "agent.node-builder@1.0.0"
 KEY = "4343"
 PID = "p-reply-schema"
 
@@ -209,11 +210,29 @@ class TestWhenARunSendsOne:
         assert rs.for_run(_config(), KEY, rs.GRAMMAR_AUTK) is None
         assert rs.for_run(_config(model="another"), KEY, rs.GRAMMAR_AUTK) is not None
 
+    def test_node_builders_content_mode_carries_the_autark_schema(self, tmp_curio):
+        """The Node Builder took the content prompts over: its
+        node.content.generate mode runs new_content_prompt.md, and an Autark
+        document under the schema runs its Autark prompt instead. Its chat
+        and its other capabilities never ask for the schema."""
+        from utk_curio.backend.app.agents.domain import builtin
+
+        testing_provider.script_chat_capabilities(structured_output=True)
+        manifest = builtin.get_builtin_manifest(NB)
+        assert manifest.capability("node.content.generate").instruction == "node.content.generate"
+        assert manifest.prompts["node.content.generate"].path == "prompts/new_content_prompt.md"
+        assert manifest.prompts[rs.AUTK_PROMPT_KEY].path == "prompts/new_content_autk_prompt.md"
+        inputs = {"nodeType": AUTK}
+        reply = delegation._reply_schema(KEY, PID, manifest, "node.content.generate", inputs, _config())
+        assert reply is not None and reply.name == "autk_grammar_document"
+        for capability in ("node.build", "dataset.fetch.author"):
+            assert delegation._reply_schema(KEY, PID, manifest, capability, inputs, _config()) is None
+
     def test_a_definition_without_the_instruction_for_it_is_never_constrained(self, tmp_curio):
         from utk_curio.backend.app.agents.domain import builtin
 
         testing_provider.script_chat_capabilities(structured_output=True)
-        manifest = builtin.get_builtin_manifest(NCB)
+        manifest = builtin.get_builtin_manifest(NB)
         inputs = {"nodeType": AUTK}
         assert delegation._reply_schema(KEY, PID, manifest, "node.content.generate", inputs, _config())
         bare = dataclasses.replace(manifest, prompts={
@@ -224,7 +243,7 @@ class TestWhenARunSendsOne:
 
 def _delegate(inputs, config=None):
     return delegation.run_delegate(
-        KEY, PID, NCB, "node.content.generate", inputs, config or _config(),
+        KEY, PID, NB, "node.content.generate", inputs, config or _config(),
         parent_execution_id="parent", parent_coord="agent.dataflow-builder@1.0.0", attachment_id=None,
     )
 
@@ -299,7 +318,7 @@ class TestADelegatedDocument:
         testing_provider.push_replies(json.dumps(refused), json.dumps(fixed))
         node = {"id": "n1", "type": AUTK, "goal": "map the points", "content": ""}
         spec = projects_storage.read_spec(KEY, PID)
-        resolution = delegation.Resolution("ok", NCB, builtin.get_builtin_manifest(NCB))
+        resolution = delegation.Resolution("ok", NB, builtin.get_builtin_manifest(NB))
         with app.test_request_context():
             events, outcome = _drive(services._verified_content_rounds(
                 KEY, PID, spec=spec, node=node, resolution=resolution, config=_config(),

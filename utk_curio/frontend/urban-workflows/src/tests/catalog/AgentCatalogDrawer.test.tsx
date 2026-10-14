@@ -341,8 +341,8 @@ describe("AgentCatalogDrawer", () => {
           name: "Dataflow Builder",
           category: "canvas",
           requiresAgents: [{
-            id: "agent.node-content-builder", name: "Node Content Builder",
-            coord: "agent.node-content-builder@1.0.0", visible: true, installedInProject: false,
+            id: "agent.node-builder", name: "Node Builder",
+            coord: "agent.node-builder@1.0.0", visible: true, installedInProject: false,
           }],
         }),
       ],
@@ -350,9 +350,9 @@ describe("AgentCatalogDrawer", () => {
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("Dataflow Builder")).toBeInTheDocument());
     expect(screen.getByText(/Requires:/)).toBeInTheDocument();
-    expect(screen.getByText("Node Content Builder (not installed)")).toBeInTheDocument();
+    expect(screen.getByText("Node Builder (not installed)")).toBeInTheDocument();
     const btn = screen.getByRole("button", { name: "Add to project (+1 required)" });
-    expect(btn).toHaveAttribute("title", "Also adds Node Content Builder (required)");
+    expect(btn).toHaveAttribute("title", "Also adds Node Builder (required)");
     await clickAndConfirm("Add to project (+1 required)", "Add to project");
     await waitFor(() =>
       expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.dataflow-builder@1.0.0"),
@@ -365,15 +365,15 @@ describe("AgentCatalogDrawer", () => {
         card("agent.dataflow-builder", {
           name: "Dataflow Builder",
           requiresAgents: [{
-            id: "agent.node-content-builder", name: "Node Content Builder",
-            coord: "agent.node-content-builder@1.0.0", visible: true, installedInProject: true,
+            id: "agent.node-builder", name: "Node Builder",
+            coord: "agent.node-builder@1.0.0", visible: true, installedInProject: true,
           }],
         }),
       ],
     } as any);
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("Dataflow Builder")).toBeInTheDocument());
-    expect(screen.getByText("Node Content Builder ✓")).toBeInTheDocument();
+    expect(screen.getByText("Node Builder ✓")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add to project" })).toBeInTheDocument();
   });
 
@@ -468,7 +468,7 @@ describe("AgentCatalogDrawer tab transitions + state sync (memo dev/47)", () => 
   it("an installed agent offers no action at all, not even Add", async () => {
     api.listProjectAgents.mockResolvedValue({
       agents: [
-        card("agent.node-content-builder", {
+        card("agent.node-builder", {
           scope: "installed",
           installedInProject: true,
         }),
@@ -477,7 +477,7 @@ describe("AgentCatalogDrawer tab transitions + state sync (memo dev/47)", () => 
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("my-explainer")).toBeInTheDocument());
     fireEvent.click(screen.getByText("In project"));
-    await waitFor(() => expect(screen.getByText("node-content-builder")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("node-builder")).toBeInTheDocument());
     // The card offers nothing once the agent is in: there is no "Remove from
     // project" any more, because an agent reaches a dataflow by being in the
     // account and `save_project` seeds it into every one. Removing it from a

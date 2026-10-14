@@ -7,9 +7,9 @@ import type { AgentDelegationPart } from "../../services/agents";
 const part = (overrides: Partial<AgentDelegationPart> = {}): AgentDelegationPart => ({
   type: "delegation",
   capability: "research.verify",
-  coord: "agent.node-researcher@1.0.0",
-  name: "Node Researcher",
-  category: "evaluate",
+  coord: "agent.researcher@1.0.0",
+  name: "Researcher",
+  category: "node",
   attachmentId: "att-r",
   status: "ok",
   summary: "verified — 200, socrata",
@@ -21,10 +21,10 @@ describe("AgentDelegationEntry (memo dev/72)", () => {
     const onOpenChat = jest.fn();
     render(<AgentDelegationEntry part={part()} onOpenChat={onOpenChat} />);
     expect(screen.getByText("research.verify")).toBeInTheDocument();
-    expect(screen.getByText("Node Researcher")).toBeInTheDocument();
+    expect(screen.getByText("Researcher")).toBeInTheDocument();
     expect(screen.getByText("ok")).toBeInTheDocument();
     expect(screen.getByText("verified — 200, socrata")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Open Node Researcher's chat" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open Researcher's chat" }));
     expect(onOpenChat).toHaveBeenCalledWith("att-r");
   });
 

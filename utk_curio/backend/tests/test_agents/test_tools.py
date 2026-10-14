@@ -827,17 +827,17 @@ class TestWebSearchTrustedProvider:
             seen["trusted_host"] = kwargs.get("trusted_host")
             return EgressResult(url=url, final_url=url, status=200,
                                 content_type="application/json",
-                                body='{"results": [{"title": "Paris", '
+                                body='{"results": [{"title": "Chicago cool roofs", '
                                      '"url": "https://w.test", "content": "18C"}]}')
 
         monkeypatch.setattr(egress, "fetch", _fake_fetch)
         status, text = tools.execute_read_tool(
             "web.search", user_key="42", project_id="none", target=None,
-            params={"q": "weather in Paris"},
+            params={"q": "cool roofs in Chicago"},
         )
         assert status == "ok" and "18C" in text
         assert seen["trusted_host"] == ("localhost", 8888)
-        assert "q=weather%20in%20Paris" in seen["url"]
+        assert "q=cool%20roofs%20in%20Chicago" in seen["url"]
 
     def test_web_fetch_never_passes_a_trusted_host(self, monkeypatch):
         from utk_curio.backend.app.agents.infrastructure import egress
@@ -921,32 +921,32 @@ class TestWebSearchProviderShapes:
             content_type="application/json", body=body))
         status, text = tools.execute_read_tool(
             "web.search", user_key="42", project_id="none", target=None,
-            params={"q": "weather in Paris"},
+            params={"q": "cool roofs in Chicago"},
         )
         assert status == "ok"
         return json.loads(text)["results"]
 
     def test_google_programmable_search_items(self, monkeypatch):
         rows = self._search(monkeypatch, json.dumps({"items": [{
-            "title": "Paris weather", "link": "https://w.test/paris",
-            "snippet": "18°C, partly cloudy"}]}))
-        assert rows == [{"title": "Paris weather", "url": "https://w.test/paris",
-                         "snippet": "18°C, partly cloudy"}]
+            "title": "Chicago cool roofs", "link": "https://heat.test/cool-roofs",
+            "snippet": "white roofs ran 18°C cooler"}]}))
+        assert rows == [{"title": "Chicago cool roofs", "url": "https://heat.test/cool-roofs",
+                         "snippet": "white roofs ran 18°C cooler"}]
 
     def test_serpapi_organic_results(self, monkeypatch):
         rows = self._search(monkeypatch, json.dumps({"organic_results": [{
-            "title": "Paris", "link": "https://w.test/p", "snippet": "cloudy"}]}))
+            "title": "Chicago cool roofs", "link": "https://w.test/p", "snippet": "cooler"}]}))
         assert rows[0]["url"] == "https://w.test/p"
 
     def test_brave_shaped_web_results_with_description(self, monkeypatch):
         rows = self._search(monkeypatch, json.dumps({"web": {"results": [{
-            "title": "Paris", "url": "https://w.test/p",
-            "description": "light breeze"}]}}))
-        assert rows[0]["snippet"] == "light breeze"
+            "title": "Chicago cool roofs", "url": "https://w.test/p",
+            "description": "reflective coating"}]}}))
+        assert rows[0]["snippet"] == "reflective coating"
 
     def test_href_alias_and_top_level_list(self, monkeypatch):
         rows = self._search(monkeypatch, json.dumps([{
-            "title": "Paris", "href": "https://w.test/p", "content": "18C"}]))
+            "title": "Chicago cool roofs", "href": "https://w.test/p", "content": "18C"}]))
         assert rows[0]["url"] == "https://w.test/p" and rows[0]["snippet"] == "18C"
 
     def test_unrecognized_shape_yields_empty_rows_not_an_error(self, monkeypatch):

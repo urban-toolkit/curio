@@ -60,9 +60,10 @@ def agent_chat_names_its_node(ctx: Ctx) -> None:
     project_id = page.url.rstrip("/").rsplit("/", 1)[-1]
     base = f"{ctx.backend}/api/agents/projects/{project_id}"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    # Node-only by roster, so the server cannot quietly fall back to a canvas
-    # attachment and leave this scene photographing the wrong header.
-    coord = "agent.node-content-builder@1.0.0"
+    # Never a canvas agent by roster (it attaches to a node or a connection),
+    # so the server cannot quietly fall back to a canvas attachment and leave
+    # this scene photographing the wrong header. It is the only such card.
+    coord = "agent.connection-builder@1.0.0"
 
     installed = page.request.post(f"{base}/install", headers=headers, data={"coord": coord})
     assert installed.ok, f"install failed: {installed.status} {installed.text()[:200]}"
@@ -103,13 +104,13 @@ def agent_chat_names_its_node(ctx: Ctx) -> None:
     expect(node).to_contain_text(AGENT_CHAT_NODE_NAME)
 
     opener = page.get_by_role(
-        "button", name=re.compile("^Open chat with Node Content Builder")
+        "button", name=re.compile("^Open chat with Connection Builder")
     ).first
     ctx.focus(opener, hold=700)
     ctx.say("Open its chat", "One agent, attached to that one node.")
     opener.click()
 
-    panel = page.get_by_role("dialog", name=re.compile("^Chat with Node Content Builder"))
+    panel = page.get_by_role("dialog", name=re.compile("^Chat with Connection Builder"))
     expect(panel).to_be_visible(timeout=20000)
 
     subtitle = panel.get_by_text(re.compile(r"^Attached to "))

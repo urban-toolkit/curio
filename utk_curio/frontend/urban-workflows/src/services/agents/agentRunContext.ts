@@ -16,11 +16,8 @@ import {
  * stale values are structurally impossible. The result rides the run
  * request's ephemeral `context` field: never persisted, never replayed.
  *
- * Node Content Builder reproduces the legacy Get Code framing byte-for-byte
- * (`clickGenerateContentNode` in styles.tsx): the Trill with the target
- * node's content blanked, then Node ID / Subtask / Task. Every other agent
- * assembles generic per-read fragments (canonical labels from its legacy
- * site) in the manifest's declared order. Reads with no chat-time source
+ * Every agent assembles generic per-read fragments (canonical labels from its
+ * legacy site) in the manifest's declared order. Reads with no chat-time source
  * (`connectionSide`, `keywords`, `currentTask`, `userMessage` — the user's
  * message carries the intent) are omitted, per the dev/44 audit table.
  */
@@ -74,29 +71,6 @@ function targetNodeId(attachment: AgentAttachment): string | null {
 function findTrillNode(trill: ReturnType<typeof liveTrill>, nodeId: string | null): TrillNode | null {
   if (!nodeId) return null;
   return trill.dataflow?.nodes?.find((n) => n.id === nodeId) ?? null;
-}
-
-/** Legacy Get Code framing (styles.tsx `generateContentNode`), byte-faithful:
- * the target node's content is blanked in the Trill before it is sent. */
-function nodeContentBuilderContext(
-  attachment: AgentAttachment,
-  canvas: AgentCanvasState,
-): string | null {
-  const nodeId = targetNodeId(attachment);
-  if (!nodeId) return null;
-  const trill = liveTrill(canvas);
-  let subtask = "";
-  for (const node of trill.dataflow?.nodes ?? []) {
-    if (node.id === nodeId) {
-      subtask = node.goal ?? "";
-      node.content = ""; // legacy parity: regenerate fresh, never echo old code
-    }
-  }
-  return (
-    "Current Trill: " + JSON.stringify(trill) + "\n" +
-    " Node ID: " + nodeId + "\n" +
-    "Subtask: " + subtask + " Task: " + "\n" + canvas.workflowGoal
-  );
 }
 
 /** Generic per-read fragments (canonical labels from the legacy call sites). */
@@ -235,9 +209,6 @@ export function composeAgentRunContext(
   attachment: AgentAttachment,
   canvas: AgentCanvasState,
 ): string | null {
-  if (attachment.coord.startsWith("agent.node-content-builder@")) {
-    return nodeContentBuilderContext(attachment, canvas);
-  }
   const reads = attachment.reads ?? [];
   const fragments = reads
     .map((read) => readFragment(read, attachment, canvas))
