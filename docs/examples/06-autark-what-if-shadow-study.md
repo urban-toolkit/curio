@@ -48,8 +48,8 @@ paired when they are compared.
 
 ## Data
 
-`docs/examples/data/back_bay.osm.pbf` is an OSM extract for Boston's Back Bay (regenerate with
-`scripts/build_example_pbfs.py`). The data node requests the layers the shader needs:
+`docs/examples/data/back_bay.osm.pbf` is an OpenStreetMap extract for Boston's Back Bay (© OpenStreetMap
+contributors, ODbL 1.0), built by `scripts/build_example_pbfs.py`. The data node requests the layers the shader needs:
 `surface`, `parks`, `water`, `roads`, and `buildings`. Anything missing from the PBF is skipped
 quietly; everything present materialises in EPSG:3395 (metric), which is what the shadow math
 expects. The downstream compute and map nodes reference these layers by name (`table_osm_roads`,

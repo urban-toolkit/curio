@@ -34,15 +34,15 @@ BACK_BAY = [
     ("table_osm_surface", "surface", 1, EPSG_3395, WITHOUT_ID),
     ("table_osm_parks", "parks", 116, EPSG_3395, WITH_ID),
     ("table_osm_water", "water", 8, EPSG_3395, WITH_ID),
-    ("table_osm_roads", "roads", 741, EPSG_3395, WITH_ID),
-    ("table_osm_buildings", "buildings", 2121, EPSG_3395, WITHOUT_ID),
+    ("table_osm_roads", "roads", 736, EPSG_3395, WITH_ID),
+    ("table_osm_buildings", "buildings", 2120, EPSG_3395, WITHOUT_ID),
 ]
 CHICAGO_LOOP = [
     ("table_osm_surface", "surface", 1, EPSG_3395, WITHOUT_ID),
-    ("table_osm_parks", "parks", 275, EPSG_3395, WITH_ID),
+    ("table_osm_parks", "parks", 281, EPSG_3395, WITH_ID),
     ("table_osm_water", "water", 52, EPSG_3395, WITH_ID),
-    ("table_osm_roads", "roads", 2098, EPSG_3395, WITH_ID),
-    ("table_osm_buildings", "buildings", 1507, EPSG_3395, WITHOUT_ID),
+    ("table_osm_roads", "roads", 2120, EPSG_3395, WITH_ID),
+    ("table_osm_buildings", "buildings", 1444, EPSG_3395, WITHOUT_ID),
 ]
 #: The land of Niterói: its coastline splits the surface.
 NITEROI = [
