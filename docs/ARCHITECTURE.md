@@ -380,9 +380,9 @@ code is written from its edit list (`metadata.editFeatures`: `key`, `layer`, `ed
   features, properties and layers pass through untouched, and the result is the
   envelope `persistLayersToBackend` stores for an Autark node. A table gives a table.
   Unknown ids are printed, and the run goes on.
-- A Data Pool's several layers read from one artifact name it (`filename`), and a
-  code node is sent that artifact (`executionInputRef`), as for one layer and as a
-  run on the server passes the pool through. In-process, the layers of a stored
+- A Data Pool's layers read from one artifact, one or several, name it (`filename`),
+  and a code node is sent that artifact (`executionInputRef`), as a run on the
+  server passes the pool through. In-process, the layers of a stored
   Autark envelope reach Python as GeoDataFrames that keep `layerName` and
   `layerType` in their `metadata` (`worker._keep_layer_identity`); the isolated
   child gets the envelope itself. `edit_features` reads both.
