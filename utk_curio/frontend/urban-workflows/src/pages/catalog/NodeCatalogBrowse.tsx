@@ -120,6 +120,8 @@ export const NodeCatalogBrowse: React.FC<NodeCatalogBrowseProps> = ({
     confirmInstall,
     onPublish,
     onUnpublish,
+    canRemoveFromAccount,
+    onRemoveFromAccount,
     cancelInstall,
   } = useNodeCatalogBrowse(packageKind);
 
@@ -389,6 +391,11 @@ export const NodeCatalogBrowse: React.FC<NodeCatalogBrowseProps> = ({
         onUnpublish={
           selectedPkg != null && installedByDir.get(selectedPkg.dirName) != null
             ? onUnpublish
+            : undefined
+        }
+        onRemoveFromAccount={
+          selectedPkg != null && canRemoveFromAccount(selectedPkg)
+            ? (p) => void onRemoveFromAccount(p)
             : undefined
         }
         onViewDetails={(p) => setDetailDirName(p.dirName)}

@@ -13,6 +13,7 @@ from utk_curio.backend.app.packages.domain.catalog_family import (
     catalog_release_collision_groups,
     families_summary,
 )
+from utk_curio.backend.app.packages.application import prune as packages_prune
 from utk_curio.backend.app.packages.application.model_packages import weights_on_first_use
 from utk_curio.backend.app.packages.domain.manifest import ManifestError, PackageManifest
 from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
@@ -40,9 +41,11 @@ def _listing_payload(manifest: PackageManifest, folder) -> dict:
     return payload
 
 
-def installed_package_payloads(user_key: str, kind: str | None = None) -> list[dict]:
+def installed_package_payloads(user_key: str, kind: str | None = None, *, usage: bool = False) -> list[dict]:
     """Every readable package in the user's store as a payload, newest ``createdAt`` first;
-    only the packages of *kind* (``node`` or ``model``) when it is given."""
+    only the packages of *kind* (``node`` or ``model``) when it is given. With
+    *usage*, each payload says ``inUse``: whether one of the user's dataflows
+    uses it (``prune.packages_in_use``), which reads every project's spec."""
     out: list[dict] = []
     # Enumeration + manifests + mtimes under ONE seed-lock hold (memo dev/99):
     # the payloads are detached dicts, so nothing live leaves the lock.
@@ -60,6 +63,10 @@ def installed_package_payloads(user_key: str, kind: str | None = None) -> list[d
     out.sort(
         key=lambda p: (-int(p.get("createdAtMs") or 0), p.get("dirName") or ""),
     )
+    if usage:
+        in_use = packages_prune.packages_in_use(user_key)
+        for payload in out:
+            payload["inUse"] = payload.get("dirName") in in_use
     return out
 
 

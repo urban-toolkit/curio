@@ -108,7 +108,20 @@ export function useNodeCatalogBrowse(packageKind: PackageKind = "node") {
     cancelInstall,
     publish: onPublish,
     unpublish,
+    removeFromAccount: onRemoveFromAccount,
   } = catalogState;
+
+  /**
+   * Remove from account is offered for a package of the account's own, in its
+   * store and in no catalog (imported, made or downloaded), that no dataflow
+   * uses, as the store listing says. A shipped package, the copy of a catalog
+   * row, never offers it.
+   */
+  const canRemoveFromAccount = useCallback(
+    (pkg: PackagePayload) =>
+      !catalogByDir.has(pkg.dirName) && installedByDir.get(pkg.dirName)?.inUse === false,
+    [catalogByDir, installedByDir],
+  );
 
   const updateCandidates = useMemo(() => {
     return installed.filter((row) => {
@@ -261,6 +274,8 @@ export function useNodeCatalogBrowse(packageKind: PackageKind = "node") {
     confirmInstall,
     onPublish,
     onUnpublish,
+    canRemoveFromAccount,
+    onRemoveFromAccount,
     cancelInstall,
   };
 }

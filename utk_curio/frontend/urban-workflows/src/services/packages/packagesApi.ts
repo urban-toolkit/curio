@@ -27,15 +27,22 @@ import type {
   WorkflowDepsInstallResponse,
 } from "./types";
 
-/** `?kind=<kind>` when a listing keeps one kind of package, else nothing. */
-function kindQuery(kind?: PackageKind): string {
-  return kind ? `?kind=${kind}` : "";
+/** `kind=<kind>` when a listing keeps one kind of package, and `usage=true`
+ *  when it says which packages a dataflow uses; nothing when neither. */
+function listingQuery(kind?: PackageKind, usage = false): string {
+  const params = [kind ? `kind=${kind}` : "", usage ? "usage=true" : ""].filter(Boolean);
+  return params.length ? `?${params.join("&")}` : "";
 }
 
 export const packagesApi = {
-  /** Installed packages for the current user; only *kind*'s when given. */
-  listInstalled(kind?: PackageKind): Promise<{ packages: PackagePayload[] }> {
-    return apiFetch(`/api/packages${kindQuery(kind)}`);
+  /** Installed packages for the current user; only *kind*'s when given. With
+   *  `usage`, each row says `inUse`: whether one of the account's dataflows
+   *  uses it, which costs the backend a read of every project. */
+  listInstalled(
+    kind?: PackageKind,
+    opts: { usage?: boolean } = {},
+  ): Promise<{ packages: PackagePayload[] }> {
+    return apiFetch(`/api/packages${listingQuery(kind, !!opts.usage)}`);
   },
 
   /** Fixture-backed catalog: package rows plus family index and collision
@@ -45,7 +52,7 @@ export const packagesApi = {
     families: CatalogFamilyPayload[];
     catalogCollisions: CatalogCollisionPayload[];
   }> {
-    return apiFetch(`/api/packages/catalog${kindQuery(kind)}`);
+    return apiFetch(`/api/packages/catalog${listingQuery(kind)}`);
   },
 
   /** A model package's weights license text, from the account's copy or the
@@ -75,8 +82,12 @@ export const packagesApi = {
     });
   },
 
-  uninstall(dirName: string): Promise<void> {
-    return apiFetch(`/api/packages/${dirName}`, { method: "DELETE" });
+  /** Delete a package from the account's store and from every lockfile. With
+   *  `unusedOnly` (a catalog page's Remove from account) the backend refuses,
+   *  409, while a dataflow uses it, and drops its defaults entry too. */
+  uninstall(dirName: string, opts: { unusedOnly?: boolean } = {}): Promise<void> {
+    const query = opts.unusedOnly ? "?unusedOnly=true" : "";
+    return apiFetch(`/api/packages/${dirName}${query}`, { method: "DELETE" });
   },
 
   /**

@@ -61,7 +61,7 @@ The palette reads the open project's lockfile, so two projects open in different
 There are two places you manage node packages:
 
 - **The drawer**, inside the canvas, works on the open project only. Open it from the **Node Catalog** button in the top bar, or from the **Node Catalog** dropdown in the left Tools panel and **Browse Node Catalog +**. Its two tabs are **Browse all** and **In project**.
-- **The `/catalog/nodes` page**, reached from `/projects` and the **Node Catalog** tab, works on your whole account: a package added here goes into every project you have and every new one. It has status and category filters, a details drawer, and no remove button. The **Data Catalog**, **Agent Catalog**, **Discovery Catalog** and **Model Catalog** tabs beside it are the other four catalogs.
+- **The `/catalog/nodes` page**, reached from `/projects` and the **Node Catalog** tab, works on your whole account: a package added here goes into every project you have and every new one. It has status and category filters and a details drawer. The **Data Catalog**, **Agent Catalog**, **Discovery Catalog** and **Model Catalog** tabs beside it are the other four catalogs.
 
 ### Action matrix
 
@@ -71,6 +71,7 @@ There are two places you manage node packages:
 | **Add to all projects** | `/catalog/nodes` | Your defaults and every project's lockfile, plus your package store | The package appears in every project's palette, and new projects start with it. |
 | **Update** (drawer), **Update all projects** (`/catalog/nodes`) | Shown when the shared catalog has a higher version than your copy | Your store copy, replaced by the catalog's version | Every project that uses the package gets the new version. A package with its own interface runs the new one after you reload the page. |
 | **Remove from project** | Drawer | This project's lockfile; also your store copy and defaults entry, when no other project uses the package | The package leaves this project's palette. |
+| **Remove from account** | The `/catalog/nodes` details drawer, for a package of your own that no project uses | Your store copy and defaults entry | A confirmation first, then the package leaves your account. |
 | **New node from a Python function** | Drawer | A new package, or one of yours, and this project's lockfile | A node that calls the function appears in this project's palette ([part 4](#new-node-from-a-python-function)). |
 | **Publish** | The Tools panel's **Node Catalog** dropdown, or the `/catalog/nodes` details drawer | The shared catalog | Every user on this install can browse the package. The button is hidden when the operator turns publishing off. |
 
@@ -80,7 +81,7 @@ There are two places you manage node packages:
 
 **I want a package in all my projects, present and future.** On `/catalog/nodes`, find the package and click **Add to all projects**. It appears in every existing project's palette at once, and every project you create from then on starts with it.
 
-**I want to remove a package.** `/catalog/nodes` has no remove button. Open each project that has the package and use **Remove from project** in the drawer. When you remove it from the last one, Curio deletes your installed copy and drops the package from your defaults, so new projects stop getting it.
+**I want to remove a package.** Open each project that has the package and use **Remove from project** in the drawer. When you remove it from the last one, Curio deletes your installed copy and drops the package from your defaults, so new projects stop getting it.
 
 **I want other users on this install to be able to add a package I built.** Build it with **Save as package node** ([part 4](#4-creating-a-package-from-a-canvas-node)), then click **Publish** on it in the Tools panel's **Node Catalog** dropdown or in the `/catalog/nodes` details drawer.
 

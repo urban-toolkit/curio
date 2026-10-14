@@ -25,7 +25,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { packagesApi } from "./packagesApi";
 import { dependencyFailureNotice } from "./packageDependencyNotice";
 import { restartNotice } from "./packageRestartCopy";
-import { packageKindOf, usePackageCatalogRefresh } from "./modelPackages";
+import { notifyPackageCatalogRefresh, packageKindOf, usePackageCatalogRefresh } from "./modelPackages";
 import type { PackageKind, PackagePayload, ResolveConflict } from "./types";
 
 export type PackageCatalogScope =
@@ -112,6 +112,9 @@ export interface PackageCatalogState {
   cancelInstall: () => void;
   /** Project scope only. */
   uninstallFromProject: (pkg: PackagePayload) => Promise<void>;
+  /** Defaults scope: Remove from account, for a package of the account's own
+   *  that no dataflow uses; the backend refuses it while one does. */
+  removeFromAccount: (pkg: PackagePayload) => Promise<void>;
   publish: (dirName: string) => Promise<void>;
   unpublish: (target: PackagePayload | string) => Promise<void>;
   reloadFromCatalog: (pkg: PackagePayload) => Promise<void>;
@@ -220,9 +223,11 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
       }
       return;
     }
+    // The account scope is a catalog page, which offers Remove from account
+    // only for a package no dataflow uses: the store says which (`inUse`).
     const [cat, mine, cap, defaultsResp] = await Promise.all([
       packagesApi.catalog(),
-      packagesApi.listInstalled(),
+      packagesApi.listInstalled(undefined, { usage: true }),
       packagesApi.factoryCapabilities(),
       packagesApi.getDefaults(),
     ]);
@@ -454,6 +459,23 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
     }
   }, [scope.kind, ensureSavedProjectId, onInstalledToProject, refreshRegistry, reload, reportActionError, showToast]);
 
+  const removeFromAccount = useCallback(async (pkg: PackagePayload) => {
+    setCardActionDir(pkg.dirName);
+    setActionError(null);
+    try {
+      await packagesApi.uninstall(pkg.dirName, { unusedOnly: true });
+      await refreshRegistry();
+      await reload();
+      // The palettes and drawers of a canvas that stays mounted list it too.
+      notifyPackageCatalogRefresh();
+      showToast(`Removed ${pkg.name} from your account.`, "success");
+    } catch (err) {
+      reportActionError(`Couldn't remove ${pkg.name} from your account`, err);
+    } finally {
+      setCardActionDir(null);
+    }
+  }, [refreshRegistry, reload, reportActionError, showToast]);
+
   const publish = useCallback(async (dirName: string) => {
     const row = installedByDirRef.current.get(dirName);
     if (!row) return;
@@ -542,15 +564,15 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
       lastInstallSummary, installCandidate, installMode, conflictReport, effectiveProjectId,
       ensureProjectId: ensureSavedProjectId,
       reload, reportActionError, dismissActionError, dismissInstallSummary, dismissRestartNotice,
-      probeInstall, probeUpdate, confirmInstall, cancelInstall, uninstallFromProject, publish, unpublish,
-      reloadFromCatalog, exportArchive,
+      probeInstall, probeUpdate, confirmInstall, cancelInstall, uninstallFromProject, removeFromAccount, publish,
+      unpublish, reloadFromCatalog, exportArchive,
     }),
     [catalog, installed, kindOfDir, installedByDir, catalogByDir, catalogPublishedDirs, catalogPublishAllowed, defaults,
      loaded, busy, publishingPackageKey, reloadingPackageKey, cardActionDir, actionError, restartNoticeText,
      lastInstallSummary, installCandidate, installMode, conflictReport, effectiveProjectId, ensureSavedProjectId,
      reload, reportActionError, dismissActionError, dismissInstallSummary, dismissRestartNotice,
-     probeInstall, probeUpdate, confirmInstall, cancelInstall, uninstallFromProject, publish, unpublish,
-     reloadFromCatalog, exportArchive],
+     probeInstall, probeUpdate, confirmInstall, cancelInstall, uninstallFromProject, removeFromAccount, publish,
+     unpublish, reloadFromCatalog, exportArchive],
   );
 }
 

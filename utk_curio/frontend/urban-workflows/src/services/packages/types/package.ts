@@ -157,6 +157,10 @@ export interface PackagePayload {
   /** Listings only: the Python modules the package ships under `sources/`,
    *  which its nodes import (`deep_umbra`). */
   modules?: string[];
+  /** The store listing asked with `usage` only: whether one of the account's
+   *  dataflows uses the package (its lockfile names it). A catalog page offers
+   *  Remove from account only when this is `false`. */
+  inUse?: boolean;
   /**
    * Catalog endpoint only - whether THIS user published it, and may therefore
    * withdraw it. The peer of `AgentCard.publishable`.

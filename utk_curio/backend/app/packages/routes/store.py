@@ -33,11 +33,13 @@ from utk_curio.backend.app.packages.schemas.responses import package_payload
 @_map_package_errors
 def list_installed_packages():
     """Every package in the caller's store, newest ``createdAt`` first;
-    ``?kind=node`` or ``?kind=model`` keeps that kind."""
+    ``?kind=node`` or ``?kind=model`` keeps that kind, and ``?usage=true``
+    says on each whether a dataflow uses it (``inUse``)."""
     kind = requests.package_kind(request.args)
+    usage = requests.query_flag(request.args, "usage")
     key = user_key()
     packages_seeding.ensure_user_seeded(key)
-    return jsonify({"packages": packages_catalog.installed_package_payloads(key, kind)}), 200
+    return jsonify({"packages": packages_catalog.installed_package_payloads(key, kind, usage=usage)}), 200
 
 
 @packages_bp.route("/upload", methods=["POST"])
@@ -88,8 +90,13 @@ def _installed_payload(key: str, result) -> dict:
 @require_auth
 @_map_package_errors
 def remove_package(dir_name: str):
-    """Uninstall from the store with the backend residue (dev/97); the builtin is refused."""
+    """Uninstall from the store with the backend residue (dev/97); the builtin is refused.
+    ``?unusedOnly=true`` is the catalog pages' Remove from account: a 409 while
+    a dataflow uses the package, else its defaults entry goes with it."""
     key = user_key()
+    if requests.query_flag(request.args, "unusedOnly"):
+        packages_project_packages.remove_unused_package(key, dir_name)
+        return "", 204
     packages_store_install.remove_package(key, dir_name)
     # ...and so do the lockfile entries that named it. Without this every
     # dataflow that had the package kept a reference to something no longer

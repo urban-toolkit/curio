@@ -22,6 +22,7 @@ from utk_curio.backend.app.packages.application import (
     store_install as packages_store_install,
     store_reads as packages_store_reads,
 )
+from utk_curio.backend.app.packages.repositories import defaults as defaults_io
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
 from utk_curio.backend.app.packages.application.seeding import BUILTIN_PACKAGE_ID
 
@@ -123,6 +124,21 @@ def detach_from_all_projects(user_key: str, dir_name: str) -> list[str]:
             continue
         detached.append(project_id)
     return detached
+
+
+def remove_unused_package(user_key: str, dir_name: str) -> None:
+    """Remove from account, on the catalog pages: *dir_name* leaves the user's
+    store, with its backend residue and its defaults entry, while no project
+    uses it, and is refused with a 409 while one does. "Uses" is the prune's
+    rule (``packages_in_use``), so a package the account added to all
+    projects before it had a dataflow, in the defaults and in no lockfile,
+    leaves too, and new projects stop asking for it."""
+    if dir_name in packages_prune.packages_in_use(user_key, {dir_name}):
+        raise PackageServiceError(
+            f"a dataflow uses {dir_name}: remove it from that dataflow first", 409,
+        )
+    packages_store_install.remove_package(user_key, dir_name)
+    defaults_io.remove_from_defaults(user_key, dir_name)
 
 
 def uninstall_from_project(
