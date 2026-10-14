@@ -22,7 +22,7 @@ const GRAMMAR_TYPES = path.resolve(
 /** Bytes a feature takes in a batched matrix entry: its bounding box, eight f32. */
 const BOX_BYTES = 8 * 4;
 /** The most building parts a shipped example's shader batches: Back Bay's, in example 06. */
-const MOST_BATCHED_PARTS = 2108;
+const MOST_BATCHED_PARTS = 2120;
 
 function grammarBindingSize(): number {
     const types = fs.readFileSync(GRAMMAR_TYPES, "utf-8");
