@@ -6,12 +6,13 @@
  *   scenario, the node's name and a neutral color. The node's code is written
  *   from them, and the stacked table carries them.
  * - `chart`, what its Chart tab draws from that table: a preset, the columns it
- *   reads as x and y, and the aggregate that combines the y values.
+ *   reads as x and y, and the aggregate that combines the y values (`none`
+ *   plots each row's value as it is).
  * - `mode`, Chart or Difference, once the user has chosen one; without it the
  *   node picks (`compareMode.ts`).
  * - `difference`, what Difference joins rows on (`key`), what its map
- *   colors by (`value`), and whether it gives each difference's size
- *   (`absolute`).
+ *   colors by (`value`) and in which color scale (`colors`), and whether it
+ *   gives each difference's size (`absolute`).
  * - `layer`, the layer it reads from an input that is an Autark node's
  *   several layers (a compute step hands on its workspace's every layer).
  *
@@ -30,7 +31,8 @@ export interface CompareInputLabel {
 export const COMPARE_PRESETS = ["bar", "grouped-bar", "line", "scatter", "pie", "lollipop", "table"] as const;
 export type ComparePreset = (typeof COMPARE_PRESETS)[number];
 
-export const COMPARE_AGGREGATES = ["mean", "sum", "median", "min", "max", "count"] as const;
+// "none" plots each row's value as it is, for a table of one row per scenario.
+export const COMPARE_AGGREGATES = ["mean", "sum", "median", "min", "max", "count", "none"] as const;
 export type CompareAggregate = (typeof COMPARE_AGGREGATES)[number];
 
 export interface CompareChart {
@@ -44,6 +46,18 @@ export interface CompareChart {
 export const COMPARE_MODES = ["chart", "difference"] as const;
 export type CompareMode = (typeof COMPARE_MODES)[number];
 
+/** The color scales a Difference map of numbers can take, the first the default
+ * (`DIFFERENCE_SCALES` in `compareDifference.ts` names each). */
+export const DIFFERENCE_COLORS = [
+  "interpolateViridis",
+  "interpolateReds",
+  "interpolateBlues",
+  "interpolateGreens",
+  "interpolateOranges",
+  "interpolatePurples",
+] as const;
+export type DifferenceColors = (typeof DIFFERENCE_COLORS)[number];
+
 export interface CompareDifference {
   /** The column rows are joined on; absent means `osm_id` or `building_id`, else (two layers) the shapes. */
   key?: string;
@@ -51,6 +65,8 @@ export interface CompareDifference {
   value?: string;
   /** Each difference's size, |comparison - reference|; absent means comparison minus reference. */
   absolute?: boolean;
+  /** The color scale of a map of numbers; absent means the first, Viridis. */
+  colors?: DifferenceColors;
 }
 
 export interface CompareSettings {
@@ -96,6 +112,9 @@ function normalizeDifference(raw: unknown): CompareDifference | undefined {
   if (nonEmpty(entry.key)) difference.key = entry.key;
   if (nonEmpty(entry.value)) difference.value = entry.value;
   if (entry.absolute === true) difference.absolute = true;
+  if ((DIFFERENCE_COLORS as readonly unknown[]).includes(entry.colors)) {
+    difference.colors = entry.colors as DifferenceColors;
+  }
   return Object.keys(difference).length > 0 ? difference : undefined;
 }
 

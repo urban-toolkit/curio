@@ -787,16 +787,20 @@ The node has two tabs:
 - **Chart** draws the stacked table in the scenarios' colors, as **Bars**, **Grouped
   bars**, **Lines**, **Points**, a **Pie**, **Lollipops** or a **Table**. Pick the
   columns it reads (**X**, **Y**) and how the Y values of a group are combined
-  (**Combine**: mean, sum, median, minimum, maximum, or a count of rows).
+  (**Combine**: mean, sum, median, minimum, maximum, a count of rows, or none).
+  **None** plots each row's value as it is, with the Y column as the axis title; a
+  scenario with several rows stacks them in one bar. A pie writes each slice's
+  value on it.
 - **Difference**, in its place in Difference, maps a raster's or a layer's
   difference, colored by a band or a number column, or by `change` (**Color by**).
   **Change** picks **Signed**, input_1 minus input_0, or **Absolute**, its size.
   The legend is titled with what it shows: `sunlight change` for the
   column `sunlight`, `sunlight absolute change` for its size, or `change`. A raster's
-  or a layer's colors run from the lowest
-  difference, dark purple, to the highest, yellow; a raster cell that is nodata in
-  either raster is clear. A table's difference is shown as a table, each
-  row in the color of its change.
+  or a layer's colors run from the lowest difference to the highest in the scale
+  picked in **Colors**: **Viridis**, from dark purple to yellow, or **Reds**,
+  **Blues**, **Greens**, **Oranges** or **Purples**, each from pale to dark. A
+  raster cell that is nodata in either raster is clear. A table's difference is
+  shown as a table, each row in the color of its change.
 - **What differs** lists the levers that differ between the scenarios: for each, the
   widget values and the code lines that changed, read against the first scenario's,
   or, for an Edit Features node, each scenario's edits. A node and the copies made
