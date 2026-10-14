@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/FloodScenarios.json",
-    "sha256": "6e49229b8cf9719c5fde6426f29bfa06e0691bab2a5abd17f85af4643944f2fb",
+    "sha256": "10a0515435cd61de02c53fff980e9a3d46940940e859c44638de3f2ebc5dca4a",
     "walkthrough": null
   },
-  "prompt": "Compare two scenarios of SCOUT's Quad Cities flood projection over the same small area: one with no nature-based solutions, and a copy of it with all six solutions in place. Three shared settings hold the projection period, 2020 to 2040, and the area's top-left and bottom-right corners. Read only that area of the solutions' class raster and of the period's flood depth with and without the solutions. In each scenario, take the depth with the solutions where a cell's class is one of the chosen solutions and the depth without them elsewhere, then the median and mean of that depth. Map how much the solutions change the depth, the second scenario minus the first, and chart each scenario's median flood depth.",
+  "prompt": "Compare two scenarios of SCOUT's Quad Cities flood projection over SCOUT's whole area: one with no nature-based solutions, and a copy of it with all six solutions in place. Three shared settings hold the projection period, 2020 to 2040, and the area's top-left and bottom-right corners. Read that area of the solutions' class raster and of the period's flood depth with and without the solutions. In each scenario, take the depth with the solutions where a cell's class is one of the chosen solutions and the depth without them elsewhere, then the median and mean of that depth, and map the depth. Map how much the solutions change the depth, the size of the second scenario minus the first, and chart each scenario's median flood depth.",
   "context": null,
   "required": {
     "datasets": [
@@ -26,13 +26,27 @@
     "nodes": [
       {
         "ref": "visualization1",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization3",
         "type": "curio.builtin/compare-scenarios",
         "role": "visualization",
         "executable": true,
         "hasContent": true
       },
       {
-        "ref": "visualization2",
+        "ref": "visualization4",
         "type": "curio.builtin/compare-scenarios",
         "role": "visualization",
         "executable": true,
@@ -151,12 +165,22 @@
       },
       {
         "from": "analysis1",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
         "to": "analysis3",
         "kind": "data"
       },
       {
         "from": "analysis2",
-        "to": "visualization1",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization3",
         "kind": "data",
         "slot": 1
       },
@@ -167,12 +191,12 @@
       },
       {
         "from": "analysis3",
-        "to": "visualization2",
+        "to": "visualization4",
         "kind": "data"
       },
       {
         "from": "analysis4",
-        "to": "visualization2",
+        "to": "visualization4",
         "kind": "data",
         "slot": 1
       }
@@ -229,7 +253,9 @@
   ],
   "execution": {
     "mode": "sandbox",
-    "browserOnlyKinds": [],
+    "browserOnlyKinds": [
+      "curio.builtin/autk-grammar"
+    ],
     "notes": null
   },
   "capability": {
@@ -285,5 +311,5 @@
     ],
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
   },
-  "notes": "Built-in nodes only, in two scenarios over three shared Parameter nodes: windowed raster loads, a Raster Calculator choosing by class and a Raster Statistics node per scenario, compared on a difference map and a chart. It reproduces SCOUT's flood function."
+  "notes": "Built-in nodes only, in two scenarios over three shared Parameter nodes: windowed raster loads, and per scenario a Raster Calculator choosing by class, a Raster Statistics node and an Autark map of the depth, compared on an absolute difference map and a chart. It reproduces SCOUT's flood function on SCOUT's whole grid."
 }

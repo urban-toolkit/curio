@@ -324,8 +324,11 @@
     "data_type": []
   },
   "dataflows/FloodScenarios": {
-    "tags": [],
+    "tags": [
+      "Autark"
+    ],
     "data_type": [
+      "Geometries",
       "Rasters"
     ]
   },
