@@ -505,8 +505,8 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
         "in and below the hidden scenarios"
     )
     _assert_towers_removed(page)
-    # Every building part reaches each shadow step's shader: Back Bay's 2120,
-    # and the 2113 Two towers removed hands on (#757).
+    # Every building part reaches each shadow step's shader: Back Bay's 2102,
+    # and the 2095 Two towers removed hands on (#757).
     assert not left_out, (
         "a shadow step's shader did not read every building part it was handed: " + "; ".join(left_out)
     )
