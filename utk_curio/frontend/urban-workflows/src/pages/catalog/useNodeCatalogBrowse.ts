@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { PackagePayload, SortMode } from "../../services/packages";
+import type { PackageKind, PackagePayload, SortMode } from "../../services/packages";
 import {
+  MODEL_RUNTIME_LABEL,
+  MODEL_TYPE_LABEL,
+  catalogAndOwnPackages,
   isNewerPackageVersion,
   matchesSearch,
   primaryCategory,
@@ -13,22 +16,69 @@ import { useToastContext } from "../../providers/ToastProvider";
 import { usePackageArchiveImport } from "../../providers/packages/usePackageArchiveImport";
 import type { NodeCatalogFilterTab } from "./nodeCatalogBrowseTypes";
 
+/** One way the rail narrows the grid: a package's category for the Node
+ *  Catalog; a model's type and runtime for the Model Catalog. */
+export interface CatalogFacet {
+  key: string;
+  label: string;
+  valueOf: (pkg: PackagePayload) => string;
+  labelOf: (value: string) => string;
+  /** The rows in a fixed order, so a value with nothing in it reads zero;
+   *  left out, the values present, by count. */
+  order?: string[];
+  /** Rows carry a dot keyed like the card strips. */
+  dotted?: boolean;
+}
+
+export const CATALOG_FACETS: Record<PackageKind, CatalogFacet[]> = {
+  node: [
+    { key: "category", label: "By category", valueOf: primaryCategory, labelOf: (value) => value, dotted: true },
+  ],
+  model: [
+    {
+      key: "type",
+      label: "By type",
+      valueOf: (pkg) => pkg.model?.type ?? "",
+      labelOf: (value) => MODEL_TYPE_LABEL[value as keyof typeof MODEL_TYPE_LABEL] ?? value,
+      order: Object.keys(MODEL_TYPE_LABEL),
+    },
+    {
+      key: "runtime",
+      label: "By runtime",
+      valueOf: (pkg) => pkg.model?.runtime ?? "",
+      labelOf: (value) => MODEL_RUNTIME_LABEL[value as keyof typeof MODEL_RUNTIME_LABEL] ?? value,
+      order: Object.keys(MODEL_RUNTIME_LABEL),
+    },
+  ],
+};
+
+/** One facet as the rail shows it: its rows with their counts. */
+export interface CatalogFacetRows {
+  facet: CatalogFacet;
+  rows: [string, number][];
+}
+
 /**
  * The Node Catalog page's view-model (memo dev/143, F3): a thin adapter over
  * `usePackageCatalog({ kind: "defaults" })` — THE catalog hook, shared with the
  * in-canvas drawer — that keeps only the page's own view state: search, sort,
- * the two filters and the selection. Its return shape is unchanged.
+ * the filters and the selection.
+ *
+ * The Model Catalog page is the same page over model packages
+ * (`packageKind: "model"`), its rail narrowing by type and runtime.
  */
-export function useNodeCatalogBrowse() {
+export function useNodeCatalogBrowse(packageKind: PackageKind = "node") {
   const { showToast } = useToastContext();
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortMode>("new");
   const [filter, setFilter] = useState<NodeCatalogFilterTab>("all");
-  const [categoryFilter, setCategoryFilter] = useState("");
+  const [facetFilters, setFacetFilters] = useState<Record<string, string>>({});
   const [selectedDirName, setSelectedDirName] = useState<string | null | undefined>(undefined);
+  const facets = CATALOG_FACETS[packageKind];
 
   const catalogState = usePackageCatalog({
     scope: { kind: "defaults" },
+    packageKind,
     showToast,
     refreshRegistry: refreshPackageRegistry,
   });
@@ -39,6 +89,7 @@ export function useNodeCatalogBrowse() {
     catalogByDir,
     catalogPublishedDirs,
     defaults,
+    loaded,
     busy,
     actionError,
     catalogPublishAllowed,
@@ -71,19 +122,14 @@ export function useNodeCatalogBrowse() {
     [updateCandidates],
   );
 
-  const mergedRows = useMemo(() => {
-    const out = new Map<string, PackagePayload>();
-    for (const row of installed) out.set(row.dirName, row);
-    for (const row of catalog) out.set(row.dirName, row);
-    return Array.from(out.values());
-  }, [catalog, installed]);
+  const mergedRows = useMemo(() => catalogAndOwnPackages(catalog, installed), [catalog, installed]);
 
   const bySearch = useMemo(
     () => mergedRows.filter((p) => matchesSearch(p, search)),
     [mergedRows, search],
   );
 
-  const categoryFacetBase = useMemo(() => {
+  const facetBase = useMemo(() => {
     let b = bySearch;
     if (filter === "installed") {
       b = b.filter((p) => defaults.has(p.dirName));
@@ -91,27 +137,41 @@ export function useNodeCatalogBrowse() {
     return b;
   }, [bySearch, filter, defaults]);
 
-  const categoryCounts = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const p of categoryFacetBase) {
-      const c = primaryCategory(p);
-      m.set(c, (m.get(c) ?? 0) + 1);
-    }
-    return m;
-  }, [categoryFacetBase]);
-
-  const sortedCategories = useMemo(
-    () => Array.from(categoryCounts.entries()).sort((a, b) => b[1] - a[1]),
-    [categoryCounts],
+  // The counts come from the rows on screen, so a search can take the selected
+  // value's count to zero; it stays on the rail so it can be cleared.
+  const facetRows = useMemo<CatalogFacetRows[]>(
+    () =>
+      facets.map((facet) => {
+        const counts = new Map<string, number>();
+        for (const p of facetBase) {
+          const value = facet.valueOf(p);
+          if (value) counts.set(value, (counts.get(value) ?? 0) + 1);
+        }
+        let rows: [string, number][] = facet.order
+          ? facet.order.map((value) => [value, counts.get(value) ?? 0])
+          : Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+        const selected = facetFilters[facet.key];
+        if (selected && !rows.some(([value]) => value === selected)) rows = [...rows, [selected, 0]];
+        return { facet, rows };
+      }),
+    [facets, facetBase, facetFilters],
   );
 
   const filtered = useMemo(() => {
-    let base = categoryFacetBase;
-    if (categoryFilter) {
-      base = base.filter((p) => primaryCategory(p) === categoryFilter);
-    }
+    const base = facetBase.filter((p) =>
+      facets.every((facet) => !facetFilters[facet.key] || facet.valueOf(p) === facetFilters[facet.key]),
+    );
     return sortPackages(base, sort);
-  }, [categoryFacetBase, categoryFilter, sort]);
+  }, [facets, facetBase, facetFilters, sort]);
+
+  /** Click a rail row to filter, click it again to clear it. */
+  const toggleFacet = useCallback((key: string, value: string) => {
+    setFacetFilters((prev) => ({ ...prev, [key]: prev[key] === value ? "" : value }));
+  }, []);
+  const clearFilters = useCallback(() => {
+    setFilter("all");
+    setFacetFilters({});
+  }, []);
 
   useEffect(() => {
     if (filtered.length === 0) {
@@ -166,10 +226,13 @@ export function useNodeCatalogBrowse() {
     setSort,
     filter,
     setFilter,
-    categoryFilter,
-    setCategoryFilter,
+    facetFilters,
+    facetRows,
+    toggleFacet,
+    clearFilters,
     selectedDirName,
     setSelectedDirName,
+    loaded,
     busy,
     actionError,
     catalogPublishAllowed,
@@ -184,9 +247,9 @@ export function useNodeCatalogBrowse() {
     catalogByDir,
     catalogPublishedDirs,
     defaults,
+    mergedRows,
     filtered,
     selectedPkg,
-    sortedCategories,
     allCount,
     installedCount,
     updatesCount,

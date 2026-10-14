@@ -14,13 +14,19 @@
  * this layer stays registry-free (memo §3.4 rule 5) and the callers keep the
  * exact behavior they had: the same call order, the same toasts, the same
  * error banners.
+ *
+ * The package kind is an option too: the Node Catalog lists node packages and
+ * the Model Catalog model packages (`packageKind: "model"`), through this one
+ * hook. Only the rows shown are filtered; an install is still reviewed
+ * against everything in the store, whatever its kind.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { packagesApi } from "./packagesApi";
 import { dependencyFailureNotice } from "./packageDependencyNotice";
 import { restartNotice } from "./packageRestartCopy";
-import type { PackagePayload, ResolveConflict } from "./types";
+import { packageKindOf, usePackageCatalogRefresh } from "./modelPackages";
+import type { PackageKind, PackagePayload, ResolveConflict } from "./types";
 
 export type PackageCatalogScope =
   | { kind: "project"; projectId: string | null }
@@ -28,6 +34,9 @@ export type PackageCatalogScope =
 
 export interface UsePackageCatalogOptions {
   scope: PackageCatalogScope;
+  /** Which packages the surface lists: `node` (the Node Catalog, the
+   *  default) or `model` (the Model Catalog). */
+  packageKind?: PackageKind;
   /** Renders a toast; `kind` defaults to error at the provider, so every success says so. */
   showToast?: (message: string, kind: "success" | "error") => void;
   /**
@@ -56,16 +65,22 @@ export interface UsePackageCatalogOptions {
 }
 
 export interface PackageCatalogState {
-  /** The shared catalog's rows (`installed` marks rows the user store holds). */
+  /** The shared catalog's rows of the surface's kind (`installed` marks rows
+   *  the user store holds). */
   catalog: PackagePayload[];
-  /** The user store's rows. */
+  /** The user store's rows of the surface's kind. */
   installed: PackagePayload[];
+  /** The kind of the package in *dirName*, read off every row of either list;
+   *  `node` for one neither lists, the manifest's own default. */
+  kindOfDir: (dirName: string) => PackageKind;
   installedByDir: Map<string, PackagePayload>;
   catalogByDir: Map<string, PackagePayload>;
   catalogPublishedDirs: Set<string>;
   catalogPublishAllowed: boolean;
   /** Defaults scope: the account's always-installed set; empty in project scope. */
   defaults: Set<string>;
+  /** The listing has arrived at least once, so an empty one means empty. */
+  loaded: boolean;
   busy: boolean;
   publishingPackageKey: string | null;
   reloadingPackageKey: string | null;
@@ -129,6 +144,7 @@ export async function probeInstallConflicts(dirNames: string[]): Promise<Resolve
 export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCatalogState {
   const {
     scope,
+    packageKind = "node",
     showToast = noop,
     onEnsureProject,
     beforeReload,
@@ -140,9 +156,11 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
   } = options;
   const projectId = scope.kind === "project" ? scope.projectId : null;
 
-  const [catalog, setCatalog] = useState<PackagePayload[]>([]);
-  const [installed, setInstalled] = useState<PackagePayload[]>([]);
+  // Every row, of every kind: the review resolves the whole store.
+  const [allCatalog, setCatalog] = useState<PackagePayload[]>([]);
+  const [allInstalled, setInstalled] = useState<PackagePayload[]>([]);
   const [defaults, setDefaults] = useState<Set<string>>(new Set());
+  const [loaded, setLoaded] = useState(false);
   const [catalogPublishAllowed, setCatalogPublishAllowed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [publishingPackageKey, setPublishingPackageKey] = useState<string | null>(null);
@@ -196,6 +214,7 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
       setInstalled(mine.packages);
       installedByDirRef.current = new Map(mine.packages.map((p) => [p.dirName, p]));
       setCatalogPublishAllowed(cap.catalogPublish);
+      setLoaded(true);
       if (projLock && Array.isArray(projLock.packages) && onProjectLockfile) {
         await onProjectLockfile(projLock.packages, token);
       }
@@ -212,11 +231,32 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
     installedByDirRef.current = new Map(mine.packages.map((p) => [p.dirName, p]));
     setCatalogPublishAllowed(cap.catalogPublish);
     setDefaults(new Set(defaultsResp.packages));
+    setLoaded(true);
   }, [scope.kind, projectId, beforeReload, onProjectLockfile]);
 
   useEffect(() => {
     void reload().catch((err) => reportActionError("Couldn't load catalog", err));
   }, [reload, reportActionError]);
+
+  // A package added elsewhere (a Discovery download) reaches the listing too.
+  const reloadOnRefresh = useCallback(() => {
+    void reload().catch((err) => reportActionError("Couldn't load catalog", err));
+  }, [reload, reportActionError]);
+  usePackageCatalogRefresh(reloadOnRefresh);
+
+  const catalog = useMemo(
+    () => allCatalog.filter((p) => packageKindOf(p) === packageKind),
+    [allCatalog, packageKind],
+  );
+  const installed = useMemo(
+    () => allInstalled.filter((p) => packageKindOf(p) === packageKind),
+    [allInstalled, packageKind],
+  );
+  const kindOfDir = useMemo(() => {
+    const kinds = new Map<string, PackageKind>();
+    for (const p of [...allInstalled, ...allCatalog]) kinds.set(p.dirName, packageKindOf(p));
+    return (dirName: string): PackageKind => kinds.get(dirName) ?? "node";
+  }, [allCatalog, allInstalled]);
 
   const installedByDir = useMemo(() => new Map(installed.map((p) => [p.dirName, p])), [installed]);
   const catalogByDir = useMemo(() => new Map(catalog.map((p) => [p.dirName, p])), [catalog]);
@@ -252,8 +292,10 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
       setInstallMode(mode);
       setInstallCandidate(pkg);
       try {
-        // An update's candidate is already in the store, so it is in `installed`.
-        const dirs = installed.map((p) => p.dirName);
+        // An update's candidate is already in the store, so it is in the
+        // store's rows. Every kind: a model's libraries can conflict with a
+        // node package's.
+        const dirs = allInstalled.map((p) => p.dirName);
         setConflictReport(
           await probeInstallConflicts(mode === "update" ? dirs : [...dirs, pkg.dirName]),
         );
@@ -262,7 +304,7 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
         setInstallCandidate(null);
       }
     },
-    [scope.kind, installed, ensureSavedProjectId],
+    [scope.kind, allInstalled, ensureSavedProjectId],
   );
   const probeInstall = useCallback((pkg: PackagePayload) => openReview(pkg, "add"), [openReview]);
   const probeUpdate = useCallback((pkg: PackagePayload) => openReview(pkg, "update"), [openReview]);
@@ -495,16 +537,16 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
 
   return useMemo(
     () => ({
-      catalog, installed, installedByDir, catalogByDir, catalogPublishedDirs, catalogPublishAllowed, defaults,
-      busy, publishingPackageKey, reloadingPackageKey, cardActionDir, actionError, restartNoticeText,
+      catalog, installed, kindOfDir, installedByDir, catalogByDir, catalogPublishedDirs, catalogPublishAllowed, defaults,
+      loaded, busy, publishingPackageKey, reloadingPackageKey, cardActionDir, actionError, restartNoticeText,
       lastInstallSummary, installCandidate, installMode, conflictReport, effectiveProjectId,
       ensureProjectId: ensureSavedProjectId,
       reload, reportActionError, dismissActionError, dismissInstallSummary, dismissRestartNotice,
       probeInstall, probeUpdate, confirmInstall, cancelInstall, uninstallFromProject, publish, unpublish,
       reloadFromCatalog, exportArchive,
     }),
-    [catalog, installed, installedByDir, catalogByDir, catalogPublishedDirs, catalogPublishAllowed, defaults,
-     busy, publishingPackageKey, reloadingPackageKey, cardActionDir, actionError, restartNoticeText,
+    [catalog, installed, kindOfDir, installedByDir, catalogByDir, catalogPublishedDirs, catalogPublishAllowed, defaults,
+     loaded, busy, publishingPackageKey, reloadingPackageKey, cardActionDir, actionError, restartNoticeText,
      lastInstallSummary, installCandidate, installMode, conflictReport, effectiveProjectId, ensureSavedProjectId,
      reload, reportActionError, dismissActionError, dismissInstallSummary, dismissRestartNotice,
      probeInstall, probeUpdate, confirmInstall, cancelInstall, uninstallFromProject, publish, unpublish,

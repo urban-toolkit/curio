@@ -1,6 +1,12 @@
 import React from "react";
-import { PackagePayload, primaryCategory } from "../../services/packages";
+import { PackagePayload, isModelPackage, primaryCategory } from "../../services/packages";
 import { CatalogItemStripHeader } from "../../components/catalog/CatalogKindVisuals";
+import {
+  modelLabelCount,
+  modelRuntimeLabel,
+  modelSizeLabel,
+  modelTypeLabel,
+} from "../../components/models/catalog/modelFacts";
 import browseStyles from "./CatalogBrowseLayout.module.css";
 import styles from "./PackageBrowseCard.module.css";
 import { countLabel } from "../../utils/countLabel";
@@ -52,6 +58,11 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
 }) => {
   const cat = primaryCategory(pkg);
   const cardStyles = styles as Record<string, string>;
+  // A model package is the Model Catalog's card: the model kind's colour, its
+  // runtime as the badge, its type and labels as chips, and its weights'
+  // license where a node package shows its age.
+  const model = isModelPackage(pkg) ? pkg : null;
+  const colourKey = model ? "model" : cat;
 
   return (
     <article
@@ -59,10 +70,11 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
         browseStyles.card,
         selected ? browseStyles.cardActive : "",
         selected ? styles.cardActive : "",
-        stripClass(cardStyles, "card", cat),
+        stripClass(cardStyles, "card", colourKey),
       ].join(" ")}
       // Same cross-surface identity attribute the drawer's PackageCard carries.
       data-pkg-dir={pkg.dirName}
+      {...(model ? { "data-model-id": model.packageId } : {})}
       role="button"
       tabIndex={0}
       onContextMenu={onContextMenu}
@@ -71,10 +83,12 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
         if (e.key === "Enter" || e.key === " ") onSelect();
       }}
     >
-      <div className={`${browseStyles.cardStrip} ${stripClass(cardStyles, "strip", cat)}`}>
+      <div className={`${browseStyles.cardStrip} ${stripClass(cardStyles, "strip", colourKey)}`}>
         <CatalogItemStripHeader
-          kind="package"
-          badge={<span className={browseStyles.cardFormatBadge}>{cat}</span>}
+          kind={model ? "model" : "package"}
+          badge={
+            <span className={browseStyles.cardFormatBadge}>{model ? modelRuntimeLabel(model) : cat}</span>
+          }
         />
       </div>
 
@@ -82,7 +96,7 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
         <h2 className={browseStyles.cardTitle}>{pkg.name}</h2>
         <p className={browseStyles.publisher}>
           {pkg.publisher || pkg.packageId} · v{pkg.version}
-          {pkg.license ? ` · ${pkg.license}` : ""}
+          {pkg.license && !model ? ` · ${pkg.license}` : ""}
         </p>
         <p
           className={browseStyles.cardDescription}
@@ -92,10 +106,16 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
         </p>
         {/* See DataCatalogBrowseCard: aims the #333 baseline at the claim. */}
         <div className={browseStyles.tagRow} data-curio-tag-row="true">
-          <span className={browseStyles.tag} data-curio-tag-chip="true">
-            {countLabel(pkg.templates.length, "node")}
-          </span>
-          <span className={browseStyles.tag} data-curio-tag-chip="true">{cat}</span>
+          {model ? (
+            <span className={browseStyles.tag} data-curio-tag-chip="true">{modelTypeLabel(model)}</span>
+          ) : (
+            <>
+              <span className={browseStyles.tag} data-curio-tag-chip="true">
+                {countLabel(pkg.templates.length, "node")}
+              </span>
+              <span className={browseStyles.tag} data-curio-tag-chip="true">{cat}</span>
+            </>
+          )}
           {(pkg.channel ?? "stable") !== "stable" ? (
             <span className={browseStyles.tag} data-curio-tag-chip="true">{pkg.channel}</span>
           ) : null}
@@ -107,12 +127,23 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
         </div>
       </div>
 
-      <div className={browseStyles.cardMeta}>
-        <span className={browseStyles.metaLeft}>
-          {countLabel(pkg.templates.length, "template")} · {pkg.packageId}
-        </span>
-        <span className={browseStyles.metaRight}>{relativeFromMs(pkg.createdAtMs)}</span>
-      </div>
+      {model ? (
+        <div className={browseStyles.cardMeta}>
+          <span className={browseStyles.metaLeft}>
+            {[model.model.labels.length > 0 ? modelLabelCount(model) : null, modelSizeLabel(model)]
+              .filter(Boolean)
+              .join(" · ")}
+          </span>
+          <span className={browseStyles.metaRight}>{model.model.license || "Unknown license"}</span>
+        </div>
+      ) : (
+        <div className={browseStyles.cardMeta}>
+          <span className={browseStyles.metaLeft}>
+            {countLabel(pkg.templates.length, "template")} · {pkg.packageId}
+          </span>
+          <span className={browseStyles.metaRight}>{relativeFromMs(pkg.createdAtMs)}</span>
+        </div>
+      )}
 
       <div className={browseStyles.cardActions}>
         {/* Identity and one way in. Publishing is an account-level decision

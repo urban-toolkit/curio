@@ -1,11 +1,18 @@
-import type { ModelRow, ModelRuntime } from "./modelCatalogTypes";
+import type { ModelBlockPayload, PackagePayload } from "./types";
 import { hasRewritableModelCall, modelIdsInCode, rewriteFirstModelCall } from "./modelCode";
+
+/**
+ * A model package (kind `model`) on the canvas: dragged from the Model
+ * Catalog onto a node, whose `curio_load_model("<id>")` call it then names,
+ * or onto the canvas, where it becomes a node that runs it. A model's id is
+ * its package's `packageId`.
+ */
 
 /** What a model drag carries: enough to rewrite a call and to say so. */
 export interface ModelDragPayload {
   modelId: string;
   name: string;
-  runtime: ModelRuntime;
+  runtime: ModelBlockPayload["runtime"];
 }
 
 /** The binding a node keeps for the model it runs, beside its code. Saved at
@@ -15,10 +22,11 @@ export interface ModelRef {
   name: string;
 }
 
-type ModelLike = Pick<ModelRow, "id" | "name"> | ModelDragPayload;
+/** A model by its id and name: a model package's row, or a drag of one. */
+type ModelLike = Pick<PackagePayload, "packageId" | "name"> | ModelDragPayload;
 
 function modelIdOf(model: ModelLike): string {
-  return "modelId" in model ? model.modelId : model.id;
+  return "modelId" in model ? model.modelId : model.packageId;
 }
 
 export const MODEL_DRAG_MIME = "application/x-curio-model";
@@ -27,8 +35,9 @@ const MODEL_DRAG_PLAIN_PREFIX = "curio-model:";
 /** In-memory payload for the current drag (HTML5 getData is unreliable for custom MIME). */
 let activeModelDrag: ModelDragPayload | null = null;
 
-export function createModelDragPayload(model: ModelRow): ModelDragPayload {
-  return { modelId: model.id, name: model.name, runtime: model.runtime };
+/** The drag of a model package. Its `model` block says how its weights run. */
+export function createModelDragPayload(model: PackagePayload): ModelDragPayload {
+  return { modelId: model.packageId, name: model.name, runtime: model.model?.runtime ?? "onnx" };
 }
 
 function parseModelDragJson(raw: string): ModelDragPayload | null {
@@ -43,7 +52,7 @@ function parseModelDragJson(raw: string): ModelDragPayload | null {
 }
 
 /** Call from `dragStart` on model rows and cards. */
-export function beginModelDrag(model: ModelRow): ModelDragPayload {
+export function beginModelDrag(model: PackagePayload): ModelDragPayload {
   const payload = createModelDragPayload(model);
   activeModelDrag = payload;
   return payload;

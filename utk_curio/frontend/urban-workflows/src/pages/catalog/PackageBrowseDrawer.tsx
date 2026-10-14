@@ -1,6 +1,11 @@
 import React from "react";
-import { PackagePayload, primaryCategory } from "../../services/packages";
+import { PackagePayload, isModelPackage, primaryCategory } from "../../services/packages";
 import { CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
+import {
+  modelInfoRows,
+  modelMetaLine,
+  modelRuntimeLabel,
+} from "../../components/models/catalog/modelFacts";
 import {
   catalogIsFresh,
   catalogRelativeTime,
@@ -87,37 +92,48 @@ const PackageBrowseDrawerContent: React.FC<PackageBrowseDrawerContentProps> = ({
   });
   const shown = pkg.templates.slice(0, TEMPLATE_PREVIEW_LIMIT);
   const hidden = pkg.templates.length - shown.length;
+  // A model package, on the Model Catalog's page: the model's facts, as the
+  // details modal and the cards read them.
+  const model = isModelPackage(pkg) ? pkg : null;
 
   return (
     <CatalogBrowseDrawerBody
-      kind="package"
-      headerTitle="Package details"
+      kind={model ? "model" : "package"}
+      headerTitle={model ? "Model details" : "Package details"}
       onClose={onClose}
       hero={
         <div className={browseStyles.drawerKindHero}>
-          <CatalogKindIcon kind="package" size="lg" title="Node package" />
+          {model ? (
+            <CatalogKindIcon kind="model" size="lg" title="Model package" />
+          ) : (
+            <CatalogKindIcon kind="package" size="lg" title="Node package" />
+          )}
         </div>
       }
       title={pkg.name}
       badges={
         <>
-          <span className={browseStyles.drawerCategoryBadge}>{cat}</span>
+          <span className={browseStyles.drawerCategoryBadge}>{model ? modelRuntimeLabel(model) : cat}</span>
           {isInstalled ? (
             <span className={browseStyles.drawerInstalledBadge}>✓ In all projects</span>
           ) : null}
         </>
       }
       subtitle={`${pkg.publisher || pkg.packageId} · v${pkg.version}`}
-      metaLeft={`${countLabel(pkg.templates.length, "node")} · ${pkg.packageId}`}
+      metaLeft={model ? modelMetaLine(model) : `${countLabel(pkg.templates.length, "node")} · ${pkg.packageId}`}
       metaRight={catalogRelativeTime(pkg.createdAtMs)}
       fresh={catalogIsFresh(pkg.createdAtMs)}
       description={pkg.description}
-      infoLabel="Package info"
-      infoRows={[
-        { label: "Channel", value: pkg.channel ?? "stable" },
-        { label: "Templates", value: pkg.templates.length },
-        pkg.license ? { label: "License", value: pkg.license } : null,
-      ]}
+      infoLabel={model ? "Model info" : "Package info"}
+      infoRows={
+        model
+          ? [...modelInfoRows(model), pkg.license ? { label: "Code license", value: pkg.license } : null]
+          : [
+              { label: "Channel", value: pkg.channel ?? "stable" },
+              { label: "Templates", value: pkg.templates.length },
+              pkg.license ? { label: "License", value: pkg.license } : null,
+            ]
+      }
       sections={
         <CatalogDrawerSection label="Nodes in pack">
           <CatalogDrawerList

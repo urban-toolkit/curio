@@ -1,8 +1,17 @@
 import React from "react";
-import { PackagePayload, packageInitial, primaryCategory } from "../../../services/packages";
+import {
+  PackagePayload,
+  beginModelDrag,
+  endModelDrag,
+  isModelPackage,
+  packageInitial,
+  primaryCategory,
+  writeModelDragData,
+} from "../../../services/packages";
 import {
   CatalogKindIcon,
 } from "../../catalog/CatalogKindVisuals";
+import { modelMetaLine } from "../../models/catalog/modelFacts";
 import styles from "./PackageCard.module.css";
 
 /**
@@ -68,14 +77,28 @@ export const PackageCard: React.FC<PackageCardProps> = ({
   // never been published.
 
   const cat = primaryCategory(pkg);
+  // A model package is the Model Catalog's card: the model's kind tile, the
+  // weights' license in its meta line, and the whole card a drag source that
+  // drops the model onto a node or the canvas.
+  const model = isModelPackage(pkg) ? pkg : null;
+  const modelDrag = model
+    ? {
+        draggable: true,
+        "data-model-id": model.packageId,
+        onDragStart: (event: React.DragEvent<HTMLElement>) =>
+          writeModelDragData(event.dataTransfer, beginModelDrag(model)),
+        onDragEnd: () => endModelDrag(),
+      }
+    : {};
 
   return (
     <article
-      className={styles.card}
+      className={model ? `${styles.card} ${styles.cardDraggable}` : styles.card}
       /* Stable hook for e2e locators: the CSS module class is hashed, and
          keying on the display name couples tests to copy that has been
          renamed repeatedly. Mirrors data-pkg-palette-coords. */
       data-pkg-dir={pkg.dirName}
+      {...modelDrag}
     >
       {/* The square, and the way into the package's details beneath it - the
           same position on every drawer card. */}
@@ -84,22 +107,35 @@ export const PackageCard: React.FC<PackageCardProps> = ({
             a button too - on every drawer card. */}
         <button
           type="button"
-          className={`${styles.cardIcon} ${styles.cardAvatarButton}`}
+          className={
+            model
+              ? `${styles.cardAvatar} ${styles.avatar_model} ${styles.cardAvatarButton}`
+              : `${styles.cardIcon} ${styles.cardAvatarButton}`
+          }
           title={`View ${pkg.name} details`}
           aria-label={`View ${pkg.name} details`}
           disabled={!onOpenDetails}
           onClick={() => onOpenDetails?.(pkg)}
         >
-          <CatalogKindIcon
-            className={`${styles.cardIcon} ${styles.cardIconPackage} ${iconVariantForCategory(cat)} `}
-            kind="package"
-            size="md"
-            title="Node package"
-          >
-            <span className={styles.cardIconText}>
-              {packageInitial(pkg.name)}
-            </span>
-          </CatalogKindIcon>
+          {model ? (
+            <CatalogKindIcon
+              className={`${styles.cardIcon} ${styles.avatar_model}`}
+              kind="model"
+              size="md"
+              title="Model package"
+            />
+          ) : (
+            <CatalogKindIcon
+              className={`${styles.cardIcon} ${styles.cardIconPackage} ${iconVariantForCategory(cat)} `}
+              kind="package"
+              size="md"
+              title="Node package"
+            >
+              <span className={styles.cardIconText}>
+                {packageInitial(pkg.name)}
+              </span>
+            </CatalogKindIcon>
+          )}
         </button>
         {onOpenDetails ? (
           <button
@@ -126,13 +162,16 @@ export const PackageCard: React.FC<PackageCardProps> = ({
         <h3 className={styles.cardTitle}>{pkg.name}</h3>
         <div className={styles.cardMetaRow}>
           <span className={styles.cardMetaText}>
-            {[
-              pkg.publisher || pkg.packageId,
-              `v${pkg.version}`,
-              cat,
-              `${pkg.templates.length} node${pkg.templates.length === 1 ? "" : "s"}`,
-              (pkg.channel ?? "stable") !== "stable" ? pkg.channel : null,
-            ]
+            {(model
+              ? [modelMetaLine(model), model.model.license]
+              : [
+                  pkg.publisher || pkg.packageId,
+                  `v${pkg.version}`,
+                  cat,
+                  `${pkg.templates.length} node${pkg.templates.length === 1 ? "" : "s"}`,
+                  (pkg.channel ?? "stable") !== "stable" ? pkg.channel : null,
+                ]
+            )
               .filter(Boolean)
               .join(" · ")}
           </span>

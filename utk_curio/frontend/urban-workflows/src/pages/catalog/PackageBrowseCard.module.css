@@ -31,6 +31,12 @@
 .cardActive.card_vis         { border-color: var(--curio-category-vis-fg); }
 .cardActive.card_package     { border-color: var(--curio-category-package-fg); }
 
+/* A model package, on the Model Catalog's page: ONE key, the model kind's
+   colour, not one per runtime or type; the runtime is the strip's neutral
+   badge. See --curio-kind-model-fg. */
+.strip_model             { background: var(--curio-kind-model-fg); }
+.cardActive.card_model   { border-color: var(--curio-kind-model-fg); }
+
 .tagUpdate {
   background: var(--curio-role-update-bg);
   color: var(--curio-role-update-fg);

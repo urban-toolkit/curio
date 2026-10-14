@@ -18,6 +18,7 @@ import type {
   FunctionTemplatePayload,
   FunctionTemplateRequest,
   InstallResponse,
+  PackageKind,
   PackageMetadataUpdate,
   PackagePayload,
   ProjectPackagesResponse,
@@ -26,19 +27,34 @@ import type {
   WorkflowDepsInstallResponse,
 } from "./types";
 
+/** `?kind=<kind>` when a listing keeps one kind of package, else nothing. */
+function kindQuery(kind?: PackageKind): string {
+  return kind ? `?kind=${kind}` : "";
+}
+
 export const packagesApi = {
-  /** Installed packages for the current user. */
-  listInstalled(): Promise<{ packages: PackagePayload[] }> {
-    return apiFetch("/api/packages");
+  /** Installed packages for the current user; only *kind*'s when given. */
+  listInstalled(kind?: PackageKind): Promise<{ packages: PackagePayload[] }> {
+    return apiFetch(`/api/packages${kindQuery(kind)}`);
   },
 
-  /** Fixture-backed catalog: package rows plus family index and collision report. */
-  catalog(): Promise<{
+  /** Fixture-backed catalog: package rows plus family index and collision
+   *  report; only *kind*'s rows when given. */
+  catalog(kind?: PackageKind): Promise<{
     packages: PackagePayload[];
     families: CatalogFamilyPayload[];
     catalogCollisions: CatalogCollisionPayload[];
   }> {
-    return apiFetch("/api/packages/catalog");
+    return apiFetch(`/api/packages/catalog${kindQuery(kind)}`);
+  },
+
+  /** A model package's weights license text, from the account's copy or the
+   *  catalog's. 404 when its weights have none. */
+  async weightsLicense(dirName: string): Promise<string> {
+    const res = await apiFetch<{ text?: string }>(
+      `/api/packages/${encodeURIComponent(dirName)}/weights-license`,
+    );
+    return res?.text ?? "";
   },
 
   /** Sideload a ``.curio.zip`` archive (multipart). */
