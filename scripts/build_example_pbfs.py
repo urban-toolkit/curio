@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Build the OpenStreetMap extracts the shipped examples load.
 
-Every ``docs/examples/data/*.osm.pbf`` is built by this script, from an area:
-a place Nominatim finds (its bounding box) or a fixed box.
+This script builds the ``docs/examples/data/*.osm.pbf`` extracts, each from an
+area: a place Nominatim finds (its bounding box) or a fixed box.
 
 - The extract holds every OpenStreetMap feature in the area's box. Nothing is
   filtered by tag: an Autark node's data spec picks and filters the layers.
@@ -69,7 +69,8 @@ class Area(NamedTuple):
 AREAS = {
     # Example 06.
     "back_bay": Area(place="Back Bay, Boston, Massachusetts, USA", boundaries=("Back Bay",)),
-    # Example 07, Interaction_Autark and WeatherRouting.
+    # Example 07, Interaction_Autark and WeatherRouting. Not rebuilt yet: autk-db
+    # 4.1.0 skips the Loop's 3D building relations (test_build_example_pbfs.py).
     "chicago_loop": Area(place="Loop, Chicago, Illinois, USA", boundaries=("Loop",)),
     # Example 08 and Regression.
     "niteroi": Area(place="Niterói, Rio de Janeiro, Brazil", boundaries=("Niterói",)),
