@@ -388,7 +388,26 @@ def _assert_towers_removed(page) -> None:
     for tower, parts in TOWER_PARTS.items():
         assert before.count(tower) == parts, f"the loaded buildings hold {before.count(tower)} parts of {tower}, not {parts}"
     artifact = page.evaluate(_OUTPUT_ARTIFACT_JS, E_EDIT)
-    assert artifact, f"{E_EDIT} shows no saved output"
+    diag = page.evaluate("""(ids) => ids.map((id) => {
+        const node = window.__curio_reactFlow.getNodes().find((n) => n.id === id);
+        const d = (node && node.data) || {};
+        const out = d.output || {};
+        const so = d.serverOutput || {};
+        const el = document.querySelector(`.react-flow__node[data-id="${id}"] [data-curio-node-status]`);
+        return {
+            id,
+            style: node && node.style && node.style.display,
+            outputCode: out.code,
+            outputContent: String(out.content || '').slice(0, 160),
+            serverSeq: so.seq,
+            serverCode: so.output && so.output.code,
+            serverContent: String((so.output && so.output.content) || '').slice(0, 160),
+            domStatus: el && el.getAttribute('data-curio-node-status'),
+            executedCode: typeof d.executedCode,
+            keys: Object.keys(d).sort().join(','),
+        };
+    })""", [E_EDIT, DATA, "whatif-pool", E_COMPUTE, CHART])
+    assert artifact, f"{E_EDIT} shows no saved output. DIAG {json.dumps(diag)}"
     stored = load_artifact_as_dict(artifact)
     handed = stored["data"]
     assert handed["dataType"] == "outputs", handed.get("dataType")
