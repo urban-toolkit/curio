@@ -288,10 +288,10 @@ class TestItLandsAsAModelPackage:
     def test_someone_who_may_not_install_is_refused_before_any_download(
         self, client, auth, live, pip, monkeypatch, repo, library,
     ):
-        from utk_curio.backend.app.model_catalog import service as model_service
+        from utk_curio.backend.app.packages import service as packages_service
 
-        monkeypatch.setattr(model_service.ModelCatalogService, "install_refusal",
-                            lambda self: "this Curio does not install packages for guests")
+        monkeypatch.setattr(packages_service, "model_library_refusal",
+                            lambda user: "this Curio does not install packages for guests")
         fetched = []
         monkeypatch.setattr(hfm.HuggingFaceModels, "file_url",
                             lambda self, plan, path: fetched.append(path) or f"{self.base}/x")
