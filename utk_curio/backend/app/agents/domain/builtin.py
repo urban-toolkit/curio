@@ -1,4 +1,4 @@
-"""Built-in agent definitions: the twelve agents Curio ships with, nine of them catalog cards.
+"""Built-in agent definitions: the eleven agents Curio ships with, eight of them catalog cards.
 
 Data-driven roster generated from the canonical prompt→agent map (plan memo
 ``dev/06``) over the existing prompt files in ``utk_curio/llm-prompts/*.md``,
@@ -169,7 +169,7 @@ def _merged(agent_id: str, name: str, category: str, purpose: str,
 
 
 # The prompt-agent migrations (dev/06 canonical map) plus the P5 composites
-# (dev/48) and the package-authoring agents: twelve in all, nine of them
+# (dev/48) and the package-authoring agents: eleven in all, eight of them
 # catalog cards (``in_catalog``), which is what docs/AGENT-CATALOG.md quotes
 # and test_prompt_assets parametrizes over.
 BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
@@ -229,18 +229,6 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
              BuiltinMode("workflow.suggest", "workflow_suggestions_prompt.md",
                          ("dataflowContext", "workflowGoal"), worked_examples=True)),
             roles=("explanation", "planning"), targets=("canvas",), tools=("dataflow.read",)),
-    # dev/67-4 (DEC-053): the research agent — concise factual verification
-    # of external sources (dataset ids, endpoints, schemas) other agents
-    # chain to via research.verify; policy-gated web tools; never mutates.
-    BuiltinAgentSpec("agent.node-researcher", "Node Researcher", "evaluate",
-                     "Verify external facts — dataset ids, API endpoints, schemas, "
-                     "parameter names — with policy-gated web access; reusable and "
-                     "chainable; reports failure to verify as a finding.",
-                     "research_instruction.md",
-                     ("research.verify", "research.summarize"), ("validation",),
-                     targets=("node", "canvas"),
-                     reads=("mission", "nodeContext"),
-                     tools=("web.search", "web.fetch", "node.read")),
     # The first P5 composite (memo dev/48; spec dev/15 §3.4). Its chat runs
     # its own instruction; content for a node runs as its
     # node.content.generate mode, which its chat asks for through the entry
@@ -269,7 +257,8 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                             "models.search"),
                      delegates_to=(("agent.node-builder", ("node.content.generate",)),
                                    ("agent.dataflow-planner", ("execution.followup.plan",)),
-                                   "agent.node-researcher",
+                                   # dev/67-4: checking a fact the node needs.
+                                   ("agent.researcher", ("research.verify",)),
                                    # dev/84: a built node's required packages.
                                    "agent.package-recommendation",
                                    # dev/89: no suitable template anywhere →
@@ -321,7 +310,7 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      delegates_to=(("agent.node-builder", ("node.build", "dataset.fetch.author")),
                                    ("agent.dataflow-reader", ("workflow.suggest",)),
                                    ("agent.dataflow-planner", ("workflow.keyword.bind",)),
-                                   "agent.node-researcher"),
+                                   ("agent.researcher", ("research.verify",))),
                      review_policy="review-before-apply",
                      node_requires=("data-loading",)),
     # The third P5 composite (memo dev/52; spec dev/15 §3.4 + dev/49 DR-1…5).
@@ -351,7 +340,6 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                                        "workflow.plan.create", "execution.followup.plan",
                                        "workflow.plan.refresh", "workflow.coherence.validate")),
                                    ("agent.dataflow-reader", ("workflow.suggest", "dataflow.explain")),
-                                   "agent.node-researcher",
                                    # dev/84: the "Recommend packages" plan step.
                                    "agent.package-recommendation",
                                    # dev/89: package-scale plan steps — one
@@ -365,7 +353,8 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                                    # dev/95 (Follow-up D): research questions in
                                    # the DFB chat delegate research.notes.compose
                                    # — runtime-gathered search inputs, schema
-                                   # reply, reviewed note sequence.
+                                   # reply, reviewed note sequence. A fact to
+                                   # check is its research.verify.
                                    "agent.researcher"),
                      # dev/106: Solve/Validate hard-invoke node.content.generate,
                      # the Node Builder's content mode.
@@ -441,9 +430,12 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                             "package.draft.apply"),
                      review_policy="review-before-apply"),
     # The twenty-first built-in (memo dev/90). Net-new instruction. The NOTES
-    # scenario owner: turns findings into post-it style note nodes. Distinct
-    # from agent.node-researcher (dev/67-4 web VERIFICATION) — the two
-    # cooperate: Researcher may chain research.verify before composing.
+    # scenario owner: turns findings into post-it style note nodes. It also
+    # checks facts (dev/67-4 web VERIFICATION): asked in its chat, it answers
+    # with labeled findings and places no notes; asked by another agent, its
+    # research.verify mode runs as a delegated call, with no tools, over the
+    # verification the runtime ran. Both prompts carry the same checking
+    # rules ({{research.verify_rules}}).
     # Reuse-first (node.create on an installed notes template, per-note
     # appearance color); when no template fits it delegates the
     # package.create-or-extend intent to the Package Builder with the
@@ -454,13 +446,13 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
     # Dataflow Builder wiring is deliberately deferred (dev/90 Follow-up D).
     BuiltinAgentSpec("agent.researcher", "Researcher", "node",
                      "Answer questions by searching the web and compose the "
-                     "findings into post-it style note nodes — reuse an "
-                     "installed notes template, or delegate package authoring to "
-                     "the Package Builder with the post-it look requirements. "
-                     "Never authors packages itself; distinct from Node "
-                     "Researcher (verification).",
+                     "findings into post-it style note nodes, reusing an "
+                     "installed notes template or delegating package authoring to "
+                     "the Package Builder with the post-it look requirements; "
+                     "check a fact (a dataset id, an endpoint, a field name) and "
+                     "report what was verified. Never authors packages itself.",
                      "researcher_notes_instruction.md",
-                     ("research.notes.compose",), ("authoring",),
+                     ("research.notes.compose", "research.verify"), ("authoring",),
                      targets=("node", "canvas"),
                      reads=("mission", "targetContext", "installedTemplates"),
                      # dev/90 A1: the reference recording's loop — question →
@@ -475,11 +467,15 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      # question produced two near-duplicate packages. The
                      # reviewed install lane (dev/84) keeps the user in
                      # control; nothing installs without their approval.
-                     tools=("dataflow.read", "web.search", "web.fetch",
+                     tools=("dataflow.read", "node.read", "web.search", "web.fetch",
                             "node.create", "package.install",
                             "package.draft.apply"),
-                     delegates_to=("agent.package-builder", "agent.node-researcher"),
-                     review_policy="review-before-apply"),
+                     # Package authoring only: checking a fact is its own work.
+                     delegates_to=(("agent.package-builder",
+                                    ("package.build", "package.extend", "node.kind.author")),),
+                     review_policy="review-before-apply",
+                     modes=(BuiltinMode("research.verify", "research_instruction.md",
+                                        ("mission", "nodeContext")),)),
 )
 
 

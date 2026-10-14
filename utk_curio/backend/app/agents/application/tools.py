@@ -173,7 +173,7 @@ REGISTRY: dict[str, ToolContract] = {
             },
         }),
     ),
-    # dev/67-4 (DEC-053) — consumer: agent.node-researcher. Policy-gated
+    # dev/67-4 (DEC-053), consumer: agent.researcher, in its chat. Policy-gated
     # egress (SSRF guards, byte caps, per-run budget) — verification of
     # external dataset APIs, never crawling.
     "web.fetch": ToolContract(
