@@ -209,18 +209,23 @@ def test_a_context_without_a_saved_output_is_listed_to_run_first(client, user_an
     assert not dataset_dir(_user_dir_key_of(user), f"{computed_dataset_id('loader-1', target)}@1").exists()
 
 
-_OSM_SPEC = json.dumps({"data": [{
-    "type": "osm",
-    "pbfFileUrl": "docs/examples/data/back_bay.osm.pbf",
-    "outputTableName": "table_osm",
-    "autoLoadLayers": {"layers": ["roads"]},
-}]})
+#: An Autark node that computes over the layers it loads: only the browser
+#: runs it (WebGPU), so a run on the server cannot make its output.
+_COMPUTE_SPEC = json.dumps({
+    "data": [{
+        "type": "osm",
+        "pbfFileUrl": "docs/examples/data/back_bay.osm.pbf",
+        "outputTableName": "table_osm",
+        "autoLoadLayers": {"layers": ["roads"]},
+    }],
+    "compute": [{"dataRef": "table_osm_roads"}],
+})
 
 
 def test_a_context_only_the_browser_can_make_is_still_refused_naming_it(client, user_and_token):
     _, token = user_and_token
     nodes = [
-        _node("osm", "autk-grammar", _OSM_SPEC, title="Back Bay layers"),
+        _node("osm", "autk-grammar", _COMPUTE_SPEC, title="Back Bay layers"),
         _node("a", x=300),
     ]
     edges = [{"id": "e1", "source": "osm", "target": "a", "sourceHandle": "out", "targetHandle": "in"}]
@@ -239,7 +244,7 @@ def test_a_context_only_the_browser_can_make_is_still_refused_naming_it(client, 
 def test_a_context_fed_by_a_node_only_the_browser_runs_is_refused_naming_that_node(client, user_and_token):
     _, token = user_and_token
     nodes = [
-        _node("osm", "autk-grammar", _OSM_SPEC, title="Back Bay layers"),
+        _node("osm", "autk-grammar", _COMPUTE_SPEC, title="Back Bay layers"),
         _node("roads", content="return input_0", x=300, title="Roads"),
         _node("a", x=600),
     ]
@@ -262,6 +267,22 @@ def test_where_runs_on_the_server_are_refused_a_missing_output_stays_a_problem(c
     monkeypatch.setattr(capabilities, "run_refusal", lambda user: "Runs on the server are not available here.")
     _, token = user_and_token
     source, target = _source_and_target(client, token)
+
+    plan = _plan(client, token, source, target).get_json()
+
+    assert plan["toRun"] == []
+    [problem] = plan["problems"]
+    assert "Data Loading" in problem and "Shadows" in problem and "no saved output" in problem
+
+
+def test_with_no_project_page_a_missing_output_stays_a_problem(client, user_and_token, monkeypatch):
+    """``--no-project`` runs every dataflow in the browser, as a hosted guest
+    does, so a drop there has no run on the server to make the output."""
+    from utk_curio.backend import config
+
+    _, token = user_and_token
+    source, target = _source_and_target(client, token)
+    monkeypatch.setattr(config, "CURIO_NO_PROJECT", True)
 
     plan = _plan(client, token, source, target).get_json()
 
