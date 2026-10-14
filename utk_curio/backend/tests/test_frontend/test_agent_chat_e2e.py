@@ -419,7 +419,7 @@ class TestAgentReviewCard:
         require_user_auth()
         spec = next(
             s for s in builtin.BUILTIN_AGENTS
-            if s.agent_id == "agent.node-content-builder"
+            if s.agent_id == "agent.node-builder"
         )
         assert "node.content.write" in spec.tools, (
             "this test needs an agent that can propose a content replacement; "
@@ -518,6 +518,11 @@ class TestAgentReviewCard:
             f"Apply did not reach the saved dataflow; node {node_id} still holds "
             f"{_content_now()!r}"
         )
+        # And the canvas shows it, through the node's own Monaco instance (the
+        # gallery's content leg did this for the content writer's card).
+        assert PROPOSED_CONTENT in read_node_code(page, node_id), (
+            "the applied content is on the server but not on the canvas"
+        )
 
         dismiss_toasts(page)
         save_workflow_test_screenshot(
@@ -536,10 +541,12 @@ class TestNodeAttachedChatHeader:
     renders.
     """
 
-    # Node-only by roster, so the server cannot answer a node attachment with
-    # a canvas one and leave this reading the wrong header.
+    # Never a canvas agent by roster (it attaches to a node or a connection),
+    # so the server cannot answer a node attachment with a canvas one and
+    # leave this reading the wrong header. It is the only card without a
+    # canvas target; the Node Builder, which writes node content now, has one.
     SPEC = next(
-        s for s in builtin.BUILTIN_AGENTS if s.agent_id == "agent.node-content-builder"
+        s for s in builtin.BUILTIN_AGENTS if s.agent_id == "agent.connection-builder"
     )
 
     def test_the_header_names_the_node_and_keeps_the_ids_on_the_tooltip(
@@ -547,6 +554,10 @@ class TestNodeAttachedChatHeader:
     ):
         require_project_page()
         require_user_auth()
+        assert "canvas" not in self.SPEC.target_kinds(), (
+            f"{self.SPEC.agent_id} now attaches to the canvas; this test needs a "
+            "card that never does"
+        )
         page = agent_chat_session["page"]
 
         _open_dataflow_with_agent(

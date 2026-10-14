@@ -68,8 +68,8 @@ class TestGlobalCatalog:
         resp = client.get("/api/agents/catalog", headers=_auth(token))
         assert resp.status_code == 200
         agents = resp.get_json()["agents"]
-        # The ten catalog cards; the internal built-ins run only as delegates.
-        assert len(agents) == 10
+        # The seven catalog cards; the internal built-ins run only as delegates.
+        assert len(agents) == 7
         assert all(a["scope"] == "browse" and a["provenance"]["trust"] == "built-in" for a in agents)
         assert all(a["inCatalog"] is True for a in agents)
         ids = {a["id"] for a in agents}
@@ -306,9 +306,9 @@ class TestUnpublishKeepsAddersCopies:
 
 class TestMyImportsInstalledState:
     """My Imports reads installedInProject from the project lockfile — the one
-    source of truth (memo dev/47; the Node Content Builder regression)."""
+    source of truth (memo dev/47 and the regression it records)."""
 
-    COORD = "agent.node-content-builder@1.0.0"
+    COORD = "agent.node-builder@1.0.0"
 
     def test_imported_and_installed_shows_installed(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
@@ -911,14 +911,14 @@ class TestReadDefinition:
     the page could only say "Export failed".
     """
 
-    BUILTIN = "agent.node-researcher@1.0.0"
+    BUILTIN = "agent.researcher@1.0.0"
 
     def test_a_builtin_is_readable_without_ever_importing_it(self, client, user_and_token, tmp_curio):
         _, token = user_and_token
         r = client.get(f"/api/agents/definitions/{self.BUILTIN}", headers=_auth(token))
         assert r.status_code == 200, r.get_json()
         body = r.get_json()
-        assert body["manifest"]["id"] == "agent.node-researcher"
+        assert body["manifest"]["id"] == "agent.researcher"
         assert body["manifest"]["provenance"]["trust"] == "built-in"
         declared = {asset["path"] for asset in body["manifest"]["prompts"].values()}
         assert declared, "a built-in declares its prompt files"
@@ -965,7 +965,7 @@ class TestReadDefinition:
         _, token = user_and_token
         bundle = client.get(f"/api/agents/definitions/{self.BUILTIN}", headers=_auth(token)).get_json()
         manifest = dict(bundle["manifest"])
-        manifest["id"] = "agent.node-researcher-copy"
+        manifest["id"] = "agent.researcher-copy"
         manifest["provenance"] = {"publisher": "alice", "trust": "imported"}
         r = client.post(
             "/api/agents/imports/upload",

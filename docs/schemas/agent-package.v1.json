@@ -133,7 +133,7 @@
           }
         ]
       },
-      "description": "Agents this agent may delegate to, in preference order, each named once. Expresses a preferred/required implementation only; it grants nothing and never auto-imports or auto-installs."
+      "description": "Agents this agent may delegate to, in preference order, each named once. Expresses a preferred/required implementation only; it grants nothing and never auto-imports or auto-installs. An entry may name this agent itself only in the object form, and only with capabilities that are its own modes (capabilities with an 'instruction'): the agent then hands that work to its own mode."
     },
     "requiresAgents": {
       "type": "array",

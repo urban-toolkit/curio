@@ -16,9 +16,9 @@ it("opens API Settings on the agent the refusal names", () => {
   const asked: ApiSettingsFocus[] = [];
   const listener = (event: Event) => asked.push((event as CustomEvent<ApiSettingsFocus>).detail);
   window.addEventListener(API_SETTINGS_EVENT, listener);
-  render(<LlmConfigAction remedy={{ kind: "llm-config", agentId: "agent.node-content-builder" }} />);
+  render(<LlmConfigAction remedy={{ kind: "llm-config", agentId: "agent.node-builder" }} />);
   fireEvent.click(screen.getByRole("button", { name: "Open API Settings" }));
-  expect(asked).toEqual([{ section: "agent-models", agentId: "agent.node-content-builder" }]);
+  expect(asked).toEqual([{ section: "agent-models", agentId: "agent.node-builder" }]);
   window.removeEventListener(API_SETTINGS_EVENT, listener);
 });
 

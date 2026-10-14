@@ -80,7 +80,7 @@ export function lastingToolFailures(turn: AgentSessionTurn): AgentToolCall[] {
 }
 
 /** The agents whose work lands on the canvas (#243). */
-const CANVAS_AGENTS = ["agent.node-builder@", "agent.dataflow-builder@", "agent.node-content-builder@"];
+const CANVAS_AGENTS = ["agent.node-builder@", "agent.dataflow-builder@"];
 
 /**
  * #243: a canvas agent's reply that holds no proposal changed nothing on the

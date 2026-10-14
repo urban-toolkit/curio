@@ -231,6 +231,15 @@ def _delegation_task_text(capability: str, inputs: dict) -> str:
     return " · ".join(parts)[:480]
 
 
+def _is_own_mode_without_a_node(
+    coord: str, parent_coord: str, inputs: dict, node_id: str | None
+) -> bool:
+    """Whether a delegated task is the parent agent's own mode, for no node."""
+    same_agent = coord.split("@", 1)[0] == (parent_coord or "").split("@", 1)[0]
+    target_node = node_id or (inputs or {}).get("nodeId")
+    return same_agent and not (isinstance(target_node, str) and target_node)
+
+
 def _run_delegate_traced(
     user_key: str,
     project_id: str,
@@ -251,12 +260,16 @@ def _run_delegate_traced(
     turn, runs the child, writes the result turn (bounded reply + a
     structured trace card + the child's execution record), and returns the
     home id alongside the classic tuple. Exactly two turns per task; every
-    trace step is best-effort — no delegation ever fails over it."""
+    trace step is best-effort: no delegation ever fails over it.
+
+    An agent that hands work to one of its own modes and names no node opens
+    no chat of its own: like an internal agent's, its record rides the
+    parent's turn."""
     home_attachment_id: str | None = None
     home_session_id: str | None = None
     try:
         spec = projects_storage.read_spec(user_key, project_id)
-        if spec is not None:
+        if spec is not None and not _is_own_mode_without_a_node(coord, parent_coord, inputs, node_id):
             home, created = _delegation_home(
                 spec, coord, capability, inputs, node_id=node_id, create=home_create,
                 user_key=user_key,
@@ -1184,8 +1197,22 @@ _REUSE_EVIDENCE_MAX_TEMPLATES = 8
 _REUSE_EVIDENCE_DESC_CHARS = 200
 
 
-def _authoring_reuse_evidence(user_key: str, project_id: str) -> dict | None:
-    """What already exists, for a TOOL-LESS authoring delegate (memo dev/94).
+#: What a delegated ``package.recommend`` is told about ``existingPackages``:
+#: its candidates are these rows and nothing else.
+_RECOMMEND_EVIDENCE_NOTE = (
+    "Packages that exist for this user: the only packages you may recommend. "
+    "installedInProject false means the caller must enlist the package before "
+    "its templates can be used; a need none of these rows meets is a finding, "
+    "not a recommendation."
+)
+
+
+def _authoring_reuse_evidence(
+    user_key: str, project_id: str, *, note: str | None = None
+) -> dict | None:
+    """What already exists, for a TOOL-LESS authoring delegate (memo dev/94),
+    and, under *note*, for a delegated ``package.recommend``, which has no
+    catalog tool either.
 
     The Package Builder's instruction opens with "Reuse first. Before authoring
     anything, read packages.catalog … never a duplicate package" — and it holds
@@ -1254,7 +1281,7 @@ def _authoring_reuse_evidence(user_key: str, project_id: str) -> dict | None:
     if not packages:
         return None
     return {
-        "note": (
+        "note": note or (
             "Packages that already exist for this user. If one of these already "
             "satisfies the requested need, say so and author nothing — name its "
             "dirName so the caller can use it (installedInProject false means the "
@@ -1281,6 +1308,15 @@ def _enriched_delegate_inputs(
         url = inputs.get("url") or inputs.get("endpoint")
         if isinstance(url, str) and url.strip():
             return {**inputs, "verification": verify.verify_external_source(url)}
+        return inputs
+    if capability == "package.recommend":
+        # A tool-less recommendation recommends from the packages that exist:
+        # the same rows an authoring delegate is shown, as its only candidates.
+        if "existingPackages" not in inputs:
+            evidence = _authoring_reuse_evidence(
+                user_key, project_id, note=_RECOMMEND_EVIDENCE_NOTE)
+            if evidence:
+                inputs = {**inputs, "existingPackages": evidence}
         return inputs
     if capability in PACKAGE_AUTHORING_CAPABILITIES:
         # dev/90 A8: tool-less authoring delegates get the build-request

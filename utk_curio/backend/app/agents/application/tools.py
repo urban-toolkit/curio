@@ -173,7 +173,7 @@ REGISTRY: dict[str, ToolContract] = {
             },
         }),
     ),
-    # dev/67-4 (DEC-053) — consumer: agent.node-researcher. Policy-gated
+    # dev/67-4 (DEC-053), consumer: agent.researcher, in its chat. Policy-gated
     # egress (SSRF guards, byte caps, per-run budget) — verification of
     # external dataset APIs, never crawling.
     "web.fetch": ToolContract(
@@ -264,7 +264,7 @@ REGISTRY: dict[str, ToolContract] = {
             "origin": _text("A dataset origin."),
         }),
     ),
-    # Consumers: agent.node-builder and agent.node-content-builder. Grounds a
+    # Consumer: agent.node-builder, in its chat and its content mode. Grounds a
     # node that runs a model in the model packages this account holds (the
     # packages domain owns the data and the loader line; this module owns
     # none of its own).
@@ -382,7 +382,7 @@ REGISTRY: dict[str, ToolContract] = {
             "sourceId", "resourceId",
         ),
     ),
-    # dev/84 — consumer: agent.package-recommendation. Grounds package
+    # dev/84, consumer: agent.package-builder, in its chat. Grounds package
     # recommendations in the real Nodes Catalog + this project's lockfile
     # (the packages domain owns the data; this module owns none of its own).
     "packages.catalog": ToolContract(
@@ -399,7 +399,7 @@ REGISTRY: dict[str, ToolContract] = {
         ),
         parameters=_object({"q": _text("Text a package's name or description must contain.")}),
     ),
-    # dev/84 — consumer: agent.package-recommendation. The identify half:
+    # dev/84, consumer: agent.package-builder, in its chat.
     # deps/permissions/conflicts come from the real resolver, never invented.
     "packages.resolve": ToolContract(
         id="packages.resolve",
@@ -491,7 +491,7 @@ REGISTRY: dict[str, ToolContract] = {
         ),
         parameters=_object({"datasetId": _text("A dataset id from catalog.search results.")}, "datasetId"),
     ),
-    # dev/84 — consumer: agent.package-recommendation. The reviewed install
+    # dev/84, consumers: agent.package-builder and agent.researcher. The reviewed install
     # lane: applying routes through the existing package install flow
     # (permissions + dependencies + conflicts); never a silent install,
     # never a built-in.

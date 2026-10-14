@@ -679,7 +679,7 @@ def review_package_dependencies(
             findings.append(Finding(
                 "block", "package-dep-missing",
                 f"package dependency {name!r} is not installed — install it "
-                "(the Package Recommendation flow can propose it) before this "
+                "(the Package Builder can propose it) before this "
                 "build can apply",
             ))
         else:

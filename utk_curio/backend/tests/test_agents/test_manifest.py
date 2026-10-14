@@ -84,14 +84,14 @@ class TestValidManifest:
 
     def test_package_capability_ids_accepted(self):
         raw = _valid_manifest()
-        raw["id"] = "agent.package-recommendation"
+        raw["id"] = "agent.my-packager"
         raw["category"] = "package"
         raw["capabilities"] = [
             {"id": "package.recommend", "contractVersion": "1"},
-            {"id": "package.identify", "contractVersion": "1"},
+            {"id": "package.build", "contractVersion": "1"},
         ]
         m = parse_agent_manifest(raw)
-        assert m.capability_ids == ["package.recommend", "package.identify"]
+        assert m.capability_ids == ["package.recommend", "package.build"]
 
 
 class TestAgentId:
@@ -115,15 +115,72 @@ class TestAgentId:
             parse_agent_manifest(raw)
 
     def test_delegates_to_self_rejected(self):
+        # The agent itself, named whole, would hand any capability to itself.
         raw = _valid_manifest()
         raw["delegatesTo"] = ["agent.my-explainer"]
-        with pytest.raises(AgentManifestError, match="must not reference the agent itself"):
+        with pytest.raises(AgentManifestError, match=r"delegatesTo\[0\] names the agent itself"):
             parse_agent_manifest(raw)
 
     def test_delegates_to_non_agent_id_rejected(self):
         raw = _valid_manifest()
         raw["delegatesTo"] = ["curio.builtin"]
         with pytest.raises(AgentManifestError, match="must be an agent id"):
+            parse_agent_manifest(raw)
+
+
+def _with_a_mode(raw: dict) -> dict:
+    """*raw* with ``node.output.interpret`` as a mode: its own instruction."""
+    raw["capabilities"] = [
+        {"id": "node.explain", "contractVersion": "1"},
+        {"id": "node.output.interpret", "contractVersion": "1", "instruction": "interpret"},
+    ]
+    raw["prompts"]["interpret"] = {"path": "prompts/interpret_output.md", "variables": []}
+    return raw
+
+
+class TestDelegatingToItsOwnModes:
+    """An agent hands work to one of its own modes through a scoped entry
+    naming itself; any other self entry is refused."""
+
+    def test_a_self_entry_scoped_to_its_own_mode_parses(self):
+        raw = _with_a_mode(_valid_manifest())
+        raw["delegatesTo"] = [
+            {"id": "agent.my-explainer", "capabilities": ["node.output.interpret"]},
+            "agent.node-builder",
+        ]
+        m = parse_agent_manifest(raw)
+        assert m.delegates_to == ["agent.my-explainer", "agent.node-builder"]
+        assert m.delegate_scopes == {"agent.my-explainer": ("node.output.interpret",)}
+        assert m.delegates("agent.my-explainer", "node.output.interpret")
+        # The chat's own capability is not a mode, so it is not delegated.
+        assert not m.delegates("agent.my-explainer", "node.explain")
+
+    def test_a_self_entry_naming_a_capability_without_its_own_instruction_is_refused(self):
+        raw = _with_a_mode(_valid_manifest())
+        raw["delegatesTo"] = [{"id": "agent.my-explainer", "capabilities": ["node.explain"]}]
+        with pytest.raises(AgentManifestError, match=r"\['node\.explain'\] are not"):
+            parse_agent_manifest(raw)
+
+    def test_a_self_entry_naming_a_capability_it_does_not_declare_is_refused(self):
+        raw = _with_a_mode(_valid_manifest())
+        raw["delegatesTo"] = [{
+            "id": "agent.my-explainer",
+            "capabilities": ["node.output.interpret", "node.content.generate"],
+        }]
+        with pytest.raises(AgentManifestError, match=r"\['node\.content\.generate'\] are not"):
+            parse_agent_manifest(raw)
+
+    def test_an_unscoped_self_entry_is_refused_even_with_modes(self):
+        raw = _with_a_mode(_valid_manifest())
+        raw["delegatesTo"] = ["agent.my-explainer"]
+        with pytest.raises(AgentManifestError, match="must name the capabilities it delegates"):
+            parse_agent_manifest(raw)
+
+    def test_an_agent_still_never_requires_itself(self):
+        raw = _with_a_mode(_valid_manifest())
+        raw["delegatesTo"] = [{"id": "agent.my-explainer", "capabilities": ["node.output.interpret"]}]
+        raw["requiresAgents"] = ["agent.my-explainer"]
+        with pytest.raises(AgentManifestError, match="must not reference the agent itself"):
             parse_agent_manifest(raw)
 
 
@@ -135,14 +192,14 @@ class TestRequiresAgents:
 
     def test_subset_of_delegates_parses(self):
         raw = _valid_manifest()
-        raw["delegatesTo"] = ["agent.node-content-builder", "agent.node-researcher"]
-        raw["requiresAgents"] = ["agent.node-content-builder"]
-        assert parse_agent_manifest(raw).requires_agents == ["agent.node-content-builder"]
+        raw["delegatesTo"] = ["agent.node-builder", "agent.researcher"]
+        raw["requiresAgents"] = ["agent.node-builder"]
+        assert parse_agent_manifest(raw).requires_agents == ["agent.node-builder"]
 
     def test_not_in_delegates_rejected(self):
         raw = _valid_manifest()
-        raw["delegatesTo"] = ["agent.node-researcher"]
-        raw["requiresAgents"] = ["agent.node-content-builder"]
+        raw["delegatesTo"] = ["agent.researcher"]
+        raw["requiresAgents"] = ["agent.node-builder"]
         with pytest.raises(AgentManifestError, match="must also be listed in delegatesTo"):
             parse_agent_manifest(raw)
 
@@ -154,21 +211,21 @@ class TestRequiresAgents:
 
     def test_non_agent_id_rejected(self):
         raw = _valid_manifest()
-        raw["delegatesTo"] = ["agent.node-content-builder"]
+        raw["delegatesTo"] = ["agent.node-builder"]
         raw["requiresAgents"] = ["curio.builtin"]
         with pytest.raises(AgentManifestError, match="must be an agent id"):
             parse_agent_manifest(raw)
 
     def test_duplicate_rejected(self):
         raw = _valid_manifest()
-        raw["delegatesTo"] = ["agent.node-content-builder"]
-        raw["requiresAgents"] = ["agent.node-content-builder", "agent.node-content-builder"]
+        raw["delegatesTo"] = ["agent.node-builder"]
+        raw["requiresAgents"] = ["agent.node-builder", "agent.node-builder"]
         with pytest.raises(AgentManifestError, match="duplicate"):
             parse_agent_manifest(raw)
 
     def test_not_a_list_rejected(self):
         raw = _valid_manifest()
-        raw["requiresAgents"] = "agent.node-content-builder"
+        raw["requiresAgents"] = "agent.node-builder"
         with pytest.raises(AgentManifestError, match="must be a list"):
             parse_agent_manifest(raw)
 

@@ -54,10 +54,11 @@ AGENT_COORD = "agent.chat-agent@1.0.0"
 AGENT_ID = "agent.chat-agent"
 AGENT_NAME = "Chat"
 
-# The one built-in that declares a hard dependency (on agent.node-content-builder),
-# which is what makes the closure assertable end to end.
+# A built-in that declares hard dependencies (on agent.dataset-finder and
+# agent.node-builder), which is what makes the closure assertable end to end.
+# The Node Builder is the one asserted; it requires the Dataset Finder itself.
 DEPENDENT_COORD = "agent.dataflow-builder@1.0.0"
-REQUIRED_ID = "agent.node-content-builder"
+REQUIRED_ID = "agent.node-builder"
 
 DRAWER_ROOT = '[data-curio-agent-catalog-drawer="true"]'
 SEARCH_PLACEHOLDER = "Search agents, publishers, tags…"

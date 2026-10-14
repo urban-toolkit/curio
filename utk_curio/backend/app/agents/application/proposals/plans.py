@@ -639,12 +639,9 @@ def set_plan_goal(
 _PLAN_NODE_AGENTS: tuple[str, ...] = ("agent.node-builder", "agent.dataset-finder")
 
 
-#: dev/132: which node-attached agent a confirmed source is handed to, in
-#: preference order — the Node Builder owns fetch code (`DEC-047`), and the
-#: Node Content Builder is the fallback a plain plan node carries.
-_NODE_BUILD_AGENTS: tuple[str, ...] = (
-    "agent.node-builder", "agent.node-content-builder",
-)
+#: dev/132: which node-attached agent a confirmed source is handed to: the
+#: Node Builder owns fetch code (`DEC-047`) and node content.
+_NODE_BUILD_AGENTS: tuple[str, ...] = ("agent.node-builder",)
 
 
 def _attach_node_agent(

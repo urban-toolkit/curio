@@ -1,7 +1,7 @@
 """The one node-context composer (memo dev/67-6).
 
-Every content generation for a node — Solve children, the Node Builder's
-Node Content Builder delegation, and the 67-9 sequence — receives the SAME
+Every content generation for a node (Solve children, the Node Builder's
+content mode, and the 67-9 sequence) receives the SAME
 structured neighborhood: the node's intent and current content, its nearest
 upstream/downstream nodes (goals, content lengths, runtime status from the
 dev/67-2 journal), the graph summary, and the dataset references. One
@@ -36,7 +36,7 @@ _CONTENT_TRUNCATION_MARKER = "\n…[truncated: content exceeds the context bound
 _RUNTIME_MESSAGE_CHARS = 240
 #: The keys a node row's ``runtime`` block can carry, in its order: what one
 #: journal record says, then ``render``, the render's own block beside a run's.
-#: The Node Content Builder's instruction lists them from here.
+#: The Node Builder's content mode lists them from here.
 RUNTIME_BLOCK_KEYS = ("status", "message", "outputType", "origin", "kind", "ranAt", "durationMs", "render")
 
 
