@@ -46,6 +46,7 @@ const mockApi = {
   uninstallFromProject: jest.fn(),
   uploadArchive: jest.fn(),
   weightsLicense: jest.fn(),
+  usage: jest.fn(),
 };
 jest.mock("../../services/packages/packagesApi", () => ({
   packagesApi: new Proxy({}, { get: (_target, name: string) => (mockApi as any)[name] }),
@@ -59,10 +60,13 @@ jest.mock("../../providers/ToastProvider", () => ({
   useToastContext: () => ({ showToast: mockShowToast }),
 }));
 let mockLockfile: string[] = [];
+let mockNodes: Array<{ id: string; data: Record<string, unknown> }> = [];
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({
     projectId: "p1",
+    projectName: "Street photos",
     packages: mockLockfile,
+    nodes: mockNodes,
     saveCurrentProject: jest.fn(),
     projectDirty: false,
   }),
@@ -125,6 +129,7 @@ function tab(name: "Browse all" | "In project"): HTMLElement {
 beforeEach(() => {
   jest.clearAllMocks();
   mockLockfile = ["model.curio.ddrnet23-slim@1", "scout.raster-conversion@1"];
+  mockNodes = [];
   // The shared catalog: two model packages and two node packages.
   mockApi.catalog.mockResolvedValue({
     packages: [ddrnetPackage(), deepUmbraPackage(), builtinPackage(), rasterConversionPackage()],
@@ -144,6 +149,7 @@ beforeEach(() => {
   mockApi.uninstallFromProject.mockResolvedValue({ packages: ["scout.raster-conversion@1"] });
   mockApi.uploadArchive.mockResolvedValue({ package: importedModelPackage() });
   mockApi.weightsLicense.mockResolvedValue("MIT License\n\nCityscapes terms.");
+  mockApi.usage.mockResolvedValue([]);
 });
 
 afterEach(() => packages.endModelDrag?.());
@@ -251,6 +257,86 @@ describe("the canvas Model Catalog drawer", () => {
     await waitFor(() =>
       expect(mockApi.uninstallFromProject).toHaveBeenCalledWith("p1", "model.curio.ddrnet23-slim@1"),
     );
+  });
+
+  test("Remove names every dataflow whose nodes load the model in code alone, this one from its canvas", async () => {
+    // On the canvas: a node that names DDRNet in its code, with no binding.
+    mockNodes = [{
+      id: "n1",
+      data: {
+        nodeType: "curio.builtin/computation-analysis@1",
+        code: 'model = curio_load_model("model.curio.ddrnet23-slim")\nreturn 1',
+      },
+    }];
+    // The account's dataflows, as the usage read answers.
+    mockApi.usage.mockResolvedValue([
+      // This dataflow as last saved: its canvas answers for it.
+      { dataflowId: "p1", dataflowName: "Street photos, as saved", nodeCount: 1, codeOnly: true },
+      { dataflowId: "p2", dataflowName: "Crosswalks", nodeCount: 1, codeOnly: true },
+      { dataflowId: "p3", dataflowName: "Keeps the model", nodeCount: 1, codeOnly: false },
+    ]);
+    renderModelDrawer();
+    await modelCard("model.curio.ddrnet23-slim@1");
+    fireEvent.click(tab("In project"));
+    const ddrnet = await modelCard("model.curio.ddrnet23-slim@1");
+    fireEvent.click(within(ddrnet).getByRole("button", { name: "Remove from project" }));
+    const confirm = await screen.findByRole("dialog", { name: "Remove DDRNet23-Slim (street scenes)?" });
+    expect(mockApi.usage).toHaveBeenCalledWith("model.curio.ddrnet23-slim@1");
+    expect(confirm).toHaveTextContent(
+      "Nodes in Crosswalks, Street photos load this model in code. " +
+        "That code is left as it is, and fails once the model leaves your account.",
+    );
+    expect(confirm).not.toHaveTextContent("as saved");
+    expect(confirm).not.toHaveTextContent("Keeps the model");
+  });
+
+  test("opened by a drop of a model the dataflow lacks, runs the drop's Add once it has its listings", async () => {
+    const onAdded = jest.fn();
+    // What the provider passes when a drop opened the drawer. Untyped: the
+    // prop is new.
+    const props: any = {
+      presented: true,
+      onRequestClose: jest.fn(),
+      onExitComplete: jest.fn(),
+      addRequest: { dirName: "model.scout.deep-umbra@1", kind: "model", onAdded },
+    };
+    render(
+      <MemoryRouter>
+        <ModelCatalogDrawer {...props} />
+      </MemoryRouter>,
+    );
+    const review = await screen.findByRole("dialog", { name: "" });
+    expect(review).toHaveTextContent('Add "Deep Umbra (accumulated shadows)"');
+    expect(onAdded).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent.click(within(review).getByRole("button", { name: "Add to project" }));
+    });
+    await waitFor(() =>
+      expect(mockApi.installToProject).toHaveBeenCalledWith("p1", "model.scout.deep-umbra@1"),
+    );
+    await waitFor(() => expect(onAdded).toHaveBeenCalledTimes(1));
+  });
+
+  test("a drop's Add whose review is cancelled adds nothing and makes no node", async () => {
+    const onAdded = jest.fn();
+    const props: any = {
+      presented: true,
+      onRequestClose: jest.fn(),
+      onExitComplete: jest.fn(),
+      addRequest: { dirName: "model.scout.deep-umbra@1", kind: "model", onAdded },
+    };
+    render(
+      <MemoryRouter>
+        <ModelCatalogDrawer {...props} />
+      </MemoryRouter>,
+    );
+    const review = await screen.findByRole("dialog", { name: "" });
+    await act(async () => {
+      fireEvent.click(within(review).getByRole("button", { name: "Cancel" }));
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "" })).toBeNull());
+    expect(mockApi.installToProject).not.toHaveBeenCalled();
+    expect(onAdded).not.toHaveBeenCalled();
   });
 
   test("the footer imports a package archive into the dataflow", async () => {

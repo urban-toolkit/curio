@@ -885,3 +885,98 @@ class TestModelRefsCountAsInUse:
         _with_nodes(user_key, alice_project, [_python_node("in-code-only", bound=False)])
         resp = client.delete(f"/api/packages/{DDRNET_DIR}?unusedOnly=true", headers=_auth(token))
         assert resp.status_code == 204, resp.get_data(as_text=True)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/packages/<dir>/usage: the dataflows that use a package
+# ---------------------------------------------------------------------------
+
+LOCAL_RELIEF_ID = "model.example.local-relief"
+
+
+class TestPackageUsage:
+    """The account's dataflows that use a package, as ``GET
+    /api/datasets/<id>/usage`` answers for a dataset. ``codeOnly`` marks a
+    dataflow whose nodes name the model in their code alone: a literal
+    ``curio_load_model("<id>")``, with no binding, no node of the package and
+    no lockfile entry. Nothing in it keeps the model, so the Model Catalog's
+    Remove names it, as the Data Catalog's names a dataflow that loads a
+    dataset in code."""
+
+    @staticmethod
+    def _project(client, token, name: str, nodes: list[dict], packages: list[str] | None = None) -> str:
+        # A lockfile of its own: an empty one would take the account's defaults.
+        spec = {"dataflow": {
+            "name": name, "nodes": nodes, "edges": [], "packages": packages or ["curio.builtin@1"],
+        }}
+        resp = client.post("/api/projects", json={"name": name, "spec": spec, "outputs": []}, headers=_auth(token))
+        assert resp.status_code == 201, resp.get_data(as_text=True)
+        return resp.get_json()["id"]
+
+    @staticmethod
+    def _usage(client, token, dir_name: str) -> list[dict]:
+        resp = client.get(f"/api/packages/{dir_name}/usage", headers=_auth(token))
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        return resp.get_json()["dataflows"]
+
+    def test_lists_each_dataflow_that_uses_the_model_and_marks_those_that_only_name_it_in_code(
+        self, client, user_and_token,
+    ):
+        user, token = user_and_token
+        store_install.install_from_catalog(_user_key_for(user), DDRNET_DIR, replace=False)
+        own_node = {
+            "id": "segment", "type": "model.curio.ddrnet23-slim/image-segmentation@1",
+            "content": f'model = curio_load_model("{DDRNET_ID}")\n', "metadata": {"keywords": []},
+        }
+        ids = {
+            "Code only": self._project(client, token, "Code only", [_python_node("in-code", bound=False)]),
+            "Bound": self._project(client, token, "Bound", [_python_node("bound", bound=True)]),
+            "Its own node": self._project(client, token, "Its own node", [own_node]),
+            "In its lockfile": self._project(
+                client, token, "In its lockfile", [_python_node("in-code", bound=False)],
+                packages=["curio.builtin@1", DDRNET_DIR],
+            ),
+            "Bound and in code": self._project(
+                client, token, "Bound and in code",
+                [_python_node("bound", bound=True), _python_node("in-code", bound=False)],
+            ),
+        }
+        other = self._project(
+            client, token, "Another model", [_python_node("relief", bound=False, runs=LOCAL_RELIEF_ID)],
+        )
+
+        rows = self._usage(client, token, DDRNET_DIR)
+
+        ours = [row for row in rows if row["dataflowId"] in ids.values()]
+        assert [(row["dataflowName"], row["codeOnly"]) for row in ours] == [
+            ("Bound", False),
+            ("Bound and in code", False),
+            ("Code only", True),
+            ("In its lockfile", False),
+            ("Its own node", False),
+        ]
+        by_name = {row["dataflowName"]: row for row in ours}
+        assert by_name["Code only"]["dataflowId"] == ids["Code only"]
+        assert by_name["Code only"]["nodes"] == [
+            {"nodeId": "in-code", "nodeType": "curio.builtin/computation-analysis"},
+        ]
+        assert by_name["Bound and in code"]["nodeCount"] == 2
+        assert [node["nodeId"] for node in by_name["Bound and in code"]["nodes"]] == ["bound", "in-code"]
+        assert other not in {row["dataflowId"] for row in rows}
+
+    def test_a_binding_the_code_no_longer_names_keeps_nothing_and_the_model_the_code_names_is_in_code_only(
+        self, client, user_and_token,
+    ):
+        """A hand edit to another model leaves the drop's ref behind: the
+        dataflow no longer uses the model the ref names, and names the other
+        one in its code alone."""
+        user, token = user_and_token
+        store_install.install_from_catalog(_user_key_for(user), DDRNET_DIR, replace=False)
+        edited = self._project(
+            client, token, "Edited by hand", [_python_node("edited", bound=True, runs=LOCAL_RELIEF_ID)],
+        )
+
+        assert edited not in {row["dataflowId"] for row in self._usage(client, token, DDRNET_DIR)}
+        relief = {row["dataflowId"]: row for row in self._usage(client, token, f"{LOCAL_RELIEF_ID}@1")}
+        assert relief[edited]["codeOnly"] is True
+        assert [node["nodeId"] for node in relief[edited]["nodes"]] == ["edited"]

@@ -8,14 +8,17 @@ Catalog drawer drags as the Node Catalog drawer's cards do:
   the package goes through the drawer's Add review first. Each card does it:
   DDRNet23-Slim, Deep Umbra, the SCOUT weather GNN and a model added from
   Hugging Face, and DDRNet's node runs;
+* a row of the Tools panel's Models dropdown drops as the card does. With the
+  drawer closed, the drop of a model the dataflow lacks opens the drawer on
+  the model's Add review: Cancel makes no node, and the confirm makes it;
 * a node on the canvas that loads a model, saved with **Save as package
   node**, becomes a model package of its own: it shows in the Model Catalog,
   holds a copy of the model's weights, and its node names the new id, so it
   runs once the model it was copied from has left the account;
 * Remove from project keeps a model that a node is bound to (the
   ``modelRefs`` a drop onto the node writes), as it keeps a node package whose
-  node is on the canvas, and warns about a node that only names the model in
-  its code.
+  node is on the canvas, and names every dataflow whose nodes only name the
+  model in their code, this one and the account's others.
 
 The libraries of these packages are installed at launch (``--with-examples``,
 whose dataflows declare the shipped ones), so no Add installs anything new.
@@ -97,6 +100,8 @@ NODE = "runs-a-model"
 MARKER = "RELIEF_RAN"
 SAVE_AS_NEW = "__save_as_new__"
 SAVED_PACKAGE_NAME = "Relief from the canvas"
+#: Another dataflow of the account, whose node loads Local Relief in code.
+OTHER_DATAFLOW = "Relief in code"
 
 
 def _manifest(dir_name: str) -> dict:
@@ -119,6 +124,12 @@ def _one_node(code: str) -> dict:
         "content": code, "in": "DEFAULT", "out": "DEFAULT", "goal": "",
         "metadata": {"keywords": []},
     }]}}
+
+
+def _empty() -> dict:
+    return {"dataflow": {
+        "name": "Model drops", "task": "", "nodes": [], "edges": [], "packages": ["curio.builtin@1"],
+    }}
 
 
 def _photos_only() -> dict:
@@ -267,9 +278,7 @@ def _add_the_hugging_face_model(page, app_frontend, current_server: str, token: 
 def test_a_model_card_dropped_on_the_canvas_adds_its_package_and_becomes_its_node(
     app_frontend: "FrontendPage", current_server: str, page, card: str,
 ):
-    spec = _photos_only() if card == "ddrnet" else {"dataflow": {
-        "name": "Model drops", "task": "", "nodes": [], "edges": [], "packages": ["curio.builtin@1"],
-    }}
+    spec = _photos_only() if card == "ddrnet" else _empty()
     session = _enter(page, app_frontend, current_server, spec=spec)
     if card == "hugging-face":
         canvas_url = page.url
@@ -303,6 +312,78 @@ def test_a_model_card_dropped_on_the_canvas_adds_its_package_and_becomes_its_nod
     run_node_and_wait(page, PHOTOS, node_type="data-loading", timeout_ms=180000)
     text = run_node_and_wait(page, node, node_type=template, timeout_ms=180000)
     assert "Saved to file" in text, f"DDRNet's node did not run: {text!r}"
+
+
+def _right_of_the_palette(page) -> tuple[float, float]:
+    """A point of the empty canvas right of the open Models dropdown, in the
+    canvas's coordinates, clear of the toasts in the bottom right."""
+    pane = page.locator(CANVAS_DROP_TARGET).bounding_box()
+    panel = page.locator('#models-palette [role="region"]').bounding_box()
+    assert pane and panel, "the canvas or the Models dropdown has no layout box"
+    x = max(panel["x"] + panel["width"] + 120, pane["x"] + pane["width"] * 0.5)
+    return x - pane["x"], pane["height"] * 0.4
+
+
+def _record_installs(page) -> list[str]:
+    """The URLs of the dataflow installs the page asks for, from now on."""
+    installs: list[str] = []
+    page.on(
+        "request",
+        lambda r: installs.append(r.url)
+        if r.method == "POST" and "/api/packages/projects/" in r.url and r.url.endswith("/install")
+        else None,
+    )
+    return installs
+
+
+def test_a_models_dropdown_row_dropped_with_the_drawer_closed_opens_the_drawer_on_its_add_review(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """The Model Catalog drawer is closed and the dataflow lacks the model: the
+    drop opens the drawer and its Add review. Cancel makes no node; dropped
+    again and confirmed, the model's node appears, as a drawer card's does."""
+    dir_name, template = SHIPPED_CARDS["deep-umbra"]
+    name = _manifest(dir_name)["name"]
+    model_id = dir_name.split("@")[0]
+    _enter(page, app_frontend, current_server, spec=_empty())
+    page.get_by_title("Open model palette").click()
+    grip = page.locator(f'#models-palette [data-model-id="{model_id}"] [draggable="true"]')
+    expect(grip).to_have_count(1, timeout=30000)
+    expect(page.locator(MODEL_DRAWER)).to_have_count(0)
+    installs = _record_installs(page)
+    before = _node_ids(page)
+
+    drop = drag_with_the_mouse_onto_canvas(page, grip, at=_right_of_the_palette(page))
+    assert drop["onCanvas"], f"the row's drop landed on {drop['droppedOn']}, not on the canvas"
+    review = _add_review(page, name)
+    expect(review).to_be_visible(timeout=30000)
+    expect(page.get_by_role("dialog").filter(
+        has=page.get_by_role("heading", name="Model Catalog", exact=True),
+    )).to_be_visible(timeout=10000)
+    review.get_by_role("button", name="Cancel", exact=True).click()
+    expect(review).to_have_count(0, timeout=10000)
+    assert (_node_ids(page), installs) == (before, []), "a cancelled Add made a node or installed"
+
+    # The drawer closed again, the row's drop opens it again, and the confirm
+    # makes the node.
+    _close_drawer(page, MODEL_DRAWER)
+    drop = drag_with_the_mouse_onto_canvas(page, grip, at=_right_of_the_palette(page))
+    assert drop["onCanvas"], f"the row's drop landed on {drop['droppedOn']}, not on the canvas"
+    review = _add_review(page, name)
+    expect(review).to_be_visible(timeout=30000)
+    assert _node_ids(page) == before, "the drop made a node before the Add review was confirmed"
+    with page.expect_response(
+        lambda r: "/api/packages/projects/" in r.url and r.url.endswith("/install") and r.request.method == "POST",
+        timeout=180000,
+    ) as added:
+        review.get_by_role("button", name="Add to project", exact=True).click()
+    assert added.value.status == 201, f"{added.value.status}: {added.value.text()[:600]}"
+    node = _new_node(page, before)
+    assert (canvas_node_type(page, node) or "").startswith(f"{model_id}/{template}"), canvas_node_type(page, node)
+    _wait_for_code_naming(page, node, model_id)
+    expect(page.locator(NOTIFICATIONS).get_by_text(re.compile(rf"node for {re.escape(name)}\."))).to_be_visible(
+        timeout=15000
+    )
 
 
 def test_a_node_that_loads_a_model_saved_as_a_package_is_a_model_package_that_runs_on_its_own_weights(
@@ -367,18 +448,30 @@ def test_remove_keeps_a_model_a_node_is_bound_to_and_warns_about_a_call_in_code(
     name = "Local Relief (example)"
     session = _enter(page, app_frontend, current_server, spec=_one_node(_relief_code(LOCAL_RELIEF_ID)))
     project_id = session["project"]["id"]
+    # Another dataflow of the account loads the model in its code alone.
+    other = _one_node(_relief_code(LOCAL_RELIEF_ID))
+    other["dataflow"]["name"] = OTHER_DATAFLOW
+    created = api_json(
+        f"{current_server}/api/projects", session["token"], method="POST",
+        payload={"name": OTHER_DATAFLOW, "spec": other, "outputs": []},
+    )
+    assert created and created.get("id"), created
     drawer = _open_drawer(page, "Model Catalog", MODEL_DRAWER)
     _import_into_project(page, drawer, _local_relief_archive(tmp_path / "local-relief.curio.zip"))
     _tab(drawer, "In project").click()
     card = _card(drawer, LOCAL_RELIEF)
     expect(card).to_have_count(1, timeout=20000)
 
-    # The node names the model in its code only: Remove says that code stays
-    # behind, and the person cancels.
+    # The node names the model in its code only, and so does the other
+    # dataflow's: Remove names both dataflows, says that code stays behind,
+    # and the person cancels.
     card.get_by_role("button", name="Remove from project", exact=True).click()
     confirm = page.get_by_role("dialog", name=f"Remove {name}?")
     expect(confirm).to_be_visible(timeout=10000)
-    expect(confirm).to_contain_text("A node in this dataflow loads this model in code")
+    expect(confirm).to_contain_text(
+        f"Nodes in Model drops, {OTHER_DATAFLOW} load this model in code. "
+        "That code is left as it is, and fails once the model leaves your account."
+    )
     confirm.get_by_role("button", name="Cancel", exact=True).click()
     expect(confirm).to_have_count(0, timeout=10000)
 

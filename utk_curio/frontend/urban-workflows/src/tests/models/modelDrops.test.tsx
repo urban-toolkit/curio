@@ -15,7 +15,11 @@ import React from "react";
 import { act, render } from "@testing-library/react";
 
 import { usePackageCardDrop, type PackageCardDrop } from "../../components/packages/usePackageCardDrop";
-import { usePackageAddRequests, type PackageAddRequest } from "../../services/packages/packageAddRequests";
+import {
+  guestAddRefusal,
+  usePackageAddRequests,
+  type PackageAddRequest,
+} from "../../services/packages/packageAddRequests";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -130,12 +134,15 @@ describe("the node a model card's drop makes", () => {
 });
 
 describe("a model card dropped on the canvas goes through the Node Catalog's card drop", () => {
-  function canvas(added: string[] = []) {
+  /** A canvas as MainCanvas renders it; *more* adds to the drop's options
+   *  (untyped, as `openModelCatalog` is new). */
+  function canvas(added: string[] = [], more: Record<string, unknown> = {}) {
     const createNode = jest.fn();
     const showToast = jest.fn();
     let drop: (dropped: PackageCardDrop) => void = () => undefined;
     function Canvas() {
-      const cardDrop = usePackageCardDrop({ dataflowPackages: added, hostedGuest: false, createNode, showToast });
+      const options: any = { dataflowPackages: added, hostedGuest: false, createNode, showToast, ...more };
+      const cardDrop = usePackageCardDrop(options);
       drop = cardDrop.drop;
       return <>{cardDrop.menu}</>;
     }
@@ -179,6 +186,29 @@ describe("a model card dropped on the canvas goes through the Node Catalog's car
       "Add Deep Umbra (accumulated shadows) to this dataflow from the Model Catalog first.",
       "warning",
     );
+  });
+
+  test("with the Model Catalog drawer closed, opens it with the drop's Add, and makes the node once the model is added", () => {
+    // MainCanvas opens the drawer with the request (`openModelCatalogDrawer({ addRequest })`).
+    const opened: PackageAddRequest[] = [];
+    const { createNode, showToast, card, drop } = canvas([], {
+      openModelCatalog: (request: PackageAddRequest) => void opened.push(request),
+    });
+    drop();
+    expect(opened.map((r) => [r.dirName, r.kind])).toEqual([["model.scout.deep-umbra@1", "model"]]);
+    expect(showToast).not.toHaveBeenCalled();
+    expect(createNode).not.toHaveBeenCalled();
+    act(() => opened[0].onAdded());
+    expect(createNode).toHaveBeenCalledWith(card.nodes[0], { x: 1, y: 2 });
+  });
+
+  test("a hosted guest's drop of a model the dataflow lacks is refused, and opens no drawer", () => {
+    const openModelCatalog = jest.fn();
+    const { createNode, showToast, drop } = canvas([], { hostedGuest: true, openModelCatalog });
+    drop();
+    expect(showToast).toHaveBeenCalledWith(guestAddRefusal("Deep Umbra (accumulated shadows)"), "warning");
+    expect(openModelCatalog).not.toHaveBeenCalled();
+    expect(createNode).not.toHaveBeenCalled();
   });
 });
 
@@ -224,9 +254,26 @@ describe("a model dropped on a node", () => {
     );
   });
 
-  test("whose node's type is not known takes the node's model", () => {
+  test("whose node's type is not known is refused, saying so", () => {
     const deepUmbra = createModelDragPayload(deepUmbraPackage());
-    expect(modelSwapRefusal(undefined, deepUmbra)).toBeNull();
+    const refusal = "This node's model type is unknown, so it does not take Deep Umbra (accumulated shadows).";
+    expect(modelSwapRefusal(undefined, deepUmbra)).toBe(refusal);
+    expect(modelSwapRefusal(nodeModelType({ code: segmentationCell("model.nowhere") }, typeOf), deepUmbra)).toBe(
+      refusal,
+    );
+  });
+
+  test("whose own type is not known is refused, saying so", () => {
+    // A model block without a type: its drag carries none.
+    const untyped = createModelDragPayload({ ...importedModelPackage(), model: { runtime: "onnx" } });
+    expect(untyped.type).toBeUndefined();
+    expect(modelSwapRefusal("semantic-segmentation", untyped)).toBe(
+      "The model type of SegFormer B0 (ADE20K) is unknown, so this node does not take it.",
+    );
+    // Neither known: the node's is said first.
+    expect(modelSwapRefusal(undefined, untyped)).toBe(
+      "This node's model type is unknown, so it does not take SegFormer B0 (ADE20K).",
+    );
   });
 
   test("binds the node, and a node bound to a model is not one that names it in code alone", () => {
