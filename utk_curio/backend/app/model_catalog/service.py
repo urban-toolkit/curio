@@ -6,6 +6,14 @@ from the Discovery Catalog, which hands its folder over here as it hands a
 dataset to the Data Catalog. A person may delete their own downloads, never a
 shipped model. Models are few and each is one manifest, so a listing reads
 the manifests; there is no index table.
+
+The model packages (a node package of kind ``model``, with its weights) are
+listed here too, until the Model Catalog reads packages itself: the ones
+Curio ships, and those imported or published into a person's store
+(``packages.service.list_model_packages``). Their details and license read
+their ``model`` block, and a person's own is deleted as the Node Catalog
+removes a package. A node reaches their weights through
+``packages.service.resolve_model_dirs``.
 """
 
 from __future__ import annotations
@@ -19,6 +27,7 @@ from typing import Any
 
 from utk_curio.backend.app.common.record_clock import utc_now
 from utk_curio.backend.app.model_catalog.domain.manifest import (
+    ModelInput,
     ModelManifest,
     ModelManifestError,
     load_manifest,
@@ -34,21 +43,24 @@ class ModelCatalogError(Exception):
         self.status = status
 
 
-class ModelFileUnavailable(ModelCatalogError):
-    """A shipped model's entry that the pip package leaves out could not be
-    downloaded. The message says what failed and how to get the file."""
-
-    def __init__(self, message: str) -> None:
-        super().__init__(message, 502)
-
-
-def _left_out_entry(folder: Path):
-    """Whether an entry of the shipped model in *folder* is a file the pip
-    package leaves out, which a pip install downloads the first time a node
-    runs the model (``datasets/infrastructure/left_out_files.py``)."""
-    from utk_curio.backend.app.datasets.infrastructure import left_out_files
-
-    return lambda entry: left_out_files.is_left_out(f"models/{folder.name}/{entry}")
+def _manifest_of_package(package) -> ModelManifest:
+    """A model package's manifest (``packages.service.PackageManifest``) as
+    this catalog's: the package's id, name, version and description, its
+    ``model`` block's fields, and the weights' publisher and license."""
+    block = package.model
+    spec = block.input
+    model_input = None if spec is None else ModelInput(
+        width=spec.width, height=spec.height, dtype=spec.dtype, layout=spec.layout,
+        scale=spec.scale, mean=spec.mean, std=spec.std,
+    )
+    return ModelManifest(
+        id=package.package_id, major=package.major, name=package.name, version=package.version,
+        runtime=block.runtime, task=block.type, entry=block.entry, license=block.license,
+        description=package.description, publisher=block.publisher or package.publisher,
+        homepage=block.homepage, license_file=block.license_file, labels=block.labels,
+        input=model_input, size_bytes=block.size_bytes, discovery_source=block.discovery_source,
+        python_deps=dict(package.python_deps), created_at=package.created_at_iso,
+    )
 
 
 def _user_key(user) -> str | None:
@@ -140,8 +152,9 @@ class ModelCatalogService:
 
     # ── reading ────────────────────────────────────────────────────────────
 
-    def _entries(self) -> list[tuple[ModelManifest, str, Path]]:
-        """Every model this account can use: its downloads, then the shipped ones.
+    def _entries(self, *, packages: bool = True) -> list[tuple[ModelManifest, str, Path]]:
+        """Every model this account can use: its downloads, then the shipped
+        ones, then (with *packages*) the model packages.
 
         A folder whose manifest cannot be read is left out, as the Data Catalog
         leaves out a dataset it cannot read; it is named in the server log.
@@ -152,14 +165,33 @@ class ModelCatalogService:
             folders += [(folder, "downloaded") for folder in storage.list_user_models(self.user_key)]
         folders += [(folder, "shipped") for folder in storage.list_shipped_models()]
         for folder, origin in folders:
-            # A shipped model whose entry the pip package leaves out is listed
-            # all the same: resolve_dir fetches the entry when a node runs it.
-            fetched = _left_out_entry(folder) if origin == "shipped" else None
             try:
-                found.append((load_manifest(folder, fetched_on_first_use=fetched), origin, folder))
+                found.append((load_manifest(folder), origin, folder))
             except ModelManifestError as exc:
                 print(f"[model catalog] {folder.name} skipped: {exc}", flush=True)
+        if packages:
+            found += self._package_entries()
         return found
+
+    def _package_entries(self) -> list[tuple[ModelManifest, str, Path]]:
+        """The model packages this account can run, as this catalog's entries:
+        one in the account's store with its own weights is ``downloaded``,
+        one that ships with Curio ``shipped`` (a store copy of it holds no
+        weights, so it is the shipped one)."""
+        from utk_curio.backend.app.packages.service import list_model_packages
+
+        return [
+            (_manifest_of_package(listed.manifest), "downloaded" if listed.in_store else "shipped", listed.folder)
+            for listed in list_model_packages(self.user_key)
+        ]
+
+    def _is_store_package(self, folder: Path) -> bool:
+        """Whether *folder* is a package in this account's store."""
+        if not self.user_key:
+            return False
+        from utk_curio.backend.app.packages.service import user_packages_dir
+
+        return Path(folder).resolve().parent == user_packages_dir(self.user_key).resolve()
 
     def list_catalog(self, *, q: str | None = None) -> dict[str, Any]:
         items = [model_row(m, origin=o, folder=f) for m, o, f in self._entries()]
@@ -174,12 +206,12 @@ class ModelCatalogService:
         items.sort(key=lambda item: (item["origin"] != "shipped", item["name"].lower()))
         return {"items": items}
 
-    def _find(self, model_id: str) -> tuple[ModelManifest, str, Path]:
+    def _find(self, model_id: str, *, packages: bool = True) -> tuple[ModelManifest, str, Path]:
         """The model *model_id* names (``<id>`` or ``<id>@<major>``): a download
         before a shipped one, the highest major of each."""
         want_id, _, want_major = str(model_id).partition("@")
         matches = [
-            entry for entry in self._entries()
+            entry for entry in self._entries(packages=packages)
             if entry[0].id == want_id and (not want_major or str(entry[0].major) == want_major)
         ]
         if not matches:
@@ -201,34 +233,16 @@ class ModelCatalogService:
         return path.read_text(encoding="utf-8", errors="replace")
 
     def resolve_dir(self, model_id: str) -> Path:
-        """The folder a node reads *model_id* from. Server side only.
-
-        For a shipped model whose entry the pip package leaves out, the folder
-        a pip install places it in, beside a copy of the model's manifest:
-        downloaded from GitHub the first time a node runs the model. Raises
-        :class:`ModelFileUnavailable` when the download fails."""
-        manifest, origin, folder = self._find(model_id)
-        entry = folder / manifest.entry
-        if origin != "shipped" or entry.exists():
-            return folder
-        from utk_curio.backend.app.datasets.infrastructure import left_out_files
-
-        repo_path = f"models/{folder.name}/{manifest.entry}"
-        if not left_out_files.is_left_out(repo_path):
-            return folder
-        try:
-            fetched = left_out_files.fetch(repo_path, entry)
-        except left_out_files.LeftOutFileUnavailable as exc:
-            raise ModelFileUnavailable(str(exc)) from exc
-        for _part in Path(manifest.entry).parts:
-            fetched = fetched.parent
-        return fetched
+        """The folder a node reads *model_id* from, one of this catalog's own
+        model folders: a model package's weights resolve through
+        ``packages.service.resolve_model_dirs``. Server side only."""
+        _manifest, _origin, folder = self._find(model_id, packages=False)
+        return folder
 
     def resolve_execution_dirs(self, model_ids: list[str]) -> dict[str, str]:
         """``{modelId: folder}`` for the ids a node's code names that this
         account can use; an unknown id is left out, and the node's
-        ``curio_load_model`` names it, as is a model whose entry could not be
-        downloaded (``left_out_files.failures`` keeps why for the node)."""
+        ``curio_load_model`` names it."""
         out: dict[str, str] = {}
         for model_id in model_ids:
             try:
@@ -326,5 +340,14 @@ class ModelCatalogService:
         manifest, origin, folder = self._find(model_id)
         if origin != "downloaded":
             raise ModelCatalogError(f"{manifest.name} ships with Curio and cannot be deleted", 403)
-        shutil.rmtree(folder)
+        if self._is_store_package(folder):
+            # A model package of the account's own goes as the Node Catalog
+            # removes a package: from the store, and from every dataflow's
+            # lockfile that names it.
+            from utk_curio.backend.app.packages.service import detach_from_all_projects, remove_package
+
+            remove_package(self.user_key, manifest.dir_name)
+            detach_from_all_projects(self.user_key, manifest.dir_name)
+        else:
+            shutil.rmtree(folder)
         return {"deleted": manifest.id}

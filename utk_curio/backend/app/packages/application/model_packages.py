@@ -15,12 +15,17 @@ weights are read where they are:
 
 ``curio_load_model("<id>")`` names a package id, ``<id>@<major>`` one major.
 The user's store answers before the catalog, the highest major of each.
+
+The Model Catalog lists the model packages one account can run
+(:func:`list_model_packages`): the catalog's, and those imported or published
+into the account's store.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
@@ -97,6 +102,46 @@ def find_model_package(user_key: str | None, model_id: str) -> tuple[PackageMani
         return None
     shipped = sorted(entry for entry in root.iterdir() if entry.is_dir() and PACKAGE_DIR_RE.match(entry.name))
     return _highest(shipped, want_id, want_major)
+
+
+@dataclass(frozen=True)
+class ListedModelPackage:
+    """A model package one account can run, as the Model Catalog lists it.
+
+    *folder* is where its manifest is read: the account's copy when that copy
+    holds its own weights (imported or published), else the catalog's.
+    *in_store* says which: an account's own model package, which it may
+    remove, or one that ships with Curio."""
+
+    manifest: PackageManifest
+    folder: Path
+    in_store: bool
+
+
+def list_model_packages(user_key: str | None) -> list[ListedModelPackage]:
+    """Every model package *user_key* can run, once per ``<id>@<major>``:
+    those in the account's store that hold their own weights, then the
+    catalog's. A user's copy of a catalog package holds none (seeded for the
+    examples, or added), so the catalog's is the one listed. A weight a pip
+    install has not fetched yet is not needed to list it. A lock owner: it
+    reads the user's store under the seed lock, as :func:`find_model_package`
+    does."""
+    listed: dict[str, ListedModelPackage] = {}
+    if user_key:
+        with package_seed_lock(user_key):
+            for folder in list_user_packages(user_key):
+                manifest = _model_manifest(folder)
+                if manifest is not None and holds_weights(folder, manifest):
+                    listed[folder.name] = ListedModelPackage(manifest, folder, True)
+    root = packages_catalog_dir.catalog_root()
+    if root.is_dir():
+        for folder in sorted(entry for entry in root.iterdir() if entry.is_dir() and PACKAGE_DIR_RE.match(entry.name)):
+            if folder.name in listed:
+                continue
+            manifest = _model_manifest(folder)
+            if manifest is not None:
+                listed[folder.name] = ListedModelPackage(manifest, folder.resolve(), False)
+    return list(listed.values())
 
 
 def _integrity(folder: Path) -> dict[str, str]:
