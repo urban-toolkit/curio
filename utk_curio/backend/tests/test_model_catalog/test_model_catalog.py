@@ -1,6 +1,9 @@
-"""The Model Catalog: the model packages Curio ships, read where they are, a
-person's own in their store, and ``curio_load_model`` reaching a node for a
-model the person's store holds."""
+"""The Model Catalog's backend: the packages service, filtered to kind
+``model``. The model packages Curio ships are read where they are, a person's
+own sit in their store, and ``curio_load_model`` reaches a node for a model
+the person's store holds. Nothing answers under ``/api/models`` any more.
+
+Code main lacks is imported inside each test."""
 
 from __future__ import annotations
 
@@ -11,21 +14,14 @@ from pathlib import Path
 import pytest
 
 from utk_curio.backend.app.datasets.domain.code_refs import MODEL_CALL_RE, model_ids_in_code
-from utk_curio.backend.app.model_catalog.domain.manifest import (
-    ModelManifestError,
-    manifest_dict,
-    parse_manifest,
-)
-from utk_curio.backend.app.model_catalog.service import (
-    ModelCatalogError,
-    ModelCatalogService,
-)
 
 REPO = Path(__file__).resolve().parents[4]
 PACKAGES = REPO / "packages"
 DDRNET = "model.curio.ddrnet23-slim"
 DEEP_UMBRA = "model.scout.deep-umbra"
 WEATHER_GNN = "model.scout.weather-gnn"
+#: A node package that ships a module of its own.
+RASTER_CONVERSION = "scout.raster-conversion"
 
 
 @pytest.fixture()
@@ -41,6 +37,12 @@ def shipped(monkeypatch):
     return PACKAGES
 
 
+def _user_key(user) -> str:
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    return _user_dir_key(user)
+
+
 def _add(user, model_id: str) -> Path:
     """*model_id*'s shipped package added to *user*'s store, as Add (or the
     examples' seeding) adds it: the copy holds no weights."""
@@ -51,13 +53,23 @@ def _add(user, model_id: str) -> Path:
     return package_dir(_user_key(user), f"{model_id}@1")
 
 
-def _onnx_manifest(**overrides):
+def _parse(raw: dict, dir_name: str):
+    from utk_curio.backend.app.packages.domain.manifest import package_manifest_from_dict
+
+    return package_manifest_from_dict(raw, manifest_path=Path("manifest.json"), dir_name=dir_name)
+
+
+def _model_package(**top) -> dict:
     raw = {
-        "id": "model.example.tiny", "name": "Tiny", "version": "1.0.0", "compatibility": {"major": 1},
-        "license": "MIT", "runtime": "onnx", "task": "semantic-segmentation", "entry": "files/m.onnx",
-        "labels": ["a", "b"], "input": {"width": 64, "height": 32, "dtype": "float32", "scale": 0.00392},
+        "id": "ai.test.tiny-model", "version": "1.0.0", "name": "Tiny", "publisher": "Test",
+        "license": "MIT", "compatibility": {"major": 1}, "kind": "model",
+        "templates": [{"id": "seg", "label": "Seg", "category": "computation", "engine": "python",
+                       "editor": "code", "inputPorts": [], "outputPorts": []}],
+        "model": {"type": "semantic-segmentation", "runtime": "onnx", "entry": "models/m.onnx",
+                  "labels": ["a", "b"], "input": {"width": 64, "height": 32, "dtype": "float32", "scale": 0.00392},
+                  "license": "MIT", "sizeBytes": 10},
     }
-    raw.update(overrides)
+    raw.update(top)
     return raw
 
 
@@ -92,41 +104,35 @@ class TestTheManifest:
         assert manifest.model.size_bytes == sum(p.stat().st_size for p in (folder / "models").iterdir())
         assert manifest.model.size_bytes == 22_857_344 + 219_605
 
-    @pytest.mark.parametrize("change, message", [
-        ({"runtime": "tflite"}, "runtime must be one of"),
-        ({"task": "detection"}, "task must be one of"),
-        ({"entry": "../m.onnx"}, "inside the model's folder"),
-        ({"entry": "/abs/m.onnx"}, "inside the model's folder"),
-        ({"entry": "files/m.bin"}, "entry is its .onnx file"),
-        ({"labels": []}, "names its labels"),
-        ({"license": ""}, "license must be"),
-        ({"input": {"width": 64, "height": 32, "dtype": "int64"}}, "input.dtype"),
-        ({"input": {"width": 64, "height": 32, "std": [1, 0, 1]}}, "zero"),
-        ({"id": "Not An Id"}, "is not a model id"),
-        ({"version": "1"}, "version must look like"),
-        ({"homepage": "http://x.example"}, "https"),
-        ({"input": {"width": 64, "height": 32, "layout": "CHW"}}, "input.layout must be one of"),
-        ({"input": {"width": 64, "height": 32, "layout": "NHWC"}}, "NCHW for this task"),
+    @pytest.mark.parametrize("raw, dir_name, message", [
+        (_model_package(id="Not An Id"), "ai.test.tiny-model@1", "id is missing or malformed"),
+        (_model_package(version="1"), "ai.test.tiny-model@1", "must be semver"),
+        (_model_package(), "ai.test.other@1", "does not match manifest id/major"),
     ])
-    def test_what_it_refuses(self, change, message):
-        with pytest.raises(ModelManifestError, match=message):
-            parse_manifest(_onnx_manifest(**change))
+    def test_a_model_packages_id_version_and_folder_are_a_packages(self, raw, dir_name, message):
+        """The id, version and folder checks the Model Catalog's own manifest
+        made are the package manifest's (the model block's own refusals are
+        ``test_model_packages.py``'s)."""
+        from utk_curio.backend.app.packages.domain.manifest import ManifestError
 
-    def test_a_folder_is_named_for_its_model(self):
-        with pytest.raises(ModelManifestError, match="<id>@<major>"):
-            parse_manifest(_onnx_manifest(), dir_name="model.example.other@1")
+        with pytest.raises(ManifestError, match=message):
+            _parse(raw, dir_name)
 
-    def test_a_transformers_checkpoint_may_leave_labels_to_its_config(self):
-        manifest = parse_manifest(_onnx_manifest(runtime="transformers", entry="files", labels=[], input=None))
-        assert manifest.labels == () and manifest.input is None
+    @pytest.mark.parametrize("change", [
+        {},
+        {"type": "image-to-image", "labels": [],
+         "input": {"width": 512, "height": 512, "dtype": "float32", "layout": "NHWC"}},
+        {"type": "node-regression", "labels": [], "input": None},
+        {"runtime": "transformers", "entry": "models/checkpoint", "labels": [], "input": None},
+    ])
+    def test_the_model_block_round_trips(self, change):
+        """What a listing says of a model is what its manifest says: each type
+        and runtime reads back from the block a payload carries."""
+        from utk_curio.backend.app.packages.domain.model_block import model_block_dict, parse_model_block
 
-    def test_an_image_to_image_model_has_no_labels_and_may_read_nhwc(self):
-        manifest = parse_manifest(_onnx_manifest(
-            task="image-to-image", labels=[],
-            input={"width": 512, "height": 512, "dtype": "float32", "layout": "NHWC"},
-        ))
-        assert manifest.labels == () and manifest.input.layout == "NHWC"
-        assert parse_manifest(manifest_dict(manifest)) == manifest
+        raw = {**_model_package()["model"], **change}
+        block = parse_model_block({key: value for key, value in raw.items() if value is not None})
+        assert parse_model_block(model_block_dict(block)) == block
 
     def test_the_shipped_deep_umbra_reads_and_its_size_is_its_file(self):
         """SCOUT's shadow model, the model package whose Accumulated Shadow
@@ -144,12 +150,6 @@ class TestTheManifest:
         assert block.publisher == "SCOUT (urban-toolkit/scout)" and block.license
         assert block.size_bytes == sum(p.stat().st_size for p in (folder / "models").iterdir())
 
-    def test_a_node_regression_model_reads_a_graph_of_any_size(self):
-        """It has no labels and no image input: the node feeds it a graph (#740)."""
-        manifest = parse_manifest(_onnx_manifest(task="node-regression", labels=[], input=None))
-        assert manifest.labels == () and manifest.input is None
-        assert parse_manifest(manifest_dict(manifest)) == manifest
-
     def test_the_shipped_weather_gnn_reads_and_its_size_is_its_file(self):
         """SCOUT's weather GNN, the model package whose Weather Routing node
         runs it: a node-regression ONNX graph, with SCOUT as its weights'
@@ -163,10 +163,6 @@ class TestTheManifest:
             "model", "onnx", "node-regression", (), None)
         assert block.publisher == "SCOUT (urban-toolkit/scout)" and block.license
         assert block.size_bytes == sum(p.stat().st_size for p in (folder / "models").iterdir())
-
-    def test_it_round_trips(self):
-        parsed = parse_manifest(_onnx_manifest())
-        assert parse_manifest(manifest_dict(parsed)) == parsed
 
 
 #: The id of the model package :func:`_downloaded` writes.
@@ -195,13 +191,18 @@ def _downloaded(user, tmp_path, *, source: dict | None = None) -> str:
     return DOWNLOADED
 
 
+def _rows(client, auth, route: str) -> dict[str, dict]:
+    resp = client.get(route, headers=auth)
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    return {row["dirName"]: row for row in resp.get_json()["packages"]}
+
+
 class TestTheCatalog:
-    def test_it_lists_the_shipped_model_without_a_path(self, app, shipped, user_and_token):
-        user, _ = user_and_token
-        items = ModelCatalogService(user).list_catalog()["items"]
-        row = next(item for item in items if item["id"] == DDRNET)
-        assert row["origin"] == "shipped" and row["runtime"] == "onnx" and row["labelCount"] == 19
-        assert str(PACKAGES) not in json.dumps(items)
+    def test_it_lists_the_shipped_model_without_a_path(self, client, auth, shipped):
+        rows = _rows(client, auth, "/api/packages/catalog?kind=model")
+        row = rows[f"{DDRNET}@1"]
+        assert (row["kind"], row["model"]["runtime"], len(row["model"]["labels"])) == ("model", "onnx", 19)
+        assert str(PACKAGES) not in json.dumps(rows)
 
     def test_a_shipped_model_runs_once_added_and_where_it_ships(self, app, shipped, user_and_token):
         """Models behave like nodes: listed in the catalog, DDRNet23-Slim gives a
@@ -216,48 +217,62 @@ class TestTheCatalog:
         folder = str((PACKAGES / f"{DDRNET}@1").resolve())
         assert resolve_model_dirs(_user_key(user), [DDRNET, f"{DDRNET}@1"]) == {DDRNET: folder, f"{DDRNET}@1": folder}
 
-    def test_a_shipped_model_cannot_be_deleted(self, app, shipped, user_and_token):
+    def test_removing_a_shipped_model_removes_only_the_accounts_copy(self, client, auth, shipped, user_and_token):
+        """Remove takes a shipped model package out of the account, as it takes
+        a node package: the store's copy goes, and the catalog keeps the package
+        and its weights."""
         user, _ = user_and_token
-        with pytest.raises(ModelCatalogError) as exc:
-            ModelCatalogService(user).delete_model(DDRNET)
-        assert exc.value.status == 403
+        copy = _add(user, DDRNET)
+        assert f"{DDRNET}@1" in _rows(client, auth, "/api/packages?kind=model")
+        removed = client.delete(f"/api/packages/{DDRNET}@1", headers=auth)
+        assert removed.status_code == 204, removed.get_data(as_text=True)
+        assert not copy.exists()
+        assert f"{DDRNET}@1" not in _rows(client, auth, "/api/packages?kind=model")
+        assert f"{DDRNET}@1" in _rows(client, auth, "/api/packages/catalog?kind=model")
+        assert (PACKAGES / f"{DDRNET}@1" / "models" / "ddrnet23_slim.onnx").is_file()
 
-    def test_a_download_is_added_listed_used_and_deleted(self, app, shipped, user_and_token, tmp_path):
+    def test_a_download_is_added_listed_used_and_removed(self, client, auth, shipped, user_and_token, tmp_path):
         """A model the Discovery Catalog downloaded is a model package in the
         person's store, with its weights: listed as theirs, found by its source
-        row, run from the store, and deleted from it."""
+        row, run from the store, and removed from it."""
         from utk_curio.backend.app.packages.repositories.store import package_dir
-        from utk_curio.backend.app.packages.service import resolve_model_dirs
+        from utk_curio.backend.app.packages.service import downloaded_model_package, resolve_model_dirs
 
         user, _ = user_and_token
+        key = _user_key(user)
         model_id = _downloaded(user, tmp_path, source={"sourceId": "source.x@1", "resourceId": "org/tiny"})
-        service = ModelCatalogService(user)
-        row = service.get_model(model_id)
-        assert (row["origin"], row["sizeBytes"]) == ("downloaded", 4) and not (tmp_path / "incoming").exists()
-        assert service.find_by_discovery_resource("source.x@1", "org/tiny")["id"] == model_id
-        folder = Path(resolve_model_dirs(_user_key(user), [model_id])[model_id])
-        assert folder == package_dir(_user_key(user), f"{model_id}@1")
+        row = _rows(client, auth, "/api/packages?kind=model")[f"{model_id}@1"]
+        assert (row["packageId"], row["model"]["sizeBytes"]) == (model_id, 4) and not (tmp_path / "incoming").exists()
+        assert row["model"]["discoverySource"] == {"sourceId": "source.x@1", "resourceId": "org/tiny"}
+        assert downloaded_model_package(key, "source.x@1", "org/tiny") == {
+            "id": model_id, "dirName": f"{model_id}@1", "name": "Tiny", "dependencies": [],
+        }
+        assert downloaded_model_package(key, "source.x@1", "org/other") is None
+        folder = Path(resolve_model_dirs(key, [model_id])[model_id])
+        assert folder == package_dir(key, f"{model_id}@1")
         assert (folder / "models" / "m.onnx").read_bytes() == b"onnx"
-        assert service.delete_model(model_id) == {"deleted": model_id}
+        assert client.delete(f"/api/packages/{model_id}@1", headers=auth).status_code == 204
         assert not folder.exists()
 
     def test_another_persons_download_is_not_theirs(self, app, db, shipped, user_and_token, tmp_path):
-        from utk_curio.backend.app.packages.service import resolve_model_dirs
+        from utk_curio.backend.app.packages.application.catalog import installed_package_payloads
+        from utk_curio.backend.app.packages.service import downloaded_model_package, resolve_model_dirs
         from utk_curio.backend.app.users.models import User
 
         user, _ = user_and_token
-        model_id = _downloaded(user, tmp_path)
+        model_id = _downloaded(user, tmp_path, source={"sourceId": "source.x@1", "resourceId": "org/tiny"})
         bob = User(username="bob", name="Bob", email="bob@test.com")
         db.session.add(bob)
         db.session.commit()
         assert resolve_model_dirs(_user_key(bob), [model_id]) == {}
-        with pytest.raises(ModelCatalogError) as exc:
-            ModelCatalogService(bob).get_model(model_id)
-        assert exc.value.status == 404
+        assert model_id not in [row["packageId"] for row in installed_package_payloads(_user_key(bob), "model")]
+        assert downloaded_model_package(_user_key(bob), "source.x@1", "org/tiny") is None
 
     def test_a_broken_folder_is_left_out(self, app, monkeypatch, tmp_path, user_and_token):
         """A package catalog holding DDRNet23-Slim's package and a folder whose
         manifest cannot be read lists the one model."""
+        from utk_curio.backend.app.packages.application.catalog import catalog_listing
+
         root = tmp_path / "packages"
         (root / f"{DDRNET}@1").mkdir(parents=True)
         shutil.copyfile(PACKAGES / f"{DDRNET}@1" / "manifest.json", root / f"{DDRNET}@1" / "manifest.json")
@@ -265,14 +280,8 @@ class TestTheCatalog:
         (root / "model.example.broken@1" / "manifest.json").write_text("{not json", encoding="utf-8")
         monkeypatch.setenv("CURIO_PACKAGES_ROOT", str(root))
         user, _ = user_and_token
-        ids = [item["id"] for item in ModelCatalogService(user).list_catalog()["items"]]
+        ids = [row["packageId"] for row in catalog_listing(_user_key(user), "model")["packages"]]
         assert ids == [DDRNET]
-
-
-def _user_key(user) -> str:
-    from utk_curio.backend.app.projects.services import _user_dir_key
-
-    return _user_dir_key(user)
 
 
 def _imported_model_package(root: Path) -> Path:
@@ -297,69 +306,84 @@ def _imported_model_package(root: Path) -> Path:
 
 
 class TestModelPackagesInTheModelCatalog:
-    """The model packages, through ``/api/models``: the catalog's (Deep Umbra
-    and the weather GNN), and those imported or published into a person's
-    store. Each model shows once, with its weights' fields."""
+    """The model packages, through the packages listings filtered to kind
+    ``model``: the catalog's (DDRNet23-Slim, Deep Umbra and the weather GNN),
+    and those imported or published into a person's store. Each shows once,
+    with its weights' fields, its modules and its weights' license text."""
 
     def test_the_listing_shows_each_model_package_once_with_its_weights_fields(self, client, auth, shipped):
-        items = client.get("/api/models/catalog", headers=auth).get_json()["items"]
-        # One row a model: DDRNet23-Slim, Deep Umbra and the weather GNN, the
-        # three the palette counts.
-        assert sorted(item["id"] for item in items) == sorted([DDRNET, DEEP_UMBRA, WEATHER_GNN])
-        rows = {item["id"]: item for item in items}
-        for model_id, task in ((DEEP_UMBRA, "image-to-image"), (WEATHER_GNN, "node-regression")):
-            row = rows[model_id]
+        rows = _rows(client, auth, "/api/packages/catalog?kind=model")
+        # One row a model: the three the palette counts.
+        assert sorted(rows) == sorted(f"{model_id}@1" for model_id in (DDRNET, DEEP_UMBRA, WEATHER_GNN))
+        for model_id, model_type, module in (
+            (DEEP_UMBRA, "image-to-image", "deep_umbra"), (WEATHER_GNN, "node-regression", "weather_routing"),
+        ):
+            row = rows[f"{model_id}@1"]
+            block = row["model"]
             weights = next((PACKAGES / f"{model_id}@1" / "models").iterdir())
-            assert (row["origin"], row["dirName"], row["runtime"], row["task"]) == (
-                "shipped", f"{model_id}@1", "onnx", task)
-            assert (row["license"], row["publisher"]) == (
+            assert (row["kind"], row["license"], block["runtime"], block["type"]) == ("model", "MIT", "onnx", model_type)
+            assert (block["license"], block["publisher"]) == (
                 "Used with the permission of SCOUT's authors", "SCOUT (urban-toolkit/scout)")
-            assert row["sizeBytes"] == weights.stat().st_size
-            assert row["labels"] == [] and row["hasLicenseText"] is False
-        assert rows[DEEP_UMBRA]["name"] == "Deep Umbra (accumulated shadows)"
-        assert rows[DEEP_UMBRA]["input"] == {"width": 512, "height": 512, "dtype": "float32"}
-        assert "input" not in rows[WEATHER_GNN]
-        # DDRNet23-Slim, a model package now, reads as it did from models/.
-        ddrnet = rows[DDRNET]
-        assert (ddrnet["origin"], ddrnet["dirName"], ddrnet["runtime"], ddrnet["task"]) == (
-            "shipped", f"{DDRNET}@1", "onnx", "semantic-segmentation")
-        assert (ddrnet["name"], ddrnet["license"], ddrnet["hasLicenseText"]) == (
-            "DDRNet23-Slim (street scenes)", "MIT; trained on Cityscapes", True)
-        assert ddrnet["publisher"] == "DDRNet authors; ONNX export by Qualcomm AI Hub Models (v0.63.0, w8a8)"
-        assert ddrnet["homepage"] == "https://huggingface.co/qualcomm/DDRNet23-Slim"
-        assert ddrnet["input"] == {"width": 2048, "height": 1024, "dtype": "uint8"}
-        assert (ddrnet["labelCount"], ddrnet["sizeBytes"], ddrnet["createdAt"]) == (19, 23_076_949, "2026-10-01T00:00:00Z")
-        assert ddrnet["dependencies"] == ["onnxruntime"]
+            assert block["sizeBytes"] == weights.stat().st_size
+            assert block["labels"] == [] and "licenseFile" not in block
+            # The module its node imports, and the weights at hand in a clone.
+            assert row["modules"] == [module]
+            assert block["downloadsOnFirstUse"] is False
+        assert rows[f"{DEEP_UMBRA}@1"]["name"] == "Deep Umbra (accumulated shadows)"
+        assert {key: rows[f"{DEEP_UMBRA}@1"]["model"]["input"][key] for key in ("width", "height", "dtype")} == {
+            "width": 512, "height": 512, "dtype": "float32"}
+        assert "input" not in rows[f"{WEATHER_GNN}@1"]["model"]
+        ddrnet = rows[f"{DDRNET}@1"]
+        block = ddrnet["model"]
+        assert (ddrnet["name"], ddrnet["license"], block["license"], block["licenseFile"]) == (
+            "DDRNet23-Slim (street scenes)", "MIT", "MIT; trained on Cityscapes", "LICENSE")
+        assert block["publisher"] == "DDRNet authors; ONNX export by Qualcomm AI Hub Models (v0.63.0, w8a8)"
+        assert block["homepage"] == "https://huggingface.co/qualcomm/DDRNet23-Slim"
+        assert {key: block["input"][key] for key in ("width", "height", "dtype")} == {
+            "width": 2048, "height": 1024, "dtype": "uint8"}
+        assert (len(block["labels"]), block["sizeBytes"], ddrnet["createdAt"]) == (19, 23_076_949, "2026-10-01T00:00:00Z")
+        assert sorted(ddrnet["dependencies"]["python"]) == ["onnxruntime"]
+        assert ddrnet["modules"] == [] and block["downloadsOnFirstUse"] is False
+        assert [template["label"] for template in ddrnet["templates"]] == ["Image Segmentation"]
         from utk_curio.backend.app.packages.service import catalog_root
 
-        assert str(catalog_root()) not in json.dumps(items) and str(PACKAGES) not in json.dumps(items)
+        text = json.dumps(rows)
+        assert str(catalog_root()) not in text and str(PACKAGES) not in text
 
-    def test_one_is_opened_by_its_id_and_a_shipped_one_has_no_license_text(self, client, auth, shipped):
-        row = client.get(f"/api/models/{DEEP_UMBRA}", headers=auth).get_json()
-        assert (row["id"], row["origin"]) == (DEEP_UMBRA, "shipped")
-        assert client.get(f"/api/models/{DEEP_UMBRA}@1", headers=auth).get_json()["id"] == DEEP_UMBRA
-        assert client.get(f"/api/models/{DEEP_UMBRA}/license", headers=auth).status_code == 404
-
-    def test_a_copy_in_the_store_is_the_shipped_model_and_is_not_deleted(self, client, auth, user_and_token, shipped):
-        """Seeded for the examples, or added: the copy holds no weights, so the
-        model is the catalog's, listed once and refused a delete."""
+    def test_every_package_lists_its_modules(self, client, auth, shipped, user_and_token):
+        """A node package names its modules as a model package does, in the
+        catalog and in the store; one that ships none names none."""
         from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
-        from utk_curio.backend.app.packages.repositories.store import package_dir
 
         user, _ = user_and_token
-        install_package_from_directory(_user_key(user), PACKAGES / f"{DEEP_UMBRA}@1")
-        copy = package_dir(_user_key(user), f"{DEEP_UMBRA}@1")
-        assert (copy / "manifest.json").is_file() and not (copy / "models").exists()
+        catalog = _rows(client, auth, "/api/packages/catalog?kind=node")
+        assert catalog[f"{RASTER_CONVERSION}@1"]["modules"] == ["scout_raster_conversion"]
+        assert catalog["curio.builtin@1"]["modules"] == []
+        install_package_from_directory(_user_key(user), PACKAGES / f"{RASTER_CONVERSION}@1")
+        _add(user, DEEP_UMBRA)
+        assert _rows(client, auth, "/api/packages?kind=node")[f"{RASTER_CONVERSION}@1"]["modules"] == [
+            "scout_raster_conversion"]
+        assert _rows(client, auth, "/api/packages?kind=model")[f"{DEEP_UMBRA}@1"]["modules"] == ["deep_umbra"]
 
-        items = client.get("/api/models/catalog", headers=auth).get_json()["items"]
-        assert [item["origin"] for item in items if item["id"] == DEEP_UMBRA] == ["shipped"]
-        assert client.get(f"/api/models/{DEEP_UMBRA}", headers=auth).get_json()["origin"] == "shipped"
-        assert client.delete(f"/api/models/{DEEP_UMBRA}", headers=auth).status_code == 403
-        assert (copy / "manifest.json").is_file()
+    def test_the_weights_license_text_is_read_where_the_package_is(self, client, auth, shipped, user_and_token):
+        """DDRNet23-Slim's weights license text, from the catalog for an account
+        that never added it and from the account's copy once added; a package
+        whose weights have no license file has no text."""
+        route = f"/api/packages/{DDRNET}@1/weights-license"
+        before = client.get(route, headers=auth)
+        assert before.status_code == 200, before.get_data(as_text=True)
+        expected = (PACKAGES / f"{DDRNET}@1" / "LICENSE").read_text(encoding="utf-8")
+        assert before.get_json()["text"] == expected and "Cityscapes" in expected
+        _add(user_and_token[0], DDRNET)
+        assert client.get(route, headers=auth).get_json()["text"] == expected
+        assert client.get(f"/api/packages/{DEEP_UMBRA}@1/weights-license", headers=auth).status_code == 404
+        assert client.get("/api/packages/model.example.none@1/weights-license", headers=auth).status_code == 404
+        # A node package has no weights.
+        assert client.get("/api/packages/curio.builtin@1/weights-license", headers=auth).status_code == 404
 
-    def test_an_imported_one_is_listed_opened_licensed_and_deleted(self, client, auth, user_and_token, shipped, tmp_path):
+    def test_an_imported_one_is_listed_licensed_and_removed(self, client, auth, user_and_token, shipped, tmp_path):
         """A model package in the person's store with its own weights: theirs,
-        with its weights' license text, and deleted as the Node Catalog removes
+        with its weights' license text, and removed as the Node Catalog removes
         a package, from the store and from every dataflow's lockfile."""
         from utk_curio.backend.app.packages.application.store_install import install_package_from_archive
         from utk_curio.backend.app.packages.repositories.archive import zip_package_tree
@@ -377,44 +401,35 @@ class TestModelPackagesInTheModelCatalog:
         assert project.status_code == 201, project.get_data(as_text=True)
         project_id = project.get_json()["id"]
 
-        items = client.get("/api/models/catalog", headers=auth).get_json()["items"]
-        (row,) = [item for item in items if item["id"] == "ai.test.relief-model"]
-        assert (row["origin"], row["task"], row["license"], row["publisher"], row["hasLicenseText"]) == (
-            "downloaded", "node-regression", "CC-BY-4.0", "Test Lab", True)
-        assert row["sizeBytes"] == 10
-        assert client.get("/api/models/ai.test.relief-model", headers=auth).get_json()["name"] == "Relief model"
-        license_text = client.get("/api/models/ai.test.relief-model/license", headers=auth).get_json()["text"]
-        assert license_text == "The weights are free to use.\n"
+        row = _rows(client, auth, "/api/packages?kind=model")["ai.test.relief-model@1"]
+        block = row["model"]
+        assert (row["name"], block["type"], block["license"], block["publisher"], block["sizeBytes"]) == (
+            "Relief model", "node-regression", "CC-BY-4.0", "Test Lab", 10)
+        assert block["downloadsOnFirstUse"] is False
+        license_text = client.get("/api/packages/ai.test.relief-model@1/weights-license", headers=auth)
+        assert license_text.get_json()["text"] == "The weights are free to use.\n"
 
-        deleted = client.delete("/api/models/ai.test.relief-model", headers=auth)
-        assert deleted.status_code == 200, deleted.get_data(as_text=True)
-        assert deleted.get_json() == {"deleted": "ai.test.relief-model"}
+        removed = client.delete("/api/packages/ai.test.relief-model@1", headers=auth)
+        assert removed.status_code == 204, removed.get_data(as_text=True)
         assert not package_dir(key, "ai.test.relief-model@1").exists()
         assert projects_storage.read_spec(key, project_id)["dataflow"]["packages"] == []
-        assert client.get("/api/models/ai.test.relief-model", headers=auth).status_code == 404
+        assert "ai.test.relief-model@1" not in _rows(client, auth, "/api/packages?kind=model")
 
 
 class TestTheRoutes:
-    def test_they_need_a_session(self, client, shipped):
-        assert client.get("/api/models/catalog").status_code == 401
+    def test_the_weights_license_needs_a_session(self, client, shipped):
+        assert client.get(f"/api/packages/{DDRNET}@1/weights-license").status_code == 401
 
-    def test_the_listing_and_one_model(self, client, auth, shipped):
-        items = client.get("/api/models/catalog", headers=auth).get_json()["items"]
-        assert DDRNET in [item["id"] for item in items]
-        row = client.get(f"/api/models/{DDRNET}", headers=auth).get_json()
-        assert row["name"].startswith("DDRNet23-Slim")
-
-    def test_the_license_text(self, client, auth, shipped):
-        text = client.get(f"/api/models/{DDRNET}/license", headers=auth).get_json()["text"]
-        assert "MIT License" in text
-
-    def test_an_unknown_model_is_404_and_a_shipped_one_is_not_deleted(self, client, auth, shipped):
-        assert client.get("/api/models/model.example.none", headers=auth).status_code == 404
-        assert client.delete(f"/api/models/{DDRNET}", headers=auth).status_code == 403
-
-    def test_a_search(self, client, auth, shipped):
-        assert client.get("/api/models/catalog?q=cityscapes", headers=auth).get_json()["items"]
-        assert client.get("/api/models/catalog?q=nothing-like-it", headers=auth).get_json()["items"] == []
+    @pytest.mark.parametrize("method, route", [
+        ("get", "/api/models/catalog"),
+        ("get", f"/api/models/{DDRNET}"),
+        ("get", f"/api/models/{DDRNET}/license"),
+        ("delete", f"/api/models/{DDRNET}"),
+    ])
+    def test_the_model_catalog_routes_are_gone(self, client, auth, shipped, method, route):
+        """The Model Catalog is the packages service's: ``/api/models`` answers
+        nothing."""
+        assert getattr(client, method)(route, headers=auth).status_code == 404
 
 
 class TestANodeReachesIt:

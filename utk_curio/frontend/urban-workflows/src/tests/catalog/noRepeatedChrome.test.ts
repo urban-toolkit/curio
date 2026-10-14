@@ -32,7 +32,8 @@ const DRAWERS: [string, string][] = [
   ["data", "components/datasets/catalog/DatasetCatalogDrawer.tsx"],
   ["node", "components/packages/publishing/NodeCatalogDrawer.tsx"],
   ["agent", "components/agents/catalog/AgentCatalogDrawer.tsx"],
-  ["model", "components/models/catalog/ModelCatalogDrawer.tsx"],
+  // The Model Catalog drawer is the Node Catalog drawer over model packages.
+  ["model", "components/packages/publishing/NodeCatalogDrawer.tsx"],
   ["scenario", "components/scenarios/catalog/ScenarioCatalogDrawer.tsx"],
 ];
 
@@ -110,8 +111,9 @@ describe("every catalog card root carries its identity attribute", () => {
     ["node browse", "pages/catalog/PackageBrowseCard.tsx", "data-pkg-dir"],
     ["node drawer", "components/packages/publishing/PackageCard.tsx", "data-pkg-dir"],
     ["agent drawer", "components/agents/catalog/AgentCatalogDrawer.tsx", "data-agent-coord"],
-    ["model browse", "pages/models/ModelCatalogBrowseCard.tsx", "data-model-id"],
-    ["model drawer", "components/models/catalog/ModelCard.tsx", "data-model-id"],
+    // A model package's cards are the package cards, which carry its id too.
+    ["model browse", "pages/catalog/PackageBrowseCard.tsx", "data-model-id"],
+    ["model drawer", "components/packages/publishing/PackageCard.tsx", "data-model-id"],
     ["scenario browse", "pages/scenarios/ScenarioCatalogBrowseCard.tsx", "data-scenario-key"],
     ["scenario drawer", "components/scenarios/catalog/ScenarioCard.tsx", "data-scenario-key"],
   ];
@@ -159,7 +161,8 @@ describe("Escape dismisses every catalog drawer, and every one honours its pin",
     ["data", "components/datasets/catalog/DatasetCatalogDrawer.tsx"],
     ["node", "components/packages/publishing/NodeCatalogDrawer.tsx"],
     ["agent", "providers/AgentCatalogDrawerProvider.tsx"],
-    ["model", "components/models/catalog/ModelCatalogDrawer.tsx"],
+    // The Model Catalog drawer is the Node Catalog drawer over model packages.
+    ["model", "components/packages/publishing/NodeCatalogDrawer.tsx"],
     ["scenario", "components/scenarios/catalog/ScenarioCatalogDrawer.tsx"],
   ];
 

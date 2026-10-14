@@ -1307,7 +1307,7 @@ For the full guide, covering searching, downloading, storage sources, collection
 
 The **Model Catalog** holds the trained models your nodes can run. A model is a package: its weights and the node that runs it. DDRNet23-Slim, which labels street photos with the 19 Cityscapes classes, ships with Curio, with an **Image Segmentation** node; models you add from the Discovery Catalog's **Hugging Face models** land here too, each with an Image Segmentation node of its own. A node runs the model its code names with `curio_load_model("<id>")`: drag a model from **Model Catalog** in the left Tools panel onto the node to change it.
 
-A node runs a model once the model's package is in your account: added, or brought by a dataflow that names it, such as example 10. Shipped models are packages under `<repo_root>/packages/`, relocated with **`--packages-root`**; models you add from the Discovery Catalog are yours, in your package store.
+A node runs a model once the model's package is in your account: added from the Model Catalog (**Add to project** in its canvas drawer, **Add to all projects** on its page), or brought by a dataflow that names it, such as example 10. Shipped models are packages under `<repo_root>/packages/`, relocated with **`--packages-root`**; models you add from the Discovery Catalog are yours, in your package store.
 
 For the full guide, covering runtimes, libraries, the manifest, and sharing a dataflow that names a model, see [docs/MODEL-CATALOG.md](MODEL-CATALOG.md).
 

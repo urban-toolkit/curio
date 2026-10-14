@@ -3,7 +3,8 @@
 The pip package leaves out Deep Umbra's weights (``packages/model.scout.deep-umbra@1/
 models/deep_umbra.onnx``, one of the files ``datasets/infrastructure/
 left_out_files.json`` lists) and keeps the rest of its model package. So a pip
-install's Model Catalog lists the model, and a node that runs it, once its
+install's Model Catalog lists the model as one that downloads on first use,
+and a node that runs it, once its
 package is in the user's store (seeded for the examples, or added), gets a
 folder holding the package's manifest and the weights, fetched from GitHub on
 that first run, as ``curio_load_model`` and the isolated sandbox's staging
@@ -89,17 +90,41 @@ def _run(client, auth):
     })
 
 
-def test_the_model_catalog_lists_a_left_out_model_before_fetching_it(pip_packages, monkeypatch):
-    from utk_curio.backend.app.model_catalog.service import ModelCatalogService
+def _listed(client, auth, route: str) -> dict:
+    resp = client.get(route, headers=auth)
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    rows = {row["packageId"]: row for row in resp.get_json()["packages"]}
+    assert MODEL_ID in rows, sorted(rows)
+    return rows[MODEL_ID]
 
+
+def test_the_model_catalog_lists_a_left_out_model_before_fetching_it(client, auth, pip_packages, monkeypatch):
+    """Listed with its weights' size, and said to download on first use, with
+    nothing downloaded to say so."""
     github = FakeGitHub().serve(monkeypatch)
 
-    items = {item["id"]: item for item in ModelCatalogService(None).list_catalog()["items"]}
+    row = _listed(client, auth, "/api/packages/catalog?kind=model")
 
-    assert MODEL_ID in items, sorted(items)
-    assert items[MODEL_ID]["origin"] == "shipped"
-    assert items[MODEL_ID]["sizeBytes"] == (REPO / WEIGHTS).stat().st_size
+    assert row["kind"] == "model"
+    assert row["model"]["sizeBytes"] == (REPO / WEIGHTS).stat().st_size
+    assert row["model"]["downloadsOnFirstUse"] is True
     assert github.urls == []
+
+
+def test_a_left_out_model_no_longer_downloads_on_first_use_once_fetched(
+    client, auth, user_and_token, pip_packages, monkeypatch,
+):
+    """The account's copy says so too, until a node has fetched the weights."""
+    FakeGitHub().serve(monkeypatch)
+    _capture_sandbox(monkeypatch)
+    _add(user_and_token[0], pip_packages)
+    assert _listed(client, auth, "/api/packages?kind=model")["model"]["downloadsOnFirstUse"] is True
+
+    resp = _run(client, auth)
+
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert _listed(client, auth, "/api/packages?kind=model")["model"]["downloadsOnFirstUse"] is False
+    assert _listed(client, auth, "/api/packages/catalog?kind=model")["model"]["downloadsOnFirstUse"] is False
 
 
 def test_a_node_fetches_a_left_out_model_into_a_folder_it_loads(

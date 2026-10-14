@@ -92,23 +92,25 @@ def onnx_input(pre: dict[str, Any]) -> dict[str, Any]:
 class ModelAcquire:
     """Turns one model source row into a model package in the user's store.
 
-    *models* gives the Model Catalog's service, which says whether this
-    account already holds the row's model, whether it may add one, and the
-    row a client is shown for the package it added."""
+    The packages service says whether *user* already holds the row's model,
+    whether it may add one, and the row a client is shown for the package it
+    added."""
 
     def __init__(
         self,
         *,
+        user: Any,
         user_key: str,
         provider_for: Callable[[DiscoverySourceManifest], Any],
-        models: Callable[[], Any],
     ) -> None:
+        self.user = user
         self.user_key = user_key
         self._provider_for = provider_for
-        self._models = models
 
     def already_held(self, manifest: DiscoverySourceManifest, repo: str) -> dict[str, Any] | None:
-        return self._models().find_by_discovery_resource(manifest.dir_name, repo)
+        from utk_curio.backend.app.packages import service as packages
+
+        return packages.downloaded_model_package(self.user_key, manifest.dir_name, repo)
 
     def acquire(
         self,
@@ -129,7 +131,7 @@ class ModelAcquire:
             return {"model": held, "alreadyPresent": True, "unchanged": True}
         # Refused before anything is fetched: a guest on a --deploy instance
         # adds no model, whatever its runtime needs (#623).
-        refusal = self._models().model_refusal()
+        refusal = packages.model_add_refusal(self.user)
         if refusal:
             raise CapabilityUnsupported(refusal)
         provider = self._provider_for(manifest)
@@ -139,7 +141,7 @@ class ModelAcquire:
         # Refused before anything is fetched, for the reason a package install
         # would be: the model's runtime libraries are installed with it.
         needs = RUNTIME_DEPS[plan.runtime]
-        refusal = self._models().install_refusal() if needs else None
+        refusal = packages.model_library_refusal(self.user) if needs else None
         if refusal:
             raise CapabilityUnsupported(f"{plan.repo} needs {', '.join(needs)}: {refusal}")
         work = (
@@ -165,7 +167,7 @@ class ModelAcquire:
             if stage is not None:
                 stage(f"Installing {', '.join(needs)}…")
             report = packages.install_downloaded_model_deps(self.user_key, installed)
-        model = self._models().get_model(installed.package_id)
+        model = packages.model_package_row(installed)
         return {"model": model, "dependencies": report, "alreadyPresent": False, "unchanged": False}
 
     def _fetch(self, provider, plan: ModelPlan, target: Path, *, progress, stage, cancelled) -> None:

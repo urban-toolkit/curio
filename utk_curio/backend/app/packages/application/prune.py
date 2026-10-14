@@ -55,28 +55,7 @@ def prune_unreferenced_packages(
     if not candidates:
         return {"pruned": set(), "removedFromDefaults": set()}
 
-    # Need a User to enumerate projects. We accept user_key (the on-disk
-    # segment) but resolving projects requires the DB id. Detect: numeric
-    # user_key → DB id; "guest" → look up the shared guest user.
-    from utk_curio.backend.app.users.services import _shared_guest_user
-
-    if user_key == "guest":
-        owner = _shared_guest_user()
-        user_id = owner.id
-    elif user_key.isdigit():
-        user_id = int(user_key)
-    else:
-        raise PackageServiceError(f"invalid user_key {user_key!r}")
-
-    referenced: set[str] = set()
-    installed_majors = packages_store_reads._installed_majors_by_pkg(user_key)
-    for project in projects_repo.list_for_user(user_id):
-        spec = projects_storage.read_spec(user_key, project.id)
-        if spec is None:
-            continue
-        referenced.update(project_packages(spec, installed_majors))
-        if candidates.issubset(referenced):
-            break  # short-circuit: every candidate has at least one reference
+    referenced = packages_in_use(user_key, candidates)
 
     unreferenced = candidates - referenced
     pruned: set[str] = set()
@@ -119,6 +98,40 @@ def prune_unreferenced_packages(
             # the user can clean up manually if needed.
             log.warning("prune: pip uninstall failed: %s", exc)
     return {"pruned": pruned, "removedFromDefaults": removed_from_defaults}
+
+
+def packages_in_use(user_key: str, candidates: Iterable[str] | None = None) -> set[str]:
+    """The package dirNames this user's projects use: each project's lockfile,
+    with the backfill from its canvas nodes (``project_packages``). With
+    *candidates*, the scan stops once every one of them has been found.
+
+    The one rule for "a dataflow uses this package": the prune above keeps
+    what it returns, and Remove from account refuses it.
+    """
+    # Need a User to enumerate projects. We accept user_key (the on-disk
+    # segment) but resolving projects requires the DB id. Detect: numeric
+    # user_key → DB id; "guest" → look up the shared guest user.
+    from utk_curio.backend.app.users.services import _shared_guest_user
+
+    if user_key == "guest":
+        owner = _shared_guest_user()
+        user_id = owner.id
+    elif user_key.isdigit():
+        user_id = int(user_key)
+    else:
+        raise PackageServiceError(f"invalid user_key {user_key!r}")
+
+    wanted = set(candidates) if candidates is not None else None
+    referenced: set[str] = set()
+    installed_majors = packages_store_reads._installed_majors_by_pkg(user_key)
+    for project in projects_repo.list_for_user(user_id):
+        spec = projects_storage.read_spec(user_key, project.id)
+        if spec is None:
+            continue
+        referenced.update(project_packages(spec, installed_majors))
+        if wanted is not None and wanted.issubset(referenced):
+            break  # short-circuit: every candidate has at least one reference
+    return referenced
 
 
 def _read_python_deps(user_key: str, dir_name: str) -> dict[str, str]:

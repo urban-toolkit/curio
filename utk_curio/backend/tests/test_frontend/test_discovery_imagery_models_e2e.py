@@ -275,10 +275,14 @@ def test_a_hugging_face_model_goes_onto_a_node_and_runs(
     _goto_discovery(page, app_frontend, f"/catalog/discovery/{HF_MODELS}?q=segformer")
     expect(row.get_by_text("In your Model Catalog")).to_be_visible(timeout=30000)
 
-    models = api_json(f"{current_server}/api/models/catalog", session["token"]) or {}
-    added = [m for m in models.get("items", []) if (m.get("discoverySource") or {}).get("resourceId") == ONNX_REPO]
+    # The Model Catalog is the account's model packages.
+    models = api_json(f"{current_server}/api/packages?kind=model", session["token"]) or {}
+    added = [
+        m for m in models.get("packages", [])
+        if ((m.get("model") or {}).get("discoverySource") or {}).get("resourceId") == ONNX_REPO
+    ]
     assert len(added) == 1, models
-    model_id = added[0]["id"]
+    model_id = added[0]["packageId"]
 
     # Back on the canvas: drag it from the left rail onto route 2's node.
     page.goto(canvas_url)

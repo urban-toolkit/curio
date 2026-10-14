@@ -35,18 +35,12 @@ const LOCAL_COMPOUND_CARDS = [
     keys: ["node", "canvas", "data", "evaluate", "package"],
   },
   {
+    // A model package's card is the package card, keyed `model`.
     label: "package",
     component: "pages/catalog/PackageBrowseCard.tsx",
     stylesheet: "pages/catalog/PackageBrowseCard.module.css",
     localImport: "styles",
-    keys: ["data", "computation", "vis", "package"],
-  },
-  {
-    label: "model",
-    component: "pages/models/ModelCatalogBrowseCard.tsx",
-    stylesheet: "pages/models/ModelCatalogBrowseCard.module.css",
-    localImport: "cardStyles",
-    keys: ["model"],
+    keys: ["data", "computation", "vis", "package", "model"],
   },
   {
     label: "scenario",

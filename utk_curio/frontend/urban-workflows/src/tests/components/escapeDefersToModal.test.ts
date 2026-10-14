@@ -22,12 +22,12 @@ import path from "path";
 const SRC = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8");
 
-/** Every file that closes something on a `window` keydown Escape. */
+/** Every file that closes something on a `window` keydown Escape. The Node
+ *  Catalog drawer's listener is the Model Catalog drawer's too. */
 const WINDOW_ESCAPE_LISTENERS = [
   "components/packages/publishing/NodeCatalogDrawer.tsx",
   "components/datasets/catalog/DatasetCatalogDrawer.tsx",
   "components/discovery/catalog/DiscoveryCatalogDrawer.tsx",
-  "components/models/catalog/ModelCatalogDrawer.tsx",
   "components/scenarios/catalog/ScenarioCatalogDrawer.tsx",
   "providers/AgentCatalogDrawerProvider.tsx",
   "components/agents/attach/AgentChatPanel.tsx",

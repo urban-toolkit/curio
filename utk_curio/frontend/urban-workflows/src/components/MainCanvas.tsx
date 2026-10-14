@@ -60,7 +60,7 @@ import {
     modelNodeForCanvas,
     readModelDragPayload,
     type ModelDropTemplate,
-} from "../services/modelCatalog";
+} from "../services/packages/modelApplication";
 import { endScenarioDrag, hasScenarioDrag, readScenarioDragPayload } from "../services/scenarioCatalog/scenarioDrag";
 import { useScenarioDrop } from "./scenarios/useScenarioDrop";
 import { packageStarterCode } from "../adapters/node/packageNodeBehavior";
@@ -430,7 +430,7 @@ export function MainCanvas() {
             const elsewhere = modelNodeForCanvas(templates(getAllNodeTypes()), model);
             showToast(
                 elsewhere?.packageName
-                    ? `${model.name} needs a node that runs models: add ${elsewhere.packageName} to this project from the Node Catalog.`
+                    ? `${model.name} needs a node that runs models: add ${elsewhere.packageName} to this project from the Model Catalog.`
                     : "No installed node runs a model.",
                 "warning",
             );

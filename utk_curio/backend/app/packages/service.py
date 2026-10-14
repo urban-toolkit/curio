@@ -94,8 +94,13 @@ from utk_curio.backend.app.packages.application.model_packages import (
     resolve_model_dirs,
 )
 from utk_curio.backend.app.packages.application.model_downloads import (
+    downloaded_model_ids,
+    downloaded_model_package,
     install_downloaded_model,
     install_downloaded_model_deps,
+    model_add_refusal,
+    model_library_refusal,
+    model_package_row,
 )
 from utk_curio.backend.app.packages.domain.default_cells import model_loader_line, model_template
 
@@ -217,6 +222,11 @@ __all__ = [
     "resolve_model_dirs",
     "install_downloaded_model",
     "install_downloaded_model_deps",
+    "downloaded_model_ids",
+    "downloaded_model_package",
+    "model_add_refusal",
+    "model_library_refusal",
+    "model_package_row",
     "model_loader_line",
     "model_template",
 ]

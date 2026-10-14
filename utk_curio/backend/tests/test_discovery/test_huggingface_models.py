@@ -178,18 +178,28 @@ class TestItLandsAsAModelPackage:
         folder = package_dir(self._key(user), f"{model_id}@1")
         return folder, json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
 
+    @staticmethod
+    def _listed(client, auth, model_id: str) -> dict:
+        """The Model Catalog's row for *model_id*: the account's model packages,
+        as the packages service lists them."""
+        resp = client.get("/api/packages?kind=model", headers=auth)
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        rows = {row["packageId"]: row for row in resp.get_json()["packages"]}
+        assert model_id in rows, sorted(rows)
+        return rows[model_id]
+
     def test_an_onnx_model_becomes_a_model_package_with_its_labels_and_input(self, client, auth, live, user_and_token):
         job = self._add(client, auth, ONNX_REPO)
         assert job["status"] == "completed", job
         assert job["stageMessage"] == "Added to your Model Catalog" and job["dataset"] is None
         model = job["model"]
         assert model["id"].startswith("imported.x") and model["dirName"] == f"{model['id']}@1"
-        assert model["origin"] == "downloaded" and model["runtime"] == "onnx"
-        assert model["labelCount"] == 150 and "wall" in model["labels"]
-        assert model["input"] == {"width": 512, "height": 512, "dtype": "float32"}
-        assert model["discoverySource"]["resourceId"] == ONNX_REPO
-        listed = client.get("/api/models/catalog", headers=auth).get_json()["items"]
-        assert model["id"] in {item["id"] for item in listed}
+        block = self._listed(client, auth, model["id"])["model"]
+        assert block["runtime"] == "onnx" and block["downloadsOnFirstUse"] is False
+        assert len(block["labels"]) == 150 and "wall" in block["labels"]
+        assert {key: block["input"][key] for key in ("width", "height", "dtype")} == {
+            "width": 512, "height": 512, "dtype": "float32"}
+        assert block["discoverySource"]["resourceId"] == ONNX_REPO
 
         user, _ = user_and_token
         folder, manifest = self._package(user, model["id"])
@@ -246,17 +256,19 @@ class TestItLandsAsAModelPackage:
         )
         photos = helpers["curio_load_collection"](sample).head(2)
         out = make_curio_segment(helpers["curio_derived_file"])(photos, CurioModel(model["id"], folder), None)
-        shares = out[[f"{label}_pct" for label in model["labels"]]]
+        labels = self._listed(client, auth, model["id"])["model"]["labels"]
+        shares = out[[f"{label}_pct" for label in labels]]
         assert shares.sum(axis=1).between(99.5, 100.5).all()
-        assert out["dominant_class"].isin(model["labels"]).all()
+        assert out["dominant_class"].isin(labels).all()
         assert out["overlay_url"].notna().all() and out["segment_error"].isna().all()
 
     def test_a_transformers_checkpoint(self, client, auth, live, user_and_token):
         """Its checkpoint is a folder of its own under ``models/``, which its
         model block names."""
         model = self._add(client, auth, TRANSFORMERS_REPO)["model"]
-        assert model["runtime"] == "transformers" and model["license"] == "mit"
-        assert model["labelCount"] == 150
+        block = self._listed(client, auth, model["id"])["model"]
+        assert block["runtime"] == "transformers" and block["license"] == "mit"
+        assert len(block["labels"]) == 150
         user, _ = user_and_token
         folder, manifest = self._package(user, model["id"])
         assert manifest["model"]["entry"] == "models/checkpoint"
@@ -288,10 +300,10 @@ class TestItLandsAsAModelPackage:
     def test_someone_who_may_not_install_is_refused_before_any_download(
         self, client, auth, live, pip, monkeypatch, repo, library,
     ):
-        from utk_curio.backend.app.model_catalog import service as model_service
+        from utk_curio.backend.app.packages import service as packages_service
 
-        monkeypatch.setattr(model_service.ModelCatalogService, "install_refusal",
-                            lambda self: "this Curio does not install packages for guests")
+        monkeypatch.setattr(packages_service, "model_library_refusal",
+                            lambda user: "this Curio does not install packages for guests")
         fetched = []
         monkeypatch.setattr(hfm.HuggingFaceModels, "file_url",
                             lambda self, plan, path: fetched.append(path) or f"{self.base}/x")
@@ -363,9 +375,10 @@ class TestItLandsAsAModelPackage:
         again = wait_for(client, auth, res.get_json()["jobId"], timeout=60)
         assert again["status"] == "completed", again
         assert again["model"]["id"] == first["id"]
-        listed = client.get("/api/models/catalog", headers=auth).get_json()["items"]
-        downloaded = [item for item in listed if item.get("origin") == "downloaded"]
-        assert [item["id"] for item in downloaded] == [first["id"]]
+        # The account's own model packages: one, from that row.
+        listed = client.get("/api/packages?kind=model", headers=auth).get_json()["packages"]
+        downloaded = [row for row in listed if (row["model"].get("discoverySource") or {}).get("sourceId")]
+        assert [row["packageId"] for row in downloaded] == [first["id"]]
         user, _token = user_and_token
         held = [
             listed.folder.name for listed in held_model_packages(self._key(user))
@@ -386,8 +399,9 @@ class TestItLandsAsAModelPackage:
             model = self._add(client, auth, ONNX_REPO)["model"]
         finally:
             record_clock.set_now(None)
-        created = datetime.fromisoformat(model["createdAt"].replace("Z", "+00:00"))
-        assert calendar <= created < calendar + timedelta(minutes=1), model["createdAt"]
+        row = self._listed(client, auth, model["id"])
+        created = datetime.fromisoformat(row["createdAt"].replace("Z", "+00:00"))
+        assert calendar <= created < calendar + timedelta(minutes=1), row["createdAt"]
 
     def test_a_search_row_says_it_is_held(self, client, auth, live):
         model = self._add(client, auth, ONNX_REPO)["model"]
@@ -436,7 +450,7 @@ class TestATokenWhereTheHubAsks:
         provider = _provider()
         plan = provider.plan(ONNX_REPO)
         provider.transport = Refusing()
-        acquire_ = ModelAcquire(user_key="alice", provider_for=lambda m: provider, models=lambda: None)
+        acquire_ = ModelAcquire(user=None, user_key="alice", provider_for=lambda m: provider)
         with pytest.raises(CredentialRequired, match="Hugging Face token"):
             acquire_._fetch(provider, plan, tmp_path, progress=None, stage=None, cancelled=None)
 
@@ -488,7 +502,7 @@ class TestAFileStaysInTheModelsFolder:
 
         provider = _provider()
         provider.transport = Writes()
-        acquire_ = ModelAcquire(user_key="alice", provider_for=lambda m: provider, models=lambda: None)
+        acquire_ = ModelAcquire(user=None, user_key="alice", provider_for=lambda m: provider)
         target = tmp_path / "model" / "files"
         for path in ("../outside/model.onnx", str(tmp_path / "outside" / "model.onnx")):
             plan = hfm.ModelPlan(repo="a/b", revision="0" * 40, runtime="onnx",
