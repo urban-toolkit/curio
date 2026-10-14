@@ -10,6 +10,10 @@ is, and its libraries install by the packages' own path.
 
 Its id is ``imported.x<hex>``. A refresh installs over the package it
 replaces, under the same id, so a node naming it runs the new files.
+
+The Discovery Catalog asks here whether an account already holds a source
+row's model (:func:`downloaded_model_package`), whether it may add one, and
+what to tell a client about the package it added (:func:`model_package_row`).
 """
 
 from __future__ import annotations
@@ -18,11 +22,13 @@ import json
 import shutil
 from pathlib import Path
 
+from utk_curio.backend.app.packages.application import model_packages as packages_model_packages
 from utk_curio.backend.app.packages.application import provisioning as packages_provisioning
 from utk_curio.backend.app.packages.application import store_install as packages_store_install
 from utk_curio.backend.app.packages.domain.manifest import PackageManifest
 from utk_curio.backend.app.packages.domain.model_block import MODELS_DIR
 from utk_curio.backend.app.packages.repositories.archive import zip_package_tree_to
+from utk_curio.backend.app.users.capabilities import install_refusal, package_install_refusal
 
 
 def install_downloaded_model(
@@ -51,3 +57,52 @@ def install_downloaded_model_deps(user_key: str, manifest: PackageManifest) -> d
     as a sideloaded package's install: reported, not raised
     (``provisioning.provision_declared_deps``)."""
     return packages_provisioning.provision_declared_deps(user_key, manifest.dir_name, manifest)
+
+
+def model_package_row(manifest: PackageManifest) -> dict:
+    """What the Discovery Catalog tells a client about a model package it
+    added: its id (the Model Catalog's link to it), folder, name and the
+    libraries it declares. Never a path on this machine."""
+    return {
+        "id": manifest.package_id,
+        "dirName": manifest.dir_name,
+        "name": manifest.name,
+        "dependencies": sorted(manifest.python_deps),
+    }
+
+
+def _downloaded(user_key: str | None, source_id: str):
+    """The model packages *user_key* downloaded from the source *source_id*,
+    each with the resource it came from."""
+    for held in packages_model_packages.held_model_packages(user_key):
+        source = held.manifest.model.discovery_source or {}
+        if held.in_store and source.get("sourceId") == source_id and source.get("resourceId"):
+            yield str(source["resourceId"]), held.manifest
+
+
+def downloaded_model_ids(user_key: str | None, source_id: str) -> dict[str, str]:
+    """``{resource id: model id}`` for every model *user_key* downloaded from
+    the source *source_id*: the rows its search marks as held."""
+    return {resource: manifest.package_id for resource, manifest in _downloaded(user_key, source_id)}
+
+
+def downloaded_model_package(user_key: str | None, source_id: str, resource_id: str) -> dict | None:
+    """The row of the model package *user_key* downloaded from *resource_id* of
+    the source *source_id*, or None when it holds none."""
+    for resource, manifest in _downloaded(user_key, source_id):
+        if resource == resource_id:
+            return model_package_row(manifest)
+    return None
+
+
+def model_add_refusal(user) -> str | None:
+    """Why *user* may not add a model, or None: the rule a package install
+    follows. A guest on a ``--deploy`` instance may not, because every guest
+    shares one account and its disk (#623)."""
+    return install_refusal(user, noun="models")
+
+
+def model_library_refusal(user) -> str | None:
+    """Why *user* may not install the libraries a model's runtime needs, or
+    None: the reason a package's own would be refused."""
+    return package_install_refusal(user)

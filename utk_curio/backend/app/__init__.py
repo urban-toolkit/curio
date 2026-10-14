@@ -115,9 +115,6 @@ def create_app(config_class=config_class):
     app.register_blueprint(discovery_bp)
     app.register_blueprint(media_bp)
 
-    from utk_curio.backend.app.model_catalog import models_bp
-    app.register_blueprint(models_bp)
-
     from utk_curio.backend.app.scenario_catalog import scenarios_bp
     app.register_blueprint(scenarios_bp)
     try:

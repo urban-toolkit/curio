@@ -13,18 +13,31 @@ from utk_curio.backend.app.packages.domain.catalog_family import (
     catalog_release_collision_groups,
     families_summary,
 )
-from utk_curio.backend.app.packages.domain.manifest import ManifestError
+from utk_curio.backend.app.packages.application.model_packages import weights_on_first_use
+from utk_curio.backend.app.packages.domain.manifest import ManifestError, PackageManifest
 from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
 from utk_curio.backend.app.packages.repositories import (
     catalog_dir as packages_catalog_dir,
     publisher_record,
 )
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+from utk_curio.backend.app.packages.repositories.python_modules import module_names
 from utk_curio.backend.app.packages.repositories.store import list_user_packages
 from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
 from utk_curio.backend.app.packages.schemas.responses import package_payload
 
 log = logging.getLogger(__name__)
+
+
+def _listing_payload(manifest: PackageManifest, folder) -> dict:
+    """*manifest*'s payload as a listing shows it, read from its *folder*: the
+    modules it ships, and for a model package whether its weights download
+    on first use."""
+    payload = package_payload(manifest, package_mtime_path=folder)
+    payload["modules"] = sorted(module_names(folder, manifest))
+    if manifest.model is not None:
+        payload["model"]["downloadsOnFirstUse"] = weights_on_first_use(manifest, folder)
+    return payload
 
 
 def installed_package_payloads(user_key: str, kind: str | None = None) -> list[dict]:
@@ -42,7 +55,7 @@ def installed_package_payloads(user_key: str, kind: str | None = None) -> list[d
                 continue
             if kind is not None and manifest.kind != kind:
                 continue
-            out.append(package_payload(manifest, package_mtime_path=package_path))
+            out.append(_listing_payload(manifest, package_path))
     # Newest ``manifest.createdAt`` first - canonical authoring time / ordering.
     out.sort(
         key=lambda p: (-int(p.get("createdAtMs") or 0), p.get("dirName") or ""),
@@ -76,7 +89,7 @@ def catalog_listing(user_key: str, kind: str | None = None) -> dict:
             continue
         if kind is not None and manifest.kind != kind:
             continue
-        payload = package_payload(manifest, package_mtime_path=entry)
+        payload = _listing_payload(manifest, entry)
         payload["installed"] = manifest.dir_name in installed_coords
         # Whether THIS user may withdraw it, which is the same question as
         # "is this the user's own package". The agent catalog has carried a

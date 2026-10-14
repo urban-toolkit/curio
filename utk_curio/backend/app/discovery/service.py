@@ -132,9 +132,9 @@ class DiscoveryService:
             install_path=self._install_path,
         )
         self._model_acquire = ModelAcquire(
+            user=self.user,
             user_key=self.user_key,
             provider_for=self._model_provider_for,
-            models=self._models,
         )
 
     # ── collaborators ──────────────────────────────────────────────────────
@@ -166,22 +166,15 @@ class DiscoveryService:
 
         return build_model_provider(manifest, self._transport_for(manifest))
 
-    def _models(self):
-        """The Model Catalog, as this account: where a model source's adds land."""
-        from utk_curio.backend.app.model_catalog.service import ModelCatalogService
-
-        return ModelCatalogService(self.user)
-
     def _model_search(self, manifest: DiscoverySourceManifest, query) -> dict[str, Any]:
         """One page of a model source's search, each row saying whether this
-        account already holds it in the Model Catalog."""
+        account already holds it in the Model Catalog: a model package it
+        downloaded from that row."""
+        from utk_curio.backend.app.packages import service as packages
+
         ratelimit.limiter.check(self.user_key, manifest.dir_name, manifest.requests_per_minute)
         page = self._model_provider_for(manifest).search(query)
-        held = {
-            (m.get("discoverySource") or {}).get("resourceId"): m.get("id")
-            for m in self._models().list_catalog()["items"]
-            if (m.get("discoverySource") or {}).get("sourceId") == manifest.dir_name
-        }
+        held = packages.downloaded_model_ids(self.user_key, manifest.dir_name)
         return search_payload(
             [
                 resource_row(r, source_name=manifest.name, already_held_model_id=held.get(r.resource_id))

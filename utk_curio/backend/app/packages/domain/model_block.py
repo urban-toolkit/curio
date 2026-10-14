@@ -22,7 +22,7 @@ own ``license`` is its code's; the block's ``license`` is the weights':
 - ``sizeBytes``, ``discoverySource`` (where a downloaded model came from), and
   the weights' ``license``, ``licenseFile``, ``publisher`` and ``homepage``.
 
-The checks are the Model Catalog's (``model_catalog/domain/manifest.py``).
+The Model Catalog shows these fields for each model package.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""The per-user package store on the wire: the installed list, sideload, uninstall, the metadata PATCH, the archive re-export and the package-file server.
+"""The per-user package store on the wire: the installed list, sideload, uninstall, the metadata PATCH, the archive re-export, a model's weights license text and the package-file server.
 
 Presentation layer of the packages package (memo dev/143, B4): handlers parse (``schemas.requests``),
 call the use case and serialize (``schemas.responses``); every exception is mapped once by
@@ -15,6 +15,7 @@ from utk_curio.backend.app.packages.repositories.archive import InstallerError
 from utk_curio.backend.app.packages.application import (
     catalog as packages_catalog,
     metadata as packages_metadata,
+    model_packages as packages_model_packages,
     package_files as packages_package_files,
     project_packages as packages_project_packages,
     provisioning as packages_provisioning,
@@ -127,6 +128,15 @@ def download_package_archive(dir_name: str):
     response.call_on_close(cleanup)
     response.headers["Content-Disposition"] = f'attachment; filename="{dir_name}.curio.zip"'
     return response
+
+
+@packages_bp.route("/<dir_name>/weights-license", methods=["GET"])
+@require_auth
+@_map_package_errors
+def get_weights_license(dir_name: str):
+    """``{"text"}``: a model package's weights license text, from the caller's
+    copy or the catalog's; a 404 when its weights have none."""
+    return jsonify({"text": packages_model_packages.weights_license_text(user_key(), dir_name)}), 200
 
 
 @packages_bp.route("/<dir_name>/file/<path:filename>", methods=["GET"])
