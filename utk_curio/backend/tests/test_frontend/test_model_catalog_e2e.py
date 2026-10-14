@@ -216,7 +216,8 @@ def test_the_model_catalog_page_lists_the_model_packages(app_frontend: "Frontend
     expect(_card(grid, "curio.builtin@1")).to_have_count(0)
     expect(page.get_by_role("button", name="Import package")).to_be_visible()
     expect(_card(grid, DEEP_UMBRA)).to_contain_text("Used with the permission of SCOUT's authors")
-    save_workflow_test_screenshot(page, "model-catalog-page", test_name="test_page")
+    # A catalog page has no canvas to fit.
+    save_workflow_test_screenshot(page, "model-catalog-page", test_name="test_page", fit_reactflow=False)
 
 
 def test_browse_all_in_project_and_remove(app_frontend: "FrontendPage", current_server: str, page):

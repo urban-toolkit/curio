@@ -127,7 +127,7 @@ const PackageBrowseDrawerContent: React.FC<PackageBrowseDrawerContentProps> = ({
       infoLabel={model ? "Model info" : "Package info"}
       infoRows={
         model
-          ? [...modelInfoRows(model), pkg.license ? { label: "Code license", value: pkg.license } : null]
+          ? modelInfoRows(model)
           : [
               { label: "Channel", value: pkg.channel ?? "stable" },
               { label: "Templates", value: pkg.templates.length },

@@ -62,9 +62,10 @@ export function modelMetaLine(pkg: ModelPackage): string {
   return [modelRuntimeLabel(pkg), kind, modelSizeLabel(pkg)].filter(Boolean).join(" · ");
 }
 
-/** The model's rows for the details: how its weights run, their license,
- *  publisher and homepage, the node a drop creates, and whether the weights
- *  download on first use. The code's license is the package's own row. */
+/** The model's rows for the details: how its weights run, the code's license
+ *  (the package's) beside the weights' license, the weights' publisher and
+ *  homepage, the node a drop creates, and whether the weights download on
+ *  first use. */
 export function modelInfoRows(pkg: ModelPackage, weightsLicense?: React.ReactNode): ModelFact[] {
   const input = modelInputLabel(pkg);
   const size = modelSizeLabel(pkg);
@@ -75,6 +76,7 @@ export function modelInfoRows(pkg: ModelPackage, weightsLicense?: React.ReactNod
     input ? { label: "Input size", value: input } : null,
     pkg.model.labels.length > 0 ? { label: "Labels", value: String(pkg.model.labels.length) } : null,
     size ? { label: "Size", value: size } : null,
+    { label: "Code license", value: pkg.license || "Unknown" },
     { label: "Weights license", value: weightsLicense ?? (pkg.model.license || "Unknown") },
     pkg.model.publisher ? { label: "Weights publisher", value: pkg.model.publisher } : null,
     pkg.model.homepage

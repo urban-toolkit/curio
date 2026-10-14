@@ -210,12 +210,14 @@ export const PackageDetailModal: React.FC<PackageDetailModalProps> = ({
   const model = isModelPackage(pkg) ? pkg : null;
   const deps = dependencyLines(pkg);
   const modules = pkg.modules ?? [];
+  // A model package's code license sits beside its weights' license, in the
+  // Model section.
   const rows: [string, React.ReactNode][] = [
     ["Identifier", pkg.packageId],
     ["Version", pkg.version],
     ["Category", primaryCategory(pkg)],
     ["Publisher", pkg.publisher || "—"],
-    [model ? "Code license" : "License", pkg.license || "—"],
+    ...(model ? [] : [["License", pkg.license || "—"] as [string, React.ReactNode]]),
     ["Channel", pkg.channel || "stable"],
     ["Nodes", String(pkg.templates.length)],
   ];

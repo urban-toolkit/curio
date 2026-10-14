@@ -163,7 +163,7 @@ export const PackageCard: React.FC<PackageCardProps> = ({
         <div className={styles.cardMetaRow}>
           <span className={styles.cardMetaText}>
             {(model
-              ? [modelMetaLine(model), model.model.license]
+              ? [modelMetaLine(model)]
               : [
                   pkg.publisher || pkg.packageId,
                   `v${pkg.version}`,
@@ -181,8 +181,21 @@ export const PackageCard: React.FC<PackageCardProps> = ({
             </span>
           ) : null}
         </div>
+        {/* A model's weights' license, on a line of its own so it reads in
+            full: what the weights may be used for is the one fact a card
+            cannot leave to its details. */}
+        {model ? (
+          <div className={styles.cardMetaRow}>
+            <span
+              className={`${styles.cardMetaText} ${styles.cardMetaWrap}`}
+              data-curio-weights-license="true"
+            >
+              {model.model.license}
+            </span>
+          </div>
+        ) : null}
       </div>
-      
+
       {/* Actions */}
       <div className={styles.cardAction}>
         {!isInstalled ? (
