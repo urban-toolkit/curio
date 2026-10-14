@@ -373,7 +373,7 @@ The behaviors in `curio.builtin@1` (`code`, `vega`, `spatial-join`, `data-pool`,
 
 ## 5. Recipe: add a Flask blueprint
 
-When your node needs server-side capabilities the sandbox can't provide, add a route. A single route can join an existing blueprint, as Spatial Join's joins the `api` blueprint (§4.5). A feature with several routes gets its own blueprint under `utk_curio/backend/app/<feature>/`, as the Model Catalog does ([`model_catalog/routes.py`](../utk_curio/backend/app/model_catalog/routes.py): `models_bp`, under `/api/models`). Third-party APIs and long downloads are Discovery Catalog sources and jobs (§3).
+When your node needs server-side capabilities the sandbox can't provide, add a route. A single route can join an existing blueprint, as Spatial Join's joins the `api` blueprint (§4.5). A feature with several routes gets its own blueprint under `utk_curio/backend/app/<feature>/`, as the Scenario Catalog does ([`scenario_catalog/routes.py`](../utk_curio/backend/app/scenario_catalog/routes.py): `scenarios_bp`, under `/api/scenarios`). Third-party APIs and long downloads are Discovery Catalog sources and jobs (§3).
 
 1. **Create the directory + entry-point.** `utk_curio/backend/app/<feature>/__init__.py`:
    ```python
