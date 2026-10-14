@@ -1,6 +1,16 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import menuStyles from "../menus/darkMenu.module.css";
+
+/** Space kept between a menu and the window's edges. */
+const WINDOW_MARGIN = 8;
+
+/** *start* moved back just enough for *size* to end inside *limit*, but
+ *  never past the margin at its start. */
+function fitInside(start: number, size: number, limit: number): number {
+  if (start + size <= limit - WINDOW_MARGIN) return start;
+  return Math.max(WINDOW_MARGIN, limit - WINDOW_MARGIN - size);
+}
 
 /**
  * The right-click menu a browse card opens, in one place.
@@ -44,6 +54,9 @@ export interface CardContextMenuProps {
   onDismiss: () => void;
   /** Names the menu for assistive tech, e.g. "Dataset actions". */
   ariaLabel: string;
+  /** "overlay": over the canvas's catalog drawers (--curio-z-modal, as
+   *  ModalShell's overlay layer), for a menu a card dropped from a drawer opens. */
+  layer?: "default" | "overlay";
 }
 
 export const CardContextMenu: React.FC<CardContextMenuProps> = ({
@@ -53,7 +66,20 @@ export const CardContextMenu: React.FC<CardContextMenuProps> = ({
   onSelect,
   onDismiss,
   ariaLabel,
+  layer = "default",
 }) => {
+  // Opened near the window's right or bottom edge, the menu moves back inside
+  // it, and a menu taller than the window scrolls: a package's nodes can be
+  // many, and rows past the edge were out of reach.
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const { width, height } = panel.getBoundingClientRect();
+    setSize((prev) => (prev && prev.width === width && prev.height === height ? prev : { width, height }));
+  }, [items]);
+
   useEffect(() => {
     const dismiss = () => onDismiss();
     const onKeyDown = (e: KeyboardEvent) => {
@@ -71,12 +97,20 @@ export const CardContextMenu: React.FC<CardContextMenuProps> = ({
 
   return (
     <div
+      ref={panelRef}
       role="menu"
       aria-label={ariaLabel}
       data-curio-card-context-menu="true"
       className={menuStyles.panel}
       // At the pointer, over everything on the page.
-      style={{ position: "fixed", top: y, left: x, zIndex: 9999 }}
+      style={{
+        position: "fixed",
+        top: size ? fitInside(y, size.height, window.innerHeight) : y,
+        left: size ? fitInside(x, size.width, window.innerWidth) : x,
+        zIndex: layer === "overlay" ? "var(--curio-z-modal)" : 9999,
+        maxHeight: window.innerHeight - 2 * WINDOW_MARGIN,
+        overflowY: "auto",
+      }}
     >
       {items.map((item) => (
         <button

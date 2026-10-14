@@ -155,6 +155,7 @@ from .canvas_authoring import (  # noqa: F401
     assert_header_shows_save,
     frame_node,
     drag_to_canvas,
+    drag_with_the_mouse_onto_canvas,
     drag_to_canvas_with_the_mouse,
     set_node_code,
     read_node_code,
@@ -200,6 +201,19 @@ from .node_drawings import (  # noqa: F401
     assert_autark_drawing_fits,
     assert_editor_panes_clear_of_markers,
     assert_vega_node_empty_state,
+)
+from .offline_install import (  # noqa: F401
+    TEST_PACKAGES_DIR,
+    OfflineNode,
+    OfflinePackage,
+    offline_package,
+    wheelhouse_library,
+    stage_wheelhouse,
+    library_installed,
+    restore_wheelhouse,
+    plant_catalog_package,
+    remove_catalog_package,
+    offline_catalog_package,
 )
 from .page import FrontendPage  # noqa: F401
 from .scripted_llm import (  # noqa: F401

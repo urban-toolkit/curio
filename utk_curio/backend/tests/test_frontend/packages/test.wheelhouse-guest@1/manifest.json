@@ -1,0 +1,74 @@
+{
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
+  "compatibility": {
+    "curioRuntime": ">=0.5.0",
+    "major": 1
+  },
+  "createdAt": "2026-10-14T12:00:00Z",
+  "dependencies": {
+    "js": {},
+    "packages": {},
+    "python": {
+      "curio-wheelhouse-guest": "1.0.0"
+    }
+  },
+  "description": "Test package: two nodes that import curio-wheelhouse-guest, a library that exists only as a wheel in the e2e suite's wheelhouse. A hosted guest's drop of its card is refused.",
+  "id": "test.wheelhouse-guest",
+  "license": "MIT",
+  "name": "Wheelhouse Guest Probe",
+  "permissions": [],
+  "publisher": "Curio tests",
+  "templates": [
+    {
+      "category": "computation",
+      "description": "Import curio-wheelhouse-guest and print the message it holds, as the first node.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": false,
+      "icon": null,
+      "id": "first",
+      "inputPorts": [],
+      "label": "Guest First Probe",
+      "behavior": "code",
+      "outputPorts": [
+        {
+          "cardinality": "[1,n]",
+          "types": [
+            "VALUE",
+            "LIST",
+            "JSON"
+          ]
+        }
+      ],
+      "source": "sources/first.py"
+    },
+    {
+      "category": "computation",
+      "description": "Import curio-wheelhouse-guest and print the message it holds, as the second node.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": false,
+      "icon": null,
+      "id": "second",
+      "inputPorts": [],
+      "label": "Guest Second Probe",
+      "behavior": "code",
+      "outputPorts": [
+        {
+          "cardinality": "[1,n]",
+          "types": [
+            "VALUE",
+            "LIST",
+            "JSON"
+          ]
+        }
+      ],
+      "source": "sources/second.py"
+    }
+  ],
+  "version": "1.0.0"
+}

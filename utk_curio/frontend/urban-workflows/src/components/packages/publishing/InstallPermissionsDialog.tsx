@@ -35,7 +35,8 @@ export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> =
 
   return (
     <div className={styles.backdrop} role="dialog" aria-modal="true">
-      <div className={styles.modal}>
+      {/* A stable hook for e2e captures: the module class is hashed. */}
+      <div className={styles.modal} data-curio-add-review="true">
         <h2 className={styles.title}>Add &quot;{pkg.name}&quot;</h2>
         <p className={styles.subtitle}>
           {pkg.publisher} · v{pkg.version}

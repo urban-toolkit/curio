@@ -103,8 +103,10 @@ export interface PackageCatalogState {
   dismissActionError: () => void;
   dismissInstallSummary: () => void;
   dismissRestartNotice: () => void;
-  /** The pre-install conflict probe: opens the install review for *pkg*. */
-  probeInstall: (pkg: PackagePayload) => Promise<void>;
+  /** The pre-install conflict probe: opens the install review for *pkg*.
+   *  `onAdded` runs once a confirmed review has added it to the project (a
+   *  card dropped on the canvas makes its node then); never after a cancel. */
+  probeInstall: (pkg: PackagePayload, options?: { onAdded?: () => void }) => Promise<void>;
   /** The same review for an update: *pkg* is the catalog row the store copy is replaced with. */
   probeUpdate: (pkg: PackagePayload) => Promise<void>;
   /** Install (or update to) the reviewed candidate. */
@@ -181,6 +183,8 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
   // the user clicks Install on the dialog. The freshly created id is stashed
   // here so the confirm handler has a synchronous fallback.
   const savedProjectIdRef = useRef<string | null>(null);
+  // What runs once the reviewed candidate is added: a dropped card's node.
+  const onAddedRef = useRef<(() => void) | null>(null);
 
   /** Pulls the friendliest message off an unknown error and surfaces it as a banner. */
   const reportActionError = useCallback((label: string, err: unknown) => {
@@ -291,6 +295,7 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
     async (pkg: PackagePayload, mode: "add" | "update") => {
       if (scope.kind === "project" && mode === "add") {
         if ((await ensureSavedProjectId("Couldn't save dataflow before adding")) === null) {
+          onAddedRef.current = null;
           return;
         }
       }
@@ -306,13 +311,23 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
         );
       } catch {
         // A probe that failed for any reason but a conflict report: no review to show.
+        onAddedRef.current = null;
         setInstallCandidate(null);
       }
     },
     [scope.kind, allInstalled, ensureSavedProjectId],
   );
-  const probeInstall = useCallback((pkg: PackagePayload) => openReview(pkg, "add"), [openReview]);
-  const probeUpdate = useCallback((pkg: PackagePayload) => openReview(pkg, "update"), [openReview]);
+  const probeInstall = useCallback(
+    (pkg: PackagePayload, options?: { onAdded?: () => void }) => {
+      onAddedRef.current = options?.onAdded ?? null;
+      return openReview(pkg, "add");
+    },
+    [openReview],
+  );
+  const probeUpdate = useCallback((pkg: PackagePayload) => {
+    onAddedRef.current = null;
+    return openReview(pkg, "update");
+  }, [openReview]);
 
   const confirmInstall = useCallback(async () => {
     if (!installCandidate) return;
@@ -357,6 +372,7 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
       if (!effectiveProjectId) return;
       setBusy(true);
       setActionError(null);
+      let added = false;
       try {
         const result = await packagesApi.installToProject(effectiveProjectId, installCandidate.dirName);
         if (result.restartRecommended?.libs?.length) {
@@ -379,13 +395,21 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
         } else {
           showToast(`Added ${installCandidate.name} to this project.`, "success");
         }
+        added = true;
       } catch (err) {
         reportActionError(`Couldn't add ${installCandidate.name}`, err);
       } finally {
         setBusy(false);
       }
+      // The package is in the project and its nodes in the registry, so a
+      // dropped card's node can be made now.
+      const onAdded = onAddedRef.current;
+      onAddedRef.current = null;
+      if (added) onAdded?.();
       return;
     }
+    // An account-wide add has no canvas to make a node on.
+    onAddedRef.current = null;
     setBusy(true);
     setActionError(null);
     setLastInstallSummary(null);
@@ -546,6 +570,7 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
   }, [reportActionError]);
 
   const cancelInstall = useCallback(() => {
+    onAddedRef.current = null;
     setInstallCandidate(null);
     setConflictReport(null);
   }, []);

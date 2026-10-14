@@ -1,0 +1,49 @@
+{
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
+  "compatibility": {
+    "curioRuntime": ">=0.5.0",
+    "major": 1
+  },
+  "createdAt": "2026-10-14T12:00:00Z",
+  "dependencies": {
+    "js": {},
+    "packages": {},
+    "python": {
+      "curio-wheelhouse-lockfile": "1.0.0"
+    }
+  },
+  "description": "Test package: one node that imports curio-wheelhouse-lockfile, a library that exists only as a wheel in the e2e suite's wheelhouse. Added by opening a dataflow whose lockfile names it.",
+  "id": "test.wheelhouse-lockfile",
+  "license": "MIT",
+  "name": "Wheelhouse Lockfile Probe",
+  "permissions": [],
+  "publisher": "Curio tests",
+  "templates": [
+    {
+      "category": "computation",
+      "description": "Import curio-wheelhouse-lockfile and print the message it holds.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": false,
+      "icon": null,
+      "id": "probe",
+      "inputPorts": [],
+      "label": "Wheelhouse Lockfile Probe",
+      "behavior": "code",
+      "outputPorts": [
+        {
+          "cardinality": "[1,n]",
+          "types": [
+            "VALUE",
+            "LIST",
+            "JSON"
+          ]
+        }
+      ],
+      "source": "sources/probe.py"
+    }
+  ],
+  "version": "1.0.0"
+}

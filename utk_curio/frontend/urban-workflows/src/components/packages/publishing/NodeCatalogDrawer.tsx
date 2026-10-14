@@ -14,10 +14,17 @@ import {
   matchesSearch,
   restartNotice,
   sortPackages,
+  usePackageAddRequests,
   usePackageCatalog,
   withRestartNotice,
 } from "../../../services/packages";
-import type { DrawerTab, PackageKind, PackagePayload, SortMode } from "../../../services/packages";
+import type {
+  DrawerTab,
+  PackageAddRequest,
+  PackageKind,
+  PackagePayload,
+  SortMode,
+} from "../../../services/packages";
 import type { CatalogItemKind } from "../../catalog/CatalogKindVisuals";
 import { InstallPermissionsDialog } from "./InstallPermissionsDialog";
 import { DrawerHeader } from "./DrawerHeader";
@@ -238,6 +245,18 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     ),
     [installed, projectInstalledDirs, search],
   );
+
+  // A card of this drawer dropped on the canvas, whose package the dataflow
+  // has not added: the same Add as the card's button, and the node once the
+  // package is added.
+  const takeAddRequest = useCallback((request: PackageAddRequest) => {
+    if (request.kind !== packageKind) return false;
+    const pkg = catalogAndOwnPackages(catalog, installed).find((p) => p.dirName === request.dirName);
+    if (!pkg) return false;
+    void onInstall(pkg, { onAdded: request.onAdded });
+    return true;
+  }, [packageKind, catalog, installed, onInstall]);
+  usePackageAddRequests(takeAddRequest, presented);
 
   // The shared import pathway the Node Catalog PAGE header calls too, so the
   // two surfaces cannot drift; the drawer alone has a lockfile to land it in.

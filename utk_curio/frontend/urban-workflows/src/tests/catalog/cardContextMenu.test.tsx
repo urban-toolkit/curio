@@ -136,6 +136,65 @@ describe("CardContextMenu", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  test("its overlay layer stacks over the canvas's catalog drawers", () => {
+    // A card dropped from a drawer opens the menu of its package's nodes over
+    // that drawer, whose scrim covers the canvas; on the page's own layer the
+    // menu sat under the scrim, out of reach.
+    render(
+      <>
+        <CardContextMenu
+          x={0}
+          y={0}
+          ariaLabel="Wheelhouse Pair nodes"
+          layer="overlay"
+          items={[{ id: "first", label: "Pair First Probe" }]}
+          onSelect={jest.fn()}
+          onDismiss={jest.fn()}
+        />
+        <CardContextMenu
+          x={0}
+          y={0}
+          ariaLabel="Package actions"
+          items={[{ id: "view-details", label: "View details" }]}
+          onSelect={jest.fn()}
+          onDismiss={jest.fn()}
+        />
+      </>,
+    );
+    expect(screen.getByRole("menu", { name: "Wheelhouse Pair nodes" }).style.zIndex).toBe("var(--curio-z-modal)");
+    expect(screen.getByRole("menu", { name: "Package actions" }).style.zIndex).toBe("9999");
+  });
+
+  test("a menu that would cross the window's right or bottom edge opens inside it", () => {
+    // A package can have many nodes (curio.builtin has sixteen), and a menu
+    // opened near an edge ran off the window, its last rows out of reach.
+    const box = { width: 200, height: 300, top: 0, left: 0, right: 200, bottom: 300, x: 0, y: 0 };
+    const measured = jest
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue({ ...box, toJSON: () => box } as DOMRect);
+    try {
+      render(
+        <CardContextMenu
+          x={window.innerWidth - 50}
+          y={window.innerHeight - 40}
+          ariaLabel="Wheelhouse Pair nodes"
+          items={[{ id: "first", label: "Pair First Probe" }]}
+          onSelect={jest.fn()}
+          onDismiss={jest.fn()}
+        />,
+      );
+      expect(screen.getByRole("menu")).toHaveStyle({
+        left: `${window.innerWidth - 8 - 200}px`,
+        top: `${window.innerHeight - 8 - 300}px`,
+        // Taller than the window, it scrolls.
+        maxHeight: `${window.innerHeight - 16}px`,
+        overflowY: "auto",
+      });
+    } finally {
+      measured.mockRestore();
+    }
+  });
+
   test("menu rows are buttons, not clickable divs", () => {
     // They are actions; as divs they were unreachable by keyboard and
     // announced as nothing.
