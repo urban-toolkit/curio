@@ -87,7 +87,7 @@ describe("the Autark document that draws it", () => {
       map: {
         layerRefs: [{
           dataRef: "band_1_change",
-          legendTitle: "band_1 change",
+          title: "band_1 change",
           getFnv: "band_1",
           getFnvType: "quantitative",
           colorMapInterpolator: "interpolateViridis",
@@ -98,7 +98,7 @@ describe("the Autark document that draws it", () => {
 
   test("its legend is titled with what it is colored by, as written, and change", () => {
     const value = (name: string) => ({ value: name, text: name, categorical: false });
-    const title = (doc: any) => doc.map.layerRefs[0].legendTitle;
+    const title = (doc: any) => doc.map.layerRefs[0].title;
     expect(title(differenceMapDoc(value("Road sunlight (h)")))).toBe("Road sunlight (h) change");
     expect(title(differenceMapDoc(value("band_2")))).toBe("band_2 change");
     const change = differenceValues("layer", LAYER).find((v) => v.value === "change");
@@ -108,14 +108,14 @@ describe("the Autark document that draws it", () => {
 
   test("an absolute difference's legend says so; its change, a category, has no size", () => {
     const band = { value: "band_1", text: "band_1", categorical: false };
-    const title = (doc: any) => doc.map.layerRefs[0].legendTitle;
+    const title = (doc: any) => doc.map.layerRefs[0].title;
     expect(title(differenceMapDoc(band, true))).toBe("band_1 absolute change");
     expect(title(differenceMapDoc(band, false))).toBe("band_1 change");
     const change = differenceValues("layer", LAYER).find((v) => v.value === "change");
     expect(title(differenceMapDoc(change, true))).toBe("change");
     // Only the title moves: the same band, table and colors.
-    const { legendTitle: _absolute, ...rest } = (differenceMapDoc(band, true) as any).map.layerRefs[0];
-    const { legendTitle: _signed, ...signed } = (differenceMapDoc(band) as any).map.layerRefs[0];
+    const { title: _absolute, ...rest } = (differenceMapDoc(band, true) as any).map.layerRefs[0];
+    const { title: _signed, ...signed } = (differenceMapDoc(band) as any).map.layerRefs[0];
     expect(rest).toEqual(signed);
   });
 
@@ -125,7 +125,7 @@ describe("the Autark document that draws it", () => {
       map: {
         layerRefs: [{
           dataRef: "sunlight_change",
-          legendTitle: "sunlight change",
+          title: "sunlight change",
           getFnv: "sunlight",
           getFnvType: "quantitative",
           colorMapInterpolator: "interpolateViridis",
@@ -140,7 +140,7 @@ describe("the Autark document that draws it", () => {
       map: {
         layerRefs: [{
           dataRef: "change",
-          legendTitle: "change",
+          title: "change",
           getFnv: "change",
           getFnvType: "categorical",
           colorMapInterpolator: "schemeTableau10",

@@ -658,8 +658,8 @@ def test_the_shipped_dataflows_roads_and_map_are_autarks():
     assert [layer["dataRef"] for layer in layers] == ["[!! input_0 !!]", "[!! input_1 !!]", "[!! input_2 !!]"]
     assert [layer.get("getFnv") for layer in layers] == [None, "duration_minutes", "duration_minutes"]
     # Each scenario's routes are titled in the legend by what they show, not
-    # by their input table (#747's legendTitle).
-    assert [layer.get("legendTitle") for layer in layers] == [
+    # by their input table (autk-grammar's title).
+    assert [layer.get("title") for layer in layers] == [
         None, "Avoid rain: route duration (min)", "Avoid wind: route duration (min)"]
 
 

@@ -170,7 +170,7 @@ coloured by the shader's `sunlight` output column:
   { "dataRef": "table_osm_roads",
     "isPick": true, "isColorMap": true,
     "getFnv": "sunlight", "getFnvType": "quantitative", "defaultFnv": 0,
-    "legendTitle": "Sunlight (minutes)" }
+    "title": "Sunlight (minutes)" }
 ]}
 ```
 

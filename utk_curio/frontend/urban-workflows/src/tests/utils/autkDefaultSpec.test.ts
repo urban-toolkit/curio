@@ -44,17 +44,19 @@ describe("AUTK_STARTER_RULES", () => {
 });
 
 describe("autkStarterText", () => {
-  test("a layer with a number is coloured by it, explicitly", () => {
+  // A colored layer is titled with the column it is colored by, so its legend
+  // reads the column and not `input_0`, the layer's id when it has no title.
+  test("a layer with a number is coloured by it, explicitly, and its legend titled by it", () => {
     const text = autkStarterText({ frames: [geo({ zone: "n", pop: 3 }, { zone: "str", pop: "int64", geometry: "geometry" })] });
     expect(doc(text)).toEqual({
-      map: { layerRefs: [{ dataRef: "input_0", getFnv: "pop", getFnvType: "quantitative", colorMapInterpolator: "interpolateViridis" }] },
+      map: { layerRefs: [{ dataRef: "input_0", title: "pop", getFnv: "pop", getFnvType: "quantitative", colorMapInterpolator: "interpolateViridis" }] },
     });
   });
 
-  test("a layer with only categories is coloured by the first", () => {
+  test("a layer with only categories is coloured by the first, and its legend titled by it", () => {
     const text = autkStarterText({ frames: [geo({ zone: "n" }, { zone: "str" })] });
     expect(doc(text).map.layerRefs[0]).toEqual({
-      dataRef: "input_0", getFnv: "zone", getFnvType: "categorical", colorMapInterpolator: "schemeTableau10",
+      dataRef: "input_0", title: "zone", getFnv: "zone", getFnvType: "categorical", colorMapInterpolator: "schemeTableau10",
     });
   });
 
