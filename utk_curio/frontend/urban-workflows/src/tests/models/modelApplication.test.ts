@@ -132,11 +132,13 @@ describe("applyModelToNodeData", () => {
 });
 
 describe("modelNodeForCanvas", () => {
+  // DDRNet23-Slim's model package's node, which opens with the segmentation
+  // cell the backend writes for it.
   const segmentation = {
-    nodeType: "curio.streetvision/image-segmentation@1",
+    nodeType: "model.curio.ddrnet23-slim/image-segmentation@1",
     label: "Image Segmentation",
     code: 'model = curio_load_model("model.curio.ddrnet23-slim")\nreturn curio_segment(input_0, model)',
-    packageName: "Street Vision",
+    packageName: "DDRNet23-Slim (street scenes)",
   };
   const loader = { nodeType: "curio.builtin/data-loading", label: "Data Loading", code: undefined };
   const transform = { nodeType: "x.pkg/transform@1", label: "Transform", code: "return input_0" };

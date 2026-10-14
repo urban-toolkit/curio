@@ -284,10 +284,6 @@ def main():
         ],
     }
 
-    from utk_curio.backend.app.model_catalog.infrastructure import storage as model_storage
-
-    report["models"] = {"root": str(model_storage.models_root()), "listed": _names(model_storage.list_shipped_models())}
-
     from utk_curio.backend.app.discovery.infrastructure import storage as discovery_storage
 
     report["discovery"] = {

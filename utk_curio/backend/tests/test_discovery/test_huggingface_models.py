@@ -1,5 +1,5 @@
 """Hugging Face models: a model source, searched like a portal, added to the
-Model Catalog.
+Model Catalog as a model package in the user's store.
 
 Against the recorded corpus (``fixtures/huggingface-models``): the Hub's real
 answers, with every weights file indexed to a synthetic stand-in, so no
@@ -59,11 +59,8 @@ def pip(monkeypatch):
 
 
 @pytest.fixture()
-def live(app, shipped_root, fixture_corpus, monkeypatch):
-    from utk_curio.backend.app.model_catalog.infrastructure import storage as model_storage
-
-    # The shipped models stay where they are; downloads go to the test's store.
-    monkeypatch.setenv(model_storage.ENV_ROOT, str(Path(__file__).resolve().parents[4] / "models"))
+def live(app, shipped_root, fixture_corpus):
+    """The recorded Hub, and the test's own store, which downloads go to."""
     return app
 
 
@@ -155,18 +152,38 @@ class TestWhatAnAddFetches:
         )
 
 
-class TestItLandsInTheModelCatalog:
+class TestItLandsAsAModelPackage:
+    """An added Hugging Face model is a model package in the user's store: its
+    files under ``models/``, its ``model`` block written from the repo's
+    configs, one Image Segmentation node whose cell Curio writes, and its
+    libraries installed by the packages' own path. It replaces the folder the
+    Model Catalog kept downloads in."""
+
     def _add(self, client, auth, repo):
         res = acquire(client, auth, SOURCE, repo)
         assert res.status_code == 202, res.get_data(as_text=True)
         job = wait_for(client, auth, res.get_json()["jobId"], timeout=60)
         return job
 
-    def test_an_onnx_model_with_its_labels_and_input(self, client, auth, live):
+    @staticmethod
+    def _key(user) -> str:
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        return _user_dir_key(user)
+
+    def _package(self, user, model_id: str):
+        """The model package's folder in *user*'s store, and its manifest."""
+        from utk_curio.backend.app.packages.repositories.store import package_dir
+
+        folder = package_dir(self._key(user), f"{model_id}@1")
+        return folder, json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+
+    def test_an_onnx_model_becomes_a_model_package_with_its_labels_and_input(self, client, auth, live, user_and_token):
         job = self._add(client, auth, ONNX_REPO)
         assert job["status"] == "completed", job
         assert job["stageMessage"] == "Added to your Model Catalog" and job["dataset"] is None
         model = job["model"]
+        assert model["id"].startswith("imported.x") and model["dirName"] == f"{model['id']}@1"
         assert model["origin"] == "downloaded" and model["runtime"] == "onnx"
         assert model["labelCount"] == 150 and "wall" in model["labels"]
         assert model["input"] == {"width": 512, "height": 512, "dtype": "float32"}
@@ -174,29 +191,52 @@ class TestItLandsInTheModelCatalog:
         listed = client.get("/api/models/catalog", headers=auth).get_json()["items"]
         assert model["id"] in {item["id"] for item in listed}
 
-    def test_its_files_keep_their_relative_paths(self, app, client, auth, live, user_and_token):
-        from utk_curio.backend.app.model_catalog.service import ModelCatalogService
-
-        model = self._add(client, auth, ONNX_REPO)["model"]
         user, _ = user_and_token
-        folder = ModelCatalogService(user).resolve_dir(model["id"])
-        assert (folder / "files" / "onnx" / "model.onnx").is_file()
-        manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
-        assert manifest["entry"] == "files/onnx/model.onnx"
-        assert manifest["input"]["mean"] and manifest["input"]["std"]
+        folder, manifest = self._package(user, model["id"])
+        assert (manifest["id"], manifest["kind"], manifest["license"]) == (model["id"], "model", "MIT")
+        block = manifest["model"]
+        assert (block["type"], block["runtime"], block["entry"]) == (
+            "semantic-segmentation", "onnx", "models/onnx/model.onnx")
+        assert (folder / block["entry"]).is_file() and (folder / "models" / "config.json").is_file()
+        assert block["input"]["mean"] and block["input"]["std"]
+        assert block["sizeBytes"] == sum(path.stat().st_size for path in (folder / "models").rglob("*") if path.is_file())
+        assert block["discoverySource"]["resourceId"] == ONNX_REPO
+        assert manifest["dependencies"]["python"] == {"onnxruntime": ">=1.17"}
+        assert (folder / "integrity.json").is_file()
+        # Its node is the one DDRNet23-Slim's package ships: no source of its
+        # own, so it opens with the cell Curio writes.
+        [template] = manifest["templates"]
+        assert (template["id"], template["label"]) == ("image-segmentation", "Image Segmentation")
+        assert "source" not in template and not (folder / "sources").exists()
+
+    def test_its_node_opens_with_the_segmentation_cell_that_names_it(self, client, auth, live):
+        """The starters the canvas fills a fresh node from: the package's Image
+        Segmentation node loads the model by its id and segments, as
+        DDRNet23-Slim's does, and runs as it is."""
+        model = self._add(client, auth, ONNX_REPO)["model"]
+        starters = client.get("/starters", headers=auth).get_json()
+        [starter] = [s for s in starters if s["type"] == f"{model['id']}/image-segmentation@1"]
+        assert starter["name"] == "image-segmentation"
+        assert starter["code"] == (
+            f'model = curio_load_model("{model["id"]}")\n'
+            "classes = None  # every class the model names\n"
+            "\n"
+            "return curio_segment(input_0, model, classes)\n"
+        )
 
     def test_an_added_model_runs_in_a_node(self, app, client, auth, live, user_and_token, tmp_path):
-        """The whole route: what an add writes is what ``curio_segment`` reads,
-        on two of example 10's photos. The graph is the synthetic stand-in, so
-        the classes are noise; their shares still have to cover the image."""
-        from utk_curio.backend.app.model_catalog.service import ModelCatalogService
+        """The whole route: what an add writes is what the backend resolves for
+        a node from the user's store, and what ``curio_segment`` reads, on two
+        of example 10's photos. The graph is the synthetic stand-in, so the
+        classes are noise; their shares still have to cover the image."""
+        from utk_curio.backend.app.packages.service import resolve_model_dirs
         from utk_curio.sandbox.util.catalog_helpers import CurioModel
         from utk_curio.sandbox.util.collections import make_collection_helpers
         from utk_curio.sandbox.util.vision import make_curio_segment
 
         model = self._add(client, auth, ONNX_REPO)["model"]
         user, _ = user_and_token
-        folder = ModelCatalogService(user).resolve_dir(model["id"])
+        folder = resolve_model_dirs(self._key(user), [model["id"]])[model["id"]]
         repo = Path(__file__).resolve().parents[4]
         sample = "data.curio.mapillary-sample"
         index = repo / "datasets" / f"{sample}@1" / "data" / "index.parquet"
@@ -205,21 +245,27 @@ class TestItLandsInTheModelCatalog:
             lambda _id: str(index), {sample: {"kind": "images", "root": str(storage)}}, str(tmp_path)
         )
         photos = helpers["curio_load_collection"](sample).head(2)
-        out = make_curio_segment(helpers["curio_derived_file"])(photos, CurioModel(model["id"], str(folder)), None)
+        out = make_curio_segment(helpers["curio_derived_file"])(photos, CurioModel(model["id"], folder), None)
         shares = out[[f"{label}_pct" for label in model["labels"]]]
         assert shares.sum(axis=1).between(99.5, 100.5).all()
         assert out["dominant_class"].isin(model["labels"]).all()
         assert out["overlay_url"].notna().all() and out["segment_error"].isna().all()
 
-    def test_a_transformers_checkpoint(self, client, auth, live):
+    def test_a_transformers_checkpoint(self, client, auth, live, user_and_token):
+        """Its checkpoint is a folder of its own under ``models/``, which its
+        model block names."""
         model = self._add(client, auth, TRANSFORMERS_REPO)["model"]
         assert model["runtime"] == "transformers" and model["license"] == "mit"
         assert model["labelCount"] == 150
+        user, _ = user_and_token
+        folder, manifest = self._package(user, model["id"])
+        assert manifest["model"]["entry"] == "models/checkpoint"
+        assert (folder / "models" / "checkpoint" / "config.json").is_file()
 
     def test_its_libraries_install_by_the_packages_path(self, client, auth, live, pip):
-        """As a package's dependencies.python installs: the model's folder name
-        in place of the package's, no backend surface, so the libraries go
-        where node code finds them."""
+        """As a package's dependencies.python installs: the package's folder
+        name, its manifest's declaration, so the libraries go where node code
+        finds them."""
         job = self._add(client, auth, TRANSFORMERS_REPO)
         model = job["model"]
         assert model["dependencies"] == ["safetensors", "torch", "transformers"]
@@ -228,12 +274,20 @@ class TestItLandsInTheModelCatalog:
         assert pip[0]["deps"]["torch"] == ">=2.6"
         assert job["dependencies"] == {"importErrors": {}}
 
-    def test_an_onnx_model_installs_nothing(self, client, auth, live, pip):
-        """onnxruntime comes with the Street Vision package."""
+    def test_an_onnx_model_declares_onnxruntime_and_installs_it(self, client, auth, live, pip):
+        """onnxruntime is not one of Curio's own libraries: an ONNX model's
+        package declares it, and it installs by the packages' path, as a
+        Transformers model's libraries do."""
         job = self._add(client, auth, ONNX_REPO)
-        assert job["model"]["dependencies"] == [] and pip == [] and job["dependencies"] is None
+        model = job["model"]
+        assert model["dependencies"] == ["onnxruntime"]
+        assert [(call["dir_name"], call["deps"]) for call in pip] == [(model["dirName"], {"onnxruntime": ">=1.17"})]
+        assert job["dependencies"] == {"importErrors": {}}
 
-    def test_someone_who_may_not_install_is_refused_before_any_download(self, client, auth, live, pip, monkeypatch):
+    @pytest.mark.parametrize("repo, library", [(TRANSFORMERS_REPO, "torch"), (ONNX_REPO, "onnxruntime")])
+    def test_someone_who_may_not_install_is_refused_before_any_download(
+        self, client, auth, live, pip, monkeypatch, repo, library,
+    ):
         from utk_curio.backend.app.model_catalog import service as model_service
 
         monkeypatch.setattr(model_service.ModelCatalogService, "install_refusal",
@@ -241,9 +295,9 @@ class TestItLandsInTheModelCatalog:
         fetched = []
         monkeypatch.setattr(hfm.HuggingFaceModels, "file_url",
                             lambda self, plan, path: fetched.append(path) or f"{self.base}/x")
-        job = self._add(client, auth, TRANSFORMERS_REPO)
+        job = self._add(client, auth, repo)
         assert job["status"] == "failed" and "does not install packages for guests" in job["error"]
-        assert "torch" in job["error"] and fetched == [] and pip == []
+        assert library in job["error"] and fetched == [] and pip == []
 
     def test_a_refused_repo_fails_its_job_with_the_reason(self, client, auth, live):
         job = self._add(client, auth, PICKLE_REPO)
@@ -286,17 +340,22 @@ class TestItLandsInTheModelCatalog:
         assert "guest" in job["error"] and fetched == []
 
     def test_the_local_guest_still_adds_one(self, client, db, live, monkeypatch):
-        """Without --deploy the shared guest is the one local user."""
+        """Without --deploy the shared guest is the one local user, and the
+        model package lands in the guest's store."""
         from utk_curio.backend import config
+        from utk_curio.backend.app.common.user_storage import GUEST_KEY
+        from utk_curio.backend.app.packages.repositories.store import package_dir
 
         monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
         job = self._add(client, self._shared_guest_auth(db), ONNX_REPO)
         assert job["status"] == "completed", job
+        assert (package_dir(GUEST_KEY, job["model"]["dirName"]) / "manifest.json").is_file()
 
     def test_a_refresh_replaces_the_model_and_keeps_its_id(self, app, client, auth, live, user_and_token):
         """#623: a refresh used to add a second copy under a new id, and keep
-        every earlier one; a node naming the first id kept the stale files."""
-        from utk_curio.backend.app.model_catalog.infrastructure import storage as model_storage
+        every earlier one; a node naming the first id kept the stale files.
+        It installs over the package, under its id."""
+        from utk_curio.backend.app.packages.service import held_model_packages
 
         first = self._add(client, auth, ONNX_REPO)["model"]
         res = acquire(client, auth, SOURCE, ONNX_REPO, refresh=True)
@@ -308,11 +367,27 @@ class TestItLandsInTheModelCatalog:
         downloaded = [item for item in listed if item.get("origin") == "downloaded"]
         assert [item["id"] for item in downloaded] == [first["id"]]
         user, _token = user_and_token
-        from utk_curio.backend.app.projects.services import _user_dir_key
+        held = [
+            listed.folder.name for listed in held_model_packages(self._key(user))
+            if (listed.manifest.model.discovery_source or {}).get("resourceId") == ONNX_REPO
+        ]
+        assert held == [f"{first['id']}@1"], held
 
-        folders = [p.name for p in model_storage.user_models_dir(_user_dir_key(user)).iterdir()
-                   if not p.name.startswith(".")]
-        assert len(folders) == 1, folders
+    def test_an_added_model_is_dated_by_the_record_clock(self, client, auth, live):
+        """An e2e test that photographs catalog ages sets the record clock to its
+        browser's date (``/api/testing/clock``); what it adds carries it."""
+        from datetime import datetime, timedelta, timezone
+
+        from utk_curio.backend.app.common import record_clock
+
+        calendar = datetime(2026, 10, 7, 6, 0, tzinfo=timezone.utc)
+        record_clock.set_now(calendar)
+        try:
+            model = self._add(client, auth, ONNX_REPO)["model"]
+        finally:
+            record_clock.set_now(None)
+        created = datetime.fromisoformat(model["createdAt"].replace("Z", "+00:00"))
+        assert calendar <= created < calendar + timedelta(minutes=1), model["createdAt"]
 
     def test_a_search_row_says_it_is_held(self, client, auth, live):
         model = self._add(client, auth, ONNX_REPO)["model"]

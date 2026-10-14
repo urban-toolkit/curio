@@ -193,7 +193,7 @@ PACKAGE_DEPS: dict[str, tuple[str, ...]] = {
     "curio.example-ui@1": (),
     "curio.weather@1": ("pythermalcomfort", "rasterio", "rasterstats"),
     "ai.utk.uhvi@1": ("rasterio",),
-    "curio.streetvision@1": ("onnxruntime",),
+    "model.curio.ddrnet23-slim@1": ("onnxruntime",),
 }
 
 
@@ -1228,7 +1228,7 @@ def chapter_nodes(run: StressRun) -> None:
             page.wait_for_timeout(800)
 
     # Install every catalog package for real. curio.weather, ai.utk.uhvi and
-    # curio.streetvision each shell out to pip (rasterio / geopandas /
+    # model.curio.ddrnet23-slim each shell out to pip (rasterio / geopandas /
     # onnxruntime), so the response wait is generous by design rather than optimistic.
     installable = [
         pkg for pkg in catalog
@@ -2460,7 +2460,7 @@ EXAMPLE_RUNS: tuple[tuple[str, int, bool], ...] = (
     ("07-autark-gpu-shader.json", 5, True),
     ("08-autark-spatial-join-regression.json", 7, True),
     ("11-autark-pbf-loading.json", 3, True),
-    # Needs curio.streetvision, which the `nodes` chapter installs.
+    # Needs model.curio.ddrnet23-slim, which the `nodes` chapter installs.
     ("10-street-vision-cv-analysis.json", 12, False),
 )
 

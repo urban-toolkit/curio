@@ -47,7 +47,7 @@ EXAMPLE_INVARIANTS = [
     ("10-street-vision-cv-analysis.json", 12, 12,
      {
          "curio.builtin/data-loading": 2,
-         "curio.streetvision/image-segmentation": 2,
+         "model.curio.ddrnet23-slim/image-segmentation": 2,
          "curio.builtin/vis-simple": 2,
          "curio.builtin/spatial-join": 2,
          "curio.builtin/vis-vega": 3,

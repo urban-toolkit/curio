@@ -184,17 +184,20 @@ def test_example_dep_package_ids_derived_from_lockfiles():
 def test_install_on_demand_packages_are_excluded_even_when_declared(monkeypatch):
     """A heavy package stays out of the boot install *explicitly*.
 
-    It used to stay out by accident: nothing pip-installed curio.streetvision
-    because no example declared it, and example 10 was left with an empty
-    lockfile to keep it that way. That silence is what broke #233 - with
-    nothing declaring the dependency, and the example's node types written
-    unversioned, the backend's backfill had no way to name the package the
-    dataflow needed, so its nodes rendered "Loading node…" forever.
+    It used to stay out by accident: nothing pip-installed the package of
+    example 10's Image Segmentation because no example declared it, and
+    example 10 was left with an empty lockfile to keep it that way. That
+    silence is what broke #233 - with nothing declaring the dependency, and
+    the example's node types written unversioned, the backend's backfill had no
+    way to name the package the dataflow needed, so its nodes rendered
+    "Loading node…" forever.
 
-    Example 10 declares it. Street Vision needs only onnxruntime now, so it is
-    no longer on the install-on-demand list and the boot install brings it.
-    The exclusion itself is still asserted, with a heavy package put on the
-    list for the test.
+    Example 10 declares it: DDRNet23-Slim's model package, whose node runs its
+    segmentation. It needs only onnxruntime, so it is not on the
+    install-on-demand list, the boot install brings it, and the examples'
+    seeding puts it in each store, where its model runs from. The exclusion
+    itself is still asserted, with a heavy package put on the list for the
+    test.
     """
     import json
     from pathlib import Path
@@ -204,20 +207,21 @@ def test_install_on_demand_packages_are_excluded_even_when_declared(monkeypatch)
     repo_root = Path(__file__).resolve().parents[4]
     example = repo_root / "docs" / "examples" / "10-street-vision-cv-analysis.json"
     declared = json.loads(example.read_text(encoding="utf-8"))["dataflow"]["packages"]
-    assert "curio.streetvision@1" in declared, (
+    assert declared == ["model.curio.ddrnet23-slim@1"], (
         "example 10 must declare the package its nodes need, or nothing can "
         "resolve them (#233)"
     )
 
-    streetvision = json.loads(
-        (repo_root / "packages" / "curio.streetvision@1" / "manifest.json").read_text(encoding="utf-8")
+    ddrnet = json.loads(
+        (repo_root / "packages" / "model.curio.ddrnet23-slim@1" / "manifest.json").read_text(encoding="utf-8")
     )
-    assert set(streetvision["dependencies"]["python"]) == {"onnxruntime"}
-    assert "curio.streetvision" not in seeding.INSTALL_ON_DEMAND_PACKAGE_IDS
-    assert "curio.streetvision" in seeding.example_dep_package_ids()
+    assert ddrnet["kind"] == "model"
+    assert set(ddrnet["dependencies"]["python"]) == {"onnxruntime"}
+    assert "model.curio.ddrnet23-slim" not in seeding.INSTALL_ON_DEMAND_PACKAGE_IDS
+    assert "model.curio.ddrnet23-slim" in seeding.example_dep_package_ids()
 
-    monkeypatch.setattr(seeding, "INSTALL_ON_DEMAND_PACKAGE_IDS", frozenset({"curio.streetvision"}))
-    assert "curio.streetvision" not in seeding.example_dep_package_ids(), (
+    monkeypatch.setattr(seeding, "INSTALL_ON_DEMAND_PACKAGE_IDS", frozenset({"model.curio.ddrnet23-slim"}))
+    assert "model.curio.ddrnet23-slim" not in seeding.example_dep_package_ids(), (
         "a package on the install-on-demand list must not reach the boot install"
     )
 

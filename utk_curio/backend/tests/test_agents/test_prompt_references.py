@@ -105,11 +105,9 @@ def _shipped_templates() -> set[str]:
 
 
 def _shipped_model_ids() -> set[str]:
-    """The Model Catalog's models: those of its own folder, and the model
-    packages (kind ``model``), whose package id is the id node code loads."""
-    return {m["id"] for _d, m in _manifests("models")} | {
-        m["id"] for _d, m in _manifests("packages") if m.get("kind") == "model"
-    }
+    """The Model Catalog's models: the model packages (kind ``model``), whose
+    package id is the id node code loads."""
+    return {m["id"] for _d, m in _manifests("packages") if m.get("kind") == "model"}
 
 
 def _injected_helpers() -> set[str]:

@@ -839,20 +839,25 @@ def run_node(workspace, *, fails=False, frame=False, **values):
     holding the Loop's roads (with *frame*, on the roads as one GeoDataFrame)
     in the sandbox, in process, with the datasets its code names resolved and
     the model resolved as the backend resolves it for a run
-    (``packages.service.resolve_model_dirs``): ``(artifact id, (routes,
-    metrics))``, or with *fails* the node's error text."""
+    (``packages.service.resolve_model_dirs``), for an account whose store
+    holds the package, as one seeded for the examples does: ``(artifact id,
+    (routes, metrics))``, or with *fails* the node's error text."""
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code, model_ids_in_code
     from utk_curio.backend.app.execution.code_references import resolve_references
+    from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+    from utk_curio.backend.app.packages.repositories.store import package_dir
     from utk_curio.backend.app.packages.service import resolve_model_dirs
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
     code, problems = resolve_references(_source(), _with_values(**values), "python", inputs=[{"slot": 0}])
     assert problems == [], problems
     artifact, data_type = (_loop_roads_frame_artifact(), "geodataframe") if frame else (_loop_roads_artifact(), "list")
+    if not (package_dir("guest", PACKAGE.name) / "manifest.json").is_file():
+        install_package_from_directory("guest", PACKAGE)
     result = _execute(
         code, artifact, NODE_TYPE, data_type, workspace,
         dataset_paths={i: str(_data_file(i)) for i in dataset_ids_in_code(code)},
-        models=resolve_model_dirs(None, model_ids_in_code(code)),
+        models=resolve_model_dirs("guest", model_ids_in_code(code)),
         package_modules={"root": str(SOURCES), "names": [MODULE]},
     )
     if fails:

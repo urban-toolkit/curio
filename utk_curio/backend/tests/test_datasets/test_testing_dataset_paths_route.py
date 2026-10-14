@@ -150,17 +150,27 @@ class TestResolvesTheCommittedCatalog:
 
 
 class TestResolvesModels:
-    def test_a_shipped_model_resolves_as_execution_resolves_it(self, client):
+    def test_a_model_the_harness_account_holds_resolves_as_execution_resolves_it(self, client):
         """Example 10's nodes call ``curio_load_model``: without the folder the
-        harness's ``/exec`` ran them with no model, and the node failed."""
-        from utk_curio.backend.app.execution.node_exec import resolve_models
+        harness's ``/exec`` ran them with no model, and the node failed. Models
+        behave like nodes, so the folder comes from the store of the account
+        the harness runs as (the shared guest's, seeded with the examples'
+        packages on a stack): none before DDRNet23-Slim's package is there, its
+        weights where they ship once it is."""
+        from utk_curio.backend.app.common.user_storage import GUEST_KEY
+        from utk_curio.backend.app.execution.node_exec import resolve_models_for
+        from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
 
         code = 'model = curio_load_model("model.curio.ddrnet23-slim")'
+        assert _post(client, {"code": code}).get_json()["models"] == {}
+
+        repo = Path(__file__).resolve().parents[4]
+        install_package_from_directory(GUEST_KEY, repo / "packages" / "model.curio.ddrnet23-slim@1")
         models = _post(client, {"code": code}).get_json()["models"]
         assert set(models) == {"model.curio.ddrnet23-slim"}
-        assert (Path(models["model.curio.ddrnet23-slim"]) / "manifest.json").is_file()
-        with client.application.test_request_context():
-            assert models == resolve_models(code, None)
+        folder = Path(models["model.curio.ddrnet23-slim"])
+        assert (folder / "manifest.json").is_file() and (folder / "models" / "ddrnet23_slim.onnx").is_file()
+        assert models == resolve_models_for(code, GUEST_KEY)
 
     def test_code_naming_no_model_resolves_none(self, client):
         assert _post(client, {"code": _loader_code()}).get_json()["models"] == {}

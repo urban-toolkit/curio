@@ -71,23 +71,25 @@ def test_check_defers_install_on_demand_packages(client, user_and_token, tmp_cur
     """
     from utk_curio.backend.app.packages.application import seeding
 
-    monkeypatch.setattr(seeding, "INSTALL_ON_DEMAND_PACKAGE_IDS", frozenset({"curio.streetvision"}))
+    monkeypatch.setattr(seeding, "INSTALL_ON_DEMAND_PACKAGE_IDS", frozenset({"model.curio.ddrnet23-slim"}))
     _, token = user_and_token
-    resp = _check(client, token, ["curio.streetvision@1", "curio.weather@1"])
+    resp = _check(client, token, ["model.curio.ddrnet23-slim@1", "curio.weather@1"])
     assert resp.status_code == 200
     body = resp.get_json()
     # Still reported as missing: the UI needs to name it.
-    assert "curio.streetvision@1" in body["packages"]
+    assert "model.curio.ddrnet23-slim@1" in body["packages"]
     assert "curio.weather@1" in body["packages"]
     # ...but only the heavy one is held back.
-    assert body["deferred"] == ["curio.streetvision@1"]
+    assert body["deferred"] == ["model.curio.ddrnet23-slim@1"]
 
 
-def test_street_vision_installs_with_the_dataflow_that_declares_it(client, user_and_token, tmp_curio):
-    """It needs only onnxruntime, so opening example 10 installs it."""
+def test_ddrnets_model_package_installs_with_the_dataflow_that_declares_it(client, user_and_token, tmp_curio):
+    """Example 10's Image Segmentation is DDRNet23-Slim's model package's node.
+    It needs only onnxruntime, so opening example 10 installs it, and its
+    model then runs from the user's store."""
     _, token = user_and_token
-    body = _check(client, token, ["curio.streetvision@1"]).get_json()
-    assert body["packages"] == ["curio.streetvision@1"] and body["deferred"] == []
+    body = _check(client, token, ["model.curio.ddrnet23-slim@1"]).get_json()
+    assert body["packages"] == ["model.curio.ddrnet23-slim@1"] and body["deferred"] == []
 
 
 def test_check_reports_no_deferrals_for_ordinary_packages(

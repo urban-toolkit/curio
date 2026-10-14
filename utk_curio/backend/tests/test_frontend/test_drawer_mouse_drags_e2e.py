@@ -62,7 +62,7 @@ CARD = 'article:not([role="status"])'
 
 LOADER_TYPE = "curio.builtin/data-loading"
 ANALYSIS_TYPE = "curio.builtin/computation-analysis"
-SEGMENTATION = "curio.streetvision/image-segmentation"
+SEGMENTATION = "model.curio.ddrnet23-slim/image-segmentation"
 
 BOUNDARY = "data.utk.chicago-boundary"
 BOUNDARY_TITLE = "Chicago Boundary"
@@ -191,15 +191,16 @@ def test_a_layer_group_card_dragged_from_the_data_catalog_drawer_becomes_a_loade
 def test_a_model_card_dragged_from_the_model_catalog_drawer_becomes_a_node_that_runs_it(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
-    # Street Vision's Image Segmentation runs a model. The stack is started
-    # --with-examples, which seeds the package (example 10).
+    # DDRNet23-Slim's model package carries the Image Segmentation node that
+    # runs it. The stack is started --with-examples, which seeds the package
+    # (example 10), so its model runs from the account's store.
     session = _enter(page, app_frontend, current_server, project_spec={"dataflow": {
         "name": "Mouse drags", "task": "", "nodes": [], "edges": [],
-        "packages": ["curio.builtin@1", "curio.streetvision@1"],
+        "packages": ["curio.builtin@1", "model.curio.ddrnet23-slim@1"],
     }})
     store = [p.get("dirName") for p in api_json(f"{current_server}/api/packages", session["token"])["packages"]]
-    assert "curio.streetvision@1" in store, (
-        f"curio.streetvision@1 is not in the account's store {store}: start the stack --with-examples"
+    assert "model.curio.ddrnet23-slim@1" in store, (
+        f"model.curio.ddrnet23-slim@1 is not in the account's store {store}: start the stack --with-examples"
     )
     # The drop picks among this dataflow's node kinds: wait until the package's
     # nodes are among them.

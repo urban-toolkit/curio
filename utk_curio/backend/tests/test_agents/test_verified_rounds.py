@@ -1630,14 +1630,15 @@ class TestValidationKnowsTheAccount:
     def test_a_model_the_account_added_resolves_on_the_validation_thread(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
-        from utk_curio.backend.app.model_catalog.service import ModelCatalogService
+        from utk_curio.backend.app.packages import service as packages
 
-        def _dirs(service, model_ids):
-            if service.user is None:
+        def _dirs(user_key, model_ids):
+            # A model runs only from the store of the account it is resolved for.
+            if user_key is None:
                 return {}
             return {model_id: f"/models/{model_id}" for model_id in model_ids}
 
-        monkeypatch.setattr(ModelCatalogService, "resolve_execution_dirs", _dirs)
+        monkeypatch.setattr(packages, "resolve_model_dirs", _dirs)
         user, token = user_and_token
         # A data-loading node must load a source to pass the grounding gate,
         # so this one reads the seeded dataset and names the model as well.
