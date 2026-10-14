@@ -1,9 +1,9 @@
 """Where the folders Curio ships beside its code are on this machine.
 
 The repository keeps them beside ``utk_curio/``: the Data Catalog's datasets
-(``datasets/``), the Discovery Catalog's sources (``discovery/``), the Model
-Catalog's models (``models/``), the Node Catalog's packages (``packages/``),
-the scripts (``scripts/``) and DuckDB's extensions (``vendor/``), and
+(``datasets/``), the Discovery Catalog's sources (``discovery/``), the
+packages of the Node and Model Catalogs (``packages/``, a model package with
+its weights), the scripts (``scripts/``) and DuckDB's extensions (``vendor/``), and
 ``docs/``, of which Curio reads the dataflows it ships, the example data their
 nodes read, the Example storage source's folder, the agent evaluation's prompt
 fixtures and two schemas. A clone, the Docker image and CI read them there.
@@ -32,7 +32,7 @@ CODE_ROOT = Path(__file__).resolve().parents[1]
 IN_THE_PACKAGE = PurePosixPath("utk_curio", "_shipped")
 
 #: The folders Curio ships beside its code, by their name in the repository.
-FOLDERS = ("datasets", "discovery", "docs", "models", "packages", "scripts", "vendor")
+FOLDERS = ("datasets", "discovery", "docs", "packages", "scripts", "vendor")
 
 
 def root(code_root=None) -> Path:

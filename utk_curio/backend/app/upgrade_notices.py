@@ -28,7 +28,7 @@ def check_upgrade_notices() -> list[str]:
     """Log a warning per stale setting. Returns the names warned about."""
     warned: list[str] = []
 
-    # The Street Vision token is an account setting only. An operator upgrading
+    # The Hugging Face token is an account setting only. An operator upgrading
     # with either deployment-wide variable exported sees gated model downloads
     # start failing with a 401 and nothing pointing at the change.
     for name in ("HUGGINGFACE_TOKEN", "CURIO_DEFAULT_HUGGINGFACE_TOKEN"):

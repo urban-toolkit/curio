@@ -3,10 +3,11 @@
 The pip package leaves out Deep Umbra's weights (``packages/model.scout.deep-umbra@1/
 models/deep_umbra.onnx``, one of the files ``datasets/infrastructure/
 left_out_files.json`` lists) and keeps the rest of its model package. So a pip
-install's Model Catalog lists the model, and a node that runs it gets a folder
-holding the package's manifest and the weights, fetched from GitHub on that
-first run, as ``curio_load_model`` and the isolated sandbox's staging read a
-model folder.
+install's Model Catalog lists the model, and a node that runs it, once its
+package is in the user's store (seeded for the examples, or added), gets a
+folder holding the package's manifest and the weights, fetched from GitHub on
+that first run, as ``curio_load_model`` and the isolated sandbox's staging
+read a model folder.
 
 No test opens a socket (``FakeGitHub``); the code under test is imported
 inside each test.
@@ -71,6 +72,15 @@ def _capture_sandbox(monkeypatch):
     return sent
 
 
+def _add(user, pip_packages) -> None:
+    """Deep Umbra's package in *user*'s store, as the examples' seeding puts it
+    there on a pip install: a copy without the weights."""
+    from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    install_package_from_directory(_user_dir_key(user), pip_packages / FOLDER)
+
+
 def _run(client, auth):
     return client.post("/processPythonCode", headers=auth, json={
         "code": f'model = curio_load_model("{MODEL_ID}")\nreturn 1',
@@ -92,12 +102,15 @@ def test_the_model_catalog_lists_a_left_out_model_before_fetching_it(pip_package
     assert github.urls == []
 
 
-def test_a_node_fetches_a_left_out_model_into_a_folder_it_loads(client, auth, pip_packages, monkeypatch):
+def test_a_node_fetches_a_left_out_model_into_a_folder_it_loads(
+    client, auth, user_and_token, pip_packages, monkeypatch,
+):
     from utk_curio.backend.app.datasets.infrastructure import left_out_files
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
     github = FakeGitHub().serve(monkeypatch)
     sent = _capture_sandbox(monkeypatch)
+    _add(user_and_token[0], pip_packages)
 
     for _ in range(2):
         resp = _run(client, auth)
@@ -115,11 +128,14 @@ def test_a_node_fetches_a_left_out_model_into_a_folder_it_loads(client, auth, pi
     assert github.urls == [url_of(WEIGHTS)]
 
 
-def test_a_failed_model_download_fails_the_node_with_what_failed(client, auth, pip_packages, monkeypatch):
+def test_a_failed_model_download_fails_the_node_with_what_failed(
+    client, auth, user_and_token, pip_packages, monkeypatch,
+):
     """The node fails with the download's own error, and the sandbox is not
     asked to run it."""
     FakeGitHub(fail=OSError("Network is unreachable")).serve(monkeypatch)
     sent = _capture_sandbox(monkeypatch)
+    _add(user_and_token[0], pip_packages)
 
     resp = _run(client, auth)
 

@@ -45,7 +45,6 @@ SENSITIVE_PATHS = (
     (".curio/data", "the artifact store: every session's data"),
     (".curio/users", "every user's imported datasets, projects and packages"),
     ("datasets", "the shared Data Catalog's published files"),
-    ("models", "the Model Catalog's shipped models, staged into a child that runs one"),
     ("packages/*/models", "a shipped model package's weights, staged into a child that runs one"),
     (".curio/fetched", "the catalog files a pip install downloaded, staged into a child that reads one"),
     (".curio/nodejs", "the Node.js packages a pip install's sandbox runs"),
@@ -74,7 +73,7 @@ SENSITIVE_PATHS = (
 # needs. Copying instead of linking would allow per-copy permissions, at the
 # cost of duplicating a multi-gigabyte raster for every node run.
 HARDLINK_SOURCES = frozenset({
-    ".curio/data", ".curio/users", "datasets", "models", "packages/*/models", ".curio/fetched",
+    ".curio/data", ".curio/users", "datasets", "packages/*/models", ".curio/fetched",
 })
 
 # What we want each of those to be. Owner-only: no read, no list, no traverse.

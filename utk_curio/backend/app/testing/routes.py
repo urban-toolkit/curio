@@ -225,8 +225,9 @@ def dataset_paths():
     "packageModules": ...}``: ``formats`` as
     ``/processPythonCode`` sends them for ``curio_load_data``, ``collections``
     and ``mediaDir`` as ``resolve_exec_collections`` gives them for
-    ``curio_load_collection`` calls, ``models`` as ``node_exec.resolve_models``
-    does for ``curio_load_model`` calls, ``packageModules`` as
+    ``curio_load_collection`` calls, ``models`` as ``node_exec.resolve_models_for``
+    does for ``curio_load_model`` calls, from that user's package store,
+    ``packageModules`` as
     ``node_exec.resolve_package_modules`` does for the node's package, as
     that user or the shared guest. Ids that do not resolve are simply absent,
     matching production's fail-open behaviour.
@@ -238,7 +239,7 @@ def dataset_paths():
     )
     from utk_curio.backend.app.execution.node_exec import (
         resolve_dataset_paths,
-        resolve_models,
+        resolve_models_for,
         resolve_package_modules,
     )
     from utk_curio.backend.app.common.user_storage import GUEST_KEY
@@ -260,7 +261,7 @@ def dataset_paths():
     paths = resolve_dataset_paths(code, body.get("dataflow_id"), g.user, formats)
     user_key = _user_dir_key(g.user) if g.user is not None else GUEST_KEY
     collections, media_dir = resolve_exec_collections(code, user_key, user=g.user)
-    models = resolve_models(code, g.user)
+    models = resolve_models_for(code, user_key)
     package_modules = resolve_package_modules(body.get("nodeType"), user_key, body.get("dataflow_id"))
     return jsonify({
         "paths": paths, "formats": formats, "collections": collections, "mediaDir": media_dir,

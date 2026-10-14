@@ -4,7 +4,8 @@ Listed with the Hub's tree API, ``/api/datasets/<repo>/tree/<revision>/<path>``,
 which pages with a ``Link: <...>; rel="next"`` header, and read with
 ``/datasets/<repo>/resolve/<revision>/<path>``, which redirects to a CDN. Each
 hop is re-checked by the egress policy. A token is optional: the account's
-Hugging Face token (the one Street Vision uses) opens gated and private repos.
+Hugging Face token (the one the Hugging Face models source uses) opens gated
+and private repos.
 """
 
 from __future__ import annotations

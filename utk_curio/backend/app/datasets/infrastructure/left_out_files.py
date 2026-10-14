@@ -32,7 +32,8 @@ its weights, a parquet's sidecar beside the parquet.
   the file waits for it (``common/file_locks.exclusive_lock``), then reads
   what it placed.
 - ``<state>/fetched`` is its owner's alone, as the sandbox's isolation leaves
-  the shipped models (``sandbox/isolation/hardening.py`` lists both): an
+  the shipped model packages' weights (``sandbox/isolation/hardening.py``
+  lists both): an
   execution account reads a fetched file through the hardlink a run stages.
 - A download first removes the files fetched for other releases, so an
   upgrade does not keep the old ones.

@@ -5,7 +5,7 @@
  * A node whose type has no descriptor has two very different explanations:
  * the registry has not caught up yet, or nothing installed provides that type.
  * They were indistinguishable, so both rendered "Loading node…" and the second
- * one rendered it forever - which is all the streetvision example ever showed
+ * one rendered it forever - which is all the street-vision example ever showed
  * (#233). This is the signal that separates them.
  *
  * "At least one real load" matters: ``refreshPackageRegistry`` returns early

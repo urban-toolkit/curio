@@ -578,13 +578,51 @@ def test_a_node_loads_an_imported_packages_weights_from_the_users_store(client, 
     assert (folder / WEIGHT).read_bytes() == _weight()
 
 
-def test_the_packages_service_resolves_model_ids(catalog):
+# ---------------------------------------------------------------------------
+# Models behave like nodes: only a model in the user's store runs
+# ---------------------------------------------------------------------------
+
+def test_a_model_never_added_resolves_to_no_folder(catalog):
+    """A model package the catalog ships but the account never added (nor was
+    seeded with) gives a node no folder, as an id that names no model package
+    does; and no account resolves any model."""
     from utk_curio.backend.app.packages.service import resolve_model_dirs
+
+    assert resolve_model_dirs("guest", [MODEL_ID, f"{MODEL_ID}@1", "model.example.none"]) == {}
+    assert resolve_model_dirs(None, [MODEL_ID]) == {}
+
+
+def test_an_added_model_resolves_by_its_id_and_its_major_for_its_account_only(catalog):
+    """Added, its copy holds no weights, so its id and its id with its major
+    resolve to the catalog's copy; another major and an id that names no model
+    package do not, and another account, which has not added it, gets none."""
+    from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+    from utk_curio.backend.app.packages.service import resolve_model_dirs
+
+    install_package_from_directory("guest", catalog / DIR)
 
     assert resolve_model_dirs("guest", [MODEL_ID, f"{MODEL_ID}@1", f"{MODEL_ID}@2", "model.example.none"]) == {
         MODEL_ID: str((catalog / DIR).resolve()),
         f"{MODEL_ID}@1": str((catalog / DIR).resolve()),
     }
+    assert resolve_model_dirs("7", [MODEL_ID]) == {}
+
+
+def test_a_node_whose_model_was_never_added_is_given_none(client, user_and_token, catalog, monkeypatch):
+    """The run sends the sandbox no folder for a model the account never added,
+    so ``curio_load_model`` says to add it; once added, the same run sends the
+    weights where they ship."""
+    from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+
+    user, token = user_and_token
+    sent = _capture_sandbox(monkeypatch)
+
+    assert _run_loader(client, token).status_code == 200
+    assert MODEL_ID not in (sent[-1].get("models") or {})
+
+    install_package_from_directory(_key(user), catalog / DIR)
+    assert _run_loader(client, token).status_code == 200
+    assert sent[-1]["models"] == {MODEL_ID: str((catalog / DIR).resolve())}
 
 
 # ---------------------------------------------------------------------------

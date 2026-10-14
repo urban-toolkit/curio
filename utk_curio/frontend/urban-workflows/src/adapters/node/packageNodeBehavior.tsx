@@ -5,7 +5,9 @@
  * expected to pick a preset from the Templates dropdown before running.
  *
  * Package nodes optionally ship a `source` field in the manifest. Reference package:
- * ``<repo_root>/packages/ai.utk.uhvi@1/manifest.json``.
+ * ``<repo_root>/packages/ai.utk.uhvi@1/manifest.json``. A model package's
+ * template without one opens with the default cell the backend writes for its
+ * model's type (``packages/model.curio.ddrnet23-slim@1``).
  *
  * Semantic — "inject once, at instantiation only":
  *
@@ -49,16 +51,26 @@ function sourceDisplayName(sourcePath: string | undefined): string | undefined {
 }
 
 /**
+ * The name of the starter a freshly dropped node of *descriptor* opens with:
+ * its manifest's `source` file's, or, for a model package's template without
+ * one, the default cell the backend writes for its model's type
+ * (`application/starters.py`).
+ */
+function starterName(descriptor: NodeDescriptor): string | undefined {
+  return sourceDisplayName(descriptor.package?.source) ?? descriptor.package?.defaultCellStarter;
+}
+
+/**
  * The code a freshly dropped node of *descriptor* opens with: its manifest's
- * `source` starter, from the starters feed. `undefined` for a template without
- * one, and until the feed has it.
+ * `source` starter, or a model package's default cell, from the starters
+ * feed. `undefined` for a template with neither, and until the feed has it.
  */
 export function packageStarterCode(
   descriptor: NodeDescriptor | undefined,
   getStarters: (type: string, custom: boolean) => Starter[],
 ): string | undefined {
   if (!descriptor || descriptor.source !== 'package') return undefined;
-  const wantedName = sourceDisplayName(descriptor.package?.source);
+  const wantedName = starterName(descriptor);
   if (!wantedName) return undefined;
   const hit = getStarters(descriptor.id, false).find((t) => t.name === wantedName);
   return hit?.code || undefined;
@@ -91,7 +103,7 @@ export const usePackageNodeBehavior: NodeBehaviorHook = (data, nodeState) => {
       return;
     }
 
-    const wantedName = sourceDisplayName(descriptor.package?.source);
+    const wantedName = starterName(descriptor);
     if (!wantedName) {
       hasInjectedRef.current = true;
       return;

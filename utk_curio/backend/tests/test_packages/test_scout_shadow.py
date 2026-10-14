@@ -181,11 +181,17 @@ def _model():
 
 def _resolved_models(code: str) -> dict:
     """``{model id: folder}`` for the models *code* loads, as the backend
-    resolves them for a run (``packages.service.resolve_model_dirs``)."""
+    resolves them for a run (``packages.service.resolve_model_dirs``), for an
+    account whose store holds the package, as one seeded for the examples
+    does (models run only from the store)."""
     from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
+    from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+    from utk_curio.backend.app.packages.repositories.store import package_dir
     from utk_curio.backend.app.packages.service import resolve_model_dirs
 
-    return resolve_model_dirs(None, model_ids_in_code(code))
+    if not (package_dir("guest", PACKAGE.name) / "manifest.json").is_file():
+        install_package_from_directory("guest", PACKAGE)
+    return resolve_model_dirs("guest", model_ids_in_code(code))
 
 
 @contextlib.contextmanager
@@ -512,7 +518,7 @@ def test_the_weights_stay_out_of_the_pip_package(monkeypatch):
     # The rest still ships: the weather GNN's weights, DDRNet23-Slim's graph
     # and the buildings dataset.
     assert "packages/model.scout.weather-gnn@1/models/weather_gnn.onnx" in shipped
-    assert "models/model.curio.ddrnet23-slim@1/files/ddrnet23_slim.onnx" in shipped
+    assert "packages/model.curio.ddrnet23-slim@1/models/ddrnet23_slim.onnx" in shipped
     assert BUILDINGS.relative_to(REPO).as_posix() in shipped
 
 
@@ -742,14 +748,15 @@ def test_rasters_deep_umbra_cannot_read_are_refused_in_a_sentence(workspace, tmp
 
 
 def test_a_curio_without_the_model_says_where_it_comes_from(workspace, tmp_path):
-    """When the backend resolves no folder for the model (a pip install that
-    could not download its weights, say), ``curio_load_model`` names the model
-    and where a model that ships with Curio comes from: a pip install downloads
-    its weights from GitHub the first time a node runs it, and a clone holds
-    them in ``packages/``. Copying folders by hand is not one of the ways."""
+    """When the backend resolves no folder for the model (one never added, or a
+    pip install that could not download its weights), ``curio_load_model``
+    names the model, says to add it with the Model Catalog's Add, and where a
+    model that ships with Curio comes from: a pip install downloads its
+    weights from GitHub the first time a node runs it, and a clone holds them
+    in ``packages/``. Copying folders by hand is not one of the ways."""
     error = run_node(_open(_mosaic(tmp_path, "A")), workspace, model=False, fails=True)
     for words in (
-        f"Model '{MODEL_ID}' is not available in this environment",
+        f"Model '{MODEL_ID}' is not one of your models: add it with Add in the Model Catalog",
         "this Curio could not give it to the node",
         "A pip install downloads",
         "from GitHub the first time a node runs it",

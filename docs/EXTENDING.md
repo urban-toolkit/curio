@@ -2,7 +2,7 @@
 
 Curio nodes are defined by **packages**, not by code. A package is a directory under [`packages/`](../packages/) that ships a `manifest.json` declaring one or more node *templates*. Each template references a **behavior key** that resolves to a React hook implementing the node's behaviour. Optionally, a behavior hook calls a backend route in Curio for work the browser and the sandbox cannot do.
 
-This guide walks through adding a new node package end-to-end. Its examples are code in this repository: [`curio.example-ui@1`](../packages/curio.example-ui@1/) for a node with its own React interface (manifest, behavior hook, `behaviorScript` bundle), [`curio.streetvision@1`](../packages/curio.streetvision@1/) for a code node with a Python dependency declared in `manifest.dependencies.python` and sandbox helpers, the built-in Spatial Join for a node that calls a backend route, and the [Discovery Catalog](DISCOVERY-CATALOG.md) for third-party APIs, per-account keys and long downloads. Easier packages can skip several of the steps below.
+This guide walks through adding a new node package end-to-end. Its examples are code in this repository: [`curio.example-ui@1`](../packages/curio.example-ui@1/) for a node with its own React interface (manifest, behavior hook, `behaviorScript` bundle), [`model.scout.deep-umbra@1`](../packages/model.scout.deep-umbra@1/) for a code node with Python dependencies declared in `manifest.dependencies.python`, a module of its own and sandbox helpers, the built-in Spatial Join for a node that calls a backend route, and the [Discovery Catalog](DISCOVERY-CATALOG.md) for third-party APIs, per-account keys and long downloads. Easier packages can skip several of the steps below.
 
 > [!TIP]
 > **Writing your first package?** Start with [`docs/AUTHORING-NODES.md`](AUTHORING-NODES.md), a task-ordered walkthrough from `git clone` to a working node, including the edit → rebuild → reload loop. Scaffold with `python scripts/new_package.py <id> [--with-ui]`, and read [`packages/curio.example-ui@1`](../packages/curio.example-ui@1/) for a minimal custom-UI node with no API keys or heavy dependencies. Come back here for the reference detail: backend blueprints, external services, dependency declaration, and the manifest's finer points.
@@ -38,7 +38,7 @@ Three patterns cover essentially every node Curio ships:
 | Pattern | Examples | Backend? |
 |---|---|---|
 | **Pure-frontend** | `vis-vega`, `vis-simple`, `autk-grammar`, `column-filter` (`curio.example-ui@1`) | None. The behavior hook does its work in the browser. |
-| **Sandbox-Python** | `data-loading`, `data-transformation`, `computation-analysis`, `data-summary`, `image-segmentation` (`curio.streetvision@1`) | Reuses Curio's existing code sandbox at [`utk_curio/sandbox/`](../utk_curio/sandbox/) via the `code` behavior. User-provided Python runs out-of-process. A package template does the same with its own starter file and Python dependencies (§4.2). |
+| **Sandbox-Python** | `data-loading`, `data-transformation`, `computation-analysis`, `data-summary`, `accumulated-shadow` (`model.scout.deep-umbra@1`), `image-segmentation` (`model.curio.ddrnet23-slim@1`) | Reuses Curio's existing code sandbox at [`utk_curio/sandbox/`](../utk_curio/sandbox/) via the `code` behavior. User-provided Python runs out-of-process. A package template does the same with its own starter file and Python dependencies (§4.2). |
 | **Backend route** | `spatial-join` (geopandas `sjoin`) | A route in Curio's backend that the behavior hook calls: Spatial Join's is one handler in [`api/routes.py`](../utk_curio/backend/app/api/routes.py) over a helper in [`common/spatial.py`](../utk_curio/backend/app/common/spatial.py). A feature with several routes gets its own Flask blueprint under [`utk_curio/backend/app/<feature>/`](../utk_curio/backend/app/) (§5). Right call when the node needs server-side work the sandbox can't reasonably do. |
 
 Pure-frontend is the right default; reach for the sandbox before a blueprint, and only stand up a blueprint when neither covers it. Third-party data and models come in through the Discovery Catalog (§3), and a node reads them from the Data or Model Catalog.
@@ -188,13 +188,13 @@ Always return JSON bodies with `{ "error": "...", "hint": "..." }` for non-200 r
 
 ### 3.8 Per-package Python dependencies
 
-Curio's `requirements.txt` / `pyproject.toml::dependencies` carries **only** the framework: what the backend and sandbox Flask apps need at module load (Flask, SQLAlchemy, requests, the LLM SDKs, etc.). **Every node package** ships its own data-ops libs in its manifest's `dependencies.python`, including the bundled `curio.builtin@1` (pandas, geopandas, etc.) and optional packages like `curio.weather@1` (rasterio, pythermalcomfort, rasterstats) and `curio.streetvision@1` (onnxruntime). The `curio start` launcher walks every installed manifest at startup, merges them into a single conflict-aware union, and pip-installs the result before booting the subprocesses. See [`cli/dependencies.py::install_manifest_dependencies`](../utk_curio/cli/dependencies.py) for the walker.
+Curio's `requirements.txt` / `pyproject.toml::dependencies` carries **only** the framework: what the backend and sandbox Flask apps need at module load (Flask, SQLAlchemy, requests, the LLM SDKs, etc.). **Every node package** ships its own data-ops libs in its manifest's `dependencies.python`, including the bundled `curio.builtin@1` (pandas, geopandas, etc.) and optional packages like `curio.weather@1` (rasterio, pythermalcomfort, rasterstats) and the model package `model.curio.ddrnet23-slim@1` (onnxruntime). The `curio start` launcher walks every installed manifest at startup, merges them into a single conflict-aware union, and pip-installs the result before booting the subprocesses. See [`cli/dependencies.py::install_manifest_dependencies`](../utk_curio/cli/dependencies.py) for the walker.
 
 Declare your package's deps in `manifest.dependencies.python`:
 
 ```json
 {
-  "id": "curio.streetvision",
+  "id": "model.curio.ddrnet23-slim",
   "dependencies": {
     "js": {},
     "packages": {},
@@ -207,7 +207,7 @@ Declare your package's deps in `manifest.dependencies.python`:
 
 Accepted spec syntax: PEP 440 comparators (`>=2.0`, `~=4.30`, `==1.5.0`, `!=2.0`), bare versions (`1.2.3` → treated as `==1.2.3`), npm-style carets (`^0.14` → rewritten to `~=0.14`), or empty string for "latest".
 
-A model in the Model Catalog declares its runtime's libraries the same way, in its own manifest's `dependencies.python`, and they install when the model is added (`install_dependencies` in [`model_catalog/service.py`](../utk_curio/backend/app/model_catalog/service.py)). A Transformers model brings `torch`, `transformers` and `safetensors` (`RUNTIME_DEPS` in [`discovery/application/model_acquire.py`](../utk_curio/backend/app/discovery/application/model_acquire.py)); an ONNX model runs on the Street Vision package's `onnxruntime`.
+A model in the Model Catalog is a model package, so it declares its runtime's libraries the same way, and they install when the model is added, by the path every package takes. A model added from the Discovery Catalog declares `onnxruntime` for an ONNX graph, or `torch`, `transformers` and `safetensors` for a Transformers checkpoint (`RUNTIME_DEPS` in [`discovery/application/model_acquire.py`](../utk_curio/backend/app/discovery/application/model_acquire.py)).
 
 #### How the install/uninstall flow handles them
 
@@ -246,7 +246,7 @@ Sandbox helpers follow the same rule: `curio_segment` imports `onnxruntime`, or 
 
 ## 4. Walked example: three nodes
 
-One node per pattern in §2: Column Filter (`curio.example-ui@1`) renders its own interface, Image Segmentation (`curio.streetvision@1`) is a code node in a package, and Spatial Join (`curio.builtin@1`) calls a backend route.
+One node per pattern in §2: Column Filter (`curio.example-ui@1`) renders its own interface, Accumulated Shadow (`model.scout.deep-umbra@1`) is a code node in a package, and Spatial Join (`curio.builtin@1`) calls a backend route.
 
 ### 4.1 A custom-UI template in [`packages/curio.example-ui@1/manifest.json`](../packages/curio.example-ui@1/manifest.json)
 
@@ -261,33 +261,46 @@ One node per pattern in §2: Column Filter (`curio.example-ui@1`) renders its ow
 
 Each entry names a *behavior key* (a string), not a JS module path. The same key can be implemented by an entirely different package and still work, which is how forks and overrides happen. `behaviorScript` names the bundle that registers the key (§4.7).
 
-### 4.2 A code template in [`packages/curio.streetvision@1/manifest.json`](../packages/curio.streetvision@1/manifest.json)
+### 4.2 A code template in [`packages/model.scout.deep-umbra@1/manifest.json`](../packages/model.scout.deep-umbra@1/manifest.json)
 
 ```jsonc
-"dependencies": { "js": {}, "packages": {}, "python": { "onnxruntime": ">=1.17" } },
+"kind": "model",
+"dependencies": { "js": {}, "packages": {},
+                  "python": { "numpy": "", "onnxruntime": ">=1.17", "pyproj": ">=3.7.2", "rasterio": ">=1.4" } },
+"model": { "type": "image-to-image", "runtime": "onnx", "entry": "models/deep_umbra.onnx", ... },
 "templates": [
-  { "id": "image-segmentation", "behavior": "code", "editor": "code", "engine": "python",
-    "source": "sources/image-segmentation.py",
-    "inputPorts":  [{"cardinality":"1","types":["GEODATAFRAME","DATAFRAME"]}],
-    "outputPorts": [{"cardinality":"1","types":["GEODATAFRAME"]}] }
+  { "id": "accumulated-shadow", "behavior": "code", "editor": "code", "engine": "python",
+    "source": "sources/accumulated-shadow.py",
+    "widgets": [{ "name": "season", "type": "choice", "default": "summer",
+                  "options": { "choices": ["spring", "summer", "winter"], "display": "radio" } }],
+    "inputPorts":  [{"cardinality":"1","types":["RASTER"]}],
+    "outputPorts": [{"cardinality":"1","types":["RASTER"]}] }
 ]
 ```
 
 An input port's `cardinality` sets how many edges the node takes. `"1"` takes one. A single port whose maximum is more than one (`"[1,2]"`, `"[1,n]"`) gives the node a new input circle for each edge, up to that maximum; its code receives them as a list in circle order and reads each through an input chip, `[!! input_1 !!]` (USAGE.md, "Several inputs"). Several input ports take one edge each, on the circles `in`, `in_1` and so on, as Spatial Join's input_0 and input_1.
 
-The template reuses the built-in `code` behavior, so the package ships no JavaScript and no `behaviorScript`. `source` is the starter a new node opens with, [`sources/image-segmentation.py`](../packages/curio.streetvision@1/sources/image-segmentation.py):
+The template reuses the built-in `code` behavior, so the package ships no JavaScript and no `behaviorScript`. `source` is the starter a new node opens with, [`sources/accumulated-shadow.py`](../packages/model.scout.deep-umbra@1/sources/accumulated-shadow.py); it imports the package's own module, `deep_umbra` (`sources/deep_umbra/`), and reads the Season widget through its chip:
+
+```python
+from deep_umbra import accumulated_shadow
+model = curio_load_model("model.scout.deep-umbra")
+return accumulated_shadow(input_0, season=[!! season !!], model=model, output_file=curio_output_file)
+```
+
+A model package's template may ship no `source`: DDRNet23-Slim's Image Segmentation ([`packages/model.curio.ddrnet23-slim@1`](../packages/model.curio.ddrnet23-slim@1/manifest.json)) opens with the cell the backend writes for its model's type (`model_default_cell` in [`packages/application/model_packages.py`](../utk_curio/backend/app/packages/application/model_packages.py), served with the starters):
 
 ```python
 model = curio_load_model("model.curio.ddrnet23-slim")
-classes = ["vegetation", "terrain", "sky", "road", "sidewalk", "building"]
+classes = None  # every class the model names
 
 return curio_segment(input_0, model, classes)
 ```
 
-Both helpers are in the sandbox's namespace for every Python node:
+These helpers are in the sandbox's namespace for every Python node:
 
-- `curio_load_model("<model id>")` ([`sandbox/util/catalog_helpers.py`](../utk_curio/sandbox/util/catalog_helpers.py)) loads a model from the account's **Model Catalog**: its `folder`, its `manifest`, its `labels`, and the `runner` that labels an image's pixels, opened on first use ([`utk_curio/backend/app/model_catalog/`](../utk_curio/backend/app/model_catalog/)); the backend resolves every id a node's code names before the run (`resolve_exec_models` in `model_catalog/service.py`). Models ship under [`models/`](../models/), as [`model.curio.ddrnet23-slim@1`](../models/model.curio.ddrnet23-slim@1/manifest.json) does, or are added from the Discovery Catalog's Hugging Face models source (§3).
-- `curio_segment(images, model, classes)` ([`sandbox/util/vision.py`](../utk_curio/sandbox/util/vision.py)) runs the loaded model the way its manifest describes (a `runtime` of `onnx` on onnxruntime, `transformers` on Transformers) over every row's `path`, and returns the rows with `dominant_class`, `dominant_pct`, a `<class>_pct` per class, `overlay_url` and `segment_error` first. Each overlay is written with `curio_derived_file` (kind `"image"`, [`sandbox/util/collections.py`](../utk_curio/sandbox/util/collections.py)) and served back by the media route (§3.6).
+- `curio_load_model("<model id>")` ([`sandbox/util/catalog_helpers.py`](../utk_curio/sandbox/util/catalog_helpers.py)) loads a model package's model: its `folder`, its `manifest`, its `labels`, the `runner` that labels an image's pixels, opened on first use, and `run`, which feeds an ONNX graph the arrays a node prepared. Before the run the backend resolves every id a node's code names to the folder of a model package in the account's store (`resolve_models` in [`execution/node_exec.py`](../utk_curio/backend/app/execution/node_exec.py), over `packages.service.resolve_model_dirs`); a model the store does not hold gets none, and the call says to add it. Models ship as model packages under [`packages/`](../packages/), or are added from the Discovery Catalog's Hugging Face models source (§3).
+- `curio_segment(images, model, classes)` ([`sandbox/util/vision.py`](../utk_curio/sandbox/util/vision.py)) runs a loaded segmentation model the way its manifest describes (a `runtime` of `onnx` on onnxruntime, `transformers` on Transformers) over every row's `path`, and returns the rows with `dominant_class`, `dominant_pct`, a `<class>_pct` per class, `overlay_url` and `segment_error` first. Each overlay is written with `curio_derived_file` (kind `"image"`, [`sandbox/util/collections.py`](../utk_curio/sandbox/util/collections.py)) and served back by the media route (§3.6).
 
 ### 4.3 A built-in template in [`packages/curio.builtin@1/manifest.json`](../packages/curio.builtin@1/manifest.json)
 
@@ -303,13 +316,13 @@ A generic Spatial Join that pairs the rows of two inputs whose shapes meet, by a
 }
 ```
 
-This one belongs in `curio.builtin@1`, not `curio.streetvision@1`, because it's reusable for any spatial workflow. Generally: if a capability is reusable outside the package's narrow theme, factor it out into builtin.
+This one belongs in `curio.builtin@1`, not in a model package, because it's reusable for any spatial workflow. Generally: if a capability is reusable outside the package's narrow theme, factor it out into builtin.
 
 The agents' prompts describe every `curio.builtin@1` template from this manifest: the shared preamble gives its label, description, control, port types, how many connections its inputs accept, and interaction support, and other prompts name templates by label. After adding or changing a built-in template, run `python scripts/generate_contracts.py` and commit the regenerated prompts in `utk_curio/llm-prompts/` with the manifest; the backend suite fails until you do (see [CONTRIBUTING.md, Generated Files](CONTRIBUTING.md#generated-files)).
 
 ### 4.4 Behavior hooks
 
-Column Filter's hook ships inside its package, at [`packages/curio.example-ui@1/sources/`](../packages/curio.example-ui@1/sources/); Spatial Join's lives with the built-ins in [`utk_curio/frontend/urban-workflows/src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/). Image Segmentation runs on the built-in `code` behavior and needs no hook of its own.
+Column Filter's hook ships inside its package, at [`packages/curio.example-ui@1/sources/`](../packages/curio.example-ui@1/sources/); Spatial Join's lives with the built-ins in [`utk_curio/frontend/urban-workflows/src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/). Accumulated Shadow runs on the built-in `code` behavior and needs no hook of its own.
 
 - [`columnFilterBehavior.tsx`](../packages/curio.example-ui@1/sources/columnFilterBehavior.tsx): reads `data.input` with `resolveInput`, which fetches a sandbox artifact reference and passes an inline payload through; keeps the column, comparison and threshold in `useState`; sends the matching rows downstream with `data.outputCallback` and reports through `nodeState.setOutput`. It returns only `contentComponent`.
 - [`spatialJoinBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/spatialJoinBehavior.tsx): the only node here with two input ports, whose circles it draws with `handlesOverride`. Keeps what each circle holds apart (`data.portInputs`) and posts both inputs to `/spatial_join` (§4.5). Worth reading if you ever need a 2-input node.
@@ -332,13 +345,13 @@ Both land in one global registry; packages reference behavior keys by name, not 
 
 ### 4.5 The backend route
 
-Spatial Join's route is a single handler at the end of [`api/routes.py`](../utk_curio/backend/app/api/routes.py) (`POST /spatial_join`) that calls the generic `spatial_join` helper at [`utk_curio/backend/app/common/spatial.py`](../utk_curio/backend/app/common/spatial.py), on geopandas `sjoin`. Reusable utilities like that belong under `common/`, not in any specific blueprint. Image Segmentation has no route of its own: its work runs in the sandbox.
+Spatial Join's route is a single handler at the end of [`api/routes.py`](../utk_curio/backend/app/api/routes.py) (`POST /spatial_join`) that calls the generic `spatial_join` helper at [`utk_curio/backend/app/common/spatial.py`](../utk_curio/backend/app/common/spatial.py), on geopandas `sjoin`. Reusable utilities like that belong under `common/`, not in any specific blueprint. Accumulated Shadow has no route of its own: its work runs in the sandbox.
 
 ### 4.6 Shipping the package
 
-The three packages are bundled in-repo under [`packages/`](../packages/). Seeding covers `curio.builtin@1` plus, when Curio starts with `--with-examples`, whatever the shipped example dataflows declare as dependencies (`example_dep_package_ids` in [`backend/app/packages/application/seeding.py`](../utk_curio/backend/app/packages/application/seeding.py)). Example 10 declares `curio.streetvision@1`, so Street Vision is installed with the examples. `curio.example-ui@1` is in neither set: users opt in by clicking **Add to project** in the catalog. Generally:
+The three packages are bundled in-repo under [`packages/`](../packages/). Seeding covers `curio.builtin@1` plus, when Curio starts with `--with-examples`, whatever the shipped example dataflows declare as dependencies (`example_dep_package_ids` in [`backend/app/packages/application/seeding.py`](../utk_curio/backend/app/packages/application/seeding.py)). Example 24 declares `model.scout.deep-umbra@1`, so Deep Umbra is installed with the examples. `curio.example-ui@1` is in neither set: users opt in by clicking **Add to project** in the catalog. Generally:
 
-- **Bundled-and-auto-installed** → `curio.builtin@1`, which every user must have, and, with `--with-examples`, the packages a shipped dataflow declares (`curio.streetvision@1`, `curio.weather@1`, `curio.media@1`, `scout.raster-conversion@1`, and the model packages `model.scout.deep-umbra@1` and `model.scout.weather-gnn@1`).
+- **Bundled-and-auto-installed** → `curio.builtin@1`, which every user must have, and, with `--with-examples`, the packages a shipped dataflow declares (`curio.weather@1`, `curio.media@1`, `scout.raster-conversion@1`, and the model packages `model.curio.ddrnet23-slim@1`, `model.scout.deep-umbra@1` and `model.scout.weather-gnn@1`).
 - **Bundled-and-installable** → optional first-party packages like `curio.example-ui@1`, `ai.utk.uhvi@1`. Visible in the catalog without a remote registry roundtrip.
 - **Remote** → publishing through Curio's catalog endpoint, for third-party packages. Same manifest schema.
 

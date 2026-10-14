@@ -1029,25 +1029,25 @@ def test_threads_share_a_bounded_number_of_malloc_arenas(isolated_deployed):
 
 DDRNET = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "..",
-    "models", "model.curio.ddrnet23-slim@1",
+    "packages", "model.curio.ddrnet23-slim@1",
 )
 
-#: Example 10's shipped model, run once at its own input size with *THREADS*
-#: intra-op threads, as ``curio_segment`` runs it.
+#: Example 10's shipped model, DDRNet23-Slim's model package, run once at its
+#: own input size with *THREADS* intra-op threads, as ``curio_segment`` runs it.
 _RUN_DDRNET = r'''
     import json, os
     import numpy as np
     import onnxruntime as ort
     folder = curio_load_model("model.curio.ddrnet23-slim").folder
     with open(os.path.join(folder, "manifest.json"), encoding="utf-8") as fh:
-        manifest = json.load(fh)
+        block = json.load(fh)["model"]
     options = ort.SessionOptions()
     options.intra_op_num_threads = THREADS
     session = ort.InferenceSession(
-        os.path.join(folder, manifest["entry"]), sess_options=options,
+        os.path.join(folder, block["entry"]), sess_options=options,
         providers=["CPUExecutionProvider"],
     )
-    size = manifest["input"]
+    size = block["input"]
     pixels = np.zeros((1, 3, int(size["height"]), int(size["width"])), dtype=np.uint8)
     scores = session.run(None, {session.get_inputs()[0].name: pixels})[0]
     return "x".join(str(n) for n in scores.shape)
@@ -1056,7 +1056,8 @@ _RUN_DDRNET = r'''
 
 @pytest.mark.parametrize("isolated_deployed", ["many-core"], indirect=True)
 def test_the_street_vision_model_runs_on_a_many_core_host(isolated_deployed):
-    """Example 10's Image Segmentation, at the default budget, on 64 cores.
+    """Example 10's Image Segmentation, DDRNet23-Slim's node, at the default
+    budget, on 64 cores.
 
     onnxruntime starts a thread per physical core, and each took a malloc
     arena of its own: at 64 threads the session reserved the whole budget and
@@ -1119,17 +1120,17 @@ _RUN_DDRNET_REPORTING = r'''
     }
     folder = curio_load_model("model.curio.ddrnet23-slim").folder
     with open(os.path.join(folder, "manifest.json"), encoding="utf-8") as fh:
-        manifest = json.load(fh)
+        block = json.load(fh)["model"]
     options = ort.SessionOptions()
     options.intra_op_num_threads = THREADS
     options.add_session_config_entry("session.intra_op.allow_spinning", "0")
     session = None
     try:
         session = ort.InferenceSession(
-            os.path.join(folder, manifest["entry"]), sess_options=options,
+            os.path.join(folder, block["entry"]), sess_options=options,
             providers=["CPUExecutionProvider"],
         )
-        size = manifest["input"]
+        size = block["input"]
         pixels = np.zeros((1, 3, int(size["height"]), int(size["width"])), dtype=np.uint8)
         scores = session.run(None, {session.get_inputs()[0].name: pixels})[0]
         seen["shape"] = "x".join(str(n) for n in scores.shape)

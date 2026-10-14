@@ -275,8 +275,9 @@ def run_through_node(
     per-node outcomes (memo dev/67-7).
 
     ``acting_user`` is the account's ``User`` row, captured in the request by
-    a caller that runs this on a thread of its own: the Model Catalog finds
-    the models the account added through it.
+    a caller that runs this on a thread of its own: the models its nodes load
+    are resolved from that account's store (else from *exec_user_key*'s, or
+    *user_key*'s).
 
     dev/115: ``dataset_paths`` (``{datasetId: absolutePath}`` for the code's
     ``curio_data_path("<id>")`` calls) and ``exec_user_key`` ride the
@@ -441,11 +442,14 @@ def run_through_node(
         if media_dir:
             payload["media_dir"] = media_dir
         if is_py and "curio_load_model" in seeded:
-            # The Model Catalog folders the node loads, as /processPythonCode
-            # resolves them, for the request's account.
-            from utk_curio.backend.app.model_catalog.service import resolve_exec_models
+            # The model packages the node loads, as /processPythonCode
+            # resolves them, from the acting account's store.
+            from utk_curio.backend.app.execution.node_exec import resolve_models, resolve_models_for
 
-            models = resolve_exec_models(seeded, user=acting_user)
+            if acting_user is not None:
+                models = resolve_models(seeded, acting_user)
+            else:
+                models = resolve_models_for(seeded, exec_user_key or user_key)
             if models:
                 payload["models"] = models
         if is_py:

@@ -238,8 +238,8 @@ def _read_onnx(path: str):
     except ImportError as exc:
         raise RuntimeError(
             "This dataset is an ONNX model, which runs on onnxruntime, and this Curio "
-            "does not have it: install a package that brings it, such as Street Vision, "
-            "from the Node Catalog."
+            "does not have it: add a model that runs on ONNX, such as DDRNet23-Slim, "
+            "with Add in the Model Catalog, which installs it."
         ) from exc
     return ort.InferenceSession(path, providers=["CPUExecutionProvider"])
 
@@ -336,7 +336,7 @@ class CurioModel:
             except ImportError as exc:
                 raise RuntimeError(
                     f"Model '{self.id}' runs on onnxruntime, which is not installed here: "
-                    "add the package whose node runs it from the Node Catalog."
+                    "add the model with Add in the Model Catalog, which installs it."
                 ) from exc
             self._session = ort.InferenceSession(
                 os.path.join(self.folder, self.manifest["entry"]), providers=["CPUExecutionProvider"]

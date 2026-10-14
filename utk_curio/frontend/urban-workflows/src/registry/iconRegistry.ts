@@ -76,7 +76,7 @@ registerIcon('fa-solid:cube', faCube);
 registerIcon('fa-solid:map', faMap);
 registerIcon('fa-solid:map-location-dot', faMapLocationDot);
 registerIcon('fa-solid:code-merge', faCodeMerge);
-// curio.builtin@1 + curio.streetvision@1 additions.
+// curio.builtin@1 + model package additions.
 registerIcon('fa-solid:object-group', faObjectGroup);
 registerIcon('fa-solid:sliders', faSliders);
 registerIcon('fa-solid:code-compare', faCodeCompare);

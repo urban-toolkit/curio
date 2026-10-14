@@ -27,7 +27,7 @@
       },
       {
         "id": "4067fb98-3ed5-497a-97a5-41a98ce1085b",
-        "type": "curio.streetvision/image-segmentation",
+        "type": "model.curio.ddrnet23-slim/image-segmentation",
         "x": 645,
         "y": 108,
         "content": "\"\"\"Label every pixel of each image with a Model Catalog model.\n\nThe input is a collection's rows, each with a ``path``, as a Data Loading\nnode gives them for street-level images from the Data or Discovery Catalog.\nTo use another model, drag it from the Model Catalog onto this node.\n\n``classes`` are the model's labels to report; each becomes a\n``<class>_pct`` column, its share of the image's pixels in percent. ``None``\nreports every label.\n``dominant_class`` and ``dominant_pct`` name the one of them covering most,\nand ``overlay_url`` shows the image tinted by class.\n\"\"\"\n\nmodel = curio_load_model(\"model.curio.ddrnet23-slim\")\nclasses = [\"vegetation\", \"terrain\", \"sky\", \"road\", \"sidewalk\", \"building\"]\n\nreturn curio_segment(input_0, model, classes)\n",
@@ -118,7 +118,7 @@
       },
       {
         "id": "b7d41c2e-5a8f-4c61-9e0b-2f3a6d9c8e14",
-        "type": "curio.streetvision/image-segmentation",
+        "type": "model.curio.ddrnet23-slim/image-segmentation",
         "x": 645,
         "y": 968,
         "content": "\"\"\"The same photos, with a model from Hugging Face.\n\nAdd one in the Discovery Catalog (Hugging Face models, for example\nopenmmlab/upernet-convnext-tiny), then drag it from the Model Catalog onto\nthis node. Until then it runs DDRNet23-Slim, the model that ships with Curio.\n\"\"\"\n\nmodel = curio_load_model(\"model.curio.ddrnet23-slim\")\nclasses = None  # every class the model names\n\nreturn curio_segment(input_0, model, classes)\n",
@@ -261,7 +261,7 @@
     "timestamp": 1778306678524,
     "provenance_id": "Street-level computer vision",
     "packages": [
-      "curio.streetvision@1"
+      "model.curio.ddrnet23-slim@1"
     ],
     "datasets": [
       {

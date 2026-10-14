@@ -67,7 +67,7 @@ EXAMPLE = os.path.join(REPO_ROOT, "docs", "examples", "10-street-vision-cv-analy
 PHOTOS = "5988175e-84aa-4964-84de-aba7d55cf122"
 ROUTE_TWO = "b7d41c2e-5a8f-4c61-9e0b-2f3a6d9c8e14"
 ROUTE_TWO_VIEW = "c3e85a7f-1d2b-4f90-8a6c-5b7e9d0f2a31"
-SEGMENTATION = "curio.streetvision/image-segmentation"
+SEGMENTATION = "model.curio.ddrnet23-slim/image-segmentation"
 DDRNET = "model.curio.ddrnet23-slim"
 DDRNET_NAME = "DDRNet23-Slim (street scenes)"
 

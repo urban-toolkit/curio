@@ -57,7 +57,8 @@ import {
 import { NotebookViewContext } from "../../providers/flow/notebookViewContext";
 import { notebookCellMinHeight, notebookHandlePlaces } from "../../utils/notebookLayout";
 
-const STREETVISION = "curio.streetvision/image-segmentation";
+// Example 10's Image Segmentation: DDRNet23-Slim's model package's node.
+const SEGMENTATION = "model.curio.ddrnet23-slim/image-segmentation";
 
 beforeEach(() => {
   mockEdges = [];
@@ -74,7 +75,7 @@ describe("packageIdFromNodeType", () => {
   it("reads the package coordinate out of a canonical type", () => {
     // No lockfile needed: the package id is right there in the node type,
     // which is what lets the card name it even when nothing resolved.
-    expect(packageIdFromNodeType(STREETVISION)).toBe("curio.streetvision");
+    expect(packageIdFromNodeType(SEGMENTATION)).toBe("model.curio.ddrnet23-slim");
     expect(packageIdFromNodeType("curio.builtin/vis-vega@1")).toBe("curio.builtin");
   });
 
@@ -89,7 +90,7 @@ describe("packageIdFromNodeType", () => {
 
 describe("packageDisplayName", () => {
   it("turns a package id into something readable", () => {
-    expect(packageDisplayName("curio.streetvision")).toBe("Streetvision");
+    expect(packageDisplayName("model.curio.ddrnet23-slim")).toBe("Ddrnet23 Slim");
     expect(packageDisplayName("ai.utk.uhvi")).toBe("Uhvi");
     expect(packageDisplayName("curio.example-ui")).toBe("Example Ui");
   });
@@ -100,7 +101,7 @@ describe("UnresolvedNode", () => {
     // The wait is correct here: a node from a saved dataflow routinely mounts
     // before its package's descriptor has registered.
     render(
-      <UnresolvedNode nodeId="n1" nodeType={STREETVISION} registryReady={false} />,
+      <UnresolvedNode nodeId="n1" nodeType={SEGMENTATION} registryReady={false} />,
     );
     expect(screen.getByText("Loading node…")).toBeInTheDocument();
     expect(screen.queryByTestId("unresolved-node")).toBeNull();
@@ -110,11 +111,11 @@ describe("UnresolvedNode", () => {
     // This is the bug: after the registry settles the wait is over, and
     // "Loading node…" becomes a permanent lie with no way to see past it.
     render(
-      <UnresolvedNode nodeId="n1" nodeType={STREETVISION} registryReady />,
+      <UnresolvedNode nodeId="n1" nodeType={SEGMENTATION} registryReady />,
     );
     expect(screen.queryByText("Loading node…")).toBeNull();
     expect(screen.getByText("Missing node package")).toBeInTheDocument();
-    expect(screen.getByText("Streetvision")).toBeInTheDocument();
+    expect(screen.getByText("Ddrnet23 Slim")).toBeInTheDocument();
   });
 
   it("says so when the type names no package to blame (#349)", () => {
@@ -177,11 +178,11 @@ describe("UnresolvedNode", () => {
     // Install stays the user's click - a package can pull large dependencies,
     // so this hands them the decision rather than making it.
     render(
-      <UnresolvedNode nodeId="n1" nodeType={STREETVISION} registryReady />,
+      <UnresolvedNode nodeId="n1" nodeType={SEGMENTATION} registryReady />,
     );
     return userEvent.click(screen.getByRole("button")).then(() => {
       expect(mockOpenDrawer).toHaveBeenCalledWith({
-        search: "curio.streetvision",
+        search: "model.curio.ddrnet23-slim",
       });
     });
   });
@@ -196,7 +197,7 @@ describe("UnresolvedNode", () => {
       { id: "e3", source: "n1", target: "sj", sourceHandle: "out_points" },
     ];
     const { container } = render(
-      <UnresolvedNode nodeId="n1" nodeType={STREETVISION} registryReady />,
+      <UnresolvedNode nodeId="n1" nodeType={SEGMENTATION} registryReady />,
     );
     expect(handleIds(container, "target")).toEqual(["in"]);
     expect(handleIds(container, "source").sort()).toEqual(["out", "out_points"]);
@@ -207,14 +208,14 @@ describe("UnresolvedNode", () => {
     // back, which is its own kind of wrong.
     mockEdges = [{ id: "e1", source: "up", target: "n1", targetHandle: "in" }];
     const { container } = render(
-      <UnresolvedNode nodeId="n1" nodeType={STREETVISION} registryReady={false} />,
+      <UnresolvedNode nodeId="n1" nodeType={SEGMENTATION} registryReady={false} />,
     );
     expect(container.querySelectorAll(".react-flow__handle").length).toBeGreaterThan(0);
   });
 
   it("offers a default port pair when nothing is connected", () => {
     const { container } = render(
-      <UnresolvedNode nodeId="n1" nodeType={STREETVISION} registryReady />,
+      <UnresolvedNode nodeId="n1" nodeType={SEGMENTATION} registryReady />,
     );
     expect(handleIds(container, "target")).toEqual(["in"]);
     expect(handleIds(container, "source")).toEqual(["out"]);
@@ -225,7 +226,7 @@ describe("UnresolvedNode", () => {
     // infers them elsewhere, so the placeholder must not drop the edge.
     mockEdges = [{ id: "e1", source: "up", target: "n1" }];
     const { container } = render(
-      <UnresolvedNode nodeId="n1" nodeType={STREETVISION} registryReady />,
+      <UnresolvedNode nodeId="n1" nodeType={SEGMENTATION} registryReady />,
     );
     expect(handleIds(container, "target")).toEqual(["in"]);
   });
@@ -236,7 +237,7 @@ describe("UnresolvedNode", () => {
       { id: "e2", source: "n1", target: "join", sourceHandle: "out" },
     ];
     const { container } = render(
-      <UnresolvedNode nodeId="n1" nodeType={STREETVISION} registryReady />,
+      <UnresolvedNode nodeId="n1" nodeType={SEGMENTATION} registryReady />,
     );
     expect(container.querySelector('[data-handleid="in"]')).toHaveAttribute("data-position", "left");
     expect(container.querySelector('[data-handleid="out"]')).toHaveAttribute("data-position", "right");
@@ -273,9 +274,9 @@ describe("UnresolvedNode in the notebook view", () => {
   });
 
   it.each([
-    ["missing its package", STREETVISION, true],
+    ["missing its package", SEGMENTATION, true],
     ["of an unrecognized type", "DATA_LOADING", true],
-    ["still loading", STREETVISION, false],
+    ["still loading", SEGMENTATION, false],
   ])("is a cell like any other when %s: the page's width, its dots on its right edge where every cell's are", (
     _label, nodeType, registryReady,
   ) => {
@@ -297,7 +298,7 @@ describe("UnresolvedNode in the notebook view", () => {
 
   it("numbers its input dot and names what feeds it, as every cell's dots do", () => {
     const { container } = renderInNotebook(
-      <UnresolvedNode nodeId="n1" nodeType={STREETVISION} registryReady />,
+      <UnresolvedNode nodeId="n1" nodeType={SEGMENTATION} registryReady />,
     );
     expect(container.querySelector('[data-handleid="in"]')).toHaveTextContent("0");
     expect(container.querySelector('[data-handleid="in"]')).toHaveAttribute("title", "input_0 · Load roads");

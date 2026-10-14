@@ -337,15 +337,20 @@ def _model_rows(messages):
 
 class TestModelGrounding:
     """models.search in a scripted run: the agents that write node code are
-    shown the Model Catalog's rows, each with the line that loads it."""
+    shown the model packages the account holds, each with the line that loads
+    it: DDRNet23-Slim, added as the examples' seeding adds it, and not Deep
+    Umbra, which ships but was never added."""
 
     @pytest.fixture(autouse=True)
-    def _shipped_models(self, monkeypatch):
+    def _ddrnet_added(self, user_and_token, tmp_curio):
         from pathlib import Path
 
-        from utk_curio.backend.app.model_catalog.infrastructure import storage
+        from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+        from utk_curio.backend.app.projects.services import _user_dir_key
 
-        monkeypatch.setenv(storage.ENV_ROOT, str(Path(__file__).resolve().parents[4] / "models"))
+        user, _ = user_and_token
+        packages = Path(__file__).resolve().parents[4] / "packages"
+        install_package_from_directory(_user_dir_key(user), packages / f"{DDRNET}@1")
 
     def test_node_builder_searches_the_model_catalog(self, client, user_and_token, tmp_curio, project, monkeypatch):
         _, token = user_and_token
@@ -367,7 +372,7 @@ class TestModelGrounding:
         _run(client, token, alice_project, att, "segment the photos with a model")
         assert "- models.search: " in calls[0][0]["content"]
         rows = _model_rows(calls[-1])
-        assert DDRNET in {row["id"] for row in rows}
+        assert {row["id"] for row in rows} == {DDRNET}
         assert all(row["loader"] == f'model = curio_load_model("{row["id"]}")' for row in rows)
 
 

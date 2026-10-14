@@ -265,8 +265,9 @@ REGISTRY: dict[str, ToolContract] = {
         }),
     ),
     # Consumers: agent.node-builder and agent.node-content-builder. Grounds a
-    # node that runs a model in the real Model Catalog (the model catalog
-    # owns the data and the loader line; this module owns none of its own).
+    # node that runs a model in the model packages this account holds (the
+    # packages domain owns the data and the loader line; this module owns
+    # none of its own).
     "models.search": ToolContract(
         id="models.search",
         contract_version="1",
@@ -275,15 +276,16 @@ REGISTRY: dict[str, ToolContract] = {
             "Search the Model Catalog: the trained models node code can run. "
             'Params (all optional): {"q": "<text>", "limit": <1 to '
             f"{_MODELS_SEARCH_MAX_ROWS}>}}; q matches a model's name, id, "
-            "description, publisher and tags. Returns model rows with id, "
-            "name, task, runtime, origin, description, labels (the classes "
-            "it answers, at most "
-            f"{_MODEL_LABELS_MAX}) and loader. Every row is a model this "
-            'account can run: origin "shipped" comes with Curio, "downloaded" '
-            "is one this account added from the Discovery Catalog. Copy the "
-            "row's `loader` line into the node's code exactly as given "
+            "description and publisher. Returns model rows with id, name, "
+            "task, runtime, origin, description, labels (the classes it "
+            f"answers, at most {_MODEL_LABELS_MAX}) and loader. Every row is "
+            "a model this account has added, and so can run: origin "
+            '"shipped" comes with Curio, "downloaded" is one of its own, '
+            "added from the Discovery Catalog or imported. Copy the row's "
+            "`loader` line into the node's code exactly as given "
             '(model = curio_load_model("<id>")); a model id that is not in '
-            "these results does not run. Reads no network."
+            "these results does not run until the user adds it in the Model "
+            "Catalog. Reads no network."
         ),
         parameters=_object({
             "q": _text("Text to search for."),
@@ -829,33 +831,37 @@ def _row_limit(value: object, bound: int) -> int:
     return max(1, min(value, bound))
 
 
-def _models_search_rows(params: dict) -> list[dict]:
-    """Bounded Model Catalog rows for ``models.search``.
+def _models_search_rows(user_key: str, params: dict) -> list[dict]:
+    """Bounded rows for ``models.search``: the model packages in *user_key*'s
+    store, the only models its node code runs, each with the line that loads
+    it.
 
-    A thin wrapper over the model catalog (`ADR-AG-007`): the same listing the
-    Model Catalog page browses, for the user the request carries, and the
-    catalog's own loader line for each model.
+    A thin wrapper over the packages domain (`ADR-AG-007`), which owns the
+    listing and the loader line.
     """
-    from flask import g
-
-    from utk_curio.backend.app.model_catalog.service import ModelCatalogService, loader_line
+    from utk_curio.backend.app.packages import service as packages
 
     query = params.get("q")
-    query = query.strip()[:_CATALOG_PARAM_MAX_CHARS] if isinstance(query, str) and query.strip() else None
-    listing = ModelCatalogService(getattr(g, "user", None)).list_catalog(q=query)
+    needle = query.strip()[:_CATALOG_PARAM_MAX_CHARS].lower() if isinstance(query, str) and query.strip() else ""
     rows = []
-    for item in (listing.get("items") or [])[:_row_limit(params.get("limit"), _MODELS_SEARCH_MAX_ROWS)]:
+    for held in packages.held_model_packages(user_key):
+        manifest, block = held.manifest, held.manifest.model
+        publisher = block.publisher or manifest.publisher
+        haystack = " ".join([manifest.name, manifest.package_id, manifest.description, publisher]).lower()
+        if needle and needle not in haystack:
+            continue
         rows.append({
-            "id": item.get("id"),
-            "name": item.get("name"),
-            "task": item.get("task"),
-            "runtime": item.get("runtime"),
-            "origin": item.get("origin"),
-            "description": (item.get("description") or "")[:_CATALOG_DESC_MAX_CHARS],
-            "labels": list(item.get("labels") or [])[:_MODEL_LABELS_MAX],
-            "loader": loader_line(item.get("id")),
+            "id": manifest.package_id,
+            "name": manifest.name,
+            "task": block.type,
+            "runtime": block.runtime,
+            "origin": "downloaded" if held.in_store else "shipped",
+            "description": (manifest.description or "")[:_CATALOG_DESC_MAX_CHARS],
+            "labels": list(block.labels)[:_MODEL_LABELS_MAX],
+            "loader": packages.model_loader_line(manifest.package_id),
         })
-    return rows
+    rows.sort(key=lambda row: (row["origin"] != "shipped", row["name"].lower()))
+    return rows[:_row_limit(params.get("limit"), _MODELS_SEARCH_MAX_ROWS)]
 
 
 def _execute_examples_read(user_key: str, project_id: str, params: dict) -> tuple[str, str]:
@@ -1184,7 +1190,7 @@ def execute_read_tool(
                 payload["unavailableSources"] = unavailable
             return "ok", _truncate(json.dumps(payload, ensure_ascii=False))
         if tool_id == "models.search":
-            return "ok", _truncate(json.dumps({"models": _models_search_rows(params)}, ensure_ascii=False))
+            return "ok", _truncate(json.dumps({"models": _models_search_rows(user_key, params)}, ensure_ascii=False))
         if tool_id == "examples.read":
             return _execute_examples_read(user_key, project_id, params)
         if tool_id == "packages.catalog":

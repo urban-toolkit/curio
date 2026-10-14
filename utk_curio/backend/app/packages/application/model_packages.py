@@ -1,10 +1,15 @@
 """Where a model package's weights are read from: for a node's ``curio_load_model`` and for an export.
 
 A model package (kind ``model``) ships its weights under ``models/``, and its
-``model`` block names the one a node runs (``domain/model_block.py``). The
-weights are read where they are:
+``model`` block names the one a node runs (``domain/model_block.py``). Models
+behave like nodes: ``curio_load_model("<id>")`` finds only a model package in
+the user's store, added (Add, or a dataflow whose lockfile names it) or seeded
+for the examples, the highest major of it; ``<id>@<major>`` names one major.
+A package the store does not hold gives the node no model, and the sandbox's
+``curio_load_model`` says to add it. The weights are read where they are:
 
-- a package imported or published into a user's store holds its own;
+- a package imported, published or downloaded into a user's store holds its
+  own;
 - a user's copy of a shipped package holds none (``seeding``,
   ``store_install.install_package_from_directory``), so they are read from the
   shared catalog's copy, ``packages/<dir>/models/``;
@@ -13,12 +18,12 @@ weights are read where they are:
   time it is needed into ``.curio/fetched/<commit>/packages/<dir>/``, checked
   against the release's record and against the package's ``integrity.json``.
 
-``curio_load_model("<id>")`` names a package id, ``<id>@<major>`` one major.
-The user's store answers before the catalog, the highest major of each.
-
-The Model Catalog lists the model packages one account can run
-(:func:`list_model_packages`): the catalog's, and those imported or published
-into the account's store.
+The Model Catalog lists the model packages one account can add or run
+(:func:`list_model_packages`): the catalog's, and those imported, published or
+downloaded into the account's store. A model downloaded from the Discovery
+Catalog becomes a model package in the user's store
+(:func:`install_downloaded_model`). A template that ships no ``source`` opens
+with the cell Curio writes for its model's type (:func:`model_default_cell`).
 """
 
 from __future__ import annotations
@@ -28,6 +33,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from utk_curio.backend.app.packages.domain.default_cells import SEGMENTATION, default_cell
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
 from utk_curio.backend.app.packages.domain.manifest import ManifestError, PackageManifest
 from utk_curio.backend.app.packages.domain.model_block import MODELS_DIR
@@ -71,68 +77,62 @@ def holds_weights(folder: Path, manifest: PackageManifest) -> bool:
     return entry.is_file()
 
 
-def _highest(folders, want_id: str, want_major: str) -> tuple[PackageManifest, Path] | None:
-    found = []
-    for folder in folders:
-        name = folder.name
-        if want_major and name != f"{want_id}@{want_major}":
-            continue
-        if not want_major and not name.startswith(f"{want_id}@"):
-            continue
-        manifest = _model_manifest(folder)
-        if manifest is not None and manifest.package_id == want_id:
-            found.append((manifest, folder))
-    return max(found, key=lambda pair: pair[0].major, default=None)
-
-
-def find_model_package(user_key: str | None, model_id: str) -> tuple[PackageManifest, Path] | None:
-    """The model package *model_id* names (``<id>`` or ``<id>@<major>``): the
-    user's copy before the catalog's, the highest major of each. A lock
-    owner: it reads the user's store under the seed lock (memo dev/99)."""
-    want_id, _, want_major = str(model_id).partition("@")
-    if want_major and not want_major.isdigit():
-        return None
-    if user_key:
-        with package_seed_lock(user_key):
-            mine = _highest(list_user_packages(user_key), want_id, want_major)
-        if mine is not None:
-            return mine
-    root = packages_catalog_dir.catalog_root()
-    if not root.is_dir():
-        return None
-    shipped = sorted(entry for entry in root.iterdir() if entry.is_dir() and PACKAGE_DIR_RE.match(entry.name))
-    return _highest(shipped, want_id, want_major)
-
-
 @dataclass(frozen=True)
 class ListedModelPackage:
-    """A model package one account can run, as the Model Catalog lists it.
+    """A model package one account can add or run, as the Model Catalog lists it.
 
     *folder* is where its manifest is read: the account's copy when that copy
-    holds its own weights (imported or published), else the catalog's.
-    *in_store* says which: an account's own model package, which it may
-    remove, or one that ships with Curio."""
+    holds its own weights (imported, published or downloaded), else the
+    catalog's. *in_store* says which: an account's own model package, which it
+    may remove, or one that ships with Curio."""
 
     manifest: PackageManifest
     folder: Path
     in_store: bool
 
 
+def held_model_packages(user_key: str | None) -> list[ListedModelPackage]:
+    """The model packages in *user_key*'s store, the only ones its nodes run:
+    each one's copy as *folder*, and *in_store* when the copy holds its own
+    weights rather than reading a shipped package's in place. None without an
+    account. A lock owner: it reads the user's store under the seed lock
+    (memo dev/99)."""
+    if not user_key:
+        return []
+    held: list[ListedModelPackage] = []
+    with package_seed_lock(user_key):
+        for folder in list_user_packages(user_key):
+            manifest = _model_manifest(folder)
+            if manifest is not None:
+                held.append(ListedModelPackage(manifest, folder, holds_weights(folder, manifest)))
+    return held
+
+
+def find_model_package(user_key: str | None, model_id: str) -> tuple[PackageManifest, Path] | None:
+    """The model package *model_id* names (``<id>`` or ``<id>@<major>``) in
+    *user_key*'s store, the highest major of it, or None: a model the store
+    does not hold is not run, as a node whose package is not added is not.
+    Chosen from the snapshot :func:`held_model_packages` reads under the lock."""
+    want_id, _, want_major = str(model_id).partition("@")
+    if want_major and not want_major.isdigit():
+        return None
+    wanted = f"{want_id}@{want_major}" if want_major else None
+    found = [
+        (held.manifest, held.folder) for held in held_model_packages(user_key)
+        if held.manifest.package_id == want_id and held.folder.name == (wanted or held.manifest.dir_name)
+    ]
+    return max(found, key=lambda pair: pair[0].major, default=None)
+
+
 def list_model_packages(user_key: str | None) -> list[ListedModelPackage]:
-    """Every model package *user_key* can run, once per ``<id>@<major>``:
-    those in the account's store that hold their own weights, then the
-    catalog's. A user's copy of a catalog package holds none (seeded for the
-    examples, or added), so the catalog's is the one listed. A weight a pip
-    install has not fetched yet is not needed to list it. A lock owner: it
-    reads the user's store under the seed lock, as :func:`find_model_package`
-    does."""
-    listed: dict[str, ListedModelPackage] = {}
-    if user_key:
-        with package_seed_lock(user_key):
-            for folder in list_user_packages(user_key):
-                manifest = _model_manifest(folder)
-                if manifest is not None and holds_weights(folder, manifest):
-                    listed[folder.name] = ListedModelPackage(manifest, folder, True)
+    """Every model package *user_key* can add or run, once per
+    ``<id>@<major>``: those in the account's store that hold their own
+    weights, then the catalog's. A user's copy of a catalog package holds none
+    (seeded for the examples, or added), so the catalog's is the one listed. A
+    weight a pip install has not fetched yet is not needed to list it."""
+    listed: dict[str, ListedModelPackage] = {
+        held.folder.name: held for held in held_model_packages(user_key) if held.in_store
+    }
     root = packages_catalog_dir.catalog_root()
     if root.is_dir():
         for folder in sorted(entry for entry in root.iterdir() if entry.is_dir() and PACKAGE_DIR_RE.match(entry.name)):
@@ -196,12 +196,55 @@ def weights_folder(manifest: PackageManifest, folder: Path) -> Path | None:
     return fetched
 
 
+def local_weights_folder(manifest: PackageManifest, folder: Path) -> Path | None:
+    """:func:`weights_folder` without the download: *folder* when it holds the
+    weights, else the catalog's copy of the same package when that does, else
+    None."""
+    if holds_weights(folder, manifest):
+        return folder
+    shipped = packages_catalog_dir.catalog_root() / manifest.dir_name
+    catalog_manifest = _model_manifest(shipped)
+    if catalog_manifest is None or catalog_manifest.model.entry != manifest.model.entry:
+        return None
+    return shipped.resolve() if holds_weights(shipped, catalog_manifest) else None
+
+
+def _graph_inputs(manifest: PackageManifest, folder: Path):
+    """The arrays the ONNX graph of the model package in *folder* takes, read
+    from weights already on this machine (``datasets.domain.onnx_model``), or
+    None."""
+    if manifest.model.runtime != "onnx":
+        return None
+    weights = local_weights_folder(manifest, folder)
+    if weights is None:
+        return None
+    from utk_curio.backend.app.datasets.domain.onnx_model import graph_inputs
+
+    graph = weights / manifest.model.entry
+    try:
+        with graph.open("rb") as handle:
+            return graph_inputs(handle, graph.stat().st_size)
+    except OSError:
+        return None
+
+
+def model_default_cell(manifest: PackageManifest, folder: Path) -> str:
+    """The cell a node of the model package *manifest* in *folder* opens with
+    when its template ships no ``source`` (``domain/default_cells.py``): a
+    segmentation model's runs as it is; another type's is a ``model.run``
+    skeleton naming the arrays its graph takes. Nothing is downloaded for it."""
+    block = manifest.model
+    inputs = None if block.type == SEGMENTATION else _graph_inputs(manifest, folder)
+    return default_cell(manifest.package_id, block.type, inputs)
+
+
 def resolve_model_dirs(user_key: str | None, model_ids) -> dict[str, str]:
     """``{model id: folder}`` for the model packages *model_ids* name that
-    *user_key* can use: the folder whose ``manifest.json`` and ``models/`` a
-    node's ``curio_load_model`` reads. An id that names no model package, or
-    whose weights cannot be had, is left out: the sandbox's ``curio_load_model``
-    names it, or the run fails with the download's own error."""
+    *user_key*'s store holds: the folder whose ``manifest.json`` and
+    ``models/`` a node's ``curio_load_model`` reads. An id that names no model
+    package in the store, or whose weights cannot be had, is left out: the
+    sandbox's ``curio_load_model`` says to add it, or the run fails with the
+    download's own error."""
     from utk_curio.backend.app.datasets.infrastructure import left_out_files
 
     out: dict[str, str] = {}

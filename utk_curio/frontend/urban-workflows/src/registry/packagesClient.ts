@@ -110,6 +110,8 @@ interface RawPackage {
   /** Server-side dirname (`<packageId>@<major>`). Used for static-asset
    *  URLs like `/api/packages/<dirName>/file/<...>`. */
   dirName?: string;
+  /** `model` for a model package, which holds a model's weights. */
+  kind?: 'node' | 'model';
   lineage: {
     forkedFrom: { packageId: string; major: number };
     root: { packageId: string; major: number };
@@ -204,12 +206,15 @@ function buildDescriptor(pkg: RawPackage, template: RawPackageTemplate, order: n
   const lookedUpBehavior = template.behavior ? getBehavior(template.behavior) : undefined;
   const resolvedBehavior = lookedUpBehavior
     ?? (isBuiltin ? useCodeNodeBehavior : usePackageNodeBehavior);
-  // A template that ships a `source` starter must get it injected on a fresh
-  // drop no matter which behavior key its manifest names — resolving `"code"`
-  // lands on the no-op `useCodeNodeBehavior`, which would leave the editor
-  // empty. `usePackageNodeBehavior` already does injection on its own, so it
-  // is not double-wrapped.
-  const behavior = template.source && resolvedBehavior !== usePackageNodeBehavior
+  // A model package's template without `source` opens with the cell the
+  // backend writes for its model's type: a starter named for its template id.
+  const defaultCellStarter = !template.source && pkg.kind === 'model' ? template.templateId : undefined;
+  // A template that ships a `source` starter (or a default cell) must get it
+  // injected on a fresh drop no matter which behavior key its manifest names:
+  // resolving `"code"` lands on the no-op `useCodeNodeBehavior`, which would
+  // leave the editor empty. `usePackageNodeBehavior` already does injection on
+  // its own, so it is not double-wrapped.
+  const behavior = (template.source || defaultCellStarter) && resolvedBehavior !== usePackageNodeBehavior
     ? withPackageStarter(resolvedBehavior)
     : resolvedBehavior;
   const icon = resolveIconRef(template.iconRef) ?? faCube;
@@ -246,6 +251,7 @@ function buildDescriptor(pkg: RawPackage, template: RawPackageTemplate, order: n
       name: pkg.name,
       publisher: pkg.publisher,
       source: template.source ?? undefined,
+      ...(defaultCellStarter ? { defaultCellStarter } : {}),
       ...(pkg.lineage
         ? {
             lineage: {

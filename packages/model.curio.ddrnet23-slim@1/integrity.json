@@ -1,0 +1,9 @@
+{
+  "sha256": {
+    "LICENSE": "8616f6d26e7bb5a90328988b634529ac69cb3807ac0e2796870282c8ba769e48",
+    "README.md": "e421d202966a532488098848163471fde024867dad6cd40146cb30e7234eb86f",
+    "manifest.json": "7a018c2efe99dec4238eb80117efab97da8a65a31241f81cf70b9e315912030e",
+    "models/ddrnet23_slim.data": "38add9668036fed6d244e266ffb8e454adefce48ef39e57e0b868d91846bd173",
+    "models/ddrnet23_slim.onnx": "379f34b81f33a703c3d8acdbf2a40c7dd178d72e15daf8018471bd3ebc8f385f"
+  }
+}

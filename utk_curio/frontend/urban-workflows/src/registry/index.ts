@@ -43,8 +43,8 @@ if (typeof window !== 'undefined') {
     },
     // A getter, not a value: a package bundle evaluates once at load, long
     // before sign-in, so a captured string would be stale forever. Packages
-    // whose backend needs to know WHO is calling (the Street Vision node, for
-    // the caller's own HuggingFace token) send this as a Bearer header.
+    // whose backend needs to know WHO is calling (for the caller's own keys)
+    // send this as a Bearer header.
     getAuthToken: () => getToken(),
   };
   const pending: Array<(c: { registerBehavior: typeof registerBehavior }) => void> =
