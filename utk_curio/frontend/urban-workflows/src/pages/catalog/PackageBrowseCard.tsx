@@ -125,6 +125,12 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
             </span>
           ) : null}
         </div>
+        {/* The weights' license, in full on a line of its own. */}
+        {model ? (
+          <p className={styles.weightsLicense} title="Weights license" data-curio-weights-license="true">
+            {model.model.license || "Unknown license"}
+          </p>
+        ) : null}
       </div>
 
       {model ? (
@@ -134,7 +140,7 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
               .filter(Boolean)
               .join(" · ")}
           </span>
-          <span className={browseStyles.metaRight}>{model.model.license || "Unknown license"}</span>
+          <span className={browseStyles.metaRight}>{relativeFromMs(pkg.createdAtMs)}</span>
         </div>
       ) : (
         <div className={browseStyles.cardMeta}>
