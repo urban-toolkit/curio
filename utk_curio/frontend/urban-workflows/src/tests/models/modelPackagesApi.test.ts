@@ -22,12 +22,14 @@ function call(fetchMock: jest.Mock, index = 0): FetchCall {
   return fetchMock.mock.calls[index] as FetchCall;
 }
 
-/** The client as main types it: `kind` and `weightsLicense` are new. */
+/** The client as main types it: `kind`, `weightsLicense`, the listing's
+ *  `usage` and Remove from account's `unusedOnly` are new. */
 const api = packagesApi as unknown as {
   catalog: (kind?: string) => Promise<{ packages: unknown[] }>;
-  listInstalled: (kind?: string) => Promise<{ packages: unknown[] }>;
+  listInstalled: (kind?: string, opts?: { usage?: boolean }) => Promise<{ packages: unknown[] }>;
   weightsLicense: (dirName: string) => Promise<string>;
   uninstallFromProject: (projectId: string, dirName: string) => Promise<unknown>;
+  uninstall: (dirName: string, opts?: { unusedOnly?: boolean }) => Promise<unknown>;
 };
 
 beforeEach(() => {
@@ -82,6 +84,23 @@ describe("the packages client, as the Model Catalog calls it", () => {
     await api.uninstallFromProject("p1", "imported.xabc@1");
     const [url, init] = call(fetchMock);
     expect(url).toMatch(/\/api\/packages\/projects\/p1\/imported\.xabc@1$/);
+    expect(init.method).toBe("DELETE");
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer tok-123");
+  });
+
+  test("a catalog page asks the store which packages a dataflow uses", async () => {
+    const fetchMock = mockFetch({ packages: [] });
+    await api.listInstalled(undefined, { usage: true });
+    await api.listInstalled("model", { usage: true });
+    expect(call(fetchMock, 0)[0]).toMatch(/\/api\/packages\?usage=true$/);
+    expect(call(fetchMock, 1)[0]).toMatch(/\/api\/packages\?kind=model&usage=true$/);
+  });
+
+  test("Remove from account deletes a package only while no dataflow uses it", async () => {
+    const fetchMock = mockFetch({});
+    await api.uninstall("imported.xabc@1", { unusedOnly: true });
+    const [url, init] = call(fetchMock);
+    expect(url).toMatch(/\/api\/packages\/imported\.xabc@1\?unusedOnly=true$/);
     expect(init.method).toBe("DELETE");
     expect((init.headers as Record<string, string>).Authorization).toBe("Bearer tok-123");
   });

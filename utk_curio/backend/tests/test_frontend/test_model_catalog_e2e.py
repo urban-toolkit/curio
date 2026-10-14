@@ -10,7 +10,9 @@ modal, built from the Node Catalog's and listing the model packages (kind
 * the Node Catalog, drawer and page, lists no model package;
 * Browse all, In project and Remove work as for a node package;
 * a model package exported as a ``.curio.zip`` from one account imports into
-  another through the Model Catalog drawer, and runs there.
+  another through the Model Catalog drawer, and runs there;
+* the page removes a model of the account's own that no dataflow uses from
+  the account, and offers no such removal for a shipped model.
 
 Frames: the drawer, the details and the page.
 """
@@ -317,3 +319,50 @@ def test_an_exported_model_package_imports_and_runs_in_another_account(
 
     text = run_node_and_wait(page, RUN_NODE, timeout_ms=180000)
     assert f"{RELIEF_MARKER} (1, 1, 8, 8)" in text, text
+
+
+def test_a_model_no_dataflow_uses_leaves_the_account_from_the_page(
+    app_frontend: "FrontendPage", current_server: str, page, tmp_path
+):
+    # Imported from the page's header, Local Relief is in the account and in
+    # no dataflow.
+    name = "Local Relief (example)"
+    _enter(page, app_frontend, current_server, username="modelcat_account")
+    page.goto(f"{app_frontend.base_url}/catalog/models")
+    grid = page.locator("main")
+    expect(_card(grid, DDRNET)).to_have_count(1, timeout=30000)
+    with page.expect_response(
+        lambda r: r.url.endswith("/api/packages/upload") and r.request.method == "POST" and r.ok,
+        timeout=180000,
+    ):
+        with page.expect_file_chooser() as chooser:
+            page.get_by_role("button", name="Import package").click()
+        chooser.value.set_files(str(_local_relief_archive(tmp_path / "local-relief.curio.zip")))
+    card = _card(grid, LOCAL_RELIEF)
+    expect(card).to_have_count(1, timeout=30000)
+
+    drawer = page.locator('[data-curio-browse-drawer="true"]')
+    remove = drawer.get_by_role("button", name="Remove from account", exact=True)
+
+    # A shipped model never offers it.
+    _card(grid, DDRNET).click()
+    expect(drawer.get_by_role("heading", name="DDRNet23-Slim (street scenes)", exact=True)).to_be_visible(
+        timeout=10000
+    )
+    expect(remove).to_have_count(0)
+
+    # The imported model does, and asks first.
+    card.click()
+    expect(drawer.get_by_role("heading", name=name, exact=True)).to_be_visible(timeout=10000)
+    remove.click()
+    with page.expect_response(
+        lambda r: f"/api/packages/{LOCAL_RELIEF}?unusedOnly=true" in r.url and r.request.method == "DELETE" and r.ok,
+        timeout=30000,
+    ):
+        accept_confirm_dialog(page, title=f"Remove {name} from your account?", button="Remove")
+    expect(card).to_have_count(0, timeout=20000)
+
+    # It left the account, not only the page.
+    page.reload()
+    expect(_card(grid, DDRNET)).to_have_count(1, timeout=30000)
+    expect(card).to_have_count(0)

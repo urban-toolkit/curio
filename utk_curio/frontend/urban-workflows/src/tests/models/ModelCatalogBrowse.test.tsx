@@ -31,6 +31,7 @@ const mockApi = {
   weightsLicense: jest.fn(),
   download: jest.fn(),
   uploadArchive: jest.fn(),
+  uninstall: jest.fn(),
 };
 jest.mock("../../services/packages/packagesApi", () => ({
   packagesApi: new Proxy({}, { get: (_target, name: string) => (mockApi as any)[name] }),
@@ -101,6 +102,7 @@ beforeEach(() => {
   mockApi.installToDefaults.mockResolvedValue({ projects: [{ id: "p1", ok: true }] });
   mockApi.weightsLicense.mockResolvedValue("MIT License\n\nCityscapes terms of use.");
   mockApi.download.mockResolvedValue(undefined);
+  mockApi.uninstall.mockResolvedValue(undefined);
 });
 
 describe("the Model Catalog page", () => {
@@ -255,5 +257,77 @@ describe("the Node Catalog page", () => {
     }
     const rail = screen.getByRole("complementary", { name: "Filter packages" });
     expect(within(rail).getByRole("button", { name: /All packages/ })).toHaveTextContent("2");
+  });
+});
+
+describe("Remove from account, on both catalog pages", () => {
+  /** The account's store as a page lists it: each row says whether a
+   *  dataflow uses it. */
+  function store(...rows: unknown[]) {
+    mockApi.listInstalled.mockResolvedValue({ packages: rows });
+  }
+
+  /** The side drawer, once it describes *name*. */
+  function drawerOn(name: string): Promise<HTMLElement> {
+    return waitFor(() => {
+      const drawer = document.querySelector<HTMLElement>('[data-curio-browse-drawer="true"]');
+      expect(drawer).not.toBeNull();
+      expect(within(drawer as HTMLElement).getByRole("heading", { level: 2, name })).toBeInTheDocument();
+      return drawer as HTMLElement;
+    });
+  }
+
+  const removeButton = (scope: HTMLElement) =>
+    within(scope).queryByRole("button", { name: "Remove from account" });
+
+  test("a model of the account's own that no dataflow uses leaves the account, after asking", async () => {
+    store(ddrnetPackage({ inUse: false }), builtinPackage({ inUse: true }), importedModelPackage({ inUse: false }));
+    renderPage();
+    fireEvent.click(await gridCard("imported.xabc123def456@1"));
+    const drawer = await drawerOn("SegFormer B0 (ADE20K)");
+    fireEvent.click(removeButton(drawer) as HTMLElement);
+
+    const confirm = await screen.findByRole("dialog", { name: "Remove SegFormer B0 (ADE20K) from your account?" });
+    expect(mockApi.uninstall).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent.click(within(confirm).getByRole("button", { name: "Remove" }));
+    });
+    await waitFor(() =>
+      expect(mockApi.uninstall).toHaveBeenCalledWith("imported.xabc123def456@1", { unusedOnly: true }),
+    );
+    expect(mockShowToast).toHaveBeenCalledWith("Removed SegFormer B0 (ADE20K) from your account.", "success");
+    // The page asks the store which packages a dataflow uses.
+    expect(mockApi.listInstalled).toHaveBeenCalledWith(undefined, { usage: true });
+  });
+
+  test("a shipped model, and a model of the account's own that a dataflow uses, offer no Remove from account", async () => {
+    store(ddrnetPackage({ inUse: false }), builtinPackage({ inUse: true }), importedModelPackage({ inUse: true }));
+    renderPage();
+    fireEvent.click(await gridCard("model.curio.ddrnet23-slim@1"));
+    expect(removeButton(await drawerOn("DDRNet23-Slim (street scenes)"))).toBeNull();
+    fireEvent.click(card("imported.xabc123def456@1")!);
+    expect(removeButton(await drawerOn("SegFormer B0 (ADE20K)"))).toBeNull();
+  });
+
+  test("the Node Catalog page offers it for a node package of the account's own that no dataflow uses", async () => {
+    const own = rasterConversionPackage({
+      packageId: "imported.xnodes1234567",
+      dirName: "imported.xnodes1234567@1",
+      name: "My raster nodes",
+      inUse: false,
+    });
+    store(builtinPackage({ inUse: true }), own);
+    renderPage("/catalog/nodes");
+    fireEvent.click(await gridCard("imported.xnodes1234567@1"));
+    const drawer = await drawerOn("My raster nodes");
+    fireEvent.click(removeButton(drawer) as HTMLElement);
+
+    const confirm = await screen.findByRole("dialog", { name: "Remove My raster nodes from your account?" });
+    await act(async () => {
+      fireEvent.click(within(confirm).getByRole("button", { name: "Remove" }));
+    });
+    await waitFor(() =>
+      expect(mockApi.uninstall).toHaveBeenCalledWith("imported.xnodes1234567@1", { unusedOnly: true }),
+    );
   });
 });
