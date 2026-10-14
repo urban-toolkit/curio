@@ -400,8 +400,10 @@ saved under its title by its first run.
 
 - Charts, maps and the other nodes that draw in the browser draw while the
   dataflow is open.
-- A node that needs data only the browser makes (an Autark data or compute
-  node, a Spatial Join) runs, with the nodes below it, in a tab. The tab that
+- An Autark node that only loads data (a `data` section, with no map, plot or
+  compute step) runs on the server, like a code node.
+- A node that needs data only the browser makes (an Autark compute node, a
+  Spatial Join) runs, with the nodes below it, in a tab. The tab that
   started the run runs them by itself; otherwise opening the dataflow offers
   **Finish run**.
 - While a run goes, **Run All** stops it. The run ends before its next node

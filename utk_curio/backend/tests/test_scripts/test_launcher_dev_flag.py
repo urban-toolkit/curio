@@ -78,9 +78,16 @@ def checkout(monkeypatch, tmp_path):
     return tmp_path
 
 
-def _build(root, stamp: str | None):
+#: The Autark data compiler a build writes beside the page
+#: (``common/autk_data_compiler.COMPILER_NAME``).
+COMPILER_NAME = "autk-data-compile.cjs"
+
+
+def _build(root, stamp: str | None, *, compiler: bool = True):
     (root / "dist").mkdir(exist_ok=True)
     (root / "dist" / "index.html").write_text("<html></html>", encoding="utf-8")
+    if compiler:
+        (root / "dist" / COMPILER_NAME).write_text("the Autark data compiler", encoding="utf-8")
     if stamp is not None:
         (root / "dist" / frontend_build.BUILD_STAMP).write_text(stamp, encoding="utf-8")
 
@@ -100,6 +107,21 @@ def test_current_build_is_reused(checkout):
     _build(checkout, "production\n")
     assert frontend_build._build_stamp_reason() is None
     assert frontend_build._frontend_needs_build() is False
+
+
+def test_a_build_without_the_autark_data_compiler_rebuilds(checkout):
+    """A run on the server compiles an Autark data node with the compiler the
+    build writes beside the page, so a build made before it was part of the
+    build is not reused."""
+    from utk_curio.common.autk_data_compiler import COMPILER_NAME as written
+
+    assert written == COMPILER_NAME
+    _build(checkout, "production\n", compiler=False)
+    assert frontend_build._build_stamp_reason() == "the Autark data compiler is not built"
+    assert frontend_build._frontend_needs_build() is True
+
+    _build(checkout, "production\n")
+    assert frontend_build._build_stamp_reason() is None
 
 
 def test_unrecorded_mode_rebuilds(checkout):

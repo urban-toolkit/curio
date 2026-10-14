@@ -17,8 +17,8 @@ The first test drives the example as it ships:
 1. Its three scenarios are listed over the shared pool. Each shadow step's
    ``height_factor`` tag sits in its Widgets tab, with its value, and as a chip
    in its spec.
-2. All collapsed, Run All: the loader loads once for all, the scenarios run
-   hidden, and each box shows its outcome done. The Edit Features node reads the
+2. All collapsed, Run All: the loader loads once for all, on the server, the
+   scenarios run hidden, and each box shows its outcome done. The Edit Features node reads the
    loader's layers through the pool and hands them on without every part of
    both towers. Each shadow step's batched shader reads every building part it
    is handed: autk-grammar says it left none out (#757). A double-click expands
@@ -166,6 +166,15 @@ def _record_runs(page, data_node: str):
         page.remove_listener("response", _response)
 
     return python, loads, stop
+
+
+def _ran_on_the_server(backend: str, token: str, project_id: str) -> list[str]:
+    """The nodes the dataflow's last run executed on the server: its steps
+    that ran there and kept an output. A node a tab ran and reported keeps none."""
+    runs = api_json(f"{backend}/api/projects/{project_id}/runs?limit=1", token)["runs"]
+    assert runs, "Run All started no run on the server"
+    run = api_json(f"{backend}/api/runs/{runs[0]['id']}", token)
+    return [step["nodeId"] for step in run["steps"] if step["role"] == "run" and step["outputPath"]]
 
 
 #: How autk-grammar's console messages about a batched compute begin. It logs
@@ -483,9 +492,17 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
         _settled_done(page, node_id, node_type)
     stop()
     stop_left_out()
-    assert loads.count(True) == 1, f"the loader the three scenarios share loaded {loads}, not once"
-    assert sorted(python) == sorted([CHART, DIFFERENCE, E_EDIT]), (
-        f"Run All ran {python}: each Python node once, in and below the hidden scenarios"
+    # The run on the server loads what the three scenarios share, once, and
+    # runs each Python node it reaches; the page runs the rest.
+    on_server = _ran_on_the_server(current_server, token, project_id)
+    assert loads == [] and on_server.count(DATA) == 1, (
+        f"the loader the three scenarios share loaded {on_server.count(DATA)} time(s) on the server "
+        f"and {len(loads)} in the page, not once on the server"
+    )
+    ran = sorted(python + [node_id for node_id in on_server if node_id != DATA])
+    assert ran == sorted([CHART, DIFFERENCE, E_EDIT]), (
+        f"Run All ran {python} in the page and {on_server} on the server: each Python node once, "
+        "in and below the hidden scenarios"
     )
     _assert_towers_removed(page)
     # Every building part reaches each shadow step's shader: Back Bay's 2108,

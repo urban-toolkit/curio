@@ -16,6 +16,7 @@ import type { Run, RunEvent, RunStatus } from "../../services/runs/runsApi";
 import type { NodeOutput } from "../../hook/useNodeState";
 import type { DatasetInstallWarning } from "../../api/projectsApi";
 import { executionResultOutput, recordExecProvenance } from "../../utils/executionResult";
+import { runKeyWithShared, sharedWidgetsOf } from "../../utils/references/sharedParameters";
 import type { IOutput } from "./flowTypes";
 import type { PlayAllState } from "./usePlayAll";
 import {
@@ -116,14 +117,28 @@ export function useServerRun({
      * (UniversalNode). With *onlyIfRunning*, the node shows it only while its
      * own output still reads running: the node holds its current output, which
      * `data.output` mirrors only after it renders.
+     *
+     * Otherwise the output, and a result's run key, also go on the node's new
+     * data, as the node mirrors them once it shows the output (useNodeState):
+     * the flow copies a node's data whenever it changes a field, and a copy
+     * made before the node renders (a Data Pool handing on an input as the
+     * step lands) would keep the outcome from before.
      */
     const showOnNode = (nodeId: string, output: NodeOutput, { onlyIfRunning = false } = {}) => {
         const seq = ++outputSeqRef.current;
-        setNodes((nds) => nds.map((node) =>
-            node.id === nodeId
-                ? { ...node, data: { ...node.data, serverOutput: { seq, output, onlyIfRunning } } }
-                : node,
-        ));
+        setNodes((nds) => nds.map((node) => {
+            if (node.id !== nodeId) return node;
+            const data = { ...node.data, serverOutput: { seq, output, onlyIfRunning } };
+            if (!onlyIfRunning) {
+                data.output = output;
+                if (output.code === "success") {
+                    data.executedCode = runKeyWithShared(
+                        String(data.code ?? ""), data.widgets, sharedWidgetsOf(nds), data.selections,
+                    );
+                }
+            }
+            return { ...node, data };
+        }));
     };
 
     /**

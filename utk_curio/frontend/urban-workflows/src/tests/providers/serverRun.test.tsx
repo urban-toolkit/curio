@@ -226,6 +226,31 @@ describe("a run started on the canvas", () => {
     expect(hook.result.current.serverRunActive).toBe(true);
   });
 
+  it("puts a step's outcome on its node's data at once, a result with its run key", async () => {
+    // The node mirrors its outcome onto its data only once it renders it
+    // (useNodeState). A Data Pool handing on an input as the step lands copies
+    // the data before then, and the copy is what the canvas keeps.
+    const live = stream();
+    api.start.mockResolvedValue(run("r1", [step("edit"), step("count", { level: 1 })]));
+    const { hook, node } = harness([{ id: "edit", data: { code: "return input_0" } }, { id: "count" }]);
+    await act(async () => { await hook.result.current.startRun(); });
+
+    live.emit({ kind: "step_started", nodeId: "edit", startedAt: 1700000000 });
+    expect({ ...node("edit")!.data }.output).toEqual({ code: "exec", content: "" });
+
+    live.emit({
+      kind: "step_finished", nodeId: "edit", status: "ok", startedAt: 1700000000, finishedAt: 1700000002,
+      reply: { stdout: ["7 removed."], stderr: "", input: null, output: { path: "art-edit", dataType: "outputs" } },
+    });
+    const copy = { ...node("edit")!.data, input: { path: "art-layers", dataType: "list" } };
+    expect(copy.output).toEqual({ code: "success", content: "stdout:\n7 removed.\nSaved to file: art-edit" });
+    expect(copy.executedCode).toBe(runKeyWithShared("return input_0", undefined, [], undefined));
+
+    live.emit({ kind: "step_finished", nodeId: "count", status: "error", stderrTail: "Traceback: boom" });
+    expect(node("count")!.data.output).toMatchObject({ code: "error", content: "Traceback: boom" });
+    expect(node("count")!.data.executedCode).toBeUndefined();
+  });
+
   it("ends as its last step lands, starting the browser's part in that tick, and reports each node", async () => {
     const live = stream();
     api.start.mockResolvedValue(run("r1", [step("osm", { role: "browser" }), step("count", { level: 1 })]));

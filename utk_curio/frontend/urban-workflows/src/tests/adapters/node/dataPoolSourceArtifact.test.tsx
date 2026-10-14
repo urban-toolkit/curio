@@ -1,9 +1,9 @@
 /**
- * A Data Pool that reads several layers from one artifact names it, and a code
- * node it feeds is sent that artifact (#662): the reference an isolated
- * sandbox can stage and a run on the server passes through the pool, as for a
- * pool of one layer. A chart it feeds still gets the rows inline, with their
- * flags; a bundle of several inputs is still sent as it is.
+ * A Data Pool that reads layers from one artifact, several or one, names it,
+ * and a code node it feeds is sent that artifact (#662): the reference an
+ * isolated sandbox can stage and a run on the server passes through the pool.
+ * A chart it feeds still gets the rows inline, with their flags; a bundle of
+ * several inputs is still sent as it is.
  */
 import { renderHook, waitFor } from "@testing-library/react";
 import type { NodeBehaviorData, UseNodeStateReturn } from "../../../registry/types";
@@ -78,6 +78,37 @@ test("a pool of an Autark node's layers names the artifact it read, and a code n
 
   // A code node is sent the artifact, without the rows.
   expect(executionInputRef(emitted)).toEqual({ filename: "art_layers", dataType: "outputs" });
+});
+
+test("a pool of an Autark node's one layer names the artifact it read too, and a code node is sent that artifact", async () => {
+  // A load of one layer: the same list of records, holding one.
+  mockFetchData.mockResolvedValue({
+    dataType: "list",
+    filename: "art_roads",
+    data: [layer("table_osm_roads", "roads", { highway: "primary" })],
+  });
+  const outputCallback = jest.fn();
+  const data = {
+    nodeId: "pool-3",
+    nodeType: "curio.builtin/data-pool@1",
+    input: { path: "art_roads", dataType: "list" },
+    outputCallback,
+    propagationCallback: jest.fn(),
+    interactionsCallback: jest.fn(),
+  } as unknown as NodeBehaviorData;
+  renderHook(() => useDataPoolBehavior(data, nodeState()));
+  await waitFor(() => expect(outputCallback).toHaveBeenCalledTimes(1));
+  const [, emitted] = outputCallback.mock.calls[0];
+
+  // A chart gets the layer inline, flagged, under its name.
+  expect(emitted.dataType).toBe("geodataframe");
+  expect(emitted.layerName).toBe("table_osm_roads");
+  expect(emitted.data.features[0].properties.interacted).toBe("0");
+  expect(emitted.filename).toBe("art_roads");
+
+  // A code node is sent the artifact, as a run on the server passes the pool
+  // through to it, not rows the backend does not read.
+  expect(executionInputRef(emitted)).toEqual({ filename: "art_roads", dataType: "geodataframe" });
 });
 
 test("a pool of several inputs names no one artifact, and its bundle is sent as it is", async () => {
