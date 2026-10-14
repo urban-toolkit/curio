@@ -9,13 +9,20 @@
  */
 import cases from "../../utils/compare/comparePresets.cases.json";
 import {
+  AGGREGATE_LABELS,
+  PRESET_FIELDS,
   chartColumns,
   compareChartSpec,
   resolveChart,
   scenarioScale,
   vegaField,
 } from "../../utils/compare/comparePresets";
-import { COMPARE_PRESETS, type CompareChart, type CompareInputLabel } from "../../utils/compare/compareSettings";
+import {
+  COMPARE_AGGREGATES,
+  COMPARE_PRESETS,
+  type CompareChart,
+  type CompareInputLabel,
+} from "../../utils/compare/compareSettings";
 import type { ClassifiedColumn } from "../../utils/starterSpec";
 
 const labels = cases.labels as CompareInputLabel[];
@@ -40,6 +47,42 @@ describe("the preset specs", () => {
       expect(text).toContain('"scale":{"domain":["Baseline","Twice as tall"],"range":["#2a9d8f","#e76f51"]}');
       expect((c.spec as Record<string, unknown>).data).toBeUndefined();
     }
+  });
+});
+
+describe("combining nothing, none", () => {
+  test("Combine offers None after the aggregates", () => {
+    expect(COMPARE_AGGREGATES[COMPARE_AGGREGATES.length - 1]).toBe("none");
+    expect(AGGREGATE_LABELS.none).toBe("None");
+  });
+
+  test("every preset that combines plots each row's value as it is, under its column's name", () => {
+    const combining = COMPARE_PRESETS.filter((preset) => PRESET_FIELDS[preset].aggregate !== null);
+    expect(combining).toEqual(["bar", "grouped-bar", "line", "pie", "lollipop"]);
+    for (const preset of combining) {
+      const resolved = resolveChart({ preset, aggregate: "none" }, columns);
+      expect(resolved.aggregate).toBe("none");
+      const drawn = compareChartSpec(resolved, labels, columns);
+      const text = JSON.stringify((drawn as { spec: unknown }).spec);
+      expect(text).not.toContain('"aggregate"');
+      expect(text).not.toContain(" of hour");
+      expect(text).toContain('"field":"hour","type":"quantitative","title":"hour"');
+    }
+  });
+});
+
+describe("a pie writes each slice's value on it", () => {
+  test("in white, over its arcs, reading what its slices measure, and stacked by scenario as the arcs are", () => {
+    const drawn = compareChartSpec(resolveChart({ preset: "pie", aggregate: "count" }, columns), labels, columns);
+    const spec = (drawn as { spec: any }).spec;
+    expect(spec.encoding.theta).toEqual({ aggregate: "count", type: "quantitative", title: "Rows", stack: true });
+    expect(spec.layer).toHaveLength(2);
+    const [arcs, values] = spec.layer;
+    expect(arcs).toEqual({ mark: { type: "arc", tooltip: true } });
+    expect(values.mark.type).toBe("text");
+    expect(values.encoding.text).toEqual({ aggregate: "count", type: "quantitative", title: "Rows", format: ",.3~f" });
+    expect(values.encoding.color).toEqual({ value: "white" });
+    expect(values.encoding.detail).toEqual({ field: "scenario_name", type: "nominal" });
   });
 });
 

@@ -4,6 +4,7 @@
  * (one layer, colored by a band, a number column or `change`), and the
  * Vega-Lite table that shows a table's.
  */
+import * as difference from "../../utils/compare/compareDifference";
 import {
   CHANGES,
   CHANGE_COLORS,
@@ -15,6 +16,7 @@ import {
   joinKey,
   resolveValue,
 } from "../../utils/compare/compareDifference";
+import * as settings from "../../utils/compare/compareSettings";
 import { TABLE_COLUMNS } from "../../utils/compare/comparePresets";
 
 const LAYER = {
@@ -152,6 +154,57 @@ describe("the Autark document that draws it", () => {
 
   test("a layer with nothing to color by, plain", () => {
     expect(differenceMapDoc(undefined)).toEqual({ map: { layerRefs: [{ dataRef: "difference" }] } });
+  });
+});
+
+describe("the color scale a map of numbers takes", () => {
+  // Read through the modules, so a checkout without them fails test by test.
+  const { DIFFERENCE_SCALES, differenceScale } = difference;
+  const { DIFFERENCE_COLORS } = settings;
+  const interpolator = (doc: any) => doc.map.layerRefs[0].colorMapInterpolator;
+
+  test("Viridis first, the default, then Reds, Blues, Greens, Oranges and Purples, each with what its colors mean", () => {
+    expect(DIFFERENCE_COLORS).toEqual([
+      "interpolateViridis",
+      "interpolateReds",
+      "interpolateBlues",
+      "interpolateGreens",
+      "interpolateOranges",
+      "interpolatePurples",
+    ]);
+    expect(DIFFERENCE_SCALES.map((scale) => [scale.value, scale.text, scale.note])).toEqual([
+      ["interpolateViridis", "Viridis", "Dark purple is the lowest difference and yellow the highest."],
+      ["interpolateReds", "Reds", "Pale red is the lowest difference and dark red the highest."],
+      ["interpolateBlues", "Blues", "Pale blue is the lowest difference and dark blue the highest."],
+      ["interpolateGreens", "Greens", "Pale green is the lowest difference and dark green the highest."],
+      ["interpolateOranges", "Oranges", "Pale orange is the lowest difference and dark orange the highest."],
+      ["interpolatePurples", "Purples", "Pale purple is the lowest difference and dark purple the highest."],
+    ]);
+  });
+
+  test("the scale the node keeps, and Viridis when it keeps none or one it does not offer", () => {
+    expect(differenceScale("interpolateOranges").text).toBe("Oranges");
+    expect(differenceScale(undefined).value).toBe("interpolateViridis");
+    expect(differenceScale("interpolateRdBu").value).toBe("interpolateViridis");
+    expect(differenceScale("Reds").value).toBe("interpolateViridis");
+  });
+
+  test("a raster's or a layer's difference is drawn in it, signed or absolute, and nothing else moves", () => {
+    const [band] = differenceValues("raster", { bands: ["band_1"] });
+    const [sunlight] = differenceValues("layer", LAYER);
+    expect(interpolator(differenceMapDoc(band, false, "interpolateReds"))).toBe("interpolateReds");
+    expect(interpolator(differenceMapDoc(band, true, "interpolatePurples"))).toBe("interpolatePurples");
+    expect(interpolator(differenceMapDoc(sunlight, false, "interpolateBlues"))).toBe("interpolateBlues");
+    expect(interpolator(differenceMapDoc(band))).toBe("interpolateViridis");
+    expect(interpolator(differenceMapDoc(band, false, "interpolateRdBu"))).toBe("interpolateViridis");
+    const { colorMapInterpolator: _reds, ...reds } = (differenceMapDoc(band, false, "interpolateReds") as any).map.layerRefs[0];
+    const { colorMapInterpolator: _viridis, ...viridis } = (differenceMapDoc(band) as any).map.layerRefs[0];
+    expect(reds).toEqual(viridis);
+  });
+
+  test("a change, a category, keeps one color for each whatever the scale", () => {
+    const change = differenceValues("layer", LAYER).find((v) => v.value === "change");
+    expect(differenceMapDoc(change, false, "interpolateReds")).toEqual(differenceMapDoc(change));
   });
 });
 

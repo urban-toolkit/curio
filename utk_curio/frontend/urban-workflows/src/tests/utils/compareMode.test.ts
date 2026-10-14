@@ -164,4 +164,18 @@ describe("the node's settings", () => {
     expect(normalizeCompareSettings({ difference: { absolute: false } })).toBeUndefined();
     expect(normalizeCompareSettings({ difference: { absolute: "yes" } })).toBeUndefined();
   });
+
+  test("keep the color scale the map takes when the node offers it, and drop any other", () => {
+    expect(normalizeCompareSettings({ mode: "difference", difference: { value: "band_1", colors: "interpolateReds" } })).toEqual({
+      mode: "difference",
+      difference: { value: "band_1", colors: "interpolateReds" },
+    });
+    expect(normalizeCompareSettings({ difference: { colors: "interpolatePurples" } })).toEqual({
+      difference: { colors: "interpolatePurples" },
+    });
+    // A centered diverging scale is not one of them, nor a scale's plain name.
+    expect(normalizeCompareSettings({ difference: { colors: "interpolateRdBu" } })).toBeUndefined();
+    expect(normalizeCompareSettings({ difference: { colors: "Reds" } })).toBeUndefined();
+    expect(normalizeCompareSettings({ difference: { colors: 3 } })).toBeUndefined();
+  });
 });

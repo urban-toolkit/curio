@@ -416,3 +416,96 @@ describe("each difference's size, absolute", () => {
     expect((screen.getByRole("combobox", { name: "Change" }) as HTMLSelectElement).value).toBe("absolute");
   });
 });
+
+describe("the color scale of a map of numbers", () => {
+  const ran = { code: "success", content: "Saved to file: diff-1" };
+  const SCALES = [
+    ["interpolateViridis", "Viridis"],
+    ["interpolateReds", "Reds"],
+    ["interpolateBlues", "Blues"],
+    ["interpolateGreens", "Greens"],
+    ["interpolateOranges", "Oranges"],
+    ["interpolatePurples", "Purples"],
+  ];
+  const inDifference = (difference?: Record<string, unknown>) => ({
+    inputSlots: holding("raster"),
+    code: DIFFERENCE,
+    defaultCode: DIFFERENCE,
+    compareScenarios: { inputs: [BASE, TALL], mode: "difference", ...(difference ? { difference } : {}) },
+  });
+  const aRaster = () => {
+    mockFrames["diff-1"] = [{
+      dataType: "raster",
+      payload: { envelope: { dataType: "raster", data: { features: [{ properties: { bands: [{ id: "band_1" }] } }] } } },
+      schema: null,
+      geometryName: null,
+    }];
+  };
+  const colors = () => screen.getByRole("combobox", { name: "Colors" }) as HTMLSelectElement;
+
+  test("Colors offers Viridis, then the plain scales, and a pick is kept with no run", async () => {
+    aRaster();
+    mount(inDifference(), nodeState(ran));
+    await screen.findByTestId("autark-map");
+    expect(Array.from(colors().options).map((option) => [option.value, option.textContent])).toEqual(SCALES);
+    expect(colors().value).toBe("interpolateViridis");
+    fireEvent.change(colors(), { target: { value: "interpolateReds" } });
+    expect(mockUpdateDataNode).toHaveBeenCalledWith(
+      COMPARE,
+      expect.objectContaining({
+        compareScenarios: { inputs: [BASE, TALL], mode: "difference", difference: { colors: "interpolateReds" } },
+      }),
+    );
+    expect(mockMarkDirty).toHaveBeenCalled();
+    // The scale only draws the map: the code is as it was, and the node does not go stale.
+    expect(writtenCode()).toBe(DIFFERENCE);
+    expect(mockMarkNodeStale).not.toHaveBeenCalled();
+  });
+
+  test("the map draws in the scale it keeps, and its note says what the colors mean", async () => {
+    aRaster();
+    mount(inDifference({ colors: "interpolateReds" }), nodeState(ran));
+    await screen.findByTestId("autark-map");
+    await waitFor(() => expect(mockApply).toHaveBeenCalled());
+    expect(JSON.parse(mockApply.mock.calls.at(-1)![0]).map.layerRefs[0]).toEqual({
+      dataRef: "band_1_change",
+      title: "band_1 change",
+      getFnv: "band_1",
+      getFnvType: "quantitative",
+      colorMapInterpolator: "interpolateReds",
+    });
+    expect(screen.getByText("Pale red is the lowest difference and dark red the highest.")).not.toBeNull();
+    expect(screen.queryByText("Dark purple is the lowest difference and yellow the highest.")).toBeNull();
+    expect(colors().value).toBe("interpolateReds");
+    // Viridis again is the default, so the setting goes.
+    fireEvent.change(colors(), { target: { value: "interpolateViridis" } });
+    expect(mockUpdateDataNode).toHaveBeenLastCalledWith(
+      COMPARE,
+      expect.objectContaining({ compareScenarios: { inputs: [BASE, TALL], mode: "difference" } }),
+    );
+  });
+
+  test("a layer colored by a number column offers it, and by its change, a category, does not", async () => {
+    mockFrames["diff-1"] = [{
+      dataType: "geodataframe",
+      payload: { type: "FeatureCollection", features: [{ properties: { osm_id: 1, change: "changed", sunlight: -2 } }] },
+      schema: { osm_id: "int64", change: "object", sunlight: "float64" },
+      geometryName: "geometry",
+    }];
+    const { view } = mount({ ...inDifference({ colors: "interpolateBlues" }), inputSlots: holding("geodataframe") }, nodeState(ran));
+    await screen.findByTestId("autark-map");
+    await waitFor(() => expect(mockApply).toHaveBeenCalled());
+    expect(JSON.parse(mockApply.mock.calls.at(-1)![0]).map.layerRefs[0].colorMapInterpolator).toBe("interpolateBlues");
+    expect(colors().value).toBe("interpolateBlues");
+    expect(screen.getByText("Pale blue is the lowest difference and dark blue the highest.")).not.toBeNull();
+    view.unmount();
+
+    mockApply.mockClear();
+    mount({ ...inDifference({ value: "change", colors: "interpolateBlues" }), inputSlots: holding("geodataframe") }, nodeState(ran));
+    await screen.findByTestId("autark-map");
+    await waitFor(() => expect(mockApply).toHaveBeenCalled());
+    expect(JSON.parse(mockApply.mock.calls.at(-1)![0]).map.layerRefs[0].colorMapInterpolator).toBe("schemeTableau10");
+    expect((screen.getByRole("combobox", { name: "Color by" }) as HTMLSelectElement).value).toBe("change");
+    expect(screen.queryByRole("combobox", { name: "Colors" })).toBeNull();
+  });
+});
