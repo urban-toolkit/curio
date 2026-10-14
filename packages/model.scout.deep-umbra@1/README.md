@@ -1,4 +1,4 @@
-# `scout.shadow@1`: SCOUT Shadow
+# `model.scout.deep-umbra@1`: Deep Umbra (accumulated shadows)
 
 SCOUT's accumulated shadow simulation, ported from
 [SCOUT](https://github.com/urban-toolkit/scout)
@@ -6,11 +6,28 @@ SCOUT's accumulated shadow simulation, ported from
 model, predicts how much of a season's day the ground spends in shadow, from the
 height mosaic of [SCOUT Raster Conversion](../scout.raster-conversion@1/README.md).
 
+This is a model package: its weights, its node and the module the node imports.
+The [Model Catalog](../../docs/MODEL-CATALOG.md) lists it.
+
+| Part | What it is | License |
+|---|---|---|
+| `models/deep_umbra.onnx` | Deep Umbra's weights | Used with the permission of SCOUT's authors, published by SCOUT (urban-toolkit/scout) |
+| `sources/accumulated-shadow.py` | The Accumulated Shadow node's cell | MIT |
+| `sources/deep_umbra/` | The module the cell imports: `node_outputs.py` (the node's input and output) and `deep_umbra.py` (SCOUT's functions) | MIT |
+
 ## Nodes
 
 | Canonical id | Label | Input | Output |
 |---|---|---|---|
-| `scout.shadow/accumulated-shadow` | Accumulated Shadow | The height mosaic of Rasterize Buildings, or its `(mosaic, tiles)` output | One RASTER: the accumulated shadow in minutes |
+| `model.scout.deep-umbra/accumulated-shadow` | Accumulated Shadow | The height mosaic of Rasterize Buildings, or its `(mosaic, tiles)` output | One RASTER: the accumulated shadow in minutes |
+
+The node's cell:
+
+```python
+from deep_umbra import accumulated_shadow
+model = curio_load_model("model.scout.deep-umbra")
+return accumulated_shadow(input_0, season=[!! season !!], model=model, output_file=curio_output_file)
+```
 
 ## Settings
 
@@ -49,14 +66,13 @@ at the edge of the raster sees no buildings beyond it.
 
 ## The model
 
-The model is Deep Umbra in the [Model Catalog](../../docs/MODEL-CATALOG.md),
-`model.scout.deep-umbra@1`, an ONNX file exported from SCOUT's TensorFlow
+Deep Umbra's weights are an ONNX file exported from SCOUT's TensorFlow
 checkpoint by
 [`scripts/scout/export_deep_umbra.py`](../../scripts/scout/export_deep_umbra.py).
-The node loads it with `curio_load_model("model.scout.deep-umbra")` and runs it
-with onnxruntime, one tile at a time.
+The node loads them with `curio_load_model("model.scout.deep-umbra")` and runs
+them with onnxruntime, one tile at a time.
 
-A pip install downloads the model from GitHub the first time the node runs.
+A pip install downloads the weights from GitHub the first time the node runs.
 
 ## A dataflow
 

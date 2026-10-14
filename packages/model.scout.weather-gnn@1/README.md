@@ -1,4 +1,4 @@
-# `scout.routing@1`: SCOUT Routing
+# `model.scout.weather-gnn@1`: SCOUT weather GNN (weather at road nodes)
 
 SCOUT's weather-aware routing, ported from
 [SCOUT](https://github.com/urban-toolkit/scout) (`backend/models/routing`).
@@ -6,11 +6,20 @@ It finds routes between two points over a roads layer, weighing each road by
 the weather a graph network predicts on it from a WRF forecast, and gives each
 route's duration, distance and rain and wind exposure.
 
+This is a model package: the graph network's weights, its node and the module
+the node imports. The [Model Catalog](../../docs/MODEL-CATALOG.md) lists it.
+
+| Part | What it is | License |
+|---|---|---|
+| `models/weather_gnn.onnx` | The weather GNN's weights | Used with the permission of SCOUT's authors, published by SCOUT (urban-toolkit/scout) |
+| `sources/weather-routing.py` | The Weather Routing node's cell | MIT |
+| `sources/weather_routing/` | The module the cell imports: SCOUT's routing (`weather_routing.py`), the road graph (`road_graph.py`), the weights of each road (`weight_calculation.py`) and isochrones (`calculate_isochrones.py`) | MIT |
+
 ## Nodes
 
 | Canonical id | Label | Input | Output |
 |---|---|---|---|
-| `scout.routing/weather-routing` | Weather Routing | The layers an Autark node loads from OpenStreetMap, whose roads layer, `table_osm_roads`, it reads; or a roads GeoDataFrame on its own | `(routes, metrics)`: one GeoDataFrame and one table |
+| `model.scout.weather-gnn/weather-routing` | Weather Routing | The layers an Autark node loads from OpenStreetMap, whose roads layer, `table_osm_roads`, it reads; or a roads GeoDataFrame on its own | `(routes, metrics)`: one GeoDataFrame and one table |
 
 ## Settings
 
@@ -58,9 +67,11 @@ WRF-Chem forecast over Chicago, an hour a step from 2025-07-06 00:00 UTC to
 2025-07-08 00:00 UTC. A start time is read in the time zone the files declare,
 Chicago's, so the forecast runs from 2025-07-05 19:00 to 2025-07-07 19:00 there;
 the trip reads the hour it starts in, and each 15 minutes of it the hour it is
-in by then. The weather at each road node comes from SCOUT's graph network, the
-Model Catalog model `model.scout.weather-gnn`, which the node loads with
-`curio_load_model` and runs with onnxruntime.
+in by then. The weather at each road node comes from SCOUT's graph network, this
+package's weights, which the node loads with
+`curio_load_model("model.scout.weather-gnn")` and runs with onnxruntime. They
+are SCOUT's `rain_model.pth`, exported to ONNX by
+[`scripts/scout/export_weather_gnn.py`](../../scripts/scout/export_weather_gnn.py).
 
 ## A dataflow
 
@@ -70,12 +81,25 @@ Model Catalog model `model.scout.weather-gnn`, which the node loads with
 ```
 
 An Autark node that only loads data hands on its layers, each under its table
-name, in EPSG:3395. The node's code reads the roads layer through a layer chip,
+name, in EPSG:3395. The node's cell reads the roads layer through a layer chip,
 which gives it as a GeoDataFrame:
 
 ```python
+from weather_routing import calculate_weather_route
+
+# The Data Catalog's SCOUT WRF group, a NetCDF file per variable.
+weather = {
+    "RAIN": curio_data_path("data.scout.wrf-rain"),
+    "T2": curio_data_path("data.scout.wrf-t2"),
+    "WSPD10": curio_data_path("data.scout.wrf-wspd10"),
+    "WDIR10": curio_data_path("data.scout.wrf-wdir10"),
+    "RH2": curio_data_path("data.scout.wrf-rh2"),
+}
+model = curio_load_model("model.scout.weather-gnn")
 return calculate_weather_route(
     [!! input_0:table_osm_roads !!],
+    weather,
+    model,
     ...
 )
 ```

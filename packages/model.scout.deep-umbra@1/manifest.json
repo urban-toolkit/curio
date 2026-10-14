@@ -15,17 +15,35 @@
       "rasterio": ">=1.4"
     }
   },
-  "description": "SCOUT's Deep Umbra shadow model, ported from SCOUT (urban-toolkit/scout): the Accumulated Shadow node predicts how long the ground stays in shadow over a season's day from the zoom-16 height mosaic of SCOUT Raster Conversion, as a raster in minutes that an Autark map draws and a Raster Statistics node sums up. The model is the Model Catalog's Deep Umbra, model.scout.deep-umbra@1, which ships in the Curio repository but not in the pip package.",
-  "id": "scout.shadow",
+  "description": "SCOUT's Deep Umbra shadow model, ported from SCOUT (urban-toolkit/scout): a generator network that predicts how much of a season's day the ground spends in shadow, from zoom-16 building height tiles, the tile's latitude and the season. Its Accumulated Shadow node runs it on the height mosaic of SCOUT Raster Conversion and returns the shadow in minutes, a raster that an Autark map draws and a Raster Statistics node sums up. The weights are SCOUT's TensorFlow checkpoint ckpt-44, exported to ONNX by scripts/scout/export_deep_umbra.py; they ship in the Curio repository but not in the pip package.",
+  "id": "model.scout.deep-umbra",
+  "kind": "model",
   "license": "MIT",
-  "name": "SCOUT Shadow",
+  "model": {
+    "entry": "models/deep_umbra.onnx",
+    "homepage": "https://github.com/urban-toolkit/scout",
+    "input": {
+      "dtype": "float32",
+      "height": 512,
+      "layout": "NHWC",
+      "scale": 1.0,
+      "width": 512
+    },
+    "labels": [],
+    "license": "Used with the permission of SCOUT's authors",
+    "publisher": "SCOUT (urban-toolkit/scout)",
+    "runtime": "onnx",
+    "sizeBytes": 10534492,
+    "type": "image-to-image"
+  },
+  "name": "Deep Umbra (accumulated shadows)",
   "permissions": [],
   "publisher": "Curio",
   "readOnly": true,
   "templates": [
     {
       "category": "computation",
-      "description": "SCOUT's accumulated shadow simulation: Deep Umbra, a generator network, predicts for each zoom-16 map tile how much of a season's day each cell spends in shadow, from the heights of the buildings on the tile and its eight neighbours, the tile's latitude and the season. Input: the height mosaic of Rasterize Buildings, or its (mosaic, tiles) output: a RASTER of building heights in metres in EPSG:3395 on the zoom-16 tile grid. Output: one RASTER of the accumulated shadow in minutes on the input's grid, for an Autark map. SCOUT's metrics, the mean and median accumulated shadow over the ground, are a Raster Statistics node's on this raster, with the heights on its input_1 as the mask and the ground where the height is under 1.08 m. The model is the Model Catalog's Deep Umbra, model.scout.deep-umbra.",
+      "description": "SCOUT's accumulated shadow simulation: Deep Umbra, a generator network, predicts for each zoom-16 map tile how much of a season's day each cell spends in shadow, from the heights of the buildings on the tile and its eight neighbours, the tile's latitude and the season. Input: the height mosaic of Rasterize Buildings, or its (mosaic, tiles) output: a RASTER of building heights in metres in EPSG:3395 on the zoom-16 tile grid. Output: one RASTER of the accumulated shadow in minutes on the input's grid, for an Autark map, band band_1. SCOUT's metrics, the mean and median accumulated shadow over the ground, are a Raster Statistics node's on this raster, with the heights on its input_1 as the mask and the ground where the height is under 1.08 m. The Widgets tab sets the season. The model is this package's, model.scout.deep-umbra.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,

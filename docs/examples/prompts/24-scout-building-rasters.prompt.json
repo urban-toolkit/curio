@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/24-scout-building-rasters.json",
-    "sha256": "9281d56248de898888b8c64e96da7529a032a2f37cb316bc0bc0668c0856f897",
+    "sha256": "76c693e3b88899955f0a15e3ba9f64d82af166c5d77aac927530ecf9b76b6628",
     "walkthrough": "docs/examples/24-scout-building-rasters.md"
   },
   "prompt": "Load SCOUT's Chicago Loop buildings, with their heights in metres, from the Data Catalog, and mark them as buildings so a map can raise each footprint to its height. Draw them in 3D on an Autark map coloured by height. Then turn their heights into zoom 16 map tiles and a height mosaic with SCOUT's building rasterizer, leaving its settings at their defaults, and draw the mosaic on a second Autark map. Keep the height mosaic as a raster on its own, run SCOUT's Deep Umbra shadow model on it for a summer day, and draw the minutes of shadow on a third Autark map. Finally take the shadow's mean and median over the ground, where the height raster is under 1.08 m. The rasterizer and the shadow model are not part of the standard node set, so whatever provides them needs installing first.",
@@ -14,8 +14,8 @@
       "data.scout.loop-buildings"
     ],
     "packages": [
-      "scout.raster-conversion@1",
-      "scout.shadow@1"
+      "model.scout.deep-umbra@1",
+      "scout.raster-conversion@1"
     ],
     "paths": []
   },
@@ -65,14 +65,14 @@
       },
       {
         "ref": "analysis3",
-        "type": "scout.raster-conversion/rasterize-buildings",
+        "type": "model.scout.deep-umbra/accumulated-shadow",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis4",
-        "type": "scout.shadow/accumulated-shadow",
+        "type": "scout.raster-conversion/rasterize-buildings",
         "role": "analysis",
         "executable": true,
         "hasContent": true
@@ -87,7 +87,7 @@
       },
       {
         "from": "analysis1",
-        "to": "analysis4",
+        "to": "analysis3",
         "kind": "data"
       },
       {
@@ -97,7 +97,7 @@
       },
       {
         "from": "loader1",
-        "to": "analysis3",
+        "to": "analysis4",
         "kind": "data"
       },
       {
@@ -107,7 +107,7 @@
       },
       {
         "from": "analysis3",
-        "to": "analysis1",
+        "to": "analysis2",
         "kind": "data"
       },
       {
@@ -117,7 +117,7 @@
       },
       {
         "from": "analysis4",
-        "to": "analysis2",
+        "to": "analysis1",
         "kind": "data"
       }
     ],
@@ -153,13 +153,13 @@
       "outputKind": "dataframe"
     },
     {
-      "ref": "analysis3",
+      "ref": "analysis4",
       "mustMention": [
         "tile"
       ]
     },
     {
-      "ref": "analysis4",
+      "ref": "analysis3",
       "mustMention": [
         "shadow"
       ]

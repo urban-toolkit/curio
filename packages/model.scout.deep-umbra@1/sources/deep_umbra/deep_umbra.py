@@ -5,8 +5,8 @@
 Only the model: what SCOUT feeds its generator, the generator, and what SCOUT
 makes of its output. Deep Umbra is a generator network that SCOUT restores with
 TensorFlow from its ``tf_model/ckpt-44`` checkpoint. Curio runs the same
-generator as an ONNX file, the Model Catalog model ``model.scout.deep-umbra@1``
-that ``scripts/scout/export_deep_umbra.py`` exported, through onnxruntime. So
+generator as an ONNX file, this package's weights ``models/deep_umbra.onnx``,
+which ``scripts/scout/export_deep_umbra.py`` exported, through onnxruntime. So
 every function here takes the loaded model (``curio_load_model``, whose
 ``run`` feeds the graph by input name) where SCOUT's took the generator.
 
