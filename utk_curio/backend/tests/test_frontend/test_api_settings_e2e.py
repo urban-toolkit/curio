@@ -469,10 +469,10 @@ def _delegate_tail(capability: str, inputs: dict) -> str:
 
 
 def test_each_agent_runs_on_the_configuration_chosen_for_it(signed_in):
-    """The Dataflow Builder on one scripted configuration, Node Content Builder
-    on another, both chosen in the panel. A Builder run that delegates the
-    content shows each model in the scripted provider's call log, and the
-    choices survive a reload with no key on the page."""
+    """The Dataflow Builder on one scripted configuration, the Node Builder
+    on another, both chosen in the panel. A Dataflow Builder run that
+    delegates the content shows each model in the scripted provider's call
+    log, and the choices survive a reload with no key on the page."""
     session = signed_in
     made = {}
     for label, model, key in (
@@ -488,7 +488,7 @@ def test_each_agent_runs_on_the_configuration_chosen_for_it(signed_in):
     _open_api_settings(page)
     _show_tab(page, "Agent configuration")
     models = page.get_by_test_id("agent-models-section")
-    for agent, label in (("Dataflow Builder", "Scripted A"), ("Node Content Builder", "Scripted B")):
+    for agent, label in (("Dataflow Builder", "Scripted A"), ("Node Builder", "Scripted B")):
         with page.expect_response(
             lambda r: r.url.endswith("/api/agents/llm/assignments") and r.request.method == "PUT",
             timeout=30000,
@@ -502,7 +502,7 @@ def test_each_agent_runs_on_the_configuration_chosen_for_it(signed_in):
     page.reload()
     models = page.get_by_test_id("agent-models-section")
     expect(models.get_by_label("Dataflow Builder", exact=True)).to_have_value(made["Scripted A"]["id"])
-    expect(models.get_by_label("Node Content Builder", exact=True)).to_have_value(made["Scripted B"]["id"])
+    expect(models.get_by_label("Node Builder", exact=True)).to_have_value(made["Scripted B"]["id"])
     expect(models).to_contain_text("Runs on Scripted B · scripted-b")
     for key in ("sk-scripted-a-", "sk-scripted-b-"):
         assert key not in page.content()

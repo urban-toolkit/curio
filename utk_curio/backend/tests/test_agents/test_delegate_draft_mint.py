@@ -296,8 +296,8 @@ class TestLargeLookSpecDelegation:
                 "editor, no Python, no network. " + "detail " * 700
             ),
             "findings": [
-                {"title": "Weather in Paris",
-                 "content": "68-77°F, rain likely — https://weather.test/paris"},
+                {"title": "Cool roofs in Chicago",
+                 "content": "cooler roof surfaces in summer: https://heat.test/chicago-cool-roofs"},
             ],
         }
         tail = _delegate_tail(inputs=json.dumps(look_spec))
@@ -307,7 +307,8 @@ class TestLargeLookSpecDelegation:
             json.dumps({"packageDraft": _draft()}),
             "Proposed — the note awaits your review.",
         ])
-        run = _run(client, token, pid, att_id, message="what's the weather in Paris?")
+        run = _run(client, token, pid, att_id,
+                   message="how much do cool roofs lower summer surface temperatures in Chicago?")
         assert run.status_code == 200, run.get_data(as_text=True)
         parts = run.get_json()["content"]
         proposal = next(p for p in parts if p["type"] == "proposal")
@@ -424,7 +425,7 @@ class TestDecoratedRequestReply:
     (delegations: null, parts: [suggestedPrompts], fence visible in chat)."""
 
     LIVE_SHAPE_REPLY = (
-        "Based on the search results, the current weather in Paris is 73F.\n\n"
+        "Based on the search results, cool roofs keep Chicago roofs 30F cooler in summer.\n\n"
         "I will place this finding as a note on your canvas.\n\n"
         "```curio.v1\n"
         '{"delegateRequest": {"capability": "node.kind.author", '
@@ -445,7 +446,7 @@ class TestDecoratedRequestReply:
             "Proposed — the note awaits your review.",
         ])
         run = _run(client, token, pid, att_id,
-                   message="What's the weather in Paris?")
+                   message="How much do cool roofs lower summer surface temperatures in Chicago?")
         assert run.status_code == 200, run.get_data(as_text=True)
         parts = run.get_json()["content"]
         # The request EXECUTED: delegation trace + minted proposal, and no
@@ -464,17 +465,17 @@ class TestFindingsReconciliation:
     because the findings never reached the child. The runtime now marries
     the parent's facts with the child's look."""
 
-    WEATHER_NOTES = [
-        {"title": "Weather in Paris",
-         "content": "73°F–76°F, mostly cloudy, light rain — https://w.test/paris",
+    FINDING_NOTES = [
+        {"title": "Cool roofs in Chicago",
+         "content": "30°F cooler roof surfaces at midday in summer: https://heat.test/cool-roofs",
          "color": "yellow"},
     ]
 
     def test_notes_extraction_shapes(self):
         from utk_curio.backend.app.agents.application.turns.delegates import _notes_from_delegate_inputs
 
-        rows = _notes_from_delegate_inputs({"notes": self.WEATHER_NOTES})
-        assert rows[0]["content"].startswith("73°F")
+        rows = _notes_from_delegate_inputs({"notes": self.FINDING_NOTES})
+        assert rows[0]["content"].startswith("30°F")
         assert rows[0]["appearance"] == {"backgroundColor": "yellow"}
         # findings alias; appearance-shaped color; malformed rows skipped.
         rows = _notes_from_delegate_inputs({"findings": [
@@ -490,13 +491,13 @@ class TestFindingsReconciliation:
         draft["nodes"] = child_nodes
         tail = ('```curio.v1\n{"delegateRequest": {"capability": "node.kind.author", '
                 '"inputs": {"requirements": "post-it look", "notes": '
-                + json.dumps(self.WEATHER_NOTES) + "}}}\n```")
+                + json.dumps(self.FINDING_NOTES) + "}}}\n```")
         att_id, calls = _setup(client, token, pid, monkeypatch, replies=[
             tail,
             json.dumps({"packageDraft": draft}),
             "Proposed.",
         ])
-        run = _run(client, token, pid, att_id, message="weather in Paris?")
+        run = _run(client, token, pid, att_id, message="cool roofs in Chicago?")
         assert run.status_code == 200, run.get_data(as_text=True)
         parts = run.get_json()["content"]
         proposal = next(p for p in parts if p["type"] == "proposal")
@@ -526,8 +527,8 @@ class TestFindingsReconciliation:
         assert "runtime-reconciled" in calls[2][-1]["content"]
         notes = self._apply_and_read_notes(client, user, token, pid, att_id, proposal)
         assert len(notes) == 1
-        assert "73°F" in notes[0]["content"]
-        assert notes[0]["title"] == "Weather in Paris"
+        assert "30°F" in notes[0]["content"]
+        assert notes[0]["title"] == "Cool roofs in Chicago"
         assert notes[0]["metadata"]["appearance"]["backgroundColor"] == "#fef3c0"
 
     def test_child_filler_content_is_replaced_verbatim(self, client, user_and_token,
@@ -546,7 +547,7 @@ class TestFindingsReconciliation:
                                               child_nodes=filler)
         notes = self._apply_and_read_notes(client, user, token, pid, att_id, proposal)
         assert len(notes) == 1  # the findings define the note set, not the filler
-        assert "73°F" in notes[0]["content"]
+        assert "30°F" in notes[0]["content"]
         assert all("Post-it note!" not in n["content"] for n in notes)
         assert all(n.get("title") != "Reminder" for n in notes)
 
@@ -575,8 +576,8 @@ class TestDraftCorrectionRounds:
     The live failure: the Researcher's first ``node.kind.author`` delegation
     came back unparseable, the runtime discarded it and said "refine the
     delegation inputs and try again" with no parse error attached, and the
-    parent's idea of refining was to re-delegate under a DIFFERENT package id
-    — so one question about the weather in Paris produced ``curio.notes`` and
+    parent's idea of refining was to re-delegate under a DIFFERENT package id,
+    so one research question produced ``curio.notes`` and
     then ``curio.postits``, near-identical, in a single run. Plans have had
     correction rounds since dev/54 and generated node content since dev/67;
     this closes the gap.
@@ -922,6 +923,73 @@ class TestAuthoringDelegateReuseEvidence:
             p["type"] != "proposal"
             for p in _run(client, token, pid, att_id).get_json()["content"]
         )
+
+
+class TestRecommendationEvidence:
+    """A delegated package.recommend, the Package Builder's mode, is tool-less
+    too, so its rule to name only rows it was shown needs the rows: it
+    receives the existingPackages an authoring delegate does, as its only
+    candidates."""
+
+    RECOMMEND_TAIL = (
+        '```curio.v1\n{"delegateRequest": {"capability": "package.recommend", '
+        '"inputs": {"intent": "notes on the canvas"}}}\n```'
+    )
+
+    def test_a_delegated_recommendation_receives_the_existing_packages(
+            self, client, user_and_token, tmp_curio):
+        from utk_curio.backend.app.agents.application.turns import delegates
+
+        user, token = user_and_token
+        pid = _project(client, token)
+        key = _ukey(client, user)
+        _write_store_package(key, "curio.notes@1", "curio.notes", "Simple Notes",
+                             ["note-surface"])
+
+        enriched = delegates._enriched_delegate_inputs(
+            key, pid, {}, "package.recommend", {"intent": "notes on the canvas"},
+        )
+        assert enriched["intent"] == "notes on the canvas"  # the model's keys survive
+        rows = {p["dirName"]: p for p in enriched["existingPackages"]["packages"]}
+        assert rows["curio.notes@1"]["templates"] == ["curio.notes/note-surface"]
+        assert rows["curio.notes@1"]["installedInProject"] is False
+        assert "the only packages you may recommend" in enriched["existingPackages"]["note"]
+        # A recommendation authors nothing, so no build contract rides along.
+        assert "buildRequestContract" not in enriched
+        # And a parent-supplied view is never overwritten.
+        assert delegates._enriched_delegate_inputs(
+            key, pid, {}, "package.recommend", {"existingPackages": "mine"},
+        )["existingPackages"] == "mine"
+
+    def test_the_recommendation_child_receives_them_in_its_framed_inputs(
+            self, client, user_and_token, tmp_curio, monkeypatch):
+        from utk_curio.backend.app.agents.domain import builtin
+
+        user, token = user_and_token
+        pid = _project(client, token)
+        key = _ukey(client, user)
+        _write_store_package(key, "curio.notes@1", "curio.notes", "Simple Notes",
+                             ["note-surface"])
+        att_id, calls = _setup(client, token, pid, monkeypatch, parent=NODE_BUILDER, replies=[
+            self.RECOMMEND_TAIL,
+            "curio.notes@1: the notes need it, and this project does not have it yet.",
+            "curio.notes@1 fits; I can propose installing it.",
+        ])
+        body = _run(client, token, pid, att_id).get_json()
+
+        entry = next(p for p in body["content"] if p["type"] == "delegation")
+        assert (entry["coord"], entry["capability"], entry["status"]) == (
+            PACKAGE_BUILDER, "package.recommend", "ok")
+        framed = calls[1][1]["content"]
+        assert "[delegated task from agent.node-builder@1.0.0" in framed
+        assert '"existingPackages"' in framed
+        assert "curio.notes@1" in framed and "curio.notes/note-surface" in framed
+        # The child ran the recommendation mode, not the authoring chat.
+        child_system = calls[1][0]["content"]
+        assert builtin.read_prompt_text(PACKAGE_BUILDER, "package.recommend").strip() in child_system
+        assert builtin.read_prompt_text(PACKAGE_BUILDER, "instruction").strip() not in child_system
+        # A recommendation mints nothing.
+        assert all(p["type"] != "proposal" for p in body["content"])
 
 
 class TestReuseInsteadOfAuthoring:

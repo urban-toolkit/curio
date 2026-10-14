@@ -178,9 +178,9 @@ class TestAnEvaluationNeverSeesItsExample:
         dfb = "agent.dataflow-builder@1.0.0"
         assert line in examples.attached_block(dfb, self.PLAIN, {"kind": "canvas"}, IMAGES)
         assert line not in (examples.attached_block(dfb, marked, {"kind": "canvas"}, IMAGES) or "")
-        ncb, capability = "agent.node-content-builder@1.0.0", "node.content.generate"
-        assert line in examples.delegated_block(ncb, capability, self.PLAIN, {"subtask": IMAGES})
-        assert line not in (examples.delegated_block(ncb, capability, marked, {"subtask": IMAGES}) or "")
+        nb, capability = "agent.node-builder@1.0.0", "node.content.generate"
+        assert line in examples.delegated_block(nb, capability, self.PLAIN, {"subtask": IMAGES})
+        assert line not in (examples.delegated_block(nb, capability, marked, {"subtask": IMAGES}) or "")
 
     def test_the_live_tool_marks_the_project_it_creates(self):
         from utk_curio.backend.app.agents.evaluation import authorization
@@ -234,13 +234,14 @@ class TestWhoTakesThem:
         assert taking == {
             ("agent.dataflow-builder", None),
             ("agent.node-builder", None),
-            ("agent.node-content-builder", None),
+            ("agent.node-builder", "node.content.generate"),
             ("agent.connection-builder", None),
             ("agent.dataflow-reader", "workflow.suggest"),
         }
-        # The Node Content Builder's Autark variant is the same agent.
-        ncb = "agent.node-content-builder@1.0.0"
-        assert builtin.gets_worked_examples(ncb, "node.content.generate")
+        # The Autark variant replaces the instruction of the same content
+        # mode, so a run under it takes them too.
+        nb = "agent.node-builder@1.0.0"
+        assert builtin.gets_worked_examples(nb, "node.content.generate")
         assert not builtin.gets_worked_examples("agent.someone-else@1.0.0")
 
     def test_the_manifests_do_not_change(self):
@@ -373,7 +374,7 @@ class TestTheBlockReachesRuns:
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
         user, token = user_and_token
-        system = self._delegate(client, token, user, monkeypatch, "agent.node-content-builder@1.0.0",
+        system = self._delegate(client, token, user, monkeypatch, "agent.node-builder@1.0.0",
                                 "node.content.generate", {"subtask": IMAGES})
         kinds = [slot["kind"] for slot in system["slots"]]
         assert kinds[-1] == "runtime" and "tool-protocol" not in kinds

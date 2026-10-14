@@ -56,8 +56,9 @@ CODE_NODE_ID = "agent-e2e-code"
 
 # Read tools that are cheap, deterministic and - the point - reach nothing
 # outside this process. web.search / web.fetch are deliberately absent: they
-# really open sockets (app/agents/egress.py), and agent.node-researcher and
-# agent.researcher both declare a local read tool as well, so nothing is lost.
+# really open sockets (app/agents/egress.py), and agent.researcher, the card
+# that declares them, is scripted on its node.create and declares
+# dataflow.read and node.read as well, so nothing is lost.
 #
 # discovery.search is absent for the same reason, with one qualification worth
 # knowing: this harness exports CURIO_DISCOVERY_FIXTURES, so in THIS stack it
@@ -85,8 +86,10 @@ SAFE_READ_TOOLS = (
 # dataflow.orchestrate - minted a single node instead of a plan. node.create
 # sits ahead of node.content.write for the same reason and one more: applying it
 # puts a NEW NODE on the canvas, which is the most visible proof an agent did
-# something. The spread this produces is deliberate - a plan, two node
-# creations, one content replacement.
+# something. The spread this produces is deliberate: a plan and two node
+# creations. Since node content is the Node Builder's mode, no card's first
+# match is node.content.write; TestAgentReviewCard (test_agent_chat_e2e.py)
+# applies a content replacement in the browser.
 MINTABLE_TOOLS = ("dataflow.plan.write", "node.create", "node.content.write")
 
 # What each mint writes, so the apply assertion and the scripted params cannot
@@ -532,9 +535,9 @@ AUTK_DOCUMENT = {
 
 def test_an_autark_document_is_written_under_its_schema(current_server: str):
     """On an endpoint that takes a reply schema, the content the Node Builder
-    delegates for an Autark node is held to the Autark document's schema, and
-    the review minted at the node's own agent carries the document decoded
-    from that reply."""
+    delegates to its own content mode for an Autark node is held to the
+    Autark document's schema, and the review minted at the node's own agent
+    carries the document decoded from that reply."""
     from utk_curio.backend.app.agents.application import reply_schemas
 
     require_project_page()
@@ -546,9 +549,9 @@ def test_an_autark_document_is_written_under_its_schema(current_server: str):
         "content": "", "in": "DEFAULT", "out": "DEFAULT", "goal": "map the points",
         "metadata": {"keywords": []},
     })
+    # Nothing else is installed: node.content.generate is the Node Builder's
+    # own mode, so the agent attached here is the delegate too.
     token, base, attachment_id = _attached(spec, current_server, "autkschema", project_spec=project)
-    api_json(f"{base}/install", token, method="POST",
-             payload={"coord": f"agent.node-content-builder@{builtin.BUILTIN_VERSION}"})
     constrained, _ = reply_schemas.autk_reply_schema(reply_schemas.FLAVOR_STRICT).encode(AUTK_DOCUMENT)
     script_agent_replies(
         current_server,
@@ -567,6 +570,7 @@ def test_an_autark_document_is_written_under_its_schema(current_server: str):
     assert "held to the Autark document's schema" in captured_system_prompt(current_server, call=1)
     (entry,) = [p for p in run["content"] if p.get("type") == "delegation"]
     assert entry["status"] == "ok", entry
+    assert entry["coord"] == f"agent.node-builder@{builtin.BUILTIN_VERSION}", entry
     turns = api_json(f"{base}/attachments/{entry['attachmentId']}/session", token)["turns"]
     proposals = [part for turn in turns for part in (turn.get("content") or [])
                  if part.get("type") == "proposal"]

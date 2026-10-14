@@ -838,9 +838,9 @@ describe("AgentChatPanel delegation entries (memo dev/72)", () => {
   const delegation = {
     type: "delegation" as const,
     capability: "research.verify",
-    coord: "agent.node-researcher@1.0.0",
-    name: "Node Researcher",
-    category: "evaluate",
+    coord: "agent.researcher@1.0.0",
+    name: "Researcher",
+    category: "node",
     attachmentId: "att-r",
     status: "ok" as const,
     summary: "verified — 200",
@@ -854,7 +854,7 @@ describe("AgentChatPanel delegation entries (memo dev/72)", () => {
       delegateExists: (id) => id === "att-r",
     });
     expect(screen.getByText("research.verify")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Open Node Researcher's chat" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open Researcher's chat" }));
     expect(onOpenAgentChat).toHaveBeenCalledWith("att-r");
   });
 
@@ -866,7 +866,7 @@ describe("AgentChatPanel delegation entries (memo dev/72)", () => {
     });
     expect(screen.getByText("research.verify")).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /open node researcher/i }),
+      screen.queryByRole("button", { name: /open researcher/i }),
     ).toBeNull();
   });
 });

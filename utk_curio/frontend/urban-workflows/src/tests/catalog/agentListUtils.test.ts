@@ -83,7 +83,7 @@ describe("sortAgentCards", () => {
 });
 
 describe("requiresAgents helpers (dev/106)", () => {
-  const ncb = { id: "agent.node-content-builder", name: "Node Content Builder", coord: "agent.node-content-builder@1.0.0", visible: true, installedInProject: false };
+  const nodeBuilder = { id: "agent.node-builder", name: "Node Builder", coord: "agent.node-builder@1.0.0", visible: true, installedInProject: false };
 
   it("a leaf card installs plainly", () => {
     expect(missingRequiredAgents(card())).toEqual([]);
@@ -98,18 +98,18 @@ describe("requiresAgents helpers (dev/106)", () => {
   });
 
   it("names what the click adds when a dependency is missing", () => {
-    const c = card({ requiresAgents: [ncb] });
+    const c = card({ requiresAgents: [nodeBuilder] });
     expect(installLabel(c)).toBe("Add to project (+1 required)");
-    expect(installTitle(c)).toBe("Also adds Node Content Builder (required)");
+    expect(installTitle(c)).toBe("Also adds Node Builder (required)");
   });
 
   it("a satisfied dependency counts as a plain Add to project", () => {
-    const c = card({ requiresAgents: [{ ...ncb, installedInProject: true }] });
+    const c = card({ requiresAgents: [{ ...nodeBuilder, installedInProject: true }] });
     expect(installLabel(c)).toBe("Add to project");
   });
 
   it("an unresolvable dependency is called out (the server will refuse)", () => {
-    const c = card({ requiresAgents: [{ ...ncb, id: "agent.ghost", name: "agent.ghost", coord: null, visible: false }] });
+    const c = card({ requiresAgents: [{ ...nodeBuilder, id: "agent.ghost", name: "agent.ghost", coord: null, visible: false }] });
     expect(installLabel(c)).toBe("Add to project (+1 required)");
     expect(installTitle(c)).toContain("Cannot add: requires agent.ghost");
   });

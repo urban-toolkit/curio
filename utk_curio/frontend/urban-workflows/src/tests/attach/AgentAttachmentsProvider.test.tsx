@@ -626,7 +626,7 @@ describe("AgentAttachmentsProvider apply→canvas bridge (memo dev/48 §3.3)", (
       attachmentId: "a1",
       proposalId: "p1",
       status: "applied",
-      installedCoord: "agent.node-content-builder@1.0.0",
+      installedCoord: "agent.node-builder@1.0.0",
     });
     renderProvider();
     fireEvent.click(screen.getByText("open"));
@@ -642,7 +642,7 @@ describe("AgentAttachmentsProvider apply→canvas bridge (memo dev/48 §3.3)", (
       attachmentId: "a1",
       proposalId: "p1",
       status: "applied",
-      installedCoord: "agent.node-content-builder@1.0.0",
+      installedCoord: "agent.node-builder@1.0.0",
     });
     renderProvider();
     fireEvent.click(screen.getByText("open"));
@@ -659,8 +659,8 @@ describe("AgentAttachmentsProvider delegate activity lines (memo dev/48)", () =>
     const seen: string[][] = [];
     api.runAttachmentStream.mockImplementation(async (_p, _a, _m, onDelta, onEvent) => {
       onEvent?.("delegate_requested", { capability: "node.content.generate" });
-      onEvent?.("delegate_started", { capability: "node.content.generate", coord: "agent.node-content-builder@1.0.0" });
-      onEvent?.("delegate_result", { capability: "node.content.generate", coord: "agent.node-content-builder@1.0.0", status: "ok", durationMs: 12 });
+      onEvent?.("delegate_started", { capability: "node.content.generate", coord: "agent.node-builder@1.0.0" });
+      onEvent?.("delegate_result", { capability: "node.content.generate", coord: "agent.node-builder@1.0.0", status: "ok", durationMs: 12 });
       onDelta("done");
       return { reply: "done", executionId: "e9", usage: null };
     });
@@ -682,7 +682,7 @@ describe("AgentAttachmentsProvider delegate activity lines (memo dev/48)", () =>
     });
     const flat = seen.flat();
     expect(flat).toContain("delegating node.content.generate …");
-    expect(flat).toContain("agent.node-content-builder@1.0.0 · ok");
+    expect(flat).toContain("agent.node-builder@1.0.0 · ok");
     // Transient: cleared once the turn finalizes.
     expect(seen[seen.length - 1]).toEqual([]);
   });
@@ -911,7 +911,7 @@ describe("AgentAttachmentsProvider streamed solve (dev/63)", () => {
     renderProvider();
     fireEvent.click(screen.getByText("solve"));
     await waitFor(() => expect(api.solveAttachmentStream).toHaveBeenCalled());
-    const reason = "specialist not installed: Node Content Builder is not installed in this project";
+    const reason = "specialist not installed: Node Builder is not installed in this project";
     act(() => {
       emit("node_result", { nodeId: "n1", status: "failed", error: reason });
       emit("node_result", { nodeId: "n2", status: "failed", error: reason });

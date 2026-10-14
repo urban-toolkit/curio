@@ -39,9 +39,15 @@ Agent ids always begin with **`agent.`**, which keeps them apart from node packa
 
 ### What ships with Curio
 
-**Thirteen agents ship with Curio.** Ten of them are the catalog: **Chat**, **Dataflow Builder**, **Dataset Finder**, **Node Builder**, **Node Content Builder**, **Node Researcher**, **Package Builder**, **Package Recommendation**, **Researcher** and **Connection Builder**. Chat is the one agent for conversation: it explains a node or the whole dataflow, diagnoses errors, and helps you define what to build.
+**Ten agents ship with Curio.** Seven of them are the catalog: **Chat**, **Dataflow Builder**, **Dataset Finder**, **Node Builder**, **Package Builder**, **Researcher** and **Connection Builder**. Chat is the one agent for conversation: it explains a node or the whole dataflow, diagnoses errors, and helps you define what to build.
 
-The other three work only on behalf of those ten: the **Dataflow Planner** plans, refreshes and checks a dataflow's tasks and extracts and binds the keywords that describe it, the **Dataflow Reader** explains a whole dataflow and suggests its next steps, and the **Generated Content Evaluator** checks generated node content against its goal. They are never listed, added or attached, and a catalog agent can delegate to one without it being added to the dataflow.
+**Node Builder** also writes a node's content. The model decides when: your message goes to Node Builder's chat prompt, and when the node's code or spec needs writing, the model asks for its content [mode](#modes), whose prompt runs as a second call. You review the change it writes.
+
+**Researcher** also checks facts. Ask it whether a dataset id, an endpoint or a field name is real, and it answers in its chat with what it verified, one labeled finding per line, and places no notes. When Node Builder or Dataset Finder needs a fact checked, Researcher's checking mode answers it as a second call.
+
+**Package Builder** also recommends packages. In its chat it reuses first: a catalog package that already does what you need is proposed for install, for your review, before anything new is authored. When Connection Builder, Node Builder or Dataflow Builder needs packages recommended, Package Builder's recommendation mode answers as a second call, from the packages your account has.
+
+The other three work only on behalf of those seven: the **Dataflow Planner** plans, refreshes and checks a dataflow's tasks and extracts and binds the keywords that describe it, the **Dataflow Reader** explains a whole dataflow and suggests its next steps, and the **Generated Content Evaluator** checks generated node content against its goal. They are never listed, added or attached, and a catalog agent can delegate to one without it being added to the dataflow.
 
 Every agent declares one **category**, which the browse page's rail counts:
 
@@ -50,8 +56,8 @@ Every agent declares one **category**, which the browse page's rail counts:
 | `node` | One node: its content, its errors, its output. |
 | `canvas` | The whole dataflow: planning, explanation, suggestion. |
 | `data` | Datasets and data shape. |
-| `evaluate` | Review, validation, and scoring. |
-| `package` | Node packages: recommending and resolving them. |
+| `evaluate` | Review, validation, and scoring. No catalog agent ships in it; the Generated Content Evaluator does. |
+| `package` | Node packages: recommending, resolving and authoring them. |
 
 Each category has its own colour and glyph in the interface, so a card is identifiable at a glance.
 
@@ -148,7 +154,7 @@ Each attachment has its own chat transcript and its own **intent**, the editable
 
 When an agent proposes a change to your dataflow, it does not apply it. The proposal appears as a **review card**, and applying it is a separate click, which first checks that the target has not changed since the proposal. Dismissing it leaves nothing behind.
 
-A reply of Node Builder, Dataflow Builder or Node Content Builder that carries no review card says **No changes were made to the canvas** under it. A web address the egress policy refused shows its reason under the reply. So does any other tool call that failed, unless a later call of the same tool in that reply succeeded.
+A reply of Node Builder or Dataflow Builder that carries no review card says **No changes were made to the canvas** under it. A web address the egress policy refused shows its reason under the reply. So does any other tool call that failed, unless a later call of the same tool in that reply succeeded.
 
 ### Required agents
 
@@ -220,7 +226,7 @@ The **Agent configuration** tab chooses which configuration answers. Its **Defau
 
 A choice that names nothing, such as a removed configuration or a Deployment default the operator withdrew, refuses the run with **Open API Settings**, which opens the **Agent configuration** tab on that agent's row; it never falls back to another configuration. Removing a configuration sends the agents chosen for it back to the default, and its confirmation names them.
 
-A Solve of the Dataflow Builder runs on the Builder's configuration, and writes each node's content through Node Content Builder and each source through Dataset Finder, each on its own choice. The choices a Solve needs are checked before it starts, and one that names nothing refuses it. After a dataset selection, the node is built on its builder's configuration, not the Dataset Finder's.
+A Solve of the Dataflow Builder runs on the Builder's configuration, and writes each node's content through Node Builder's content mode and each source through Dataset Finder, each on its own choice. The choices a Solve needs are checked before it starts, and one that names nothing refuses it. After a dataset selection, the node is built on its builder's configuration, not the Dataset Finder's.
 
 The choice is per account, for every version of the agent and every project. A shared project carries none, so it runs on the configurations of whoever runs it. An agent's details show what it runs on, with **Change in API Settings**, which opens the **Agent configuration** tab on its row; a reply's status line says, on hover, which configuration and model answered it; and a delegated task in the chat names what the delegate ran on.
 
@@ -293,7 +299,7 @@ A minimal, complete manifest:
 | `capabilities` | Yes | Non-empty list of `{ id, contractVersion }`: the contracts this agent implements. A capability that also names an `instruction` is a mode; see [Modes](#modes). |
 | `provenance` | Yes | `{ publisher, license?, trust? }`; `trust` is one of `built-in`, `global`, `imported`. |
 | `purpose`, `roles` | | One-line description and display roles. |
-| `delegatesTo` | | Other `agent.` ids this agent may call, in preference order. An entry `{ "id", "capabilities": [...] }` delegates only those capabilities of that agent. A preference only: it grants nothing and never adds or imports anything. |
+| `delegatesTo` | | Other `agent.` ids this agent may call, in preference order. An entry `{ "id", "capabilities": [...] }` delegates only those capabilities of that agent. An entry may name the agent itself only in that form, with capabilities that are its own [modes](#modes). A preference only: it grants nothing and never adds or imports anything. |
 | `requiresAgents` | | A subset of `delegatesTo`: the agents this one cannot work without. See [Required agents](#required-agents). |
 | `prompts` | | Prompt files by package-relative `path`, `sha256`, and declared `variables`. Absolute paths and `..` are rejected. |
 | `compatibleTargets` | | Where the agent can attach: `{ kind: node\|canvas\|connection, requires: [...] }`. For `node`, `requires` lists the node kinds it accepts, such as `data-loading`; empty means any node. |
@@ -332,6 +338,14 @@ A capability can run an instruction of its own. Add the prompt under `prompts` a
 ```
 
 When another agent delegates `node.output.interpret`, the run uses `prompts/interpret_output.md` in place of the `instruction` prompt, and receives the [catalog settings](#catalog-settings) named in that capability's `requiredConfig` as well as those in `inputs.requiredConfig`. An attached run, and a delegated run of a capability without an `instruction` of its own, uses the `instruction` prompt. A setting key Curio does not define is skipped.
+
+An agent can also hand work to one of its own modes. List the agent itself in `delegatesTo`, naming only those capabilities:
+
+```json
+"delegatesTo": [{ "id": "agent.my-explainer", "capabilities": ["node.output.interpret"] }]
+```
+
+A chat with the agent then runs the `instruction` prompt, and when the model asks for `node.output.interpret`, that mode runs as a second call, with no tools, and its answer comes back to the chat. A task for no node opens no chat of its own: it shows in the agent's reply.
 
 A definition that declares `node.content.generate` may also declare an `autk-grammar` prompt. A run that writes an Autark document on a provider that takes a reply schema uses it in place of the capability's instruction, and holds the reply to the Autark schema. Without that prompt, its runs are never held to the schema.
 

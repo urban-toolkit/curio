@@ -694,12 +694,17 @@ PROMPT_TEMPLATES: tuple[str, ...] = (
     "package_contract",
     "package_recommendation_instruction",
     "research_instruction",
+    "research_verify_rules",
     "researcher_notes_instruction",
 )
 #: The Package Builder's backend contract: a fragment the Package Builder's
 #: instruction includes whole, and a delegated Package Builder receives as an
 #: input (``turns/delegates.py``).
 PACKAGE_CONTRACT = "package_contract"
+#: The Researcher's rules for checking a fact: a fragment both of its prompts
+#: include whole, its chat (``researcher_notes_instruction``) and its
+#: ``research.verify`` mode (``research_instruction``).
+RESEARCH_VERIFY_RULES = "research_verify_rules"
 
 #: A marker: a field name, then the argument after a colon when it takes one.
 _MARKER_RE = re.compile(r"\{\{([a-z][a-z0-9_.]*)(?::([^{}]+))?\}\}")
@@ -928,6 +933,11 @@ def _package_contract(_src: _Sources) -> str:
     return render_prompt(PACKAGE_CONTRACT).rstrip("\n")
 
 
+def _research_verify_rules(_src: _Sources) -> str:
+    """The Researcher's rules for checking a fact, rendered, to include whole."""
+    return render_prompt(RESEARCH_VERIFY_RULES).rstrip("\n")
+
+
 _NUMBER_WORDS = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
 
 
@@ -1034,6 +1044,7 @@ PROMPT_FIELDS: dict[str, PromptField] = {
     "backend.server_network_permission": PromptField(_server_network_permission),
     "backend.data_dir_env": PromptField(_data_dir_env),
     "package.contract": PromptField(_package_contract),
+    "research.verify_rules": PromptField(_research_verify_rules),
     "vega.schema_url": PromptField(lambda _src: VEGA_SCHEMA_URL),
     "vega.starter_ladder": PromptField(lambda _src: render_starter_ladder(VEGA_STARTER_LADDER)),
     "autk.starter_ladder": PromptField(lambda _src: render_starter_ladder(AUTK_STARTER_LADDER)),

@@ -309,8 +309,7 @@ class TestGuests:
 #: built-ins whose configuration can be chosen.
 _CARDS = {
     "agent.dataflow-builder", "agent.dataset-finder", "agent.node-builder",
-    "agent.node-content-builder", "agent.node-researcher", "agent.package-builder",
-    "agent.package-recommendation", "agent.researcher", "agent.connection-builder",
+    "agent.package-builder", "agent.researcher", "agent.connection-builder",
     "agent.chat-agent",
 }
 
@@ -335,16 +334,16 @@ class TestAChoicePerAgent:
     def test_a_choice_is_saved_listed_and_answers(self, client, user_and_token, tmp_curio):
         _, token = user_and_token
         config_id = _create(client, token).get_json()["config"]["id"]
-        chosen = self._choose(client, token, {"agent.node-content-builder": config_id})
+        chosen = self._choose(client, token, {"agent.node-builder": config_id})
         assert chosen.status_code == 200, chosen.get_json()
         listing = chosen.get_json()
-        assert listing["assignments"] == {"agent.node-content-builder": config_id}
-        row = next(r for r in listing["agents"] if r["id"] == "agent.node-content-builder")
+        assert listing["assignments"] == {"agent.node-builder": config_id}
+        row = next(r for r in listing["agents"] if r["id"] == "agent.node-builder")
         assert row["choice"] == config_id
         assert (row["answers"]["source"], row["answers"]["configId"]) == ("assigned", config_id)
         assert KEY not in chosen.get_data(as_text=True)
         # null clears it, and the agent follows its rules again.
-        cleared = self._choose(client, token, {"agent.node-content-builder": None}).get_json()
+        cleared = self._choose(client, token, {"agent.node-builder": None}).get_json()
         assert cleared["assignments"] == {}
 
     def test_the_deployment_default_is_choosable_only_while_there_is_one(
@@ -395,10 +394,10 @@ class TestAChoicePerAgent:
         keep = _create(client, token, label="Keep").get_json()["config"]["id"]
         gone = _create(client, token, label="Gone").get_json()["config"]["id"]
         self._choose(client, token, {
-            "agent.node-content-builder": gone, "agent.chat-agent": gone, "agent.researcher": keep,
+            "agent.node-builder": gone, "agent.chat-agent": gone, "agent.researcher": keep,
         })
         deleted = client.delete(f"{BASE}/configs/{gone}", headers=_auth(token)).get_json()
-        assert deleted["moved"] == ["agent.chat-agent", "agent.node-content-builder"]
+        assert deleted["moved"] == ["agent.chat-agent", "agent.node-builder"]
         assert llm_configs.default_store().choices(_user_dir_key(user)) == {"agent.researcher": keep}
 
     def test_a_hosted_guest_chooses_nothing(self, client, db, tmp_curio, monkeypatch):

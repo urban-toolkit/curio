@@ -6,6 +6,10 @@ both ids until #549 gave them plainly made-up ones (``agent.my-explainer``,
 ``agent.my-debugger``). A fixture with a retired id reads as a test of an
 agent Curio no longer has, so the scan covers the backend and frontend test
 trees.
+
+Three more left on 2026-10-14, each taken over by a card that runs its prompt
+as a mode: the Node Builder writes node content, the Researcher checks facts,
+and the Package Builder recommends packages.
 """
 
 from __future__ import annotations
@@ -26,6 +30,9 @@ SKIP_DIRS = {"node_modules", "__pycache__", ".pytest_cache"}
 RETIRED = {
     "agent." + "node-explainer": "agent.chat-agent",
     "agent." + "debug-agent": "agent.chat-agent",
+    "agent." + "node-content-builder": "agent.node-builder",
+    "agent." + "node-researcher": "agent.researcher",
+    "agent." + "package-recommendation": "agent.package-builder",
 }
 
 

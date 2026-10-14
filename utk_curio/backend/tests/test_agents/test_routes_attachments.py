@@ -85,7 +85,7 @@ class TestPruneAttachmentsOnDelete:
 
     def test_node_attachment_pruned_when_its_node_is_deleted(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
-        node_coord = "agent.node-content-builder@1.0.0"  # node-only
+        node_coord = "agent.connection-builder@1.0.0"  # node or connection, never the canvas
         canvas_coord = "agent.dataflow-builder@1.0.0"  # canvas-only
         for c in (node_coord, canvas_coord):
             client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": c}, headers=_auth(token))
@@ -152,7 +152,9 @@ class TestAttachCompatibility:
 
     def test_node_only_agent_rejected_on_canvas(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
-        coord = "agent.node-content-builder@1.0.0"  # node-only
+        # The Connection Builder attaches to a node or a connection: the one
+        # card that never attaches to the canvas.
+        coord = "agent.connection-builder@1.0.0"
         self._install(client, token, alice_project, coord)
         r = self._attach(client, token, alice_project, coord, {"kind": "canvas"})
         assert r.status_code == 400
@@ -467,7 +469,7 @@ class TestSession:
 
         self._mock_provider(monkeypatch, ["a1"])
         user, token = user_and_token
-        coord = "agent.node-content-builder@1.0.0"
+        coord = "agent.node-builder@1.0.0"
         client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token))
         client.put(
             f"/api/projects/{alice_project}",
@@ -555,6 +557,6 @@ class TestAttachRequiresGating:
         pid = self._project_with_nodes(client, token)
         r = self._attach(
             client, token, pid, {"kind": "node", "targetId": "comp1"},
-            coord="agent.node-content-builder@1.0.0",
+            coord="agent.node-builder@1.0.0",
         )
         assert r.status_code == 201, r.get_data(as_text=True)

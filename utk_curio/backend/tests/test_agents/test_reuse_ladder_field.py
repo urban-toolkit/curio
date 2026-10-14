@@ -47,7 +47,7 @@ def _create_on_the_postit():
     # The node type the model saw on the canvas — a compute template.
     return _tool("node.create", {
         "nodeType": "curio.postits/post-it-note@1",
-        "content": "whats the weather in Paris?",
+        "content": "how much do cool roofs cool Chicago?",
         "title": "Question",
         "appearance": {"backgroundColor": "yellow"},
     })
@@ -164,14 +164,19 @@ def _apply(client, token, project_id, att_id, proposal_id):
     )
 
 
+#: The research example the notes carry (owner, 2026-10-13).
+QUESTION = "how much do cool roofs lower summer surface temperatures in Chicago?"
+ANSWER = "### Cool roofs in Chicago\n- **Roof surface:** ~30°F cooler"
+
+
 def _install_with_notes():
     # dev/105 A3: the ENLIST request carries the findings (the AUTHOR shape).
     return _tool("package.install", {
         "dirName": "curio.notes@1",
         "reason": "notes need a note template",
         "notes": [
-            {"title": "Question", "content": "what's the weather in Paris?", "color": "yellow"},
-            {"title": "Weather in Paris", "content": "### Weather in Paris\n- **Now:** ~21°C"},
+            {"title": "Question", "content": QUESTION, "color": "yellow"},
+            {"title": "Cool roofs in Chicago", "content": ANSWER},
         ],
     })
 
@@ -200,7 +205,7 @@ class TestFieldReplay:
         (install,) = [p for p in run.get_json()["content"] if p["type"] == "proposal"]
         assert install["tool"] == "package.install"
         assert install["summary"] == "Install package · Simple Notes · 2 notes to follow"
-        assert "Question · what's the weather in Paris?" in install["preview"]
+        assert f"Question · {QUESTION}" in install["preview"]
         assert len(_spec_nodes(client, token, pid)) == 0
 
         # Apply the install: the package is enlisted, the notes are QUEUED (not
@@ -233,7 +238,7 @@ class TestFieldReplay:
             assert len(_spec_nodes(client, token, pid)) == i + 1
         notes = [n for n in _spec_nodes(client, token, pid) if "note-surface" in n["type"]]
         assert [(n["title"], n["metadata"]["appearance"]) for n in notes] == [
-            ("Question", yellow), ("Weather in Paris", green),
+            ("Question", yellow), ("Cool roofs in Chicago", green),
         ]
 
     def test_variant_c_enlisted_notes_land_titled_and_colored(
@@ -250,8 +255,8 @@ class TestFieldReplay:
         user, token = user_and_token
         pid = _project(client, token)
         att_id, calls = _setup(client, token, pid, monkeypatch, replies=[
-            _create_note("Question", "what's the weather in Paris?"),
-            _create_note("Weather in Paris", "### Weather in Paris\n- **Now:** ~21°C"),
+            _create_note("Question", QUESTION),
+            _create_note("Cool roofs in Chicago", ANSWER),
             "Two notes await your review.",
         ])
         key = _user_dir_key(user)
@@ -270,7 +275,7 @@ class TestFieldReplay:
         green = node_appearance.normalize_appearance({"backgroundColor": "green"})
         notes = [n for n in _spec_nodes(client, token, pid) if "note-surface" in n["type"]]
         assert [(n.get("title"), n["metadata"]["appearance"]) for n in notes] == [
-            ("Question", yellow), ("Weather in Paris", green),
+            ("Question", yellow), ("Cool roofs in Chicago", green),
         ]
         assert "goal" not in notes[0]  # title is the header, not the purpose line
 
@@ -289,7 +294,7 @@ class TestFieldReplay:
             _read_canvas(),            # round 1 — productive
             _create_on_the_postit(),   # refused: free correction 1
             _install_bare_id(),        # round 2 — RESOLVES to curio.notes@1 and mints
-            "The weather in Paris is warm; the notes await your review above.",
+            "Cool roofs run cooler in Chicago; the notes await your review above.",
         ])
         _field_store(_user_dir_key(user), pid, with_notes=True)
         nodes_before = len(_spec_nodes(client, token, pid))

@@ -78,7 +78,7 @@ describe("ConfirmDialog", () => {
           <>
             <p>Add Dataflow Builder to this dataflow?</p>
             <ul>
-              <li>Node Content Builder (not installed)</li>
+              <li>Node Builder (not installed)</li>
             </ul>
           </>
         }
@@ -87,7 +87,7 @@ describe("ConfirmDialog", () => {
       />,
     );
 
-    expect(screen.getByText("Node Content Builder (not installed)")).toBeInTheDocument();
+    expect(screen.getByText("Node Builder (not installed)")).toBeInTheDocument();
     expect(dialog().querySelector("li")).not.toBeNull();
   });
 

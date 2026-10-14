@@ -21,7 +21,6 @@ from utk_curio.backend.tests.test_agents import test_routes_turns as routes_turn
 
 NB = "agent.node-builder@1.0.0"
 DF = "agent.dataset-finder@1.0.0"
-NCB = "agent.node-content-builder@1.0.0"
 DL = "curio.builtin/data-loading"
 CA = "curio.builtin/computation-analysis"
 
@@ -364,7 +363,7 @@ class TestModelGrounding:
         # The grant reaches the run: the tail's tool list offers it.
         assert "- models.search: " in calls[0][0]["content"]
 
-    def test_node_content_builder_searches_the_model_catalog(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_the_node_builder_on_a_node_searches_the_model_catalog(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         _, token = user_and_token
         att, calls = routes_proposals.TestReviewProposals()._setup(
             client, token, alice_project, monkeypatch, replies=[_models_tail(), "ok"],
@@ -574,7 +573,7 @@ class TestSolveSourceGrounding:
         return "Plan.\n```curio.v1\n" + json.dumps({"dataflowPlan": plan}) + "\n```"
 
     def _applied_plan(self, client, user, token, project, monkeypatch, child_reply):
-        _install(client, token, project, "agent.dataflow-builder@1.0.0", NCB)
+        _install(client, token, project, "agent.dataflow-builder@1.0.0", NB)
         att = _attach(client, token, project, "agent.dataflow-builder@1.0.0")
 
         def _reply(calls):
@@ -690,7 +689,7 @@ class TestSolveRequestedDatasets:
             f'dataset_path = curio_data_path("{asked if load_the_asked else other}")\n'
             "df = pd.read_csv(dataset_path)\nreturn df"
         )
-        _install(client, token, project, "agent.dataflow-builder@1.0.0", NCB)
+        _install(client, token, project, "agent.dataflow-builder@1.0.0", NB)
         att = _attach(client, token, project, "agent.dataflow-builder@1.0.0")
         _script(monkeypatch, [
             lambda calls: loader if "[delegated task" in calls[-1][-1]["content"] else plan_tail,
@@ -755,7 +754,7 @@ class TestSolveRequestedDatasets:
 class TestContentReviewMintInheritsTheGate:
     def test_delegated_generation_with_a_fabricated_path_mints_no_review(self, client, user_and_token, tmp_curio, project, monkeypatch):
         _, token = user_and_token
-        _install(client, token, project, NB, NCB)
+        _install(client, token, project, NB)
         att = _attach(client, token, project, NB, target={"kind": "node", "targetId": "n1"})
         calls = _script(monkeypatch, [
             _delegate_tail("node.content.generate", {"nodeId": "n1", "intent": "load the demographics"}),

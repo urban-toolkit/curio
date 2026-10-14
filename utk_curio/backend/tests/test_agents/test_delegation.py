@@ -32,8 +32,14 @@ def _delegate_tail(capability="node.content.generate", inputs='{"intent": "sum c
 
 
 NB = "agent.node-builder@1.0.0"
-NCB = "agent.node-content-builder@1.0.0"
+RS = "agent.researcher@1.0.0"
 DF = "agent.dataset-finder@1.0.0"
+
+
+def _verify_tail(inputs='{"intent": "check the column"}'):
+    """The Node Builder asking the Researcher to check a fact: a delegate that
+    is another agent, unlike node content, which is the Node Builder's own mode."""
+    return _delegate_tail(capability="research.verify", inputs=inputs)
 
 
 def _project(client, token):
@@ -47,13 +53,15 @@ def _project(client, token):
     return resp.get_json()["id"]
 
 
-def _setup(client, token, project_id, monkeypatch, *, install_delegate=True, replies=None):
-    """Install + attach Node Builder (canvas), optionally install the
-    delegate, and script the provider: parent and child calls share one mock
-    (the services-bound symbol), dispatched in call order."""
+def _setup(client, token, project_id, monkeypatch, *, delegate=None, install_delegate=True, replies=None):
+    """Install + attach Node Builder (canvas), optionally install *delegate*,
+    another agent its run hands work to, and script the provider: parent and
+    child calls share one mock (the services-bound symbol), dispatched in call
+    order. The default script hands node content to the Node Builder's own
+    mode, which needs nothing installed beside it."""
     client.post(f"/api/agents/projects/{project_id}/install", json={"coord": NB}, headers=_auth(token))
-    if install_delegate:
-        client.post(f"/api/agents/projects/{project_id}/install", json={"coord": NCB}, headers=_auth(token))
+    if delegate is not None and install_delegate:
+        client.post(f"/api/agents/projects/{project_id}/install", json={"coord": delegate}, headers=_auth(token))
     att_id = client.post(
         f"/api/agents/projects/{project_id}/attachments",
         json={"coord": NB, "target": {"kind": "canvas"}},
@@ -90,17 +98,18 @@ class TestRequiredClosure:
 
     DFB = "agent.dataflow-builder@1.0.0"
 
-    def test_dataflow_builder_closure_is_the_three_server_invoked_agents(
+    def test_dataflow_builder_closure_is_the_two_server_invoked_agents(
         self, client, user_and_token, tmp_curio
     ):
         # dev/126: the closure is walked in declaration order, root first, and
         # the Dataset Finder ↔ Node Builder delegation cycle is traversed once
-        # (the Dataset Finder requires nothing, so nothing recurses).
+        # (the Dataset Finder requires nothing, so nothing recurses). Node
+        # content is the Node Builder's own mode, so it adds no third agent.
         user, _ = user_and_token
         coords, missing = delegation.required_closure(
             _user_dir_key(user), builtin.get_builtin_manifest(self.DFB)
         )
-        assert coords == [NCB, DF, NB]
+        assert coords == [DF, NB]
         assert missing == []
 
     def test_node_builder_closure_is_the_dataset_finder(self, client, user_and_token, tmp_curio):
@@ -113,7 +122,7 @@ class TestRequiredClosure:
     def test_leaf_has_empty_closure(self, client, user_and_token, tmp_curio):
         user, _ = user_and_token
         coords, missing = delegation.required_closure(
-            _user_dir_key(user), builtin.get_builtin_manifest(NCB)
+            _user_dir_key(user), builtin.get_builtin_manifest(RS)
         )
         assert (coords, missing) == ([], [])
 
@@ -123,40 +132,41 @@ class TestRequiredClosure:
 
         root = dataclasses.replace(
             builtin.get_builtin_manifest(self.DFB),
-            delegates_to=["agent.node-content-builder", "agent.nowhere"],
-            requires_agents=["agent.node-content-builder", "agent.nowhere"],
+            delegates_to=["agent.researcher", "agent.nowhere"],
+            requires_agents=["agent.researcher", "agent.nowhere"],
         )
         coords, missing = delegation.required_closure(_user_dir_key(user), root)
-        assert coords == [NCB]
+        assert coords == [RS]
         assert missing == ["agent.nowhere"]
 
     def test_transitive_and_cycle_safe(self, client, user_and_token, tmp_curio, monkeypatch):
         user, _ = user_and_token
         import dataclasses
 
-        ncb = builtin.get_builtin_manifest(NCB)
-        # NCB (pretend) requires NB, NB (pretend) requires NCB — a cycle.
-        fake_ncb = dataclasses.replace(ncb, delegates_to=["agent.node-builder"], requires_agents=["agent.node-builder"])
+        rs = builtin.get_builtin_manifest(RS)
+        # The Researcher (pretend) requires NB, and NB (pretend) requires the
+        # Researcher: a cycle.
+        fake_rs = dataclasses.replace(rs, delegates_to=["agent.node-builder"], requires_agents=["agent.node-builder"])
         nb = builtin.get_builtin_manifest(NB)
-        fake_nb = dataclasses.replace(nb, delegates_to=["agent.node-content-builder"], requires_agents=["agent.node-content-builder"])
+        fake_nb = dataclasses.replace(nb, delegates_to=["agent.researcher"], requires_agents=["agent.researcher"])
         df = builtin.get_builtin_manifest(DF)
         table = {
-            "agent.node-content-builder": (NCB, fake_ncb),
+            "agent.researcher": (RS, fake_rs),
             "agent.node-builder": (NB, fake_nb),
             "agent.dataset-finder": (DF, df),
         }
         monkeypatch.setattr(delegation, "find_visible", lambda key, aid: table.get(aid, (None, None)))
         coords, missing = delegation.required_closure(_user_dir_key(user), builtin.get_builtin_manifest(self.DFB))
         # Declaration order, each id visited once despite the pretend cycle.
-        assert coords == [NCB, DF, NB]
+        assert coords == [DF, NB, RS]
         assert missing == []
 
     def test_required_by_names_installed_dependents(self, client, user_and_token, tmp_curio):
         user, _ = user_and_token
         key = _user_dir_key(user)
-        assert delegation.required_by(key, [self.DFB, NCB], NCB) == [self.DFB]
-        assert delegation.required_by(key, [NCB], NCB) == []
-        assert delegation.required_by(key, [self.DFB, NCB], self.DFB) == []
+        assert delegation.required_by(key, [self.DFB, NB], NB) == [self.DFB]
+        assert delegation.required_by(key, [NB], NB) == []
+        assert delegation.required_by(key, [self.DFB, NB], self.DFB) == []
 
 
 class TestResolution:
@@ -169,33 +179,45 @@ class TestResolution:
         user, token = user_and_token
         key = _user_dir_key(user)
         pid = _project(client, token)
-        client.post(f"/api/agents/projects/{pid}/install", json={"coord": NCB}, headers=_auth(token))
+        client.post(f"/api/agents/projects/{pid}/install", json={"coord": RS}, headers=_auth(token))
+        r = delegation.resolve(key, pid, self._manifest(key), "research.verify")
+        assert r.outcome == "ok"
+        assert r.coord == RS
+
+    def test_its_own_mode_resolves_to_itself(self, client, user_and_token, tmp_curio):
+        # Node content is the Node Builder's own mode: its entry naming itself
+        # resolves to the Node Builder installed in this project.
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        pid = _project(client, token)
+        client.post(f"/api/agents/projects/{pid}/install", json={"coord": NB}, headers=_auth(token))
         r = delegation.resolve(key, pid, self._manifest(key), "node.content.generate")
         assert r.outcome == "ok"
-        assert r.coord == NCB
+        assert r.coord == NB
+        assert r.manifest.capability("node.content.generate").instruction == "node.content.generate"
 
     def test_visible_but_not_installed_is_missing_specialist(self, client, user_and_token, tmp_curio):
         user, token = user_and_token
         key = _user_dir_key(user)
         pid = _project(client, token)
-        r = delegation.resolve(key, pid, self._manifest(key), "node.content.generate")
+        r = delegation.resolve(key, pid, self._manifest(key), "research.verify")
         assert r.outcome == "not-installed"
-        assert r.coord == NCB  # visible in the catalog, resolvable to propose
+        assert r.coord == RS  # visible in the catalog, resolvable to propose
 
     def test_installed_in_another_project_does_not_count(self, client, user_and_token, tmp_curio):
         user, token = user_and_token
         key = _user_dir_key(user)
         pid_a = _project(client, token)
         pid_b = _project(client, token)
-        client.post(f"/api/agents/projects/{pid_b}/install", json={"coord": NCB}, headers=_auth(token))
-        r = delegation.resolve(key, pid_a, self._manifest(key), "node.content.generate")
+        client.post(f"/api/agents/projects/{pid_b}/install", json={"coord": RS}, headers=_auth(token))
+        r = delegation.resolve(key, pid_a, self._manifest(key), "research.verify")
         assert r.outcome == "not-installed"  # never another project's template
 
     def test_capability_nobody_declares_is_unresolvable(self, client, user_and_token, tmp_curio):
         user, token = user_and_token
         key = _user_dir_key(user)
         pid = _project(client, token)
-        client.post(f"/api/agents/projects/{pid}/install", json={"coord": NCB}, headers=_auth(token))
+        client.post(f"/api/agents/projects/{pid}/install", json={"coord": RS}, headers=_auth(token))
         r = delegation.resolve(key, pid, self._manifest(key), "ghost.capability")
         assert r.outcome == "unresolvable"
         assert r.coord is None
@@ -218,7 +240,7 @@ class TestResolution:
         # The capability that only the SECOND node-builder delegate declares
         # resolves to it deterministically. That one is internal, so it
         # resolves from the roster without an install.
-        client.post(f"/api/agents/projects/{pid}/install", json={"coord": NCB}, headers=_auth(token))
+        client.post(f"/api/agents/projects/{pid}/install", json={"coord": RS}, headers=_auth(token))
         r = delegation.resolve(key, pid, self._manifest(key), "execution.followup.plan")
         assert r.outcome == "ok"
         assert r.coord == "agent.dataflow-planner@1.0.0"
@@ -234,17 +256,20 @@ class TestDelegateChildRun:
         assert r.get_json()["reply"] == "Here is the node content plan."
         # Three provider calls: parent, child, parent.
         assert len(calls) == 3
-        # The CHILD system turn is the delegate's own prompts — with NO tail
-        # instruction and NO delegation paragraph (depth-1 structurally).
+        # The CHILD system turn is the delegate's own prompts: node content is
+        # the Node Builder's own mode, so its mode prompt, in place of its chat
+        # instruction, with NO tail instruction and NO delegation paragraph
+        # (depth-1 structurally).
         child_system = calls[1][0]["content"]
-        ncb_instruction = builtin.read_prompt_text(NCB, "instruction")
-        assert ncb_instruction.strip() in child_system
+        mode_prompt = builtin.read_prompt_text(NB, "node.content.generate")
+        assert mode_prompt.strip() in child_system
+        assert builtin.read_prompt_text(NB, "instruction").strip() not in child_system
         assert "curio.v1" not in child_system
         assert "delegateRequest" not in child_system
         # The child got the framed inputs, and the parent got the framed result.
         assert "[delegated task from agent.node-builder@1.0.0" in calls[1][1]["content"]
         assert '"intent": "sum column"' in calls[1][1]["content"]
-        assert "[delegate result] agent.node-content-builder@1.0.0" in calls[2][-1]["content"]
+        assert "[delegate result] agent.node-builder@1.0.0" in calls[2][-1]["content"]
         assert "df.sum(axis=0)" in calls[2][-1]["content"]
 
     def test_execution_records_link_parent_and_child(self, client, user_and_token, tmp_curio, monkeypatch):
@@ -259,11 +284,11 @@ class TestDelegateChildRun:
         assert execution["executionId"] == run_body["executionId"]
         (child,) = execution["delegations"]
         assert child["parentExecutionId"] == run_body["executionId"]
-        assert child["coord"] == NCB
+        assert child["coord"] == NB
         assert child["capability"] == "node.content.generate"
         assert child["status"] == "ok"
         assert child["executionId"] != run_body["executionId"]
-        assert child["pins"]["coord"] == NCB
+        assert child["pins"]["coord"] == NB
         assert child["pins"]["tools"] == []  # structurally tool-less
 
     def test_child_reply_with_request_tail_is_data_not_a_request(self, client, user_and_token, tmp_curio, monkeypatch):
@@ -368,8 +393,8 @@ class TestTheChildRunsOnItsOwnConfiguration:
                 return "Title"
             models.append(config.model)
             if len(models) == 1:
-                return _delegate_tail()
-            return "df.sum(axis=0)" if len(models) == 2 and not child_fails else "Here is the plan."
+                return _verify_tail()
+            return "VERIFIED: the column exists." if len(models) == 2 and not child_fails else "Here is the plan."
 
         monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         response = _run(client, token, pid, att_id)
@@ -383,9 +408,9 @@ class TestTheChildRunsOnItsOwnConfiguration:
     def test_an_assigned_child_runs_on_and_pins_its_own(self, client, user_and_token, tmp_curio, monkeypatch):
         _, token = user_and_token
         pid = _project(client, token)
-        att_id, _ = _setup(client, token, pid, monkeypatch)
+        att_id, _ = _setup(client, token, pid, monkeypatch, delegate=RS)
         child_config = self._config(client, token, "Child", "child-model")
-        self._choose(client, token, "agent.node-content-builder", child_config)
+        self._choose(client, token, "agent.researcher", child_config)
         models, turns, execution = self._run_counting_models(client, token, pid, att_id, monkeypatch)
         # The parent on the deployment default, the child on its own choice.
         assert models == ["test-model", "child-model", "test-model"]
@@ -402,7 +427,7 @@ class TestTheChildRunsOnItsOwnConfiguration:
     def test_an_unassigned_child_inherits_its_callers(self, client, user_and_token, tmp_curio, monkeypatch):
         _, token = user_and_token
         pid = _project(client, token)
-        att_id, _ = _setup(client, token, pid, monkeypatch)
+        att_id, _ = _setup(client, token, pid, monkeypatch, delegate=RS)
         parent_config = self._config(client, token, "Parent", "parent-model")
         self._choose(client, token, "agent.node-builder", parent_config)
         models, _, execution = self._run_counting_models(client, token, pid, att_id, monkeypatch)
@@ -418,9 +443,9 @@ class TestTheChildRunsOnItsOwnConfiguration:
 
         user, token = user_and_token
         pid = _project(client, token)
-        att_id, _ = _setup(client, token, pid, monkeypatch)
+        att_id, _ = _setup(client, token, pid, monkeypatch, delegate=RS)
         child_config = self._config(client, token, "Child", "child-model")
-        self._choose(client, token, "agent.node-content-builder", child_config)
+        self._choose(client, token, "agent.researcher", child_config)
         store = llm_configs.default_store()
         doc = store.read(_user_dir_key(user))
         del doc["configs"][child_config]  # a hand-edited file: the choice names nothing
@@ -478,20 +503,20 @@ class TestMissingSpecialist:
         user, token = user_and_token
         pid = _project(client, token)
         att_id, calls = _setup(
-            client, token, pid, monkeypatch, install_delegate=False,
-            replies=[_delegate_tail(), "Awaiting the install review."],
+            client, token, pid, monkeypatch, delegate=RS, install_delegate=False,
+            replies=[_verify_tail(), "Awaiting the install review."],
         )
         r = _run(client, token, pid, att_id)
         assert r.status_code == 200
         proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
         assert proposal["tool"] == "project.install"
-        assert proposal["pins"] == {"coord": NCB}
+        assert proposal["pins"] == {"coord": RS}
         # REQ-ORCH-001: nothing installed by the loop, only the proposal.
         from utk_curio.backend.app.agents.repositories import project_agents
         from utk_curio.backend.app.projects import storage as projects_storage
 
         spec = projects_storage.read_spec(_user_dir_key(user), pid)
-        assert NCB not in set(project_agents.project_agents(spec))
+        assert RS not in set(project_agents.project_agents(spec))
         # The model was told not to assume anything ran.
         assert "do NOT assume it was installed" in calls[1][-1]["content"]
         # Only TWO provider calls — no child ever ran.
@@ -501,8 +526,8 @@ class TestMissingSpecialist:
         user, token = user_and_token
         pid = _project(client, token)
         att_id, _ = _setup(
-            client, token, pid, monkeypatch, install_delegate=False,
-            replies=[_delegate_tail(), "Awaiting the install review."],
+            client, token, pid, monkeypatch, delegate=RS, install_delegate=False,
+            replies=[_verify_tail(), "Awaiting the install review."],
         )
         proposal = next(
             p for p in _run(client, token, pid, att_id).get_json()["content"]
@@ -513,12 +538,12 @@ class TestMissingSpecialist:
             headers=_auth(token),
         )
         assert resp.status_code == 200
-        assert resp.get_json()["installedCoord"] == NCB
+        assert resp.get_json()["installedCoord"] == RS
         from utk_curio.backend.app.agents.repositories import project_agents
         from utk_curio.backend.app.projects import storage as projects_storage
 
         spec = projects_storage.read_spec(_user_dir_key(user), pid)
-        assert NCB in set(project_agents.project_agents(spec))
+        assert RS in set(project_agents.project_agents(spec))
 
     def test_unresolvable_capability_is_refused(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
@@ -541,7 +566,9 @@ class TestDelegationTailAndBudget:
         _run(client, token, pid, att_id)
         system = calls[0][0]["content"]
         assert "delegateRequest" in system
-        assert "node.content.generate — handled by Node Content Builder" in system
+        # Its own mode is offered under its own name, beside the other agents'.
+        assert "node.content.generate \N{EM DASH} handled by Node Builder" in system
+        assert "research.verify \N{EM DASH} handled by Researcher" in system
 
     def test_non_delegating_agent_gets_no_delegation_paragraph(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
@@ -636,7 +663,7 @@ class TestDelegateStreamEvents:
         requested = next(p for k, p in events if k == "delegate_requested")
         assert requested["capability"] == "node.content.generate"
         result = next(p for k, p in events if k == "delegate_result")
-        assert result["coord"] == NCB and result["status"] == "ok"
+        assert result["coord"] == NB and result["status"] == "ok"
 
 
 class TestDec047DatasetFinderHandoff:
@@ -706,6 +733,8 @@ class TestDec047DatasetFinderHandoff:
         _run(client, token, pid, att_id)
         system = calls[0][0]["content"]
         assert "dataset.fetch.author — handled by Node Builder" in system
+        # Its Node Builder entry names what it hands over: never node content.
+        assert "node.content.generate \N{EM DASH} handled by" not in system
 
 
 class TestCapabilityFirstResolution:
@@ -729,10 +758,9 @@ class TestCapabilityFirstResolution:
         assert r.coord == "agent.chat-agent@1.0.0"
 
     def test_delegates_to_preference_still_wins(self, client, user_and_token, tmp_curio):
-        # node-content-builder is NCB's capability via node-builder's list; for
-        # dataflow-builder, node.build is declared by node-builder (in its
-        # delegatesTo) — install both node-builder and a hypothetical rival:
-        # preference order must pick the delegatesTo entry first.
+        # For dataflow-builder, node.build is declared by node-builder (in its
+        # delegatesTo): install node-builder, and preference order must pick
+        # the delegatesTo entry first.
         user, token = user_and_token
         key = _user_dir_key(user)
         pid = _project(client, token)
@@ -770,23 +798,26 @@ class TestDelegationTransparency:
     turns at the home attachment, a compact linkable delegation part on the
     parent's turn, best-effort throughout."""
 
+    #: The Node Builder asks the Researcher to check a fact; the Researcher answers.
+    VERIFY_SCRIPT = [_verify_tail(), "VERIFIED: the column exists.", "Here is what was checked."]
+
     def test_delegated_task_lives_in_its_agents_chat(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
         pid = _project(client, token)
-        att_id, _ = _setup(client, token, pid, monkeypatch)
+        att_id, _ = _setup(client, token, pid, monkeypatch, delegate=RS, replies=self.VERIFY_SCRIPT)
         body = _run(client, token, pid, att_id).get_json()
         # The PARENT turn carries the compact, linkable entry.
         part = next(p for p in body["content"] if p["type"] == "delegation")
-        assert part["capability"] == "node.content.generate"
-        assert part["name"] == "Node Content Builder"
+        assert part["capability"] == "research.verify"
+        assert part["name"] == "Researcher"
         assert part["status"] == "ok"
         assert part["attachmentId"]
-        # The delegate got a HOME (an NCB canvas attachment) …
+        # The delegate got a HOME (a Researcher canvas attachment) …
         cards = client.get(
             f"/api/agents/projects/{pid}/attachments", headers=_auth(token)
         ).get_json()["attachments"]
         home = next(c for c in cards if c["attachmentId"] == part["attachmentId"])
-        assert home["coord"] == NCB and home["target"]["kind"] == "canvas"
+        assert home["coord"] == RS and home["target"]["kind"] == "canvas"
         # … whose transcript tells the full story: task turn + result turn.
         turns = client.get(
             f"/api/agents/projects/{pid}/attachments/{part['attachmentId']}/session",
@@ -795,9 +826,9 @@ class TestDelegationTransparency:
         assert len(turns) == 2  # concise by contract
         assert turns[0]["role"] == "user"
         assert "[Delegated by Node Builder]" in turns[0]["text"]
-        assert "intent: sum column" in turns[0]["text"]
+        assert "intent: check the column" in turns[0]["text"]
         assert turns[1]["role"] == "agent"
-        assert turns[1]["text"] == "df.sum(axis=0)"
+        assert turns[1]["text"] == "VERIFIED: the column exists."
         card = next(c for c in turns[1]["content"] if c["type"] == "card")
         assert card["title"] == "Delegated task · ok"
         assert turns[1]["execution"]["parentExecutionId"]
@@ -805,12 +836,12 @@ class TestDelegationTransparency:
     def test_reuses_an_existing_home_and_appends(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
         pid = _project(client, token)
-        att_id, _ = _setup(client, token, pid, monkeypatch)
-        # A pre-existing NCB attachment IS the home — no duplicate (NCB is
-        # node-target; the home fallback accepts any target kind).
+        att_id, _ = _setup(client, token, pid, monkeypatch, delegate=RS, replies=self.VERIFY_SCRIPT)
+        # A pre-existing Researcher attachment IS the home, no duplicate (it is
+        # on a node; the home fallback accepts any target kind).
         existing = client.post(
             f"/api/agents/projects/{pid}/attachments",
-            json={"coord": NCB, "target": {"kind": "node", "targetId": "n1"}},
+            json={"coord": RS, "target": {"kind": "node", "targetId": "n1"}},
             headers=_auth(token),
         ).get_json()["attachmentId"]
         body = _run(client, token, pid, att_id).get_json()
@@ -819,12 +850,12 @@ class TestDelegationTransparency:
         cards = client.get(
             f"/api/agents/projects/{pid}/attachments", headers=_auth(token)
         ).get_json()["attachments"]
-        assert len([c for c in cards if c["coord"] == NCB]) == 1
+        assert len([c for c in cards if c["coord"] == RS]) == 1
 
     def test_missing_home_never_fails_the_delegation(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
         pid = _project(client, token)
-        att_id, _ = _setup(client, token, pid, monkeypatch)
+        att_id, _ = _setup(client, token, pid, monkeypatch, delegate=RS, replies=self.VERIFY_SCRIPT)
         monkeypatch.setattr(
             'utk_curio.backend.app.agents.application.turns.delegates._delegation_home',
             lambda *a, **k: (None, False),
@@ -833,6 +864,145 @@ class TestDelegationTransparency:
         part = next(p for p in body["content"] if p["type"] == "delegation")
         assert part["attachmentId"] is None  # plain entry, honest
         assert part["status"] == "ok"  # the work itself was unaffected
+
+
+#: A made-up agent whose chat hands one capability to its own mode.
+MINE = "agent.my-helper@1.0.0"
+CHAT_PROMPT = "You are My Helper. Chat with the user about their dataflow."
+MODE_PROMPT = "You are My Helper, interpreting one node's output. Reply in one line."
+
+
+def _write_my_helper(user):
+    """My Helper in the user's store: a chat instruction, and
+    ``node.output.interpret`` as a mode its entry for itself delegates."""
+    from utk_curio.backend.app.agents.repositories import storage
+
+    manifest = {
+        "id": "agent.my-helper",
+        "name": "My Helper",
+        "category": "node",
+        "version": "1.0.0",
+        "capabilities": [
+            {"id": "node.explain", "contractVersion": "1"},
+            {"id": "node.output.interpret", "contractVersion": "1", "instruction": "interpret"},
+        ],
+        "delegatesTo": [{"id": "agent.my-helper", "capabilities": ["node.output.interpret"]}],
+        "prompts": {
+            "instruction": {"path": "prompts/chat.md", "variables": []},
+            "interpret": {"path": "prompts/interpret.md", "variables": []},
+        },
+        "compatibleTargets": [{"kind": "canvas", "requires": []}],
+        "inputs": {"reads": [], "requiredConfig": []},
+        "provenance": {"publisher": "me", "trust": "imported"},
+    }
+    storage.write_definition(_user_dir_key(user), MINE, manifest, {
+        "prompts/chat.md": CHAT_PROMPT, "prompts/interpret.md": MODE_PROMPT,
+    })
+
+
+class TestOwnModes:
+    """An agent hands work to one of its own modes: the delegated call runs the
+    mode's prompt on the same agent, and a task that names no node opens no chat
+    of its own; its record rides the parent's turn."""
+
+    def _cards(self, client, token, pid):
+        return client.get(
+            f"/api/agents/projects/{pid}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+
+    def _turns(self, client, token, pid, att_id):
+        return client.get(
+            f"/api/agents/projects/{pid}/attachments/{att_id}/session", headers=_auth(token)
+        ).get_json()["turns"]
+
+    def _script(self, monkeypatch, replies):
+        calls = []
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents.application.turns import titles as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            calls.append(messages)
+            return replies[min(len(calls) - 1, len(replies) - 1)]
+
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
+        return calls
+
+    def test_a_made_up_agent_hands_work_to_its_own_mode_and_opens_no_chat(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        _write_my_helper(user)
+        pid = _project(client, token)
+        installed = client.post(f"/api/agents/projects/{pid}/install", json={"coord": MINE}, headers=_auth(token))
+        assert installed.status_code == 201, installed.get_json()
+        att_id = client.post(
+            f"/api/agents/projects/{pid}/attachments",
+            json={"coord": MINE, "target": {"kind": "canvas"}}, headers=_auth(token),
+        ).get_json()["attachmentId"]
+        calls = self._script(monkeypatch, [
+            _delegate_tail(capability="node.output.interpret", inputs='{"intent": "what n1 returns"}'),
+            "n1 returns one row.",
+            "It returns one row.",
+        ])
+        r = _run(client, token, pid, att_id, message="what does n1 return?")
+        assert r.status_code == 200, r.get_json()
+        assert r.get_json()["reply"] == "It returns one row."
+        # Parent, child, parent: the chat runs the chat prompt, and the child
+        # the mode's prompt in its place.
+        assert len(calls) == 3
+        assert CHAT_PROMPT in calls[0][0]["content"]
+        assert "node.output.interpret \N{EM DASH} handled by My Helper" in calls[0][0]["content"]
+        child_system = calls[1][0]["content"]
+        assert MODE_PROMPT in child_system and CHAT_PROMPT not in child_system
+        assert "[delegated task from agent.my-helper@1.0.0" in calls[1][1]["content"]
+        # It resolved to itself, and its record rides the parent's turn …
+        part = next(p for p in r.get_json()["content"] if p["type"] == "delegation")
+        assert (part["coord"], part["capability"], part["status"]) == (MINE, "node.output.interpret", "ok")
+        assert part["attachmentId"] is None
+        turns = self._turns(client, token, pid, att_id)
+        execution = next(t["execution"] for t in reversed(turns) if t.get("execution"))
+        (child,) = execution["delegations"]
+        assert child["coord"] == MINE and child["pins"]["coord"] == MINE
+        # … it opened no chat of its own, and wrote no task turns into its own.
+        assert [c["attachmentId"] for c in self._cards(client, token, pid)] == [att_id]
+        assert [t["role"] for t in turns] == ["user", "agent"]
+        assert not any("[Delegated by" in (t.get("text") or "") for t in turns)
+
+    def test_the_node_builders_content_for_no_node_opens_no_chat(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        # The Node Builder on the canvas asks its own content mode for a node
+        # that does not exist yet: no second Node Builder chat appears.
+        user, token = user_and_token
+        pid = _project(client, token)
+        att_id, calls = _setup(client, token, pid, monkeypatch)
+        body = _run(client, token, pid, att_id).get_json()
+        part = next(p for p in body["content"] if p["type"] == "delegation")
+        assert (part["coord"], part["capability"], part["status"]) == (NB, "node.content.generate", "ok")
+        assert part["attachmentId"] is None
+        assert [c["attachmentId"] for c in self._cards(client, token, pid)] == [att_id]
+        turns = self._turns(client, token, pid, att_id)
+        assert [t["role"] for t in turns] == ["user", "agent"]
+        assert builtin.read_prompt_text(NB, "node.content.generate").strip() in calls[1][0]["content"]
+
+    def test_content_for_a_node_still_lives_in_that_nodes_chat(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        # Naming a node, the task homes at that node's Node Builder (dev/72),
+        # its own mode or not.
+        user, token = user_and_token
+        pid = _project(client, token)
+        att_id, _ = _setup(client, token, pid, monkeypatch, replies=[
+            _delegate_tail(inputs='{"intent": "fix", "nodeId": "n1"}'), "print(2)", "Done.",
+        ])
+        body = _run(client, token, pid, att_id).get_json()
+        part = next(p for p in body["content"] if p["type"] == "delegation")
+        home = next(c for c in self._cards(client, token, pid) if c["attachmentId"] == part["attachmentId"])
+        assert home["coord"] == NB and home["target"] == {"kind": "node", "targetId": "n1"}
+        assert any("[Delegated by Node Builder]" in (t.get("text") or "")
+                   for t in self._turns(client, token, pid, home["attachmentId"]))
 
 
 class TestChatContentReviewMint:
@@ -921,7 +1091,7 @@ class TestChatContentReviewMint:
         user, token = user_and_token
         pid = _project(client, token)
         DFB = "agent.dataflow-builder@1.0.0"
-        for coord in (DFB, NB, NCB):
+        for coord in (DFB, NB):
             client.post(
                 f"/api/agents/projects/{pid}/install",
                 json={"coord": coord}, headers=_auth(token),
@@ -948,8 +1118,9 @@ class TestChatContentReviewMint:
 
         monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         body = _run(client, token, pid, att_id, message="change n1 to median").get_json()
-        # dev/73 roster: the capability is OFFERED in the delegation paragraph.
-        assert "node.content.generate — handled by Node Content Builder" in calls[0][0]["content"]
+        # dev/73 roster: the capability is OFFERED in the delegation paragraph,
+        # as the Node Builder's.
+        assert "node.content.generate \N{EM DASH} handled by Node Builder" in calls[0][0]["content"]
         entry = next(p for p in body["content"] if p["type"] == "delegation")
         assert entry["attachmentId"] and entry["attachmentId"] != att_id
         cards = client.get(
@@ -1041,32 +1212,40 @@ class TestChatContentReviewMintStream:
         assert entry["attachmentId"] == review["attachmentId"]
 
 
-class TestPackageRecommendationDelegation:
-    """dev/84: the three build parents resolve the package capabilities to
-    agent.package-recommendation — current-project-only, missing template =
+class TestPackageRecommendDelegation:
+    """dev/84: the three build parents resolve package.recommend to the
+    Package Builder, whose mode it is: current-project-only, missing template =
     the reviewed missing-specialist path."""
 
-    PR = "agent.package-recommendation@1.0.0"
+    PB = "agent.package-builder@1.0.0"
+    PARENTS = ("agent.node-builder@1.0.0", "agent.dataflow-builder@1.0.0",
+               "agent.connection-builder@1.0.0")
 
     def test_parents_declare_the_delegate(self):
-        for parent in ("agent.node-builder@1.0.0", "agent.dataflow-builder@1.0.0",
-                       "agent.connection-builder@1.0.0"):
+        for parent in self.PARENTS:
             m = builtin.get_builtin_manifest(parent)
-            assert "agent.package-recommendation" in m.delegates_to, parent
+            assert "agent.package-builder" in m.delegates_to, parent
+            assert m.delegates("agent.package-builder", "package.recommend"), parent
 
-    def test_installed_recommendation_agent_resolves_both_capabilities(self, client, user_and_token, tmp_curio):
+    def test_the_connection_builder_is_offered_only_the_recommendation(self, client, user_and_token, tmp_curio):
+        user, _ = user_and_token
+        cb = builtin.get_builtin_manifest("agent.connection-builder@1.0.0")
+        assert cb.delegate_scopes == {"agent.package-builder": ("package.recommend",)}
+        offered = delegation.visible_capability_entries(_user_dir_key(user), cb)
+        assert offered == [("package.recommend", "Package Builder")]
+
+    def test_installed_package_builder_resolves_the_recommendation(self, client, user_and_token, tmp_curio):
         user, token = user_and_token
         key = _user_dir_key(user)
         pid = _project(client, token)
-        client.post(f"/api/agents/projects/{pid}/install", json={"coord": self.PR}, headers=_auth(token))
-        for parent in ("agent.node-builder@1.0.0", "agent.dataflow-builder@1.0.0",
-                       "agent.connection-builder@1.0.0"):
-            for capability in ("package.identify", "package.recommend"):
-                r = delegation.resolve(key, pid, builtin.get_builtin_manifest(parent), capability)
-                assert r.outcome == "ok", (parent, capability)
-                assert r.coord == self.PR
+        client.post(f"/api/agents/projects/{pid}/install", json={"coord": self.PB}, headers=_auth(token))
+        for parent in self.PARENTS:
+            r = delegation.resolve(key, pid, builtin.get_builtin_manifest(parent), "package.recommend")
+            assert r.outcome == "ok", parent
+            assert r.coord == self.PB
+            assert r.manifest.capability("package.recommend").instruction == "package.recommend"
 
-    def test_missing_recommendation_agent_is_missing_specialist(self, client, user_and_token, tmp_curio):
+    def test_missing_package_builder_is_missing_specialist(self, client, user_and_token, tmp_curio):
         user, token = user_and_token
         key = _user_dir_key(user)
         pid = _project(client, token)
@@ -1075,7 +1254,7 @@ class TestPackageRecommendationDelegation:
             "package.recommend",
         )
         assert r.outcome == "not-installed"  # → the reviewed project.install proposal
-        assert r.coord == self.PR
+        assert r.coord == self.PB
 
 
 class TestEvaluatorDelegation:
@@ -1124,7 +1303,7 @@ class TestEvaluatorDelegation:
             "research.verify",
         )
         assert r.outcome == "not-installed"
-        assert r.coord == "agent.node-researcher@1.0.0"
+        assert r.coord == RS
 
 
 class TestMergedAgentModes:

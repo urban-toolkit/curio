@@ -28,9 +28,15 @@ from .utils import (
 PACKAGE_NAME = "Urban Heat Vulnerability Index"
 PACKAGE_DIR = "ai.utk.uhvi@1"
 
-#: A built-in from the roster; readable without ever being imported.
-AGENT_NAME = "Node Researcher"
-AGENT_DIR = "agent.node-researcher@1.0.0"
+#: A built-in from the roster; readable without ever being imported. Its
+#: research.verify mode has a prompt of its own, so the bundle carries three.
+AGENT_NAME = "Researcher"
+AGENT_DIR = "agent.researcher@1.0.0"
+AGENT_PROMPTS = {
+    "prompts/default_preamble.md",
+    "prompts/researcher_notes_instruction.md",
+    "prompts/research_instruction.md",
+}
 
 
 def _login(page, app_frontend, current_server):
@@ -89,7 +95,8 @@ def test_a_builtin_agent_exports_from_view_details(app_frontend, current_server,
     assert download.suggested_filename == f"{AGENT_DIR}.curio-agent.json"
     with open(download.path(), "rb") as fh:
         bundle = json.load(io.TextIOWrapper(fh, encoding="utf-8"))
-    assert bundle["manifest"]["id"] == "agent.node-researcher", bundle["manifest"]
+    assert bundle["manifest"]["id"] == "agent.researcher", bundle["manifest"]
     declared = {asset["path"] for asset in bundle["manifest"]["prompts"].values()}
+    assert declared == AGENT_PROMPTS, declared
     assert declared and declared <= set(bundle["prompts"]), (declared, list(bundle["prompts"]))
     assert dialog.locator("[data-curio-export-error]").count() == 0
