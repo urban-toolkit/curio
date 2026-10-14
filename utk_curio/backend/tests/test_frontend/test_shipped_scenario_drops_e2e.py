@@ -63,7 +63,9 @@ from .utils import (
     save_workflow_test_screenshot,
     stub_login_and_enter_workflow,
     wait_for_drawer_closed,
+    wait_for_node_run_to_end,
     wait_for_run_guard_released,
+    watch_node_run,
 )
 
 if TYPE_CHECKING:
@@ -130,14 +132,6 @@ _RECORD_TOASTS_JS = r"""() => {
     });
     new MutationObserver(record).observe(region, { childList: true, subtree: true });
     record();
-}"""
-
-# A node's status once it has ended a run, read by the check that saw it.
-# The outcomes arrive with no output, so the first end is the run's.
-_ENDED_JS = """(nodeId) => {
-    const el = document.querySelector(`.react-flow__node[data-id="${nodeId}"] [data-curio-node-status]`);
-    const status = el && el.getAttribute('data-curio-node-status');
-    return status === 'done' || status === 'error' ? status : false;
 }"""
 
 # What a code node holds after a run: its output's code and the file it saved.
@@ -243,9 +237,11 @@ def test_a_shipped_scenario_drops_from_a_project_never_run_and_runs(
     outcomes = [(copies[outcome["nodeId"]], outcome) for outcome in plan["outcomes"]]
     assert outcomes, f"{name} has no outcomes"
     _scenario_menu(page, "Show scenarios")
+    for node_id, _outcome in outcomes:
+        watch_node_run(page, node_id)
     page.get_by_test_id(f"scenario-card-{dropped['id']}").get_by_role("button", name="Run scenario").click()
     for node_id, outcome in outcomes:
-        status = page.wait_for_function(_ENDED_JS, arg=node_id, timeout=RUN_MS, polling=500).json_value()
+        status = wait_for_node_run_to_end(page, node_id, node_type=types[outcome["nodeId"]], timeout_ms=RUN_MS)
         assert status == "done", (
             f"{outcome['label']} ({node_id}) ended {status}: {read_node_error_text(node_locator(page, node_id))}"
         )
