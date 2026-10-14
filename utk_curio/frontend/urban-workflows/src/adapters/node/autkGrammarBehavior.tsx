@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Feature } from 'geojson';
 import type { NodeBehaviorData, NodeBehaviorResult, UseNodeStateReturn } from '../../registry/types';
+import type { NodeOutput } from '../../hook/useNodeState';
 import { detectWebGpuSupport, reprobeWebGpuSupport } from '../../utils/webgpuSupport';
 import { useToastContext } from '../../providers/ToastProvider';
 import { VisInteractionType, NodeType } from '../../constants';
@@ -197,6 +198,32 @@ export const useAutkGrammarBehavior = (
             words: emptyStateWords(problem.reason, kind, problem.detail),
         };
         writeEmptyState(wrapperRef.current, problem.reason, noticeRef.current.words);
+    };
+
+    // The node's status set from outside its own run (UniversalNode): a step of
+    // a run on the server among them (`serverOutput`). A document that only
+    // loads data runs there as its run here posts it, so its result says what
+    // it loaded, as a run here says it, rather than "not run yet" under Done.
+    const setOutputFromOutside = (output: NodeOutput) => {
+        const code = isEmptySpecBuffer(nodeState.code) ? data.defaultCode : nodeState.code;
+        const loadsData = classifyAutkSpecString(code) === 'data';
+        const ran = output?.code === 'exec' || output?.code === 'success' || output?.code === 'error';
+        // A run tried, as applyGrammar marks one: no "not run yet" after it.
+        if (loadsData && ran) hasRunRef.current = true;
+        nodeState.setOutput(output);
+        if (!loadsData || !ran) return;
+        if (output.code !== 'success') {
+            setRunSummary(null);
+            return;
+        }
+        // The notice before a run goes, as a run here empties the body.
+        noticeRef.current = null;
+        const host = wrapperRef.current;
+        if (host?.hasAttribute('data-curio-node-empty')) {
+            host.replaceChildren();
+            clearEmptyState(host);
+        }
+        setRunSummary(describeAutkRun('Loaded', 'table', requestedLayerTables(JSON.parse(code as string).data)));
     };
 
     const runGrammar = async (
@@ -1321,6 +1348,7 @@ export const useAutkGrammarBehavior = (
         // Only ever offered for an empty editor, so it cannot displace real
         // work, and it steps aside for a document written in from outside.
         defaultValueOverride: starterSpec,
+        setOutputCallbackOverride: setOutputFromOutside,
     };
 };
 

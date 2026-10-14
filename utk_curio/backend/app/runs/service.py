@@ -326,6 +326,7 @@ def _run_thread(app, run_id, user_id, token, project_id, plan, spec) -> Iterator
     from utk_curio.backend.app.projects.schemas import OutputRef
     from utk_curio.backend.app.projects.services import record_node_outputs
     from utk_curio.backend.app.users.models import User
+    from utk_curio.common.autk_data_compiler import compile_data_spec
 
     default_save = bool(config.CURIO_DEFAULT_SAVE_NODE_OUTPUT)
     # What a pinned tile reads and what a scenario's context and outcomes
@@ -337,6 +338,21 @@ def _run_thread(app, run_id, user_id, token, project_id, plan, spec) -> Iterator
         jobs.hold_point()
         # The request that started the run is gone: load the account here.
         user = db.session.get(User, user_id)
+        if step.autk_data:
+            # The JavaScript the node's run in the browser posts, from the
+            # browser's own compiler, with no input and no dataset of its own
+            # (autkLayerMaterialize.ts runDataInBackend): its output is saved
+            # as the canvas saves it, the layer list as it is.
+            node_run = node_exec.NodeRun(
+                code=compile_data_spec(code),
+                node_type=step.node_type,
+                node_id=step.node_id,
+                dataflow_id=project_id,
+                node_name=step.label,
+                save_output_dataset=False,
+            )
+            reply, _status = node_exec.execute_js_node(user, token, node_run)
+            return reply
         node_run = node_exec.NodeRun(
             code=code,
             node_type=step.node_type,
