@@ -12,6 +12,7 @@ import {
   catalogAndOwnPackages,
   isNewerPackageVersion,
   matchesSearch,
+  nodesNamingModelInCodeOnly,
   restartNotice,
   sortPackages,
   usePackageAddRequests,
@@ -86,7 +87,7 @@ const DRAWER_COPY: Record<PackageKind, {
   model: {
     title: "Model Catalog",
     titleId: "model-catalog-title",
-    subtitle: "Model packages available in this project. Drag a model onto a node that runs one.",
+    subtitle: "Model packages available in this project. Drag a model onto the canvas to add its node, or onto a node to swap its model.",
     kindIcon: "model",
     rootAttribute: "data-curio-model-catalog-drawer",
     searchPlaceholder: "Search models, publishers, tags…",
@@ -120,7 +121,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
 
   // The drawer is *per-project*: Install/Uninstall write to the current
   // project's lockfile (see docs/NODE-CATALOG.md).
-  const { projectId, packages: projectPackages, saveCurrentProject, projectDirty } = useFlowContext();
+  const { projectId, packages: projectPackages, saveCurrentProject, projectDirty, nodes } = useFlowContext();
   const { showToast } = useToastContext();
 
   const [tab, setTab] = useState<DrawerTab>("browse");
@@ -312,6 +313,16 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   );
 
   const onUninstall = useCallback((pkg: PackagePayload) => {
+    // A node that names a model in its code alone does not keep the model:
+    // nothing rewrites node code on removal, so that code is left behind, as
+    // the Data Catalog's Remove says of a dataset loaded in code. A node of
+    // the package, or one bound to its model (`modelRefs`), keeps it: the
+    // backend refuses the removal while one is on the canvas.
+    const inCode = packageKind === "model" ? nodesNamingModelInCodeOnly(nodes ?? [], pkg.packageId).length : 0;
+    const codeWarning = inCode
+      ? `\n\n${inCode === 1 ? "A node in this dataflow loads" : `${inCode} nodes in this dataflow load`} ` +
+        `this model in code. That code is left as it is, and fails once the model leaves your account.`
+      : "";
     // No `projectId` guard: an unsaved dataflow saves itself on confirm (the
     // hook's ``uninstallFromProject``). Guarding here hid the action entirely.
     setConfirmAction({
@@ -324,11 +335,12 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
         `Remove ${pkg.name} (${pkg.dirName}) from this project?` +
         `\n\nIf no other dataflow uses it, it is also deleted from your account ` +
         `and its Python libraries are uninstalled from the shared environment, ` +
-        `which affects every dataflow and everyone using this Curio.`,
+        `which affects every dataflow and everyone using this Curio.` +
+        codeWarning,
       confirmLabel: "Remove",
       run: () => performUninstall(pkg),
     });
-  }, [performUninstall]);
+  }, [packageKind, nodes, performUninstall]);
 
   const anyBusy = busy || importBusy;
   // dev/92 B-2: the restart-honesty line (backend-declared, never inferred) from

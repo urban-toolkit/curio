@@ -1176,13 +1176,17 @@ def catalog_package():
     Each e2e shard has its own catalog (``tests/shards.py``).
 
     Body (JSON):
-      * ``action``  - ``"plant"`` or ``"remove"``.
-      * ``dirName`` - ``test.<name>@<major>``; nothing else passes.
-      * ``files``   - plant: ``{relative path: text}``, with ``manifest.json``.
+      * ``action``      - ``"plant"`` or ``"remove"``.
+      * ``dirName``     - ``test.<name>@<major>``; nothing else passes.
+      * ``files``       - plant: ``{relative path: text}``, with ``manifest.json``.
+      * ``binaryFiles`` - plant, optional: ``{relative path: base64}`` under
+        ``models/``, a test model package's weights.
 
     ``plant`` replaces any earlier copy and writes its ``integrity.json``;
     ``remove`` deletes the folder. Neither touches a user's store.
     """
+    import base64 as _base64
+    import binascii as _binascii
     import json as _json
 
     from utk_curio.backend.app.packages.repositories.archive import refresh_package_integrity
@@ -1201,15 +1205,29 @@ def catalog_package():
         shutil.rmtree(target, ignore_errors=True)
         return jsonify({"removed": dir_name, "present": target.exists()}), 200
 
+    def _safe(rel) -> bool:
+        return (isinstance(rel, str) and bool(rel) and not rel.startswith("/") and "\\" not in rel
+                and ".." not in rel.split("/") and rel != "integrity.json")
+
     files = body.get("files")
     if not isinstance(files, dict) or "manifest.json" not in files:
         return jsonify({"error": "files must map relative paths to text, with manifest.json"}), 400
-    if len(files) > _TEST_PACKAGE_MAX_FILES or sum(len(str(t)) for t in files.values()) > _TEST_PACKAGE_MAX_BYTES:
+    binary_files = body.get("binaryFiles") or {}
+    if not isinstance(binary_files, dict):
+        return jsonify({"error": "binaryFiles must map paths under models/ to base64"}), 400
+    weights: dict[str, bytes] = {}
+    for rel, encoded in binary_files.items():
+        if not _safe(rel) or not rel.startswith("models/") or rel in files or not isinstance(encoded, str):
+            return jsonify({"error": f"invalid weights file: {rel!r}"}), 400
+        try:
+            weights[rel] = _base64.b64decode(encoded, validate=True)
+        except (_binascii.Error, ValueError):
+            return jsonify({"error": f"{rel!r} is not base64"}), 400
+    size = sum(len(str(t)) for t in files.values()) + sum(len(b) for b in weights.values())
+    if len(files) + len(weights) > _TEST_PACKAGE_MAX_FILES or size > _TEST_PACKAGE_MAX_BYTES:
         return jsonify({"error": "a test package is a manifest and a few small files"}), 400
     for rel, text in files.items():
-        if (not isinstance(rel, str) or not isinstance(text, str) or not rel
-                or rel.startswith("/") or "\\" in rel or ".." in rel.split("/")
-                or rel == "integrity.json"):
+        if not _safe(rel) or not isinstance(text, str):
             return jsonify({"error": f"invalid file: {rel!r}"}), 400
     try:
         manifest = _json.loads(files["manifest.json"])
@@ -1224,5 +1242,9 @@ def catalog_package():
         path = target / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
+    for rel, data in weights.items():
+        path = target / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
     refresh_package_integrity(target)
-    return jsonify({"planted": dir_name, "files": sorted(files)}), 200
+    return jsonify({"planted": dir_name, "files": sorted([*files, *weights])}), 200

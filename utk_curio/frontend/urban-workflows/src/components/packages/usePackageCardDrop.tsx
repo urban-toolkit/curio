@@ -13,7 +13,8 @@ import type { PackageCardDragPayload, PackageCardNode } from "../../services/pac
 import type { ToastVariant } from "../../providers/ToastProvider";
 
 /**
- * A package's card dropped on the canvas from the Node Catalog drawer.
+ * A package's card dropped on the canvas from the Node Catalog drawer, or a
+ * model's from the Model Catalog drawer (a model package has one node).
  *
  * A hosted guest's drop of a package the dataflow has not added is refused
  * first, before any menu: guests never install. Otherwise a package with one
@@ -60,7 +61,8 @@ export function usePackageCardDrop({
       if (action === "create") {
         createNode(node, position);
       } else if (!requestPackageAdd({ dirName: card.dirName, kind: card.kind, onAdded: () => createNode(node, position) })) {
-        showToast(`Add ${card.name} to this dataflow from the Node Catalog first.`, "warning");
+        const catalog = card.kind === "model" ? "Model Catalog" : "Node Catalog";
+        showToast(`Add ${card.name} to this dataflow from the ${catalog} first.`, "warning");
       }
     },
     [createNode, showToast],

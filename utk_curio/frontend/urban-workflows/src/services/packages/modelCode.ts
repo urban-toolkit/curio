@@ -58,6 +58,20 @@ export function hasRewritableModelCall(code: unknown): boolean {
 }
 
 /**
+ * *code* with every literal `curio_load_model("<fromId>")` call naming *toId*
+ * instead, in each call's own quotes: what Save as package node writes into
+ * the node of the model package it makes from a node that loads *fromId*
+ * (the backend's `rename_model_calls`, `builder/factory.py`). *code* itself
+ * when *toId* is not safe to write into source.
+ */
+export function renameModelCalls(code: string, fromId: string, toId: string): string {
+  if (!SAFE_MODEL_ID_RE.test(toId)) return code;
+  const escaped = fromId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const call = new RegExp(`(curio_load_model\\(\\s*(["']))${escaped}(\\2\\s*\\))`, "g");
+  return code.replace(call, (_match, open: string, _quote: string, close: string) => `${open}${toId}${close}`);
+}
+
+/**
  * *code* with the id inside its first literal `curio_load_model(...)` call replaced
  * by *modelId*, in the call's own quote style, or `null` when there is no such
  * call or *modelId* is not safe to write into source.

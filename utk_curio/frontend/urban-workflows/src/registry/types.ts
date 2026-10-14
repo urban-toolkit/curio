@@ -52,6 +52,11 @@ export interface NodePackageMeta {
    *  the backend writes for it (its template id), the default cell of its
    *  model's type. */
   defaultCellStarter?: string;
+  /** `model` for a model package's node: the Model Catalog lists it, and the
+   *  Node Catalog palette does not. */
+  kind?: 'model';
+  /** A model package's model type (its manifest's `model.type`). */
+  modelType?: string;
   lineage?: NodePackageLineage;
   /** When true, the package rejects factory-install / Save-As writes (manifest `readOnly`). */
   readOnly?: boolean;

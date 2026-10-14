@@ -128,18 +128,71 @@ def set_project_packages(spec: dict, dirs: Iterable[str]) -> dict:
     return spec
 
 
+def dir_name_from_model_ref(
+    model_id: object,
+    installed_majors_by_pkg: Mapping[str, Iterable[int]] | None = None,
+) -> str | None:
+    """The dirName of the model package a node's ``modelRefs`` entry names:
+    ``<id>@<major>`` as it is, a bare ``<id>`` at its highest installed major,
+    or ``None`` without one."""
+    if not isinstance(model_id, str):
+        return None
+    package_id, _, major = model_id.partition("@")
+    if not re.fullmatch(_PKG_ID, package_id):
+        return None
+    if major:
+        return f"{package_id}@{major}" if re.fullmatch(_MAJOR, major) else None
+    majors = list((installed_majors_by_pkg or {}).get(package_id, ()))
+    return f"{package_id}@{max(majors)}" if majors else None
+
+
+def _model_ref_dir_names(
+    node: dict, installed_majors_by_pkg: Mapping[str, Iterable[int]] | None,
+) -> set[str]:
+    """The model packages *node* is bound to: what its ``metadata.modelRefs``
+    names, as a drop of a model onto the node writes it."""
+    metadata = node.get("metadata")
+    refs = metadata.get("modelRefs") if isinstance(metadata, dict) else None
+    out: set[str] = set()
+    for ref in refs if isinstance(refs, list) else ():
+        dir_name = dir_name_from_model_ref(ref.get("id") if isinstance(ref, dict) else None, installed_majors_by_pkg)
+        if dir_name:
+            out.add(dir_name)
+    return out
+
+
+def model_ref_packages(
+    spec: dict | None,
+    installed_majors_by_pkg: Mapping[str, Iterable[int]] | None = None,
+) -> set[str]:
+    """The model packages the canvas nodes of *spec* are bound to
+    (``metadata.modelRefs``). A dataflow uses each of them as it uses the
+    packages its lockfile names. A literal ``curio_load_model`` call in node
+    code is only a code reference, and is not one of them."""
+    dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+    if not isinstance(dataflow, dict):
+        return set()
+    out: set[str] = set()
+    for node in dataflow.get("nodes") or []:
+        if isinstance(node, dict):
+            out |= _model_ref_dir_names(node, installed_majors_by_pkg)
+    return out
+
+
 def referencing_nodes(
     spec: dict | None,
     dir_name: str,
     installed_majors_by_pkg: Mapping[str, Iterable[int]] | None = None,
 ) -> list[str]:
-    """Ids of the canvas nodes whose type derives to *dir_name* (memo dev/101).
+    """Ids of the canvas nodes that use *dir_name* (memo dev/101): whose type
+    derives to it, or which are bound to it as their model (``modelRefs``).
 
     This is what an uninstall must refuse on: while any node of the package's
     types is on the canvas, the backfill in :func:`project_packages` would
     re-derive the package on the next read, so a "successful" uninstall would
-    be a permanent no-op. Nodes without an ``id`` are counted under a
-    positional placeholder so the count is still truthful.
+    be a permanent no-op; and a node bound to a model runs that model. Nodes
+    without an ``id`` are counted under a positional placeholder so the count
+    is still truthful.
     """
     dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
     if not isinstance(dataflow, dict):
@@ -148,7 +201,8 @@ def referencing_nodes(
     for index, node in enumerate(dataflow.get("nodes") or []):
         if not isinstance(node, dict):
             continue
-        if dir_name_from_node_type(node.get("type", ""), installed_majors_by_pkg) == dir_name:
+        if (dir_name_from_node_type(node.get("type", ""), installed_majors_by_pkg) == dir_name
+                or dir_name in _model_ref_dir_names(node, installed_majors_by_pkg)):
             node_id = node.get("id")
             out.append(node_id if isinstance(node_id, str) else f"#{index}")
     return out

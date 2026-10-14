@@ -7,7 +7,7 @@ call the use case and serialize (``schemas.responses``); every exception is mapp
 
 from __future__ import annotations
 
-from flask import Response, jsonify, request
+from flask import jsonify, request, send_file
 
 from utk_curio.backend.app.users.dependencies import require_auth
 from utk_curio.backend.app.packages.application import (
@@ -59,12 +59,21 @@ def factory_publish_catalog():
 @require_auth
 @_map_package_errors
 def factory_build():
-    """Validate a draft and return the produced ``.curio.zip`` bytes."""
-    result = packages_factory_install.build_draft(user_key(), request.get_json(silent=True) or {})
-    response = Response(result.archive, mimetype="application/zip")
-    response.headers["Content-Disposition"] = f'attachment; filename="{result.filename}"'
-    response.headers["X-Curio-Package-Dir"] = result.manifest.dir_name
-    response.headers["X-Curio-Package-Version"] = result.manifest.version
+    """Validate a draft and return the produced ``.curio.zip``, written to a
+    file and streamed from it, which is removed once the response is sent: a
+    model package carries its weights."""
+    built, cleanup = packages_factory_install.build_draft_for_download(
+        user_key(), request.get_json(silent=True) or {},
+    )
+    try:
+        response = send_file(built.path, mimetype="application/zip", max_age=0)
+    except Exception:
+        cleanup()
+        raise
+    response.call_on_close(cleanup)
+    response.headers["Content-Disposition"] = f'attachment; filename="{built.filename}"'
+    response.headers["X-Curio-Package-Dir"] = built.manifest.dir_name
+    response.headers["X-Curio-Package-Version"] = built.manifest.version
     return response
 
 
@@ -91,8 +100,10 @@ def factory_function_template():
 @_map_package_errors
 def factory_install():
     """Build a draft and immediately install it for the current user — the
-    wizard's "Save and install", dependency step included."""
+    wizard's "Save and install", dependency step included. ``copiedModel``
+    names the model a new package of a node that loads one copied."""
     key = user_key()
     draft = request.get_json(silent=True) or {}
     built, result = packages_factory_install.install_draft(key, draft, replace=requests.replace_flag(draft))
-    return jsonify({**_installed_payload(key, result), "filename": built.filename}), 201
+    copied = {"copiedModel": built.copied_model} if built.copied_model else {}
+    return jsonify({**_installed_payload(key, result), "filename": built.filename, **copied}), 201

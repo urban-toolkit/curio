@@ -50,6 +50,12 @@ The builder:
 * refuses any source filename that is not a single safe segment, and
 * writes a deterministic ZIP — entries sorted, stable mtime — so two
   identical drafts always produce byte-identical archives.
+
+A new package whose node loads a model (Save as package node of such a node)
+is built as a model package of its own (:class:`ModelSource`): it copies the
+model's weights and ``model`` block, declares the model's libraries, and its
+node names the new package's id. Its archive is written to a file
+(:func:`build_package_archive_to`), since weights may reach 2 GiB.
 """
 
 from __future__ import annotations
@@ -58,10 +64,11 @@ import io
 import json
 import logging
 import re
+import shutil
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 from utk_curio.backend.app.common.record_clock import utc_now
 from utk_curio.backend.app.execution.code_references import references_as_names
@@ -260,6 +267,64 @@ class BuildResult:
     filename: str  # suggested download name
 
 
+@dataclass(frozen=True)
+class ModelSource:
+    """The model a new package's node loads, which the package then carries:
+    Save as package node of a node that loads a model makes a model package
+    of its own, a copy of that model."""
+
+    #: The id the node's code names the model by.
+    model_id: str
+    #: The model's manifest ``model`` block, copied as it is.
+    block: dict
+    #: The libraries the model's package declares (``dependencies.python``):
+    #: the model's runtime, which the node's code does not import.
+    python: dict = field(default_factory=dict)
+    #: Its files to copy, by package-relative path: the weights under
+    #: ``models/``, and the weights' license file.
+    files: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class BuiltArchive:
+    """An archive :func:`build_package_archive_to` wrote to a file."""
+
+    manifest: PackageManifest
+    filename: str  # suggested download name
+    path: Path
+    #: The id of the model the package copied (:class:`ModelSource`), if any.
+    copied_model: str | None = None
+
+
+def rename_model_calls(code: str, from_id: str, to_id: str) -> str:
+    """*code* with every literal ``curio_load_model("<from_id>")`` naming
+    *to_id* instead, in each call's own quotes (``renameModelCalls`` in the
+    frontend's ``services/packages/modelCode.ts``)."""
+    call = re.compile(r"(curio_load_model\(\s*([\"']))" + re.escape(from_id) + r"(\2\s*\))")
+    return call.sub(lambda m: f"{m.group(1)}{to_id}{m.group(3)}", code)
+
+
+def _as_model_package(
+    draft: dict[str, Any], model: ModelSource,
+) -> tuple[dict[str, Any], dict[str, dict[str, str]]]:
+    """*draft* as the model package of :class:`ModelSource` *model*: its
+    manifest says ``kind: model`` with the model's block, and its sources name
+    the package's own id where they named the model's. Returns the draft and
+    the libraries it declares beside what its sources import."""
+    manifest = dict(draft.get("manifest") or {})
+    manifest["kind"] = "model"
+    manifest["model"] = json.loads(json.dumps(model.block))
+    new_id = str(manifest.get("id") or "")
+    sources = {
+        template_id: (
+            {**entry, "code": rename_model_calls(entry["code"], model.model_id, new_id)}
+            if isinstance(entry, dict) and isinstance(entry.get("code"), str) else entry
+        )
+        for template_id, entry in (draft.get("sources") or {}).items()
+    }
+    return {**draft, "manifest": manifest, "sources": sources}, {"python": dict(model.python), "js": {}}
+
+
 def _validate_sources(
     manifest: PackageManifest, sources: dict[str, dict[str, str]]
 ) -> dict[str, dict[str, str]]:
@@ -419,9 +484,118 @@ def _add_entry(zf: zipfile.ZipFile, name: str, body: bytes) -> None:
     zf.writestr(info, body)
 
 
+def _add_file_entry(zf: zipfile.ZipFile, name: str, path: Path) -> None:
+    """*path* as the entry *name*, copied in chunks rather than read whole,
+    stored rather than deflated: weights do not compress."""
+    info = zipfile.ZipInfo(filename=name, date_time=_FIXED_DATE)
+    info.compress_type = zipfile.ZIP_STORED
+    with path.open("rb") as source, zf.open(info, "w", force_zip64=True) as target:
+        shutil.copyfileobj(source, target, 1024 * 1024)
+
+
+@dataclass(frozen=True)
+class _Prepared:
+    """A validated draft, ready to be written as an archive."""
+
+    manifest: PackageManifest
+    manifest_authoring: dict[str, Any]
+    sources: dict[str, dict[str, str]]
+    readme: Any
+    license_text: Any
+    base: _InstalledBase | None
+    model: ModelSource | None
+
+    @property
+    def filename(self) -> str:
+        return f"{self.manifest.dir_name}-{self.manifest.version}.curio.zip"
+
+
+def _prepare(
+    draft: dict[str, Any], onto: Path | None, imported_modules: frozenset[str], model: ModelSource | None,
+) -> _Prepared:
+    """Lay *draft* over the package it is saved into, make it *model*'s model
+    package when given, derive its dependencies and validate it as the
+    installer would (see :func:`build_package_archive`)."""
+    if not isinstance(draft, dict):
+        raise FactoryError("draft must be an object")
+    draft, base = _onto_installed_package(draft, onto)
+    declared = base.declared if base else None
+    if model is not None:
+        draft, declared = _as_model_package(draft, model)
+    manifest_raw = draft.get("manifest")
+    if not isinstance(manifest_raw, dict):
+        raise FactoryError("draft.manifest is required and must be an object")
+    sources = draft.get("sources") or {}
+    if not isinstance(sources, dict):
+        raise FactoryError("draft.sources must be an object of {templateId: {file: code}}")
+
+    # Sources land *before* manifest validation so we can derive the
+    # ``dependencies.python``/``.js`` fields from the actual imports and have
+    # the validator see the final shape. ``packages`` (inter-package deps) is
+    # not source-derivable and stays as the draft provided it.
+    manifest_with_deps = _apply_detected_dependencies(
+        dict(manifest_raw), sources, declared,
+        # The modules the package being saved into carries forward (#468),
+        # and those of the packages it depends on.
+        module_names_in(base.files if base else (), [
+            t.get("source") for t in manifest_raw.get("templates") or [] if isinstance(t, dict)
+        ]) | frozenset(imported_modules),
+    )
+    manifest_authoring = _stamp_manifest_created_at_when_absent(manifest_with_deps)
+    manifest = _validate_manifest_dict(manifest_authoring)
+    return _Prepared(
+        manifest=manifest,
+        manifest_authoring=manifest_authoring,
+        sources=_validate_sources(manifest, sources),
+        readme=draft.get("readme"),
+        license_text=draft.get("license_text") or draft.get("licenseText"),
+        base=base,
+        model=model,
+    )
+
+
+def _write_archive(handle: IO[bytes], prepared: _Prepared) -> None:
+    """Write *prepared* as a deterministic ``.curio.zip`` to *handle*."""
+    written: set[str] = {"manifest.json"}
+    with zipfile.ZipFile(handle, mode="w", allowZip64=True) as zf:
+        # 1. manifest.json — canonical ``createdAt`` may be stamped here if absent.
+        _add_entry(
+            zf, "manifest.json",
+            json.dumps(prepared.manifest_authoring, indent=2, sort_keys=True).encode("utf-8"),
+        )
+
+        # 2. sources/<filename> — one starter per template, deterministic ordering.
+        for template_id in sorted(prepared.sources):
+            entry = prepared.sources[template_id]
+            arcname = f"sources/{entry['filename']}"
+            _add_entry(zf, arcname, entry["code"].encode("utf-8"))
+            written.add(arcname)
+
+        # 3. README.md / LICENSE — optional.
+        readme, license_text = prepared.readme, prepared.license_text
+        if isinstance(readme, str) and readme.strip():
+            _add_entry(zf, "README.md", readme.encode("utf-8"))
+            written.add("README.md")
+        if isinstance(license_text, str) and license_text.strip():
+            _add_entry(zf, "LICENSE", license_text.encode("utf-8"))
+            written.add("LICENSE")
+
+        # 4. Everything else the package being saved into already had.
+        for arcname, body in sorted((prepared.base.files if prepared.base else {}).items()):
+            if arcname not in written:
+                _add_entry(zf, arcname, body)
+                written.add(arcname)
+
+        # 5. The weights of the model the package copies, and their license.
+        for arcname, path in sorted((prepared.model.files if prepared.model else {}).items()):
+            if arcname not in written:
+                _add_file_entry(zf, arcname, Path(path))
+
+
 def build_package_archive(
     draft: dict[str, Any], *, onto: Path | None = None,
     imported_modules: frozenset[str] = frozenset(),
+    model: ModelSource | None = None,
 ) -> BuildResult:
     """Build a deterministic ``.curio.zip`` zip from *draft*.
 
@@ -436,65 +610,30 @@ def build_package_archive(
     (``dependencies.packages``): its templates import them as they import the
     package's own, so neither becomes a detected Python dependency.
 
+    *model* makes the package a model package, a copy of the model its node
+    loads (:class:`ModelSource`); :func:`build_package_archive_to` writes one
+    to a file instead of memory.
+
     The function only reads *onto*; it never writes outside a temporary
     directory used by the manifest validator.
     """
-    if not isinstance(draft, dict):
-        raise FactoryError("draft must be an object")
-    draft, base = _onto_installed_package(draft, onto)
-    manifest_raw = draft.get("manifest")
-    if not isinstance(manifest_raw, dict):
-        raise FactoryError("draft.manifest is required and must be an object")
-    sources = draft.get("sources") or {}
-    if not isinstance(sources, dict):
-        raise FactoryError("draft.sources must be an object of {templateId: {file: code}}")
-    readme = draft.get("readme")
-    license_text = draft.get("license_text") or draft.get("licenseText")
-
-    # Sources land *before* manifest validation so we can derive the
-    # ``dependencies.python``/``.js`` fields from the actual imports and have
-    # the validator see the final shape. ``packages`` (inter-package deps) is
-    # not source-derivable and stays as the draft provided it.
-    manifest_with_deps = _apply_detected_dependencies(
-        dict(manifest_raw), sources, base.declared if base else None,
-        # The modules the package being saved into carries forward (#468),
-        # and those of the packages it depends on.
-        module_names_in(base.files if base else (), [
-            t.get("source") for t in manifest_raw.get("templates") or [] if isinstance(t, dict)
-        ]) | frozenset(imported_modules),
-    )
-    manifest_authoring = _stamp_manifest_created_at_when_absent(manifest_with_deps)
-    manifest = _validate_manifest_dict(manifest_authoring)
-    validated_sources = _validate_sources(manifest, sources)
-
-    written: set[str] = {"manifest.json"}
+    prepared = _prepare(draft, onto, imported_modules, model)
     buf = io.BytesIO()
-    with zipfile.ZipFile(buf, mode="w") as zf:
-        # 1. manifest.json — canonical ``createdAt`` may be stamped here if absent.
-        _add_entry(
-            zf, "manifest.json",
-            json.dumps(manifest_authoring, indent=2, sort_keys=True).encode("utf-8"),
-        )
+    _write_archive(buf, prepared)
+    return BuildResult(manifest=prepared.manifest, archive=buf.getvalue(), filename=prepared.filename)
 
-        # 2. sources/<filename> — one starter per template, deterministic ordering.
-        for template_id in sorted(validated_sources):
-            entry = validated_sources[template_id]
-            arcname = f"sources/{entry['filename']}"
-            _add_entry(zf, arcname, entry["code"].encode("utf-8"))
-            written.add(arcname)
 
-        # 3. README.md / LICENSE — optional.
-        if isinstance(readme, str) and readme.strip():
-            _add_entry(zf, "README.md", readme.encode("utf-8"))
-            written.add("README.md")
-        if isinstance(license_text, str) and license_text.strip():
-            _add_entry(zf, "LICENSE", license_text.encode("utf-8"))
-            written.add("LICENSE")
-
-        # 4. Everything else the package being saved into already had.
-        for arcname, body in sorted((base.files if base else {}).items()):
-            if arcname not in written:
-                _add_entry(zf, arcname, body)
-
-    filename = f"{manifest.dir_name}-{manifest.version}.curio.zip"
-    return BuildResult(manifest=manifest, archive=buf.getvalue(), filename=filename)
+def build_package_archive_to(
+    target: Path, draft: dict[str, Any], *, onto: Path | None = None,
+    imported_modules: frozenset[str] = frozenset(),
+    model: ModelSource | None = None,
+) -> BuiltArchive:
+    """:func:`build_package_archive`, written to the file *target*: a model
+    package's weights are copied into it in chunks, never held in memory."""
+    prepared = _prepare(draft, onto, imported_modules, model)
+    with open(target, "wb") as handle:
+        _write_archive(handle, prepared)
+    return BuiltArchive(
+        manifest=prepared.manifest, filename=prepared.filename, path=Path(target),
+        copied_model=model.model_id if model else None,
+    )

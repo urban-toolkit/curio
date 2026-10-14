@@ -66,6 +66,7 @@ export {
   tryGetNodeDescriptor,
   getAllNodeTypes,
   getPaletteNodeTypes,
+  modelTypeOfPackage,
   subscribeToRegistry,
 } from './nodeRegistry';
 
