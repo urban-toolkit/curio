@@ -42,7 +42,7 @@ Agent ids always begin with **`agent.`**, which keeps them apart from node packa
 
 ### The agents
 
-**Seven agents ship with Curio.** Four of them are the catalog: **Researcher**, **Node Builder**, **Dataflow Builder** and **Dataset Finder**. This guide says what an agent does in three words:
+**Seven agents ship with Curio.** Four of them are the catalog: **Researcher**, **Node Builder**, **Dataflow Builder** and **Dataset Finder**. This guide uses three words for what an agent does:
 
 - **In chat:** what you can ask an agent where you dropped it.
 - **Tools:** the actions an agent takes during a chat, such as reading the dataflow, searching the web, proposing a node or proposing a package install. Anything that changes your dataflow is a proposal you apply.
@@ -59,7 +59,7 @@ The other three are helpers. They have modes only, never a chat: they are never 
 
 | Helper | Modes (who asks) |
 |---|---|
-| **Dataflow Planner** | Plan a dataflow's tasks, refresh them and check a plan's coherence (Dataflow Builder); plan a follow-up from a node's run (Dataflow Builder, Node Builder); bind the keywords of a description (Dataset Finder); extract them |
+| **Dataflow Planner** | Plan a dataflow's tasks, refresh them and check a plan's coherence (Dataflow Builder); plan a follow-up from a node's run (Dataflow Builder, Node Builder); bind the keywords of a description (Dataset Finder); extract them (no agent asks for this) |
 | **Dataflow Reader** | Explain the whole dataflow (Dataflow Builder); suggest its next steps (Dataflow Builder, Dataset Finder) |
 | **Generated Content Evaluator** | Check generated node content against its goal (Node Builder, Dataflow Builder) |
 
