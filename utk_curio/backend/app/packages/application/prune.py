@@ -16,6 +16,7 @@ from utk_curio.backend.app.projects import (
     storage as projects_storage,
 )
 from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
+from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
 from utk_curio.backend.app.packages.domain.spec_packages import model_ref_packages, project_packages
 from utk_curio.backend.app.packages.repositories import defaults as defaults_io
 from utk_curio.backend.app.packages.infrastructure import (
@@ -131,7 +132,7 @@ def packages_in_use(user_key: str, candidates: Iterable[str] | None = None) -> s
         if spec is None:
             continue
         referenced.update(project_packages(spec, installed_majors))
-        referenced.update(model_ref_packages(spec, installed_majors))
+        referenced.update(model_ref_packages(spec, installed_majors, model_ids_in_code))
         if wanted is not None and wanted.issubset(referenced):
             break  # short-circuit: every candidate has at least one reference
     return referenced

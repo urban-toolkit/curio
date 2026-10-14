@@ -779,17 +779,17 @@ DDRNET_DIR = "model.curio.ddrnet23-slim@1"
 DDRNET_ID = "model.curio.ddrnet23-slim"
 
 
-def _python_node(node_id: str, *, bound: bool, model_ref: str = DDRNET_ID) -> dict:
-    """A built-in Python node whose code runs DDRNet: bound to it as a drop of
-    the model onto the node binds it (``metadata.modelRefs``), or naming it in
-    its code only."""
+def _python_node(node_id: str, *, bound: bool, model_ref: str = DDRNET_ID, runs: str = DDRNET_ID) -> dict:
+    """A built-in Python node whose code runs the model *runs* (DDRNet): bound
+    to DDRNet as a drop of the model onto the node binds it
+    (``metadata.modelRefs``), or naming it in its code only."""
     metadata: dict = {"keywords": []}
     if bound:
         metadata["modelRefs"] = [{"id": model_ref, "name": "DDRNet23-Slim (street scenes)"}]
     return {
         "id": node_id,
         "type": "curio.builtin/computation-analysis",
-        "content": f'model = curio_load_model("{DDRNET_ID}")\nreturn 1\n',
+        "content": f'model = curio_load_model("{runs}")\nreturn 1\n',
         "metadata": metadata,
     }
 
@@ -816,6 +816,30 @@ class TestModelRefsCountAsInUse:
         ]}}
         assert referencing_nodes(spec, DDRNET_DIR, {DDRNET_ID: [1]}) == ["bound", "by-major"]
         assert referencing_nodes(spec, "model.curio.other@1", {DDRNET_ID: [1]}) == []
+
+    def test_a_binding_counts_only_while_the_code_still_names_its_model(self):
+        """A hand edit to another model leaves the drop's ref behind, as the
+        canvas's ``nodeLinkedModelIds`` reads it: that ref keeps nothing."""
+        from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
+
+        spec = {"dataflow": {"nodes": [
+            _python_node("bound", bound=True),
+            _python_node("edited", bound=True, runs="model.example.local-relief"),
+        ]}}
+        assert referencing_nodes(spec, DDRNET_DIR, {DDRNET_ID: [1]}, model_ids_in_code) == ["bound"]
+
+    def test_remove_from_project_takes_a_model_whose_binding_the_code_no_longer_names(
+        self, app, user_and_token, alice_project,
+    ):
+        user, _ = user_and_token
+        user_key = _user_key_for(user)
+        packages_services.install_to_project(user_key, alice_project, DDRNET_DIR)
+        _with_nodes(user_key, alice_project, [_python_node("edited", bound=True, runs="model.example.local-relief")])
+
+        result = packages_services.uninstall_from_project(user_key, alice_project, DDRNET_DIR)
+
+        assert result["packages"] == []
+        assert result["pruned"] == [DDRNET_DIR]
 
     def test_remove_from_project_is_refused_while_a_node_is_bound_to_the_model(
         self, app, user_and_token, alice_project,
