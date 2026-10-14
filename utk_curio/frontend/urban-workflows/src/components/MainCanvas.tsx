@@ -61,6 +61,17 @@ import {
     readModelDragPayload,
     type ModelDropTemplate,
 } from "../services/packages/modelApplication";
+import {
+    endPackageCardDrag,
+    hasPackageCardDrag,
+    readPackageCardDragPayload,
+} from "../services/packages/packageCardDrag";
+import {
+    guestAddRefusal,
+    packageDropAction,
+    requestPackageAdd,
+} from "../services/packages/packageAddRequests";
+import { useHostedGuest } from "./apiSettings/useHostedGuest";
 import { endScenarioDrag, hasScenarioDrag, readScenarioDragPayload } from "../services/scenarioCatalog/scenarioDrag";
 import { useScenarioDrop } from "./scenarios/useScenarioDrop";
 import { packageStarterCode } from "../adapters/node/packageNodeBehavior";
@@ -122,7 +133,9 @@ export function MainCanvas() {
         registerNotebookScroller,
         revealNodes,
         scenarios,
+        packages: dataflowPackages,
     } = useFlowContext();
+    const hostedGuest = useHostedGuest();
 
     // The Scenarios panel, and the scenario it highlights (#662). Never saved.
     const [scenarioPanelOpen, setScenarioPanelOpen] = useState(false);
@@ -333,13 +346,14 @@ export function MainCanvas() {
 
     const handleDragOver = useCallback((event: React.DragEvent) => {
         event.preventDefault();
-        // Dataset, model, scenario AND agent drags use effectAllowed="copy"; a
-        // "move" dropEffect is an incompatible pair, so the browser cancels the
-        // drop (handleDrop never fires and the agent silently fails to attach).
-        // Node-creation drags keep "move".
+        // Dataset, model, package card, scenario AND agent drags use
+        // effectAllowed="copy"; a "move" dropEffect is an incompatible pair, so
+        // the browser cancels the drop (handleDrop never fires and the agent
+        // silently fails to attach). Node-creation drags keep "move".
         const wantsCopy =
             hasDatasetDrag(event.dataTransfer) ||
             hasModelDrag(event.dataTransfer) ||
+            hasPackageCardDrag(event.dataTransfer) ||
             hasScenarioDrag(event.dataTransfer) ||
             hasAgentDrag(event.dataTransfer);
         event.dataTransfer.dropEffect = wantsCopy ? "copy" : "move";
@@ -443,6 +457,37 @@ export function MainCanvas() {
         markDirty();
     }, [getStarters, dropPosition, revealCreated, createCodeNode, markDirty, showToast]);
 
+    // A package's card from the Node Catalog drawer becomes the package's
+    // node. A package the dataflow has not added goes through the drawer's own
+    // Add first (the review, then the install of its libraries), and the node
+    // is made once it is added; a hosted guest's drop is refused, since guests
+    // never install.
+    const handlePackageCardCanvasDrop = useCallback((event: React.DragEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const card = readPackageCardDragPayload(event.dataTransfer);
+        endPackageCardDrag();
+        if (!card) return;
+        const position = dropPosition(event);
+        const create = () => {
+            revealCreated(createCodeNode(card.nodeType as NodeType, { position }));
+            const article = /^[aeiou]/i.test(card.nodeLabel) ? "an" : "a";
+            showToast(`Created ${article} ${card.nodeLabel} node.`, "success");
+            markDirty();
+        };
+        const action = packageDropAction({
+            inDataflow: (dataflowPackages ?? []).includes(card.dirName),
+            hostedGuest,
+        });
+        if (action === "create") {
+            create();
+        } else if (action === "refuse") {
+            showToast(guestAddRefusal(card.name), "warning");
+        } else if (!requestPackageAdd({ dirName: card.dirName, kind: card.kind, onAdded: create })) {
+            showToast(`Add ${card.name} to this dataflow from the Node Catalog first.`, "warning");
+        }
+    }, [dropPosition, revealCreated, createCodeNode, showToast, markDirty, dataflowPackages, hostedGuest]);
+
     // A scenario from the Scenario Catalog arrives as a copy: its box where it
     // was dropped, its context as fixed data (useScenarioDrop). The notebook
     // view shows its cells. On the canvas the box is drawn beside React Flow,
@@ -476,6 +521,10 @@ export function MainCanvas() {
         }
         if (hasModelDrag(event.dataTransfer)) {
             handleModelCanvasDrop(event);
+            return;
+        }
+        if (hasPackageCardDrag(event.dataTransfer)) {
+            handlePackageCardCanvasDrop(event);
             return;
         }
         if (hasScenarioDrag(event.dataTransfer)) {
@@ -528,7 +577,7 @@ export function MainCanvas() {
         const position = dropPosition(event);
         revealCreated(createCodeNode(type, { position }));
         markDirty();
-    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleModelCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, saveCurrentProject, reactFlow]);
+    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, saveCurrentProject, reactFlow]);
 
     // The Delete key reaches these through React Flow, which sends the
     // selected edges plus every edge attached to a deleted node first, then

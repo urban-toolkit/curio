@@ -68,6 +68,7 @@ There are two places you manage node packages:
 | Action | Where | What it changes | What you see |
 |---|---|---|---|
 | **Add to project** | Drawer | This project's lockfile, plus your package store if the package is not there yet | The package's nodes appear in this project's palette only. |
+| **Drag a card onto the canvas**, for a package with one node | Drawer | What **Add to project** changes, when the project does not have the package yet | The package's node appears where you drop it. |
 | **Add to all projects** | `/catalog/nodes` | Your defaults and every project's lockfile, plus your package store | The package appears in every project's palette, and new projects start with it. |
 | **Update** (drawer), **Update all projects** (`/catalog/nodes`) | Shown when the shared catalog has a higher version than your copy | Your store copy, replaced by the catalog's version | Every project that uses the package gets the new version. A package with its own interface runs the new one after you reload the page. |
 | **Remove from project** | Drawer | This project's lockfile; also your store copy and defaults entry, when no other project uses the package | The package leaves this project's palette. |
@@ -90,6 +91,8 @@ There are two places you manage node packages:
 ## 3. Using a node in a dataflow
 
 Once a package is in the open project, its nodes are in the palette: the built-in nodes sit in the left Tools panel, and nodes from other packages in its **Node Catalog** dropdown. Drag one onto the canvas.
+
+A package with one node can also be dragged onto the canvas by its card in the drawer, and its node appears where you drop it. If the project does not have the package yet, the drop first opens the same review as **Add to project**, and the node appears once the package and its Python libraries are installed. On a hosted deployment, a guest's drop of such a package is refused.
 
 A Python node that calls a key-gated API reads the key by name, never as a literal: `api_key = curio_secret("<name>")` returns the key saved under that name as a **Node code** key on the **API keys** tab of **API Settings** (see [USAGE.md](USAGE.md#keys-for-node-code)). Like `curio_data_path("<id>")`, the name travels with the dataflow, and the value reaches the sandbox for the run only.
 

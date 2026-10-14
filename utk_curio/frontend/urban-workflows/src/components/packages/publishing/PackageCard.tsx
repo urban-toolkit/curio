@@ -2,11 +2,15 @@ import React from "react";
 import {
   PackagePayload,
   beginModelDrag,
+  beginPackageCardDrag,
   endModelDrag,
+  endPackageCardDrag,
   isModelPackage,
+  packageCardNode,
   packageInitial,
   primaryCategory,
   writeModelDragData,
+  writePackageCardDragData,
 } from "../../../services/packages";
 import {
   CatalogKindIcon,
@@ -90,15 +94,30 @@ export const PackageCard: React.FC<PackageCardProps> = ({
         onDragEnd: () => endModelDrag(),
       }
     : {};
+  // A node package's card drags when the package has one node: dropped on the
+  // canvas it becomes that node, after the package's Add when the dataflow
+  // has not added it (`packageAddRequests`).
+  const nodeDraggable = !model && packageCardNode(pkg) != null;
+  const nodeDrag = nodeDraggable
+    ? {
+        draggable: true,
+        onDragStart: (event: React.DragEvent<HTMLElement>) => {
+          const payload = beginPackageCardDrag(pkg);
+          if (payload) writePackageCardDragData(event.dataTransfer, payload);
+        },
+        onDragEnd: () => endPackageCardDrag(),
+      }
+    : {};
 
   return (
     <article
-      className={model ? `${styles.card} ${styles.cardDraggable}` : styles.card}
+      className={model || nodeDraggable ? `${styles.card} ${styles.cardDraggable}` : styles.card}
       /* Stable hook for e2e locators: the CSS module class is hashed, and
          keying on the display name couples tests to copy that has been
          renamed repeatedly. Mirrors data-pkg-palette-coords. */
       data-pkg-dir={pkg.dirName}
       {...modelDrag}
+      {...nodeDrag}
     >
       {/* The square, and the way into the package's details beneath it - the
           same position on every drawer card. */}
