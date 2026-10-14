@@ -1006,3 +1006,223 @@ def package_store():
             "dirName": dir_name,
         }
     return jsonify(answer), 200
+
+
+#: The pip settings ``wheelhouse`` overrides, with the values they had before
+#: the first stage, so ``restore`` puts back exactly what was there: a variable
+#: that was unset is removed again, not left empty. Module level, like
+#: ``_PIP_ORIGINALS``: the install it has to reach happens in a LATER request.
+_WHEELHOUSE_ENV_KEYS = ("PIP_NO_INDEX", "PIP_FIND_LINKS", "PIP_DISABLE_PIP_VERSION_CHECK")
+_WHEELHOUSE_ENV_ORIGINALS: dict = {}
+
+#: Staging uninstalls the distributions it stages from the interpreter every
+#: sandbox of the stack imports from, so only a test library's name may reach
+#: it: ``curio-wheelhouse-<name>``, a name no index carries.
+_WHEELHOUSE_DIST_RE = re.compile(r"curio[-_.]wheelhouse[-_.][a-z0-9][a-z0-9_.-]{0,40}", re.IGNORECASE)
+_WHEEL_FILE_RE = re.compile(
+    r"(?P<dist>[A-Za-z0-9][A-Za-z0-9_.]*)-(?P<version>[0-9][0-9A-Za-z.]*)-py3-none-any\.whl"
+)
+#: A test wheel is a few hundred bytes.
+_WHEEL_MAX_BYTES = 64 * 1024
+
+
+def _wheelhouse_root():
+    """Where the staged wheels live: inside the test rig's state tree."""
+    from utk_curio.backend.app.common.user_storage import curio_root
+
+    return curio_root() / "test-wheelhouse"
+
+
+def _staged_dists() -> list[str]:
+    """The distributions of the wheels in the wheelhouse, as their files name them."""
+    root = _wheelhouse_root()
+    if not root.is_dir():
+        return []
+    dists = []
+    for path in sorted(root.glob("*.whl")):
+        match = _WHEEL_FILE_RE.fullmatch(path.name)
+        if match:
+            dists.append(match.group("dist"))
+    return dists
+
+
+def _installed_map(dists) -> dict:
+    """Whether pip's metadata holds each distribution, asked afresh."""
+    import importlib
+
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
+
+    # The metadata finder caches directory listings, and pip ran in a child.
+    importlib.invalidate_caches()
+    pip_runner.forget_import_probes()
+    return {dist: pip_runner.is_satisfied(dist, "") for dist in dists}
+
+
+@testing_bp.route("/wheelhouse", methods=["POST"])
+def wheelhouse():
+    """Make this backend's pip install from a local wheelhouse, and from nothing else.
+
+    A package declares its libraries, and Curio installs them when the package
+    is added, when a dataflow whose lockfile names it is opened, and at launch.
+    A test of those installs has to run the real pip and stay offline. pip
+    reads both from its environment (``PIP_NO_INDEX`` with ``PIP_FIND_LINKS``,
+    as ``test_backend_runtime.py`` sets them), and only this process's
+    environment reaches the pip it spawns, so the wheelhouse is staged here,
+    for the same reason ``broken-library`` and ``package-store`` act here.
+
+    Body (JSON):
+      * ``action`` - ``"stage"``, ``"status"`` or ``"restore"``.
+      * ``wheels`` - stage: ``[{"filename", "content"}]``, the content in
+        base64, each a ``curio-wheelhouse-*`` distribution.
+      * ``names``  - status: the distributions to ask about.
+
+    ``stage`` writes the wheels, points pip at them with no index, and
+    uninstalls any copy of their distributions an earlier run left, so the
+    install a test then sets off is a real one. ``status`` and ``stage`` answer
+    ``installed``, per distribution. ``restore`` puts pip's settings back,
+    removes the wheelhouse and uninstalls what it held.
+    """
+    import base64
+    import binascii
+    import os
+
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
+
+    body = request.get_json(silent=True) or {}
+    action = (body.get("action") or "").strip()
+    if action not in ("stage", "status", "restore"):
+        return jsonify({"error": "action must be 'stage', 'status' or 'restore'"}), 400
+
+    if action == "status":
+        names = body.get("names")
+        if not isinstance(names, list) or not names or not all(
+            isinstance(name, str) and _WHEELHOUSE_DIST_RE.fullmatch(name) for name in names
+        ):
+            return jsonify({"error": "names must list curio-wheelhouse-* distributions"}), 400
+        return jsonify({"installed": _installed_map(names)}), 200
+
+    root = _wheelhouse_root()
+    if action == "restore":
+        staged = _staged_dists()
+        # Settings first: whatever the uninstall below answers, no later pip in
+        # this process may be left reading only a wheelhouse.
+        for key, value in _WHEELHOUSE_ENV_ORIGINALS.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        _WHEELHOUSE_ENV_ORIGINALS.clear()
+        shutil.rmtree(root, ignore_errors=True)
+        pip_runner.uninstall_python_deps(staged)
+        return jsonify({"restored": True, "installed": _installed_map(staged)}), 200
+
+    wheels = body.get("wheels")
+    if not isinstance(wheels, list) or not wheels:
+        return jsonify({"error": "wheels must be a non-empty list"}), 400
+    decoded: dict[str, bytes] = {}
+    for wheel in wheels:
+        wheel = wheel if isinstance(wheel, dict) else {}
+        filename = str(wheel.get("filename") or "")
+        match = _WHEEL_FILE_RE.fullmatch(filename)
+        if not match or not _WHEELHOUSE_DIST_RE.fullmatch(match.group("dist")):
+            return jsonify({"error": f"not a curio-wheelhouse-* wheel: {filename!r}"}), 400
+        try:
+            data = base64.b64decode(str(wheel.get("content") or ""), validate=True)
+        except (binascii.Error, ValueError):
+            return jsonify({"error": f"{filename}: the content is not base64"}), 400
+        if not data or len(data) > _WHEEL_MAX_BYTES:
+            return jsonify({"error": f"{filename}: {len(data)} bytes is not a test wheel"}), 400
+        decoded[filename] = data
+
+    shutil.rmtree(root, ignore_errors=True)
+    root.mkdir(parents=True)
+    for filename, data in decoded.items():
+        (root / filename).write_bytes(data)
+    dists = _staged_dists()
+    # A copy an earlier run left would make pip answer "already satisfied", and
+    # a test would pass over an install that never ran.
+    pip_runner.uninstall_python_deps(dists)
+
+    if not _WHEELHOUSE_ENV_ORIGINALS:
+        _WHEELHOUSE_ENV_ORIGINALS.update({key: os.environ.get(key) for key in _WHEELHOUSE_ENV_KEYS})
+    os.environ["PIP_NO_INDEX"] = "1"
+    os.environ["PIP_FIND_LINKS"] = str(root)
+    os.environ["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
+    return jsonify({
+        "wheelhouse": str(root),
+        "wheels": sorted(decoded),
+        "installed": _installed_map(dists),
+    }), 200
+
+
+#: Only a test package may be planted in the shared catalog or removed from it
+#: through here, so no test can replace or delete a package Curio ships.
+_TEST_PACKAGE_DIR_RE = re.compile(r"test\.[a-z][a-z0-9-]{0,62}@(?:0|[1-9][0-9]{0,3})")
+#: A test package is a manifest and a starter or two.
+_TEST_PACKAGE_MAX_FILES = 16
+_TEST_PACKAGE_MAX_BYTES = 256 * 1024
+
+
+@testing_bp.route("/catalog-package", methods=["POST"])
+def catalog_package():
+    """Put a test package in this backend's shared catalog, or take it out.
+
+    Adding a package copies it from the shared catalog (``catalog_root()``)
+    into the user's store and installs the libraries its manifest declares. A
+    test of that install needs a package only the test has, in the catalog, and
+    not yet in the user's store: a store copy is answered as already added and
+    installs nothing. The catalog is in the stack's own filesystem, which a
+    pytest process talking to a container cannot write, so it is written here.
+    Each e2e shard has its own catalog (``tests/shards.py``).
+
+    Body (JSON):
+      * ``action``  - ``"plant"`` or ``"remove"``.
+      * ``dirName`` - ``test.<name>@<major>``; nothing else passes.
+      * ``files``   - plant: ``{relative path: text}``, with ``manifest.json``.
+
+    ``plant`` replaces any earlier copy and writes its ``integrity.json``;
+    ``remove`` deletes the folder. Neither touches a user's store.
+    """
+    import json as _json
+
+    from utk_curio.backend.app.packages.repositories.archive import refresh_package_integrity
+    from utk_curio.backend.app.packages.repositories.catalog_dir import catalog_root as _catalog_root
+
+    body = request.get_json(silent=True) or {}
+    action = (body.get("action") or "").strip()
+    dir_name = (body.get("dirName") or "").strip()
+    if action not in ("plant", "remove"):
+        return jsonify({"error": "action must be 'plant' or 'remove'"}), 400
+    if not _TEST_PACKAGE_DIR_RE.fullmatch(dir_name):
+        return jsonify({"error": f"not a test package: {dir_name!r}"}), 400
+
+    target = _catalog_root() / dir_name
+    if action == "remove":
+        shutil.rmtree(target, ignore_errors=True)
+        return jsonify({"removed": dir_name, "present": target.exists()}), 200
+
+    files = body.get("files")
+    if not isinstance(files, dict) or "manifest.json" not in files:
+        return jsonify({"error": "files must map relative paths to text, with manifest.json"}), 400
+    if len(files) > _TEST_PACKAGE_MAX_FILES or sum(len(str(t)) for t in files.values()) > _TEST_PACKAGE_MAX_BYTES:
+        return jsonify({"error": "a test package is a manifest and a few small files"}), 400
+    for rel, text in files.items():
+        if (not isinstance(rel, str) or not isinstance(text, str) or not rel
+                or rel.startswith("/") or "\\" in rel or ".." in rel.split("/")
+                or rel == "integrity.json"):
+            return jsonify({"error": f"invalid file: {rel!r}"}), 400
+    try:
+        manifest = _json.loads(files["manifest.json"])
+    except ValueError:
+        return jsonify({"error": "manifest.json is not JSON"}), 400
+    declared = f"{manifest.get('id')}@{(manifest.get('compatibility') or {}).get('major')}"
+    if declared != dir_name:
+        return jsonify({"error": f"manifest.json declares {declared}, not {dir_name}"}), 400
+
+    shutil.rmtree(target, ignore_errors=True)
+    for rel, text in files.items():
+        path = target / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    refresh_package_integrity(target)
+    return jsonify({"planted": dir_name, "files": sorted(files)}), 200
