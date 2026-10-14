@@ -6,7 +6,7 @@ import {
   endModelDrag,
   endPackageCardDrag,
   isModelPackage,
-  packageCardNode,
+  packageCardNodes,
   packageInitial,
   primaryCategory,
   writeModelDragData,
@@ -94,10 +94,11 @@ export const PackageCard: React.FC<PackageCardProps> = ({
         onDragEnd: () => endModelDrag(),
       }
     : {};
-  // A node package's card drags when the package has one node: dropped on the
-  // canvas it becomes that node, after the package's Add when the dataflow
-  // has not added it (`packageAddRequests`).
-  const nodeDraggable = !model && packageCardNode(pkg) != null;
+  // A node package's card drags when the package has a node: dropped on the
+  // canvas it becomes that node, or the one picked from a menu of the
+  // package's nodes, after the package's Add when the dataflow has not added
+  // it (`usePackageCardDrop`).
+  const nodeDraggable = !model && packageCardNodes(pkg).length > 0;
   const nodeDrag = nodeDraggable
     ? {
         draggable: true,

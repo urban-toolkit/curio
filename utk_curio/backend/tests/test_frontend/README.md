@@ -207,7 +207,7 @@ palette drag and the edge drag.
 | `drag_to_canvas(page, source, *, at=None)` | One synthetic HTML5 drag from any draggable palette source onto `.curio-canvas-drop-target`; returns the new node's id, diffed from the canvas because ids are `uuid4`. |
 | `drag_to_canvas_with_the_mouse(page, grip, *, at)` | The same drag with `page.mouse`: press on *grip* (a card's title, a palette row's grip), move in steps, release over the canvas. The browser routes every event, so it is the only one that meets what lies over the canvas, such as an open drawer's scrim. Fails with the element that took the drop, or none. |
 | `drag_with_the_mouse_onto_canvas(page, grip, *, at)` | That mouse drag without waiting for a node, for a drop that opens a dialog first or is refused. Answers what the drop did: the element that took it, whether it is the canvas, and the drop effect. |
-| `offline_catalog_package(backend_url, dir_name, libraries)` | A context manager: a test package from `packages/` in the backend's catalog, and its libraries as wheels in a wheelhouse the backend's pip reads instead of an index (`PIP_NO_INDEX` with `PIP_FIND_LINKS`). Undone afterwards. `library_installed(backend_url, library)` says whether pip installed one. |
+| `offline_catalog_package(backend_url, dir_name, libraries)` | A context manager: a test package from `packages/` in the backend's catalog, and its libraries as wheels in a wheelhouse the backend's pip reads instead of an index (`PIP_NO_INDEX` with `PIP_FIND_LINKS`). Undone afterwards. `library_installed(backend_url, library)` says whether pip installed one. `offline_package(dir_name)` reads a test package's manifest: its name, its one library and its nodes. Each test of an install path has a package and a library of its own. |
 | `connect_nodes(page, source_id, target_id, *, source_handle="out", target_handle="in")` | Draws an edge with real pointer moves between two `.react-flow__handle`s and returns the derived edge id. |
 | `set_node_code(page, node_id, code)` / `read_node_code(page, node_id)` | Writes / reads a code node's source through that node's own Monaco instance. |
 | `canvas_nodes(page)` / `canvas_node_type(page, node_id)` | `{id, nodeType}` for the canvas, read from `window.__curio_reactFlow`. Projected, because `node.data` holds a `PythonInterpreter` and callbacks that Playwright cannot serialize. |
@@ -513,8 +513,9 @@ test_frontend/
   test_package_metadata_roundtrip_e2e.py  # Node settings + package metadata survive the archive
   test_workflow_deps_e2e.py   # loading a dataflow auto-installs its declared packages
   test_package_libraries_offline_e2e.py  # a package's library installs on every path that adds
-                                   # it: a drawer card drop, a dataflow's lockfile, the catalog
-                                   # page (offline via /api/testing/wheelhouse and
+                                   # it: a drawer card drop (and its menu of a package's
+                                   # nodes), a dataflow's lockfile, the catalog page
+                                   # (offline via /api/testing/wheelhouse and
                                    # /api/testing/catalog-package)
   test_library_install_integration.py  # library install -> sandbox import (NO browser)
   tour.py                     # screencast toolkit: caption/cursor overlay, pacing, video output

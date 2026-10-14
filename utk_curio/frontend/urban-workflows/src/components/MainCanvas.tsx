@@ -14,6 +14,7 @@ import ReactFlow, {
     useReactFlow,
     useStore,
     useStoreApi,
+    type XYPosition,
 } from "reactflow";
 import {
     CANVAS_TITLE_ATTR,
@@ -65,12 +66,9 @@ import {
     endPackageCardDrag,
     hasPackageCardDrag,
     readPackageCardDragPayload,
+    type PackageCardNode,
 } from "../services/packages/packageCardDrag";
-import {
-    guestAddRefusal,
-    packageDropAction,
-    requestPackageAdd,
-} from "../services/packages/packageAddRequests";
+import { usePackageCardDrop } from "./packages/usePackageCardDrop";
 import { useHostedGuest } from "./apiSettings/useHostedGuest";
 import { endScenarioDrag, hasScenarioDrag, readScenarioDragPayload } from "../services/scenarioCatalog/scenarioDrag";
 import { useScenarioDrop } from "./scenarios/useScenarioDrop";
@@ -457,36 +455,32 @@ export function MainCanvas() {
         markDirty();
     }, [getStarters, dropPosition, revealCreated, createCodeNode, markDirty, showToast]);
 
-    // A package's card from the Node Catalog drawer becomes the package's
-    // node. A package the dataflow has not added goes through the drawer's own
-    // Add first (the review, then the install of its libraries), and the node
-    // is made once it is added; a hosted guest's drop is refused, since guests
-    // never install.
+    // A package's card from the Node Catalog drawer becomes one of the
+    // package's nodes: its one node, or the one picked from a menu of its
+    // nodes at the drop point (usePackageCardDrop). A package the dataflow has
+    // not added goes through the drawer's own Add first (the review, then the
+    // install of its libraries), and the node is made once it is added; a
+    // hosted guest's drop is refused, since guests never install.
+    const createPackageNode = useCallback((node: PackageCardNode, position: XYPosition) => {
+        revealCreated(createCodeNode(node.nodeType as NodeType, { position }));
+        const article = /^[aeiou]/i.test(node.label) ? "an" : "a";
+        showToast(`Created ${article} ${node.label} node.`, "success");
+        markDirty();
+    }, [revealCreated, createCodeNode, showToast, markDirty]);
+    const { drop: dropPackageCard, menu: packageNodeMenu } = usePackageCardDrop({
+        dataflowPackages,
+        hostedGuest,
+        createNode: createPackageNode,
+        showToast,
+    });
     const handlePackageCardCanvasDrop = useCallback((event: React.DragEvent) => {
         event.preventDefault();
         event.stopPropagation();
         const card = readPackageCardDragPayload(event.dataTransfer);
         endPackageCardDrag();
         if (!card) return;
-        const position = dropPosition(event);
-        const create = () => {
-            revealCreated(createCodeNode(card.nodeType as NodeType, { position }));
-            const article = /^[aeiou]/i.test(card.nodeLabel) ? "an" : "a";
-            showToast(`Created ${article} ${card.nodeLabel} node.`, "success");
-            markDirty();
-        };
-        const action = packageDropAction({
-            inDataflow: (dataflowPackages ?? []).includes(card.dirName),
-            hostedGuest,
-        });
-        if (action === "create") {
-            create();
-        } else if (action === "refuse") {
-            showToast(guestAddRefusal(card.name), "warning");
-        } else if (!requestPackageAdd({ dirName: card.dirName, kind: card.kind, onAdded: create })) {
-            showToast(`Add ${card.name} to this dataflow from the Node Catalog first.`, "warning");
-        }
-    }, [dropPosition, revealCreated, createCodeNode, showToast, markDirty, dataflowPackages, hostedGuest]);
+        dropPackageCard({ card, position: dropPosition(event), at: { x: event.clientX, y: event.clientY } });
+    }, [dropPosition, dropPackageCard]);
 
     // A scenario from the Scenario Catalog arrives as a copy: its box where it
     // was dropped, its context as fixed data (useScenarioDrop). The notebook
@@ -750,6 +744,7 @@ export function MainCanvas() {
             </div>
 
         </div> : loadingAnimation() }
+        {packageNodeMenu}
         <VersionBadge />
         </ScenarioUiContext.Provider>
         </AgentAttachmentsProvider>
