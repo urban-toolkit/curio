@@ -698,9 +698,10 @@ Things worth knowing before adding to these:
   string for every parameter. The per-agent claim is on the captured system
   prompt, which the run composes from that agent's own preamble + instruction
   bytes. Keep that assertion or the parametrization becomes decoration.
-- **Never script `web.search` / `web.fetch`.** `agent.node-researcher` and
-  `agent.researcher` declare them and `app/agents/egress.py` really opens
-  sockets. Both also declare a local read tool, which is what the suite uses.
+- **Never script `web.search` / `web.fetch`.** `agent.researcher` declares
+  them and `app/agents/egress.py` really opens sockets. The suite scripts its
+  `node.create` instead, and it also declares the local read tools
+  `dataflow.read` and `node.read`.
 - **`discovery.search` is the exception, and only because of the corpus.**
   `agent.dataset-finder` declares it, and it too really opens sockets - but the
   harness exports `CURIO_DISCOVERY_FIXTURES`, so in this stack the discovery
@@ -714,8 +715,10 @@ Things worth knowing before adding to these:
   match: `dataflow.plan.write` (so the Dataflow Builder plans rather than
   creating one node), then `node.create` (applying it puts a NEW node on the
   canvas - the most visible proof an agent did something), then
-  `node.content.write`. That spread is intentional: one plan, two node
-  creations, one content replacement. The remaining mutate contracts
+  `node.content.write`. That spread is intentional: one plan and two node
+  creations. No card's first match is `node.content.write` (node content is
+  the Node Builder's mode), so `TestAgentReviewCard` in
+  `test_agent_chat_e2e.py` applies a content replacement. The remaining mutate contracts
   (`dataset.install`, `package.install`, `package.draft.apply`,
   `node.template.create`) each need a real catalog row, or a run of the isolated
   build service; their mints are covered in-process by

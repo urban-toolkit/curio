@@ -37,8 +37,8 @@ class TestDelegatedSearch:
         monkeypatch.setattr(
             agent_tools, "_execute_web_search",
             lambda params: ("ok", json.dumps({"results": rows})))
-        out = _delegated_search_results("weather in Paris")
-        assert out["query"] == "weather in Paris"
+        out = _delegated_search_results("cool roofs in Chicago")
+        assert out["query"] == "cool roofs in Chicago"
         assert len(out["results"]) == 5  # row cap
         for row in out["results"]:
             assert set(row) == {"title", "url", "snippet"}
@@ -68,11 +68,11 @@ class TestNotesComposeEnrichment:
                 {"title": "T", "url": "https://e.test", "snippet": "S"}]})))
         enriched = _enriched_delegate_inputs(
             "guest", "p1", {}, "research.notes.compose",
-            {"question": "what's the weather in Paris?"})
+            {"question": "how much do cool roofs lower summer surface temperatures in Chicago?"})
         assert enriched["searchResults"]["results"][0]["title"] == "T"
         assert enriched["notesReplyContract"] is _NOTES_REPLY_CONTRACT
         assert isinstance(enriched["notesTemplates"], list)
-        assert enriched["question"] == "what's the weather in Paris?"
+        assert enriched["question"] == "how much do cool roofs lower summer surface temperatures in Chicago?"
 
     def test_model_supplied_keys_always_win(self, tmp_curio, monkeypatch):
         def _never(params):  # pragma: no cover — must not run
@@ -269,24 +269,26 @@ class TestDataflowBuilderNotesLane:
         monkeypatch.setattr(
             agent_tools, "_execute_web_search",
             lambda params: ("ok", json.dumps({"results": [
-                {"title": "Paris weather", "url": "https://w.test",
-                 "snippet": "21C clear"}]})))
+                {"title": "Chicago cool roofs", "url": "https://w.test",
+                 "snippet": "30F cooler roofs"}]})))
         return pid, att_id, calls
+
+    QUESTION = "how much do cool roofs lower summer surface temperatures in Chicago?"
 
     def _delegate_tail(self):
         return ('```curio.v1\n{"delegateRequest": {"capability": '
                 '"research.notes.compose", "inputs": '
-                '{"question": "what\'s the weather in Paris?"}}}\n```')
+                '{"question": "' + self.QUESTION + '"}}}\n```')
 
     def _child_reply(self):
         return json.dumps({
-            "answer": "It is about 21°C and clear in Paris.",
+            "answer": "Cool roofs run about 30°F cooler than dark roofs in a Chicago summer.",
             "nodeType": "curio.notes/note-surface",
             "notes": [
                 {"title": "Question",
-                 "content": "what's the weather in Paris?", "color": "yellow"},
-                {"title": "Weather in Paris",
-                 "content": "**Now:** ~21°C, clear\n\n- [source](https://w.test)",
+                 "content": self.QUESTION, "color": "yellow"},
+                {"title": "Cool roofs in Chicago",
+                 "content": "**Roof surface:** ~30°F cooler\n\n- [source](https://w.test)",
                  "color": "green"},
             ],
         })
@@ -304,7 +306,7 @@ class TestDataflowBuilderNotesLane:
         ])
         run = client.post(
             f"/api/agents/projects/{pid}/attachments/{att_id}/run",
-            json={"message": "what's the weather in Paris?"},
+            json={"message": self.QUESTION},
             headers=_auth(token))
         assert run.status_code == 200, run.get_data(as_text=True)
         parts = run.get_json()["content"]
@@ -312,11 +314,11 @@ class TestDataflowBuilderNotesLane:
         assert len(proposals) == 2  # the A13 row, jointly pending (A16)
         assert all(p["tool"] == "node.create" and p["status"] == "pending"
                    for p in proposals)
-        assert proposals[0]["preview"] == "what's the weather in Paris?"
-        assert "21°C" in proposals[1]["preview"]
+        assert proposals[0]["preview"] == self.QUESTION
+        assert "30°F" in proposals[1]["preview"]
         # The child saw runtime-gathered inputs, not tools.
         child_prompt = json.dumps(calls[1])
-        assert "searchResults" in child_prompt and "21C clear" in child_prompt
+        assert "searchResults" in child_prompt and "30F cooler roofs" in child_prompt
         assert "notesReplyContract" in child_prompt
         # The delegation card reports ok with the answer riding the summary.
         delegation = next(p for p in parts if p["type"] == "delegation")

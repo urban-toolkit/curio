@@ -10,10 +10,10 @@ import { behaviorDataView } from "../utils/behaviorDataView";
 
 describe("behaviorDataView (dev/90 A15)", () => {
     it("aliases data.code onto data.content when content is absent", () => {
-        const data = { nodeType: "curio.notes/note-surface@1", code: "### Weather in Paris" };
+        const data = { nodeType: "curio.notes/note-surface@1", code: "### Cool roofs in Chicago" };
         const view = behaviorDataView(data);
-        expect(view.content).toBe("### Weather in Paris");
-        expect(view.code).toBe("### Weather in Paris");
+        expect(view.content).toBe("### Cool roofs in Chicago");
+        expect(view.code).toBe("### Cool roofs in Chicago");
     });
 
     it("never overwrites an explicit content field", () => {

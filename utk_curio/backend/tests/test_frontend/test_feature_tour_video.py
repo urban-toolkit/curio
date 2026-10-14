@@ -284,20 +284,19 @@ GEO_CHART_SPEC = json.dumps(
     indent=2,
 )
 GEO_GOAL = "Map and chart the size of downtown Chicago's ZIP codes."
-# Every catalog agent is added, so the rail counts ten; these are the ones
+# Every catalog agent is added, so the rail counts seven; these are the ones
 # attached, each where it works.
 GEO_AGENTS = [
     "agent.chat-agent@1.0.0", "agent.connection-builder@1.0.0",
     "agent.dataflow-builder@1.0.0", "agent.dataset-finder@1.0.0",
-    "agent.node-builder@1.0.0", "agent.node-content-builder@1.0.0",
-    "agent.node-researcher@1.0.0", "agent.package-builder@1.0.0",
-    "agent.package-recommendation@1.0.0", "agent.researcher@1.0.0",
+    "agent.node-builder@1.0.0", "agent.package-builder@1.0.0",
+    "agent.researcher@1.0.0",
 ]
 GEO_ATTACH = [
     ("agent.dataset-finder@1.0.0", {"kind": "node", "targetId": GEO_LOADER}),
     ("agent.node-builder@1.0.0", {"kind": "node", "targetId": GEO_TRANSFORM}),
     ("agent.chat-agent@1.0.0", {"kind": "node", "targetId": GEO_MAP}),
-    ("agent.package-recommendation@1.0.0", {"kind": "node", "targetId": GEO_CHART}),
+    ("agent.package-builder@1.0.0", {"kind": "node", "targetId": GEO_CHART}),
     (
         "agent.connection-builder@1.0.0",
         {"kind": "connection", "targetId": f"reactflow__edge-{GEO_TRANSFORM}out-{GEO_CHART}in"},
@@ -1318,7 +1317,7 @@ def scene_agent_catalog(ctx: Ctx) -> None:
     drawer = _open_agent_drawer(ctx)
     tour.say(
         "Nodes, data - and agents",
-        "Ten ship built in, each a versioned package like any other.",
+        "Seven ship built in, each a versioned package like any other.",
         hold=2900,
     )
     tour.say(

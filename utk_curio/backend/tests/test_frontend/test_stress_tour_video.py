@@ -2190,7 +2190,7 @@ def chapter_agents(run: StressRun) -> None:
     with run.step("Attach an agent to a node by dragging"):
         dismiss_toasts(page)
         target = run.state["transform"]
-        drag_agent_to(run, _first_coord(installed, "node-content-builder"),
+        drag_agent_to(run, _first_coord(installed, "node-builder"),
                       lambda: node_client_point(page, target))
         expect_attach_toast(run, "the node")
 
@@ -2243,7 +2243,7 @@ def chapter_agents(run: StressRun) -> None:
         ) or []
         edge_id = edges[0] if edges else None
         already = {
-            _first_coord(installed, "node-content-builder"),
+            _first_coord(installed, "node-builder"),
             _first_coord(installed, "connection-builder"),
             _first_coord(installed, "dataflow-builder"),
         }

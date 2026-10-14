@@ -9,9 +9,10 @@ import { TrillGenerator } from "../../TrillGenerator";
 import { composeAgentRunContext, type AgentAttachment } from "../../services/agents";
 
 /**
- * Grounded-context composer parity tests (memo dev/44): the Node Content
- * Builder framing must match the legacy Get Code flow
- * (`clickGenerateContentNode` in styles.tsx) byte-for-byte.
+ * Grounded-context composer tests (memo dev/44): an attachment's context is
+ * its declared reads, composed in order from the live canvas, byte for byte.
+ * No agent is special-cased (the content writer's legacy Get Code framing left
+ * with it: node content is the Node Builder's mode, composed server-side).
  */
 
 const attachment = (over: Partial<AgentAttachment>): AgentAttachment => ({
@@ -54,29 +55,25 @@ beforeEach(() => jest.spyOn(Date, "now").mockReturnValue(1_700_000_000_000));
 afterEach(() => jest.restoreAllMocks());
 
 describe("composeAgentRunContext (memo dev/44)", () => {
-  it("Node Content Builder matches the legacy Get Code framing byte-for-byte", () => {
+  it("a node attachment's content reads compose labeled fragments, byte for byte", () => {
+    // The reads of the Node Builder's content mode, on a Node Builder attached
+    // to a node: no coord is special-cased, so they compose like any agent's.
     const att = attachment({
-      coord: "agent.node-content-builder@1.0.0",
+      coord: "agent.node-builder@1.0.0",
       target: { kind: "node", targetId: "n1" },
       reads: ["dataflowContext", "nodeId", "subtask", "workflowGoal"],
     });
     const context = composeAgentRunContext(att, canvas);
-    // Reproduce the legacy composition independently (styles.tsx:477-493).
+    // Composed independently: the live Trill, then each read's labeled line.
     const trill = TrillGenerator.generateTrill(nodes, [], "wf", "analyze heat risk");
-    let goal = "";
-    for (const node of trill.dataflow.nodes) {
-      if (node.id === "n1") {
-        goal = node.goal ?? "";
-        node.content = ""; // legacy blanks the target's content
-      }
-    }
-    const legacy =
+    const expected =
       "Current Trill: " + JSON.stringify(trill) + "\n" +
-      " Node ID: n1\n" +
-      "Subtask: " + goal + " Task: " + "\n" + "analyze heat risk";
-    expect(context).toBe(legacy);
-    // The blanking is real: the target's old code never reaches the model…
-    expect(context).not.toContain("print('old')");
+      "Node ID: n1\n" +
+      "Subtask: load the data\n" +
+      "Task: analyze heat risk";
+    expect(context).toBe(expected);
+    // The target's code rides the live Trill, as for every other agent…
+    expect(context).toContain("print('old')");
     // …and the unsaved canvas-only node IS included.
     expect(context).toContain("n2-unsaved");
   });

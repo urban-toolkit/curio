@@ -29,7 +29,7 @@ from .utils import (
 PACKAGE_NAME = "Urban Heat Vulnerability Index"
 
 #: A built-in from the roster, listed without ever being imported.
-AGENT_NAME = "Node Researcher"
+AGENT_NAME = "Researcher"
 
 
 def _login(page, app_frontend, current_server):

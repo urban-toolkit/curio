@@ -58,14 +58,13 @@ class TestProjectInstall:
 
     # ── dev/106: the requiresAgents closure ─────────────────────────────
     DFB = "agent.dataflow-builder@1.0.0"
-    NCB = "agent.node-content-builder@1.0.0"
-    # dev/126: the closure is three deep now — the Dataset Finder (resolution
-    # delegates dataset.discover from a server path) and the Node Builder
-    # (every plan-created node is given one at Apply) joined the content
-    # builder, in the Dataflow Builder's own declaration order.
+    # dev/126: the Dataset Finder (resolution delegates dataset.discover from
+    # a server path) and the Node Builder (every plan-created node is given
+    # one at Apply, and Solve writes content through its content mode), in
+    # the Dataflow Builder's own declaration order.
     DF = "agent.dataset-finder@1.0.0"
     NB = "agent.node-builder@1.0.0"
-    CLOSURE = [NCB, DF, NB]
+    CLOSURE = [DF, NB]
 
     def test_installing_the_builder_installs_its_required_specialist_in_one_write(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
@@ -90,7 +89,7 @@ class TestProjectInstall:
         assert body["required"] == self.CLOSURE
         assert len(writes) == 1  # atomic: root + closure in one spec write
         # The dependency's bytes are materialized (AC-5) — no import row added.
-        assert storage.load_installed_agent_definition(_user_dir_key(user), self.NCB) is not None
+        assert storage.load_installed_agent_definition(_user_dir_key(user), self.NB) is not None
         assert client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"] == []
 
     def test_reinstall_with_satisfied_closure_is_idempotent(self, client, user_and_token, tmp_curio, alice_project):
@@ -103,11 +102,12 @@ class TestProjectInstall:
 
     def test_dependency_already_installed_adds_only_the_root(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
-        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": self.NCB}, headers=_auth(token))
+        # The Dataset Finder requires nothing, so this installs it alone.
+        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": self.DF}, headers=_auth(token))
         r = client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": self.DFB}, headers=_auth(token))
         # The already-installed member is not re-added; the rest of the
         # closure is (dev/126).
-        assert r.get_json()["installed"] == [self.DFB, self.DF, self.NB]
+        assert r.get_json()["installed"] == [self.DFB, self.NB]
         assert sorted(r.get_json()["agents"]) == sorted([self.DFB, *self.CLOSURE])
 
     def test_unresolvable_dependency_409s_and_writes_nothing(self, client, user_and_token, tmp_curio, alice_project):
@@ -119,8 +119,8 @@ class TestProjectInstall:
             "id": "agent.needy", "name": "Needy", "category": "node", "version": "1.0.0",
             "capabilities": [{"id": "node.explain", "contractVersion": "1"}],
             "compatibleTargets": [{"kind": "node", "requires": []}],
-            "delegatesTo": ["agent.node-content-builder", "agent.ghost"],
-            "requiresAgents": ["agent.node-content-builder", "agent.ghost"],
+            "delegatesTo": ["agent.node-builder", "agent.ghost"],
+            "requiresAgents": ["agent.node-builder", "agent.ghost"],
             "provenance": {"publisher": "curio", "trust": "imported"},
         }), encoding="utf-8")
         r = client.post(
@@ -131,7 +131,7 @@ class TestProjectInstall:
         assert "agent.ghost" in r.get_json()["error"]
         assert "nothing was installed" in r.get_json()["error"]
         listed = client.get(f"/api/agents/projects/{alice_project}", headers=_auth(token)).get_json()
-        assert listed["agents"] == []  # not even the resolvable NCB landed
+        assert listed["agents"] == []  # not even the resolvable Node Builder landed
 
     def test_uninstalling_a_required_dependency_409s_naming_the_dependent(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
@@ -152,23 +152,24 @@ class TestProjectInstall:
         assert client.delete(f"/api/agents/projects/{alice_project}/{self.DF}", headers=_auth(token)).status_code == 409
         assert client.delete(f"/api/agents/projects/{alice_project}/{self.NB}", headers=_auth(token)).status_code == 200
         assert client.delete(f"/api/agents/projects/{alice_project}/{self.DF}", headers=_auth(token)).status_code == 200
-        assert client.delete(f"/api/agents/projects/{alice_project}/{self.NCB}", headers=_auth(token)).status_code == 200
+        # Every member of the closure is gone, one by one.
+        listed = client.get(f"/api/agents/projects/{alice_project}", headers=_auth(token)).get_json()
+        assert listed["agents"] == []
 
     def test_catalog_cards_disclose_requires_agents_per_project(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
         cat = client.get(f"/api/agents/catalog?projectId={alice_project}", headers=_auth(token)).get_json()["agents"]
         dfb = next(a for a in cat if a["dirName"] == self.DFB)
         assert dfb["requiresAgents"] == [
-            {"id": "agent.node-content-builder", "name": "Node Content Builder",
-             "coord": self.NCB, "visible": True, "installedInProject": False},
             {"id": "agent.dataset-finder", "name": "Dataset Finder",
              "coord": self.DF, "visible": True, "installedInProject": False},
             {"id": "agent.node-builder", "name": "Node Builder",
              "coord": self.NB, "visible": True, "installedInProject": False},
         ]
-        ncb = next(a for a in cat if a["dirName"] == self.NCB)
-        assert ncb["requiresAgents"] == []
-        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": self.NCB}, headers=_auth(token))
+        # The Dataset Finder is the member that requires nothing.
+        df = next(a for a in cat if a["dirName"] == self.DF)
+        assert df["requiresAgents"] == []
+        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": self.DF}, headers=_auth(token))
         cat = client.get(f"/api/agents/catalog?projectId={alice_project}", headers=_auth(token)).get_json()["agents"]
         dfb = next(a for a in cat if a["dirName"] == self.DFB)
         assert dfb["requiresAgents"][0]["installedInProject"] is True
@@ -294,12 +295,20 @@ class TestMaterializationHeal:
 
         user, token = user_and_token
         ukey = _user_dir_key(user)
-        coord = "agent.node-content-builder@1.0.0"
-        # Fabricate the stale pre-dev/38 store copy: instruction only.
+        coord = "agent.node-builder@1.0.0"
+        # Fabricate the stale pre-dev/38 store copy: instruction only. A copy
+        # that old has no modes either, so no capability names a prompt of its
+        # own and no delegatesTo entry names the agent itself.
         spec = builtin.get_builtin_spec(coord)
         manifest = builtin.build_builtin_manifest(spec)
         stale = dict(manifest)
         stale["prompts"] = {"instruction": manifest["prompts"]["instruction"]}
+        stale["capabilities"] = [
+            {"id": c["id"], "contractVersion": c["contractVersion"]} for c in manifest["capabilities"]
+        ]
+        stale["delegatesTo"] = [
+            d for d in manifest["delegatesTo"] if not isinstance(d, dict) or d["id"] != manifest["id"]
+        ]
         storage.write_definition(
             ukey, coord, stale,
             {manifest["prompts"]["instruction"]["path"]: "old instruction bytes"},
@@ -321,7 +330,7 @@ class TestMaterializationHeal:
 
         user, token = user_and_token
         ukey = _user_dir_key(user)
-        coord = "agent.node-content-builder@1.0.0"
+        coord = "agent.node-builder@1.0.0"
         client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token))
         manifest_path = storage.agent_definition_dir(ukey, coord) / "manifest.json"
         before = manifest_path.stat().st_mtime_ns, manifest_path.read_bytes()
@@ -342,7 +351,7 @@ class TestMaterializationHeal:
         user, token = user_and_token
         ukey = _user_dir_key(user)
         # An owned imported definition deliberately shadowing a built-in coord.
-        coord = _write_def(user, "agent.node-content-builder")
+        coord = _write_def(user, "agent.node-builder")
         catalog._materialize_definition(ukey, coord)
         from utk_curio.backend.app.agents.repositories import storage
 

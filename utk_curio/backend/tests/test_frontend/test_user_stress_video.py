@@ -107,7 +107,7 @@ from .test_feature_tour_video import (  # noqa: E402
 
 
 #: A node-only agent: the drop onto the canvas below must be refused.
-AGENT_NODE_ONLY = "agent.node-content-builder@1.0.0"
+AGENT_NODE_ONLY = "agent.connection-builder@1.0.0"  # the one card with no canvas target
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("CURIO_STRESS") != "1",
@@ -1679,11 +1679,13 @@ class TestSessionExtending:
             clear_canvas_overlays(page)
 
         # --- agents --------------------------------------------------------
-        with s.step("Add three agents to the dataflow",
-                    "A node agent, a connection agent, and a canvas agent.",
+        with s.step("Add two agents to the dataflow",
+                    "One that attaches to a node or a connection, and a canvas agent.",
                     chapter="Agents"):
             drawer = _open_agent_drawer(ctx)
-            for coord in (AGENT_NODE_ONLY, AGENT_CONNECTION, AGENT_BUILDER):
+            # The node agent and the connection agent are one card now (the
+            # only card with no canvas target), so it is added once.
+            for coord in dict.fromkeys((AGENT_NODE_ONLY, AGENT_CONNECTION, AGENT_BUILDER)):
                 _add_agent(ctx, drawer, coord, hold=700)
             drawer.get_by_role("button", name="Close Agent Catalog drawer").click()
             s.tour.beat(900)
@@ -1722,7 +1724,7 @@ class TestSessionExtending:
                     "a node-only agent was accepted onto the canvas",
                     severity="bug",
                     detail_full=(
-                        "agent.node-content-builder declares node targets only, so the "
+                        "agent.connection-builder declares no canvas target, so the "
                         f"canvas drop should have been refused. The app said: {said!r}"
                     ),
                 )
@@ -1770,8 +1772,9 @@ class TestSessionExtending:
         with s.step("Ask the node agent a real question",
                     "A live model, over this dataflow.", expect="either",
                     quiet_console=True):
-            badge = page.get_by_role(
-                "button", name=re.compile(r"^Open chat with Node Content Builder")
+            # The node's own badge: the same card is on the edge too.
+            badge = node_locator(page, s.state["transform"]).get_by_role(
+                "button", name=re.compile(r"^Open chat with Connection Builder")
             ).first
             badge.wait_for(state="visible", timeout=25000)
             s.tour.click(badge)

@@ -80,13 +80,13 @@ class TestTheFallbackOrder:
     def test_an_unchosen_delegate_answers_with_its_callers(self, deployment):
         caller = ProviderConfig(api_key="k", api_type="anthropic", base_url="", model="claude",
                                 config_id="llm-00000000000a", label="Caller", source="default")
-        out = pc.resolve_llm(USER, "agent.node-content-builder", caller=caller)
+        out = pc.resolve_llm(USER, "agent.node-builder", caller=caller)
         assert (out.api_key, out.model, out.config_id, out.label) == ("k", "claude", "llm-00000000000a", "Caller")
         assert out.source == "caller"
 
 
 class TestAChoicePerAgent:
-    def _chosen(self, store, agent_id="agent.node-content-builder", **fields):
+    def _chosen(self, store, agent_id="agent.node-builder", **fields):
         created = _own(store, label=fields.pop("label", "Chosen"), model=fields.pop("model", "chosen-model"), **fields)
         store.set_choices(USER, {agent_id: created["id"]},
                           choosable=frozenset({agent_id}), deployment_default=True)
@@ -105,7 +105,7 @@ class TestAChoicePerAgent:
         chosen = self._chosen(deployment)
         caller = ProviderConfig(api_key="k", api_type="anthropic", base_url="", model="claude",
                                 source="default")
-        out = pc.resolve_llm(USER, "agent.node-content-builder", caller=caller)
+        out = pc.resolve_llm(USER, "agent.node-builder", caller=caller)
         assert (out.config_id, out.api_key, out.source) == (chosen["id"], "user-secret-key", "assigned")
 
     def test_an_internal_agent_always_runs_on_its_callers(self, deployment):
@@ -145,7 +145,7 @@ class TestAChoicePerAgent:
         self._chosen(deployment)
         caller = pc.resolve_llm("guest", "agent.dataflow-builder")
         assert caller.source == "guest"
-        assert pc.resolve_llm("guest", "agent.node-content-builder", caller=caller) is caller
+        assert pc.resolve_llm("guest", "agent.node-builder", caller=caller) is caller
 
     def test_a_default_that_names_nothing_is_refused_not_replaced(self, deployment):
         created = _own(deployment)

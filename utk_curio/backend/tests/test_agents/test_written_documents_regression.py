@@ -42,7 +42,7 @@ TEMPLATES = _CODE_TEMPLATES + [
 ]
 
 DFB = "agent.dataflow-builder@1.0.0"
-NCB = "agent.node-content-builder@1.0.0"
+NB = "agent.node-builder@1.0.0"
 DL = "curio.builtin/data-loading"
 TABLE = "curio.builtin/vis-simple"
 POOL = "curio.builtin/data-pool"
@@ -98,7 +98,7 @@ class _Harness:
         body = {"name": "p", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
                 "outputs": []}
         self.pid = client.post("/api/projects", json=body, headers=_auth(token)).get_json()["id"]
-        for coord in (DFB, NCB):
+        for coord in (DFB, NB):
             client.post(f"/api/agents/projects/{self.pid}/install", json={"coord": coord},
                         headers=_auth(token))
         self.att = client.post(
