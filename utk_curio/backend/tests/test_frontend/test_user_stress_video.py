@@ -54,6 +54,7 @@ from .usertest import (
 from .utils import (
     EXPORT_DOWNLOAD_TIMEOUT_MS,
     NODE_ONLY_AGENT,
+    NODE_ONLY_AGENT_NAME,
     REPO_ROOT,
     accept_confirm_dialog,
     activate_header_icon,
@@ -1786,9 +1787,9 @@ class TestSessionExtending:
         with s.step("Ask the node agent a real question",
                     "A live model, over this dataflow.", expect="either",
                     quiet_console=True):
-            # The node's own badge: the same card is on the edge too.
+            # The node's own badge: the node-only agent attached to it.
             badge = node_locator(page, s.state["transform"]).get_by_role(
-                "button", name=re.compile(r"^Open chat with Connection Builder")
+                "button", name=re.compile(rf"^Open chat with {re.escape(NODE_ONLY_AGENT_NAME)}")
             ).first
             badge.wait_for(state="visible", timeout=25000)
             s.tour.click(badge)

@@ -1223,26 +1223,18 @@ class TestChatContentReviewMintStream:
 
 
 class TestPackageRecommendDelegation:
-    """dev/84: the three build parents resolve package.recommend to the
-    Package Builder, whose mode it is: current-project-only, missing template =
-    the reviewed missing-specialist path."""
+    """dev/84: the build parents resolve package.recommend to the Package
+    Builder, whose mode it is: current-project-only, missing template = the
+    reviewed missing-specialist path."""
 
     PB = "agent.package-builder@1.0.0"
-    PARENTS = ("agent.node-builder@1.0.0", "agent.dataflow-builder@1.0.0",
-               "agent.connection-builder@1.0.0")
+    PARENTS = ("agent.node-builder@1.0.0", "agent.dataflow-builder@1.0.0")
 
     def test_parents_declare_the_delegate(self):
         for parent in self.PARENTS:
             m = builtin.get_builtin_manifest(parent)
             assert "agent.package-builder" in m.delegates_to, parent
             assert m.delegates("agent.package-builder", "package.recommend"), parent
-
-    def test_the_connection_builder_is_offered_only_the_recommendation(self, client, user_and_token, tmp_curio):
-        user, _ = user_and_token
-        cb = builtin.get_builtin_manifest("agent.connection-builder@1.0.0")
-        assert cb.delegate_scopes == {"agent.package-builder": ("package.recommend",)}
-        offered = delegation.visible_capability_entries(_user_dir_key(user), cb)
-        assert offered == [("package.recommend", "Package Builder")]
 
     def test_installed_package_builder_resolves_the_recommendation(self, client, user_and_token, tmp_curio):
         user, token = user_and_token
@@ -1357,6 +1349,20 @@ class TestMergedAgentModes:
         offered = {cap for cap, _ in delegation.visible_capability_entries(key, nb)}
         assert "execution.followup.plan" in offered
         assert "workflow.plan.create" not in offered
+
+    def test_a_card_is_offered_exactly_what_its_scoped_entries_name(self, client, user_and_token, tmp_curio):
+        # The Dataset Finder's every entry is scoped: two of the Node Builder's
+        # capabilities, one mode of each internal agent and the Researcher's
+        # checking mode. Its runs are offered those, by the delegate's name,
+        # and nothing else of the same agents.
+        user, _ = user_and_token
+        df = builtin.get_builtin_manifest(DF)
+        offered = delegation.visible_capability_entries(_user_dir_key(user), df)
+        assert offered == [
+            ("node.build", "Node Builder"), ("dataset.fetch.author", "Node Builder"),
+            ("workflow.suggest", "Dataflow Reader"), ("workflow.keyword.bind", "Dataflow Planner"),
+            ("research.verify", "Researcher"),
+        ]
 
     def test_a_delegated_mode_runs_its_own_instruction(self, client, user_and_token, tmp_curio, monkeypatch):
         from utk_curio.backend.app.agents.domain import contracts

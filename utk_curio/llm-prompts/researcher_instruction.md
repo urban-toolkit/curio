@@ -92,4 +92,4 @@ Two kinds of failure, two different responses. A REFUSED tool request ("[tool re
 
 ## Changes to the dataflow
 
-For anything that changes the dataflow, such as adding nodes, rewriting a node's code or connecting nodes, say which agent does it: the Dataflow Builder plans and builds a whole dataflow, the Node Builder creates or changes one node, and the Connection Builder suggests connections between nodes. Keep your answers objective and specific to this dataflow.
+For anything that changes the dataflow, such as adding nodes, rewriting a node's code or connecting nodes, say which agent does it: the Dataflow Builder plans and builds a whole dataflow, and the Node Builder creates or changes one node and suggests the nodes that could go on a connection. The user draws the connections on the canvas. Keep your answers objective and specific to this dataflow.

@@ -230,24 +230,6 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                                         ("question", "searchResults", "notesTemplates")),
                             BuiltinMode("research.verify", "research_instruction.md",
                                         ("mission", "nodeContext")))),
-    BuiltinAgentSpec("agent.connection-builder", "Connection Builder", "node",
-                     "Suggest and create valid node connections.",
-                     "new_connection_prompt.md", ("connection.propose",), ("authoring",),
-                     # Attaches to a node or to a connection. The connection
-                     # target is why this agent declares ``connectionSide``:
-                     # bound to one edge it knows which end it is reasoning
-                     # from. The kind was always accepted by the backend and
-                     # advertised in the palette; only the drop gesture that
-                     # produces one was missing.
-                     targets=("node", "connection"),
-                     reads=("workflowGoal", "nodeId", "subtask", "connectionSide", "dataflowContext"),
-                     # dev/16 §3.3 addendum via dev/84 (deviation D4): the one
-                     # migrated manifest that gains delegatesTo — a proposed
-                     # connection's required packages are recommended by the
-                     # Package Builder's package.recommend mode. Its
-                     # connection.propose capability is unchanged.
-                     delegates_to=(("agent.package-builder", ("package.recommend",)),),
-                     worked_examples=True),
     # The planning and keyword agents, merged: six capabilities that shared
     # their tools (none), delegates (none), review and execution, each still
     # running its own instruction as a mode. Internal: a delegate only.
@@ -279,19 +261,23 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
     # node.content.generate mode, which its chat asks for through the entry
     # naming itself, and Solve and validate ask for by capability. The mode
     # is a delegated call with no tools, under the Autark prompt for an
-    # Autark document.
+    # Autark document. On a connection, or asked what could come before or
+    # after a node, its chat suggests up to three nodes in prose and creates
+    # the one the user picks (the connection builder's work, which it took
+    # over); the user wires it.
     BuiltinAgentSpec("agent.node-builder", "Node Builder", "node",
-                     "Create computation, transform, visualization, or data-fetch nodes as "
-                     "reviewable proposals, or modify an existing node through a reviewed "
-                     "content replacement; writes node content in its own content mode.",
+                     "Create a node, or rewrite a node's content, as a proposal you review. "
+                     "On a connection it suggests what could go there.",
                      "node_build_instruction.md",
                      ("node.build", "dataset.fetch.author", "node.content.generate"),
                      ("authoring",),
                      # dev/67-6: node targets lift the dev/48 canvas-only
-                     # limitation — the modify-existing posture attaches to
-                     # the node it modifies.
-                     targets=("canvas", "node"),
-                     reads=("nodeIntent", "targetContext", "externalSelection"),
+                     # limitation: the modify-existing posture attaches to
+                     # the node it modifies. The connection target is why it
+                     # reads ``connectionSide``: bound to one edge it knows
+                     # which end is which, and the read composes only there.
+                     targets=("canvas", "node", "connection"),
+                     reads=("nodeIntent", "targetContext", "externalSelection", "connectionSide"),
                      # dev/114 (DEC-072): catalog.search — the ONLY way a
                      # data-loading node learns a real local path (rows carry
                      # the resolved path); the grounding gate refuses any
@@ -379,7 +365,6 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      # "change this node's content" (the runtime mints the review
                      # at that node's own agent; plans stay content-free).
                      delegates_to=("agent.dataset-finder", "agent.node-builder",
-                                   "agent.connection-builder",
                                    ("agent.dataflow-planner", (
                                        "workflow.plan.create", "execution.followup.plan",
                                        "workflow.plan.refresh", "workflow.coherence.validate")),
