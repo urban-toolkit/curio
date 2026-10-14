@@ -256,9 +256,10 @@ class TestItLandsAsAModelPackage:
         )
         photos = helpers["curio_load_collection"](sample).head(2)
         out = make_curio_segment(helpers["curio_derived_file"])(photos, CurioModel(model["id"], folder), None)
-        shares = out[[f"{label}_pct" for label in model["labels"]]]
+        labels = self._listed(client, auth, model["id"])["model"]["labels"]
+        shares = out[[f"{label}_pct" for label in labels]]
         assert shares.sum(axis=1).between(99.5, 100.5).all()
-        assert out["dominant_class"].isin(model["labels"]).all()
+        assert out["dominant_class"].isin(labels).all()
         assert out["overlay_url"].notna().all() and out["segment_error"].isna().all()
 
     def test_a_transformers_checkpoint(self, client, auth, live, user_and_token):
@@ -449,7 +450,7 @@ class TestATokenWhereTheHubAsks:
         provider = _provider()
         plan = provider.plan(ONNX_REPO)
         provider.transport = Refusing()
-        acquire_ = ModelAcquire(user_key="alice", provider_for=lambda m: provider, models=lambda: None)
+        acquire_ = ModelAcquire(user=None, user_key="alice", provider_for=lambda m: provider)
         with pytest.raises(CredentialRequired, match="Hugging Face token"):
             acquire_._fetch(provider, plan, tmp_path, progress=None, stage=None, cancelled=None)
 
@@ -501,7 +502,7 @@ class TestAFileStaysInTheModelsFolder:
 
         provider = _provider()
         provider.transport = Writes()
-        acquire_ = ModelAcquire(user_key="alice", provider_for=lambda m: provider, models=lambda: None)
+        acquire_ = ModelAcquire(user=None, user_key="alice", provider_for=lambda m: provider)
         target = tmp_path / "model" / "files"
         for path in ("../outside/model.onnx", str(tmp_path / "outside" / "model.onnx")):
             plan = hfm.ModelPlan(repo="a/b", revision="0" * 40, runtime="onnx",

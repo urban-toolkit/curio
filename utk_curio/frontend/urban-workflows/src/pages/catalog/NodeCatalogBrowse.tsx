@@ -35,7 +35,6 @@ const PAGE_COPY: Record<PackageKind, {
   allLabel: string;
   searchPlaceholder: string;
   sortAriaLabel: string;
-  intro: React.ReactNode;
   noneMatch: string;
   notFound: string;
 }> = {
@@ -48,13 +47,6 @@ const PAGE_COPY: Record<PackageKind, {
     allLabel: "All packages",
     searchPlaceholder: "Search packages…",
     sortAriaLabel: "Sort packages",
-    intro: (
-      <>
-        Node packages in the shared catalog. Adding one here adds it to{" "}
-        <strong>all your projects</strong>, present and future; add or remove it for a
-        single project from that project&apos;s Node Catalog.
-      </>
-    ),
     noneMatch: "No packages match the current filters.",
     notFound: "This package is not in your Node Catalog.",
   },
@@ -67,14 +59,6 @@ const PAGE_COPY: Record<PackageKind, {
     allLabel: "All models",
     searchPlaceholder: "Search models…",
     sortAriaLabel: "Sort models",
-    intro: (
-      <>
-        Trained models your nodes run, each a package with its weights and the node that runs
-        it. Adding one here adds it to <strong>all your projects</strong>; add or remove it for a
-        single project from that project&apos;s Model Catalog. Models you download from the{" "}
-        <strong>Discovery Catalog</strong> land here too.
-      </>
-    ),
     noneMatch: "No models match the current filters.",
     notFound: "This model is not in your Model Catalog.",
   },
@@ -242,7 +226,22 @@ export const NodeCatalogBrowse: React.FC<NodeCatalogBrowseProps> = ({
           iconTitle={copy.iconTitle}
           title={copy.title}
           count={filtered.length}
-          intro={copy.intro}
+          intro={
+            packageKind === "model" ? (
+              <>
+                Trained models your nodes run, each a package with its weights and the node that
+                runs it. Adding one here adds it to <strong>all your projects</strong>; add or remove
+                it for a single project from that project&apos;s Model Catalog. Models you download
+                from the <strong>Discovery Catalog</strong> land here too.
+              </>
+            ) : (
+              <>
+                Node packages in the shared catalog. Adding one here adds it to{" "}
+                <strong>all your projects</strong>, present and future; add or remove it for a
+                single project from that project&apos;s Node Catalog.
+              </>
+            )
+          }
           viewTools={
             <select
               className={browseStyles.sortSelect}

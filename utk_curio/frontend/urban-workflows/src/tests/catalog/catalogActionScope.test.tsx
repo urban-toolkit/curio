@@ -960,8 +960,12 @@ describe("the Node drawer's In project tab in an unsaved dataflow", () => {
     expect(src).not.toContain("accountDefaults");
     // The lockfile mirror, plus the builtin package -- which is in every
     // dataflow by construction, so its absence could only ever mean "the
-    // lockfile has not arrived yet".
-    expect(src).toContain("new Set([...projectPackages, BUILTIN_PACKAGE_DIR])");
+    // lockfile has not arrived yet". Each catalog's drawer keeps the
+    // packages of its own kind from that one set (the Model Catalog's drawer
+    // is this drawer over model packages).
+    expect(src).toMatch(
+      /new Set\(\s*\[\.\.\.projectPackages, BUILTIN_PACKAGE_DIR\]\.filter\(\(dirName\) => kindOfDir\(dirName\) === packageKind\),?\s*\)/,
+    );
   });
 
   test("the count comes from the same set as the list", () => {
