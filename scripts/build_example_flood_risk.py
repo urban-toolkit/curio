@@ -774,8 +774,9 @@ CANVAS_KEYS = ("x", "y", "width", "height", "minimized", "controlsOnly", "contro
 
 def keep_canvas(flow: dict) -> dict:
     """Keep the layout arranged on the canvas and saved into the shipped file:
-    each node's canvas keys, and each scenario's upstream and downstream (a
-    save stores them). A node the file does not have keeps its own place."""
+    each node's canvas keys, and each scenario's members, upstream and
+    downstream (a save stores them). A node the file does not have keeps its
+    own place."""
     if not TARGET.exists():
         return flow
     shipped = json.loads(TARGET.read_text())["dataflow"]
@@ -785,10 +786,15 @@ def keep_canvas(flow: dict) -> dict:
             if key in old.get(n["id"], {}):
                 n[key] = old[n["id"]][key]
     old_scenarios = {s["id"]: s for s in shipped.get("scenarios") or []}
+    ids = {n["id"] for n in flow["dataflow"]["nodes"]}
     for scenario in flow["dataflow"]["scenarios"]:
+        old_scenario = old_scenarios.get(scenario["id"], {})
+        # Its members as arranged on the canvas, while every one is still a node.
+        if old_scenario.get("nodes") and set(old_scenario["nodes"]) <= ids:
+            scenario["nodes"] = old_scenario["nodes"]
         for key in ("upstream", "downstream"):
-            if key in old_scenarios.get(scenario["id"], {}):
-                scenario[key] = old_scenarios[scenario["id"]][key]
+            if key in old_scenario:
+                scenario[key] = old_scenario[key]
     return flow
 
 
