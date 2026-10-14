@@ -74,7 +74,7 @@ def _postits_manifest():
     output port and no behavior — a blank compute box, not a note."""
     return {
         "id": "curio.postits", "version": "1.0.0", "name": "Post-it Notes",
-        "publisher": "Package Builder", "description": "", "license": "MIT",
+        "publisher": "Node Builder", "description": "", "license": "MIT",
         "compatibility": {"curioRuntime": ">=0.5.0", "major": 1},
         "permissions": [], "dependencies": {"packages": {}, "python": {}, "js": {}},
         "templates": [{
@@ -91,7 +91,7 @@ def _notes_manifest():
     """The live ``curio.notes@1``: the real note surface (behavior + editor none)."""
     return {
         "id": "curio.notes", "version": "1.0.0", "name": "Simple Notes",
-        "publisher": "Package Builder", "description": "Colored notes.", "license": "MIT",
+        "publisher": "Node Builder", "description": "Colored notes.", "license": "MIT",
         "compatibility": {"curioRuntime": ">=0.5.0", "major": 1},
         "permissions": [], "dependencies": {"packages": {}, "python": {}, "js": {}},
         "templates": [{
@@ -341,7 +341,7 @@ class TestFieldReplay:
             _create_on_the_postit(),   # refused: free correction 1
             _install_bare_id(),        # refused (no such package): free correction 2
             _delegate_tail(),          # round 2 — AUTHOR
-            child_reply,               # CHILD (Package Builder): the draft
+            child_reply,               # CHILD (the writing mode): the draft
             "Proposed — review the package above.",
         ])
         _field_store(_user_dir_key(user), pid, with_notes=False)
@@ -360,7 +360,7 @@ class TestFieldReplay:
         assert "not in the Nodes Catalog" in miss
         assert "packages.catalog" not in miss
         assert "No further tool calls" not in miss
-        assert delegated.startswith("[delegate result] agent.package-builder@1.0.0 (node.kind.author): ok")
+        assert delegated.startswith("[delegate result] agent.node-builder@1.0.0 (node.kind.author): ok")
 
         execution = _execution(client, token, pid, att_id)
         assert [c["status"] for c in execution["toolCalls"]] == ["ok", "refused", "refused"]

@@ -382,7 +382,7 @@ REGISTRY: dict[str, ToolContract] = {
             "sourceId", "resourceId",
         ),
     ),
-    # dev/84, consumer: agent.package-builder, in its chat. Grounds package
+    # dev/84, consumer: agent.node-builder, in its chat. Grounds package
     # recommendations in the real Nodes Catalog + this project's lockfile
     # (the packages domain owns the data; this module owns none of its own).
     "packages.catalog": ToolContract(
@@ -399,7 +399,7 @@ REGISTRY: dict[str, ToolContract] = {
         ),
         parameters=_object({"q": _text("Text a package's name or description must contain.")}),
     ),
-    # dev/84, consumer: agent.package-builder, in its chat.
+    # dev/84, consumer: agent.node-builder, in its chat.
     # deps/permissions/conflicts come from the real resolver, never invented.
     "packages.resolve": ToolContract(
         id="packages.resolve",
@@ -491,7 +491,7 @@ REGISTRY: dict[str, ToolContract] = {
         ),
         parameters=_object({"datasetId": _text("A dataset id from catalog.search results.")}, "datasetId"),
     ),
-    # dev/84, consumers: agent.package-builder and agent.researcher. The reviewed install
+    # dev/84, consumers: agent.node-builder and agent.researcher. The reviewed install
     # lane: applying routes through the existing package install flow
     # (permissions + dependencies + conflicts); never a silent install,
     # never a built-in.
@@ -566,7 +566,8 @@ REGISTRY: dict[str, ToolContract] = {
             "nodeType", "content",
         ),
     ),
-    # dev/89 — consumer: agent.package-builder. The ONE package-authoring
+    # dev/89, consumers: agent.node-builder (its package-writing mode's drafts)
+    # and agent.researcher (the drafts it asks for). The ONE package-authoring
     # mutate contract: requesting it runs the isolated build service
     # (validate → resolve → compile → preview → package, all staged and
     # content-addressed) and mints the reviewed package-draft proposal;

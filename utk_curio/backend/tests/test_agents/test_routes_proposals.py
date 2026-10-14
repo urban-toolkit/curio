@@ -2391,14 +2391,14 @@ class TestPlanEdgeApply:
 
 
 class TestPackageBuilderTools:
-    """dev/89 commit 8 — package.draft.apply: the Package Builder's ONE
-    authoring mutate contract. Mint runs the isolated build service and
-    persists bounded provenance; Apply promotes the exact reviewed artifact
-    digest, inserts the requested nodes server-side (normalized appearance at
-    metadata.appearance), and tells the frontend to refresh registries before
-    painting (registry-before-canvas)."""
+    """dev/89 commit 8 — package.draft.apply: the ONE package-writing mutate
+    contract, which the Node Builder's chat holds. Mint runs the isolated
+    build service and persists bounded provenance; Apply promotes the exact
+    reviewed artifact digest, inserts the requested nodes server-side
+    (normalized appearance at metadata.appearance), and tells the frontend to
+    refresh registries before painting (registry-before-canvas)."""
 
-    COORD = "agent.package-builder@1.0.0"
+    COORD = "agent.node-builder@1.0.0"
     TARGET = "ai.agent.notes@1"
 
     def _draft_params(self, *, color="pink", template_id="note-kind"):

@@ -15,7 +15,7 @@ See ``docs/schemas/node-package.v4.json`` for the package manifest schema and
 
 Layout (memo dev/143): ``domain/`` (pure rules), ``schemas/`` (wire shapes),
 ``repositories/`` (the stores), ``infrastructure/`` (processes, subprocesses,
-locks), ``application/`` (the use cases), ``builder/`` (the Package Builder
+locks), ``application/`` (the use cases), ``builder/`` (the package build
 pipeline, a subsystem beside the layers), ``routes/`` (presentation), behind the
 one facade ``service.py``. This root exports only what the app factory boots.
 """

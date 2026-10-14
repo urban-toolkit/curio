@@ -1223,40 +1223,41 @@ class TestChatContentReviewMintStream:
 
 
 class TestPackageRecommendDelegation:
-    """dev/84: the build parents resolve package.recommend to the Package
-    Builder, whose mode it is: current-project-only, missing template = the
-    reviewed missing-specialist path."""
+    """dev/84: the Dataflow Builder's "Recommend packages" step resolves
+    package.recommend to the Node Builder, whose mode it is:
+    current-project-only, missing template = the reviewed missing-specialist
+    path. The Node Builder recommends in its own chat, with its catalog
+    tools, so it never asks for the mode."""
 
-    PB = "agent.package-builder@1.0.0"
-    PARENTS = ("agent.node-builder@1.0.0", "agent.dataflow-builder@1.0.0")
+    DFB = "agent.dataflow-builder@1.0.0"
 
-    def test_parents_declare_the_delegate(self):
-        for parent in self.PARENTS:
-            m = builtin.get_builtin_manifest(parent)
-            assert "agent.package-builder" in m.delegates_to, parent
-            assert m.delegates("agent.package-builder", "package.recommend"), parent
+    def test_the_dataflow_builder_declares_the_delegate(self):
+        m = builtin.get_builtin_manifest(self.DFB)
+        assert "agent.node-builder" in m.delegates_to
+        assert m.delegates("agent.node-builder", "package.recommend")
+        nb = builtin.get_builtin_manifest(NB)
+        assert not nb.delegates("agent.node-builder", "package.recommend")
+        assert "packages.catalog" in [t.id for t in nb.tools]
 
-    def test_installed_package_builder_resolves_the_recommendation(self, client, user_and_token, tmp_curio):
+    def test_the_installed_node_builder_resolves_the_recommendation(self, client, user_and_token, tmp_curio):
         user, token = user_and_token
         key = _user_dir_key(user)
         pid = _project(client, token)
-        client.post(f"/api/agents/projects/{pid}/install", json={"coord": self.PB}, headers=_auth(token))
-        for parent in self.PARENTS:
-            r = delegation.resolve(key, pid, builtin.get_builtin_manifest(parent), "package.recommend")
-            assert r.outcome == "ok", parent
-            assert r.coord == self.PB
-            assert r.manifest.capability("package.recommend").instruction == "package.recommend"
+        client.post(f"/api/agents/projects/{pid}/install", json={"coord": NB}, headers=_auth(token))
+        r = delegation.resolve(key, pid, builtin.get_builtin_manifest(self.DFB), "package.recommend")
+        assert r.outcome == "ok"
+        assert r.coord == NB
+        assert r.manifest.capability("package.recommend").instruction == "package.recommend"
 
-    def test_missing_package_builder_is_missing_specialist(self, client, user_and_token, tmp_curio):
+    def test_a_missing_node_builder_is_missing_specialist(self, client, user_and_token, tmp_curio):
         user, token = user_and_token
         key = _user_dir_key(user)
         pid = _project(client, token)
         r = delegation.resolve(
-            key, pid, builtin.get_builtin_manifest("agent.dataflow-builder@1.0.0"),
-            "package.recommend",
+            key, pid, builtin.get_builtin_manifest(self.DFB), "package.recommend",
         )
         assert r.outcome == "not-installed"  # → the reviewed project.install proposal
-        assert r.coord == self.PB
+        assert r.coord == NB
 
 
 class TestEvaluatorDelegation:

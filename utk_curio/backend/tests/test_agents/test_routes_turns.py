@@ -1601,7 +1601,7 @@ class TestReuseLadder:
 
     def _write_store_package(self, user_key, dir_name, package_id, template_id, label):
         """A package in the user's STORE but not in any project lockfile —
-        e.g. one a previous project's Package Builder authored."""
+        e.g. one the Node Builder wrote for a previous project."""
         import json as _json
 
         from utk_curio.backend.app.packages.repositories.store import user_packages_dir
@@ -1612,7 +1612,7 @@ class TestReuseLadder:
             "id": package_id,
             "version": "1.0.0",
             "name": "Simple Notes",
-            "publisher": "Package Builder",
+            "publisher": "Node Builder",
             "description": "Colored note surfaces.",
             "license": "MIT",
             "compatibility": {"curioRuntime": ">=0.5.0", "major": 1},
@@ -1879,7 +1879,7 @@ class TestReuseLadder:
         d.mkdir(parents=True, exist_ok=True)
         (d / "manifest.json").write_text(_json.dumps({
             "id": "curio.postits", "version": "1.0.0", "name": "Post-it Notes",
-            "publisher": "Package Builder", "description": "", "license": "MIT",
+            "publisher": "Node Builder", "description": "", "license": "MIT",
             "compatibility": {"curioRuntime": ">=0.5.0", "major": 1},
             "permissions": [], "dependencies": {"packages": {}, "python": {}, "js": {}},
             "templates": [{
@@ -2411,36 +2411,56 @@ class TestRosterGrantCoverage:
                 "leave it with no template vocabulary at all"
             )
 
+    @staticmethod
+    def _write_one_tool_agent(user, tool: str) -> str:
+        """A made-up canvas agent whose one tool is *tool*. Every card that
+        holds a package grant also holds node.create, which earns the roster
+        on its own, so only an agent like this shows the grant alone does."""
+        from utk_curio.backend.app.agents.repositories import storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        agent_id = "agent.my-" + tool.replace(".", "-")
+        coord = f"{agent_id}@1.0.0"
+        storage.write_definition(_user_dir_key(user), coord, {
+            "id": agent_id, "name": f"My {tool}", "category": "package",
+            "version": "1.0.0",
+            "capabilities": [{"id": "conversation.respond", "contractVersion": "1"}],
+            "compatibleTargets": [{"kind": "canvas", "requires": []}],
+            "inputs": {"reads": ["installedTemplates"], "requiredConfig": []},
+            "tools": [{"id": tool}],
+            "provenance": {"publisher": "me", "trust": "imported"},
+            "prompts": {"instruction": {"path": "prompts/instruction.txt", "variables": []}},
+        }, {"prompts/instruction.txt": "Answer briefly."})
+        return coord
+
     def test_the_package_install_lane_run_carries_the_roster(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
-        """The agent that proposes installing a package holds package.install
-        and no node.create, so before commit 4 it was the agent that would have
-        been stranded. That is the Package Builder's chat now."""
-        from utk_curio.backend.app.agents.domain import builtin
-
-        spec = builtin.get_builtin_spec("agent.package-builder@1.0.0")
-        assert "package.install" in spec.tools and "node.create" not in spec.tools
+        """An agent that proposes installing a package and places no node
+        (package.install without node.create) is the one that would have been
+        stranded before commit 4: package.install alone earns the roster."""
         helper = TestDataflowPlanMint()
         user, token = user_and_token
+        coord = self._write_one_tool_agent(user, "package.install")
         att_id, calls = helper._setup(
             client, user, token, alice_project, monkeypatch,
-            replies=["noted"], coord="agent.package-builder@1.0.0",
+            replies=["noted"], coord=coord,
         )
         helper._run(client, token, alice_project, att_id)
         assert "Available node templates" in calls[0][0]["content"]
 
-    def test_package_builder_run_carries_the_roster(
+    def test_a_package_writing_run_carries_the_roster(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
         """An AUTHORING agent especially needs to see what already exists —
         not seeing it is how one weather question produced two near-identical
-        note packages."""
+        note packages. package.draft.apply alone earns the roster."""
         helper = TestDataflowPlanMint()
         user, token = user_and_token
+        coord = self._write_one_tool_agent(user, "package.draft.apply")
         att_id, calls = helper._setup(
             client, user, token, alice_project, monkeypatch,
-            replies=["noted"], coord="agent.package-builder@1.0.0",
+            replies=["noted"], coord=coord,
         )
         helper._run(client, token, alice_project, att_id)
         assert "Available node templates" in calls[0][0]["content"]
@@ -3270,9 +3290,9 @@ class TestPackageRecommendationTools:
     """dev/84 — packages.catalog grounds recommendations in the real Nodes
     Catalog; package.install is the reviewed mutation over the existing
     package install flow (permissions dialog client-side, conflict re-check
-    and lockfile write server-side). Both are the Package Builder's chat."""
+    and lockfile write server-side). Both are the Node Builder's chat."""
 
-    COORD = "agent.package-builder@1.0.0"
+    COORD = "agent.node-builder@1.0.0"
     PKG = "curio.weather@1"
 
     @pytest.fixture(autouse=True)

@@ -325,9 +325,10 @@ def _detect_dependencies_from_sources(
     Node Factory wizard. Each detected name is pinned to ``"*"`` — version
     pinning is a follow-up enhancement (no UI for it today since the wizard
     is gone). Inter-package (``packages``) deps are not source-derivable and
-    must come from the draft. *own_modules* are left out, as the Package
-    Builder leaves them out (#468). Each ``[!! ... !!]`` reference is read as
-    a plain name, as the Package Builder reads it (#707).
+    must come from the draft. *own_modules* are left out, as the draft
+    dependency review (``builder/deps.py``) leaves them out (#468). Each
+    ``[!! ... !!]`` reference is read as a plain name, as that review reads
+    it (#707).
     """
     py: set[str] = set()
     js: set[str] = set()

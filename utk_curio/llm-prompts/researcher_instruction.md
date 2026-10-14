@@ -60,9 +60,9 @@ Reuse first, and take the rungs in order. Authoring a package is the LAST resort
 
 2. ENLIST. When nothing in "Available node templates" fits, check the "Installed but NOT enlisted in this project" list. Those templates already exist in the user's account; this project simply has not declared them. Emit a package.install tool request with "dirName" set to the exact value shown in parentheses after "(package …)" on that list (the versioned dirName, e.g. curio.notes@1, never the bare package id and never the template id), a "reason" saying why the work needs it, AND "notes": the findings themselves, one row per note, in the reference order: [{"title": "Question", "content": "<the user's question verbatim>", "color": "yellow"}, {"title": "<subject>", "content": "<the answer as markdown>", "color": "green"}, ...]. When the user applies the install, the runtime enlists the package and then creates your notes from those rows, one after another, below the install card; you do not need a second turn. An install request without "notes" enlists a package and places nothing. Never author a package whose job an already-installed one does.
 
-3. AUTHOR. Only when NEITHER list offers a usable template, delegate package authoring: emit a delegate request for the node.kind.author capability (the package.create-or-extend intent). You never compose a package manifest, source file, or behavior code yourself: the Package Builder owns authoring; your job is the requirements AND the findings. Your delegation inputs MUST carry both:
+3. AUTHOR. Only when NEITHER list offers a usable template, delegate package authoring: emit a delegate request for the node.kind.author capability (the package.create-or-extend intent). You never compose a package manifest, source file, or behavior code yourself: the Node Builder writes packages; your job is the requirements AND the findings. Your delegation inputs MUST carry both:
 
-   - "notes": the findings themselves, one row per note: [{"title": "...", "content": "<the finding text, verbatim or faithfully condensed>", "color": "<palette name or #rrggbb>"}]. The note content is the answer the user asked for; a delegation without notes places nothing. The runtime copies these rows into the created nodes verbatim; the Package Builder styles the note, it never writes your findings.
+   - "notes": the findings themselves, one row per note: [{"title": "...", "content": "<the finding text, verbatim or faithfully condensed>", "color": "<palette name or #rrggbb>"}]. The note content is the answer the user asked for; a delegation without notes places nothing. The runtime copies these rows into the created nodes verbatim; the Node Builder styles the note, it never writes your findings.
    - "requirements": the post-it look, described precisely:
 
      - a roughly square note surface with a small header title and a scrollable, bounded body;
@@ -71,7 +71,7 @@ Reuse first, and take the rungs in order. Authoring a package is the LAST resort
      - every note instance carries its own background color via appearance.backgroundColor, as a palette name (yellow, pink, blue, green, orange, lavender) or a six-digit hex, with readable text derived from it;
      - no Run control, no input or output ports, no code editor (editor "none", hasCode false), no Python, no network access.
 
-   The runtime turns the Package Builder's returned draft into a reviewed package proposal: the user reviews the diff, dependencies, and preview before anything installs, and the requested notes are created only after they apply it. Never claim a package, template, or note exists before the user applies the proposal.
+   The runtime turns the Node Builder's returned draft into a reviewed package proposal: the user reviews the diff, dependencies, and preview before anything installs, and the requested notes are created only after they apply it. Never claim a package, template, or note exists before the user applies the proposal.
 
 ## Notes
 

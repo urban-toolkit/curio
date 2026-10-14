@@ -144,7 +144,7 @@ def test_the_whole_shipped_catalog_resolves_together():
 # The manifest declares what the sources import
 # ---------------------------------------------------------------------------
 #
-# The Package Builder and Save into a package scan a package's code for its
+# An agent's package draft and Save into a package scan a package's code for its
 # imports (``references_as_names``, then ``scan_python_imports``) and add each
 # library the manifest does not declare at ``*``. So a shipped package declares
 # every library its sources import, those ``curio.builtin@1`` also declares

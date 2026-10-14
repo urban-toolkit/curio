@@ -6,7 +6,7 @@ engine as the agents suite (``tests/_support/layering.py``), parameterized:
   ``schemas/`` imports only ``domain``; ``repositories/`` imports ``domain`` (and
   ``common``); ``infrastructure/`` imports ``domain`` and ``repositories`` (memo
   §3.2 rule 2: the store paths are downward of the processes); ``application/``
-  imports everything beneath it plus ``builder/``, the Package Builder subsystem
+  imports everything beneath it plus ``builder/``, the package build subsystem
   beside the layers, which may reach every layer and is reached only by
   ``application`` and ``routes``.
 - No in-function import inside the package of the facade, ``application/`` or

@@ -698,9 +698,9 @@ PROMPT_TEMPLATES: tuple[str, ...] = (
     "researcher_instruction",
     "researcher_notes_instruction",
 )
-#: The Package Builder's backend contract: a fragment the Package Builder's
-#: instruction includes whole, and a delegated Package Builder receives as an
-#: input (``turns/delegates.py``).
+#: The package backend contract: a fragment the Node Builder's
+#: package-writing prompt (``package_build_instruction``) includes whole, and
+#: a delegated call of that mode receives as an input (``turns/delegates.py``).
 PACKAGE_CONTRACT = "package_contract"
 #: The Researcher's rules for checking a fact: a fragment two of its prompts
 #: include whole, its chat (``researcher_instruction``) and its
@@ -936,7 +936,7 @@ def _data_dir_env(_src: _Sources) -> str:
 
 
 def _package_contract(_src: _Sources) -> str:
-    """The Package Builder's backend contract, rendered, to include whole."""
+    """The package backend contract, rendered, to include whole."""
     return render_prompt(PACKAGE_CONTRACT).rstrip("\n")
 
 

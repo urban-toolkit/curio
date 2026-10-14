@@ -6,8 +6,8 @@
   ships a module of the same top-level name, naming both and the module.
 - What a run of one of its nodes is handed: the package's ``sources/`` folder
   and its module names, for the sandbox to make importable.
-- Save into a package and the Package Builder do not declare the package's
-  own modules as PyPI dependencies.
+- Save into a package and an agent's package draft do not declare the
+  package's own modules as PyPI dependencies.
 
 New code is imported inside each test, so a checkout without it fails each
 test on its own instead of the whole module at collection.
@@ -364,7 +364,7 @@ class TestADependentPackagesNodeGetsTheModulesItDependsOn:
     def test_the_package_builder_leaves_the_dependencys_modules_out_too(self):
         from utk_curio.backend.app.packages.builder.deps import merge_declared_and_detected
 
-        request = TestThePackageBuilderLeavesTheOwnModulesOut._request({
+        request = TestAPackageDraftLeavesTheOwnModulesOut._request({
             "sources/caller.py": "import numpy\nfrom building_height.convert import convert\nreturn convert(input_0)\n",
         })
         python, _js, _findings = merge_declared_and_detected(request, (), frozenset({"building_height"}))
@@ -396,8 +396,8 @@ def test_saving_into_a_package_does_not_declare_its_modules_as_libraries(tmp_cur
         assert "sources/building_height/convert_to_raster.py" in zf.namelist()
 
 
-class TestThePackageBuilderLeavesTheOwnModulesOut:
-    """The agent Package Builder scans every file it is handed. An import of
+class TestAPackageDraftLeavesTheOwnModulesOut:
+    """An agent's package draft has every file it carries scanned. An import of
     the package's own module is no PyPI dependency there either: an install
     would otherwise fetch whatever PyPI package has that name."""
 

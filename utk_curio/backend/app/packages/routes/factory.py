@@ -1,4 +1,4 @@
-"""The Package Builder on the wire: capabilities, build, install, and the developer-only publish to the catalog.
+"""The package build pipeline on the wire: capabilities, build, install, and the developer-only publish to the catalog.
 
 Presentation layer of the packages package (memo dev/143, B4): handlers parse (``schemas.requests``),
 call the use case and serialize (``schemas.responses``); every exception is mapped once by

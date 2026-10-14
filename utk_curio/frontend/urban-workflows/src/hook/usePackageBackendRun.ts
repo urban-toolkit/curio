@@ -7,7 +7,7 @@
  * template-id literal (the §0 dispatch gap this memo closes).
  *
  * The invocation payload is the node's run context, one stable shape the
- * Package Builder's prompt contract documents for handler authors:
+ * package-writing prompt's contract documents for handler authors:
  * `{ "content": <the node's editor text>, "input": <upstream JSON or null> }`.
  * The reply's `result` becomes the node's output display; a well-formed
  * `ok: false` envelope or a transport error becomes the node's error surface
