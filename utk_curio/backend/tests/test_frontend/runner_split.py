@@ -11,6 +11,8 @@ has to run WebGPU, and everything else is spread across a matrix of CPU jobs.
 The line is drawn from the tests themselves, never from a list someone keeps:
 
 * a ``test_workflows`` case needs WebGPU when its dataflow has an Autark node;
+* so does a ``test_shipped_scenario_drops_e2e`` case, by the dataflow it drops
+  a scenario from;
 * a walkthrough scene does when its example dataflow does, or its script
   drives Autark or the browser's GPU;
 * any other e2e module does when its source mentions Autark or WebGPU at all.
@@ -55,6 +57,7 @@ RUNNERS = ("utk", "desktop")
 #: Modules classified per test rather than per file.
 WORKFLOW_MODULE = "test_workflows"
 WALKTHROUGH_MODULE = "test_walkthrough_baselines"
+SHIPPED_DROPS_MODULE = "test_shipped_scenario_drops_e2e"
 
 
 @functools.lru_cache(maxsize=None)
@@ -97,6 +100,8 @@ def item_needs_webgpu(item) -> bool:
     params = getattr(getattr(item, "callspec", None), "params", {}) or {}
     if name == WORKFLOW_MODULE and "loaded_workflow" in params:
         return dataflow_needs_webgpu(str(params["loaded_workflow"]))
+    if name == SHIPPED_DROPS_MODULE and "dataflow" in params:
+        return dataflow_needs_webgpu(str(REPO_ROOT / params["dataflow"]))
     if name == WALKTHROUGH_MODULE and "walk" in params:
         return walk_needs_webgpu(params["walk"])
     path = getattr(module, "__file__", None)

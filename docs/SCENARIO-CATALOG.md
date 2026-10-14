@@ -86,6 +86,7 @@ A scenario dragged from the canvas drawer onto the canvas arrives as a copy, and
 
 - **Its levers** are copied with new ids. Each copy names the node it was copied from.
 - **Its fixed context** arrives as data. Each node it reads becomes a **Data Loading** node that reads a copy of the output that node saved in its project, wired where the context was. The copy is this dataflow's own: running the source project again changes its own output, not the copy. A Parameter node of its context is copied with its value.
+- **A context node with no saved output** runs first, on the server and in the scenario's project, which saves its output there; the drop then brings it. While it runs, a notice names it, such as "Running Buildings in ScoutShadows for Existing". When the run fails, the message says why and nothing is added.
 - **Its outcomes** show the results its project saved, before anything runs.
 - **Packages** its nodes use are added to the dataflow, as **Add** in the Node Catalog adds one.
 - **The scenario** is collapsed where you dropped it, in its own color, and keeps its name and description.
@@ -96,7 +97,7 @@ To use your own data instead, double-click the box, delete the Data Loading node
 
 A drop is refused, and nothing is added, when:
 
-- a node of its fixed context has no saved output: run the scenario in its project and save it, then drag it again;
+- a node of its fixed context has no saved output and cannot run on the server: only the browser runs it (an Autark compute node, for one), you are a guest on a hosted Curio, or Curio runs with `--no-project`. Run the scenario in its project and save it, then drag it again;
 - its nodes need a package, a dataset or a model your account does not have, or a package your account cannot add; the message names it;
 - it brings a Parameter node whose name the dataflow already uses: rename yours, then drag it again.
 

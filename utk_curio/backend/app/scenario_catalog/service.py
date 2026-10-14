@@ -13,7 +13,7 @@ from typing import Any
 
 from utk_curio.backend.app.execution.code_references import effective_value, normalize_shared
 from utk_curio.backend.app.projects.scenarios import scenario_summaries
-from utk_curio.backend.app.scenario_catalog.domain.copy import copy_plan, requirements
+from utk_curio.backend.app.scenario_catalog.domain.copy import copy_plan, node_label, requirements
 from utk_curio.backend.app.scenario_catalog.domain.parts import (
     is_parameter_node,
     saved_sources,
@@ -22,6 +22,7 @@ from utk_curio.backend.app.scenario_catalog.domain.parts import (
 )
 from utk_curio.backend.app.scenario_catalog.infrastructure import projects
 from utk_curio.backend.app.scenario_catalog.infrastructure import requirements as needs
+from utk_curio.backend.app.scenario_catalog.infrastructure import runs as server_runs
 
 #: A node id a drop may give a copy: what the canvas makes (a uuid), and the
 #: ids hand-written dataflows use.
@@ -153,17 +154,22 @@ class ScenarioCatalogService:
     # -- Dragging a scenario into another dataflow --------------------------
 
     def copy_plan(self, project_id: str, scenario_id: str, target_id: str) -> dict[str, Any]:
-        """What dragging the scenario into *target_id* copies, and why it
-        cannot be, if it cannot (``problems``). Changes nothing."""
+        """What dragging the scenario into *target_id* copies, the context
+        nodes a run on the server makes first in the scenario's project
+        (``toRun``), and why it cannot be, if it cannot (``problems``).
+        Changes nothing."""
         return self._plan(project_id, scenario_id, target_id)[0]
 
     def _plan(self, project_id: str, scenario_id: str, target_id: str) -> tuple[dict[str, Any], Any, dict, Any]:
         row, spec, _is_example, scenario = self._scenario(project_id, scenario_id)
         target_row, target_spec, _ = self._project(target_id)
         nodes, edges = spec_nodes_and_edges(spec)
+        by_id = {n["id"]: n for n in nodes}
         plan = copy_plan(scenario, nodes, edges)
         name = scenario["name"]
         problems: list[str] = []
+        to_run: list[dict[str, str]] = []
+        runs_refused = server_runs.refusal(self.user)
 
         for entry in plan["context"]:
             if entry.get("parameter"):
@@ -178,13 +184,25 @@ class ScenarioCatalogService:
                 )
                 continue
             saved = projects.saved_output(self.user, project_id, spec, source["nodeId"])
-            if saved is None:
+            if saved is not None:
+                source["datasetId"] = saved["datasetId"]
+                continue
+            # A run on the server makes the output in the scenario's project,
+            # where the account's runs go to the server and the server can run
+            # the node and every node it reads from.
+            unsaved = f'"{name}" reads {entry["label"]}, which has no saved output in {row.name}'
+            if runs_refused is not None:
+                problems.append(f"{unsaved}: run the scenario there and save the project, then drag it again.")
+                continue
+            blocker = server_runs.browser_node(self.user, project_id, nodes, edges, source["nodeId"])
+            if blocker is not None:
                 problems.append(
-                    f'"{name}" reads {entry["label"]}, which has no saved output in {row.name}: '
+                    f"{unsaved}, and {node_label(blocker)} runs only in the browser: "
                     "run the scenario there and save the project, then drag it again."
                 )
                 continue
-            source["datasetId"] = saved["datasetId"]
+            if all(item["nodeId"] != source["nodeId"] for item in to_run):
+                to_run.append({"nodeId": source["nodeId"], "label": node_label(by_id[source["nodeId"]])})
 
         # An outcome without a saved output shows once the scenario runs.
         for outcome in plan["outcomes"]:
@@ -236,6 +254,7 @@ class ScenarioCatalogService:
             "project": {"id": row.id, "name": row.name},
             **plan,
             "packages": packages,
+            "toRun": to_run,
             "problems": problems,
         }, row, spec, (target_row, target_spec)
 
@@ -244,10 +263,15 @@ class ScenarioCatalogService:
         copies have the node ids *outputs* names (``[{source, node}]``): add
         the packages it needs, copy each saved output to its copy, and restore
         those for the canvas. Refused, changing nothing, while the plan has a
-        problem."""
+        problem or a context node still to run."""
         plan, row, spec, (target_row, target_spec) = self._plan(project_id, scenario_id, target_id)
-        if plan["problems"]:
-            raise ScenarioCatalogError(" ".join(plan["problems"]), 409)
+        unsaved = [
+            f'"{plan["scenario"]["name"]}" reads {item["label"]}, which has no saved output in {row.name}: '
+            "run it there first."
+            for item in plan["toRun"]
+        ]
+        if plan["problems"] or unsaved:
+            raise ScenarioCatalogError(" ".join(plan["problems"] + unsaved), 409)
         context = {
             entry["source"]["nodeId"]: entry["source"]["datasetId"]
             for entry in plan["context"]
