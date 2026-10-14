@@ -109,6 +109,8 @@ describe("the drag", () => {
 
   it("reads from the DataTransfer alone once the in-memory drag has ended", () => {
     const payload = createPackageCardDragPayload(pkg([FIRST, SECOND], PAIR))!;
+    // A drag to read back, not two nulls that compare equal.
+    expect(payload?.nodes).toHaveLength(2);
     const dataTransfer = fakeDataTransfer();
     writePackageCardDragData(dataTransfer, payload);
     endPackageCardDrag();
