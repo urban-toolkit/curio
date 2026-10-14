@@ -63,11 +63,30 @@ def test_corruption_detected_and_removed(tmp_curio):
     assert not has_artifact("guest", digest)
 
 
-def test_stage_rejects_empty_and_oversized(tmp_curio):
+def test_stage_rejects_empty_and_oversized(tmp_curio, tmp_path, monkeypatch):
     with pytest.raises(StagingError, match="non-empty"):
         stage_artifact("guest", b"")
+    # One byte over the limit, without allocating it: a sparse file, whose size
+    # is checked before any of it is read.
+    oversized = tmp_path / "oversized.zip"
+    with open(oversized, "wb") as handle:
+        handle.truncate(build_staging.MAX_ARTIFACT_BYTES + 1)
     with pytest.raises(StagingError, match="staging limit"):
-        stage_artifact("guest", b"x" * (build_staging.MAX_ARTIFACT_BYTES + 1))
+        stage_artifact("guest", oversized)
+    assert not user_build_staging_dir("guest").exists() or not any(user_build_staging_dir("guest").iterdir())
+    # Bytes in memory meet the same limit, here made small enough to hold.
+    monkeypatch.setattr(build_staging, "MAX_ARTIFACT_BYTES", 16)
+    with pytest.raises(StagingError, match="staging limit"):
+        stage_artifact("guest", b"x" * 17)
+    assert read_artifact("guest", stage_artifact("guest", b"x" * 16)) == b"x" * 16
+
+
+def test_the_staging_limit_is_a_model_package_s_whole_archive(tmp_curio):
+    """A package the builder stages may be a model package, whose weights may
+    reach 2 GiB beside a node package's budget for everything else."""
+    from utk_curio.backend.app.packages.repositories.archive import _model_caps
+
+    assert build_staging.MAX_ARTIFACT_BYTES == _model_caps()[1] == 2 * 1024 ** 3 + 128 * 1024 ** 2
 
 
 def test_discard(tmp_curio):

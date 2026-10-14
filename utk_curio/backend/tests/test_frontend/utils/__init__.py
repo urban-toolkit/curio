@@ -211,6 +211,7 @@ from .offline_install import (  # noqa: F401
     stage_wheelhouse,
     library_installed,
     restore_wheelhouse,
+    planted_package_files,
     plant_catalog_package,
     remove_catalog_package,
     offline_catalog_package,

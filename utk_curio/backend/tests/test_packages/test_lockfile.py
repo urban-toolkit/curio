@@ -769,3 +769,95 @@ class TestRemoveFromAccount:
         assert resp.status_code == 204, resp.get_data(as_text=True)
         assert not (user_packages_dir(user_key) / UHVI_DIR).is_dir()
         assert UHVI_DIR not in defaults_io.load_defaults(user_key)
+
+
+# ---------------------------------------------------------------------------
+# A node bound to a model (metadata.modelRefs) uses the model's package
+# ---------------------------------------------------------------------------
+
+DDRNET_DIR = "model.curio.ddrnet23-slim@1"
+DDRNET_ID = "model.curio.ddrnet23-slim"
+
+
+def _python_node(node_id: str, *, bound: bool, model_ref: str = DDRNET_ID) -> dict:
+    """A built-in Python node whose code runs DDRNet: bound to it as a drop of
+    the model onto the node binds it (``metadata.modelRefs``), or naming it in
+    its code only."""
+    metadata: dict = {"keywords": []}
+    if bound:
+        metadata["modelRefs"] = [{"id": model_ref, "name": "DDRNet23-Slim (street scenes)"}]
+    return {
+        "id": node_id,
+        "type": "curio.builtin/computation-analysis",
+        "content": f'model = curio_load_model("{DDRNET_ID}")\nreturn 1\n',
+        "metadata": metadata,
+    }
+
+
+def _with_nodes(user_key: str, project_id: str, nodes: list[dict], packages: list[str] | None = None) -> None:
+    spec = projects_storage.read_spec(user_key, project_id)
+    spec["dataflow"]["nodes"] = nodes
+    if packages is not None:
+        spec["dataflow"]["packages"] = packages
+    projects_storage.write_spec(user_key, project_id, spec)
+
+
+class TestModelRefsCountAsInUse:
+    """A model package is in use while a node's type or its ``modelRefs``
+    names it. A literal ``curio_load_model`` call is only a code reference:
+    the drawer's Remove dialog warns about it, and it keeps nothing."""
+
+    def test_a_node_bound_to_the_model_references_its_package(self):
+        spec = {"dataflow": {"nodes": [
+            _python_node("bound", bound=True),
+            _python_node("by-major", bound=True, model_ref=DDRNET_DIR),
+            _python_node("in-code-only", bound=False),
+            {"id": "loader", "type": "curio.builtin/data-loading@1"},
+        ]}}
+        assert referencing_nodes(spec, DDRNET_DIR, {DDRNET_ID: [1]}) == ["bound", "by-major"]
+        assert referencing_nodes(spec, "model.curio.other@1", {DDRNET_ID: [1]}) == []
+
+    def test_remove_from_project_is_refused_while_a_node_is_bound_to_the_model(
+        self, app, user_and_token, alice_project,
+    ):
+        user, _ = user_and_token
+        user_key = _user_key_for(user)
+        packages_services.install_to_project(user_key, alice_project, DDRNET_DIR)
+        _with_nodes(user_key, alice_project, [_python_node("bound", bound=True)])
+
+        with pytest.raises(packages_services.PackageServiceError) as exc:
+            packages_services.uninstall_from_project(user_key, alice_project, DDRNET_DIR)
+        assert exc.value.status == 409
+        assert f"1 node on this canvas uses {DDRNET_DIR}" in str(exc.value)
+        assert DDRNET_DIR in projects_storage.read_spec(user_key, alice_project)["dataflow"]["packages"]
+
+    def test_a_call_in_code_alone_keeps_no_model(self, app, user_and_token, alice_project):
+        user, _ = user_and_token
+        user_key = _user_key_for(user)
+        packages_services.install_to_project(user_key, alice_project, DDRNET_DIR)
+        _with_nodes(user_key, alice_project, [_python_node("in-code-only", bound=False)])
+
+        result = packages_services.uninstall_from_project(user_key, alice_project, DDRNET_DIR)
+
+        assert result["packages"] == []
+        assert result["pruned"] == [DDRNET_DIR]
+
+    def test_remove_from_account_is_refused_while_a_node_is_bound_to_the_model(
+        self, client, user_and_token, alice_project,
+    ):
+        """The node's dataflow does not name the model in its lockfile: the
+        binding alone keeps it."""
+        user, token = user_and_token
+        user_key = _user_key_for(user)
+        store_install.install_from_catalog(user_key, DDRNET_DIR, replace=False)
+        _with_nodes(user_key, alice_project, [_python_node("bound", bound=True)], packages=["curio.builtin@1"])
+
+        assert _store_rows(client, token, "?usage=true")[DDRNET_DIR]["inUse"] is True
+        resp = client.delete(f"/api/packages/{DDRNET_DIR}?unusedOnly=true", headers=_auth(token))
+        assert resp.status_code == 409, resp.get_data(as_text=True)
+        assert (package_dir(user_key, DDRNET_DIR) / "manifest.json").is_file()
+
+        # Bound no longer, it leaves.
+        _with_nodes(user_key, alice_project, [_python_node("in-code-only", bound=False)])
+        resp = client.delete(f"/api/packages/{DDRNET_DIR}?unusedOnly=true", headers=_auth(token))
+        assert resp.status_code == 204, resp.get_data(as_text=True)

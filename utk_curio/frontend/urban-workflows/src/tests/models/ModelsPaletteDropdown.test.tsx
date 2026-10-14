@@ -125,6 +125,7 @@ describe("ModelsPaletteDropdown", () => {
         modelId: "model.curio.ddrnet23-slim",
         name: "DDRNet23-Slim (street scenes)",
         runtime: "onnx",
+        type: "semantic-segmentation",
       }),
     );
   });

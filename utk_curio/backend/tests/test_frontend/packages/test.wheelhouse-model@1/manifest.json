@@ -1,0 +1,67 @@
+{
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
+  "compatibility": {
+    "curioRuntime": ">=0.5.0",
+    "major": 1
+  },
+  "createdAt": "2026-10-14T12:00:00Z",
+  "dependencies": {
+    "js": {},
+    "packages": {},
+    "python": {
+      "curio-wheelhouse-model": "1.0.0"
+    }
+  },
+  "description": "Test model package: a copy of Local Relief whose node imports curio-wheelhouse-model, a library that exists only as a wheel in the e2e suite's wheelhouse.",
+  "id": "test.wheelhouse-model",
+  "kind": "model",
+  "license": "MIT",
+  "model": {
+    "entry": "models/local_relief.onnx",
+    "homepage": "https://github.com/urban-toolkit/curio",
+    "input": {
+      "dtype": "float32",
+      "height": 64,
+      "layout": "NCHW",
+      "scale": 1.0,
+      "width": 64
+    },
+    "labels": [],
+    "license": "MIT",
+    "publisher": "Curio tests",
+    "runtime": "onnx",
+    "sizeBytes": 2394,
+    "type": "image-to-image"
+  },
+  "name": "Wheelhouse Relief",
+  "permissions": [],
+  "publisher": "Curio tests",
+  "templates": [
+    {
+      "behavior": "code",
+      "category": "computation",
+      "description": "Run the Local Relief model on an 8 by 8 height grid, import curio-wheelhouse-model and print the message it holds.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": false,
+      "icon": null,
+      "id": "relief",
+      "inputPorts": [],
+      "label": "Wheelhouse Relief",
+      "outputPorts": [
+        {
+          "cardinality": "[1,n]",
+          "types": [
+            "VALUE",
+            "LIST",
+            "JSON"
+          ]
+        }
+      ],
+      "source": "sources/relief.py"
+    }
+  ],
+  "version": "1.0.0"
+}

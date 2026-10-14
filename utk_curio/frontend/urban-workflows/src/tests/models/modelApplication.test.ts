@@ -214,6 +214,7 @@ describe("the model drag", () => {
       modelId: "model.curio.ddrnet23-slim",
       name: "DDRNet23-Slim (street scenes)",
       runtime: "onnx",
+      type: "semantic-segmentation",
     });
     // A new page (no in-memory payload) still reads it, from either form.
     endModelDrag();
