@@ -1,7 +1,0 @@
-{
-  "sha256": {
-    "README.md": "4c36b9ca0daeedae11534f4623890a9e38e358fa8e380d4daed897311de14218",
-    "manifest.json": "16bac22580e8c196c962ba16b37392900f423b57cafa644c1d2b18c18a1fb54a",
-    "sources/image-segmentation.py": "3af0948c99354fac1a3e4b86a336df7b8977155be25f2395f8bca4666c0e4bd4"
-  }
-}

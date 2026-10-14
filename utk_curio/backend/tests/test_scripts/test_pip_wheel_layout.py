@@ -2,9 +2,9 @@
 dist-info, and a pip install still finds everything Curio ships beside its code.
 
 The repository keeps the Data Catalog's datasets, the Discovery Catalog's
-sources, the Model Catalog's models, the Node Catalog's packages, the scripts
-and DuckDB's extensions in folders beside ``utk_curio/``: ``datasets/``,
-``discovery/``, ``models/``, ``packages/``, ``scripts/`` and ``vendor/``. A
+sources, the packages of the Node and Model Catalogs, the scripts and DuckDB's
+extensions in folders beside ``utk_curio/``: ``datasets/``, ``discovery/``,
+``packages/``, ``scripts/`` and ``vendor/``. A
 wheel that installs those folders as they are puts a ``datasets/`` of Curio's
 into site-packages, where Hugging Face's ``datasets`` package lives: the two
 mix in one folder, uninstalling either can break the other, and without
@@ -57,7 +57,7 @@ REPO = Path(__file__).resolve().parents[4]
 PROBE = REPO / "utk_curio" / "backend" / "tests" / "_support" / "pip_install_probe.py"
 #: The folders the repository keeps beside utk_curio/, and docs/, part of
 #: which the package ships.
-FOLDERS = ("datasets", "discovery", "docs", "models", "packages", "scripts", "vendor")
+FOLDERS = ("datasets", "discovery", "docs", "packages", "scripts", "vendor")
 #: Where the wheel carries them, under the folder that holds utk_curio/.
 IN_THE_WHEEL = PurePosixPath("utk_curio", "_shipped")
 #: The credits of the Example storage's Mapillary photos, whose license
@@ -306,8 +306,7 @@ def test_a_pip_install_reads_every_shipped_folder_from_inside_utk_curio(pip_inst
     where = {
         "the Data Catalog (datasets/)": report["datasets"]["root"],
         "the Discovery Catalog (discovery/)": report["discovery"]["root"],
-        "the Model Catalog (models/)": report["models"]["root"],
-        "the Node Catalog (packages/)": report["packages"]["root"],
+        "the Node and Model Catalogs (packages/)": report["packages"]["root"],
         "curio test (scripts/test.sh)": report["scripts"]["test_sh"],
         "DuckDB's extensions (vendor/duckdb-extensions/)": report["duckdb_extensions"]["root"],
         "the record of the files the package leaves out": report["record"]["path"],
@@ -320,11 +319,10 @@ def test_a_pip_install_reads_every_shipped_folder_from_inside_utk_curio(pip_inst
 
 
 def test_a_pip_install_lists_every_shipped_dataset_model_source_and_package(pip_install):
-    """The Data Catalog, the Model Catalog, the Discovery Catalog and the Node
-    Catalog of a pip install list every entry the repository ships."""
+    """The Data Catalog, the Discovery Catalog and the packages of the Node and
+    Model Catalogs of a pip install list every entry the repository ships."""
     report = pip_install.report
     assert sorted(item["dirName"] for item in report["datasets"]["items"]) == _with_manifest("datasets")
-    assert report["models"]["listed"] == _with_manifest("models")
     assert report["discovery"]["listed"] == _with_manifest("discovery")
     assert report["packages"]["listed"] == _with_manifest("packages")
 
@@ -336,7 +334,6 @@ def test_a_pip_install_reads_each_file_the_sdist_ships_and_nothing_else(pip_inst
     read_from = {
         "datasets": report["datasets"]["root"],
         "discovery": report["discovery"]["root"],
-        "models": report["models"]["root"],
         "packages": report["packages"]["root"],
         "scripts": str(Path(report["scripts"]["test_sh"]).parent),
         "vendor/duckdb-extensions": report["duckdb_extensions"]["root"],

@@ -2,17 +2,19 @@ import React from "react";
 
 import { formatBytes } from "../../datasets/catalog/datasetDetailHelpers";
 import {
-  MODEL_ORIGIN_LABEL,
   MODEL_RUNTIME_LABEL,
-  MODEL_TASK_LABEL,
-  type ModelRow,
-} from "../../../services/modelCatalog";
+  MODEL_TYPE_LABEL,
+  type ModelBlockPayload,
+  type PackagePayload,
+} from "../../../services/packages";
 
 /**
- * What the Model Catalog says about one model, for its browse drawer, its
- * canvas card and its details modal alike, as `discoverySourceFacts` is for a
- * source. Each view lays the rows out in its own container, and none of them
- * can disagree with another about a model.
+ * What the Model Catalog says about one model package, for the cards, the
+ * page's side drawer and the details modal alike, as `discoverySourceFacts`
+ * is for a source. Each view lays the rows out in its own container, and none
+ * of them can disagree with another about a model. A model is a package of
+ * kind `model`: its `model` block says how its weights run, its `license` is
+ * its code's.
  */
 
 export interface ModelFact {
@@ -20,53 +22,75 @@ export interface ModelFact {
   value: React.ReactNode;
 }
 
+type ModelPackage = PackagePayload & { model: ModelBlockPayload };
+
 /** `"19 labels"`, singular for one. */
-export function modelLabelCount(model: Pick<ModelRow, "labelCount">): string {
-  return `${model.labelCount} ${model.labelCount === 1 ? "label" : "labels"}`;
+export function modelLabelCount(pkg: ModelPackage): string {
+  const count = pkg.model.labels.length;
+  return `${count} ${count === 1 ? "label" : "labels"}`;
 }
 
-/** `"23.1 MB"`, or null when the manifest does not say. */
-export function modelSizeLabel(model: Pick<ModelRow, "sizeBytes">): string | null {
-  return model.sizeBytes > 0 ? formatBytes(model.sizeBytes) : null;
+/** `"22.0 MB"`, or null when the manifest does not say. */
+export function modelSizeLabel(pkg: ModelPackage): string | null {
+  return pkg.model.sizeBytes > 0 ? formatBytes(pkg.model.sizeBytes) : null;
 }
 
-/** `"1024 × 512, uint8"`, or null for a model that reads any size. */
-export function modelInputLabel(model: Pick<ModelRow, "input">): string | null {
-  if (!model.input) return null;
-  return `${model.input.width} × ${model.input.height}, ${model.input.dtype}`;
+/** `"2048 × 1024, uint8"`, or null for a model that reads any size. */
+export function modelInputLabel(pkg: ModelPackage): string | null {
+  const input = pkg.model.input;
+  return input ? `${input.width} × ${input.height}, ${input.dtype}` : null;
 }
 
-/** The card meta line: runtime, label count (an image-to-image model has
- *  none, so its task instead), size. */
-export function modelMetaLine(model: ModelRow): string {
-  const kind = model.labelCount > 0 ? modelLabelCount(model) : MODEL_TASK_LABEL[model.task] ?? model.task;
-  return [MODEL_RUNTIME_LABEL[model.runtime], kind, modelSizeLabel(model)]
-    .filter(Boolean)
-    .join(" · ");
+export function modelRuntimeLabel(pkg: ModelPackage): string {
+  return MODEL_RUNTIME_LABEL[pkg.model.runtime] ?? pkg.model.runtime;
 }
 
-export function modelInfoRows(model: ModelRow): ModelFact[] {
-  const input = modelInputLabel(model);
-  const size = modelSizeLabel(model);
+export function modelTypeLabel(pkg: ModelPackage): string {
+  return MODEL_TYPE_LABEL[pkg.model.type] ?? pkg.model.type;
+}
+
+/** The node a drop of the model creates: its package's own. */
+export function modelNodeLabel(pkg: ModelPackage): string | null {
+  const template = pkg.templates[0];
+  return template ? template.label || template.templateId : null;
+}
+
+/** The card meta line: runtime, label count (a model with none, its type
+ *  instead), size. */
+export function modelMetaLine(pkg: ModelPackage): string {
+  const kind = pkg.model.labels.length > 0 ? modelLabelCount(pkg) : modelTypeLabel(pkg);
+  return [modelRuntimeLabel(pkg), kind, modelSizeLabel(pkg)].filter(Boolean).join(" · ");
+}
+
+/** The model's rows for the details: how its weights run, the code's license
+ *  (the package's) beside the weights' license, the weights' publisher and
+ *  homepage, the node a drop creates, and whether the weights download on
+ *  first use. */
+export function modelInfoRows(pkg: ModelPackage, weightsLicense?: React.ReactNode): ModelFact[] {
+  const input = modelInputLabel(pkg);
+  const size = modelSizeLabel(pkg);
+  const node = modelNodeLabel(pkg);
   const rows: (ModelFact | null)[] = [
-    { label: "Runtime", value: MODEL_RUNTIME_LABEL[model.runtime] ?? model.runtime },
-    { label: "Task", value: MODEL_TASK_LABEL[model.task] ?? model.task },
-    input ? { label: "Input", value: input } : null,
-    model.labelCount > 0 ? { label: "Labels", value: String(model.labelCount) } : null,
+    { label: "Type", value: modelTypeLabel(pkg) },
+    { label: "Runtime", value: modelRuntimeLabel(pkg) },
+    input ? { label: "Input size", value: input } : null,
+    pkg.model.labels.length > 0 ? { label: "Labels", value: String(pkg.model.labels.length) } : null,
     size ? { label: "Size", value: size } : null,
-    { label: "Version", value: model.version },
-    { label: "License", value: model.license || "Unknown" },
-    { label: "Origin", value: MODEL_ORIGIN_LABEL[model.origin] ?? model.origin },
-    model.homepage
+    { label: "Code license", value: pkg.license || "Unknown" },
+    { label: "Weights license", value: weightsLicense ?? (pkg.model.license || "Unknown") },
+    pkg.model.publisher ? { label: "Weights publisher", value: pkg.model.publisher } : null,
+    pkg.model.homepage
       ? {
           label: "Homepage",
           value: (
-            <a href={model.homepage} target="_blank" rel="noreferrer noopener">
-              {hostOf(model.homepage)} ↗
+            <a href={pkg.model.homepage} target="_blank" rel="noreferrer noopener">
+              {hostOf(pkg.model.homepage)} ↗
             </a>
           ),
         }
       : null,
+    node ? { label: "Node", value: node } : null,
+    pkg.model.downloadsOnFirstUse ? { label: "Weights", value: "Downloads on first use" } : null,
   ];
   return rows.filter((row): row is ModelFact => row != null);
 }

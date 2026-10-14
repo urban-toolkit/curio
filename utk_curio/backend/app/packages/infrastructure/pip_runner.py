@@ -214,8 +214,8 @@ def _spec_argv(name: str, spec: str) -> str:
       — passed through verbatim.
     - Bare versions (``1.2.3``) — treated as exact match.
     - npm-style carets (``^0.14``) — rewritten to PEP 440's
-      compatible-release ``~=0.14`` so the streetvision / UHVI manifests
-      authored in the original PR's npm-influenced style still install.
+      compatible-release ``~=0.14`` so manifests authored in an
+      npm-influenced style still install.
     - Empty spec — install latest.
 
     Every requirement passes :func:`validate_python_requirement` first, so a

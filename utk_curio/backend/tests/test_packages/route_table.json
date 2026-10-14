@@ -42,6 +42,13 @@
   "endpoint": "packages_api.get_package_file"
  },
  {
+  "rule": "/api/packages/<dir_name>/weights-license",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "packages_api.get_weights_license"
+ },
+ {
   "rule": "/api/packages/catalog",
   "methods": [
    "GET"

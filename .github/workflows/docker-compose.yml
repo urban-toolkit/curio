@@ -39,7 +39,6 @@ on:
       - 'packages/**'
       - 'datasets/**'
       - 'discovery/**'
-      - 'models/**'
       - 'docs/examples/**'
       # The example model package the image copies and the tests run.
       - 'docs/bring-your-own-model/**'
@@ -90,7 +89,6 @@ on:
       - 'packages/**'
       - 'datasets/**'
       - 'discovery/**'
-      - 'models/**'
       - 'docs/examples/**'
       # The example model package the image copies and the tests run.
       - 'docs/bring-your-own-model/**'
@@ -1227,9 +1225,11 @@ jobs:
             # What a pip install keeps after downloading the files its package
             # leaves out (left_out_files.py): one release's folder under
             # .curio/fetched, which the boot's hardening closes as it closes
-            # models/. The boundary suite reads both files through staging.
+            # packages/*/models/. The boundary suite reads both through
+            # staging: the Milan raster, and Deep Umbra's model package with
+            # its weights.
             release=.curio/fetched/0123456789abcdef0123456789abcdef01234567
-            for folder in "datasets/data.utk.milan-mrt@1" "models/model.scout.deep-umbra@1"; do
+            for folder in "datasets/data.utk.milan-mrt@1" "packages/model.scout.deep-umbra@1"; do
               mkdir -p "$release/$folder"
               cp -R "$folder/." "$release/$folder/"
             done
@@ -1364,7 +1364,7 @@ jobs:
             "$tests/test_discovery/test_shipped_sources.py::test_the_image_ships_the_catalog" \
             "$tests/test_discovery/test_shipped_sources.py::test_the_wheel_ships_the_catalog" \
             "$tests/test_discovery/test_shipped_sources.py::test_the_ci_container_is_pointed_at_the_recorded_corpus" \
-            "$tests/test_model_catalog/test_model_catalog.py::TestItShips::test_the_image_and_the_wheel_carry_models" \
+            "$tests/test_model_catalog/test_model_catalog.py::TestItShips::test_models_ship_as_model_packages_and_no_models_folder_does" \
             "$tests/test_packages/test_model_packages.py::test_the_image_copies_local_relief" \
             "$tests/test_scripts/test_launcher_node_version.py::test_node_version_declarations_agree"
 

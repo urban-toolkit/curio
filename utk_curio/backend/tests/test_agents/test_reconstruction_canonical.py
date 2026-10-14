@@ -302,7 +302,8 @@ class TestRoles:
         assert TEMPLATES[VEGA].executable is False  # grammar, no code
         assert TEMPLATES["curio.builtin/js-computation"].executable is True  # javascript
         assert TEMPLATES["curio.example-ui/column-filter"].executable is False  # package, no code
-        assert TEMPLATES["curio.streetvision/image-segmentation"].executable is True  # package, python
+        # A model package's node with no source of its own: python, so executable.
+        assert TEMPLATES["model.curio.ddrnet23-slim/image-segmentation"].executable is True
 
 
 class TestDependencies:
@@ -318,9 +319,9 @@ class TestDependencies:
         assert deps.packages == ("curio.weather@1",)
 
     def test_a_package_template_used_but_not_declared_is_undeclared(self):
-        spec = _spec([_node("a", "curio.streetvision/image-segmentation", content="")], [], packages=[])
-        deps = declared_dependencies(spec, installed_majors_by_pkg={"curio.streetvision": [1]})
-        assert deps.undeclared_packages == ("curio.streetvision@1",)
+        spec = _spec([_node("a", "model.curio.ddrnet23-slim/image-segmentation", content="")], [], packages=[])
+        deps = declared_dependencies(spec, installed_majors_by_pkg={"model.curio.ddrnet23-slim": [1]})
+        assert deps.undeclared_packages == ("model.curio.ddrnet23-slim@1",)
 
     def test_builtin_is_never_a_declared_dependency(self):
         spec = _spec([_node("a", LOADER)], [])
@@ -414,9 +415,10 @@ class TestTheShippedCorpus:
         while using only builtin templates -- a different resolution route
         from examples 10, 18, 21, 22 and 24 and the BuildingRasters,
         ScoutShadows and WeatherRouting test dataflows, whose templates
-        themselves live in a package (``curio.streetvision@1``,
-        ``curio.media@1``, ``scout.raster-conversion@1``, ``scout.shadow@1``
-        and ``scout.routing@1``). The
+        themselves live in a package (``curio.media@1``,
+        ``scout.raster-conversion@1``, and the model packages
+        ``model.curio.ddrnet23-slim@1``, ``model.scout.deep-umbra@1`` and
+        ``model.scout.weather-gnn@1``). The
         FloodScenarios test dataflow is made of built-in nodes only."""
         needs_package_templates = {}
         for path in example_paths():
@@ -437,6 +439,10 @@ class TestTheShippedCorpus:
             "ScoutShadows",
             "WeatherRouting",
         ]
+        # SCOUT's two models are packages with nodes of their own.
+        for stem in ("24-scout-building-rasters", "ScoutShadows"):
+            assert "model.scout.deep-umbra/accumulated-shadow" in needs_package_templates[stem], stem
+        assert needs_package_templates["WeatherRouting"] == ["model.scout.weather-gnn/weather-routing"]
         assert declared_dependencies(
             json.loads(
                 (REPO_ROOT / "docs/examples/09-heterogeneous-data-linked-views.json").read_text()

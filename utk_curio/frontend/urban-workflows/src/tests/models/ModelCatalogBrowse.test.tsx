@@ -1,260 +1,335 @@
-import React from 'react';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import '@testing-library/jest-dom';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+/**
+ * The Model Catalog page, `/catalog/models`: the Node Catalog page's code,
+ * listing the model packages (kind `model`) through the same services, with
+ * the same rail, header import, side drawer, Add to all projects and details
+ * modal. The modal shows the model's fields, its code's and its weights'
+ * licenses, the node a drop creates and the package's modules. The Node
+ * Catalog page lists no model package.
+ */
+import React from "react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import "@testing-library/jest-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
-import { ModelCatalogBrowse } from '../../pages/models/ModelCatalogBrowse';
-import { invalidateModelCatalogCache } from '../../services/modelCatalog';
-import type { ModelRow } from '../../services/modelCatalog';
-import { downloadedModel, shippedModel } from '../_support/modelRows';
+import { ModelCatalogBrowse } from "../../pages/models/ModelCatalogBrowse";
+import { NodeCatalogBrowse } from "../../pages/catalog/NodeCatalogBrowse";
+import {
+  builtinPackage,
+  ddrnetPackage,
+  deepUmbraPackage,
+  importedModelPackage,
+  rasterConversionPackage,
+} from "../_support/modelPackages";
 
-jest.mock('../../utils/authApi', () => ({
-  apiFetch: jest.fn(),
-  getToken: jest.fn(() => 'token'),
+const mockApi = {
+  catalog: jest.fn(),
+  listInstalled: jest.fn(),
+  factoryCapabilities: jest.fn(),
+  getDefaults: jest.fn(),
+  resolve: jest.fn(),
+  installToDefaults: jest.fn(),
+  weightsLicense: jest.fn(),
+  download: jest.fn(),
+  uploadArchive: jest.fn(),
+  uninstall: jest.fn(),
+};
+jest.mock("../../services/packages/packagesApi", () => ({
+  packagesApi: new Proxy({}, { get: (_target, name: string) => (mockApi as any)[name] }),
 }));
-
+jest.mock("../../utils/authApi", () => ({
+  apiFetch: jest.fn().mockResolvedValue({ items: [] }),
+  getToken: jest.fn(() => "token"),
+}));
 const mockShowToast = jest.fn();
-jest.mock('../../providers/ToastProvider', () => ({
+jest.mock("../../providers/ToastProvider", () => ({
   useToastContext: () => ({ showToast: mockShowToast }),
 }));
+jest.mock("../../registry/packageRegistryBootstrap", () => ({
+  refreshPackageRegistry: jest.fn().mockResolvedValue(undefined),
+}));
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { apiFetch } = require('../../utils/authApi') as { apiFetch: jest.Mock };
-
-/** Route the mocked client by method and path, so a test can serve the
- *  listing, a model, its license and a delete without caring about order. */
-function routeApi(rows: ModelRow[], extra: { license?: string } = {}) {
-  apiFetch.mockImplementation((path: string, init: RequestInit = {}) => {
-    if (init.method === 'DELETE') return Promise.resolve({ deleted: path.split('/').pop() });
-    if (path.startsWith('/api/models/catalog')) return Promise.resolve({ items: rows });
-    if (path.endsWith('/license')) return Promise.resolve({ text: extra.license ?? '' });
-    const id = decodeURIComponent(path.replace('/api/models/', ''));
-    const row = rows.find((r) => r.id === id);
-    if (row) return Promise.resolve(row);
-    return Promise.reject(Object.assign(new Error('no model'), { status: 404 }));
-  });
-}
-
-/** The card for one model. Scoped because a runtime or origin label appears
- *  in the rail and the card alike. */
-function card(id: string): HTMLElement {
-  const el = document.querySelector(`.cardGrid [data-model-id="${id}"]`);
-  if (!el) throw new Error(`no card for ${id}`);
-  return el as HTMLElement;
-}
-
-let location = '';
+let location = "";
 const LocationProbe: React.FC = () => {
   location = useLocation().pathname;
   return null;
 };
 
-function renderPage(entry = '/catalog/models') {
+function renderPage(entry = "/catalog/models") {
   return render(
     <MemoryRouter initialEntries={[entry]}>
       <Routes>
         <Route path="/catalog/models/:modelId?" element={<ModelCatalogBrowse />} />
+        <Route path="/catalog/nodes" element={<NodeCatalogBrowse />} />
         <Route path="/catalog/discovery/:sourceDir" element={<div>source page</div>} />
       </Routes>
       <LocationProbe />
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 
-const details = () => screen.queryByRole('dialog', { name: 'Model details' });
+/** The grid card for one package. Scoped, because a runtime or a type label
+ *  appears on the rail and the card alike. */
+function card(dirName: string): HTMLElement | null {
+  return document.querySelector(`.cardGrid article[data-pkg-dir="${dirName}"]`);
+}
+
+async function gridCard(dirName: string): Promise<HTMLElement> {
+  await waitFor(() => expect(card(dirName)).not.toBeNull());
+  return card(dirName)!;
+}
+
+function railRow(name: RegExp): HTMLElement {
+  const rail = screen.getByRole("complementary", { name: "Filter models" });
+  return within(rail).getByRole("button", { name });
+}
+
+const details = () => screen.queryByRole("dialog", { name: "Model details" });
 
 beforeEach(() => {
-  invalidateModelCatalogCache();
-  apiFetch.mockReset();
-  mockShowToast.mockReset();
+  jest.clearAllMocks();
+  location = "";
+  mockApi.catalog.mockResolvedValue({
+    packages: [ddrnetPackage(), deepUmbraPackage(), builtinPackage(), rasterConversionPackage()],
+    families: [],
+    catalogCollisions: [],
+  });
+  mockApi.listInstalled.mockResolvedValue({
+    packages: [ddrnetPackage(), builtinPackage(), importedModelPackage()],
+  });
+  mockApi.factoryCapabilities.mockResolvedValue({ catalogPublish: false });
+  mockApi.getDefaults.mockResolvedValue({ packages: [] });
+  mockApi.resolve.mockResolvedValue({ lockfile: [], conflicts: [] });
+  mockApi.installToDefaults.mockResolvedValue({ projects: [{ id: "p1", ok: true }] });
+  mockApi.weightsLicense.mockResolvedValue("MIT License\n\nCityscapes terms of use.");
+  mockApi.download.mockResolvedValue(undefined);
+  mockApi.uninstall.mockResolvedValue(undefined);
 });
 
-describe('ModelCatalogBrowse', () => {
-  test('a card shows the name, publisher, runtime, label count, size and license', async () => {
-    routeApi([shippedModel()]);
+describe("the Model Catalog page", () => {
+  test("lists the model packages, the catalog's and the account's own, and no node package", async () => {
     renderPage();
-    await screen.findAllByText('DDRNet23-Slim (street scenes)');
-    const tile = within(card('model.curio.ddrnet23-slim'));
-    expect(tile.getByText('DDRNet23-Slim (street scenes)')).toBeInTheDocument();
-    expect(tile.getByText('Curio')).toBeInTheDocument();
-    expect(tile.getByText('ONNX')).toBeInTheDocument();
-    expect(tile.getByText('3 labels · 23.0 MB')).toBeInTheDocument();
-    expect(tile.getByText('MIT; trained on Cityscapes')).toBeInTheDocument();
-    expect(tile.getByText('Shipped with Curio')).toBeInTheDocument();
+    await gridCard("model.curio.ddrnet23-slim@1");
+    expect(card("model.scout.deep-umbra@1")).not.toBeNull();
+    expect(card("imported.xabc123def456@1")).not.toBeNull();
+    expect(card("curio.builtin@1")).toBeNull();
+    expect(card("scout.raster-conversion@1")).toBeNull();
+    expect(screen.getByRole("heading", { name: /Model Catalog/ })).toBeInTheDocument();
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { apiFetch } = require("../../utils/authApi");
+    expect(apiFetch).not.toHaveBeenCalled();
   });
 
-  test('it asks the backend to search, with q', async () => {
-    routeApi([shippedModel()]);
+  test("a card shows the name, publisher, runtime, label count, size and the weights' license", async () => {
     renderPage();
-    await screen.findAllByText('DDRNet23-Slim (street scenes)');
-    expect(apiFetch).toHaveBeenCalledWith('/api/models/catalog');
-    fireEvent.change(screen.getByRole('searchbox', { name: 'Search models' }), {
-      target: { value: 'street' },
+    const ddrnet = await gridCard("model.curio.ddrnet23-slim@1");
+    expect(ddrnet).toHaveTextContent("DDRNet23-Slim (street scenes)");
+    expect(ddrnet).toHaveTextContent("Curio");
+    expect(ddrnet).toHaveTextContent("ONNX");
+    expect(ddrnet).toHaveTextContent("19 labels");
+    expect(ddrnet).toHaveTextContent("22.0 MB");
+    expect(ddrnet).toHaveTextContent("MIT; trained on Cityscapes");
+    expect(card("model.scout.deep-umbra@1")).toHaveTextContent("Used with the permission of SCOUT's authors");
+  });
+
+  test("the rail narrows the grid by type and by runtime", async () => {
+    renderPage();
+    await gridCard("model.curio.ddrnet23-slim@1");
+    expect(railRow(/All models/)).toHaveTextContent("3");
+    fireEvent.click(railRow(/Image to image/));
+    await waitFor(() => expect(card("model.curio.ddrnet23-slim@1")).toBeNull());
+    expect(card("model.scout.deep-umbra@1")).not.toBeNull();
+    fireEvent.click(railRow(/Image to image/));
+    fireEvent.click(railRow(/Transformers/));
+    await waitFor(() => expect(card("model.scout.deep-umbra@1")).toBeNull());
+    expect(card("imported.xabc123def456@1")).not.toBeNull();
+  });
+
+  test("the search narrows the grid", async () => {
+    renderPage();
+    await gridCard("model.curio.ddrnet23-slim@1");
+    fireEvent.change(screen.getByPlaceholderText("Search models…"), { target: { value: "shadow" } });
+    await waitFor(() => expect(card("model.curio.ddrnet23-slim@1")).toBeNull());
+    expect(card("model.scout.deep-umbra@1")).not.toBeNull();
+  });
+
+  test("the side drawer opens on the first model, and Add to all projects reviews then adds it", async () => {
+    renderPage();
+    await gridCard("model.curio.ddrnet23-slim@1");
+    fireEvent.click(card("model.scout.deep-umbra@1")!);
+    const add = await screen.findByRole("button", { name: "Add to all projects" });
+    fireEvent.click(add);
+    const review = await screen.findByRole("dialog", { name: "" });
+    expect(review).toHaveTextContent('Add "Deep Umbra (accumulated shadows)"');
+    await act(async () => {
+      fireEvent.click(within(review).getByRole("button", { name: "Add to all projects" }));
     });
-    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith('/api/models/catalog?q=street'));
+    await waitFor(() => expect(mockApi.installToDefaults).toHaveBeenCalledWith("model.scout.deep-umbra@1"));
   });
 
-  test('the drawer opens on the first model, as on the other catalog pages', async () => {
-    routeApi([shippedModel(), downloadedModel()]);
+  test("the header imports a package archive", async () => {
     renderPage();
-    await screen.findAllByText('SegFormer B0 (ADE20K)');
-    const drawer = document.querySelector('[data-curio-browse-drawer]') as HTMLElement;
-    expect(drawer).not.toBeNull();
-    expect(within(drawer).getByText('Model info')).toBeInTheDocument();
-    expect(card('model.curio.ddrnet23-slim').className).toMatch(/cardActive/);
+    await gridCard("model.curio.ddrnet23-slim@1");
+    expect(screen.getByRole("button", { name: /Import package/ })).toBeInTheDocument();
   });
 
-  test('the runtime and origin rows on the rail narrow the grid', async () => {
-    // The page's filters are the shared rail's rows now; its chip row, which
-    // repeated them, is gone.
-    routeApi([shippedModel(), downloadedModel()]);
+  test("View details shows the model's fields, both licenses, the node a drop creates and its modules", async () => {
     renderPage();
-    await screen.findAllByText('SegFormer B0 (ADE20K)');
-    const row = (section: string, value: string) =>
-      document.querySelector(
-        `[data-curio-rail-section="${section}"][data-curio-rail-value="${value}"]`
-      ) as HTMLElement;
-    fireEvent.click(row('runtime', 'transformers'));
-    expect(document.querySelector('.cardGrid [data-model-id="model.curio.ddrnet23-slim"]')).toBeNull();
-    expect(card('imported.xabc123def456')).toBeInTheDocument();
-
-    fireEvent.click(row('origin', 'shipped'));
-    expect(screen.getByText('No models match the current filters.')).toBeInTheDocument();
+    const deepUmbra = await gridCard("model.scout.deep-umbra@1");
+    fireEvent.click(within(deepUmbra).getByRole("button", { name: "View details" }));
+    const modal = await screen.findByRole("dialog", { name: "Model details" });
+    const row = (label: string) => {
+      const term = within(modal).getByText(label, { selector: "dt" });
+      return term.nextElementSibling as HTMLElement;
+    };
+    expect(row("Type")).toHaveTextContent("Image to image");
+    expect(row("Runtime")).toHaveTextContent("ONNX");
+    expect(row("Input size")).toHaveTextContent("512 × 512, float32");
+    expect(row("Size")).toHaveTextContent("10.0 MB");
+    expect(row("Code license")).toHaveTextContent("MIT");
+    expect(row("Weights license")).toHaveTextContent("Used with the permission of SCOUT's authors");
+    expect(row("Node")).toHaveTextContent("Accumulated Shadow");
+    // A pip install has not fetched its weights yet.
+    expect(row("Weights")).toHaveTextContent("Downloads on first use");
+    expect(within(modal).getByRole("heading", { name: /Modules/ })).toBeInTheDocument();
+    expect(modal).toHaveTextContent("deep_umbra");
+    // Same export as every package.
+    expect(within(modal).getByRole("button", { name: "Export" })).toBeInTheDocument();
   });
 
-  test('an empty catalog says so', async () => {
-    routeApi([]);
+  test("a model's labels show as chips, and its weights' license text opens in the details", async () => {
     renderPage();
-    expect(await screen.findByText('Your Model Catalog is empty.')).toBeInTheDocument();
+    const ddrnet = await gridCard("model.curio.ddrnet23-slim@1");
+    fireEvent.click(within(ddrnet).getByRole("button", { name: "View details" }));
+    const modal = await screen.findByRole("dialog", { name: "Model details" });
+    expect(within(modal).getByText("Labels", { selector: "dt" }).nextElementSibling).toHaveTextContent("19");
+    expect(modal.querySelector('[data-curio-model-labels="true"]')).toHaveTextContent("sidewalk");
+    // Weights at hand: nothing to download.
+    expect(within(modal).queryByText("Downloads on first use")).toBeNull();
+    await act(async () => {
+      fireEvent.click(within(modal).getByRole("button", { name: "View license" }));
+    });
+    await waitFor(() => expect(mockApi.weightsLicense).toHaveBeenCalledWith("model.curio.ddrnet23-slim@1"));
+    expect(modal.querySelector('[data-curio-model-license="true"]')).toHaveTextContent("Cityscapes terms of use.");
   });
 
-  test('a failed load surfaces the error and keeps a retry', async () => {
-    apiFetch.mockRejectedValue(new Error('backend is down'));
+  test("a downloaded model says where it came from, and links there", async () => {
     renderPage();
-    expect(await screen.findByText('backend is down')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    const segformer = await gridCard("imported.xabc123def456@1");
+    fireEvent.click(within(segformer).getByRole("button", { name: "View details" }));
+    const modal = await screen.findByRole("dialog", { name: "Model details" });
+    fireEvent.click(within(modal).getByRole("link", { name: /Hugging Face/ }));
+    await waitFor(() => expect(location).toBe("/catalog/discovery/source.curio.huggingface"));
+  });
+
+  test("a link to a model opens the page with its details, and closing leaves the plain page", async () => {
+    renderPage("/catalog/models/model.curio.ddrnet23-slim");
+    await waitFor(() => expect(details()).toBeInTheDocument());
+    expect(details()).toHaveTextContent("DDRNet23-Slim (street scenes)");
+    fireEvent.click(within(details() as HTMLElement).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(details()).toBeNull());
+    expect(location).toBe("/catalog/models");
+  });
+
+  test("a link to a model that is not there says so", async () => {
+    renderPage("/catalog/models/model.example.none");
+    expect(await screen.findByText("This model is not in your Model Catalog.")).toBeInTheDocument();
+  });
+
+  test("there is no Delete: a model leaves the account as a node package does", async () => {
+    renderPage();
+    const segformer = await gridCard("imported.xabc123def456@1");
+    fireEvent.click(segformer);
+    fireEvent.contextMenu(segformer);
+    const menu = await screen.findByRole("menu", { name: "Package actions" });
+    expect(within(menu).getByRole("menuitem", { name: /View details/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+    expect(within(menu).queryByRole("menuitem", { name: /Delete/ })).toBeNull();
   });
 });
 
-describe('ModelCatalogBrowse: details', () => {
-  test('View details shows the model, its labels as chips, and its license text', async () => {
-    routeApi([shippedModel()], { license: 'MIT License\n\nCopyright (c) DDRNet' });
-    renderPage();
-    await screen.findAllByText('DDRNet23-Slim (street scenes)');
-    fireEvent.click(within(card('model.curio.ddrnet23-slim')).getByRole('button', { name: 'View details' }));
-
-    const modal = within(details() as HTMLElement);
-    expect(modal.getByRole('heading', { name: 'DDRNet23-Slim (street scenes)' })).toBeInTheDocument();
-    expect(modal.getByText('Labels every pixel of a street photo.')).toBeInTheDocument();
-    expect(modal.getByText('Semantic segmentation')).toBeInTheDocument();
-    expect(modal.getByText('1024 × 512, uint8')).toBeInTheDocument();
-    expect(modal.getByText('23.0 MB')).toBeInTheDocument();
-    const labels = document.querySelector('[data-curio-model-labels]') as HTMLElement;
-    expect(Array.from(labels.children).map((el) => el.textContent)).toEqual([
-      'road',
-      'sidewalk',
-      'building',
-    ]);
-    expect(modal.getByRole('link', { name: 'github.com ↗' })).toHaveAttribute(
-      'href',
-      'https://github.com/ydhongHIT/DDRNet'
-    );
-
-    fireEvent.click(modal.getByRole('button', { name: 'View license' }));
-    await waitFor(() =>
-      expect(document.querySelector('[data-curio-model-license]')?.textContent).toBe(
-        'MIT License\n\nCopyright (c) DDRNet'
-      )
-    );
-    expect(apiFetch).toHaveBeenCalledWith('/api/models/model.curio.ddrnet23-slim/license');
-  });
-
-  test('a downloaded model says where it came from, and links there', async () => {
-    routeApi([downloadedModel()]);
-    renderPage();
-    await screen.findAllByText('SegFormer B0 (ADE20K)');
-    fireEvent.click(within(card('imported.xabc123def456')).getByRole('button', { name: 'View details' }));
-
-    const modal = within(details() as HTMLElement);
-    expect(modal.getByText('Downloaded from')).toBeInTheDocument();
-    expect(modal.getByText('nvidia/segformer-b0-finetuned-ade-512-512')).toBeInTheDocument();
-    // No license text to show, so nothing offers to show it.
-    expect(modal.queryByRole('button', { name: 'View license' })).toBeNull();
-    fireEvent.click(modal.getByRole('link', { name: 'Hugging Face' }));
-    expect(await screen.findByText('source page')).toBeInTheDocument();
-    expect(location).toBe('/catalog/discovery/source.curio.huggingface');
-  });
-
-  test('a link to a model opens the page with its details, and closing leaves the plain page', async () => {
-    routeApi([shippedModel()]);
-    renderPage('/catalog/models/model.curio.ddrnet23-slim');
-    expect(await screen.findByRole('heading', { name: 'Model Catalog' })).toBeInTheDocument();
-    await waitFor(() => expect(details()).not.toBeNull());
-    fireEvent.click(within(details() as HTMLElement).getByRole('button', { name: 'Close' }));
-    expect(details()).toBeNull();
-    expect(location).toBe('/catalog/models');
-  });
-
-  test('a link to a model that is not there says so', async () => {
-    routeApi([shippedModel()]);
-    renderPage('/catalog/models/model.gone');
-    expect(await screen.findByText('This model is not in your Model Catalog.')).toBeInTheDocument();
+describe("the Node Catalog page", () => {
+  test("lists no model package", async () => {
+    renderPage("/catalog/nodes");
+    await gridCard("scout.raster-conversion@1");
+    expect(card("curio.builtin@1")).not.toBeNull();
+    for (const dirName of ["model.curio.ddrnet23-slim@1", "model.scout.deep-umbra@1", "imported.xabc123def456@1"]) {
+      expect(card(dirName)).toBeNull();
+    }
+    const rail = screen.getByRole("complementary", { name: "Filter packages" });
+    expect(within(rail).getByRole("button", { name: /All packages/ })).toHaveTextContent("2");
   });
 });
 
-describe('ModelCatalogBrowse: delete', () => {
-  function openMenu(id: string) {
-    fireEvent.contextMenu(card(id), { clientX: 10, clientY: 20 });
-    return screen.getByRole('menu', { name: 'Model actions' });
+describe("Remove from account, on both catalog pages", () => {
+  /** The account's store as a page lists it: each row says whether a
+   *  dataflow uses it. */
+  function store(...rows: unknown[]) {
+    mockApi.listInstalled.mockResolvedValue({ packages: rows });
   }
 
-  test('a shipped model offers only its details on right-click, and no Delete anywhere', async () => {
-    routeApi([shippedModel()]);
-    renderPage();
-    await screen.findAllByText('DDRNet23-Slim (street scenes)');
-    const menu = openMenu('model.curio.ddrnet23-slim');
-    expect(within(menu).getAllByRole('menuitem').map((el) => el.textContent)).toEqual(['View details']);
-    const drawer = document.querySelector('[data-curio-drawer-ctas]') as HTMLElement;
-    expect(within(drawer).queryByRole('button', { name: 'Delete' })).toBeNull();
-  });
-
-  test('a downloaded model offers Delete, which asks first and then deletes', async () => {
-    routeApi([downloadedModel()]);
-    renderPage();
-    await screen.findAllByText('SegFormer B0 (ADE20K)');
-    const menu = openMenu('imported.xabc123def456');
-    expect(within(menu).getAllByRole('menuitem').map((el) => el.textContent)).toEqual([
-      'Delete',
-      'View details',
-    ]);
-    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Delete' }));
-
-    const confirm = await screen.findByRole('dialog', {
-      name: 'Permanently delete "SegFormer B0 (ADE20K)"?',
+  /** The side drawer, once it describes *name*. */
+  function drawerOn(name: string): Promise<HTMLElement> {
+    return waitFor(() => {
+      const drawer = document.querySelector<HTMLElement>('[data-curio-browse-drawer="true"]');
+      expect(drawer).not.toBeNull();
+      expect(within(drawer as HTMLElement).getByRole("heading", { level: 2, name })).toBeInTheDocument();
+      return drawer as HTMLElement;
     });
-    // Nothing is deleted until the question is answered.
-    expect(apiFetch).not.toHaveBeenCalledWith(
-      '/api/models/imported.xabc123def456',
-      expect.objectContaining({ method: 'DELETE' })
-    );
+  }
+
+  const removeButton = (scope: HTMLElement) =>
+    within(scope).queryByRole("button", { name: "Remove from account" });
+
+  test("a model of the account's own that no dataflow uses leaves the account, after asking", async () => {
+    store(ddrnetPackage({ inUse: false }), builtinPackage({ inUse: true }), importedModelPackage({ inUse: false }));
+    renderPage();
+    fireEvent.click(await gridCard("imported.xabc123def456@1"));
+    const drawer = await drawerOn("SegFormer B0 (ADE20K)");
+    fireEvent.click(removeButton(drawer) as HTMLElement);
+
+    const confirm = await screen.findByRole("dialog", { name: "Remove SegFormer B0 (ADE20K) from your account?" });
+    expect(mockApi.uninstall).not.toHaveBeenCalled();
     await act(async () => {
-      fireEvent.click(within(confirm).getByRole('button', { name: 'Delete' }));
+      fireEvent.click(within(confirm).getByRole("button", { name: "Remove" }));
     });
-    expect(apiFetch).toHaveBeenCalledWith('/api/models/imported.xabc123def456', { method: 'DELETE' });
-    expect(mockShowToast).toHaveBeenCalledWith(
-      'Deleted SegFormer B0 (ADE20K) from your Model Catalog.',
-      'success'
+    await waitFor(() =>
+      expect(mockApi.uninstall).toHaveBeenCalledWith("imported.xabc123def456@1", { unusedOnly: true }),
     );
+    await waitFor(() =>
+      expect(mockShowToast).toHaveBeenCalledWith("Removed SegFormer B0 (ADE20K) from your account.", "success"),
+    );
+    // The page asks the store which packages a dataflow uses.
+    expect(mockApi.listInstalled).toHaveBeenCalledWith(undefined, { usage: true });
   });
 
-  test("the drawer offers the same Delete for a downloaded model", async () => {
-    routeApi([downloadedModel()]);
+  test("a shipped model, and a model of the account's own that a dataflow uses, offer no Remove from account", async () => {
+    store(ddrnetPackage({ inUse: false }), builtinPackage({ inUse: true }), importedModelPackage({ inUse: true }));
     renderPage();
-    await screen.findAllByText('SegFormer B0 (ADE20K)');
-    const drawer = document.querySelector('[data-curio-drawer-ctas]') as HTMLElement;
-    fireEvent.click(within(drawer).getByRole('button', { name: 'Delete' }));
-    expect(
-      await screen.findByRole('dialog', { name: 'Permanently delete "SegFormer B0 (ADE20K)"?' })
-    ).toBeInTheDocument();
+    fireEvent.click(await gridCard("model.curio.ddrnet23-slim@1"));
+    expect(removeButton(await drawerOn("DDRNet23-Slim (street scenes)"))).toBeNull();
+    fireEvent.click(card("imported.xabc123def456@1")!);
+    expect(removeButton(await drawerOn("SegFormer B0 (ADE20K)"))).toBeNull();
+  });
+
+  test("the Node Catalog page offers it for a node package of the account's own that no dataflow uses", async () => {
+    const own = rasterConversionPackage({
+      packageId: "imported.xnodes1234567",
+      dirName: "imported.xnodes1234567@1",
+      name: "My raster nodes",
+      inUse: false,
+    });
+    store(builtinPackage({ inUse: true }), own);
+    renderPage("/catalog/nodes");
+    fireEvent.click(await gridCard("imported.xnodes1234567@1"));
+    const drawer = await drawerOn("My raster nodes");
+    fireEvent.click(removeButton(drawer) as HTMLElement);
+
+    const confirm = await screen.findByRole("dialog", { name: "Remove My raster nodes from your account?" });
+    await act(async () => {
+      fireEvent.click(within(confirm).getByRole("button", { name: "Remove" }));
+    });
+    await waitFor(() =>
+      expect(mockApi.uninstall).toHaveBeenCalledWith("imported.xnodes1234567@1", { unusedOnly: true }),
+    );
   });
 });

@@ -44,7 +44,7 @@ No scenario ships with Curio. The catalog lists the scenarios in your own projec
 - **The `/catalog/scenarios` page** lists every scenario in your projects. Reach it from the **Scenario Catalog** tab. Search with **Search scenarios**, sort by **Recently edited**, **Name** or **Project**, and filter by **By project** or **By origin** (**Your dataflows** or **Examples**) in the left rail. Click a card to describe it in the right-hand drawer.
 - **The Scenario Catalog drawer**, on the canvas. Open it from the **Scenario** button in the top bar, and drag a card onto the canvas to bring the scenario into the open dataflow.
 
-Each card shows the scenario's name in its color, its project, how many nodes it holds, its description, and its project's graph.
+Each card shows a square of the scenario's color before its name, then its project, how many nodes it holds, its description, and its project's graph. On the `/catalog/scenarios` page, the strip at the top is the same on every card.
 
 ### Action matrix
 

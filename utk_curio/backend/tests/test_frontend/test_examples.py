@@ -47,7 +47,7 @@ EXAMPLE_INVARIANTS = [
     ("10-street-vision-cv-analysis.json", 12, 12,
      {
          "curio.builtin/data-loading": 2,
-         "curio.streetvision/image-segmentation": 2,
+         "model.curio.ddrnet23-slim/image-segmentation": 2,
          "curio.builtin/vis-simple": 2,
          "curio.builtin/spatial-join": 2,
          "curio.builtin/vis-vega": 3,
@@ -91,7 +91,7 @@ EXAMPLE_INVARIANTS = [
       "curio.builtin/vis-vega": 1}, False),
     ("24-scout-building-rasters.json", 8, 8,
      {"curio.builtin/data-loading": 1, "scout.raster-conversion/rasterize-buildings": 1,
-      "curio.builtin/computation-analysis": 1, "scout.shadow/accumulated-shadow": 1,
+      "curio.builtin/computation-analysis": 1, "model.scout.deep-umbra/accumulated-shadow": 1,
       "curio.builtin/raster-statistics": 1, "curio.builtin/autk-grammar": 3}, False),
     # #576: one Spatial Join per operation, plus two over a point on an edge.
     ("25-spatial-join-operations.json", 25, 28,

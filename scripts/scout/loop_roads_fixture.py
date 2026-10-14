@@ -12,7 +12,7 @@ it as a GeoDataFrame.
 
 This script runs that section the same way, then `curio_layer` on its layers,
 and writes the roads' lines and the tags routing reads (highway, oneway and
-maxspeed) as the scout.routing tests' fixture
+maxspeed) as the model.scout.weather-gnn tests' fixture
 `utk_curio/backend/tests/test_packages/fixtures/scout_routing/loop_roads.parquet`.
 The roads are OpenStreetMap data, as the extract is.
 

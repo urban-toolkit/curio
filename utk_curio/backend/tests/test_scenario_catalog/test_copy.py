@@ -428,6 +428,68 @@ def test_what_the_account_cannot_provide_is_refused_naming_it(client, user_and_t
     assert not dataset_dir(_user_dir_key_of(user), f"{computed_dataset_id('loader-1', target)}@1").exists()
 
 
+DDRNET_DIR = "model.curio.ddrnet23-slim@1"
+
+
+def _streets_spec():
+    """A loader feeding ``a``, a lever that runs DDRNet23-Slim, with the binding
+    a model dropped on a node leaves."""
+    nodes = [
+        _node("load", "data-loading", "return 1"),
+        _node(
+            "a", content='model = curio_load_model("model.curio.ddrnet23-slim")\nreturn input_0', x=300,
+            metadata={"modelRefs": [{"id": "model.curio.ddrnet23-slim", "name": "DDRNet23-Slim (street scenes)"}]},
+        ),
+    ]
+    edges = [{"id": "e1", "source": "load", "target": "a", "sourceHandle": "out", "targetHandle": "in"}]
+    return _spec("Streets", [{**BASELINE, "nodes": ["a"]}], nodes, edges)
+
+
+def test_a_model_the_target_lacks_is_added_as_its_package(client, user_and_token, monkeypatch):
+    """A model is a model package: a lever that runs DDRNet23-Slim brings its
+    package into the target dataflow, as a lever's node brings its package,
+    and the account's store holds it afterwards, so the copy can run it."""
+    from utk_curio.backend.app.packages.application import provisioning
+    from utk_curio.backend.app.packages.repositories.store import package_dir
+
+    # Its library is the packages' business, tested there; no pip here.
+    monkeypatch.setattr(provisioning, "provision_python_deps", lambda *a, **k: provisioning.InstallOutcome())
+    user, token = user_and_token
+    source, target = _source_and_target(client, token, _streets_spec())
+    _save_outputs(client, token, source, {"load": "id\n1\n"})
+
+    plan = _plan(client, token, source, target).get_json()
+    assert plan["problems"] == [] and plan["packages"] == [DDRNET_DIR]
+    resp = _copy(client, token, source, target, [{"source": "load", "node": "loader-1"}])
+
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert resp.get_json()["added"] == [DDRNET_DIR]
+    lockfile = client.get(f"/api/packages/projects/{target}", headers=_headers(token)).get_json()
+    assert DDRNET_DIR in json.dumps(lockfile)
+    assert (package_dir(_user_dir_key_of(user), DDRNET_DIR) / "manifest.json").is_file()
+
+
+def test_a_model_the_account_may_not_add_is_refused_naming_it(client, user_and_token, monkeypatch):
+    """Guests never install: a drop whose lever runs a model the account's
+    store does not hold, and which the account may not add, is refused before
+    anything is copied, naming the model's package and why."""
+    from utk_curio.backend.app.packages.repositories.store import package_dir
+    from utk_curio.backend.app.users import capabilities
+
+    monkeypatch.setattr(capabilities, "package_install_refusal",
+                        lambda user: "this Curio does not install packages for guests")
+    user, token = user_and_token
+    source, target = _source_and_target(client, token, _streets_spec())
+    _save_outputs(client, token, source, {"load": "id\n1\n"})
+
+    problems = " ".join(_plan(client, token, source, target).get_json()["problems"])
+    assert DDRNET_DIR in problems and "does not install packages for guests" in problems
+    resp = _copy(client, token, source, target, [{"source": "load", "node": "loader-1"}])
+    assert resp.status_code == 409
+    assert not package_dir(_user_dir_key_of(user), DDRNET_DIR).exists()
+    assert not dataset_dir(_user_dir_key_of(user), f"{computed_dataset_id('loader-1', target)}@1").exists()
+
+
 def test_a_shared_parameter_comes_with_the_plan_and_its_value(client, user_and_token):
     _, token = user_and_token
     spec = _spec("Shadows", [BASELINE])

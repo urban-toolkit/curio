@@ -17,6 +17,10 @@ outputs the canvas could not reuse, in the levels
   references resolved (``WorkflowSpec.node_code``), every line indented by
   four spaces, one upstream's output as it is, several as an ``outputs``
   bundle in circle order;
+- an Autark node whose document only loads data gets its document with its
+  references resolved and no input, as its run in the browser reads none; the
+  caller's *execute* compiles it as the browser does, and a failed attempt is
+  tried once more, as ``runDataInBackend`` tries it;
 - a sandbox that cannot be asked fails that node, as the browser shows it.
 
 Executing a node is the caller's *execute* (``node_exec`` in a real run), and
@@ -36,6 +40,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Callable, Iterator, Optional
 
+from utk_curio.backend.app.execution.autk_spec_kind import is_autk_data_node
 from utk_curio.backend.app.execution.code_references import CodeReferenceError
 from utk_curio.backend.app.execution.run_plan import ancestors, node_role, topological_levels
 from utk_curio.backend.app.execution.workflow_spec import WorkflowSpec, parse_workflow_dict
@@ -44,6 +49,9 @@ from utk_curio.backend.app.execution.workflow_spec import WorkflowSpec, parse_wo
 TAIL_CHARS = 4000
 
 CYCLE_REASON = "It is part of a cycle, so a run cannot put it in order."
+#: How often an Autark data node is tried before its failure stands, as
+#: ``autkLayerMaterialize.ts::runDataInBackend`` tries it.
+AUTK_DATA_ATTEMPTS = 2
 #: What a node passes downstream: an artifact reference, or an ``outputs``
 #: bundle's ``data``.
 _INPUT_KEYS = ("path", "filename", "dataset", "dataType", "data")
@@ -63,6 +71,9 @@ class Step:
     role: str
     node: dict = field(repr=False)
     content: str = field(default="", repr=False)
+    #: An Autark node whose document only loads data (``autk_spec_kind``): run
+    #: as the JavaScript its document compiles to, on no input.
+    autk_data: bool = False
 
 
 @dataclass
@@ -146,15 +157,19 @@ def plan_run(
     for level, node_id in placed:
         parsed = by_id[node_id]
         node = saved.get(node_id, {})
+        role = node_role(node, templates)
+        autk_data = role == "run" and is_autk_data_node(node)
         steps[node_id] = Step(
             node_id=node_id,
             label=node_label(node, labels),
             node_type=parsed.raw_type,
-            engine=parsed.engine,
+            # The compiled document is JavaScript, whatever the template says.
+            engine="javascript" if autk_data else parsed.engine,
             level=level,
-            role=node_role(node, templates),
+            role=role,
             node=node,
             content=parsed.content or "",
+            autk_data=autk_data,
         )
     return Plan(
         spec=spec, steps=steps, levels=levels, unplanned=unplanned,
@@ -197,7 +212,8 @@ class _Outcome:
 
 def _execute_step(plan: Plan, step: Step, input_ref, execute) -> _Outcome:
     started = time.time()
-    language = "javascript" if step.engine == "javascript" else "python"
+    # An Autark document's references resolve as a spec's do.
+    language = "json" if step.autk_data else "javascript" if step.engine == "javascript" else "python"
     try:
         # Its widgets, its wired circles and the dataflow's shared tags, as the
         # canvas and the headless runner resolve them.
@@ -208,8 +224,17 @@ def _execute_step(plan: Plan, step: Step, input_ref, execute) -> _Outcome:
         return _Outcome("error", {}, stderr=str(exc), started_at=started, finished_at=time.time())
     # Python is indented as PythonInterpreter.ts posts it; JavaScript goes as
     # written, as JavaScriptInterpreter.ts posts it (an indented `import` is
-    # no longer a module's own).
-    sent = code if language == "javascript" else play_indent(code)
+    # no longer a module's own), and so does an Autark document.
+    sent = play_indent(code) if language == "python" else code
+    attempts = AUTK_DATA_ATTEMPTS if step.autk_data else 1
+    for _attempt in range(attempts):
+        outcome = _attempt_step(step, sent, input_ref, execute, started)
+        if outcome.status == "ok":
+            break
+    return outcome
+
+
+def _attempt_step(step: Step, sent: str, input_ref, execute, started: float) -> _Outcome:
     try:
         reply = execute(step, sent, input_ref) or {}
     except Exception as exc:  # a sandbox that cannot be asked fails this node only
@@ -306,7 +331,8 @@ def run_events(
             if blocked is not None:
                 yield settle(step, blocked[0], skipReason=blocked[1])
                 continue
-            input_ref = node_input(plan.spec, node_id, outputs)
+            # A document that only loads data reads no input.
+            input_ref = None if step.autk_data else node_input(plan.spec, node_id, outputs)
             if step.role == "forward":
                 if input_ref is not None:
                     outputs[node_id] = input_ref

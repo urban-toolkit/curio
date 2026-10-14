@@ -40,7 +40,7 @@ def _spec(node):
 
 
 class _Resolution:
-    coord = "agent.node-content-builder@1.0.0"
+    coord = "agent.node-builder@1.0.0"
     outcome = "ok"
 
 
@@ -765,7 +765,7 @@ class TestValidateNodeCarriesDatasetPaths:
         dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="heat.csv")
         body = {"name": "p", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}}, "outputs": []}
         pid = client.post("/api/projects", json=body, headers=_auth(token)).get_json()["id"]
-        for coord in ("agent.dataflow-builder@1.0.0", "agent.node-content-builder@1.0.0"):
+        for coord in ("agent.dataflow-builder@1.0.0", "agent.node-builder@1.0.0"):
             client.post(f"/api/agents/projects/{pid}/install", json={"coord": coord}, headers=_auth(token))
         att = client.post(
             f"/api/agents/projects/{pid}/attachments",
@@ -832,7 +832,7 @@ class TestVerifiedSolve:
     ``verify: false`` keeps the legacy write."""
 
     DFB = "agent.dataflow-builder@1.0.0"
-    NCB = "agent.node-content-builder@1.0.0"
+    NB = "agent.node-builder@1.0.0"
 
     def _plan_tail(self, with_stats=True):
         nodes = [{"ref": "load", "nodeType": DL, "title": "Load", "intent": "load the tract heat data"}]
@@ -854,7 +854,7 @@ class TestVerifiedSolve:
         dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="heat_tracts.csv")
         body = {"name": "p", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}}, "outputs": []}
         pid = client.post("/api/projects", json=body, headers=_auth(token)).get_json()["id"]
-        for coord in (self.DFB, self.NCB):
+        for coord in (self.DFB, self.NB):
             client.post(f"/api/agents/projects/{pid}/install", json={"coord": coord}, headers=_auth(token))
         att = client.post(
             f"/api/agents/projects/{pid}/attachments",
@@ -1353,7 +1353,6 @@ class TestSolveNode:
     review; an empty node is written on PASS; exhaustion mints nothing."""
 
     NB = "agent.node-builder@1.0.0"
-    NCB = "agent.node-content-builder@1.0.0"
     LOADER = 'import pandas as pd\ndataset_path = curio_data_path("{DATASET}")\ndf = pd.read_csv(dataset_path)\nreturn df'
 
     def _setup(self, client, user, token, monkeypatch, *, content, child_replies=(), exec_outcomes=None,
@@ -1368,8 +1367,8 @@ class TestSolveNode:
             {"id": "n1", "type": node_type, "goal": "load the heat data", "content": content, "x": 0, "y": 0}],
             "edges": [], "packages": []}}, "outputs": []}
         pid = client.post("/api/projects", json=body, headers=_auth(token)).get_json()["id"]
-        for coord in (self.NB, self.NCB):
-            client.post(f"/api/agents/projects/{pid}/install", json={"coord": coord}, headers=_auth(token))
+        # The Node Builder writes the content too, in its content mode.
+        client.post(f"/api/agents/projects/{pid}/install", json={"coord": self.NB}, headers=_auth(token))
         att = client.post(f"/api/agents/projects/{pid}/attachments",
                           json={"coord": self.NB, "target": {"kind": "node", "targetId": "n1"}},
                           headers=_auth(token)).get_json()["attachmentId"]
@@ -1630,14 +1629,15 @@ class TestValidationKnowsTheAccount:
     def test_a_model_the_account_added_resolves_on_the_validation_thread(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
-        from utk_curio.backend.app.model_catalog.service import ModelCatalogService
+        from utk_curio.backend.app.packages import service as packages
 
-        def _dirs(service, model_ids):
-            if service.user is None:
+        def _dirs(user_key, model_ids):
+            # A model runs only from the store of the account it is resolved for.
+            if user_key is None:
                 return {}
             return {model_id: f"/models/{model_id}" for model_id in model_ids}
 
-        monkeypatch.setattr(ModelCatalogService, "resolve_execution_dirs", _dirs)
+        monkeypatch.setattr(packages, "resolve_model_dirs", _dirs)
         user, token = user_and_token
         # A data-loading node must load a source to pass the grounding gate,
         # so this one reads the seeded dataset and names the model as well.

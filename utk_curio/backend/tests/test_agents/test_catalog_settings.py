@@ -188,7 +188,7 @@ class TestAttachedRunOrder:
             },
             "inputs": {"reads": ["mission"], "requiredConfig": ["keywordTypes", "notASetting"]},
             "tools": [{"id": "dataflow.read"}, {"id": "node.create"}],
-            "delegatesTo": ["agent.node-content-builder"],
+            "delegatesTo": ["agent.node-builder"],
             "provenance": {"publisher": "alice", "trust": "imported"},
         }
         prompts = {
@@ -210,7 +210,7 @@ class TestAttachedRunOrder:
         coord = "agent.hazard-mapper@1.0.0"
         client.post(f"/api/agents/projects/{pid}/install", json={"coord": coord}, headers=_auth(token))
         client.post(f"/api/agents/projects/{pid}/install",
-                    json={"coord": "agent.node-content-builder@1.0.0"}, headers=_auth(token))
+                    json={"coord": "agent.node-builder@1.0.0"}, headers=_auth(token))
         att = client.post(f"/api/agents/projects/{pid}/attachments",
                           json={"coord": coord, "target": {"kind": "canvas"}}, headers=_auth(token))
         att_id = att.get_json()["attachmentId"]

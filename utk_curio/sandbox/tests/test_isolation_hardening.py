@@ -306,12 +306,16 @@ class TestTheChildCanReachItsScratchDirectory(unittest.TestCase):
         self.assertFalse(hardening.can_access(denied, uid=1001, gid=1001))
 
     def test_the_hardlink_sources_keep_their_file_modes(self):
-        """Tightening them would tighten the staged copy the child reads."""
-        for relative in (".curio/data", ".curio/users", "datasets", "models", ".curio/fetched"):
+        """Tightening them would tighten the staged copy the child reads.
+        Models ship as model packages, so their weights are under
+        ``packages/*/models``; there is no ``models/`` folder to close."""
+        for relative in (".curio/data", ".curio/users", "datasets", "packages/*/models", ".curio/fetched"):
             with self.subTest(relative=relative):
                 self.assertIn(relative, hardening.HARDLINK_SOURCES)
         # instance/ is not staged from, so its files are still tightened.
         self.assertNotIn("instance", hardening.HARDLINK_SOURCES)
+        self.assertNotIn("models", hardening.HARDLINK_SOURCES)
+        self.assertNotIn("models", {relative for relative, _why in hardening.SENSITIVE_PATHS})
 
     @posix_only
     def test_a_staged_artifact_stays_readable_after_hardening(self):
@@ -354,7 +358,7 @@ class TestTheChildCanReachItsScratchDirectory(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             fetched = os.path.join(tmp, ".curio", "fetched")
-            files = os.path.join(fetched, "0" * 40, "models", "model.scout.deep-umbra@1", "files")
+            files = os.path.join(fetched, "0" * 40, "packages", "model.scout.deep-umbra@1", "models")
             os.makedirs(files)
             os.chmod(fetched, 0o755)
             source = os.path.join(files, "deep_umbra.onnx")

@@ -46,8 +46,6 @@ COPY datasets/ datasets/
 # datasets/ is: the catalog root is read from the image, and without this the
 # roster is empty and every source is a 404.
 COPY discovery/ discovery/
-# The Model Catalog's shipped models, read from the image as datasets/ is.
-COPY models/ models/
 COPY docs/examples/ docs/examples/
 COPY docs/schemas/ docs/schemas/
 # Local Relief, the example model package beside the guide that brings a model

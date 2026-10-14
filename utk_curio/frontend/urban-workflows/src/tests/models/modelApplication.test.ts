@@ -3,9 +3,17 @@
  *
  * A node runs a model by naming it in `curio_load_model("<id>")`; a drop rewrites
  * that name and records which model it is (`modelRefs`, saved at
- * `metadata.modelRefs`). Pure functions, so they are tested as such.
+ * `metadata.modelRefs`). Pure functions in the packages service, so they are
+ * tested as such; a model is a model package, named by its `packageId`.
+ *
+ * Reached through `require`, so a checkout without them fails test by test.
  */
-import {
+import { TrillGenerator } from "../../TrillGenerator";
+import { ddrnetPackage, importedModelPackage } from "../_support/modelPackages";
+import { read } from "../_support/workflowPaths";
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const {
   MODEL_DRAG_MIME,
   applyModelToNodeData,
   beginModelDrag,
@@ -16,12 +24,10 @@ import {
   nodeLinkedModelIds,
   readModelDragPayload,
   writeModelDragData,
-} from "../../services/modelCatalog";
-import { TrillGenerator } from "../../TrillGenerator";
-import { downloadedModel, shippedModel } from "../_support/modelRows";
+} = require("../../services/packages");
 
-const ddrnet = { id: "model.curio.ddrnet23-slim", name: "DDRNet23-Slim (street scenes)" };
-const segformer = { id: "imported.xabc123def456", name: "SegFormer B0 (ADE20K)" };
+const ddrnet = { packageId: "model.curio.ddrnet23-slim", name: "DDRNet23-Slim (street scenes)" };
+const segformer = { packageId: "imported.xabc123def456", name: "SegFormer B0 (ADE20K)" };
 
 /** A minimal DataTransfer: jsdom has none. */
 function fakeDataTransfer() {
@@ -36,7 +42,7 @@ function fakeDataTransfer() {
   } as unknown as DataTransfer;
 }
 
-afterEach(() => endModelDrag());
+afterEach(() => endModelDrag?.());
 
 describe("canApplyModelToNode", () => {
   test("a node whose code calls curio_load_model can take a model", () => {
@@ -98,9 +104,9 @@ describe("applyModelToNodeData", () => {
 
   test("records the one model the node now runs, replacing any before", () => {
     const first = applyModelToNodeData({ code: 'curio_load_model("x")' }, ddrnet);
-    expect(first.modelRefs).toEqual([{ id: ddrnet.id, name: ddrnet.name }]);
+    expect(first.modelRefs).toEqual([{ id: ddrnet.packageId, name: ddrnet.name }]);
     const second = applyModelToNodeData(first, segformer);
-    expect(second.modelRefs).toEqual([{ id: segformer.id, name: segformer.name }]);
+    expect(second.modelRefs).toEqual([{ id: segformer.packageId, name: segformer.name }]);
   });
 
   test("a node with no call comes back unchanged, the same object", () => {
@@ -112,7 +118,7 @@ describe("applyModelToNodeData", () => {
 
   test("an id that is not safe to write into source changes nothing", () => {
     const data = { code: 'curio_load_model("x")' };
-    expect(applyModelToNodeData(data, { id: 'bad")\nimport os', name: "bad" })).toBe(data);
+    expect(applyModelToNodeData(data, { packageId: 'bad")\nimport os', name: "bad" })).toBe(data);
   });
 
   test("leaves the input alone", () => {
@@ -121,21 +127,25 @@ describe("applyModelToNodeData", () => {
     expect(data).toEqual({ code: 'curio_load_model("x")', other: 1 });
   });
 
-  test("takes a drag payload as well as a row", () => {
+  test("takes a drag payload as well as a package row", () => {
     const next = applyModelToNodeData(
       { code: 'curio_load_model("x")' },
-      { modelId: ddrnet.id, name: ddrnet.name, runtime: "onnx" },
+      { modelId: ddrnet.packageId, name: ddrnet.name, runtime: "onnx" },
     );
     expect(next.code).toBe('curio_load_model("model.curio.ddrnet23-slim")');
+    const fromRow = applyModelToNodeData({ code: 'curio_load_model("x")' }, ddrnetPackage());
+    expect(fromRow.code).toBe('curio_load_model("model.curio.ddrnet23-slim")');
   });
 });
 
 describe("modelNodeForCanvas", () => {
+  // DDRNet23-Slim's model package's node, which opens with the segmentation
+  // cell the backend writes for it.
   const segmentation = {
-    nodeType: "curio.streetvision/image-segmentation@1",
+    nodeType: "model.curio.ddrnet23-slim/image-segmentation@1",
     label: "Image Segmentation",
     code: 'model = curio_load_model("model.curio.ddrnet23-slim")\nreturn curio_segment(input_0, model)',
-    packageName: "Street Vision",
+    packageName: "DDRNet23-Slim (street scenes)",
   };
   const loader = { nodeType: "curio.builtin/data-loading", label: "Data Loading", code: undefined };
   const transform = { nodeType: "x.pkg/transform@1", label: "Transform", code: "return input_0" };
@@ -145,7 +155,7 @@ describe("modelNodeForCanvas", () => {
     expect(node).toEqual({
       ...segmentation,
       code: 'model = curio_load_model("imported.xabc123def456")\nreturn curio_segment(input_0, model)',
-      modelRefs: [{ id: segformer.id, name: segformer.name }],
+      modelRefs: [{ id: segformer.packageId, name: segformer.name }],
     });
   });
 
@@ -154,23 +164,32 @@ describe("modelNodeForCanvas", () => {
     expect(node?.code).toBe(applyModelToNodeData({ code: segmentation.code }, ddrnet).code);
   });
 
-  test("takes a drag payload as well as a row", () => {
+  test("takes a drag payload as well as a package row", () => {
     const node = modelNodeForCanvas(
       [segmentation],
-      { modelId: segformer.id, name: segformer.name, runtime: "transformers" },
+      { modelId: segformer.packageId, name: segformer.name, runtime: "transformers" },
     );
-    expect(node?.modelRefs).toEqual([{ id: segformer.id, name: segformer.name }]);
+    expect(node?.modelRefs).toEqual([{ id: segformer.packageId, name: segformer.name }]);
   });
 
   test("a model with a node of its own becomes that node, wherever it is in the list", () => {
-    const deepUmbra = { id: "model.scout.deep-umbra", name: "Deep Umbra (accumulated shadows)" };
+    // Deep Umbra's model package and its Accumulated Shadow node, as they ship.
+    const folder = "packages/model.scout.deep-umbra@1";
+    const manifest = JSON.parse(read(`${folder}/manifest.json`));
+    const [template] = manifest.templates;
+    const deepUmbra = { packageId: manifest.id, name: manifest.name };
     const shadows = {
-      nodeType: "scout.shadow/accumulated-shadow",
-      label: "Accumulated Shadow",
-      code: 'model = open_model(lambda: curio_load_model("model.scout.deep-umbra"))\nreturn accumulated_shadow(input_0, season="summer", model=model, output_file=curio_output_file)',
-      packageName: "SCOUT Shadow",
+      nodeType: `${manifest.id}/${template.id}`,
+      label: template.label,
+      code: read(`${folder}/${template.source}`),
+      packageName: manifest.name,
     };
-    expect(modelNodeForCanvas([segmentation, shadows], deepUmbra)?.nodeType).toBe(shadows.nodeType);
+    expect(shadows.nodeType).toBe("model.scout.deep-umbra/accumulated-shadow");
+    const node = modelNodeForCanvas([segmentation, shadows], deepUmbra);
+    expect(node?.nodeType).toBe(shadows.nodeType);
+    // The package's own cell, which already names its model.
+    expect(node?.code).toBe(shadows.code);
+    expect(node?.modelRefs).toEqual([{ id: "model.scout.deep-umbra", name: manifest.name }]);
     // Any other model still goes to the first template that runs one.
     expect(modelNodeForCanvas([segmentation, shadows], segformer)?.nodeType).toBe(segmentation.nodeType);
   });
@@ -181,14 +200,14 @@ describe("modelNodeForCanvas", () => {
   });
 
   test("an id that is not safe to write into source makes nothing", () => {
-    expect(modelNodeForCanvas([segmentation], { id: 'bad")\nimport os', name: "bad" })).toBeNull();
+    expect(modelNodeForCanvas([segmentation], { packageId: 'bad")\nimport os', name: "bad" })).toBeNull();
   });
 });
 
 describe("the model drag", () => {
   test("round-trips through the custom type and the text fallback", () => {
     const dt = fakeDataTransfer();
-    writeModelDragData(dt, beginModelDrag(shippedModel()));
+    writeModelDragData(dt, beginModelDrag(ddrnetPackage()));
     expect(dt.effectAllowed).toBe("copy");
     expect(hasModelDrag(dt)).toBe(true);
     expect(JSON.parse(dt.getData(MODEL_DRAG_MIME))).toEqual({
@@ -230,8 +249,8 @@ describe("nodeLinkedModelIds", () => {
     const dropped = applyModelToNodeData({ code: 'm = curio_load_model("x")' }, ddrnet);
     const edited = 'm = curio_load_model("imported.xabc123def456")';
     const reopened = { ...dropped, code: edited, defaultCode: edited };
-    expect(reopened.modelRefs).toEqual([{ id: ddrnet.id, name: ddrnet.name }]);
-    expect(nodeLinkedModelIds(reopened)).toEqual([segformer.id]);
+    expect(reopened.modelRefs).toEqual([{ id: ddrnet.packageId, name: ddrnet.name }]);
+    expect(nodeLinkedModelIds(reopened)).toEqual([segformer.packageId]);
   });
 });
 
@@ -241,7 +260,7 @@ describe("the saved dataflow says which model a node runs", () => {
   test("modelRefs is saved at metadata.modelRefs, and only when set", () => {
     const applied = applyModelToNodeData(
       { nodeId: "seg-1", nodeType: "curio.builtin/computation-analysis", code: 'curio_load_model("x")' },
-      downloadedModel(),
+      importedModelPackage(),
     );
     const spec = TrillGenerator.generateTrill(
       [

@@ -197,25 +197,34 @@ class ScenarioCatalogService:
         needed = requirements(plan["dataflow"]["nodes"])
         present = needs.project_packages(ukey, target_id)
         packages: list[str] = []
+
+        def add(dir_name: str) -> None:
+            """The package *dir_name* the levers need: added to the target the
+            way the Node Catalog adds one, unless it is there already."""
+            if needs.is_builtin(dir_name) or dir_name in present or dir_name in packages:
+                return
+            problem = needs.package_problem(self.user, ukey, dir_name)
+            if problem:
+                problems.append(f'"{name}" needs {problem}.')
+            else:
+                packages.append(dir_name)
+
         for node_type, dir_name in needs.package_dirs(ukey, project_id, needed["types"]).items():
             if dir_name is None:
                 problems.append(f'"{name}" needs the package of {node_type}, which is not in your Node Catalog.')
-            elif needs.is_builtin(dir_name):
-                continue
-            elif dir_name not in present and dir_name not in packages:
-                problem = needs.package_problem(self.user, ukey, dir_name)
-                if problem:
-                    problems.append(f'"{name}" needs {problem}.')
-                else:
-                    packages.append(dir_name)
+            else:
+                add(dir_name)
         for dataset_id in needed["datasets"]:
             problem = needs.dataset_problem(self.user, dataset_id)
             if problem:
                 problems.append(f'"{name}" needs {problem}.')
+        # A model is a model package: added as a node's package is.
         for model_id in needed["models"]:
-            problem = needs.model_problem(self.user, model_id)
-            if problem:
-                problems.append(f'"{name}" needs {problem}.')
+            dir_name = needs.model_package_dir(ukey, model_id)
+            if dir_name is None:
+                problems.append(f'"{name}" needs the model {model_id}, which is not in your Model Catalog.')
+            else:
+                add(dir_name)
 
         return {
             "scenario": {

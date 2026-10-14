@@ -1,8 +1,9 @@
 """``curio_segment``: a Model Catalog model over a collection's images.
 
-Runs the real DDRNet23-Slim export on two of example 10's committed photos,
-and the synthetic graph the Hugging Face model fixtures use. onnxruntime is
-the Street Vision package's one library, which a stack's boot installs with
+Runs the real DDRNet23-Slim export, the model package
+``packages/model.curio.ddrnet23-slim@1``, on two of example 10's committed
+photos, and the synthetic graph the Hugging Face model fixtures use.
+onnxruntime is that package's one library, which a stack's boot installs with
 the examples' packages; it is imported, not skipped, so a stack without it
 fails here.
 """
@@ -11,6 +12,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import textwrap
 from pathlib import Path
 
 import pandas as pd
@@ -21,7 +23,8 @@ from utk_curio.sandbox.util.collections import make_collection_helpers
 from utk_curio.sandbox.util.vision import CLASS_COLOURS, make_curio_segment, palette
 
 REPO = Path(__file__).resolve().parents[3]
-DDRNET = REPO / "models" / "model.curio.ddrnet23-slim@1"
+DDRNET_ID = "model.curio.ddrnet23-slim"
+DDRNET = REPO / "packages" / f"{DDRNET_ID}@1"
 SAMPLE = "data.curio.mapillary-sample"
 STORAGE = REPO / "docs" / "examples" / "data" / "storage"
 SYNTHETIC = REPO / "utk_curio" / "backend" / "tests" / "test_discovery" / "fixtures" / "huggingface-models" / "synthetic-segmentation.onnx"
@@ -56,6 +59,30 @@ def test_ddrnet_labels_the_photos(photos):
     assert out["segment_error"].isna().all()
 
 
+def test_the_segmentation_default_cell_runs_as_it_is(photos, tmp_path):
+    """The cell a node of DDRNet23-Slim's package opens with, which the backend
+    writes for a segmentation model (``packages.domain.default_cells``), runs
+    unchanged, as the sandbox runs a node's code: every class the model names
+    gets its share of each photo, and the shares cover the image."""
+    from utk_curio.backend.app.packages.domain.default_cells import default_cell
+    from utk_curio.sandbox.util.user_code import compile_user_code
+
+    frame, helpers = photos
+    cell = default_cell(DDRNET_ID, "semantic-segmentation")
+    namespace = {
+        "curio_load_model": lambda model_id: CurioModel(model_id, str(DDRNET)),
+        "curio_segment": make_curio_segment(helpers["curio_derived_file"]),
+    }
+    exec(compile_user_code(textwrap.indent(cell, "    "), str(tmp_path)), namespace)
+    out = namespace["userCode"](input_0=frame)
+
+    labels = json.loads((DDRNET / "manifest.json").read_text(encoding="utf-8"))["model"]["labels"]
+    assert len(out) == 2 and len(labels) == 19
+    assert out[[f"{label}_pct" for label in labels]].sum(axis=1).between(99.5, 100.5).all()
+    assert out["dominant_class"].isin(labels).all()
+    assert out["overlay_url"].notna().all() and out["segment_error"].isna().all()
+
+
 def test_a_share_is_of_all_the_pixels(photos):
     """Not of the classes asked for: asked for vegetation alone, an image with
     some vegetation does not read 100% (HF CV Inference's renormalization)."""
@@ -65,7 +92,7 @@ def test_a_share_is_of_all_the_pixels(photos):
     every = segment(frame, _loaded(DDRNET), None)
     assert (alone["vegetation_pct"] < 100).all()
     assert list(alone["vegetation_pct"]) == list(every["vegetation_pct"])
-    labels = json.loads((DDRNET / "manifest.json").read_text(encoding="utf-8"))["labels"]
+    labels = json.loads((DDRNET / "manifest.json").read_text(encoding="utf-8"))["model"]["labels"]
     totals = every[[f"{name}_pct" for name in labels]].sum(axis=1)
     assert totals.between(99.5, 100.5).all()
 

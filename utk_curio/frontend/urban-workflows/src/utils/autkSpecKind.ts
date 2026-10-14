@@ -31,7 +31,8 @@ const KIND_ORDER = ["render", "compute", "data"] as const;
  * the tests that use them are unaffected.
  */
 export function classifyAutkSpec(spec: any): AutkSpecKind {
-  if (!spec || typeof spec !== "object") return "unknown";
+  // A list is no document, though it answers to `map` (Array.prototype.map).
+  if (!spec || typeof spec !== "object" || Array.isArray(spec)) return "unknown";
   // A map or plot counts as soon as it is named; a step list only when it
   // holds a step.
   const names = (family: AutkFamily) =>

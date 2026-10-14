@@ -226,6 +226,7 @@ def test_a_fresh_autark_node_fills_from_its_input(
     assert starter == {
         "map": {"layerRefs": [{
             "dataRef": "input_0",
+            "title": "pop",
             "getFnv": "pop",
             "getFnvType": "quantitative",
             "colorMapInterpolator": "interpolateViridis",

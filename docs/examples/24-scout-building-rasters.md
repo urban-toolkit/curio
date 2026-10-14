@@ -6,10 +6,11 @@ example takes the buildings of SCOUT's own shadow example in the Chicago Loop,
 draws them in 3D, and turns them into those tiles with the **Rasterize
 Buildings** node of the `scout.raster-conversion@1` package, SCOUT's own
 rasterizer ported to Curio. It draws the tiles joined into one map. Then the
-**Accumulated Shadow** node of the `scout.shadow@1` package runs Deep Umbra,
-from the Model Catalog, on those heights: a map shows how many minutes of a
-summer day each spot is in shadow, and a **Raster Statistics** node gives the
-mean and median over the ground, SCOUT's own two numbers.
+**Accumulated Shadow** node of Deep Umbra's model package,
+`model.scout.deep-umbra@1`, runs Deep Umbra on those heights: a map shows how
+many minutes of a summer day each spot is in shadow, and a **Raster
+Statistics** node gives the mean and median over the ground, SCOUT's own two
+numbers.
 
 ## Pipeline overview
 
@@ -36,8 +37,8 @@ The packages' libraries (`datashader`, `spatialpandas`, `dask`, `rasterio`,
 `geopandas`, `numpy`, `pandas`, `pillow`, `pyarrow`, `pyproj`, `shapely`, and
 `onnxruntime` for Deep Umbra) are installed with them. Curio installs both
 packages for you when it starts with `--with-examples`, because this dataflow
-declares them. Deep Umbra itself, `model.scout.deep-umbra`, ships with Curio
-in the [Model Catalog](../MODEL-CATALOG.md).
+declares them. Deep Umbra's package, which holds its weights, is in the
+[Model Catalog](../MODEL-CATALOG.md).
 
 ## Load the buildings
 
@@ -63,15 +64,15 @@ buildings, so it raises each footprint to its `height`:
         "getFnv": "height",
         "getFnvType": "quantitative",
         "colorMapInterpolator": "interpolateViridis",
-        "legendTitle": "Building height (m)"
+        "title": "Building height (m)"
       }
     ]
   }
 }
 ```
 
-`legendTitle` is Curio's own key, not the grammar's: it titles the legend,
-which would otherwise read `input_0`, the table the input became.
+`title` names the layer in the legend, which would otherwise read `input_0`,
+the table the input became.
 
 ## Rasterize them
 
@@ -156,25 +157,11 @@ return input_0[0]
 ```
 
 Accumulated Shadow runs Deep Umbra on every tile of that height raster. Its
-code names the model, which the Model Catalog holds:
+code imports the package's module, `deep_umbra`, and names the model by its id:
 
 ```python
-"""Accumulated Shadow: SCOUT's Deep Umbra shadow model.
-
-Input: the height mosaic of Rasterize Buildings (scout.raster-conversion), or
-its (mosaic, tiles) output: building heights in metres in EPSG:3395 on the
-zoom-16 tile grid.
-Output: the accumulated shadow in minutes, a raster on the input's grid. An
-Autark map draws it as input_0, band band_1. A Raster Statistics node gives its
-mean and median over the ground: the heights on its input_1 as the mask, with
-where=lambda height: height < 1.08.
-The Widgets tab sets the season. The model is the Model Catalog's Deep Umbra,
-model.scout.deep-umbra.
-Ported from SCOUT, https://github.com/urban-toolkit/scout.
-"""
-from scout_shadow.node_outputs import accumulated_shadow, open_model
-
-model = open_model(lambda: curio_load_model("model.scout.deep-umbra"))
+from deep_umbra import accumulated_shadow
+model = curio_load_model("model.scout.deep-umbra")
 return accumulated_shadow(input_0, season=[!! season !!], model=model, output_file=curio_output_file)
 ```
 
@@ -222,7 +209,7 @@ A third Autark map reads the shadow raster as `input_0`:
         "dataRef": "[!! input_0 !!]",
         "getFnv": "band_1",
         "colorMapInterpolator": "interpolateReds",
-        "legendTitle": "Accumulated shadow (minutes)"
+        "title": "Accumulated shadow (minutes)"
       }
     ]
   }

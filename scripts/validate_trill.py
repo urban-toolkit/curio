@@ -198,12 +198,12 @@ def _validate_one(
         ]
 
     # The lockfile has to cover the node types, or nothing downstream can tell
-    # what the dataflow needs. `10-street-vision-cv-analysis.json` shipped
-    # `packages: []` while its nodes referenced `curio.streetvision/*`, and
-    # because those types are UNVERSIONED the backend's backfill could only
-    # resolve them through packages that were ALREADY installed - which
-    # streetvision, by design, then never was. So three nodes sat on "Loading node…"
-    # forever and every edge touching them vanished (#233).
+    # what the dataflow needs. `10-street-vision-cv-analysis.json` once shipped
+    # `packages: []` while its nodes referenced the Image Segmentation package's
+    # types, and because those types are UNVERSIONED the backend's backfill
+    # could only resolve them through packages that were ALREADY installed -
+    # which that package, by design, then never was. So three nodes sat on
+    # "Loading node…" forever and every edge touching them vanished (#233).
     #
     # Not behind `--resolve`: that flag exists because resolution needs the
     # package catalog on disk, whereas this needs only the document. A guard

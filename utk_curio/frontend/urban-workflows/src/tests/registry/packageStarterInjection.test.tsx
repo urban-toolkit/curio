@@ -18,13 +18,21 @@ jest.mock('vega', () => ({}), { virtual: true });
 jest.mock('vega-lite', () => ({}), { virtual: true });
 
 const STARTER_CODE = 'import rasterio\nds = rasterio.open("mrt.tif")\n';
+// The cell the backend writes for a segmentation model package's template
+// without a `source` (application/starters.py), named for the template's id.
+const DEFAULT_CELL = 'model = curio_load_model("model.example.tiny")\nclasses = None\n\nreturn curio_segment(input_0, model, classes)\n';
 
 jest.mock('../../providers/StarterProvider', () => ({
   useStarterContext: () => ({
-    getStarters: (type: string) =>
-      type === 'curio.weather/mrt-load@1'
-        ? [{ id: 's1', type, name: 'mrt-load', description: '', accessLevel: 'ANY', code: STARTER_CODE, custom: false }]
-        : [],
+    getStarters: (type: string) => {
+      if (type === 'curio.weather/mrt-load@1') {
+        return [{ id: 's1', type, name: 'mrt-load', description: '', accessLevel: 'ANY', code: STARTER_CODE, custom: false }];
+      }
+      if (type === 'model.example.tiny/image-segmentation@1') {
+        return [{ id: 's2', type, name: 'image-segmentation', description: '', accessLevel: 'ANY', code: DEFAULT_CELL, custom: false }];
+      }
+      return [];
+    },
   }),
 }));
 
@@ -86,9 +94,27 @@ const FIXTURE_PACK = {
 /** The fixture, with `source` allowed to be null — which is exactly the case
  *  the "no source" test below exercises. */
 type StarterPack = Omit<typeof FIXTURE_PACK, "templates"> & {
+  kind?: 'node' | 'model';
   templates: Array<
     Omit<(typeof FIXTURE_PACK)["templates"][number], "source"> & { source: string | null }
   >;
+};
+
+/** A segmentation model package whose one template ships no `source`, as
+ *  DDRNet23-Slim's and every Discovery download's does. */
+const MODEL_PACK: StarterPack = {
+  ...FIXTURE_PACK,
+  packageId: 'model.example.tiny',
+  name: 'Tiny model',
+  kind: 'model',
+  templates: [{
+    ...TEMPLATE,
+    id: 'model.example.tiny/image-segmentation@1',
+    templateId: 'image-segmentation',
+    label: 'Image Segmentation',
+    category: 'computation',
+    source: null,
+  }],
 };
 
 function runBehavior(pack: StarterPack, code: unknown): Array<string | undefined> {
@@ -118,6 +144,28 @@ describe('package starter injection', () => {
   test('no source → nothing injected', () => {
     const pack = { ...FIXTURE_PACK, templates: [{ ...TEMPLATE, source: null }] };
     expect(runBehavior(pack, undefined)).not.toContain(STARTER_CODE);
+  });
+});
+
+describe('a model package\'s template without a source', () => {
+  beforeEach(() => clearPackageNodes());
+  const { getStarters } = useStarterContext();
+
+  test('opens with the default cell the backend writes for its model on a fresh drop', () => {
+    expect(runBehavior(MODEL_PACK, undefined)).toContain(DEFAULT_CELL);
+    const [desc] = registerPackageTemplates([MODEL_PACK]);
+    expect(packageStarterCode(desc, getStarters)).toBe(DEFAULT_CELL);
+  });
+
+  test('a restored node keeps the code it was saved with', () => {
+    expect(runBehavior(MODEL_PACK, 'user code')).not.toContain(DEFAULT_CELL);
+  });
+
+  test('the same template in a node package opens empty, as any template without a source does', () => {
+    const pack: StarterPack = { ...MODEL_PACK, kind: 'node' };
+    expect(runBehavior(pack, undefined)).not.toContain(DEFAULT_CELL);
+    const [desc] = registerPackageTemplates([pack]);
+    expect(packageStarterCode(desc, getStarters)).toBeUndefined();
   });
 });
 

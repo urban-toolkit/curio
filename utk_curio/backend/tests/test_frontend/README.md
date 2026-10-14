@@ -550,11 +550,11 @@ CURIO_NO_PROJECT=1 pytest \
 content: the Node Catalog reads `<repo_root>/packages/`, the Data Catalog reads
 `<repo_root>/datasets/` (surfacing as `origin: "hub"`), and the Agent Catalog
 reads the built-in roster in `app/agents/builtin.py`. A fresh test user already
-sees five packages, three datasets and ten agents.
+sees five packages, three datasets and seven agents.
 
 **Only `curio.example-ui@1` may be installed in a test.** It declares no python
 dependencies, so nothing shells out to pip. `curio.weather@1`,
-`ai.utk.uhvi@1` and `curio.streetvision@1` pull rasterio / geopandas /
+`ai.utk.uhvi@1` and `model.curio.ddrnet23-slim@1` pull rasterio / geopandas /
 **torch** through a synchronous call capped at 30 minutes - and worse, the
 resulting user-store copy makes *every later* `curio start` re-resolve those deps
 (`utk_curio/cli/dependencies.py` walks every user store on boot and `sys.exit(1)`s if pip fails). The
@@ -650,14 +650,14 @@ agent arriving by some other path cannot slip past.
 | `test_agent_runs_e2e.py` | no | The correctness gate: install -> attach -> run -> the reply, the minted proposal or tool round, and the persisted transcript. ~1-2 s per agent. Each agent runs twice, fenced and on native tools, and one run falls back from native to fenced. One more writes an Autark document under its reply schema. |
 | `test_agent_chat_e2e.py` | yes | Drives a real chat turn per agent and captures the baselines below. A mutate-capable agent additionally **applies its proposal and is held to the canvas actually changing**; a report-only one is held to the canvas NOT changing. |
 
-**What gets captured, and why it differs by agent.** Only 4 of the 10 catalog agents
+**What gets captured, and why it differs by agent.** Only 3 of the 7 catalog agents
 can mutate anything - the rest are `report-only` by contract - so there are two
 kinds of evidence and two capture shapes.
 
 | Agent kind | Baselines under `agent-run` | The assertion behind it |
 |---|---|---|
-| report-only (6) | `<agent-id>.png` - the chat panel, clipped | the reply rendered, and the saved dataflow is byte-identical afterwards |
-| mutate-capable (4) | `<agent-id>_chat.png` (panel) + `<agent-id>.png` (full canvas) | the proposal was applied and the node was really created or rewritten, on the server *and* on the canvas |
+| report-only (4) | `<agent-id>.png` - the chat panel, clipped | the reply rendered, and the saved dataflow is byte-identical afterwards |
+| mutate-capable (3) | `<agent-id>_chat.png` (panel) + `<agent-id>.png` (full canvas) | the proposal was applied and the node was really created or rewritten, on the server *and* on the canvas |
 
 Three things about those captures are deliberate:
 
@@ -698,9 +698,10 @@ Things worth knowing before adding to these:
   string for every parameter. The per-agent claim is on the captured system
   prompt, which the run composes from that agent's own preamble + instruction
   bytes. Keep that assertion or the parametrization becomes decoration.
-- **Never script `web.search` / `web.fetch`.** `agent.node-researcher` and
-  `agent.researcher` declare them and `app/agents/egress.py` really opens
-  sockets. Both also declare a local read tool, which is what the suite uses.
+- **Never script `web.search` / `web.fetch`.** `agent.researcher` declares
+  them and `app/agents/egress.py` really opens sockets. The suite scripts its
+  `node.create` instead, and it also declares the local read tools
+  `dataflow.read` and `node.read`.
 - **`discovery.search` is the exception, and only because of the corpus.**
   `agent.dataset-finder` declares it, and it too really opens sockets - but the
   harness exports `CURIO_DISCOVERY_FIXTURES`, so in this stack the discovery
@@ -714,8 +715,10 @@ Things worth knowing before adding to these:
   match: `dataflow.plan.write` (so the Dataflow Builder plans rather than
   creating one node), then `node.create` (applying it puts a NEW node on the
   canvas - the most visible proof an agent did something), then
-  `node.content.write`. That spread is intentional: one plan, two node
-  creations, one content replacement. The remaining mutate contracts
+  `node.content.write`. That spread is intentional: one plan and two node
+  creations. No card's first match is `node.content.write` (node content is
+  the Node Builder's mode), so `TestAgentReviewCard` in
+  `test_agent_chat_e2e.py` applies a content replacement. The remaining mutate contracts
   (`dataset.install`, `package.install`, `package.draft.apply`,
   `node.template.create`) each need a real catalog row, or a run of the isolated
   build service; their mints are covered in-process by
@@ -876,7 +879,7 @@ file and the next run dies at conftest import with `PermissionError: [WinError
 |---|---|
 | `access` | signup validation, real signup, the persona picker, sign out, a wrong password, sign in; the projects page - search, all three sorts, grid/list, card click / Enter / Space / right-click, Duplicate, Rename, Delete, the detail drawer; Jupyter notebook import |
 | `canvas` | all eleven built-in tiles dropped and identity-checked; header band, resize, comments, pin; every editor tab; Node settings including the port editor; invalid connections and cycles; the guarded delete; Backspace inside Monaco; box select; zoom; minimize/expand all; a node that raises; Play All; Save-as JSON and notebook export |
-| `nodes` | the Node Catalog drawer's four tabs; **a real install of every catalog package** (`curio.weather`, `ai.utk.uhvi`, `curio.streetvision` each shell out to pip); every template those packages ship dropped onto the canvas; **authoring a new node type** through Node settings -> Save as package node -> a new package, then dragging it back out of the palette; package metadata; export, re-import (400 by design), the library manager (a real `titlecase` install, then a JS install that 501s) |
+| `nodes` | the Node Catalog drawer's four tabs; **a real install of every catalog package** (`curio.weather`, `ai.utk.uhvi`, `model.curio.ddrnet23-slim` each shell out to pip); every template those packages ship dropped onto the canvas; **authoring a new node type** through Node settings -> Save as package node -> a new package, then dragging it back out of the palette; package metadata; export, re-import (400 by design), the library manager (a real `titlecase` install, then a JS install that 501s) |
 | `data` | the Data Catalog drawer's four tabs; **every hub dataset added to the dataflow**; the detail panel's four tabs; **a real import of every format** - CSV, Parquet, GeoJSON, GeoTIFF, an OSM PBF (split per layer) and a shapefile the chapter synthesises, since the repo ships none; dataset drag to canvas; a computed dataset and its lineage; the catalog pages and a deliberately bad dataset id |
 | `agents` | API Settings from both of its entry points, a new LLM configuration with all four provider tabs and Fetch models, the HF token; **every agent in the catalog installed**; all three attach targets (node, connection, canvas); the chat panel's controls; **one live turn per attached agent** against the configured provider; applying a proposal |
 | `views` | all eleven bundled examples loaded and run, Autark/WebGPU among them; linked brushing; the Data Pool scroll; a node with several inputs; JS Computation; widgets; the dashboard page and its layout editing; the provenance window and a node's provenance tab |

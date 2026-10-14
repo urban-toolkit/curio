@@ -18,5 +18,5 @@ permission of SCOUT's authors.
   `made_with` in the file). It holds no data of SCOUT's beyond node ids, metrics and
   hashes.
 
-The `scout.routing@1` tests route on the graph with the package's port and compare
-with `routing_reference.json`.
+The `model.scout.weather-gnn@1` tests route on the graph with the package's port
+and compare with `routing_reference.json`.

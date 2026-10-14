@@ -24,12 +24,12 @@ const answering = (label: string, model: string, source = "default") => ({
 const listingOf = (overrides: Record<string, unknown> = {}) => ({
   configs: [WORK, LOCAL],
   default: WORK.id,
-  assignments: { "agent.node-content-builder": LOCAL.id },
+  assignments: { "agent.node-builder": LOCAL.id },
   agents: [
     { id: "agent.chat-agent", name: "Chat", category: "chat", choice: null, answers: answering("Work", "gpt-4o-mini") },
     { id: "agent.dataflow-builder", name: "Dataflow Builder", category: "dataflow", choice: null,
       answers: answering("Work", "gpt-4o-mini") },
-    { id: "agent.node-content-builder", name: "Node Content Builder", category: "node", choice: LOCAL.id,
+    { id: "agent.node-builder", name: "Node Builder", category: "node", choice: LOCAL.id,
       answers: answering("Local", "llama3", "assigned") },
   ],
   deployment: { label: "Deployment default", endpointOffered: true, apiType: "openai_compatible",
@@ -90,7 +90,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockApi.listing.mockImplementation(() => Promise.resolve(mockListing));
   mockApi.setAssignments.mockImplementation(() => Promise.resolve(mockListing));
-  mockApi.remove.mockResolvedValue({ deleted: LOCAL.id, moved: ["agent.node-content-builder"], default: WORK.id });
+  mockApi.remove.mockResolvedValue({ deleted: LOCAL.id, moved: ["agent.node-builder"], default: WORK.id });
 });
 
 const models = async () => within(await screen.findByTestId("agent-models-section"));
@@ -121,7 +121,7 @@ describe("Agent configuration", () => {
     const section = await models();
     expect(section.getAllByRole("combobox")).toHaveLength(3);
     expect(select("Chat").value).toBe("");
-    expect(select("Node Content Builder").value).toBe(LOCAL.id);
+    expect(select("Node Builder").value).toBe(LOCAL.id);
     expect(section.getByText("Runs on Local · llama3")).toBeInTheDocument();
   });
 
@@ -142,17 +142,17 @@ describe("Agent configuration", () => {
     await models();
     fireEvent.change(select("Chat"), { target: { value: LOCAL.id } });
     await waitFor(() => expect(mockApi.setAssignments).toHaveBeenCalledWith({ "agent.chat-agent": LOCAL.id }));
-    await waitFor(() => expect(select("Node Content Builder")).toBeEnabled());
-    fireEvent.change(select("Node Content Builder"), { target: { value: "" } });
+    await waitFor(() => expect(select("Node Builder")).toBeEnabled());
+    fireEvent.change(select("Node Builder"), { target: { value: "" } });
     await waitFor(() =>
-      expect(mockApi.setAssignments).toHaveBeenLastCalledWith({ "agent.node-content-builder": null }),
+      expect(mockApi.setAssignments).toHaveBeenLastCalledWith({ "agent.node-builder": null }),
     );
   });
 
   it("says what the Dataflow Builder's Solve also runs, and the rules", async () => {
     render(<Panel />);
     const section = await models();
-    expect(section.getByText(/Its Solve also runs Node Content Builder and Dataset Finder/)).toBeInTheDocument();
+    expect(section.getByText(/Its Solve also runs Node Builder and Dataset Finder/)).toBeInTheDocument();
     expect(section.getByText(/on its choice, else on its caller's/)).toBeInTheDocument();
   });
 
@@ -179,14 +179,14 @@ describe("the key list and the choices", () => {
     const list = await screen.findByRole("table");
     await waitFor(() => expect(list).toHaveTextContent("Local"));
     const local = within(list).getByText("Local").closest("tr")!;
-    expect(local).toHaveTextContent("Chosen for Node Content Builder");
+    expect(local).toHaveTextContent("Chosen for Node Builder");
   });
 
   it("names the agents that go back to the default when one is removed", async () => {
     render(<Panel initial="keys" />);
     fireEvent.click(await screen.findByRole("button", { name: "Remove Local" }));
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "Remove Local? Node Content Builder goes back to the default.",
+      "Remove Local? Node Builder goes back to the default.",
     );
     fireEvent.click(screen.getByRole("button", { name: "Confirm removing Local" }));
     await waitFor(() => expect(mockApi.remove).toHaveBeenCalledWith(LOCAL.id));

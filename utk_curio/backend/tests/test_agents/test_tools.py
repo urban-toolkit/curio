@@ -451,92 +451,120 @@ class TestCatalogSearchRows:
 
 
 class TestModelsSearch:
-    """models.search: the Model Catalog this account can run, the shipped
-    model and its own download, each with the loader line node code copies."""
+    """models.search: the model packages this account's store holds, the only
+    models its node code runs (models behave like nodes): one that ships with
+    Curio and was added, or seeded for the examples, and one of its own, each
+    with the loader line node code copies. A model it never added is not a
+    row."""
 
     DDRNET = "model.curio.ddrnet23-slim"
+    DOWNLOAD = "imported.xa1b2c3d4e5f6"
     ROW_KEYS = {"id", "name", "task", "runtime", "origin", "description", "labels", "loader"}
 
+    @staticmethod
+    def _key(user) -> str:
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        return _user_dir_key(user)
+
     @pytest.fixture()
-    def catalog(self, app, user_and_token, tmp_path, monkeypatch):
-        """The repo's shipped models plus one download in the user's store."""
+    def shipped(self, monkeypatch):
+        """The package catalog Curio ships: DDRNet23-Slim, Deep Umbra and the
+        weather GNN are its model packages."""
         from pathlib import Path
 
-        from utk_curio.backend.app.model_catalog.infrastructure import storage
-        from utk_curio.backend.app.model_catalog.service import ModelCatalogService
+        packages = Path(__file__).resolve().parents[4] / "packages"
+        monkeypatch.setenv("CURIO_PACKAGES_ROOT", str(packages))
+        return packages
 
-        monkeypatch.setenv(storage.ENV_ROOT, str(Path(__file__).resolve().parents[4] / "models"))
+    @pytest.fixture()
+    def catalog(self, app, user_and_token, tmp_path, shipped):
+        """DDRNet23-Slim added to the user's store, and a model package of the
+        user's own with 60 labels, as the Discovery Catalog writes one."""
+        from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+        from utk_curio.backend.app.packages.service import install_downloaded_model, model_template
+
         user, _ = user_and_token
-        incoming = tmp_path / "incoming"
-        (incoming / "files").mkdir(parents=True)
-        (incoming / "files" / "m.onnx").write_bytes(b"onnx")
-        download = ModelCatalogService(user).install_downloaded(incoming, {
-            "id": "model.example.tiny", "name": "Tiny facades", "version": "1.0.0",
-            "compatibility": {"major": 1}, "license": "MIT", "runtime": "onnx",
-            "task": "semantic-segmentation", "entry": "files/m.onnx",
-            "labels": [f"class {i}" for i in range(60)],
-            "input": {"width": 64, "height": 32, "dtype": "float32", "scale": 0.00392},
+        key = self._key(user)
+        install_package_from_directory(key, shipped / f"{self.DDRNET}@1")
+        files = tmp_path / "incoming"
+        files.mkdir()
+        (files / "m.onnx").write_bytes(b"onnx")
+        install_downloaded_model(key, files, {
+            "id": self.DOWNLOAD, "kind": "model", "name": "Tiny facades", "version": "1.0.0",
+            "compatibility": {"major": 1}, "publisher": "org", "license": "MIT",
+            "templates": [model_template("semantic-segmentation")],
+            "model": {
+                "type": "semantic-segmentation", "runtime": "onnx", "entry": "models/m.onnx",
+                "labels": [f"class {i}" for i in range(60)],
+                "input": {"width": 64, "height": 32, "dtype": "float32", "scale": 0.00392},
+                "license": "MIT", "sizeBytes": 4,
+            },
         })
-        return user, download["id"]
+        return key
 
-    def _rows(self, app, user, params):
-        from flask import g
-
-        with app.test_request_context():
-            g.user = user
-            return tools._models_search_rows(params)
-
-    def test_rows_carry_both_origins_and_the_loader_line(self, app, catalog):
+    def test_rows_carry_both_origins_and_the_loader_line(self, catalog):
         from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
 
-        user, download_id = catalog
-        by_id = {row["id"]: row for row in self._rows(app, user, {})}
-        assert {self.DDRNET, download_id} <= set(by_id)
+        by_id = {row["id"]: row for row in tools._models_search_rows(catalog, {})}
+        # Deep Umbra and the weather GNN ship too, but this account added neither.
+        assert set(by_id) == {self.DDRNET, self.DOWNLOAD}
         for row in by_id.values():
             assert set(row) == self.ROW_KEYS
             assert row["loader"] == f'model = curio_load_model("{row["id"]}")'
             # The line resolves through the runtime's own reading of node code.
             assert model_ids_in_code(row["loader"]) == [row["id"]]
-        shipped, mine = by_id[self.DDRNET], by_id[download_id]
+        shipped, mine = by_id[self.DDRNET], by_id[self.DOWNLOAD]
         assert (shipped["origin"], shipped["runtime"], shipped["task"]) == ("shipped", "onnx", "semantic-segmentation")
         assert "vegetation" in shipped["labels"] and len(shipped["labels"]) == 19
         assert (mine["origin"], mine["name"]) == ("downloaded", "Tiny facades")
         # Labels are bounded; a checkpoint may name hundreds of classes.
         assert mine["labels"] == [f"class {i}" for i in range(tools._MODEL_LABELS_MAX)]
 
-    def test_q_filters_and_limit_bounds(self, app, catalog):
-        user, download_id = catalog
-        assert [r["id"] for r in self._rows(app, user, {"q": "  tiny  "})] == [download_id]
-        assert self._rows(app, user, {"q": "no-such-model-zzz"}) == []
-        assert len(self._rows(app, user, {"limit": 1})) == 1
-        assert len(self._rows(app, user, {"limit": "1"})) == 1
+    def test_a_model_the_account_never_added_is_not_a_row(self, app, user_and_token, shipped):
+        """Each shipped model package is in the catalog, and none is a model this
+        account's code runs until it is added; nor does an account-less run
+        see one."""
+        from utk_curio.backend.app.packages.service import list_model_packages
+
+        user, _ = user_and_token
+        assert {"model.scout.deep-umbra", self.DDRNET} <= {
+            listed.manifest.package_id for listed in list_model_packages(self._key(user))
+        }
+        assert tools._models_search_rows(self._key(user), {}) == []
+        assert tools._models_search_rows(None, {}) == []
+
+    def test_q_filters_and_limit_bounds(self, catalog):
+        def rows(params):
+            return tools._models_search_rows(catalog, params)
+
+        assert [r["id"] for r in rows({"q": "  tiny  "})] == [self.DOWNLOAD]
+        assert [r["id"] for r in rows({"q": "cityscapes"})] == [self.DDRNET]
+        assert rows({"q": "no-such-model-zzz"}) == []
+        assert len(rows({"limit": 1})) == 1
+        assert len(rows({"limit": "1"})) == 1
         # A native call may carry every number as a float.
-        assert len(self._rows(app, user, {"limit": 1.0})) == 1
-        everything = self._rows(app, user, {})
+        assert len(rows({"limit": 1.0})) == 1
+        everything = rows({})
         # A limit that is not a whole number, or is out of range, never hides a row.
-        assert self._rows(app, user, {"limit": "many"}) == everything
-        assert self._rows(app, user, {"limit": 1.5}) == everything
-        assert self._rows(app, user, {"limit": 10_000}) == everything
-        assert len(self._rows(app, user, {"limit": 0})) == 1
+        assert rows({"limit": "many"}) == everything
+        assert rows({"limit": 1.5}) == everything
+        assert rows({"limit": 10_000}) == everything
+        assert len(rows({"limit": 0})) == 1
 
-    def test_the_executor_returns_the_rows_and_needs_no_project_spec(self, app, catalog):
-        from flask import g
-
-        user, download_id = catalog
-        with app.test_request_context():
-            g.user = user
-            status, text = tools.execute_read_tool(
-                "models.search", user_key="42", project_id="no-such-project", target=None, params={"q": "tiny"},
-            )
+    def test_the_executor_returns_the_rows_and_needs_no_project_spec(self, catalog):
+        status, text = tools.execute_read_tool(
+            "models.search", user_key=catalog, project_id="no-such-project", target=None, params={"q": "tiny"},
+        )
         assert status == "ok"
-        assert [row["id"] for row in json.loads(text)["models"]] == [download_id]
+        assert [row["id"] for row in json.loads(text)["models"]] == [self.DOWNLOAD]
 
     def test_the_contract_states_its_params_and_rows(self):
         contract = tools.REGISTRY["models.search"]
         assert contract.parameters["properties"]["q"]["type"] == "string"
         assert contract.parameters["properties"]["limit"]["type"] == "integer"
         assert "required" not in contract.parameters
-        for word in ("id", "name", "task", "origin", "labels", "loader", 'curio_load_model("<id>")'):
+        for word in ("id", "name", "task", "origin", "labels", "loader", 'curio_load_model("<id>")', "added"):
             assert word in contract.description, word
 
 
@@ -799,17 +827,17 @@ class TestWebSearchTrustedProvider:
             seen["trusted_host"] = kwargs.get("trusted_host")
             return EgressResult(url=url, final_url=url, status=200,
                                 content_type="application/json",
-                                body='{"results": [{"title": "Paris", '
+                                body='{"results": [{"title": "Chicago cool roofs", '
                                      '"url": "https://w.test", "content": "18C"}]}')
 
         monkeypatch.setattr(egress, "fetch", _fake_fetch)
         status, text = tools.execute_read_tool(
             "web.search", user_key="42", project_id="none", target=None,
-            params={"q": "weather in Paris"},
+            params={"q": "cool roofs in Chicago"},
         )
         assert status == "ok" and "18C" in text
         assert seen["trusted_host"] == ("localhost", 8888)
-        assert "q=weather%20in%20Paris" in seen["url"]
+        assert "q=cool%20roofs%20in%20Chicago" in seen["url"]
 
     def test_web_fetch_never_passes_a_trusted_host(self, monkeypatch):
         from utk_curio.backend.app.agents.infrastructure import egress
@@ -893,32 +921,32 @@ class TestWebSearchProviderShapes:
             content_type="application/json", body=body))
         status, text = tools.execute_read_tool(
             "web.search", user_key="42", project_id="none", target=None,
-            params={"q": "weather in Paris"},
+            params={"q": "cool roofs in Chicago"},
         )
         assert status == "ok"
         return json.loads(text)["results"]
 
     def test_google_programmable_search_items(self, monkeypatch):
         rows = self._search(monkeypatch, json.dumps({"items": [{
-            "title": "Paris weather", "link": "https://w.test/paris",
-            "snippet": "18°C, partly cloudy"}]}))
-        assert rows == [{"title": "Paris weather", "url": "https://w.test/paris",
-                         "snippet": "18°C, partly cloudy"}]
+            "title": "Chicago cool roofs", "link": "https://heat.test/cool-roofs",
+            "snippet": "white roofs ran 18°C cooler"}]}))
+        assert rows == [{"title": "Chicago cool roofs", "url": "https://heat.test/cool-roofs",
+                         "snippet": "white roofs ran 18°C cooler"}]
 
     def test_serpapi_organic_results(self, monkeypatch):
         rows = self._search(monkeypatch, json.dumps({"organic_results": [{
-            "title": "Paris", "link": "https://w.test/p", "snippet": "cloudy"}]}))
+            "title": "Chicago cool roofs", "link": "https://w.test/p", "snippet": "cooler"}]}))
         assert rows[0]["url"] == "https://w.test/p"
 
     def test_brave_shaped_web_results_with_description(self, monkeypatch):
         rows = self._search(monkeypatch, json.dumps({"web": {"results": [{
-            "title": "Paris", "url": "https://w.test/p",
-            "description": "light breeze"}]}}))
-        assert rows[0]["snippet"] == "light breeze"
+            "title": "Chicago cool roofs", "url": "https://w.test/p",
+            "description": "reflective coating"}]}}))
+        assert rows[0]["snippet"] == "reflective coating"
 
     def test_href_alias_and_top_level_list(self, monkeypatch):
         rows = self._search(monkeypatch, json.dumps([{
-            "title": "Paris", "href": "https://w.test/p", "content": "18C"}]))
+            "title": "Chicago cool roofs", "href": "https://w.test/p", "content": "18C"}]))
         assert rows[0]["url"] == "https://w.test/p" and rows[0]["snippet"] == "18C"
 
     def test_unrecognized_shape_yields_empty_rows_not_an_error(self, monkeypatch):

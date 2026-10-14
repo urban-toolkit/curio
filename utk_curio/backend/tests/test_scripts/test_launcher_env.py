@@ -359,12 +359,6 @@ def _shipped_discovery_root():
     return storage.discovery_root()
 
 
-def _shipped_models_root():
-    from utk_curio.backend.app.model_catalog.infrastructure import storage
-
-    return storage.models_root()
-
-
 def _shared_packages_root():
     from utk_curio.backend.app.packages.repositories import catalog_dir
 
@@ -373,7 +367,6 @@ def _shared_packages_root():
 
 @pytest.mark.parametrize("arg, env_name, reader", [
     ("discovery_root", "CURIO_DISCOVERY_ROOT", _shipped_discovery_root),
-    ("models_root", "CURIO_MODELS_ROOT", _shipped_models_root),
     ("packages_root", "CURIO_PACKAGES_ROOT", _shared_packages_root),
 ])
 def test_a_shipped_root_flag_is_resolved_and_read_by_the_backend(tmp_path, arg, env_name, reader):
@@ -383,7 +376,42 @@ def test_a_shipped_root_flag_is_resolved_and_read_by_the_backend(tmp_path, arg, 
     assert Path(reader()).resolve() == (tmp_path / "shipped").resolve()
 
 
-@pytest.mark.parametrize("env_name", ["CURIO_DISCOVERY_ROOT", "CURIO_MODELS_ROOT", "CURIO_PACKAGES_ROOT"])
+def test_the_packages_root_flag_moves_the_shipped_models_too(tmp_path):
+    """Models ship as model packages, in the catalog ``--packages-root``
+    names: an added model's copy holds no weights, and they are read where
+    that flag points."""
+    from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+    from utk_curio.backend.app.packages.service import resolve_model_dirs
+
+    repo = Path(__file__).resolve().parents[4]
+    shipped = tmp_path / "shipped" / "model.curio.ddrnet23-slim@1"
+    (shipped / "models").mkdir(parents=True)
+    (shipped / "manifest.json").write_bytes(
+        (repo / "packages" / "model.curio.ddrnet23-slim@1" / "manifest.json").read_bytes()
+    )
+    (shipped / "models" / "ddrnet23_slim.onnx").write_bytes(b"graph")
+    set_environment_variables(**BASE, packages_root=str(tmp_path / "a" / ".." / "shipped"))
+    install_package_from_directory("guest", shipped)
+    assert resolve_model_dirs("guest", ["model.curio.ddrnet23-slim"]) == {
+        "model.curio.ddrnet23-slim": str(shipped.resolve()),
+    }
+
+
+def test_the_models_root_flag_is_gone_with_no_alias(tmp_path):
+    """There is no ``--models-root`` (nor ``CURIO_MODELS_ROOT``): no models
+    folder is read any more."""
+    import inspect
+
+    from utk_curio import main as launcher
+
+    assert "--models-root" not in inspect.getsource(launcher)
+    assert "models_root" not in inspect.signature(set_environment_variables).parameters
+    with pytest.raises(TypeError):
+        set_environment_variables(**BASE, models_root=str(tmp_path))
+    assert "CURIO_MODELS_ROOT" not in os.environ
+
+
+@pytest.mark.parametrize("env_name", ["CURIO_DISCOVERY_ROOT", "CURIO_PACKAGES_ROOT"])
 def test_no_shipped_root_flag_leaves_its_var_unset(env_name):
     set_environment_variables(**BASE)
     assert env_name not in os.environ

@@ -1,9 +1,13 @@
 /**
- * Global Node Catalog under /catalog/nodes (see docs/NODE-CATALOG.md).
+ * Global Node Catalog under /catalog/nodes (see docs/NODE-CATALOG.md), and the
+ * Model Catalog under /catalog/models (docs/MODEL-CATALOG.md): the same page
+ * over the other kind of package (`packageKind="model"`).
  */
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { InstallPermissionsDialog } from "../../components/packages/publishing/InstallPermissionsDialog";
-import { isNewerPackageVersion, type SortMode } from "../../services/packages";
+import ModalShell from "../../components/ModalShell";
+import { isNewerPackageVersion, type PackageKind, type SortMode } from "../../services/packages";
 import browseStyles from "./CatalogBrowseLayout.module.css";
 import { PackageBrowseCard } from "./PackageBrowseCard";
 import { PackageBrowseDrawer } from "./PackageBrowseDrawer";
@@ -14,12 +18,67 @@ import { CatalogRail } from "./CatalogRail";
 import { PackageDetailModal } from "../../components/packages/publishing/PackageDetailModal";
 import type { PackagePayload } from "../../services/packages";
 import { CardContextMenu } from "../../components/catalog/CardContextMenu";
+import type { CatalogItemKind } from "../../components/catalog/CatalogKindVisuals";
 import {
   packageCardActions,
   type CatalogCardActionId,
 } from "../../components/catalog/catalogCardActions";
+import detailStyles from "../../components/agents/catalog/AgentDetailModal.module.css";
 
-export const NodeCatalogBrowse: React.FC = () => {
+/** What each catalog's page says; everything else is the same page. */
+const PAGE_COPY: Record<PackageKind, {
+  path: string;
+  kind: CatalogItemKind;
+  title: string;
+  iconTitle: string;
+  railLabel: string;
+  allLabel: string;
+  searchPlaceholder: string;
+  sortAriaLabel: string;
+  noneMatch: string;
+  notFound: string;
+}> = {
+  node: {
+    path: "/catalog/nodes",
+    kind: "package",
+    title: "Node Catalog",
+    iconTitle: "Node package catalog",
+    railLabel: "Filter packages",
+    allLabel: "All packages",
+    searchPlaceholder: "Search packages…",
+    sortAriaLabel: "Sort packages",
+    noneMatch: "No packages match the current filters.",
+    notFound: "This package is not in your Node Catalog.",
+  },
+  model: {
+    path: "/catalog/models",
+    kind: "model",
+    title: "Model Catalog",
+    iconTitle: "Model Catalog",
+    railLabel: "Filter models",
+    allLabel: "All models",
+    searchPlaceholder: "Search models…",
+    sortAriaLabel: "Sort models",
+    noneMatch: "No models match the current filters.",
+    notFound: "This model is not in your Model Catalog.",
+  },
+};
+
+export interface NodeCatalogBrowseProps {
+  /** Which catalog this page is: the Node Catalog (`node`, the default) or
+   *  the Model Catalog (`model`). */
+  packageKind?: PackageKind;
+  /** A link to one package (`/catalog/models/<id>`): the page with its
+   *  details open. */
+  linkedPackageId?: string;
+}
+
+export const NodeCatalogBrowse: React.FC<NodeCatalogBrowseProps> = ({
+  packageKind = "node",
+  linkedPackageId,
+}) => {
+  const copy = PAGE_COPY[packageKind];
+  const navigate = useNavigate();
   const [drawerSlotOpen, setDrawerSlotOpen] = useState(false);
   const {
     search,
@@ -28,9 +87,12 @@ export const NodeCatalogBrowse: React.FC = () => {
     setSort,
     filter,
     setFilter,
-    categoryFilter,
-    setCategoryFilter,
+    facetFilters,
+    facetRows,
+    toggleFacet,
+    clearFilters,
     setSelectedDirName,
+    loaded,
     busy,
     actionError,
     catalogPublishAllowed,
@@ -45,9 +107,9 @@ export const NodeCatalogBrowse: React.FC = () => {
     catalogByDir,
     catalogPublishedDirs,
     defaults,
+    mergedRows,
     filtered,
     selectedPkg,
-    sortedCategories,
     allCount,
     installedCount,
     selectedHasUpdate,
@@ -58,14 +120,33 @@ export const NodeCatalogBrowse: React.FC = () => {
     confirmInstall,
     onPublish,
     onUnpublish,
+    canRemoveFromAccount,
+    onRemoveFromAccount,
     cancelInstall,
-  } = useNodeCatalogBrowse();
+  } = useNodeCatalogBrowse(packageKind);
 
   // Separate from `selectedDirName`, which drives the side drawer. Wiring both
   // to one setter is what made the Agent page's "View details" a no-op (#189),
   // and it is exactly what the Node card's did: it called `onSelect`, so on a
   // card whose drawer was already open the click changed nothing.
   const [detailDirName, setDetailDirName] = useState<string | null>(null);
+  // A link to a package lands where every "View details" does, once the
+  // listing has arrived to say whether it is there.
+  const [linkMissing, setLinkMissing] = useState(false);
+  useEffect(() => {
+    if (!linkedPackageId || !loaded) return;
+    const linked = mergedRows.find(
+      (p) => p.packageId === linkedPackageId || p.dirName === linkedPackageId,
+    );
+    if (linked) setDetailDirName(linked.dirName);
+    else setLinkMissing(true);
+  }, [linkedPackageId, loaded, mergedRows]);
+  const closeDetails = () => {
+    setDetailDirName(null);
+    setLinkMissing(false);
+    // Back to the plain page, so a reload does not reopen what was closed.
+    if (linkedPackageId) navigate(copy.path, { replace: true });
+  };
 
   // Right-click. The card reports the event, the grid owns the menu - the same
   // division the projects page has used all along (#285). `hasUpdate` rides in
@@ -110,25 +191,15 @@ export const NodeCatalogBrowse: React.FC = () => {
         null)
     : null;
 
-  // The counts come from the rows on screen, so a search can take the selected
-  // category's count to zero; it stays on the rail so it can be cleared.
-  const categoryRows: [string, number][] =
-    categoryFilter && !sortedCategories.some(([cat]) => cat === categoryFilter)
-      ? [...sortedCategories, [categoryFilter, 0]]
-      : sortedCategories;
-
   return (
     <div className={[browseStyles.page, drawerSlotOpen ? browseStyles.pageWithDrawer : ""].filter(Boolean).join(" ")}>
       <CatalogRail
-        ariaLabel="Filter packages"
+        ariaLabel={copy.railLabel}
         all={{
-          label: "All packages",
+          label: copy.allLabel,
           count: allCount,
-          active: filter === "all" && categoryFilter === "",
-          onClick: () => {
-            setFilter("all");
-            setCategoryFilter("");
-          },
+          active: filter === "all" && Object.values(facetFilters).every((value) => !value),
+          onClick: clearFilters,
         }}
         scope={{
           label: "In all projects",
@@ -136,40 +207,47 @@ export const NodeCatalogBrowse: React.FC = () => {
           active: filter === "installed",
           onClick: () => setFilter(filter === "installed" ? "all" : "installed"),
         }}
-        sections={[
-          {
-            key: "category",
-            label: "By category",
-            entries: categoryRows.map(([cat, count]) => ({
-              value: cat,
-              label: cat,
-              count,
-              active: categoryFilter === cat,
-              onClick: () => setCategoryFilter((prev) => (prev === cat ? "" : cat)),
-              // Keyed like the card strips (`primaryCategory()`).
-              dotClassName: browseStyles[`categoryDot_${cat}`] ?? "",
-            })),
-          },
-        ]}
+        sections={facetRows.map(({ facet, rows }) => ({
+          key: facet.key,
+          label: facet.label,
+          entries: rows.map(([value, count]) => ({
+            value,
+            label: facet.labelOf(value),
+            count,
+            active: facetFilters[facet.key] === value,
+            onClick: () => toggleFacet(facet.key, value),
+            // Keyed like the card strips (`primaryCategory()`).
+            ...(facet.dotted ? { dotClassName: browseStyles[`categoryDot_${value}`] ?? "" } : {}),
+          })),
+        }))}
       />
 
       <main className={browseStyles.browseMain}>
         <CatalogPageHeader
-          kind="package"
-          iconTitle="Node package catalog"
-          title="Node Catalog"
+          kind={copy.kind}
+          iconTitle={copy.iconTitle}
+          title={copy.title}
           count={filtered.length}
           intro={
-            <>
-              Node packages in the shared catalog. Adding one here adds it to{" "}
-              <strong>all your projects</strong>, present and future; add or remove it for a
-              single project from that project&apos;s Node Catalog.
-            </>
+            packageKind === "model" ? (
+              <>
+                Trained models your nodes run, each a package with its weights and the node that
+                runs it. Adding one here adds it to <strong>all your projects</strong>; add or remove
+                it for a single project from that project&apos;s Model Catalog. Models you download
+                from the <strong>Discovery Catalog</strong> land here too.
+              </>
+            ) : (
+              <>
+                Node packages in the shared catalog. Adding one here adds it to{" "}
+                <strong>all your projects</strong>, present and future; add or remove it for a
+                single project from that project&apos;s Node Catalog.
+              </>
+            )
           }
           viewTools={
             <select
               className={browseStyles.sortSelect}
-              aria-label="Sort packages"
+              aria-label={copy.sortAriaLabel}
               value={sort}
               onChange={(e) => setSort(e.target.value as SortMode)}
             >
@@ -181,7 +259,7 @@ export const NodeCatalogBrowse: React.FC = () => {
           <input
             className={browseStyles.hubSearch}
             type="search"
-            placeholder="Search packages…"
+            placeholder={copy.searchPlaceholder}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -250,7 +328,7 @@ export const NodeCatalogBrowse: React.FC = () => {
         ) : null}
 
         {filtered.length === 0 ? (
-          <div className={browseStyles.empty}>No packages match the current filters.</div>
+          <div className={browseStyles.empty}>{copy.noneMatch}</div>
         ) : (
           <section className={browseStyles.cardGrid}>
             {filtered.map((pkg) => {
@@ -262,8 +340,6 @@ export const NodeCatalogBrowse: React.FC = () => {
                 userStoreRow != null &&
                 catalogRow != null &&
                 isNewerPackageVersion(catalogRow.version, userStoreRow.version);
-              const isPublished = catalogPublishedDirs.has(pkg.dirName);
-              const showPublish = userStoreRow != null;
               return (
                 <PackageBrowseCard
                   key={pkg.dirName}
@@ -317,6 +393,11 @@ export const NodeCatalogBrowse: React.FC = () => {
             ? onUnpublish
             : undefined
         }
+        onRemoveFromAccount={
+          selectedPkg != null && canRemoveFromAccount(selectedPkg)
+            ? (p) => void onRemoveFromAccount(p)
+            : undefined
+        }
         onViewDetails={(p) => setDetailDirName(p.dirName)}
         onClose={() => setSelectedDirName(null)}
         onLayoutChange={setDrawerSlotOpen}
@@ -341,8 +422,19 @@ export const NodeCatalogBrowse: React.FC = () => {
           pkg={detailPkg}
           inAllProjects={defaults.has(detailPkg.dirName)}
           isPublished={catalogPublishedDirs.has(detailPkg.dirName)}
-          onClose={() => setDetailDirName(null)}
+          onClose={closeDetails}
         />
+      ) : linkMissing ? (
+        <ModalShell
+          onClose={closeDetails}
+          size="xlarge"
+          layer="overlay"
+          label={packageKind === "model" ? "Model details" : "Package details"}
+        >
+          <div className={detailStyles.body}>
+            <p className={detailStyles.purpose}>{copy.notFound}</p>
+          </div>
+        </ModalShell>
       ) : null}
 
       {installCandidate ? (

@@ -121,13 +121,29 @@ def resolve_dataset_paths(code: str, dataflow_id: str | None, user, formats: dic
         return {}
 
 
-def resolve_models(code: str, user) -> dict:
-    """The Model Catalog folders of the models *code* runs as
-    ``curio_load_model("<id>")``, for this account. Fail-open like dataset paths:
+def resolve_models_for(code: str, user_key: str | None) -> dict:
+    """``{model id: folder}`` for the models *code* runs as
+    ``curio_load_model("<id>")`` that the store of *user_key* holds: models
+    behave like nodes, so a model package never added gives none
+    (``packages.service.resolve_model_dirs``). Fail-open like dataset paths:
     the sandbox's ``curio_load_model`` names a model that is not there."""
-    from utk_curio.backend.app.model_catalog.service import resolve_exec_models
+    from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
 
-    return resolve_exec_models(code, user)
+    ids = model_ids_in_code(code)
+    if not ids:
+        return {}
+    try:
+        from utk_curio.backend.app.packages.service import resolve_model_dirs
+
+        return resolve_model_dirs(user_key, ids)
+    except Exception as e:  # noqa: BLE001 - resolution must never fail the execution
+        print(f"[processPythonCode] model resolution failed: {e}", flush=True)
+        return {}
+
+
+def resolve_models(code: str, user) -> dict:
+    """:func:`resolve_models_for` the account *user* runs as."""
+    return resolve_models_for(code, exec_user_key(user))
 
 
 def resolve_package_modules(

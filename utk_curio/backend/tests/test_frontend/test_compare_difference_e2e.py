@@ -181,7 +181,7 @@ _LEGEND_TITLE_JS = """(id) => {
 
 
 def _assert_legend_title(page, node_id: str, title: str) -> None:
-    """The node's map legend is titled *title*, the layerRef's legendTitle,
+    """The node's map legend is titled *title*, the layerRef's title,
     not the table the difference is read as."""
     deadline = time.time() + 15
     shown = None

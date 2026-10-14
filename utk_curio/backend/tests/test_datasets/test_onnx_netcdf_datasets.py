@@ -33,7 +33,7 @@ REPO = Path(__file__).resolve().parents[4]
 #: ONNX exports already in the repository, made by real exporters, so the check
 #: is not judged only against the model this suite builds by hand.
 REAL_MODELS = [
-    REPO / "models" / "model.curio.ddrnet23-slim@1" / "files" / "ddrnet23_slim.onnx",
+    REPO / "packages" / "model.curio.ddrnet23-slim@1" / "models" / "ddrnet23_slim.onnx",
     REPO / "utk_curio" / "backend" / "tests" / "test_discovery" / "fixtures"
     / "huggingface-models" / "synthetic-segmentation.onnx",
 ]

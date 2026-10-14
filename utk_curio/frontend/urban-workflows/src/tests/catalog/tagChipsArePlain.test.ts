@@ -25,10 +25,10 @@ const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8");
 const CARDS = [
   "pages/dataCatalog/DataCatalogBrowseCard.tsx",
   "pages/agents/AgentCatalogBrowseCard.tsx",
+  // Also a model package's card, with its type chip.
   "pages/catalog/PackageBrowseCard.tsx",
   "pages/catalog/CatalogBrowseDrawerBody.tsx",
   // Born plain, and listed so it stays that way.
-  "pages/models/ModelCatalogBrowseCard.tsx",
   "pages/scenarios/ScenarioCatalogBrowseCard.tsx",
 ];
 
@@ -37,7 +37,6 @@ const STYLESHEETS = [
   "pages/catalog/CatalogBrowseLayout.module.css",
   "pages/agents/AgentCatalogBrowseCard.module.css",
   "pages/catalog/PackageBrowseCard.module.css",
-  "pages/models/ModelCatalogBrowseCard.module.css",
   "pages/scenarios/ScenarioCatalogBrowseCard.module.css",
 ];
 

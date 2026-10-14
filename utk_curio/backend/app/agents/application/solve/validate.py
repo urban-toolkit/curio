@@ -76,7 +76,7 @@ def validate_node_stream(
     if resolution.outcome != "ok":
         raise AgentServiceError(
             "no installed agent declares node.content.generate — install the "
-            "Node Content Builder first",
+            "Node Builder first",
             409,
         )
     agents_session._check_delegate_llms(user_key, project_id, manifest, config, agents_session._delegate_capabilities([node]))

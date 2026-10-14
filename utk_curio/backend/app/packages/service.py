@@ -79,6 +79,7 @@ from utk_curio.backend.app.packages.builder.factory import FactoryError
 from utk_curio.backend.app.packages.application.store_install import (
     install_package_from_archive,
     install_package_from_directory,
+    remove_package,
     uninstall_package,
     export_package_archive,
 )
@@ -86,8 +87,22 @@ from utk_curio.backend.app.packages.application.starters import (
     generate_package_starters,
 )
 from utk_curio.backend.app.packages.application.model_packages import (
+    ListedModelPackage,
+    held_model_packages,
+    list_model_packages,
+    model_default_cell,
     resolve_model_dirs,
 )
+from utk_curio.backend.app.packages.application.model_downloads import (
+    downloaded_model_ids,
+    downloaded_model_package,
+    install_downloaded_model,
+    install_downloaded_model_deps,
+    model_add_refusal,
+    model_library_refusal,
+    model_package_row,
+)
+from utk_curio.backend.app.packages.domain.default_cells import model_loader_line, model_template
 
 # The names other features take from the package (memo dev/143 B5: the agents, the
 # projects service, the launcher and the testing routes import THESE from here, never
@@ -146,6 +161,7 @@ __all__ = [
     "seed_dev_packages",
     "install_package_from_archive",
     "install_package_from_directory",
+    "remove_package",
     "uninstall_package",
     "export_package_archive",
     "agent_catalog_overview",
@@ -199,5 +215,18 @@ __all__ = [
     "input_capacity",
     "per_user_node_envs",
     "user_node_overlay_dir",
+    "ListedModelPackage",
+    "held_model_packages",
+    "list_model_packages",
+    "model_default_cell",
     "resolve_model_dirs",
+    "install_downloaded_model",
+    "install_downloaded_model_deps",
+    "downloaded_model_ids",
+    "downloaded_model_package",
+    "model_add_refusal",
+    "model_library_refusal",
+    "model_package_row",
+    "model_loader_line",
+    "model_template",
 ]

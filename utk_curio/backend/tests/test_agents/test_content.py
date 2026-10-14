@@ -523,9 +523,9 @@ class TestDelegateRequestPart:
 class TestDelegationInstruction:
     def test_names_entries_and_syntax(self):
         text = content.delegation_instruction(
-            [("node.content.generate", "Node Content Builder")]
+            [("node.content.generate", "Node Builder")]
         )
-        assert "- node.content.generate — handled by Node Content Builder" in text
+        assert "- node.content.generate \N{EM DASH} handled by Node Builder" in text
         assert '"delegateRequest"' in text
 
 

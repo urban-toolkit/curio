@@ -9,11 +9,13 @@
   ``runLevels.cases.json`` beside the TypeScript holds the cases both run.
 - :func:`ancestors` is the slice ``playNodesUpTo`` runs for one node.
 - :func:`node_role`: what a run does with a node. ``run`` executes it in the
-  sandbox; ``forward`` passes its input on, as a chart, a pool or a download
-  does on the canvas, or has nothing to run, as a Parameter node, whose value
-  reaches the nodes that name it through their code; ``browser`` makes data only the browser can
-  (an Autark data or compute node, a Spatial Join), so nothing below it can run
-  until a tab does.
+  sandbox, as an executable template or an Autark node whose document only
+  loads data (``autk_spec_kind``); ``forward`` passes its input on, as a chart,
+  a pool or a download does on the canvas, or has nothing to run, as a
+  Parameter node, whose value reaches the nodes that name it through their
+  code; ``browser`` makes data only the browser can (an Autark compute node, an
+  Autark node with no data of its own to load, a Spatial Join), so nothing
+  below it can run until a tab does.
 """
 from __future__ import annotations
 
@@ -103,6 +105,7 @@ def ancestors(target_id: str, edges: Iterable[dict]) -> set[str]:
 
 def node_role(node: dict, templates: dict | None = None) -> str:
     """``run``, ``forward`` or ``browser`` for a node as a saved dataflow holds it."""
+    from utk_curio.backend.app.execution.autk_spec_kind import is_autk_data_node
     from utk_curio.backend.app.execution.workflow_spec import is_executable_kind
     from utk_curio.backend.app.projects.dashboard_payload import _is_pass_through, _node_kind
 
@@ -110,4 +113,6 @@ def node_role(node: dict, templates: dict | None = None) -> str:
         return "run"
     if _is_pass_through(node) or _node_kind(node) in _FORWARD_KINDS:
         return "forward"
+    if is_autk_data_node(node):
+        return "run"
     return "browser"

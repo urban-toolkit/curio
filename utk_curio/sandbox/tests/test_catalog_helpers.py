@@ -368,7 +368,9 @@ class TestLoadModel:
             _helpers({}, models={"m": str(folder)})["curio_load_model"]("m")
 
     def test_a_missing_model_says_so(self):
-        with pytest.raises(RuntimeError, match="not available"):
+        """A model the backend gave no folder for: the account never added it,
+        so the call names it and the Model Catalog's Add."""
+        with pytest.raises(RuntimeError, match="Model 'gone' is not one of your models: add it with Add in the Model Catalog"):
             _helpers({})["curio_load_model"]("gone")
 
     def test_an_image_to_image_model_is_run_with_its_own_inputs(self, tmp_path):

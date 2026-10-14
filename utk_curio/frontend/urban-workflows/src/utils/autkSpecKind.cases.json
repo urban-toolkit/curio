@@ -1,0 +1,125 @@
+{
+  "description": "What kind of step an Autark document describes, from the text an Autark node holds. Read by src/tests/utils/autkSpecKindCases.test.ts (classifyAutkSpecString) and by backend/tests/test_runs/test_autk_spec_kind.py (execution/autk_spec_kind.classify_autk_spec_string, and run_plan.node_role: a run on the server runs a data node, forwards a render node and leaves the rest to the browser).",
+  "cases": [
+    {
+      "name": "an OSM extract only loads",
+      "spec": "{\"data\": [{\"type\": \"osm\", \"pbfFileUrl\": \"docs/examples/data/back_bay.osm.pbf\", \"outputTableName\": \"table_osm\", \"autoLoadLayers\": {\"layers\": [\"roads\", \"buildings\"]}}]}",
+      "kind": "data"
+    },
+    {
+      "name": "several sources only load",
+      "spec": "{\"data\": [{\"type\": \"csv\", \"csvFileUrl\": \"a.csv\", \"outputTableName\": \"a\"}, {\"type\": \"join\", \"tableRootName\": \"a\"}]}",
+      "kind": "data"
+    },
+    {
+      "name": "a key no family names changes nothing",
+      "spec": "{\"data\": [{\"type\": \"osm\"}], \"title\": \"Loop\"}",
+      "kind": "data"
+    },
+    {
+      "name": "an empty data section loads nothing, so the node reads its input",
+      "spec": "{\"data\": []}",
+      "kind": "unknown"
+    },
+    {
+      "name": "a data section that is not a list loads nothing",
+      "spec": "{\"data\": {\"type\": \"osm\"}}",
+      "kind": "unknown"
+    },
+    {
+      "name": "a map draws what the node loads",
+      "spec": "{\"data\": [{\"type\": \"osm\"}], \"map\": {\"layers\": [{\"dataRef\": \"table_osm_roads\"}]}}",
+      "kind": "render"
+    },
+    {
+      "name": "a plot draws what the node loads",
+      "spec": "{\"data\": [{\"type\": \"osm\"}], \"plot\": {\"dataRef\": \"table_osm_buildings\"}}",
+      "kind": "render"
+    },
+    {
+      "name": "a map written as an empty list is still named",
+      "spec": "{\"data\": [{\"type\": \"osm\"}], \"map\": []}",
+      "kind": "render"
+    },
+    {
+      "name": "a map written as false is still named",
+      "spec": "{\"data\": [{\"type\": \"osm\"}], \"map\": false}",
+      "kind": "render"
+    },
+    {
+      "name": "a map written as null names no map",
+      "spec": "{\"data\": [{\"type\": \"osm\"}], \"map\": null}",
+      "kind": "data"
+    },
+    {
+      "name": "a compute step over what the node loads computes",
+      "spec": "{\"data\": [{\"type\": \"osm\"}], \"compute\": [{\"dataRef\": \"table_osm_roads\"}]}",
+      "kind": "compute"
+    },
+    {
+      "name": "an empty compute list computes nothing",
+      "spec": "{\"data\": [{\"type\": \"osm\"}], \"compute\": []}",
+      "kind": "data"
+    },
+    {
+      "name": "a compute step alone computes",
+      "spec": "{\"compute\": [{\"dataRef\": \"input_0\"}]}",
+      "kind": "compute"
+    },
+    {
+      "name": "an empty compute list alone is nothing",
+      "spec": "{\"compute\": []}",
+      "kind": "unknown"
+    },
+    {
+      "name": "an empty document",
+      "spec": "{}",
+      "kind": "unknown"
+    },
+    {
+      "name": "an empty editor",
+      "spec": "",
+      "kind": "unknown"
+    },
+    {
+      "name": "an editor holding only blanks",
+      "spec": "  \n\t ",
+      "kind": "unknown"
+    },
+    {
+      "name": "a document cut short",
+      "spec": "{\"data\": [{\"type\": \"osm\"",
+      "kind": "unknown"
+    },
+    {
+      "name": "a reference outside quotes is not JSON until it is resolved",
+      "spec": "{\"data\": [{\"type\": \"csv\", \"csvFileUrl\": \"a.csv\", \"outputTableName\": [!! name !!]}]}",
+      "kind": "unknown"
+    },
+    {
+      "name": "a reference inside quotes leaves the document JSON",
+      "spec": "{\"data\": [{\"type\": \"osm\", \"pbfFileUrl\": \"[!! @extract !!]\", \"outputTableName\": \"table_osm\"}]}",
+      "kind": "data"
+    },
+    {
+      "name": "NaN is not JSON",
+      "spec": "{\"data\": [{\"type\": \"osm\"}], \"scale\": NaN}",
+      "kind": "unknown"
+    },
+    {
+      "name": "a JSON list is not a document",
+      "spec": "[{\"data\": [{\"type\": \"osm\"}]}]",
+      "kind": "unknown"
+    },
+    {
+      "name": "JSON null is not a document",
+      "spec": "null",
+      "kind": "unknown"
+    },
+    {
+      "name": "a JSON string is not a document",
+      "spec": "\"data\"",
+      "kind": "unknown"
+    }
+  ]
+}

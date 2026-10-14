@@ -56,7 +56,7 @@ ANALYSIS = "curio.builtin/computation-analysis"
 UNIVERSE = Universe(
     templates=frozenset(TEMPLATES),
     dataset_ids=frozenset({"data.x.y", "data.projectsidewalk.chicago-labels"}),
-    package_dir_names=frozenset({"curio.weather@1", "curio.streetvision@1"}),
+    package_dir_names=frozenset({"curio.weather@1", "model.curio.ddrnet23-slim@1"}),
 )
 
 

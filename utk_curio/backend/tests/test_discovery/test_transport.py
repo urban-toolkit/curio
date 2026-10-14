@@ -372,7 +372,7 @@ class TestACancelledDownload:
             transport=T.HttpDiscoveryTransport(), file_url=lambda plan, path: self.URL
         )
         plan = SimpleNamespace(files=[("model.onnx", 4)], total_bytes=4, repo="org/model", gated=False)
-        acquire_ = ModelAcquire(user_key="alice", provider_for=lambda m: provider, models=lambda: None)
+        acquire_ = ModelAcquire(user=None, user_key="alice", provider_for=lambda m: provider)
         with pytest.raises(_cancels()):
             acquire_._fetch(provider, plan, tmp_path, progress=None, stage=None, cancelled=cancelled)
         assert len(checks) == 2

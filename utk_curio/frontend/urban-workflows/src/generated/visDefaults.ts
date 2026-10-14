@@ -135,7 +135,7 @@ export const AUTK_STARTER_LADDER = [
     columns: { quantitative: { least: 1 } },
     produces: "map",
     description:
-      'a layer colored by the first quantitative column, with "getFnv": that column, "getFnvType": "quantitative" and "colorMapInterpolator": "interpolateViridis"',
+      'a layer colored by the first quantitative column, with "title" and "getFnv": that column, "getFnvType": "quantitative" and "colorMapInterpolator": "interpolateViridis"',
   },
   {
     id: "geometry+nominal",
@@ -143,7 +143,7 @@ export const AUTK_STARTER_LADDER = [
     columns: { nominal: { least: 1 } },
     produces: "map",
     description:
-      'a layer colored by the first nominal column, with "getFnv": that column, "getFnvType": "categorical" and "colorMapInterpolator": "schemeTableau10"',
+      'a layer colored by the first nominal column, with "title" and "getFnv": that column, "getFnvType": "categorical" and "colorMapInterpolator": "schemeTableau10"',
   },
   {
     id: "geometry",

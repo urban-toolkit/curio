@@ -54,7 +54,7 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 // That wait is only right while the registry might still deliver. Once it has
 // settled, a missing descriptor means no installed package provides this type,
 // and continuing to say "Loading node…" is a lie the user cannot see past —
-// which is exactly what the streetvision example showed, permanently (#233).
+// which is exactly what the street-vision example showed, permanently (#233).
 // `UnresolvedNode` tells the two apart, and renders handles either way so the
 // edges touching it can still be drawn.
 const UniversalNode = React.memo(function UniversalNode({ data, isConnectable }: { data: any; isConnectable: boolean }) {
@@ -488,7 +488,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
         ) : (
           // ``editor: "none"`` in the manifest means there's no tabbed editor
           // surface — but the behavior hook can still inject custom UI via
-          // ``contentComponent`` (the streetvision place-picker, etc.).
+          // ``contentComponent`` (a package's own interface, etc.).
           // Without this branch that UI would be silently dropped because
           // ``contentComponent`` is otherwise only rendered inside NodeEditor's
           // output tab. ``noContent`` containers

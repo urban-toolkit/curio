@@ -23,7 +23,7 @@ class TestReviewProposals:
     """Review-before-apply (memo dev/41, DEC-006/REQ-REVIEW-001): the model
     proposes, only the authenticated endpoint applies, digest-checked."""
 
-    COORD = "agent.node-content-builder@1.0.0"
+    COORD = "agent.node-builder@1.0.0"
 
     def _mutate_tail(self, node_id="n1", new_content="print(2)"):
         return (
@@ -1742,10 +1742,10 @@ class TestDestructiveReplan:
             replies=["Revising.\n" + self._revision_tail(nodes=[self._new_node()])],
         )
         # A node-target attachment on the victim (dies with it, dev/32) …
-        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.node-content-builder@1.0.0"}, headers=_auth(token))
+        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.node-builder@1.0.0"}, headers=_auth(token))
         victim_att = client.post(
             f"/api/agents/projects/{alice_project}/attachments",
-            json={"coord": "agent.node-content-builder@1.0.0", "target": {"kind": "node", "targetId": "old-loader"}},
+            json={"coord": "agent.node-builder@1.0.0", "target": {"kind": "node", "targetId": "old-loader"}},
             headers=_auth(token),
         ).get_json()["attachmentId"]
         # … and a stale nodeRuns entry for it in the builder session.

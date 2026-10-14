@@ -12,7 +12,6 @@ include package-lock.json
 recursive-include packages *
 recursive-include datasets *
 recursive-include discovery *
-recursive-include models *
 recursive-include tests *
 
 # DuckDB's extensions, which the launcher seeds and the backend serves
@@ -71,4 +70,4 @@ exclude datasets/data.cityofchicago.red-light-violations@1/data/red-light-violat
 exclude datasets/data.cityofchicago.speed-camera-violations@1/data/speed-camera-violations.parquet
 exclude datasets/data.projectsidewalk.chicago-labels@1/data/chicago-labels.parquet
 exclude datasets/data.utk.milan-mrt@1/data/milan-mrt.tif
-exclude models/model.scout.deep-umbra@1/files/deep_umbra.onnx
+exclude packages/model.scout.deep-umbra@1/models/deep_umbra.onnx

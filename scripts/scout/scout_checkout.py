@@ -6,11 +6,11 @@ SCOUT_COMMIT (``BLOBS``, git blob ids), so a rerun reads the same bytes.
 
 The scripts write SCOUT's weather into the Data Catalog
 (``<repo>/datasets/<id>@1/``, ``DATASETS``), each dataset with its manifest
-(``write_manifest``), and its weather GNN into the Model Catalog
-(``<repo>/models/<id>@1/``, ``write_model_manifest``). SCOUT's data is
+(``write_manifest``), and its weather GNN's weights into its model package
+(``<repo>/packages/<id>@1/models/``, ``write_model_block``). SCOUT's data is
 published by SCOUT and used with the permission of SCOUT's authors, so a
-dataset manifest names SCOUT as publisher and no license, and the model's
-names that permission as its license. SCOUT's road graph is not a Curio dataset: a Curio road graph comes
+dataset manifest names SCOUT as publisher and no license, and the package's
+model block names that permission as the weights' license. SCOUT's road graph is not a Curio dataset: a Curio road graph comes
 from a Curio roads layer. The cut of it that SCOUT's own routing runs on for
 the proof is a test fixture (``ROAD_NODES_FILE``, ``ROAD_EDGES_FILE``).
 """
@@ -55,8 +55,8 @@ BLOBS = {
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CATALOG = REPO_ROOT / "datasets"
-MODELS = REPO_ROOT / "models"
-#: The scout.routing proof's fixtures.
+PACKAGES = REPO_ROOT / "packages"
+#: The weather GNN package's proof fixtures.
 FIXTURES = REPO_ROOT / "utk_curio" / "backend" / "tests" / "test_packages" / "fixtures" / "scout_routing"
 
 #: The WRF variables' NetCDF group, and each variable's dataset id.
@@ -64,9 +64,9 @@ WEATHER_GROUP = "netcdf.scout-wrf"
 WEATHER_IDS = {name: f"data.scout.wrf-{name.lower()}" for name in WEATHER_VARIABLES}
 #: Each dataset's data file, under ``<catalog>/<id>@1/``.
 DATASETS = {dataset_id: f"data/{name}.nc" for name, dataset_id in WEATHER_IDS.items()}
-#: The weather GNN's Model Catalog id, and its ONNX file under ``<models>/<id>@1/``.
+#: The weather GNN's model package, and its ONNX file under ``<packages>/<id>@1/``.
 WEATHER_GNN = "model.scout.weather-gnn"
-WEATHER_GNN_ENTRY = "files/weather_gnn.onnx"
+WEATHER_GNN_ENTRY = "models/weather_gnn.onnx"
 #: SCOUT's road graph cut, under ``<fixtures>/``: its nodes and its edges.
 ROAD_NODES_FILE = "roads_nodes.parquet"
 ROAD_EDGES_FILE = "roads_edges.parquet"
@@ -75,7 +75,7 @@ PUBLISHER = "SCOUT (urban-toolkit/scout)"
 SOURCE_LABEL = "SCOUT"
 STAMP = "2026-10-05T00:00:00Z"
 PERMISSION = "used with the permission of SCOUT's authors"
-#: A Model Catalog model names its license; SCOUT's is this permission.
+#: A model package's model block names its weights' license; SCOUT's is this permission.
 MODEL_LICENSE = "Used with the permission of SCOUT's authors"
 
 
@@ -131,22 +131,25 @@ def write_manifest(catalog, dataset_id, *, name, fmt, description, tags,
     return path
 
 
-def model_file(models, model_id=WEATHER_GNN):
-    """Where the Model Catalog model *model_id*'s ONNX file lives under *models*."""
-    return Path(models) / f"{model_id}@1" / WEATHER_GNN_ENTRY
+def model_file(packages, model_id=WEATHER_GNN):
+    """Where the model package *model_id*'s ONNX file lives under *packages*."""
+    return Path(packages) / f"{model_id}@1" / WEATHER_GNN_ENTRY
 
 
-def write_model_manifest(models, model_id, *, name, task, description, tags):
-    """*model_id*'s Model Catalog manifest (``parse_manifest`` in
-    ``utk_curio/backend/app/model_catalog/domain/manifest.py``), for the ONNX
-    file already at ``model_file``: no labels and no image input, its size the
-    file's."""
-    manifest = {
-        "id": model_id, "name": name, "version": "1.0.0", "compatibility": {"major": 1},
-        "description": description, "publisher": PUBLISHER, "homepage": SCOUT_URL, "license": MODEL_LICENSE,
-        "runtime": "onnx", "task": task, "entry": WEATHER_GNN_ENTRY, "labels": [], "tags": list(tags),
-        "sizeBytes": model_file(models, model_id).stat().st_size, "createdAt": STAMP, "updatedAt": STAMP,
+def write_model_block(packages, model_id, *, model_type):
+    """The ``model`` block of the model package *model_id*'s manifest (the
+    package's ``domain/model_block.py``), for the ONNX file already at
+    ``model_file``: no labels and no image input, its size the file's, and
+    SCOUT's permission as the weights' license. The rest of the manifest, the
+    package's node and code, is the package's own. The package's
+    ``integrity.json`` is then rewritten with ``scripts/regen_integrity.py``."""
+    path = Path(packages) / f"{model_id}@1" / "manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest["kind"] = "model"
+    manifest["model"] = {
+        "entry": WEATHER_GNN_ENTRY, "homepage": SCOUT_URL, "labels": [], "license": MODEL_LICENSE,
+        "publisher": PUBLISHER, "runtime": "onnx", "sizeBytes": model_file(packages, model_id).stat().st_size,
+        "type": model_type,
     }
-    path = Path(models) / f"{model_id}@1" / "manifest.json"
     path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return path

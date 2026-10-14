@@ -3,9 +3,11 @@
 // the Node.js sandbox.
 //
 // This module deliberately has no imports. It is consumed by the React node
-// behavior (autkGrammarBehavior.tsx) and, unchanged, by scripts/compile-autk-data.mts,
-// which Node runs directly with type stripping so the CI stress harness can
-// produce the very same JavaScript the browser would post to the backend.
+// behavior (autkGrammarBehavior.tsx), by the compiler a run on the server uses
+// (autkDataCompileServer.ts, bundled into dist/autk-data-compile.cjs), and,
+// unchanged, by scripts/compile-autk-data.mts, which Node runs directly with
+// type stripping so the CI stress harness can produce the very same JavaScript
+// the browser would post to the backend.
 
 // Stand-in for "the backend, as reachable from the sandbox" inside a URL that
 // will be fetched by the sandbox's Node subprocess.

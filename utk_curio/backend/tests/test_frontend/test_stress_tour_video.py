@@ -193,7 +193,7 @@ PACKAGE_DEPS: dict[str, tuple[str, ...]] = {
     "curio.example-ui@1": (),
     "curio.weather@1": ("pythermalcomfort", "rasterio", "rasterstats"),
     "ai.utk.uhvi@1": ("rasterio",),
-    "curio.streetvision@1": ("onnxruntime",),
+    "model.curio.ddrnet23-slim@1": ("onnxruntime",),
 }
 
 
@@ -1228,7 +1228,7 @@ def chapter_nodes(run: StressRun) -> None:
             page.wait_for_timeout(800)
 
     # Install every catalog package for real. curio.weather, ai.utk.uhvi and
-    # curio.streetvision each shell out to pip (rasterio / geopandas /
+    # model.curio.ddrnet23-slim each shell out to pip (rasterio / geopandas /
     # onnxruntime), so the response wait is generous by design rather than optimistic.
     installable = [
         pkg for pkg in catalog
@@ -2190,7 +2190,7 @@ def chapter_agents(run: StressRun) -> None:
     with run.step("Attach an agent to a node by dragging"):
         dismiss_toasts(page)
         target = run.state["transform"]
-        drag_agent_to(run, _first_coord(installed, "node-content-builder"),
+        drag_agent_to(run, _first_coord(installed, "node-builder"),
                       lambda: node_client_point(page, target))
         expect_attach_toast(run, "the node")
 
@@ -2231,7 +2231,7 @@ def chapter_agents(run: StressRun) -> None:
     with run.step("Attach every remaining agent, so all of them can be asked"):
         # The three drags above are the gesture worth filming, but the chat
         # panel cycles ATTACHMENTS - so with three attachments only three of the
-        # ten agents would ever be asked anything. The rest are attached
+        # seven agents would ever be asked anything. The rest are attached
         # through the same REST endpoint the drop handler calls, picking the
         # first target kind each agent's manifest accepts (the API refuses an
         # incompatible one with a 400 naming what it does accept).
@@ -2243,7 +2243,7 @@ def chapter_agents(run: StressRun) -> None:
         ) or []
         edge_id = edges[0] if edges else None
         already = {
-            _first_coord(installed, "node-content-builder"),
+            _first_coord(installed, "node-builder"),
             _first_coord(installed, "connection-builder"),
             _first_coord(installed, "dataflow-builder"),
         }
@@ -2460,7 +2460,7 @@ EXAMPLE_RUNS: tuple[tuple[str, int, bool], ...] = (
     ("07-autark-gpu-shader.json", 5, True),
     ("08-autark-spatial-join-regression.json", 7, True),
     ("11-autark-pbf-loading.json", 3, True),
-    # Needs curio.streetvision, which the `nodes` chapter installs.
+    # Needs model.curio.ddrnet23-slim, which the `nodes` chapter installs.
     ("10-street-vision-cv-analysis.json", 12, False),
 )
 

@@ -43,7 +43,7 @@ class _OnnxRunner:
         except ImportError as exc:  # pragma: no cover - a package dependency
             raise RuntimeError(
                 "This model runs on onnxruntime, which this Curio does not have: "
-                "install the Street Vision package from the Node Catalog."
+                "add the model with Add in the Model Catalog, which installs it."
             ) from exc
         self.labels = list(manifest.get("labels") or [])
         self.input = manifest.get("input") or {}

@@ -27,10 +27,10 @@ const SRC = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8");
 
 const CANVAS_DRAWERS = [
+  // The Node Catalog drawer, which is also the Model Catalog's (below).
   "components/packages/publishing/NodeCatalogDrawer.tsx",
   "components/datasets/catalog/DatasetCatalogDrawer.tsx",
   "components/agents/catalog/AgentCatalogDrawer.tsx",
-  "components/models/catalog/ModelCatalogDrawer.tsx",
   "components/scenarios/catalog/ScenarioCatalogDrawer.tsx",
   "components/discovery/catalog/DiscoveryCatalogDrawer.tsx",
   // API Settings and Monitor, opened from the top bar.
@@ -38,13 +38,12 @@ const CANVAS_DRAWERS = [
 ];
 
 /** The data/lifecycle hooks behind the drawers. A confirmation that moved
- *  into a hook is just as native as one left in the component; the model
- *  drawer's delete question lives in `useModelDelete`. */
+ *  into a hook is just as native as one left in the component; the Node and
+ *  Model drawers' catalog state lives in `usePackageCatalog`. */
 const DRAWER_HOOKS = [
   "components/datasets/catalog/useDatasetCatalogDrawer.ts",
   "components/agents/catalog/useAgentCatalogDrawer.ts",
-  "components/models/catalog/useModelCatalogDrawer.ts",
-  "components/models/catalog/useModelDelete.ts",
+  "services/packages/usePackageCatalog.ts",
   "components/scenarios/catalog/useScenarioCatalogDrawer.ts",
 ];
 
@@ -60,6 +59,17 @@ const PROVIDERS = [
 ];
 
 describe("canvas catalog drawer parity", () => {
+  test("the Model Catalog drawer is the Node Catalog drawer over model packages", () => {
+    // So every rule below that holds for the Node Catalog drawer holds for it:
+    // one file, one drawer, the other kind of package.
+    const model = read("components/models/catalog/ModelCatalogDrawer.tsx");
+    expect(model).toContain('<NodeCatalogDrawer {...props} packageKind="model" />');
+    expect(model).not.toMatch(/role="dialog"|<aside|useState/);
+    const node = read("components/packages/publishing/NodeCatalogDrawer.tsx");
+    expect(node).toContain('rootAttribute: "data-curio-model-catalog-drawer"');
+    expect(node).toContain("packageKind,");
+  });
+
   test.each(CANVAS_DRAWERS)(
     "%s hides its root from assistive tech until presented",
     (drawer) => {

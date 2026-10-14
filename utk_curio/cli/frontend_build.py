@@ -9,6 +9,7 @@ import sys
 
 from utk_curio.cli.lifecycle import clean_shutdown, shell_required
 from utk_curio.cli.logs import COLOR_FRONTEND, log_error, log_info, log_warning
+from utk_curio.common.autk_data_compiler import compiler_path
 
 
 # The Node.js major the project targets: the frontend build, Jest, and the
@@ -255,6 +256,10 @@ def _build_stamp_reason(root: str = "") -> str | None:
     dist = os.path.join(root or _frontend_dir(), "dist")
     if not _frontend_is_built(root):
         return "dist directory not found"
+    # A run on the server compiles an Autark data node with it, and a build
+    # from before it was part of the build lacks it.
+    if not compiler_path(root or _frontend_dir()).is_file():
+        return "the Autark data compiler is not built"
 
     wanted_mode = _frontend_build_mode(root)
     built_mode = None

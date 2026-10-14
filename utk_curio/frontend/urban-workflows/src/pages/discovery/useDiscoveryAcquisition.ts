@@ -9,7 +9,7 @@ import {
   type DiscoveryAcquireJob,
   type UseDiscoveryAcquireResult,
 } from "../../services/discoveryCatalog";
-import { notifyModelCatalogRefresh } from "../../services/modelCatalog";
+import { notifyPackageCatalogRefresh } from "../../services/packages";
 
 export interface DiscoveryAcquisitionOptions {
   /** Whether the job came from a storage source, whose files are added
@@ -40,7 +40,10 @@ export function useDiscoveryAcquisition({
 
   return useDiscoveryAcquire((job) => {
     if (job.model?.id) {
-      notifyModelCatalogRefresh();
+      // The model is a model package in the account's store now: every
+      // listing of packages (the Model Catalog's drawer, page and palette)
+      // reloads.
+      notifyPackageCatalogRefresh();
       const modelId = job.model.id;
       const name = job.model.name || modelId;
       const view = { action: { label: "View model", onClick: () => onViewModel(modelId) } };

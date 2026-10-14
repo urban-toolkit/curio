@@ -3,8 +3,14 @@
  * the frontend half of `MODEL_CALL_RE` / `model_ids_in_code` in
  * `backend/app/datasets/domain/code_refs.py`.
  */
-import { modelIdsInCode } from "../../services/modelCatalog";
 import { datasetIdsInCode } from "../../services/datasetCatalog/datasetLoaderSnippets";
+
+// The grammar moved into the packages service with the Model Catalog; reached
+// through `require` so a checkout without it fails test by test.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { modelIdsInCode } = require("../../services/packages") as {
+  modelIdsInCode: (code: unknown) => string[];
+};
 
 describe("modelIdsInCode", () => {
   test("finds a call in either quote style", () => {

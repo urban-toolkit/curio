@@ -307,6 +307,9 @@ def render_autk_region(schema: dict, label: str) -> str:
     interpolators = _definition(
         schema, layer_spec.get("properties", {}).get("colorMapInterpolator", {}).get("$ref", "")
     ).get("enum", [])
+    # What "title" does in a map; the grammar's note on which adapters read it is left out.
+    layer_title = layer_spec.get("properties", {}).get("title", {}).get("description", "")
+    layer_title = layer_title.split(" Read by the ", 1)[0]
 
     lines = [
         f"{label} nodes ({AUTK_TEMPLATE}) are controlled through grammar: their content "
@@ -341,7 +344,8 @@ def render_autk_region(schema: dict, label: str) -> str:
         # document may name both; a node draws one view.
         f'- "map": {AUTK_ONE_VIEW} Requires {_every(_definition(schema, "MapSpec").get("required", []))}, '
         f'and each entry of "{layers}" requires {_every(layer_required)}. '
-        f'"colorMapInterpolator" is one of {_either(interpolators)}.',
+        f'"colorMapInterpolator" is one of {_either(interpolators)}. '
+        f'A layer that shows a legend names it with "title": {layer_title}'.rstrip(),
         f'- "plot": {AUTK_ONE_VIEW} Every plot requires '
         f'{_every(_plot_required(schema))}; "mark" selects the rest:',
     ]
@@ -472,13 +476,13 @@ AUTK_STARTER_LADDER: tuple[StarterRule, ...] = (
     ),
     StarterRule(
         "geometry+quantitative", "map",
-        'a layer colored by the first quantitative column, with "getFnv": that column, '
+        'a layer colored by the first quantitative column, with "title" and "getFnv": that column, '
         '"getFnvType": "quantitative" and "colorMapInterpolator": "interpolateViridis"',
         columns=_roles(quantitative=1), layers=CountRange(1, 1),
     ),
     StarterRule(
         "geometry+nominal", "map",
-        'a layer colored by the first nominal column, with "getFnv": that column, '
+        'a layer colored by the first nominal column, with "title" and "getFnv": that column, '
         '"getFnvType": "categorical" and "colorMapInterpolator": "schemeTableau10"',
         columns=_roles(nominal=1), layers=CountRange(1, 1),
     ),
@@ -690,12 +694,17 @@ PROMPT_TEMPLATES: tuple[str, ...] = (
     "package_contract",
     "package_recommendation_instruction",
     "research_instruction",
+    "research_verify_rules",
     "researcher_notes_instruction",
 )
 #: The Package Builder's backend contract: a fragment the Package Builder's
 #: instruction includes whole, and a delegated Package Builder receives as an
 #: input (``turns/delegates.py``).
 PACKAGE_CONTRACT = "package_contract"
+#: The Researcher's rules for checking a fact: a fragment both of its prompts
+#: include whole, its chat (``researcher_notes_instruction``) and its
+#: ``research.verify`` mode (``research_instruction``).
+RESEARCH_VERIFY_RULES = "research_verify_rules"
 
 #: A marker: a field name, then the argument after a colon when it takes one.
 _MARKER_RE = re.compile(r"\{\{([a-z][a-z0-9_.]*)(?::([^{}]+))?\}\}")
@@ -924,6 +933,11 @@ def _package_contract(_src: _Sources) -> str:
     return render_prompt(PACKAGE_CONTRACT).rstrip("\n")
 
 
+def _research_verify_rules(_src: _Sources) -> str:
+    """The Researcher's rules for checking a fact, rendered, to include whole."""
+    return render_prompt(RESEARCH_VERIFY_RULES).rstrip("\n")
+
+
 _NUMBER_WORDS = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
 
 
@@ -1030,6 +1044,7 @@ PROMPT_FIELDS: dict[str, PromptField] = {
     "backend.server_network_permission": PromptField(_server_network_permission),
     "backend.data_dir_env": PromptField(_data_dir_env),
     "package.contract": PromptField(_package_contract),
+    "research.verify_rules": PromptField(_research_verify_rules),
     "vega.schema_url": PromptField(lambda _src: VEGA_SCHEMA_URL),
     "vega.starter_ladder": PromptField(lambda _src: render_starter_ladder(VEGA_STARTER_LADDER)),
     "autk.starter_ladder": PromptField(lambda _src: render_starter_ladder(AUTK_STARTER_LADDER)),

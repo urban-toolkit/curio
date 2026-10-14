@@ -1,0 +1,122 @@
+{
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
+  "compatibility": {
+    "curioRuntime": ">=0.5.0",
+    "major": 1
+  },
+  "createdAt": "2026-10-05T00:00:00Z",
+  "dependencies": {
+    "js": {},
+    "packages": {},
+    "python": {
+      "geopandas": ">=1.1.3",
+      "netCDF4": ">=1.7",
+      "networkx": ">=3.2",
+      "numpy": "",
+      "onnxruntime": ">=1.17",
+      "osmnx": ">=2.0",
+      "pandas": ">=3.0.2",
+      "scikit-learn": ">=1.6",
+      "scipy": ">=1.13",
+      "shapely": ">=2.0"
+    }
+  },
+  "description": "SCOUT's weather graph network and weather-aware routing, ported from SCOUT (urban-toolkit/scout): two GraphSAGE layers and a linear head predict the rain, temperature, humidity and wind at every node of a road graph from a WRF forecast. Its Weather Routing node weighs each road of a roads layer by them and finds routes between two points, with each route's duration, distance and rain and wind exposure. The weights are SCOUT's rain_model.pth, exported to ONNX by scripts/scout/export_weather_gnn.py.",
+  "id": "model.scout.weather-gnn",
+  "kind": "model",
+  "license": "MIT",
+  "model": {
+    "entry": "models/weather_gnn.onnx",
+    "homepage": "https://github.com/urban-toolkit/scout",
+    "labels": [],
+    "license": "Used with the permission of SCOUT's authors",
+    "publisher": "SCOUT (urban-toolkit/scout)",
+    "runtime": "onnx",
+    "sizeBytes": 52437,
+    "type": "node-regression"
+  },
+  "name": "SCOUT weather GNN (weather at road nodes)",
+  "permissions": [],
+  "publisher": "Curio",
+  "readOnly": true,
+  "templates": [
+    {
+      "category": "computation",
+      "description": "SCOUT's weather-aware routing. Input: the layers an Autark node loads from OpenStreetMap, whose roads layer, table_osm_roads, the node reads through its layer chip as a GeoDataFrame of road lines (with highway, and oneway and maxspeed where known), or such a GeoDataFrame on its own. The routes run inside its bounds. The node predicts the rain, temperature, humidity and wind at every road node with this package's weather graph network, model.scout.weather-gnn, from the WRF forecast in the Data Catalog (the SCOUT WRF group) at the start time, weighs each road by them, and finds the mode's routes: Default weights, the fastest route and the weather-weighted one; Custom weights, the K routes that weigh rain most, the K that weigh wind most, and the fastest; Single-factor weights, one route per factor, and the fastest. Output: (routes, metrics): a GeoDataFrame with one line per route and its distance_m (metres), duration_minutes and rain, heat, wind and humidity exposure, which an Autark map draws; and the same routes as a table, with distance in km and duration in minutes, which Compare Scenarios charts. The Widgets tab sets the origin and destination, the mode, K, the start time (local time where the weather is, Chicago) and the rain and wind weights.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": true,
+      "iconRef": "fa-solid:map-location-dot",
+      "id": "weather-routing",
+      "inputPorts": [
+        {
+          "cardinality": "1",
+          "types": ["GEODATAFRAME"]
+        }
+      ],
+      "label": "Weather Routing",
+      "behavior": "code",
+      "outputPorts": [
+        {
+          "cardinality": "[1,n]",
+          "types": ["GEODATAFRAME", "DATAFRAME"]
+        }
+      ],
+      "source": "sources/weather-routing.py",
+      "widgets": [
+        {
+          "name": "origin",
+          "type": "location",
+          "label": "Origin",
+          "default": {"lat": 41.868, "lon": -87.636}
+        },
+        {
+          "name": "destination",
+          "type": "location",
+          "label": "Destination",
+          "default": {"lat": 41.889, "lon": -87.624}
+        },
+        {
+          "name": "mode",
+          "type": "choice",
+          "label": "Mode",
+          "default": "Default weights",
+          "options": {
+            "choices": ["Default weights", "Custom weights", "Single-factor weights"],
+            "display": "dropdown"
+          }
+        },
+        {
+          "name": "K",
+          "type": "number",
+          "label": "Routes per factor (K)",
+          "default": 1,
+          "options": {"min": 1, "max": 3, "step": 1}
+        },
+        {
+          "name": "time",
+          "type": "datetime",
+          "label": "Start time (Chicago)",
+          "default": "2025-07-06T12:00:00"
+        },
+        {
+          "name": "rain",
+          "type": "slider",
+          "label": "Rain weight",
+          "default": 0.85834,
+          "options": {"min": 0, "max": 1, "step": 0.00001}
+        },
+        {
+          "name": "wind",
+          "type": "slider",
+          "label": "Wind weight",
+          "default": 0.01657,
+          "options": {"min": 0, "max": 1, "step": 0.00001}
+        }
+      ]
+    }
+  ],
+  "version": "1.0.0"
+}

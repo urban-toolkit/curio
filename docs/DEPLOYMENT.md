@@ -50,11 +50,11 @@ The three directories you created, `instance/`, `datasets/` and `.curio/`, are b
 | `discovery/` | The Discovery Catalog's shipped sources: one manifest per portal or storage source. Ships with the image | No |
 | `.curio/` | Per-user stores, logs, sandbox artifacts, each account's agent imports, catalog settings and LLM configurations, and your own sources in `.curio/discovery/` | Yes, if users' imported datasets, computed outputs and settings matter |
 
-`packages/` is **not** mounted: the node catalog is baked into the image, so it
-always matches the deployed commit. Neither is `discovery/`, whose shipped
-sources match the deployed commit too, nor `models/`, the Model Catalog's
-shipped models. Pass `--packages-root`, `--discovery-root` or `--models-root`
-to `curio.py start` if you need them elsewhere. Models your users add live in their stores under `.curio/`. Sources of your own go in `.curio/discovery/`; see
+`packages/` is **not** mounted: the node catalog, with the Model Catalog's
+shipped models as model packages, is baked into the image, so it always
+matches the deployed commit. Neither is `discovery/`, whose shipped sources
+match the deployed commit too. Pass `--packages-root` or `--discovery-root` to
+`curio.py start` if you need them elsewhere. Models your users add live in their stores under `.curio/`. Sources of your own go in `.curio/discovery/`; see
 [Storage sources](#storage-sources).
 
 ### Outbound requests

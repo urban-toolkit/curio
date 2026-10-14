@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Feature } from 'geojson';
 import type { NodeBehaviorData, NodeBehaviorResult, UseNodeStateReturn } from '../../registry/types';
+import type { NodeOutput } from '../../hook/useNodeState';
 import { detectWebGpuSupport, reprobeWebGpuSupport } from '../../utils/webgpuSupport';
 import { useToastContext } from '../../providers/ToastProvider';
 import { VisInteractionType, NodeType } from '../../constants';
@@ -40,10 +41,12 @@ import {
 } from './autkRunDescriptions';
 import { loadSpecLayers, materializeBackendLayers, runDataInBackend, toPoolOutput } from './autkLayerMaterialize';
 import {
-    isCurioRasterSource, newAutkDb, recolorRasters, resolveRasterInputs, withRasterSources, type CurioRasterSource,
+    bleedRasterEdges, isCurioRasterSource, newAutkDb, resolveRasterInputs, withOpaqueRasters, withRasterSources,
+    type CurioRasterSource,
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
-import { titleLegends } from './autkLegendTitles';
+import { withScenarioColors } from './autkScenarioColors';
+import type { Scenario } from '../../utils/scenarios/scenarioModel';
 import { frameMaps } from './autkMapView';
 import { trackMaps } from './autkMapDrawing';
 
@@ -160,7 +163,13 @@ export const useAutkGrammarBehavior = (
     // node asks (hook/useGrammarInputState).
     const { connected, upstreamErrored } = useGrammarInputState(data.nodeId);
     // A failed node says so to the nodes it feeds, as a failed code node does.
-    const { markNodeErrored } = useFlowContext() as { markNodeErrored?: (nodeId: string) => void };
+    const { markNodeErrored, scenarios } = useFlowContext() as {
+        markNodeErrored?: (nodeId: string) => void;
+        scenarios?: Scenario[];
+    };
+    // Read when a run draws, so a layer that names a scenario wears its color.
+    const scenariosRef = useRef<Scenario[]>([]);
+    scenariosRef.current = scenarios ?? [];
     // Whether a run has been tried, whether one is under way, and what the last
     // one could not read from its input: the pre-run notice reads these.
     const hasRunRef = useRef(false);
@@ -197,6 +206,32 @@ export const useAutkGrammarBehavior = (
             words: emptyStateWords(problem.reason, kind, problem.detail),
         };
         writeEmptyState(wrapperRef.current, problem.reason, noticeRef.current.words);
+    };
+
+    // The node's status set from outside its own run (UniversalNode): a step of
+    // a run on the server among them (`serverOutput`). A document that only
+    // loads data runs there as its run here posts it, so its result says what
+    // it loaded, as a run here says it, rather than "not run yet" under Done.
+    const setOutputFromOutside = (output: NodeOutput) => {
+        const code = isEmptySpecBuffer(nodeState.code) ? data.defaultCode : nodeState.code;
+        const loadsData = classifyAutkSpecString(code) === 'data';
+        const ran = output?.code === 'exec' || output?.code === 'success' || output?.code === 'error';
+        // A run tried, as applyGrammar marks one: no "not run yet" after it.
+        if (loadsData && ran) hasRunRef.current = true;
+        nodeState.setOutput(output);
+        if (!loadsData || !ran) return;
+        if (output.code !== 'success') {
+            setRunSummary(null);
+            return;
+        }
+        // The notice before a run goes, as a run here empties the body.
+        noticeRef.current = null;
+        const host = wrapperRef.current;
+        if (host?.hasAttribute('data-curio-node-empty')) {
+            host.replaceChildren();
+            clearEmptyState(host);
+        }
+        setRunSummary(describeAutkRun('Loaded', 'table', requestedLayerTables(JSON.parse(code as string).data)));
     };
 
     const runGrammar = async (
@@ -665,6 +700,10 @@ export const useAutkGrammarBehavior = (
                     };
                 }
 
+                // A layer that names a scenario is drawn in its box's color, and
+                // every raster with each cell that has a value opaque.
+                spec = withOpaqueRasters(withScenarioColors(spec, scenariosRef.current));
+
                 const { AutkGrammar } = await import('@urban-toolkit/autk-grammar');
                 // A fresh grammar per attempt: it builds its own AutkDb, and a
                 // DuckDB worker that failed to fetch the spatial extension keeps
@@ -680,8 +719,7 @@ export const useAutkGrammarBehavior = (
                 // are destroyed with the next run or the node even if a step
                 // below fails.
                 destroyMapsRef.current = trackMaps(grammar);
-                recolorRasters(grammar, spec);
-                titleLegends(grammar, spec);
+                bleedRasterEdges(grammar, spec);
                 frameMaps(grammar);
                 // A node that left the page while they were made destroys them now.
                 if (!mountedRef.current) destroyLastMaps();
@@ -1321,6 +1359,7 @@ export const useAutkGrammarBehavior = (
         // Only ever offered for an empty editor, so it cannot displace real
         // work, and it steps aside for a document written in from outside.
         defaultValueOverride: starterSpec,
+        setOutputCallbackOverride: setOutputFromOutside,
     };
 };
 

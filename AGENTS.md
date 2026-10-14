@@ -10,12 +10,11 @@ Curio is a framework for urban visual analytics built on dataflows: a React canv
 - `utk_curio/sandbox/`: Flask service that runs node Python and JavaScript and stores results as DuckDB artifacts.
 - `utk_curio/llm-prompts/`: built-in agent prompts, and `examples.md`, the index of shipped dataflows that runs get as worked examples (`agents/application/turns/examples.py`).
 - `utk_curio/common/`: code shared by backend, sandbox and the page server (`redaction.py`, `backend_address.py`).
-- `utk_curio/shipped.py`: where `packages/`, `datasets/`, `discovery/`, `models/`, `scripts/`, `vendor/` and the parts of `docs/` Curio reads are: beside `utk_curio/` in a clone, `utk_curio/_shipped/` in a pip install. Every reader of them asks it.
+- `utk_curio/shipped.py`: where `packages/`, `datasets/`, `discovery/`, `scripts/`, `vendor/` and the parts of `docs/` Curio reads are: beside `utk_curio/` in a clone, `utk_curio/_shipped/` in a pip install. Every reader of them asks it.
 - `utk_curio/tools/`: operator tools outside the Flask app (`agent_eval.py`, `preview_runner.py`).
-- `packages/`: shipped Node Catalog, one directory per node package (`manifest.json`, `sources/`, `integrity.json`).
+- `packages/`: shipped Node and Model Catalogs, one directory per package (`manifest.json`, `sources/`, `integrity.json`); a model package (kind `model`) also holds its weights under `models/`.
 - `datasets/`: shipped Data Catalog, one directory per dataset (`manifest.json`, `data/`).
 - `discovery/`: Discovery Catalog sources, one `manifest.json` per source.
-- `models/`: shipped Model Catalog, one directory per model.
 - `docs/`: user and developer guides; `docs/examples/` (curated dataflows, their walkthroughs, test dataflows); `docs/schemas/` (`trill.v1.json`).
 - `scripts/`: developer and CI scripts (see Scripts).
 - `vendor/duckdb-extensions/`: DuckDB extensions bundled with Curio.
@@ -40,7 +39,7 @@ Each backend feature's `service.py` is its public entry point for routes and oth
 | Node packages | `packages/`: `domain/`, `application/`, `infrastructure/`, `repositories/`, `routes/`, `schemas/`, `service.py`, `builder/` | `services/packages/`, `pages/catalog/`, `components/packages/`, `providers/packages/` | `docs/NODE-CATALOG.md` |
 | Datasets | `datasets/`: `domain/`, `application/`, `infrastructure/`, `repositories/`, `routes.py`, `schemas/`, `service.py`, `install/`, `models.py` | `services/datasetCatalog/`, `pages/dataCatalog/`, `components/datasets/`, `providers/datasetCatalog/` | `docs/DATA-CATALOG.md` |
 | Discovery | `discovery/`: `domain/`, `application/`, `infrastructure/`, `routes.py`, `media_routes.py`, `schemas/`, `service.py`, `providers/` | `services/discoveryCatalog/`, `pages/discovery/`, `components/discovery/`, `providers/discoveryCatalog/` | `docs/DISCOVERY-CATALOG.md` |
-| Models | `model_catalog/`: `domain/`, `infrastructure/`, `routes.py`, `service.py` | `services/modelCatalog/`, `pages/models/`, `components/models/`, `providers/modelCatalog/` | `docs/MODEL-CATALOG.md` |
+| Models | The packages service (model packages, kind `model`, through the package routes with `?kind=model`): `packages/application/model_packages.py` (weights, listing fields, weights license, a node's models) and `model_downloads.py` (a model downloaded from the Discovery Catalog) | `services/packages/` (`modelPackages.ts`, `modelApplication.ts`, `modelCode.ts`), `pages/models/`, `components/models/`, `providers/modelCatalog/` | `docs/MODEL-CATALOG.md` |
 | Scenarios | `scenario_catalog/`: `domain/`, `infrastructure/`, `routes.py`, `service.py` (reads the projects' scenarios; no storage of its own) | `services/scenarioCatalog/`, `pages/scenarios/`, `components/scenarios/catalog/`, `providers/scenarioCatalog/` | `docs/SCENARIO-CATALOG.md` |
 
 - Backend tests per feature: `utk_curio/backend/tests/test_agents/`, `test_packages/`, `test_datasets/`, `test_discovery/`, `test_model_catalog/`, `test_scenario_catalog/`.
@@ -147,7 +146,7 @@ Several files run past 1,500 lines. List their sections, then Read only the rang
 Generated, vendored or data files:
 
 - `src/components/vega-schema.json`, `package-lock.json` and `utk_curio/frontend/urban-workflows/package-lock.json`, `*.js.map`.
-- `*.geojson`, `datasets/*/data/`, `models/*/files/`, `vendor/`.
+- `*.geojson`, `datasets/*/data/`, `packages/*/models/`, `vendor/`.
 - `utk_curio/backend/tests/test_discovery/fixtures/` (recorded portal responses).
 - `docs/examples/dataflows/expected_outputs/` (screenshot baselines).
 - `utk_curio/llm-prompts/X.md` when an `X.template.md` sits beside it (the preamble, most agent instructions, `package_contract.md`): generated; edit the template or `contracts.py`, then run `scripts/generate_contracts.py`.

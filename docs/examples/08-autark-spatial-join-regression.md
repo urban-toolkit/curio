@@ -34,8 +34,8 @@ selections back.
 
 ## Data
 
-`docs/examples/data/niteroi.osm.pbf` is an OSM extract for Niterói (regenerate with
-`scripts/build_example_pbfs.py`). `docs/examples/data/niteroi_lst_verao_2001_2024.tif` is the 24-band LST
+`docs/examples/data/niteroi.osm.pbf` is an OpenStreetMap extract for Niterói (© OpenStreetMap contributors,
+ODbL 1.0), built by `scripts/build_example_pbfs.py`. `docs/examples/data/niteroi_lst_verao_2001_2024.tif` is the 24-band LST
 raster, from the upstream Autark repo.
 
 ## Step 1: Load OSM layers from a PBF (`autk-grammar`, data block)
@@ -140,7 +140,7 @@ The compute output flows into a **`data-pool`** node, which fans the augmented l
 "map": { "layerRefs": [
   { "dataRef": "table_osm_surface" }, { "dataRef": "table_osm_parks" }, { "dataRef": "table_osm_water" },
   { "dataRef": "table_osm_roads", "isPick": true, "isColorMap": true, "getFnv": "angle", "getFnvType": "quantitative", "defaultFnv": 0,
-    "legendTitle": "Warming angle (°)" }
+    "title": "Warming angle (°)" }
 ]}
 
 "plot": { "dataRef": "table_osm_roads", "mark": "scatter", "axis": ["intercept", "angle"],

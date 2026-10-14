@@ -56,11 +56,11 @@ OWN_DATASET_CODE = (
     "return df\n"
 )
 
-#: SCOUT's buildings and its shadow package both shipped dated 2026-10-05 00:00
-#: UTC, 54 hours before the calendar date: "2d ago" there, "3d ago" by noon of
-#: that day on the real clock, and more every day after.
+#: SCOUT's buildings and its rasterizer package both shipped dated 2026-10-05
+#: 00:00 UTC, 54 hours before the calendar date: "2d ago" there, "3d ago" by
+#: noon of that day on the real clock, and more every day after.
 SHIPPED_DATASET = "data.scout.loop-buildings"
-SHIPPED_PACKAGE = "scout.shadow@1"
+SHIPPED_PACKAGE = "scout.raster-conversion@1"
 SHIPPED_AGE = "2d ago"
 
 #: The text the catalogs give an age (``catalogTimeFormat.ts``).

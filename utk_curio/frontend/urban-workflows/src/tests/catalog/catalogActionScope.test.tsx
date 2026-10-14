@@ -143,7 +143,8 @@ describe("the browse cards are informational, and the drawer acts", () => {
     ["node", "pages/catalog/PackageBrowseCard.tsx"],
     ["agent", "pages/agents/AgentCatalogBrowseCard.tsx"],
     ["Discovery Catalog", "pages/discovery/DiscoverySourceCard.tsx"],
-    ["model", "pages/models/ModelCatalogBrowseCard.tsx"],
+    // A model package's card is the package card.
+    ["model", "pages/catalog/PackageBrowseCard.tsx"],
     ["scenario", "pages/scenarios/ScenarioCatalogBrowseCard.tsx"],
   ])("the %s card offers View details and a status, the same shape", (_kind, rel) => {
     const src = read(rel);
@@ -475,9 +476,9 @@ describe("all four catalogs have a details view, and it is the same shape", () =
   const MODALS: [string, string][] = [
     ["dataset", "components/datasets/catalog/DatasetDetailModal.tsx"],
     ["agent", "components/agents/catalog/AgentDetailModal.tsx"],
+    // The package details are a model package's too.
     ["package", "components/packages/publishing/PackageDetailModal.tsx"],
     ["Discovery Catalog", "pages/discovery/DiscoverySourceDetailModal.tsx"],
-    ["model", "components/models/catalog/ModelDetailModal.tsx"],
     ["scenario", "components/scenarios/catalog/ScenarioDetailModal.tsx"],
   ];
 
@@ -521,22 +522,22 @@ describe("all four catalogs have a details view, and it is the same shape", () =
   });
 
   test("the Model Catalog has a details view of its own state", () => {
-    // Born with one, and not wired to the drawer's setter (#189): the card's
-    // View details opens the modal even on a card whose drawer is open.
-    const page = read("pages/models/ModelCatalogBrowse.tsx");
-    expect(page).toContain("ModelDetailModal");
-    expect(page).toContain("const [detailId");
-    expect(page).toContain("onViewDetails={() => setDetailId(model.id)}");
-    expect(read("components/models/catalog/ModelDetailModal.tsx")).toContain("ModalShell");
+    // It is the Node Catalog's page over model packages, so the same details
+    // view, with its own state and not the drawer's setter (#189), and a link
+    // to one model opens it.
+    expect(read("pages/models/ModelCatalogBrowse.tsx")).toMatch(/<NodeCatalogBrowse\s+packageKind="model"/);
+    const page = read("pages/catalog/NodeCatalogBrowse.tsx");
+    expect(page).toContain("onViewDetails={() => setDetailDirName(pkg.dirName)}");
+    expect(page).toContain("linkedPackageId");
+    expect(read("components/packages/publishing/PackageDetailModal.tsx")).toContain("ModalShell");
   });
 
-  test("the model drawer and its details view read the same facts", () => {
-    for (const rel of [
-      "pages/models/ModelCatalogBrowseDrawer.tsx",
-      "components/models/catalog/ModelDetailModal.tsx",
-    ]) {
-      expect(read(rel)).toContain("modelInfoRows(model)");
-    }
+  test("the model drawer, cards and details view read the same facts", () => {
+    expect(read("pages/catalog/PackageBrowseDrawer.tsx")).toContain("modelInfoRows(model)");
+    expect(read("components/packages/publishing/PackageDetailModal.tsx")).toContain(
+      "modelInfoRows(model, weightsLicense)",
+    );
+    expect(read("components/packages/publishing/PackageCard.tsx")).toContain("modelMetaLine(model)");
   });
 
   test("the Scenario Catalog has a details view of its own state", () => {
@@ -694,10 +695,16 @@ describe("every details view opens with the same header", () => {
   const VIEWS: [string, string][] = [
     ["dataset", "components/datasets/catalog/DatasetDetailPanel.tsx"],
     ["agent", "components/agents/catalog/AgentDetailModal.tsx"],
+    // A model package's details are the package view's, with the model kind.
     ["package", "components/packages/publishing/PackageDetailModal.tsx"],
-    ["model", "components/models/catalog/ModelDetailModal.tsx"],
     ["scenario", "components/scenarios/catalog/ScenarioDetailModal.tsx"],
   ];
+
+  test("the model details wear the model kind on the shared header", () => {
+    expect(read("components/packages/publishing/PackageDetailModal.tsx")).toContain(
+      'kind={model ? "model" : "package"}',
+    );
+  });
 
   test.each(VIEWS)("the %s view renders the shared header", (_k, rel) => {
     // There were two stylesheets and three results: two title sizes, three
@@ -772,11 +779,12 @@ describe("every catalog page's rail opens with the same section", () => {
     ["data", "pages/dataCatalog/DataCatalogBrowse.tsx"],
   ];
 
-  /** Every browse page, Projects, Discovery and Models included. */
+  /** Every browse page, Projects and Discovery included. The Model Catalog's
+   *  page is the node page's code (`NodeCatalogBrowse` with
+   *  `packageKind="model"`), so its rail is that one, all-projects scope and all. */
   const BROWSE_PAGES: [string, string][] = [
     ...PAGES,
     ["discovery", "pages/discovery/DiscoveryCatalogBrowse.tsx"],
-    ["model", "pages/models/ModelCatalogBrowse.tsx"],
     ["scenario", "pages/scenarios/ScenarioCatalogBrowse.tsx"],
     ["projects", "pages/projects/ProjectsList.tsx"],
   ];
@@ -952,8 +960,12 @@ describe("the Node drawer's In project tab in an unsaved dataflow", () => {
     expect(src).not.toContain("accountDefaults");
     // The lockfile mirror, plus the builtin package -- which is in every
     // dataflow by construction, so its absence could only ever mean "the
-    // lockfile has not arrived yet".
-    expect(src).toContain("new Set([...projectPackages, BUILTIN_PACKAGE_DIR])");
+    // lockfile has not arrived yet". Each catalog's drawer keeps the
+    // packages of its own kind from that one set (the Model Catalog's drawer
+    // is this drawer over model packages).
+    expect(src).toMatch(
+      /new Set\(\s*\[\.\.\.projectPackages, BUILTIN_PACKAGE_DIR\]\.filter\(\(dirName\) => kindOfDir\(dirName\) === packageKind\),?\s*\)/,
+    );
   });
 
   test("the count comes from the same set as the list", () => {
@@ -1261,15 +1273,17 @@ describe("user-facing catalog copy uses sentences, not dashes", () => {
     "components/agents/catalog/AgentCatalogDrawer.tsx",
     "components/datasets/catalog/DatasetCatalogDrawer.tsx",
     "components/menus/nodes/PaletteDragHint.tsx",
-    "components/models/catalog/ModelCard.tsx",
+    // The Model Catalog: its own entry points and the shared code it runs on.
     "components/models/catalog/ModelCatalogDrawer.tsx",
-    "components/models/catalog/ModelDetailModal.tsx",
-    "components/models/catalog/useModelDelete.ts",
+    "components/models/catalog/modelFacts.tsx",
+    "components/packages/publishing/NodeCatalogDrawer.tsx",
+    "components/packages/publishing/PackageDetailModal.tsx",
     "components/menus/nodes/modelsPalette/ModelsPaletteDropdown.tsx",
     "components/menus/nodes/modelsPalette/ModelPaletteRow.tsx",
     "pages/models/ModelCatalogBrowse.tsx",
-    "pages/models/ModelCatalogBrowseCard.tsx",
-    "pages/models/ModelCatalogBrowseDrawer.tsx",
+    "pages/catalog/NodeCatalogBrowse.tsx",
+    "pages/catalog/PackageBrowseCard.tsx",
+    "pages/catalog/PackageBrowseDrawer.tsx",
     "components/scenarios/catalog/ScenarioCard.tsx",
     "components/scenarios/catalog/ScenarioCatalogDrawer.tsx",
     "components/scenarios/catalog/ScenarioDetailModal.tsx",

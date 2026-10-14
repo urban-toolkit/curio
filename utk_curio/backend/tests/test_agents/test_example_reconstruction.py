@@ -426,7 +426,7 @@ class TestProvisionedMode:
         # The lockfile is the authority (dev/101), and the install wrote it.
         from utk_curio.backend.app.packages.domain.spec_packages import project_packages
 
-        assert "curio.streetvision@1" in set(
+        assert "model.curio.ddrnet23-slim@1" in set(
             project_packages(driver.read_spec()) or ()
         ) | set(STREETVISION.required["packages"])
 
@@ -456,10 +456,10 @@ class TestResolutionModePackageTemplates:
         result = oracle_attempt(
             STREETVISION, driver, templates=TEMPLATES, example=_example(STREETVISION),
             provision_packages=False,
-            account_only_packages=["curio.streetvision@1"],
+            account_only_packages=["model.curio.ddrnet23-slim@1"],
         )
         assert result.turn.refused, "a plan naming an unenlisted template must not mint"
-        assert "curio.streetvision/image-segmentation" not in driver.roster_ids()
+        assert "model.curio.ddrnet23-slim/image-segmentation" not in driver.roster_ids()
         # The runtime's correction round is what the model actually gets told.
         correction = str(driver.calls[-1][-1]["content"])
         assert "[plan validation]" in correction
@@ -474,7 +474,7 @@ class TestResolutionModePackageTemplates:
                 driver.user_key, driver.project_id
             )
         }
-        assert "curio.streetvision/image-segmentation" in not_enlisted
+        assert "model.curio.ddrnet23-slim/image-segmentation" in not_enlisted
 
     def test_the_reviewed_enlist_resolves_it_and_authors_no_package(
         self, client, user_and_token, tmp_curio, monkeypatch
@@ -488,7 +488,7 @@ class TestResolutionModePackageTemplates:
         driver.create_project()
         driver.install_and_attach()
         driver.install_datasets(fixture.required["datasets"])
-        driver.install_packages_to_account_only(["curio.streetvision@1"])
+        driver.install_packages_to_account_only(["model.curio.ddrnet23-slim@1"])
         researcher = driver.install_and_attach_second(RESEARCHER_COORD)
 
         expected_graph = canonical_graph_from_spec(example, templates=TEMPLATES)
@@ -503,7 +503,7 @@ class TestResolutionModePackageTemplates:
                 "toolRequest": {
                     "tool": "package.install",
                     "params": {
-                        "dirName": "curio.streetvision@1",
+                        "dirName": "model.curio.ddrnet23-slim@1",
                         "reason": "its image segmentation template",
                     },
                 }
@@ -546,7 +546,7 @@ class TestResolutionModePackageTemplates:
         # The enlist put the package's template on the roster. Named rather
         # than counted: the point is that THIS one arrived.
         roster = driver.roster_ids()
-        assert "curio.streetvision/image-segmentation" in roster
+        assert "model.curio.ddrnet23-slim/image-segmentation" in roster
 
         phase["name"] = "plan"
         driver.with_attachment(dfb)
@@ -558,7 +558,7 @@ class TestResolutionModePackageTemplates:
         built = {
             node.get("type") for node in attempt_mod.spec_nodes(spec)
         }
-        assert "curio.streetvision/image-segmentation" in built
+        assert "model.curio.ddrnet23-slim/image-segmentation" in built
         assert "package.draft.apply" not in driver.applied
 
 

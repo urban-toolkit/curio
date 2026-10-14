@@ -87,7 +87,6 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 | `--discovery-root PATH` | `<repo_root>/discovery/` | Where the shipped Discovery Catalog sources are read from. Your own sources stay in `.curio/discovery/` |
 | `--discovery-max-download-mb MB` | `1024` | The largest file the Discovery Catalog downloads, or adds from a bucket. A source's manifest may set a lower limit for itself |
 | `--media-cache-max-gb GB` | `20` | How much each account may hold in cached bucket files and downloaded street-level images |
-| `--models-root PATH` | `<repo_root>/models/` | Where the shipped Model Catalog models are read from |
 | `--packages-root PATH` | `<repo_root>/packages/` | Where the shared Node Catalog is read from and published to. Start it from a copy of `packages/`: the built-in nodes are installed from it |
 | `--save-node-outputs` / `--no-save-node-outputs` | off | Whether a new node's **Save output dataset** toggle starts on. Users can still flip it on each node |
 | `--allow-publish` / `--no-allow-publish` | on | Whether the node, data and agent catalogs allow Publish/Unpublish |
@@ -400,8 +399,10 @@ saved under its title by its first run.
 
 - Charts, maps and the other nodes that draw in the browser draw while the
   dataflow is open.
-- A node that needs data only the browser makes (an Autark data or compute
-  node, a Spatial Join) runs, with the nodes below it, in a tab. The tab that
+- An Autark node that only loads data (a `data` section, with no map, plot or
+  compute step) runs on the server, like a code node.
+- A node that needs data only the browser makes (an Autark compute node, a
+  Spatial Join) runs, with the nodes below it, in a tab. The tab that
   started the run runs them by itself; otherwise opening the dataflow offers
   **Finish run**.
 - While a run goes, **Run All** stops it. The run ends before its next node
@@ -1056,13 +1057,11 @@ a run is going, and a selection only highlights it (see
 press play or run the dataflow. Without WebGPU nothing is drawn on its own;
 pressing play says why.
 
-### Legend titles
+### Layer titles and colors
 
-A `layerRef`'s `legendTitle` titles the legend of its layer, on a vector or a
-raster layer. Without one, a layer of the node's input (`input_0`) is titled
-with the column it is coloured by (`getFnv`), and a table the document loads
-itself keeps the table's name (`table_osm_roads`). `legendTitle` is Curio's own
-key, not the Autark grammar's.
+A `layerRef`'s `title` names its layer in the legend. Without one, the legend
+reads the layer's table: `input_0` for the node's input, `table_osm_roads` for
+a table the document loads. Two layers of one map cannot have the same title.
 
 ```json
 {
@@ -1070,15 +1069,26 @@ key, not the Autark grammar's.
     "layerRefs": [
       {
         "dataRef": "input_0",
+        "title": "Building height (m)",
         "getFnv": "height",
         "getFnvType": "quantitative",
-        "colorMapInterpolator": "interpolateViridis",
-        "legendTitle": "Building height (m)"
+        "colorMapInterpolator": "interpolateViridis"
       }
     ]
   }
 }
 ```
+
+A layer can also be drawn in one `color` (`"#d62728"`), with no legend. A
+line layer takes a `width` in meters, and a polygon layer a `stroke` color, or
+`"stroke": false` for no outline. A raster layer takes `colorMapReverse` to
+run its scheme from its highest value to its lowest, `colorMapCenter` to put a
+value at the middle of its scheme, and `transferFunction` for how opaque its
+cells are; every cell with a value is opaque unless it says otherwise.
+
+A layer that names a scenario of the dataflow by its id, `"scenario":
+"weather-aware"`, is drawn in that scenario's color, the color of its box.
+`scenario` is Curio's own key, not the Autark grammar's.
 
 ### The starter document
 
@@ -1093,8 +1103,8 @@ The first matching rule wins:
 | the input has | you get |
 |---|---|
 | two or more layers with geometry | a map with one layer per table |
-| one layer with a quantitative column | a map coloured by the first quantitative column, `interpolateViridis` |
-| one layer with a nominal column | a map coloured by the first nominal column, `schemeTableau10` |
+| one layer with a quantitative column | a map coloured by the first quantitative column, `interpolateViridis`, its legend titled with the column |
+| one layer with a nominal column | a map coloured by the first nominal column, `schemeTableau10`, its legend titled with the column |
 | one layer with geometry only | a plain map |
 | no geometry, or only rasters | the editor stays empty |
 
@@ -1295,17 +1305,17 @@ For the full guide, covering searching, downloading, storage sources, collection
 
 ## Model Catalog
 
-The **Model Catalog** holds the trained models your nodes can run. DDRNet23-Slim, which labels street photos with the 19 Cityscapes classes, ships with Curio; models you add from the Discovery Catalog's **Hugging Face models** land here too. An **Image Segmentation** node, from the Street Vision package, runs the model its code names with `curio_load_model("<id>")`: drag a model from **Model Catalog** in the left Tools panel onto the node to change it.
+The **Model Catalog** holds the trained models your nodes can run. A model is a package: its weights and the node that runs it. DDRNet23-Slim, which labels street photos with the 19 Cityscapes classes, ships with Curio, with an **Image Segmentation** node; models you add from the Discovery Catalog's **Hugging Face models** land here too, each with an Image Segmentation node of its own. A node runs the model its code names with `curio_load_model("<id>")`: drag a model from **Model Catalog** in the left Tools panel onto the node to change it.
 
-Shipped models are folders under `<repo_root>/models/`, relocated with **`--models-root`**; models you add are yours, under `.curio/users/<user-key>/models/`.
+A node runs a model once the model's package is in your account: added from the Model Catalog (**Add to project** in its canvas drawer, **Add to all projects** on its page), or brought by a dataflow that names it, such as example 10. Shipped models are packages under `<repo_root>/packages/`, relocated with **`--packages-root`**; models you add from the Discovery Catalog are yours, in your package store.
 
 For the full guide, covering runtimes, libraries, the manifest, and sharing a dataflow that names a model, see [docs/MODEL-CATALOG.md](MODEL-CATALOG.md).
 
 ## Agent Catalog
 
-Agents are AI assistants you attach to your dataflow. The catalog lists ten:
+Agents are AI assistants you attach to your dataflow. The catalog lists seven:
 **Chat**, which explains a node or the whole dataflow, diagnoses errors and
-helps you define what to build, and nine that build dataflows and nodes, find
+helps you define what to build, and six that build dataflows and nodes, find
 data, connect nodes, research, and recommend or author packages. Each agent
 answers with the LLM configuration chosen for it on the **Agent configuration**
 tab of **API Settings** (above), else your default.

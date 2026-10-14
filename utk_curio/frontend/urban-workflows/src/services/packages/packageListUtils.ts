@@ -44,6 +44,21 @@ export function sortPackages(packages: PackagePayload[], mode: SortMode): Packag
 }
 
 /**
+ * Every package an account can add: the shared catalog's rows and the
+ * account's own (imported, published or downloaded into its store, so in no
+ * catalog), once per `dirName`, a package in both as the catalog's row.
+ */
+export function catalogAndOwnPackages(
+  catalog: PackagePayload[],
+  installed: PackagePayload[],
+): PackagePayload[] {
+  const rows = new Map<string, PackagePayload>();
+  for (const row of installed) rows.set(row.dirName, row);
+  for (const row of catalog) rows.set(row.dirName, row);
+  return Array.from(rows.values());
+}
+
+/**
  * Returns true when the package matches a free-text search query
  * against its name, publisher, description and packageId fields.
  */

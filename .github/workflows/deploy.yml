@@ -69,7 +69,6 @@ on:
       - 'packages/**'
       - 'datasets/**'
       - 'discovery/**'
-      - 'models/**'
       - 'vendor/**'
   workflow_dispatch:
     inputs:

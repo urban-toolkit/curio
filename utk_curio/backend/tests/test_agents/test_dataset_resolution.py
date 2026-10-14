@@ -238,11 +238,19 @@ class TestDelegationHome:
         from utk_curio.backend.app.agents.application.turns import delegates as services
 
         spec = self._spec()
+        # Content generation is the Node Builder's own mode, so NB is the delegate.
         home, _ = services._delegation_home(
-            spec, "agent.node-content-builder@1.0.0", "node.content.generate", {},
+            spec, NB, "node.content.generate", {},
             node_id="n1", user_key="1",
         )
         assert home["coord"] == NB
+        # The delegate does not pick the home: another agent's task for the
+        # same node lands at that Node Builder too.
+        other, _ = services._delegation_home(
+            spec, "agent.researcher@1.0.0", "research.verify", {},
+            node_id="n1", user_key="1",
+        )
+        assert other["coord"] == NB and other["attachmentId"] == home["attachmentId"]
 
     def test_discovery_on_an_incompatible_node_falls_back_to_dev_72(self):
         from utk_curio.backend.app.agents.application.turns import delegates as services

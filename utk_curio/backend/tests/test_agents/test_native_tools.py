@@ -194,9 +194,9 @@ class TestTheSystemTurn:
         assert content.CANDIDATES_INSTRUCTION in native and content.CANDIDATES_DISCOVERY_ADDENDUM in native
 
     def test_the_native_delegation_paragraph_names_the_delegate_tool(self):
-        entries = [("node.content.generate", "Node Content Builder")]
+        entries = [("node.content.generate", "Node Builder")]
         native = content.delegation_instruction(entries, native_tools=True)
-        assert "node.content.generate" in native and "Node Content Builder" in native
+        assert "node.content.generate" in native and "Node Builder" in native
         assert "delegate tool" in native and "delegateRequest" not in native
         assert "delegateRequest" in content.delegation_instruction(entries)
 

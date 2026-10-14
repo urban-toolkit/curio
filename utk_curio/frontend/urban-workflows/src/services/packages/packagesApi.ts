@@ -18,6 +18,7 @@ import type {
   FunctionTemplatePayload,
   FunctionTemplateRequest,
   InstallResponse,
+  PackageKind,
   PackageMetadataUpdate,
   PackagePayload,
   ProjectPackagesResponse,
@@ -26,19 +27,41 @@ import type {
   WorkflowDepsInstallResponse,
 } from "./types";
 
+/** `kind=<kind>` when a listing keeps one kind of package, and `usage=true`
+ *  when it says which packages a dataflow uses; nothing when neither. */
+function listingQuery(kind?: PackageKind, usage = false): string {
+  const params = [kind ? `kind=${kind}` : "", usage ? "usage=true" : ""].filter(Boolean);
+  return params.length ? `?${params.join("&")}` : "";
+}
+
 export const packagesApi = {
-  /** Installed packages for the current user. */
-  listInstalled(): Promise<{ packages: PackagePayload[] }> {
-    return apiFetch("/api/packages");
+  /** Installed packages for the current user; only *kind*'s when given. With
+   *  `usage`, each row says `inUse`: whether one of the account's dataflows
+   *  uses it, which costs the backend a read of every project. */
+  listInstalled(
+    kind?: PackageKind,
+    opts: { usage?: boolean } = {},
+  ): Promise<{ packages: PackagePayload[] }> {
+    return apiFetch(`/api/packages${listingQuery(kind, !!opts.usage)}`);
   },
 
-  /** Fixture-backed catalog: package rows plus family index and collision report. */
-  catalog(): Promise<{
+  /** Fixture-backed catalog: package rows plus family index and collision
+   *  report; only *kind*'s rows when given. */
+  catalog(kind?: PackageKind): Promise<{
     packages: PackagePayload[];
     families: CatalogFamilyPayload[];
     catalogCollisions: CatalogCollisionPayload[];
   }> {
-    return apiFetch("/api/packages/catalog");
+    return apiFetch(`/api/packages/catalog${listingQuery(kind)}`);
+  },
+
+  /** A model package's weights license text, from the account's copy or the
+   *  catalog's. 404 when its weights have none. */
+  async weightsLicense(dirName: string): Promise<string> {
+    const res = await apiFetch<{ text?: string }>(
+      `/api/packages/${encodeURIComponent(dirName)}/weights-license`,
+    );
+    return res?.text ?? "";
   },
 
   /** Sideload a ``.curio.zip`` archive (multipart). */
@@ -59,8 +82,12 @@ export const packagesApi = {
     });
   },
 
-  uninstall(dirName: string): Promise<void> {
-    return apiFetch(`/api/packages/${dirName}`, { method: "DELETE" });
+  /** Delete a package from the account's store and from every lockfile. With
+   *  `unusedOnly` (a catalog page's Remove from account) the backend refuses,
+   *  409, while a dataflow uses it, and drops its defaults entry too. */
+  uninstall(dirName: string, opts: { unusedOnly?: boolean } = {}): Promise<void> {
+    const query = opts.unusedOnly ? "?unusedOnly=true" : "";
+    return apiFetch(`/api/packages/${dirName}${query}`, { method: "DELETE" });
   },
 
   /**

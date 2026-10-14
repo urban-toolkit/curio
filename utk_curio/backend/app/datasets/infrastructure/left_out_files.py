@@ -1,13 +1,12 @@
 """The catalog files the pip package leaves out, fetched from GitHub on first use.
 
-The repository holds every file of the Data Catalog (``datasets/``), the
-Model Catalog (``models/``) and the model packages (``packages/<dir>/models/``).
-PyPI takes no file over 100 MiB, so the pip package (the sdist, and the wheel
-built from it) leaves out the big ones, named in ``left_out_files.json``
-beside this module. Each is the data file of a dataset, the entry of a model
-or the weight a model package's ``model`` block names; the small files of its
-folder (the manifest, a parquet's decode sidecar, a license, a package's code)
-still ship. ``MANIFEST.in`` excludes exactly the listed files, which
+The repository holds every file of the Data Catalog (``datasets/``) and of the
+model packages (``packages/<dir>/models/``). PyPI takes no file over 100 MiB,
+so the pip package (the sdist, and the wheel built from it) leaves out the big
+ones, named in ``left_out_files.json`` beside this module. Each is the data
+file of a dataset or the weights a model package's ``model`` block names; the
+small files of its folder (the manifest, a parquet's decode sidecar, a
+license, a package's code) still ship. ``MANIFEST.in`` excludes exactly the listed files, which
 ``test_left_out_files`` checks. A model package's weight must also match the
 sha256 its package's ``integrity.json`` names (``fetch``'s *expected_sha256*).
 
@@ -22,8 +21,8 @@ its size and sha256 against the record, and places it under Curio's state
 directory, at ``<state>/fetched/<commit>/<path>`` (``<state>`` is ``.curio``,
 or ``CURIO_STATE_DIR``): a pip install's site-packages may be read-only. The
 small files of its catalog folder are copied beside it, so the folder there
-reads as the folder in a clone: a model's manifest beside its entry, a
-parquet's sidecar beside the parquet.
+reads as the folder in a clone: a model package's manifest and code beside
+its weights, a parquet's sidecar beside the parquet.
 
 - Placing is atomic. The bytes go to a file under ``.partial/`` on the same
   file system, are checked, are made readable by every account (an isolated
@@ -33,7 +32,8 @@ parquet's sidecar beside the parquet.
   the file waits for it (``common/file_locks.exclusive_lock``), then reads
   what it placed.
 - ``<state>/fetched`` is its owner's alone, as the sandbox's isolation leaves
-  the shipped models (``sandbox/isolation/hardening.py`` lists both): an
+  the shipped model packages' weights (``sandbox/isolation/hardening.py``
+  lists both): an
   execution account reads a fetched file through the hardlink a run stages.
 - A download first removes the files fetched for other releases, so an
   upgrade does not keep the old ones.

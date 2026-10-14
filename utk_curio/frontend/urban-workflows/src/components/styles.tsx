@@ -62,7 +62,7 @@ import {
     canApplyModelToNode,
     hasModelDrag,
     readModelDragPayload,
-} from "../services/modelCatalog";
+} from "../services/packages/modelApplication";
 import "./styles.css";
 import { useStarterContext } from "../providers/StarterProvider";
 import { useCode } from "../hook/useCode";

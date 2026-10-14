@@ -412,7 +412,7 @@ describe("AgentBuilderStrip missing specialist (dev/106)", () => {
   const installProposal = {
     proposalId: "ip1",
     tool: "project.install",
-    summary: "Install Node Content Builder in this project",
+    summary: "Install Node Builder in this project",
     status: "pending",
   } as unknown as NonNullable<AgentAttachment["activeProposal"]>;
   const runs = { "node-aaaa-1": "failed", "node-bbbb-2": "failed" } as const;
@@ -430,7 +430,7 @@ describe("AgentBuilderStrip missing specialist (dev/106)", () => {
       />,
     );
     const group = screen.getByRole("group", { name: "Missing specialist" });
-    expect(group).toHaveTextContent("Install Node Content Builder in this project");
+    expect(group).toHaveTextContent("Install Node Builder in this project");
     fireEvent.click(within(group).getByRole("button", { name: "Add to project" }));
     await waitFor(() => expect(onApplyProposal).toHaveBeenCalledWith("ip1"));
     // Retry stays available alongside.
@@ -442,7 +442,7 @@ describe("AgentBuilderStrip missing specialist (dev/106)", () => {
   });
 
   it("renders one reason line for six identical node failures", () => {
-    const reason = "specialist not installed: Node Content Builder is not installed in this project";
+    const reason = "specialist not installed: Node Builder is not installed in this project";
     const errors = Object.fromEntries(
       ["n1", "n2", "n3", "n4", "n5", "n6"].map((n) => [n, reason]),
     );

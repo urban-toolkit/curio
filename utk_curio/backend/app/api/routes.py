@@ -498,6 +498,8 @@ def get_starters():
     ``<packageId>/<templateId>@<major>``. The pre-installed ``curio.builtin@1``
     package ships no sources, so dragging a built-in node onto the canvas
     yields an empty editor; third-party packages may ship a starter per template.
+    A model package's template without a ``source`` gets the cell Curio writes
+    for its model's type (``packages.application.starters``).
     """
     from utk_curio.backend.app.packages.application.starters import generate_package_starters
     from utk_curio.backend.app.projects.services import _user_dir_key

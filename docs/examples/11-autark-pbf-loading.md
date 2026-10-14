@@ -32,8 +32,8 @@ interaction edge (see [Linking charts](../USAGE.md#linking-charts)).
 
 ## Data
 
-`docs/examples/data/lower_mnt.osm.pbf` is a pre-extracted OpenStreetMap extract for Lower Manhattan
-(regenerate with `scripts/build_example_pbfs.py`).
+`docs/examples/data/lower_mnt.osm.pbf` is an OpenStreetMap extract for Lower Manhattan (© OpenStreetMap
+contributors, ODbL 1.0), built by `scripts/build_example_pbfs.py`.
 
 ## Step 1: Load the OSM layer stack from a PBF (`pbf-load`)
 
@@ -80,7 +80,7 @@ and pickable.
   { "dataRef": "table_osm_parks" },
   { "dataRef": "table_osm_water" },
   { "dataRef": "table_osm_buildings", "isPick": true, "getFnv": "height", "getFnvType": "quantitative", "defaultFnv": 10,
-    "legendTitle": "Building height (m)" },
+    "title": "Building height (m)" },
   { "dataRef": "table_osm_roads" }
 ]}
 ```

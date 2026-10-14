@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import React from "react";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
@@ -6,6 +8,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { ScenarioCatalogBrowse } from "../../pages/scenarios/ScenarioCatalogBrowse";
 import { scenarioCatalogApi } from "../../services/scenarioCatalog/scenarioCatalogApi";
 import type { ScenarioRow } from "../../services/scenarioCatalog";
+import { declaredValue } from "../_support/cssRules";
 import { exampleScenario, heatDetails, heatScenario } from "../_support/scenarioRows";
 
 jest.mock("../../services/scenarioCatalog/scenarioCatalogApi", () => ({
@@ -115,6 +118,34 @@ describe("ScenarioCatalogBrowse", () => {
     expect(example.getByText("1 node")).toBeInTheDocument();
     expect(example.getByText("Example")).toBeInTheDocument();
     expect(card("p-heat/s-cool").tagName).toBe("ARTICLE");
+  });
+
+  test("every card wears the scenario kind colour, and its own colour as the square before its name", async () => {
+    const rows = [heatScenario(), exampleScenario()];
+    routeApi(rows);
+    renderPage();
+    await waitFor(() => expect(card("p-heat/s-cool")).toBeInTheDocument());
+    for (const row of rows) {
+      const el = card(row.key);
+      // Nothing on the card sets a colour: its strip and selected border come
+      // from the stylesheet, the same for every scenario.
+      expect(el.getAttribute("style")).toBeNull();
+      const heading = within(el).getByRole("heading", { level: 2 });
+      expect(heading).toHaveTextContent(row.name);
+      const swatches = heading.querySelectorAll<HTMLElement>("[data-curio-scenario-swatch]");
+      expect(swatches).toHaveLength(1);
+      expect(swatches[0].style.getPropertyValue("--scenario-color")).toBe(row.color);
+    }
+
+    const css = fs.readFileSync(
+      path.resolve(__dirname, "../../pages/scenarios/ScenarioCatalogBrowseCard.module.css"),
+      "utf8",
+    );
+    expect(declaredValue(css, ".strip_scenario", "background")).toBe("var(--curio-kind-scenario-fg)");
+    expect(declaredValue(css, ".cardActive.card_scenario", "border-color")).toBe(
+      "var(--curio-kind-scenario-fg)",
+    );
+    expect(css).not.toMatch(/var\(\s*--scenario-color\b/);
   });
 
   test("the drawer opens on the first card, as on the other catalog pages", async () => {

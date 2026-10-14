@@ -64,7 +64,7 @@ input chip `[!! input_0 !!]`; the document writes no `data` entry for it.
         "getFnvType": "quantitative",
         "colorMapInterpolator": "interpolateViridis",
         "isPick": true,
-        "legendTitle": "Area (km2)"
+        "title": "Area (km2)"
       }
     ]
   }
@@ -130,7 +130,7 @@ their position, `input_0` and `input_1`, and the document draws both:
 {
   "map": {
     "layerRefs": [
-      { "dataRef": "input_0", "getFnv": "area_km2", "getFnvType": "quantitative", "colorMapInterpolator": "interpolateViridis", "legendTitle": "Area (km2)" },
+      { "dataRef": "input_0", "getFnv": "area_km2", "getFnvType": "quantitative", "colorMapInterpolator": "interpolateViridis", "title": "Area (km2)" },
       { "dataRef": "input_1" }
     ]
   }

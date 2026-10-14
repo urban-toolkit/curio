@@ -317,11 +317,11 @@ class TestDodThroughTheResearcher:
             "backgroundColor": "#336699"}
 
 
-class TestWeatherInParisScenario:
-    """dev/90 A1 — the reference recording's full loop: 'what's the weather
-    in Paris?' → web.search (mocked provider) → the finding delegated with
-    the post-it requirements → runtime-minted draft → Apply → a colored note
-    carrying the weather text and its source link."""
+class TestCoolRoofsScenario:
+    """dev/90 A1, the reference recording's full loop: a research question
+    → web.search (mocked provider) → the finding delegated with the post-it
+    requirements → runtime-minted draft → Apply → a colored note carrying
+    the finding and its source link."""
 
     RESEARCHER = "agent.researcher@1.0.0"
     PACKAGE_BUILDER = "agent.package-builder@1.0.0"
@@ -341,15 +341,15 @@ class TestWeatherInParisScenario:
         monkeypatch.setattr(egress, "fetch", lambda url, **kw: EgressResult(
             url=url, final_url=url, status=200, content_type="application/json",
             body=json.dumps({"results": [{
-                "title": "Paris weather now",
-                "url": "https://weather.test/paris",
-                "snippet": "18°C, partly cloudy, light breeze",
+                "title": "Chicago cool roofs",
+                "url": "https://heat.test/cool-roofs",
+                "snippet": "white roofs ran 18°C cooler on summer afternoons",
             }]}),
         ))
 
         user, token = user_and_token
         pid = client.post("/api/projects", json={
-            "name": "paris",
+            "name": "cool roofs",
             "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
             "outputs": [],
         }, headers=self._auth(token)).get_json()["id"]
@@ -364,31 +364,31 @@ class TestWeatherInParisScenario:
 
         # dev/90 A13 — the recording's row: yellow QUESTION note first,
         # then the green ANSWER note with markdown-composed content.
-        weather_note = [{
+        roof_notes = [{
             "templateId": "postit-note", "title": "Question",
-            "content": "What's the weather in Paris?",
+            "content": "How much do cool roofs lower summer surface temperatures in Chicago?",
             "appearance": {"backgroundColor": "yellow"},
         }, {
-            "templateId": "postit-note", "title": "Weather in Paris",
-            "content": ("**Now:** 18°C, partly cloudy\n"
-                        "- light breeze\n"
-                        "- [source](https://weather.test/paris)"),
+            "templateId": "postit-note", "title": "Cool roofs in Chicago",
+            "content": ("**Finding:** white roofs ran 18°C cooler\n"
+                        "- on summer afternoons\n"
+                        "- [source](https://heat.test/cool-roofs)"),
             "appearance": {"backgroundColor": "green"},
         }]
         replies = [
             # Round 1: the Researcher searches the internet first.
             '```curio.v1\n{"toolRequest": {"tool": "web.search", '
-            '"params": {"q": "weather in Paris now"}}}\n```',
+            '"params": {"q": "cool roofs in Chicago"}}}\n```',
             # Round 2: findings in hand, it delegates authoring with the look.
             '```curio.v1\n{"delegateRequest": {"capability": "node.kind.author", '
             '"inputs": {"look": "post-it note", "finding": '
-            '"Paris: 18\\u00b0C, partly cloudy", '
-            '"source": "https://weather.test/paris"}}}\n```',
+            '"Chicago: white roofs ran 18\\u00b0C cooler", '
+            '"source": "https://heat.test/cool-roofs"}}}\n```',
             # The CHILD (Package Builder) returns the draft with the note.
             "```json\n" + json.dumps(
-                {"packageDraft": _postit_scenario(weather_note)}) + "\n```",
+                {"packageDraft": _postit_scenario(roof_notes)}) + "\n```",
             # Round 3: the Researcher's visible answer.
-            "Paris is 18°C and partly cloudy — the note above awaits your review.",
+            "White roofs ran 18°C cooler in Chicago; the note above awaits your review.",
         ]
         calls: list = []
 
@@ -405,7 +405,7 @@ class TestWeatherInParisScenario:
 
         run = client.post(
             f"/api/agents/projects/{pid}/attachments/{att_id}/run",
-            json={"message": "what's the weather in Paris?"},
+            json={"message": "how much do cool roofs lower summer surface temperatures in Chicago?"},
             headers=self._auth(token),
         )
         assert run.status_code == 200, run.get_data(as_text=True)
@@ -418,8 +418,8 @@ class TestWeatherInParisScenario:
                       if isinstance(m.get("content"), str)]
         search_idx = next(i for i, c in enumerate(transcript)
                           if "[tool result] web.search: ok" in c)
-        assert "weather.test/paris" in transcript[search_idx]
-        assert "partly cloudy" in transcript[search_idx]
+        assert "heat.test/cool-roofs" in transcript[search_idx]
+        assert "summer afternoons" in transcript[search_idx]
         delegate_idx = next(i for i, c in enumerate(transcript)
                             if "[delegate result]" in c)
         assert search_idx < delegate_idx
@@ -441,15 +441,15 @@ class TestWeatherInParisScenario:
         # The recording's row, in order: yellow question note, then the green
         # markdown-composed answer note carrying the finding + source link.
         question = nodes["Question"]
-        assert question["content"] == "What's the weather in Paris?"
+        assert question["content"] == "How much do cool roofs lower summer surface temperatures in Chicago?"
         assert question["metadata"]["appearance"]["backgroundColor"] == NAMED_COLORS["yellow"]
-        answer = nodes["Weather in Paris"]
-        assert "**Now:**" in answer["content"]  # markdown-composed, not prose
-        assert "- [source](https://weather.test/paris)" in answer["content"]
+        answer = nodes["Cool roofs in Chicago"]
+        assert "**Finding:**" in answer["content"]  # markdown-composed, not prose
+        assert "- [source](https://heat.test/cool-roofs)" in answer["content"]
         assert answer["metadata"]["appearance"]["backgroundColor"] == NAMED_COLORS["green"]
         ordered = [n.get("title") for n in spec["dataflow"]["nodes"]
-                   if n.get("title") in ("Question", "Weather in Paris")]
-        assert ordered == ["Question", "Weather in Paris"]  # question FIRST
+                   if n.get("title") in ("Question", "Cool roofs in Chicago")]
+        assert ordered == ["Question", "Cool roofs in Chicago"]  # question FIRST
 
 
 _CURIO_NOTES_TSX = """\
@@ -638,14 +638,14 @@ class TestReuseFirstNoteCreation:
         script["replies"] = [
             '```curio.v1\n{"toolRequest": {"tool": "node.create", "params": '
             '{"nodeType": "ai.agent.postit/postit-note@1", "content": '
-            '"**Now:** 19\\u00b0C, partly cloudy\\n- [source](https://w.test/p)", '
-            '"goal": "Weather in Paris"}}}\n```',
+            '"**Finding:** 19\\u00b0C cooler on white roofs\\n- [source](https://heat.test/cool-roofs)", '
+            '"goal": "Cool roofs in Chicago"}}}\n```',
             "Note placed for review.",
         ]
         script["calls"] = 0
         run2 = client.post(
             f"/api/agents/projects/{pid}/attachments/{att_id}/run",
-            json={"message": "what's the weather in Paris?"},
+            json={"message": "how much do cool roofs lower summer surface temperatures in Chicago?"},
             headers=self._auth(token))
         parts = run2.get_json()["content"]
         note_proposal = next(p for p in parts if p["type"] == "proposal")
@@ -663,4 +663,4 @@ class TestReuseFirstNoteCreation:
         spec = projects_storage.read_spec(user_key, pid)
         note = next(n for n in spec["dataflow"]["nodes"]
                     if n["type"] == "ai.agent.postit/postit-note")
-        assert "**Now:** 19°C" in note["content"]  # markdown-composed answer
+        assert "**Finding:** 19°C" in note["content"]  # markdown-composed answer

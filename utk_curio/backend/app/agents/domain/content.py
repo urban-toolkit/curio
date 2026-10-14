@@ -67,7 +67,7 @@ PACKAGE_AUTHORING_CAPABILITIES = frozenset({
 #: generation). An agent declaring one is a catalog card.
 STRUCTURED_CAPABILITIES = frozenset({
     "node.content.generate", "dataset.discover", "research.verify",
-    "research.notes.compose", *PACKAGE_AUTHORING_CAPABILITIES,
+    "research.notes.compose", "package.recommend", *PACKAGE_AUTHORING_CAPABILITIES,
 })
 # Tool ids share the capability grammar (mirrors manifest.CAPABILITY_ID_RE —
 # duplicated here so the content contract stays import-light).

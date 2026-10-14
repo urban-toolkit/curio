@@ -1187,8 +1187,8 @@ def _template_index() -> dict[str, dict]:
     """Map '<packageId>/<templateId>' -> template, from the in-repo packages.
 
     Deliberately the in-repo ``packages/`` tree rather than a user store: that is
-    what makes ``curio.streetvision`` resolvable for example 10 even though the
-    package is not auto-installed. Do not repoint this at ``.curio``.
+    what makes ``model.curio.ddrnet23-slim`` resolvable for example 10 even
+    though the package is not auto-installed. Do not repoint this at ``.curio``.
     """
     index: dict[str, dict] = {}
     for path in sorted(glob.glob(os.path.join(PACKAGES_DIR, "*", "manifest.json"))):

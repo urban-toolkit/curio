@@ -40,7 +40,7 @@ def _traceback(last_line: str, *, preamble: str = "") -> str:
 
 def test_names_the_module_and_its_distribution(monkeypatch):
     # The premise, stated rather than assumed of the environment: nothing
-    # installed provides sklearn (scout.routing@1 installs scikit-learn).
+    # installed provides sklearn (model.scout.weather-gnn@1 installs scikit-learn).
     monkeypatch.setattr(pip_runner, "distributions_for_module", lambda module: [])
     found = detect(_traceback("ModuleNotFoundError: No module named 'sklearn'"))
     assert found["module"] == "sklearn"
