@@ -363,7 +363,7 @@ class TestLargeLookSpecDelegation:
 class TestChildAnswersInToolRequestShape:
     """dev/90 A7 route replay of the live screenshots: the package-writing
     child answers with a curio.v1 toolRequest tail (it is tool-less as a
-    delegate) — the runtime unwraps and mints anyway."""
+    delegate), and the runtime unwraps and mints anyway."""
 
     def test_delegation_mints_from_the_tool_request_reply(
             self, client, user_and_token, tmp_curio, monkeypatch):
@@ -737,7 +737,7 @@ def _ukey(client, user):
 
 def _write_store_package(user_key, dir_name, package_id, name, template_ids,
                          description="Colored note surfaces."):
-    """A package in the user's store — one the Node Builder wrote for a
+    """A package in the user's store: one the Node Builder wrote for a
     previous project, which never enters the committed catalog."""
     from utk_curio.backend.app.packages.repositories.store import user_packages_dir
 
@@ -766,7 +766,7 @@ def _write_store_package(user_key, dir_name, package_id, name, template_ids,
 
 
 class TestAuthoringDelegateReuseEvidence:
-    """dev/94 — the package agent's instruction opened with "Reuse first.
+    """dev/94: the package agent's instruction opened with "Reuse first.
     Before authoring anything, read packages.catalog … never a duplicate
     package", and it held that tool only as a direct ATTACHMENT. As a DEC-046
     delegate it runs structurally tool-less — which is the path packages are

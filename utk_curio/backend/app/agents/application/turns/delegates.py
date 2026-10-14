@@ -1215,7 +1215,7 @@ def _authoring_reuse_evidence(
     catalog tool either.
 
     The package agent's instruction opened with "Reuse first. Before authoring
-    anything, read packages.catalog … never a duplicate package" — and it held
+    anything, read packages.catalog … never a duplicate package", and it held
     that tool only as a direct attachment. As a DEC-046 delegate it runs
     structurally tool-less, which is the path packages are actually authored
     on, so its first instruction was unexecutable and it had no way to know:

@@ -2391,7 +2391,7 @@ class TestPlanEdgeApply:
 
 
 class TestPackageBuilderTools:
-    """dev/89 commit 8 — package.draft.apply: the ONE package-writing mutate
+    """dev/89 commit 8, package.draft.apply: the ONE package-writing mutate
     contract, which the Node Builder's chat holds. Mint runs the isolated
     build service and persists bounded provenance; Apply promotes the exact
     reviewed artifact digest, inserts the requested nodes server-side

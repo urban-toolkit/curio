@@ -233,8 +233,8 @@ class TestStreamRun:
 
 class TestExecutionRecords:
     """Execution records on agent turns (memo dev/37): every completed run
-    pins its DEC-031 reproducibility inputs and Actual usage on the transcript
-    — the transcript IS the run history.
+    pins its DEC-031 reproducibility inputs and Actual usage on the transcript:
+    the transcript IS the run history.
 
     The Dataset Finder runs these: its grants are a fixed list the records
     can pin exactly."""

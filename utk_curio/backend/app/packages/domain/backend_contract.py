@@ -3,8 +3,8 @@
 Generated server-side package code never runs in the Curio host process:
 each invocation spawns a short-lived, resource-limited worker (memo dev/91
 §3) that receives a request envelope and writes a reply envelope. Every
-party — the HTTP route, the runtime, the child-side harness, the build-time
-probe, and the package-writing prompt's contract — speaks the shapes defined
+party (the HTTP route, the runtime, the child-side harness, the build-time
+probe, and the package-writing prompt's contract) speaks the shapes defined
 HERE and nowhere else (the dev/90 A15 lesson: a contract stated in two
 places WILL drift; this module is the single spelling).
 
