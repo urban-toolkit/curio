@@ -157,6 +157,20 @@ def test_the_model_catalog_button_opens_its_own_drawer_and_a_card_its_details(
     expect(_card(drawer, DEEP_UMBRA)).to_contain_text("Used with the permission of SCOUT's authors")
     expect(_card(drawer, DDRNET)).to_contain_text("MIT; trained on Cityscapes")
     expect(drawer.locator('[role="alert"]')).to_have_count(0)
+
+    # DDRNet23-Slim's labels, and its weights' license text.
+    _card(drawer, DDRNET).get_by_role("button", name="View details", exact=True).click()
+    modal = page.get_by_role("dialog", name="Model details")
+    expect(modal).to_be_visible(timeout=10000)
+    expect(_row(modal, "Labels")).to_have_text("19")
+    expect(_row(modal, "Node")).to_have_text("Image Segmentation")
+    modal.get_by_role("button", name="View license").click()
+    expect(modal.locator('[data-curio-model-license="true"]')).to_contain_text("Cityscapes", timeout=10000)
+    modal.get_by_role("button", name="Close").click()
+    expect(modal).to_have_count(0, timeout=10000)
+
+    # Every check comes before the captures, so a frame that has no baseline
+    # yet cannot hide one.
     save_workflow_test_screenshot(page, "model-catalog-drawer", test_name="test_drawer")
 
     _card(drawer, DEEP_UMBRA).get_by_role("button", name="View details", exact=True).click()
@@ -174,16 +188,6 @@ def test_the_model_catalog_button_opens_its_own_drawer_and_a_card_its_details(
     expect(modal.get_by_role("heading", name="Modules")).to_be_visible()
     expect(modal).to_contain_text("deep_umbra")
     save_workflow_test_screenshot(page, "model-catalog-details", test_name="test_details")
-    modal.get_by_role("button", name="Close").click()
-    expect(modal).to_have_count(0, timeout=10000)
-
-    # DDRNet23-Slim's labels, and its weights' license text.
-    _card(drawer, DDRNET).get_by_role("button", name="View details", exact=True).click()
-    modal = page.get_by_role("dialog", name="Model details")
-    expect(_row(modal, "Labels")).to_have_text("19")
-    expect(_row(modal, "Node")).to_have_text("Image Segmentation")
-    modal.get_by_role("button", name="View license").click()
-    expect(modal.locator('[data-curio-model-license="true"]')).to_contain_text("Cityscapes", timeout=10000)
 
 
 def test_the_node_catalog_lists_no_model_package(app_frontend: "FrontendPage", current_server: str, page):
@@ -216,9 +220,12 @@ def test_the_model_catalog_page_lists_the_model_packages(app_frontend: "Frontend
 
 
 def test_browse_all_in_project_and_remove(app_frontend: "FrontendPage", current_server: str, page):
+    # DDRNet23-Slim: its one library, onnxruntime, is the one example 10's
+    # nodes already run with, so the Add installs nothing new.
+    name = "DDRNet23-Slim (street scenes)"
     _enter(page, app_frontend, current_server, username="modelcat_scope")
     drawer = _open_drawer(page, "Model Catalog", MODEL_DRAWER)
-    expect(_card(drawer, WEATHER_GNN)).to_have_count(1, timeout=15000)
+    expect(_card(drawer, DDRNET)).to_have_count(1, timeout=15000)
 
     # A fresh dataflow holds no model.
     _tab(drawer, "In project").click()
@@ -226,24 +233,24 @@ def test_browse_all_in_project_and_remove(app_frontend: "FrontendPage", current_
 
     # Browse all: Add, through the Node Catalog's review.
     _tab(drawer, "Browse all").click()
-    _add_to_project(page, _card(drawer, WEATHER_GNN), "SCOUT weather GNN (weather at road nodes)")
-    expect(_card(drawer, WEATHER_GNN).get_by_role("button", name="Remove from project", exact=True)).to_be_visible(
+    _add_to_project(page, _card(drawer, DDRNET), name)
+    expect(_card(drawer, DDRNET).get_by_role("button", name="Remove from project", exact=True)).to_be_visible(
         timeout=20000
     )
 
     # In project: it is there, and the tab counts it.
     _tab(drawer, "In project").click()
-    expect(_card(drawer, WEATHER_GNN)).to_have_count(1, timeout=10000)
-    expect(_card(drawer, DDRNET)).to_have_count(0)
+    expect(_card(drawer, DDRNET)).to_have_count(1, timeout=10000)
+    expect(_card(drawer, WEATHER_GNN)).to_have_count(0)
     expect(_tab(drawer, "In project")).to_contain_text("1")
 
     # Remove asks first, then takes it out of the dataflow.
-    _card(drawer, WEATHER_GNN).get_by_role("button", name="Remove from project", exact=True).click()
+    _card(drawer, DDRNET).get_by_role("button", name="Remove from project", exact=True).click()
     with page.expect_response(
         lambda r: "/api/packages/projects/" in r.url and r.request.method == "DELETE" and r.ok, timeout=30000
     ):
-        accept_confirm_dialog(page, title="Remove SCOUT weather GNN (weather at road nodes)?", button="Remove")
-    expect(_card(drawer, WEATHER_GNN)).to_have_count(0, timeout=10000)
+        accept_confirm_dialog(page, title=f"Remove {name}?", button="Remove")
+    expect(_card(drawer, DDRNET)).to_have_count(0, timeout=10000)
     expect(drawer.get_by_text("No models added to this project yet.")).to_be_visible()
 
 
