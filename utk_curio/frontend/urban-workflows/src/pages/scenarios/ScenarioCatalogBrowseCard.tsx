@@ -4,6 +4,7 @@ import DataflowThumbnail from "../../components/DataflowThumbnail";
 import { CatalogItemStripHeader } from "../../components/catalog/CatalogKindVisuals";
 import { catalogRelativeTime } from "../../components/catalog/catalogTimeFormat";
 import {
+  ScenarioName,
   scenarioNodeCount,
   scenarioOriginLabel,
 } from "../../components/scenarios/catalog/scenarioFacts";
@@ -26,8 +27,10 @@ export interface ScenarioCatalogBrowseCardProps {
  *
  * Structurally the Model Catalog's card, painted from the same stylesheet:
  * strip header, body, meta row, actions, with the project's graph between the
- * strip and the body. The strip wears the scenario's colour; its origin is the
- * card's status, at the start of its actions row.
+ * strip and the body. The strip wears the scenario kind colour, the same on
+ * every card; the scenario's own colour is the square before its name, as on
+ * the canvas drawer's card. Its origin is the card's status, at the start of
+ * its actions row.
  */
 export function ScenarioCatalogBrowseCard({
   scenario,
@@ -49,7 +52,6 @@ export function ScenarioCatalogBrowseCard({
       ]
         .filter(Boolean)
         .join(" ")}
-      style={{ "--scenario-color": scenario.color } as React.CSSProperties}
       data-scenario-key={scenario.key}
       role="button"
       tabIndex={0}
@@ -68,7 +70,9 @@ export function ScenarioCatalogBrowseCard({
       </div>
 
       <div className={styles.cardBody}>
-        <h2 className={styles.cardTitle}>{scenario.name}</h2>
+        <h2 className={styles.cardTitle}>
+          <ScenarioName row={scenario} />
+        </h2>
         <p className={styles.publisher}>{scenario.project.name}</p>
         {/* The non-breaking space keeps a description-less card the same height
             as its neighbours, as the peer cards do. */}

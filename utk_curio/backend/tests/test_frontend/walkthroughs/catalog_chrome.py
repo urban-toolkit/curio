@@ -1,8 +1,12 @@
-"""The scene on the catalog details panel and the version badge."""
+"""The scenes on the catalog chrome: the details panel and the version badge,
+and the scenario cards' kind color."""
 from __future__ import annotations
 
 import re
 
+from playwright.sync_api import expect
+
+from ..utils import api_json
 from .framework import Ctx, walkthrough
 from .provenance import PROVENANCE_EXAMPLE
 
@@ -90,3 +94,152 @@ def catalog_details_clear_the_version_badge(ctx: Ctx) -> None:
     ctx.focus(badge.first, hold=1200)
     ctx.say("The corner is its own", "The drawer ends above it, not behind it.")
     ctx.capture("details-panel-and-version-badge")
+
+
+# ---------------------------------------------------------------------------
+# Scenario cards wear one kind color
+# ---------------------------------------------------------------------------
+
+#: Two projects and their scenarios, in the colors the canvas gives them: each
+#: project's scenarios take blue, orange and green in turn (``SCENARIO_COLORS``
+#: in utils/scenarios/scenarioEdits.ts), so two projects repeat them.
+RIVERSIDE_PROJECTS = {
+    "Riverside heat": [("Cool roofs", "#3567c7"), ("Street trees", "#e86a3c")],
+    "Riverside flood": [
+        ("Levee raised", "#3567c7"),
+        ("Pumps added", "#e86a3c"),
+        ("Marsh restored", "#2f8f4a"),
+    ],
+}
+
+#: ``--curio-kind-scenario-fg`` (#2E6822), as the browser computes it.
+SCENARIO_KIND_FG = "rgb(46, 104, 34)"
+
+#: Each card's name, its strip and border, and the swatches in its title, as
+#: drawn. The strip is the card's first child.
+_CARD_PAINT = """() => Array.from(
+  document.querySelectorAll('main article[data-scenario-key]')
+).map((card) => {
+  const heading = card.querySelector('h2');
+  const swatches = heading
+    ? Array.from(heading.querySelectorAll('[data-curio-scenario-swatch]'))
+    : [];
+  return {
+    name: heading ? heading.innerText.trim() : '',
+    strip: card.firstElementChild
+      ? getComputedStyle(card.firstElementChild).backgroundColor
+      : '',
+    border: getComputedStyle(card).borderTopColor,
+    swatches: swatches.map((s) => getComputedStyle(s).backgroundColor),
+  };
+})"""
+
+
+def _rgb(hex_color: str) -> str:
+    """``#3567c7`` as the browser computes it: ``rgb(53, 103, 199)``."""
+    red, green, blue = (int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
+    return f"rgb({red}, {green}, {blue})"
+
+
+def _save_riverside_projects(page, backend: str) -> None:
+    """Both projects, each a chain of code nodes with one scenario per node."""
+    token = next(
+        c["value"] for c in page.context.cookies() if c["name"] == "session_token"
+    )
+    for name, scenarios in RIVERSIDE_PROJECTS.items():
+        nodes = [
+            {"id": f"n{i}", "type": "curio.builtin/computation-analysis@1",
+             "content": "return 1", "x": 300 * i, "y": 0}
+            for i in range(len(scenarios))
+        ]
+        edges = [
+            {"id": f"e{i}", "source": f"n{i - 1}", "target": f"n{i}"}
+            for i in range(1, len(nodes))
+        ]
+        api_json(f"{backend}/api/projects", token, method="POST", payload={
+            "name": name,
+            "spec": {"dataflow": {
+                "name": name,
+                "nodes": nodes,
+                "edges": edges,
+                "scenarios": [
+                    {"id": f"s{i}", "name": scenario, "color": color, "nodes": [f"n{i}"]}
+                    for i, (scenario, color) in enumerate(scenarios)
+                ],
+            }},
+            "outputs": [],
+        })
+
+
+@walkthrough(
+    slug="scenario-cards-wear-one-kind-color",
+    title="Every scenario card wears the scenario kind color",
+    premise="Open the Scenario Catalog on two projects' scenarios and read the cards.",
+    note="A card's strip and selected border wore the scenario's own color, and "
+         "every project gives its scenarios the same few colors in turn, so the "
+         "strips repeated across projects and told the cards apart by nothing. "
+         "Every scenario card now takes one scenario kind color, as model and "
+         "source cards take theirs, and the scenario's own color is the square "
+         "before its name.",
+    tests=["src/tests/styles/catalogKindPalette.test.ts",
+           "src/tests/scenarioCatalog/ScenarioCatalogBrowse.test.tsx",
+           "test_frontend/test_walkthrough_baselines.py"],
+    fit_reactflow=False,
+)
+def scenario_cards_wear_one_kind_color(ctx: Ctx) -> None:
+    page = ctx.page
+    _save_riverside_projects(page, ctx.backend)
+
+    ctx.say("Open the Scenario Catalog",
+            "Two projects, five scenarios, three colors between them.")
+    page.goto(f"{ctx.frontend}/catalog/scenarios")
+    expect(page.get_by_role("heading", name="Scenario Catalog", level=1)).to_be_visible(
+        timeout=30000
+    )
+    ctx.narrator.type_into(page.get_by_role("searchbox", name="Search scenarios"), "Riverside")
+    page.get_by_role("combobox", name="Sort scenarios").select_option("name")
+
+    cards = page.locator("main article[data-scenario-key]")
+    expect(cards).to_have_count(5, timeout=30000)
+    expect(cards.locator("h2")).to_have_text(
+        ["Cool roofs", "Levee raised", "Marsh restored", "Pumps added", "Street trees"],
+        timeout=30000,
+    )
+
+    # The drawer follows the first card. Its graph marks the scenario, and its
+    # info rows grow, once the scenario's details answer.
+    drawer = page.locator('[data-curio-browse-drawer="true"]')
+    expect(drawer.get_by_role("heading", name="Cool roofs", level=2)).to_be_visible(
+        timeout=30000
+    )
+    expect(drawer.get_by_text("Fixed context", exact=True)).to_be_visible(timeout=30000)
+    page.wait_for_load_state("networkidle")
+
+    own = {
+        scenario: _rgb(color)
+        for scenarios in RIVERSIDE_PROJECTS.values()
+        for scenario, color in scenarios
+    }
+    painted = page.evaluate(_CARD_PAINT)
+    problems = [
+        f"{card['name']}: the strip is {card['strip']}, not the scenario kind "
+        f"color {SCENARIO_KIND_FG}"
+        for card in painted
+        if card["strip"] != SCENARIO_KIND_FG
+    ]
+    problems += [
+        f"{card['name']}: the title holds swatches {card['swatches']}, not one "
+        f"in the scenario's own {own.get(card['name'])}"
+        for card in painted
+        if card["swatches"] != [own.get(card["name"])]
+    ]
+    if painted and painted[0]["border"] != SCENARIO_KIND_FG:
+        problems.append(
+            f"{painted[0]['name']}, selected: the border is {painted[0]['border']}, "
+            f"not the scenario kind color {SCENARIO_KIND_FG}"
+        )
+    assert not problems, "\n".join(problems)
+
+    ctx.focus(cards.first, hold=900)
+    ctx.say("One strip for every scenario",
+            "The scenario's own color is the square before its name.")
