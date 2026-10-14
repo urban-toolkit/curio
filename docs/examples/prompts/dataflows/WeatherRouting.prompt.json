@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/WeatherRouting.json",
-    "sha256": "664fdbfdacc71efcb0917c351993b52e6d704937c1853648cc9e589756e9fea2",
+    "sha256": "546681d6bc5764183b6687b651d642e0f77ca68c2ab6402c2052456027999b3a",
     "walkthrough": null
   },
-  "prompt": "Recreate SCOUT's weather routing example: two routes across downtown Chicago, west and south of the Loop, from (41.896438, -87.659758) to (41.861649, -87.614034), starting at midnight on 6 July 2025, using SCOUT's routing model and its forecast with the default weather weights and one route per kind. Load downtown Chicago's roads from the Data Catalog, marked as roads so the map draws them, and find the fastest route and the weather-aware route once. Then compare them as two scenarios, \"Fastest route\" in light blue and \"Weather-aware route\" in teal, the second a copy of the first: each keeps its route, as a band, and that route's metrics. Draw both scenarios' routes over the roads on one map, and chart the two routes' duration, distance, rain exposure and wind exposure on four Vega-Lite charts that compare the scenarios, one bar per scenario in its scenario's colour with its value above it. The routing model is not part of the standard node set, so whatever provides it needs installing first.",
+  "prompt": "Recreate SCOUT's weather routing example: two routes across downtown Chicago, west and south of the Loop, from (41.896438, -87.659758) to (41.861649, -87.614034), starting at midnight on 6 July 2025, using SCOUT's routing model and its forecast with the default weather weights and one route per kind. Load downtown Chicago's roads from the Data Catalog, marked as roads so the map draws them, and find the fastest route and the weather-aware route once. Then compare them as two scenarios, \"Fastest route\" in blue (#4e79a7) and \"Weather-aware route\" in orange (#f28e2c), the first two colors of the Tableau10 scheme the map draws the routes in, the second a copy of the first: each keeps its route, as a band, and that route's metrics. Put both scenarios' routes in one layer, each named in a route column, and draw it over the roads on one map, colored by route with a categorical color scheme, so the map's own legend names the two routes; and chart the two routes' duration, distance, rain exposure and wind exposure on four Vega-Lite charts that compare the scenarios, one bar per scenario in its scenario's colour with its value above it. The routing model is not part of the standard node set, so whatever provides it needs installing first.",
   "context": null,
   "required": {
     "datasets": [
@@ -56,6 +56,13 @@
         "hasContent": true
       },
       {
+        "ref": "analysis5",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
         "ref": "loader1",
         "type": "curio.builtin/data-loading",
         "role": "loader",
@@ -91,7 +98,7 @@
         "hasContent": true
       },
       {
-        "ref": "analysis5",
+        "ref": "analysis6",
         "type": "scout.routing/weather-routing",
         "role": "analysis",
         "executable": true,
@@ -107,82 +114,87 @@
       },
       {
         "from": "analysis2",
-        "to": "visualization1",
-        "kind": "data",
-        "slot": 2
-      },
-      {
-        "from": "analysis3",
-        "to": "visualization2",
-        "kind": "data"
-      },
-      {
-        "from": "analysis3",
-        "to": "visualization3",
-        "kind": "data"
-      },
-      {
-        "from": "analysis3",
-        "to": "visualization4",
-        "kind": "data"
-      },
-      {
-        "from": "analysis3",
-        "to": "visualization5",
-        "kind": "data"
-      },
-      {
-        "from": "analysis4",
-        "to": "visualization2",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis4",
-        "to": "visualization3",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis4",
-        "to": "visualization4",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis4",
-        "to": "visualization5",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "loader1",
-        "to": "visualization1",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "analysis5",
-        "kind": "data"
-      },
-      {
-        "from": "analysis5",
         "to": "analysis1",
         "kind": "data"
       },
       {
+        "from": "analysis3",
+        "to": "analysis1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis4",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis4",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis4",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "analysis4",
+        "to": "visualization5",
+        "kind": "data"
+      },
+      {
         "from": "analysis5",
+        "to": "visualization2",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis5",
+        "to": "visualization3",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis5",
+        "to": "visualization4",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis5",
+        "to": "visualization5",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis6",
+        "kind": "data"
+      },
+      {
+        "from": "analysis6",
         "to": "analysis2",
         "kind": "data"
       },
       {
-        "from": "analysis5",
+        "from": "analysis6",
         "to": "analysis3",
         "kind": "data"
       },
       {
-        "from": "analysis5",
+        "from": "analysis6",
         "to": "analysis4",
+        "kind": "data"
+      },
+      {
+        "from": "analysis6",
+        "to": "analysis5",
         "kind": "data"
       }
     ],
@@ -246,5 +258,5 @@
     ],
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids. The datasets, and the weather GNN the routing nodes name from the Model Catalog, are SCOUT's (urban-toolkit/scout), used with the permission of its authors; the SCOUT datasets carry no licence string. The roads are OpenStreetMap data, © OpenStreetMap contributors, ODbL 1.0."
   },
-  "notes": "A package node with widgets over roads from the Data Catalog, shared by two scenarios: SCOUT's weather routing example, its fastest and weather-aware routes kept one per scenario, mapped through Autark and compared on four bar charts, as SCOUT's example compares them: Vega-Lite nodes comparing the scenarios (metadata.vegaCompare), each reading the stacked scenarios table."
+  "notes": "A package node with widgets over roads from the Data Catalog, shared by two scenarios: SCOUT's weather routing example, its fastest and weather-aware routes kept one per scenario, joined by a node in no scenario into one layer with a route column that an Autark map colors by (isColorMap, getFnv route, a scheme* interpolator), and compared on four bar charts, as SCOUT's example compares them: Vega-Lite nodes comparing the scenarios (its spec reads its inputs stacked, the dataset inputs, and names each circle's scenario from __input__), each reading its stacked inputs."
 }

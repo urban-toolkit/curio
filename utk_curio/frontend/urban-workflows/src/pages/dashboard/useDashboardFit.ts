@@ -31,9 +31,8 @@ const RETRY_MS = 50;
 export function useDashboardFit(
   pinnedIds: readonly string[],
   containerRef: RefObject<HTMLElement | null>,
-  /** `headroom`: room kept above the tiles, for scenario headers (#662);
-   *  a new `refitKey` frames the tiles again (after Arrange by scenario). */
-  { headroom = 0, refitKey = 0 }: { headroom?: number; refitKey?: number } = {},
+  /** `headroom`: room kept above the tiles, for scenario headers (#662). */
+  { headroom = 0 }: { headroom?: number } = {},
 ): void {
   const reactFlow = useReactFlow();
   // A stable key: the effect must re-run when the set of tiles changes, not on
@@ -72,5 +71,5 @@ export function useDashboardFit(
       observer.disconnect();
     };
     // containerRef is a ref object and stable; reactFlow is stable per provider.
-  }, [key, headroom, refitKey, reactFlow, containerRef]);
+  }, [key, headroom, reactFlow, containerRef]);
 }

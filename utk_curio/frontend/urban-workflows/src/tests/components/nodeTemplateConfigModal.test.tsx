@@ -363,24 +363,8 @@ describe("NodeTemplateConfigModal - footer", () => {
   });
 });
 
-describe("NodeTemplateConfigModal - Compare scenarios", () => {
-  test("a Vega-Lite node's switch applies as it is toggled, apart from Save", () => {
-    const onChange = jest.fn();
-    const { onSave } = renderModal({ compareScenarios: { on: false, onChange } });
-    expect(screen.getByText("Vega-Lite")).toBeInTheDocument();
-    const toggle = screen.getByRole("checkbox", { name: "Compare scenarios" });
-    expect(toggle).not.toBeChecked();
-    fireEvent.click(toggle);
-    expect(onChange).toHaveBeenCalledWith(true);
-    expect(onSave).not.toHaveBeenCalled();
-  });
-
-  test("shows the switch on for a node comparing scenarios", () => {
-    renderModal({ compareScenarios: { on: true, onChange: jest.fn() } });
-    expect(screen.getByRole("checkbox", { name: "Compare scenarios" })).toBeChecked();
-  });
-
-  test("other nodes have no Vega-Lite section", () => {
+describe("NodeTemplateConfigModal - no Compare scenarios switch", () => {
+  test("a Vega-Lite node's settings hold no switch: its spec names its scenarios", () => {
     renderModal();
     expect(screen.queryByRole("checkbox", { name: "Compare scenarios" })).toBeNull();
   });

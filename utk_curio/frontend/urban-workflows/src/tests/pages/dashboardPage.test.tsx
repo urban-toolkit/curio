@@ -9,7 +9,7 @@
  * that does not open.
  */
 import React from "react";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 class ResizeObserverStub {
@@ -25,6 +25,7 @@ let mockLoadState = "loaded";
 let mockFlow: any = {};
 let mockUser: any = { user: { name: "Owner", is_guest: false }, enableUserAuth: true };
 let mockReactFlowProps: any = null;
+let mockViewport = { x: 0, y: 0, zoom: 1 };
 const mockShowToast = jest.fn();
 const mockReactFlowInstance = {
   getNode: (id: string) => ({ id, data: { nodeId: id, comments: [{ text: "kept" }] } }),
@@ -41,6 +42,7 @@ jest.mock("reactflow", () => ({
   },
   ConnectionMode: { Loose: "loose" },
   useReactFlow: () => mockReactFlowInstance,
+  useViewport: () => mockViewport,
   // useViewportMotionHint reads the flow's wrapper from the store.
   useStoreApi: () => ({ getState: () => ({ domNode: null }) }),
 }));
@@ -218,7 +220,7 @@ describe("editing the layout", () => {
   });
 });
 
-describe("arranging by scenario", () => {
+describe("a dashboard with scenarios", () => {
   // A loader the two scenarios share, each scenario's one tile, all pinned.
   const tile = (id: string, x: number, y: number) => ({
     id,
@@ -240,51 +242,12 @@ describe("arranging by scenario", () => {
       ...over,
     });
 
-  test("is offered while the owner edits the layout of a dashboard with a scenario's tiles", async () => {
+  test("offers no Arrange by scenario, even while the owner edits a dashboard with a scenario's tiles", async () => {
     mockFlow = withScenarios({ dashboardLocked: false });
-    await renderPage();
-
-    expect(screen.getByTestId("arrange-by-scenario-btn").textContent).toBe("Arrange by scenario");
-  });
-
-  test("is not offered while the layout is locked, or without a scenario's tile", async () => {
-    mockFlow = withScenarios({ dashboardLocked: true });
-    const { unmount } = await renderPage();
-    expect(screen.queryByTestId("arrange-by-scenario-btn")).toBeNull();
-    unmount();
-
-    mockFlow = flow({ dashboardLocked: false });
     await renderPage();
     expect(screen.queryByTestId("save-layout-btn")).toBeTruthy();
     expect(screen.queryByTestId("arrange-by-scenario-btn")).toBeNull();
-  });
-
-  test("moves every tile into its column and records the slots a Save layout writes", async () => {
-    mockFlow = withScenarios({ dashboardLocked: false });
-    await renderPage();
-
-    act(() => { fireEvent.click(screen.getByTestId("arrange-by-scenario-btn")); });
-
-    const moves = mockFlow.onNodesChange.mock.calls.flat(1).flat();
-    const x = Object.fromEntries(moves.map((change: any) => [change.id, change.position.x]));
-    expect(moves.every((change: any) => change.type === "position")).toBe(true);
-    expect(Object.keys(x).sort()).toEqual(["a", "b", "load"]);
-    // The shared loader first, then one column per scenario, in their order.
-    expect(x.load).toBeLessThan(x.a);
-    expect(x.a).toBeLessThan(x.b);
-
-    const slots = Object.fromEntries(
-      mockFlow.updateDataNode.mock.calls.map(([id, data]: [string, any]) => [id, data]),
-    );
-    for (const change of moves) {
-      expect([slots[change.id].dashboardX, slots[change.id].dashboardY]).toEqual([
-        change.position.x,
-        change.position.y,
-      ]);
-      // The rest of the node's data stays.
-      expect(slots[change.id].title).toBe(change.id);
-    }
-    expect(mockFlow.markDirty).toHaveBeenCalled();
+    expect(screen.queryByText("Arrange by scenario")).toBeNull();
   });
 });
 
@@ -296,6 +259,15 @@ describe("the canvas", () => {
     expect(mockReactFlowProps.panOnDrag).toBe(false);
     expect(mockReactFlowProps.zoomOnScroll).toBe(false);
     expect(mockReactFlowProps.nodesConnectable).toBe(false);
+  });
+
+  test("locked, its tiles still take the pointer, so their inputs can be set", async () => {
+    await renderPage();
+
+    // React Flow only keeps pointer events on a node it cannot drag or select
+    // when a node handler is passed.
+    expect(mockReactFlowProps.elementsSelectable).toBe(false);
+    expect(typeof mockReactFlowProps.onNodeClick).toBe("function");
   });
 
   test("never enlarges a tile past its authored size", async () => {
@@ -492,5 +464,104 @@ describe("the states", () => {
     expect(screen.queryByTestId("dashboard-empty")).toBeNull();
     expect(screen.queryByTestId("dashboard-load-failed")).toBeNull();
     expect(screen.queryByTestId("loading")).toBeNull();
+  });
+});
+
+describe("the Run button", () => {
+  const tile = () => screen.queryByTestId("dashboard-run-tile") as HTMLElement | null;
+  const placeOf = () => ({ left: tile()!.style.left, top: tile()!.style.top });
+
+  beforeEach(() => {
+    mockViewport = { x: 0, y: 0, zoom: 1 };
+  });
+
+  test("is drawn over the canvas, never as a node of the graph", async () => {
+    await renderPage();
+    expect(tile()).not.toBeNull();
+    expect(mockReactFlowProps.nodes).toBe(mockFlow.nodes);
+    expect(Object.keys(mockReactFlowProps.nodeTypes)).toHaveLength(1);
+  });
+
+  test("stands above the top-left tile until it is moved, carried through the viewport", async () => {
+    mockFlow = flow({
+      nodes: [
+        { id: "chart", position: { x: 200, y: 300 }, data: {} },
+        { id: "map", position: { x: 80, y: 500 }, data: {} },
+      ],
+      dashboardPins: { chart: true, map: true },
+    });
+    mockViewport = { x: 10, y: -100, zoom: 0.5 };
+    await renderPage();
+    // (80, 300 - 64) in the page, at half size, panned by (10, -100).
+    expect(placeOf()).toEqual({ left: "50px", top: "18px" });
+  });
+
+  test("stands where dataflow.dashboard.runButton says, kept on the canvas", async () => {
+    mockFlow = flow({ dashboardSettings: { runButton: { x: 640, y: 120 } } });
+    await renderPage();
+    expect(placeOf()).toEqual({ left: "640px", top: "120px" });
+    cleanup();
+
+    mockFlow = flow({ dashboardSettings: { runButton: { x: -500, y: -500 } } });
+    await renderPage();
+    expect(placeOf()).toEqual({ left: "8px", top: "8px" });
+  });
+
+  test("moves only while the layout is edited, and the drop saves where it stands", async () => {
+    await renderPage();
+    expect(screen.queryByTestId("dashboard-run-resize")).toBeNull();
+    cleanup();
+
+    const setDashboardRunButton = jest.fn();
+    mockFlow = flow({ dashboardLocked: false, setDashboardRunButton, dashboardSettings: { runButton: { x: 100, y: 100 } } });
+    mockViewport = { x: 0, y: 0, zoom: 2 };
+    await renderPage();
+    const card = screen.getByTestId("dashboard-run-tile");
+    fireEvent.pointerDown(card, { button: 0, clientX: 300, clientY: 300, pointerId: 1 });
+    fireEvent.pointerMove(card, { button: 0, clientX: 340, clientY: 320, pointerId: 1 });
+    // It follows the pointer at the zoom: 40px right is 20 in the page.
+    expect(placeOf()).toEqual({ left: "240px", top: "220px" });
+    fireEvent.pointerUp(card, { button: 0, clientX: 340, clientY: 320, pointerId: 1 });
+    expect(setDashboardRunButton).toHaveBeenCalledWith({ x: 120, y: 110, width: 56, height: 44 });
+    expect(mockFlow.updateDataNode).not.toHaveBeenCalled();
+    expect(mockFlow.onNodesChange).not.toHaveBeenCalled();
+  });
+
+  test("a hosted guest runs its own dataflow from the page, but cannot move the button", async () => {
+    mockUser = { user: { name: "Guest", is_guest: true }, enableUserAuth: true };
+    mockFlow = flow({ dashboardLocked: false });
+    await renderPage();
+    expect(screen.queryByTestId("edit-layout-btn")).toBeNull();
+    expect(tile()).not.toBeNull();
+    expect(tile()!.getAttribute("data-editing")).toBeNull();
+    expect(screen.queryByTestId("dashboard-run-resize")).toBeNull();
+  });
+
+  test("is not offered to a visitor, nor on a dashboard with nothing pinned", async () => {
+    mockFlow = flow({ viewerMode: "shared" });
+    await renderPage();
+    expect(tile()).toBeNull();
+    cleanup();
+
+    mockFlow = flow({ dashboardPins: {} });
+    await renderPage();
+    expect(tile()).toBeNull();
+  });
+});
+
+describe("a published dashboard's visitor", () => {
+  test("runs it from the page, cannot move the button, and is told their runs are not saved", async () => {
+    mockFlow = flow({ viewerMode: "shared", runsPublished: true });
+    await renderPage();
+    expect(screen.getByTestId("dashboard-run-tile")).not.toBeNull();
+    expect(screen.queryByTestId("dashboard-run-resize")).toBeNull();
+    expect(screen.getByTestId("shared-view-banner").textContent).toContain("Your runs are not saved");
+  });
+
+  test("without the run link, a visitor still has no Run button", async () => {
+    mockFlow = flow({ viewerMode: "shared", runsPublished: false });
+    await renderPage();
+    expect(screen.queryByTestId("dashboard-run-tile")).toBeNull();
+    expect(screen.getByTestId("shared-view-banner").textContent).toContain("read-only");
   });
 });

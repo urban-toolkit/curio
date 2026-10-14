@@ -6,6 +6,7 @@
 import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import WidgetsEditor from "../../components/editing/WidgetsEditor";
+import { NodeControlsOnlyContext } from "../../components/editing/nodeControlsOnly";
 import type { WidgetDef } from "../../utils/widgets/widgetModel";
 
 function renderEditor(overrides: Partial<React.ComponentProps<typeof WidgetsEditor>> = {}) {
@@ -117,5 +118,103 @@ describe("a run", () => {
   test("mounting resolves nothing; only a toggle does", () => {
     const { props } = renderEditor({ userCode: "return [!! factor !!]", widgets: [factor] });
     expect(props.sendReplacedCode).not.toHaveBeenCalled();
+  });
+});
+
+describe("controls only", () => {
+  test("a compact editor shows each widget's label and control, nothing to edit", () => {
+    const { props, view } = renderEditor({ widgets: [factor], compact: true });
+    expect(view.container.querySelector('[data-widget-tag="factor"]')).toBeNull();
+    expect(screen.queryByRole("button", { name: "Edit widget factor" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete widget factor" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add widget" })).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Height factor"), { target: { value: "2" } });
+    expect(props.onWidgetsChange).toHaveBeenLastCalledWith([{ ...factor, value: 2 }]);
+  });
+
+  test("the Display as widget switch folds the node; folded, it moves to the node's bar", () => {
+    const setControlsOnly = jest.fn();
+    const editor = (controlsOnly: boolean) => (
+      <NodeControlsOnlyContext.Provider value={{ controlsOnly, setControlsOnly }}>
+        <WidgetsEditor
+          userCode=""
+          sendReplacedCode={jest.fn()}
+          nodeId="n1"
+          markersDirty={false}
+          widgets={[factor]}
+          onWidgetsChange={jest.fn()}
+          language="python"
+          onResolveError={jest.fn()}
+          compact={controlsOnly}
+        />
+      </NodeControlsOnlyContext.Provider>
+    );
+    const view = render(editor(false));
+    fireEvent.click(screen.getByRole("switch", { name: "Display as widget" }));
+    expect(setControlsOnly).toHaveBeenLastCalledWith(true);
+
+    view.rerender(editor(true));
+    expect(screen.queryByRole("switch")).toBeNull();
+  });
+
+  test("no switch where the node cannot fold", () => {
+    renderEditor({ widgets: [factor] });
+    expect(screen.queryByRole("switch")).toBeNull();
+  });
+});
+
+describe("separated widgets on a dashboard tile", () => {
+  const season: WidgetDef = { name: "season", type: "text", label: "Season", default: "summer" };
+  const separatedEditor = (editable: boolean, layout = {}) => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { ReactFlowProvider } = require("reactflow");
+    const onBoxChange = jest.fn();
+    const view = render(
+      <ReactFlowProvider>
+        <NodeControlsOnlyContext.Provider
+          value={{ controlsOnly: true, separated: { layout, editable, onBoxChange, defaultWidth: 200 } }}
+        >
+          <WidgetsEditor
+            userCode=""
+            sendReplacedCode={jest.fn()}
+            nodeId="n1"
+            markersDirty={false}
+            widgets={[factor, season]}
+            onWidgetsChange={jest.fn()}
+            language="python"
+            onResolveError={jest.fn()}
+            compact
+          />
+        </NodeControlsOnlyContext.Provider>
+      </ReactFlowProvider>,
+    );
+    return { view, onBoxChange };
+  };
+
+  test("each widget in a box of its own, placed as saved; locked, nothing moves", () => {
+    const { view } = separatedEditor(false, { season: { x: 300, y: 40, width: 150 } });
+    expect(view.container.querySelectorAll("[data-separated-widget]")).toHaveLength(2);
+    const seasonBox = view.container.querySelector('[data-separated-widget="season"]') as HTMLElement;
+    expect(seasonBox.style.left).toBe("300px");
+    expect(seasonBox.style.width).toBe("150px");
+    expect(screen.queryByLabelText("Move widget season")).toBeNull();
+    expect(screen.queryByLabelText("Resize widget season")).toBeNull();
+  });
+
+  test("while the layout is edited, a box moves by its grip", () => {
+    const { onBoxChange } = separatedEditor(true, { season: { x: 10, y: 20 } });
+    fireEvent.mouseDown(screen.getByLabelText("Move widget season"), { button: 0, clientX: 0, clientY: 0 });
+    fireEvent.mouseMove(window, { clientX: 50, clientY: 30 });
+    fireEvent.mouseUp(window);
+    expect(onBoxChange).toHaveBeenCalledWith("season", { x: 60, y: 50 });
+  });
+
+  test("while the layout is edited, each box resizes by its own corner", () => {
+    const { onBoxChange } = separatedEditor(true, { factor: { x: 0, y: 0, width: 200, height: 80 } });
+    fireEvent.mouseDown(screen.getByLabelText("Resize widget factor"), { button: 0, clientX: 0, clientY: 0 });
+    fireEvent.mouseMove(window, { clientX: 300, clientY: 100 });
+    fireEvent.mouseUp(window);
+    expect(onBoxChange).toHaveBeenCalledWith("factor", { x: 0, y: 0, width: 500, height: 180 });
   });
 });

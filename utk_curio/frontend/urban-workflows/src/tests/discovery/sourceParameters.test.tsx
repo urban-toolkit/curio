@@ -125,6 +125,18 @@ describe('the area field', () => {
     expect(screen.getByText(/of at most 4\.0 km²/)).toBeInTheDocument();
   });
 
+  test('a pasted typographic minus or dash reads as a minus sign', () => {
+    // Coordinates copied from a document came with U+2212, which Number()
+    // reads as NaN: the box was dropped and the dialog said "Area is needed".
+    const onChange = jest.fn();
+    render(<AreaField parameter={AREA} value={null} onChange={onChange} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Coordinates' }));
+    ['\u221287.64', '41.875', '\u201387.62', '41.89'].forEach((value, i) =>
+      fireEvent.change(screen.getByLabelText(['West', 'South', 'East', 'North'][i]), { target: { value } }),
+    );
+    expect(onChange).toHaveBeenLastCalledWith({ box: LOOP });
+  });
+
   test('a place search gives a box and the place name', async () => {
     mockSearchPlaces.mockResolvedValue({
       places: [{ name: 'Loop', label: 'Loop, Chicago, Illinois', box: LOOP, kind: 'boundary/administrative', boundary: true }],
@@ -291,6 +303,19 @@ const portalRow = (over: Partial<DiscoveryResource> = {}): DiscoveryResource => 
   heldFormats: {},
   parameters: [{ ...AREA, required: false, maxAreaKm2: undefined }],
   ...over,
+});
+
+describe('the dialog above the canvas drawer', () => {
+  it('stacks over a catalog drawer, so a click in it does not reach the drawer scrim', () => {
+    // The canvas's Discovery Catalog drawer opens this dialog. On the default
+    // layer the drawer's scrim lay over it: any click closed both.
+    render(
+      <DiscoveryAddDialog resource={portalRow({ parameters: [AREA] })} splitBy={[]} onAdd={jest.fn()} onCancel={jest.fn()} />,
+    );
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.className).toMatch(/modalOverlay/);
+    expect(document.querySelector('[class*="backdropOverlay"]')).not.toBeNull();
+  });
 });
 
 describe('what an add or a download sends', () => {

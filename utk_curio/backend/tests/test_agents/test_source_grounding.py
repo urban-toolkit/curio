@@ -181,6 +181,19 @@ class TestCatalogIdForm:
         verdict = sg.check_grounding(codes[0], "python", ctx)
         assert verdict.ok and verdict.source["kind"] == "catalog", verdict.violations
 
+    def test_a_file_the_node_writes_is_not_a_path_it_reads(self):
+        """``curio_output_file("<name>")`` names a file the node writes in its
+        own output folder, so, as for ``curio_save_file``, neither scanner
+        reads its argument as a path the node depends on."""
+        for code in (
+            'path = curio_output_file("nbs_classes.tif")\nreturn path',
+            'path = curio_output_file(f"flood-{key}.tif")\nreturn path',
+            'path = curio_output_file("nbs_classes.tif")\nreturn (path',  # syntax error, regex
+        ):
+            assert sg.scan_sources(code, "python") == [], code
+        refs = [(r.kind, r.literal) for r in sg.scan_sources('out = curio_output_file("a.tif")\nsrc = "/data/b.tif"', "python")]
+        assert refs == [("path", "/data/b.tif")]
+
     def test_a_part_keyword_outside_curio_load_data_is_still_a_path(self):
         for code in (
             'df = read_part(part="/data/x.csv")\nreturn df',

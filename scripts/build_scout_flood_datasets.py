@@ -59,7 +59,15 @@ STAMP = "2026-10-07T00:00:00Z"
 PUBLISHER = "SCOUT (urban-toolkit/scout)"
 
 CLASS_FILE = "NBS_others_5m_4326_cropped_cleaned_resampled.tif"
-PERIODS = ("2020 - 2040", "2050 - 2080", "2080 - 2100")
+PERIODS = ("2020 - 2050", "2050 - 2080", "2080 - 2100")
+#: SCOUT's own name for a period where it differs: its code and files call the
+#: first period 2020 - 2040; it is 2020 - 2050.
+SCOUT_PERIOD = {"2020 - 2050": "2020 - 2040"}
+
+
+def scout_period(period: str) -> str:
+    """SCOUT's name for *period*, as its function and its files have it."""
+    return SCOUT_PERIOD.get(period, period)
 
 
 def _parts() -> list[dict]:
@@ -67,9 +75,9 @@ def _parts() -> list[dict]:
     each with its name in the bundle (``file``) and SCOUT's (``scout``)."""
     parts = [{"file": "nbs_classes.tif", "scout": CLASS_FILE, "label": "NbS classes"}]
     for period in PERIODS:
-        stem = period.replace(" - ", "_")
+        stem, scout_stem = period.replace(" - ", "_"), scout_period(period).replace(" - ", "_")
         for kind, what in (("NbS", "with"), ("noNbS", "without")):
-            parts.append({"file": f"{stem}_{kind}.tif", "scout": f"{stem}_{kind}_4326_cropped.tif",
+            parts.append({"file": f"{stem}_{kind}.tif", "scout": f"{scout_stem}_{kind}_4326_cropped.tif",
                           "label": f"Flood depth {period} {what} NbS"})
     return parts
 
@@ -80,7 +88,7 @@ DESCRIPTION = (
     "-90.6879 to -90.4252 and latitude 41.4150 to 41.6242): "
     "nbs_classes.tif, where nature-based solutions (NbS) would go, as class codes (21 bioswales or "
     "infiltration trenches, 31 permeable pavements, 43 retention ponds, 52 infiltration trench, 71 and 81 "
-    "bioswales, 90 and 95 constructed wetlands, and 0 none); and, for 2020-2040, 2050-2080 and 2080-2100, "
+    "bioswales, 90 and 95 constructed wetlands, and 0 none); and, for 2020-2050, 2050-2080 and 2080-2100, "
     "<period>_NbS.tif and <period>_noNbS.tif, the projected flood depth in metres "
     "with and without NbS. The Flood Projection node of the scout.flood package runs SCOUT's function on "
     "them. Every cell as SCOUT ships it, compressed losslessly. From SCOUT, "
@@ -92,7 +100,7 @@ DESCRIPTION = (
 def _write_manifest() -> None:
     manifest = DatasetManifest(
         id=DATASET_ID,
-        name="SCOUT Quad Cities Flood Projections",
+        name="Quad Cities Flood Projections",
         version="1.0.0",
         format="bundle",
         description=DESCRIPTION,
@@ -176,13 +184,16 @@ ALL_NBS = [
 #: The proof's cases, as ``test_scout_flood.py`` lists them: a region, a
 #: period and the chosen NbS.
 PROOF_CASES = {
-    "scout-2020-none": (SCOUT_REGION, "2020 - 2040", []),
-    "scout-2020-all": (SCOUT_REGION, "2020 - 2040", ALL_NBS),
+    "scout-2020-none": (SCOUT_REGION, "2020 - 2050", []),
+    "scout-2020-all": (SCOUT_REGION, "2020 - 2050", ALL_NBS),
     "scout-2050-none": (SCOUT_REGION, "2050 - 2080", []),
     "scout-2050-all": (SCOUT_REGION, "2050 - 2080", ALL_NBS),
     "scout-2080-none": (SCOUT_REGION, "2080 - 2100", []),
     "scout-2080-all": (SCOUT_REGION, "2080 - 2100", ALL_NBS),
-    "inner-2080-some": (INNER_REGION, "2080 - 2100", ["Bioswales", "Constructed wetlands"]),
+    # SCOUT's names: its three for bioswales and infiltration trenches, the
+    # package's one "Bioswales/Infiltration trenches", and constructed wetlands.
+    "inner-2080-some": (INNER_REGION, "2080 - 2100", ["Bioswales/Infiltration trenches", "Infiltration trench",
+                                                      "Bioswales", "Constructed wetlands"]),
 }
 
 
@@ -218,7 +229,8 @@ def run_scout(folder_of_rasters: Path, region, period, chosen, output="A"):
     top, left, bottom, right = region
     simulate = _scout_function()
     with _scout_layout(folder_of_rasters) as folder:
-        simulate(f"{left!r}, {top!r}", f"{right!r}, {bottom!r}", output, year=period, use_NBS_classes=list(chosen))
+        simulate(f"{left!r}, {top!r}", f"{right!r}, {bottom!r}", output, year=scout_period(period),
+                 use_NBS_classes=list(chosen))
         with rasterio.open(folder / "data" / "served" / "raster" / f"{output}.tif") as raster:
             cells, transform = raster.read(1), tuple(raster.transform)[:6]
         metrics = (folder / "data" / "served" / "metric" / f"{output}.csv").read_text(encoding="utf-8")

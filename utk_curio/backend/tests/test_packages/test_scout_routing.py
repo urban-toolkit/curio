@@ -93,10 +93,10 @@ EXAMPLE = [
     ("weighted-route", 1, 264, 7.646003063522548, 12.365133939742854, 1992.3714365959167, 742.6831955313683),
 ]
 #: The example's two scenarios, each keeping one of the routes: SCOUT's C and
-#: D, in SCOUT's colors.
+#: D, in the colors the routes map draws them in (schemeTableau10's first two).
 EXAMPLE_SCENARIOS = {
-    "fastest": ("Fastest route", "#42A5F5", "fastest-route"),
-    "weather-aware": ("Weather-aware route", "#00838F", "weighted-route"),
+    "fastest": ("Fastest route", "#4e79a7", "fastest-route"),
+    "weather-aware": ("Weather-aware route", "#f28e2c", "weighted-route"),
 }
 #: Each comparison chart's metric, in the dataflow's order.
 EXAMPLE_CHARTS = ["duration", "distance", "rain_exposure", "wind_exposure"]
@@ -637,16 +637,19 @@ def test_the_shipped_dataflow_runs_scouts_example():
 
 def test_the_shipped_dataflows_charts_compare_the_four_metrics():
     """As in SCOUT's example, the two routes are compared on four bar charts,
-    one per metric: each a Vega-Lite node comparing the scenarios
-    (``metadata.vegaCompare``), the fastest route in circle 0 and the
-    weather-aware one in circle 1, one bar per scenario."""
+    one per metric: each a Vega-Lite node over its inputs stacked (the dataset
+    ``inputs``), naming each circle's scenario, the fastest route in circle 0
+    and the weather-aware one in circle 1, one bar per scenario."""
     spec = _dataflow()
     charts = [n for n in spec["nodes"] if n["type"] == "curio.builtin/vis-vega"]
     scenario_of = {i: s["id"] for s in spec["scenarios"] for i in s["nodes"]}
     charted = []
     for node in charts:
-        assert node["metadata"]["vegaCompare"] == {"enabled": True}
         chart = json.loads(node["content"])
+        assert chart["data"] == {"name": "inputs"}
+        assert {
+            "calculate": "['Fastest route', 'Weather-aware route'][datum.__input__]", "as": "scenario_name",
+        } in chart["transform"]
         assert chart["encoding"]["x"]["field"] == "scenario_name"
         assert [layer["mark"]["type"] for layer in chart["layer"]] == ["bar", "text"]
         charted.append(chart["encoding"]["y"]["field"])
@@ -665,8 +668,10 @@ def test_the_shipped_dataflows_roads_come_from_the_catalog_and_autark_maps_them(
     Data Catalog, marked as roads for Autark, and the dataflow declares the
     dataset. The Weather Routing node takes them straight on its one input, and
     its layer chip reads them as the roads layer: no node in between.
-    The map draws each scenario's route in its color, SCOUT's, with a darker
-    outline, and its legend names the scenarios (Curio's ``scenario`` key)."""
+    A node in no scenario puts both scenarios' routes in one layer, each named
+    in a ``route`` column, and the map colors that layer by it with a
+    categorical scheme, plain Autark grammar: Autark's own legend names the
+    routes, and Curio resolves nothing."""
     spec = _dataflow()
     nodes = {n["id"]: n for n in spec["nodes"]}
     autark = {n["id"]: json.loads(n["content"]) for n in spec["nodes"] if n["type"] == "curio.builtin/autk-grammar"}
@@ -681,14 +686,22 @@ def test_the_shipped_dataflows_roads_come_from_the_catalog_and_autark_maps_them(
     assert {e["target"] for e in spec["edges"] if e["source"] == loader_id} == {routing, map_id}
     assert [(e["source"], e["targetHandle"]) for e in spec["edges"] if e["target"] == routing] == [(loader_id, "in")]
     assert "    [!! input_0:table_osm_roads !!],\n" in nodes[routing]["content"]
-    layers = autark[map_id]["map"]["layerRefs"]
-    assert [layer["dataRef"] for layer in layers] == ["[!! input_0 !!]", "[!! input_1 !!]", "[!! input_2 !!]"]
-    assert [layer.get("scenario") for layer in layers] == [None, *EXAMPLE_SCENARIOS]
-    scenario_of = {i: s["id"] for s in spec["scenarios"] for i in s["nodes"]}
+    roads_layer, routes_layer = autark[map_id]["map"]["layerRefs"]
+    assert roads_layer == {"dataRef": "[!! input_0 !!]"}
+    assert routes_layer["dataRef"] == "[!! input_1 !!]"
+    assert routes_layer["isColorMap"] is True and routes_layer["getFnv"] == "route"
+    assert routes_layer["colorMapInterpolator"].startswith("scheme")
+    assert not {"scenario", "color", "stroke", "label", "legend"} & set(routes_layer)
     sources = {e["targetHandle"]: e["source"] for e in spec["edges"] if e["target"] == map_id}
-    assert [scenario_of.get(sources[h]) for h in ("in_1", "in_2")] == list(EXAMPLE_SCENARIOS)
-    assert all("input_0[0]" in nodes[sources[h]]["content"] for h in ("in_1", "in_2"))
-    assert not any("getFnv" in layer or "colorMapInterpolator" in layer for layer in layers)
+    assert sources == {"in": loader_id, "in_1": sources["in_1"]}
+    both = sources["in_1"]
+    scenario_of = {i: s["id"] for s in spec["scenarios"] for i in s["nodes"]}
+    assert both not in scenario_of
+    routes = {e["targetHandle"]: e["source"] for e in spec["edges"] if e["target"] == both}
+    assert [scenario_of.get(routes[h]) for h in ("in", "in_1")] == list(EXAMPLE_SCENARIOS)
+    assert all("input_0[0]" in nodes[routes[h]]["content"] for h in ("in", "in_1"))
+    for name, _color, _route in EXAMPLE_SCENARIOS.values():
+        assert f'route="{name}"' in nodes[both]["content"]
 
 
 def test_the_templates_layer_chip_reads_autarks_layer_array():

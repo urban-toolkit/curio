@@ -6,7 +6,7 @@ gray level times the season's minutes over 255 (720 in summer, 540 in spring,
 360 in winter, SCOUT's ``factor``). Each tile sits where SCOUT's rasterizer drew
 the heights it was predicted from, its corners from SCOUT's ``num2deg`` and the
 WGS 84 to World Mercator transform, so the shadow and the height mosaic of
-Rasterize Buildings' tiles share one grid, as a Raster Statistics mask needs.
+Rasterize Buildings' tiles share one grid, as a ``curio_raster_statistics`` mask needs.
 A cell no tile covers has no value (NaN): a GeoTIFF that names no nodata is read
 by autk-db with 0 as its nodata, which would leave every cell in the sun out of
 an Autark map.

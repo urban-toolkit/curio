@@ -12,13 +12,11 @@ def simulate_flood_projection(
     topleft,
     bottomright,
     output,
-    year="2020 - 2040",
+    year="2020 - 2050",  # Curio: the first period is 2020 - 2050
     use_NBS_classes=[
         "Bioswales/Infiltration trenches",
         "Permeable pavements",
         "Retention ponds",
-        "Infiltration trench",
-        "Bioswales",
         "Constructed wetlands",
     ],
     data_dir="./models/flooding/data_substitutes",  # Curio: the folder of SCOUT's rasters
@@ -28,9 +26,9 @@ def simulate_flood_projection(
         21: "Bioswales/Infiltration trenches",
         31: "Permeable pavements",
         43: "Retention ponds",
-        52: "Infiltration trench",
-        71: "Bioswales",
-        81: "Bioswales",
+        52: "Bioswales/Infiltration trenches",  # Curio: one class per kind of solution
+        71: "Bioswales/Infiltration trenches",  # Curio: one class per kind of solution
+        81: "Bioswales/Infiltration trenches",  # Curio: one class per kind of solution
         90: "Constructed wetlands",
         95: "Constructed wetlands",
     }
@@ -43,7 +41,7 @@ def simulate_flood_projection(
     }
 
     year_dict = {
-        "2020 - 2040": "2020_2040",
+        "2020 - 2050": "2020_2050",  # Curio: the first period is 2020 - 2050
         "2050 - 2080": "2050_2080",
         "2080 - 2100": "2080_2100",
     }

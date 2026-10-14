@@ -29,10 +29,12 @@ USAGE
 
 from __future__ import annotations
 
+import copy
 import csv
 import json
 import math
 import random
+import re
 import uuid
 from pathlib import Path
 
@@ -607,6 +609,66 @@ def node_id(key: str) -> str:
     return str(uuid.uuid5(NAMESPACE, key))
 
 
+_COLOR_CHANNELS = {"color", "fill", "stroke"}
+_ORDER_CHANNELS = {"x", "y", "xOffset", "yOffset", "row", "column", "facet", "shape"}
+_SCENARIO_FIELDS = ("scenario", "scenario_name", "scenario_color", "scenario_order")
+
+
+def _by_input(values) -> str:
+    """A Vega expression picking a row's value by the circle it came in on."""
+    quoted = ["'" + str(v).replace("\\", "\\\\").replace("'", "\\'") + "'" for v in values]
+    return "[" + ", ".join(quoted) + "][datum.__input__]"
+
+
+def name_the_scenarios(spec: dict, ids: list, names: list, colors: list) -> dict:
+    """*spec* over the node's inputs stacked (the dataset `inputs`, each row's
+    `__input__` its circle), naming each circle's scenario itself: the
+    scenario columns it reads, from `__input__`, and the scenarios' colors and
+    order on the encodings of the scenario that set none of their own. The
+    specs share encodings (``NO_LEGEND_SCENARIO``), so a copy is changed."""
+    spec = copy.deepcopy(spec)
+    text = json.dumps(spec)
+    columns = {
+        "scenario": _by_input(ids),
+        "scenario_name": _by_input(names),
+        "scenario_color": _by_input(colors),
+        "scenario_order": "datum.__input__",
+    }
+    calculates = [{"calculate": columns[f], "as": f} for f in _SCENARIO_FIELDS if re.search(rf"\b{f}\b", text)]
+
+    def visit(node) -> None:
+        if isinstance(node, list):
+            for child in node:
+                visit(child)
+            return
+        if not isinstance(node, dict):
+            return
+        for key, value in node.items():
+            if key in ("data", "datasets"):
+                continue
+            if isinstance(value, dict) and value.get("field") in ("scenario", "scenario_name"):
+                domain = ids if value["field"] == "scenario" else names
+                if key in _COLOR_CHANNELS and "scale" not in value:
+                    value["scale"] = {"domain": domain, "range": colors}
+                elif key in _ORDER_CHANNELS and "sort" not in value:
+                    value["sort"] = domain
+            visit(value)
+
+    visit(spec)
+    transform = calculates + list(spec.get("transform") or [])
+    out: dict = {}
+    for key, value in spec.items():
+        if key in ("data", "transform"):
+            continue
+        out[key] = value
+        if key == "$schema":
+            out["data"] = {"name": "inputs"}
+            out["transform"] = transform
+    if "data" not in out:
+        out = {"data": {"name": "inputs"}, "transform": transform, **out}
+    return out
+
+
 def node(key, node_type, x, y, title, goal, content, extra_metadata=None) -> dict:
     metadata = {"keywords": [], **(extra_metadata or {}), "packageTemplateLabel": title}
     return {
@@ -642,11 +704,14 @@ def write_dataflow() -> None:
     members: dict[str, list[str]] = {key: [] for key in SCENARIOS}
     for row, (key, file_name, _table, label, title, goal, scenarios, spec) in enumerate(CHARTS):
         y = row * ROW_HEIGHT
-        chart = node(
-            f"chart/{key}", "curio.builtin/vis-vega", CHART_X, y, title, goal,
-            json.dumps({"$schema": VEGA_SCHEMA, **spec()}, indent=2),
-            {"vegaCompare": {"enabled": True}},
+        # A plain Vega-Lite node: its spec names each circle's scenario itself.
+        named = name_the_scenarios(
+            {"$schema": VEGA_SCHEMA, **spec()},
+            list(scenarios),
+            [SCENARIOS[s][0] for s in scenarios],
+            [SCENARIOS[s][1] for s in scenarios],
         )
+        chart = node(f"chart/{key}", "curio.builtin/vis-vega", CHART_X, y, title, goal, json.dumps(named, indent=2))
         for slot, scenario in enumerate(scenarios):
             name = SCENARIOS[scenario][0]
             branch = node(

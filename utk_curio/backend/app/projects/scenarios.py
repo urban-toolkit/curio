@@ -1,8 +1,11 @@
 """A dataflow's scenarios (#662), at ``dataflow.scenarios``.
 
 A scenario is a named selection of the dataflow's nodes. Each one is
-``{id, name, color, description?, nodes, collapsed?, box?, source?}``, and a
-node belongs to at most one.
+``{id, name, color, description?, nodes, upstream?, downstream?, collapsed?,
+box?, source?}``, and a node belongs to at most one. ``upstream`` and
+``downstream`` are the nodes outside it that feed it and that it feeds, which a
+save stores (:func:`normalize_spec_scenarios`) and a drag from the Scenario
+Catalog brings with it; they may name another scenario's neighbors too.
 
 * :func:`scenario_conflicts` is what a writer may not send: a node in two
   scenarios, or two scenarios with one id. A save that sends either is refused.
@@ -63,8 +66,8 @@ def _well_formed(entry: object) -> bool:
     )
 
 
-def _members(entry: dict) -> list[str]:
-    raw = entry.get("nodes")
+def _members(entry: dict, key: str = "nodes") -> list[str]:
+    raw = entry.get(key)
     if not isinstance(raw, list):
         return []
     out: list[str] = []
@@ -146,6 +149,9 @@ def normalize_scenarios(raw: object, node_ids: Iterable[str]) -> list[dict]:
         if isinstance(entry.get("description"), str) and entry["description"]:
             scenario["description"] = entry["description"]
         scenario["nodes"] = members
+        for key in ("upstream", "downstream"):
+            if isinstance(entry.get(key), list):
+                scenario[key] = [n for n in _members(entry, key) if n in nodes and n not in members]
         if isinstance(entry.get("collapsed"), bool):
             scenario["collapsed"] = entry["collapsed"]
         box = entry.get("box")
@@ -163,12 +169,24 @@ def normalize_scenarios(raw: object, node_ids: Iterable[str]) -> list[dict]:
 
 
 def normalize_spec_scenarios(spec: object) -> None:
-    """Clean ``dataflow.scenarios`` in place, against the spec's own nodes; an
-    empty list is dropped, so a dataflow without scenarios has no key."""
+    """Clean ``dataflow.scenarios`` in place, against the spec's own nodes,
+    and store each one's upstream and downstream nodes as the spec's edges
+    have them now (each only when it has some); an empty list is dropped, so a dataflow without scenarios
+    has no key."""
+    from utk_curio.backend.app.scenario_catalog.domain.parts import scenario_neighbors, spec_nodes_and_edges
+
     dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
     if not isinstance(dataflow, dict) or "scenarios" not in dataflow:
         return
     kept = normalize_scenarios(dataflow["scenarios"], _node_ids(spec))
+    nodes, edges = spec_nodes_and_edges(spec)
+    for scenario in kept:
+        # Emitted only when non-empty, as a description is.
+        for key, ids in scenario_neighbors(scenario, kept, nodes, edges).items():
+            if ids:
+                scenario[key] = ids
+            else:
+                scenario.pop(key, None)
     if kept:
         dataflow["scenarios"] = kept
     else:

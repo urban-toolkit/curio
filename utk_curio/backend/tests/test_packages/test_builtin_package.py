@@ -36,15 +36,12 @@ EXPECTED_TEMPLATE_IDS: frozenset[str] = frozenset({
     "autk-grammar",
     "spatial-join",
     "parameter",
-    "raster-calculator",
-    "raster-statistics",
     "edit-features",
 })
 
 EXPECTED_BEHAVIORS: frozenset[str] = frozenset({
     "code", "data-export", "data-pool", "data-summary", "vega",
     "simple-vis", "autk-grammar", "spatial-join", "parameter",
-    "raster-calculator", "raster-statistics",
     "edit-features",
 })
 

@@ -184,11 +184,6 @@ EXAMPLE_09_MAP = "6c4aa6a8-45eb-480e-bb3d-3fd54d13325b"
 EXAMPLE_08_SCATTER = "niteroi-plot"
 EXAMPLE_08_MAP = "niteroi-map"
 
-#: Raster Calculator and Raster Statistics (#738) run their code behind their
-#: own play button too, with no legacy category: example 24's Raster
-#: Statistics node is played and must end Done like any other.
-RASTER_TOOLS = {"curio.builtin/raster-calculator", "curio.builtin/raster-statistics"}
-
 #: Edit Features (#662) runs the code its edit list writes behind its own play
 #: button too: example 06's is played and must end Done like any other.
 EDIT_FEATURES = "curio.builtin/edit-features"
@@ -197,7 +192,7 @@ EDIT_FEATURES = "curio.builtin/edit-features"
 def _plays(node: NodeSpec) -> bool:
     """Whether the canvas gives *node* a play button that the run clicks."""
     return (
-        node.has_play_button or node.type in RASTER_TOOLS or node.type == EDIT_FEATURES
+        node.has_play_button or node.type == EDIT_FEATURES
     )
 
 

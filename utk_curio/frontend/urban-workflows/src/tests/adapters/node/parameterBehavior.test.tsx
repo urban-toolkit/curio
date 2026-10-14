@@ -13,13 +13,14 @@ let mockNodes: any[] = [];
 const mockUpdateDataNode = jest.fn();
 const mockMarkNodeStale = jest.fn();
 const mockMarkDirty = jest.fn();
+let mockDashboardOn = false;
 jest.mock("../../../providers/FlowProvider", () => ({
   useFlowContext: () => ({
     nodes: mockNodes,
     updateDataNode: mockUpdateDataNode,
     markNodeStale: mockMarkNodeStale,
     markDirty: mockMarkDirty,
-    dashboardOn: false,
+    dashboardOn: mockDashboardOn,
   }),
 }));
 
@@ -46,6 +47,7 @@ function Harness({ data }: { data: any }) {
 const factor: WidgetDef = { name: "factor", type: "number", label: "Factor", default: 2 };
 
 beforeEach(() => {
+  mockDashboardOn = false;
   mockUpdateDataNode.mockReset();
   mockMarkNodeStale.mockReset();
   mockMarkDirty.mockReset();
@@ -116,6 +118,22 @@ describe("a Parameter node with its widget", () => {
       expect.objectContaining({ widgets: [{ ...factor, value: 5 }] }),
     );
     expect(mockMarkNodeStale.mock.calls.map((c) => c[0]).sort()).toEqual(["a", "b"]);
+  });
+
+  test("on the dashboard, its value is still set, though its definition is not", () => {
+    mockDashboardOn = true;
+    const self = node("p1", PARAM, { widgets: [factor] });
+    mockNodes = [self, ...users()];
+    render(<Harness data={self.data} />);
+    expect(screen.queryByRole("button", { name: "Edit parameter factor" })).toBeNull();
+    const control = screen.getByLabelText("Factor", { selector: "input" }) as HTMLInputElement;
+    expect(control.disabled).toBe(false);
+    fireEvent.change(control, { target: { value: "7" } });
+    fireEvent.blur(control);
+    expect(mockUpdateDataNode).toHaveBeenCalledWith(
+      "p1",
+      expect.objectContaining({ widgets: [{ ...factor, value: 7 }] }),
+    );
   });
 
   test("a rename rewrites the references in every node that uses it, and nowhere else", () => {

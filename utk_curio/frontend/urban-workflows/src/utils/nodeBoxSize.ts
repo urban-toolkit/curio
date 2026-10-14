@@ -18,7 +18,7 @@ export interface NodeBox {
 
 export interface MeasurableNode {
     type?: string | null;
-    data?: { nodeType?: string | null; nodeWidth?: unknown; nodeHeight?: unknown } | null;
+    data?: { nodeType?: string | null; nodeWidth?: unknown; nodeHeight?: unknown; minimized?: unknown } | null;
 }
 
 /** `typeof v === "number"` with NaN/Infinity excluded, mirroring the renderer. */
@@ -40,6 +40,8 @@ function finiteNumber(value: unknown): number | undefined {
  *    sub-minimum and stays that way.
  * 2. The mount clamp snaps a sub-minimum size to the DEFAULT, not to the
  *    minimum. A node asking for `nodeWidth: 120` renders at 525, not 200.
+ * 3. A node saved minimized (`data.minimized`) renders as its chip, so chips
+ *    laid out close together are not pushed apart on load.
  *
  * When no descriptor is registered the answer is 525x350, deliberately. An
  * anonymous shared view registers no packages at all, and a spec can name an
@@ -59,6 +61,10 @@ export function resolveNodeBoxSize(node: MeasurableNode): NodeBox {
         };
     }
 
+    if (data?.minimized === true) {
+        return { width: MINIMIZED_NODE_WIDTH, height: MINIMIZED_NODE_HEIGHT };
+    }
+
     return clampNodeBox(
         finiteNumber(data?.nodeWidth) ?? finiteNumber(container?.nodeWidth),
         finiteNumber(data?.nodeHeight) ?? finiteNumber(container?.nodeHeight),
@@ -74,12 +80,20 @@ export function resolveNodeBoxSize(node: MeasurableNode): NodeBox {
  * for most built-ins, and reach 525x350 only in a mount effect; the canvas's
  * load fit could measure the narrow first render and leave the grown nodes
  * past the window's edge (#683).
+ *
+ * *min* is the smallest box its resize handle allows, the node minimum unless
+ * the node says otherwise: a dashboard tile showing only its controls may be
+ * resized smaller, and keeps that size when the dashboard is opened again.
  */
-export function clampNodeBox(width: unknown, height: unknown): NodeBox {
+export function clampNodeBox(
+    width: unknown,
+    height: unknown,
+    min: NodeBox = { width: MIN_NODE_WIDTH, height: MIN_NODE_HEIGHT },
+): NodeBox {
     const w = finiteNumber(width);
     const h = finiteNumber(height);
     return {
-        width: w === undefined || w < MIN_NODE_WIDTH ? DEFAULT_NODE_WIDTH : w,
-        height: h === undefined || h < MIN_NODE_HEIGHT ? DEFAULT_NODE_HEIGHT : h,
+        width: w === undefined || w < min.width ? DEFAULT_NODE_WIDTH : w,
+        height: h === undefined || h < min.height ? DEFAULT_NODE_HEIGHT : h,
     };
 }

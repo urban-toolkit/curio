@@ -9,8 +9,9 @@ Routing node set as SCOUT's example sets it (Default weights, K 1, midnight on
 ``[!! input_0:table_osm_roads !!]``. It finds SCOUT's two routes, the fastest
 (SCOUT's C) and the one its weather weights favor (D). Two scenarios,
 "Fastest route" and "Weather-aware route" (its copy), each keep one of them: a
-node with the route as a band, and one with its metrics. An Autark map draws
-both scenarios' routes in their colors, SCOUT's, with a darker outline; four
+node with the route as a band, and one with its metrics. A node in no scenario
+puts both routes in one layer, each named in a ``route`` column, and an Autark
+map draws it over the roads colored by that column, with Autark's own legend; four
 Vega-Lite nodes comparing the scenarios chart the two routes' duration,
 distance, rain exposure and wind exposure, one bar per scenario, as SCOUT's
 example compares them. Run All drives the whole path:

@@ -246,7 +246,10 @@ describe("injectInputs", () => {
   test("several inputs are named datasets, and the top level reads the first unless it names another", () => {
     const spec: any = { mark: "bar", datasets: { mine: [1] } };
     expect(injectInputs(spec, [rowsOf("input_0"), rowsOf("input_1")])).toBe(true);
-    expect(spec.datasets).toEqual({ mine: [1], input_0: [{ name: "input_0" }], input_1: [{ name: "input_1" }] });
+    expect(spec.datasets).toEqual({
+      mine: [1], input_0: [{ name: "input_0" }], input_1: [{ name: "input_1" }],
+      inputs: [{ name: "input_0", __input__: 0 }, { name: "input_1", __input__: 1 }],
+    });
     expect(spec.data).toEqual({ name: "input_0" });
 
     const second: any = { data: { name: "input_1" }, mark: "bar" };
@@ -257,8 +260,21 @@ describe("injectInputs", () => {
   test("one input that a part of the spec names is a named dataset too", () => {
     const spec: any = { layer: [{ mark: "bar" }, { data: { name: "input_0" }, mark: "rule" }] };
     expect(injectInputs(spec, [rowsOf("input_0")])).toBe(true);
-    expect(Object.keys(spec.datasets)).toEqual(["input_0"]);
+    expect(Object.keys(spec.datasets)).toEqual(["input_0", "inputs"]);
     expect(spec.data).toEqual({ name: "input_0" });
+  });
+
+  test("a spec reading `inputs` gets them all stacked, each row's __input__ its circle, even from one", () => {
+    const one: any = { data: { name: "inputs" }, mark: "bar" };
+    expect(injectInputs(one, [rowsOf("input_0")])).toBe(true);
+    expect(one.data).toEqual({ name: "inputs" });
+    expect(one.datasets.inputs).toEqual([{ name: "input_0", __input__: 0 }]);
+
+    const two: any = { data: { name: "inputs" }, mark: "bar" };
+    injectInputs(two, [rowsOf("input_1"), rowsOf("input_0")]);
+    expect(two.datasets.inputs.map((row: any) => row.__input__)).toEqual([0, 1]);
+    // The inputs' own rows are left as they were.
+    expect(two.datasets.input_0).toEqual([{ name: "input_0" }]);
   });
 });
 
@@ -270,6 +286,7 @@ describe("usesNamedDatasets", () => {
   test("one input does when a layer, a concatenated view, a facet's view or a lookup names a dataset", () => {
     expect(usesNamedDatasets({ mark: "bar" }, 1)).toBe(false);
     expect(usesNamedDatasets({ data: { name: "input_0" }, mark: "bar" }, 1)).toBe(false);
+    expect(usesNamedDatasets({ data: { name: "inputs" }, mark: "bar" }, 1)).toBe(true);
     expect(usesNamedDatasets({ layer: [{ data: { name: "input_0" }, mark: "bar" }] }, 1)).toBe(true);
     expect(usesNamedDatasets({ hconcat: [{ mark: "bar" }, { data: { name: "input_0" }, mark: "bar" }] }, 1)).toBe(true);
     expect(usesNamedDatasets({ facet: { row: { field: "a" } }, spec: { data: { name: "input_0" }, mark: "bar" } }, 1)).toBe(true);

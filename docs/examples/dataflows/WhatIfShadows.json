@@ -48,7 +48,13 @@
             }
           ]
         },
-        "title": "Season"
+        "title": "Season",
+        "dashboardPinned": true,
+        "dashboardX": 552.8245817857519,
+        "dashboardY": 228.70735340629028,
+        "dashboardWidth": 287,
+        "dashboardHeight": 157,
+        "dashboardControlsOnly": true
       },
       {
         "id": "0143e82a-7b14-504b-b059-e2834c8ac1c3",
@@ -166,7 +172,12 @@
           "keywords": [],
           "packageTemplateLabel": "Data Transformation - Towers removed"
         },
-        "title": "Data Transformation - Towers removed"
+        "title": "Data Transformation - Towers removed",
+        "dashboardPinned": true,
+        "dashboardX": 928.5909411077744,
+        "dashboardY": 566.5190164835567,
+        "dashboardWidth": 415,
+        "dashboardHeight": 382
       },
       {
         "id": "7b7141d3-60ba-5be3-a1a4-e23b8b981e31",
@@ -287,26 +298,30 @@
       {
         "id": "c68aeed6-9cfd-5759-b15e-76fe3563051b",
         "type": "curio.builtin/vis-vega",
-        "x": 3870,
-        "y": 410,
+        "x": 4528.754078871152,
+        "y": 917.1579519342757,
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Chart SCOUT's mean accumulated shadow of both scenarios.",
         "metadata": {
           "keywords": [],
-          "vegaCompare": {
-            "enabled": true
-          },
           "packageTemplateLabel": "Mean accumulated shadow comparison"
         },
         "title": "Mean accumulated shadow comparison",
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"title\": \"Mean accumulated shadow (min)\",\n  \"encoding\": {\n    \"theta\": {\n      \"field\": \"Mean Acc shadow\",\n      \"type\": \"quantitative\",\n      \"stack\": true\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"legend\": null\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"arc\",\n        \"outerRadius\": 110,\n        \"tooltip\": true\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"text\",\n        \"radius\": 135\n      },\n      \"encoding\": {\n        \"text\": {\n          \"field\": \"Mean Acc shadow\",\n          \"type\": \"quantitative\",\n          \"format\": \".2f\"\n        }\n      }\n    }\n  ]\n}"
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"inputs\"\n  },\n  \"transform\": [\n    {\n      \"calculate\": \"['Existing', 'Towers removed'][datum.__input__]\",\n      \"as\": \"scenario_name\"\n    }\n  ],\n  \"title\": \"Mean accumulated shadow (min)\",\n  \"encoding\": {\n    \"theta\": {\n      \"field\": \"Mean Acc shadow\",\n      \"type\": \"quantitative\",\n      \"stack\": true\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"legend\": {\n        \"title\": \"Scenario\",\n        \"orient\": \"bottom\",\n        \"direction\": \"horizontal\"\n      },\n      \"scale\": {\n        \"domain\": [\n          \"Existing\",\n          \"Towers removed\"\n        ],\n        \"range\": [\n          \"#2a9d8f\",\n          \"#e76f51\"\n        ]\n      }\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"arc\",\n        \"outerRadius\": 100,\n        \"tooltip\": true\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"text\",\n        \"radius\": 122\n      },\n      \"encoding\": {\n        \"text\": {\n          \"field\": \"Mean Acc shadow\",\n          \"type\": \"quantitative\",\n          \"format\": \".2f\"\n        }\n      }\n    }\n  ]\n}",
+        "width": 505,
+        "height": 351,
+        "dashboardPinned": true,
+        "dashboardX": 1918.0242310084238,
+        "dashboardY": 583.626763048886,
+        "dashboardWidth": 363,
+        "dashboardHeight": 353
       },
       {
         "id": "7465bb33-9916-53fe-806b-90becc9aa805",
-        "type": "curio.builtin/raster-calculator",
-        "x": 3870,
-        "y": 910,
+        "type": "curio.builtin/computation-analysis",
+        "x": 4083.115739068351,
+        "y": 854.0507119532468,
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Take the size of the change in the accumulated shadow between the two scenarios, cell by cell.",
@@ -315,13 +330,14 @@
           "packageTemplateLabel": "Accumulated shadow change"
         },
         "title": "Accumulated shadow change",
-        "content": "# The size of the change from Existing (input_0) to Towers removed (input_1),\n# cell by cell: 0 where they agree.\nreturn curio_raster_calculate(\"subtract\", [input_1, input_0], absolute=True)\n"
+        "content": "# The size of the change from Existing (input_0) to Towers removed (input_1),\n# cell by cell: 0 where they agree.\nreturn curio_raster_calculate(\"subtract\", [input_1, input_0], absolute=True)\n",
+        "minimized": true
       },
       {
         "id": "40039de4-5651-5ddf-9915-ab56972e35cc",
         "type": "curio.builtin/autk-grammar",
-        "x": 4520,
-        "y": 910,
+        "x": 4532.683567810411,
+        "y": 330.5370950444113,
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Map where the accumulated shadow changes when the towers are removed.",
@@ -330,7 +346,14 @@
           "packageTemplateLabel": "Accumulated shadow change map"
         },
         "title": "Accumulated shadow change map",
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"legendTitle\": \"Accumulated shadow change (minutes)\"\n      }\n    ]\n  }\n}"
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"legendTitle\": \"Accumulated shadow change (minutes)\"\n      }\n    ]\n  }\n}",
+        "width": 495,
+        "height": 537,
+        "dashboardPinned": true,
+        "dashboardX": 1869.2259659412236,
+        "dashboardY": 131.3368337050363,
+        "dashboardWidth": 458,
+        "dashboardHeight": 434
       },
       {
         "id": "c43cf253-1b54-5e18-8fb5-393817d22389",
@@ -345,7 +368,12 @@
           "keywords": [],
           "packageTemplateLabel": "Buildings in 3D - Existing"
         },
-        "title": "Buildings in 3D - Existing"
+        "title": "Buildings in 3D - Existing",
+        "dashboardPinned": true,
+        "dashboardX": 935.370466121764,
+        "dashboardY": 93.82708235092556,
+        "dashboardWidth": 409,
+        "dashboardHeight": 422
       },
       {
         "id": "a9c39074-cc27-5df9-9f6c-0fe4599b35b0",
@@ -365,8 +393,8 @@
       {
         "id": "93184132-1d8a-563b-bd05-f8fc9e5d64f0",
         "type": "curio.builtin/autk-grammar",
-        "x": 3225,
-        "y": 430,
+        "x": 3893.2428057531897,
+        "y": 264.1299861415855,
         "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"legendTitle\": \"Accumulated shadow (minutes)\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -375,7 +403,14 @@
           "keywords": [],
           "packageTemplateLabel": "Shadow map - Existing"
         },
-        "title": "Shadow map - Existing"
+        "title": "Shadow map - Existing",
+        "width": 500,
+        "height": 536,
+        "dashboardPinned": true,
+        "dashboardX": 1380.6153244602845,
+        "dashboardY": 73.02778848899126,
+        "dashboardWidth": 457,
+        "dashboardHeight": 463
       },
       {
         "id": "a568ff77-e88d-5a19-936d-5988aeebe5b3",
@@ -390,7 +425,12 @@
           "keywords": [],
           "packageTemplateLabel": "Buildings in 3D - Towers removed"
         },
-        "title": "Buildings in 3D - Towers removed"
+        "title": "Buildings in 3D - Towers removed",
+        "dashboardPinned": true,
+        "dashboardX": 500.1008777431831,
+        "dashboardY": 566.6292668464409,
+        "dashboardWidth": 412,
+        "dashboardHeight": 383
       },
       {
         "id": "13c5544b-f368-5a5f-9f88-103fdd0caa61",
@@ -410,8 +450,8 @@
       {
         "id": "a9d15f3f-f8ce-58b1-91a2-545fefaebcf4",
         "type": "curio.builtin/autk-grammar",
-        "x": 3225,
-        "y": 1390,
+        "x": 3892.553923827758,
+        "y": 963.1606231130822,
         "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"legendTitle\": \"Accumulated shadow (minutes)\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -420,7 +460,14 @@
           "keywords": [],
           "packageTemplateLabel": "Shadow map - Towers removed"
         },
-        "title": "Shadow map - Towers removed"
+        "title": "Shadow map - Towers removed",
+        "width": 498,
+        "height": 547,
+        "dashboardPinned": true,
+        "dashboardX": 1381.016906074095,
+        "dashboardY": 548.4993213613262,
+        "dashboardWidth": 457,
+        "dashboardHeight": 420
       },
       {
         "id": "dfc77348-ce30-5c66-ba39-28944edd5b54",
@@ -650,7 +697,6 @@
           "6086b922-b194-5525-affd-b987dabe7356",
           "c43cf253-1b54-5e18-8fb5-393817d22389",
           "a9c39074-cc27-5df9-9f6c-0fe4599b35b0",
-          "93184132-1d8a-563b-bd05-f8fc9e5d64f0",
           "dfc77348-ce30-5c66-ba39-28944edd5b54",
           "c0c2c860-6e5e-5606-84b9-9f685450ba00"
         ]
@@ -666,7 +712,6 @@
           "3bd9ca02-2391-52cb-94ce-8bd862128574",
           "a568ff77-e88d-5a19-936d-5988aeebe5b3",
           "13c5544b-f368-5a5f-9f88-103fdd0caa61",
-          "a9d15f3f-f8ce-58b1-91a2-545fefaebcf4",
           "9f9ba8b1-7d6c-5001-97a5-e8b7e3c8d065",
           "3e37e26a-268b-51de-a494-249116b148ea"
         ]

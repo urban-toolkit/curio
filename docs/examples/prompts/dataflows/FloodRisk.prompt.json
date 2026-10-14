@@ -1,0 +1,412 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "FloodRisk",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/dataflows/FloodRisk.json",
+    "sha256": "82b3b3fd29c98a717e50d1f36e10b0a42f55f7b28ea7408bb2d3bf4d9c6e90dc",
+    "walkthrough": null
+  },
+  "prompt": "Measure how deep SCOUT's Quad Cities flood projection stands on the census tracts along the Mississippi, for two scenarios: one with no nature-based solutions in place and a copy of it with all of them, over SCOUT's whole flood grid, from 90.688 to 90.425 degrees west and 41.415 to 41.624 degrees north. A shared setting holds the period the maps show, 2020 to 2050 by default. Load the census tracts the grid meets with CDC's Social Vulnerability Index and the grid's rivers, lakes and reservoirs from USGS's National Hydrography Dataset, two datasets in the Data Catalog, and harmonize the tracts: give CDC's columns readable names with its missing-value code as missing, and keep the riverside tracts, those the Mississippi's channel touches, with an SVI percentile; map the riverside tracts, coloured by their vulnerability, on an Autark map. In each scenario, run SCOUT's flood projection for the map period, a setting both scenarios share; and, for the riverside tracts, draw the mapped period's depth on those tracts alone, the tracts' borders over it, on an Autark map, each tract's average depth over its land, on one 0 to 5 metre scale in both, on another. In one more node, run the flood projection for every period ticked in its own setting, all three by default, with no solutions and with all of them, and average each depth over all the riverside tracts' land, leaving the water itself out. Then map the absolute change in depth between the scenarios on the riverside tracts, the tracts' borders over it, and how much the solutions lower each tract's average depth, and compare them in two Vega-Lite charts: the average depth per period with and without the solutions and how much they lower it, and each tract's social vulnerability against its average depth, its depths with and without the solutions joined. SCOUT's flood projection is not part of the standard node set, so whatever provides it needs installing first.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.cdc.quad-cities-svi-tracts",
+      "data.scout.quad-cities-flood",
+      "data.usgs.quad-cities-waterways"
+    ],
+    "packages": [
+      "scout.flood@1"
+    ]
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization4",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization5",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization6",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization7",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis3",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis4",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis5",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis6",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis7",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis8",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "endpoint1",
+        "type": "curio.builtin/parameter",
+        "role": "endpoint",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "visualization8",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization9",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis9",
+        "type": "scout.flood/flood-projection",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis10",
+        "type": "scout.flood/flood-projection",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis11",
+        "type": "scout.flood/flood-projection",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "analysis1",
+        "to": "visualization5",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization6",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization7",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization5",
+        "kind": "data"
+      },
+      {
+        "from": "analysis3",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis4",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis5",
+        "to": "visualization6",
+        "kind": "data"
+      },
+      {
+        "from": "analysis5",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis6",
+        "to": "visualization7",
+        "kind": "data"
+      },
+      {
+        "from": "analysis6",
+        "to": "analysis2",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis7",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis7",
+        "to": "analysis3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis7",
+        "to": "visualization8",
+        "kind": "data"
+      },
+      {
+        "from": "analysis8",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "analysis8",
+        "to": "analysis3",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis8",
+        "to": "visualization8",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader1",
+        "to": "analysis4",
+        "kind": "data"
+      },
+      {
+        "from": "analysis9",
+        "to": "analysis5",
+        "kind": "data"
+      },
+      {
+        "from": "analysis9",
+        "to": "analysis7",
+        "kind": "data"
+      },
+      {
+        "from": "analysis10",
+        "to": "analysis6",
+        "kind": "data"
+      },
+      {
+        "from": "analysis10",
+        "to": "analysis8",
+        "kind": "data"
+      },
+      {
+        "from": "analysis11",
+        "to": "visualization9",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.cdc.quad-cities-svi-tracts",
+        "data.scout.quad-cities-flood",
+        "data.usgs.quad-cities-waterways"
+      ],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [
+    {
+      "ref": "analysis4",
+      "mustMention": [
+        "tract",
+        "water"
+      ]
+    },
+    {
+      "ref": "analysis9",
+      "mustMention": [
+        "flood"
+      ]
+    },
+    {
+      "ref": "analysis10",
+      "mustMention": [
+        "flood"
+      ]
+    },
+    {
+      "ref": "analysis11",
+      "mustMention": [
+        "depth",
+        "period"
+      ],
+      "outputKind": "dataframe"
+    },
+    {
+      "ref": "analysis7",
+      "mustMention": [
+        "depth",
+        "tract"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "analysis8",
+      "mustMention": [
+        "depth",
+        "tract"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "analysis2",
+      "mustMention": [
+        "flood"
+      ],
+      "outputKind": "raster"
+    },
+    {
+      "ref": "analysis3",
+      "mustMention": [
+        "depth",
+        "tract"
+      ],
+      "outputKind": "geodataframe"
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T1",
+    "needs": [
+      "package-enlist:templates"
+    ],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5-5 from the example JSON, 2026-10-13",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "sourceLicences": [
+      {
+        "datasetId": "data.cdc.quad-cities-svi-tracts",
+        "licence": "Public domain"
+      },
+      {
+        "datasetId": "data.usgs.quad-cities-waterways",
+        "licence": "Public domain"
+      },
+      {
+        "datasetId": "data.scout.quad-cities-flood",
+        "licence": "to be confirmed"
+      }
+    ],
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the export carries the datasets' identifiers only. The tracts are CDC/ATSDR's and the waterways USGS's (both public domain), the flood rasters SCOUT's (urban-toolkit/scout), used with the permission of its authors; their licence is to be confirmed."
+  },
+  "notes": "A shared context (the map period), two loaders, each a dataset dragged from the Data Catalog, and a Harmonize node that saves the riverside tracts as a computed dataset (curio_save_file), which the depth nodes read with curio_computed_path, feed two scenarios. Each runs the package's Flood Projection for the map period, then an Autark map of the depth with the tracts' borders over it; one Autark map shows the tracts' vulnerability for both. A Python node takes the absolute change in depth (curio_raster_calculate) for an Autark map; one Flood Projection node runs every compared period for both scenarios for a bar chart, and the scatter reads the tract depths stacked (the dataset inputs) and names each circle's scenario from __input__."
+}

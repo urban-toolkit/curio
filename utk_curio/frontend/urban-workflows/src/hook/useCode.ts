@@ -21,8 +21,8 @@ import { runKeyWithShared, sharedWidgetsOfSpec } from "../utils/references/share
 import { normalizeSelections, type SelectionTag } from "../utils/references/selectionTags";
 import { normalizeInputReferences } from "../utils/references/codeReferences";
 import { lineageFromSpec } from "../utils/scenarios/duplicateSelection";
-import { normalizeVegaCompare, type VegaCompareSettings } from "../utils/vegaCompare";
 import { normalizeEditFeatures, type EditFeaturesSettings } from "../utils/editFeatures/editFeatures";
+import { currentNodeType } from "../utils/flowNodeCanonicalType";
 
 // Module-level singletons so every node shares the same interpreter
 // connection pool. Exported so collaboration's remote-graph handler can
@@ -48,6 +48,17 @@ type CreateCodeNodeOptions = {
     keywords?: number[];
     nodeWidth?: number;
     nodeHeight?: number;
+    // Drawn as its small chip on the canvas (the header's Minimize).
+    minimized?: boolean;
+    // Folded to its widget rows (the "Display as widget" switch).
+    controlsOnly?: boolean;
+    controlsOnlyWidth?: number;
+    controlsOnlyHeight?: number;
+    // Its dashboard tile displayed as a widget, apart from the canvas.
+    dashboardControlsOnly?: boolean;
+    // Its widgets each in a box of their own on the tile, placed by name.
+    dashboardSeparateWidgets?: boolean;
+    dashboardWidgetLayout?: Record<string, { x: number; y: number; width?: number; height?: number }>;
     dashboardPinned?: boolean;
     dashboardX?: number;
     dashboardY?: number;
@@ -88,8 +99,6 @@ type CreateCodeNodeOptions = {
     copiedFrom?: string[];
     // #662: the node's selection tags and the ids they hold (metadata.selections).
     selections?: SelectionTag[];
-    // A Vega-Lite node's Compare scenarios switch (metadata.vegaCompare).
-    vegaCompare?: VegaCompareSettings;
     // #662: an Edit Features node's edit list (metadata.editFeatures).
     editFeatures?: EditFeaturesSettings;
     // #407: a node whose saved output a project load restored mounts as having
@@ -268,10 +277,6 @@ export function useCode(): IUseCode {
             if(node.metadata != undefined && Array.isArray(node.metadata.selections))
                 nodeMeta.selections = normalizeSelections(node.metadata.selections);
 
-            // And a Vega-Lite node's Compare scenarios switch.
-            if(node.metadata != undefined && node.metadata.vegaCompare != undefined)
-                nodeMeta.vegaCompare = normalizeVegaCompare(node.metadata.vegaCompare);
-
             // #662: and an Edit Features node's edit list.
             if(node.metadata != undefined && node.metadata.editFeatures != undefined)
                 nodeMeta.editFeatures = normalizeEditFeatures(node.metadata.editFeatures);
@@ -284,6 +289,27 @@ export function useCode(): IUseCode {
 
             if(typeof parsedHeight === "number")
                 nodeMeta.nodeHeight = parsedHeight;
+
+            if(node.minimized === true)
+                nodeMeta.minimized = true;
+
+            if(node.controlsOnly === true)
+                nodeMeta.controlsOnly = true;
+
+            if(typeof node.controlsOnlyWidth === "number")
+                nodeMeta.controlsOnlyWidth = node.controlsOnlyWidth;
+
+            if(typeof node.controlsOnlyHeight === "number")
+                nodeMeta.controlsOnlyHeight = node.controlsOnlyHeight;
+
+            if(node.dashboardControlsOnly === true)
+                nodeMeta.dashboardControlsOnly = true;
+
+            if(node.dashboardSeparateWidgets === true)
+                nodeMeta.dashboardSeparateWidgets = true;
+
+            if(node.dashboardWidgetLayout && typeof node.dashboardWidgetLayout === "object")
+                nodeMeta.dashboardWidgetLayout = node.dashboardWidgetLayout;
 
             if(node.dashboardPinned)
                 nodeMeta.dashboardPinned = true;
@@ -312,7 +338,8 @@ export function useCode(): IUseCode {
                 nodeMeta.executedCode = runKeyWithShared(node.content, nodeMeta.widgets, shared, nodeMeta.selections);
             }
 
-            nodes.push(generateCodeNode(node.type, nodeMeta));
+            // A removed kind opens as the kind that replaced it.
+            nodes.push(generateCodeNode(currentNodeType(node.type), nodeMeta));
 
         }
 
@@ -390,7 +417,7 @@ export function useCode(): IUseCode {
             // reach loadParsedTrill identically from there down.
             markDirty();
         } else if(suggestionType == undefined) {
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], trill.dataflow.categories || {}, trill.dataflow.scenarios ?? []);
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], trill.dataflow.categories || {}, trill.dataflow.scenarios ?? [], trill.dataflow.dashboard ?? null);
             if (trill.nodeProvenance) loadNodeProvenance(rekeyNodeProvenance(trill.nodeProvenance, nodes.map((n) => n.id)));
             if (trill.dataflowProvenance) TrillGenerator.loadDataflowProvenance(trill.dataflowProvenance);
         } else {
@@ -418,6 +445,13 @@ export function useCode(): IUseCode {
             keywords = [],
             nodeWidth = undefined,
             nodeHeight = undefined,
+            minimized = undefined,
+            controlsOnly = undefined,
+            controlsOnlyWidth = undefined,
+            controlsOnlyHeight = undefined,
+            dashboardControlsOnly = undefined,
+            dashboardSeparateWidgets = undefined,
+            dashboardWidgetLayout = undefined,
             dashboardPinned = undefined,
             dashboardX = undefined,
             dashboardY = undefined,
@@ -439,7 +473,6 @@ export function useCode(): IUseCode {
             widgets = undefined,
             copiedFrom = undefined,
             selections = undefined,
-            vegaCompare = undefined,
             editFeatures = undefined,
             output = undefined,
             executedCode = undefined,
@@ -473,6 +506,13 @@ export function useCode(): IUseCode {
                 out,
                 nodeWidth,
                 nodeHeight,
+                minimized,
+                controlsOnly,
+                controlsOnlyWidth,
+                controlsOnlyHeight,
+                dashboardControlsOnly,
+                dashboardSeparateWidgets,
+                dashboardWidgetLayout,
                 dashboardPinned,
                 dashboardX,
                 dashboardY,
@@ -492,7 +532,6 @@ export function useCode(): IUseCode {
                 widgets,
                 copiedFrom,
                 selections,
-                vegaCompare,
                 editFeatures,
                 saveOutputDataset:
                     saveOutputDataset !== undefined

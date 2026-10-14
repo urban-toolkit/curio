@@ -1,0 +1,173 @@
+/* The agent's panel: a column on the right of the dashboard, under the bar,
+   above the tiles and the Run card. */
+.panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(380px, 100%);
+  display: flex;
+  flex-direction: column;
+  background-color: var(--curio-card-bg);
+  border-left: 1px solid var(--curio-border);
+  box-shadow: var(--curio-shadow-card);
+  z-index: 95;
+  font-size: var(--curio-font-size-md);
+  color: var(--curio-text-primary);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--curio-border);
+}
+
+.title {
+  font-weight: 600;
+}
+
+.close {
+  border: none;
+  background: none;
+  color: var(--curio-text-secondary);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: var(--curio-radius-sm);
+}
+
+.close:hover {
+  background-color: var(--curio-surface-muted);
+}
+
+.list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.hint {
+  margin: 0;
+  color: var(--curio-text-secondary);
+  font-size: var(--curio-font-size-sm);
+}
+
+.entry {
+  max-width: 88%;
+  padding: 8px 10px;
+  border-radius: var(--curio-radius-md);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+
+.user {
+  align-self: flex-end;
+  background-color: var(--curio-top-bar-bg);
+  color: var(--curio-text-on-dark);
+}
+
+.assistant {
+  align-self: flex-start;
+  background-color: var(--curio-surface-muted);
+}
+
+.error {
+  background-color: var(--curio-danger-bg);
+  color: var(--curio-danger-text);
+  border: 1px solid var(--curio-danger-border);
+}
+
+.pending {
+  color: var(--curio-text-secondary);
+}
+
+.notes {
+  margin: 6px 0 0;
+  padding-left: 16px;
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-text-secondary);
+}
+
+.setup {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 14px;
+  color: var(--curio-text-secondary);
+  font-size: var(--curio-font-size-sm);
+}
+
+.setupTitle {
+  color: var(--curio-text-primary);
+  font-size: var(--curio-font-size-md);
+  font-weight: 600;
+}
+
+.setupActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.primary,
+.secondary {
+  padding: 6px 12px;
+  border-radius: var(--curio-radius-md);
+  font-size: var(--curio-font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.primary {
+  border: 1px solid var(--curio-top-bar-bg);
+  background-color: var(--curio-top-bar-bg);
+  color: var(--curio-text-on-dark);
+}
+
+.secondary {
+  border: 1px solid var(--curio-border-strong);
+  background-color: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+}
+
+.composer {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--curio-border);
+}
+
+.input {
+  flex: 1;
+  resize: none;
+  padding: 7px 9px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-md);
+  font: inherit;
+  color: inherit;
+  background-color: var(--curio-card-bg);
+}
+
+.send {
+  align-self: flex-end;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: var(--curio-radius-md);
+  background-color: var(--curio-top-bar-bg);
+  color: var(--curio-text-on-dark);
+  cursor: pointer;
+}
+
+.send:disabled,
+.input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

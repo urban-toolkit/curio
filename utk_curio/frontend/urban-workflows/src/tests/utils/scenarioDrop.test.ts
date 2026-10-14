@@ -23,6 +23,9 @@ function plan(overrides: Partial<ScenarioCopyPlan> = {}): ScenarioCopyPlan {
     scenario: { id: "s1", name: "Twice as tall", color: "#e86a3c", description: "Heights doubled" },
     project: { id: "p-src", name: "Shadows" },
     levers: ["scale", "map"],
+    upstream: [],
+    downstream: [],
+    saved: [],
     context: [
       { nodeId: "pool", label: "Data pool", source: { nodeId: "load", copiedFrom: [], datasetId: "computed.p-src.load" } },
     ],
@@ -207,5 +210,83 @@ describe("loaderNodes and dropGraph", () => {
     expect(graph.nodes.map((n) => n.id).sort()).toEqual(d.nodes.map((n) => n.id).sort());
     expect(graph.edges.some((e) => e.source === d.loaders[0].id)).toBe(false);
     expect(graph.edges).toHaveLength(1);
+  });
+});
+
+describe("planScenarioDrop: the nodes upstream and downstream of it", () => {
+  // clean -> scale -> map -> chart; a sibling scenario (scale2) also feeds chart.
+  function around(overrides: Partial<ScenarioCopyPlan> = {}): ScenarioCopyPlan {
+    return plan({
+      upstream: ["clean"],
+      downstream: ["chart"],
+      context: [],
+      saved: ["clean"],
+      dataflow: {
+        nodes: [
+          { id: "clean", type: "curio.builtin/computation-analysis@1", x: 0, y: 100, content: "return 1" },
+          { id: "scale", type: "curio.builtin/computation-analysis@1", x: 600, y: 100, content: "return input_0" },
+          { id: "map", type: "curio.builtin/autk-grammar@1", x: 1200, y: 100, content: "{}" },
+          { id: "chart", type: "curio.builtin/vis-vega@1", x: 1800, y: 100, content: "{}" },
+        ],
+        edges: [
+          { id: "e1", source: "clean", target: "scale", sourceHandle: "out", targetHandle: "in" },
+          { id: "e2", source: "scale", target: "map", sourceHandle: "out", targetHandle: "in" },
+          { id: "e3", source: "scale", target: "chart", sourceHandle: "out", targetHandle: "in" },
+          { id: "e4", source: "scale2", target: "chart", sourceHandle: "out", targetHandle: "in" },
+        ],
+      },
+      ...overrides,
+    });
+  }
+
+  // A later drop takes ids of its own, as uuid would give it.
+  function dropAgain(p: ScenarioCopyPlan, live: { nodes: SpecNode[]; edges: any[] }, scenarios: Scenario[]): ScenarioDrop {
+    let n = 0;
+    const built = planScenarioDrop(p, live, scenarios, { newId: () => `again-${++n}`, at: { x: 50, y: 900 } });
+    if ("error" in built) throw new Error(built.error);
+    return built;
+  }
+
+  test("arrive as copies where they were around the levers, wired as they were, with their saved outputs", () => {
+    const d = drop(around());
+    const clean = copyOf(d, "clean");
+    const scale = copyOf(d, "scale");
+    const chart = copyOf(d, "chart");
+    expect([clean.x, chart.x]).toEqual([AT.x - 600, AT.x + 1200]);
+    expect(d.edges).toContainEqual(expect.objectContaining({ source: clean.id, target: scale.id }));
+    expect(d.edges).toContainEqual(expect.objectContaining({ source: scale.id, target: chart.id }));
+    // The sibling scenario's edge into the chart is not brought.
+    expect(d.edges.some((e) => e.source === "scale2")).toBe(false);
+    expect(d.outputs).toContainEqual({ source: "clean", node: clean.id });
+    expect(d.scenario.nodes).toEqual([scale.id, copyOf(d, "map").id]);
+    expect(d.loaders).toEqual([]);
+  });
+
+  test("a second drop from the same project reuses them and feeds the same downstream node", () => {
+    const first = drop(around());
+    const live = { nodes: [...first.nodes], edges: [...first.edges] };
+    const second = dropAgain(
+      around({ scenario: { id: "s2", name: "Half as tall", color: "#2f8f4a", description: "" } }),
+      live,
+      [first.scenario],
+    );
+    const clean = copyOf(first, "clean");
+    const chart = copyOf(first, "chart");
+    expect(second.reused.map((n) => n.id).sort()).toEqual([chart.id, clean.id].sort());
+    expect(second.nodes.some((n) => n.id === clean.id || n.id === chart.id)).toBe(false);
+    const scale = copyOf(second, "scale");
+    expect(second.edges).toContainEqual(expect.objectContaining({ source: clean.id, target: scale.id }));
+    expect(second.edges).toContainEqual(expect.objectContaining({ source: scale.id, target: chart.id, targetHandle: "in" }));
+    expect(second.outputs.some((o) => o.source === "clean")).toBe(false);
+  });
+
+  test("an edge the canvas already has into a reused node is not made again", () => {
+    const first = drop(around());
+    const live = { nodes: [...first.nodes], edges: [...first.edges] };
+    const again = dropAgain(around(), live, [{ ...first.scenario, nodes: [] }]);
+    const chart = copyOf(first, "chart");
+    const into = again.edges.filter((e) => e.target === chart.id);
+    expect(into).toHaveLength(1);
+    expect(into[0].source).toBe(copyOf(again, "scale").id);
   });
 });

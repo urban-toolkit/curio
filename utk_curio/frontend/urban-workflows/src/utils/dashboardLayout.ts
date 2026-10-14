@@ -219,26 +219,6 @@ export function prepareDashboardNodes<N extends Node, E extends Edge>(
 }
 
 /**
- * Where Arrange by scenario puts each pinned tile: its place in *columns*,
- * whatever slot it was saved in or dragged to.
- */
-export function arrangedTilePositions(
-  nodes: readonly Node[],
-  dashboardPins: { [key: string]: boolean },
-  columns: DashboardColumns,
-): Map<string, { x: number; y: number }> {
-  const unsaved = nodes.map((node) =>
-    dashboardPins[node.id]
-      ? { ...node, data: { ...node.data, dashboardX: undefined, dashboardY: undefined } }
-      : node,
-  ) as NodeWithPosition[];
-  const laidOut = applyDashboardLayout(unsaved, [], dashboardPins, columns);
-  return new Map(
-    laidOut.filter((node) => dashboardPins[node.id]).map((node) => [node.id, node.position]),
-  );
-}
-
-/**
  * Node kinds that pass data through rather than produce it.
  *
  * Each of these re-derives what it shows from ``data.input`` whenever that

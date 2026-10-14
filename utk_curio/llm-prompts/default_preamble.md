@@ -211,8 +211,6 @@ A node's "type" is the id of the template it was made from. A run that can place
 - Autark: Grammar-driven urban analytics. Write an UrbanSpec (JSON) covering data loading (OSM, CSV, GeoJSON), GPU compute, map rendering of layers and rasters, and/or plot rendering in one declarative spec.
 - Spatial Join: Finds the polygon each point falls in. Connect the points to the blue circle at the top and the polygons to the green circle at the bottom, then pick the polygon column to copy onto the points, such as a neighborhood name. The output is either the points, each tagged with its polygon's value, or the polygons, each with a count of the points inside. Points outside every polygon get no value.
 - Parameter: One value any node can use. Give it a name, a type and a default. Its tag then shows under Shared in every node's Widgets tab and above every code editor; drag it into a node's code to use the value there. Changing the value makes the nodes that use it run again, and renaming it updates their code. It has no edges, and it lists the nodes that use it.
-- Raster Calculator: One operation over rasters on one grid, cell by cell. Connect the rasters to its input circles, in order; its code names the operation: add, subtract, multiply or divide input 0 and input 1, or choose, which takes input 1 where input 0's class is one of the codes it names and input 2 elsewhere. A cell that is nodata in an input the operation reads there is nodata in the result, and rasters on different grids are refused. The output is the result, a raster an Autark map draws.
-- Raster Statistics: The mean, median, minimum, maximum and count of a raster's cells, nodata left out, as a table of one row. Its code can keep only the cells that meet a condition, such as a value under 1.08, on the raster itself or on a second raster on input 1, on the same grid, used as a mask: a test of the mask's values or a set of them. A Vega-Lite node comparing the scenarios charts the table.
 - Interaction: Interacts with a layer's features on a map and edits them, for a design step. Connect a layer, or the layers an Autark node hands on, and pick the layer to edit and the column that identifies a feature: osm_id or building_id, or another column whose values differ in every feature. A layer with no such column is refused. Double-click features to pick them, then remove them (Delete), raise or lower a number such as height (the arrow keys, or a step), scale it, set a column, type into the picked features' table, or restore them; or pick features by a condition such as height > 100 and do any of these to all of them, including writing a column from an expression such as levels * 3.2. The map shows the layer as the edits leave it. The edits are a log, applied in order by that column, never by a feature's place; each can be switched off, undone or deleted. Its output is the edited layer, with the other layers as they came, and Update results runs the nodes after it again. A building's parts share its building_id, so an edit by building_id applies to the whole building.
 
 A node that accepts more than one connection takes each one on its own input circle, numbered from 0 in the order they were connected. An edge names the circle it connects to in "targetHandle": "in", "in_1", "in_2", ..., circle 0 first.
@@ -237,8 +235,6 @@ Nodes are uncontrollable, controllable through code (python or JavaScript) or co
 - Autark: controllable through grammar.
 - Spatial Join: uncontrollable.
 - Parameter: uncontrollable.
-- Raster Calculator: controllable through python code.
-- Raster Statistics: controllable through python code.
 - Interaction: controllable through python code.
 
 An output connection of a node can be connected to the input connection of different nodes.
@@ -347,8 +343,6 @@ Input supported:
 - Autark: LIST, JSON, GEODATAFRAME, DATAFRAME, RASTER
 - Spatial Join: GEODATAFRAME
 - Parameter: no input supported
-- Raster Calculator: RASTER
-- Raster Statistics: RASTER
 - Interaction: GEODATAFRAME, DATAFRAME, LIST, JSON
 
 Output supported:
@@ -365,8 +359,6 @@ Output supported:
 - Autark: LIST, JSON, GEODATAFRAME, DATAFRAME, RASTER
 - Spatial Join: GEODATAFRAME
 - Parameter: no output supported
-- Raster Calculator: RASTER
-- Raster Statistics: DATAFRAME
 - Interaction: GEODATAFRAME, DATAFRAME, JSON
 
 Make sure to pay attention to the compatibility between output and input of the nodes.
@@ -383,8 +375,6 @@ Number of connections each node accepts into its inputs. A node that accepts mor
 - Simple View: 1
 - Autark: any number
 - Spatial Join: 2
-- Raster Calculator: 3
-- Raster Statistics: 2
 - Interaction: 1
 
 Number of outputs possible for each node (if you want to output more than one data unit you need to use a tuple):
@@ -399,8 +389,6 @@ Number of outputs possible for each node (if you want to output more than one da
 - Simple View: 1
 - Autark: [0,1]
 - Spatial Join: 1
-- Raster Calculator: 1
-- Raster Statistics: 1
 - Interaction: 1
 
 Note that there is no problem connecting the output of a node into the input of multiple nodes.

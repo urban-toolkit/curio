@@ -1,0 +1,705 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "ShadowsAnywhere",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/dataflows/ShadowsAnywhere.json",
+    "sha256": "bc6798d539706f0092ec33e670d865788af3ad0fe6c788b0921ba8a0fd4870c8",
+    "walkthrough": null
+  },
+  "prompt": "Run SCOUT's shadow study on Lower Manhattan and compare the shadow in its parks across three scenarios. Load Overture Maps' buildings and OpenStreetMap's parks of Lower Manhattan from the Data Catalog, one bundle, as the Discovery Catalog downloaded them. Give every building a height in metres, from Overture's height, else its number of floors times a floor height, else a default height, both set on the node, without underground buildings and Overture's nested columns. Keep the named parks of at least a minimum area, set on the node, that are not mostly under building footprints, a park mapped twice once. Mark the buildings the what-ifs change by one rule for every park: at least a tall building height, 60 metres, and within a distance of any park, 75 metres, both shared settings. The scenarios: the buildings as they are; the marked buildings taken out; and the marked buildings cut down to the tall building height. In each, turn the buildings' heights into a zoom 16 height raster with SCOUT's building rasterizer, run SCOUT's Deep Umbra shadow model on it, with one season setting all three share, set to summer, take the accumulated shadow raster from what it returns, and measure each park's minutes of shadow: the mean, median and 90th percentile, the mean as a share of the season's daylight, and the shares of the park in sun, partial shade and deep shade. Draw each scenario's buildings in 3D coloured by height and its shadow raster on Autark maps. Then map the absolute change in shadow from the buildings as they are to each what-if, cell by cell, with a raster calculator, and the minutes of sun each park gains under each what-if, and compare the parks in a Vega-Lite chart: each park's mean shadow in the three scenarios beside the sun each what-if gains it, linked by a park picked on the bars. The rasterizer and the shadow model are not part of the standard node set, so whatever provides them needs installing first.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.curio.lower-manhattan-shadows"
+    ],
+    "packages": [
+      "scout.raster-conversion@1",
+      "scout.shadow@1"
+    ]
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization4",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization5",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization6",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization7",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization8",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization9",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization10",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis3",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis4",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis5",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis6",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis7",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis8",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis9",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis10",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis11",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis12",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader2",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform1",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform2",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "endpoint1",
+        "type": "curio.builtin/parameter",
+        "role": "endpoint",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "endpoint2",
+        "type": "curio.builtin/parameter",
+        "role": "endpoint",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "endpoint3",
+        "type": "curio.builtin/parameter",
+        "role": "endpoint",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "visualization11",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis13",
+        "type": "scout.raster-conversion/rasterize-buildings",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis14",
+        "type": "scout.raster-conversion/rasterize-buildings",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis15",
+        "type": "scout.raster-conversion/rasterize-buildings",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis16",
+        "type": "scout.shadow/accumulated-shadow",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis17",
+        "type": "scout.shadow/accumulated-shadow",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis18",
+        "type": "scout.shadow/accumulated-shadow",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "analysis1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis3",
+        "to": "analysis7",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis3",
+        "to": "visualization11",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis4",
+        "to": "analysis7",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "analysis4",
+        "to": "visualization11",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "analysis5",
+        "to": "analysis7",
+        "kind": "data"
+      },
+      {
+        "from": "analysis5",
+        "to": "visualization11",
+        "kind": "data"
+      },
+      {
+        "from": "analysis6",
+        "to": "transform1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis6",
+        "to": "transform2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis7",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis7",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "analysis8",
+        "to": "analysis3",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis8",
+        "to": "analysis4",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis8",
+        "to": "analysis5",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis8",
+        "to": "analysis6",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis9",
+        "to": "visualization5",
+        "kind": "data"
+      },
+      {
+        "from": "analysis9",
+        "to": "analysis6",
+        "kind": "data"
+      },
+      {
+        "from": "analysis9",
+        "to": "analysis8",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis9",
+        "to": "analysis13",
+        "kind": "data"
+      },
+      {
+        "from": "analysis10",
+        "to": "visualization6",
+        "kind": "data"
+      },
+      {
+        "from": "analysis10",
+        "to": "analysis1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis10",
+        "to": "analysis3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis11",
+        "to": "visualization7",
+        "kind": "data"
+      },
+      {
+        "from": "analysis11",
+        "to": "analysis2",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis11",
+        "to": "analysis4",
+        "kind": "data"
+      },
+      {
+        "from": "analysis12",
+        "to": "visualization8",
+        "kind": "data"
+      },
+      {
+        "from": "analysis12",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis12",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis12",
+        "to": "analysis5",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis8",
+        "kind": "data"
+      },
+      {
+        "from": "loader2",
+        "to": "analysis9",
+        "kind": "data"
+      },
+      {
+        "from": "transform1",
+        "to": "visualization9",
+        "kind": "data"
+      },
+      {
+        "from": "transform1",
+        "to": "analysis14",
+        "kind": "data"
+      },
+      {
+        "from": "transform2",
+        "to": "visualization10",
+        "kind": "data"
+      },
+      {
+        "from": "transform2",
+        "to": "analysis15",
+        "kind": "data"
+      },
+      {
+        "from": "analysis13",
+        "to": "analysis16",
+        "kind": "data"
+      },
+      {
+        "from": "analysis14",
+        "to": "analysis17",
+        "kind": "data"
+      },
+      {
+        "from": "analysis15",
+        "to": "analysis18",
+        "kind": "data"
+      },
+      {
+        "from": "analysis16",
+        "to": "analysis12",
+        "kind": "data"
+      },
+      {
+        "from": "analysis17",
+        "to": "analysis10",
+        "kind": "data"
+      },
+      {
+        "from": "analysis18",
+        "to": "analysis11",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.curio.lower-manhattan-shadows"
+      ],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [
+    {
+      "ref": "loader2",
+      "mustMention": [
+        "building"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "analysis9",
+      "mustMention": [
+        "height"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "loader1",
+      "mustMention": [
+        "park"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "analysis8",
+      "mustMention": [
+        "park"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "analysis6",
+      "mustMention": [
+        "park",
+        "height"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "transform1",
+      "mustMention": [
+        "around_park"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "transform2",
+      "mustMention": [
+        "around_park",
+        "height"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "analysis13",
+      "mustMention": [
+        "height",
+        "tile"
+      ],
+      "outputKind": "dataframe"
+    },
+    {
+      "ref": "analysis14",
+      "mustMention": [
+        "height",
+        "tile"
+      ],
+      "outputKind": "dataframe"
+    },
+    {
+      "ref": "analysis15",
+      "mustMention": [
+        "height",
+        "tile"
+      ],
+      "outputKind": "dataframe"
+    },
+    {
+      "ref": "analysis16",
+      "mustMention": [
+        "shadow"
+      ]
+    },
+    {
+      "ref": "analysis17",
+      "mustMention": [
+        "shadow"
+      ]
+    },
+    {
+      "ref": "analysis18",
+      "mustMention": [
+        "shadow"
+      ]
+    },
+    {
+      "ref": "analysis12",
+      "mustMention": [
+        "shadow"
+      ],
+      "outputKind": "raster"
+    },
+    {
+      "ref": "analysis10",
+      "mustMention": [
+        "shadow"
+      ],
+      "outputKind": "raster"
+    },
+    {
+      "ref": "analysis11",
+      "mustMention": [
+        "shadow"
+      ],
+      "outputKind": "raster"
+    },
+    {
+      "ref": "analysis5",
+      "mustMention": [
+        "park",
+        "daylight"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "analysis3",
+      "mustMention": [
+        "park",
+        "daylight"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "analysis4",
+      "mustMention": [
+        "park",
+        "daylight"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "analysis1",
+      "mustMention": [
+        "change"
+      ],
+      "outputKind": "raster"
+    },
+    {
+      "ref": "analysis2",
+      "mustMention": [
+        "change"
+      ],
+      "outputKind": "raster"
+    },
+    {
+      "ref": "analysis7",
+      "mustMention": [
+        "park"
+      ],
+      "outputKind": "geodataframe"
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T1",
+    "needs": [
+      "package-enlist:templates"
+    ],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5-5 from the example JSON, 2026-10-14",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "sourceLicences": [
+      {
+        "datasetId": "data.curio.lower-manhattan-shadows",
+        "licence": "ODbL-1.0"
+      }
+    ],
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the export carries the dataset's identifier only. The buildings are Overture Maps' and the parks OpenStreetMap's, both ODbL 1.0; the Deep Umbra model the shadow nodes name is SCOUT's (urban-toolkit/scout), used with the permission of its authors."
+  },
+  "notes": "A shared context (the bundle's two loaders, Building heights, Open-air parks, Buildings around parks and three Parameter nodes) feeds three scenarios. Each runs SCOUT's rasterizer and Deep Umbra, takes the shadow raster apart, measures the shade in each park (rasterio's geometry_mask) and draws its buildings and shadow on Autark maps; Towers removed and Height cap first change the buildings Buildings around parks marks, in a Data Transformation each. Python nodes take each what-if's absolute change in shadow (curio_raster_calculate) and the sun each park gains, on Autark maps; a Vega-Lite chart reads its three inputs stacked (the dataset inputs) and names each circle's scenario from __input__."
+}

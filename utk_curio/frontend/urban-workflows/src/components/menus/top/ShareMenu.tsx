@@ -8,10 +8,13 @@ import { copyText } from "../../../utils/clipboard";
 import { absoluteUrl, dashboardPath, dataflowPath } from "../../../utils/shareLinks";
 import menuStyles from "../darkMenu.module.css";
 import { HeaderMenu, HeaderMenuItem } from "./HeaderMenu";
+import { publishedApi, publishLinkToken, runLink } from "../../../services/published/publishedApi";
 
 export const SAVE_FIRST_MESSAGE = "Save the dataflow first to share it.";
 export const STALE_DASHBOARD_MESSAGE =
   "The dashboard shows the last saved version. Save to update it.";
+export const RUN_LINK_COPIED =
+  "Dashboard link copied. Whoever opens it can change the inputs and run it; their runs are not saved.";
 
 export interface ShareMenuProps {
   /** The project id both links are built from; ``null`` before the first save. */
@@ -23,6 +26,9 @@ export interface ShareMenuProps {
   onClose: () => void;
   /** Unsaved edits are not in what a visitor would open. */
   projectDirty?: boolean;
+  /** The owner, who may save the dataflow: the dashboard link they copy lets
+   *  whoever opens it run the dashboard (backend `published/`). */
+  canPublish?: boolean;
 }
 
 /**
@@ -33,8 +39,8 @@ export interface ShareMenuProps {
  * bars must not drift over what "share this" means.
  *
  * Both links are ordinary URLs into this app. A dataflow link opens the canvas,
- * read-only for anyone but the owner; a dashboard link opens the pinned tiles.
- * Neither mints a token or changes what the project already grants.
+ * read-only for anyone but the owner; a dashboard link opens the pinned tiles,
+ * and the owner's lets whoever opens it run them (`copyDashboardLink`).
  */
 export function ShareMenu({
   id,
@@ -43,6 +49,7 @@ export function ShareMenu({
   onToggle,
   onClose,
   projectDirty = false,
+  canPublish = false,
 }: ShareMenuProps) {
   const { showToast } = useToastContext();
   // ``useHref`` applies the router's basename, which a hand-built path would
@@ -62,6 +69,37 @@ export function ShareMenu({
     // result is reported the way the rest of this bar reports things.
     const copied = await copyText(value, label);
     showToast(copied ? done : `Could not copy the ${label}.`, copied ? "success" : "error");
+  };
+
+  /**
+   * The dashboard link. The owner's lets whoever opens it run the dashboard:
+   * copying it publishes the dataflow as it is saved now, under a link token
+   * that stays the same from one copy to the next. A dataflow that cannot be
+   * published yet (nothing pinned, code that saves files) gets the plain link,
+   * and says why. A visitor on a run link passes that link on.
+   */
+  const copyDashboardLink = async () => {
+    if (!id || !canPublish) {
+      const token = publishLinkToken();
+      await copy(token ? runLink(dashboardUrl, token) : dashboardUrl, "dashboard link", "Dashboard link copied.");
+      return;
+    }
+    onClose();
+    let token: string | null = null;
+    let refusal: string | null = null;
+    try {
+      token = (await publishedApi.publish(id, "link")).token;
+    } catch (err: any) {
+      refusal = err?.message || "The dashboard could not be published.";
+    }
+    const copied = await copyText(token ? runLink(dashboardUrl, token) : dashboardUrl, "dashboard link");
+    if (!copied) {
+      showToast("Could not copy the dashboard link.", "error");
+    } else if (token) {
+      showToast(projectDirty ? `${RUN_LINK_COPIED} ${STALE_DASHBOARD_MESSAGE}` : RUN_LINK_COPIED, "success");
+    } else {
+      showToast(`Dashboard link copied, for viewing only: ${refusal}`, "info");
+    }
   };
 
   return (
@@ -94,7 +132,7 @@ export function ShareMenu({
       )}
       <HeaderMenuItem
         icon={faLink}
-        onClick={() => void copy(dashboardUrl, "dashboard link", "Dashboard link copied.")}
+        onClick={() => void copyDashboardLink()}
       >
         Copy dashboard link
       </HeaderMenuItem>

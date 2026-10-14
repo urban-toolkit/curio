@@ -4,7 +4,11 @@
  *
  * - its levers are copied with fresh ids, each naming its original in
  *   `metadata.copiedFrom`, with the edges between them;
- * - each context node arrives as fixed data: a Data Loading node that reads
+ * - so are the nodes upstream and downstream of it its last save stored,
+ *   where they were around it, with their saved outputs; one an earlier drop
+ *   from the same project already brought is reused and wired to, so two
+ *   scenarios read the same upstream and feed the same downstream nodes;
+ * - each other context node arrives as fixed data: a Data Loading node that reads
  *   a copy of the output the source project saved for it, wired where the
  *   context node was. A Parameter node of the context is copied with its
  *   value;
@@ -86,6 +90,7 @@ export function planScenarioDrop(
   const byId = new Map(plan.dataflow.nodes.map((node) => [node.id, node as SpecNode]));
   const levers = plan.levers.filter((id) => byId.has(id));
   if (levers.length === 0) return { error: `"${plan.scenario.name}" has no nodes to bring.` };
+  const around = [...(plan.upstream ?? []), ...(plan.downstream ?? [])].filter((id) => byId.has(id));
 
   // What an earlier drop from the same project brought: the nodes outside
   // every scenario here that copy one of its nodes.
@@ -95,14 +100,23 @@ export function planScenarioDrop(
   const broughtFor = (sourceId: string, kind: (node: SpecNode) => boolean) =>
     outside.find((node) => kind(node) && lastOf(node) === sourceId);
 
+  const reused: SpecNode[] = [];
+  const kept = new Map<string, string>();
+  for (const id of around) {
+    const again = broughtFor(id, () => true);
+    if (again) {
+      reused.push(again);
+      kept.set(id, again.id);
+    }
+  }
+
   const left = Math.min(...levers.map((id) => byId.get(id)!.x ?? 0));
   const top = Math.min(...levers.map((id) => byId.get(id)!.y ?? 0));
-  const copy = duplicateSelection(plan.dataflow, levers, {
+  const copy = duplicateSelection(plan.dataflow, [...levers, ...around.filter((id) => !kept.has(id))], {
     newId,
     offset: { x: at.x - left, y: at.y - top },
   });
 
-  const reused: SpecNode[] = [];
   const parameters: SpecNode[] = [];
   const loaders: PlannedLoader[] = [];
   const standIn = new Map<string, string>();
@@ -167,11 +181,41 @@ export function planScenarioDrop(
       edges.push(edge);
       continue;
     }
+    const again = kept.get(edge.source);
+    if (again) {
+      edges.push({ ...edge, source: again });
+      continue;
+    }
     const source = standIn.get(edge.source);
     if (source) edges.push({ ...edge, source, sourceHandle: "out" });
   }
+  // A downstream node an earlier drop brought is not copied, so the edges a
+  // copy feeds it with are made here; one the canvas already has is not.
+  const wired = (e: { source: string; target: string; sourceHandle?: string; targetHandle?: string }) =>
+    live.edges.some(
+      (l) => l.source === e.source && l.target === e.target
+        && (l.sourceHandle ?? null) === (e.sourceHandle ?? null)
+        && (l.targetHandle ?? null) === (e.targetHandle ?? null),
+    );
+  for (const edge of plan.dataflow.edges as SpecEdge[]) {
+    const target = kept.get(edge.target);
+    const source = copy.ids.get(edge.source);
+    if (!target || !source || edge.type === "Interaction") continue;
+    const into: SpecEdge = {
+      ...JSON.parse(JSON.stringify(edge)),
+      id: newId(),
+      source,
+      target,
+      targetHandle: edge.targetHandle ?? "in",
+    };
+    if (!wired(into)) edges.push(into);
+  }
 
   const outputs: ScenarioCopyOutput[] = loaders.map((loader) => ({ source: loader.source, node: loader.id }));
+  for (const source of plan.saved ?? []) {
+    const node = copy.ids.get(source);
+    if (node && !outputs.some((o) => o.node === node)) outputs.push({ source, node });
+  }
   for (const outcome of plan.outcomes) {
     for (const source of outcome.sources) {
       const node = copy.ids.get(source);

@@ -16,7 +16,7 @@
       "shapely": ">=2.0"
     }
   },
-  "description": "SCOUT's Quad Cities flood projection, ported from SCOUT (urban-toolkit/scout): the Flood Projection node runs SCOUT's simulate_flood_projection on the Data Catalog's data.scout.quad-cities-flood, SCOUT's seven rasters, for a region, a projection period and the nature-based solutions (NbS) in place. It returns the flood depth in metres, one raster that an Autark map draws, and SCOUT's metrics, the median and mean flood depth, as a table.",
+  "description": "SCOUT's Quad Cities flood projection, ported from SCOUT (urban-toolkit/scout): the Flood Projection node runs SCOUT's simulate_flood_projection on the Data Catalog's data.scout.quad-cities-flood, SCOUT's seven rasters, on SCOUT's whole grid, for a projection period and the nature-based solutions (NbS) in place. It returns the flood depth in metres, one raster that an Autark map draws, and SCOUT's metrics, the median and mean flood depth, as a table.",
   "id": "scout.flood",
   "license": "MIT",
   "name": "SCOUT Flood",
@@ -26,7 +26,7 @@
   "templates": [
     {
       "category": "computation",
-      "description": "SCOUT's flood projection for the Quad Cities: for each cell of a region, the projected flood depth in metres with nature-based solutions (NbS) where the cell's class is one of the chosen solutions, and without NbS elsewhere, for a projection period. No input; SCOUT's rasters are the Data Catalog's data.scout.quad-cities-flood. Output: (depth, metrics): one RASTER in EPSG:4326 on SCOUT's grid, for an Autark map, and SCOUT's metrics, a DATAFRAME of one row with the median and mean flood depth.",
+      "description": "SCOUT's flood projection for the Quad Cities: for each cell of SCOUT's whole grid, the projected flood depth in metres with nature-based solutions (NbS) where the cell's class is one of the chosen solutions, and without NbS elsewhere, for a projection period. SCOUT's rasters are the Data Catalog's data.scout.quad-cities-flood. Optional input: a RASTER of NbS classes on SCOUT's grid, which code that reads input_0 uses in place of SCOUT's nbs_classes.tif; the shipped code takes no input. Output: (depth, metrics): one RASTER in EPSG:4326 on SCOUT's grid, for an Autark map, and SCOUT's metrics, a DATAFRAME of one row with the median and mean flood depth.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
@@ -34,7 +34,14 @@
       "hasWidgets": true,
       "iconRef": "fa-solid:water",
       "id": "flood-projection",
-      "inputPorts": [],
+      "inputPorts": [
+        {
+          "cardinality": "[0,1]",
+          "types": [
+            "RASTER"
+          ]
+        }
+      ],
       "label": "Flood Projection",
       "behavior": "code",
       "outputPorts": [
@@ -49,31 +56,13 @@
       "source": "sources/flood-projection.py",
       "widgets": [
         {
-          "name": "topleft",
-          "type": "location",
-          "label": "Top-left corner",
-          "default": {
-            "lat": 41.6242105,
-            "lon": -90.6879323
-          }
-        },
-        {
-          "name": "bottomright",
-          "type": "location",
-          "label": "Bottom-right corner",
-          "default": {
-            "lat": 41.4150156,
-            "lon": -90.4252158
-          }
-        },
-        {
           "name": "timeline",
           "type": "choice",
           "label": "Projection period",
-          "default": "2020 - 2040",
+          "default": "2020 - 2050",
           "options": {
             "choices": [
-              "2020 - 2040",
+              "2020 - 2050",
               "2050 - 2080",
               "2080 - 2100"
             ],
@@ -88,8 +77,6 @@
             "Bioswales/Infiltration trenches",
             "Permeable pavements",
             "Retention ponds",
-            "Infiltration trench",
-            "Bioswales",
             "Constructed wetlands"
           ],
           "options": {
@@ -97,8 +84,6 @@
               "Bioswales/Infiltration trenches",
               "Permeable pavements",
               "Retention ponds",
-              "Infiltration trench",
-              "Bioswales",
               "Constructed wetlands"
             ]
           }

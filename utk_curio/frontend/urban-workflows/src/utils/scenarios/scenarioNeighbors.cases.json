@@ -1,0 +1,73 @@
+{
+  "about": "The nodes around a scenario (#662): upstream, what feeds it on every path up, and downstream, what it feeds on every path down, which a save stores and a drag from the Scenario Catalog brings. Nodes and edges are written as a saved spec holds them. Read by src/tests/utils/scenarioNeighbors.cases.test.ts and by utk_curio/backend/tests/test_scenario_catalog/test_parts.py.",
+  "cases": [
+    {
+      "name": "a chain: everything before it is upstream, everything after it downstream",
+      "nodes": [
+        {"id": "load", "type": "curio.builtin/data-loading@1", "content": "return 1"},
+        {"id": "clean", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"},
+        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"},
+        {"id": "pool", "type": "curio.builtin/data-pool@1", "content": ""},
+        {"id": "chart", "type": "curio.builtin/vis-vega@1", "content": "{}"}
+      ],
+      "edges": [
+        {"source": "load", "target": "clean"},
+        {"source": "clean", "target": "a"},
+        {"source": "a", "target": "pool"},
+        {"source": "pool", "target": "chart"}
+      ],
+      "scenarios": [{"id": "s1", "nodes": ["a"]}],
+      "scenario": "s1",
+      "expected": {"upstream": ["load", "clean"], "downstream": ["pool", "chart"]}
+    },
+    {
+      "name": "a walk stops at another scenario's node, and a node both read is downstream of each",
+      "nodes": [
+        {"id": "load", "type": "curio.builtin/data-loading@1", "content": "return 1"},
+        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"},
+        {"id": "b", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"},
+        {"id": "chart", "type": "curio.builtin/vis-vega@1", "content": "{}"}
+      ],
+      "edges": [
+        {"source": "load", "target": "a"},
+        {"source": "load", "target": "b"},
+        {"source": "a", "target": "chart"},
+        {"source": "b", "target": "chart"}
+      ],
+      "scenarios": [{"id": "s1", "nodes": ["a"]}, {"id": "s2", "nodes": ["b"]}],
+      "scenario": "s1",
+      "expected": {"upstream": ["load"], "downstream": ["chart"]}
+    },
+    {
+      "name": "a node between two of its nodes is upstream only",
+      "nodes": [
+        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return 1"},
+        {"id": "mid", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"},
+        {"id": "b", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"}
+      ],
+      "edges": [
+        {"source": "a", "target": "mid"},
+        {"source": "mid", "target": "b"}
+      ],
+      "scenarios": [{"id": "s1", "nodes": ["a", "b"]}],
+      "scenario": "s1",
+      "expected": {"upstream": ["mid"], "downstream": []}
+    },
+    {
+      "name": "a Parameter node an upstream node names is upstream; a link between views is not followed",
+      "nodes": [
+        {"id": "p", "type": "curio.builtin/parameter@1", "content": "", "metadata": {"widgets": [{"name": "year", "type": "number", "default": 2020}]}},
+        {"id": "load", "type": "curio.builtin/computation-analysis@1", "content": "return [!! @year !!]"},
+        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"},
+        {"id": "view", "type": "curio.builtin/vis-vega@1", "content": "{}"}
+      ],
+      "edges": [
+        {"source": "load", "target": "a"},
+        {"source": "a", "target": "view", "sourceHandle": "in/out", "targetHandle": "in/out"}
+      ],
+      "scenarios": [{"id": "s1", "nodes": ["a"]}],
+      "scenario": "s1",
+      "expected": {"upstream": ["p", "load"], "downstream": []}
+    }
+  ]
+}

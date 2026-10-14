@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 // Bootstrap
 import "bootstrap/dist/css/bootstrap.min.css";
@@ -8,6 +8,8 @@ import { SharedTag, WidgetTag, uniqueSharedNames } from "./widgets/WidgetTag";
 import { WidgetControl } from "./widgets/WidgetControl";
 import { WidgetForm } from "./widgets/WidgetForm";
 import { SelectionSection } from "./widgets/SelectionTags";
+import { DisplayAsWidgetSwitch, useSeparatedWidgets } from "./nodeControlsOnly";
+import { SeparatedWidgetBox } from "./widgets/SeparatedWidgetBox";
 import { checkWidgetValue, effectiveValue, type WidgetDef } from "../../utils/widgets/widgetModel";
 import type { SelectionTag } from "../../utils/references/selectionTags";
 import type { SelectionView } from "../../hook/useSelectionViews";
@@ -56,6 +58,8 @@ type WidgetsEditorProps = {
     customWidgetsCallback?: any;
     data?: any;
     disableWidgets?: boolean; // freeze the widget controls instead of hiding them
+    /** "Display as widget": each widget's label and control, nothing to edit. */
+    compact?: boolean;
 };
 
 type Editing = { mode: "add" } | { mode: "edit"; name: string } | null;
@@ -84,6 +88,7 @@ function WidgetsEditor({
     nodeIds = NO_NODE_IDS,
     customWidgetsCallback,
     disableWidgets,
+    compact = false,
 }: WidgetsEditorProps) {
     const markersDirtyBypass = useRef(false);
     const [editing, setEditing] = useState<Editing>(null);
@@ -114,6 +119,19 @@ function WidgetsEditor({
         [userCode, scope, language],
     );
 
+    // A dashboard tile with "Separate widgets" on: each widget in a box of its
+    // own. A box not placed yet stands under the one before it, as measured.
+    const separatedLayout = useSeparatedWidgets();
+    const separated = compact ? separatedLayout : undefined;
+    const boxEls = useRef<Record<string, HTMLDivElement | null>>({});
+    const [boxHeights, setBoxHeights] = useState<Record<string, number>>({});
+    useLayoutEffect(() => {
+        if (!separated) return;
+        const next: Record<string, number> = {};
+        for (const w of widgets) next[w.name] = boxEls.current[w.name]?.offsetHeight ?? 0;
+        if (JSON.stringify(next) !== JSON.stringify(boxHeights)) setBoxHeights(next);
+    });
+
     const setValue = (name: string, value: any) =>
         onWidgetsChange(widgets.map((w) => (w.name === name ? { ...w, value } : w)));
 
@@ -128,13 +146,52 @@ function WidgetsEditor({
         setEditing(null);
     };
 
+    if (separated) {
+        let stackedY = 0;
+        return (
+            <div id={"widgetsEditor" + nodeId} className={styles.separatedLayer} data-widgets-panel="true">
+                {widgets.map((widget, index) => {
+                    const fallback = { x: 0, y: stackedY };
+                    stackedY += (boxHeights[widget.name] || 60) + 12;
+                    return (
+                        <SeparatedWidgetBox
+                            key={widget.name}
+                            nodeId={nodeId}
+                            name={widget.name}
+                            box={separated.layout[widget.name] ?? fallback}
+                            defaultWidth={separated.defaultWidth}
+                            editable={separated.editable}
+                            onChange={(box) => separated.onBoxChange(widget.name, box)}
+                            header={index === 0 ? separated.toolbar : null}
+                            boxRef={(el) => {
+                                boxEls.current[widget.name] = el;
+                            }}
+                        >
+                            <div className={styles.row} data-widget-row={widget.name}>
+                                <span className={styles.rowLabel}>{widget.label || widget.name}</span>
+                                <span className={styles.rowControl}>
+                                    <WidgetControl
+                                        widget={widget}
+                                        value={effectiveValue(widget)}
+                                        disabled={disableWidgets}
+                                        onChange={(value) => setValue(widget.name, value)}
+                                    />
+                                </span>
+                            </div>
+                        </SeparatedWidgetBox>
+                    );
+                })}
+            </div>
+        );
+    }
+
     return (
         <div
             id={"widgetsEditor" + nodeId}
-            className={`nowheel nodrag ${styles.panel}`}
+            className={`nowheel nodrag ${styles.panel}${widgets.length > 0 && !compact ? ` ${styles.panelWithSwitch}` : ""}`}
             data-widgets-panel="true"
         >
-            {widgets.length === 0 && editing === null ? (
+            {widgets.length === 0 && editing === null && !compact ? (
                 <p className={styles.empty}>
                     No widgets yet. Add one, then drag its tag into the code.
                 </p>
@@ -151,7 +208,7 @@ function WidgetsEditor({
                 ) : (
                     <div key={widget.name} className={styles.row} data-widget-row={widget.name}>
                         <span className={styles.rowLabel}>{widget.label || widget.name}</span>
-                        <WidgetTag name={widget.name} disabled={disableWidgets} />
+                        {!compact ? <WidgetTag name={widget.name} disabled={disableWidgets} /> : null}
                         <span className={styles.rowControl}>
                             <WidgetControl
                                 widget={widget}
@@ -160,30 +217,32 @@ function WidgetsEditor({
                                 onChange={(value) => setValue(widget.name, value)}
                             />
                         </span>
-                        <span className={styles.rowActions}>
-                            <button
-                                type="button"
-                                className={styles.button}
-                                aria-label={`Edit widget ${widget.name}`}
-                                disabled={disableWidgets || editing !== null}
-                                onClick={() => setEditing({ mode: "edit", name: widget.name })}
-                            >
-                                Edit
-                            </button>
-                            <button
-                                type="button"
-                                className={styles.danger}
-                                aria-label={`Delete widget ${widget.name}`}
-                                disabled={disableWidgets || editing !== null}
-                                onClick={() => onWidgetsChange(widgets.filter((w) => w.name !== widget.name))}
-                            >
-                                Delete
-                            </button>
-                        </span>
+                        {!compact ? (
+                            <span className={styles.rowActions}>
+                                <button
+                                    type="button"
+                                    className={styles.button}
+                                    aria-label={`Edit widget ${widget.name}`}
+                                    disabled={disableWidgets || editing !== null}
+                                    onClick={() => setEditing({ mode: "edit", name: widget.name })}
+                                >
+                                    Edit
+                                </button>
+                                <button
+                                    type="button"
+                                    className={styles.danger}
+                                    aria-label={`Delete widget ${widget.name}`}
+                                    disabled={disableWidgets || editing !== null}
+                                    onClick={() => onWidgetsChange(widgets.filter((w) => w.name !== widget.name))}
+                                >
+                                    Delete
+                                </button>
+                            </span>
+                        ) : null}
                     </div>
                 ),
             )}
-            {editing?.mode === "add" ? (
+            {compact ? null : editing?.mode === "add" ? (
                 <WidgetForm
                     others={widgets}
                     onSave={(def) => {
@@ -202,15 +261,17 @@ function WidgetsEditor({
                     Add widget
                 </button>
             )}
-            <SelectionSection
-                selections={selections}
-                onSelectionsChange={onSelectionsChange}
-                views={views}
-                allNodeIds={nodeIds}
-                disabled={disableWidgets}
-                locked={editing !== null}
-            />
-            {sharedNames.length > 0 ? (
+            {!compact ? (
+                <SelectionSection
+                    selections={selections}
+                    onSelectionsChange={onSelectionsChange}
+                    views={views}
+                    allNodeIds={nodeIds}
+                    disabled={disableWidgets}
+                    locked={editing !== null}
+                />
+            ) : null}
+            {sharedNames.length > 0 && !compact ? (
                 <div className={styles.shared} data-shared-panel="true">
                     <p className={styles.sharedHeading}>Shared</p>
                     {sharedNames.map((name) => {
@@ -239,6 +300,7 @@ function WidgetsEditor({
                     ))}
                 </ul>
             ) : null}
+            {widgets.length > 0 && !compact ? <DisplayAsWidgetSwitch /> : null}
         </div>
     );
 }

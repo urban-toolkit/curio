@@ -8,7 +8,7 @@ import { useDrawerDragThrough } from "../../packages/publishing/useDrawerDragThr
 import { modalStackDepth } from "../../ModalShell";
 import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
 import { useFlowContext } from "../../../providers/FlowProvider";
-import { SCENARIO_SORT_OPTIONS, type ScenarioRow } from "../../../services/scenarioCatalog";
+import { groupScenariosByProject, SCENARIO_SORT_OPTIONS, type ScenarioRow } from "../../../services/scenarioCatalog";
 import { ScenarioCard } from "./ScenarioCard";
 import { ScenarioDetailModal } from "./ScenarioDetailModal";
 import { scenarioProjectPath } from "./scenarioFacts";
@@ -165,18 +165,33 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
                   : "No scenarios yet. Select nodes on a canvas and choose View > Save selection as scenario."}
               </div>
             ) : null}
-            <div className={shell.cardList}>
-              {items.map((scenario) => (
-                <ScenarioCard
-                  key={scenario.key}
-                  scenario={scenario}
-                  onOpenDetails={openScenarioDetails}
-                  onOpenProject={openProject}
-                  onDragStart={(event) => handleScenarioDragStart(scenario, event)}
-                  onDragEnd={handleScenarioDragEnd}
-                />
-              ))}
-            </div>
+            {/* Each dataflow's scenarios under its name; two dragged from one
+                dataflow share what is upstream and downstream of them. */}
+            {groupScenariosByProject(items).map((group) => (
+              <details
+                key={group.project.id}
+                className={styles.projectGroup}
+                data-curio-scenario-group={group.project.id}
+                open
+              >
+                <summary className={styles.projectGroupTitle}>
+                  {group.project.name}
+                  <span className={styles.projectGroupCount}>{group.items.length}</span>
+                </summary>
+                <div className={shell.cardList}>
+                  {group.items.map((scenario) => (
+                    <ScenarioCard
+                      key={scenario.key}
+                      scenario={scenario}
+                      onOpenDetails={openScenarioDetails}
+                      onOpenProject={openProject}
+                      onDragStart={(event) => handleScenarioDragStart(scenario, event)}
+                      onDragEnd={handleScenarioDragEnd}
+                    />
+                  ))}
+                </div>
+              </details>
+            ))}
           </main>
         </aside>
       </div>

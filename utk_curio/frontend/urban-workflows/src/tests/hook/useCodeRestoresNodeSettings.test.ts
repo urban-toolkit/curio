@@ -81,3 +81,33 @@ describe("per-node settings survive a load", () => {
         expect(typeBlock).toMatch(/editFeatures\?: EditFeaturesSettings;/);
     });
 });
+
+describe("a minimized node comes back minimized", () => {
+    // Top-level on the spec node, as `width` and `height` are, not in metadata.
+    test("loadTrill reads minimized off the spec node", () => {
+        expect(USE_CODE).toMatch(/if\(node\.minimized === true\)\s*nodeMeta\.minimized = true;/);
+    });
+
+    test("generateCodeNode accepts minimized and writes it into node.data", () => {
+        const factory = generateCodeNodeSource();
+        expect(factory).toMatch(/^\s*minimized = undefined,\s*$/m);
+        expect(factory.slice(factory.indexOf("data: {"))).toMatch(/^\s*minimized,\s*$/m);
+    });
+});
+
+describe("a controls-only node comes back controls-only", () => {
+    test("loadTrill reads controlsOnly off the spec node", () => {
+        expect(USE_CODE).toMatch(/if\(node\.controlsOnly === true\)\s*nodeMeta\.controlsOnly = true;/);
+        expect(USE_CODE).toMatch(/nodeMeta\.controlsOnlyWidth = node\.controlsOnlyWidth;/);
+        expect(USE_CODE).toMatch(/nodeMeta\.controlsOnlyHeight = node\.controlsOnlyHeight;/);
+        expect(USE_CODE).toMatch(/if\(node\.dashboardControlsOnly === true\)\s*nodeMeta\.dashboardControlsOnly = true;/);
+        expect(USE_CODE).toMatch(/if\(node\.dashboardSeparateWidgets === true\)\s*nodeMeta\.dashboardSeparateWidgets = true;/);
+        expect(USE_CODE).toMatch(/nodeMeta\.dashboardWidgetLayout = node\.dashboardWidgetLayout;/);
+    });
+
+    test("generateCodeNode accepts controlsOnly and writes it into node.data", () => {
+        const factory = generateCodeNodeSource();
+        expect(factory).toMatch(/^\s*controlsOnly = undefined,\s*$/m);
+        expect(factory.slice(factory.indexOf("data: {"))).toMatch(/^\s*controlsOnly,\s*$/m);
+    });
+});

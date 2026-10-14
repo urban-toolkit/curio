@@ -82,6 +82,18 @@
       "expected": [{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": []}]
     },
     {
+      "name": "upstream and downstream keep the dataflow's nodes outside the scenario, once each",
+      "nodes": ["load", "a", "chart"],
+      "scenarios": [{
+        "id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["a"],
+        "upstream": ["load", "gone", "load", "a"], "downstream": ["chart", 7]
+      }],
+      "expected": [{
+        "id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["a"],
+        "upstream": ["load"], "downstream": ["chart"]
+      }]
+    },
+    {
       "name": "anything but a list is no scenarios",
       "nodes": ["a"],
       "scenarios": {"id": "s1"},

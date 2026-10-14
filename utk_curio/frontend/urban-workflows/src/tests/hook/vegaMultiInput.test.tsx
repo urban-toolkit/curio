@@ -108,7 +108,9 @@ test("one input is the spec's own data, named input_0", async () => {
 
 test("two inputs are the datasets input_0 and input_1, and the spec reads input_0 unless it names another", async () => {
   const { view } = await drawn(both(POP, INCOME), LAYERED);
-  expect(Object.keys(view.spec.datasets)).toEqual(["input_0", "input_1"]);
+  // And `inputs`, both stacked, each row's __input__ its circle.
+  expect(Object.keys(view.spec.datasets)).toEqual(["input_0", "input_1", "inputs"]);
+  expect(view.spec.datasets.inputs.map((row: any) => row.__input__)).toEqual([0, 0, 1, 1]);
   expect(view.spec.datasets.input_0.map((row: any) => row.value)).toEqual([1, 2]);
   expect(view.spec.datasets.input_1.map((row: any) => row.income)).toEqual([10, 20]);
   expect(view.spec.data).toEqual({ name: "input_0" });
@@ -136,7 +138,7 @@ test("a second input arriving, then leaving, builds the view from the spec as wr
   });
   await waitFor(() => expect(views[views.length - 1].spec.datasets).toBeDefined());
   const two = views[views.length - 1].spec;
-  expect(Object.keys(two.datasets)).toEqual(["input_0", "input_1"]);
+  expect(Object.keys(two.datasets)).toEqual(["input_0", "input_1", "inputs"]);
   expect(two.data).toEqual({ name: "input_0" });
 
   const count = views.length;

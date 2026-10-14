@@ -28,6 +28,7 @@ import { TrillGenerator } from "../TrillGenerator";
 import { projectsApi, OutputRef, DatasetInstallWarning } from "../api/projectsApi";
 import type { DataflowCategories, HandCategories } from "../utils/dataflowCategories";
 import { normalizeScenarios, type Scenario } from "../utils/scenarios/scenarioModel";
+import { normalizeDashboardSettings, serializeDashboardSettings, type DashboardSettings, type RunButtonPlace } from "../utils/dashboardSettings";
 import { buildSaveableLiveOutputs } from "../utils/saveOutputDataset";
 import { prepareDashboardNodes } from "../utils/dashboardLayout";
 import { savedSourceNodeIds } from "../utils/scenarios/scenarioParts";
@@ -134,6 +135,10 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // a version snapshot carries them.
     const [scenarios, setScenariosState] = useState<Scenario[]>([]);
     const scenariosRef = useRef<Scenario[]>([]);
+    // The dashboard's own settings (``dataflow.dashboard``): where its Run
+    // button stands. Saved with the dataflow, read through a ref as above.
+    const [dashboardSettings, setDashboardSettingsState] = useState<DashboardSettings>({});
+    const dashboardSettingsRef = useRef<DashboardSettings>({});
     // ``packages`` is the current project's lockfile (``spec.dataflow.packages``).
     // The authoritative copy lives in ``projectPackagesStore`` so non-React
     // code (palette filter, registry bootstrap) can read it without context.
@@ -258,6 +263,17 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         markDirty();
     }, [setScenariosQuietly, markDirty]);
 
+    // The dashboard's settings the same way: a load sets them without
+    // dirtying, a move or a resize of the Run button dirties until Save layout.
+    const setDashboardSettingsQuietly = useCallback((next: DashboardSettings) => {
+        dashboardSettingsRef.current = next;
+        setDashboardSettingsState(next);
+    }, []);
+    const setDashboardRunButton = useCallback((place: RunButtonPlace) => {
+        setDashboardSettingsQuietly(normalizeDashboardSettings({ ...dashboardSettingsRef.current, runButton: place }));
+        markDirty();
+    }, [setDashboardSettingsQuietly, markDirty]);
+
     // beforeunload guard
     useEffect(() => {
         if (!projectDirty) return;
@@ -362,9 +378,14 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setNodes((prevNodes: Node[]) => updateNodeData(prevNodes, nodeId, () => ({ ...newData })));
     }, [setNodes]);
 
-    const loadParsedTrill = async (workflowName: string, task: string, loaded_nodes: any, loaded_edges: any, provenance?: boolean, merge?: boolean, incomingPackages?: string[], incomingDescription?: string, incomingDatasets?: any[], incomingCategories?: HandCategories, incomingScenarios?: unknown) => {
+    const loadParsedTrill = async (workflowName: string, task: string, loaded_nodes: any, loaded_edges: any, provenance?: boolean, merge?: boolean, incomingPackages?: string[], incomingDescription?: string, incomingDatasets?: any[], incomingCategories?: HandCategories, incomingScenarios?: unknown, incomingDashboard?: unknown) => {
         if (!merge) {
             TrillGenerator.reset();
+            // Absent = keep, as for the categories: a provenance revert loads a
+            // version snapshot, which carries no dashboard settings.
+            if (incomingDashboard !== undefined) {
+                setDashboardSettingsQuietly(normalizeDashboardSettings(incomingDashboard));
+            }
             // Before the replay below, whose version snapshots carry them.
             // Absent = keep, as for the categories.
             setScenariosQuietly(
@@ -979,6 +1000,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // backend owns dataflow.datasets and ignores whatever is sent here —
         // syncDatasetsFromSavedSpec re-aligns the mirror from the response.
         const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, workflowGoalRef.current, currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current, workflowCategoriesRef.current, scenariosRef.current);
+        const dashboard = serializeDashboardSettings(dashboardSettingsRef.current);
+        if (dashboard) spec.dataflow.dashboard = dashboard;
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
 
@@ -1331,6 +1354,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // project's refs (dev/81) — read from the ref so the copy carries the
         // latest installed datasets.
         const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, workflowGoalRef.current, currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current, workflowCategoriesRef.current, scenariosRef.current);
+        const dashboard = serializeDashboardSettings(dashboardSettingsRef.current);
+        if (dashboard) spec.dataflow.dashboard = dashboard;
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
 
@@ -1479,6 +1504,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         scenarios,
         // For the run's save rule, which must read the list as it is now.
         scenariosRef,
+        dashboardSettings,
         packages,
         setPackages,
         addPackage,
@@ -1516,6 +1542,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         renameDataflow,
         updateDataflowCategories,
         setScenarios,
+        setDashboardRunButton,
         saveCurrentProject,
         saveAsNewProject,
         ensureProjectId,

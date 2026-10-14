@@ -26,7 +26,7 @@ import { readGrammarInput, type GrammarFrame } from "./grammarInput";
 import { parseDataframe, parseGeoDataframeWithGeometry } from "./parsing";
 import type { NodeEmptyReason } from "./nodeEmptyState";
 import { normalizeGeoSpec, specNeedsGeometry } from "./vegaGeoSpec";
-import { namesDataset, usesNamedDatasets } from "./vegaDatasets";
+import { namesDataset, stackInputs, usesNamedDatasets } from "./vegaDatasets";
 import { inputTableName } from "../generated/autkGrammar";
 
 export { usesNamedDatasets };
@@ -144,7 +144,8 @@ const isObject = (value: unknown): value is Record<string, any> =>
 /**
  * Put the node's inputs into *spec*. One input read by the whole spec becomes
  * its top-level `data`, named `input_0`. Otherwise every input becomes a named
- * dataset in `datasets`, and the top level reads the first input unless it
+ * dataset in `datasets`, with `inputs`, all of them stacked (each row's
+ * `__input__` its circle), and the top level reads the first input unless it
  * names another. Returns whether the inputs went in as named datasets.
  */
 export function injectInputs(spec: any, datasets: VegaDataset[]): boolean {
@@ -156,6 +157,8 @@ export function injectInputs(spec: any, datasets: VegaDataset[]): boolean {
     ...(isObject(spec.datasets) ? spec.datasets : {}),
     ...Object.fromEntries(datasets.map((d) => [d.name, d.values])),
   };
+  const stacked = stackInputs(datasets);
+  spec.datasets[stacked.name] = stacked.values;
   if (!namesDataset(spec.data)) spec.data = { name: inputTableName(0) };
   return true;
 }

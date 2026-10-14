@@ -1,10 +1,10 @@
 {
   "sha256": {
-    "README.md": "cea0042cbe068a964d6ea23cd7af181f7285a056a3c1d5d84c5f759f8d29c74d",
+    "README.md": "cd2034352d0377cd9d11c78d44f92c61e2da24c94dbac33aa8d81aaab7e9b1ec",
     "manifest.json": "c7efbe36d0198fe2c623d1fc5708972b9cdc1b1504b6df67fd95329787318140",
     "sources/accumulated-shadow.py": "204e7ece325a5fd8712b617e88a7c1dd1330831c73ed833c3f49de57ffe96d26",
     "sources/scout_shadow/__init__.py": "e33af840093ea902fa71d098462e1e0ce7d2e53b7e3649eea1c60764dff695cc",
     "sources/scout_shadow/deep_umbra.py": "f715e5737e86250b935efce2536c06948015eb8cd25888f7ff5d1613306e2e6c",
-    "sources/scout_shadow/mosaic.py": "5c52cb5d5c3f83146f49248847d44a707c94300392fe5f5d1b91077b0d36f4c7"
+    "sources/scout_shadow/mosaic.py": "9bcf2f29070813219e3ff28f771766bfcb7f6c95ce3922c557dedc9d4ad95a1c"
   }
 }

@@ -453,6 +453,21 @@ def _carry_hand_categories(new_spec, old_spec) -> None:
         new_df["categories"] = old_df["categories"]
 
 
+
+def _carry_dashboard_settings(new_spec, old_spec) -> None:
+    """A spec written without ``dataflow.dashboard`` keeps the on-disk one: the
+    dashboard page's own settings, such as where its Run button stands. Only
+    the canvas and the dashboard page know the field, and they write it once
+    it is set, so another writer's save (an agent's graph edit) must not drop it.
+    """
+    new_df = new_spec.get("dataflow") if isinstance(new_spec, dict) else None
+    old_df = old_spec.get("dataflow") if isinstance(old_spec, dict) else None
+    if not isinstance(new_df, dict) or not isinstance(old_df, dict):
+        return
+    if "dashboard" not in new_df and "dashboard" in old_df:
+        new_df["dashboard"] = old_df["dashboard"]
+
+
 def _to_summary(
     p, graph_preview=None, spec_revision=None, is_example=False, categories=None, scenario_list=None,
 ) -> ProjectSummary:
@@ -898,6 +913,7 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
             # ``create()`` — Save a copy / trill import.)
             preserve_dataset_refs(effective_spec, existing_spec)
             _carry_hand_categories(effective_spec, existing_spec)
+            _carry_dashboard_settings(effective_spec, existing_spec)
             _normalize_spec_categories(effective_spec)
             scenarios.carry_scenarios(effective_spec, existing_spec)
             scenarios.normalize_spec_scenarios(effective_spec)

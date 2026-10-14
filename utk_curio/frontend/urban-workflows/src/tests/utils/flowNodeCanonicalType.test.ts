@@ -1,5 +1,6 @@
 import { CURIO_UNIVERSAL_NODE_TYPE, NodeType } from '../../constants';
 import {
+  currentNodeType,
   getFlowNodeCanonicalType,
   getUnversionedFlowNodeType,
   unversionedNodeType,
@@ -80,5 +81,17 @@ describe('getUnversionedFlowNodeType against the NodeType enum', () => {
   test('non-universal nodes fall back to node.type, unversioned', () => {
     expect(getUnversionedFlowNodeType({ type: 'curio.builtin/data-pool@1' })).toBe(NodeType.DATA_POOL);
     expect(getUnversionedFlowNodeType({ type: undefined })).toBe('');
+  });
+});
+
+describe('currentNodeType', () => {
+  it('opens a removed raster kind as a Python node, its major kept', () => {
+    expect(currentNodeType('curio.builtin/raster-calculator@1')).toBe('curio.builtin/computation-analysis@1');
+    expect(currentNodeType('curio.builtin/raster-statistics')).toBe('curio.builtin/computation-analysis');
+  });
+
+  it('leaves every other kind as it is', () => {
+    expect(currentNodeType('curio.builtin/vis-vega@1')).toBe('curio.builtin/vis-vega@1');
+    expect(currentNodeType('scout.flood/flood@1')).toBe('scout.flood/flood@1');
   });
 });

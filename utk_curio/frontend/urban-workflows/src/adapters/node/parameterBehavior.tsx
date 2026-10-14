@@ -13,6 +13,7 @@ import styles from "../../components/editing/widgets/WidgetTags.module.css";
 import { SharedTag } from "../../components/editing/widgets/WidgetTag";
 import { WidgetControl } from "../../components/editing/widgets/WidgetControl";
 import { WidgetForm } from "../../components/editing/widgets/WidgetForm";
+import { DisplayAsWidgetSwitch, useNodeControlsOnly } from "../../components/editing/nodeControlsOnly";
 import {
   checkWidgetValue,
   effectiveValue,
@@ -43,6 +44,8 @@ function ParameterBody({ data }: { data: any }) {
   const widget: WidgetDef | null = held[0] ?? null;
   const others = sharedWidgetsOf(all.filter((n) => n.id !== data.nodeId));
   const [editing, setEditing] = useState(false);
+  // "Display as widget": the value's row alone, without its tag, Edit or users.
+  const controlsOnly = useNodeControlsOnly();
 
   // Code is mirrored into node data without a state change, so the list of
   // users is read again on every code edit.
@@ -139,17 +142,19 @@ function ParameterBody({ data }: { data: any }) {
 
   return (
     <div
-      className={`nowheel nodrag ${styles.panel}`}
+      className={`nowheel nodrag ${styles.panel}${!controlsOnly && !dashboardOn ? ` ${styles.panelWithSwitch}` : ""}`}
       data-parameter-panel="true"
       onBlur={() => flush()}
     >
       <div className={styles.row} data-widget-row={widget.name}>
         <span className={styles.rowLabel}>{widget.label || widget.name}</span>
-        <SharedTag name={widget.name} disabled={dashboardOn} />
+        {!controlsOnly ? <SharedTag name={widget.name} disabled={dashboardOn} /> : null}
         <span className={styles.rowControl}>
-          <WidgetControl widget={widget} value={shown} disabled={dashboardOn} onChange={setValue} />
+          {/* Its value is set on the dashboard too, the layout locked or not;
+              only its definition (tag, Edit) stays on the canvas. */}
+          <WidgetControl widget={widget} value={shown} onChange={setValue} />
         </span>
-        {!dashboardOn ? (
+        {!dashboardOn && !controlsOnly ? (
           <span className={styles.rowActions}>
             <button
               type="button"
@@ -165,26 +170,30 @@ function ParameterBody({ data }: { data: any }) {
           </span>
         ) : null}
       </div>
-      {held.length > 1 ? (
+      {held.length > 1 && !controlsOnly ? (
         <p className={styles.problem}>
           This node holds {held.length} widgets, and a Parameter node holds one. Each is shared; move the others to
           Parameter nodes of their own.
         </p>
       ) : null}
-      <div className={styles.shared} data-parameter-users="true">
-        <p className={styles.sharedHeading}>Used by</p>
-        {users.length === 0 ? (
-          <p className={styles.empty}>No node uses it yet. Drag its tag into a node&apos;s code.</p>
-        ) : (
-          <ul className={styles.users}>
-            {users.map((node) => (
-              <li key={node.id} data-parameter-user={node.id}>
-                {labelOf(node.data, node.id)}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      {!controlsOnly ? (
+        <div className={styles.shared} data-parameter-users="true">
+          <p className={styles.sharedHeading}>Used by</p>
+          {users.length === 0 ? (
+            <p className={styles.empty}>No node uses it yet. Drag its tag into a node&apos;s code.</p>
+          ) : (
+            <ul className={styles.users}>
+              {users.map((node) => (
+                <li key={node.id} data-parameter-user={node.id}>
+                  {labelOf(node.data, node.id)}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
+      {/* A tile's switch is in its title band. */}
+      {!controlsOnly && !dashboardOn ? <DisplayAsWidgetSwitch /> : null}
     </div>
   );
 }

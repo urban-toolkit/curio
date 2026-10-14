@@ -5,7 +5,9 @@ nothing and says why the drop cannot be made, if it cannot. The canvas picks
 the copies' ids; then ``POST .../copy`` adds the packages the levers need and
 copies each saved output the drop brings to its copy, the target's own:
 
-* each context node's saved output, which a Data Loading node there reads;
+* the saved outputs of the nodes upstream and downstream of it, which arrive
+  as copies of those nodes;
+* each other context node's saved output, which a Data Loading node there reads;
 * the saved outputs of the levers its outcomes show, so they show without a run.
 
 Run::
@@ -108,7 +110,7 @@ def _copied_data(user_key: str, node_id: str, project_id: str) -> str:
     return (dest / load_dataset_manifest(dest).data_file).read_text(encoding="utf-8")
 
 
-def test_the_plan_names_the_levers_the_context_and_the_outcomes_saved_outputs(client, user_and_token):
+def test_the_plan_names_the_levers_what_is_around_them_and_the_saved_outputs(client, user_and_token):
     _, token = user_and_token
     source, target = _source_and_target(client, token)
     _save_outputs(client, token, source, {"load": "id,height\n1,10\n", "a": "id,sunlight\n1,0.5\n"})
@@ -121,12 +123,14 @@ def test_the_plan_names_the_levers_the_context_and_the_outcomes_saved_outputs(cl
     assert plan["scenario"] == {"id": "s1", "name": "Baseline", "color": "#2a9d8f", "description": ""}
     assert plan["project"] == {"id": source, "name": "Shadows"}
     assert plan["levers"] == ["a", "chart"]
-    [load] = plan["context"]
-    assert load["nodeId"] == "load" and "parameter" not in load
-    assert load["source"] == {"nodeId": "load", "copiedFrom": [], "datasetId": computed_dataset_id("load", source)}
+    # The loader feeding it is upstream: it arrives as a copy, with its saved
+    # output, so no context is left to stand in for.
+    assert (plan["upstream"], plan["downstream"]) == (["load"], [])
+    assert plan["context"] == []
+    assert plan["saved"] == ["load"]
     # The chart saves nothing itself: what it shows is a's saved output.
     assert plan["outcomes"] == [{"nodeId": "chart", "label": "Vis Vega", "sources": ["a"]}]
-    assert [n["id"] for n in plan["dataflow"]["nodes"]] == ["a", "chart"]
+    assert [n["id"] for n in plan["dataflow"]["nodes"]] == ["a", "chart", "load"]
     assert [(e["source"], e["target"]) for e in plan["dataflow"]["edges"]] == [("load", "a"), ("a", "chart")]
     assert plan["packages"] == []
 
@@ -137,23 +141,22 @@ def test_a_drop_copies_each_saved_output_to_its_copy_and_restores_it(client, use
     saved = _save_outputs(client, token, source, {"load": "id,height\n1,10\n", "a": "id,sunlight\n1,0.5\n"})
 
     resp = _copy(client, token, source, target, [
-        {"source": "load", "node": "loader-1"},
+        {"source": "load", "node": "load-copy"},
         {"source": "a", "node": "a-copy"},
     ])
 
     assert resp.status_code == 200, resp.get_data(as_text=True)
     body = resp.get_json()
     ukey = _user_dir_key_of(user)
-    assert _copied_data(ukey, "loader-1", target) == "id,height\n1,10\n"
+    assert _copied_data(ukey, "load-copy", target) == "id,height\n1,10\n"
     assert _copied_data(ukey, "a-copy", target) == "id,sunlight\n1,0.5\n"
     # Each copy is the output of its copy, in the target.
-    manifest = load_dataset_manifest(dataset_dir(ukey, f"{computed_dataset_id('loader-1', target)}@1"))
-    assert (manifest.producer_node_id, manifest.producer_dataflow_id) == ("loader-1", target)
-    # The loader is told which dataset it reads; the copies' outputs are restored.
-    assert body["datasets"]["loader-1"]["id"] == computed_dataset_id("loader-1", target)
-    assert set(body["datasets"]) == {"loader-1"}
+    manifest = load_dataset_manifest(dataset_dir(ukey, f"{computed_dataset_id('load-copy', target)}@1"))
+    assert (manifest.producer_node_id, manifest.producer_dataflow_id) == ("load-copy", target)
+    # No loader stands in for anything; the copies' outputs are restored.
+    assert body["datasets"] == {}
     assert sorted((o["node_id"], o["filename"]) for o in body["outputs"]) == [
-        ("a-copy", saved["a"]), ("loader-1", saved["load"]),
+        ("a-copy", saved["a"]), ("load-copy", saved["load"]),
     ]
     assert body["added"] == []
 
@@ -187,17 +190,17 @@ def test_the_copy_is_the_targets_own_and_a_reload_restores_it(client, user_and_t
     assert (_shared() / saved["load"]).read_text(encoding="utf-8") == "id,height\n1,10\n"
 
 
-def test_a_context_without_a_saved_output_is_refused_naming_it(client, user_and_token):
-    user, token = user_and_token
+def test_an_upstream_node_without_a_saved_output_arrives_to_run_again(client, user_and_token):
+    _, token = user_and_token
     source, target = _source_and_target(client, token)
 
     plan = _plan(client, token, source, target).get_json()
-    [problem] = plan["problems"]
-    assert "Data Loading" in problem and "Shadows" in problem and "no saved output" in problem
+    assert plan["problems"] == []
+    assert plan["upstream"] == ["load"] and plan["saved"] == []
 
-    resp = _copy(client, token, source, target, [])
-    assert resp.status_code == 409
-    assert resp.get_json()["error"] == problem
+    assert _copy(client, token, source, target, []).status_code == 200
+    resp = _copy(client, token, source, target, [{"source": "load", "node": "load-copy"}])
+    assert resp.status_code == 400
 
 
 def test_only_the_scenarios_saved_outputs_are_copied_to_fresh_ids(client, user_and_token):
@@ -275,12 +278,12 @@ def test_a_shared_parameter_comes_with_the_plan_and_its_value(client, user_and_t
     plan = _plan(client, token, source, target).get_json()
 
     assert plan["problems"] == []
-    assert [(c["nodeId"], c.get("parameter", False)) for c in plan["context"]] == [("load", False), ("season", True)]
+    assert plan["upstream"] == ["load", "season"] and plan["context"] == []
     season = next(n for n in plan["dataflow"]["nodes"] if n["id"] == "season")
     assert season["metadata"]["widgets"][0]["value"] == "summer"
 
 
-def test_a_context_that_passes_on_several_outputs_is_refused(client, user_and_token):
+def test_a_pool_upstream_arrives_with_the_saved_outputs_feeding_it(client, user_and_token):
     _, token = user_and_token
     nodes = [
         _node("load", "data-loading", "return 1"),
@@ -296,8 +299,10 @@ def test_a_context_that_passes_on_several_outputs_is_refused(client, user_and_to
     source, target = _source_and_target(client, token, _spec("Shadows", [{**BASELINE, "nodes": ["a"]}], nodes, edges))
     _save_outputs(client, token, source, {"load": "id\n1\n", "load2": "id\n2\n"})
 
-    [problem] = _plan(client, token, source, target).get_json()["problems"]
-    assert "Data Pool" in problem and "2 outputs" in problem
+    plan = _plan(client, token, source, target).get_json()
+    assert plan["problems"] == []
+    assert plan["upstream"] == ["load", "load2", "pool"]
+    assert plan["saved"] == ["load", "load2"]
 
 
 def test_another_accounts_project_is_not_found_either_way(client, user_and_token, other_user_and_token):

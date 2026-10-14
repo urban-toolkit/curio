@@ -22,7 +22,11 @@ import { fitViewWithMenuOffsetNow } from "../../utils/fitViewWithMenuOffset";
 import { scenarioDashboard } from "../../utils/scenarios/scenarioDashboard";
 import { dataflowPath } from "../../utils/shareLinks";
 import { useViewportMotionHint } from "../../hook/useViewportMotionHint";
-import DashboardTopBar, { useCanEditLayout, useDashboardLeaveGuard } from "./DashboardTopBar";
+import DashboardTopBar, { useCanEditLayout, useCanRunDashboard, useDashboardLeaveGuard } from "./DashboardTopBar";
+import DashboardRunTile from "./DashboardRunTile";
+import DashboardAgent from "./DashboardAgent";
+import { useUserContext } from "../../providers/UserProvider";
+import { runButtonPlace, type RunButtonPlace } from "../../utils/dashboardSettings";
 import { DASHBOARD_FIT_OPTIONS, useDashboardFit } from "./useDashboardFit";
 import styles from "./DashboardPage.module.css";
 import "reactflow/dist/style.css";
@@ -33,6 +37,8 @@ export const NOTHING_PINNED_BODY =
   "Open the dataflow and use Pin to dashboard on the nodes you want to show here.";
 export const READ_ONLY_NOTICE =
   "Viewing a shared dashboard (read-only). Open the dataflow to make a copy.";
+export const PUBLISHED_NOTICE =
+  "Change the inputs and press Run to see your own results. Your runs are not saved.";
 export const LOAD_FAILED_TITLE = "This dashboard could not be opened.";
 export const LOAD_FAILED_BODY =
   "It may have been deleted, or the link may not be shared with you.";
@@ -49,10 +55,17 @@ export const STALE_TILES_HINT =
  * ones are laid out invisibly by ``prepareDashboardNodes``, which is also what
  * decides where the tiles sit.
  *
- * Nothing on this page runs a dataflow. Tiles draw from the outputs a run
- * already saved, restored by ``ProjectLoader``; a chart compiles its spec
- * against them (``UniversalNode``'s auto-render effect).
+ * Tiles draw from the outputs a run already saved, restored by
+ * ``ProjectLoader``; a chart compiles its spec against them (``UniversalNode``'s
+ * auto-render effect). The Run button (``DashboardRunTile``) runs the
+ * dataflow again with the values the tiles show, as Run All does on the
+ * canvas, so the tiles redraw; the run is not saved from this page
+ * (``useInstallSave``). It is drawn over the canvas, no node of the dataflow
+ * nor of React Flow, where and as big as ``dataflow.dashboard.runButton`` says.
  */
+/** A node handler with nothing to do; see `onNodeClick` below. */
+const keepTilesInteractive = () => {};
+
 export const DashboardPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const {
@@ -65,6 +78,9 @@ export const DashboardPage: React.FC = () => {
     updateDataNode,
     markDirty,
     scenarios,
+    dashboardSettings,
+    setDashboardRunButton,
+    runsPublished,
   } = useFlowContext();
   const loadState = useProjectLoadState();
   // Why the backend would not build this dashboard as a page of its own, when
@@ -87,9 +103,29 @@ export const DashboardPage: React.FC = () => {
     [nodes, edges, dashboardPins, scenarios],
   );
   const headroom = frames.length > 0 ? FRAME_HEADER_ROOM : 0;
-  const [arranged, setArranged] = useState(0);
-  const onArranged = useCallback(() => setArranged((count) => count + 1), []);
-  useDashboardFit(pinnedIds, canvasRef, { headroom, refitKey: arranged });
+
+  // The Run button, for whoever owns the open dataflow, a hosted guest
+  // included: a run from here saves nothing, so it needs no right to save.
+  // Only an owner who may edit the layout moves it. It stands where they put
+  // it, else above the top-left tile, and follows a drag before the drop
+  // saves it.
+  // A visitor on a published dashboard's link runs it too, as its owner
+  // published it (FlowProvider's `runsPublished`).
+  const canRun = useCanRunDashboard() || !!runsPublished;
+  const showRun = loadState === "loaded" && canRun && pinnedIds.length > 0;
+  const runMovable = canEditLayout && !dashboardLocked;
+  const [runPreview, setRunPreview] = useState<Required<RunButtonPlace> | null>(null);
+  const runPlace = useMemo(
+    () => runPreview ?? runButtonPlace(dashboardSettings ?? {}, nodes.filter((node) => dashboardPins[node.id])),
+    [runPreview, dashboardSettings, nodes, dashboardPins],
+  );
+  useDashboardFit(pinnedIds, canvasRef, { headroom });
+
+  // The agent, for a signed-in viewer of a dashboard with tiles. It answers
+  // with the viewer's own LLM, so a visitor needs a configuration of their own.
+  const { user } = useUserContext();
+  const showAgent = loadState === "loaded" && pinnedIds.length > 0 && !!user;
+  const [agentOpen, setAgentOpen] = useState(false);
 
   const nodeTypes = useMemo(() => ({ [CURIO_UNIVERSAL_NODE_TYPE]: UniversalNode }), []);
   const edgeTypes = useMemo(() => ({
@@ -158,12 +194,18 @@ export const DashboardPage: React.FC = () => {
 
   return (
     <div className={styles.page}>
-      {id ? <DashboardTopBar id={id} onArranged={onArranged} /> : null}
+      {id ? (
+        <DashboardTopBar
+          id={id}
+          agentOpen={agentOpen}
+          onToggleAgent={showAgent ? () => setAgentOpen((open) => !open) : undefined}
+        />
+      ) : null}
       {loadState === "loaded" && !canEditLayout ? (
         // The notice the canvas gives a visitor, for the same reason: the page
         // looks editable (tiles, a Share menu) and is not.
         <div className={styles.banner} data-testid="shared-view-banner">
-          {READ_ONLY_NOTICE}
+          {runsPublished ? PUBLISHED_NOTICE : READ_ONLY_NOTICE}
         </div>
       ) : null}
       <div className={styles.canvas} ref={canvasRef}>
@@ -175,6 +217,12 @@ export const DashboardPage: React.FC = () => {
           onNodesChange={handleNodesChange}
           onEdgesChange={handleEdgesChange}
           onNodeDragStop={handleNodeDragStop}
+          // Load-bearing, though it does nothing: React Flow takes pointer
+          // events off a node that is neither draggable nor selectable unless
+          // a node handler is passed, so a locked layout's tiles ignored every
+          // click. With it, a locked tile stays put and the canvas does not
+          // pan, but its widgets, Parameter value, map and chart still answer.
+          onNodeClick={keepTilesInteractive}
           connectionMode={ConnectionMode.Loose}
           nodesDraggable={!dashboardLocked}
           nodesConnectable={false}
@@ -200,6 +248,21 @@ export const DashboardPage: React.FC = () => {
         >
           <DashboardScenarioLayers frames={frames} />
         </ReactFlow>
+        {showRun ? (
+          <DashboardRunTile
+            place={runPlace}
+            movable={runMovable}
+            onPreview={setRunPreview}
+            onCommit={(place) => {
+              // Saved with the layout, as a tile's place and size are.
+              setDashboardRunButton(place);
+              setRunPreview(null);
+            }}
+          />
+        ) : null}
+        {showAgent && agentOpen ? (
+          <DashboardAgent canRun={canRun} onClose={() => setAgentOpen(false)} />
+        ) : null}
         {loadState === "loading" || loadState === "idle" ? (
           <div className={styles.state}>
             <Loading />

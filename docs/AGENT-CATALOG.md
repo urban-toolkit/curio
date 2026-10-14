@@ -176,6 +176,14 @@ Applying the whole plan saves its scenarios. Applied node by node, a copy can be
 
 An agent that reads the dataflow sees each scenario with its fixed context, levers and outcomes, and each node's widget values.
 
+### Notes from the Researcher
+
+The **Researcher** writes what it finds into post-it notes: a yellow note with your question, then a green note per answer, each citing its sources. The **Notes** package (`curio.notes@1`) ships the Note template it reuses; without it, the Researcher has the Package Builder make one first.
+
+### The dashboard agent
+
+A dashboard has an agent of its own: **Agent** in its top bar opens a chat that sets the pinned tiles' widgets and runs the dataflow (see [Dashboards](USAGE.md#dashboards)). It is not a catalog agent: it is not added or attached, and it answers with the viewer's default LLM configuration, else the Deployment default, else the first configuration they added, so adding one is enough; with none it opens API Settings, showing the API keys alone, since Agent configuration has no row for it. Its changes are checked as a widget's value is, and nothing of the chat is saved.
+
 ### Finding data in portals
 
 The **Dataset Finder** can search the portals in the [Discovery Catalog](DISCOVERY-CATALOG.md) as well as your own datasets, and propose downloading one. Nothing is downloaded until you apply the proposal. See [DISCOVERY-CATALOG.md part 6](DISCOVERY-CATALOG.md#6-the-dataset-finder).

@@ -33,7 +33,14 @@ const ApiSettingsDrawerContext = createContext<ApiSettingsDrawerContextValue | n
  * the catalog drawer providers: the same two-phase slide, the same scroll lock,
  * and the drawer unmounted once its exit slide ends.
  */
-export function ApiSettingsDrawerProvider({ children }: { children: React.ReactNode }) {
+export function ApiSettingsDrawerProvider({
+  children,
+  keysOnly = false,
+}: {
+  children: React.ReactNode;
+  /** The dashboard: API keys alone, without Agent configuration (ApiSettingsPanel). */
+  keysOnly?: boolean;
+}) {
   const { mounted, presented, open, close, finishExit } = useSlideDrawerPresentation();
   const [tab, setTab] = useState<ApiSettingsTab>("keys");
   const [focus, setFocus] = useState<ApiSettingsFocus | null>(null);
@@ -73,6 +80,7 @@ export function ApiSettingsDrawerProvider({ children }: { children: React.ReactN
             focus={focus}
             onRequestClose={close}
             onExitComplete={finishExit}
+            keysOnly={keysOnly}
           />
         </Suspense>,
         document.body,

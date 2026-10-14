@@ -1,7 +1,8 @@
-"""The Raster Calculator and Raster Statistics nodes (``curio.builtin@1``) run
-the code they start with, as the canvas writes it
-(``utils/raster/rasterNodeCode.ts``), in process and in an isolated child: a
-raster on the inputs' grid, and a table of one row.
+"""Curio's raster algebra in a Python node: ``curio_raster_calculate`` and
+``curio_raster_statistics``, which every Python node's code can call, run in
+process and in an isolated child: a raster on the inputs' grid, and a table of
+one row. (They were once the Raster Calculator and Raster Statistics nodes'
+starter code; those kinds are Python nodes now.)
 
 Every test imports the sandbox's modules itself, so a checkout without them
 fails test by test rather than at collection.
@@ -10,7 +11,6 @@ from __future__ import annotations
 
 import json
 import math
-import re
 import textwrap
 from pathlib import Path
 
@@ -18,19 +18,16 @@ import numpy as np
 import pytest
 
 REPO = Path(__file__).resolve().parents[3]
-NODE_CODE_TS = REPO / "utk_curio" / "frontend" / "urban-workflows" / "src" / "utils" / "raster" / "rasterNodeCode.ts"
-CALCULATOR = "curio.builtin/raster-calculator"
-STATISTICS = "curio.builtin/raster-statistics"
+PYTHON = "curio.builtin/computation-analysis"
 
+CALCULATE = 'return curio_raster_calculate("subtract", [input_0, input_1])\n'
+STATISTICS = "return curio_raster_statistics(input_0, mask=input_1)\n"
 
-def starter(name: str) -> str:
-    """The code a node starts with: the template literal ``rasterNodeCode.ts``
-    exports as *name*."""
-    source = NODE_CODE_TS.read_text(encoding="utf-8")
-    match = re.search(rf"export const {name} = `([^`]*)`;", source)
-    assert match, f"{name} is not a plain template literal in {NODE_CODE_TS}"
-    assert "${" not in match.group(1)
-    return match.group(1)
+#: The Python node that maps the change between an example's scenarios.
+EXAMPLE_CALCULATORS = {
+    "FloodScenarios": "8bdc7401-d983-5420-b863-b9aba4c4a397",
+    "WhatIfShadows": "7465bb33-9916-53fe-806b-90becc9aa805",
+}
 
 
 def _raster(path, values, *, dtype="float64", nodata=-9999.0):
@@ -80,15 +77,10 @@ def run_in_process(code, inputs, node_type, workspace):
     return result["output"], load_from_duckdb(result["output"]["path"])
 
 
-def test_the_starters_call_curios_raster_algebra():
-    assert 'return curio_raster_calculate("subtract", [input_0, input_1])' in starter("RASTER_CALCULATOR_CODE")
-    assert "return curio_raster_statistics(input_0, mask=input_1)" in starter("RASTER_STATISTICS_CODE")
-
-
-def test_a_raster_calculator_runs_its_starter_on_two_inputs(workspace):
+def test_a_python_node_calculates_over_two_inputs(workspace):
     a = _raster(workspace / "a.tif", [[5.0, 7.0], [-9999.0, 1.5]])
     b = _raster(workspace / "b.tif", [[1.0, 2.0], [3.0, 0.25]])
-    output, result = run_in_process(starter("RASTER_CALCULATOR_CODE"), (a, b), CALCULATOR, workspace)
+    output, result = run_in_process(CALCULATE, (a, b), PYTHON, workspace)
     try:
         assert output["dataType"] == "raster"
         assert result.dtypes[0] == "float64"
@@ -100,15 +92,12 @@ def test_a_raster_calculator_runs_its_starter_on_two_inputs(workspace):
         result.close()
 
 
-def test_a_raster_calculator_chooses_by_class(workspace):
+def test_a_python_node_chooses_by_class(workspace):
     classes = _raster(workspace / "classes.tif", [[21, 0, 43]], dtype="uint8", nodata=0)
     nbs = _raster(workspace / "nbs.tif", [[1.0, 2.0, 3.0]])
     no_nbs = _raster(workspace / "no_nbs.tif", [[10.0, 20.0, 30.0]])
-    code = starter("RASTER_CALCULATOR_CODE").replace(
-        'curio_raster_calculate("subtract", [input_0, input_1])',
-        'curio_raster_calculate("choose", [input_0, input_1, input_2], codes=[21, 31])',
-    )
-    _output, result = run_in_process(code, (classes, nbs, no_nbs), CALCULATOR, workspace)
+    code = 'return curio_raster_calculate("choose", [input_0, input_1, input_2], codes=[21, 31])\n'
+    _output, result = run_in_process(code, (classes, nbs, no_nbs), PYTHON, workspace)
     try:
         assert result.read(1).tolist() == [[1.0, 20.0, 30.0]]
     finally:
@@ -116,14 +105,15 @@ def test_a_raster_calculator_chooses_by_class(workspace):
 
 
 @pytest.mark.parametrize("example", ["FloodScenarios", "WhatIfShadows"])
-def test_an_examples_raster_calculator_maps_the_absolute_change_between_its_scenarios(workspace, example):
+def test_an_examples_python_node_maps_the_absolute_change_between_its_scenarios(workspace, example):
     """The code SCOUT's flood and shadow examples map the change between their
-    scenarios with: input 1 minus input 0, as its size."""
+    scenarios with, in a Python node: input 1 minus input 0, as its size."""
     flow = json.loads((REPO / "docs" / "examples" / "dataflows" / f"{example}.json").read_text(encoding="utf-8"))
-    (node,) = [n for n in flow["dataflow"]["nodes"] if n["type"] == CALCULATOR]
+    (node,) = [n for n in flow["dataflow"]["nodes"] if n["id"] == EXAMPLE_CALCULATORS[example]]
+    assert node["type"] == PYTHON
     reference = _raster(workspace / "reference.tif", [[1.0, 2.0], [-9999.0, 4.0]])
     comparison = _raster(workspace / "comparison.tif", [[0.5, 2.0], [3.0, 6.0]])
-    _output, result = run_in_process(node["content"], (reference, comparison), CALCULATOR, workspace)
+    _output, result = run_in_process(node["content"], (reference, comparison), PYTHON, workspace)
     try:
         cells = result.read(1)
         assert cells[0].tolist() == [0.5, 0.0]
@@ -132,9 +122,9 @@ def test_an_examples_raster_calculator_maps_the_absolute_change_between_its_scen
         result.close()
 
 
-def test_a_raster_statistics_node_runs_its_starter_into_one_row(workspace):
+def test_a_python_node_summarises_a_raster_into_one_row(workspace):
     a = _raster(workspace / "a.tif", [[1.0, 2.0, -9999.0], [3.0, 4.0, 5.0]])
-    output, table = run_in_process(starter("RASTER_STATISTICS_CODE"), a, STATISTICS, workspace)
+    output, table = run_in_process(STATISTICS, a, PYTHON, workspace)
     assert output["dataType"] == "dataframe"
     assert table.to_dict("records") == [{"mean": 3.0, "median": 3.0, "min": 1.0, "max": 5.0, "count": 5}]
 
@@ -159,7 +149,7 @@ def test_the_steps_run_in_an_isolated_child(tmp_path):
         assert manifest["ok"], manifest["stderr"]
         return manifest
 
-    calculated = run(starter("RASTER_CALCULATOR_CODE"), CALCULATOR)
+    calculated = run(CALCULATE, PYTHON)
     child.write_result(calculated, str(scratch))
     from utk_curio.sandbox.isolation import supervisor
 
@@ -170,9 +160,6 @@ def test_the_steps_run_in_an_isolated_child(tmp_path):
     with rasterio.open(scratch / descriptor["file"]) as written:
         assert written.read(1).tolist() == [[4.0, 5.0]]
 
-    stats_code = starter("RASTER_STATISTICS_CODE").replace(
-        "curio_raster_statistics(input_0, mask=input_1)", "curio_raster_statistics(input_0, where=lambda value: value > 6)"
-    )
-    counted = run(stats_code, STATISTICS)
+    counted = run("return curio_raster_statistics(input_0, where=lambda value: value > 6)\n", PYTHON)
     child.write_result(counted, str(scratch))
     assert supervisor.read_child_manifest(str(scratch))["output"]["kind"] == "dataframe"

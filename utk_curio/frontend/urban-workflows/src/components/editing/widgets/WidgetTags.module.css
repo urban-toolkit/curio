@@ -117,11 +117,13 @@
   margin: 0;
 }
 
-.panel input[type="text"],
-.panel input[type="number"],
-.panel input[type="search"],
-.panel input[type="datetime-local"],
-.panel select {
+/* Not a widget's own control (WidgetControl), which MUI draws: its field has
+   its own border and height. */
+.panel input[type="text"]:not(:global(.MuiInputBase-input)),
+.panel input[type="number"]:not(:global(.MuiInputBase-input)),
+.panel input[type="search"]:not(:global(.MuiInputBase-input)),
+.panel input[type="datetime-local"]:not(:global(.MuiInputBase-input)),
+.panel select:not(:global(.MuiInputBase-input)) {
   box-sizing: border-box;
   height: var(--widget-h);
   min-width: 0;
@@ -135,8 +137,8 @@
   box-shadow: none;
 }
 
-.panel input:focus,
-.panel select:focus {
+.panel input:not(:global(.MuiInputBase-input)):focus,
+.panel select:not(:global(.MuiInputBase-input)):focus {
   outline: 2px solid var(--curio-role-update-fg);
   outline-offset: -1px;
   box-shadow: none;
@@ -458,4 +460,78 @@
   color: var(--curio-danger-text);
   margin: 8px 0 0;
   padding-left: 16px;
+}
+
+/* "Display as widget" (nodeControlsOnly): under the widget rows, in the
+   Widgets tab and in a Parameter node, and in the folded node's bottom bar. After
+   `.panel label`, which it overrides. */
+label.displayAsWidget {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  color: var(--curio-text-secondary);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+/* A panel holding the "Display as widget" switch: a column, so the switch
+   takes the space left over and sits at the panel's bottom left. */
+.panelWithSwitch {
+  display: flex;
+  flex-direction: column;
+}
+
+.panelWithSwitch > * {
+  flex-shrink: 0;
+}
+
+.panelWithSwitch > label.displayAsWidget {
+  margin-top: auto;
+  padding-top: 8px;
+  align-self: flex-start;
+}
+
+/* A dashboard tile's widgets, separated (SeparatedWidgetBox): each its own
+   white box, placed from the tile's corner. */
+.separatedLayer {
+  position: relative;
+  overflow: visible;
+}
+
+.separatedBox {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: 4px 10px 6px;
+  background: var(--curio-card-bg);
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-md);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  pointer-events: auto;
+  font-family: var(--curio-font-family);
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-primary);
+}
+
+.separatedGrip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 12px;
+  margin: 0 -10px 2px;
+  padding: 0 10px;
+  border-bottom: 1px dashed var(--curio-border);
+  cursor: grab;
+}
+
+.separatedBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.separatedBody > .row {
+  border-bottom: none;
 }

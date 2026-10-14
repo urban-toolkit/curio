@@ -1,0 +1,37 @@
+{
+  "id": "data.cdc.quad-cities-svi-tracts",
+  "name": "Quad Cities SVI Census Tracts",
+  "version": "1.0.0",
+  "format": "geojson",
+  "description": "The 86 census tracts of Scott County, Iowa and Rock Island and Henry Counties, Illinois that meet SCOUT's Quad Cities flood grid (-90.6879, 41.4150 to -90.4252, 41.6242), from CDC/ATSDR's Social Vulnerability Index 2020 (ArcGIS Hub item 3827cb5593174c79b35119611299279b, tracts layer). CDC's column names: estimates such as E_TOTPOP (people), E_AGE65, E_DISABL, E_NOVEH and E_POV150, and the percentile rankings RPL_THEME1 to 4 and RPL_THEMES (overall); -999 marks a missing value, as CDC publishes it. CDC/ATSDR, public domain.",
+  "publisher": "CDC/ATSDR",
+  "license": "Public domain",
+  "tags": [
+    "census-tracts",
+    "social-vulnerability",
+    "svi",
+    "quad-cities",
+    "geojson"
+  ],
+  "dataFile": "data/svi_tracts.geojson",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "CDC/ATSDR",
+  "rowCount": 86,
+  "featureCount": 86,
+  "schema": null,
+  "createdAt": "2026-10-13T00:00:00Z",
+  "updatedAt": "2026-10-13T00:00:00Z",
+  "sourceUpdatedAt": null,
+  "sourceEncoding": null,
+  "groupId": null,
+  "layerName": null,
+  "producerNodeId": null,
+  "producerNodeType": null,
+  "producerDataflowId": null,
+  "producerDataflowName": null,
+  "upstreamInputs": null,
+  "discoverySource": null,
+  "collection": null
+}

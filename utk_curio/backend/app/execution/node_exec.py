@@ -50,6 +50,10 @@ class NodeRun:
     save_output_dataset: bool = bool(CURIO_DEFAULT_SAVE_NODE_OUTPUT)
     # The wired circles, in order: which input_k each value of *input* is.
     input_slots: tuple[int, ...] | None = None
+    # A run of a published dashboard (published/service.py): it runs as the
+    # owner but writes nothing of theirs - no output or saved file installed,
+    # no runtime journal entry. Never set from a request body.
+    published: bool = False
 
     @classmethod
     def from_request_json(cls, body: dict) -> "NodeRun":
@@ -392,7 +396,7 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
 
     installed_dataset = None
     dataset_diagnostic = None
-    if run.save_output_dataset and isinstance(output, dict) and run.node_id:
+    if run.save_output_dataset and not run.published and isinstance(output, dict) and run.node_id:
         dataset_diagnostic = auto_install_node_output(
             user=user,
             node_id=run.node_id,
@@ -417,15 +421,16 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
 
     # What the code saved with curio_save_file / curio_save_folder, whatever
     # the save-output toggle says: the node asked for it by name.
-    saved_datasets = install_saved_files(user, run, output)
+    saved_datasets = None if run.published else install_saved_files(user, run, output)
 
-    record_runtime_outcome(
-        user,
-        node_id=run.node_id,
-        dataflow_id=run.dataflow_id,
-        code=run.code, stdout=stdout, stderr=stderr, output=output,
-        duration_ms=(time.perf_counter() - t0) * 1000.0,
-    )
+    if not run.published:
+        record_runtime_outcome(
+            user,
+            node_id=run.node_id,
+            dataflow_id=run.dataflow_id,
+            code=run.code, stdout=stdout, stderr=stderr, output=output,
+            duration_ms=(time.perf_counter() - t0) * 1000.0,
+        )
 
     # Deliberately a SIBLING of the journal call, not a line inside it:
     # record_runtime_outcome returns early whenever node/dataflow/user is
@@ -472,10 +477,11 @@ def _unavailable_reply(user, run: NodeRun, input_ref: dict, unavailable: dict, *
     stderr = "\n\n".join(unavailable.values())
     output = {'path': '', 'dataType': 'str'}
     duration_ms = (time.perf_counter() - started) * 1000.0
-    record_runtime_outcome(
-        user, node_id=run.node_id, dataflow_id=run.dataflow_id, code=run.code,
-        stdout=[], stderr=stderr, output=output, duration_ms=duration_ms,
-    )
+    if not run.published:
+        record_runtime_outcome(
+            user, node_id=run.node_id, dataflow_id=run.dataflow_id, code=run.code,
+            stdout=[], stderr=stderr, output=output, duration_ms=duration_ms,
+        )
     _monitor_counters.record_execution(
         language="python", node_type=run.node_type, ok=False, duration_ms=duration_ms,
     )

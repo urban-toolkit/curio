@@ -1992,16 +1992,15 @@ SHADOW_MAPS = {
 }
 SHADOW_STATS = "8a914e39-4cb1-535d-9a8b-19b45f6be288"
 
-# FloodScenarios: three Parameter nodes, the period and the region's corners,
-# read by both scenarios' Flood Projection nodes.
+# FloodScenarios: one Parameter node, the period, read by both scenarios'
+# Flood Projection nodes (the region is SCOUT's whole grid, in their code).
 FLOOD_NAME = "FloodScenarios"
 FLOOD_PERIOD = "7e42b950-0e76-5cde-b794-4ad6a15a5a87"
-FLOOD_TOPLEFT = "5c04f860-4e09-5048-9d43-7439564159c8"
 FLOOD_NO_NBS = "9452b697-1b8f-5467-97f1-431619c3fa22"
 FLOOD_ALL_NBS = "27b90608-bddf-5c7c-b412-e6adc6a5c344"
 #: The comparison: the change in depth and the table, by node type.
 FLOOD_COMPARES = [
-    ("8bdc7401-d983-5420-b863-b9aba4c4a397", "raster-calculator"),
+    ("8bdc7401-d983-5420-b863-b9aba4c4a397", "computation-analysis"),
     ("6e64afd6-5098-54b7-8be9-ecf587472763", "vis-vega"),
 ]
 
@@ -2301,7 +2300,7 @@ def scene_shadows(ctx: Ctx) -> None:
     tour.hush()
     _play_all(
         ctx, timeout_ms=600000,
-        settle=[(m, "autk-grammar") for m in SHADOW_MAPS.values()] + [(SHADOW_STATS, "raster-statistics")],
+        settle=[(m, "autk-grammar") for m in SHADOW_MAPS.values()] + [(SHADOW_STATS, "computation-analysis")],
     )
     page.set_viewport_size(STILL_SIZE)
     page.wait_for_timeout(1500)
@@ -2326,19 +2325,19 @@ def scene_shadows(ctx: Ctx) -> None:
 
 
 def scene_parameter(ctx: Ctx) -> None:
-    """FloodScenarios run, and its period and corner Parameter nodes beside
-    the Flood Projection nodes whose code reads them."""
+    """FloodScenarios run, and its period Parameter node beside the Flood
+    Projection nodes whose code reads it."""
     page, tour = ctx.page, ctx.tour
     _open_project(ctx, _account_project(ctx, FLOOD_NAME), [FLOOD_PERIOD, FLOOD_NO_NBS])
     tour.hush()
     _play_all(ctx, timeout_ms=600000, settle=FLOOD_COMPARES)
     page.set_viewport_size(STILL_SIZE)
     page.wait_for_timeout(1500)
-    block = [FLOOD_PERIOD, FLOOD_TOPLEFT, FLOOD_NO_NBS, FLOOD_ALL_NBS]
+    block = [FLOOD_PERIOD, FLOOD_NO_NBS, FLOOD_ALL_NBS]
     _frame_nodes(page, block, (230, 140, 1870, 1160), max_zoom=1.0)
     tour.beat(2000)
     _still_with_boxes(ctx, "parameter-node", {
-        "period": _node_box(FLOOD_PERIOD), "topleft": _node_box(FLOOD_TOPLEFT),
+        "period": _node_box(FLOOD_PERIOD),
         "no-nbs": _node_box(FLOOD_NO_NBS), "all-nbs": _node_box(FLOOD_ALL_NBS),
     })
     page.set_viewport_size(VIDEO_SIZE)

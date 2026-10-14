@@ -1,0 +1,1240 @@
+{
+  "dataflow": {
+    "categories": {
+      "complexity": [
+        "Beginner"
+      ],
+      "city": [
+        "New York"
+      ]
+    },
+    "nodes": [
+      {
+        "id": "924f0840-2a22-54d2-aa37-482db7f9daca",
+        "type": "curio.builtin/data-loading",
+        "x": 858.5796282896973,
+        "y": 1390.5250815662173,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load Overture Maps' buildings of Lower Manhattan, downloaded from the Discovery Catalog.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Buildings",
+        "content": "# Overture Maps' buildings of Lower Manhattan, as the Discovery Catalog's\n# Overture Maps source downloads them, for the parks' box and about 300 m more:\n# a tower just outside the parks' box still shades a park at its edge.\nreturn curio_load_data(\"data.curio.lower-manhattan-shadows\", part=\"buildings.parquet\")\n",
+        "width": 436,
+        "height": 292,
+        "minimized": true,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "8a618e89-fc6b-50c4-a0e8-1f6e1b1c8f0e",
+        "type": "curio.builtin/parameter",
+        "x": 804.8796519036563,
+        "y": 1248.8302594655495,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "The season all three scenarios' shadow runs in.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "season",
+              "type": "choice",
+              "label": "Season",
+              "default": "summer",
+              "options": {
+                "choices": [
+                  "spring",
+                  "summer",
+                  "winter"
+                ],
+                "display": "radio"
+              }
+            }
+          ]
+        },
+        "title": "Season",
+        "controlsOnly": true,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "919d641d-e4c5-53b6-acd2-528290976d00",
+        "type": "curio.builtin/parameter",
+        "x": 796.9247249446993,
+        "y": 1915.19175032601,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "How close to a park a tall building must be for the what-ifs to change it.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "park_distance",
+              "type": "number",
+              "label": "Distance from a park",
+              "default": 75,
+              "options": {
+                "min": 0,
+                "step": 5,
+                "units": "m"
+              }
+            }
+          ]
+        },
+        "title": "Distance from a park",
+        "content": "",
+        "controlsOnly": true,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "f7b245ac-9072-5111-9307-2f4db4d1c33f",
+        "type": "curio.builtin/parameter",
+        "x": 796.7946107004879,
+        "y": 1771.2734768951527,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "The height from which the what-ifs change a building near a park, and Height cap's cap.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "tall_height",
+              "type": "number",
+              "label": "Building height cap",
+              "default": 60,
+              "options": {
+                "min": 0,
+                "step": 5,
+                "units": "m"
+              }
+            }
+          ]
+        },
+        "title": "Tall building height",
+        "content": "",
+        "controlsOnly": true,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "e3b2747c-c98b-55fd-b7f0-d2236c63ab00",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1016,
+        "y": 1396,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Give every building a height in metres for Rasterize Buildings: Overture's height, else its number of floors times the floor height, else the default height; leave out underground buildings and keep id, height, num_floors, class and the footprint.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "floor_height",
+              "type": "number",
+              "label": "Floor height",
+              "default": 3.5,
+              "options": {
+                "min": 0,
+                "step": 0.1,
+                "units": "m"
+              }
+            },
+            {
+              "name": "default_height",
+              "type": "number",
+              "label": "Default height",
+              "default": 10,
+              "options": {
+                "min": 0,
+                "step": 1,
+                "units": "m"
+              }
+            }
+          ]
+        },
+        "title": "Building heights",
+        "content": "# Rasterize Buildings reads a \"height\" column in metres with a value in every\n# row. Overture gives most buildings a height; for the rest, take the number of\n# floors times the floor height, and else the default height.\nbuildings = input_0[~input_0[\"is_underground\"].fillna(False).astype(bool)]\nheight = buildings[\"height\"].fillna(buildings[\"num_floors\"] * float([!! floor_height !!]))\nbuildings = buildings.assign(height=height.fillna(float([!! default_height !!])))\n# Overture's nested columns (names, sources) are not needed downstream.\nbuildings = buildings[[\"id\", \"height\", \"num_floors\", \"class\", \"geometry\"]].reset_index(drop=True)\n# Mark the frame as buildings, so an Autark map extrudes each footprint to its height.\nbuildings.metadata = {\"layerType\": \"buildings\"}\nreturn buildings\n",
+        "minimized": true,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "e7aadece-bf19-5608-8611-e5fb4030b7fe",
+        "type": "curio.builtin/data-loading",
+        "x": 858.8109741597196,
+        "y": 1540.944141122167,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load OpenStreetMap's parks of Lower Manhattan, downloaded from the Discovery Catalog.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Parks",
+        "content": "# OpenStreetMap's parks, playgrounds and green spaces of Lower Manhattan, the\n# Financial District to City Hall, as the Discovery Catalog's OpenStreetMap\n# source downloads its Parks layer.\nreturn curio_load_data(\"data.curio.lower-manhattan-shadows\", part=\"parks.geojson\")\n",
+        "minimized": true,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "c9061045-a172-5520-99c5-067400bd47de",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1016,
+        "y": 1550.6786973441897,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the named parks (input_0) of at least the minimum area that are not mostly under the building footprints (input_1), a park mapped twice once; one row per park with its name as park, osm_id, area_m2 and outline, in EPSG:4326.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "min_area",
+              "type": "number",
+              "label": "Minimum area",
+              "default": 500,
+              "options": {
+                "min": 0,
+                "step": 50,
+                "units": "m²"
+              }
+            }
+          ]
+        },
+        "title": "Open-air parks",
+        "content": "# The named parks large enough to measure, in the open: a \"park\" mostly under\n# building footprints, such as a public atrium, is left out. Areas in metres,\n# in the UTM zone of the parks, so this works for any city.\nutm = input_0.estimate_utm_crs()\nparks = input_0[input_0[\"name\"].notna() & input_0.geometry.type.isin([\"Polygon\", \"MultiPolygon\"])]\nparks = parks.to_crs(utm)\narea = parks.area\nroofed = parks.intersection(input_1.to_crs(utm).union_all()).area / area\nparks = parks[(area >= float([!! min_area !!])) & (roofed < 0.5)].assign(area_m2=area)\n# One park mapped twice (two outlines that almost coincide, under two names)\n# counts once: the larger outline is kept.\nkept = []\nfor i in parks.sort_values(\"area_m2\", ascending=False).index:\n    if not any(parks.geometry[i].intersection(parks.geometry[k]).area >= 0.8 * parks.area_m2[i]\n               and parks.area_m2[k] <= 1.25 * parks.area_m2[i] for k in kept):\n        kept.append(i)\nparks = parks.loc[sorted(kept)]\nparks = parks.rename(columns={\"name\": \"park\"})[[\"park\", \"osm_id\", \"area_m2\", \"geometry\"]]\n# A park's name is its key in the charts: two parks with one name keep their OSM id.\ntwice = parks[\"park\"].duplicated(keep=False)\nparks.loc[twice, \"park\"] = parks[\"park\"] + \" (\" + parks[\"osm_id\"].astype(str) + \")\"\nreturn parks.to_crs(4326).sort_values(\"park\").reset_index(drop=True)\n",
+        "minimized": true,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "c0886a45-9334-5ad3-a107-af87fc110c71",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1100.3900108794885,
+        "y": 1641.47975412463,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Mark the buildings (input_0) the what-ifs change, by one rule for every park (input_1): around_park when at least the Tall building height tall and within the Distance from a park of any park, in metres in the parks' UTM zone; with each building's nearest_park and park_distance_m.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Buildings around parks",
+        "content": "import pandas as pd\n\n# The buildings the what-ifs change, by one rule for every park, so the parks\n# compare fairly: at least the Tall building height tall, and within the\n# Distance from a park of any park. input_0 is the buildings, input_1 the parks.\n# Distances in metres, in the parks' UTM zone.\nbuildings, parks = input_0, input_1\nutm = parks.estimate_utm_crs()\nfootprints = buildings.to_crs(utm).geometry\ndistance = pd.DataFrame({park: footprints.distance(outline)\n                         for park, outline in zip(parks[\"park\"], parks.to_crs(utm).geometry)})\nmarked = buildings.assign(nearest_park=distance.idxmin(axis=1), park_distance_m=distance.min(axis=1))\nmarked[\"around_park\"] = ((marked[\"height\"] >= float([!! @tall_height !!]))\n                         & (marked[\"park_distance_m\"] <= float([!! @park_distance !!])))\n# assign drops the frame's metadata: mark it as buildings again.\nmarked.metadata = {\"layerType\": \"buildings\"}\nreturn marked\n",
+        "minimized": true,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "8a037364-714c-52a7-9672-bcdb00a37573",
+        "type": "curio.builtin/data-transformation",
+        "x": 1274.824768694851,
+        "y": 2940.478786429336,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take out the buildings Buildings around parks marks.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Data Transformation - Towers removed",
+        "content": "# Towers removed: the buildings Buildings around parks marks are taken out.\nremaining = input_0[~input_0[\"around_park\"]].reset_index(drop=True)\n# SCOUT's rasterizer looks rows up by position, hence reset_index; filtering\n# drops the frame's metadata, so mark it as buildings again.\nremaining.metadata = {\"layerType\": \"buildings\"}\nreturn remaining\n",
+        "saveOutputDataset": false
+      },
+      {
+        "id": "33698fa9-2e1a-5846-92d3-ec965927a341",
+        "type": "curio.builtin/data-transformation",
+        "x": 1276.551787474316,
+        "y": 1865.0284066528054,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Cut the buildings Buildings around parks marks down to the Tall building height.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Data Transformation - Height cap",
+        "content": "# Height cap: the buildings Buildings around parks marks are cut down to the\n# Tall building height; every other building keeps its height.\ncap = float([!! @tall_height !!])\ncapped = input_0.assign(height=input_0[\"height\"].where(~input_0[\"around_park\"], cap))\ncapped.metadata = {\"layerType\": \"buildings\"}\nreturn capped\n",
+        "saveOutputDataset": false
+      },
+      {
+        "id": "57a99f30-8a4f-5dc4-8c0a-bd36c0c614a9",
+        "type": "scout.raster-conversion/rasterize-buildings",
+        "x": 1279.328583097473,
+        "y": 824.0612648026741,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Rasterize the existing buildings into zoom-16 height tiles.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "attribute",
+              "type": "text",
+              "label": "Height column",
+              "default": "height"
+            },
+            {
+              "name": "zoom",
+              "type": "number",
+              "label": "Zoom level",
+              "default": 16,
+              "options": {
+                "min": 1,
+                "max": 20,
+                "step": 1
+              }
+            },
+            {
+              "name": "max_height",
+              "type": "number",
+              "label": "Maximum height",
+              "default": 550,
+              "options": {
+                "min": 1,
+                "step": 1,
+                "units": "m"
+              }
+            },
+            {
+              "name": "tiles",
+              "type": "text",
+              "label": "Save tiles as",
+              "default": "tiles"
+            }
+          ]
+        },
+        "title": "Rasterize Buildings - Existing",
+        "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: the 256 by 256 tiles SCOUT writes, 8-bit gray where 255 is the maximum\nheight, in EPSG:3395, saved as one of this dataflow's computed datasets, under\nthe name the \"Save tiles as\" widget gives (\"tiles\"); and a table of them, one\nrow per tile: zoom, x, y and the maximum height. Mosaic Tiles, given the same\nname, puts the tiles together into one raster.\nThe Widgets tab sets the height column, the zoom level, the maximum height and\nthe name.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_raster_conversion.convert_to_raster import convert_raster\nfrom scout_raster_conversion.mosaic import tile_table\n\ntiles = curio_save_folder([!! tiles !!])\nconvert_raster(input_0, [!! attribute !!], int([!! zoom !!]), tiles, max_height=float([!! max_height !!]))\nreturn tile_table(tiles, int([!! zoom !!]), float([!! max_height !!]))\n",
+        "saveOutputDataset": false
+      },
+      {
+        "id": "f345d532-b656-5d14-b004-4ea9a6e8e6fe",
+        "type": "scout.shadow/accumulated-shadow",
+        "x": 1866.4523961711905,
+        "y": 825.344031026904,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Predict the existing buildings' accumulated shadow with Deep Umbra.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "tiles",
+              "type": "text",
+              "label": "Tiles",
+              "default": "tiles"
+            },
+            {
+              "name": "shadows",
+              "type": "text",
+              "label": "Save shadows as",
+              "default": "shadows"
+            }
+          ]
+        },
+        "title": "Accumulated Shadow - Existing",
+        "content": "\"\"\"Accumulated Shadow: SCOUT's Deep Umbra shadow model.\n\nInput: Rasterize Buildings' table of tiles (scout.raster-conversion). The\nheight tiles themselves are this dataflow's computed dataset the \"Tiles\"\nwidget names, the name Rasterize Buildings saved them under (\"tiles\").\nOutput: (shadow, metrics).\n- shadow: the accumulated shadow in minutes, one raster in EPSG:3395 on the\n  grid of the tiles' height mosaic (Mosaic Tiles), made from the shadow tiles\n  SCOUT's run_shadow_model writes. An Autark map draws it, band band_1.\n- metrics: SCOUT's metrics as its run_shadow_model computes them, one row:\n  \"Mean Acc shadow\" and \"Median Acc shadow\", the minutes of shadow over the\n  ground (the cells with no building), for a chart comparing the scenarios.\nThe shadow tiles are kept as a computed dataset of this dataflow, under the\nname the \"Save shadows as\" widget gives.\nThe Widgets tab sets the season and the names. The model is the Model\nCatalog's Deep Umbra, model.scout.deep-umbra, its ONNX file run as it is.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_shadow.deep_umbra import run_shadow_model\nfrom scout_shadow.mosaic import mosaic\n\nshadows = curio_save_folder([!! shadows !!])\nmetrics = run_shadow_model(\n    curio_computed_path([!! tiles !!]),\n    [!! @season !!],\n    shadows,\n    model_path=curio_load_model(\"model.scout.deep-umbra\").entry,\n)\nreturn mosaic(shadows, [!! @season !!], curio_output_file), metrics\n",
+        "saveOutputDataset": false
+      },
+      {
+        "id": "eb115051-9c43-57c8-a205-831629f55849",
+        "type": "curio.builtin/computation-analysis",
+        "x": 2503.88431641803,
+        "y": 1030.2885949804495,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the accumulated shadow raster from Accumulated Shadow.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Shadow raster - Existing",
+        "content": "# Accumulated Shadow returns (shadow, metrics): this is the shadow in minutes, a raster.\nreturn input_0[0]\n",
+        "minimized": true,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "f82d6a98-3878-5954-9d1e-74057b9a30b2",
+        "type": "curio.builtin/computation-analysis",
+        "x": 2681.222908609746,
+        "y": 1150.1475991122404,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "For each park (input_1), the accumulated shadow raster's cells inside it (input_0, minutes, EPSG:3395): mean, median and 90th percentile minutes, the mean as a share of the season's daylight of the Season parameter (SCOUT's 720 minutes in summer, 540 in spring, 360 in winter), and the shares of its cells in sun (under 25% of daylight), partial shade and deep shade (over 75%). One row per park, with its outline and area.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Shade per park - Existing",
+        "content": "import numpy as np\nimport pandas as pd\nfrom rasterio.features import geometry_mask\n\n# input_0: the accumulated shadow in minutes, a raster; input_1: the parks.\nshadow, parks = input_0, input_1\n# The minutes of daylight Deep Umbra's season stands for, SCOUT's factor.\ndaylight = {\"winter\": 360, \"spring\": 540}.get([!! @season !!], 720)\nminutes = shadow.read(1, masked=True).filled(np.nan).astype(\"float64\")\nrows = []\nfor park in parks.to_crs(shadow.crs).itertuples():\n    inside = geometry_mask([park.geometry], out_shape=minutes.shape, transform=shadow.transform, invert=True)\n    values = minutes[inside]\n    values = values[~np.isnan(values)]\n    if values.size == 0:\n        continue\n    share = values / daylight\n    rows.append({\n        \"park\": park.park,\n        \"cells\": int(values.size),\n        \"mean_min\": float(values.mean()),\n        \"median_min\": float(np.median(values)),\n        \"p90_min\": float(np.percentile(values, 90)),\n        \"pct_daylight\": float(values.mean() / daylight),\n        # Shares of the park's cells: in sun (shaded under a quarter of the\n        # daylight), in partial shade, and in deep shade (over three quarters).\n        \"share_sun\": float((share < 0.25).mean()),\n        \"share_partial\": float(((share >= 0.25) & (share < 0.75)).mean()),\n        \"share_deep\": float((share >= 0.75).mean()),\n    })\nreturn parks.merge(pd.DataFrame(rows), on=\"park\")\n",
+        "minimized": true,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "a5f5587d-c1ac-5a4f-8641-b4a7f28acaaf",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1275.8317751537465,
+        "y": 1206.9572697240674,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the existing buildings in 3D, coloured by height.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Buildings in 3D - Existing",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"legendTitle\": \"Building height (m)\",\n        \"colorMapRange\": [\n          0,\n          420\n        ]\n      }\n    ]\n  }\n}",
+        "width": 658,
+        "height": 547,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "c573d396-b847-5d49-bcae-f30a10e5651d",
+        "type": "curio.builtin/autk-grammar",
+        "x": 3282.0685405303375,
+        "y": 1174.993219096925,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the existing buildings' accumulated shadow on a map.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Shadow map - Existing",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"legendTitle\": \"Accumulated shadow (minutes)\",\n        \"colorMapRange\": [\n          0,\n          720\n        ]\n      }\n    ]\n  }\n}",
+        "width": 500,
+        "height": 536,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "33e817ea-f60f-5356-b0a5-72590be493ec",
+        "type": "scout.raster-conversion/rasterize-buildings",
+        "x": 1861.4690857169899,
+        "y": 2942.795617023977,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Rasterize the towers removed buildings into zoom-16 height tiles.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "attribute",
+              "type": "text",
+              "label": "Height column",
+              "default": "height"
+            },
+            {
+              "name": "zoom",
+              "type": "number",
+              "label": "Zoom level",
+              "default": 16,
+              "options": {
+                "min": 1,
+                "max": 20,
+                "step": 1
+              }
+            },
+            {
+              "name": "max_height",
+              "type": "number",
+              "label": "Maximum height",
+              "default": 550,
+              "options": {
+                "min": 1,
+                "step": 1,
+                "units": "m"
+              }
+            },
+            {
+              "name": "tiles",
+              "type": "text",
+              "label": "Save tiles as",
+              "default": "tiles",
+              "value": "tiles-towers-removed"
+            }
+          ]
+        },
+        "title": "Rasterize Buildings - Towers removed",
+        "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: the 256 by 256 tiles SCOUT writes, 8-bit gray where 255 is the maximum\nheight, in EPSG:3395, saved as one of this dataflow's computed datasets, under\nthe name the \"Save tiles as\" widget gives (\"tiles\"); and a table of them, one\nrow per tile: zoom, x, y and the maximum height. Mosaic Tiles, given the same\nname, puts the tiles together into one raster.\nThe Widgets tab sets the height column, the zoom level, the maximum height and\nthe name.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_raster_conversion.convert_to_raster import convert_raster\nfrom scout_raster_conversion.mosaic import tile_table\n\ntiles = curio_save_folder([!! tiles !!])\nconvert_raster(input_0, [!! attribute !!], int([!! zoom !!]), tiles, max_height=float([!! max_height !!]))\nreturn tile_table(tiles, int([!! zoom !!]), float([!! max_height !!]))\n",
+        "saveOutputDataset": false
+      },
+      {
+        "id": "834b8c84-814e-5f57-8884-11869c40d767",
+        "type": "scout.shadow/accumulated-shadow",
+        "x": 2431.4610472914005,
+        "y": 2941.5449026478304,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Predict the towers removed buildings' accumulated shadow with Deep Umbra.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "tiles",
+              "type": "text",
+              "label": "Tiles",
+              "default": "tiles",
+              "value": "tiles-towers-removed"
+            },
+            {
+              "name": "shadows",
+              "type": "text",
+              "label": "Save shadows as",
+              "default": "shadows",
+              "value": "shadows-towers-removed"
+            }
+          ]
+        },
+        "title": "Accumulated Shadow - Towers removed",
+        "content": "\"\"\"Accumulated Shadow: SCOUT's Deep Umbra shadow model.\n\nInput: Rasterize Buildings' table of tiles (scout.raster-conversion). The\nheight tiles themselves are this dataflow's computed dataset the \"Tiles\"\nwidget names, the name Rasterize Buildings saved them under (\"tiles\").\nOutput: (shadow, metrics).\n- shadow: the accumulated shadow in minutes, one raster in EPSG:3395 on the\n  grid of the tiles' height mosaic (Mosaic Tiles), made from the shadow tiles\n  SCOUT's run_shadow_model writes. An Autark map draws it, band band_1.\n- metrics: SCOUT's metrics as its run_shadow_model computes them, one row:\n  \"Mean Acc shadow\" and \"Median Acc shadow\", the minutes of shadow over the\n  ground (the cells with no building), for a chart comparing the scenarios.\nThe shadow tiles are kept as a computed dataset of this dataflow, under the\nname the \"Save shadows as\" widget gives.\nThe Widgets tab sets the season and the names. The model is the Model\nCatalog's Deep Umbra, model.scout.deep-umbra, its ONNX file run as it is.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_shadow.deep_umbra import run_shadow_model\nfrom scout_shadow.mosaic import mosaic\n\nshadows = curio_save_folder([!! shadows !!])\nmetrics = run_shadow_model(\n    curio_computed_path([!! tiles !!]),\n    [!! @season !!],\n    shadows,\n    model_path=curio_load_model(\"model.scout.deep-umbra\").entry,\n)\nreturn mosaic(shadows, [!! @season !!], curio_output_file), metrics\n",
+        "saveOutputDataset": false
+      },
+      {
+        "id": "1ac3b510-1042-53bc-9582-3dad24f0dfb0",
+        "type": "curio.builtin/computation-analysis",
+        "x": 3028.44045166723,
+        "y": 3102.7413311904047,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the accumulated shadow raster from Accumulated Shadow.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Shadow raster - Towers removed",
+        "content": "# Accumulated Shadow returns (shadow, metrics): this is the shadow in minutes, a raster.\nreturn input_0[0]\n",
+        "minimized": true,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "da5bd917-0876-51a8-854a-d9a3b544ea6e",
+        "type": "curio.builtin/computation-analysis",
+        "x": 3139.942048791978,
+        "y": 3240.409543085802,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "For each park (input_1), the accumulated shadow raster's cells inside it (input_0, minutes, EPSG:3395): mean, median and 90th percentile minutes, the mean as a share of the season's daylight of the Season parameter (SCOUT's 720 minutes in summer, 540 in spring, 360 in winter), and the shares of its cells in sun (under 25% of daylight), partial shade and deep shade (over 75%). One row per park, with its outline and area.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Shade per park - Towers removed",
+        "content": "import numpy as np\nimport pandas as pd\nfrom rasterio.features import geometry_mask\n\n# input_0: the accumulated shadow in minutes, a raster; input_1: the parks.\nshadow, parks = input_0, input_1\n# The minutes of daylight Deep Umbra's season stands for, SCOUT's factor.\ndaylight = {\"winter\": 360, \"spring\": 540}.get([!! @season !!], 720)\nminutes = shadow.read(1, masked=True).filled(np.nan).astype(\"float64\")\nrows = []\nfor park in parks.to_crs(shadow.crs).itertuples():\n    inside = geometry_mask([park.geometry], out_shape=minutes.shape, transform=shadow.transform, invert=True)\n    values = minutes[inside]\n    values = values[~np.isnan(values)]\n    if values.size == 0:\n        continue\n    share = values / daylight\n    rows.append({\n        \"park\": park.park,\n        \"cells\": int(values.size),\n        \"mean_min\": float(values.mean()),\n        \"median_min\": float(np.median(values)),\n        \"p90_min\": float(np.percentile(values, 90)),\n        \"pct_daylight\": float(values.mean() / daylight),\n        # Shares of the park's cells: in sun (shaded under a quarter of the\n        # daylight), in partial shade, and in deep shade (over three quarters).\n        \"share_sun\": float((share < 0.25).mean()),\n        \"share_partial\": float(((share >= 0.25) & (share < 0.75)).mean()),\n        \"share_deep\": float((share >= 0.75).mean()),\n    })\nreturn parks.merge(pd.DataFrame(rows), on=\"park\")\n",
+        "minimized": true,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "15643dea-0ac3-54b1-ad35-fa58d1d64eb1",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1873.873526978645,
+        "y": 3332.507184450286,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the towers removed buildings in 3D, coloured by height.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Buildings in 3D - Towers removed",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"legendTitle\": \"Building height (m)\",\n        \"colorMapRange\": [\n          0,\n          420\n        ]\n      }\n    ]\n  }\n}",
+        "width": 761,
+        "height": 620,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "8f469fdf-9d0e-5243-aa95-cf94dc90643d",
+        "type": "curio.builtin/autk-grammar",
+        "x": 3280.0453955789244,
+        "y": 2445.7706351636075,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the towers removed buildings' accumulated shadow on a map.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Shadow map - Towers removed",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"legendTitle\": \"Accumulated shadow (minutes)\",\n        \"colorMapRange\": [\n          0,\n          720\n        ]\n      }\n    ]\n  }\n}",
+        "width": 500,
+        "height": 536,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "46ee8239-d76a-5b01-8bc2-4aa425829b9c",
+        "type": "scout.raster-conversion/rasterize-buildings",
+        "x": 1879.0418613577544,
+        "y": 1865.5931202993736,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Rasterize the height cap buildings into zoom-16 height tiles.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "attribute",
+              "type": "text",
+              "label": "Height column",
+              "default": "height"
+            },
+            {
+              "name": "zoom",
+              "type": "number",
+              "label": "Zoom level",
+              "default": 16,
+              "options": {
+                "min": 1,
+                "max": 20,
+                "step": 1
+              }
+            },
+            {
+              "name": "max_height",
+              "type": "number",
+              "label": "Maximum height",
+              "default": 550,
+              "options": {
+                "min": 1,
+                "step": 1,
+                "units": "m"
+              }
+            },
+            {
+              "name": "tiles",
+              "type": "text",
+              "label": "Save tiles as",
+              "default": "tiles",
+              "value": "tiles-height-cap"
+            }
+          ]
+        },
+        "title": "Rasterize Buildings - Height cap",
+        "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: the 256 by 256 tiles SCOUT writes, 8-bit gray where 255 is the maximum\nheight, in EPSG:3395, saved as one of this dataflow's computed datasets, under\nthe name the \"Save tiles as\" widget gives (\"tiles\"); and a table of them, one\nrow per tile: zoom, x, y and the maximum height. Mosaic Tiles, given the same\nname, puts the tiles together into one raster.\nThe Widgets tab sets the height column, the zoom level, the maximum height and\nthe name.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_raster_conversion.convert_to_raster import convert_raster\nfrom scout_raster_conversion.mosaic import tile_table\n\ntiles = curio_save_folder([!! tiles !!])\nconvert_raster(input_0, [!! attribute !!], int([!! zoom !!]), tiles, max_height=float([!! max_height !!]))\nreturn tile_table(tiles, int([!! zoom !!]), float([!! max_height !!]))\n",
+        "saveOutputDataset": false
+      },
+      {
+        "id": "79efde20-a3bf-532e-90f0-c31b50209f79",
+        "type": "scout.shadow/accumulated-shadow",
+        "x": 2462.06500594064,
+        "y": 1865.3538288253828,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Predict the height cap buildings' accumulated shadow with Deep Umbra.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "tiles",
+              "type": "text",
+              "label": "Tiles",
+              "default": "tiles",
+              "value": "tiles-height-cap"
+            },
+            {
+              "name": "shadows",
+              "type": "text",
+              "label": "Save shadows as",
+              "default": "shadows",
+              "value": "shadows-height-cap"
+            }
+          ]
+        },
+        "title": "Accumulated Shadow - Height cap",
+        "content": "\"\"\"Accumulated Shadow: SCOUT's Deep Umbra shadow model.\n\nInput: Rasterize Buildings' table of tiles (scout.raster-conversion). The\nheight tiles themselves are this dataflow's computed dataset the \"Tiles\"\nwidget names, the name Rasterize Buildings saved them under (\"tiles\").\nOutput: (shadow, metrics).\n- shadow: the accumulated shadow in minutes, one raster in EPSG:3395 on the\n  grid of the tiles' height mosaic (Mosaic Tiles), made from the shadow tiles\n  SCOUT's run_shadow_model writes. An Autark map draws it, band band_1.\n- metrics: SCOUT's metrics as its run_shadow_model computes them, one row:\n  \"Mean Acc shadow\" and \"Median Acc shadow\", the minutes of shadow over the\n  ground (the cells with no building), for a chart comparing the scenarios.\nThe shadow tiles are kept as a computed dataset of this dataflow, under the\nname the \"Save shadows as\" widget gives.\nThe Widgets tab sets the season and the names. The model is the Model\nCatalog's Deep Umbra, model.scout.deep-umbra, its ONNX file run as it is.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_shadow.deep_umbra import run_shadow_model\nfrom scout_shadow.mosaic import mosaic\n\nshadows = curio_save_folder([!! shadows !!])\nmetrics = run_shadow_model(\n    curio_computed_path([!! tiles !!]),\n    [!! @season !!],\n    shadows,\n    model_path=curio_load_model(\"model.scout.deep-umbra\").entry,\n)\nreturn mosaic(shadows, [!! @season !!], curio_output_file), metrics\n",
+        "saveOutputDataset": false
+      },
+      {
+        "id": "0d3963ee-6191-523f-97b4-5b224132ba15",
+        "type": "curio.builtin/computation-analysis",
+        "x": 3030.001014114744,
+        "y": 2028.2184819206336,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the accumulated shadow raster from Accumulated Shadow.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Shadow raster - Height cap",
+        "content": "# Accumulated Shadow returns (shadow, metrics): this is the shadow in minutes, a raster.\nreturn input_0[0]\n",
+        "minimized": true,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "70de3392-e925-5d20-a596-dac2725ed833",
+        "type": "curio.builtin/computation-analysis",
+        "x": 3136.8905399700584,
+        "y": 2216.194379284273,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "For each park (input_1), the accumulated shadow raster's cells inside it (input_0, minutes, EPSG:3395): mean, median and 90th percentile minutes, the mean as a share of the season's daylight of the Season parameter (SCOUT's 720 minutes in summer, 540 in spring, 360 in winter), and the shares of its cells in sun (under 25% of daylight), partial shade and deep shade (over 75%). One row per park, with its outline and area.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Shade per park - Height cap",
+        "content": "import numpy as np\nimport pandas as pd\nfrom rasterio.features import geometry_mask\n\n# input_0: the accumulated shadow in minutes, a raster; input_1: the parks.\nshadow, parks = input_0, input_1\n# The minutes of daylight Deep Umbra's season stands for, SCOUT's factor.\ndaylight = {\"winter\": 360, \"spring\": 540}.get([!! @season !!], 720)\nminutes = shadow.read(1, masked=True).filled(np.nan).astype(\"float64\")\nrows = []\nfor park in parks.to_crs(shadow.crs).itertuples():\n    inside = geometry_mask([park.geometry], out_shape=minutes.shape, transform=shadow.transform, invert=True)\n    values = minutes[inside]\n    values = values[~np.isnan(values)]\n    if values.size == 0:\n        continue\n    share = values / daylight\n    rows.append({\n        \"park\": park.park,\n        \"cells\": int(values.size),\n        \"mean_min\": float(values.mean()),\n        \"median_min\": float(np.median(values)),\n        \"p90_min\": float(np.percentile(values, 90)),\n        \"pct_daylight\": float(values.mean() / daylight),\n        # Shares of the park's cells: in sun (shaded under a quarter of the\n        # daylight), in partial shade, and in deep shade (over three quarters).\n        \"share_sun\": float((share < 0.25).mean()),\n        \"share_partial\": float(((share >= 0.25) & (share < 0.75)).mean()),\n        \"share_deep\": float((share >= 0.75).mean()),\n    })\nreturn parks.merge(pd.DataFrame(rows), on=\"park\")\n",
+        "minimized": true,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "4e424f74-a0c6-5ebd-8956-e28bcb918f29",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1866.7523208075654,
+        "y": 2266.245620567314,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the height cap buildings in 3D, coloured by height.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Buildings in 3D - Height cap",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"legendTitle\": \"Building height (m)\",\n        \"colorMapRange\": [\n          0,\n          420\n        ]\n      }\n    ]\n  }\n}",
+        "width": 682,
+        "height": 576,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "01a350dd-c9c3-551c-b4d5-9069a2e64c16",
+        "type": "curio.builtin/autk-grammar",
+        "x": 3286.211857141573,
+        "y": 1848.408311102194,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the height cap buildings' accumulated shadow on a map.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Shadow map - Height cap",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"legendTitle\": \"Accumulated shadow (minutes)\",\n        \"colorMapRange\": [\n          0,\n          720\n        ]\n      }\n    ]\n  }\n}",
+        "width": 500,
+        "height": 536,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "78dcee76-51f6-504a-869e-559c7a2a3e28",
+        "type": "curio.builtin/computation-analysis",
+        "x": 3826.7028606500758,
+        "y": 3081.9292099489676,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the size of the change in the accumulated shadow from Existing to Towers removed, cell by cell.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Shadow change - Towers removed",
+        "content": "# The size of the change from Existing (input_0) to Towers removed (input_1),\n# cell by cell: 0 where they agree.\nreturn curio_raster_calculate(\"subtract\", [input_1, input_0], absolute=True)\n",
+        "minimized": true,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "e14b5130-b2be-5392-ba9f-7b14d118a0cd",
+        "type": "curio.builtin/autk-grammar",
+        "x": 3958.5139758278333,
+        "y": 2454.8798376235573,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map where the accumulated shadow changes under Towers removed.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Shadow change map - Towers removed",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"legendTitle\": \"Shadow change, Towers removed (minutes)\",\n        \"colorMapRange\": [\n          0,\n          720\n        ]\n      }\n    ]\n  }\n}",
+        "width": 495,
+        "height": 537,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "57a06580-ecf1-5e14-aa76-59bfc341b556",
+        "type": "curio.builtin/computation-analysis",
+        "x": 3829.543871968653,
+        "y": 2011.6563387661533,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the size of the change in the accumulated shadow from Existing to Height cap, cell by cell.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Shadow change - Height cap",
+        "content": "# The size of the change from Existing (input_0) to Height cap (input_1),\n# cell by cell: 0 where they agree.\nreturn curio_raster_calculate(\"subtract\", [input_1, input_0], absolute=True)\n",
+        "minimized": true,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "b564bf15-9d58-5fcf-95e9-8db7544008f6",
+        "type": "curio.builtin/autk-grammar",
+        "x": 3956.3414861909596,
+        "y": 1852.302659215387,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map where the accumulated shadow changes under Height cap.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Shadow change map - Height cap",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"legendTitle\": \"Shadow change, Height cap (minutes)\",\n        \"colorMapRange\": [\n          0,\n          720\n        ]\n      }\n    ]\n  }\n}",
+        "width": 495,
+        "height": 537,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "bb111755-b6c3-5e6a-991e-a07e185cd953",
+        "type": "curio.builtin/computation-analysis",
+        "x": 3928.5339881207515,
+        "y": 2644.9248484431073,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "For each park, the minutes of shadow it loses from Existing to Towers removed and to Height cap, with its outline.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Sun gained per park",
+        "content": "# The minutes of shadow each park loses from Existing (input_0) to Towers\n# removed (input_1) and to Height cap (input_2): the sun it gains under each,\n# on its outline for the maps.\nexisting = input_0.set_index(\"park\")[\"mean_min\"]\ngained = input_0[[\"park\", \"area_m2\", \"geometry\"]].copy()\nfor column, what_if in ((\"gain_removed_min\", input_1), (\"gain_capped_min\", input_2)):\n    gained[column] = (existing - what_if.set_index(\"park\")[\"mean_min\"]).reindex(gained[\"park\"]).values\nreturn gained\n",
+        "minimized": true,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "768fd6b0-6c2f-5dfb-b52a-9299ea4a8a25",
+        "type": "curio.builtin/autk-grammar",
+        "x": 4535.505131491951,
+        "y": 2458.627579943445,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map the parks, coloured by the minutes of sun each gains when the towers are removed.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Sun gained per park map - Towers removed",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"gain_removed_min\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"legendTitle\": \"Sun gained, Towers removed (minutes)\",\n        \"colorMapRange\": [\n          0,\n          440\n        ]\n      }\n    ]\n  }\n}",
+        "width": 495,
+        "height": 537,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "10fa4f2f-0173-5b2f-a0a3-91611e6d3014",
+        "type": "curio.builtin/autk-grammar",
+        "x": 4529.825973575334,
+        "y": 1851.7882706864882,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map the parks, coloured by the minutes of sun each gains under the height cap.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Sun gained per park map - Height cap",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"gain_capped_min\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"legendTitle\": \"Sun gained, Height cap (minutes)\",\n        \"colorMapRange\": [\n          0,\n          440\n        ]\n      }\n    ]\n  }\n}",
+        "width": 495,
+        "height": 537,
+        "saveOutputDataset": false
+      },
+      {
+        "id": "88b7c798-45e5-5398-9511-281f6b2d40c3",
+        "type": "curio.builtin/vis-vega",
+        "x": 5082.982951307794,
+        "y": 2107.1542591056204,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Compare each park's mean minutes of shadow in the three scenarios, a range per park, beside the sun each what-if gains it, linked by a park picked on the bars.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Minutes of shadow per park",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"inputs\"\n  },\n  \"title\": {\n    \"text\": \"Minutes of shadow per park\",\n    \"subtitle\": \"Click a bar to pick a park\"\n  },\n  \"transform\": [\n    {\n      \"calculate\": \"['Existing', 'Towers removed', 'Height cap'][datum.__input__]\",\n      \"as\": \"scenario_name\"\n    },\n    {\n      \"calculate\": \"datum.__input__ === 0 ? datum.mean_min : null\",\n      \"as\": \"existing_rows\"\n    },\n    {\n      \"calculate\": \"datum.__input__ === 1 ? datum.mean_min : null\",\n      \"as\": \"removed_rows\"\n    },\n    {\n      \"calculate\": \"datum.__input__ === 2 ? datum.mean_min : null\",\n      \"as\": \"capped_rows\"\n    },\n    {\n      \"joinaggregate\": [\n        {\n          \"op\": \"max\",\n          \"field\": \"existing_rows\",\n          \"as\": \"existing\"\n        },\n        {\n          \"op\": \"max\",\n          \"field\": \"removed_rows\",\n          \"as\": \"removed\"\n        },\n        {\n          \"op\": \"max\",\n          \"field\": \"capped_rows\",\n          \"as\": \"capped\"\n        }\n      ],\n      \"groupby\": [\n        \"park\"\n      ]\n    },\n    {\n      \"filter\": \"isValid(datum.existing) && isValid(datum.removed) && isValid(datum.capped)\"\n    },\n    {\n      \"calculate\": \"datum.existing - datum.removed\",\n      \"as\": \"gain_removed\"\n    },\n    {\n      \"calculate\": \"datum.existing - datum.capped\",\n      \"as\": \"gain_capped\"\n    },\n    {\n      \"calculate\": \"min(datum.existing, datum.removed, datum.capped)\",\n      \"as\": \"lowest\"\n    },\n    {\n      \"calculate\": \"max(datum.existing, datum.removed, datum.capped)\",\n      \"as\": \"highest\"\n    }\n  ],\n  \"hconcat\": [\n    {\n      \"width\": 300,\n      \"height\": {\n        \"step\": 13\n      },\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"park\",\n          \"type\": \"nominal\",\n          \"sort\": {\n            \"field\": \"gain_removed\",\n            \"op\": \"max\",\n            \"order\": \"descending\"\n          },\n          \"title\": null\n        },\n        \"opacity\": {\n          \"condition\": {\n            \"param\": \"pick\",\n            \"empty\": true,\n            \"value\": 1\n          },\n          \"value\": 0.25\n        }\n      },\n      \"layer\": [\n        {\n          \"transform\": [\n            {\n              \"filter\": \"datum.__input__ === 0\"\n            }\n          ],\n          \"mark\": {\n            \"type\": \"rule\",\n            \"color\": \"#9ca3af\",\n            \"strokeWidth\": 2\n          },\n          \"encoding\": {\n            \"x\": {\n              \"field\": \"lowest\",\n              \"type\": \"quantitative\",\n              \"title\": \"Mean shadow (minutes)\"\n            },\n            \"x2\": {\n              \"field\": \"highest\"\n            }\n          }\n        },\n        {\n          \"mark\": {\n            \"type\": \"point\",\n            \"filled\": true,\n            \"size\": 60,\n            \"opacity\": 1,\n            \"tooltip\": true\n          },\n          \"encoding\": {\n            \"x\": {\n              \"field\": \"mean_min\",\n              \"type\": \"quantitative\"\n            },\n            \"color\": {\n              \"field\": \"scenario_name\",\n              \"type\": \"nominal\",\n              \"scale\": {\n                \"domain\": [\n                  \"Existing\",\n                  \"Towers removed\",\n                  \"Height cap\"\n                ],\n                \"range\": [\n                  \"#2a9d8f\",\n                  \"#e76f51\",\n                  \"#6a4c93\"\n                ]\n              },\n              \"legend\": {\n                \"title\": \"Scenario\",\n                \"orient\": \"bottom\"\n              }\n            }\n          }\n        }\n      ]\n    },\n    {\n      \"width\": 220,\n      \"height\": {\n        \"step\": 13,\n        \"for\": \"position\"\n      },\n      \"transform\": [\n        {\n          \"filter\": \"datum.__input__ === 0\"\n        },\n        {\n          \"fold\": [\n            \"gain_removed\",\n            \"gain_capped\"\n          ],\n          \"as\": [\n            \"gain_key\",\n            \"gain\"\n          ]\n        },\n        {\n          \"calculate\": \"datum.gain_key === 'gain_removed' ? 'Towers removed' : 'Height cap'\",\n          \"as\": \"what_if\"\n        }\n      ],\n      \"params\": [\n        {\n          \"name\": \"pick\",\n          \"select\": {\n            \"type\": \"point\",\n            \"fields\": [\n              \"park\"\n            ]\n          }\n        }\n      ],\n      \"mark\": {\n        \"type\": \"bar\",\n        \"tooltip\": true,\n        \"cursor\": \"pointer\"\n      },\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"park\",\n          \"type\": \"nominal\",\n          \"sort\": {\n            \"field\": \"gain_removed\",\n            \"op\": \"max\",\n            \"order\": \"descending\"\n          },\n          \"axis\": null\n        },\n        \"yOffset\": {\n          \"field\": \"what_if\",\n          \"sort\": [\n            \"Towers removed\",\n            \"Height cap\"\n          ]\n        },\n        \"x\": {\n          \"field\": \"gain\",\n          \"type\": \"quantitative\",\n          \"title\": \"Sun gained (minutes)\"\n        },\n        \"color\": {\n          \"field\": \"what_if\",\n          \"type\": \"nominal\",\n          \"scale\": {\n            \"domain\": [\n              \"Existing\",\n              \"Towers removed\",\n              \"Height cap\"\n            ],\n            \"range\": [\n              \"#2a9d8f\",\n              \"#e76f51\",\n              \"#6a4c93\"\n            ]\n          },\n          \"legend\": {\n            \"title\": \"Scenario\",\n            \"orient\": \"bottom\"\n          }\n        },\n        \"opacity\": {\n          \"condition\": {\n            \"param\": \"pick\",\n            \"empty\": true,\n            \"value\": 1\n          },\n          \"value\": 0.25\n        }\n      }\n    }\n  ]\n}",
+        "width": 872,
+        "height": 587,
+        "saveOutputDataset": false
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-924f0840-2a22-54d2-aa37-482db7f9dacaout-e3b2747c-c98b-55fd-b7f0-d2236c63ab00in",
+        "source": "924f0840-2a22-54d2-aa37-482db7f9daca",
+        "target": "e3b2747c-c98b-55fd-b7f0-d2236c63ab00",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-e7aadece-bf19-5608-8611-e5fb4030b7feout-c9061045-a172-5520-99c5-067400bd47dein",
+        "source": "e7aadece-bf19-5608-8611-e5fb4030b7fe",
+        "target": "c9061045-a172-5520-99c5-067400bd47de",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-e3b2747c-c98b-55fd-b7f0-d2236c63ab00out-c9061045-a172-5520-99c5-067400bd47dein_1",
+        "source": "e3b2747c-c98b-55fd-b7f0-d2236c63ab00",
+        "target": "c9061045-a172-5520-99c5-067400bd47de",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-e3b2747c-c98b-55fd-b7f0-d2236c63ab00out-c0886a45-9334-5ad3-a107-af87fc110c71in",
+        "source": "e3b2747c-c98b-55fd-b7f0-d2236c63ab00",
+        "target": "c0886a45-9334-5ad3-a107-af87fc110c71",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-c9061045-a172-5520-99c5-067400bd47deout-c0886a45-9334-5ad3-a107-af87fc110c71in_1",
+        "source": "c9061045-a172-5520-99c5-067400bd47de",
+        "target": "c0886a45-9334-5ad3-a107-af87fc110c71",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-c0886a45-9334-5ad3-a107-af87fc110c71out-8a037364-714c-52a7-9672-bcdb00a37573in",
+        "source": "c0886a45-9334-5ad3-a107-af87fc110c71",
+        "target": "8a037364-714c-52a7-9672-bcdb00a37573",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-c0886a45-9334-5ad3-a107-af87fc110c71out-33698fa9-2e1a-5846-92d3-ec965927a341in",
+        "source": "c0886a45-9334-5ad3-a107-af87fc110c71",
+        "target": "33698fa9-2e1a-5846-92d3-ec965927a341",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-e3b2747c-c98b-55fd-b7f0-d2236c63ab00out-57a99f30-8a4f-5dc4-8c0a-bd36c0c614a9in",
+        "source": "e3b2747c-c98b-55fd-b7f0-d2236c63ab00",
+        "target": "57a99f30-8a4f-5dc4-8c0a-bd36c0c614a9",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-e3b2747c-c98b-55fd-b7f0-d2236c63ab00out-a5f5587d-c1ac-5a4f-8641-b4a7f28acaafin",
+        "source": "e3b2747c-c98b-55fd-b7f0-d2236c63ab00",
+        "target": "a5f5587d-c1ac-5a4f-8641-b4a7f28acaaf",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-57a99f30-8a4f-5dc4-8c0a-bd36c0c614a9out-f345d532-b656-5d14-b004-4ea9a6e8e6fein",
+        "source": "57a99f30-8a4f-5dc4-8c0a-bd36c0c614a9",
+        "target": "f345d532-b656-5d14-b004-4ea9a6e8e6fe",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-f345d532-b656-5d14-b004-4ea9a6e8e6feout-eb115051-9c43-57c8-a205-831629f55849in",
+        "source": "f345d532-b656-5d14-b004-4ea9a6e8e6fe",
+        "target": "eb115051-9c43-57c8-a205-831629f55849",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-eb115051-9c43-57c8-a205-831629f55849out-c573d396-b847-5d49-bcae-f30a10e5651din",
+        "source": "eb115051-9c43-57c8-a205-831629f55849",
+        "target": "c573d396-b847-5d49-bcae-f30a10e5651d",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-eb115051-9c43-57c8-a205-831629f55849out-f82d6a98-3878-5954-9d1e-74057b9a30b2in",
+        "source": "eb115051-9c43-57c8-a205-831629f55849",
+        "target": "f82d6a98-3878-5954-9d1e-74057b9a30b2",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-c9061045-a172-5520-99c5-067400bd47deout-f82d6a98-3878-5954-9d1e-74057b9a30b2in_1",
+        "source": "c9061045-a172-5520-99c5-067400bd47de",
+        "target": "f82d6a98-3878-5954-9d1e-74057b9a30b2",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-8a037364-714c-52a7-9672-bcdb00a37573out-33e817ea-f60f-5356-b0a5-72590be493ecin",
+        "source": "8a037364-714c-52a7-9672-bcdb00a37573",
+        "target": "33e817ea-f60f-5356-b0a5-72590be493ec",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-8a037364-714c-52a7-9672-bcdb00a37573out-15643dea-0ac3-54b1-ad35-fa58d1d64eb1in",
+        "source": "8a037364-714c-52a7-9672-bcdb00a37573",
+        "target": "15643dea-0ac3-54b1-ad35-fa58d1d64eb1",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-33e817ea-f60f-5356-b0a5-72590be493ecout-834b8c84-814e-5f57-8884-11869c40d767in",
+        "source": "33e817ea-f60f-5356-b0a5-72590be493ec",
+        "target": "834b8c84-814e-5f57-8884-11869c40d767",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-834b8c84-814e-5f57-8884-11869c40d767out-1ac3b510-1042-53bc-9582-3dad24f0dfb0in",
+        "source": "834b8c84-814e-5f57-8884-11869c40d767",
+        "target": "1ac3b510-1042-53bc-9582-3dad24f0dfb0",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-1ac3b510-1042-53bc-9582-3dad24f0dfb0out-8f469fdf-9d0e-5243-aa95-cf94dc90643din",
+        "source": "1ac3b510-1042-53bc-9582-3dad24f0dfb0",
+        "target": "8f469fdf-9d0e-5243-aa95-cf94dc90643d",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-1ac3b510-1042-53bc-9582-3dad24f0dfb0out-da5bd917-0876-51a8-854a-d9a3b544ea6ein",
+        "source": "1ac3b510-1042-53bc-9582-3dad24f0dfb0",
+        "target": "da5bd917-0876-51a8-854a-d9a3b544ea6e",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-c9061045-a172-5520-99c5-067400bd47deout-da5bd917-0876-51a8-854a-d9a3b544ea6ein_1",
+        "source": "c9061045-a172-5520-99c5-067400bd47de",
+        "target": "da5bd917-0876-51a8-854a-d9a3b544ea6e",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-33698fa9-2e1a-5846-92d3-ec965927a341out-46ee8239-d76a-5b01-8bc2-4aa425829b9cin",
+        "source": "33698fa9-2e1a-5846-92d3-ec965927a341",
+        "target": "46ee8239-d76a-5b01-8bc2-4aa425829b9c",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-33698fa9-2e1a-5846-92d3-ec965927a341out-4e424f74-a0c6-5ebd-8956-e28bcb918f29in",
+        "source": "33698fa9-2e1a-5846-92d3-ec965927a341",
+        "target": "4e424f74-a0c6-5ebd-8956-e28bcb918f29",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-46ee8239-d76a-5b01-8bc2-4aa425829b9cout-79efde20-a3bf-532e-90f0-c31b50209f79in",
+        "source": "46ee8239-d76a-5b01-8bc2-4aa425829b9c",
+        "target": "79efde20-a3bf-532e-90f0-c31b50209f79",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-79efde20-a3bf-532e-90f0-c31b50209f79out-0d3963ee-6191-523f-97b4-5b224132ba15in",
+        "source": "79efde20-a3bf-532e-90f0-c31b50209f79",
+        "target": "0d3963ee-6191-523f-97b4-5b224132ba15",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-0d3963ee-6191-523f-97b4-5b224132ba15out-01a350dd-c9c3-551c-b4d5-9069a2e64c16in",
+        "source": "0d3963ee-6191-523f-97b4-5b224132ba15",
+        "target": "01a350dd-c9c3-551c-b4d5-9069a2e64c16",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-0d3963ee-6191-523f-97b4-5b224132ba15out-70de3392-e925-5d20-a596-dac2725ed833in",
+        "source": "0d3963ee-6191-523f-97b4-5b224132ba15",
+        "target": "70de3392-e925-5d20-a596-dac2725ed833",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-c9061045-a172-5520-99c5-067400bd47deout-70de3392-e925-5d20-a596-dac2725ed833in_1",
+        "source": "c9061045-a172-5520-99c5-067400bd47de",
+        "target": "70de3392-e925-5d20-a596-dac2725ed833",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-eb115051-9c43-57c8-a205-831629f55849out-78dcee76-51f6-504a-869e-559c7a2a3e28in",
+        "source": "eb115051-9c43-57c8-a205-831629f55849",
+        "target": "78dcee76-51f6-504a-869e-559c7a2a3e28",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-1ac3b510-1042-53bc-9582-3dad24f0dfb0out-78dcee76-51f6-504a-869e-559c7a2a3e28in_1",
+        "source": "1ac3b510-1042-53bc-9582-3dad24f0dfb0",
+        "target": "78dcee76-51f6-504a-869e-559c7a2a3e28",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-78dcee76-51f6-504a-869e-559c7a2a3e28out-e14b5130-b2be-5392-ba9f-7b14d118a0cdin",
+        "source": "78dcee76-51f6-504a-869e-559c7a2a3e28",
+        "target": "e14b5130-b2be-5392-ba9f-7b14d118a0cd",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-eb115051-9c43-57c8-a205-831629f55849out-57a06580-ecf1-5e14-aa76-59bfc341b556in",
+        "source": "eb115051-9c43-57c8-a205-831629f55849",
+        "target": "57a06580-ecf1-5e14-aa76-59bfc341b556",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-0d3963ee-6191-523f-97b4-5b224132ba15out-57a06580-ecf1-5e14-aa76-59bfc341b556in_1",
+        "source": "0d3963ee-6191-523f-97b4-5b224132ba15",
+        "target": "57a06580-ecf1-5e14-aa76-59bfc341b556",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-57a06580-ecf1-5e14-aa76-59bfc341b556out-b564bf15-9d58-5fcf-95e9-8db7544008f6in",
+        "source": "57a06580-ecf1-5e14-aa76-59bfc341b556",
+        "target": "b564bf15-9d58-5fcf-95e9-8db7544008f6",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-f82d6a98-3878-5954-9d1e-74057b9a30b2out-bb111755-b6c3-5e6a-991e-a07e185cd953in",
+        "source": "f82d6a98-3878-5954-9d1e-74057b9a30b2",
+        "target": "bb111755-b6c3-5e6a-991e-a07e185cd953",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-da5bd917-0876-51a8-854a-d9a3b544ea6eout-bb111755-b6c3-5e6a-991e-a07e185cd953in_1",
+        "source": "da5bd917-0876-51a8-854a-d9a3b544ea6e",
+        "target": "bb111755-b6c3-5e6a-991e-a07e185cd953",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-70de3392-e925-5d20-a596-dac2725ed833out-bb111755-b6c3-5e6a-991e-a07e185cd953in_2",
+        "source": "70de3392-e925-5d20-a596-dac2725ed833",
+        "target": "bb111755-b6c3-5e6a-991e-a07e185cd953",
+        "sourceHandle": "out",
+        "targetHandle": "in_2"
+      },
+      {
+        "id": "reactflow__edge-f82d6a98-3878-5954-9d1e-74057b9a30b2out-88b7c798-45e5-5398-9511-281f6b2d40c3in",
+        "source": "f82d6a98-3878-5954-9d1e-74057b9a30b2",
+        "target": "88b7c798-45e5-5398-9511-281f6b2d40c3",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-da5bd917-0876-51a8-854a-d9a3b544ea6eout-88b7c798-45e5-5398-9511-281f6b2d40c3in_1",
+        "source": "da5bd917-0876-51a8-854a-d9a3b544ea6e",
+        "target": "88b7c798-45e5-5398-9511-281f6b2d40c3",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-70de3392-e925-5d20-a596-dac2725ed833out-88b7c798-45e5-5398-9511-281f6b2d40c3in_2",
+        "source": "70de3392-e925-5d20-a596-dac2725ed833",
+        "target": "88b7c798-45e5-5398-9511-281f6b2d40c3",
+        "sourceHandle": "out",
+        "targetHandle": "in_2"
+      },
+      {
+        "id": "reactflow__edge-bb111755-b6c3-5e6a-991e-a07e185cd953out-768fd6b0-6c2f-5dfb-b52a-9299ea4a8a25in",
+        "source": "bb111755-b6c3-5e6a-991e-a07e185cd953",
+        "target": "768fd6b0-6c2f-5dfb-b52a-9299ea4a8a25",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-bb111755-b6c3-5e6a-991e-a07e185cd953out-10fa4f2f-0173-5b2f-a0a3-91611e6d3014in",
+        "source": "bb111755-b6c3-5e6a-991e-a07e185cd953",
+        "target": "10fa4f2f-0173-5b2f-a0a3-91611e6d3014",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      }
+    ],
+    "scenarios": [
+      {
+        "id": "existing",
+        "name": "Existing",
+        "color": "#2a9d8f",
+        "nodes": [
+          "57a99f30-8a4f-5dc4-8c0a-bd36c0c614a9",
+          "f345d532-b656-5d14-b004-4ea9a6e8e6fe",
+          "eb115051-9c43-57c8-a205-831629f55849",
+          "f82d6a98-3878-5954-9d1e-74057b9a30b2",
+          "a5f5587d-c1ac-5a4f-8641-b4a7f28acaaf"
+        ],
+        "upstream": [
+          "924f0840-2a22-54d2-aa37-482db7f9daca",
+          "8a618e89-fc6b-50c4-a0e8-1f6e1b1c8f0e",
+          "e3b2747c-c98b-55fd-b7f0-d2236c63ab00",
+          "e7aadece-bf19-5608-8611-e5fb4030b7fe",
+          "c9061045-a172-5520-99c5-067400bd47de"
+        ],
+        "downstream": [
+          "c573d396-b847-5d49-bcae-f30a10e5651d",
+          "78dcee76-51f6-504a-869e-559c7a2a3e28",
+          "e14b5130-b2be-5392-ba9f-7b14d118a0cd",
+          "57a06580-ecf1-5e14-aa76-59bfc341b556",
+          "b564bf15-9d58-5fcf-95e9-8db7544008f6",
+          "bb111755-b6c3-5e6a-991e-a07e185cd953",
+          "768fd6b0-6c2f-5dfb-b52a-9299ea4a8a25",
+          "10fa4f2f-0173-5b2f-a0a3-91611e6d3014",
+          "88b7c798-45e5-5398-9511-281f6b2d40c3"
+        ]
+      },
+      {
+        "id": "towers-removed",
+        "name": "Towers removed",
+        "color": "#e76f51",
+        "nodes": [
+          "8a037364-714c-52a7-9672-bcdb00a37573",
+          "33e817ea-f60f-5356-b0a5-72590be493ec",
+          "834b8c84-814e-5f57-8884-11869c40d767",
+          "1ac3b510-1042-53bc-9582-3dad24f0dfb0",
+          "da5bd917-0876-51a8-854a-d9a3b544ea6e",
+          "15643dea-0ac3-54b1-ad35-fa58d1d64eb1"
+        ],
+        "upstream": [
+          "924f0840-2a22-54d2-aa37-482db7f9daca",
+          "8a618e89-fc6b-50c4-a0e8-1f6e1b1c8f0e",
+          "919d641d-e4c5-53b6-acd2-528290976d00",
+          "f7b245ac-9072-5111-9307-2f4db4d1c33f",
+          "e3b2747c-c98b-55fd-b7f0-d2236c63ab00",
+          "e7aadece-bf19-5608-8611-e5fb4030b7fe",
+          "c9061045-a172-5520-99c5-067400bd47de",
+          "c0886a45-9334-5ad3-a107-af87fc110c71"
+        ],
+        "downstream": [
+          "8f469fdf-9d0e-5243-aa95-cf94dc90643d",
+          "78dcee76-51f6-504a-869e-559c7a2a3e28",
+          "e14b5130-b2be-5392-ba9f-7b14d118a0cd",
+          "bb111755-b6c3-5e6a-991e-a07e185cd953",
+          "768fd6b0-6c2f-5dfb-b52a-9299ea4a8a25",
+          "10fa4f2f-0173-5b2f-a0a3-91611e6d3014",
+          "88b7c798-45e5-5398-9511-281f6b2d40c3"
+        ]
+      },
+      {
+        "id": "height-cap",
+        "name": "Height cap",
+        "color": "#6a4c93",
+        "nodes": [
+          "33698fa9-2e1a-5846-92d3-ec965927a341",
+          "46ee8239-d76a-5b01-8bc2-4aa425829b9c",
+          "79efde20-a3bf-532e-90f0-c31b50209f79",
+          "0d3963ee-6191-523f-97b4-5b224132ba15",
+          "70de3392-e925-5d20-a596-dac2725ed833",
+          "4e424f74-a0c6-5ebd-8956-e28bcb918f29"
+        ],
+        "upstream": [
+          "924f0840-2a22-54d2-aa37-482db7f9daca",
+          "8a618e89-fc6b-50c4-a0e8-1f6e1b1c8f0e",
+          "919d641d-e4c5-53b6-acd2-528290976d00",
+          "f7b245ac-9072-5111-9307-2f4db4d1c33f",
+          "e3b2747c-c98b-55fd-b7f0-d2236c63ab00",
+          "e7aadece-bf19-5608-8611-e5fb4030b7fe",
+          "c9061045-a172-5520-99c5-067400bd47de",
+          "c0886a45-9334-5ad3-a107-af87fc110c71"
+        ],
+        "downstream": [
+          "01a350dd-c9c3-551c-b4d5-9069a2e64c16",
+          "57a06580-ecf1-5e14-aa76-59bfc341b556",
+          "b564bf15-9d58-5fcf-95e9-8db7544008f6",
+          "bb111755-b6c3-5e6a-991e-a07e185cd953",
+          "768fd6b0-6c2f-5dfb-b52a-9299ea4a8a25",
+          "10fa4f2f-0173-5b2f-a0a3-91611e6d3014",
+          "88b7c798-45e5-5398-9511-281f6b2d40c3"
+        ]
+      }
+    ],
+    "packages": [
+      "scout.raster-conversion@1",
+      "scout.shadow@1"
+    ],
+    "datasets": [
+      {
+        "datasetId": "data.curio.lower-manhattan-shadows",
+        "dirName": "data.curio.lower-manhattan-shadows@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-14T00:00:00Z"
+      }
+    ],
+    "name": "ShadowsAnywhere",
+    "task": "",
+    "timestamp": 1791936000000,
+    "provenance_id": "ShadowsAnywhere"
+  }
+}

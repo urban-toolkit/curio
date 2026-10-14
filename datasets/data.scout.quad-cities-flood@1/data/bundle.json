@@ -10,17 +10,17 @@
     },
     {
       "index": 1,
-      "label": "Flood depth 2020 - 2040 with NbS",
+      "label": "Flood depth 2020 - 2050 with NbS",
       "kind": "raster",
       "format": "geotiff",
-      "file": "data/2020_2040_NbS.tif"
+      "file": "data/2020_2050_NbS.tif"
     },
     {
       "index": 2,
-      "label": "Flood depth 2020 - 2040 without NbS",
+      "label": "Flood depth 2020 - 2050 without NbS",
       "kind": "raster",
       "format": "geotiff",
-      "file": "data/2020_2040_noNbS.tif"
+      "file": "data/2020_2050_noNbS.tif"
     },
     {
       "index": 3,

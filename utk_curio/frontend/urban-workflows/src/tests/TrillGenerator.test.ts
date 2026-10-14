@@ -30,6 +30,78 @@ describe("TrillGenerator", () => {
     });
   });
 
+  test("saves a minimized node as minimized, and says nothing for the rest", () => {
+    const node = (nodeId: string, minimized?: boolean) => ({
+      type: "DATA_LOADING",
+      position: { x: 0, y: 0 },
+      data: { nodeId, ...(minimized === undefined ? {} : { minimized }) },
+    });
+    const spec = TrillGenerator.generateTrill(
+      [node("folded", true), node("open"), node("unfolded", false)],
+      [],
+      "Imported Workflow",
+    );
+    const [folded, open, unfolded] = spec.dataflow.nodes;
+    expect(folded.minimized).toBe(true);
+    expect("minimized" in open).toBe(false);
+    expect("minimized" in unfolded).toBe(false);
+  });
+
+  test("saves a controls-only node as controlsOnly, and says nothing for the rest", () => {
+    const node = (nodeId: string, controlsOnly?: boolean) => ({
+      type: "DATA_LOADING",
+      position: { x: 0, y: 0 },
+      data: { nodeId, ...(controlsOnly === undefined ? {} : { controlsOnly }) },
+    });
+    const spec = TrillGenerator.generateTrill(
+      [node("folded", true), node("full"), node("unfolded", false)],
+      [],
+      "Imported Workflow",
+    );
+    const [folded, full, unfolded] = spec.dataflow.nodes;
+    expect(folded.controlsOnly).toBe(true);
+    expect("controlsOnly" in full).toBe(false);
+    expect("controlsOnly" in unfolded).toBe(false);
+  });
+
+  test("saves the size a node displayed as a widget was resized to", () => {
+    const spec = TrillGenerator.generateTrill(
+      [{ type: "DATA_LOADING", position: { x: 0, y: 0 }, data: { nodeId: "w", controlsOnly: true, controlsOnlyWidth: 240, controlsOnlyHeight: 90 } }],
+      [],
+      "Imported Workflow",
+    );
+    const [node] = spec.dataflow.nodes;
+    expect(node.controlsOnlyWidth).toBe(240);
+    expect(node.controlsOnlyHeight).toBe(90);
+  });
+
+  test("saves a tile displayed as a widget apart from the canvas", () => {
+    const spec = TrillGenerator.generateTrill(
+      [
+        { type: "DATA_LOADING", position: { x: 0, y: 0 }, data: { nodeId: "tile", dashboardControlsOnly: true } },
+        { type: "DATA_LOADING", position: { x: 0, y: 0 }, data: { nodeId: "canvas", controlsOnly: true } },
+      ],
+      [],
+      "Imported Workflow",
+    );
+    const [tile, canvas] = spec.dataflow.nodes;
+    expect(tile.dashboardControlsOnly).toBe(true);
+    expect("controlsOnly" in tile).toBe(false);
+    expect("dashboardControlsOnly" in canvas).toBe(false);
+  });
+
+  test("saves a tile's separated widgets and where each stands", () => {
+    const layout = { origin: { x: 0, y: 0, width: 300, height: 220 }, rain: { x: 320, y: 0 } };
+    const spec = TrillGenerator.generateTrill(
+      [{ type: "DATA_LOADING", position: { x: 0, y: 0 }, data: { nodeId: "tile", dashboardControlsOnly: true, dashboardSeparateWidgets: true, dashboardWidgetLayout: layout } }],
+      [],
+      "Imported Workflow",
+    );
+    const [tile] = spec.dataflow.nodes;
+    expect(tile.dashboardSeparateWidgets).toBe(true);
+    expect(tile.dashboardWidgetLayout).toEqual(layout);
+  });
+
   test("persists edge handles so UUID-id edges keep their input circle (dev/64)", () => {
     const spec = TrillGenerator.generateTrill(
       [],

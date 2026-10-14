@@ -61,6 +61,13 @@ interface FollowedRun {
     refollows: number;
 }
 
+/**
+ * What the hook asks of the server. `runsApi` for the owner's runs; a published
+ * dashboard's visitor follows the runs a link starts through the same calls
+ * (services/published/publishedRunApi).
+ */
+export type ServerRunApi = Pick<typeof runsApi, "start" | "get" | "follow" | "cancel" | "reportStep" | "listForProject">;
+
 type PlayNodes = (
     nodeIds: string[],
     hooks?: Pick<PlayAllState, "onNodeDone" | "onFinish">,
@@ -70,7 +77,7 @@ export function useServerRun({
     reactFlow, setNodes, showToast, requestProjectSave, applyNewOutput, setOutputs,
     hydrateRestoredOutputs, markNodeErroredRef, playNodes, playAllStateRef,
     emittedForInputRef, outputsRef, workflowNameRef, nodeExecProv, flushInstallSyncRef,
-    surfaceInstallWarnings,
+    surfaceInstallWarnings, api,
 }: {
     reactFlow: ReactFlowInstance;
     setNodes: React.Dispatch<React.SetStateAction<Node[]>>;
@@ -92,7 +99,12 @@ export function useServerRun({
         detail: { dataset_install_warnings?: DatasetInstallWarning[] } | undefined,
         scopeNodeIds?: readonly string[],
     ) => void;
+    /** Where runs start and are followed; the owner's runs (`runsApi`) unless given. */
+    api?: ServerRunApi;
 }) {
+    // Read at each call, so the calls follow the page from one kind of run to the other.
+    const apiRef = useRef<ServerRunApi>(api ?? runsApi);
+    apiRef.current = api ?? runsApi;
     // True from the click until the server's part ends. UniversalNode reads it
     // with isRunActive: a map or chart draws in the run's browser part, or from
     // its input once the run ends, never twice.
@@ -222,7 +234,7 @@ export function useServerRun({
     };
 
     const follow = (run: FollowedRun) => {
-        runsApi
+        apiRef.current
             .follow(run.runId, (event) => onEvent(run, event), run.controller.signal)
             .then(() => streamEnded(run), () => streamEnded(run));
     };
@@ -233,7 +245,7 @@ export function useServerRun({
     const streamEnded = async (run: FollowedRun) => {
         if (followedRef.current !== run || run.done) return;
         try {
-            const record = await runsApi.get(run.runId);
+            const record = await apiRef.current.get(run.runId);
             if (followedRef.current !== run || run.done) return;
             if (ACTIVE_RUN_STATUSES.has(record.status) && run.refollows < MAX_REFOLLOWS) {
                 run.refollows += 1;
@@ -312,7 +324,7 @@ export function useServerRun({
     const report = (
         runId: string, nodeId: string, body: { status: "ok" | "error"; message?: string }, attempt = 1,
     ) => {
-        runsApi.reportStep(runId, nodeId, body).catch((err) => {
+        apiRef.current.reportStep(runId, nodeId, body).catch((err) => {
             if (err?.status !== 409 || attempt >= MAX_REPORT_ATTEMPTS) return;
             window.setTimeout(() => report(runId, nodeId, body, attempt + 1), 500 * attempt);
         });
@@ -326,7 +338,7 @@ export function useServerRun({
                 action: {
                     label: "Finish run",
                     onClick: () => {
-                        void runsApi.get(runId).then((record) => {
+                        void apiRef.current.get(runId).then((record) => {
                             const steps = new Map((record.steps ?? []).map((s) => [s.nodeId, { role: s.role, status: s.status }]));
                             finishInBrowser(runId, steps);
                         }).catch((err) => showToast(err?.message || "The run could not be read.", "error"));
@@ -369,7 +381,7 @@ export function useServerRun({
     const serverWroteEnd = async (runId: string): Promise<boolean> => {
         for (let read = 0; read < END_WAIT_READS; read++) {
             try {
-                const record = await runsApi.get(runId);
+                const record = await apiRef.current.get(runId);
                 if (!ACTIVE_RUN_STATUSES.has(record.status)) return true;
             } catch {
                 return false;
@@ -424,7 +436,7 @@ export function useServerRun({
         let refused: any = null;
         for (let attempt = 1; attempt <= MAX_START_ATTEMPTS && !record; attempt++) {
             try {
-                record = await runsApi.start(projectId, {
+                record = await apiRef.current.start(projectId, {
                     ...(targetNodeId ? { target: targetNodeId, reuse } : {}),
                     specRevision: saved?.spec_revision ?? null,
                 });
@@ -448,7 +460,7 @@ export function useServerRun({
             // revision just saved is this click's run; one of an earlier
             // version is shown as a run opened later is, and says so.
             try {
-                record = await runsApi.get(runningId);
+                record = await apiRef.current.get(runningId);
             } catch (readErr: any) {
                 giveUp(readErr?.message || "The run could not start.");
                 return;
@@ -468,7 +480,7 @@ export function useServerRun({
         if (startingRef.current === starting) startingRef.current = null;
         if (starting.stopped) {
             unmark();
-            void runsApi.cancel(record.id).catch(() => {});
+            void apiRef.current.cancel(record.id).catch(() => {});
             return;
         }
         attach(record, {
@@ -487,7 +499,7 @@ export function useServerRun({
         const run = followedRef.current;
         if (!run) return;
         stopFollowing(run, { stopped: true });
-        void runsApi.cancel(run.runId).catch(() => { /* it had already ended */ });
+        void apiRef.current.cancel(run.runId).catch(() => { /* it had already ended */ });
     };
 
     /** Leave the run going and stop following it: another dataflow is opening. */
@@ -508,9 +520,9 @@ export function useServerRun({
         if (followedRef.current || startingRef.current) return;
         let record: Run;
         try {
-            const [latest] = await runsApi.listForProject(projectId, { limit: 1 });
+            const [latest] = await apiRef.current.listForProject(projectId, { limit: 1 });
             if (!latest) return;
-            record = await runsApi.get(latest.id);
+            record = await apiRef.current.get(latest.id);
         } catch {
             return; // nothing to show is the same as no run
         }

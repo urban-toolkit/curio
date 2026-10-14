@@ -19,6 +19,7 @@ import {
   RASTER_TRANSFER_FUNCTION,
   bleedIntoClearCells,
   centeredDomain,
+  rangeDomain,
   recolorRasters,
   resolveRasterInputs,
   withRasterSources,
@@ -313,6 +314,48 @@ describe("recolorRasters", () => {
     expect(centeredDomain({ colorMapCenter: 10 }, [4, 12])).toEqual([4, 10, 16]);
     expect(centeredDomain({}, [1, 2])).toBeNull();
     expect(centeredDomain({ colorMapCenter: 0 }, [0, 0, NaN])).toBeNull();
+  });
+
+  test("two rasters whose layerRefs name one range are colored over it, whatever their own values", () => {
+    const none = fakeMap({ none: "raster" });
+    const all = fakeMap({ all: "raster" });
+    none.layers.none.rasterValues = new Float32Array([0.2, 10.6]);
+    all.layers.all.rasterValues = new Float32Array([0.1, 4.8]);
+    const grammar = { _mapRegistry: new Map([["none", none], ["all", all]]) };
+    const ref = (dataRef: string) => ({ dataRef, getFnv: "band_1", colorMapInterpolator: "interpolateBlues", colorMapRange: [0, 11] });
+    recolorRasters(grammar, { map: [{ layerRefs: [ref("none")] }, { layerRefs: [ref("all")] }] });
+    for (const [map, id] of [[none, "none"], [all, "all"]] as const) {
+      expect(map.updateColorMap).toHaveBeenCalledWith(id, { colorMap: { domainSpec: { type: "user", params: [0, 11] } } });
+    }
+  });
+
+  test("a polygon layer whose layerRef names a range is colored over it; one that names none is left as drawn", () => {
+    const map = fakeMap({ none: "polygons", plain: "polygons" });
+    recolorRasters({ _mapRegistry: new Map([["none", map], ["plain", map]]) }, {
+      map: { layerRefs: [
+        { dataRef: "none", getFnv: "mean_depth_m", colorMapInterpolator: "interpolateBlues", colorMapRange: [0, 5] },
+        { dataRef: "plain", getFnv: "svi", colorMapInterpolator: "interpolateReds" },
+      ] },
+    });
+    expect(map.updateColorMap).toHaveBeenCalledTimes(1);
+    expect(map.updateColorMap).toHaveBeenCalledWith("none", { colorMap: { domainSpec: { type: "user", params: [0, 5] } } });
+    expect(map.layers.none.setTransferFunction).not.toHaveBeenCalled();
+    expect(map.requestRender).toHaveBeenCalled();
+  });
+
+  test("a range is two finite numbers, low under high, turned around when asked; a center wins over it", () => {
+    expect(rangeDomain({ colorMapRange: [0, 11] })).toEqual([0, 11]);
+    expect(rangeDomain({ colorMapRange: [0, 11], colorMapReverse: true })).toEqual([11, 0]);
+    expect(rangeDomain({ colorMapRange: [5, 5] })).toBeNull();
+    expect(rangeDomain({ colorMapRange: [0] })).toBeNull();
+    expect(rangeDomain({ colorMapRange: ["0", 11] })).toBeNull();
+    expect(rangeDomain({})).toBeNull();
+    const map = fakeMap({ change: "raster" });
+    map.layers.change.rasterValues = new Float32Array([-2, 3]);
+    recolorRasters({ _mapRegistry: new Map([["change", map]]) }, {
+      map: { layerRefs: [{ dataRef: "change", colorMapCenter: 0, colorMapRange: [0, 11] }] },
+    });
+    expect(map.updateColorMap).toHaveBeenCalledWith("change", { colorMap: { domainSpec: { type: "user", params: [-3, 0, 3] } } });
   });
 
   test("colors a raster's cells again in the scheme its layerRef names", () => {

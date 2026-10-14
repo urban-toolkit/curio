@@ -33,3 +33,37 @@ def test_the_catalog_reads_a_scenario_as_its_canvas_does():
             if sources != expected:
                 mismatches.append(f"{case['name']}: {node_id} stands for {sources!r}, the table says {expected!r}")
     assert not mismatches, "\n".join(mismatches)
+
+
+NEIGHBOR_CASES = CASES.with_name("scenarioNeighbors.cases.json")
+
+
+def test_a_save_stores_the_nodes_around_a_scenario_as_its_canvas_finds_them():
+    from utk_curio.backend.app.scenario_catalog.domain.parts import scenario_neighbors
+
+    cases = json.loads(NEIGHBOR_CASES.read_text(encoding="utf-8"))["cases"]
+    assert cases
+    mismatches = []
+    for case in cases:
+        scenario = next(s for s in case["scenarios"] if s["id"] == case["scenario"])
+        got = scenario_neighbors(scenario, case["scenarios"], case["nodes"], case["edges"])
+        if got != case["expected"]:
+            mismatches.append(f"{case['name']}: found {got!r}, the table says {case['expected']!r}")
+    assert not mismatches, "\n".join(mismatches)
+
+
+def test_a_save_stores_each_scenarios_upstream_and_downstream():
+    from utk_curio.backend.app.projects.scenarios import normalize_spec_scenarios
+
+    case = json.loads(NEIGHBOR_CASES.read_text(encoding="utf-8"))["cases"][1]
+    spec = {"dataflow": {
+        "nodes": case["nodes"],
+        "edges": case["edges"],
+        "scenarios": [
+            {"id": s["id"], "name": s["id"], "color": "#2a9d8f", "nodes": s["nodes"], "upstream": ["stale"]}
+            for s in case["scenarios"]
+        ],
+    }}
+    normalize_spec_scenarios(spec)
+    stored = {s["id"]: (s["upstream"], s["downstream"]) for s in spec["dataflow"]["scenarios"]}
+    assert stored == {"s1": (["load"], ["chart"]), "s2": (["load"], ["chart"])}

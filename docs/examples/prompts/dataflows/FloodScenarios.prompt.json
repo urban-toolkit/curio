@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/FloodScenarios.json",
-    "sha256": "09efbf951bbed561eeb0d988603c7084ac6e4af8a3cca323c58def97ef1fdcff",
+    "sha256": "8991cb4cfc4872e2430c93adee09470f2c8e9746f0607f07d29d842e8039bb01",
     "walkthrough": null
   },
-  "prompt": "Compare two scenarios of SCOUT's Quad Cities flood projection, as SCOUT's own flood example does: one with no nature-based solutions in place, and a copy of it with all six. Three shared settings hold the projection period, 2020 to 2040, and the region's top-left and bottom-right corners, SCOUT's example's, which cover SCOUT's whole flood grid. In each scenario, run SCOUT's flood projection with that scenario's solutions, which gives the flood depth and SCOUT's own metrics; take the depth and draw it on its own Autark map in blues, and take SCOUT's metrics, whose median flood depth the comparison shows. Then take the absolute difference of the two scenarios' depths, cell by cell, with a raster calculator, and draw it on an Autark map in blues; and compare the two scenarios' median and mean flood depth in one Vega-Lite table that compares the scenarios: one row per scenario, its values in its scenario's colour, one column per metric. SCOUT's flood projection is not part of the standard node set, so whatever provides it needs installing first.",
+  "prompt": "Compare two scenarios of SCOUT's Quad Cities flood projection, as SCOUT's own flood example does: one with no nature-based solutions in place, and a copy of it with all four (one per kind of solution). A shared setting holds the projection period, 2020 to 2050; the projection covers SCOUT's whole flood grid, as SCOUT's example does. In each scenario, run SCOUT's flood projection with that scenario's solutions, which gives the flood depth and SCOUT's own metrics; take the depth and draw it on its own Autark map in blues, and take SCOUT's metrics, whose median flood depth the comparison shows. Then take the absolute difference of the two scenarios' depths, cell by cell, with a raster calculator, and draw it on an Autark map in blues; and compare the two scenarios' median and mean flood depth in one Vega-Lite table that compares the scenarios: one row per scenario, its values in its scenario's colour, one column per metric. SCOUT's flood projection is not part of the standard node set, so whatever provides it needs installing first.",
   "context": null,
   "required": {
     "datasets": [
@@ -69,32 +69,18 @@
         "hasContent": true
       },
       {
+        "ref": "analysis5",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
         "ref": "endpoint1",
         "type": "curio.builtin/parameter",
         "role": "endpoint",
         "executable": false,
         "hasContent": false
-      },
-      {
-        "ref": "endpoint2",
-        "type": "curio.builtin/parameter",
-        "role": "endpoint",
-        "executable": false,
-        "hasContent": false
-      },
-      {
-        "ref": "endpoint3",
-        "type": "curio.builtin/parameter",
-        "role": "endpoint",
-        "executable": false,
-        "hasContent": false
-      },
-      {
-        "ref": "analysis5",
-        "type": "curio.builtin/raster-calculator",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
       },
       {
         "ref": "visualization4",
@@ -125,55 +111,55 @@
         "kind": "data"
       },
       {
-        "from": "analysis1",
-        "to": "analysis5",
-        "kind": "data"
-      },
-      {
         "from": "analysis2",
         "to": "visualization2",
         "kind": "data"
       },
       {
         "from": "analysis2",
-        "to": "analysis5",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis3",
-        "to": "visualization4",
-        "kind": "data"
-      },
-      {
-        "from": "analysis4",
-        "to": "visualization4",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis5",
-        "to": "visualization3",
-        "kind": "data"
-      },
-      {
-        "from": "analysis6",
         "to": "analysis1",
         "kind": "data"
       },
       {
+        "from": "analysis3",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis3",
+        "to": "analysis1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis4",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "analysis5",
+        "to": "visualization4",
+        "kind": "data",
+        "slot": 1
+      },
+      {
         "from": "analysis6",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis6",
+        "to": "analysis4",
+        "kind": "data"
+      },
+      {
+        "from": "analysis7",
         "to": "analysis3",
         "kind": "data"
       },
       {
         "from": "analysis7",
-        "to": "analysis2",
-        "kind": "data"
-      },
-      {
-        "from": "analysis7",
-        "to": "analysis4",
+        "to": "analysis5",
         "kind": "data"
       }
     ],
@@ -199,13 +185,6 @@
       ]
     },
     {
-      "ref": "analysis1",
-      "mustMention": [
-        "flood"
-      ],
-      "outputKind": "raster"
-    },
-    {
       "ref": "analysis2",
       "mustMention": [
         "flood"
@@ -215,9 +194,9 @@
     {
       "ref": "analysis3",
       "mustMention": [
-        "median"
+        "flood"
       ],
-      "outputKind": "dataframe"
+      "outputKind": "raster"
     },
     {
       "ref": "analysis4",
@@ -228,6 +207,13 @@
     },
     {
       "ref": "analysis5",
+      "mustMention": [
+        "median"
+      ],
+      "outputKind": "dataframe"
+    },
+    {
+      "ref": "analysis1",
       "mustMention": [
         "flood"
       ],
@@ -270,5 +256,5 @@
     ],
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the export carries the dataset's identifier only. The dataset is SCOUT's (urban-toolkit/scout), used with the permission of its authors; its licence is to be confirmed."
   },
-  "notes": "Two scenarios over a shared context: three Parameter nodes (the period and SCOUT's corners), and in each scenario SCOUT's Flood Projection with its solutions, returning the depth and SCOUT's metrics, a node taking the depth for an Autark map, and one taking SCOUT's metrics. A Raster Calculator takes the absolute difference of the two depths (curio_raster_calculate(\"subtract\", [input_1, input_0], absolute=True)) and an Autark node maps it, and a Vega-Lite table comparing the scenarios (metadata.vegaCompare) shows SCOUT's median and mean flood depth from the stacked scenarios table, one row per scenario."
+  "notes": "Two scenarios over a shared context: one Parameter node (the period; the region is SCOUT's whole grid, in the package's code), and in each scenario SCOUT's Flood Projection with its solutions, returning the depth and SCOUT's metrics, a node taking the depth for an Autark map, and one taking SCOUT's metrics. A Python node takes the absolute difference of the two depths (curio_raster_calculate(\"subtract\", [input_1, input_0], absolute=True)) and an Autark node maps it, and a Vega-Lite table comparing the scenarios (its spec reads its inputs stacked, the dataset inputs, and names each circle's scenario from __input__) shows SCOUT's median and mean flood depth from its stacked inputs, one row per scenario."
 }

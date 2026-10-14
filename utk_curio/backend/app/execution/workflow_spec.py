@@ -117,6 +117,10 @@ NAMESPACED_TO_LEGACY: dict[str, str] = {
     "curio.builtin/vis-simple":           "VIS_SIMPLE",
     "curio.builtin/data-pool":            "DATA_POOL",
     "curio.builtin/autk-grammar":         "AUTK_GRAMMAR",
+    # Removed kinds that were Python nodes with starter code: a dataflow saved
+    # with one still runs it as one (the frontend's REPLACED_NODE_TYPES).
+    "curio.builtin/raster-calculator":    "COMPUTATION_ANALYSIS",
+    "curio.builtin/raster-statistics":    "COMPUTATION_ANALYSIS",
 }
 
 

@@ -17,7 +17,6 @@ export function NodeTemplateConfigModal({
   templateCode,
   onClose,
   onSave,
-  compareScenarios,
 }: {
   show: boolean;
   nodeId: string;
@@ -28,12 +27,6 @@ export function NodeTemplateConfigModal({
   templateCode: string;
   onClose: () => void;
   onSave: (config: CanvasTemplateConfig) => void;
-  /**
-   * A Vega-Lite node's Compare scenarios switch (utils/vegaCompare). It is the
-   * node's own setting, applied as it is toggled, not part of the package node
-   * Save makes.
-   */
-  compareScenarios?: { on: boolean; onChange: (on: boolean) => void };
 }) {
   const desc = useMemo(() => tryGetNodeDescriptor(nodeType), [nodeType]);
   const [config, setConfig] = useState<CanvasTemplateConfig | null>(null);
@@ -99,26 +92,6 @@ export function NodeTemplateConfigModal({
             ? "This node belongs to a read-only package. Save your changes as a new package."
             : "Edit kind metadata, ports, and editor tabs. Saving opens the Save As flow to commit the changes into a package."}
         </p>
-
-        {compareScenarios ? (
-          <>
-            <p className={styles.sectionTitle}>Vega-Lite</p>
-            <label className={styles.checkRow}>
-              <input
-                type="checkbox"
-                data-vega-compare-toggle
-                checked={compareScenarios.on}
-                onChange={(e) => compareScenarios.onChange(e.target.checked)}
-              />
-              Compare scenarios
-            </label>
-            <p className={styles.subtitle}>
-              Each input is one scenario. The spec reads them all as the table <code>scenarios</code>, each row with its
-              {" "}<code>scenario_name</code> and <code>scenario_color</code>; a color on <code>scenario_name</code> uses
-              the scenarios' colors. Applies to this node now.
-            </p>
-          </>
-        ) : null}
 
         <p className={styles.sectionTitle}>Identity</p>
         <div className={styles.field}>

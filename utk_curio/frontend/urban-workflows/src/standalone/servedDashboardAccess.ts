@@ -8,7 +8,7 @@
  * which answers yes or no by the gate a save of the layout passes. On a yes the
  * page becomes the owner's: UserProvider learns who is signed in and
  * ProjectLoader loads the dataflow, as a page that fetches does, so Edit
- * layout, Save layout and Arrange work. Anything else is a no, and asks nothing
+ * layout and Save layout work. Anything else is a no, and asks nothing
  * more: no session, a page the server refused to build (which asks for
  * nothing), a failed answer, or one slower than `ANSWER_TIMEOUT_MS`, past which
  * the page opens read-only, as it must where its server cannot be reached.

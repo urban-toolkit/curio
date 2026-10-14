@@ -1,0 +1,38 @@
+{
+  "id": "data.usgs.quad-cities-waterways",
+  "name": "Quad Cities Waterways",
+  "version": "1.0.0",
+  "format": "geojson",
+  "description": "The 309 rivers, lakes and reservoirs of USGS's National Hydrography Dataset (NHD) that meet SCOUT's Quad Cities flood grid (-90.6879, 41.4150 to -90.4252, 41.6242), clipped to it, 29 km2 of water: NHD's large-scale Area layer, its stream and river areas (FTYPE 460, the Mississippi's channel), and its large-scale Waterbody layer, its lakes and ponds (390) and reservoirs (436); swamps and marshes (466) are left out. NHD's columns GNIS_NAME, FTYPE, FCODE and AREASQKM (the whole feature's area, before clipping). From hydro.nationalmap.gov/arcgis/rest/services/nhd/MapServer, layers 9 and 12. USGS, public domain.",
+  "publisher": "U.S. Geological Survey",
+  "license": "Public domain",
+  "tags": [
+    "water",
+    "rivers",
+    "nhd",
+    "usgs",
+    "quad-cities",
+    "geojson"
+  ],
+  "dataFile": "data/waterways.geojson",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "USGS",
+  "rowCount": 309,
+  "featureCount": 309,
+  "schema": null,
+  "createdAt": "2026-10-13T00:00:00Z",
+  "updatedAt": "2026-10-13T00:00:00Z",
+  "sourceUpdatedAt": null,
+  "sourceEncoding": null,
+  "groupId": null,
+  "layerName": null,
+  "producerNodeId": null,
+  "producerNodeType": null,
+  "producerDataflowId": null,
+  "producerDataflowName": null,
+  "upstreamInputs": null,
+  "discoverySource": null,
+  "collection": null
+}

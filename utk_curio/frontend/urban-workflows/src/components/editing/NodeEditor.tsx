@@ -36,6 +36,7 @@ import { resolveInitialEditorTab } from "../../utils/canvasTemplateConfig";
 import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
 import { notebookOutputBox } from "../../utils/notebookLayout";
 import { useNodeHeaderSlot } from "./nodeHeaderSlot";
+import { useNodeControlsOnly, useSeparatedWidgets } from "./nodeControlsOnly";
 import { normalizeWidgets, type WidgetDef } from "../../utils/widgets/widgetModel";
 import {
     describeEmptyInputs,
@@ -188,11 +189,18 @@ function NodeEditor({
     // (notebookOutputBox).
     const inCell = notebook.on && !dashboardOn;
     const split = inCell && hasOutputPane && Boolean(code || grammar);
-    const effectiveTab = dashboardOn && hasOutputPane
-        ? "output"
-        : split && activeTab === "output"
-            ? resolveInitialEditorTab({ code, grammar, widgets: widgetsTab })
-            : activeTab;
+    // "Display as widget" (nodeControlsOnly): the Widgets pane alone, with no
+    // pills. The other panes stay mounted, hidden, as on any tab: a run goes
+    // through the editors, and its output lands where it always does.
+    const controlsOnly = useNodeControlsOnly() && widgetsTab;
+    // A tile displayed as a widget shows its controls, not its output.
+    const effectiveTab = controlsOnly
+        ? "widgets"
+        : dashboardOn && hasOutputPane
+            ? "output"
+            : split && activeTab === "output"
+                ? resolveInitialEditorTab({ code, grammar, widgets: widgetsTab })
+                : activeTab;
 
     const contentComponentBypass = useRef(false);
     // Set while a *load* is priming the widgets, so the marker round-trip it
@@ -284,6 +292,7 @@ function NodeEditor({
         setDefaultCode(defaultValue);
     }, [defaultValue]);
 
+
     const navigateProv = (code: string) => {
         setDefaultCode(code);
         sendCodeToWidgets(code);
@@ -295,9 +304,13 @@ function NodeEditor({
 
     // The panes sit on the node's white, as a notebook cell's do; a dashboard
     // tile keeps its gray panel.
+    // Separated widgets: no panel behind them, and nothing clips their boxes.
+    const separatedWidgets = useSeparatedWidgets() !== undefined;
     const tabContentStyle: CSS.Properties = inCell
         ? { backgroundColor: "#ffffff" }
-        : dashboardOn
+        : separatedWidgets
+            ? { height: "100%", background: "none", overflow: "visible" }
+            : dashboardOn
             ? {
                 height: "100%",
                 backgroundColor: "#f2f2f2",
@@ -349,7 +362,7 @@ function NodeEditor({
     // Node.css), or above the panes when the node has no header to hold them.
     const tabSlot = useNodeHeaderSlot();
     const pillsInHeader = tabSlot !== null;
-    const pills = !dashboardOn ? (
+    const pills = !dashboardOn && !controlsOnly ? (
         <Nav
             variant="pills"
             className="flex-column"
@@ -556,6 +569,7 @@ function NodeEditor({
                                             onSelectionsChange={updateSelections}
                                             views={views}
                                             nodeIds={nodeIds}
+                                            compact={controlsOnly}
                                         />
                                     </Tab.Pane>
                                 ) : null}

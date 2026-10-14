@@ -61,3 +61,24 @@
   text-decoration: underline;
   cursor: pointer;
 }
+
+/* One dataflow's scenarios, under its name. */
+.projectGroup + .projectGroup {
+  margin-top: 12px;
+}
+
+.projectGroupTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--curio-text-primary);
+  cursor: pointer;
+}
+
+.projectGroupCount {
+  font-weight: 600;
+  color: var(--curio-text-secondary);
+}

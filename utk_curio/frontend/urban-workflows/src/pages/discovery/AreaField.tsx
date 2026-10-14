@@ -170,7 +170,12 @@ function CoordinateBox({ box, onChange }: { box: Box | null; onChange: (box: Box
   const update = (index: number, next: string) => {
     const all = text.map((v, i) => (i === index ? next : v));
     setText(all);
-    const numbers = all.map((v) => (v.trim() === "" ? Number.NaN : Number(v)));
+    // A pasted coordinate often carries a typographic minus (U+2212) or a dash
+    // instead of "-", which Number() reads as nothing at all.
+    const numbers = all.map((v) => {
+      const text = v.trim().replace(/[\u2212\u2012\u2013\u2014]/g, "-");
+      return text === "" ? Number.NaN : Number(text);
+    });
     onChange(numbers.every(Number.isFinite) ? (numbers as Box) : null);
   };
   return (

@@ -14,8 +14,8 @@
     windows it if it is a GeoTIFF.
 ``curio_raster_calculate(operation, rasters, codes=None, absolute=False)``,
 ``curio_raster_statistics(raster, band=1, mask=None, mask_values=None, where=None)``
-    The Raster Calculator and Raster Statistics nodes' steps
-    (``util/raster_algebra.py``).
+    Raster algebra for a Python node: an operation over rasters, cell by cell,
+    and a raster's statistics (``util/raster_algebra.py``).
 ``curio_data_path("<id>")``
     The dataset's file, for a reader of your own (``pd.read_csv(..., sep=";")``,
     ``netCDF4.Dataset(...)``).
@@ -193,7 +193,7 @@ def listed_bundle_parts(path) -> list[tuple[dict, Path]]:
 
 def bundle_part(path: str, part: str, dataset_id: str) -> tuple[str, dict]:
     """``(file, entry)`` of the part of the bundle at *path* that *part* names:
-    by its file's name (``2020_2040_NbS.tif``) or by its label. A name the
+    by its file's name (``2020_2050_NbS.tif``) or by its label. A name the
     bundle does not list, a path among them, is refused with the files it has."""
     listed = listed_bundle_parts(path)
     wanted = str(part)
@@ -472,14 +472,14 @@ def install_catalog_helpers(
             return read_window(whole, bounds, raster_output_file, name=dataset_id)
 
     def curio_raster_calculate(operation, rasters, codes=None, absolute=False):
-        """The Raster Calculator's step: *operation* over *rasters*, cell by cell
+        """*operation* over *rasters*, cell by cell
         (``util/raster_algebra.calculate``)."""
         from utk_curio.sandbox.util.raster_algebra import calculate
 
         return calculate(operation, rasters, codes=codes, absolute=absolute, output_file=raster_output_file)
 
     def curio_raster_statistics(raster, band=1, mask=None, mask_values=None, where=None):
-        """The Raster Statistics node's step: a raster's mean, median, minimum,
+        """A raster's mean, median, minimum,
         maximum and count, nodata left out (``util/raster_algebra.statistics``)."""
         from utk_curio.sandbox.util.raster_algebra import statistics
 

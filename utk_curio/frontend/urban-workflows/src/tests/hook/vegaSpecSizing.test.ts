@@ -78,6 +78,26 @@ describe("applyContainerSizing on a spec that sized itself", () => {
     expect(spec.height).toBe(300);
   });
 
+  test("fits only the dimension that follows the container", () => {
+    const wide: Record<string, unknown> = { mark: "bar", width: 800 };
+    applyContainerSizing(wide);
+    expect(wide.autosize).toEqual({ type: "fit-y", contains: "padding", resize: true });
+
+    const tall: Record<string, unknown> = { mark: "bar", height: 300 };
+    applyContainerSizing(tall);
+    expect(tall.autosize).toEqual({ type: "fit-x", contains: "padding", resize: true });
+  });
+
+  test("a chart that sized both dimensions gets no fit, so a redraw cannot shrink it", () => {
+    // FloodRisk's former "People exposed over time": a 420x260 layer chart whose plot
+    // shrank to nothing, one hover at a time, under `fit` with `resize`.
+    const spec: Record<string, unknown> = { layer: [{ mark: "line" }], width: 420, height: 260 };
+    applyContainerSizing(spec);
+    expect(spec.width).toBe(420);
+    expect(spec.height).toBe(260);
+    expect(spec.autosize).toBeUndefined();
+  });
+
   test("keeps an explicit autosize", () => {
     const spec: Record<string, unknown> = { mark: "bar", autosize: "pad" };
     applyContainerSizing(spec);

@@ -42,7 +42,7 @@ No scenario ships with Curio. The catalog lists the scenarios in your own projec
 ## 2. Surfaces and workflows
 
 - **The `/catalog/scenarios` page** lists every scenario in your projects. Reach it from the **Scenario Catalog** tab. Search with **Search scenarios**, sort by **Recently edited**, **Name** or **Project**, and filter by **By project** or **By origin** (**Your dataflows** or **Examples**) in the left rail. Click a card to describe it in the right-hand drawer.
-- **The Scenario Catalog drawer**, on the canvas. Open it from the **Scenario** button in the top bar, and drag a card onto the canvas to bring the scenario into the open dataflow.
+- **The Scenario Catalog drawer**, on the canvas. Open it from the **Scenario** button in the top bar, and drag a card onto the canvas to bring the scenario into the open dataflow. Its cards are grouped under the name of the dataflow they come from.
 
 Each card shows the scenario's name in its color, its project, how many nodes it holds, its description, and its project's graph.
 
@@ -85,18 +85,19 @@ A chart or a Data Pool saves nothing itself, so its saved result is the output o
 A scenario dragged from the canvas drawer onto the canvas arrives as a copy, and editing either one leaves the other as it is:
 
 - **Its levers** are copied with new ids. Each copy names the node it was copied from.
-- **Its fixed context** arrives as data. Each node it reads becomes a **Data Loading** node that reads a copy of the output that node saved in its project, wired where the context was. The copy is this dataflow's own: running the source project again changes its own output, not the copy. A Parameter node of its context is copied with its value.
+- **Its upstream and downstream nodes** are copied too, where they were around it: every node outside the scenario that feeds it, on every path up (with the Parameter nodes whose tags they read), and every node it feeds, on every path down. A path stops at another scenario's node. A save stores these lists with the scenario (`upstream`, `downstream`). Each copy shows the output its project saved, before anything runs; one with no saved output runs again.
+- **Any other node of its fixed context** arrives as data. Each one becomes a **Data Loading** node that reads a copy of the output that node saved in its project, wired where the context was. The copy is this dataflow's own: running the source project again changes its own output, not the copy. A Parameter node of its context is copied with its value.
 - **Its outcomes** show the results its project saved, before anything runs.
 - **Packages** its nodes use are added to the dataflow, as **Add** in the Node Catalog adds one.
 - **The scenario** is collapsed where you dropped it, in its own color, and keeps its name and description.
 
-A second scenario of the same project, dragged into the same dataflow, reads the fixed context the first one brought, so the two share it as they did in their project.
+A second scenario of the same project, dragged into the same dataflow, reuses the upstream and downstream nodes the first one brought: it reads the same upstream nodes and feeds the same downstream ones, as the two did in their project.
 
-To use your own data instead, double-click the box, delete the Data Loading node, and connect your node to the lever it fed. **Run scenario** then runs your node first.
+To use your own data instead, double-click the box, delete the upstream node, and connect your node to the lever it fed. **Run scenario** then runs your node first.
 
 A drop is refused, and nothing is added, when:
 
-- a node of its fixed context has no saved output: run the scenario in its project and save it, then drag it again;
+- a node of its fixed context that is not upstream of it has no saved output: run the scenario in its project and save it, then drag it again;
 - its nodes need a package, a dataset or a model your account does not have, or a package your account cannot add; the message names it;
 - it brings a Parameter node whose name the dataflow already uses: rename yours, then drag it again.
 

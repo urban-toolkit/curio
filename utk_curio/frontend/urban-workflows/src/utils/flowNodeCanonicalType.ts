@@ -36,3 +36,22 @@ export function getUnversionedFlowNodeType(node: {
 }): string {
     return unversionedNodeType(getFlowNodeCanonicalType(node));
 }
+
+/**
+ * Node kinds that were removed, and the kind a saved dataflow's node of one
+ * opens as. Both were Python nodes with starter code, so their code runs
+ * unchanged as a Python node's. Kept in sync with `NAMESPACED_TO_LEGACY` in
+ * `execution/workflow_spec.py`.
+ */
+const REPLACED_NODE_TYPES: Readonly<Record<string, string>> = {
+    "curio.builtin/raster-calculator": "curio.builtin/computation-analysis",
+    "curio.builtin/raster-statistics": "curio.builtin/computation-analysis",
+};
+
+/** *nodeType*, or the kind it opens as if it was removed, its `@<major>` kept. */
+export function currentNodeType(nodeType: string): string {
+    const replacement = REPLACED_NODE_TYPES[unversionedNodeType(nodeType)];
+    if (replacement === undefined) return nodeType;
+    const major = /@\d+$/.exec(nodeType);
+    return replacement + (major ? major[0] : "");
+}

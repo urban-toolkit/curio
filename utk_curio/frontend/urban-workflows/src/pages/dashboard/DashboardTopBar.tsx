@@ -1,6 +1,5 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import type { NodePositionChange } from "reactflow";
 import clsx from "clsx";
 
 import { LEAVE_DASHBOARD, useLeaveGuard } from "../../hook/useLeaveGuard";
@@ -11,8 +10,6 @@ import { useToastContext } from "../../providers/ToastProvider";
 import { useUserContext } from "../../providers/UserProvider";
 import { isHostedGuest } from "../../components/apiSettings/useHostedGuest";
 import { dashboardRefusal } from "../../standalone/dashboardPayload";
-import { arrangedTilePositions } from "../../utils/dashboardLayout";
-import { scenarioDashboard } from "../../utils/scenarios/scenarioDashboard";
 import { dataflowPath } from "../../utils/shareLinks";
 import headerStyles from "../../components/layout/GlobalPageHeader.module.css";
 import styles from "./DashboardTopBar.module.css";
@@ -38,6 +35,19 @@ export function useCanEditLayout(): boolean {
   );
 }
 
+/**
+ * May this viewer run the dashboard's dataflow from the page?
+ *
+ * Whoever owns the open dataflow, a hosted guest included: a run from the
+ * dashboard saves nothing (`useInstallSave` never saves from it), so unlike
+ * moving tiles it needs no right to save. A visitor on another account's link
+ * (`viewerMode === "shared"`) does not run here.
+ */
+export function useCanRunDashboard(): boolean {
+  const { viewerMode, projectId } = useFlowContext();
+  return viewerMode === "owner" && !!projectId;
+}
+
 /** The dashboard's leave guard: the layout is unsaved work only while it is
  *  unlocked for editing. Shared by the top bar and the empty state. */
 export function useDashboardLeaveGuard() {
@@ -52,14 +62,22 @@ export function useDashboardLeaveGuard() {
  * the same product. What it puts in the bar is deliberately almost nothing,
  * because the page is the content: a way back to the dataflow, the share
  * links, and, for the owner, the controls that move tiles around. None of
- * the editor's menus are here. There is no palette to drop nodes from, nothing
- * to run, no catalogs, and no save status, because a dashboard is not edited
- * except by explicitly saving a layout.
- *
- * *onArranged* is told when Arrange by scenario has moved the tiles, so the
- * page can frame them again.
+ * the editor's menus are here. There is no palette to drop nodes from, no
+ * catalogs, and no save status, because a dashboard is not edited except by
+ * explicitly saving a layout. The owner's Run button is not in the bar: it is
+ * a tile among the others (DashboardRunTile), placed with Edit layout.
  */
-export function DashboardTopBar({ id, onArranged }: { id: string; onArranged?: () => void }) {
+export function DashboardTopBar({
+  id,
+  agentOpen,
+  onToggleAgent,
+}: {
+  id: string;
+  /** The agent panel is open (DashboardAgent). */
+  agentOpen?: boolean;
+  /** Opens or closes it; without it the bar offers no agent. */
+  onToggleAgent?: () => void;
+}) {
   const navigate = useNavigate();
   const { showToast } = useToastContext();
   const { workflowName } = useNodeActionsContext();
@@ -69,41 +87,11 @@ export function DashboardTopBar({ id, onArranged }: { id: string; onArranged?: (
     dashboardLocked,
     setDashboardLocked,
     saveCurrentProject,
-    nodes,
-    edges,
-    dashboardPins,
-    scenarios,
-    onNodesChange,
-    updateDataNode,
-    markDirty,
   } = useFlowContext();
   const canEditLayout = useCanEditLayout();
   // A page the server refused to build carries nothing to open the dataflow
   // with, so its link loads the dataflow as a page of its own.
   const refused = dashboardRefusal() !== null;
-
-  // Arrange by scenario (#662): offered while a pinned tile is in a scenario.
-  const byScenario = useMemo(
-    () => scenarioDashboard(nodes ?? [], edges ?? [], dashboardPins ?? {}, scenarios ?? []),
-    [nodes, edges, dashboardPins, scenarios],
-  );
-  const arrangeByScenario = () => {
-    if (!byScenario) return;
-    const positions = arrangedTilePositions(nodes, dashboardPins, byScenario.columns);
-    const moves: NodePositionChange[] = [...positions].map(([nodeId, position]) => ({
-      type: "position",
-      id: nodeId,
-      position,
-    }));
-    onNodesChange(moves);
-    // The slots a Save layout writes, as a drag records them.
-    for (const [nodeId, position] of positions) {
-      const live = nodes.find((node) => node.id === nodeId)?.data;
-      updateDataNode(nodeId, { ...live, dashboardX: position.x, dashboardY: position.y });
-    }
-    markDirty();
-    onArranged?.();
-  };
 
   const [shareOpen, setShareOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -156,8 +144,20 @@ export function DashboardTopBar({ id, onArranged }: { id: string; onArranged?: (
           open={shareOpen}
           onToggle={() => setShareOpen((open) => !open)}
           onClose={closeShare}
+          canPublish={canEditLayout}
         />
 
+        {onToggleAgent && (
+          <button
+            type="button"
+            className={clsx(headerStyles.barButton, agentOpen && headerStyles.barButtonActive)}
+            aria-pressed={!!agentOpen}
+            onClick={onToggleAgent}
+            data-testid="dashboard-agent-btn"
+          >
+            Agent
+          </button>
+        )}
         {canEditLayout && (
           <button
             type="button"
@@ -167,16 +167,6 @@ export function DashboardTopBar({ id, onArranged }: { id: string; onArranged?: (
             data-testid="edit-layout-btn"
           >
             {dashboardLocked ? "Edit layout" : "Editing layout"}
-          </button>
-        )}
-        {canEditLayout && !dashboardLocked && byScenario && (
-          <button
-            type="button"
-            className={headerStyles.barButton}
-            onClick={arrangeByScenario}
-            data-testid="arrange-by-scenario-btn"
-          >
-            Arrange by scenario
           </button>
         )}
         {canEditLayout && !dashboardLocked && (

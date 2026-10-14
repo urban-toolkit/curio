@@ -249,16 +249,6 @@ def _assert_chart_drew(page, node_id: str) -> None:
     assert_scenario_colors_drawn(page, node_id, [COLORS[BASELINE], COLORS[TWICE], COLORS[TOWERS]])
 
 
-def _set_compare(page, node_id: str) -> None:
-    """Turn the Vega-Lite node's Compare scenarios switch on, in Node settings."""
-    node_locator(page, node_id).get_by_role("button", name="Node settings", exact=False).first.click()
-    toggle = page.locator("[data-vega-compare-toggle]")
-    toggle.wait_for(state="visible", timeout=10000)
-    if not toggle.is_checked():
-        toggle.click()
-    page.get_by_role("button", name="Cancel", exact=True).click()
-
-
 _INPUT_ARTIFACT_JS = """(id) => {
     const node = window.__curio_reactFlow.getNodes().find((n) => n.id === id);
     const input = node && node.data && node.data.input;
@@ -482,7 +472,7 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
     shipped = {node["id"]: node for node in spec["dataflow"]["nodes"]}
     for node_id in (CHART, DIFFERENCE):
         assert by_id[node_id]["content"] == shipped[node_id]["content"], f"{node_id} rewrote its content"
-    assert by_id[CHART]["metadata"]["vegaCompare"] == {"enabled": True}
+    assert json.loads(by_id[CHART]["content"])["data"] == {"name": "inputs"}
     assert by_id[E_EDIT]["content"] == shipped[E_EDIT]["content"], f"{E_EDIT} rewrote its code"
     assert by_id[E_EDIT]["metadata"]["editFeatures"] == shipped[E_EDIT]["metadata"]["editFeatures"]
     scenarios = {scenario["id"]: scenario for scenario in saved["scenarios"]}
@@ -622,18 +612,12 @@ def test_both_scenarios_dragged_into_an_empty_project_read_one_context(
     frame_nodes(page, [copies[T_ROADS], chart])
     dismiss_toasts(page)
     connect_nodes(page, copies[T_ROADS], chart, target_handle="in_1")
-    _set_compare(page, chart)
 
-    # Each input is labelled by the scenario it came from.
-    frame_nodes(page, [chart])
-    strip = node_locator(page, chart).locator("[data-vega-compare-strip]")
-    strip.wait_for(state="visible", timeout=15000)
-    rows = strip.locator("[data-vega-compare-row]")
-    deadline = time.time() + 15
-    names = []
-    while time.time() < deadline:
-        names = [rows.nth(i).inner_text().replace("✓", "").strip() for i in range(rows.count())]
-        if names == ["Baseline", "Twice as tall"]:
-            break
-        page.wait_for_timeout(250)
-    assert names == ["Baseline", "Twice as tall"], f"the chart's inputs are labelled {names}"
+    # Its circles read the scenarios' roads in order: a spec over the stacked
+    # inputs (the dataset inputs) names each from its circle (__input__).
+    wired = page.evaluate(
+        """(id) => Object.fromEntries(window.__curio_reactFlow.getEdges()
+            .filter((e) => e.target === id).map((e) => [e.targetHandle, e.source]))""",
+        chart,
+    )
+    assert wired == {"in": copies[B_ROADS], "in_1": copies[T_ROADS]}, f"the chart's circles read {wired}"

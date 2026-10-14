@@ -2,7 +2,7 @@
 
 SCOUT's Quad Cities flood projection, ported from
 [SCOUT](https://github.com/urban-toolkit/scout)
-(`backend/models/flooding`). For a region and a projection period, each cell
+(`backend/models/flooding`). For a projection period, each cell of SCOUT's whole grid
 takes the projected flood depth with nature-based solutions (NbS) where its
 class is one of the chosen solutions, and the depth without NbS elsewhere.
 
@@ -10,7 +10,7 @@ class is one of the chosen solutions, and the depth without NbS elsewhere.
 
 | Canonical id | Label | Input | Output |
 |---|---|---|---|
-| `scout.flood/flood-projection` | Flood Projection | none | `(depth, metrics)`: one RASTER, the flood depth in metres, and SCOUT's metrics, a table of one row |
+| `scout.flood/flood-projection` | Flood Projection | none; optionally a RASTER of NbS classes on SCOUT's grid, which code that reads `input_0` can use in place of SCOUT's `nbs_classes.tif` (the FloodRisk example merges classes this way) | `(depth, metrics)`: one RASTER, the flood depth in metres, and SCOUT's metrics, a table of one row |
 
 ## Settings
 
@@ -18,15 +18,13 @@ The node's **Widgets** tab holds its settings:
 
 | Widget | Default | What it sets |
 |---|---|---|
-| Top-left corner (`topleft`) | 41.6242105, -90.6879323 | The region's north-west corner, SCOUT's example's |
-| Bottom-right corner (`bottomright`) | 41.4150156, -90.4252158 | The region's south-east corner, SCOUT's example's |
-| Projection period (`timeline`) | `2020 - 2040` | `2020 - 2040`, `2050 - 2080` or `2080 - 2100` |
-| Nature-based solutions (`use_NBS_classes`) | all six | The solutions in place: bioswales/infiltration trenches, permeable pavements, retention ponds, infiltration trench, bioswales, constructed wetlands |
+| Projection period (`timeline`) | `2020 - 2050` | `2020 - 2050`, `2050 - 2080` or `2080 - 2100` |
+| Nature-based solutions (`use_NBS_classes`) | all four | The solutions in place, one per kind: bioswales/infiltration trenches (SCOUT's classes 21, 52, 71 and 81), permeable pavements, retention ponds, constructed wetlands |
 
-The corners' defaults cover SCOUT's whole grid, 2592 by 2064 cells, as SCOUT's
-flood example does. Two Flood Projection nodes in one dataflow, as in two
-scenarios, share the region and the period by reading them from Parameter nodes (`[!! @timeline !!]` in place of
-`[!! timeline !!]`).
+The region is SCOUT's whole grid, 2592 by 2064 cells, as SCOUT's flood example
+runs it: its corners are fixed in the node's code. Two Flood Projection nodes in
+one dataflow, as in two scenarios, share the period by reading it from a
+Parameter node (`[!! @timeline !!]` in place of `[!! timeline !!]`).
 
 ## SCOUT's code
 
@@ -48,7 +46,7 @@ On every cell, and in its metrics, the
 port gives what SCOUT's function gives on SCOUT's own files
 (`utk_curio/backend/tests/test_packages/test_scout_flood.py`).
 
-The node hands SCOUT's function the corners as SCOUT's `"lon, lat"` text, the
+The node hands SCOUT's function the grid's corners as SCOUT's `"lon, lat"` text, the
 dataset's `data` folder as `data_dir`, a file `curio_output_file` gives
 for the raster, and returns the raster and the metrics SCOUT's function
 returns. No CSV is written.
@@ -72,8 +70,8 @@ builds it from SCOUT's `data_substitutes` folder.
   and `mean flood depth`, the numbers SCOUT computes (and SCOUT writes to its
   CSV).
 
-A node after it takes one part. The depth, for a map or a Raster Calculator's
-difference:
+A node after it takes one part. The depth, for a map or a raster difference
+(`curio_raster_calculate` in a Python node):
 
 ```python
 return input_0[0]
@@ -101,7 +99,7 @@ An Autark map draws the depth as `input_0`:
 
 The test dataflow [FloodScenarios](../../docs/examples/dataflows/FloodScenarios.json)
 compares SCOUT's two flood scenarios: no nature-based solution in place, and
-all six. A shared period and region, a map of each scenario's depth, a Raster
+all four. A shared period, a map of each scenario's depth, a Raster
 Calculator's absolute change in depth on a map, and a Vega-Lite table of each
 scenario's median and mean flood depth, SCOUT's flood example's metrics.
 

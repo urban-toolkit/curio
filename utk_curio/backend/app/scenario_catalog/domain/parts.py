@@ -119,6 +119,62 @@ def scenario_parts(scenario: dict, nodes: list[dict], edges: list[dict]) -> dict
     }
 
 
+def scenario_neighbors(scenario: dict, scenarios: list, nodes: list[dict], edges: list[dict]) -> dict:
+    """``{"upstream", "downstream"}`` for *scenario*, as node ids in dataflow
+    order: the nodes outside it that feed it, walking up every path, and the
+    nodes outside it that it feeds, walking down. A walk stops at another
+    scenario's node, so two scenarios never carry each other. Upstream also
+    holds the Parameter nodes whose shared tags it or its upstream names. A
+    node on a path from one of its nodes to another is upstream only.
+
+    Stored with the scenario on save (``normalize_spec_scenarios``) and dropped
+    with it from the Scenario Catalog. The twin of ``scenarioNeighbors`` in
+    ``src/utils/scenarios/scenarioParts.ts``; both read
+    ``scenarioNeighbors.cases.json``.
+    """
+    by_id = {n["id"]: n for n in nodes}
+    members = {i for i in scenario.get("nodes") or [] if i in by_id}
+    others = {
+        i
+        for s in scenarios
+        if isinstance(s, dict) and s.get("id") != scenario.get("id")
+        for i in s.get("nodes") or []
+    } - members
+    incoming: dict[str, list[str]] = {}
+    outgoing: dict[str, list[str]] = {}
+    for edge in edges:
+        if _is_interaction(edge) or edge["source"] not in by_id or edge["target"] not in by_id:
+            continue
+        incoming.setdefault(edge["target"], []).append(edge["source"])
+        outgoing.setdefault(edge["source"], []).append(edge["target"])
+
+    def walk(links: dict[str, list[str]]) -> set[str]:
+        found: set[str] = set()
+        queue = deque(members)
+        while queue:
+            for next_id in links.get(queue.popleft(), []):
+                if next_id in members or next_id in others or next_id in found:
+                    continue
+                found.add(next_id)
+                queue.append(next_id)
+        return found
+
+    upstream = walk(incoming)
+    named = {name for i in members | upstream for name in shared_names_in(node_code(by_id[i]))}
+    if named:
+        for node in nodes:
+            if node["id"] in members or node["id"] in others or not is_parameter_node(node):
+                continue
+            widgets = normalize_shared((node.get("metadata") or {}).get("widgets"))
+            if any(widget["name"] in named for widget in widgets):
+                upstream.add(node["id"])
+    downstream = walk(outgoing) - upstream
+    return {
+        "upstream": [n["id"] for n in nodes if n["id"] in upstream],
+        "downstream": [n["id"] for n in nodes if n["id"] in downstream],
+    }
+
+
 def producers_feeding(ids: list[str], nodes: list[dict], edges: list[dict]) -> set[str]:
     """The nodes that make the data reaching *ids*: walking up from each, the
     first node on every path that is not a pass-through. *ids* themselves are
@@ -173,6 +229,7 @@ def scenario_source_node_ids(spec: object) -> set[str]:
         if not isinstance(scenario, dict):
             continue
         parts = scenario_parts(scenario, nodes, edges)
-        for node_id in [*parts["context"], *parts["outcomes"]]:
+        near = scenario_neighbors(scenario, scenarios, nodes, edges)
+        for node_id in [*parts["context"], *parts["outcomes"], *near["upstream"], *near["downstream"]]:
             sources.update(saved_sources(node_id, nodes, edges))
     return sources

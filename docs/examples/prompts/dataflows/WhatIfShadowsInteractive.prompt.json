@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/WhatIfShadowsInteractive.json",
-    "sha256": "1c1815e18ef5093b371cfc8218d3e9d781265e467c7e417ccb8408bada8d7067",
+    "sha256": "cfe26343030f8ed2e349105d86059b9daf04faf193d4d3bb0e5d7b2970b26271",
     "walkthrough": null
   },
   "prompt": "Compare two scenarios of SCOUT's high-rise shadow case on the Chicago Loop. Load SCOUT's Loop buildings from the Data Catalog; in one scenario keep them as they are, in the other, edit the buildings in an interaction node whose edit log takes out the 15 buildings SCOUT's second scenario removes, by their building ids, so more can be picked on its map and removed, raised or lowered later and the results after it updated. In both, turn the buildings' heights into a zoom 16 height raster with SCOUT's building rasterizer, run SCOUT's Deep Umbra shadow model on it, with one season setting both scenarios share, set to summer, and take apart what it returns: the accumulated shadow raster, and SCOUT's own mean and median accumulated shadow over the ground. In each scenario, also draw the buildings in 3D coloured by height, the height raster, and the accumulated shadow raster, each on its own Autark map. Then chart the two scenarios' mean accumulated shadow on a Vega-Lite pie chart that compares the scenarios, each slice in its scenario's colour with its value beside it, and take the absolute difference of the two scenarios' shadow rasters, cell by cell, with a raster calculator, drawn on its own Autark map in reds. The rasterizer and the shadow model are not part of the standard node set, so whatever provides them needs installing first.",
@@ -20,6 +20,13 @@
   },
   "expected": {
     "nodes": [
+      {
+        "ref": "visualization5",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
       {
         "ref": "visualization1",
         "type": "curio.builtin/autk-grammar",
@@ -49,13 +56,6 @@
         "hasContent": true
       },
       {
-        "ref": "visualization5",
-        "type": "curio.builtin/autk-grammar",
-        "role": "visualization",
-        "executable": false,
-        "hasContent": true
-      },
-      {
         "ref": "visualization6",
         "type": "curio.builtin/autk-grammar",
         "role": "visualization",
@@ -67,6 +67,13 @@
         "type": "curio.builtin/autk-grammar",
         "role": "visualization",
         "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis5",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
         "hasContent": true
       },
       {
@@ -119,13 +126,6 @@
         "hasContent": false
       },
       {
-        "ref": "analysis5",
-        "type": "curio.builtin/raster-calculator",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
         "ref": "visualization8",
         "type": "curio.builtin/vis-vega",
         "role": "visualization",
@@ -176,6 +176,11 @@
       }
     ],
     "edges": [
+      {
+        "from": "analysis5",
+        "to": "visualization5",
+        "kind": "data"
+      },
       {
         "from": "analysis1",
         "to": "visualization1",
@@ -231,11 +236,6 @@
       {
         "from": "transform1",
         "to": "analysis9",
-        "kind": "data"
-      },
-      {
-        "from": "analysis5",
-        "to": "visualization5",
         "kind": "data"
       },
       {
@@ -426,5 +426,5 @@
     ],
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the export carries the dataset's identifier only. The dataset, and the Deep Umbra model the shadow nodes name, are SCOUT's (urban-toolkit/scout), used with the permission of its authors; the dataset carries no licence string."
   },
-  "notes": "Two scenarios over a shared context; the Towers removed scenario's buildings come from an Interaction node (curio.builtin/edit-features) whose edit log removes the 15 building_ids, in place of WhatIfShadows' Data Transformation: SCOUT's buildings and a season Parameter node, SCOUT's rasterizer, the height mosaic, and Deep Umbra in each scenario, whose (shadow, metrics) two Python Computation nodes take apart, and three Autark maps in each (the buildings in 3D, the height raster and the shadow raster). The chart of SCOUT's mean is a Vega-Lite pie comparing the scenarios (metadata.vegaCompare), reading the stacked scenarios table, and the change in shadow is a Raster Calculator taking the absolute difference of the two shadow rasters (curio_raster_calculate(\"subtract\", [input_1, input_0], absolute=True)) with an Autark node mapping it."
+  "notes": "Two scenarios over a shared context; the Towers removed scenario's buildings come from an Interaction node (curio.builtin/edit-features) whose edit log removes the 15 building_ids, in place of WhatIfShadows' Data Transformation: SCOUT's buildings and a season Parameter node, SCOUT's rasterizer, the height mosaic, and Deep Umbra in each scenario, whose (shadow, metrics) two Python Computation nodes take apart, and three Autark maps in each (the buildings in 3D, the height raster and the shadow raster). The chart of SCOUT's mean is a Vega-Lite pie comparing the scenarios (its spec reads its inputs stacked, the dataset inputs, and names each circle's scenario from __input__), reading its stacked inputs, and the change in shadow is a Python node taking the absolute difference of the two shadow rasters (curio_raster_calculate(\"subtract\", [input_1, input_0], absolute=True)) with an Autark node mapping it."
 }

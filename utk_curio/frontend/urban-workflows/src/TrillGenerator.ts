@@ -18,7 +18,6 @@ import { dataPoolToSpec } from "./utils/dataPoolSpec";
 import { normalizeWidgets } from "./utils/widgets/widgetModel";
 import { normalizeSelections } from "./utils/references/selectionTags";
 import { normalizeScenarios, type Scenario } from "./utils/scenarios/scenarioModel";
-import { normalizeVegaCompare } from "./utils/vegaCompare";
 import { normalizeEditFeatures } from "./utils/editFeatures/editFeatures";
 
 export class TrillGenerator {
@@ -231,6 +230,28 @@ export class TrillGenerator {
             if(typeof node.data.nodeHeight === "number")
                 trill_node.height = node.data.nodeHeight;
 
+            if(node.data.minimized === true)
+                trill_node.minimized = true;
+
+            if(node.data.controlsOnly === true)
+                trill_node.controlsOnly = true;
+
+            if(typeof node.data.controlsOnlyWidth === "number")
+                trill_node.controlsOnlyWidth = node.data.controlsOnlyWidth;
+
+            if(typeof node.data.controlsOnlyHeight === "number")
+                trill_node.controlsOnlyHeight = node.data.controlsOnlyHeight;
+
+            if(node.data.dashboardControlsOnly === true)
+                trill_node.dashboardControlsOnly = true;
+
+            if(node.data.dashboardSeparateWidgets === true)
+                trill_node.dashboardSeparateWidgets = true;
+
+            if(node.data.dashboardWidgetLayout && typeof node.data.dashboardWidgetLayout === "object"
+                && Object.keys(node.data.dashboardWidgetLayout).length > 0)
+                trill_node.dashboardWidgetLayout = node.data.dashboardWidgetLayout;
+
             if(node.data.dashboardPinned)
                 trill_node.dashboardPinned = true;
 
@@ -397,16 +418,6 @@ export class TrillGenerator {
                     trill_node.metadata = {};
 
                 trill_node.metadata.selections = selections;
-            }
-
-            // A Vega-Lite node comparing scenarios (utils/vegaCompare), only
-            // when its switch is on.
-            const vegaCompare = normalizeVegaCompare(node.data.vegaCompare);
-            if(vegaCompare != undefined){
-                if(trill_node.metadata == undefined)
-                    trill_node.metadata = {};
-
-                trill_node.metadata.vegaCompare = vegaCompare;
             }
 
             // #662: an Edit Features node's edit list, with the column that

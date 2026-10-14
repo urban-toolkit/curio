@@ -35,8 +35,11 @@ export function isMultiViewSpec(spec: Record<string, unknown> | null | undefined
  *
  * - multi-view: untouched.
  * - unit/layer: `width`/`height` become `"container"` **only** if the author
- *   did not declare them, and `autosize` is set to fit-with-resize so the view
- *   actually follows the container it is now sized against.
+ *   did not declare them, and `autosize` fits the container-sized dimensions,
+ *   with resize, so the view actually follows the container it is sized against.
+ *   Only those: `fit` with `resize` on a dimension the author fixed shrinks it
+ *   on every redraw, so a fixed-size layered chart lost its plot to the axes and
+ *   legend one hover at a time (FloodRisk's former "People exposed over time").
  */
 export function applyContainerSizing<T extends Record<string, unknown>>(spec: T): T {
   if (!spec || typeof spec !== "object") return spec;
@@ -48,11 +51,14 @@ export function applyContainerSizing<T extends Record<string, unknown>>(spec: T)
   if (spec.height === undefined) {
     (spec as Record<string, unknown>).height = "container";
   }
-  // Only meaningful once at least one dimension is "container"; harmless
-  // otherwise, and it is what makes the ResizeObserver's re-render take effect.
-  if (spec.autosize === undefined) {
+  // What makes the ResizeObserver's re-render take effect, for the dimensions
+  // that follow the container. None of them: the author sized the chart, and
+  // vega-lite's default (`pad`) keeps that size.
+  const fitsWidth = spec.width === "container";
+  const fitsHeight = spec.height === "container";
+  if (spec.autosize === undefined && (fitsWidth || fitsHeight)) {
     (spec as Record<string, unknown>).autosize = {
-      type: "fit",
+      type: fitsWidth && fitsHeight ? "fit" : fitsWidth ? "fit-x" : "fit-y",
       contains: "padding",
       resize: true,
     };

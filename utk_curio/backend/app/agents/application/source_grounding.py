@@ -279,11 +279,12 @@ PART_CALLS = ("curio_load_data", "curio_data_path")
 _PART_KEYWORD_RE = re.compile(r"\bpart\s*=\s*[fFrRbBuU]{0,2}$")
 #: ``curio_save_file("summary.csv")``, ``curio_save_folder("tiles")`` and
 #: ``curio_computed_path("tiles")`` name a file the dataflow keeps
-#: (datasets/domain/saved_files.py), not a path on disk; both scanners skip
-#: their argument.
-SAVED_FILE_CALLS = ("curio_save_file", "curio_save_folder", "curio_computed_path")
+#: (datasets/domain/saved_files.py), and ``curio_output_file("mosaic.vrt")`` a
+#: file the node writes in its own output folder, not a path on disk it
+#: reads; both scanners skip their argument.
+SAVED_FILE_CALLS = ("curio_save_file", "curio_save_folder", "curio_computed_path", "curio_output_file")
 _SAVED_FILE_CALL_RE = re.compile(
-    r"""\b(?:curio_save_file|curio_save_folder|curio_computed_path)\(\s*(["'])[^"'\n]{1,200}\1\s*\)"""
+    r"""\b(?:curio_save_file|curio_save_folder|curio_computed_path|curio_output_file)\(\s*(["'])[^"'\n]{1,200}\1\s*\)"""
 )
 
 

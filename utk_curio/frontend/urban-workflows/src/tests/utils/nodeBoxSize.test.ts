@@ -120,6 +120,22 @@ describe("resolveNodeBoxSize", () => {
         ).toEqual({ width: 640, height: 900 });
     });
 
+    test("a node saved minimized measures as its chip, whatever size it expands to", () => {
+        registerNode(descriptor("curio.builtin/spatial-join@1", {}));
+
+        expect(
+            resolveNodeBoxSize(
+                node("curio.builtin/spatial-join@1", { nodeWidth: 640, nodeHeight: 900, minimized: true }),
+            ),
+        ).toEqual({ width: 70, height: 40 });
+    });
+
+    test("a smaller minimum keeps a size the resize handle allowed under the node minimum", () => {
+        expect(clampNodeBox(180, 80, { width: 160, height: 60 })).toEqual({ width: 180, height: 80 });
+        expect(clampNodeBox(150, 50, { width: 160, height: 60 })).toEqual({ width: 525, height: 350 });
+        expect(clampNodeBox(180, 80)).toEqual({ width: 525, height: 350 });
+    });
+
     test("a sub-minimum size snaps to the DEFAULT, not to the minimum", () => {
         // The rule worth pinning: styles.tsx's mount effect reads
         // `nodeWidth < MIN_NODE_WIDTH` and then sets 525, not 200. Measuring such
@@ -187,9 +203,9 @@ describe("clampNodeBox", () => {
         );
         const widthAt = source.indexOf("const [currentNodeWidth, setCurrentNodeWidth]");
         const heightAt = source.indexOf("const [currentNodeHeight, setCurrentNodeHeight]");
-        const minimizedAt = source.indexOf("const [minimized, setMinimized]");
+        const minimizedAt = source.indexOf("const minimized = ");
         expect([widthAt, heightAt, minimizedAt].every((at) => at >= 0)).toBe(true);
-        expect(source.slice(widthAt, heightAt)).toContain("clampNodeBox(nodeWidth, nodeHeight).width");
-        expect(source.slice(heightAt, minimizedAt)).toContain("clampNodeBox(nodeWidth, nodeHeight).height");
+        expect(source.slice(widthAt, heightAt)).toContain("clampNodeBox(nodeWidth, nodeHeight, minBox).width");
+        expect(source.slice(heightAt, minimizedAt)).toContain("clampNodeBox(nodeWidth, nodeHeight, minBox).height");
     });
 });

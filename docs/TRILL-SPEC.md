@@ -99,11 +99,9 @@ ids of the nodes it descends from, oldest first, ending with the node it was
 copied from. Two nodes are the same lever in two scenarios when their ids and
 these lists meet.
 
-`metadata.vegaCompare` holds a `curio.builtin/vis-vega` node's Compare scenarios
-switch, `{"enabled": true}`, written only when it is on. Each input circle is then
-one scenario, labelled by the scenario its node belongs to, and the spec reads the
-inputs stacked as one table, `scenarios`, each row carrying `scenario`,
-`scenario_name`, `scenario_color` and `scenario_order`.
+`metadata.vegaCompare` was a `curio.builtin/vis-vega` node's Compare scenarios
+switch. It is no longer written and is ignored when read; a Vega-Lite spec reads all
+its inputs stacked as the dataset `inputs` and names its scenarios itself.
 
 `metadata.editFeatures` holds a `curio.builtin/edit-features` node's edit list,
 written only when it has one of its fields. `key` is the column that identifies a

@@ -1,0 +1,679 @@
+{
+  "dataflow": {
+    "categories": {
+      "complexity": [
+        "Beginner"
+      ]
+    },
+    "nodes": [
+      {
+        "id": "96594ceb-c648-5ad6-8f70-c8d9a6d70edf",
+        "type": "curio.builtin/parameter",
+        "x": 100,
+        "y": 190,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "The projection period both scenarios' Flood Projections map, as FloodScenarios shares its period.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "timeline",
+              "type": "choice",
+              "label": "Map period",
+              "default": "2020 - 2050",
+              "options": {
+                "choices": [
+                  "2020 - 2050",
+                  "2050 - 2080",
+                  "2080 - 2100"
+                ],
+                "display": "radio"
+              }
+            }
+          ],
+          "packageTemplateLabel": "Map period"
+        },
+        "title": "Map period",
+        "dashboardPinned": true,
+        "dashboardControlsOnly": true,
+        "dashboardWidth": 420,
+        "dashboardHeight": 150
+      },
+      {
+        "id": "d699ef00-3b47-52bd-b773-43fc8e55b0e3",
+        "type": "scout.flood/flood-projection",
+        "x": 650,
+        "y": 2650,
+        "content": "\"\"\"Average depth by period: for every period ticked in its Projection periods widget, the\naverage flood depth over the riverside tracts' land (the water itself left\nout, dry land as 0 m), weighted by area, with no nature-based solution and\nwith all four: SCOUT's simulate_flood_projection run for each, on SCOUT's\nwhole grid, as the Flood Projection nodes run it for the map period. Input:\nnone. The riverside tracts are Harmonize's computed dataset, the water NHD's\nwaterways. One row per period and scenario.\n\"\"\"\nimport hashlib\nimport json\nimport os\n\nimport geopandas as gpd\nimport numpy as np\nimport pandas as pd\nimport rasterio\nfrom rasterio.features import rasterize\nfrom scout_flood.flood_simulation import simulate_flood_projection\n\n\ndef depth_of(raster):\n    \"\"\"The depth in metres, 0 where SCOUT's raster holds no data (dry land).\"\"\"\n    depth = raster.read(1).astype(\"float64\")\n    depth[~np.isfinite(depth) | (depth < 0)] = 0.0\n    return depth\n\n\ndef cell_areas(raster):\n    \"\"\"Each cell's area in km2: SCOUT's grid is in degrees, so a cell narrows\n    with its latitude.\"\"\"\n    t = raster.transform\n    lat = t.f + t.e * (np.arange(raster.height) + 0.5)\n    rows = (abs(t.a) * 111.32 * np.cos(np.radians(lat))) * (abs(t.e) * 110.574)\n    return np.broadcast_to(rows[:, None], (raster.height, raster.width))\n\n\ndef water_on(raster, water):\n    \"\"\"Where the grid's cells are water: rivers, lakes and reservoirs.\"\"\"\n    return rasterize(((g, 1) for g in water.geometry), out_shape=(raster.height, raster.width),\n                     transform=raster.transform, fill=0, dtype=\"uint8\").astype(bool)\n\n\nORDER = [\"2020 - 2050\", \"2050 - 2080\", \"2080 - 2100\"]\n#: Each scenario's name and the solutions in place.\nSCENARIOS = {\"No NbS\": [], \"All NbS\": [\"Bioswales/Infiltration trenches\", \"Permeable pavements\", \"Retention ponds\", \"Constructed wetlands\"]}\n#: SCOUT's whole grid.\ntopleft, bottomright = {\"lat\": 41.6242105, \"lon\": -90.6879323}, {\"lat\": 41.4150156, \"lon\": -90.4252158}\n\nperiods = [p for p in ORDER if p in [!! periods !!]]\nrasters = os.path.dirname(curio_data_path(\"data.scout.quad-cities-flood\"))\ntracts = gpd.read_file(curio_computed_path(\"riverside-tracts\"))\nwater = curio_load_data(\"data.usgs.quad-cities-waterways\").to_crs(\"EPSG:4326\")\n\nrows, land = [], None\nfor period in periods:\n    for name, chosen in SCENARIOS.items():\n        # Named by its settings: every node's output files share one folder.\n        settings = json.dumps([topleft, bottomright, period, sorted(chosen)], sort_keys=True)\n        path = curio_output_file(f\"period-flood-{hashlib.sha256(settings.encode()).hexdigest()[:16]}.tif\")\n        simulate_flood_projection(\n            f\"{topleft['lon']!r}, {topleft['lat']!r}\",\n            f\"{bottomright['lon']!r}, {bottomright['lat']!r}\",\n            \"flood\",\n            year=period,\n            use_NBS_classes=chosen,\n            data_dir=rasters,\n            output_path=path,\n        )\n        with rasterio.open(path) as grid:\n            if land is None:\n                area = cell_areas(grid)\n                inside = rasterize(((g, 1) for g in tracts.geometry), out_shape=(grid.height, grid.width),\n                                   transform=grid.transform, fill=0, dtype=\"uint8\").astype(bool)\n                land = inside & ~water_on(grid, water)\n                land_km2 = float(area[land].sum())\n            depth = depth_of(grid)\n        rows.append({\n            \"period\": period,\n            \"scenario_name\": name,\n            \"mean_depth_m\": round(float((depth * area)[land].sum()) / land_km2, 4),\n            \"land_km2\": round(land_km2, 3),\n        })\nreturn pd.DataFrame(rows)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "For each period ticked in its Projection periods widget, run SCOUT's flood projection with no nature-based solution and with all four, and average each depth over the riverside tracts' land, weighted by area, the rivers, lakes and reservoirs left out and dry land as 0 m. Return one row per period and scenario.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "periods",
+              "type": "checkbox-group",
+              "label": "Projection periods",
+              "default": [
+                "2020 - 2050",
+                "2050 - 2080",
+                "2080 - 2100"
+              ],
+              "options": {
+                "choices": [
+                  "2020 - 2050",
+                  "2050 - 2080",
+                  "2080 - 2100"
+                ]
+              }
+            }
+          ],
+          "packageTemplateLabel": "Average depth by period"
+        },
+        "title": "Average depth by period",
+        "dashboardPinned": true,
+        "dashboardControlsOnly": true,
+        "dashboardWidth": 420,
+        "dashboardHeight": 150
+      },
+      {
+        "id": "7a8b0b8d-4ccd-5082-ab1b-ae79515b45c7",
+        "type": "curio.builtin/data-loading",
+        "x": 100,
+        "y": 700,
+        "content": "# How these census tracts were acquired, to do it again:\n# 1. Set up an LLM in API Settings; the Dataset Finder answers with it.\n# 2. Agent Catalog (canvas top bar) -> Dataset Finder -> Add to project, and drag\n#    it onto this node, then open its chat.\n# 3. Ask: \"Census tracts with CDC's Social Vulnerability Index (SVI) 2020 for\n#    Scott County, Iowa and Rock Island and Henry Counties, Illinois.\"\n# 4. Under External sources it finds CDC/ATSDR's \"CDC/ATSDR Social\n#    Vulnerability Index 2020 USA\" on ArcGIS Hub (item\n#    3827cb5593174c79b35119611299279b; layer 2 holds the tracts). The whole\n#    layer is about 268 MB, every tract in the country, so either:\n#    - Download it (Downloadable) and keep the tracts that meet SCOUT's flood\n#      grid in a node after this one, or\n#    - let it hand off to the Node Builder, which writes a loader asking the\n#      layer only for the three counties: STCNTY IN ('19163','17161','17073').\n# 5. Keep the tracts that meet SCOUT's flood grid, West -90.6879323,\n#    South 41.4150156, East -90.4252158, North 41.6242105: 86 tracts, CDC's\n#    column names, -999 missing.\n# 6. Shipped: that query and that box, run by scripts/build_flood_risk_datasets.py,\n#    saved as data.cdc.quad-cities-svi-tracts, so every account loads it by the same id.\ndf = curio_load_data(\"data.cdc.quad-cities-svi-tracts\")\nreturn df\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the census tracts SCOUT's flood grid meets, with CDC's Social Vulnerability Index.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "SVI census tracts"
+        },
+        "title": "SVI census tracts"
+      },
+      {
+        "id": "99458954-1898-5240-a975-9dda7c36000f",
+        "type": "curio.builtin/computation-analysis",
+        "x": 650,
+        "y": 850,
+        "content": "# Harmonize: CDC's tracts into the shape the depth measures read, kept to the\n# riverside tracts: those that touch the Mississippi's channel. input_0 is the\n# tracts as CDC publishes them; the waterways are NHD's, loaded here, whose\n# stream and river areas (FTYPE 460) are the Mississippi's channel.\n# Output: the riverside tracts with an SVI percentile, readable names, in\n# EPSG:4326, saved as this dataflow's computed dataset \"riverside-tracts\", which\n# the depth nodes read with curio_computed_path, and returned for the maps.\nimport numpy as np\n\ntracts = input_0\nwaterways = curio_load_data(\"data.usgs.quad-cities-waterways\")\n\n# CDC: readable names, its -999 as missing, the tract's FIPS code as text.\nt = tracts.to_crs(\"EPSG:4326\").replace(-999, np.nan)\nt = t.rename(columns={\n    \"FIPS\": \"tract_fips\", \"LOCATION\": \"tract\", \"COUNTY\": \"county\", \"STATE\": \"state\",\n    \"E_TOTPOP\": \"people\", \"E_HU\": \"housing_units\", \"E_AGE65\": \"people_65_plus\",\n    \"E_DISABL\": \"people_disabled\", \"E_NOVEH\": \"households_no_vehicle\",\n    \"E_POV150\": \"people_below_150_poverty\", \"RPL_THEMES\": \"svi\", \"RPL_THEME1\": \"svi_socioeconomic\",\n    \"RPL_THEME2\": \"svi_household\", \"RPL_THEME3\": \"svi_minority_language\", \"RPL_THEME4\": \"svi_housing_transport\",\n})\nt[\"tract_fips\"] = t[\"tract_fips\"].astype(str).str.zfill(11)\nt = t[[\"tract_fips\", \"tract\", \"county\", \"state\", \"people\", \"housing_units\", \"people_65_plus\", \"people_disabled\",\n       \"households_no_vehicle\", \"people_below_150_poverty\", \"svi\", \"svi_socioeconomic\", \"svi_household\",\n       \"svi_minority_language\", \"svi_housing_transport\", \"geometry\"]].reset_index(drop=True)\n\n# The riverside tracts: those the Mississippi's channel touches, with an SVI\n# percentile.\nriver = waterways[waterways[\"FTYPE\"] == 460].to_crs(\"EPSG:4326\").union_all()\nriverside = t[t.intersects(river) & t[\"svi\"].notna()].reset_index(drop=True)\n# One category for every tract, so the maps draw them in one strong color.\nriverside[\"tract_group\"] = \"Riverside tract\"\nriverside.to_file(curio_save_file(\"riverside-tracts.geojson\"), driver=\"GeoJSON\")\nreturn riverside\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Harmonize CDC's SVI tracts and keep the riverside ones: rename CDC's columns, read -999 as missing, keep the tract's FIPS code as text, and keep the tracts the Mississippi's channel (NHD's stream and river areas, FTYPE 460, loaded with curio_load_data) touches that have an SVI percentile. Save them as the computed dataset riverside-tracts, which the depth nodes read, and return them, in EPSG:4326, for the maps.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Harmonize tracts and waterways"
+        },
+        "title": "Harmonize tracts and waterways"
+      },
+      {
+        "id": "fa7c4989-d581-5d1b-9e52-a1465d337b6c",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1200,
+        "y": 1150,
+        "content": "# Tract borders: each riverside tract's outline as a band WIDTH_M wide, for the\n# maps to draw over the depth in one strong color. Autark draws a line 3 m\n# wide, under a pixel on a map of the whole grid, and a polygon's fill with its\n# outline, which would tint the depth under it. The riverside tracts are\n# Harmonize's computed dataset.\nimport geopandas as gpd\n\nWIDTH_M = 60\n\ntracts = gpd.read_file(curio_computed_path(\"riverside-tracts\"))\nborders = tracts[[\"tract_fips\", \"tract\", \"tract_group\", \"geometry\"]].copy()\nmetres = borders.estimate_utm_crs()\nborders[\"geometry\"] = borders.to_crs(metres).boundary.buffer(WIDTH_M / 2).to_crs(borders.crs)\nreturn borders.reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Read the riverside tracts Harmonize saved and turn each outline into a band 60 m wide, for the maps to draw over the depth and the waterways.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Tract borders"
+        },
+        "title": "Tract borders"
+      },
+      {
+        "id": "34d76a4d-e505-5e24-97f6-108fdba8275a",
+        "type": "curio.builtin/autk-grammar",
+        "x": 2350,
+        "y": 1000,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"svi\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"legendTitle\": \"Social vulnerability (SVI percentile)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map the riverside tracts, coloured by their social vulnerability (SVI percentile).",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Social vulnerability map"
+        },
+        "title": "Social vulnerability map",
+        "dashboardPinned": true,
+        "dashboardWidth": 470,
+        "dashboardHeight": 380
+      },
+      {
+        "id": "d6a4f6ee-d89f-5051-9c53-fcf6d6e1b7bd",
+        "type": "scout.flood/flood-projection",
+        "x": 650,
+        "y": 0,
+        "content": "\"\"\"Flood Projection: SCOUT's Quad Cities flood projection, simulate_flood_projection.\n\nInput: none. SCOUT's rasters are the Data Catalog's data.scout.quad-cities-flood.\nOutput: (depth, metrics).\n- depth: the flood depth in metres, one raster in EPSG:4326 on SCOUT's grid: a\n  cell takes the depth with nature-based solutions (NbS) where its class is\n  one of the chosen solutions, and the depth without NbS elsewhere. An Autark\n  map draws it as input_0, band band_1.\n- metrics: SCOUT's metrics, the median and mean flood depth, one row (SCOUT\n  writes them as a CSV; here its function returns them).\nA node after it takes either part, input_0[0] or input_0[1].\nThe region is SCOUT's whole grid, as SCOUT's flood example runs it. The\nWidgets tab sets the projection period and the solutions. Two scenarios that\nshare the period read it from a Parameter node instead, by putting @timeline\nin the code's reference to that widget.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nimport hashlib\nimport json\nimport os\n\nimport rasterio\nfrom scout_flood.flood_simulation import simulate_flood_projection\n\n# SCOUT's whole grid, its flood example's corners.\ntopleft, bottomright = {\"lat\": 41.6242105, \"lon\": -90.6879323}, {\"lat\": 41.4150156, \"lon\": -90.4252158}\nperiod, chosen = [!! @timeline !!], [!! use_NBS_classes !!]\n# SCOUT's rasters, beside the bundle's bundle.json.\nrasters = os.path.dirname(curio_data_path(\"data.scout.quad-cities-flood\"))\n# The raster SCOUT's code writes is the node's output. Its name, one per run's\n# settings, keeps two scenarios from writing the same file.\nsettings = json.dumps([topleft, bottomright, period, sorted(chosen)], sort_keys=True)\ndepth = curio_output_file(f\"flood-{hashlib.sha256(settings.encode()).hexdigest()[:16]}.tif\")\nmetrics = simulate_flood_projection(\n    f\"{topleft['lon']!r}, {topleft['lat']!r}\",\n    f\"{bottomright['lon']!r}, {bottomright['lat']!r}\",\n    \"flood\",\n    year=period,\n    use_NBS_classes=chosen,\n    data_dir=rasters,\n    output_path=depth,\n)\nreturn rasterio.open(depth), metrics\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Project the flood depth with no nature-based solution in place, for the Map period, on SCOUT's whole grid: the scout.flood package's own code.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "use_NBS_classes",
+              "type": "checkbox-group",
+              "label": "Nature-based solutions",
+              "default": [
+                "Bioswales/Infiltration trenches",
+                "Permeable pavements",
+                "Retention ponds",
+                "Constructed wetlands"
+              ],
+              "options": {
+                "choices": [
+                  "Bioswales/Infiltration trenches",
+                  "Permeable pavements",
+                  "Retention ponds",
+                  "Constructed wetlands"
+                ]
+              },
+              "value": []
+            }
+          ],
+          "packageTemplateLabel": "Flood Projection - No NbS"
+        },
+        "title": "Flood Projection - No NbS",
+        "dashboardPinned": true,
+        "dashboardControlsOnly": true,
+        "dashboardWidth": 460,
+        "dashboardHeight": 330
+      },
+      {
+        "id": "ff986609-33a1-582b-b40b-bc0f9dc1d56c",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1200,
+        "y": 400,
+        "content": "# The mapped depth only on the riverside tracts: no data elsewhere, so the\n# depth map shows those tracts alone. input_0 is this scenario's Flood\n# Projection (its first item the depth for the mapped period); the riverside\n# tracts are Harmonize's computed dataset.\nimport os\n\nimport geopandas as gpd\nimport numpy as np\nimport rasterio\nfrom rasterio.features import rasterize\n\ndepth = input_0[0]\ntracts = gpd.read_file(curio_computed_path(\"riverside-tracts\"))\ninside = rasterize(((g, 1) for g in tracts.geometry), out_shape=(depth.height, depth.width),\n                   transform=depth.transform, fill=0, dtype=\"uint8\").astype(bool)\n# SCOUT's no-data cells and the cells outside those tracts: no value.\ncells = depth.read(1, masked=True).astype(\"float64\").filled(np.nan).astype(\"float32\")\ncells[~inside] = np.nan\n# Named after this scenario's depth (SCOUT's flood-<hash>.tif): every node's\n# output files share one folder, so a fixed name would be overwritten by the\n# other scenario's.\npath = curio_output_file(\"riverside_\" + os.path.basename(depth.name))\nwith rasterio.open(path, \"w\", **{**depth.profile, \"dtype\": \"float32\", \"nodata\": np.nan}) as out:\n    out.write(cells, 1)\nreturn rasterio.open(path)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the mapped period's flood depth only on the riverside tracts, no data elsewhere, No NbS.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Depth on riverside tracts - No NbS"
+        },
+        "title": "Depth on riverside tracts - No NbS"
+      },
+      {
+        "id": "9c8ba6e5-1485-5ae6-944b-713e6d16c174",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1750,
+        "y": -450,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateBlues\",\n        \"colorMapRange\": [\n          0,\n          11\n        ],\n        \"legendTitle\": \"Flood depth (m)\"\n      },\n      {\n        \"dataRef\": \"[!! input_1 !!]\",\n        \"getFnv\": \"tract_group\",\n        \"colorMapInterpolator\": \"schemeSet1\",\n        \"legend\": false\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map the flood depth for the mapped period on the riverside tracts, the tracts' borders over it, No NbS.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Flood depth map - No NbS"
+        },
+        "title": "Flood depth map - No NbS",
+        "dashboardPinned": true,
+        "dashboardWidth": 470,
+        "dashboardHeight": 380
+      },
+      {
+        "id": "0bb2db86-b7ed-591a-8b61-488d1943b525",
+        "type": "curio.builtin/computation-analysis",
+        "x": 2350,
+        "y": 1500,
+        "content": "# Tract depth: each tract's average flood depth for the mapped period, over\n# its land (the water itself left out, dry land as 0 m), as polygons for a\n# choropleth, with the tract's SVI percentile for the scatter against it: the\n# riverside tracts. input_0 is this scenario's Flood Projection (its first\n# item the depth for the mapped period). The riverside tracts are Harmonize's\n# computed dataset, the water NHD's waterways.\nimport geopandas as gpd\nimport numpy as np\nfrom rasterio.features import rasterize\n\n\ndef depth_of(raster):\n    \"\"\"The depth in metres, 0 where SCOUT's raster holds no data (dry land).\"\"\"\n    depth = raster.read(1).astype(\"float64\")\n    depth[~np.isfinite(depth) | (depth < 0)] = 0.0\n    return depth\n\n\ndef cell_areas(raster):\n    \"\"\"Each cell's area in km2: SCOUT's grid is in degrees, so a cell narrows\n    with its latitude.\"\"\"\n    t = raster.transform\n    lat = t.f + t.e * (np.arange(raster.height) + 0.5)\n    rows = (abs(t.a) * 111.32 * np.cos(np.radians(lat))) * (abs(t.e) * 110.574)\n    return np.broadcast_to(rows[:, None], (raster.height, raster.width))\n\n\ndef water_on(raster, water):\n    \"\"\"Where the grid's cells are water: rivers, lakes and reservoirs.\"\"\"\n    return rasterize(((g, 1) for g in water.geometry), out_shape=(raster.height, raster.width),\n                     transform=raster.transform, fill=0, dtype=\"uint8\").astype(bool)\n\n\ngrid = input_0[0]\ntracts = gpd.read_file(curio_computed_path(\"riverside-tracts\"))\nwater = curio_load_data(\"data.usgs.quad-cities-waterways\").to_crs(\"EPSG:4326\")\ndepth = depth_of(grid)\narea = cell_areas(grid)\n# Each cell's tract, 1 to the number of tracts, 0 outside every tract.\ntract_of = rasterize(((g, i + 1) for i, g in enumerate(tracts.geometry)), out_shape=(grid.height, grid.width),\n                     transform=grid.transform, fill=0, dtype=\"int32\")\nland = (tract_of > 0) & ~water_on(grid, water)\n\n# Area-weighted mean depth of each tract's land; no value for a tract with none.\nweighted = np.bincount(tract_of[land], weights=(depth * area)[land], minlength=len(tracts) + 1)\nland_km2 = np.bincount(tract_of[land], weights=area[land], minlength=len(tracts) + 1)\nmean = np.full(len(tracts) + 1, np.nan)\nmean[land_km2 > 0] = weighted[land_km2 > 0] / land_km2[land_km2 > 0]\n\nresult = tracts[[\"tract_fips\", \"tract\", \"svi\", \"tract_group\", \"geometry\"]].copy()\nresult[\"mean_depth_m\"] = mean[1:].round(3)\nreturn result[result[\"mean_depth_m\"].notna()].reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Average the flood depth over each tract's land for the mapped period, water left out and dry land as 0 m, for the riverside tracts. Return them as polygons with their SVI percentile and average depth, No NbS.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Tract depth - No NbS"
+        },
+        "title": "Tract depth - No NbS"
+      },
+      {
+        "id": "8d85788e-6522-5f2a-99f2-b57cd26d3815",
+        "type": "curio.builtin/autk-grammar",
+        "x": 2900,
+        "y": 1000,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"mean_depth_m\",\n        \"colorMapInterpolator\": \"interpolateBlues\",\n        \"colorMapRange\": [\n          0,\n          5\n        ],\n        \"legendTitle\": \"Average flood depth per tract (m)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map the average flood depth of each riverside tract, for the mapped period, No NbS.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Average depth per tract - No NbS"
+        },
+        "title": "Average depth per tract - No NbS",
+        "dashboardPinned": true,
+        "dashboardWidth": 470,
+        "dashboardHeight": 380
+      },
+      {
+        "id": "205db28f-a16e-513a-a8b7-866e2357625d",
+        "type": "scout.flood/flood-projection",
+        "x": 650,
+        "y": 1300,
+        "content": "\"\"\"Flood Projection: SCOUT's Quad Cities flood projection, simulate_flood_projection.\n\nInput: none. SCOUT's rasters are the Data Catalog's data.scout.quad-cities-flood.\nOutput: (depth, metrics).\n- depth: the flood depth in metres, one raster in EPSG:4326 on SCOUT's grid: a\n  cell takes the depth with nature-based solutions (NbS) where its class is\n  one of the chosen solutions, and the depth without NbS elsewhere. An Autark\n  map draws it as input_0, band band_1.\n- metrics: SCOUT's metrics, the median and mean flood depth, one row (SCOUT\n  writes them as a CSV; here its function returns them).\nA node after it takes either part, input_0[0] or input_0[1].\nThe region is SCOUT's whole grid, as SCOUT's flood example runs it. The\nWidgets tab sets the projection period and the solutions. Two scenarios that\nshare the period read it from a Parameter node instead, by putting @timeline\nin the code's reference to that widget.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nimport hashlib\nimport json\nimport os\n\nimport rasterio\nfrom scout_flood.flood_simulation import simulate_flood_projection\n\n# SCOUT's whole grid, its flood example's corners.\ntopleft, bottomright = {\"lat\": 41.6242105, \"lon\": -90.6879323}, {\"lat\": 41.4150156, \"lon\": -90.4252158}\nperiod, chosen = [!! @timeline !!], [!! use_NBS_classes !!]\n# SCOUT's rasters, beside the bundle's bundle.json.\nrasters = os.path.dirname(curio_data_path(\"data.scout.quad-cities-flood\"))\n# The raster SCOUT's code writes is the node's output. Its name, one per run's\n# settings, keeps two scenarios from writing the same file.\nsettings = json.dumps([topleft, bottomright, period, sorted(chosen)], sort_keys=True)\ndepth = curio_output_file(f\"flood-{hashlib.sha256(settings.encode()).hexdigest()[:16]}.tif\")\nmetrics = simulate_flood_projection(\n    f\"{topleft['lon']!r}, {topleft['lat']!r}\",\n    f\"{bottomright['lon']!r}, {bottomright['lat']!r}\",\n    \"flood\",\n    year=period,\n    use_NBS_classes=chosen,\n    data_dir=rasters,\n    output_path=depth,\n)\nreturn rasterio.open(depth), metrics\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Project the flood depth with all four kinds of nature-based solution in place, for the Map period, on SCOUT's whole grid: the scout.flood package's own code.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "use_NBS_classes",
+              "type": "checkbox-group",
+              "label": "Nature-based solutions",
+              "default": [
+                "Bioswales/Infiltration trenches",
+                "Permeable pavements",
+                "Retention ponds",
+                "Constructed wetlands"
+              ],
+              "options": {
+                "choices": [
+                  "Bioswales/Infiltration trenches",
+                  "Permeable pavements",
+                  "Retention ponds",
+                  "Constructed wetlands"
+                ]
+              },
+              "value": [
+                "Bioswales/Infiltration trenches",
+                "Permeable pavements",
+                "Retention ponds",
+                "Constructed wetlands"
+              ]
+            }
+          ],
+          "packageTemplateLabel": "Flood Projection - All NbS"
+        },
+        "title": "Flood Projection - All NbS",
+        "dashboardPinned": true,
+        "dashboardControlsOnly": true,
+        "dashboardWidth": 460,
+        "dashboardHeight": 330
+      },
+      {
+        "id": "9bdba037-9a0e-582d-99c2-f5982b95400a",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1200,
+        "y": 1900,
+        "content": "# The mapped depth only on the riverside tracts: no data elsewhere, so the\n# depth map shows those tracts alone. input_0 is this scenario's Flood\n# Projection (its first item the depth for the mapped period); the riverside\n# tracts are Harmonize's computed dataset.\nimport os\n\nimport geopandas as gpd\nimport numpy as np\nimport rasterio\nfrom rasterio.features import rasterize\n\ndepth = input_0[0]\ntracts = gpd.read_file(curio_computed_path(\"riverside-tracts\"))\ninside = rasterize(((g, 1) for g in tracts.geometry), out_shape=(depth.height, depth.width),\n                   transform=depth.transform, fill=0, dtype=\"uint8\").astype(bool)\n# SCOUT's no-data cells and the cells outside those tracts: no value.\ncells = depth.read(1, masked=True).astype(\"float64\").filled(np.nan).astype(\"float32\")\ncells[~inside] = np.nan\n# Named after this scenario's depth (SCOUT's flood-<hash>.tif): every node's\n# output files share one folder, so a fixed name would be overwritten by the\n# other scenario's.\npath = curio_output_file(\"riverside_\" + os.path.basename(depth.name))\nwith rasterio.open(path, \"w\", **{**depth.profile, \"dtype\": \"float32\", \"nodata\": np.nan}) as out:\n    out.write(cells, 1)\nreturn rasterio.open(path)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the mapped period's flood depth only on the riverside tracts, no data elsewhere, All NbS.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Depth on riverside tracts - All NbS"
+        },
+        "title": "Depth on riverside tracts - All NbS"
+      },
+      {
+        "id": "5b67cb57-7989-52bf-8a0d-111736e0c37d",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1750,
+        "y": 1750,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateBlues\",\n        \"colorMapRange\": [\n          0,\n          11\n        ],\n        \"legendTitle\": \"Flood depth (m)\"\n      },\n      {\n        \"dataRef\": \"[!! input_1 !!]\",\n        \"getFnv\": \"tract_group\",\n        \"colorMapInterpolator\": \"schemeSet1\",\n        \"legend\": false\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map the flood depth for the mapped period on the riverside tracts, the tracts' borders over it, All NbS.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Flood depth map - All NbS"
+        },
+        "title": "Flood depth map - All NbS",
+        "dashboardPinned": true,
+        "dashboardWidth": 470,
+        "dashboardHeight": 380
+      },
+      {
+        "id": "e85cb489-240f-5b92-ab09-1bb554faacae",
+        "type": "curio.builtin/computation-analysis",
+        "x": 2350,
+        "y": 1950,
+        "content": "# Tract depth: each tract's average flood depth for the mapped period, over\n# its land (the water itself left out, dry land as 0 m), as polygons for a\n# choropleth, with the tract's SVI percentile for the scatter against it: the\n# riverside tracts. input_0 is this scenario's Flood Projection (its first\n# item the depth for the mapped period). The riverside tracts are Harmonize's\n# computed dataset, the water NHD's waterways.\nimport geopandas as gpd\nimport numpy as np\nfrom rasterio.features import rasterize\n\n\ndef depth_of(raster):\n    \"\"\"The depth in metres, 0 where SCOUT's raster holds no data (dry land).\"\"\"\n    depth = raster.read(1).astype(\"float64\")\n    depth[~np.isfinite(depth) | (depth < 0)] = 0.0\n    return depth\n\n\ndef cell_areas(raster):\n    \"\"\"Each cell's area in km2: SCOUT's grid is in degrees, so a cell narrows\n    with its latitude.\"\"\"\n    t = raster.transform\n    lat = t.f + t.e * (np.arange(raster.height) + 0.5)\n    rows = (abs(t.a) * 111.32 * np.cos(np.radians(lat))) * (abs(t.e) * 110.574)\n    return np.broadcast_to(rows[:, None], (raster.height, raster.width))\n\n\ndef water_on(raster, water):\n    \"\"\"Where the grid's cells are water: rivers, lakes and reservoirs.\"\"\"\n    return rasterize(((g, 1) for g in water.geometry), out_shape=(raster.height, raster.width),\n                     transform=raster.transform, fill=0, dtype=\"uint8\").astype(bool)\n\n\ngrid = input_0[0]\ntracts = gpd.read_file(curio_computed_path(\"riverside-tracts\"))\nwater = curio_load_data(\"data.usgs.quad-cities-waterways\").to_crs(\"EPSG:4326\")\ndepth = depth_of(grid)\narea = cell_areas(grid)\n# Each cell's tract, 1 to the number of tracts, 0 outside every tract.\ntract_of = rasterize(((g, i + 1) for i, g in enumerate(tracts.geometry)), out_shape=(grid.height, grid.width),\n                     transform=grid.transform, fill=0, dtype=\"int32\")\nland = (tract_of > 0) & ~water_on(grid, water)\n\n# Area-weighted mean depth of each tract's land; no value for a tract with none.\nweighted = np.bincount(tract_of[land], weights=(depth * area)[land], minlength=len(tracts) + 1)\nland_km2 = np.bincount(tract_of[land], weights=area[land], minlength=len(tracts) + 1)\nmean = np.full(len(tracts) + 1, np.nan)\nmean[land_km2 > 0] = weighted[land_km2 > 0] / land_km2[land_km2 > 0]\n\nresult = tracts[[\"tract_fips\", \"tract\", \"svi\", \"tract_group\", \"geometry\"]].copy()\nresult[\"mean_depth_m\"] = mean[1:].round(3)\nreturn result[result[\"mean_depth_m\"].notna()].reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Average the flood depth over each tract's land for the mapped period, water left out and dry land as 0 m, for the riverside tracts. Return them as polygons with their SVI percentile and average depth, All NbS.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Tract depth - All NbS"
+        },
+        "title": "Tract depth - All NbS"
+      },
+      {
+        "id": "5e132cdf-cda1-5b38-9299-441304a02487",
+        "type": "curio.builtin/autk-grammar",
+        "x": 2900,
+        "y": 1450,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"mean_depth_m\",\n        \"colorMapInterpolator\": \"interpolateBlues\",\n        \"colorMapRange\": [\n          0,\n          5\n        ],\n        \"legendTitle\": \"Average flood depth per tract (m)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map the average flood depth of each riverside tract, for the mapped period, All NbS.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Average depth per tract - All NbS"
+        },
+        "title": "Average depth per tract - All NbS",
+        "dashboardPinned": true,
+        "dashboardWidth": 470,
+        "dashboardHeight": 380
+      },
+      {
+        "id": "3d92c0da-2494-51c2-ad15-d4779a056956",
+        "type": "curio.builtin/computation-analysis",
+        "x": 2350,
+        "y": 450,
+        "content": "# The size of the change in depth from No NbS (input_0) to All NbS (input_1),\n# cell by cell, for the period both maps draw: 0 where they agree. Each input\n# is its scenario's depth on the riverside tracts, no data elsewhere.\nreturn curio_raster_calculate(\"subtract\", [input_1, input_0], absolute=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the absolute change in flood depth from No NbS to All NbS on the riverside tracts.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Flood depth change"
+        },
+        "title": "Flood depth change"
+      },
+      {
+        "id": "025f3c6e-aad6-5058-b913-1226220f84a8",
+        "type": "curio.builtin/autk-grammar",
+        "x": 2900,
+        "y": 450,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateBlues\",\n        \"legendTitle\": \"Flood depth change (m)\"\n      },\n      {\n        \"dataRef\": \"[!! input_1 !!]\",\n        \"getFnv\": \"tract_group\",\n        \"colorMapInterpolator\": \"schemeSet1\",\n        \"legend\": false\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map how much the flood depth changes on the riverside tracts with every nature-based solution in place, the tracts' borders over it.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Flood depth change map"
+        },
+        "title": "Flood depth change map",
+        "dashboardPinned": true,
+        "dashboardWidth": 470,
+        "dashboardHeight": 380
+      },
+      {
+        "id": "57ec4ab1-9606-5351-9f8c-c33882674d8b",
+        "type": "curio.builtin/computation-analysis",
+        "x": 2350,
+        "y": 2400,
+        "content": "# Tract depth change: how much All NbS lowers each riverside tract's average\n# depth, No NbS's minus All NbS's, for the period both maps draw. input_0 is\n# the No NbS tract depths, input_1 the All NbS ones.\nnone, all_ = input_0, input_1\nresult = none.rename(columns={\"mean_depth_m\": \"depth_no_nbs_m\"})\nresult = result.merge(all_[[\"tract_fips\", \"mean_depth_m\"]].rename(columns={\"mean_depth_m\": \"depth_all_nbs_m\"}),\n                      on=\"tract_fips\")\nresult[\"lowered_m\"] = (result[\"depth_no_nbs_m\"] - result[\"depth_all_nbs_m\"]).round(3)\nreturn result\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "For each riverside tract, take how much All NbS lowers its average flood depth: No NbS's average depth minus All NbS's.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Tract depth change"
+        },
+        "title": "Tract depth change"
+      },
+      {
+        "id": "2728195f-4e8c-5f19-9ab6-57c1ae31beeb",
+        "type": "curio.builtin/autk-grammar",
+        "x": 2900,
+        "y": 1900,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"lowered_m\",\n        \"colorMapInterpolator\": \"interpolateBlues\",\n        \"legendTitle\": \"Average depth lowered by NbS (m)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map how much All NbS lowers each riverside tract's average flood depth.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Average depth change per tract"
+        },
+        "title": "Average depth change per tract",
+        "dashboardPinned": true,
+        "dashboardWidth": 470,
+        "dashboardHeight": 380
+      },
+      {
+        "id": "465cfa71-bc54-56cd-ad10-ec1f2cbec436",
+        "type": "curio.builtin/vis-vega",
+        "x": 3500,
+        "y": -200,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"title\": {\n    \"text\": \"Average flood depth, with and without NbS\",\n    \"subtitle\": \"Land of the riverside tracts. Label: how much All NbS lowers it.\"\n  },\n  \"width\": 440,\n  \"height\": 280,\n  \"transform\": [\n    {\n      \"calculate\": \"datum.scenario_name == 'No NbS' ? datum.mean_depth_m : 0\",\n      \"as\": \"none_m\"\n    },\n    {\n      \"joinaggregate\": [\n        {\n          \"op\": \"sum\",\n          \"field\": \"none_m\",\n          \"as\": \"none_m\"\n        }\n      ],\n      \"groupby\": [\n        \"period\"\n      ]\n    },\n    {\n      \"calculate\": \"datum.none_m - datum.mean_depth_m\",\n      \"as\": \"lowered_m\"\n    },\n    {\n      \"calculate\": \"datum.scenario_name == 'All NbS' && datum.none_m > 0 ? '\\u2212' + format(datum.lowered_m, '.2f') + ' m (\\u2212' + format(datum.lowered_m / datum.none_m, '.0%') + ')' : ''\",\n      \"as\": \"less\"\n    }\n  ],\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"bar\"\n      },\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"period\",\n          \"type\": \"nominal\",\n          \"title\": null,\n          \"axis\": {\n            \"labelAngle\": 0\n          }\n        },\n        \"xOffset\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"sort\": [\n            \"No NbS\",\n            \"All NbS\"\n          ]\n        },\n        \"y\": {\n          \"field\": \"mean_depth_m\",\n          \"type\": \"quantitative\",\n          \"title\": \"Average flood depth (m)\"\n        },\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"title\": \"Scenario\",\n          \"scale\": {\n            \"domain\": [\n              \"No NbS\",\n              \"All NbS\"\n            ],\n            \"range\": [\n              \"#e76f51\",\n              \"#2a9d8f\"\n            ]\n          }\n        },\n        \"tooltip\": [\n          {\n            \"field\": \"period\",\n            \"title\": \"Period\"\n          },\n          {\n            \"field\": \"scenario_name\",\n            \"title\": \"Scenario\"\n          },\n          {\n            \"field\": \"mean_depth_m\",\n            \"title\": \"Average depth (m)\",\n            \"format\": \".2f\"\n          },\n          {\n            \"field\": \"lowered_m\",\n            \"title\": \"Lower than No NbS (m)\",\n            \"format\": \".2f\"\n          }\n        ]\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"text\",\n        \"dy\": -7,\n        \"fontWeight\": \"bold\",\n        \"fontSize\": 11\n      },\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"period\",\n          \"type\": \"nominal\",\n          \"title\": null,\n          \"axis\": {\n            \"labelAngle\": 0\n          }\n        },\n        \"xOffset\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"sort\": [\n            \"No NbS\",\n            \"All NbS\"\n          ]\n        },\n        \"y\": {\n          \"field\": \"mean_depth_m\",\n          \"type\": \"quantitative\",\n          \"title\": \"Average flood depth (m)\"\n        },\n        \"text\": {\n          \"field\": \"less\"\n        }\n      }\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Compare the average flood depth of each compared period, with and without NbS, and how much NbS lowers it.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Average flood depth, with and without NbS"
+        },
+        "title": "Average flood depth, with and without NbS",
+        "dashboardPinned": true
+      },
+      {
+        "id": "3c0e5421-6a4c-54e0-b13b-32095b094501",
+        "type": "curio.builtin/vis-vega",
+        "x": 3500,
+        "y": 600,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"inputs\"\n  },\n  \"transform\": [\n    {\n      \"calculate\": \"['No NbS', 'All NbS'][datum.__input__]\",\n      \"as\": \"scenario_name\"\n    },\n    {\n      \"filter\": \"isValid(datum.svi) && isValid(datum.mean_depth_m)\"\n    },\n    {\n      \"calculate\": \"replace(replace(datum.tract, /, (Scott|Rock Island|Henry) County.*$/, ''), 'Census Tract ', 'Tract ')\",\n      \"as\": \"tract_short\"\n    }\n  ],\n  \"title\": {\n    \"text\": \"Social vulnerability against average flood depth\",\n    \"subtitle\": \"Each riverside tract: its depth with No NbS and All NbS, joined.\"\n  },\n  \"width\": 520,\n  \"height\": 320,\n  \"layer\": [\n    {\n      \"transform\": [\n        {\n          \"pivot\": \"scenario_name\",\n          \"value\": \"mean_depth_m\",\n          \"groupby\": [\n            \"tract_fips\",\n            \"tract_short\",\n            \"svi\"\n          ]\n        },\n        {\n          \"calculate\": \"datum['No NbS'] - datum['All NbS']\",\n          \"as\": \"lowered\"\n        }\n      ],\n      \"params\": [\n        {\n          \"name\": \"hover\",\n          \"select\": {\n            \"type\": \"point\",\n            \"fields\": [\n              \"tract_fips\"\n            ],\n            \"on\": \"pointerover\",\n            \"clear\": \"pointerout\"\n          }\n        }\n      ],\n      \"mark\": {\n        \"type\": \"rule\",\n        \"strokeWidth\": 2\n      },\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"svi\",\n          \"type\": \"quantitative\",\n          \"title\": \"Social vulnerability (SVI percentile)\",\n          \"scale\": {\n            \"domain\": [\n              0,\n              1\n            ]\n          }\n        },\n        \"y\": {\n          \"field\": \"No NbS\",\n          \"type\": \"quantitative\"\n        },\n        \"y2\": {\n          \"field\": \"All NbS\"\n        },\n        \"color\": {\n          \"condition\": {\n            \"param\": \"hover\",\n            \"empty\": false,\n            \"value\": \"#333\"\n          },\n          \"value\": \"#bbb\"\n        },\n        \"tooltip\": [\n          {\n            \"field\": \"tract_short\",\n            \"title\": \"Tract\"\n          },\n          {\n            \"field\": \"svi\",\n            \"title\": \"SVI percentile\",\n            \"format\": \".2f\"\n          },\n          {\n            \"field\": \"No NbS\",\n            \"title\": \"Average depth, No NbS (m)\",\n            \"format\": \".2f\"\n          },\n          {\n            \"field\": \"All NbS\",\n            \"title\": \"Average depth, All NbS (m)\",\n            \"format\": \".2f\"\n          },\n          {\n            \"field\": \"lowered\",\n            \"title\": \"Lowered by NbS (m)\",\n            \"format\": \".2f\"\n          }\n        ]\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"circle\",\n        \"size\": 70,\n        \"opacity\": 0.9,\n        \"stroke\": \"#fff\",\n        \"strokeWidth\": 0.5\n      },\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"svi\",\n          \"type\": \"quantitative\",\n          \"title\": \"Social vulnerability (SVI percentile)\",\n          \"scale\": {\n            \"domain\": [\n              0,\n              1\n            ]\n          }\n        },\n        \"y\": {\n          \"field\": \"mean_depth_m\",\n          \"type\": \"quantitative\",\n          \"title\": \"Average flood depth over the tract's land (m)\"\n        },\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"title\": \"Scenario\",\n          \"scale\": {\n            \"domain\": [\n              \"No NbS\",\n              \"All NbS\"\n            ],\n            \"range\": [\n              \"#e76f51\",\n              \"#2a9d8f\"\n            ]\n          }\n        },\n        \"tooltip\": [\n          {\n            \"field\": \"tract_short\",\n            \"title\": \"Tract\"\n          },\n          {\n            \"field\": \"scenario_name\",\n            \"title\": \"Scenario\"\n          },\n          {\n            \"field\": \"svi\",\n            \"title\": \"SVI percentile\",\n            \"format\": \".2f\"\n          },\n          {\n            \"field\": \"mean_depth_m\",\n            \"title\": \"Average depth (m)\",\n            \"format\": \".2f\"\n          }\n        ]\n      }\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Show each tract's social vulnerability against its average flood depth with and without NbS, the two joined per tract, so what NbS changes reads at each tract's vulnerability.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Social vulnerability against average flood depth"
+        },
+        "title": "Social vulnerability against average flood depth",
+        "dashboardPinned": true
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-7a8b0b8d-4ccd-5082-ab1b-ae79515b45c7out-99458954-1898-5240-a975-9dda7c36000fin",
+        "source": "7a8b0b8d-4ccd-5082-ab1b-ae79515b45c7",
+        "target": "99458954-1898-5240-a975-9dda7c36000f",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-99458954-1898-5240-a975-9dda7c36000fout-34d76a4d-e505-5e24-97f6-108fdba8275ain",
+        "source": "99458954-1898-5240-a975-9dda7c36000f",
+        "target": "34d76a4d-e505-5e24-97f6-108fdba8275a",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-d6a4f6ee-d89f-5051-9c53-fcf6d6e1b7bdout-ff986609-33a1-582b-b40b-bc0f9dc1d56cin",
+        "source": "d6a4f6ee-d89f-5051-9c53-fcf6d6e1b7bd",
+        "target": "ff986609-33a1-582b-b40b-bc0f9dc1d56c",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-ff986609-33a1-582b-b40b-bc0f9dc1d56cout-9c8ba6e5-1485-5ae6-944b-713e6d16c174in",
+        "source": "ff986609-33a1-582b-b40b-bc0f9dc1d56c",
+        "target": "9c8ba6e5-1485-5ae6-944b-713e6d16c174",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-fa7c4989-d581-5d1b-9e52-a1465d337b6cout-9c8ba6e5-1485-5ae6-944b-713e6d16c174in_1",
+        "source": "fa7c4989-d581-5d1b-9e52-a1465d337b6c",
+        "target": "9c8ba6e5-1485-5ae6-944b-713e6d16c174",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-d6a4f6ee-d89f-5051-9c53-fcf6d6e1b7bdout-0bb2db86-b7ed-591a-8b61-488d1943b525in",
+        "source": "d6a4f6ee-d89f-5051-9c53-fcf6d6e1b7bd",
+        "target": "0bb2db86-b7ed-591a-8b61-488d1943b525",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-0bb2db86-b7ed-591a-8b61-488d1943b525out-8d85788e-6522-5f2a-99f2-b57cd26d3815in",
+        "source": "0bb2db86-b7ed-591a-8b61-488d1943b525",
+        "target": "8d85788e-6522-5f2a-99f2-b57cd26d3815",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-205db28f-a16e-513a-a8b7-866e2357625dout-9bdba037-9a0e-582d-99c2-f5982b95400ain",
+        "source": "205db28f-a16e-513a-a8b7-866e2357625d",
+        "target": "9bdba037-9a0e-582d-99c2-f5982b95400a",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-9bdba037-9a0e-582d-99c2-f5982b95400aout-5b67cb57-7989-52bf-8a0d-111736e0c37din",
+        "source": "9bdba037-9a0e-582d-99c2-f5982b95400a",
+        "target": "5b67cb57-7989-52bf-8a0d-111736e0c37d",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-fa7c4989-d581-5d1b-9e52-a1465d337b6cout-5b67cb57-7989-52bf-8a0d-111736e0c37din_1",
+        "source": "fa7c4989-d581-5d1b-9e52-a1465d337b6c",
+        "target": "5b67cb57-7989-52bf-8a0d-111736e0c37d",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-205db28f-a16e-513a-a8b7-866e2357625dout-e85cb489-240f-5b92-ab09-1bb554faacaein",
+        "source": "205db28f-a16e-513a-a8b7-866e2357625d",
+        "target": "e85cb489-240f-5b92-ab09-1bb554faacae",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-e85cb489-240f-5b92-ab09-1bb554faacaeout-5e132cdf-cda1-5b38-9299-441304a02487in",
+        "source": "e85cb489-240f-5b92-ab09-1bb554faacae",
+        "target": "5e132cdf-cda1-5b38-9299-441304a02487",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-ff986609-33a1-582b-b40b-bc0f9dc1d56cout-3d92c0da-2494-51c2-ad15-d4779a056956in",
+        "source": "ff986609-33a1-582b-b40b-bc0f9dc1d56c",
+        "target": "3d92c0da-2494-51c2-ad15-d4779a056956",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-9bdba037-9a0e-582d-99c2-f5982b95400aout-3d92c0da-2494-51c2-ad15-d4779a056956in_1",
+        "source": "9bdba037-9a0e-582d-99c2-f5982b95400a",
+        "target": "3d92c0da-2494-51c2-ad15-d4779a056956",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-3d92c0da-2494-51c2-ad15-d4779a056956out-025f3c6e-aad6-5058-b913-1226220f84a8in",
+        "source": "3d92c0da-2494-51c2-ad15-d4779a056956",
+        "target": "025f3c6e-aad6-5058-b913-1226220f84a8",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-fa7c4989-d581-5d1b-9e52-a1465d337b6cout-025f3c6e-aad6-5058-b913-1226220f84a8in_1",
+        "source": "fa7c4989-d581-5d1b-9e52-a1465d337b6c",
+        "target": "025f3c6e-aad6-5058-b913-1226220f84a8",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-0bb2db86-b7ed-591a-8b61-488d1943b525out-57ec4ab1-9606-5351-9f8c-c33882674d8bin",
+        "source": "0bb2db86-b7ed-591a-8b61-488d1943b525",
+        "target": "57ec4ab1-9606-5351-9f8c-c33882674d8b",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-e85cb489-240f-5b92-ab09-1bb554faacaeout-57ec4ab1-9606-5351-9f8c-c33882674d8bin_1",
+        "source": "e85cb489-240f-5b92-ab09-1bb554faacae",
+        "target": "57ec4ab1-9606-5351-9f8c-c33882674d8b",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-57ec4ab1-9606-5351-9f8c-c33882674d8bout-2728195f-4e8c-5f19-9ab6-57c1ae31beebin",
+        "source": "57ec4ab1-9606-5351-9f8c-c33882674d8b",
+        "target": "2728195f-4e8c-5f19-9ab6-57c1ae31beeb",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-d699ef00-3b47-52bd-b773-43fc8e55b0e3out-465cfa71-bc54-56cd-ad10-ec1f2cbec436in",
+        "source": "d699ef00-3b47-52bd-b773-43fc8e55b0e3",
+        "target": "465cfa71-bc54-56cd-ad10-ec1f2cbec436",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-0bb2db86-b7ed-591a-8b61-488d1943b525out-3c0e5421-6a4c-54e0-b13b-32095b094501in",
+        "source": "0bb2db86-b7ed-591a-8b61-488d1943b525",
+        "target": "3c0e5421-6a4c-54e0-b13b-32095b094501",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-e85cb489-240f-5b92-ab09-1bb554faacaeout-3c0e5421-6a4c-54e0-b13b-32095b094501in_1",
+        "source": "e85cb489-240f-5b92-ab09-1bb554faacae",
+        "target": "3c0e5421-6a4c-54e0-b13b-32095b094501",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      }
+    ],
+    "scenarios": [
+      {
+        "id": "no-nbs",
+        "name": "No NbS",
+        "color": "#e76f51",
+        "nodes": [
+          "d6a4f6ee-d89f-5051-9c53-fcf6d6e1b7bd",
+          "ff986609-33a1-582b-b40b-bc0f9dc1d56c",
+          "9c8ba6e5-1485-5ae6-944b-713e6d16c174",
+          "0bb2db86-b7ed-591a-8b61-488d1943b525",
+          "8d85788e-6522-5f2a-99f2-b57cd26d3815"
+        ]
+      },
+      {
+        "id": "all-nbs",
+        "name": "All NbS",
+        "color": "#2a9d8f",
+        "nodes": [
+          "205db28f-a16e-513a-a8b7-866e2357625d",
+          "9bdba037-9a0e-582d-99c2-f5982b95400a",
+          "5b67cb57-7989-52bf-8a0d-111736e0c37d",
+          "e85cb489-240f-5b92-ab09-1bb554faacae",
+          "5e132cdf-cda1-5b38-9299-441304a02487"
+        ]
+      }
+    ],
+    "packages": [
+      "scout.flood@1"
+    ],
+    "datasets": [
+      {
+        "datasetId": "data.cdc.quad-cities-svi-tracts",
+        "dirName": "data.cdc.quad-cities-svi-tracts@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-12T00:00:00Z"
+      },
+      {
+        "datasetId": "data.usgs.quad-cities-waterways",
+        "dirName": "data.usgs.quad-cities-waterways@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-12T00:00:00Z"
+      },
+      {
+        "datasetId": "data.scout.quad-cities-flood",
+        "dirName": "data.scout.quad-cities-flood@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-12T00:00:00Z"
+      }
+    ],
+    "name": "FloodRisk",
+    "task": "",
+    "timestamp": 1791763200000,
+    "provenance_id": "FloodRisk"
+  }
+}

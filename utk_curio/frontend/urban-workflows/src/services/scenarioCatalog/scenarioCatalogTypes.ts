@@ -102,10 +102,17 @@ export interface ScenarioCopyPlan {
   scenario: { id: string; name: string; color: string; description: string };
   project: { id: string; name: string };
   levers: string[];
+  /** The nodes outside it that feed it and that it feeds, copied with it. */
+  upstream: string[];
+  downstream: string[];
+  /** The context nodes that are not upstream. */
   context: ScenarioCopyContext[];
   /** Each outcome, with the levers whose saved outputs it shows. */
   outcomes: { nodeId: string; label: string; sources: string[] }[];
-  /** The levers and the Parameter nodes of the context, and the edges into the levers. */
+  /** The upstream and downstream nodes whose saved outputs arrive with their copies. */
+  saved: string[];
+  /** The levers, upstream and downstream nodes and the Parameter nodes of the
+   * context, and the edges into all of them. */
   dataflow: { nodes: SpecNodeShape[]; edges: SpecEdgeShape[] };
   /** Packages the target project gets. */
   packages: string[];
@@ -149,6 +156,26 @@ export function sortScenarios(items: ScenarioRow[], mode: ScenarioSortMode): Sce
   }
   // Newest project first; a project's scenarios keep their own order.
   return rows.sort((a, b) => b.project.updatedAt.localeCompare(a.project.updatedAt));
+}
+
+/** The scenarios of one dataflow, as the catalog drawer lists them under its name. */
+export interface ScenarioGroup {
+  project: ScenarioProjectRef;
+  items: ScenarioRow[];
+}
+
+/**
+ * *items* under their dataflows: one group per project, in the order its
+ * first scenario comes, each keeping its scenarios' order.
+ */
+export function groupScenariosByProject(items: readonly ScenarioRow[]): ScenarioGroup[] {
+  const groups = new Map<string, ScenarioGroup>();
+  for (const row of items) {
+    const group = groups.get(row.project.id);
+    if (group) group.items.push(row);
+    else groups.set(row.project.id, { project: row.project, items: [row] });
+  }
+  return [...groups.values()];
 }
 
 /** The address of a scenario's details over the Scenario Catalog page. */

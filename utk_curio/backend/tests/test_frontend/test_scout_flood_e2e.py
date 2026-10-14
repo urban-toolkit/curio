@@ -11,7 +11,7 @@ Vega-Lite node comparing the scenarios shows SCOUT's metrics in a table. Run All
 drives the whole path:
 
 1. Both Flood Projections read the Data Catalog's flood rasters for the region
-   and the period (2020 - 2040) the Parameter nodes hold, and the nodes after
+   and the period (2020 - 2050) the Parameter nodes hold, and the nodes after
    them take the depth and SCOUT's metrics.
 2. The difference is a 2592 by 2064 cell raster in EPSG:4326, on SCOUT's grid,
    whose cells are the size of SCOUT's depth with all NbS minus its depth
@@ -62,7 +62,6 @@ if TYPE_CHECKING:
 DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "FloodScenarios.json"
 PROJECTION_TYPE = "scout.flood/flood-projection"
 PYTHON_TYPE = "curio.builtin/computation-analysis"
-CALCULATOR_TYPE = "curio.builtin/raster-calculator"
 MAP_TYPE = "curio.builtin/autk-grammar"
 VEGA_TYPE = "curio.builtin/vis-vega"
 COLORS = {"no-nbs": "#e76f51", "all-nbs": "#2a9d8f"}
@@ -71,7 +70,7 @@ CELL = 0.00010133941049058334
 ORIGIN = (-90.6879323, 41.6242105)
 WIDTH, HEIGHT = 2592, 2064
 
-#: SCOUT's median flood depth in 2020 - 2040, without NbS and with every NbS
+#: SCOUT's median flood depth in 2020 - 2050, without NbS and with every NbS
 #: (``PINS`` in ``test_packages/test_scout_flood.py``).
 MEDIANS = [7.163970947265625, 4.900075276692708]
 
@@ -110,22 +109,23 @@ def test_two_flood_scenarios_are_mapped_and_charted(
     require_owner_view(page)
     for node in spec["dataflow"]["nodes"]:
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
-    calculator = _one(spec, CALCULATOR_TYPE)["id"]
+    # The absolute difference: a Python node calling curio_raster_calculate.
+    calculator = _one(spec, PYTHON_TYPE, title="Flood depth change")["id"]
     change_map = _one(spec, MAP_TYPE, title="Flood depth change map")["id"]
     table = _one(spec, VEGA_TYPE)["id"]
     steps = [(node["id"], node["type"]) for node in spec["dataflow"]["nodes"]
-             if node["type"] in (PROJECTION_TYPE, PYTHON_TYPE)]
+             if node["type"] in (PROJECTION_TYPE, PYTHON_TYPE) and node["id"] != calculator]
     assert len(steps) == 6, steps
 
     # 1. Run All: both scenarios project SCOUT's flood for the shared region and period.
     run_all_and_wait(page, timeout_ms=300000)
-    for node_id, node_type in [*steps, (calculator, CALCULATOR_TYPE)]:
+    for node_id, node_type in [*steps, (calculator, PYTHON_TYPE)]:
         status = wait_for_node_settled(page, node_id, node_type=node_type, timeout_ms=120000)
         assert status == "done", f"{node_type} did not run: {read_node_error_text(node_locator(page, node_id))}"
 
     # 2. The absolute difference, on SCOUT's grid, mapped.
     artifact = page.evaluate(OUTPUT_ARTIFACT_JS, calculator)
-    assert artifact, "the Raster Calculator shows no saved raster"
+    assert artifact, "the difference node shows no saved raster"
     values, profile = fetch_raster(artifact)
     assert (str(profile["crs"]), profile["width"], profile["height"]) == ("EPSG:4326", WIDTH, HEIGHT), profile
     transform = profile["transform"]

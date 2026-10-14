@@ -600,7 +600,9 @@ WRITER_SHAPES = {
         ],
     ),
     # Written by TrillGenerator for a Vega-Lite node comparing two scenarios
-    # (#662): its spec and its Compare scenarios switch.
+    # (#662): a plain spec over its stacked inputs, naming each circle's
+    # scenario itself. (A save from before the switch was removed still
+    # carries metadata.vegaCompare, which stays valid and is ignored.)
     "canvas save with a Vega-Lite node comparing scenarios": _flow(
         nodes=[
             AGENT_NODE,
@@ -610,6 +612,17 @@ WRITER_SHAPES = {
                 "type": "curio.builtin/vis-vega@1",
                 "x": 700,
                 "y": 0,
+                "content": (
+                    '{"data": {"name": "inputs"}, "transform": [{"calculate": '
+                    '"[\'Baseline\', \'Twice as tall\'][datum.__input__]", "as": "scenario_name"}], '
+                    '"mark": "bar", "encoding": {"x": {"field": "scenario_name"}}}'
+                ),
+            },
+            {
+                "id": "cmp-older",
+                "type": "curio.builtin/vis-vega@1",
+                "x": 700,
+                "y": 300,
                 "content": '{"mark": "bar", "encoding": {"x": {"field": "scenario_name"}}}',
                 "metadata": {"vegaCompare": {"enabled": True}},
             },

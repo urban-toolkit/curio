@@ -16,6 +16,8 @@ export function NodeResizeHandle({
     disabled = false,
     onResize,
     onResizeEnd,
+    minWidth = MIN_NODE_WIDTH,
+    minHeight = MIN_NODE_HEIGHT,
 }: {
     nodeId: string;
     /** The node's box, which the drag sizes. */
@@ -24,12 +26,15 @@ export function NodeResizeHandle({
     disabled?: boolean;
     onResize: (width: number, height: number) => void;
     onResizeEnd: (width: number, height: number) => void;
+    /** The least box the drag leaves, the least node size unless given. */
+    minWidth?: number;
+    minHeight?: number;
 }) {
     const readOnly = useSharedView();
     const handleRef = useRef<HTMLDivElement>(null);
     // The latest callbacks, so a drag reports to the node's current state.
-    const callbacks = useRef({ onResize, onResizeEnd });
-    callbacks.current = { onResize, onResizeEnd };
+    const callbacks = useRef({ onResize, onResizeEnd, minWidth, minHeight });
+    callbacks.current = { onResize, onResizeEnd, minWidth, minHeight };
 
     useEffect(() => {
         const handle = handleRef.current;
@@ -43,8 +48,8 @@ export function NodeResizeHandle({
         function resize(e: MouseEvent) {
             const el = box.current;
             if (!el) return;
-            const width = Math.max(MIN_NODE_WIDTH, startWidth + (e.clientX - startX));
-            const height = Math.max(MIN_NODE_HEIGHT, startHeight + (e.clientY - startY));
+            const width = Math.max(callbacks.current.minWidth, startWidth + (e.clientX - startX));
+            const height = Math.max(callbacks.current.minHeight, startHeight + (e.clientY - startY));
             el.style.width = width + "px";
             el.style.height = height + "px";
             callbacks.current.onResize(width, height);

@@ -1,6 +1,18 @@
 import React, { useEffect, useId, useState } from "react";
+import Button from "@mui/material/Button";
+import Checkbox from "@mui/material/Checkbox";
+import Chip from "@mui/material/Chip";
+import FormControlLabel from "@mui/material/FormControlLabel";
+import FormGroup from "@mui/material/FormGroup";
+import InputAdornment from "@mui/material/InputAdornment";
+import Radio from "@mui/material/Radio";
+import RadioGroup from "@mui/material/RadioGroup";
+import Slider from "@mui/material/Slider";
+import TextField from "@mui/material/TextField";
+import { ThemeProvider } from "@mui/material/styles";
 import styles from "./WidgetTags.module.css";
 import { LocationControl } from "./LocationControl";
+import { widgetTheme } from "./widgetTheme";
 import {
   FILE_WIDGET_MAX_CHARS,
   checkWidgetValue,
@@ -80,53 +92,50 @@ export function WidgetControl({ widget, value, onChange, disabled = false, ariaL
 
   const options = widget.options ?? {};
   const choices = options.choices ?? [];
-  const units = options.units ? <span className={styles.units}>{options.units}</span> : null;
+  const unitsAdornment = options.units
+    ? { endAdornment: <InputAdornment position="end">{options.units}</InputAdornment> }
+    : undefined;
 
   let control: React.ReactNode;
   switch (widget.type) {
-    case "number": {
-      const input = (
-        <input
+    case "number":
+      control = (
+        <TextField
           type="number"
-          step={options.step ?? "any"}
-          min={options.min}
-          max={options.max}
-          aria-label={label}
+          fullWidth
           value={draft}
           disabled={disabled}
+          inputProps={{ step: options.step ?? "any", min: options.min, max: options.max, "aria-label": label }}
+          InputProps={unitsAdornment}
           onChange={(e) => {
             setDraft(e.target.value);
             commit(e.target.value.trim() === "" ? (NaN as number) : Number(e.target.value));
           }}
         />
       );
-      control = units ? (
-        <span className={styles.inline}>
-          {input}
-          {units}
-        </span>
-      ) : (
-        input
-      );
       break;
-    }
     case "slider": {
       const min = options.min ?? 0;
       const max = options.max ?? 100;
       const current = typeof value === "number" ? value : min;
       control = (
-        <span className={styles.inline}>
-          <input
-            type="range"
+        <span className={styles.inline} style={{ gap: 12, paddingLeft: 6 }}>
+          <Slider
             aria-label={label}
             min={min}
             max={max}
-            step={options.step ?? "any"}
+            // MUI has no "any": a hundredth of the span when none is set.
+            step={options.step ?? (max - min) / 100}
             value={current}
             disabled={disabled}
-            onChange={(e) => commit(Number(e.target.value))}
+            valueLabelDisplay="auto"
+            marks={[
+              { value: min, label: String(min) },
+              { value: max, label: String(max) },
+            ]}
+            onChange={(_e, next) => commit(Array.isArray(next) ? next[0] : next)}
           />
-          <output className={styles.units}>
+          <output className={styles.units} style={{ whiteSpace: "nowrap" }}>
             {current}
             {options.units ? ` ${options.units}` : ""}
           </output>
@@ -136,11 +145,11 @@ export function WidgetControl({ widget, value, onChange, disabled = false, ariaL
     }
     case "text":
       control = (
-        <input
-          type="text"
-          aria-label={label}
+        <TextField
+          fullWidth
           value={typeof value === "string" ? value : ""}
           disabled={disabled}
+          inputProps={{ "aria-label": label }}
           onChange={(e) => commit(e.target.value)}
         />
       );
@@ -148,26 +157,26 @@ export function WidgetControl({ widget, value, onChange, disabled = false, ariaL
     case "choice":
       control =
         options.display === "radio" ? (
-          <span role="radiogroup" aria-label={label} className={styles.choices}>
-            {choices.map((choice) => (
-              <label key={choice} className={styles.choiceItem}>
-                <input
-                  type="radio"
-                  name={radioGroup}
-                  value={choice}
-                  checked={value === choice}
-                  disabled={disabled}
-                  onChange={() => commit(choice)}
-                />
-                {choice}
-              </label>
-            ))}
-          </span>
-        ) : (
-          <select
+          <RadioGroup
+            row
+            name={radioGroup}
             aria-label={label}
             value={typeof value === "string" ? value : ""}
+            onChange={(e) => commit(e.target.value)}
+          >
+            {choices.map((choice) => (
+              <FormControlLabel key={choice} value={choice} label={choice} disabled={disabled} control={<Radio />} />
+            ))}
+          </RadioGroup>
+        ) : (
+          // A native list: it opens at any zoom of the canvas.
+          <TextField
+            select
+            fullWidth
+            SelectProps={{ native: true }}
+            value={typeof value === "string" ? value : ""}
             disabled={disabled}
+            inputProps={{ "aria-label": label }}
             onChange={(e) => commit(e.target.value)}
           >
             {choices.map((choice) => (
@@ -175,28 +184,30 @@ export function WidgetControl({ widget, value, onChange, disabled = false, ariaL
                 {choice}
               </option>
             ))}
-          </select>
+          </TextField>
         );
       break;
     case "checkbox-group": {
       const selected = chosen(value);
       control = (
-        <span role="group" aria-label={label} className={styles.choices}>
+        <FormGroup row role="group" aria-label={label}>
           {choices.map((choice) => (
-            <label key={choice} className={styles.choiceItem}>
-              <input
-                type="checkbox"
-                checked={selected.includes(choice)}
-                disabled={disabled}
-                // In the order of the choices, so the same picks are the same value.
-                onChange={(e) =>
-                  commit(choices.filter((c) => (c === choice ? e.target.checked : selected.includes(c))))
-                }
-              />
-              {choice}
-            </label>
+            <FormControlLabel
+              key={choice}
+              label={choice}
+              disabled={disabled}
+              control={
+                <Checkbox
+                  checked={selected.includes(choice)}
+                  // In the order of the choices, so the same picks are the same value.
+                  onChange={(e) =>
+                    commit(choices.filter((c) => (c === choice ? e.target.checked : selected.includes(c))))
+                  }
+                />
+              }
+            />
           ))}
-        </span>
+        </FormGroup>
       );
       break;
     }
@@ -204,28 +215,33 @@ export function WidgetControl({ widget, value, onChange, disabled = false, ariaL
       const selected = chosen(value);
       const remaining = choices.filter((c) => !selected.includes(c));
       control = (
-        <span className={styles.multi}>
+        <span className={styles.multi} style={{ gap: 6 }}>
           {selected.length > 0 ? (
-            <span className={styles.picks} aria-label={`${label}: chosen`}>
+            <span className={styles.picks} aria-label={`${label}: chosen`} style={{ gap: 4 }}>
               {selected.map((choice) => (
-                <span key={choice} className={styles.pick}>
-                  {choice}
-                  <button
-                    type="button"
-                    aria-label={`Remove ${choice}`}
-                    disabled={disabled}
-                    onClick={() => commit(selected.filter((c) => c !== choice))}
-                  >
-                    ×
-                  </button>
-                </span>
+                <Chip
+                  key={choice}
+                  label={choice}
+                  color="primary"
+                  variant="outlined"
+                  disabled={disabled}
+                  onDelete={() => commit(selected.filter((c) => c !== choice))}
+                  deleteIcon={
+                    <span role="button" aria-label={`Remove ${choice}`} style={{ fontSize: 14, lineHeight: 1 }}>
+                      ×
+                    </span>
+                  }
+                />
               ))}
             </span>
           ) : null}
-          <select
-            aria-label={label}
+          <TextField
+            select
+            fullWidth
+            SelectProps={{ native: true }}
             value=""
             disabled={disabled || remaining.length === 0}
+            inputProps={{ "aria-label": label }}
             onChange={(e) => {
               const added = e.target.value;
               if (added) commit(choices.filter((c) => c === added || selected.includes(c)));
@@ -237,19 +253,19 @@ export function WidgetControl({ widget, value, onChange, disabled = false, ariaL
                 {choice}
               </option>
             ))}
-          </select>
+          </TextField>
         </span>
       );
       break;
     }
     case "datetime":
       control = (
-        <input
+        <TextField
           type="datetime-local"
-          step={1}
-          aria-label={label}
+          fullWidth
           value={draft}
           disabled={disabled}
+          inputProps={{ step: 1, "aria-label": label }}
           onChange={(e) => {
             setDraft(e.target.value);
             commit(normalizeDateTime(e.target.value) ?? e.target.value);
@@ -262,11 +278,10 @@ export function WidgetControl({ widget, value, onChange, disabled = false, ariaL
       break;
     case "checkbox":
       control = (
-        <input
-          type="checkbox"
-          aria-label={label}
+        <Checkbox
           checked={value === true}
           disabled={disabled}
+          inputProps={{ "aria-label": label }}
           onChange={(e) => commit(e.target.checked)}
         />
       );
@@ -274,11 +289,12 @@ export function WidgetControl({ widget, value, onChange, disabled = false, ariaL
     case "number-list":
     case "text-list":
       control = (
-        <input
-          type="text"
-          aria-label={label}
+        <TextField
+          fullWidth
           value={draft}
           disabled={disabled}
+          placeholder={widget.type === "number-list" ? "[1, 2, 3]" : '["a", "b"]'}
+          inputProps={{ "aria-label": label }}
           onChange={(e) => {
             setDraft(e.target.value);
             let parsed: unknown;
@@ -300,21 +316,22 @@ export function WidgetControl({ widget, value, onChange, disabled = false, ariaL
         commit(nums as number[]);
       };
       control = (
-        <span style={{ display: "flex", gap: 4 }}>
-          <input
+        <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <TextField
             type="number"
-            step="any"
-            aria-label={`${label} from`}
+            fullWidth
             value={rangeDraft[0]}
             disabled={disabled}
+            inputProps={{ step: "any", "aria-label": `${label} from` }}
             onChange={(e) => update(0, e.target.value)}
           />
-          <input
+          <span className={styles.units}>to</span>
+          <TextField
             type="number"
-            step="any"
-            aria-label={`${label} to`}
+            fullWidth
             value={rangeDraft[1]}
             disabled={disabled}
+            inputProps={{ step: "any", "aria-label": `${label} to` }}
             onChange={(e) => update(1, e.target.value)}
           />
         </span>
@@ -323,22 +340,26 @@ export function WidgetControl({ widget, value, onChange, disabled = false, ariaL
     }
     case "file":
       control = (
-        <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          <input
-            type="file"
-            aria-label={label}
-            accept=".txt, .csv, .json, .geojson, .tsv"
-            disabled={disabled}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              const reader = new FileReader();
-              reader.onload = () => commit(typeof reader.result === "string" ? reader.result : "");
-              reader.onerror = () => setProblem("The file could not be read.");
-              reader.readAsText(file);
-            }}
-          />
-          <span>
+        <span style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <Button variant="outlined" component="label" disabled={disabled}>
+            Choose file
+            <input
+              type="file"
+              hidden
+              aria-label={label}
+              accept=".txt, .csv, .json, .geojson, .tsv"
+              disabled={disabled}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = () => commit(typeof reader.result === "string" ? reader.result : "");
+                reader.onerror = () => setProblem("The file could not be read.");
+                reader.readAsText(file);
+              }}
+            />
+          </Button>
+          <span className={styles.units}>
             {typeof value === "string" && value.length > 0
               ? `${value.length.toLocaleString("en-US")} characters loaded`
               : `No file yet (at most ${FILE_WIDGET_MAX_CHARS.toLocaleString("en-US")} characters)`}
@@ -350,11 +371,15 @@ export function WidgetControl({ widget, value, onChange, disabled = false, ariaL
       control = null;
   }
 
+  // MUI's look, as SCOUT draws its widgets (widgetTheme). `nodrag` and
+  // `nowheel`: dragging a slider or scrolling a list never moves the canvas.
   return (
-    <span className={styles.control}>
-      {control}
-      {problem ? <span className={styles.problem}>{problem}</span> : null}
-    </span>
+    <ThemeProvider theme={widgetTheme}>
+      <span className={`${styles.control} nodrag nowheel`}>
+        {control}
+        {problem ? <span className={styles.problem}>{problem}</span> : null}
+      </span>
+    </ThemeProvider>
   );
 }
 

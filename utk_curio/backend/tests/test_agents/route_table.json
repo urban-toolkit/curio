@@ -7,6 +7,13 @@
   "endpoint": "agents_api.list_catalog"
  },
  {
+  "rule": "/api/agents/dashboard-chat",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.dashboard_chat_turn"
+ },
+ {
   "rule": "/api/agents/definitions/<coord>",
   "methods": [
    "GET"

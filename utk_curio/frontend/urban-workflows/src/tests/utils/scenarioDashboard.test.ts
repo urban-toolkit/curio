@@ -9,7 +9,6 @@ import { NodeType } from "../../constants";
 import {
   DASHBOARD_TILE_DEFAULT_HEIGHT,
   DASHBOARD_TILE_DEFAULT_WIDTH,
-  arrangedTilePositions,
   prepareDashboardNodes,
 } from "../../utils/dashboardLayout";
 import { scenarioDashboard } from "../../utils/scenarios/scenarioDashboard";
@@ -214,22 +213,5 @@ describe("saved slots", () => {
     const moved = nodes.map((n) => (n.id === "a1" ? { ...n, data: { ...n.data, dashboardX: 5, dashboardY: 7 } } : n));
 
     expect(laidOut(moved, edges, pins, scenarios).get("a1")).toEqual({ x: 5, y: 7 });
-  });
-
-  test("Arrange by scenario puts every tile in its column, whatever slot it was saved in", () => {
-    const { nodes, edges, scenarios, pins } = shadows();
-    const columns = scenarioDashboard(nodes, edges, pins, scenarios)!.columns;
-    const fresh = prepareDashboardNodes(nodes, edges, pins, columns).nodes;
-    // Opened, then a tile dragged away and its slot saved.
-    const dragged = fresh.map((n) =>
-      n.id === "a1"
-        ? { ...n, position: { x: 9000, y: 9000 }, data: { ...n.data, dashboardX: 9000, dashboardY: 9000 } }
-        : n,
-    );
-
-    const arranged = arrangedTilePositions(dragged, pins, columns);
-
-    expect([...arranged.keys()].sort()).toEqual(Object.keys(pins).sort());
-    for (const tile of fresh) expect(arranged.get(tile.id)).toEqual(tile.position);
   });
 });

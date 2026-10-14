@@ -34,6 +34,14 @@ path.react-flow__edge-path:hover {
     background: #888787;
 }
 
+/* While a Shift-drag selection box is drawn (MainCanvas), no text is
+   selected; `!important` beats the inline `userSelect: text` some nodes set. */
+body.curio-box-selecting,
+body.curio-box-selecting * {
+    user-select: none !important;
+    -webkit-user-select: none !important;
+}
+
 /* A node in an expanded scenario wears the scenario's color (#662); the
    canvas view sets --scenario-color on it, a per-node value, not a token. */
 .react-flow__node.curio-scenario-member {

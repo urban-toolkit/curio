@@ -20,8 +20,6 @@ import {
   useAutkGrammarBehavior,
   useSpatialJoinBehavior,
   useParameterBehavior,
-  useRasterCalculatorBehavior,
-  useRasterStatisticsBehavior,
   useEditFeaturesBehavior,
 } from '../adapters/node';
 import { registerBehavior } from './behaviorRegistry';
@@ -39,10 +37,6 @@ registerBehavior('spatial-join', useSpatialJoinBehavior);
 // curio.builtin@1 parameter node: one widget any node's code names as
 // [!! @name !!] (#662).
 registerBehavior('parameter', useParameterBehavior);
-// curio.builtin@1 raster-calculator and raster-statistics nodes: Python nodes
-// that start with a call to Curio's raster algebra.
-registerBehavior('raster-calculator', useRasterCalculatorBehavior);
-registerBehavior('raster-statistics', useRasterStatisticsBehavior);
 // curio.builtin@1 edit-features node: features picked on its map, removed,
 // given a value or restored, as a list its code applies by id (#662).
 registerBehavior('edit-features', useEditFeaturesBehavior);

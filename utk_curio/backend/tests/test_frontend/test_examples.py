@@ -321,7 +321,8 @@ def test_example_06_is_three_scenarios_over_one_context():
         assert "[!! input_0:table_osm_roads !!]" in nodes[roads]["content"], roads
         assert [e["source"] for e in flow["edges"] if e["target"] == roads] == [scenario["nodes"][-2]]
     chart = nodes["whatif-sunlight-chart"]
-    assert chart["metadata"]["vegaCompare"] == {"enabled": True}
+    # A plain Vega-Lite node over its inputs stacked, naming each circle's scenario.
+    assert json.loads(chart["content"])["data"] == {"name": "inputs"}
     into = {(e["target"], e.get("targetHandle")): e["source"] for e in flow["edges"]}
     assert [into[("whatif-sunlight-chart", h)] for h in ("in", "in_1", "in_2")] == [
         s["nodes"][-1] for s in (baseline, twice, towers)

@@ -10,7 +10,7 @@ writes SCOUT's shadow tiles and returns SCOUT's metrics, where SCOUT saves them
 as a CSV. The package's own ``mosaic`` joins the shadow tiles into one raster in
 minutes, on the grid of the height mosaic; the node returns it with the metrics,
 which the shipped dataflow ``WhatIfShadows.json`` compares on a Vega-Lite pie
-and maps the change of with a Raster Calculator and an Autark map.
+and maps the change of with a Python node (``curio_raster_calculate``) and an Autark map.
 
 The proof starts from SCOUT's own files, copied unchanged into
 ``fixtures/scout/`` (see its ``ATTRIBUTION.md``): SCOUT's committed height tiles
@@ -511,7 +511,7 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     saves its tiles and its shadow tiles under names of its own;
     its Accumulated Shadow reads Rasterize Buildings' table and its tiles, and
     two nodes take its (shadow, metrics) apart. The Vega-Lite pie reads SCOUT's
-    metrics, one value per scenario, the Raster Calculator and the maps the
+    metrics, one value per scenario, the raster difference and the maps the
     shadow. The model is no dataset of
     the dataflow."""
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code, model_ids_in_code
@@ -563,17 +563,20 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     (loader,) = by_type["curio.builtin/data-loading"]
     assert dataset_ids_in_code(loader["content"]) == ["data.scout.loop-buildings"]
 
-    assert "curio.builtin/raster-statistics" not in by_type
-    pickers = by_type["curio.builtin/computation-analysis"]
+    python = by_type["curio.builtin/computation-analysis"]
+    (difference,) = [n for n in python if "curio_raster_calculate" in n["content"]]
+    pickers = [n for n in python if n is not difference]
     assert len(pickers) == 4
     for node in pickers:
         assert nodes[into[(node["id"], "in")]]["type"] == NODE_TYPE
         assert node["content"].splitlines()[-1] in ("return input_0[0]", "return input_0[1]")
     (chart,) = by_type["curio.builtin/vis-vega"]
-    assert chart["metadata"]["vegaCompare"] == {"enabled": True}
+    # A plain Vega-Lite node over its inputs stacked, naming each circle's scenario.
+    pie = json.loads(chart["content"])
+    assert pie["data"] == {"name": "inputs"}
+    assert {"calculate": "['Existing', 'Towers removed'][datum.__input__]", "as": "scenario_name"} in pie["transform"]
     # One row per scenario: each slice is SCOUT's mean as it is.
     assert json.loads(chart["content"])["encoding"]["theta"]["field"] == "Mean Acc shadow"
-    (difference,) = by_type["curio.builtin/raster-calculator"]
     assert difference["content"].splitlines()[-1] == (
         'return curio_raster_calculate("subtract", [input_1, input_0], absolute=True)'
     )

@@ -25,6 +25,8 @@ import { useSelectionTags } from "./flow/useSelectionTags";
 import { useCollaborationSync } from "./flow/useCollaborationSync";
 import { useInstallSave } from "./flow/useInstallSave";
 import { useServerRun } from "./flow/useServerRun";
+import { publishLinkToken } from "../services/published/publishedApi";
+import { publishedRunApi } from "../services/published/publishedRunApi";
 import { CanvasViewAddress, useNotebookView } from "./flow/useNotebookView";
 import { NotebookViewContext } from "./flow/notebookViewContext";
 import type { IOutput, IInteraction } from "./flow/flowTypes";
@@ -136,9 +138,11 @@ export const FlowContext = createContext<FlowContextProps>({
     workflowCategories: {},
     serverCategories: {},
     scenarios: [],
+    dashboardSettings: {},
     renameDataflow: () => false,
     updateDataflowCategories: () => {},
     setScenarios: () => {},
+    setDashboardRunButton: () => {},
     saveCurrentProject: async () => {},
     saveAsNewProject: async () => {},
     ensureProjectId: async () => null,
@@ -155,6 +159,7 @@ export const FlowContext = createContext<FlowContextProps>({
     signalNodeExecDone: () => {},
     isRunActive: false,
     serverRunActive: false,
+    runsPublished: false,
     cancelRun: () => {},
     attachLatestRun: async () => {},
     defaultSaveOutputDataset: false,
@@ -402,9 +407,27 @@ const FlowProvider = ({
         user != null &&
         !isHostedGuest(user, enableUserAuth) &&
         workflowOps.viewerMode === "owner";
+    // A visitor on a published dashboard's link (`?run=<token>`) runs it on the
+    // server, as its owner published it, with the values its widgets show; the
+    // run saves nothing, so nothing is saved before it either (published/).
+    const publishToken = useMemo(() => (dashboardOn ? publishLinkToken() : null), [dashboardOn]);
+    // Only the owner, signed in with the dataflow loaded, runs it as their own
+    // from such a link. A page served with its data (a standalone dashboard,
+    // what a browser with no session gets) knows no viewer, and its viewerMode
+    // keeps its default, so it is a visitor's.
+    const ownsLoadedDataflow =
+        workflowOps.viewerMode === "owner" && !!workflowOps.projectId && user != null;
+    const runsPublished = !!publishToken && !ownsLoadedDataflow;
+    const publishedRuns = useMemo(
+        () => (publishToken ? publishedRunApi(publishToken, () => reactFlow.getNodes()) : undefined),
+        [publishToken, reactFlow],
+    );
     const serverRun = useServerRun({
         reactFlow, setNodes, showToast,
-        requestProjectSave: workflowOps.requestProjectSave,
+        requestProjectSave: runsPublished
+            ? async () => ({ id: workflowOps.projectId ?? "published", spec_revision: null })
+            : workflowOps.requestProjectSave,
+        api: runsPublished ? publishedRuns : undefined,
         applyNewOutput, setOutputs, hydrateRestoredOutputs, markNodeErroredRef,
         playNodes, playAllStateRef, emittedForInputRef, outputsRef, workflowNameRef,
         nodeExecProv, flushInstallSyncRef,
@@ -467,7 +490,8 @@ const FlowProvider = ({
                 isDashboardSource,
                 applyNewOutput,
                 hydrateRestoredOutputs,
-                playAllNodes: runsOnServer ? () => { void serverRun.startRun(); } : playAllNodes,
+                playAllNodes: runsOnServer || runsPublished ? () => { void serverRun.startRun(); } : playAllNodes,
+                runsPublished,
                 // A run on the server takes one target node, so a list (a
                 // scenario's levers) runs in the browser, once no server run
                 // is going.

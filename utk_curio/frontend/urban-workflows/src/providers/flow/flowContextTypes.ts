@@ -6,6 +6,7 @@ import type { InstallSyncOutcome, PendingInstall } from "../../services/datasetC
 import type { DataflowCategories, HandCategories } from "../../utils/dataflowCategories";
 import type { NotebookPane } from "../../utils/notebookLayout";
 import type { Scenario } from "../../utils/scenarios/scenarioModel";
+import type { DashboardSettings, RunButtonPlace } from "../../utils/dashboardSettings";
 import type { IInteraction, IOutput, IPropagation, NodeExecOutcome } from "./flowTypes";
 import type { CanvasView } from "./useNotebookView";
 
@@ -56,7 +57,7 @@ export interface FlowContextProps {
     // Reviewed plan removals (dev/62): victims + their edge cascade leave in
     // one operation, without the manual "remove the edges first" guard.
     applyReviewedRemovals: (nodeIds: string[], edgeIds: string[]) => void;
-    loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean, packages?: string[], description?: string, datasets?: any[], categories?: HandCategories, scenarios?: unknown) => void;
+    loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean, packages?: string[], description?: string, datasets?: any[], categories?: HandCategories, scenarios?: unknown, dashboard?: unknown) => void;
     packages: string[];
     setPackages: (pkgs: string[]) => void;
     addPackage: (pkg: string) => void;
@@ -97,6 +98,9 @@ export interface FlowContextProps {
     /** The dataflow's scenarios (#662), saved with it. Member ids of nodes
      * deleted since the last save are dropped when it saves. */
     scenarios: Scenario[];
+    /** The dashboard's own settings (`dataflow.dashboard`): where its Run
+     * button stands and how big it is. Saved with the dataflow. */
+    dashboardSettings: DashboardSettings;
 
     // Project operations
     /** Rename the open dataflow, writing BOTH name stores (#230). False if blank. */
@@ -105,6 +109,8 @@ export interface FlowContextProps {
     updateDataflowCategories: (next: HandCategories) => void;
     /** Replace the scenarios; the dataflow is dirty until the next save. */
     setScenarios: (next: Scenario[]) => void;
+    /** Move or resize the dashboard's Run button; the dataflow is dirty until the next save. */
+    setDashboardRunButton: (place: RunButtonPlace) => void;
     saveCurrentProject: (nameOverride?: string, options?: { omitOutputs?: boolean }) => Promise<any>;
     saveAsNewProject: (name: string) => Promise<any>;
     ensureProjectId: () => Promise<string | null>;
@@ -132,6 +138,9 @@ export interface FlowContextProps {
      * is going" reads both.
      */
     serverRunActive: boolean;
+    /** A visitor opened a published dashboard's link (`?run=<token>`): Run
+     * runs it on the server as its owner published it, saving nothing. */
+    runsPublished: boolean;
     /** Stop the run in flight: clears the guard so the next play is accepted. */
     cancelRun: () => void;
     /** Show the outputs of a just-opened dataflow's last run on the server, and follow it if it goes. */

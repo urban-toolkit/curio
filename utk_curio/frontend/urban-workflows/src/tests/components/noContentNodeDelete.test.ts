@@ -60,6 +60,7 @@ describe("noContent nodes", () => {
   it("keeps the header band gated off for them, so the chip is the only route", () => {
     // If this ever stops being true the chip control becomes a duplicate and
     // this whole special case can go.
-    expect(read("components/styles.tsx")).toContain("{!noContent && !dashboardOn ?");
+    // (A node displayed as a widget drops its header too, for its own bar.)
+    expect(read("components/styles.tsx")).toMatch(/\{!noContent && !dashboardOn(?: && !controlsOnly)? \?/);
   });
 });

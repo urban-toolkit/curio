@@ -61,6 +61,18 @@
           "items": { "type": "string", "minLength": 1 },
           "description": "The ids of its nodes. Empty once its last node is deleted, until the scenario is deleted too."
         },
+        "upstream": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "The ids of the nodes outside it that feed it, on every path up, and the Parameter nodes whose shared tags it reads. Stored by a save; a drag from the Scenario Catalog brings them."
+        },
+        "downstream": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "The ids of the nodes outside it that it feeds, on every path down. Stored by a save; a drag from the Scenario Catalog brings them."
+        },
         "collapsed": { "type": "boolean", "description": "Drawn as one box on the canvas. Emitted only when set." },
         "box": {
           "type": "object",
@@ -138,6 +150,26 @@
             "complexity": { "$ref": "#/$defs/categoryValues", "maxItems": 1 }
           }
         },
+        "dashboard": {
+          "type": "object",
+          "description": "The dashboard page's own settings, which belong to no node. 'runButton' is where the owner put the page's Run button with Edit layout, and how big they made it, in the page's coordinates, as a tile's 'dashboardX'/'dashboardY'/'dashboardWidth'/'dashboardHeight' are; absent, it stands above the top-left tile at its own size. Written only when set.",
+          "properties": {
+            "runButton": {
+              "type": "object",
+              "required": ["x", "y"],
+              "dependentRequired": {
+                "width": ["height"],
+                "height": ["width"]
+              },
+              "properties": {
+                "x": { "type": "number" },
+                "y": { "type": "number" },
+                "width": { "type": "number", "exclusiveMinimum": 0 },
+                "height": { "type": "number", "exclusiveMinimum": 0 }
+              }
+            }
+          }
+        },
         "scenarios": {
           "type": "array",
           "description": "The dataflow's scenarios (#662): named selections of its nodes, each a lever set compared against the others over the context outside it. A node belongs to at most one scenario, which the backend checks on save (projects/scenarios.py) because this schema cannot say it. A save drops member ids that are not nodes of the dataflow, so deleting a node removes it from its scenario. Written by TrillGenerator.generateTrill when the canvas saves, an empty list clearing them; the backend drops an empty list and keeps the on-disk value when a writer omits the key. Version snapshots and agent views carry it only when there are scenarios.",
@@ -213,6 +245,45 @@
         "height": {
           "type": "number",
           "description": "Explicit canvas height in pixels. See 'width'."
+        },
+        "minimized": {
+          "type": "boolean",
+          "description": "Drawn as its small chip on the canvas (the header's Minimize); its width and height stay the size it expands back to. Only ever written as true - false is elided."
+        },
+        "controlsOnly": {
+          "type": "boolean",
+          "description": "Folded to its widget rows under its header (the 'Display as widget' switch in its Widgets tab or Parameter body), on a node holding widgets or a Parameter node; its width and height stay the size it unfolds back to. Only ever written as true - false is elided."
+        },
+        "controlsOnlyWidth": {
+          "type": "number",
+          "description": "Width in pixels of the node displayed as a widget ('controlsOnly'), when the user has resized it so; otherwise it takes 'width'. Apart from 'width', which stays the full node's."
+        },
+        "controlsOnlyHeight": {
+          "type": "number",
+          "description": "Height in pixels of the node displayed as a widget, when the user has resized it so; otherwise it is as tall as its controls. See 'controlsOnlyWidth'."
+        },
+        "dashboardControlsOnly": {
+          "type": "boolean",
+          "description": "Its dashboard tile is displayed as a widget: its controls, with no Run, not its output (the 'Display as widget' switch in the tile's title band while the layout is edited). Apart from 'controlsOnly', which is the canvas's. Keeps 'dashboardWidth'/'dashboardHeight'. Only ever written as true - false is elided."
+        },
+        "dashboardSeparateWidgets": {
+          "type": "boolean",
+          "description": "On a tile displayed as a widget ('dashboardControlsOnly') with more than one widget: each widget in a white box of its own, placed and sized apart ('dashboardWidgetLayout'), still the one node (the 'Separate widgets' switch while the layout is edited). Only ever written as true - false is elided."
+        },
+        "dashboardWidgetLayout": {
+          "type": "object",
+          "description": "Where each of a tile's separated widgets stands ('dashboardSeparateWidgets'), by widget name: x and y from the tile's corner, and the width and height it was resized to, if it was. A widget without one stands under the one before it.",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["x", "y"],
+            "properties": {
+              "x": { "type": "number" },
+              "y": { "type": "number" },
+              "width": { "type": "number" },
+              "height": { "type": "number" }
+            },
+            "additionalProperties": false
+          }
         },
         "dashboardPinned": {
           "type": "boolean",
@@ -410,7 +481,8 @@
         },
         "vegaCompare": {
           "type": "object",
-          "description": "A Vega-Lite node's Compare scenarios switch. With `enabled`, each input circle is one scenario, as many as are wired, and the spec reads them stacked as one table, the dataset `scenarios`, each row carrying `scenario`, `scenario_name`, `scenario_color` and `scenario_order`. An encoding on the scenario without its own scale is drawn in the scenarios' colors. Emitted only when the switch is on.",
+          "deprecated": true,
+          "description": "DEPRECATED and ignored: the Vega-Lite node's Compare scenarios switch, removed. Still accepted so a dataflow saved with it loads; never written. A Vega-Lite spec now reads all its inputs stacked as the dataset `inputs`, each row's `__input__` its circle, and names each circle's scenario itself.",
           "additionalProperties": false,
           "required": ["enabled"],
           "properties": {

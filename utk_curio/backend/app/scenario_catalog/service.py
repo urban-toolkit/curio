@@ -161,7 +161,7 @@ class ScenarioCatalogService:
         row, spec, _is_example, scenario = self._scenario(project_id, scenario_id)
         target_row, target_spec, _ = self._project(target_id)
         nodes, edges = spec_nodes_and_edges(spec)
-        plan = copy_plan(scenario, nodes, edges)
+        plan = copy_plan(scenario, nodes, edges, (spec.get("dataflow") or {}).get("scenarios") or [scenario])
         name = scenario["name"]
         problems: list[str] = []
 
@@ -192,6 +192,11 @@ class ScenarioCatalogService:
                 s for s in outcome["sources"]
                 if (projects.saved_output(self.user, project_id, spec, s) or {}).get("computed")
             ]
+        # Likewise a node upstream or downstream of it.
+        plan["saved"] = [
+            s for s in plan["saved"]
+            if (projects.saved_output(self.user, project_id, spec, s) or {}).get("computed")
+        ]
 
         ukey = projects.user_key(self.user)
         needed = requirements(plan["dataflow"]["nodes"])
@@ -246,7 +251,7 @@ class ScenarioCatalogService:
         }
         outcomes = {source for outcome in plan["outcomes"] for source in outcome["sources"]}
         taken = {node["id"] for node in spec_nodes_and_edges(target_spec)[0]}
-        copies = self._copies(outputs, set(context) | outcomes, taken)
+        copies = self._copies(outputs, set(context) | outcomes | set(plan["saved"]), taken)
 
         ukey = projects.user_key(self.user)
         added: list[str] = []

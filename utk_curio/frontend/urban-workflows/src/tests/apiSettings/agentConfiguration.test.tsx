@@ -108,6 +108,13 @@ describe("Agent configuration", () => {
     await models();
   });
 
+  it("is left out on the dashboard, whose agent has no row in it: the keys alone", async () => {
+    render(<ApiSettingsPanel tab="agents" onTabChange={() => undefined} keysOnly />);
+    await screen.findByRole("table");
+    expect(screen.queryAllByRole("tab")).toEqual([]);
+    expect(screen.queryByTestId("agent-models-section")).toBeNull();
+  });
+
   it("arrow keys move between the tabs", async () => {
     render(<Panel />);
     fireEvent.keyDown(screen.getByRole("tab", { name: "Agent configuration" }), { key: "ArrowRight" });

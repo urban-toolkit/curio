@@ -1,0 +1,39 @@
+{
+ "id": "data.curio.lower-manhattan-shadows",
+ "name": "Lower Manhattan Buildings and Parks",
+ "version": "1.0.0",
+ "format": "bundle",
+ "description": "Lower Manhattan, the Financial District to City Hall. Two parts, as the Discovery Catalog downloads them: parks.geojson, OpenStreetMap's 215 parks, playgrounds and green spaces of longitude -74.018 to -74.004, latitude 40.7 to 40.713, as Autark's parks layer cuts them at that box; and buildings.parquet, the 1,038 buildings of Overture Maps release 2026-09-23.1 in a box about 300 m larger on every side (longitude -74.0215 to -74.0005, latitude 40.6973 to 40.7157), so the towers that shade the parks at its edge are there too, every column as Overture names it, height in metres among them (missing for a few). Both in EPSG:4326. The ShadowsAnywhere test dataflow runs SCOUT's shadow model on them. Built by scripts/build_lower_manhattan_shadows_dataset.py.",
+ "publisher": "Overture Maps Foundation; OpenStreetMap contributors",
+ "license": "ODbL-1.0",
+ "tags": [
+  "buildings",
+  "parks",
+  "new-york",
+  "manhattan",
+  "overture",
+  "osm",
+  "bundle"
+ ],
+ "dataFile": "data/bundle.json",
+ "compatibility": {
+  "major": 1
+ },
+ "sourceLabel": "Discovery Catalog: Overture Maps and OpenStreetMap",
+ "rowCount": null,
+ "featureCount": null,
+ "schema": null,
+ "createdAt": "2026-10-14T00:00:00Z",
+ "updatedAt": "2026-10-14T00:00:00Z",
+ "sourceUpdatedAt": null,
+ "sourceEncoding": null,
+ "groupId": null,
+ "layerName": null,
+ "producerNodeId": null,
+ "producerNodeType": null,
+ "producerDataflowId": null,
+ "producerDataflowName": null,
+ "upstreamInputs": null,
+ "discoverySource": null,
+ "collection": null
+}

@@ -27,7 +27,6 @@ import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { readCanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { ConnectionValidator } from "../ConnectionValidator";
 import { unversionedNodeType } from "../utils/flowNodeCanonicalType";
-import { isComparing } from "../utils/vegaCompare";
 import { HeaderIconButton } from "./HeaderIconButton";
 import {
     EditableNodeHeaderLabel,
@@ -99,6 +98,14 @@ import { NodeResizeHandle } from "./nodes/NodeResizeHandle";
 import { NodeDeleteTool } from "./nodes/NodeDeleteTool";
 import { useSharedView } from "../hook/useSharedView";
 import { NodeHeaderSlotContext } from "./editing/nodeHeaderSlot";
+import {
+    DisplayAsWidgetSwitch,
+    NodeControlsOnlyContext,
+    SwitchLabel,
+    nodeHasControls,
+    type WidgetBoxLayout,
+} from "./editing/nodeControlsOnly";
+import { normalizeWidgets } from "../utils/widgets/widgetModel";
 import { resolveSaveOutputDataset, showsSaveOutputToggle } from "../utils/saveOutputDataset";
 import { nodeRunStatus, nodeRunError } from "../utils/nodeRunStatus";
 import { hasNodeDescription } from "../utils/nodeDescription";
@@ -106,6 +113,12 @@ import { droppedDatasetSource, isDatasetPaletteNode } from "../services/datasetC
 import { DatasetMetaHeader } from "./datasets/DatasetMetaHeader";
 import { useDatasetPalette } from "../providers/DatasetPaletteContext";
 
+
+// A node displayed as a widget: its bar (the switch back, and Run), and the
+// least box a resize leaves it.
+const CONTROLS_ONLY_BAR_PX = 28;
+const CONTROLS_ONLY_MIN_WIDTH = 160;
+const CONTROLS_ONLY_MIN_HEIGHT = 60;
 
 // Node Container
 export const NodeContainer = ({
@@ -252,26 +265,142 @@ export const NodeContainer = ({
     // A node with content starts at the size the mount clamp below gives it, so
     // its first render is already its final size: the canvas measures that
     // render for its load fit (#683). An icon-only node keeps its own footprint.
+    // The smallest box the resize handle allows (below), so a load keeps the
+    // size it was saved at: a dashboard tile showing only its controls may be
+    // smaller than a node. Its controls-only box on the canvas is sized apart.
+    const minBox = dashboardOn && data.dashboardControlsOnly === true
+        ? { width: CONTROLS_ONLY_MIN_WIDTH, height: CONTROLS_ONLY_MIN_HEIGHT }
+        : { width: MIN_NODE_WIDTH, height: MIN_NODE_HEIGHT };
+    // A node saved minimized starts as its chip.
     const [currentNodeWidth, setCurrentNodeWidth] = useState<number | undefined>(
-        () => (noContent ? nodeWidth : clampNodeBox(nodeWidth, nodeHeight).width)
+        () => (noContent ? nodeWidth : data.minimized === true ? MINIMIZED_NODE_WIDTH : clampNodeBox(nodeWidth, nodeHeight, minBox).width)
     );
     const [currentNodeHeight, setCurrentNodeHeight] = useState<number | undefined>(
-        () => (noContent ? nodeHeight : clampNodeBox(nodeWidth, nodeHeight).height)
+        () => (noContent ? nodeHeight : data.minimized === true ? MINIMIZED_NODE_HEIGHT : clampNodeBox(nodeWidth, nodeHeight, minBox).height)
     );
     // Icon-only nodes (manifest `containerStyle.noContent: true`)
     // start minimized: they have no body to expand and the 50×180 footprint is
     // their default render. (Spatial Join left this set in #262, when it gained
     // a body with the polygon-property control.)
-    const [minimized, setMinimized] = useState(!!noContent);
+    // Whether a node is folded to its chip lives in its data, so a save keeps
+    // it and a load brings it back (TrillGenerator writes `minimized`).
+    const minimized = !!noContent || data.minimized === true;
+    const setMinimized = (next: boolean) => {
+        if (noContent) return;
+        // Live data, not the captured `data`, as keepBoxSize does.
+        const liveData = getNodes().find((n) => n.id === nodeId)?.data ?? data;
+        if ((liveData.minimized === true) === next) return;
+        updateDataNode(nodeId, { ...liveData, minimized: next || undefined });
+        markDirty();
+    };
+    // "Display as widget": the node folds to its widget rows (nodeControlsOnly).
+    // On the canvas the switch is in its Widgets tab or Parameter body; on the
+    // dashboard, in the tile's title band while the layout is edited. Each view
+    // keeps its own, in node data as `minimized` is, so a save keeps it:
+    // `controlsOnly` on the canvas, `dashboardControlsOnly` on the dashboard.
+    // A notebook cell shows the whole node.
+    const canShowControlsOnly = !noContent && !notebookCell && nodeHasControls(data);
+    const controlsOnlyField = dashboardOn ? "dashboardControlsOnly" : "controlsOnly";
+    const controlsOnly = canShowControlsOnly && data[controlsOnlyField] === true;
+    // The canvas node displayed as a widget, which has a size of its own; a
+    // tile keeps its tile size.
+    const canvasControlsOnly = controlsOnly && !dashboardOn;
+    const setControlsOnly = (next: boolean) => {
+        const liveData = getNodes().find((n) => n.id === nodeId)?.data ?? data;
+        if ((liveData[controlsOnlyField] === true) === next) return;
+        updateDataNode(nodeId, { ...liveData, [controlsOnlyField]: next || undefined });
+        markDirty();
+    };
+    // A tile's switch is a layout edit, so only while the layout is edited.
+    const controlsOnlySwitchShown = canShowControlsOnly && (!dashboardOn || !dashboardLocked);
+    // The bar under the controls, on the canvas: the switch back and Run (not
+    // on a Parameter node, which has nothing to run). A tile has neither: its
+    // switch is in its title band, and it has no Run.
+    const controlsOnlyBarShown = controlsOnly && !dashboardOn;
+    // Displayed as a widget, the node has a size of its own, saved as
+    // `controlsOnlyWidth`/`controlsOnlyHeight`: until it is resized, the full
+    // node's width and as tall as its controls.
+    const [widgetBox, setWidgetBox] = useState<{ width?: number; height?: number }>(() => ({
+        width: data.controlsOnlyWidth,
+        height: data.controlsOnlyHeight,
+    }));
+    useEffect(() => {
+        setWidgetBox({ width: data.controlsOnlyWidth, height: data.controlsOnlyHeight });
+    }, [data.controlsOnlyWidth, data.controlsOnlyHeight]);
+    const keepWidgetBox = (width: number, height: number) => {
+        const liveData = getNodes().find((n) => n.id === nodeId)?.data ?? data;
+        if (liveData.controlsOnlyWidth === width && liveData.controlsOnlyHeight === height) return;
+        updateDataNode(nodeId, { ...liveData, controlsOnlyWidth: width, controlsOnlyHeight: height });
+        markDirty();
+    };
+    const controlsOnlyBarStyle: CSS.Properties = {
+        display: "flex",
+        alignItems: "center",
+        height: `${CONTROLS_ONLY_BAR_PX}px`,
+        padding: "0 15px",
+        boxSizing: "border-box",
+        width: "100%",
+    };
+    // "Separate widgets", only on the dashboard: a tile displayed as a widget,
+    // with more than one, shows each in a box of its own, placed and sized on
+    // its own while the layout is edited (`dashboardWidgetLayout`, by widget
+    // name). Still the one node; switched off, the widgets are one box again.
+    const canSeparateWidgets = controlsOnly && dashboardOn && normalizeWidgets(data.widgets).length > 1;
+    const separatedWidgets = canSeparateWidgets && data.dashboardSeparateWidgets === true;
+    const setSeparatedWidgets = (next: boolean) => {
+        const liveData = getNodes().find((n) => n.id === nodeId)?.data ?? data;
+        if ((liveData.dashboardSeparateWidgets === true) === next) return;
+        updateDataNode(nodeId, { ...liveData, dashboardSeparateWidgets: next || undefined });
+        markDirty();
+    };
+    const keepWidgetBoxLayout = (name: string, box: WidgetBoxLayout) => {
+        const liveData = getNodes().find((n) => n.id === nodeId)?.data ?? data;
+        const layout = { ...(liveData.dashboardWidgetLayout ?? {}), [name]: box };
+        updateDataNode(nodeId, { ...liveData, dashboardWidgetLayout: layout });
+        markDirty();
+    };
+    const separateWidgetsSwitch = canSeparateWidgets && controlsOnlySwitchShown ? (
+        <SwitchLabel
+            label="Separate widgets"
+            checked={separatedWidgets}
+            onChange={setSeparatedWidgets}
+            style={{ margin: "0 0 0 8px", flexShrink: 0, fontWeight: 400 }}
+        />
+    ) : null;
+    const controlsOnlyState = {
+        controlsOnly,
+        setControlsOnly: controlsOnlySwitchShown ? setControlsOnly : undefined,
+        separated: separatedWidgets
+            ? {
+                layout: data.dashboardWidgetLayout ?? {},
+                editable: controlsOnlySwitchShown,
+                onBoxChange: keepWidgetBoxLayout,
+                defaultWidth: Math.max(160, (currentNodeWidth ?? 260) - 30),
+                toolbar: controlsOnlySwitchShown ? (
+                    <>
+                        <DisplayAsWidgetSwitch style={{ margin: 0 }} />
+                        {separateWidgetsSwitch}
+                    </>
+                ) : undefined,
+            }
+            : undefined,
+    };
     // Hover state for the minimized chip's delete control (noContent nodes have
     // no header band to put it in).
     const [chipHovered, setChipHovered] = useState(false);
     const shownMinimized = minimized && !notebookCell;
-    const boxWidth = notebookCell && cellBox ? cellBox.width : currentNodeWidth;
+    const boxWidth = notebookCell && cellBox
+        ? cellBox.width
+        : canvasControlsOnly
+            ? widgetBox.width ?? currentNodeWidth
+            : currentNodeWidth;
     // The cell's box: as tall as its content, never shorter than its dots need.
     const cellBoxStyle: CSS.Properties = notebookCell
         ? { height: "auto", minHeight: `${cellBox?.minHeight ?? 0}px` }
-        : { height: currentNodeHeight + "px" };
+        : canvasControlsOnly
+            // As tall as its controls, until it is resized.
+            ? { height: widgetBox.height !== undefined ? widgetBox.height + "px" : "auto" }
+            : { height: currentNodeHeight + "px" };
 
     useEffect(() => {
         if (nodeWidth !== undefined) {
@@ -319,14 +448,13 @@ export const NodeContainer = ({
 
     }, [data.output, data.input])
 
+    // View > Minimize all / Expand all. Only a change folds or unfolds, so a
+    // node mounting (a load) keeps the state it was saved with.
+    const allMinimizedSeen = useRef(allMinimized);
     useEffect(() => {
-        if (!noContent) {
-            if(allMinimized > 0){
-                setMinimized(true);
-            }else{
-                setMinimized(false);
-            }
-        }
+        if (allMinimizedSeen.current === allMinimized) return;
+        allMinimizedSeen.current = allMinimized;
+        setMinimized(allMinimized > 0);
     }, [allMinimized])
 
     useEffect(() => {
@@ -355,13 +483,14 @@ export const NodeContainer = ({
     }, [minimized]);
 
     useEffect(() => {
-        if (noContent) return;
+        // A minimized node keeps its chip; expanding it sizes it.
+        if (noContent || minimized) return;
 
-        if (nodeWidth == undefined || nodeWidth < MIN_NODE_WIDTH) {
+        if (nodeWidth == undefined || nodeWidth < minBox.width) {
             setCurrentNodeWidth(DEFAULT_NODE_WIDTH);
         }
 
-        if (nodeHeight == undefined || nodeHeight < MIN_NODE_HEIGHT) {
+        if (nodeHeight == undefined || nodeHeight < minBox.height) {
             setCurrentNodeHeight(DEFAULT_NODE_HEIGHT);
         }
     }, []);
@@ -743,13 +872,14 @@ export const NodeContainer = ({
                 </div>
             ) : null}
 
-            {(!dashboardOn || !dashboardLocked) && !noContent && !notebookCell && (
+            {(!dashboardOn || !dashboardLocked) && !noContent && !notebookCell && !separatedWidgets && (
                 <NodeResizeHandle
                     nodeId={nodeId}
                     box={resizableRef}
                     disabled={data.suggestionType != "none" && data.suggestionType != undefined}
-                    onResize={resizeBox}
-                    onResizeEnd={keepBoxSize}
+                    onResize={canvasControlsOnly ? (width, height) => setWidgetBox({ width, height }) : resizeBox}
+                    onResizeEnd={canvasControlsOnly ? keepWidgetBox : keepBoxSize}
+                    {...(controlsOnly ? { minWidth: CONTROLS_ONLY_MIN_WIDTH, minHeight: CONTROLS_ONLY_MIN_HEIGHT } : {})}
                 />
             )}
             <div
@@ -782,9 +912,18 @@ export const NodeContainer = ({
                     ...(shownMinimized ? { display: "none" } : {}),
                     ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {opacity: 0.5, pointerEvents: "none"} : {}),
                     ...(data.keywordHighlighted ? {backgroundColor: "#1E1F23"} : {}),
+                    // Separated widgets: the tile is no box of its own, only
+                    // where its widgets' boxes are placed from.
+                    ...(separatedWidgets ? {
+                        background: "none",
+                        border: "none",
+                        boxShadow: "none",
+                        overflow: "visible",
+                        pointerEvents: "none",
+                    } : {}),
                 }}
             >
-                {!noContent && dashboardOn ? (
+                {!noContent && dashboardOn && !separatedWidgets ? (
                     <div
                         // Matches DASHBOARD_TILE_DRAG_HANDLE, which the dashboard
                         // page hands React Flow as the tile's ``dragHandle``. No
@@ -809,11 +948,20 @@ export const NodeContainer = ({
                             cursor: dashboardLocked ? "default" : "grab",
                         }}
                     >
-                        {headerKindLabel}
+                        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {headerKindLabel}
+                        </span>
+                        {/* While the layout is edited: "Display as widget". */}
+                        {controlsOnlySwitchShown ? (
+                            <NodeControlsOnlyContext.Provider value={controlsOnlyState}>
+                                <DisplayAsWidgetSwitch style={{ margin: "0 0 0 8px", flexShrink: 0, fontWeight: 400 }} />
+                            </NodeControlsOnlyContext.Provider>
+                        ) : null}
+                        {separateWidgetsSwitch}
                     </div>
                 ) : null}
 
-                {!noContent && !dashboardOn ? (
+                {!noContent && !dashboardOn && !controlsOnly ? (
                     <>
                         <div className="curio-node-header" style={{
                         display: "flex",
@@ -910,16 +1058,39 @@ export const NodeContainer = ({
                 <div style={{
                     // A notebook cell's body is as tall as what it holds; on
                     // the canvas the body fills the node under its header.
-                    height: notebookCell ? "auto" : `calc(100% - ${dashboardOn ? dashboardTitleBandPx : nodeHeaderBandPx}px)`,
+                    height: notebookCell || (canvasControlsOnly && widgetBox.height === undefined)
+                        ? "auto"
+                        : `calc(100% - ${
+                            (dashboardOn ? dashboardTitleBandPx : canvasControlsOnly ? 0 : nodeHeaderBandPx)
+                            + (controlsOnlyBarShown ? CONTROLS_ONLY_BAR_PX : 0)
+                        }px)`,
                     width: "calc(100% - 30px)",
                     marginLeft: "auto",
                     marginRight: "auto",
                     ...(notebookCell ? { paddingBottom: "8px" } : {}),
                 }}>
                     <NodeHeaderSlotContext.Provider value={dashboardOn ? null : tabSlot}>
-                        {children}
+                        <NodeControlsOnlyContext.Provider value={controlsOnlyState}>
+                            {children}
+                        </NodeControlsOnlyContext.Provider>
                     </NodeHeaderSlotContext.Provider>
                 </div>
+
+                {/* Displayed as a widget on the canvas: no header, only a bar
+                    under the controls, which drags the node: the switch back on
+                    its left, Run on its right (none on a Parameter node, which
+                    has nothing to run). */}
+                {controlsOnlyBarShown ? (
+                    <div className="curio-controls-only-bar" style={controlsOnlyBarStyle}>
+                        <NodeControlsOnlyContext.Provider value={controlsOnlyState}>
+                            <DisplayAsWidgetSwitch style={{ margin: 0 }} />
+                        </NodeControlsOnlyContext.Provider>
+                        <span style={{ flex: 1 }} />
+                        {sendCodeToWidgets != undefined ? (
+                            <NodeRunControls {...runControls} part="play" />
+                        ) : null}
+                    </div>
+                ) : null}
 
             </div>
 
@@ -1038,15 +1209,6 @@ export const NodeContainer = ({
                 storedLabel={data.packageTemplateLabel}
                 templateCode={code ?? data.defaultCode ?? ""}
                 onClose={() => setConfigOpen(false)}
-                compareScenarios={unversionedNodeType(String(data.nodeType ?? "")) === NodeType.VIS_VEGA
-                    ? {
-                        on: isComparing(data),
-                        onChange: (on: boolean) => {
-                            updateDataNode(nodeId, { ...data, vegaCompare: on ? { enabled: true } : undefined });
-                            markDirty();
-                        },
-                    }
-                    : undefined}
                 onSave={(config: CanvasTemplateConfig) => {
                     updateDataNode(nodeId, {
                         ...data,

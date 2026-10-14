@@ -310,6 +310,22 @@ export function MainCanvas() {
         };
     }, [loading, registerNotebookScroller, setNotebookPane]);
 
+    // A Shift-drag draws React Flow's selection box, but the browser also
+    // selects the text of everything the drag crosses, the side panels too.
+    // Cancelling the mousedown keeps the browser from starting a text
+    // selection; the page class covers the rest of the drag, until the
+    // mouseup, wherever the pointer is by then.
+    const handleSelectionStart = useCallback((event: React.MouseEvent) => {
+        event.preventDefault();
+        window.getSelection()?.removeAllRanges();
+        document.body.classList.add("curio-box-selecting");
+        window.addEventListener(
+            "mouseup",
+            () => document.body.classList.remove("curio-box-selecting"),
+            { once: true },
+        );
+    }, []);
+
     // Where a dropped node goes. On the canvas, under the pointer. In the
     // notebook view the pointer is on a page, not on the canvas, so the node
     // takes the next free canvas spot and its cell is scrolled into view.
@@ -822,6 +838,7 @@ export function MainCanvas() {
                 selectionKeyCode={"Shift"}
                 panActivationKeyCode={null}
                 onSelectionChange={handleSelectionChange}
+                onSelectionStart={handleSelectionStart}
                 onNodeDoubleClick={handleNodeDoubleClick}
                 onConnect={graphEdits.connect ? handleConnect : undefined}
                 nodeTypes={nodeTypes}

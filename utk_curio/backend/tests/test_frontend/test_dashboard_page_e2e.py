@@ -18,7 +18,7 @@ What replaced it, and what each test below pins:
 * the page is read-only for everyone but the owner, cannot delete anything, and
   its one write (Save layout) leaves the dataflow's recorded outputs alone;
 * a dataflow's scenarios each get a column of tiles under a header in their
-  color, and Arrange by scenario puts the tiles back in them (#662).
+  color (#662).
 
 The dataflow is built here rather than borrowed from ``docs/examples``: three
 nodes, no datasets, so a failure is about this feature and not about a seed.
@@ -692,32 +692,11 @@ _TILE_POSITIONS_JS = """() => Object.fromEntries(window.__curio_reactFlow.getNod
     .map((n) => [n.id, [n.position.x, n.position.y]]))"""
 
 
-def _tiles_settle(page, node_id: str, *, at=None, away_from=None) -> dict:
-    """The tiles' positions once *node_id* is *at* a place, or *away_from* one
-    (React Flow takes a move a render later). On a timeout the caller's
-    assertion says what the positions were."""
-    try:
-        page.wait_for_function(
-            """([id, at, away]) => {
-                const node = window.__curio_reactFlow.getNode(id);
-                if (!node) return false;
-                const same = (p) => p[0] === node.position.x && p[1] === node.position.y;
-                return at ? same(at) : !same(away);
-            }""",
-            arg=[node_id, at, away_from],
-            timeout=10000,
-        )
-    except PlaywrightTimeoutError:
-        pass
-    return page.evaluate(_TILE_POSITIONS_JS)
-
-
 def test_scenarios_get_a_column_each_under_a_header_in_their_color(
     app_frontend: "FrontendPage", current_server, page,
 ):
     """The dashboard by scenario (#662): the shared tiles first, a column per
-    scenario under its header, then what reads their outcomes. Arrange by
-    scenario puts a dragged tile back, and Save layout records the columns."""
+    scenario under its header, then what reads their outcomes."""
     require_project_page()
     require_user_auth()
     session = stub_login_and_enter_workflow(
@@ -732,7 +711,6 @@ def test_scenarios_get_a_column_each_under_a_header_in_their_color(
     require_owner_view(page)
     page.wait_for_selector(".react-flow__node", timeout=45000)
     project_id = session["project"]["id"]
-    before = _project(current_server, session["token"], project_id)
 
     _open_dashboard(page, app_frontend.base_url, project_id)
     for node_id in (SCN_LOAD, SCN_FACTOR, SCN_BASE, SCN_TALL, SCN_COMPARE):
@@ -763,37 +741,6 @@ def test_scenarios_get_a_column_each_under_a_header_in_their_color(
         )
         assert header.get_by_role("button").count() == 0, "a dashboard header offers a button"
     assert page.locator("[data-scenario-frame]").count() == 2
-
-    # Drag a scenario's tile away, then put every tile back in its column.
-    page.get_by_test_id("edit-layout-btn").click()
-    handle = page.locator(
-        f'.react-flow__node[data-id="{SCN_BASE}"] .curio-dashboard-tile-handle'
-    ).first
-    grab = handle.bounding_box()
-    assert grab, "the tile's title band has no box to grab"
-    gx, gy = grab["x"] + grab["width"] / 2, grab["y"] + grab["height"] / 2
-    page.mouse.move(gx, gy)
-    page.mouse.down()
-    page.mouse.move(gx + 140, gy + 70, steps=10)
-    page.mouse.up()
-    dragged = _tiles_settle(page, SCN_BASE, away_from=opened[SCN_BASE])
-    assert dragged[SCN_BASE] != opened[SCN_BASE], "the drag did not move the tile"
-
-    page.get_by_test_id("arrange-by-scenario-btn").click()
-    arranged = _tiles_settle(page, SCN_BASE, at=opened[SCN_BASE])
-    assert arranged == opened, f"Arrange by scenario left {arranged!r}, not the columns {opened!r}"
-
-    page.get_by_test_id("save-layout-btn").click()
-    page.get_by_test_id("save-layout-btn").wait_for(state="detached", timeout=20000)
-    after = _project(current_server, session["token"], project_id)
-    for node_id, (tx, ty) in opened.items():
-        saved = _node_in_spec(after, node_id)
-        assert (saved.get("dashboardX"), saved.get("dashboardY")) == (tx, ty), (
-            f"{node_id} saved at {saved.get('dashboardX')!r}, {saved.get('dashboardY')!r}, not its column's {tx}, {ty}"
-        )
-        assert (saved["x"], saved["y"]) == (
-            _node_in_spec(before, node_id)["x"], _node_in_spec(before, node_id)["y"],
-        ), f"the dashboard moved {node_id} on the canvas"
 
 
 def test_the_dashboard_is_a_layer_only_while_it_is_panned(

@@ -319,17 +319,14 @@
         "goal": "Chart SCOUT's mean accumulated shadow of both scenarios.",
         "metadata": {
           "keywords": [],
-          "vegaCompare": {
-            "enabled": true
-          },
           "packageTemplateLabel": "Mean accumulated shadow comparison"
         },
         "title": "Mean accumulated shadow comparison",
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"title\": \"Mean accumulated shadow (min)\",\n  \"encoding\": {\n    \"theta\": {\n      \"field\": \"Mean Acc shadow\",\n      \"type\": \"quantitative\",\n      \"stack\": true\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"legend\": null\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"arc\",\n        \"outerRadius\": 110,\n        \"tooltip\": true\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"text\",\n        \"radius\": 135\n      },\n      \"encoding\": {\n        \"text\": {\n          \"field\": \"Mean Acc shadow\",\n          \"type\": \"quantitative\",\n          \"format\": \".2f\"\n        }\n      }\n    }\n  ]\n}"
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"inputs\"\n  },\n  \"transform\": [\n    {\n      \"calculate\": \"['Existing', 'Towers removed'][datum.__input__]\",\n      \"as\": \"scenario_name\"\n    }\n  ],\n  \"title\": \"Mean accumulated shadow (min)\",\n  \"encoding\": {\n    \"theta\": {\n      \"field\": \"Mean Acc shadow\",\n      \"type\": \"quantitative\",\n      \"stack\": true\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"legend\": {\n        \"title\": \"Scenario\",\n        \"orient\": \"bottom\",\n        \"direction\": \"horizontal\"\n      },\n      \"scale\": {\n        \"domain\": [\n          \"Existing\",\n          \"Towers removed\"\n        ],\n        \"range\": [\n          \"#2a9d8f\",\n          \"#e76f51\"\n        ]\n      }\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"arc\",\n        \"outerRadius\": 100,\n        \"tooltip\": true\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"text\",\n        \"radius\": 122\n      },\n      \"encoding\": {\n        \"text\": {\n          \"field\": \"Mean Acc shadow\",\n          \"type\": \"quantitative\",\n          \"format\": \".2f\"\n        }\n      }\n    }\n  ]\n}"
       },
       {
         "id": "03f22465-a451-5053-bac8-f4bf03b1853c",
-        "type": "curio.builtin/raster-calculator",
+        "type": "curio.builtin/computation-analysis",
         "x": 3870,
         "y": 910,
         "out": "DEFAULT",
@@ -675,7 +672,6 @@
           "33482cc2-1ead-59ed-932f-b23edcba877c",
           "bc58b3ce-5879-584c-a824-a153f64cc2ff",
           "b137fcf4-9875-5fee-a732-1995346e6628",
-          "f2016af8-e02e-5c0b-98e3-d152433318a4",
           "55ffb609-2962-506d-905a-79325abe48bb",
           "594a6065-3240-577b-b7a5-3f6fb46964a0"
         ]
@@ -691,7 +687,6 @@
           "994f05dc-1211-5f00-b227-5856709da6e7",
           "eb082a2a-0343-548d-b55a-e120f133250e",
           "a2cc7747-f3ff-54f1-88ac-577a85c6baa0",
-          "cddd5b07-28d6-5832-a59d-7ba01c7e3331",
           "3f43ffa8-c1ab-5f68-be17-16acbe345f6f",
           "f3af1ffb-4f11-5676-bd63-419147fc297c"
         ]

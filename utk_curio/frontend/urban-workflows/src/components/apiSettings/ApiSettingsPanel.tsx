@@ -24,7 +24,10 @@ export const ApiSettingsPanel: React.FC<{
   onTabChange: (tab: ApiSettingsTab) => void;
   /** The place a card asked for: a key's form or an agent's row. */
   focus?: ApiSettingsFocus | null;
-}> = ({ tab, onTabChange, focus = null }) => {
+  /** API keys alone, without the tabs: the dashboard, whose agent runs on the
+   *  default configuration and has no row in Agent configuration. */
+  keysOnly?: boolean;
+}> = ({ tab, onTabChange, focus = null, keysOnly = false }) => {
   const llm = useLlmListing();
   const { user, isSharedGuest, enableUserAuth } = useUserContext();
   const hostedGuest = isHostedGuest(user, enableUserAuth);
@@ -40,8 +43,11 @@ export const ApiSettingsPanel: React.FC<{
     tabRefs.current[next]?.focus();
   };
 
+  const shown = keysOnly ? "keys" : tab;
+
   return (
     <div className={styles.panel}>
+      {keysOnly ? null : (
       <div className={styles.tabs} role="tablist" aria-label="API Settings" onKeyDown={onKeyDown}>
         {TABS.map((t) => (
           <button
@@ -62,13 +68,18 @@ export const ApiSettingsPanel: React.FC<{
           </button>
         ))}
       </div>
+      )}
       {shared ? (
         <p className={styles.sharedNote} role="note">
           Everyone using this Curio shares this account, so keys saved here are shared too.
         </p>
       ) : null}
-      <div role="tabpanel" id={`api-settings-panel-${tab}`} aria-labelledby={`api-settings-tab-${tab}`}>
-        {tab === "keys" ? (
+      <div
+        role={keysOnly ? undefined : "tabpanel"}
+        id={`api-settings-panel-${shown}`}
+        aria-labelledby={keysOnly ? undefined : `api-settings-tab-${shown}`}
+      >
+        {shown === "keys" ? (
           <ApiKeysTab llm={llm} hostedGuest={hostedGuest} focus={focus} />
         ) : (
           <AgentConfigTab llm={llm} focus={focus} onShowKeys={() => onTabChange("keys")} />

@@ -222,6 +222,10 @@ export function DiscoveryAddDialog({
 
   return (
     <ConfirmDialog
+      // Above a catalog drawer: the canvas's Discovery Catalog drawer opens this
+      // dialog too, and on the default layer its scrim lay over the dialog, so
+      // every click in it closed the drawer and the dialog with it.
+      layer="overlay"
       title={verb === "download" ? `Download ${resource.name}` : `Add ${resource.name}`}
       body={body}
       confirmLabel={verb === "download" ? "Download" : "Add to Data Catalog"}

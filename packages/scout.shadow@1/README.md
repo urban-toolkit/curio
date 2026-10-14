@@ -112,7 +112,8 @@ of SCOUT's Chicago Loop buildings. The test dataflow
 [WhatIfShadows](../../docs/examples/dataflows/WhatIfShadows.json) compares SCOUT's
 two building sets of the Chicago Loop as two scenarios: the buildings as they
 are, and with 15 of them removed, on a Vega-Lite pie of the mean accumulated
-shadow and a map of a Raster Calculator's absolute change in shadow.
+shadow and a map of the absolute change in shadow (`curio_raster_calculate` in a
+Python node).
 
 ## Setup
 

@@ -18,6 +18,13 @@ export interface Scenario {
   description?: string;
   /** Its nodes' ids. Empty once its last node is deleted. */
   nodes: string[];
+  /**
+   * The nodes outside it that feed it and that it feeds, as its last save
+   * stored them (`normalize_spec_scenarios`); a drag from the Scenario
+   * Catalog brings them with it.
+   */
+  upstream?: string[];
+  downstream?: string[];
   collapsed?: boolean;
   /** Where its collapsed box sits on the canvas. */
   box?: { x: number; y: number };
@@ -43,10 +50,11 @@ function wellFormed(entry: unknown): entry is Record<string, unknown> & { id: st
   );
 }
 
-function members(entry: Record<string, unknown>): string[] {
+function members(entry: Record<string, unknown>, key = "nodes"): string[] {
   const out: string[] = [];
-  if (!Array.isArray(entry.nodes)) return out;
-  for (const id of entry.nodes) {
+  const raw = entry[key];
+  if (!Array.isArray(raw)) return out;
+  for (const id of raw) {
     if (nonEmpty(id) && !out.includes(id)) out.push(id);
   }
   return out;
@@ -70,6 +78,11 @@ export function normalizeScenarios(raw: unknown, nodeIds: Iterable<string>): Sce
     kept.forEach((id) => claimed.add(id));
     const scenario: Scenario = { id: entry.id, name: entry.name, color: entry.color, nodes: kept };
     if (nonEmpty(entry.description)) scenario.description = entry.description;
+    for (const key of ["upstream", "downstream"] as const) {
+      if (Array.isArray(entry[key])) {
+        scenario[key] = members(entry, key).filter((id) => nodes.has(id) && !kept.includes(id));
+      }
+    }
     if (typeof entry.collapsed === "boolean") scenario.collapsed = entry.collapsed;
     const box = entry.box as Record<string, unknown> | undefined;
     if (box && typeof box === "object" && isNumber(box.x) && isNumber(box.y)) {

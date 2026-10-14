@@ -10,7 +10,7 @@ and returns the shadow raster with SCOUT's mean and median over the ground, whic
 two Python Computation nodes take apart. "Towers removed" first removes the 15
 buildings SCOUT's second scenario removes. A Vega-Lite node comparing the
 scenarios draws SCOUT's mean accumulated shadow on a pie, one value per
-scenario, and a Raster Calculator takes the size of its change, which an Autark
+scenario, and a Python node (curio_raster_calculate) takes the size of its change, which an Autark
 map draws.
 
 Run All in the browser runs the whole dataflow:
@@ -64,7 +64,6 @@ DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "WhatIfShadows.
 SHADOW_TYPE = "scout.shadow/accumulated-shadow"
 PICKER_TYPE = "curio.builtin/computation-analysis"
 VEGA_TYPE = "curio.builtin/vis-vega"
-CALCULATOR_TYPE = "curio.builtin/raster-calculator"
 MAP_TYPE = "curio.builtin/autk-grammar"
 PACKAGES = ("scout.raster-conversion@1", "scout.shadow@1")
 #: SCOUT's A_shadows_metric.csv and B_shadows_metric.csv.
@@ -95,7 +94,9 @@ def test_two_building_sets_are_shadowed_charted_and_mapped(
                and node["content"].splitlines()[-1] == "return input_0[1]"]
     assert len(shadows) == len(metrics) == 2, (shadows, metrics)
     (chart,) = [n for n, node in nodes.items() if node["type"] == VEGA_TYPE]
-    (difference,) = [n for n, node in nodes.items() if node["type"] == CALCULATOR_TYPE]
+    # The change between the scenarios: a Python node calling curio_raster_calculate.
+    (difference,) = [n for n, node in nodes.items() if node["type"] == PICKER_TYPE
+                     and "curio_raster_calculate" in node["content"]]
     (change_map,) = [e["target"] for e in dataflow["edges"] if e["source"] == difference]
     scenario_of = {n: scenario["id"] for scenario in dataflow["scenarios"] for n in scenario["nodes"]}
     colors = [scenario["color"] for scenario in dataflow["scenarios"]]
@@ -141,7 +142,7 @@ def test_two_building_sets_are_shadowed_charted_and_mapped(
 
     # 2. The size of towers removed minus existing, on the mosaics' grid, mapped.
     artifact = page.evaluate(OUTPUT_ARTIFACT_JS, difference)
-    assert artifact, "the Raster Calculator shows no saved raster"
+    assert artifact, "the difference node shows no saved raster"
     values, profile = fetch_raster(artifact)
     assert (str(profile["crs"]), profile["width"], profile["height"]) == ("EPSG:3395", 512, 512), profile
     cells = values[0].ravel().tolist()

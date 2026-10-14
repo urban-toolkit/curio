@@ -520,6 +520,8 @@ function generateCells(
       inputNodes.forEach((input, position) => {
         lines.push(`_spec["datasets"]["${inputTableName(position)}"] = ${outputVarName(input)}.to_dict(orient="records")`);
       });
+      // All of them stacked, each row's __input__ its circle (utils/vegaDatasets).
+      lines.push(`_spec["datasets"]["inputs"] = [dict(row, __input__=k) for k, rows in enumerate([${inputNodes.map((input) => `${outputVarName(input)}.to_dict(orient="records")`).join(", ")}]) for row in rows]`);
       if (!namesDataset((spec as any)?.data)) lines.push(`_spec["data"] = {"name": "${inputTableName(0)}"}`);
     }
     lines.push(

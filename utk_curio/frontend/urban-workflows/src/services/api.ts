@@ -1,6 +1,7 @@
 import { getToken } from "../utils/authApi";
 import { backendUrl } from "../utils/backendUrl";
 import { embeddedArtifact, EmbeddedEnvelope, embeddedRaster, EmbeddedRaster } from "../standalone/dashboardPayload";
+import { notePublishedArtifacts, publishedArtifactPath } from "./published/publishedArtifacts";
 
 export const ARROW_IPC_MIME = "application/vnd.apache.arrow.stream";
 
@@ -120,8 +121,13 @@ export async function fetchData(fileName: string) {
     if (embedded) {
         return { ...embedded, filename: fileName };
     }
+    // An artifact of a published run a visitor started is read with the run's
+    // key (services/published/publishedArtifacts).
+    const published = publishedArtifactPath("get", fileName);
     try {
-        const url = `${backendUrl()}/get?fileName=${encodeURIComponent(fileName)}`;
+        const url = published
+            ? `${backendUrl()}${published}`
+            : `${backendUrl()}/get?fileName=${encodeURIComponent(fileName)}`;
         console.log(`Fetching ${url}`);
         const _token = getToken();
 
@@ -153,6 +159,8 @@ export async function fetchData(fileName: string) {
         const jsonData = await response.json();
 
         console.log(`Fetched data`, jsonData);
+        // A bundle a published run produced lists its parts, read next.
+        if (published) notePublishedArtifacts(jsonData);
 
         return jsonData;
     } catch (error: unknown) {
@@ -179,7 +187,10 @@ export async function fetchPreviewData(fileName: string) {
     try {
         // Use the correct backend URL
         const base = backendUrl() || 'http://localhost:5002';
-        const url = `${base}/get-preview?fileName=${encodeURIComponent(fileName)}`;
+        const published = publishedArtifactPath("get-preview", fileName);
+        const url = published
+            ? `${base}${published}`
+            : `${base}/get-preview?fileName=${encodeURIComponent(fileName)}`;
         console.log(`[fetchPreviewData] Fetching preview from ${url}`);
         const _token = getToken();
         const response = await fetch(url, {
@@ -195,6 +206,7 @@ export async function fetchPreviewData(fileName: string) {
 
         const jsonData = await response.json();
         console.log(`[fetchPreviewData] Fetched preview data:`, jsonData);
+        if (published) notePublishedArtifacts(jsonData);
 
         return jsonData;
     } catch (error: unknown) {
@@ -249,7 +261,13 @@ export async function fetchRaster(
     });
     if (opts.part != null) params.set("part", String(opts.part));
     const token = getToken();
-    const response = await fetch(`${backendUrl()}/raster?${params.toString()}`, {
+    // A raster of a published run a visitor started is read with the run's key.
+    const published = publishedArtifactPath("raster", fileName);
+    if (published) params.delete("fileName");
+    const rasterUrl = published
+        ? `${backendUrl()}${published}&${params.toString()}`
+        : `${backendUrl()}/raster?${params.toString()}`;
+    const response = await fetch(rasterUrl, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (!response.ok) {

@@ -10,6 +10,8 @@ export interface ApiSettingsDrawerProps {
   focus: ApiSettingsFocus | null;
   onRequestClose: () => void;
   onExitComplete: () => void;
+  /** API keys alone (the dashboard): see ApiSettingsPanel. */
+  keysOnly?: boolean;
 }
 
 /** API Settings on the canvas and the dashboard: the settings page's panel in
@@ -21,6 +23,7 @@ export const ApiSettingsDrawer: React.FC<ApiSettingsDrawerProps> = ({
   focus,
   onRequestClose,
   onExitComplete,
+  keysOnly = false,
 }) => (
   <HeaderDrawer
     presented={presented}
@@ -30,7 +33,7 @@ export const ApiSettingsDrawer: React.FC<ApiSettingsDrawerProps> = ({
     titleId="api-settings-drawer-title"
     name="settings"
   >
-    <ApiSettingsPanel tab={tab} onTabChange={onTabChange} focus={focus} />
+    <ApiSettingsPanel tab={tab} onTabChange={onTabChange} focus={focus} keysOnly={keysOnly} />
   </HeaderDrawer>
 );
 

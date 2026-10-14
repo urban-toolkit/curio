@@ -99,6 +99,11 @@ def create_app(config_class=config_class):
     from utk_curio.backend.app.runs.routes import runs_bp
     app.register_blueprint(runs_bp)
 
+    # Published dashboards: their table, and the runs others start from a link.
+    from utk_curio.backend.app.published import models as _published_models  # noqa: F401
+    from utk_curio.backend.app.published.routes import published_bp
+    app.register_blueprint(published_bp)
+
     from utk_curio.backend.app.notebooks import notebooks_bp
     app.register_blueprint(notebooks_bp)
 

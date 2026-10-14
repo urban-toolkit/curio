@@ -38,6 +38,7 @@ import { CatalogButtons } from "./CatalogButtons";
 import { CanvasViewSwitch } from "./CanvasViewSwitch";
 import { useNavigate, useParams } from "react-router-dom";
 import { useUserContext } from "../../../providers/UserProvider";
+import { isHostedGuest } from "../../apiSettings/useHostedGuest";
 import { useToastContext } from "../../../providers/ToastProvider";
 import { getCurrentProjectPackagesList } from "../../../registry/projectPackagesStore";
 import {
@@ -65,7 +66,7 @@ export default function UpMenu() {
 
     const loadTrillInputRef = useRef<HTMLInputElement>(null);
     const navigate = useNavigate();
-    const { skipProjectPage } = useUserContext();
+    const { skipProjectPage, user, enableUserAuth } = useUserContext();
     const {
         workflowNameRef,
         projectId,
@@ -86,6 +87,7 @@ export default function UpMenu() {
         edges,
         canvasView,
         setCanvasView,
+        viewerMode,
     } = useFlowContext();
 
     /** Run *action* now, or ask first when there is unsaved work to lose.
@@ -525,6 +527,8 @@ export default function UpMenu() {
                     onToggle={() => toggleMenu("share")}
                     onClose={closeShare}
                     projectDirty={projectDirty}
+                    // The owner, who may save it, publishes the dashboard for others to run.
+                    canPublish={viewerMode === "owner" && !!projectId && !isHostedGuest(user, enableUserAuth)}
                 />
 
                 {/* Real-time collaboration side panel toggle. Only rendered

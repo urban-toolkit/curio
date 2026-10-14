@@ -117,7 +117,13 @@
               "value": 0.01657
             }
           ]
-        }
+        },
+        "dashboardPinned": true,
+        "dashboardX": -1039.6257898656295,
+        "dashboardY": 25.249989618816628,
+        "dashboardWidth": 435,
+        "dashboardHeight": 534,
+        "dashboardControlsOnly": true
       },
       {
         "id": "9aefed8b-e3a5-52e0-a60d-d1dcd1534217",
@@ -182,18 +188,39 @@
         }
       },
       {
+        "id": "1aa678ac-3b5c-5e01-8e11-7a901f45a5a4",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1440,
+        "y": -20,
+        "content": "# Both scenarios' routes in one layer, each named in a route column, for\n# the map to color by.\nimport geopandas as gpd\nimport pandas as pd\n\nfastest = input_0.assign(route=\"Fastest route\")\nweather_aware = input_1.assign(route=\"Weather-aware route\")\nreturn gpd.GeoDataFrame(pd.concat([fastest, weather_aware], ignore_index=True), crs=fastest.crs)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Put both scenarios' routes in one layer, each named in a route column.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Both routes"
+        }
+      },
+      {
         "id": "ce358c62-e1d3-5bed-a112-da3a53787822",
         "type": "curio.builtin/autk-grammar",
         "x": 2144,
         "y": -20,
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\"\n      },\n      {\n        \"dataRef\": \"[!! input_1 !!]\",\n        \"scenario\": \"fastest\"\n      },\n      {\n        \"dataRef\": \"[!! input_2 !!]\",\n        \"scenario\": \"weather-aware\"\n      }\n    ]\n  }\n}",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\"\n      },\n      {\n        \"dataRef\": \"[!! input_1 !!]\",\n        \"isColorMap\": true,\n        \"getFnv\": \"route\",\n        \"colorMapInterpolator\": \"schemeTableau10\",\n        \"legendTitle\": \"Route\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Draw both scenarios' routes over the roads.",
+        "goal": "Draw both routes over the roads, colored by route.",
         "metadata": {
           "keywords": [],
           "packageTemplateLabel": "Routes map"
-        }
+        },
+        "width": 1156,
+        "height": 565,
+        "dashboardPinned": true,
+        "dashboardX": -595.9756763997946,
+        "dashboardY": 24.954512768585417,
+        "dashboardWidth": 495,
+        "dashboardHeight": 531
       },
       {
         "id": "b6500b1e-1575-5693-b8d0-59c214aba8d7",
@@ -205,13 +232,15 @@
         "goal": "Compare the two routes' duration, in minutes.",
         "metadata": {
           "keywords": [],
-          "vegaCompare": {
-            "enabled": true
-          },
           "packageTemplateLabel": "Duration comparison"
         },
         "title": "Duration comparison",
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    },\n    \"y\": {\n      \"field\": \"duration\",\n      \"type\": \"quantitative\",\n      \"title\": \"Duration (min)\"\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"bar\",\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"legend\": null\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"text\",\n        \"dy\": -6,\n        \"baseline\": \"bottom\"\n      },\n      \"encoding\": {\n        \"text\": {\n          \"field\": \"duration\",\n          \"type\": \"quantitative\",\n          \"format\": \".2f\"\n        }\n      }\n    }\n  ]\n}"
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"inputs\"\n  },\n  \"transform\": [\n    {\n      \"calculate\": \"['Fastest route', 'Weather-aware route'][datum.__input__]\",\n      \"as\": \"scenario_name\"\n    }\n  ],\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"axis\": {\n        \"labelAngle\": 0\n      },\n      \"sort\": [\n        \"Fastest route\",\n        \"Weather-aware route\"\n      ]\n    },\n    \"y\": {\n      \"field\": \"duration\",\n      \"type\": \"quantitative\",\n      \"title\": \"Duration (min)\"\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"bar\",\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"legend\": null,\n          \"scale\": {\n            \"domain\": [\n              \"Fastest route\",\n              \"Weather-aware route\"\n            ],\n            \"range\": [\n              \"#4e79a7\",\n              \"#f28e2c\"\n            ]\n          }\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"text\",\n        \"dy\": -6,\n        \"baseline\": \"bottom\"\n      },\n      \"encoding\": {\n        \"text\": {\n          \"field\": \"duration\",\n          \"type\": \"quantitative\",\n          \"format\": \".2f\"\n        }\n      }\n    }\n  ]\n}",
+        "dashboardPinned": true,
+        "dashboardX": 261.97688432552286,
+        "dashboardY": 25.42133463761101,
+        "dashboardWidth": 323,
+        "dashboardHeight": 256
       },
       {
         "id": "f5349c92-21d6-521b-a43f-50070b72f1a3",
@@ -223,13 +252,15 @@
         "goal": "Compare the two routes' distance, in kilometres.",
         "metadata": {
           "keywords": [],
-          "vegaCompare": {
-            "enabled": true
-          },
           "packageTemplateLabel": "Distance comparison"
         },
         "title": "Distance comparison",
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    },\n    \"y\": {\n      \"field\": \"distance\",\n      \"type\": \"quantitative\",\n      \"title\": \"Distance (km)\"\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"bar\",\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"legend\": null\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"text\",\n        \"dy\": -6,\n        \"baseline\": \"bottom\"\n      },\n      \"encoding\": {\n        \"text\": {\n          \"field\": \"distance\",\n          \"type\": \"quantitative\",\n          \"format\": \".2f\"\n        }\n      }\n    }\n  ]\n}"
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"inputs\"\n  },\n  \"transform\": [\n    {\n      \"calculate\": \"['Fastest route', 'Weather-aware route'][datum.__input__]\",\n      \"as\": \"scenario_name\"\n    }\n  ],\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"axis\": {\n        \"labelAngle\": 0\n      },\n      \"sort\": [\n        \"Fastest route\",\n        \"Weather-aware route\"\n      ]\n    },\n    \"y\": {\n      \"field\": \"distance\",\n      \"type\": \"quantitative\",\n      \"title\": \"Distance (km)\"\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"bar\",\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"legend\": null,\n          \"scale\": {\n            \"domain\": [\n              \"Fastest route\",\n              \"Weather-aware route\"\n            ],\n            \"range\": [\n              \"#4e79a7\",\n              \"#f28e2c\"\n            ]\n          }\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"text\",\n        \"dy\": -6,\n        \"baseline\": \"bottom\"\n      },\n      \"encoding\": {\n        \"text\": {\n          \"field\": \"distance\",\n          \"type\": \"quantitative\",\n          \"format\": \".2f\"\n        }\n      }\n    }\n  ]\n}",
+        "dashboardPinned": true,
+        "dashboardX": -89.51848900121303,
+        "dashboardY": 25.578504303899166,
+        "dashboardWidth": 342,
+        "dashboardHeight": 255
       },
       {
         "id": "c0c8b561-fc90-5063-9579-7096b743e2a1",
@@ -241,13 +272,15 @@
         "goal": "Compare the two routes' rain exposure.",
         "metadata": {
           "keywords": [],
-          "vegaCompare": {
-            "enabled": true
-          },
           "packageTemplateLabel": "Rain exposure comparison"
         },
         "title": "Rain exposure comparison",
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    },\n    \"y\": {\n      \"field\": \"rain_exposure\",\n      \"type\": \"quantitative\",\n      \"title\": \"Rain exposure\"\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"bar\",\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"legend\": null\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"text\",\n        \"dy\": -6,\n        \"baseline\": \"bottom\"\n      },\n      \"encoding\": {\n        \"text\": {\n          \"field\": \"rain_exposure\",\n          \"type\": \"quantitative\",\n          \"format\": \".2f\"\n        }\n      }\n    }\n  ]\n}"
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"inputs\"\n  },\n  \"transform\": [\n    {\n      \"calculate\": \"['Fastest route', 'Weather-aware route'][datum.__input__]\",\n      \"as\": \"scenario_name\"\n    }\n  ],\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"axis\": {\n        \"labelAngle\": 0\n      },\n      \"sort\": [\n        \"Fastest route\",\n        \"Weather-aware route\"\n      ]\n    },\n    \"y\": {\n      \"field\": \"rain_exposure\",\n      \"type\": \"quantitative\",\n      \"title\": \"Rain exposure\"\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"bar\",\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"legend\": null,\n          \"scale\": {\n            \"domain\": [\n              \"Fastest route\",\n              \"Weather-aware route\"\n            ],\n            \"range\": [\n              \"#4e79a7\",\n              \"#f28e2c\"\n            ]\n          }\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"text\",\n        \"dy\": -6,\n        \"baseline\": \"bottom\"\n      },\n      \"encoding\": {\n        \"text\": {\n          \"field\": \"rain_exposure\",\n          \"type\": \"quantitative\",\n          \"format\": \".2f\"\n        }\n      }\n    }\n  ]\n}",
+        "dashboardPinned": true,
+        "dashboardX": 262.61358102654765,
+        "dashboardY": 293.05251907235595,
+        "dashboardWidth": 323,
+        "dashboardHeight": 265
       },
       {
         "id": "cb62b12e-822e-558b-b44c-a482b76011ec",
@@ -259,13 +292,15 @@
         "goal": "Compare the two routes' wind exposure.",
         "metadata": {
           "keywords": [],
-          "vegaCompare": {
-            "enabled": true
-          },
           "packageTemplateLabel": "Wind exposure comparison"
         },
         "title": "Wind exposure comparison",
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    },\n    \"y\": {\n      \"field\": \"wind_exposure\",\n      \"type\": \"quantitative\",\n      \"title\": \"Wind exposure\"\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"bar\",\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"legend\": null\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"text\",\n        \"dy\": -6,\n        \"baseline\": \"bottom\"\n      },\n      \"encoding\": {\n        \"text\": {\n          \"field\": \"wind_exposure\",\n          \"type\": \"quantitative\",\n          \"format\": \".2f\"\n        }\n      }\n    }\n  ]\n}"
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"inputs\"\n  },\n  \"transform\": [\n    {\n      \"calculate\": \"['Fastest route', 'Weather-aware route'][datum.__input__]\",\n      \"as\": \"scenario_name\"\n    }\n  ],\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"axis\": {\n        \"labelAngle\": 0\n      },\n      \"sort\": [\n        \"Fastest route\",\n        \"Weather-aware route\"\n      ]\n    },\n    \"y\": {\n      \"field\": \"wind_exposure\",\n      \"type\": \"quantitative\",\n      \"title\": \"Wind exposure\"\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"bar\",\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"legend\": null,\n          \"scale\": {\n            \"domain\": [\n              \"Fastest route\",\n              \"Weather-aware route\"\n            ],\n            \"range\": [\n              \"#4e79a7\",\n              \"#f28e2c\"\n            ]\n          }\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"text\",\n        \"dy\": -6,\n        \"baseline\": \"bottom\"\n      },\n      \"encoding\": {\n        \"text\": {\n          \"field\": \"wind_exposure\",\n          \"type\": \"quantitative\",\n          \"format\": \".2f\"\n        }\n      }\n    }\n  ]\n}",
+        "dashboardPinned": true,
+        "dashboardX": -88.94595789493675,
+        "dashboardY": 291.6605177495886,
+        "dashboardWidth": 342,
+        "dashboardHeight": 266
       }
     ],
     "edges": [
@@ -312,18 +347,25 @@
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-9aefed8b-e3a5-52e0-a60d-d1dcd1534217out-ce358c62-e1d3-5bed-a112-da3a53787822in_1",
+        "id": "reactflow__edge-9aefed8b-e3a5-52e0-a60d-d1dcd1534217out-1aa678ac-3b5c-5e01-8e11-7a901f45a5a4in",
         "source": "9aefed8b-e3a5-52e0-a60d-d1dcd1534217",
-        "target": "ce358c62-e1d3-5bed-a112-da3a53787822",
+        "target": "1aa678ac-3b5c-5e01-8e11-7a901f45a5a4",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-4433fb36-161f-5369-9703-9fd5fc8ba6adout-1aa678ac-3b5c-5e01-8e11-7a901f45a5a4in_1",
+        "source": "4433fb36-161f-5369-9703-9fd5fc8ba6ad",
+        "target": "1aa678ac-3b5c-5e01-8e11-7a901f45a5a4",
         "sourceHandle": "out",
         "targetHandle": "in_1"
       },
       {
-        "id": "reactflow__edge-4433fb36-161f-5369-9703-9fd5fc8ba6adout-ce358c62-e1d3-5bed-a112-da3a53787822in_2",
-        "source": "4433fb36-161f-5369-9703-9fd5fc8ba6ad",
+        "id": "reactflow__edge-1aa678ac-3b5c-5e01-8e11-7a901f45a5a4out-ce358c62-e1d3-5bed-a112-da3a53787822in_1",
+        "source": "1aa678ac-3b5c-5e01-8e11-7a901f45a5a4",
         "target": "ce358c62-e1d3-5bed-a112-da3a53787822",
         "sourceHandle": "out",
-        "targetHandle": "in_2"
+        "targetHandle": "in_1"
       },
       {
         "id": "reactflow__edge-50c95cc1-8a22-54b5-b9be-b3896879d2d7out-b6500b1e-1575-5693-b8d0-59c214aba8d7in",
@@ -386,7 +428,7 @@
       {
         "id": "fastest",
         "name": "Fastest route",
-        "color": "#42A5F5",
+        "color": "#4e79a7",
         "nodes": [
           "9aefed8b-e3a5-52e0-a60d-d1dcd1534217",
           "50c95cc1-8a22-54b5-b9be-b3896879d2d7"
@@ -395,7 +437,7 @@
       {
         "id": "weather-aware",
         "name": "Weather-aware route",
-        "color": "#00838F",
+        "color": "#f28e2c",
         "nodes": [
           "4433fb36-161f-5369-9703-9fd5fc8ba6ad",
           "86e04cad-d2cb-5c94-a1bb-38a32cde7d3c"

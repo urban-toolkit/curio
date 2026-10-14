@@ -1,8 +1,8 @@
 """Raster algebra: operations over rasters on one grid, cell by cell, and a
 raster's statistics.
 
-The one implementation behind the Raster Calculator and Raster Statistics
-nodes (``curio_raster_calculate``, ``curio_raster_statistics``).
+The one implementation behind ``curio_raster_calculate`` and
+``curio_raster_statistics``, which a Python node's code calls.
 
 Rasters are combined only on one grid: the same size, origin, cell size and
 CRS. Anything else is refused with a sentence that names both, since putting
@@ -180,7 +180,7 @@ def _reads(operation: str) -> int:
     if operation == CHOOSE:
         return 3
     raise RasterAlgebraError(
-        f"The Raster Calculator has no operation {operation!r}. Its operations: {', '.join(OPERATIONS)}."
+        f"curio_raster_calculate has no operation {operation!r}. Its operations: {', '.join(OPERATIONS)}."
     )
 
 
@@ -321,7 +321,7 @@ def calculate(operation, rasters, *, codes=None, absolute=False, output_file):
     rasters = _inputs(rasters)
     if len(rasters) != wanted:
         raise RasterAlgebraError(
-            f"{operation} reads {wanted} rasters, and the Raster Calculator has {len(rasters)}: "
+            f"{operation} reads {wanted} rasters, and curio_raster_calculate has {len(rasters)}: "
             "connect one to each input circle."
         )
     _check_rasters(rasters)
@@ -379,7 +379,7 @@ def statistics(raster, *, band=1, mask=None, mask_values=None, where=None):
         rasters, mask = rasters[:1], rasters[1]
     if len(rasters) != 1:
         raise RasterAlgebraError(
-            f"Raster Statistics reads one raster, and a mask on input_1, and it has {len(rasters)}."
+            f"curio_raster_statistics reads one raster, and a mask on input_1, and it has {len(rasters)}."
         )
     _check_rasters(rasters + ([mask] if mask is not None else []))
     dataset = rasters[0]

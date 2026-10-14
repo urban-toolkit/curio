@@ -263,7 +263,7 @@ export const ProjectLoader: React.FC<{
       //
       // A session that may edit the layout (`mayEditServedDashboard`, asked
       // once for the page) gets the dataflow the way a page that fetches loads
-      // it, from the owner's endpoint, so Edit layout, Save layout and Arrange
+      // it, from the owner's endpoint, so Edit layout and Save layout
       // work as there; the rows still come from the page. If that load fails,
       // it gets the page's own data like anyone else.
       const embedded = getEmbeddedDashboard();

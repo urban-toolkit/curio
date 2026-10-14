@@ -91,8 +91,9 @@ The test dataflow [WeatherRouting](../../docs/examples/dataflows/WeatherRouting.
 is SCOUT's weather routing example: the node set as SCOUT's example sets it
 (Default weights, midnight on 6 July 2025), over downtown Chicago's roads, the
 Data Catalog's `data.osm.chicago-downtown-roads`, which a Data Loading node loads. Two scenarios each
-keep one of its routes, the fastest and the weather-aware one; a map draws both
-in SCOUT's colors, and four Vega-Lite bar charts compare them.
+keep one of its routes, the fastest and the weather-aware one; a node in no
+scenario puts both in one layer with a `route` column, which an Autark map
+colors by with a categorical scheme, and four Vega-Lite bar charts compare them.
 
 ## Setup
 

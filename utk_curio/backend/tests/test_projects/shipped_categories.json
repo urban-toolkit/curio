@@ -325,6 +325,19 @@
     "tags": [],
     "data_type": []
   },
+  "dataflows/FloodRisk": {
+    "tags": [
+      "Autark",
+      "Vega-Lite",
+      "GeoPandas",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries",
+      "Rasters"
+    ]
+  },
   "dataflows/FloodScenarios": {
     "tags": [
       "Autark",
@@ -454,6 +467,18 @@
       "Tables"
     ]
   },
+  "dataflows/ShadowsAnywhere": {
+    "tags": [
+      "Autark",
+      "Vega-Lite",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries",
+      "Rasters"
+    ]
+  },
   "dataflows/SimpleView": {
     "tags": [
       "Pandas"
@@ -474,7 +499,9 @@
   "dataflows/WeatherRouting": {
     "tags": [
       "Autark",
-      "Vega-Lite"
+      "Vega-Lite",
+      "GeoPandas",
+      "Pandas"
     ],
     "data_type": [
       "Tables",

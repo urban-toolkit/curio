@@ -165,6 +165,15 @@ A collection lands as a dataset of format **Collection**. Its **Data Loading** n
 
 Downloading or adding does not add the dataset to a dataflow. Add it from the Data Catalog drawer on the canvas, then drag it onto the canvas: see [DATA-CATALOG.md part 3](DATA-CATALOG.md#3-using-a-dataset-in-a-dataflow).
 
+### Example: SCOUT's shadow study for another city
+
+The ShadowsAnywhere test dataflow runs SCOUT's rasterizer and Deep Umbra shadow model on Lower Manhattan, and compares the minutes of shadow in each of its parks across three scenarios: the buildings as they are, the tall buildings near the parks removed, and the same buildings capped at a height. Its data (`data.curio.lower-manhattan-shadows`) is what two downloads from this catalog give: **OpenStreetMap → Parks** for the parks' box, and **Overture Maps → Buildings** for a box about 300 m larger, since a tower just outside the parks' box still shades a park at its edge. To run it for another area:
+
+1. Download **Parks** from **OpenStreetMap** for the area, and **Buildings** from **Overture Maps** for the same area with a margin of a few hundred metres. OpenStreetMap takes a box of up to 25 km², Overture Maps up to 100 km².
+2. In the dataflow, point the **Buildings** loader at the buildings dataset and the **Parks** loader at the parks dataset: `return curio_load_data("<datasetId>")`.
+3. Set the two Parameter nodes, **Tall building height** and **Distance from a park**. They pick the buildings both what-ifs change, by the same rule for every park, so the parks compare fairly.
+4. Run all. **Building heights** gives a height to the buildings Overture has none for (from the number of floors, or the node's default), and **Open-air parks** keeps the named parks in the open, so the rest runs as it is.
+
 ---
 
 ## 4. Downloading and adding

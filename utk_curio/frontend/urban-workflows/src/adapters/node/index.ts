@@ -8,7 +8,6 @@ export { useDataSummaryBehavior } from './dataSummaryBehavior';
 export { useAutkGrammarBehavior } from './autkGrammarBehavior';
 export { useSpatialJoinBehavior } from './spatialJoinBehavior';
 export { useParameterBehavior } from './parameterBehavior';
-export { useRasterCalculatorBehavior, useRasterStatisticsBehavior } from './rasterNodeBehaviors';
 export { useEditFeaturesBehavior } from './editFeaturesBehavior';
 // Note: a package's own behavior hooks live IN its package directory and
 // ship as a pre-built `behaviors.js` loaded dynamically by the package

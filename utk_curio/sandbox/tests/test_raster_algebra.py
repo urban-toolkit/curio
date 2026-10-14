@@ -2,8 +2,8 @@
 (``util/rasters.py``): one implementation of operations over rasters.
 
 - Grids: two that differ are named in words, numbers as JavaScript writes them.
-- The Raster Calculator computes on rasterio datasets at their own number
-  type, nodata as NaN; Raster Statistics gives numpy's numbers on a band.
+- ``curio_raster_calculate`` computes on rasterio datasets at their own number
+  type, nodata as NaN; ``curio_raster_statistics`` gives numpy's numbers on a band.
 - ``curio_load_data("<id>", bounds=...)`` reads the cells whose centres lie in
   the bounds, on the raster's own grid.
 - Map tiles are laid side by side on their own grid.
@@ -207,9 +207,9 @@ class TestCalculate:
         )
 
     @pytest.mark.parametrize("operation,count,codes,sentence", [
-        ("power", 2, None, "The Raster Calculator has no operation 'power'. Its operations: add, subtract, multiply, divide, choose."),
-        ("add", 3, None, "add reads 2 rasters, and the Raster Calculator has 3: connect one to each input circle."),
-        ("choose", 2, [1], "choose reads 3 rasters, and the Raster Calculator has 2: connect one to each input circle."),
+        ("power", 2, None, "curio_raster_calculate has no operation 'power'. Its operations: add, subtract, multiply, divide, choose."),
+        ("add", 3, None, "add reads 2 rasters, and curio_raster_calculate has 3: connect one to each input circle."),
+        ("choose", 2, [1], "choose reads 3 rasters, and curio_raster_calculate has 2: connect one to each input circle."),
         ("choose", 3, None, "choose takes input_1 where input_0's class is one of codes, and input_2 elsewhere"),
         ("subtract", 2, [1], "Only choose reads codes; subtract takes none."),
         ("choose", 3, ["a"], "codes are numbers, such as [21, 31], not ['a']."),
@@ -311,7 +311,7 @@ class TestStatistics:
             (dict(raster=a, where=lambda v: True), "where must give one answer per cell"),
             (dict(raster=a, mask=moved, mask_values=[0]), "their grids differ in origin"),
             (dict(raster=a, band=3), "input_0 has bands 1 to 1, so it has no band 3"),
-            (dict(raster=[a, mask, mask]), "Raster Statistics reads one raster, and a mask on input_1, and it has 3"),
+            (dict(raster=[a, mask, mask]), "curio_raster_statistics reads one raster, and a mask on input_1, and it has 3"),
         ]
         for kwargs, sentence in cases:
             with pytest.raises(algebra().RasterAlgebraError) as refused:

@@ -9,10 +9,10 @@ Output: (depth, metrics).
 - metrics: SCOUT's metrics, the median and mean flood depth, one row (SCOUT
   writes them as a CSV; here its function returns them).
 A node after it takes either part, input_0[0] or input_0[1].
-The Widgets tab sets the region's corners, the projection period and the
-solutions. Two scenarios that share the region and the period
-read them from Parameter nodes instead, by putting @topleft, @bottomright and
-@timeline in the code's references to those widgets.
+The region is SCOUT's whole grid, as SCOUT's flood example runs it. The
+Widgets tab sets the projection period and the solutions. Two scenarios that
+share the period read it from a Parameter node instead, by putting @timeline
+in the code's reference to that widget.
 Ported from SCOUT, https://github.com/urban-toolkit/scout.
 """
 import hashlib
@@ -22,7 +22,8 @@ import os
 import rasterio
 from scout_flood.flood_simulation import simulate_flood_projection
 
-topleft, bottomright = [!! topleft !!], [!! bottomright !!]
+# SCOUT's whole grid, its flood example's corners.
+topleft, bottomright = {"lat": 41.6242105, "lon": -90.6879323}, {"lat": 41.4150156, "lon": -90.4252158}
 period, chosen = [!! timeline !!], [!! use_NBS_classes !!]
 # SCOUT's rasters, beside the bundle's bundle.json.
 rasters = os.path.dirname(curio_data_path("data.scout.quad-cities-flood"))

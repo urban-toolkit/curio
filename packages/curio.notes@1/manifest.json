@@ -1,0 +1,38 @@
+{
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
+  "id": "curio.notes",
+  "name": "Notes",
+  "publisher": "Curio",
+  "description": "Post-it notes on the canvas: a note shows a title and a short text, written in simple markdown (headings, bullets, bold, and https links), on a background color of its own. Notes run nothing and connect to nothing. The Researcher agent writes its findings into them.",
+  "version": "1.0.0",
+  "license": "MIT",
+  "compatibility": {
+    "curioRuntime": ">=0.5.0",
+    "major": 1
+  },
+  "createdAt": "2026-10-12T00:00:00Z",
+  "dependencies": {
+    "js": {},
+    "packages": {},
+    "python": {}
+  },
+  "permissions": [],
+  "behaviorScript": "scripts/behaviors.js",
+  "templates": [
+    {
+      "id": "note",
+      "label": "Note",
+      "description": "A post-it note: its title, and its text as simple markdown (headings, bullets, bold, https links) on its own background color (appearance.backgroundColor: yellow, pink, blue, green, orange, lavender, or #rrggbb). Presentation only: it has no inputs or outputs and a run skips it.",
+      "category": "flow",
+      "engine": "python",
+      "editor": "none",
+      "behavior": "note",
+      "iconRef": "fa-solid:rectangle-list",
+      "hasCode": false,
+      "hasWidgets": false,
+      "hasGrammar": false,
+      "inputPorts": [],
+      "outputPorts": []
+    }
+  ]
+}

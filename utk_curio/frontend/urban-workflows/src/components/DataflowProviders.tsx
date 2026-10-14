@@ -46,8 +46,10 @@ export const DataflowProviders: React.FC<{
           dataset's details through it, and the modal reads the live graph. */}
       <CanvasDatasetDetailsProvider>
       {/* The top bar's API Settings and Monitor open these drawers here, in
-          place of their pages, so the dataflow stays open. */}
-      <ApiSettingsDrawerProvider>
+          place of their pages, so the dataflow stays open. On the dashboard
+          API Settings is its keys alone: its agent runs on the default
+          configuration, so Agent configuration has nothing for it. */}
+      <ApiSettingsDrawerProvider keysOnly={presentation}>
       <MonitorDrawerProvider>
       {/* NodeCatalogDrawerProvider must sit INSIDE FlowProvider: the drawer
           calls useFlowContext to auto-save unsaved dataflows on Install, and

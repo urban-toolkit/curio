@@ -8,6 +8,7 @@ import { useToastContext } from "../providers/ToastProvider";
 import { applyContainerSizing, createFlipGuard, refitToContainer } from "../utils/vegaSpecSizing";
 import type { RenderCounts } from "../utils/renderOutcome";
 import { injectInputs, prepareVegaInputs, usesNamedDatasets, type VegaDataset } from "../utils/vegaInput";
+import { readsAllInputs } from "../utils/vegaDatasets";
 import { DEFAULT_INPUT_DATASET } from "../utils/vegaGeoSpec";
 import { inputTableName } from "../generated/autkGrammar";
 import { usableCounts } from "../utils/vegaUsableRows";
@@ -17,7 +18,6 @@ import { echoedCircle } from "../utils/selectionEcho";
 import type { NodeEmptyReason } from "../utils/nodeEmptyState";
 import { resolveGrammarEmptyReason } from "../utils/nodeEmptyState";
 import { clearEmptyState, writeEmptyState } from "../utils/writeEmptyState";
-import { applyScenarioDefaults, stackScenarios, type ScenarioInput } from "../utils/vegaCompare";
 
 // const schema = require('./vega-schema.json');
 const vega = require("vega");
@@ -72,7 +72,6 @@ export const useVega = ({
   upstreamErrored = false,
   hasSpec = true,
   onRedraw,
-  scenarios = null,
 }: {
   data: any;
   code: string;
@@ -89,17 +88,9 @@ export const useVega = ({
    * arrived and it drew them.
    */
   onRedraw?: (counts: RenderCounts) => void;
-  /**
-   * The scenario each input circle is, when the node compares scenarios
-   * (utils/vegaCompare): the spec then reads its inputs stacked as one table,
-   * `scenarios`, as well as each as its own `input_<n>`. Null when it does not.
-   */
-  scenarios?: ScenarioInput[] | null;
 }) => {
   const onRedrawRef = React.useRef(onRedraw);
   onRedrawRef.current = onRedraw;
-  const scenariosRef = React.useRef(scenarios);
-  scenariosRef.current = scenarios;
   const { showToast } = useToastContext();
   const [interactions, _setInteractions] = useState<any>({}); // {signal: {type: point/interval, data: }} // if type point data contains list of object ids. If type is interval data is an object where each key is an attribute with intervals or lists
 
@@ -427,11 +418,8 @@ export const useVega = ({
     lastValuesRef.current = values;
     heldDatasetsRef.current = prepared.datasets;
     heldInputRef.current = data.input;
-    // Comparing scenarios: every input, stacked under its scenario, is the
-    // spec's data, and is what the chart is judged over.
-    const comparing = scenariosRef.current;
-    const stacked = comparing && prepared.datasets.length > 0 ? stackScenarios(prepared.datasets, comparing) : null;
-    const judged = stacked?.values ?? values;
+    // A spec over all its inputs at once (`inputs`) is judged over all their rows.
+    const judged = readsAllInputs(specObj) ? prepared.datasets.flatMap((d) => d.values ?? []) : values;
     const rowsIn = Array.isArray(judged) ? judged.length : undefined;
     // dev/137: judged over the fields the input carries; see vegaUsableRows.
     const { usableRows, usableFields } = usableCounts(judged, specObj);
@@ -455,8 +443,7 @@ export const useVega = ({
 
     // Each input as the dataset its name says (`input_0`, `input_1`, ...): one
     // input as the spec's data, several as named datasets (utils/vegaInput).
-    if (stacked && comparing) applyScenarioDefaults(specObj, comparing);
-    datasetViewRef.current = injectInputs(specObj, stacked ? [...prepared.datasets, stacked] : prepared.datasets);
+    datasetViewRef.current = injectInputs(specObj, prepared.datasets);
     // Multi-view specs keep their authored size (vega-lite discards a
     // "container" injection there anyway) and the output pane scrolls; unit
     // and layer specs fill the node, unless the author sized them (#202).

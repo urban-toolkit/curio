@@ -300,6 +300,23 @@ export function centeredDomain(ref: any, values: ArrayLike<number> | undefined):
 }
 
 /**
+ * The domain a layerRef that names a `colorMapRange`, `[low, high]`, is
+ * colored over: that range, whatever the raster's own values, so two maps
+ * that name the same range color the same value alike (two scenarios' depth,
+ * side by side). `colorMapReverse` turns it around. A raster's alone, as
+ * `centeredDomain`. Null when the layerRef names no range or not two finite
+ * numbers, low under high.
+ */
+export function rangeDomain(ref: any): number[] | null {
+    const range = ref?.colorMapRange;
+    if (!Array.isArray(range) || range.length !== 2) return null;
+    const [low, high] = range;
+    if (typeof low !== 'number' || typeof high !== 'number' || !Number.isFinite(low) || !Number.isFinite(high)
+        || low >= high) return null;
+    return ref.colorMapReverse === true ? [high, low] : [low, high];
+}
+
+/**
  * Draw every raster layer the same way, in the colors its legend shows.
  * autk-map colors a raster's cells when it loads it, in its default reds, and
  * autk-grammar sets the layer's `colorMapInterpolator` after that, so the
@@ -310,11 +327,15 @@ export function centeredDomain(ref: any, values: ArrayLike<number> | undefined):
  * raster's cells are colored whatever its `isColorMap`, so on a raster
  * `"isColorMap": false` hides the legend alone; the grammar turns it on for
  * any layer with a scheme. A raster's layerRef that names a
- * `colorMapCenter` is colored over the domain `centeredDomain` gives it. A map
+ * `colorMapCenter` is colored over the domain `centeredDomain` gives it, and
+ * one that names a `colorMapRange` over that range (`rangeDomain`). A map
  * whose raster was colored again is asked for a frame (`requestRender`), since
  * it draws on demand (`autkMapDrawing`). The
- * grammar keeps each map by the dataRefs it draws (`_mapRegistry`); a layer
- * that is not a raster is left as drawn.
+ * grammar keeps each map by the dataRefs it draws (`_mapRegistry`). A layer
+ * that is not a raster is left as drawn, unless its layerRef names a
+ * `colorMapRange`: then it is colored over that range too, so two choropleths
+ * side by side color the same value alike (the grammar's own domain,
+ * `colorMapDomain`, names categories).
  */
 export function recolorRasters(grammar: any, spec: any): void {
     const registry: Map<string, any> | undefined = grammar?._mapRegistry;
@@ -324,9 +345,17 @@ export function recolorRasters(grammar: any, spec: any): void {
         for (const ref of mapSpec?.layerRefs ?? []) {
             const map = registry.get(ref?.dataRef);
             const layer = map?.layerManager?.searchByLayerId?.(ref.dataRef);
-            if (layer?.layerInfo?.typeLayer !== 'raster' || typeof map.updateColorMap !== 'function') continue;
+            if (!layer || typeof map.updateColorMap !== 'function') continue;
+            if (layer.layerInfo?.typeLayer !== 'raster') {
+                const range = rangeDomain(ref);
+                if (range) {
+                    map.updateColorMap(ref.dataRef, { colorMap: { domainSpec: { type: 'user', params: range } } });
+                    map.requestRender?.();
+                }
+                continue;
+            }
             layer.setTransferFunction?.(RASTER_TRANSFER_FUNCTION);
-            const domain = centeredDomain(ref, layer.rasterValues);
+            const domain = centeredDomain(ref, layer.rasterValues) ?? rangeDomain(ref);
             map.updateColorMap(ref.dataRef, { colorMap: domain ? { domainSpec: { type: 'user', params: domain } } : {} });
             const rgba = layer.rasterData;
             if (rgba instanceof Float32Array && layer.rasterResX > 0 && layer.rasterResY > 0) {

@@ -1,0 +1,68 @@
+/* The dashboard's Run button, a small card among the tiles. */
+.tile {
+  /* Over the canvas, at a place and size the page works out from the viewport. */
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  box-sizing: border-box;
+  padding: 4px;
+  border-radius: var(--curio-radius-md);
+  background-color: var(--curio-card-bg);
+  border: 1px solid var(--curio-border-strong);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+/* While the layout is edited the whole card drags. */
+.tile[data-editing="true"] {
+  border-style: dashed;
+  cursor: grab;
+  touch-action: none;
+}
+
+.tile[data-editing="true"]:active {
+  cursor: grabbing;
+}
+
+.button {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid #1E1F23;
+  border-radius: var(--curio-radius-md);
+  background-color: #1E1F23;
+  color: #fbfcf6;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.tile[data-editing="true"] .button {
+  cursor: inherit;
+}
+
+.button:hover {
+  background-color: #33353b;
+}
+
+.button[data-run-active="true"] {
+  background-color: var(--curio-card-bg);
+  border-color: var(--curio-warning-text, #b7791f);
+  color: var(--curio-warning-text, #b7791f);
+}
+
+/* The corner that resizes the card while the layout is edited. */
+.resize {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background-color: var(--curio-card-bg);
+  border: 1px solid var(--curio-border-strong);
+  cursor: nwse-resize;
+  touch-action: none;
+}

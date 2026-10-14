@@ -99,7 +99,7 @@ def test_the_scanner_finds_an_id_followed_by_options():
     for code in (
         'src = curio_load_data("data.scout.depth", bounds=None)',
         "src = curio_load_data( 'data.scout.depth' , bounds=(-90.48, 41.44, -90.46, 41.46))",
-        'src = curio_load_data("data.scout.depth", part="2020_2040_NbS.tif", bounds=None)',
+        'src = curio_load_data("data.scout.depth", part="2020_2050_NbS.tif", bounds=None)',
     ):
         assert [i for _q, i in _DATASET_PATH_CALL_RE.findall(code)] == ["data.scout.depth"], code
         assert [i for _q, i in COLLECTION_CALL_RE.findall(code)] == ["data.scout.depth"], code

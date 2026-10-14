@@ -596,8 +596,8 @@ circle:
 
 A circle's variable does not change when another edge is connected, so code
 that reads `input_0.crs` keeps working beside a second input. A circle with no
-edge is `None`, which lets a node take an optional input, such as the mask on a
-Raster Statistics node's input 1. Code that reads its inputs when none has
+edge is `None`, which lets a node take an optional input, such as a
+`curio_raster_statistics` mask on input 1. Code that reads its inputs when none has
 arrived stops with a message naming the circle.
 
 A tuple a Python node returns leaves by its one output circle, so it is one
@@ -711,39 +711,38 @@ scenario, an Edit Features node is a lever.
 
 ### Comparing scenarios
 
-A **Vega-Lite** node charts scenarios side by side when its **Compare scenarios** switch
-is on:
+A **Vega-Lite** node charts scenarios side by side over its inputs, one per scenario:
 
 1. Connect each scenario's outcome, a table, to one of the Vega-Lite node's input
-   circles. Each edge takes the next circle, and each input is labelled by the scenario
-   its node belongs to: its name and color, or, for a node in no scenario, the node's
-   name in gray.
-2. Open **Node settings** (the gear in the node's header) and turn on **Compare
-   scenarios**.
-3. Write the spec over the stacked table. The node stacks every input's rows into one
-   table, `scenarios`, which is the spec's data when it names none. Each row carries
-   `scenario` (the scenario's id), `scenario_name`, `scenario_color` and
-   `scenario_order` (its circle). Each input is also its own dataset, `input_0`,
-   `input_1`, and so on.
-
-An encoding on `scenario` or `scenario_name` that sets no scale of its own is drawn in
-the scenarios' colors, and one on an axis, an offset or a facet that sets no sort is
-ordered by circle:
+   circles. Each edge takes the next circle.
+2. Write the spec over the stacked inputs. Besides each input as its own dataset,
+   `input_0`, `input_1` and so on, the node offers all of them stacked as one table,
+   `inputs`, each row's `__input__` the circle it came in on. Read it with
+   `"data": {"name": "inputs"}`.
+3. Name the scenarios in the spec: you know which circle is which, so turn `__input__`
+   into the scenario's name, and give the names their colors on the color scale.
 
 ```json
 {
+  "data": { "name": "inputs" },
+  "transform": [
+    { "calculate": "['Baseline', 'Twice as tall'][datum.__input__]", "as": "scenario_name" }
+  ],
   "mark": "bar",
   "encoding": {
-    "x": { "field": "scenario_name", "type": "nominal" },
+    "x": { "field": "scenario_name", "type": "nominal", "sort": ["Baseline", "Twice as tall"] },
     "y": { "field": "sunlight", "type": "quantitative", "aggregate": "mean" },
-    "color": { "field": "scenario_name", "type": "nominal", "legend": null }
+    "color": {
+      "field": "scenario_name", "type": "nominal", "legend": null,
+      "scale": { "domain": ["Baseline", "Twice as tall"], "range": ["#2a9d8f", "#e76f51"] }
+    }
   }
 }
 ```
 
-A strip above the chart lists each input's scenario, with a check when its input has
-every column the spec reads, and a cross naming what it lacks. A circle whose input
-lacks a column is outlined in red, its tooltip naming the column.
+A spec that names no data reads its first input, as any Vega-Lite node does. Use the
+same colors as the scenarios' (in the Scenario Catalog) so a chart matches its maps;
+a map's own scenario legend comes from its Autark layers.
 
 Each input is one table. An Autark node hands on every layer of its workspace, so take
 the layer to compare out of it first, with a Python node and a layer chip:
@@ -752,8 +751,8 @@ the layer to compare out of it first, with a Python node and a layer chip:
 To map how an outcome changes between two scenarios, compute the difference and draw
 it on an Autark map:
 
-- Two rasters on one grid: a **Raster Calculator** with
-  `curio_raster_calculate("subtract", [input_1, input_0])`, the comparison minus the
+- Two rasters on one grid: a Python node with
+  `return curio_raster_calculate("subtract", [input_1, input_0])`, the comparison minus the
   reference, or with `absolute=True` the size of the change (see
   [Rasters](#rasters)).
 - Two layers: a Python node that matches their rows, on an id such as `osm_id` or, for
@@ -1020,53 +1019,34 @@ key, not the Autark grammar's.
 }
 ```
 
-A layer colored by a value always gets a legend, and the grammar has no fixed
-color, so a layer colored only to tell it apart from the others (one route of
-several) would show a scale nobody reads. `"legend": false` on its `layerRef`
-keeps its colors and hides its legend. It is Curio's own key too.
-
 A raster whose values run both ways from a point, such as a change or a
 height above the surroundings, is read best on a diverging scheme centered on
 that point. `"colorMapCenter": 0` on a raster's `layerRef` colors it over a
 domain from the farthest value below 0 to as far above it, so the scheme's
 middle color is 0 whatever the values' own range, and
 `"colorMapReverse": true` turns the scheme around, so on `interpolateRdBu`
-red is above and blue below. The legend shows the three values. Curio's own
-keys, for a raster layer only: a layer of features is drawn without them.
+red is above and blue below. The legend shows the three values.
+`"colorMapRange": [low, high]` colors a raster over that range instead of its
+own lowest to highest value, so two maps compared side by side, such as two
+scenarios' flood depth, color the same value alike: give both the same range.
+A `colorMapCenter` wins over it. Curio's own keys, for a raster layer only: a
+layer of features is drawn without them.
 
 ```json
 { "dataRef": "[!! input_0 !!]", "getFnv": "band_1", "colorMapInterpolator": "interpolateRdBu",
   "colorMapCenter": 0, "colorMapReverse": true, "legendTitle": "Local relief (m)" }
 ```
 
-A `layerRef`'s `scenario`, a scenario's id, draws the layer in that
-scenario's color, the one its frame and a Vega-Lite node comparing scenarios use, and
-gives the map one discrete legend naming each scenario it draws. The color
-follows the scenario: recolor or rename it and the map changes too. Another
-of Curio's own keys; leave out `getFnv` on such a layer.
+To tell features apart by a category, such as each scenario's route, put them
+in one layer with a column naming the category and color the layer by it
+with a categorical scheme (a `scheme*` name). Autark gives each value its own
+color and its legend names the values. The
+[WeatherRouting](examples/dataflows/WeatherRouting.json) dataflow puts both
+scenarios' routes in one layer with a `route` column this way:
 
 ```json
-{
-  "map": {
-    "layerRefs": [
-      { "dataRef": "[!! input_0 !!]" },
-      { "dataRef": "[!! input_1 !!]", "scenario": "avoid-rain" },
-      { "dataRef": "[!! input_2 !!]", "scenario": "avoid-wind" }
-    ]
-  }
-}
-```
-
-A layer can also wear a fixed color of its own, with no scenario: `color`, an
-outline `stroke` (else a darker shade of the color) and the legend's `label`
-(else its dataRef), Curio's own keys too. A layer drawn in a scenario's color
-gets a darker outline as well. Autark outlines polygons only, so a route
-outlined this way is a band, such as a line buffered by a few metres, a light
-fill and a darker casing as on a web map (the
-[WeatherRouting](examples/dataflows/WeatherRouting.json) dataflow's routes):
-
-```json
-{ "dataRef": "[!! input_1 !!]", "color": "#90CAF9", "stroke": "#42A5F5", "label": "Fastest route (C)" }
+{ "dataRef": "[!! input_1 !!]", "isColorMap": true, "getFnv": "route",
+  "colorMapInterpolator": "schemeTableau10", "legendTitle": "Route" }
 ```
 
 ### The starter document
@@ -1089,13 +1069,13 @@ The first matching rule wins:
 
 ## Rasters
 
-Two nodes in the palette's computation group work on rasters: a `rasterio`
+Any Python node's code can call Curio's raster algebra on rasters: a `rasterio`
 dataset from a Python node or the Data Catalog, or a raster an Autark node hands
-on. Each is a Python node whose code is written for it when it is dropped; edit
-the call to change what it does.
+on. Return the call's result, for example
+`return curio_raster_calculate("subtract", [input_0, input_1])`.
 
-**Raster Calculator** computes one operation over rasters on one grid, cell by
-cell. Connect the rasters to its input circles, in order:
+`curio_raster_calculate` computes one operation over rasters on one grid, cell
+by cell. Connect the rasters to the node's input circles, in order:
 
 | operation | result |
 |---|---|
@@ -1115,7 +1095,7 @@ cell. Connect the rasters to its input circles, in order:
 - The result keeps the inputs' number type, at least float32, so a float64
   raster keeps every digit. Its cells with no value are NaN.
 
-**Raster Statistics** gives a raster's `mean`, `median`, `min`, `max` and
+`curio_raster_statistics` gives a raster's `mean`, `median`, `min`, `max` and
 `count` over its cells with a value, as a table of one row, for example for a
 Vega-Lite node comparing scenarios to chart. `curio_raster_statistics(input_0, band=2)` reads
 another band. A condition keeps only some cells:
@@ -1176,11 +1156,38 @@ running anything.
 - **Edit layout** (the owner, signed in on this browser) unlocks the tiles to drag by
   their title band and resize, and **Save layout** records where they sit, without
   touching the canvas positions.
+- **Run** (whoever owns the dataflow, a guest included) runs the dataflow again with the values
+  the tiles show, such as a Parameter changed on the page, as **Run all** does on the
+  canvas, and the tiles redraw as its outputs arrive. **Stop** cancels it. The run is
+  not saved from the page: a reload shows the outputs on disk again, so run the
+  dataflow from the canvas to keep them. The button is a card of its own; in **Edit
+  layout** drag it to move it and drag its corner to resize it, and **Save layout**
+  records where it stands and its size (`dataflow.dashboard.runButton`). Until then it
+  stands above the top-left tile.
+- **Agent** (signed in) opens a chat beside the tiles. Ask it in plain words to
+  change any widget of a pinned tile, a Parameter node's included, one or several at
+  once, and to run the dataflow: "set the season to winter in the Baseline scenario,
+  the height to 300, and rerun". The widgets change on the page as if you had set them,
+  each within its own range or choices, and the chat lists every value it changed, from
+  what to what, and any it could not. When a widget is in several scenarios and you do
+  not say which, it asks. It runs only where **Run** is offered to you. It answers with
+  your own LLM configuration, so a visitor needs one of their own: without one, the
+  panel says so and **Open API Settings** adds one. Nothing of the chat is saved.
 - **Scenarios** each get a column, framed under a header in the scenario's color. The
   tiles they share (their fixed context, and pinned Parameter nodes outside them) come
   first, and tiles that read their outcomes, such as a comparison, come last. Tiles
-  without a saved place are laid out this way when the page opens; while editing the
-  layout, **Arrange by scenario** puts every tile back in its column.
+  without a saved place are laid out this way when the page opens.
+- **Running from the link**: the owner's **Share → Copy dashboard link** gives a link
+  that lets whoever opens it run the dashboard, `/dashboard/<dataflow id>?run=<token>`.
+  They change the inputs on its pinned tiles and press **Run**: the run goes on the
+  server with the owner's packages, data and keys, and saves nothing to the dataflow;
+  each visitor sees only their own results. Copying the link publishes the dataflow as
+  it is saved then, and the token stays the same, so copying it again after a save
+  updates what the link runs. Only the pinned tiles' widgets can be changed, each within
+  its own range or choices. A link runs at most three runs at once and a few per address
+  every ten minutes, and the same values reuse the last run's results for 30 minutes. A
+  dataflow with nothing pinned, or whose code saves files (`curio_save_file`,
+  `curio_save_folder`), gets a view-only link, and the copy says why.
 - **Sharing**: the page is served with its data inside it, whether `--backend-url` is an
   address or a path such as `/api`, so a viewer needs no account and the dashboard keeps
   working if the server is unreachable. It is read-only for everyone but its owner.
