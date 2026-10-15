@@ -245,6 +245,13 @@ class TestOnlyTheRuntimeSaysActionable:
         http = self._row(url=self.URL.replace("https://", "http://"), verification=self.GEOJSON)
         assert "sourceId" not in http
 
+    def test_a_bare_source_id_from_a_search_result_is_the_roster_source(self, app, shipped_root):
+        """discovery.search reports ``source.x`` and the roster keys ``source.x@1``:
+        the 2026-10-14 field case, a copied coordinate that never downloaded."""
+        row = self._row(sourceId="source.cityofchicago.data-portal", resourceId="hvv9-38ut")
+        assert row["acquirable"] is True
+        assert row["sourceId"] == self.CHICAGO["sourceId"]
+
     def test_a_portal_link_is_that_portals_resource(self, app, shipped_root):
         """A model that found a dataset with discovery.search and wrote only its
         link (no coordinate) still gets it downloaded: the link's host is a
@@ -314,6 +321,23 @@ class TestTheRosterExecutor:
                 "sourceId", "name", "provider", "publisher", "description",
                 "formats", "searchable", "credentialReady",
             }
+
+
+class TestSearchResultsNameTheDownloadableSource:
+    def test_a_result_reports_the_sources_versioned_id(self, app, shipped_root, monkeypatch):
+        """The model copies a result's ``sourceId`` into its candidate row, and a
+        download is keyed by the source's ``dirName``, so that is what it reads."""
+
+        class _Search:
+            def search_all(self, **kw):
+                return {"resources": [{"sourceId": "source.cityofchicago.data-portal",
+                                       "resourceId": "hvv9-38ut", "name": "Bike Routes"}],
+                        "sources": []}
+
+        monkeypatch.setattr(tools, "_discovery_service", lambda: _Search())
+        rows, _unavailable = tools._discovery_search_rows({"q": "bike routes"})
+        assert rows[0]["sourceId"] == "source.cityofchicago.data-portal@1"
+        assert rows[0]["resourceId"] == "hvv9-38ut"
 
 
 class TestStorageSourcesAreNotOffered:
