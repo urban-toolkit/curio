@@ -125,6 +125,15 @@ def _violating_scenario() -> dict:
                      behavior="postit-note", source=_VIOLATING_TSX)
 
 
+def _justified(draft: dict) -> dict:
+    """The draft as an agent sends it, with the justification a draft that
+    adds a template carries. The build request never holds it."""
+    return {**draft, "justification": (
+        "Considered curio.builtin/vis-simple and curio.builtin/data-summary: "
+        "neither draws a colored note surface."
+    )}
+
+
 _NOTES = [
     {"templateId": "postit-note", "title": "Transit findings", "content": "# Findings",
      "appearance": {"backgroundColor": "pink"}},
@@ -268,7 +277,7 @@ class TestDodThroughTheResearcher:
             '"#336699"]}}}\n```'
         )
         child_reply = ("```json\n"
-                       + json.dumps({"packageDraft": _postit_scenario(_NOTES)})
+                       + json.dumps({"packageDraft": _justified(_postit_scenario(_NOTES))})
                        + "\n```")
         replies = [delegate_tail, child_reply, "Proposed — review the draft above."]
         calls: list = []
@@ -386,7 +395,7 @@ class TestCoolRoofsScenario:
             '"source": "https://heat.test/cool-roofs"}}}\n```',
             # The CHILD (the Node Builder's writing mode) returns the draft with the note.
             "```json\n" + json.dumps(
-                {"packageDraft": _postit_scenario(roof_notes)}) + "\n```",
+                {"packageDraft": _justified(_postit_scenario(roof_notes))}) + "\n```",
             # Round 3: the Researcher's visible answer.
             "White roofs ran 18°C cooler in Chicago; the note above awaits your review.",
         ]
@@ -504,11 +513,12 @@ class TestCurioNotesRetry:
             headers=self._auth(token),
         ).get_json()["attachmentId"]
 
-        params = _scenario(package_id="curio.notes", template_id="note",
-                           behavior="note-behavior", source=_CURIO_NOTES_TSX,
-                           notes=[{"templateId": "note", "title": "Docs note",
-                                   "content": "# Pipeline\n- loads GTFS\n- joins zones",
-                                   "appearance": {"backgroundColor": "blue"}}])
+        params = _justified(_scenario(
+            package_id="curio.notes", template_id="note",
+            behavior="note-behavior", source=_CURIO_NOTES_TSX,
+            notes=[{"templateId": "note", "title": "Docs note",
+                    "content": "# Pipeline\n- loads GTFS\n- joins zones",
+                    "appearance": {"backgroundColor": "blue"}}]))
         params.pop("target")  # A4: identity is manifest.id@major
         assert params["manifest"]["dependencies"]["js"] == {}  # A5: zero deps
         tail = ("```curio.v1\n" + json.dumps(
@@ -619,7 +629,7 @@ class TestReuseFirstNoteCreation:
         script["replies"] = [
             '```curio.v1\n{"delegateRequest": {"capability": "node.kind.author", '
             '"inputs": {"look": "post-it"}}}\n```',
-            json.dumps({"packageDraft": _postit_scenario()}),
+            json.dumps({"packageDraft": _justified(_postit_scenario())}),
             "Package proposed.",
         ]
         run1 = client.post(

@@ -28,10 +28,18 @@ def _auth(token):
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
+#: Why the draft's node type is new: a draft that adds a template carries one.
+JUSTIFICATION = (
+    "Considered curio.builtin/data-summary and curio.builtin/vis-simple: "
+    "neither keeps a research note with its own title and color."
+)
+
+
 def _draft(color="pink"):
     return {
         "mode": "create",
         "target": "ai.agent.notes@1",
+        "justification": JUSTIFICATION,
         "manifest": {
             "id": "ai.agent.notes",
             "version": "1.0.0",
@@ -725,6 +733,66 @@ class TestDraftCorrectionRounds:
         assert "no text at all" in why
         params, why = _extract_draft_params_verbose(json.dumps(_draft()))
         assert params is not None and why == ""
+
+
+def _retry_sent(calls) -> str:
+    """What the re-run writing mode was handed, or a failure if it never ran."""
+    retry = next(
+        (c for c in calls if any("validationError" in str(m.get("content", "")) for m in c)),
+        None,
+    )
+    assert retry is not None, "the writing mode must be re-run with what to change"
+    return " ".join(str(m.get("content", "")) for m in retry)
+
+
+class TestNewNodeTypesFromTheWritingMode:
+    """A draft the writing mode returns passes the checks a draft proposed in
+    chat does, on the one mint path: every template it adds needs its
+    justification, a label no available template has, and code that reads
+    only grounded sources. A refusal goes back to the writing mode as a
+    correction round, with exactly what to change."""
+
+    def test_a_draft_without_its_justification_goes_back_to_the_writing_mode(
+            self, client, user_and_token, tmp_curio, monkeypatch):
+        _, token = user_and_token
+        pid = _project(client, token)
+        unjustified = _draft()
+        del unjustified["justification"]
+        att_id, calls = _setup(client, token, pid, monkeypatch, parent=NODE_BUILDER, replies=[
+            _delegate_tail(),
+            json.dumps({"packageDraft": unjustified}),
+            json.dumps({"packageDraft": _draft()}),  # the correction
+            "Proposed, review the package above.",
+        ])
+        parts = _run(client, token, pid, att_id).get_json()["content"]
+        proposals = [p for p in parts if p["type"] == "proposal"]
+        assert len(proposals) == 1, parts
+        assert proposals[0]["justification"] == JUSTIFICATION
+        sent = _retry_sent(calls)
+        assert "the review needs your reasoning" in sent
+        assert "note-kind" in sent
+
+    def test_a_draft_like_an_existing_template_is_answered_with_reuse(
+            self, client, user_and_token, tmp_curio, monkeypatch):
+        _, token = user_and_token
+        pid = _project(client, token)
+        twin = _draft()
+        twin["manifest"]["templates"][0]["label"] = "Python Computation"
+        reuse = json.dumps({"reuseExisting": {
+            "dirName": "curio.builtin@1", "reason": "Python Computation runs this code"}})
+        att_id, calls = _setup(client, token, pid, monkeypatch, parent=NODE_BUILDER, replies=[
+            _delegate_tail(),
+            json.dumps({"packageDraft": twin}),
+            reuse,  # the correction: the template that exists
+            "Use the Python Computation node.",
+        ])
+        parts = _run(client, token, pid, att_id).get_json()["content"]
+        assert all(p["type"] != "proposal" for p in parts), parts
+        card = next(p for p in parts if p["type"] == "delegation")
+        assert card["status"] == "ok"
+        sent = _retry_sent(calls)
+        assert "reuse territory" in sent
+        assert "curio.builtin/computation-analysis" in sent
 
 
 def _ukey(client, user):

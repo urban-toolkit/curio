@@ -3,6 +3,7 @@ import type { AgentProposalPart } from "../../../services/agents";
 import styles from "./AgentReviewCard.module.css";
 import { BackendTrustBlock } from "./reviewCard/BackendTrustBlock";
 import { EffectLine } from "./reviewCard/EffectLine";
+import { JustificationBlock } from "./reviewCard/JustificationBlock";
 import { PackageDraftDetails } from "./reviewCard/PackageDraftDetails";
 import { PlanEdgesList } from "./reviewCard/PlanEdgesList";
 import { PlanNodesList } from "./reviewCard/PlanNodesList";
@@ -10,7 +11,6 @@ import { PlanScenariosList } from "./reviewCard/PlanScenariosList";
 import { PlanSummary } from "./reviewCard/PlanSummary";
 import { ReviewActions } from "./reviewCard/ReviewActions";
 import { SourceBlock } from "./reviewCard/SourceBlock";
-import { TemplateCreateBlocks } from "./reviewCard/TemplateCreateBlocks";
 import { ValidationBlock } from "./reviewCard/ValidationBlock";
 import type { PlanNodeReviewState } from "./reviewCard/reviewCardText";
 
@@ -27,8 +27,8 @@ export type { PlanNodeReviewState } from "./reviewCard/reviewCardText";
  * (REQ-SEC-002), never markup. Non-pending proposals render inert with
  * their outcome label.
  *
- * Since memo dev/142 (F4) the card COMPOSES one section per concern — source,
- * template-create blocks, plan summary and removals, package-draft details,
+ * Since memo dev/142 (F4) the card COMPOSES one section per concern: source,
+ * a draft's justification, plan summary and removals, package-draft details,
  * the backend trust edge, validation, the plan's node and connection lists,
  * the effect line, the actions — and keeps only what spans them: the busy /
  * error state of an action, and which section a proposal kind shows.
@@ -95,7 +95,7 @@ export const AgentReviewCard: React.FC<{
         <span className={styles.kind}>review</span>
       </div>
       {part.source ? <SourceBlock source={part.source} /> : null}
-      <TemplateCreateBlocks part={part} />
+      <JustificationBlock part={part} />
       <PlanSummary part={part} />
       {part.tool === "package.draft.apply" && part.draft ? <PackageDraftDetails draft={part.draft} /> : null}
       {part.tool === "package.draft.apply" && part.backend ? <BackendTrustBlock backend={part.backend} /> : null}

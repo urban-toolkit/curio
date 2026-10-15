@@ -300,14 +300,15 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
     # It also took over the package agents (dev/84, dev/89). Its chat installs
     # a catalog package that already fits (the reviewed package.install
     # lane), grounded in packages.catalog and packages.resolve, and climbs the
-    # node type ladder: an existing template, a package to install,
-    # node.template.create, then a package written by its writing mode. The
-    # writing mode (package.build, package.extend and node.kind.author, one
+    # node type ladder: an existing template, a package to install, then a
+    # package written by its writing mode, the one way it makes a node type.
+    # The writing mode (package.build, package.extend and node.kind.author, one
     # prompt) is a delegated call with no tools that its own chat, the
     # Researcher and the Dataflow Builder ask for. package.draft.apply is the
-    # ONE package-writing mutate contract (dev/89 commit 8): the runtime mints
-    # the reviewed draft from the mode's JSON at the asking agent's
-    # attachment, and Apply promotes the exact reviewed artifact digest. The
+    # ONE package-writing mutate contract (dev/89 commit 8): the runtime checks
+    # every template a draft adds, mints the reviewed draft from the mode's
+    # JSON at the asking agent's attachment, and Apply promotes the exact
+    # reviewed artifact digest. The
     # recommendation mode (package.recommend) answers the Dataflow Builder
     # from the existingPackages the runtime passes, and is listed before the
     # writing capabilities so reuse stays ahead of writing.
@@ -335,7 +336,7 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      # names, and package.install proposes one for review.
                      # dev/89: package.draft.apply authorizes the mint of the
                      # draft its writing mode returns.
-                     tools=("dataflow.read", "node.read", "node.create", "node.template.create",
+                     tools=("dataflow.read", "node.read", "node.create",
                             "node.runtime.read", "node.content.write", "catalog.search",
                             "models.search", "packages.catalog", "packages.resolve",
                             "package.install", "package.draft.apply"),
