@@ -493,7 +493,7 @@ class TestNodeBuilderComposite:
         assert [t.id for t in m.tools] == [
             "dataflow.read",
             "node.read",  # the content mode's own read, kept by the merge
-            "node.create", "node.template.create",
+            "node.create",  # a node type is made only by a package draft
             "node.runtime.read",  # dev/67-2: diagnose before regenerating
             "node.content.write",  # dev/67-6: modify-existing, reviewed
             "catalog.search",  # dev/114 (DEC-072): the only source of a real local path
@@ -895,24 +895,43 @@ class TestNodeBuilderPackages:
         assert "never present an install as done" in low
 
     def test_its_chat_climbs_the_node_type_ladder_in_order(self):
-        # An existing template, a catalog package to install,
-        # node.template.create for a plain code node type, and only then a
-        # package written by its writing mode.
+        # An existing template, a catalog package to install, and only then a
+        # package written by its writing mode: the one way it makes a node
+        # type, with the justification the user judges.
         text = builtin.read_prompt_text(self.COORD, "instruction")
         rungs = text.split("## Node types and packages", 1)[1].split("\n## ", 1)[0]
-        starts = [rungs.index(f"\n{n}. ") for n in (1, 2, 3, 4)]
+        starts = [rungs.index(f"\n{n}. ") for n in (1, 2, 3)]
         assert starts == sorted(starts)
+        assert "\n4. " not in rungs
         one, rest = rungs.split("\n2. ", 1)
-        two, rest = rest.split("\n3. ", 1)
-        three, four = rest.split("\n4. ", 1)
+        two, three = rest.split("\n3. ", 1)
         assert "Available node templates" in one
         assert "packages.catalog" in two and "package.install" in two
-        assert "node.template.create" in three
-        assert "justification must name the closest existing templates" in three
-        assert '"node.kind.author"' in four and "package.draft.apply" in four
+        assert '"node.kind.author"' in three and "package.draft.apply" in three
+        assert "for any new node type" in three
+        assert "the closest listed templates you considered and why each is inadequate" in three
+        assert "the user judges the justification" in three
+        assert "node.template.create" not in text
         # The procedure sends the model to the ladder.
         procedure = text.split("## Procedure", 1)[1].split("\n## ", 1)[0]
         assert "node type ladder" in procedure
+
+    def test_the_writing_mode_justifies_each_node_type_it_adds(self):
+        # The delegate writes the draft, so it is taught the justification
+        # and the label rule both in its prompt and in the build-request
+        # contract it is handed.
+        from utk_curio.backend.app.agents.application.turns.delegates import _build_request_contract
+
+        text = builtin.read_prompt_text(self.COORD, "package.build")
+        low = text.lower()
+        assert '"justification" beside "mode"' in text
+        assert "the closest existing templates you considered" in low
+        assert "why each is inadequate" in low
+        assert "a label no existing template has" in low
+        contract = _build_request_contract()
+        assert "justification" in contract["shape"]
+        assert any("justification" in rule and "a label no existing template has" in rule
+                   for rule in contract["rules"])
 
     def test_the_writing_mode_teaches_the_generic_authoring_contract(self):
         # dev/90 commit 2: ONE authoring contract for every custom look:
@@ -1008,7 +1027,9 @@ class TestResearcher:
         # chip is [!! input_k !!] (port of #819's input names).
         # 2026-10-14: the research examples are cool roofs, building heights
         # and street trees in Chicago, beside GTFS feeds (owner, 10-13).
-        "60ad0818d8842b693bcfe18bcee0a016c660de4f585038940693ed8dc3772f45"
+        # 2026-10-15: the Node Builder writes new node types; its one-template
+        # fallback is retired (plan a-few-things-snuggly-goblet, step 6).
+        "42299b9c32141994349d1671609f011eb938b47e9f3115d7b0e9e11f293b886e"
     )
 
     def test_manifest_surface(self):

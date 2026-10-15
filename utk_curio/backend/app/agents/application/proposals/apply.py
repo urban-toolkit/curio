@@ -74,10 +74,6 @@ def apply_proposal(
         return _apply_project_install(
             user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
         )
-    if tool == "node.template.create":
-        return _apply_node_template_create(
-            user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
-        )
     if tool == "dataset.install":
         return _apply_dataset_install(
             user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
@@ -168,63 +164,6 @@ def _apply_node_content_write(
         # The frontend canvas bridge (dev/48 §3.3) applies this to the LIVE
         # node too, so the next canvas save can't clobber the mutation.
         "appliedContent": {"nodeId": node_id, "content": proposal.get("content", "")},
-    }
-
-
-def _apply_node_template_create(
-    user_key: str,
-    project_id: str,
-    attachment_id: str,
-    proposal_id: str,
-    spec: dict,
-    proposal: dict,
-    session_id: object,
-) -> dict:
-    """The dev/48 §3.2b apply: ONE explicit review covering both stated
-    effects — register the template through the EXISTING package factory
-    (atomic staging; store + project lockfile), then insert the first node.
-    Template first, node only on success: a factory failure 409s with the
-    verbatim error and nothing is half-registered."""
-    from utk_curio.backend.app.packages import service as packages_services
-
-    template = proposal.get("template") or {}
-    try:
-        created_template = packages_services.create_template_package(
-            user_key, project_id, template
-        )
-    except packages_services.PackageServiceError as exc:
-        raise agents_store._mark_stale(
-            user_key, project_id, proposal_id, spec, proposal, session_id,
-            f"the node type could not be registered: {exc}",
-        ) from exc
-    # The factory path wrote the spec (lockfile); re-read before inserting the
-    # node so we don't clobber the new package entry.
-    spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
-    proposal = attachments.find_proposal(spec, attachment_id, proposal_id) or proposal
-    created = _insert_node(spec, created_template["id"], template.get("content", ""), None)
-    proposal["status"] = "applied"
-    projects_storage.write_spec(user_key, project_id, spec)
-    label = created_template["label"]
-    broken_line = _broken_library_line(
-        created_template.get("importErrors"), created_template.get("dependencyError"),
-    )
-    agents_store._log_applied_turn(
-        user_key, project_id, session_id, attachment_id, proposal_id,
-        f"Applied: node type registered and node created ({created['id']}).{broken_line}",
-        "Applied: custom node type created",
-        [
-            f"{label} · {created_template['id']}",
-            f"node {created['id']}",
-            f"proposal {proposal_id[:8]}",
-        ],
-    )
-    return {
-        "attachmentId": attachment_id,
-        "proposalId": proposal_id,
-        "status": "applied",
-        "mutationApplied": True,
-        "createdTemplate": created_template,
-        "createdNode": dict(created),
     }
 
 

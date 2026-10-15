@@ -51,7 +51,7 @@ Agent ids always begin with **`agent.`**, which keeps them apart from node packa
 | Agent | In chat | Tools | Modes (who asks) |
 |---|---|---|---|
 | **Researcher** | Explains a node or the dataflow, diagnoses errors, helps define what to build, answers web questions as notes, checks facts | Read the dataflow and a node's last run; search and read the web; propose notes; propose a notes package | Notes from search results (Dataflow Builder); Check a fact (Node Builder, Dataset Finder, Dataflow Builder) |
-| **Node Builder** | Builds a node, rewrites a node's content, suggests nodes for a connection, finds or writes node types | Read the dataflow and a node's last run; search the Data and Model Catalogs; propose a node, a content change, a node type, a package install or a package draft | Write a node's content (Node Builder, Dataflow Builder, Solve); Recommend packages (Dataflow Builder); Write a package (Node Builder, Researcher, Dataflow Builder) |
+| **Node Builder** | Builds a node, rewrites a node's content, suggests nodes for a connection, finds or writes node types | Read the dataflow and a node's last run; search the Data and Model Catalogs; propose a node, a content change, a package install or a package draft | Write a node's content (Node Builder, Dataflow Builder, Solve); Recommend packages (Dataflow Builder); Write a package (Node Builder, Researcher, Dataflow Builder) |
 | **Dataflow Builder** | Plans a whole dataflow, then solves its nodes | Read the dataflow and runs; propose a plan or a node; read worked examples | None |
 | **Dataset Finder** | Finds datasets in the Data Catalog and in portals | Search the catalog and portals; propose a download | Find datasets (Node Builder, Dataflow Builder, Solve) |
 
@@ -118,6 +118,13 @@ Each agent's prompts, by the key its manifest gives them:
 
 1. Drop the Node Builder on the connection between two nodes and ask what could go there. The chat runs with `node_build_instruction.md`, told which node's output feeds which node's input, and suggests up to three nodes in prose.
 2. Tell it which one you want. The chat proposes that node, and you review it. You connect the new node on the canvas yourself.
+
+**Node Builder writing a node type: "score the sentiment of each review".**
+
+1. The chat runs with `node_build_instruction.md`. No template on the dataflow does this and no catalog package fits, so the model asks for its package-writing mode, naming the templates it considered and why each falls short.
+2. The writing mode runs: the preamble and `package_build_instruction.md`, with no tools. Curio hands it the packages you have and the shape of a draft, and it replies in JSON with a package draft and a justification: the closest existing templates and why each is inadequate.
+3. Before building the draft, Curio checks each template it adds: the draft carries the justification, the template's label is not the label of a template the dataflow can use, and its code reads only files and web addresses Curio can ground. A draft that fails a check goes back to the writing mode with what to change.
+4. Curio builds the package, and the review card shows the justification first, then the files, dependencies and preview. The package installs, with the nodes the draft asks for, when you apply the card.
 
 **Researcher on a failed node: "why did this node fail?"**
 

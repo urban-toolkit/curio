@@ -38,7 +38,7 @@ _TOOLS = {
         "Read the dataflow", "Read a node", "Read a node's last run",
         "Search the Data Catalog", "Search the Model Catalog", "Search the Node Catalog",
         "Check a package's dependencies and permissions", "Propose a node",
-        "Propose a node type", "Propose a content change", "Propose a package install",
+        "Propose a content change", "Propose a package install",
         "Propose a package draft",
     ],
     "agent.dataflow-builder": [

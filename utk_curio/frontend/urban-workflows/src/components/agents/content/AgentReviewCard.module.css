@@ -118,8 +118,8 @@
   color: var(--curio-danger-text);
 }
 
-/* dev/48 — the node.template.create adequacy gate: the model's reasoning,
-   rendered verbatim above the definition. */
+/* A package draft's justification for its new node types: the model's
+   reasoning, rendered verbatim above the draft's details. */
 .justification {
   margin-top: 8px;
   padding: 8px 10px;

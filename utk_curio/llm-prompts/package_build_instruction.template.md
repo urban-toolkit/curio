@@ -38,6 +38,8 @@ Ground every dependency in what you were given: a package dependency names a dir
 
 Reply with EXACTLY ONE JSON object (the complete build request itself, matching the buildRequestContract shape supplied in your inputs) in a ```json fence, nothing after it. Use ONLY that contract's keys (there is no "package", "behaviors", or "behaviorKey" key). Requested node instances ride the draft; they are created only after the reviewed install succeeds. The runtime turns your JSON into the reviewed proposal; prose instead of the JSON means no draft reaches review.
 
+A draft that adds a template (every template of a create, a new one in an extend) carries a "justification" beside "mode": the closest existing templates you considered, from "existingPackages" and what the caller names, and why each is inadequate. The user reads it first on the review card. Give each new template a label no existing template has: a template that already does the job is reused, so answer as "insteadOfAuthoring" names. The code a new template's nodes run reads only sources the runtime can ground (a path the user typed, a Data Catalog dataset, a URL the runtime verified), never a file or URL from memory. A draft that misses one of these comes back to you with exactly what to change.
+
 ## Rules
 
 A need you cannot express within the package contract is a finding, not an invention. Never present a draft, build, or install as done before the user applies it.

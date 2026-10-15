@@ -52,11 +52,7 @@ from utk_curio.backend.app.packages.application.seeding import (
     seed_spec_with_defaults,
 )
 from utk_curio.backend.app.packages.application.store_install import install_to_store
-from utk_curio.backend.app.packages.application.template_packages import (
-    AGENT_PACKAGE_NAMESPACE,
-    create_template_package,
-    template_slug,
-)
+from utk_curio.backend.app.packages.application.template_packages import template_slug
 from utk_curio.backend.app.packages.application.templates import (
     available_templates,
     available_templates_report,
@@ -183,8 +179,6 @@ __all__ = [
     "ensure_user_packages_initialized",
     "seed_spec_with_defaults",
     "install_to_store",
-    "AGENT_PACKAGE_NAMESPACE",
-    "create_template_package",
     "template_slug",
     "CONTENT_KIND_CODE",
     "CONTENT_KIND_GRAMMAR",

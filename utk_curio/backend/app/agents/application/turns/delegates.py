@@ -501,6 +501,8 @@ _BUILD_REQUEST_CONTRACT: dict = {
     ),
     "shape": {
         "mode": "create | extend",
+        "justification": ("<the closest existing templates you considered and why "
+                          "each is inadequate: needed when the draft adds a template>"),
         "baseDigest": "<64-hex digest of the installed target — extend only>",
         "manifest": {
             "id": ("reverse-DNS: two or more dot-separated lowercase segments, "
@@ -547,6 +549,11 @@ _BUILD_REQUEST_CONTRACT: dict = {
         }],
     },
     "rules": [
+        "every template the draft adds (all of a create's, the new ones of an "
+        "extend) needs the top-level justification, which the user reads "
+        "first on the review card, and a label no existing template has: a "
+        "template that already does the job is reused (insteadOfAuthoring), "
+        "never drafted again",
         "a presentation-only template is engine 'javascript', editor 'none', "
         "hasCode false, empty ports",
         "the behavior source registers EXACTLY the template's behavior key: "
