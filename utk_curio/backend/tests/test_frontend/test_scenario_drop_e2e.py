@@ -355,9 +355,11 @@ def test_a_scenario_dragged_into_another_project_brings_its_results_and_its_own_
     assert [r["nodeId"] for r in details["context"][0]["results"]] == [LOADER], details["context"]
     assert [r["nodeId"] for r in details["outcomes"][0]["results"]] == [SCALE], details["outcomes"]
 
-    # Another project, with a grid of its own.
+    # Another project, with a grid of its own. Low enough that its output
+    # handle, halfway down the loader's preview (168 px tall), sits clear of the
+    # scenario dropped above it, where the 350 px editor's handle used to sit.
     target = _create_project(current_server, token, "Elsewhere", _dataflow(
-        "Elsewhere", [_node(OWN, "curio.builtin/data-loading", 0, _grid_code(7), y=600)],
+        "Elsewhere", [_node(OWN, "curio.builtin/data-loading", 0, _grid_code(7), y=700)],
     ))
     page.goto(f"{app_frontend.base_url}/dataflow/{target}")
     node_locator(page, OWN).wait_for(state="visible", timeout=45000)
