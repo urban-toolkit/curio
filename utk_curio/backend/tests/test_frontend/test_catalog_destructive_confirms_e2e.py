@@ -28,6 +28,7 @@ Run::
 from __future__ import annotations
 
 import re
+import uuid
 from typing import TYPE_CHECKING
 
 import pytest
@@ -35,6 +36,7 @@ from playwright.sync_api import expect
 
 from .utils import (
     accept_confirm_dialog,
+    api_json,
     connect_nodes,
     drag_to_canvas,
     require_owner_view,
@@ -60,6 +62,13 @@ BROWSE_DRAWER = '[data-curio-browse-drawer="true"]'
 
 LOADING_TILE = "#tile-data-loading"
 LOADING_TYPE = "curio.builtin/data-loading"
+
+#: A shipped dataset, as the drawer's card and a loader's code name it.
+BOUNDARY = "data.utk.chicago-boundary"
+#: The dataflow these tests open.
+DATAFLOW = "Destructive confirms"
+#: Another dataflow of the account, whose node loads the boundary in code.
+OTHER_DATAFLOW = "Boundary in code"
 
 #: A node body that outputs a frame, so running it with save-output on leaves a
 #: ``computed.`` dataset behind - the toggle is the half that registers it, see
@@ -113,18 +122,30 @@ def _open_node_drawer(page):
     )
 
 
-def _enter(page, frontend, backend, username):
+def _enter(page, frontend, backend, username, *, spec: dict | None = None) -> dict:
     page.emulate_media(reduced_motion="reduce")
-    stub_login_and_enter_workflow(
+    session = stub_login_and_enter_workflow(
         page,
         frontend_url=frontend,
         backend_url=backend,
         name="Confirm User",
         username=username,
-        project_name="Destructive confirms",
+        project_name=DATAFLOW,
+        project_spec=spec,
     )
     require_owner_view(page)
     page.locator("#tools-menu").wait_for(state="visible", timeout=45000)
+    return session
+
+
+def _loads_the_boundary_in_code(name: str) -> dict:
+    """A dataflow whose one node loads the boundary in its code alone."""
+    return {"dataflow": {"name": name, "task": "", "edges": [], "nodes": [{
+        "id": "loads-in-code", "type": "curio.builtin/computation-analysis", "x": 0, "y": 0,
+        "content": f'gdf = curio_load_data("{BOUNDARY}")\nreturn gdf\n',
+        "in": "DEFAULT", "out": "DEFAULT", "goal": "",
+        "metadata": {"keywords": []},
+    }]}}
 
 
 def test_removing_a_dataset_from_the_dataflow_asks_first(
@@ -194,6 +215,54 @@ def test_removing_a_dataset_from_the_dataflow_asks_first(
             "button", name="Add to project", exact=True
         )
     ).to_be_visible(timeout=30000)
+
+
+def test_removing_a_dataset_names_every_dataflow_whose_code_alone_loads_it(
+    app_frontend: "FrontendPage", current_server: str, page
+):
+    """This dataflow too, read from its canvas, as the Model Catalog's Remove does.
+
+    Its saved row cannot name it: the ref the Remove takes out keeps the
+    dataset in it until then.
+    """
+    require_project_page()
+    require_user_auth()
+    session = _enter(
+        page, app_frontend.base_url, current_server,
+        f"confirm_code_only_{uuid.uuid4().hex[:8]}",
+        spec=_loads_the_boundary_in_code(DATAFLOW),
+    )
+    # Another dataflow of the account loads the boundary in its code alone.
+    created = api_json(
+        f"{current_server}/api/projects", session["token"], method="POST",
+        payload={"name": OTHER_DATAFLOW, "spec": _loads_the_boundary_in_code(OTHER_DATAFLOW), "outputs": []},
+    )
+    assert created and created.get("id"), created
+
+    drawer = _open_data_drawer(page)
+    # Not the "Adding..." placeholder, an article with the same id.
+    card = drawer.locator(f'article:not([role="status"])[data-dataset-id="{BOUNDARY}"]')
+    expect(card).to_have_count(1, timeout=30000)
+    card.get_by_role("button", name="Add to project", exact=True).click()
+    with page.expect_response(
+        lambda r: "/datasets/install" in r.url and r.request.method == "POST" and r.ok,
+        timeout=60000,
+    ):
+        accept_confirm_dialog(page, title=re.compile(r"^Add "), button="Add to project")
+    remove = card.get_by_role("button", name="Remove from project", exact=True)
+    expect(remove).to_be_visible(timeout=30000)
+
+    # THE POINT: both dataflows are named, this one included, and the
+    # person cancels.
+    remove.click()
+    modal = _modal(page, re.compile(r"^Remove "))
+    expect(modal).to_contain_text(
+        f"Nodes in {OTHER_DATAFLOW}, {DATAFLOW} load this dataset in code. "
+        "That code is left as it is and will fail the next time those nodes run."
+    )
+    modal.get_by_role("button", name="Cancel", exact=True).click()
+    expect(modal).to_have_count(0, timeout=10000)
+    expect(remove).to_be_visible(timeout=10000)
 
 
 def test_removing_a_package_says_it_reaches_the_shared_environment(
