@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { getToken } from "../../utils/authApi";
 import { backendUrl } from "../../utils/backendUrl";
 import styles from "./NodeOutcomeStrip.module.css";
+import { TYPE_PROBE_KIND } from "../../services/datasetCatalog/loaderTypeProbe";
 
 /**
  * A node's last outcome, in the node (memo dev/138).
@@ -76,6 +77,9 @@ export function recordOutcome(record: unknown, live = false): Outcome | null {
   const row = record as Record<string, unknown>;
   const status = typeof row.status === "string" ? row.status : "";
   if (status !== "error") return null;
+  // A background run that looked for a loader's type is not a run the user
+  // made: its failure is not the node's to show.
+  if (row.kind === TYPE_PROBE_KIND) return null;
   const text = textOf(row.stderrTail) || "This node's last run failed.";
   return { level: "error", text, live };
 }
