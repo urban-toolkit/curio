@@ -220,16 +220,7 @@ describe("agent category stylesheets", () => {
 
 
 describe("agentIcon", () => {
-  // Chat and the Connection Builder are `node` agents: without a glyph of their
-  // own they look exactly like the Node Content Builder and the Node Researcher.
-  it("draws Chat as a speech balloon and the Connection Builder as a link", () => {
-    const { faComment, faLink } = require("@fortawesome/free-solid-svg-icons");
-    expect(agentIcon("agent.chat-agent@1.0.0", "node")).toBe(faComment);
-    expect(agentIcon("agent.connection-builder@1.0.0", "node")).toBe(faLink);
-    expect(agentIcon("agent.chat-agent", "node")).toBe(faComment);
-  });
-
-  // The Researcher is a `node` agent too; its workshop slide draws it as an open book.
+  // The Researcher is a `node` agent; its workshop slide draws it as an open book.
   it("draws the Researcher as an open book", () => {
     const { faBookOpen } = require("@fortawesome/free-solid-svg-icons");
     expect(agentIcon("agent.researcher@1.0.0", "node")).toBe(faBookOpen);
@@ -241,7 +232,7 @@ describe("agentIcon", () => {
     // An id that merely contains "researcher" is not the Researcher.
     expect(agentIcon("agent.my-researcher@1.0.0", "evaluate")).toBe(agentCategoryIcon("evaluate"));
     expect(agentIcon("agent.dataflow-builder@1.0.0", "canvas")).toBe(agentCategoryIcon("canvas"));
-    expect(agentIcon("user.my-chat-agent@1.0.0", "node")).toBe(agentCategoryIcon("node"));
+    expect(agentIcon("user.my-notes@1.0.0", "node")).toBe(agentCategoryIcon("node"));
   });
 
   it("falls back to the category for a missing ref", () => {
@@ -250,10 +241,6 @@ describe("agentIcon", () => {
   });
 
   it("only overrides agents that exist in the roster", () => {
-    expect(Object.keys(AGENT_ICON_OVERRIDE).sort()).toEqual([
-      "agent.chat-agent",
-      "agent.connection-builder",
-      "agent.researcher",
-    ]);
+    expect(Object.keys(AGENT_ICON_OVERRIDE).sort()).toEqual(["agent.researcher"]);
   });
 });
