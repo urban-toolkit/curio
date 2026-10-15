@@ -245,6 +245,23 @@ class TestOnlyTheRuntimeSaysActionable:
         http = self._row(url=self.URL.replace("https://", "http://"), verification=self.GEOJSON)
         assert "sourceId" not in http
 
+    def test_a_portal_link_is_that_portals_resource(self, app, shipped_root):
+        """A model that found a dataset with discovery.search and wrote only its
+        link (no coordinate) still gets it downloaded: the link's host is a
+        configured portal, and its provider recognises the dataset id in it."""
+        row = self._row(url="https://data.cityofchicago.org/d/ijzp-q8t2",
+                        verification={"status": "verified", "httpStatus": 200,
+                                      "contentType": "text/html"})
+        assert row["acquirable"] is True
+        assert (row["sourceId"], row["resourceId"]) == (self.CHICAGO["sourceId"], "ijzp-q8t2")
+        assert "downloadSteps" not in row
+
+    def test_a_portal_link_that_names_no_dataset_stays_manual(self, app, shipped_root):
+        page = {"status": "verified", "httpStatus": 200, "contentType": "text/html"}
+        row = self._row(url="https://data.cityofchicago.org/browse?q=bike+routes", verification=page)
+        assert row.get("acquirable") is None
+        assert "sourceId" not in row and "resourceId" not in row
+
     def test_a_downloadable_row_carries_no_portal_steps(self, app, shipped_root):
         row = {"name": "Bike Routes", "sourceType": "discovery", **self.CHICAGO,
                "access": verify.ACCESS_MANUAL, "downloadSteps": ["Open the portal page"]}
