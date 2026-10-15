@@ -367,6 +367,8 @@ def test_a_models_dropdown_row_dropped_with_the_drawer_closed_opens_the_drawer_o
     # The drawer closed again, the row's drop opens it again, and the confirm
     # makes the node.
     _close_drawer(page, MODEL_DRAWER)
+    if page.get_by_title("Open model palette").count():
+        page.get_by_title("Open model palette").click()
     drop = drag_with_the_mouse_onto_canvas(page, grip, at=_right_of_the_palette(page))
     assert drop["onCanvas"], f"the row's drop landed on {drop['droppedOn']}, not on the canvas"
     review = _add_review(page, name)

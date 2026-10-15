@@ -32,6 +32,9 @@ jest.mock("../../providers/packages/PackagePaletteContext", () => ({
 }));
 jest.mock("../../providers/ToastProvider", () => ({ useToastContext: () => ({ showToast: jest.fn() }) }));
 jest.mock("../../providers/StarterProvider", () => ({ useStarterContext: () => ({ getStarters: jest.fn() }) }));
+jest.mock("../../providers/modelCatalog", () => ({
+  useModelCatalogDrawer: () => ({ openModelCatalogDrawer: jest.fn() }),
+}));
 jest.mock("../../providers/agents", () => ({ AgentAttachmentsProvider: ({ children }: any) => <>{children}</> }));
 jest.mock("../../components/datasets/catalog/datasetDetailsContext", () => ({
   useDatasetDetails: () => ({ openDatasetDetails: jest.fn() }),

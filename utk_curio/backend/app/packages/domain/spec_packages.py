@@ -229,6 +229,51 @@ def referencing_nodes(
     return out
 
 
+def package_usage_in_spec(
+    spec: dict | None,
+    dir_name: str,
+    installed_majors_by_pkg: Mapping[str, Iterable[int]] | None = None,
+    model_ids_in: ModelIdsInCode | None = None,
+) -> tuple[list[dict], bool] | None:
+    """How *spec*'s dataflow uses the package *dir_name*, as a usage read
+    reports it: ``None`` when it does not, else its nodes that do
+    (``[{nodeId, nodeType}]``) and whether it uses the package only through
+    node code (``codeOnly``).
+
+    A node uses it when its type derives to it, when it is bound to it as its
+    model, or when its code names the model (a literal ``curio_load_model``
+    call, read by *model_ids_in*). The lockfile naming it is a use with no
+    node. ``codeOnly`` holds when node code is all there is: no lockfile
+    entry, no node of the package, no node bound to it. Such a dataflow keeps
+    nothing (see :func:`model_ref_packages`), as a dataset's usage read marks
+    a dataflow that loads the dataset in code alone."""
+    dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+    if not isinstance(dataflow, dict):
+        return None
+    package_id = dir_name.partition("@")[0]
+    kept = dir_name in project_packages(spec, installed_majors_by_pkg)
+    nodes: list[dict] = []
+    for index, node in enumerate(dataflow.get("nodes") or []):
+        if not isinstance(node, dict):
+            continue
+        keeps = (dir_name_from_node_type(node.get("type", ""), installed_majors_by_pkg) == dir_name
+                 or dir_name in _model_ref_dir_names(node, installed_majors_by_pkg, model_ids_in))
+        in_code = model_ids_in is not None and package_id in {
+            str(model_id).partition("@")[0] for model_id in model_ids_in(node.get("content"))
+        }
+        if keeps or in_code:
+            node_id = node.get("id")
+            node_type = node.get("type")
+            nodes.append({
+                "nodeId": node_id if isinstance(node_id, str) else f"#{index}",
+                "nodeType": node_type if isinstance(node_type, str) else None,
+            })
+            kept = kept or keeps
+    if not nodes and not kept:
+        return None
+    return nodes, bool(nodes) and not kept
+
+
 def preserve_project_packages(
     effective_spec: dict | None,
     existing_spec: dict | None,

@@ -7,8 +7,10 @@ import type { PackageKind } from "./types";
  * the dataflow has not added the package, the drop asks the open catalog
  * drawer of the package's kind to run that drawer's own Add (the review, then
  * the install of the package and its libraries), and the node is made once
- * the package is added. A hosted guest's drop is refused before any of it:
- * guests never install.
+ * the package is added. With the Model Catalog drawer closed, a model's drop
+ * (a row of the Tools panel's Models dropdown) opens that drawer with the
+ * request, and the drawer runs it the same way. A hosted guest's drop is
+ * refused before any of it: guests never install.
  */
 
 /** What a dropped card does. */
@@ -31,6 +33,8 @@ export function guestAddRefusal(name: string): string {
 export interface PackageAddRequest {
   dirName: string;
   kind: PackageKind;
+  /** The package's name, for what the drawer says when it cannot find it. */
+  name?: string;
   /** Runs once the package is added to the dataflow; never after a cancelled review or a failed install. */
   onAdded: () => void;
 }

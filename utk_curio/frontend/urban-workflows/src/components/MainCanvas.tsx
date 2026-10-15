@@ -67,6 +67,8 @@ import {
     readPackageCardDragPayload,
     type PackageCardNode,
 } from "../services/packages/packageCardDrag";
+import type { PackageAddRequest } from "../services/packages/packageAddRequests";
+import { useModelCatalogDrawer } from "../providers/modelCatalog";
 import { usePackageCardDrop } from "./packages/usePackageCardDrop";
 import { useHostedGuest } from "./apiSettings/useHostedGuest";
 import { endScenarioDrag, hasScenarioDrag, readScenarioDragPayload } from "../services/scenarioCatalog/scenarioDrag";
@@ -437,8 +439,14 @@ export function MainCanvas() {
     // one node runs the model, opening with its template's code, which names
     // the model. A package the dataflow has not added goes through the
     // drawer's own Add first (the review, then the install of its libraries),
-    // and the node is made once it is added; a hosted guest's drop is
-    // refused, since guests never install.
+    // and the node is made once it is added; a model dropped from the Models
+    // palette with the Model Catalog drawer closed opens that drawer on its
+    // Add. A hosted guest's drop is refused, since guests never install.
+    const { openModelCatalogDrawer } = useModelCatalogDrawer();
+    const openModelCatalogOnAdd = useCallback(
+        (addRequest: PackageAddRequest) => openModelCatalogDrawer({ addRequest }),
+        [openModelCatalogDrawer],
+    );
     const createPackageNode = useCallback((node: PackageCardNode, position: XYPosition) => {
         const starter = node.model
             ? packageStarterCode(tryGetNodeDescriptor(node.nodeType as NodeType), getStarters)
@@ -458,6 +466,7 @@ export function MainCanvas() {
         hostedGuest,
         createNode: createPackageNode,
         showToast,
+        openModelCatalog: openModelCatalogOnAdd,
     });
     const handlePackageCardCanvasDrop = useCallback((event: React.DragEvent) => {
         event.preventDefault();

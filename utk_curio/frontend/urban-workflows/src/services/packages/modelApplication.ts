@@ -11,7 +11,7 @@ import {
 /**
  * A model package (kind `model`) on the canvas: dragged from the Model
  * Catalog onto a node, whose `curio_load_model("<id>")` call it then names
- * when the node runs a model of its type, or onto the canvas, where it is its
+ * when the node runs a model of its known type, or onto the canvas, where it is its
  * package's card and becomes the package's node. A model's id is its
  * package's `packageId`.
  */
@@ -186,14 +186,17 @@ function modelTypeText(type: string): string {
 
 /**
  * Why a node that runs models of *nodeType* does not take *model*: a model
- * swaps another of its own type only. `null` when the node takes it, and
- * when the node's type or the model's is not known.
+ * swaps another of its own type only, so the node takes it only when both
+ * types are known and equal. `null` when the node takes it; else the reason,
+ * an unknown type (the node's said first) or the two types.
  */
 export function modelSwapRefusal(
   nodeType: string | null | undefined,
   model: Pick<ModelDragPayload, "name" | "type">,
 ): string | null {
-  if (!nodeType || !model.type || nodeType === model.type) return null;
+  if (!nodeType) return `This node's model type is unknown, so it does not take ${model.name}.`;
+  if (!model.type) return `The model type of ${model.name} is unknown, so this node does not take it.`;
+  if (nodeType === model.type) return null;
   const dropped = modelTypeText(model.type);
   const article = /^[aeiou]/i.test(dropped) ? "an" : "a";
   return `This node runs ${modelTypeText(nodeType)} models, and ${model.name} is ${article} ${dropped} model.`;

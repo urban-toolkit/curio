@@ -15,9 +15,14 @@ from utk_curio.backend.app.projects import (
     repositories as projects_repo,
     storage as projects_storage,
 )
+from utk_curio.backend.app.projects.usage import dataflow_usage
 from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
 from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
-from utk_curio.backend.app.packages.domain.spec_packages import model_ref_packages, project_packages
+from utk_curio.backend.app.packages.domain.spec_packages import (
+    model_ref_packages,
+    package_usage_in_spec,
+    project_packages,
+)
 from utk_curio.backend.app.packages.repositories import defaults as defaults_io
 from utk_curio.backend.app.packages.infrastructure import (
     backend_runtime as packages_backend_runtime,
@@ -111,19 +116,7 @@ def packages_in_use(user_key: str, candidates: Iterable[str] | None = None) -> s
     The one rule for "a dataflow uses this package": the prune above keeps
     what it returns, and Remove from account refuses it.
     """
-    # Need a User to enumerate projects. We accept user_key (the on-disk
-    # segment) but resolving projects requires the DB id. Detect: numeric
-    # user_key → DB id; "guest" → look up the shared guest user.
-    from utk_curio.backend.app.users.services import _shared_guest_user
-
-    if user_key == "guest":
-        owner = _shared_guest_user()
-        user_id = owner.id
-    elif user_key.isdigit():
-        user_id = int(user_key)
-    else:
-        raise PackageServiceError(f"invalid user_key {user_key!r}")
-
+    user_id = _user_id(user_key)
     wanted = set(candidates) if candidates is not None else None
     referenced: set[str] = set()
     installed_majors = packages_store_reads._installed_majors_by_pkg(user_key)
@@ -136,6 +129,35 @@ def packages_in_use(user_key: str, candidates: Iterable[str] | None = None) -> s
         if wanted is not None and wanted.issubset(referenced):
             break  # short-circuit: every candidate has at least one reference
     return referenced
+
+
+def package_usage(user_key: str, dir_name: str) -> list[dict]:
+    """The account's dataflows that use the package *dir_name*, one row each
+    (``package_usage_in_spec``), through the scan the Data Catalog's usage
+    read makes (``projects.usage.dataflow_usage``). ``codeOnly`` marks a
+    dataflow whose nodes name the model in their code alone, which keeps
+    nothing: the Model Catalog's Remove names it."""
+    if not PACKAGE_DIR_RE.match(dir_name):
+        raise PackageServiceError(f"invalid dirName: {dir_name!r}")
+    installed_majors = packages_store_reads._installed_majors_by_pkg(user_key)
+    return dataflow_usage(
+        _user_id(user_key),
+        user_key,
+        lambda spec, _project_id: package_usage_in_spec(spec, dir_name, installed_majors, model_ids_in_code),
+    )
+
+
+def _user_id(user_key: str) -> int:
+    """The DB id of *user_key*'s account, whose projects a scan enumerates:
+    the on-disk segment is the numeric id, or ``guest`` for the shared guest
+    user."""
+    from utk_curio.backend.app.users.services import _shared_guest_user
+
+    if user_key == "guest":
+        return _shared_guest_user().id
+    if user_key.isdigit():
+        return int(user_key)
+    raise PackageServiceError(f"invalid user_key {user_key!r}")
 
 
 def _read_python_deps(user_key: str, dir_name: str) -> dict[str, str]:

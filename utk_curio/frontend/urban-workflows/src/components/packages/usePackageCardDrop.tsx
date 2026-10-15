@@ -8,6 +8,7 @@ import {
   guestAddRefusal,
   packageDropAction,
   requestPackageAdd,
+  type PackageAddRequest,
 } from "../../services/packages/packageAddRequests";
 import type { PackageCardDragPayload, PackageCardNode } from "../../services/packages/packageCardDrag";
 import type { ToastVariant } from "../../providers/ToastProvider";
@@ -22,7 +23,9 @@ import type { ToastVariant } from "../../providers/ToastProvider";
  * point, Curio's one dark pop-up menu (`CardContextMenu`); the node picked is
  * made. Escape or a click outside makes none. A package the dataflow has not
  * added goes through the open drawer's own Add first (the review, then the
- * install of its libraries), and the node is made once it is added.
+ * install of its libraries), and the node is made once it is added. A model
+ * dropped with the Model Catalog drawer closed (from the Tools panel's Models
+ * dropdown) opens that drawer on the same Add.
  */
 
 /** A card's drop on the canvas. */
@@ -41,6 +44,9 @@ export interface PackageCardDropOptions {
   /** Make *node* at *position*. */
   createNode: (node: PackageCardNode, position: XYPosition) => void;
   showToast: (message: string, variant?: ToastVariant) => void;
+  /** Open the Model Catalog drawer on *request*, the Add of a model no open
+   *  drawer took: the drawer was closed (`openModelCatalogDrawer`). */
+  openModelCatalog?: (request: PackageAddRequest) => void;
 }
 
 /** A drop of a card of a package with several nodes, waiting for a pick. */
@@ -53,6 +59,7 @@ export function usePackageCardDrop({
   hostedGuest,
   createNode,
   showToast,
+  openModelCatalog,
 }: PackageCardDropOptions): { drop: (dropped: PackageCardDrop) => void; menu: React.ReactNode } {
   const [pending, setPending] = useState<PendingPick | null>(null);
 
@@ -60,12 +67,23 @@ export function usePackageCardDrop({
     (action: PendingPick["action"], card: PackageCardDragPayload, node: PackageCardNode, position: XYPosition) => {
       if (action === "create") {
         createNode(node, position);
-      } else if (!requestPackageAdd({ dirName: card.dirName, kind: card.kind, onAdded: () => createNode(node, position) })) {
-        const catalog = card.kind === "model" ? "Model Catalog" : "Node Catalog";
-        showToast(`Add ${card.name} to this dataflow from the ${catalog} first.`, "warning");
+        return;
       }
+      const request: PackageAddRequest = {
+        dirName: card.dirName,
+        kind: card.kind,
+        name: card.name,
+        onAdded: () => createNode(node, position),
+      };
+      if (requestPackageAdd(request)) return;
+      if (card.kind === "model" && openModelCatalog) {
+        openModelCatalog(request);
+        return;
+      }
+      const catalog = card.kind === "model" ? "Model Catalog" : "Node Catalog";
+      showToast(`Add ${card.name} to this dataflow from the ${catalog} first.`, "warning");
     },
-    [createNode, showToast],
+    [createNode, showToast, openModelCatalog],
   );
 
   const drop = useCallback(
