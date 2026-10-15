@@ -309,7 +309,7 @@ Autark nodes (curio.builtin/autk-grammar) are controlled through grammar: their 
 In the document, the node's inputs are the layers named "input_0", "input_1", ... in the order of its input circles; the layers an upstream Autark node produces keep their table names, such as "table_osm_buildings". The document writes no "data" entry for its inputs.
 
 - "data": Tables to load, in order. Each entry's "type" selects its fields:
-  - "osm": Loads OpenStreetMap data for a named area, from Overpass or from a PBF extract. Requires "outputTableName" and "queryArea".
+  - "osm": Loads OpenStreetMap data for a named area or a box, from Overpass or from a PBF extract. Requires "outputTableName" and "queryArea".
   - "csv": Loads a CSV table from exactly one of `csvFileUrl` or `csvObject`. Requires "outputTableName".
   - "json": Loads a JSON table from exactly one of `jsonFileUrl` or `jsonObject`. Requires "outputTableName".
   - "geojson": Loads a GeoJSON FeatureCollection from `geojsonFileUrl` or `geojsonObject`. When both are given, the Autark adapter reads the URL. Requires "outputTableName".

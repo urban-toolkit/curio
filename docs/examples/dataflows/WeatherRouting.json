@@ -11,7 +11,7 @@
         "type": "curio.builtin/autk-grammar",
         "x": 0,
         "y": 560,
-        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/chicago_downtown.osm.pbf\",\n      \"queryArea\": {\n        \"geocodeArea\": \"Chicago\",\n        \"areas\": [\n          \"Chicago\"\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"roads\"\n        ]\n      }\n    }\n  ]\n}",
+        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/chicago_downtown.osm.pbf\",\n      \"queryArea\": {\n        \"bbox\": [\n          -87.662,\n          41.859,\n          -87.613,\n          41.898\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"roads\"\n        ]\n      }\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Load the roads of SCOUT's routing box, in downtown Chicago, from OpenStreetMap.",
