@@ -333,7 +333,7 @@ class TestItBecomesDatasets:
         assert job["status"] == "completed", job
         dataset = job["dataset"]
         assert dataset["title"] == "Parks, Golf"
-        assert dataset["featureCount"] == 32
+        assert dataset["featureCount"] == 31
         collection = json.loads(Path(dataset["path"]).read_text())
         west, south, east, north = GOLF_BOX["box"]
         # Cropped to the box, as autk-db crops a named area's layers to its boundary.

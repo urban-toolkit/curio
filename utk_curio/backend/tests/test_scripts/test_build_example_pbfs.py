@@ -10,9 +10,8 @@ outside is dropped. The boundary relations autk-db's loader clips to stay whole.
 The cut runs here on small hand-made extracts, in a box from (0, 0) to (1, 1).
 Then each committed extract is read (``_support/osm_pbf.py``, no pyosmium): it
 holds, whole, each boundary relation the shipped specs that load it clip to,
-and each one the script built records its box, and cutting it again at that
-box changes nothing. One extract is not built by the script yet: the Loop's
-(``NOT_YET_REBUILT``, which says why).
+it is the script's and records its box, and cutting it again at that box
+changes nothing.
 
 The script is loaded inside each test: it must load without pyosmium, which
 is not one of Curio's dependencies.
@@ -74,15 +73,6 @@ def _pbf_loads():
 PBF_LOADS = _pbf_loads()
 PBF_LOAD_IDS = [f"{dataflow}:{node_id}" for dataflow, node_id, _extract, _names in PBF_LOADS]
 EXTRACTS = sorted(path.name for path in DATA.glob("*.osm.pbf"))
-#: The committed extracts the script has not built yet, and why.
-NOT_YET_REBUILT = {
-    "chicago_loop.osm.pbf": (
-        "OpenStreetMap now maps Willis Tower, Aqua and other Loop towers as 3D building relations "
-        "with roof, column and part members, which autk-db 4.1.0 skips whole. The Loop is rebuilt "
-        "with the script once an autk-db release reads them (a code PR on urban-toolkit/autark)."
-    ),
-}
-BUILT_BY_THE_SCRIPT = [name for name in EXTRACTS if name not in NOT_YET_REBUILT]
 
 
 def _ring(nodes, refs):
@@ -317,6 +307,21 @@ def test_a_building_relation_keeps_its_clipped_parts_and_loses_those_outside():
     assert 82 not in kept_ways
 
 
+def test_an_untagged_closed_way_a_building_relation_lists_is_clipped_as_a_polygon():
+    """A closed way with no tags is a polygon when a building relation lists it,
+    as River North Point's part (way 1276517180) in the Loop's box: the box
+    clips it, and never cuts it open as a line."""
+    nodes = {1: (0.5, 0.5, {}), 2: (1.5, 0.5, {}), 3: (2.0, 0.65, {}), 4: (1.5, 0.8, {}), 5: (0.5, 0.8, {})}
+    ways = {81: ([1, 2, 3, 4, 5, 1], {})}
+    relations = {80: ([("w", 81, "part")], {"type": "building"})}
+
+    kept_nodes, kept_ways, kept_relations = _script().cut(nodes, ways, relations, BOX, ())
+
+    assert kept_relations == relations
+    assert list(kept_ways) == [81] and kept_ways[81][1] == {}
+    assert _ring(kept_nodes, kept_ways[81][0]) == [(0.5, 0.5), (1.0, 0.5), (1.0, 0.8), (0.5, 0.8)]
+
+
 def test_neighbours_clipped_at_one_place_share_its_new_node():
     nodes = {1: (0.5, 0.2, {}), 2: (1.5, 0.2, {}), 3: (1.5, 0.5, {}), 4: (0.5, 0.5, {}),
              5: (1.5, 0.8, {}), 6: (0.5, 0.8, {})}
@@ -401,19 +406,6 @@ def test_every_shipped_extract_is_an_area_of_the_script():
     assert EXTRACTS == sorted(f"{key}.osm.pbf" for key in areas)
 
 
-def test_the_loop_is_the_one_extract_the_script_has_not_built_yet():
-    """``NOT_YET_REBUILT`` names only the Loop, whose committed extract predates
-    the script. Once the script rebuilds it, this fails: the Loop then leaves
-    ``NOT_YET_REBUILT``, and the committed-extract test covers it as it covers
-    the others."""
-    script = _script()
-
-    assert sorted(NOT_YET_REBUILT) == ["chicago_loop.osm.pbf"]
-    loop = read_pbf(DATA / "chicago_loop.osm.pbf")
-    assert loop.generator != script.GENERATOR
-    assert loop.box is None
-
-
 def test_scouts_routing_box_is_an_area_with_the_chicago_boundary():
     areas = _script().AREAS
 
@@ -431,8 +423,11 @@ def test_the_script_carries_every_boundary_a_spec_clips_to(dataflow, node_id, ex
     assert set(names) <= set(areas[key].boundaries)
 
 
-@pytest.mark.parametrize("name", BUILT_BY_THE_SCRIPT)
-def test_the_committed_extract_records_its_box_and_is_cut_at_it(name):
+@pytest.mark.parametrize("name", EXTRACTS)
+def test_every_committed_extract_is_the_scripts(name):
+    """Every committed extract is one the script built: its header names the
+    script, the date of the data and the box it was cut at, and cutting it
+    again at that box changes nothing."""
     script = _script()
     key = name.removesuffix(".osm.pbf")
     area = script.AREAS.get(key)

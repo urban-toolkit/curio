@@ -21,7 +21,10 @@ const GRAMMAR_TYPES = path.resolve(
 
 /** Bytes a feature takes in a batched matrix entry: its bounding box, eight f32. */
 const BOX_BYTES = 8 * 4;
-/** The most building parts a shipped example's shader batches: Back Bay's, in example 06. */
+/**
+ * The largest batched building-part count the walkthrough's claim covers. No
+ * shipped shader batches more: Back Bay's, in example 06, is the largest, 2102.
+ */
 const MOST_BATCHED_PARTS = 2120;
 
 function grammarBindingSize(): number {
