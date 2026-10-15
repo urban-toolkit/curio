@@ -110,10 +110,10 @@ MAP_CONTENT = json.dumps({"map": {"layerRefs": [{
 }]}}, indent=2)
 
 
-def _node(node_id, node_type, x, content, y=0):
+def _node(node_id, node_type, x, content, y=0, **metadata):
     return {
         "id": node_id, "type": node_type, "x": x, "y": y, "content": content,
-        "in": "DEFAULT", "out": "DEFAULT", "goal": "", "metadata": {"keywords": []},
+        "in": "DEFAULT", "out": "DEFAULT", "goal": "", "metadata": {"keywords": [], **metadata},
     }
 
 
@@ -355,11 +355,12 @@ def test_a_scenario_dragged_into_another_project_brings_its_results_and_its_own_
     assert [r["nodeId"] for r in details["context"][0]["results"]] == [LOADER], details["context"]
     assert [r["nodeId"] for r in details["outcomes"][0]["results"]] == [SCALE], details["outcomes"]
 
-    # Another project, with a grid of its own. Low enough that its output
-    # handle, halfway down the loader's preview (168 px tall), sits clear of the
-    # scenario dropped above it, where the 350 px editor's handle used to sit.
+    # Another project, with a grid of its own. Saved on its code view: where
+    # the scenario lands, and whether it covers this loader's output handle,
+    # follow the loader's box, and this layout is laid out for the editor's
+    # (a loader otherwise opens on its shorter preview).
     target = _create_project(current_server, token, "Elsewhere", _dataflow(
-        "Elsewhere", [_node(OWN, "curio.builtin/data-loading", 0, _grid_code(7), y=700)],
+        "Elsewhere", [_node(OWN, "curio.builtin/data-loading", 0, _grid_code(7), y=600, loaderView="code")],
     ))
     page.goto(f"{app_frontend.base_url}/dataflow/{target}")
     node_locator(page, OWN).wait_for(state="visible", timeout=45000)
