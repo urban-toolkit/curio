@@ -1,16 +1,23 @@
-"""Whether the browser has a WebGPU adapter, asked the way the app asks.
+"""Whether the browser has a WebGPU adapter, asked by the app's own probe.
 
-One ``requestAdapter()`` can answer null where the next one, a moment later,
-answers with an adapter. The app's probe (``src/utils/webgpuSupport.ts``,
-#272) is built for that: it asks again after 150 ms, doubles the wait up to
-1 s, calls the adapter missing after 3 s of null answers, and bounds the whole
-probe at 8 s. A test that asks once fails where the app would have drawn: on
-the GPU runners Chrome sometimes drops a first request (the browser log then
-says "A valid external Instance reference no longer exists."), most often
-while several jobs share the one GPU.
+Every e2e test asks through the page's ``window.__curio_probeWebGpu``, the
+probe of ``src/utils/webgpuSupport.ts``, so the rule lives in one place. The
+probe waits until the page has drawn a frame (at most 10 s), then asks for an
+adapter, asks again after a null (150 ms, doubling to 1 s, for 3 s), and gives
+up on a request that has not answered in 8 s.
 
-So every e2e test asks here, by the probe's rule and with its numbers. A
-browser that answers null for the whole 3 s has no adapter for the app either.
+The frame wait is for Chrome's switch to software compositing. CI's headless
+Chrome starts a page on GPU compositing and switches once its GPU process is
+up, and the switch drops a request in flight: it resolves null, and the
+browser log says "A valid external Instance reference no longer exists."
+While several jobs share the one GPU, the GPU process can take 4 to 9 s to
+start. A test that asked before the page drew (the shipped scenario drops, on
+an empty dataflow) saw its first request wait that long and come back null
+after the 3 s of retries. The page draws its first frame only after the
+switch, so a request made once a frame is drawn is past it.
+
+A browser that answers null for the whole 3 s has no adapter for the app
+either.
 """
 
 from __future__ import annotations
@@ -20,87 +27,65 @@ import warnings
 from dataclasses import dataclass
 
 import pytest
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
-#: webgpuSupport.ts's WEBGPU_ADAPTER_RETRY_DELAY_MS, WEBGPU_ADAPTER_RETRY_MAX_DELAY_MS,
-#: WEBGPU_ADAPTER_RETRY_BUDGET_MS and WEBGPU_PROBE_TIMEOUT_MS, which these follow.
-ADAPTER_PROBE = {
-    "delay": 150,
-    "maxDelay": 1_000,
-    "budget": 3_000,
-    "timeout": 8_000,
-}
-
-#: ``async (gpu, ADAPTER_PROBE) => ({ adapter, answers })``: ``requestAdapterUntil``
-#: and ``probe`` of webgpuSupport.ts, returning the adapter itself (null when
-#: none came) and every answer with when it came.
-REQUEST_ADAPTER_JS = """async (gpu, { delay, maxDelay, budget, timeout }) => {
-    const started = Date.now();
-    const answers = [];
-    const note = (answer) => answers.push(`${answer} at ${Date.now() - started} ms`);
-    const until = async (deadline) => {
-        let wait = delay;
-        for (;;) {
-            let adapter;
-            try {
-                adapter = await gpu.requestAdapter();
-            } catch (err) {
-                note(`rejected (${(err && err.message) || err})`);
-                return null;
-            }
-            note(adapter ? "an adapter" : "null");
-            if (adapter) return adapter;
-            if (Date.now() + wait >= deadline) return null;
-            await new Promise((resolve) => setTimeout(resolve, wait));
-            wait = Math.min(wait * 2, maxDelay);
-        }
+#: ``async () => ({ adapter, frame, answers, reason })``: one probe of the
+#: app's, and its record: when the page drew (absent when it had drawn
+#: already) and each request's answer, timed from the start of the probe.
+PROBE_JS = """async () => {
+    const support = await window.__curio_probeWebGpu();
+    return {
+        adapter: !!support.supported,
+        frame: support.frame || null,
+        answers: support.answers || [],
+        reason: support.reason || null,
     };
-    let timer = null;
-    const timedOut = new Promise((resolve) => {
-        timer = setTimeout(() => { note("no answer"); resolve(null); }, timeout);
-    });
-    try {
-        return { adapter: await Promise.race([until(started + budget), timedOut]), answers };
-    } finally {
-        clearTimeout(timer);
-    }
 }"""
 
-# The probe's first checks, then the adapter requests. Only a yes or no leaves
-# the page, with the answers.
-_ASK_JS = """async (probe) => {
-    let gpu;
-    try {
-        gpu = navigator.gpu;
-    } catch (err) {
-        return { adapter: false, answers: [`navigator.gpu threw (${(err && err.message) || err})`] };
-    }
-    if (!gpu) {
-        return { adapter: false, answers: [window.isSecureContext === false ? "no navigator.gpu on an insecure page" : "no navigator.gpu"] };
-    }
-    if (typeof gpu.requestAdapter !== "function" || typeof gpu.getPreferredCanvasFormat !== "function") {
-        return { adapter: false, answers: ["an incomplete WebGPU implementation"] };
-    }
-    const { adapter, answers } = await (REQUEST_ADAPTER_JS)(gpu, probe);
-    return { adapter: !!adapter, answers };
-}""".replace("REQUEST_ADAPTER_JS", REQUEST_ADAPTER_JS)
+_HOOK_READY_JS = "() => typeof window.__curio_probeWebGpu === 'function'"
+
+#: The bundle defines the hook as it loads, long before a test asks.
+_HOOK_TIMEOUT_MS = 30_000
 
 
 class WebGpuAdapterRetried(UserWarning):
-    """The browser answered null before it gave an adapter: the wait was needed."""
+    """The browser answered null before it gave an adapter: the retry was needed."""
 
 
 @dataclass(frozen=True)
 class WebGpuAnswer:
-    """What the browser answered, request by request; true when one gave an adapter."""
+    """What the probe saw; true when a request gave an adapter."""
 
     adapter: bool
     answers: tuple[str, ...]
+    #: "drew a frame at 33 ms" or "drew no frame in 10000 ms"; None when the
+    #: page had drawn already.
+    frame: str | None = None
+    #: Why not, in the app's words, when no request gave an adapter.
+    reason: str | None = None
 
     def __bool__(self) -> bool:
         return self.adapter
 
     def __str__(self) -> str:
-        return "the browser answered " + ", ".join(self.answers)
+        if self.answers:
+            said = "the browser answered " + ", ".join(self.answers)
+        else:
+            said = self.reason or "the probe asked nothing"
+        return f"the page {self.frame}; {said}" if self.frame else said
+
+
+def wait_for_probe(page) -> None:
+    """Wait until the page's bundle has defined the probe hook; fail when it never does."""
+    try:
+        # Polled on a timer: a page waiting for its GPU process draws no frames.
+        page.wait_for_function(_HOOK_READY_JS, polling=100, timeout=_HOOK_TIMEOUT_MS)
+    except PlaywrightTimeoutError:
+        pytest.fail(
+            f"{page.url} has no window.__curio_probeWebGpu after {_HOOK_TIMEOUT_MS} ms: "
+            "it is not running Curio's frontend bundle",
+            pytrace=False,
+        )
 
 
 def webgpu_adapter(page) -> WebGpuAnswer:
@@ -109,8 +94,11 @@ def webgpu_adapter(page) -> WebGpuAnswer:
     When it came after a null, a ``WebGpuAdapterRetried`` warning says so in
     the run's warnings summary.
     """
-    found = page.evaluate(_ASK_JS, ADAPTER_PROBE)
-    answer = WebGpuAnswer(bool(found["adapter"]), tuple(found["answers"]))
+    wait_for_probe(page)
+    found = page.evaluate(PROBE_JS)
+    answer = WebGpuAnswer(
+        bool(found["adapter"]), tuple(found["answers"]), found.get("frame"), found.get("reason"),
+    )
     if answer and len(answer.answers) > 1:
         warnings.warn(str(answer), WebGpuAdapterRetried, stacklevel=2)
     return answer

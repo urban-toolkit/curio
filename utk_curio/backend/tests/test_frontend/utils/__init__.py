@@ -206,10 +206,10 @@ from .node_drawings import (  # noqa: F401
     assert_vega_node_empty_state,
 )
 from .webgpu import (  # noqa: F401
-    ADAPTER_PROBE,
-    REQUEST_ADAPTER_JS,
+    PROBE_JS,
     WebGpuAdapterRetried,
     WebGpuAnswer,
+    wait_for_probe,
     webgpu_adapter,
     require_webgpu,
 )
