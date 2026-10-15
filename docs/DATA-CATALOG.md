@@ -217,6 +217,26 @@ It never runs code that sends a saved connection key (`curio_secret`) to an API,
 
 **Minimizing** a loader folds it to a chip of one size for every type: the Data Loading arrow and the typed database, with the type's name under them.
 
+#### Design concepts
+
+These are the approved design concepts for the preview and the chip (Option A). The interactive version is at [Data Loading preview design](https://claude.ai/artifact/Dy9NzMmThAFb5q4WJpBHz6?sk=yaLvzSQZ7jsxzd4YZ6cE0g). Sample titles, paths and row counts are illustrative: the shipped status line says **Loaded** after a run.
+
+**Anatomy.** The typed database is used in both the preview and the folded chip: a tile in the format's tint, the database in the format's colour, and the type's glyph as a badge. The Code pill shows `</>` in the preview and an eye in the code view.
+
+![The folded chip's parts, and the same loader in its preview and in its code view](images/data-loading-preview/anatomy.png?raw=true)
+
+**By source.** The four source kinds. Only the type carries colour; the source line stays neutral.
+
+![Loaders reading from the Data Catalog, a file on disk, an API, and data defined in code](images/data-loading-preview/by-source.png?raw=true)
+
+**Folded chips.** Every type's chip at its real size on the canvas. All chips are the same size, with the type's name inside the border.
+
+![The folded chip for each data type](images/data-loading-preview/folded-chips.png?raw=true)
+
+**States.** What the preview and the chip show while a background run finds the type, when the type is unknown, after a failed run, and for an empty loader, which stays on its editor with the eye disabled.
+
+![A loader detecting its type, of unknown type, after a failed run, and empty](images/data-loading-preview/states.png?raw=true)
+
 ### Collections
 
 A **collection** is a dataset made of many files that stay where they are: a folder of orthoimagery, video frames, photos and videos, or audio recordings, added from a storage source in the [Discovery Catalog](DISCOVERY-CATALOG.md). Its data file is an index with one row per file. `curio_load_collection("<datasetId>")` returns those rows with a way to reach each file:
