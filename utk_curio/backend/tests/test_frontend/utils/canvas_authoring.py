@@ -631,6 +631,36 @@ def drag_to_canvas_with_the_mouse(page, grip, *, at: tuple[float, float],
     return node_id
 
 
+# A Data Loading node (and a package's loader) opens on its preview, with its
+# editor mounted but hidden under it (plans/data-loading-expressive-preview-memo.md).
+# Its Code pill shows what a press shows: the code from the preview, the
+# preview (an eye) from the code view.
+LOADER_PREVIEW = '[data-testid="data-loader-preview"]'
+LOADER_VIEW_TOGGLE = '[data-testid="loader-view-toggle"]'
+
+
+def show_node_code(page, node_id: str, *, timeout: float = 15000) -> bool:
+    """Show a loader's code view, as a person does with its header's Code pill.
+
+    Returns whether the node was on its preview. Any other node, or a loader
+    already showing its code, is left as it is. Two presses at most: from
+    another tab the first opens the pane as it was left, the second leaves the
+    preview.
+    """
+    node_el = node_locator(page, node_id)
+    toggle = node_el.locator(LOADER_VIEW_TOGGLE).first
+    switched = False
+    for _ in range(2):
+        if not toggle.count() or not node_el.locator(LOADER_PREVIEW).first.is_visible():
+            break
+        toggle.dispatch_event("click")
+        switched = True
+        page.wait_for_timeout(100)
+    if switched:
+        node_el.locator(".monaco-editor").first.wait_for(state="visible", timeout=timeout)
+    return switched
+
+
 # Monaco is bundled and pinned on ``window`` by index.tsx, so the editor
 # instance is reachable; it is found by DOM containment because a canvas holds
 # one editor per code node and ``getEditors()`` returns all of them.
@@ -685,6 +715,8 @@ def set_node_code(page, node_id: str, code: str, *, timeout: float = 15000, poin
             code_tab.dispatch_event("click")
     except PlaywrightTimeoutError:
         pass
+    # A loader on its preview is edited from its code view.
+    show_node_code(page, node_id, timeout=timeout)
     node_el.locator(".monaco-editor").first.wait_for(state="visible", timeout=timeout)
     if pointer is not None:
         # Recordings: the code is typed in first (``Tour.type_code``); the exact
@@ -937,7 +969,8 @@ def read_node_error_text(node_el) -> str | None:
             # currently visible.
             pass
         output_area = node_el.locator("[data-curio-node-output]").first
-        output_area.wait_for(state="visible", timeout=2000)
+        # Hidden under a loader's preview, and readable all the same.
+        output_area.wait_for(state="attached", timeout=2000)
         return output_area.text_content()
     except Exception:
         return None
@@ -952,9 +985,12 @@ def read_node_output_text(page, node_id: str, *, timeout: float = 10000) -> str:
 
     The text is the Jupyter-style counter followed by the result, e.g.
     ``"[1]:Saved to file: xyz"`` or ``"[ ]:No output yet"``.
+
+    Attached, not visible: a loader on its preview keeps the box mounted under
+    it, hidden, and its text is the run's all the same.
     """
     box = node_locator(page, node_id).locator("[data-curio-node-output]").first
-    box.wait_for(state="visible", timeout=timeout)
+    box.wait_for(state="attached", timeout=timeout)
     return box.text_content() or ""
 
 

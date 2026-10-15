@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 
 import pytest
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, expect
 
 # from .utils import (
     # save_workflow_test_screenshot,
@@ -17,6 +17,8 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
     # compare_svg_structure,
 # )
 from .utils import (
+    LOADER_PREVIEW,
+    LOADER_VIEW_TOGGLE,
     INTERACTION_MIN_CHANGED_PIXELS,
     INTERACTION_RESTORED_RATIO,
     INTERACTION_SHOWN_TIMEOUT_MS,
@@ -756,10 +758,12 @@ class TestWorkflowCanvas:
             # counter, so this only applies to "code" category nodes (their
             # success is already proven by the status attribute above).
             if node.category == "code":
+                # Attached, not visible: a loader's output box stays mounted,
+                # hidden, under its preview.
                 output_area = node_el.locator("[data-curio-node-output]").filter(
                     has_text=re.compile(r"\[\d+\]:")
                 ).first
-                output_area.wait_for(state="visible", timeout=10000)
+                output_area.wait_for(state="attached", timeout=10000)
         self.__class__._executed_workflow = self.spec.filepath
 
     # -- 1. Node & edge counts --------------------------------------------
@@ -876,6 +880,13 @@ class TestWorkflowCanvas:
                     f"is missing 'No output yet' placeholder"
                 )
                 
+                # A loader with code opens on its preview, its editor mounted
+                # and hidden under it (plans/data-loading-expressive-preview-memo.md):
+                # the preview shows, and the editor still holds the code.
+                is_loader = node_el.locator(LOADER_VIEW_TOGGLE).count() > 0
+                if is_loader and node.content.strip():
+                    expect(node_el.locator(LOADER_PREVIEW).first).to_be_visible(timeout=5000)
+
                 if node.type in CODE_EDITOR_TYPES:
                     # 2. Check if the code tab is rendered
                     code_tab = node_el.locator(
@@ -892,7 +903,9 @@ class TestWorkflowCanvas:
                         code_tab.click(force=True)
                         code_tab.wait_for(state="visible", timeout=3000)
                     editor = node_el.locator(".monaco-editor")
-                    editor.first.wait_for(state="visible", timeout=5000)
+                    editor.first.wait_for(
+                        state="attached" if is_loader else "visible", timeout=5000
+                    )
                     assert editor.count() >= 1, (
                         f"Code node {node.id} ({node.type}) is missing its "
                         f"Monaco editor"
@@ -1089,7 +1102,8 @@ class TestWorkflowCanvas:
                 output_area = node_el.locator("[data-curio-node-output]").filter(
                     has_text=re.compile(r"\[\d+\]:")
                 )
-                output_area.first.wait_for(state="visible", timeout=10000)
+                # Attached: hidden under a loader's preview, read all the same.
+                output_area.first.wait_for(state="attached", timeout=10000)
                 assert output_area.count() >= 1, (
                     f"Code node {node.id} ({node.type}) is missing its "
                     f"inline output counter after execution"

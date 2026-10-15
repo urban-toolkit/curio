@@ -64,6 +64,7 @@ from .utils import (
     save_dataflow_and_settle_header,
     save_workflow_test_screenshot,
     set_node_code,
+    is_type_probe,
     stub_login_and_enter_workflow,
     wait_for_drawer_closed,
     wait_for_node_run_to_end,
@@ -186,6 +187,8 @@ def _record_python_runs(page):
     def _request(request) -> None:
         if request.method != "POST" or not request.url.endswith("/processPythonCode"):
             return
+        if is_type_probe(request.post_data):
+            return
         try:
             body = json.loads(request.post_data or "{}")
         except ValueError:
@@ -195,6 +198,8 @@ def _record_python_runs(page):
 
     def _response(response) -> None:
         if response.request.method != "POST" or not response.url.endswith("/processPythonCode"):
+            return
+        if is_type_probe(response.request.post_data):
             return
         try:
             body = json.loads(response.request.post_data or "{}")

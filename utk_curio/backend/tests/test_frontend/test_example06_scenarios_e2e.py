@@ -70,6 +70,7 @@ from .test_scenarios_canvas_e2e import _box, _frame_box, _require_webgpu, _scena
 from .test_widget_tags_e2e import _open_tab, _panel
 from .utils import (
     REPO_ROOT,
+    is_type_probe,
     api_json,
     assert_autark_map_drawn,
     assert_vega_canvas_rendered,
@@ -137,6 +138,8 @@ def _record_runs(page, data_node: str):
 
     def _request(request) -> None:
         if request.method != "POST" or not request.url.endswith("/processPythonCode"):
+            return
+        if is_type_probe(request.post_data):
             return
         try:
             python.append(str(json.loads(request.post_data or "{}").get("nodeId")))

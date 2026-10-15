@@ -160,6 +160,9 @@ from .canvas_authoring import (  # noqa: F401
     drag_to_canvas,
     drag_with_the_mouse_onto_canvas,
     drag_to_canvas_with_the_mouse,
+    LOADER_PREVIEW,
+    LOADER_VIEW_TOGGLE,
+    show_node_code,
     set_node_code,
     read_node_code,
     connect_nodes,
@@ -192,6 +195,8 @@ from .run_all import (  # noqa: F401
     held_node_executions,
     release_node_execution,
     SandboxRuns,
+    TYPE_PROBE_PURPOSE,
+    is_type_probe,
 )
 from .node_drawings import (  # noqa: F401
     VEGA_CANVAS_PROBE_JS,

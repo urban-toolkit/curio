@@ -41,6 +41,7 @@ from playwright.sync_api import expect
 from .test_library_install_integration import library_teardown  # noqa: F401
 from .utils import (
     SandboxRuns,
+    is_type_probe,
     _wait_for_reactflow_ready,
     api_json,
     install_session_cookie,
@@ -159,7 +160,11 @@ def _reply_to(page, token: str, project_id: str, start, *, until_done: bool = Fa
     answers = []
 
     def _answer(response) -> None:
-        if response.url.endswith("/processPythonCode") and response.request.method == "POST":
+        if (
+            response.url.endswith("/processPythonCode")
+            and response.request.method == "POST"
+            and not is_type_probe(response.request.post_data)
+        ):
             answers.append(response)
 
     page.on("response", _answer)
