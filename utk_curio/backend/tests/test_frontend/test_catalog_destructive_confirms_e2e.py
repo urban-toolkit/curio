@@ -63,12 +63,13 @@ BROWSE_DRAWER = '[data-curio-browse-drawer="true"]'
 LOADING_TILE = "#tile-data-loading"
 LOADING_TYPE = "curio.builtin/data-loading"
 
-#: A shipped dataset, as the drawer's card and a loader's code name it.
-BOUNDARY = "data.utk.chicago-boundary"
+#: A shipped dataset, as the drawer's card and a loader's code name it. No
+#: dataflow Curio seeds loads it, so a Remove names only the test's own.
+COMMUNITY_AREAS = "data.utk.chicago-community-areas"
 #: The dataflow these tests open.
 DATAFLOW = "Destructive confirms"
-#: Another dataflow of the account, whose node loads the boundary in code.
-OTHER_DATAFLOW = "Boundary in code"
+#: Another dataflow of the account, whose node loads the areas in code.
+OTHER_DATAFLOW = "Areas in code"
 
 #: A node body that outputs a frame, so running it with save-output on leaves a
 #: ``computed.`` dataset behind - the toggle is the half that registers it, see
@@ -138,11 +139,11 @@ def _enter(page, frontend, backend, username, *, spec: dict | None = None) -> di
     return session
 
 
-def _loads_the_boundary_in_code(name: str) -> dict:
-    """A dataflow whose one node loads the boundary in its code alone."""
+def _loads_the_areas_in_code(name: str) -> dict:
+    """A dataflow whose one node loads the community areas in its code alone."""
     return {"dataflow": {"name": name, "task": "", "edges": [], "nodes": [{
         "id": "loads-in-code", "type": "curio.builtin/computation-analysis", "x": 0, "y": 0,
-        "content": f'gdf = curio_load_data("{BOUNDARY}")\nreturn gdf\n',
+        "content": f'gdf = curio_load_data("{COMMUNITY_AREAS}")\nreturn gdf\n',
         "in": "DEFAULT", "out": "DEFAULT", "goal": "",
         "metadata": {"keywords": []},
     }]}}
@@ -230,18 +231,18 @@ def test_removing_a_dataset_names_every_dataflow_whose_code_alone_loads_it(
     session = _enter(
         page, app_frontend.base_url, current_server,
         f"confirm_code_only_{uuid.uuid4().hex[:8]}",
-        spec=_loads_the_boundary_in_code(DATAFLOW),
+        spec=_loads_the_areas_in_code(DATAFLOW),
     )
-    # Another dataflow of the account loads the boundary in its code alone.
+    # Another dataflow of the account loads the areas in its code alone.
     created = api_json(
         f"{current_server}/api/projects", session["token"], method="POST",
-        payload={"name": OTHER_DATAFLOW, "spec": _loads_the_boundary_in_code(OTHER_DATAFLOW), "outputs": []},
+        payload={"name": OTHER_DATAFLOW, "spec": _loads_the_areas_in_code(OTHER_DATAFLOW), "outputs": []},
     )
     assert created and created.get("id"), created
 
     drawer = _open_data_drawer(page)
     # Not the "Adding..." placeholder, an article with the same id.
-    card = drawer.locator(f'article:not([role="status"])[data-dataset-id="{BOUNDARY}"]')
+    card = drawer.locator(f'article:not([role="status"])[data-dataset-id="{COMMUNITY_AREAS}"]')
     expect(card).to_have_count(1, timeout=30000)
     card.get_by_role("button", name="Add to project", exact=True).click()
     with page.expect_response(
