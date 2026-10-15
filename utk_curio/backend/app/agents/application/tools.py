@@ -136,7 +136,9 @@ class ToolContract:
 
     ``parameters`` is the JSON Schema of its params, offered to a model that
     calls tools natively. ``native_description`` replaces ``description`` there
-    when the fenced one teaches a block syntax a native call does not use."""
+    when the fenced one teaches a block syntax a native call does not use, or
+    spells out params the schema already gives: a native description holds at
+    most 1,024 characters (OpenAI's limit)."""
 
     id: str
     contract_version: str
@@ -580,12 +582,12 @@ REGISTRY: dict[str, ToolContract] = {
         effect="mutate",
         description=(
             "Propose ONE built node package as a reviewed draft. Params: the "
-            'typed build request — {"mode": "create"|"extend", '
+            'typed build request, {"mode": "create"|"extend", '
             '"baseDigest": "<64-hex, extend only>", '
             '"manifest": {...}, "files": {"<path>": {"text"|"base64": "..."}}, '
             "The draft's identity is manifest.id + compatibility.major; the "
             "package id MUST be reverse-DNS (two or more dot-separated "
-            "segments, e.g. curio.notes — never a single segment like "
+            "segments, e.g. curio.notes, never a single segment like "
             'curio-notes). An optional "target": "<packageId>@<major>" may '
             "restate it but must agree. Other params: "
             '"behaviorEntries": ["sources/<entry>.tsx", ...], "dependencies": '
@@ -601,6 +603,20 @@ REGISTRY: dict[str, ToolContract] = {
             "reused, not drafted again. The build "
             "service compiles/validates/previews the draft; the user reviews "
             "the diff, dependencies, and preview before anything installs. "
+            "Never claim the package exists before the user applies it."
+        ),
+        # The same rules without the param shapes, which the schema gives.
+        native_description=(
+            "Propose ONE built node package as a reviewed draft, from the "
+            "typed build request in the params. Its identity is manifest.id + "
+            "compatibility.major; the id MUST be reverse-DNS (two or more "
+            "dot-separated segments: curio.notes, never curio-notes), and an "
+            'optional "target": "<packageId>@<major>" must agree with it. A '
+            "draft that adds a template (every template of a create, a new one "
+            'in an extend) needs the "justification" and gives each new '
+            "template a label no existing template has: one that already does "
+            "the job is reused, not drafted again. The user reviews the built "
+            "draft's diff, dependencies and preview before anything installs. "
             "Never claim the package exists before the user applies it."
         ),
         parameters=_object(
