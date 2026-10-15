@@ -32,8 +32,12 @@ from utk_curio.backend.app.discovery.providers.base import BaseProvider
 RESOURCE_ID_RE = re.compile(r"^[a-z0-9]{4}-[a-z0-9]{4}$")
 
 #: The URL shapes a 4x4 appears in. Used by ``verify.py`` to recognise a
-#: Socrata URL a model produced.
+#: Socrata URL a model produced, and by the agents' roster to recover a
+#: dataset's coordinate from its link.
 _URL_ID_RE = re.compile(r"/(?:resource|api/views|d)/([a-z0-9]{4}-[a-z0-9]{4})\b")
+#: A dataset's own page, the link a portal shows and a model copies:
+#: ``/<Category>/<Title>/<4x4>``, the 4x4 as the last path segment.
+_PAGE_ID_RE = re.compile(r"/([a-z0-9]{4}-[a-z0-9]{4})/?(?:[?#]|$)")
 
 _EXT = {"csv": "csv", "geojson": "geojson", "json": "json"}
 
@@ -65,7 +69,7 @@ def recognize(url: str) -> str | None:
     """The Socrata dataset id in *url*, or None."""
     if not isinstance(url, str):
         return None
-    match = _URL_ID_RE.search(url)
+    match = _URL_ID_RE.search(url) or _PAGE_ID_RE.search(url)
     return match.group(1) if match else None
 
 

@@ -492,6 +492,7 @@ def _grounding_context(
     is_data_loading: bool | None = None,
     request_texts: tuple = (),
     requested_ids=(),
+    confirmed_urls=(),
 ) -> "source_grounding.GroundingContext":
     """dev/114 (DEC-072): everything the gate needs for ONE mint — catalog
     paths, the conversation's evidence, the run-budgeted prober, and the
@@ -583,6 +584,7 @@ def _grounding_context(
         requested_dataset_ids=(
             _requested_dataset_ids(loop_ctx, request_texts, catalog_ids) | set(requested_ids)
         ),
+        confirmed_urls=set(confirmed_urls),
     )
 
 
@@ -612,6 +614,7 @@ def _gate_generated_content(
     is_data_loading: bool | None = None,
     request_texts: tuple = (),
     requested_ids=(),
+    confirmed_urls=(),
 ) -> tuple["source_grounding.GroundingVerdict", str | None]:
     """The ONE call every agent-authored-content boundary makes (dev/114):
     ``(verdict, refusal_text | None)``. The refusal is model-correctable
@@ -620,6 +623,7 @@ def _gate_generated_content(
         user_key, project_id, loop_ctx, node_type=node_type, params=params,
         extra_texts=extra_texts, base=base, is_data_loading=is_data_loading,
         request_texts=request_texts, requested_ids=requested_ids,
+        confirmed_urls=confirmed_urls,
     )
     engine_name = engine if isinstance(engine, str) and engine else "python"
     verdict = source_grounding.check_grounding(code, engine_name, ctx)

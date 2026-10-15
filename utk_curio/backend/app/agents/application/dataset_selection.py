@@ -97,6 +97,11 @@ def record_dataset_selection(
     # A row Curio can download is downloaded now, by the Discovery Catalog, and
     # recorded as the catalog pick it becomes.
     acquisitions = agents_acquire._acquire_confirmed_picks(rows)
+    # ...and, being the user's choice for this dataflow, added to it, as Add to
+    # project does. Before the locked write below: the install writes the spec.
+    installs = agents_acquire._install_acquired_picks(
+        project_id, rows, agents_spec_reads._acting_user(),
+    )
     with projects_storage.spec_write_lock(user_key, project_id):
         fresh = agents_spec_reads._read_spec_or_404(user_key, project_id)
         state = agents_dataset_resolution.record_selection(fresh, attachment_id, rows)
@@ -119,6 +124,8 @@ def record_dataset_selection(
                 [sessions.make_turn(
                     "agent",
                     f"Source recorded for this node: {names}."
+                    + (" Downloaded into your Data Catalog and added to this dataflow."
+                       if any(i.get("status") == "installed" for i in installs) else "")
                     + (" It is downloading into the Data Catalog; Solve the node "
                        "once it lands."
                        if any(r.get("acquiring") for r in rows) else

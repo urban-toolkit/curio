@@ -312,6 +312,15 @@ def acquiring_pick(row: dict, job_id: object) -> dict:
     }
 
 
+def selection_states(spec: dict | None) -> list[dict]:
+    """Every Dataset Finder selection record in *spec* (the ``datasetSource``
+    state of each attachment that has one)."""
+    return [
+        record[RECORD_KEY] for record in attachments.list_attachments(spec or {})
+        if isinstance(record.get(RECORD_KEY), dict)
+    ]
+
+
 def has_acquiring_picks(spec: dict | None) -> bool:
     """Whether any node waits on a download, so a caller can skip the lookup."""
 
@@ -414,15 +423,16 @@ def record_selection(spec: dict, attachment_id: str, rows: list[dict]) -> dict |
 
 
 def mark_dataset_installed(spec: dict, dataset_id: str) -> list[str]:
-    """An applied ``dataset.install`` resolves every node awaiting exactly that
-    dataset. Returns the attachment ids whose state changed."""
+    """An installed dataset is marked installed on every selection that picked
+    it, and resolves every node awaiting exactly that dataset (an applied
+    ``dataset.install``). Returns the attachment ids whose state changed."""
 
     changed: list[str] = []
     for record in attachments.list_attachments(spec):
         if record.get("coord", "").split("@", 1)[0] != FINDER_AGENT_ID:
             continue
         state = record.get(RECORD_KEY)
-        if not isinstance(state, dict) or state.get("status") != STATE_AWAITING_INSTALL:
+        if not isinstance(state, dict):
             continue
         picks = state.get("picks") or []
         if not any(str(p.get("datasetId") or "") == str(dataset_id) for p in picks):
@@ -430,6 +440,10 @@ def mark_dataset_installed(spec: dict, dataset_id: str) -> list[str]:
         for pick in picks:
             if str(pick.get("datasetId") or "") == str(dataset_id):
                 pick["installed"] = True
+        # A downloaded pick already resolved its node (the file loads from the
+        # account store): its install only records that it is in the dataflow.
+        if state.get("status") != STATE_AWAITING_INSTALL:
+            continue
         if not any(_needs_install(p) for p in picks if isinstance(p, dict)):
             state["status"] = STATE_RESOLVED
             state["recordedAt"] = _now()

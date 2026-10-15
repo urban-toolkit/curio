@@ -180,6 +180,10 @@ class GroundingContext:
     #: message that names none, in the user's previous message), and the
     #: catalog rows the user confirmed for the node. Empty restricts nothing.
     requested_dataset_ids: set[str] = field(default_factory=set)
+    #: The external sources the user confirmed for the node and Curio did not
+    #: download (a pick it downloads becomes a catalog pick, above). With these
+    #: and no catalog pick, a catalog read is another source in their place.
+    confirmed_urls: set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -751,6 +755,17 @@ def confirmed_dataset_ids(confirmed: object) -> set[str]:
     }
 
 
+def confirmed_external_urls(confirmed: object) -> set[str]:
+    """The external URLs among the sources the user confirmed for a node (the
+    shape ``dataset_resolution.confirmed_source`` returns). A row Curio
+    downloaded is a catalog pick by then, so it is not among them."""
+    picks = confirmed.get("picks") if isinstance(confirmed, dict) else None
+    return {
+        str(pick["url"]) for pick in picks or ()
+        if isinstance(pick, dict) and pick.get("lane") == "external" and pick.get("url")
+    }
+
+
 def synthetic_requested(texts: list[str] | tuple[str, ...], params: dict | None = None) -> bool:
     """True when the USER asked for made-up data, or the model declared
     ``synthetic: true`` — the declaration is only honoured when the user's
@@ -817,6 +832,16 @@ def _unrequested_catalog_reads(catalog_reads: list[tuple[str, str]], ctx: Ground
     read is refused with both named. A requested dataset read beside another
     one (a boundary to clip by) stays grounded."""
     requested = ctx.requested_dataset_ids or set()
+    if not requested and ctx.confirmed_urls and catalog_reads:
+        # The user confirmed an external source for this node and no catalog
+        # one: a Data Catalog dataset read here is another source in its place.
+        confirmed = ", ".join(repr(u) for u in sorted(ctx.confirmed_urls))
+        return [
+            f"{read_at}: loads the Data Catalog dataset {dataset_id!r}, but the user "
+            f"confirmed {confirmed} for this node; load the confirmed source, or ask "
+            "the user before using another one"
+            for read_at, dataset_id in catalog_reads
+        ]
     if not requested or not catalog_reads or any(d in requested for _, d in catalog_reads):
         return []
     asked = ", ".join(repr(d) for d in sorted(requested))

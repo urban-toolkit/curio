@@ -188,6 +188,43 @@ class _LazyRoster:
                     self._sources[source["dirName"]] = source
         return self._sources.get(dir_name) if isinstance(dir_name, str) else None
 
+    def portal_coordinate(self, url: object) -> tuple[str, str] | None:
+        """The ``(sourceId, resourceId)`` a portal link names, or None.
+
+        A configured portal source whose ``baseUrl`` host is the link's host,
+        which downloads, and whose provider recognises a dataset id in the link
+        (the recognisers the probe already uses, ``discovery.providers.RECOGNISERS``).
+        A model that found a dataset with ``discovery.search`` but wrote only its
+        link loses no coordinate this way: the runtime reads it back from its own
+        roster and the provider's own URL shape, never from the model.
+        """
+        from urllib.parse import urlparse
+
+        if not isinstance(url, str) or not url.startswith("https://"):
+            return None
+        host = (urlparse(url).hostname or "").lower()
+        if not host:
+            return None
+        from utk_curio.backend.app.discovery.providers import RECOGNISERS
+
+        recognisers = {module.PROVIDER_TYPE: module for module in RECOGNISERS}
+        self.get(None)
+        for dir_name, source in (self._sources or {}).items():
+            module = recognisers.get(source.get("provider"))
+            if module is None or source.get("kind") in ("storage", "service", "model"):
+                continue
+            if not (source.get("capabilities") or {}).get("download"):
+                continue
+            if (urlparse(str(source.get("baseUrl") or "")).hostname or "").lower() != host:
+                continue
+            try:
+                resource_id = module.recognize(url)
+            except Exception:  # noqa: BLE001 - a broken recogniser recognises nothing
+                resource_id = None
+            if resource_id:
+                return dir_name, str(resource_id)
+        return None
+
     def direct(self) -> str | None:
         """The source that downloads a plain link, when the roster has one."""
         self.get(None)

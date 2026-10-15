@@ -503,14 +503,14 @@ class SolveBatch:
         to, the ids the node's goal names and the catalog rows the user
         confirmed for the node."""
         node = self.nodes_by_id.get(node_id) or {}
+        confirmed = agents_dataset_resolution.confirmed_source(self.current["spec"], node_id)
         _verdict, refusal = agents_grounding._gate_generated_content(
             self.user_key, self.project_id, self.solve_ctx,
             code=code, engine="python", node_type=node.get("type"),
             base=self.solve_ground,
             request_texts=(str(node.get("goal") or ""),),
-            requested_ids=source_grounding.confirmed_dataset_ids(
-                agents_dataset_resolution.confirmed_source(self.current["spec"], node_id)
-            ),
+            requested_ids=source_grounding.confirmed_dataset_ids(confirmed),
+            confirmed_urls=source_grounding.confirmed_external_urls(confirmed),
         )
         return refusal
 
