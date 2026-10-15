@@ -4,10 +4,9 @@ The shipped test dataflow ``BuildingRasters.json``: twelve buildings built in
 code, the ``scout.raster-conversion@1`` package's Rasterize Buildings node with
 the widgets its template declares, and an Autark map whose document draws
 ``input_0``, band ``band_1``. The map is wired straight to the package node, so
-it reads the first part of the node's ``(mosaic, tiles)``, a raster, through the
-Autark node's raster path (#718); no node in between picks the raster out.
+it reads the node's one raster through the Autark node's raster path (#718).
 
-The buildings have twelve heights, so the mosaic holds thirteen values with
+The buildings have twelve heights, so the raster holds thirteen values with
 the ground's, and the map drawn from it holds more colours than the eight
 ``assert_autark_map_drawn`` takes for a map: a blank map, or one raster value
 spread over the canvas, holds fewer.

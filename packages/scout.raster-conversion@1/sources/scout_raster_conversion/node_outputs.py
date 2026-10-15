@@ -1,16 +1,19 @@
-"""The Rasterize Buildings node's two outputs, made from the tiles SCOUT's
+"""The Rasterize Buildings node's output, made from the tiles SCOUT's
 ``convert_raster`` writes. Curio's own code, beside SCOUT's
 ``convert_to_raster.py``.
 
-- **tiles**: one row per tile ``convert_raster`` writes: ``zoom``, ``x``,
-  ``y`` and ``png``, the tile's PNG file in base64. 8-bit gray, 256 by 256
-  pixels, where 255 is the maximum height, in EPSG:3395 between the tile's
-  corners: the files SCOUT's Deep Umbra shadow model reads, named
-  ``<zoom>_<x>_<y>.png``.
-- **mosaic**: the tiles side by side in one GeoTIFF in EPSG:3395, one float32
-  band of heights in metres (gray level times the maximum height over 255),
-  for an Autark map. A tile ``convert_raster`` does not write, because no
-  building is near it, is 0, the ground.
+``convert_raster`` writes a folder of tiles: 8-bit gray, 256 by 256 pixels,
+where 255 is the maximum height, in EPSG:3395 between the tile's corners,
+named ``<zoom>_<x>_<y>.png``, the files SCOUT's Deep Umbra shadow model reads.
+It writes a tile only where a building is near it.
+
+The node returns those tiles side by side in one GeoTIFF in EPSG:3395, one
+float32 band of heights in metres (gray level times the maximum height over
+255), on the tiles' own grid, for an Autark map and for Accumulated Shadow
+(``model.scout.deep-umbra@1``). A tile ``convert_raster`` did not write is no
+data (NaN, which the file names as its no-data value), so it is neither drawn
+nor counted, as SCOUT reads only the tiles there are; inside a written tile,
+the ground is a height of 0.
 """
 
 import base64
@@ -63,7 +66,8 @@ def height_layer(buildings, attribute):
 
 
 def read_tiles(folder):
-    """The tiles in *folder*, one row each, by ``x`` then ``y``."""
+    """The tiles ``convert_raster`` wrote in *folder*, one row each, by ``x``
+    then ``y``: ``zoom``, ``x``, ``y`` and ``png``, the tile's file in base64."""
     rows = []
     for name in os.listdir(folder):
         match = TILE_FILE.match(name)
@@ -92,7 +96,8 @@ def mosaic_name(tiles, max_height):
 
 
 def write_mosaic(tiles, max_height, path):
-    """The tiles side by side at *path*, as the module docstring describes."""
+    """The tiles side by side at *path*, as the module docstring describes:
+    heights in metres, and no data where no tile was written."""
     zoom = int(tiles["zoom"].iloc[0])
     metres = float(max_height) / 255.0
     heights = {
@@ -101,7 +106,7 @@ def write_mosaic(tiles, max_height, path):
     }
     return mosaic_web_tiles(
         heights, zoom, path, crs=MOSAIC_CRS, tile_size=TILE_SIZE, dtype="float32",
-        band_descriptions=["height (m)"],
+        fill=float("nan"), nodata=float("nan"), band_descriptions=["height (m)"],
         tags={
             "zoom": zoom, "tile_x": int(tiles["x"].min()), "tile_y": int(tiles["y"].min()),
             "tile_size": TILE_SIZE, "max_height": float(max_height),
@@ -110,9 +115,10 @@ def write_mosaic(tiles, max_height, path):
 
 
 def rasterize_buildings(buildings, attribute, zoom, max_height, output_file):
-    """``(mosaic, tiles)`` for *buildings*: SCOUT's ``convert_raster`` at
-    *zoom* and *max_height* on the heights in column *attribute*.
-    *output_file(name)* names where a file the node returns is written."""
+    """The raster of heights for *buildings*: SCOUT's ``convert_raster`` at
+    *zoom* and *max_height* on the heights in column *attribute*, its tiles
+    side by side. *output_file(name)* names where a file the node returns is
+    written."""
     layer = height_layer(buildings, attribute)
     # convert_raster empties the folder it is given, so it gets one of its own.
     work = output_file(f"tiles-{uuid.uuid4().hex}")
@@ -123,5 +129,4 @@ def rasterize_buildings(buildings, attribute, zoom, max_height, output_file):
         shutil.rmtree(work, ignore_errors=True)
     if tiles.empty:
         raise ValueError("No tile holds a building; check the layer's geometries and CRS.")
-    path = write_mosaic(tiles, max_height, output_file(mosaic_name(tiles, max_height)))
-    return rasterio.open(path), tiles
+    return rasterio.open(write_mosaic(tiles, max_height, output_file(mosaic_name(tiles, max_height))))
