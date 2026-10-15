@@ -212,6 +212,10 @@
     color: var(--curio-danger-text);
 }
 
+.notRun {
+    color: var(--curio-text-muted);
+}
+
 .spin {
     animation: loaderSpin 1.1s linear infinite;
 }

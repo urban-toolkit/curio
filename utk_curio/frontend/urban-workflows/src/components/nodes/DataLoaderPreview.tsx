@@ -1,7 +1,7 @@
 import React from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
-import { faCircleCheck, faCircleXmark, faSpinner } from "@fortawesome/free-solid-svg-icons";
+import { faCircleCheck, faCirclePlay, faCircleXmark, faSpinner } from "@fortawesome/free-solid-svg-icons";
 import { dataTypeVisual, SOURCE_KIND_VISUALS } from "../../constants/dataTypeVisuals";
 import {
   shortenPath,
@@ -135,7 +135,8 @@ function StatusLine({
   }
   return (
     <span className={styles.status}>
-      <LineIcon />
+      {/* Not run: the play glyph, muted, as the header's Play button runs it. */}
+      <LineIcon icon={faCirclePlay} className={styles.notRun} />
       <span>{profile.dataType === "unknown" ? "Run to see the type" : "Not run yet"}</span>
     </span>
   );
