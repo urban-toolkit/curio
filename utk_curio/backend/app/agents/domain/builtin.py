@@ -54,6 +54,9 @@ PACKAGE_CONTRACT_FILE = f"{PACKAGE_CONTRACT}.md"
 # lists them (``content.PACKAGE_AUTHORING_CAPABILITIES`` holds the same set).
 # All three are one mode prompt, ``package_build_instruction.md``.
 _PACKAGE_WRITING = ("package.build", "package.extend", "node.kind.author")
+# The Node Builder's content mode, in plain words. Its Autark prompt runs in
+# that mode's place for an Autark node, and is named after it.
+_WRITE_CONTENT = "Write a node's content"
 
 # category -> the single compatible attachment target kind.
 _TARGET_BY_CATEGORY = {
@@ -78,6 +81,9 @@ class BuiltinMode:
     # Whether a run of this mode gets worked examples, the shipped dataflows
     # closest to its task, in its runtime slot (``turns/examples``).
     worked_examples: bool = False
+    # What the mode does, in the plain words docs/AGENT-CATALOG.md uses for
+    # it: the agent details window lists the mode by it.
+    label: str = ""
 
 
 #: A ``delegates_to`` entry: an agent id, or ``(agent id, capabilities)`` to
@@ -138,10 +144,14 @@ class BuiltinAgentSpec:
     # A merged agent's modes, one per capability. Empty for an agent with one
     # instruction for everything it does.
     modes: tuple[BuiltinMode, ...] = field(default_factory=tuple)
+    # Capabilities other agents ask for that run the agent's own instruction,
+    # with no mode of their own, as (capability, label): the label names them
+    # in the agent details window, as a mode's label does.
+    capability_labels: tuple[tuple[str, str], ...] = field(default_factory=tuple)
     # Instructions a run selects in place of its instruction or a mode's in
-    # one situation, as (prompts key, file): the Autark document under its
-    # reply schema (``reply_schemas.AUTK_PROMPT_KEY``).
-    variant_prompts: tuple[tuple[str, str], ...] = field(default_factory=tuple)
+    # one situation, as (prompts key, file, when it runs): the Autark document
+    # under its reply schema (``reply_schemas.AUTK_PROMPT_KEY``).
+    variant_prompts: tuple[tuple[str, str, str], ...] = field(default_factory=tuple)
     # Whether a run of this agent, under its instruction or a variant, gets
     # worked examples (``turns/examples``). A mode decides for itself.
     worked_examples: bool = False
@@ -156,8 +166,19 @@ class BuiltinAgentSpec:
         """Every prompt key this agent declares and the file behind it."""
         files = {"system": PREAMBLE_FILE, "instruction": self.prompt_file}
         files.update({mode.capability: mode.prompt_file for mode in self.modes})
-        files.update(dict(self.variant_prompts))
+        files.update({key: filename for key, filename, _runs in self.variant_prompts})
         return files
+
+    def capability_label_map(self) -> dict[str, str]:
+        """The plain-word label of each capability the agent is asked for by
+        name: its mode's, else its own. A capability without one is no mode."""
+        labels = dict(self.capability_labels)
+        labels.update({mode.capability: mode.label for mode in self.modes if mode.label})
+        return labels
+
+    def variant_runs(self) -> dict[str, str]:
+        """When each variant prompt runs, by its prompts key."""
+        return {key: runs for key, _filename, runs in self.variant_prompts}
 
 
 def _merged(agent_id: str, name: str, category: str, purpose: str,
@@ -231,9 +252,10 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      delegates_to=(("agent.node-builder", _PACKAGE_WRITING),),
                      review_policy="review-before-apply",
                      modes=(BuiltinMode("research.notes.compose", "researcher_notes_instruction.md",
-                                        ("question", "searchResults", "notesTemplates")),
+                                        ("question", "searchResults", "notesTemplates"),
+                                        label="Notes from search results"),
                             BuiltinMode("research.verify", "research_instruction.md",
-                                        ("mission", "nodeContext")))),
+                                        ("mission", "nodeContext"), label="Check a fact"))),
     # The planning and keyword agents, merged: six capabilities that shared
     # their tools (none), delegates (none), review and execution, each still
     # running its own instruction as a mode. Internal: a delegate only.
@@ -241,24 +263,30 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
             "Plan, refresh and check a dataflow's tasks, and extract and bind "
             "the keywords that describe it.",
             (BuiltinMode("workflow.plan.create", "new_subtasks_prompt.md",
-                         ("currentTask", "dataflowContext")),
+                         ("currentTask", "dataflowContext"), label="Plan a dataflow's tasks"),
              BuiltinMode("execution.followup.plan", "new_subtask_from_exec_prompt.md",
-                         ("nodeContent", "nodeType", "currentTask")),
+                         ("nodeContent", "nodeType", "currentTask"),
+                         label="Plan a follow-up from a node's run"),
              BuiltinMode("workflow.plan.refresh", "task_refresh_prompt.md",
-                         ("currentTask", "keywords", "dataflowContext"), ("keywordTypes",)),
+                         ("currentTask", "keywords", "dataflowContext"), ("keywordTypes",),
+                         label="Refresh a dataflow's tasks"),
              BuiltinMode("workflow.coherence.validate", "evaluate_coherence_subtasks_prompt.md",
-                         ("workflowGoal", "dataflowContext")),
+                         ("workflowGoal", "dataflowContext"), label="Check a plan's coherence"),
              BuiltinMode("workflow.keyword.bind", "keywords_binding_prompt.md",
-                         ("keywords", "dataflowContext"), ("keywordTypes",)),
+                         ("keywords", "dataflowContext"), ("keywordTypes",),
+                         label="Bind the keywords of a description"),
              BuiltinMode("workflow.keywords.extract", "syntax_analysis_prompt.md",
-                         ("workflowGoal",), ("keywordTypes",))),
+                         ("workflowGoal",), ("keywordTypes",),
+                         label="Extract the keywords of a description")),
             roles=("planning", "validation"), targets=("canvas",)),
     # The two dataflow readers, merged the same way.
     _merged("agent.dataflow-reader", "Dataflow Reader", "canvas",
             "Explain what the whole dataflow does, and suggest its next steps.",
-            (BuiltinMode("dataflow.explain", "explanation_prompt.md", ("dataflowContext",)),
+            (BuiltinMode("dataflow.explain", "explanation_prompt.md", ("dataflowContext",),
+                         label="Explain the whole dataflow"),
              BuiltinMode("workflow.suggest", "workflow_suggestions_prompt.md",
-                         ("dataflowContext", "workflowGoal"), worked_examples=True)),
+                         ("dataflowContext", "workflowGoal"), worked_examples=True,
+                         label="Suggest the dataflow's next steps")),
             roles=("explanation", "planning"), targets=("canvas",), tools=("dataflow.read",)),
     # The first P5 composite (memo dev/48; spec dev/15 §3.4). Its chat runs
     # its own instruction; content for a node runs as its
@@ -336,13 +364,16 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      review_policy="review-before-apply",
                      modes=(BuiltinMode("node.content.generate", "new_content_prompt.md",
                                         ("dataflowContext", "nodeId", "subtask", "workflowGoal"),
-                                        worked_examples=True),
+                                        worked_examples=True, label=_WRITE_CONTENT),
                             BuiltinMode("package.recommend", "package_recommendation_instruction.md",
-                                        ("mission", "targetContext", "existingPackages")),
+                                        ("mission", "targetContext", "existingPackages"),
+                                        label="Recommend packages"),
                             *(BuiltinMode(capability, "package_build_instruction.md",
-                                          ("packageIntent", "targetContext", "existingPackages"))
+                                          ("packageIntent", "targetContext", "existingPackages"),
+                                          label="Write a package")
                               for capability in _PACKAGE_WRITING)),
-                     variant_prompts=((AUTK_PROMPT_KEY, "new_content_autk_prompt.md"),),
+                     variant_prompts=((AUTK_PROMPT_KEY, "new_content_autk_prompt.md",
+                                       f"{_WRITE_CONTENT}, for an Autark node"),),
                      worked_examples=True),
     # The second P5 composite (memo dev/50; spec dev/15 §3.4 + docs/06). Two-
     # lane discovery: catalog picks → reviewed dataset.install; external picks
@@ -371,7 +402,9 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                                    ("agent.dataflow-planner", ("workflow.keyword.bind",)),
                                    ("agent.researcher", ("research.verify",))),
                      review_policy="review-before-apply",
-                     node_requires=("data-loading",)),
+                     node_requires=("data-loading",),
+                     # Asked for by name, under its own instruction.
+                     capability_labels=(("dataset.discover", "Find datasets"),)),
     # The third P5 composite (memo dev/52; spec dev/15 §3.4 + dev/49 DR-1…5).
     # Plan → Revise → Solve → Run: additive graph-level plan proposals, the
     # persisted builder session, and the authenticated Solve batch (DEC-048).
@@ -444,7 +477,9 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      targets=("node", "canvas"),
                      reads=("nodeContext", "targetContext"),
                      tools=("node.read", "node.runtime.read", "dataflow.read"),
-                     in_catalog=False),
+                     in_catalog=False,
+                     capability_labels=(("content.quality.evaluate",
+                                         "Check generated node content against its goal"),)),
 )
 
 

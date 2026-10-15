@@ -191,7 +191,8 @@ env:
 # other stacks. So every job that can run on one starts by removing the
 # curio-ci* stacks an earlier job left and handing back the files containers
 # wrote as root (build-image's first step, `&reclaim`), and a job that starts a
-# stack tears it down at its end (stop-stack, or a step of its own).
+# stack tears it down at its end with stop-stack, which also removes the images
+# and build cache CI jobs leave on that daemon.
 #
 # Concurrency is set on the GPU jobs, not on the run: a GPU runner has one GPU
 # and a fixed set of CI ports, so two of its jobs must never execute at once,
@@ -751,14 +752,10 @@ jobs:
             shard-logs.txt
           retention-days: 7
 
-      - name: 🧹 Tear down containers
+      - uses: ./.github/actions/stop-stack
         if: always()
-        run: |
-          docker compose -p curio-ci down -v --remove-orphans || true
-          # Hand the container-written (root-owned) files back to the runner
-          # user so they don't accumulate; the pre-checkout step is the real
-          # safety net for the next run.
-          docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+        with:
+          project: curio-ci
 
   # The Python unit suites need the image but neither a GPU nor a browser, so
   # they run here, beside test-gpu, instead of adding nine minutes to it. The
@@ -1718,11 +1715,10 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: 🧹 Tear down containers
+      - uses: ./.github/actions/stop-stack
         if: always()
-        run: |
-          docker compose -p curio-ci-stress down -v --remove-orphans || true
-          docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+        with:
+          project: curio-ci-stress
 
   # One page for the whole run (scripts/ci_report.py): every job's result, each
   # suite's results with the failures, and every screenshot comparison, from

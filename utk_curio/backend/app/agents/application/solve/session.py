@@ -18,6 +18,7 @@ from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.application import verify
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
+from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import upstream_schema
 from utk_curio.backend.app.agents.domain.manifest import AgentManifest
 from utk_curio.backend.app.agents.infrastructure import agent_jobs
@@ -95,10 +96,11 @@ def _is_data_loading_node(node: object) -> bool:
 
 def _delegate_capabilities(nodes) -> list[str]:
     """What a content run always delegates: the content, and discovery when a
-    data-loading node may need a source."""
-    capabilities = ["node.content.generate"]
+    data-loading node may need a source (``content.SOLVE_CAPABILITIES``)."""
+    generate, discover = content.SOLVE_CAPABILITIES
+    capabilities = [generate]
     if any(_is_data_loading_node(node) for node in nodes):
-        capabilities.append("dataset.discover")
+        capabilities.append(discover)
     return capabilities
 
 

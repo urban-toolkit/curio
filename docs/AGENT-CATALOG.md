@@ -50,17 +50,17 @@ Agent ids always begin with **`agent.`**, which keeps them apart from node packa
 
 | Agent | In chat | Tools | Modes (who asks) |
 |---|---|---|---|
-| **Researcher** | Explains a node or the dataflow, diagnoses errors, helps define what to build, answers web questions as notes, checks facts | Read the dataflow and a node's last run; search and read the web; propose notes; propose a notes package | Check a fact (Node Builder, Dataset Finder, Dataflow Builder); Notes from search results (Dataflow Builder) |
+| **Researcher** | Explains a node or the dataflow, diagnoses errors, helps define what to build, answers web questions as notes, checks facts | Read the dataflow and a node's last run; search and read the web; propose notes; propose a notes package | Notes from search results (Dataflow Builder); Check a fact (Node Builder, Dataset Finder, Dataflow Builder) |
 | **Node Builder** | Builds a node, rewrites a node's content, suggests nodes for a connection, finds or writes node types | Read the dataflow and a node's last run; search the Data and Model Catalogs; propose a node, a content change, a package install or a package draft | Write a node's content (Node Builder, Dataflow Builder, Solve); Recommend packages (Dataflow Builder); Write a package (Node Builder, Researcher, Dataflow Builder) |
 | **Dataflow Builder** | Plans a whole dataflow, then solves its nodes | Read the dataflow and runs; propose a plan or a node; read worked examples | None |
-| **Dataset Finder** | Finds datasets in the Data Catalog and in portals | Search the catalog and portals; propose a download | Find datasets (Node Builder, Dataflow Builder) |
+| **Dataset Finder** | Finds datasets in the Data Catalog and in portals | Search the catalog and portals; propose a download | Find datasets (Node Builder, Dataflow Builder, Solve) |
 
 The other three are helpers. They have modes only, never a chat: they are never listed, added or attached, and a catalog agent asks for their modes without them being added to the dataflow.
 
 | Helper | Modes (who asks) |
 |---|---|
-| **Dataflow Planner** | Plan a dataflow's tasks, refresh them and check a plan's coherence (Dataflow Builder); plan a follow-up from a node's run (Dataflow Builder, Node Builder); bind the keywords of a description (Dataset Finder); extract them (no agent asks for this) |
-| **Dataflow Reader** | Explain the whole dataflow (Dataflow Builder); suggest its next steps (Dataflow Builder, Dataset Finder) |
+| **Dataflow Planner** | Plan a dataflow's tasks, refresh them and check a plan's coherence (Dataflow Builder); plan a follow-up from a node's run (Node Builder, Dataflow Builder); bind the keywords of a description (Dataset Finder); extract them (no agent asks for this) |
+| **Dataflow Reader** | Explain the whole dataflow (Dataflow Builder); suggest its next steps (Dataset Finder, Dataflow Builder) |
 | **Generated Content Evaluator** | Check generated node content against its goal (Node Builder, Dataflow Builder) |
 
 ### How an agent picks what to run
@@ -78,8 +78,8 @@ Each agent's prompts, by the key its manifest gives them:
 |---|---|---|
 | `system` | [`default_preamble.md`](../utk_curio/llm-prompts/default_preamble.md) | every call |
 | `instruction` | [`researcher_instruction.md`](../utk_curio/llm-prompts/researcher_instruction.md) | a message you type |
-| `research.verify` | [`research_instruction.md`](../utk_curio/llm-prompts/research_instruction.md) | another agent asks for a fact to be checked |
 | `research.notes.compose` | [`researcher_notes_instruction.md`](../utk_curio/llm-prompts/researcher_notes_instruction.md) | the Dataflow Builder asks for notes from search results |
+| `research.verify` | [`research_instruction.md`](../utk_curio/llm-prompts/research_instruction.md) | another agent asks for a fact to be checked |
 
 **Node Builder**
 
@@ -104,7 +104,7 @@ Each agent's prompts, by the key its manifest gives them:
 | Key | File | When it runs |
 |---|---|---|
 | `system` | [`default_preamble.md`](../utk_curio/llm-prompts/default_preamble.md) | every call |
-| `instruction` | [`discovery_instruction.md`](../utk_curio/llm-prompts/discovery_instruction.md) | a message you type, and another agent asking for datasets |
+| `instruction` | [`discovery_instruction.md`](../utk_curio/llm-prompts/discovery_instruction.md) | a message you type, and another agent or Solve asking for datasets |
 
 ### Walk-throughs
 
@@ -191,6 +191,8 @@ There are three places you work with agents, and as with the Data Catalog they a
 - **The `/catalog/agents` page** is the account-level library. Reach it from `/projects` and the **Agent Catalog** tab. It lists the built-in agents, every published one, and the ones you imported yourself. Filter by status (**All agents**, **In all projects**) and by category, search, and read an agent's full details. **Add to all projects**, **Publish**, **Unpublish**, **Settings** and **Import agent** live here. You cannot add an agent to just one dataflow from this page: the drawer does that.
 - **The Agent Catalog drawer**, inside the canvas, is the working surface. Open it from the **Agent Catalog** button in the top bar, or from the left Tools panel's **Agent Catalog** dropdown and **Browse Agent Catalog +**. Its tabs are **Browse all** (the default) and **In project**, and everything scoped to the open dataflow happens here, including **Import agent** in its footer.
 - **The Agent palette**, the **Agent Catalog** dropdown in the left Tools panel, holds the agents already added to this dataflow, ready to drag onto a node, a connection, or the canvas. It sits below the **Node Catalog** and **Data Catalog** dropdowns.
+
+**View details**, on any agent card and beside each agent in the palette, opens the agent's details window. Its first three sections use the three words defined in [The agents](#the-agents): **In chat** says what you can ask the agent where you drop it, **Tools** lists the actions it takes in that chat, what it reads before what it proposes, and **Modes (who asks)** lists each mode with the agents, or Solve, that ask for it, and the mode's capability ids beneath it. **Agent info** gives its identifier, version, category, publisher, what it attaches to and the model it runs on. **Prompts** shows each prompt file, labeled by when it runs: every call, a message you type, or the mode that reads it. **Requires** names the agents it cannot work without, and **Export** saves the agent as one file.
 
 ### Action matrix
 
@@ -453,8 +455,8 @@ The modes of the agents Curio ships, each with its capability id and its prompt 
 
 | Mode | Capability id | Prompt |
 |---|---|---|
-| Researcher: check a fact | `research.verify` | `research_instruction.md` |
 | Researcher: notes from search results | `research.notes.compose` | `researcher_notes_instruction.md` |
+| Researcher: check a fact | `research.verify` | `research_instruction.md` |
 | Node Builder: write a node's content | `node.content.generate` | `new_content_prompt.md`, or `new_content_autk_prompt.md` for an Autark document |
 | Node Builder: recommend packages | `package.recommend` | `package_recommendation_instruction.md` |
 | Node Builder: write a package | `package.build`, `package.extend`, `node.kind.author` | `package_build_instruction.md` |
