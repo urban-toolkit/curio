@@ -108,6 +108,21 @@ export const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClo
     }
   };
 
+  // Every listing sends these; a card built anywhere else may not.
+  const tools = agent.tools ?? [];
+  const modes = agent.modes ?? [];
+  // When each prompt file runs, by its path. The card lists them in the order
+  // to read them: every call, a message you type, then each mode. The bundle
+  // arrives sorted by path, so it gives the text and the card the order; a
+  // file the card does not know follows, by its name alone.
+  const promptRuns = new Map(
+    (agent.promptRuns ?? []).map((row): [string, string[]] => [row.path, row.runs]),
+  );
+  const promptOrder = (prompts: Record<string, string>) => [
+    ...(agent.promptRuns ?? []).map((row) => row.path).filter((path) => path in prompts),
+    ...Object.keys(prompts).filter((path) => !promptRuns.has(path)),
+  ];
+
   const rows: [string, React.ReactNode][] = [
     ["Identifier", agent.id],
     ["Version", agent.version],
@@ -168,7 +183,15 @@ export const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClo
       />
 
       <div className={styles.body}>
-        {agent.purpose ? <p className={styles.purpose}>{agent.purpose}</p> : null}
+        {/* The docs' three words (docs/AGENT-CATALOG.md, "The agents"): what
+            you ask the agent where you dropped it, the tools it uses in that
+            chat, and its modes, each with who asks for it. */}
+        {agent.purpose ? (
+          <section className={styles.section}>
+            <h3 className={styles.sectionLabel}>In chat</h3>
+            <p className={styles.sectionText}>{agent.purpose}</p>
+          </section>
+        ) : null}
 
         {exportError ? (
           <p className={styles.purpose} role="alert" data-curio-export-error="true">
@@ -176,6 +199,41 @@ export const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClo
           </p>
         ) : null}
 
+        <section className={styles.section}>
+          <h3 className={styles.sectionLabel}>Tools</h3>
+          {tools.length > 0 ? (
+            <ul className={styles.list}>
+              {tools.map((tool) => (
+                <li key={tool.id}>{tool.label}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className={styles.sectionText}>None</p>
+          )}
+        </section>
+
+        <section className={styles.section}>
+          <h3 className={styles.sectionLabel}>Modes (who asks)</h3>
+          {modes.length > 0 ? (
+            <ul className={styles.list}>
+              {modes.map((mode) => (
+                <li key={mode.label}>
+                  <span>
+                    {`${mode.label}: ${
+                      mode.askedBy.length > 0
+                        ? `asked by ${mode.askedBy.join(", ")}`
+                        : "no agent asks for this"
+                    }`}
+                  </span>
+                  {/* The capability ids a mode covers, for developers. */}
+                  <div className={styles.modeIds}>{mode.capabilities.join(", ")}</div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className={styles.sectionText}>None</p>
+          )}
+        </section>
 
         <section className={styles.section}>
           <h3 className={styles.sectionLabel}>Agent info</h3>
@@ -189,17 +247,6 @@ export const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClo
           </dl>
         </section>
 
-        {agent.capabilities.length > 0 ? (
-          <section className={styles.section}>
-            <h3 className={styles.sectionLabel}>Capabilities</h3>
-            <ul className={styles.list}>
-              {agent.capabilities.map((capability) => (
-                <li key={capability}>{capability}</li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
-
         <section className={styles.section}>
           <h3 className={styles.sectionLabel}>
             Prompts{bundle ? ` (${Object.keys(bundle.prompts).length})` : ""}
@@ -211,14 +258,26 @@ export const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClo
           ) : Object.keys(bundle.prompts).length === 0 ? (
             <p className={styles.purpose}>This agent ships no prompt files.</p>
           ) : (
-            Object.entries(bundle.prompts).map(([name, text]) => (
-              <details key={name} className={styles.promptBlock}>
-                {/* Collapsed by default: a prompt runs to hundreds of lines and
-                    would otherwise bury every section under it. */}
-                <summary className={styles.promptName}>{name}</summary>
-                <pre className={styles.promptText}>{text}</pre>
-              </details>
-            ))
+            promptOrder(bundle.prompts).map((name) => {
+              const runs = promptRuns.get(name) ?? [];
+              return (
+                <details key={name} className={styles.promptBlock}>
+                  {/* Collapsed by default: a prompt runs to hundreds of lines and
+                      would otherwise bury every section under it. Its summary
+                      says when it runs, then which file it is. */}
+                  <summary className={styles.promptName}>
+                    {runs.length > 0 ? (
+                      <>
+                        <span className={styles.promptRuns}>{runs.join(", ")}</span>
+                        {" · "}
+                      </>
+                    ) : null}
+                    {name}
+                  </summary>
+                  <pre className={styles.promptText}>{bundle.prompts[name]}</pre>
+                </details>
+              );
+            })
           )}
         </section>
 
