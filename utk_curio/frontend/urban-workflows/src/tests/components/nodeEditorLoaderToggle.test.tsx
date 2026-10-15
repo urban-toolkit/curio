@@ -5,7 +5,7 @@
  * editor stays mounted under the preview.
  */
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 
 let mockDashboardOn = false;
 
@@ -96,6 +96,26 @@ describe('a loader in preview', () => {
     rerender(<NodeEditor {...(baseProps as any)} loaderPreview={loader({ view: 'code' })} />);
     expect(screen.getByTestId('monaco')).toBe(before);
     expect(screen.queryByTestId('preview')).toBeNull();
+  });
+});
+
+describe('a failed run that needs a library', () => {
+  const failed = {
+    code: 'error',
+    content: "ModuleNotFoundError: No module named 'humanize'",
+    missingModule: { module: 'humanize', distribution: 'humanize', installable: true, reason: null, detail: null },
+  };
+
+  it('offers the install under the preview, where the editor cannot be seen', () => {
+    render(<NodeEditor {...(baseProps as any)} output={failed} loaderPreview={loader()} />);
+    const slot = screen.getByTestId('loader-notice-slot');
+    expect(within(slot).getByRole('button', { name: 'Install humanize' })).toBeTruthy();
+  });
+
+  it('offers it under the output again in code mode', () => {
+    render(<NodeEditor {...(baseProps as any)} output={failed} loaderPreview={loader({ view: 'code' })} />);
+    expect(screen.queryByTestId('loader-notice-slot')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Install humanize' })).toBeTruthy();
   });
 });
 
