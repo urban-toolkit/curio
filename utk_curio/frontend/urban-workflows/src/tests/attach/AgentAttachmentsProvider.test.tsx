@@ -501,14 +501,13 @@ describe("AgentAttachmentsProvider apply→canvas bridge (memo dev/48 §3.3)", (
 
   afterEach(() => unsubscribe());
 
-  it("a createdNode apply response dispatches node-created (with the template dir)", async () => {
+  it("a createdNode apply response dispatches node-created", async () => {
     api.applyProposal.mockResolvedValue({
       attachmentId: "a1",
       proposalId: "p1",
       status: "applied",
       mutationApplied: true,
-      createdNode: { id: "nid", type: "curio.agent.scorer/scorer", content: "c", x: 1, y: 2 },
-      createdTemplate: { id: "curio.agent.scorer/scorer", label: "Scorer", packageDir: "curio.agent.scorer@1" },
+      createdNode: { id: "nid", type: "curio.builtin/computation-analysis", content: "c", x: 1, y: 2 },
     });
     renderProvider();
     fireEvent.click(screen.getByText("open"));
@@ -519,8 +518,7 @@ describe("AgentAttachmentsProvider apply→canvas bridge (memo dev/48 §3.3)", (
     expect(events).toEqual([
       {
         kind: "node-created",
-        node: { id: "nid", type: "curio.agent.scorer/scorer", content: "c", x: 1, y: 2 },
-        createdPackageDir: "curio.agent.scorer@1",
+        node: { id: "nid", type: "curio.builtin/computation-analysis", content: "c", x: 1, y: 2 },
       },
     ]);
   });

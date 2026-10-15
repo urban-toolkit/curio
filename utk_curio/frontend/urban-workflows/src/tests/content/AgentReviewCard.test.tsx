@@ -103,30 +103,53 @@ describe("AgentReviewCard — dev/48 proposal kinds", () => {
     ).toBeInTheDocument();
   });
 
-  it("node.template.create renders the justification FIRST and the two-effects line", () => {
-    const template: AgentProposalPart = {
+  it("a package draft that adds a node type renders its justification FIRST", () => {
+    // A draft is the one way an agent makes a node type: its justification
+    // is what the user judges, so it precedes the draft's details and preview.
+    const draft: AgentProposalPart = {
       type: "proposal",
       proposalId: "p4",
-      tool: "node.template.create",
-      summary: "Create a new custom node type · Sentiment Scorer",
-      preview: "print('score')",
-      pins: { templateSlug: "sentiment-scorer" },
+      tool: "package.draft.apply",
+      summary: "Build package · Sentiment",
+      preview: "1 added / 0 modified / 0 preserved files; 1 node(s) after install",
+      pins: { artifactDigest: "d".repeat(64), target: "ai.agent.sentiment@1" },
       status: "pending",
-      justification: "Considered computation-analysis: it cannot hold streaming output.",
-      template: { label: "Sentiment Scorer", engine: "python", description: "Scores text." },
+      justification: "Considered curio.builtin/computation-analysis: it cannot hold streaming output.",
+      draft: {
+        mode: "create",
+        target: "ai.agent.sentiment@1",
+        files: { added: ["sources/scorer.py"], modified: [], addedTotal: 1,
+                 modifiedTotal: 0, preservedTotal: 0 },
+        templates: { added: ["sentiment-scorer"], modified: [], addedTotal: 1,
+                     modifiedTotal: 0, preservedTotal: 0 },
+      },
     };
-    const { container } = render(<AgentReviewCard part={template} onApply={jest.fn()} />);
+    const { container } = render(<AgentReviewCard part={draft} onApply={jest.fn()} />);
     const justification = screen.getByLabelText("Why a new node type is needed");
     expect(justification).toHaveTextContent("cannot hold streaming output");
-    // The reasoning is what the user judges: it precedes the code preview.
     const text = container.textContent ?? "";
-    expect(text.indexOf("cannot hold streaming output")).toBeLessThan(
-      text.indexOf("print('score')"),
-    );
-    expect(screen.getByText(/Sentiment Scorer · python: Scores text\./)).toBeInTheDocument();
+    const reasoning = text.indexOf("cannot hold streaming output");
+    expect(reasoning).toBeLessThan(text.indexOf("Files: 1 added"));
+    expect(reasoning).toBeLessThan(text.indexOf("1 added / 0 modified / 0 preserved files"));
     expect(
-      screen.getByText("Applying registers the node type in this project and adds its first node."),
+      screen.getByText(
+        "Applying installs the exact reviewed artifact and creates its requested nodes; nothing else changes.",
+      ),
     ).toBeInTheDocument();
+  });
+
+  it("a draft that adds no node type shows no justification block", () => {
+    const extend: AgentProposalPart = {
+      type: "proposal",
+      proposalId: "p5",
+      tool: "package.draft.apply",
+      summary: "Extend package · Sentiment",
+      preview: "0 added / 1 modified / 3 preserved files; 0 node(s) after install",
+      pins: { artifactDigest: "e".repeat(64), target: "ai.agent.sentiment@1" },
+      status: "pending",
+    };
+    render(<AgentReviewCard part={extend} onApply={jest.fn()} />);
+    expect(screen.queryByLabelText("Why a new node type is needed")).toBeNull();
   });
 
   it("plain node.content.write cards carry no effect line (unchanged dev/41 shape)", () => {
