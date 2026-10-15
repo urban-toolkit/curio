@@ -93,6 +93,7 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
   - `canvas_authoring.py`: `drag_to_canvas`, `drag_to_canvas_with_the_mouse`, `connect_nodes`, `set_node_code`, `play_node`, `run_node_and_wait`.
   - `run_all.py`: Run All state, holding a run open.
   - `node_drawings.py`: `assert_vega_canvas_rendered`, `assert_autark_map_drawn` and the other drawing checks.
+  - `webgpu.py`: `require_webgpu` and `webgpu_adapter`, which ask for a WebGPU adapter through the app's own probe (`window.__curio_probeWebGpu`, `src/utils/webgpuSupport.ts`): it waits for a drawn frame, then asks again after a null for up to 3 s.
   - `offline_install.py`: `offline_catalog_package`, a test package from `test_frontend/packages/` in the backend's catalog with its libraries in a local wheelhouse (`/api/testing/wheelhouse`, `/api/testing/catalog-package`); `offline_package` reads a test package's manifest; the wheels come from `tests/_support/offline_wheels.py`.
   - `scripted_llm.py`: scripted agent turns.
 - Walkthroughs, `test_frontend/walkthroughs/`: importing a scene module registers its scenes in `WALKTHROUGHS`, and `__init__.py` imports them in registry order:

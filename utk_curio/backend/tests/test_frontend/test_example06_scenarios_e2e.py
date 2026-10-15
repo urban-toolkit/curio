@@ -66,7 +66,7 @@ from .test_scenario_drop_e2e import (
     _status,
     _toast,
 )
-from .test_scenarios_canvas_e2e import _box, _frame_box, _require_webgpu, _scenario_menu
+from .test_scenarios_canvas_e2e import _box, _frame_box, _scenario_menu
 from .test_widget_tags_e2e import _open_tab, _panel
 from .utils import (
     REPO_ROOT,
@@ -84,6 +84,7 @@ from .utils import (
     require_owner_view,
     require_project_page,
     require_user_auth,
+    require_webgpu,
     run_all_and_wait,
     save_dataflow,
     stub_login_and_enter_workflow,
@@ -466,7 +467,7 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
     token, project_id = session["token"], session["project"]["id"]
     for node in spec["dataflow"]["nodes"]:
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
-    _require_webgpu(page)
+    require_webgpu(page)
 
     # 1. Three scenarios over the shared pool, and each shadow step's tag.
     _scenario_menu(page, "Show scenarios")
@@ -648,7 +649,7 @@ def test_both_scenarios_dragged_into_an_empty_project_read_one_context(
     page.goto(f"{app_frontend.base_url}/dataflow/{source}")
     for node_id in (DATA, B_MAP, T_MAP):
         node_locator(page, node_id).wait_for(state="visible", timeout=45000)
-    _require_webgpu(page)
+    require_webgpu(page)
     run_all_and_wait(page, timeout_ms=RUN_MS)
     for node_id, node_type in ((B_MAP, AUTARK), (T_MAP, AUTARK)):
         _settled_done(page, node_id, node_type)

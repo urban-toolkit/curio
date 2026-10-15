@@ -7,16 +7,43 @@
  * process is still starting, and memoised that answer for the life of the
  * page. Every case here is one of the ways that single-shot, cache-forever
  * probe was wrong.
+ *
+ * The cases at the end are about what comes before the first request: the
+ * probe waits until the page has drawn a frame, because Chrome's switch to
+ * software compositing drops a request made before it.
  */
+import fs from "fs";
+import path from "path";
 import {
   detectWebGpuSupport,
   reprobeWebGpuSupport,
   WEBGPU_ADAPTER_RETRY_DELAY_MS,
+  WEBGPU_FRAME_WAIT_MS,
   WEBGPU_PROBE_TIMEOUT_MS,
   __resetWebGpuSupportCache,
 } from "../../utils/webgpuSupport";
 
 const ADAPTER = { name: "fake-adapter" };
+
+/**
+ * The page's animation frames. Each runs at once by default: a page that
+ * draws, as every page has by the time a user runs an Autark node. A case
+ * about the frame wait holds them instead, and draws them one at a time with
+ * drawFrame(), or never (a hidden tab draws none).
+ */
+const pageFrames = { held: false, waiting: [] as FrameRequestCallback[] };
+const realRequestAnimationFrame = window.requestAnimationFrame;
+
+function drawFrame() {
+  const due = pageFrames.waiting;
+  pageFrames.waiting = [];
+  due.forEach((callback) => callback(Date.now()));
+}
+
+/** Let every promise callback that is due run. */
+async function flush() {
+  for (let i = 0; i < 10; i += 1) await Promise.resolve();
+}
 
 function installGpu(gpu: unknown) {
   Object.defineProperty(navigator, "gpu", { configurable: true, value: gpu });
@@ -33,9 +60,9 @@ function setSecureContext(value: boolean | undefined) {
 
 /** Resolve the probe under fake timers: flush microtasks, advance, repeat. */
 async function settle<T>(promise: Promise<T>, advanceMs: number): Promise<T> {
-  // Let the first requestAdapter() resolve and the retry timer be armed.
-  await Promise.resolve();
-  await Promise.resolve();
+  // Let the page's frame pass, the first requestAdapter() resolve and the
+  // retry timer be armed.
+  await flush();
   jest.advanceTimersByTime(advanceMs);
   return promise;
 }
@@ -60,7 +87,15 @@ async function drain<T>(promise: Promise<T>, stepMs = 250, steps = 80): Promise<
 }
 
 beforeEach(() => {
-  jest.useFakeTimers();
+  // Animation frames are the page's (above), not 16 ms timers.
+  jest.useFakeTimers({ doNotFake: ["requestAnimationFrame", "cancelAnimationFrame"] });
+  pageFrames.held = false;
+  pageFrames.waiting = [];
+  window.requestAnimationFrame = (callback: FrameRequestCallback) => {
+    if (pageFrames.held) pageFrames.waiting.push(callback);
+    else callback(Date.now());
+    return 0;
+  };
   __resetWebGpuSupportCache();
   setSecureContext(true);
   installGpu(undefined);
@@ -68,6 +103,7 @@ beforeEach(() => {
 
 afterEach(() => {
   jest.useRealTimers();
+  window.requestAnimationFrame = realRequestAnimationFrame;
 });
 
 describe("detectWebGpuSupport", () => {
@@ -142,7 +178,7 @@ describe("detectWebGpuSupport", () => {
     gpuWith(jest.fn(() => new Promise(() => undefined)));
 
     const pending = detectWebGpuSupport();
-    await Promise.resolve();
+    await flush();
     jest.advanceTimersByTime(WEBGPU_PROBE_TIMEOUT_MS + 1);
     const result = await pending;
 
@@ -240,5 +276,169 @@ describe("detectWebGpuSupport", () => {
     await detectWebGpuSupport();
 
     expect(requestAdapter).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * Chrome can start a page on GPU compositing and switch it to software
+ * compositing once its GPU process is up. The switch drops a WebGPU request in
+ * flight: requestAdapter() resolves null ("A valid external Instance reference
+ * no longer exists."), however long it has waited for the GPU process. The
+ * page draws its first frame only after the switch, so the probe asks once a
+ * frame is drawn. A request made earlier can wait seconds for a slow GPU
+ * process and then come back null, too late for the retry (#926).
+ */
+describe("before its first request, the probe waits until the page has drawn a frame", () => {
+  beforeEach(() => {
+    pageFrames.held = true;
+  });
+
+  test("nothing is asked while the page has drawn nothing; the first request follows the first drawn frame", async () => {
+    const requestAdapter = gpuWith(jest.fn().mockResolvedValue(ADAPTER));
+
+    const pending = detectWebGpuSupport();
+    await flush();
+    expect(requestAdapter).not.toHaveBeenCalled();
+
+    // The first animation frame runs while that frame is still being made,
+    // and the switch can land right after it.
+    drawFrame();
+    await flush();
+    expect(requestAdapter).not.toHaveBeenCalled();
+
+    // The next one starts once the first frame is drawn.
+    drawFrame();
+    await flush();
+    expect(requestAdapter).toHaveBeenCalledTimes(1);
+    expect((await pending).supported).toBe(true);
+  });
+
+  test("a page that draws no frame, such as a hidden tab, is asked anyway when the wait ends", async () => {
+    const requestAdapter = gpuWith(jest.fn().mockResolvedValue(ADAPTER));
+
+    const pending = detectWebGpuSupport();
+    await flush();
+    jest.advanceTimersByTime(WEBGPU_FRAME_WAIT_MS - 1);
+    await flush();
+    expect(requestAdapter).not.toHaveBeenCalled();
+
+    jest.advanceTimersByTime(1);
+    await flush();
+    expect(requestAdapter).toHaveBeenCalledTimes(1);
+    expect((await pending).supported).toBe(true);
+  });
+
+  test("after the wait, the retry rule is the one it was: 150 ms, doubling to 1 s, for 3 s from the first request", async () => {
+    const askedAt: number[] = [];
+    gpuWith(jest.fn(() => {
+      askedAt.push(Date.now());
+      return Promise.resolve(null);
+    }));
+
+    const pending = detectWebGpuSupport();
+    // No frame comes, so the whole wait passes before the first request: if
+    // the retry budget counted from the start of the wait, it would be spent.
+    await jest.advanceTimersByTimeAsync(30_000);
+    const result = await pending;
+
+    expect(result.reasonCode).toBe("no-adapter");
+    expect(askedAt.map((at) => at - askedAt[0])).toEqual([0, 150, 450, 1050, 2050]);
+  });
+
+  test("a request that never answers is given up 8 s after it was made, not 8 s after the wait began", async () => {
+    gpuWith(jest.fn(() => new Promise(() => undefined)));
+
+    const pending = detectWebGpuSupport();
+    let answered = false;
+    void pending.then(() => { answered = true; });
+    await jest.advanceTimersByTimeAsync(WEBGPU_FRAME_WAIT_MS + WEBGPU_PROBE_TIMEOUT_MS - 1);
+    expect(answered).toBe(false);
+
+    await jest.advanceTimersByTimeAsync(1);
+    expect(answered).toBe(true);
+    expect((await pending).reasonCode).toBe("timed-out");
+  });
+
+  test("once the page has drawn a frame, later probes ask at once", async () => {
+    gpuWith(jest.fn().mockResolvedValue(ADAPTER));
+    const first = detectWebGpuSupport();
+    await flush();
+    drawFrame();
+    await flush();
+    drawFrame();
+    expect((await first).supported).toBe(true);
+
+    // "Check again" on the node.
+    const requestAdapter = gpuWith(jest.fn().mockResolvedValue(ADAPTER));
+    const again = reprobeWebGpuSupport();
+    await flush();
+
+    expect(requestAdapter).toHaveBeenCalledTimes(1);
+    expect(pageFrames.waiting).toHaveLength(0);
+    expect((await again).supported).toBe(true);
+  });
+
+  test("the probe says when the page drew and what each request answered, and when", async () => {
+    gpuWith(jest.fn().mockResolvedValueOnce(null).mockResolvedValue(ADAPTER));
+
+    const pending = detectWebGpuSupport();
+    await jest.advanceTimersByTimeAsync(100);
+    drawFrame();
+    drawFrame();
+    await flush();
+    await jest.advanceTimersByTimeAsync(WEBGPU_ADAPTER_RETRY_DELAY_MS);
+
+    expect(await pending).toEqual({
+      supported: true,
+      frame: "drew a frame at 100 ms",
+      answers: ["null at 100 ms", "an adapter at 250 ms"],
+    });
+  });
+
+  test("the record of a page that drew no frame and a browser that never answered", async () => {
+    gpuWith(jest.fn(() => new Promise(() => undefined)));
+
+    const pending = detectWebGpuSupport();
+    await jest.advanceTimersByTimeAsync(WEBGPU_FRAME_WAIT_MS + WEBGPU_PROBE_TIMEOUT_MS);
+
+    expect(await pending).toMatchObject({
+      supported: false,
+      reasonCode: "timed-out",
+      frame: `drew no frame in ${WEBGPU_FRAME_WAIT_MS} ms`,
+      answers: [`no answer in ${WEBGPU_PROBE_TIMEOUT_MS} ms`],
+    });
+  });
+});
+
+/**
+ * The e2e tests ask for an adapter through the app's probe itself
+ * (backend/tests/test_frontend/utils/webgpu.py), so the wait and the retry
+ * live in one place.
+ */
+describe("the e2e tests ask through the app's own probe", () => {
+  const hook = () => (window as unknown as { __curio_probeWebGpu?: () => Promise<unknown> }).__curio_probeWebGpu;
+
+  test("window.__curio_probeWebGpu runs a fresh probe, outside the app's memo", async () => {
+    const requestAdapter = gpuWith(jest.fn().mockResolvedValue(ADAPTER));
+    expect(typeof hook()).toBe("function");
+
+    await detectWebGpuSupport();
+    expect(await hook()!()).toMatchObject({ supported: true, answers: ["an adapter at 0 ms"] });
+    // Asked again rather than handed the app's answer...
+    expect(requestAdapter).toHaveBeenCalledTimes(2);
+
+    // ...and the app's own answer is left as it was.
+    await detectWebGpuSupport();
+    expect(requestAdapter).toHaveBeenCalledTimes(2);
+  });
+
+  test("the helper asks only through that hook, with no adapter request of its own", () => {
+    const helper = fs.readFileSync(
+      path.resolve(__dirname, "../../../../../backend/tests/test_frontend/utils/webgpu.py"),
+      "utf8",
+    );
+
+    expect(helper).toMatch(/window\.__curio_probeWebGpu\(\)/);
+    expect(helper).not.toMatch(/\.requestAdapter\(/);
   });
 });

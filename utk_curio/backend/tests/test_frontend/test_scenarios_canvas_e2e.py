@@ -28,10 +28,7 @@ Run::
 from __future__ import annotations
 
 import json
-import os
 from typing import TYPE_CHECKING
-
-import pytest
 
 from .utils import (
     SandboxRuns,
@@ -43,6 +40,7 @@ from .utils import (
     require_owner_view,
     require_project_page,
     require_user_auth,
+    require_webgpu,
     run_all_and_wait,
     save_dataflow,
     stub_login_and_enter_workflow,
@@ -118,16 +116,6 @@ _STORE_EDGES_JS = """() => window.__curio_reactFlow.getEdges().map((e) => ({
 }))"""
 
 
-def _require_webgpu(page) -> None:
-    has_adapter = bool(page.evaluate(
-        "async () => !!(navigator.gpu && await navigator.gpu.requestAdapter())"
-    ))
-    if not has_adapter:
-        if os.environ.get("CURIO_REQUIRE_HARDWARE_WEBGPU") == "1":
-            pytest.fail("CURIO_REQUIRE_HARDWARE_WEBGPU=1 but this browser has no WebGPU adapter")
-        pytest.skip("running an Autark node needs a WebGPU adapter; this browser has none")
-
-
 _ON_PANE_JS = """([x, y]) => {
     const hit = document.elementFromPoint(x, y);
     return !!hit && !!hit.closest('.react-flow__pane') && !hit.closest('.react-flow__node');
@@ -198,7 +186,7 @@ def test_a_branch_duplicated_as_a_scenario_collapses_runs_and_expands(
     require_owner_view(page)
     for node in spec["dataflow"]["nodes"]:
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
-    _require_webgpu(page)
+    require_webgpu(page)
 
     # 1. Select the branch and duplicate it as a scenario.
     _shift_drag_around(page, [SCALE, MAP])

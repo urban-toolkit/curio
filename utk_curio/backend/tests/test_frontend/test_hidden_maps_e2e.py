@@ -37,11 +37,9 @@ Run::
 from __future__ import annotations
 
 import json
-import os
 import time
 from typing import TYPE_CHECKING
 
-import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from .utils import (
@@ -54,6 +52,7 @@ from .utils import (
     require_owner_view,
     require_project_page,
     require_user_auth,
+    require_webgpu,
     run_all_and_wait,
     stub_login_and_enter_workflow,
     wait_for_node_settled,
@@ -268,19 +267,6 @@ def _spec(*, scenario: bool) -> dict:
     return {"dataflow": dataflow}
 
 
-def _require_webgpu(page) -> None:
-    has_adapter = bool(page.evaluate(
-        "async () => !!(navigator.gpu && await navigator.gpu.requestAdapter())"
-    ))
-    if not has_adapter:
-        if os.environ.get("CURIO_REQUIRE_HARDWARE_WEBGPU") == "1":
-            pytest.fail("CURIO_REQUIRE_HARDWARE_WEBGPU=1 but this browser has no WebGPU adapter")
-        pytest.skip("running an Autark node needs a WebGPU adapter; this browser has none")
-    assert page.evaluate("() => window.__curio_countsMapFrames"), (
-        "the browser has WebGPU but no GPUCanvasContext to count a map's frames on"
-    )
-
-
 def _open_dataflow(page, app_frontend, current_server: str, *, username: str, scenario: bool) -> dict:
     """Open the dataflow with the frame counter installed, and run it."""
     require_project_page()
@@ -300,7 +286,10 @@ def _open_dataflow(page, app_frontend, current_server: str, *, username: str, sc
     require_owner_view(page)
     for node in spec["dataflow"]["nodes"]:
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
-    _require_webgpu(page)
+    require_webgpu(page)
+    assert page.evaluate("() => window.__curio_countsMapFrames"), (
+        "the browser has WebGPU but no GPUCanvasContext to count a map's frames on"
+    )
     run_all_and_wait(page, timeout_ms=240000)
     _assert_map_ran(page, "after Run All")
     return session
