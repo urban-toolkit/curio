@@ -100,6 +100,11 @@ export const NodeContainer = ({
     styles = {},
     disablePlay = false,
     isLoading = false,
+    minimizedContent,
+    minimizedLabel,
+    minimizedBox,
+    heightKey = "nodeHeight",
+    hideDatasetPill = false,
 }: {
     data: any;
     children: ReactNode;
@@ -124,6 +129,16 @@ export const NodeContainer = ({
     handleType?: string;
     disablePlay?: boolean;
     isLoading?: boolean;
+    /** What the folded node shows instead of its kind's icon (a loader's typed chip). */
+    minimizedContent?: ReactNode;
+    /** The folded node's accessible name and tooltip, when it says more than its kind. */
+    minimizedLabel?: string;
+    /** The folded node's box, when its content needs another size than the icon's. */
+    minimizedBox?: { width: number; height: number };
+    /** The data field a resize writes the height to: a loader's preview keeps its own. */
+    heightKey?: "nodeHeight" | "loaderPreviewHeight";
+    /** The node's body already names its dataset (a loader's preview). */
+    hideDatasetPill?: boolean;
 }) => {
     const { showToast } = useToastContext();
     const { openDatasetDetails } = useDatasetDetails();
@@ -298,8 +313,8 @@ export const NodeContainer = ({
     useEffect(() => {
         if (!noContent) {
             if (minimized) {
-                setCurrentNodeWidth(MINIMIZED_NODE_WIDTH);
-                setCurrentNodeHeight(MINIMIZED_NODE_HEIGHT);
+                setCurrentNodeWidth(minimizedBox?.width ?? MINIMIZED_NODE_WIDTH);
+                setCurrentNodeHeight(minimizedBox?.height ?? MINIMIZED_NODE_HEIGHT);
             } else {
                 if (nodeWidth == undefined) {
                     setCurrentNodeWidth(DEFAULT_NODE_WIDTH);
@@ -355,11 +370,11 @@ export const NodeContainer = ({
                 markDirty();
             }
         } else {
-            if (liveData.nodeWidth !== newWidth || liveData.nodeHeight !== newHeight) {
+            if (liveData.nodeWidth !== newWidth || liveData[heightKey] !== newHeight) {
                 updateDataNode(nodeId, {
                     ...liveData,
                     nodeWidth: newWidth,
-                    nodeHeight: newHeight,
+                    [heightKey]: newHeight,
                 });
             }
         }
@@ -808,7 +823,7 @@ export const NodeContainer = ({
 
                         {/* Dataset linkage pills — independent of the PACKAGE pill
                             and of each other; any combination may render. */}
-                        {consumerSource ? (
+                        {consumerSource && !hideDatasetPill ? (
                             <DatasetMetaHeader
                                 source={consumerSource}
                                 variant="consumer"
@@ -897,6 +912,8 @@ export const NodeContainer = ({
                 <div
                     onMouseEnter={() => setChipHovered(true)}
                     onMouseLeave={() => setChipHovered(false)}
+                    title={minimizedLabel}
+                    aria-label={minimizedLabel}
                     style={{
                         ...{
                             // An icon-only node in the notebook view is a chip
@@ -935,6 +952,7 @@ export const NodeContainer = ({
                         }
                     }}
                 >
+                    {minimizedContent ?? (
                     <FontAwesomeIcon
                         icon={nodeIconTranslation(data.nodeType)}
                         style={{ 
@@ -943,6 +961,7 @@ export const NodeContainer = ({
                             ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {color: "#888787"})
                         }}
                     />
+                    )}
                     {/* A noContent node is the one
                         shape that never renders the header band, and it can
                         never be expanded to reach one - so without this it has

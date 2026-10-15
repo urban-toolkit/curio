@@ -547,6 +547,15 @@
           "type": "number",
           "deprecated": true,
           "description": "DEPRECATED height fallback, fourth and last. Never written."
+        },
+        "loaderView": {
+          "type": "string",
+          "enum": ["preview", "code"],
+          "description": "A loader's view (the built-in Data Loading, or a package's data node with code and no input): its preview, which names the data type and the source, or its code editor. Shared with collaborators. Absent: the view follows the code, preview when there is code and the editor when there is none. An empty loader always shows its editor."
+        },
+        "loaderPreviewHeight": {
+          "type": "number",
+          "description": "A loader's height while it shows its preview, kept apart from the node's height, which is the editor's. Emitted only after the preview was resized."
         }
       }
     },

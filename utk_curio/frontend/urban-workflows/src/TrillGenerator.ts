@@ -20,6 +20,7 @@ import { normalizeSelections } from "./utils/references/selectionTags";
 import { normalizeScenarios, type Scenario } from "./utils/scenarios/scenarioModel";
 import { normalizeCompareSettings } from "./utils/compare/compareSettings";
 import { normalizeEditFeatures } from "./utils/editFeatures/editFeatures";
+import { isLoaderView } from "./utils/loaderView";
 
 export class TrillGenerator {
 
@@ -426,6 +427,21 @@ export class TrillGenerator {
                     trill_node.metadata = {};
 
                 trill_node.metadata.editFeatures = editFeatures;
+            }
+
+            // A loader's view and its preview's height, only when set: a node
+            // without them follows its code (utils/loaderView).
+            if(isLoaderView(node.data.loaderView)){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.loaderView = node.data.loaderView;
+            }
+            if(typeof node.data.loaderPreviewHeight === "number" && Number.isFinite(node.data.loaderPreviewHeight)){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.loaderPreviewHeight = node.data.loaderPreviewHeight;
             }
 
             if(typeof node.data.title === "string" && node.data.title)

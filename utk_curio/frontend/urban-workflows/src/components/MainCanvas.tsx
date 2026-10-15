@@ -76,6 +76,7 @@ import { useScenarioDrop } from "./scenarios/useScenarioDrop";
 import { packageStarterCode } from "../adapters/node/packageNodeBehavior";
 import { useStarterContext } from "../providers/StarterProvider";
 import { tryGetNodeDescriptor } from "../registry/nodeRegistry";
+import { initialLoaderView } from "../registry/loaderTemplates";
 import {
   agentsApi,
   readAgentDragCoord,
@@ -451,7 +452,12 @@ export function MainCanvas() {
         const starter = node.model
             ? packageStarterCode(tryGetNodeDescriptor(node.nodeType as NodeType), getStarters)
             : undefined;
-        revealCreated(createCodeNode(node.nodeType as NodeType, { position, ...packageCardNodeOptions(node, starter) }));
+        revealCreated(createCodeNode(node.nodeType as NodeType, {
+            position,
+            ...packageCardNodeOptions(node, starter),
+            // A package's loader brings its code, so it opens on its preview.
+            loaderView: initialLoaderView(tryGetNodeDescriptor(node.nodeType as NodeType)),
+        }));
         const article = /^[aeiou]/i.test(node.label) ? "an" : "a";
         showToast(
             node.model
@@ -564,7 +570,9 @@ export function MainCanvas() {
         const type = event.dataTransfer.getData("application/reactflow") as NodeType;
         if (!type) return;
         const position = dropPosition(event);
-        revealCreated(createCodeNode(type, { position }));
+        // A loader from the palette: the bare Data Loading opens on its editor,
+        // a package's loader (which brings its code) on its preview.
+        revealCreated(createCodeNode(type, { position, loaderView: initialLoaderView(tryGetNodeDescriptor(type)) }));
         markDirty();
     }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, saveCurrentProject, reactFlow]);
 
