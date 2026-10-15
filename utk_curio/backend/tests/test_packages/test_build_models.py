@@ -104,7 +104,7 @@ class TestParseRequest:
     def test_single_segment_id_error_names_the_grammar(self):
         # The live-transcript failure (dev/90 A4): 'curio-notes' LOOKS like a
         # valid '<packageId>@<major>' value — the refusal must say WHY it is
-        # not, or the requester loops (as the Package Builder did).
+        # not, or the requester loops (as a package-writing agent did).
         payload = _request_payload()
         payload["manifest"] = dict(payload["manifest"], id="curio-notes")
         payload.pop("target")
