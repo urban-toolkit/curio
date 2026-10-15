@@ -15,6 +15,9 @@ export type LoaderView = "preview" | "code";
 /** The preview box's default height, header included. */
 export const LOADER_PREVIEW_HEIGHT = 168;
 
+/** Room the preview adds under itself for a failed run's missing-library notice. */
+export const LOADER_NOTICE_HEIGHT = 150;
+
 /** The folded chip: one size for every type, the label inside it. */
 export const LOADER_CHIP_WIDTH = 84;
 export const LOADER_CHIP_HEIGHT = 62;

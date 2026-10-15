@@ -363,6 +363,9 @@ function NodeEditor({
     // A loader's preview shows on the canvas only: a notebook cell keeps its
     // editor over its output, and a dashboard tile has no editor to toggle.
     const previewing = !!loaderPreview && !inCell && !dashboardOn && loaderPreview.view === "preview";
+    // Under the preview: where the editor puts a failed run's missing-library
+    // notice, so a loader that needs a library offers its install in place.
+    const [noticeSlot, setNoticeSlot] = useState<HTMLElement | null>(null);
     const loaderPill = (() => {
         if (!loaderPreview) return { icon: faCode, tip: "Code", disabled: false };
         const onPane = effectiveTab === "code";
@@ -582,6 +585,7 @@ function NodeEditor({
                                                 stripInputs={inputs}
                                                 onLoadColumns={loadColumns}
                                                 widgetLanguage={widgetLanguage}
+                                                noticeSlot={previewing ? noticeSlot : null}
                                             />
                                             );
                                             if (!loaderPreview) return editor;
@@ -589,7 +593,17 @@ function NodeEditor({
                                             // run, the cursor and the undo history (dev/70).
                                             return (
                                                 <>
-                                                    {previewing ? loaderPreview.content : null}
+                                                    {previewing ? (
+                                                        <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+                                                            <div style={{ flex: "none" }}>{loaderPreview.content}</div>
+                                                            <div
+                                                                ref={setNoticeSlot}
+                                                                className="nowheel nodrag nopan"
+                                                                data-testid="loader-notice-slot"
+                                                                style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto", fontSize: "11px" }}
+                                                            />
+                                                        </div>
+                                                    ) : null}
                                                     <div
                                                         style={previewing ? { display: "none" } : (inCell ? undefined : { height: "100%" })}
                                                         aria-hidden={previewing || undefined}

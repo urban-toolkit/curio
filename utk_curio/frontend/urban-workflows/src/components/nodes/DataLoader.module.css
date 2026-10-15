@@ -55,7 +55,6 @@
 .preview {
     display: flex;
     flex-direction: column;
-    height: 100%;
     padding: 10px 2px 8px;
     box-sizing: border-box;
     min-width: 0;

@@ -40,6 +40,7 @@ import { isLoaderTemplate } from '../registry/loaderTemplates';
 import {
   LOADER_CHIP_HEIGHT,
   LOADER_CHIP_WIDTH,
+  LOADER_NOTICE_HEIGHT,
   LOADER_PREVIEW_HEIGHT,
   resolveLoaderView,
   type LoaderView,
@@ -499,7 +500,8 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
             ? (data.dashboardHeight ?? DASHBOARD_TILE_DEFAULT_HEIGHT)
             : previewActive
               // The preview keeps its own, smaller height; the editor keeps the node's.
-              ? (data.loaderPreviewHeight ?? LOADER_PREVIEW_HEIGHT)
+              // A missing-library notice opens room under the preview for its install.
+              ? (data.loaderPreviewHeight ?? LOADER_PREVIEW_HEIGHT) + (output?.missingModule ? LOADER_NOTICE_HEIGHT : 0)
               : (data.nodeHeight ?? adapter.container.nodeHeight)
         }
         // A notebook cell has the page's width and its content's height, at
