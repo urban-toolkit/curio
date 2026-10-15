@@ -1,9 +1,9 @@
 {
   "sha256": {
-    "manifest.json": "a4791589b0396a943587d87138c9366c5f46fcc81a3a66f48a5e94ec4d9c6c7d",
+    "manifest.json": "ff3900d196875e1f7020ffcbf7bdb47d5b60d08093b836493c9376db076c0019",
     "models/local_relief.onnx": "2613bb79fa8e3645aaf879764340bd7135f30a509105e65bc818613acefa17dc",
-    "sources/local-relief.py": "34b6d9be7b81bcb050a3bd71255ab4a864be30b06fc8553c09fa62ad8ed5a668",
+    "sources/local-relief.py": "6a3c590d8f9a53fa11fd5520e7f6538983d0580f2508d5ebbeaf73d0913b05ff",
     "sources/local_relief/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "sources/local_relief/run.py": "60af78f4eeb8abf5a26c44336a30d5bbd7240be5f2f2c03dca83a5e1e16f17a3"
+    "sources/local_relief/run.py": "0766a38e5cfa2342247bd5f66aba9e0e0bd466d15dcf0839f876def028cfa8b7"
   }
 }
