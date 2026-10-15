@@ -36,7 +36,6 @@ from .utils import (
     CANVAS_DROP_TARGET,
     api_json,
     canvas_node_type,
-    close_tools_palette,
     drag_to_canvas_with_the_mouse,
     enable_save_output,
     node_locator,
@@ -202,21 +201,25 @@ def test_a_model_card_dragged_from_the_model_catalog_drawer_becomes_a_node_that_
     assert "model.curio.ddrnet23-slim@1" in store, (
         f"model.curio.ddrnet23-slim@1 is not in the account's store {store}: start the stack --with-examples"
     )
-    # The drop picks among this dataflow's node kinds: wait until the package's
-    # nodes are among them.
-    open_tools_palette(page, "packages")
-    expect(
-        page.locator(f'#packages-palette [data-pkg-template-id^="{SEGMENTATION}"]').first
-    ).to_be_attached(timeout=60000)
-    close_tools_palette(page, "packages")
 
     drawer = _open_drawer(page, "Model Catalog", MODEL_DRAWER)
     card = drawer.locator(f'[data-model-id="{DDRNET}"]')
     expect(card).to_have_count(1, timeout=30000)
 
+    # The card makes its package's node: the dataflow has the package, so no
+    # Add review comes first.
     node = drag_to_canvas_with_the_mouse(page, card.locator("h3"), at=UNDER_THE_SCRIM)
 
     assert (canvas_node_type(page, node) or "").startswith(SEGMENTATION), canvas_node_type(page, node)
+    # The node's code is its template's, which arrives with the package's starters.
+    page.wait_for_function(
+        """([id, needle]) => {
+            const node = window.__curio_reactFlow.getNodes().find((n) => n.id === id);
+            return !!node && typeof node.data.code === "string" && node.data.code.includes(needle);
+        }""",
+        arg=[node, f'curio_load_model("{DDRNET}")'],
+        timeout=60000,
+    )
     code = read_node_code(page, node)
     assert f'curio_load_model("{DDRNET}")' in code, code
     expect(_toast(page, f"Created an Image Segmentation node for {DDRNET_NAME}.")).to_be_visible(

@@ -4,11 +4,10 @@ import { faBrain } from "@fortawesome/free-solid-svg-icons";
 import { useReactFlow } from "reactflow";
 
 import {
-  beginModelDrag,
-  endModelDrag,
+  endModelCardDrag,
   isModelPackage,
   nodeLinkedModelIds,
-  writeModelDragData,
+  writeModelCardDrag,
   type PackagePayload,
 } from "../../../../services/packages";
 import { modelLabelCount, modelRuntimeLabel } from "../../../models/catalog/modelFacts";
@@ -22,7 +21,8 @@ import rowStyles from "./ModelPaletteRow.module.css";
 /**
  * One model package in the MODELS palette. Mirrors the Datasets and Agents
  * rows (reusing the shared `packageKind*` classes): a draggable avatar writing
- * the model drag so a node can take it, a meta button showing the name, the
+ * the model's card drag, which a node takes as its model and the canvas as the
+ * model's node (as from the Model Catalog drawer), a meta button showing the name, the
  * package folder and two chips, and the way into the details. The meta button
  * selects the canvas nodes that run this model, as a dataset row selects the
  * nodes that load its dataset.
@@ -61,9 +61,9 @@ export const ModelPaletteRow = memo(function ModelPaletteRow({
         className={`${packageStyles.packageKindRowDrag} ${rowStyles.avatar_model}`}
         draggable
         onDragStart={(event) => {
-          writeModelDragData(event.dataTransfer, beginModelDrag(model));
+          writeModelCardDrag(event.dataTransfer, model);
         }}
-        onDragEnd={() => endModelDrag()}
+        onDragEnd={() => endModelCardDrag()}
         title="Drag onto a node that runs a model"
       >
         <FontAwesomeIcon icon={faBrain} className={rowStyles.avatarIcon} />

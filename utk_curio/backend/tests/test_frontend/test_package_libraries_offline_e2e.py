@@ -30,6 +30,11 @@ reads that and no index (``PIP_NO_INDEX`` with ``PIP_FIND_LINKS``, as
   runs its node (``test.wheelhouse-lockfile@1``).
 * Add on the Node Catalog page installs the library, and the node dropped from
   the palette runs (``test.wheelhouse-catalog@1``).
+* A model card dragged from the Model Catalog drawer onto the canvas opens the
+  same Add review, which lists the library; after the confirm the model's node
+  appears with ``curio_load_model("<id>")`` and runs the model
+  (``test.wheelhouse-model@1``, a copy of Local Relief). A hosted guest's drop
+  of that card is refused, and no node appears.
 
 Run::
 
@@ -60,6 +65,7 @@ from .utils import (
     offline_package,
     open_new_workflow,
     open_tools_palette,
+    read_node_code,
     read_node_output_text,
     require_owner_view,
     require_project_page,
@@ -86,9 +92,13 @@ PAIR = offline_package("test.wheelhouse-pair@1")
 GUEST = offline_package("test.wheelhouse-guest@1")
 LOCKFILE = offline_package("test.wheelhouse-lockfile@1")
 CATALOG = offline_package("test.wheelhouse-catalog@1")
+#: A model package, a copy of Local Relief: its card's drop makes its one node.
+MODEL = offline_package("test.wheelhouse-model@1")
+MODEL_ID = "test.wheelhouse-model"
 
 BAR = "header[data-curio-menu-bar]"
 NODE_DRAWER = '[data-curio-node-catalog-drawer="true"]'
+MODEL_DRAWER = '[data-curio-model-catalog-drawer="true"]'
 ADD_REVIEW = '[data-curio-add-review="true"]'
 NOTIFICATIONS = '[aria-label="Notifications"]'
 #: Where a card from the drawer is dropped, from the canvas's top-left corner:
@@ -98,6 +108,8 @@ UNDER_THE_SCRIM = (320.0, 220.0)
 DROP_STEM = "package-card-drop"
 #: The frames of the menu: open at the drop point, and the node picked.
 MENU_STEM = "package-card-menu"
+#: The frames of a model card's drop: the Add review, and the node after the install.
+MODEL_DROP_STEM = "model-card-drop"
 
 
 def _offline(server: str, package: OfflinePackage):
@@ -132,6 +144,12 @@ def lockfile_package(current_server: str):
 @pytest.fixture()
 def catalog_package(current_server: str):
     with _offline(current_server, CATALOG):
+        yield
+
+
+@pytest.fixture()
+def model_package(current_server: str):
+    with _offline(current_server, MODEL):
         yield
 
 
@@ -213,6 +231,13 @@ def _card(package: OfflinePackage) -> str:
 def _open_node_catalog_drawer(page):
     page.locator(BAR).get_by_role("button", name="Node Catalog", exact=True).click()
     drawer = page.locator(NODE_DRAWER)
+    expect(drawer).to_have_attribute("aria-hidden", "false", timeout=15000)
+    return drawer
+
+
+def _open_model_catalog_drawer(page):
+    page.locator(BAR).get_by_role("button", name="Model Catalog", exact=True).click()
+    drawer = page.locator(MODEL_DRAWER)
     expect(drawer).to_have_attribute("aria-hidden", "false", timeout=15000)
     return drawer
 
@@ -560,3 +585,88 @@ def test_adding_the_package_on_the_catalog_page_installs_its_library_and_its_nod
     assert (canvas_node_type(page, node) or "").startswith(probe.type), canvas_node_type(page, node)
     run_node_and_wait(page, node, node_type=probe.type)
     _assert_the_node_ran_the_library(page, node, CATALOG)
+
+
+def test_a_model_card_whose_package_is_not_added_opens_the_add_review_and_its_node_runs_with_the_library(
+    app_frontend: "FrontendPage", current_server: str, page, model_package,
+):
+    session = _enter_canvas(page, app_frontend, current_server, kind="model")
+    _assert_not_added_yet(current_server, session["token"], MODEL)
+    [relief] = MODEL.nodes
+
+    drawer = _open_model_catalog_drawer(page)
+    card = drawer.locator(_card(MODEL))
+    expect(card).to_have_count(1, timeout=30000)
+    expect(card).to_have_attribute("draggable", "true")
+    writes = _record_package_writes(page)
+    before = _node_ids(page)
+
+    drop = drag_with_the_mouse_onto_canvas(page, card.locator("h3"), at=UNDER_THE_SCRIM)
+
+    assert drop["onCanvas"], f"the card's drop landed on {drop['droppedOn']}, not on the canvas"
+    review = _add_review(page, MODEL)
+    expect(review).to_be_visible(timeout=30000)
+    _assert_lists_the_library(review, MODEL)
+    # The review comes first: nothing is added, installed or created before it.
+    assert (sorted(_node_ids(page) - before), _adds(writes)) == ([], []), (
+        f"the drop made nodes or added the package before the review was confirmed: {writes}"
+    )
+    save_workflow_test_screenshot(
+        page, MODEL_DROP_STEM, test_name="add-review", fit_reactflow=False, clip_selector=ADD_REVIEW,
+    )
+
+    with _expect_project_install(page) as added:
+        review.get_by_role("button", name="Add to project", exact=True).click()
+    response = added.value
+    assert response.status == 201, f"{response.status}: {response.text()[:600]}"
+    assert not response.json().get("importErrors"), response.json()
+    assert library_installed(current_server, MODEL.library), (
+        f"{MODEL.dir_name} was added and pip never installed {MODEL.library.dist}"
+    )
+
+    node = _new_node(page, before)
+    assert (canvas_node_type(page, node) or "").startswith(relief.type), canvas_node_type(page, node)
+    expect(review).to_have_count(0)
+    page.wait_for_function(
+        """([id, needle]) => {
+            const node = window.__curio_reactFlow.getNodes().find((n) => n.id === id);
+            return !!node && typeof node.data.code === "string" && node.data.code.includes(needle);
+        }""",
+        arg=[node, f'curio_load_model("{MODEL_ID}")'],
+        timeout=30000,
+    )
+    assert f'curio_load_model("{MODEL_ID}")' in read_node_code(page, node)
+
+    # The drawer's scrim lies over the canvas: close it, then frame and run the node.
+    page.keyboard.press("Escape")
+    wait_for_drawer_closed(page, MODEL_DRAWER)
+    save_node_closeup(page, MODEL_DROP_STEM, node, test_name="node", sweep_toasts=True)
+    run_node_and_wait(page, node, node_type=relief.type)
+    _assert_the_node_ran_the_library(page, node, MODEL, shows="relief (1, 1, 8, 8)")
+
+
+def test_a_hosted_guest_dropping_a_model_card_is_refused_and_no_node_appears(
+    app_frontend: "FrontendPage", current_server: str, page, model_package,
+):
+    require_project_page()
+    require_user_auth()
+    assert allow_guest_login_env(), "this stack turns guest login off, so it has no hosted guest to refuse"
+    page.emulate_media(reduced_motion="reduce")
+    _enter_as_hosted_guest(page, app_frontend.base_url)
+
+    drawer = _open_model_catalog_drawer(page)
+    card = drawer.locator(_card(MODEL))
+    expect(card).to_have_count(1, timeout=30000)
+    expect(card).to_have_attribute("draggable", "true")
+    writes = _record_package_writes(page)
+    before = _node_ids(page)
+
+    drop = drag_with_the_mouse_onto_canvas(page, card.locator("h3"), at=UNDER_THE_SCRIM)
+
+    assert drop["onCanvas"], f"the card's drop landed on {drop['droppedOn']}, not on the canvas"
+    expect(page.locator(NOTIFICATIONS).get_by_text(_guest_refusal(MODEL))).to_be_visible(timeout=10000)
+    expect(_add_review(page, MODEL)).to_have_count(0)
+    assert (sorted(_node_ids(page) - before), writes) == ([], []), (
+        f"a hosted guest's drop made nodes or reached the package routes: {writes}"
+    )
+    assert not library_installed(current_server, MODEL.library)

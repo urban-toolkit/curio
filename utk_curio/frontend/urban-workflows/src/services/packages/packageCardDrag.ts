@@ -1,11 +1,12 @@
+import type { ModelRef } from "./modelApplication";
 import { packageKindOf } from "./modelPackages";
 import type { PackageKind, PackagePayload } from "./types";
 
 /**
- * A package's card dragged from the Node Catalog drawer onto the canvas,
- * where it becomes one of the package's nodes: its one node, or the node
- * picked from a menu of its nodes at the drop point. A card drags when its
- * package has a node.
+ * A package's card dragged from the Node Catalog or Model Catalog drawer onto
+ * the canvas, where it becomes one of the package's nodes: its one node, or
+ * the node picked from a menu of its nodes at the drop point. A card drags
+ * when its package has a node. A model package has one, which runs its model.
  */
 
 /** A node a card's drop can make. */
@@ -13,6 +14,8 @@ export interface PackageCardNode {
   /** The node's canonical type, `<packageId>/<templateId>@<major>`. */
   nodeType: string;
   label: string;
+  /** The model a model package's node runs: the package itself. */
+  model?: ModelRef;
 }
 
 /** What a card drag carries: the package, and the nodes its drop can make. */
@@ -31,13 +34,16 @@ const PACKAGE_CARD_DRAG_PLAIN_PREFIX = "curio-package-card:";
 let activePackageCardDrag: PackageCardDragPayload | null = null;
 
 /** The nodes a drop of *pkg*'s card can make: every node of the package, in
- *  the palette's order (`paletteOrder`, the manifest's order among equals). */
+ *  the palette's order (`paletteOrder`, the manifest's order among equals).
+ *  A model package's node names the model it runs. */
 export function packageCardNodes(
-  pkg: Pick<PackagePayload, "templates">,
+  pkg: Pick<PackagePayload, "templates"> & Partial<Pick<PackagePayload, "kind" | "packageId" | "name">>,
 ): PackageCardNode[] {
+  const model: ModelRef | null =
+    pkg.kind === "model" && pkg.packageId ? { id: pkg.packageId, name: pkg.name ?? pkg.packageId } : null;
   return [...pkg.templates]
     .sort((a, b) => (a.paletteOrder ?? 999) - (b.paletteOrder ?? 999))
-    .map((template) => ({ nodeType: template.id, label: template.label }));
+    .map((template) => ({ nodeType: template.id, label: template.label, ...(model ? { model } : {}) }));
 }
 
 /** The drag of *pkg*'s card, or `null` when the card does not drag: its package has no node. */

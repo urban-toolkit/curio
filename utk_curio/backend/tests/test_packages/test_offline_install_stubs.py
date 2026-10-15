@@ -7,7 +7,8 @@ It needs a wheelhouse the backend's pip reads instead of an index
 (``/api/testing/catalog-package``). These tests hold each door to that: the
 staged wheel is what pip installs with no index, everything is put back
 afterwards, nothing but a test library or a test package gets through, and
-every test package is one the catalog accepts, with a library of its own.
+every test package is one the catalog accepts, with a library of its own. A
+test model package's weights travel in base64 and land under ``models/``.
 """
 
 from __future__ import annotations
@@ -55,12 +56,36 @@ def _wheel(library: WheelLibrary = LIB) -> dict:
 
 
 def _test_package_files(dir_name: str = TEST_PACKAGE_DIR) -> dict:
+    """A test package's text files: everything but a model package's weights."""
     root = TEST_PACKAGES / dir_name
     return {
         path.relative_to(root).as_posix(): path.read_text(encoding="utf-8")
         for path in sorted(root.rglob("*"))
-        if path.is_file()
+        if path.is_file() and not _is_weight(root, path)
     }
+
+
+def _is_weight(root: Path, path: Path) -> bool:
+    return path.relative_to(root).parts[0] == "models"
+
+
+def _test_package_weights(dir_name: str) -> dict:
+    """A test model package's weights, by package-relative path, as bytes."""
+    root = TEST_PACKAGES / dir_name
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and _is_weight(root, path)
+    }
+
+
+def _plant_body(dir_name: str) -> dict:
+    """What ``utils/offline_install.py`` plants a test package with: its text
+    files, and a model package's weights in base64."""
+    weights = {
+        rel: base64.b64encode(body).decode("ascii") for rel, body in _test_package_weights(dir_name).items()
+    }
+    return {"files": _test_package_files(dir_name), **({"binaryFiles": weights} if weights else {})}
 
 
 def _own_library(dir_name: str) -> str:
@@ -132,11 +157,13 @@ def test_only_a_test_library_reaches_the_wheelhouse(client):
 
 
 def test_the_e2e_tests_have_a_test_package_each():
-    # The card drop, its menu, the guest refusal, the lockfile and the catalog page.
+    # The card drop, its menu, the guest refusal, the lockfile, the catalog
+    # page, and the model card drop (a model package, with its weights).
     assert TEST_PACKAGE_DIRS == [
         "test.wheelhouse-catalog@1",
         "test.wheelhouse-guest@1",
         "test.wheelhouse-lockfile@1",
+        "test.wheelhouse-model@1",
         "test.wheelhouse-pair@1",
         "test.wheelhouse-probe@1",
     ]
@@ -148,10 +175,7 @@ def test_each_test_package_plants_as_a_catalog_package_with_a_library_of_its_own
 ):
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
-    planted = _post(
-        client, "catalog-package",
-        action="plant", dirName=dir_name, files=_test_package_files(dir_name),
-    )
+    planted = _post(client, "catalog-package", action="plant", dirName=dir_name, **_plant_body(dir_name))
 
     assert planted.status_code == 200, planted.get_json()
     manifest = load_package_manifest(catalog / dir_name)
@@ -160,10 +184,93 @@ def test_each_test_package_plants_as_a_catalog_package_with_a_library_of_its_own
     # which no other test package declares.
     assert manifest.python_deps == {_own_library(dir_name): "1.0.0"}
     assert (catalog / dir_name / "integrity.json").is_file()
+    # A model package's weights land as they are in the repository.
+    weights = _test_package_weights(dir_name)
+    assert {rel: (catalog / dir_name / rel).read_bytes() for rel in weights} == weights
+    assert (manifest.kind == "model") == bool(weights)
 
     removed = _post(client, "catalog-package", action="remove", dirName=dir_name)
 
     assert removed.get_json() == {"removed": dir_name, "present": False}
+
+
+def test_the_test_model_package_plants_with_its_weights_and_its_node_resolves_them(client, catalog):
+    from utk_curio.backend.app.packages.application.model_packages import _model_manifest, weights_folder
+
+    dir_name = "test.wheelhouse-model@1"
+    planted = _post(client, "catalog-package", action="plant", dirName=dir_name, **_plant_body(dir_name))
+
+    assert planted.status_code == 200, planted.get_json()
+    assert sorted(planted.get_json()["files"]) == sorted([*_test_package_files(dir_name), *_test_package_weights(dir_name)])
+    manifest = _model_manifest(catalog / dir_name)
+    assert manifest is not None and manifest.model.entry == "models/local_relief.onnx"
+    assert weights_folder(manifest, catalog / dir_name) == catalog / dir_name
+
+
+def test_a_model_package_missing_from_a_dataflow_goes_through_the_node_catalogs_add(
+    client, catalog, user_and_token, monkeypatch,
+):
+    """A model card dropped on a dataflow that has not added its package asks
+    the drawer's Add, the Node Catalog's: the review's probe, then the
+    install into the dataflow, which installs the package's libraries. The
+    weights stay in the catalog's copy, where the node's model is read."""
+    from utk_curio.backend.app.packages.application.model_packages import resolve_model_dirs
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
+    from utk_curio.backend.app.packages.infrastructure.pip_runner import InstallReport
+    from utk_curio.backend.app.packages.repositories.store import package_dir
+    from utk_curio.backend.app.projects import services as projects_services
+
+    dir_name = "test.wheelhouse-model@1"
+    user, token = user_and_token
+    user_key = projects_services._user_dir_key(user)
+    auth = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    asked: list[dict] = []
+    monkeypatch.setattr(
+        pip_runner, "install_python_deps",
+        lambda deps: asked.append(dict(deps or {})) or InstallReport(installed=list(deps or {}), skipped=[]),
+    )
+    assert _post(client, "catalog-package", action="plant", dirName=dir_name, **_plant_body(dir_name)).status_code == 200
+    project = client.post("/api/projects", json={
+        "name": "missing-model", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}}, "outputs": [],
+    }, headers=auth)
+    assert project.status_code == 201, project.get_data(as_text=True)
+    project_id = project.get_json()["id"]
+
+    probe = client.post("/api/packages/resolve", data=json.dumps({"packages": [dir_name]}), headers=auth)
+    added = client.post(
+        f"/api/packages/projects/{project_id}/install", data=json.dumps({"dirName": dir_name}), headers=auth,
+    )
+
+    assert probe.status_code == 200, probe.get_data(as_text=True)
+    assert "curio-wheelhouse-model" in json.dumps(probe.get_json()["lockfile"])
+    assert added.status_code == 201, added.get_data(as_text=True)
+    assert dir_name in added.get_json()["packages"]
+    assert {"curio-wheelhouse-model": "1.0.0"} in asked
+    store_copy = package_dir(user_key, dir_name)
+    assert (store_copy / "manifest.json").is_file() and not (store_copy / "models").exists()
+    assert resolve_model_dirs(user_key, ["test.wheelhouse-model"]) == {
+        "test.wheelhouse-model": str((catalog / dir_name).resolve()),
+    }
+
+
+def test_weights_are_planted_only_under_models_and_only_from_base64(client, catalog):
+    dir_name = "test.wheelhouse-model@1"
+    files = _test_package_files(dir_name)
+    outside = _post(
+        client, "catalog-package", action="plant", dirName=dir_name, files=files,
+        binaryFiles={"sources/relief.bin": base64.b64encode(b"\x00\x01").decode("ascii")},
+    )
+    not_base64 = _post(
+        client, "catalog-package", action="plant", dirName=dir_name, files=files,
+        binaryFiles={"models/local_relief.onnx": "not base64!"},
+    )
+    escaping = _post(
+        client, "catalog-package", action="plant", dirName=dir_name, files=files,
+        binaryFiles={"models/../manifest.json": base64.b64encode(b"{}").decode("ascii")},
+    )
+
+    assert [r.status_code for r in (outside, not_base64, escaping)] == [400, 400, 400]
+    assert not (catalog / dir_name).exists()
 
 
 def test_only_a_test_package_is_planted_or_removed(client, catalog):

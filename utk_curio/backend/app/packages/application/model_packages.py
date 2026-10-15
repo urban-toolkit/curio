@@ -41,6 +41,7 @@ from utk_curio.backend.app.packages.domain.model_block import MODELS_DIR
 from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
 from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
 from utk_curio.backend.app.packages.repositories import catalog_dir as packages_catalog_dir
+from utk_curio.backend.app.packages.repositories.archive import is_non_content_filename
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 from utk_curio.backend.app.packages.repositories.store import list_user_packages, package_dir
 
@@ -325,3 +326,32 @@ def export_weights_folder(source: Path) -> Path | None:
             "neither in your copy nor in the catalog"
         )
     return weights
+
+
+def model_copy(user_key: str | None, model_id: str) -> tuple[dict, dict[str, Path]] | None:
+    """What a package that copies the model *model_id* takes from it (Save as
+    package node of a node that loads it): its manifest as written, whose
+    ``model`` block and libraries the copy declares, and its files by
+    package-relative path, every file of ``models/`` where its weights are (a
+    pip install's left-out weight downloaded first) and its weights' license
+    file. None when *user_key*'s store holds no such model, as a node's run
+    finds none. Raises :class:`ModelWeightsUnavailable`."""
+    found = find_model_package(user_key, model_id)
+    if found is None:
+        return None
+    manifest, folder = found
+    weights = folder if holds_weights(folder, manifest) else export_weights_folder(folder)
+    raw = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+    files: dict[str, Path] = {
+        path.relative_to(weights).as_posix(): path
+        for path in sorted((weights / MODELS_DIR).rglob("*"))
+        if path.is_file() and not is_non_content_filename(path.name)
+    }
+    license_file = manifest.model.license_file
+    if license_file:
+        for base in (weights, folder):
+            candidate = base / license_file
+            if candidate.is_file():
+                files[license_file] = candidate
+                break
+    return raw, files

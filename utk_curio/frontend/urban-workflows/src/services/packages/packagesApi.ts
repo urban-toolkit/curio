@@ -7,6 +7,7 @@
  */
 
 import { apiFetch } from "../../utils/authApi";
+import type { DataflowUsageRow } from "../codeOnlyUsage";
 import { downloadArchive, factoryBuild, uploadArchive } from "./packagesBlobTransport";
 import type {
   CatalogCollisionPayload,
@@ -62,6 +63,16 @@ export const packagesApi = {
       `/api/packages/${encodeURIComponent(dirName)}/weights-license`,
     );
     return res?.text ?? "";
+  },
+
+  /** The account's dataflows that use the package, as saved: `codeOnly` marks
+   *  one whose nodes name the model in their code alone. The twin of
+   *  `datasetCatalogApi.datasetUsage`. */
+  async usage(dirName: string): Promise<DataflowUsageRow[]> {
+    const res = await apiFetch<{ dataflows?: DataflowUsageRow[] }>(
+      `/api/packages/${encodeURIComponent(dirName)}/usage`,
+    );
+    return res?.dataflows ?? [];
   },
 
   /** Sideload a ``.curio.zip`` archive (multipart). */

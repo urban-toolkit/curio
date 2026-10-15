@@ -32,6 +32,9 @@ jest.mock("../../providers/packages/PackagePaletteContext", () => ({
 }));
 jest.mock("../../providers/ToastProvider", () => ({ useToastContext: () => ({ showToast: jest.fn() }) }));
 jest.mock("../../providers/StarterProvider", () => ({ useStarterContext: () => ({ getStarters: jest.fn() }) }));
+jest.mock("../../providers/modelCatalog", () => ({
+  useModelCatalogDrawer: () => ({ openModelCatalogDrawer: jest.fn() }),
+}));
 jest.mock("../../providers/agents", () => ({ AgentAttachmentsProvider: ({ children }: any) => <>{children}</> }));
 jest.mock("../../components/datasets/catalog/datasetDetailsContext", () => ({
   useDatasetDetails: () => ({ openDatasetDetails: jest.fn() }),
@@ -69,6 +72,7 @@ jest.mock("../../services/datasetCatalog", () => ({
 jest.mock("../../services/packages/modelApplication", () => ({
   hasModelDrag: () => false,
   modelNodeForCanvas: () => null,
+  packageCardNodeOptions: () => ({}),
   readModelDragPayload: () => null,
 }));
 jest.mock("../../services/scenarioCatalog/scenarioDrag", () => ({
@@ -84,7 +88,11 @@ jest.mock("../../services/agents", () => ({
   hasAgentDrag: () => false,
 }));
 jest.mock("../../adapters/node/packageNodeBehavior", () => ({ packageStarterCode: jest.fn() }));
-jest.mock("../../registry/nodeRegistry", () => ({ getAllNodeTypes: () => [], getPaletteNodeTypes: () => [] }));
+jest.mock("../../registry/nodeRegistry", () => ({
+  getAllNodeTypes: () => [],
+  getPaletteNodeTypes: () => [],
+  tryGetNodeDescriptor: () => undefined,
+}));
 jest.mock("../../registry/packageKeys", () => ({ packageKeyFromCanonicalNodeType: () => null }));
 jest.mock("../../utils/flowNodeCanonicalType", () => ({ getFlowNodeCanonicalType: () => "" }));
 jest.mock("../../utils/agentDropHover", () => ({ clearAgentDropHover: jest.fn(), setAgentDropHoverEdgeId: jest.fn() }));

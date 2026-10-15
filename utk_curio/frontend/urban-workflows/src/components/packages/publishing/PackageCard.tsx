@@ -1,15 +1,14 @@
 import React from "react";
 import {
   PackagePayload,
-  beginModelDrag,
   beginPackageCardDrag,
-  endModelDrag,
+  endModelCardDrag,
   endPackageCardDrag,
   isModelPackage,
   packageCardNodes,
   packageInitial,
   primaryCategory,
-  writeModelDragData,
+  writeModelCardDrag,
   writePackageCardDragData,
 } from "../../../services/packages";
 import {
@@ -82,16 +81,16 @@ export const PackageCard: React.FC<PackageCardProps> = ({
 
   const cat = primaryCategory(pkg);
   // A model package is the Model Catalog's card: the model's kind tile, the
-  // weights' license in its meta line, and the whole card a drag source that
-  // drops the model onto a node or the canvas.
+  // weights' license in its meta line, and the whole card a drag source. On a
+  // node it swaps the node's model; on the canvas it is its package's card and
+  // makes the package's node, as a Node Catalog card does.
   const model = isModelPackage(pkg) ? pkg : null;
   const modelDrag = model
     ? {
         draggable: true,
         "data-model-id": model.packageId,
-        onDragStart: (event: React.DragEvent<HTMLElement>) =>
-          writeModelDragData(event.dataTransfer, beginModelDrag(model)),
-        onDragEnd: () => endModelDrag(),
+        onDragStart: (event: React.DragEvent<HTMLElement>) => writeModelCardDrag(event.dataTransfer, model),
+        onDragEnd: () => endModelCardDrag(),
       }
     : {};
   // A node package's card drags when the package has a node: dropped on the
