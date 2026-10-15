@@ -133,7 +133,13 @@ An Autark map reads the first part of the node's output, the raster, as
         "dataRef": "[!! input_0 !!]",
         "getFnv": "band_1",
         "colorMapInterpolator": "interpolateViridis",
-        "isColorMap": false
+        "isColorMap": false,
+        "transferFunction": {
+          "mode": "far-zero",
+          "opacityMin": 0,
+          "opacityMax": 1,
+          "gamma": 0.0001
+        }
       }
     ]
   }
@@ -141,9 +147,11 @@ An Autark map reads the first part of the node's output, the raster, as
 ```
 
 A cell holds its building's height, rounded to SCOUT's steps of
-550/255 = 2.16 m, drawn opaque in viridis, from the lowest building (dark
-purple) to the tallest (yellow). The mosaic names no nodata, so a cell of 0,
-the ground, has no value and is left clear. `"isColorMap": false` leaves the
+550/255 = 2.16 m, drawn in viridis, from dark purple for the lowest buildings
+to yellow for the tallest. The mosaic names no nodata, so the ground is a cell
+of 0 like any other. The `transferFunction` leaves it clear: a cell's opacity
+grows with its distance from 0 (`far-zero`), from none at the ground, and the
+gamma of 0.0001 draws every building opaque. `"isColorMap": false` leaves the
 map without a legend.
 
 ## Predict the shadows

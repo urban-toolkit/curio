@@ -154,6 +154,8 @@ A model ships with the deployment, or you add one from the Discovery Catalog's *
 
 A dataflow names its models by id, and lists their packages. Someone you share it with runs a shipped model once opening the dataflow has added its package. A model of your own keeps its id through **Export** and **Import package**, so send them its archive, or publish it for them to add; else they drag a model of their own onto the node.
 
+To make a model package from a model you trained, see [BRINGING-MODELS.md](BRINGING-MODELS.md).
+
 ---
 
 ## 6. The manifest
@@ -184,6 +186,7 @@ A template with no `source` opens with the cell Curio writes for the model's typ
 
 ## See also
 
+- [`docs/BRINGING-MODELS.md`](BRINGING-MODELS.md): a model you trained, exported to ONNX and made into a model package with the node that runs it.
 - [`docs/DISCOVERY-CATALOG.md`](DISCOVERY-CATALOG.md#adding-a-model): adding a model from Hugging Face.
 - [`docs/NODE-CATALOG.md`](NODE-CATALOG.md): adding, removing and publishing packages, which the Model Catalog does the same way, and the manifest a model package extends.
 - [`docs/examples/10-street-vision-cv-analysis.md`](examples/10-street-vision-cv-analysis.md): two models over the same street photos.

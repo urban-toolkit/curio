@@ -9,8 +9,10 @@ and import order between siblings cannot matter.
 from __future__ import annotations
 
 from utk_curio.backend.app.agents.application import delegation
+from utk_curio.backend.app.agents.application import tools
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.domain import builtin
+from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import contracts
 from utk_curio.backend.app.agents.domain.manifest import AGENT_CATEGORIES
 from utk_curio.backend.app.agents.domain.manifest import AgentManifest
@@ -53,6 +55,113 @@ def agent_catalog_facets(cards: list[dict]) -> dict[str, dict[str, int]]:
     return facets
 
 
+# ── the details window's three words ────────────────────────────────────────
+# docs/AGENT-CATALOG.md, "The agents": what you ask an agent in chat (its
+# purpose), the tools it uses there, and its modes, with who asks for each.
+
+#: Who asks for what Solve and validate ask for (``content.SOLVE_CAPABILITIES``).
+SOLVE = "Solve"
+#: When the preamble and the instruction run. A mode's prompt runs when the
+#: mode is asked for, and is named by the mode's label.
+EVERY_CALL = "every call"
+A_MESSAGE_YOU_TYPE = "a message you type"
+
+
+def _roster_spec(m: AgentManifest) -> builtin.BuiltinAgentSpec | None:
+    """The roster entry *m* is, or None for a definition someone else wrote,
+    even one at a built-in's coordinate: the roster's words describe the
+    built-in, not it."""
+    if m.provenance.trust != "built-in":
+        return None
+    return builtin.get_builtin_spec(m.dir_name)
+
+
+def agent_tools(m: AgentManifest) -> list[dict]:
+    """The tools *m* uses in a chat, ``{id, label}`` each: its grants, by their
+    contracts' labels, what it reads before what it proposes. A tool Curio
+    does not define is never granted, so it is not listed."""
+    granted = [tools.REGISTRY[tool_id] for tool_id in tools.resolve_grants(m.tools)]
+    granted.sort(key=lambda contract: contract.effect != "read")
+    return [{"id": contract.id, "label": contract.label or contract.id} for contract in granted]
+
+
+def agent_modes(m: AgentManifest) -> list[dict]:
+    """What another agent, Solve or *m* itself can ask *m* to do, one entry
+    per label: ``{label, capabilities, prompt, askedBy}``, in its manifest's
+    order. ``prompt`` is the file the mode runs: its own, else the
+    instruction.
+
+    A built-in's modes are its labeled capabilities (``builtin``): one it
+    is never asked for by name has no label and is no mode. A definition
+    Curio does not ship has no labels, so each of its capabilities is a mode
+    named by its id.
+    """
+    spec = _roster_spec(m)
+    labels = spec.capability_label_map() if spec is not None else None
+    modes: dict[str, dict] = {}
+    for capability in m.capabilities:
+        label = capability.id if labels is None else labels.get(capability.id)
+        if not label:
+            continue
+        asset = m.prompts.get(capability.instruction or "instruction")
+        mode = modes.setdefault(label, {
+            "label": label,
+            "capabilities": [],
+            "prompt": asset.path if asset is not None else None,
+            "askedBy": [],
+        })
+        mode["capabilities"].append(capability.id)
+    roster = builtin.list_builtin_manifests()
+    for mode in modes.values():
+        mode["askedBy"] = _asked_by(m, mode["capabilities"], roster)
+    return list(modes.values())
+
+
+def _asked_by(m: AgentManifest, capabilities: list[str], roster: list[AgentManifest]) -> list[str]:
+    """Who asks *m* for any of *capabilities*: *m* itself, through a
+    ``delegatesTo`` entry naming it; then every other built-in whose entry
+    covers one (an entry that names capabilities covers only those), in
+    roster order; then Solve."""
+    askers = [m, *(other for other in roster if other.agent_id != m.agent_id)]
+    names = [
+        asker.name for asker in askers
+        if any(asker.delegates(m.agent_id, capability) for capability in capabilities)
+    ]
+    if any(capability in content.SOLVE_CAPABILITIES for capability in capabilities):
+        names.append(SOLVE)
+    return names
+
+
+def prompt_runs(m: AgentManifest, modes: list[dict]) -> list[dict]:
+    """When each of *m*'s prompt files runs, ``{path, runs}`` in its manifest's
+    order: the preamble on every call, the instruction for a message you type
+    (a helper has no chat), and each mode's prompt when the mode is asked for
+    (*modes*, from :func:`agent_modes`). Any other prompt runs as its key says:
+    a built-in's in the roster's words, any other by the key itself."""
+    spec = _roster_spec(m)
+    variants = spec.variant_runs() if spec is not None else {}
+    chats = spec is None or spec.in_catalog
+    mode_keys = {c.instruction for c in m.capabilities if c.instruction}
+    runs: dict[str, list[str]] = {}
+
+    def note(path: str, label: str | None) -> None:
+        labels = runs.setdefault(path, [])
+        if label and label not in labels:
+            labels.append(label)
+
+    for key, asset in m.prompts.items():
+        if key == "system":
+            note(asset.path, EVERY_CALL)
+        elif key == "instruction":
+            note(asset.path, A_MESSAGE_YOU_TYPE if chats else None)
+        else:
+            note(asset.path, None if key in mode_keys else variants.get(key, key))
+    for mode in modes:
+        if mode["prompt"] is not None:
+            note(mode["prompt"], mode["label"])
+    return [{"path": path, "runs": labels} for path, labels in runs.items()]
+
+
 def _manifest_to_card(
     m: AgentManifest,
     *,
@@ -68,6 +177,7 @@ def _manifest_to_card(
     ``requires_agents`` (dev/106) is the server-resolved hard-dependency list
     (``_requires_agents_rows``) so the drawer can disclose what an Install
     adds without re-deriving it; absent → ``[]``."""
+    modes = agent_modes(m)
     return {
         "id": m.agent_id,
         "version": m.version,
@@ -76,6 +186,10 @@ def _manifest_to_card(
         "category": m.category,
         "purpose": m.purpose,
         "capabilities": m.capability_ids,
+        # The details window's Tools, Modes (who asks) and Prompts.
+        "tools": agent_tools(m),
+        "modes": modes,
+        "promptRuns": prompt_runs(m, modes),
         "hooks": [t.kind for t in m.compatible_targets],
         "provenance": {"publisher": m.provenance.publisher, "trust": m.provenance.trust},
         "imported": imported,

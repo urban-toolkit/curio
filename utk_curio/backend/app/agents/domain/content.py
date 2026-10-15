@@ -69,6 +69,11 @@ STRUCTURED_CAPABILITIES = frozenset({
     "node.content.generate", "dataset.discover", "research.verify",
     "research.notes.compose", "package.recommend", *PACKAGE_AUTHORING_CAPABILITIES,
 })
+#: What Solve and validate ask other agents for, in this order: every node's
+#: content, then datasets for a data-loading node whose source is not settled
+#: (``solve.session._delegate_capabilities``). The agent details window names
+#: Solve among who asks for each.
+SOLVE_CAPABILITIES = ("node.content.generate", "dataset.discover")
 # Tool ids share the capability grammar (mirrors manifest.CAPABILITY_ID_RE —
 # duplicated here so the content contract stays import-light).
 _TOOL_ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+$")

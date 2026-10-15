@@ -14,14 +14,16 @@ INPUT = "height"
 OUTPUT = "relief"
 
 
-def local_relief(raster, model, output_file):
+def local_relief(raster, model, output_file, min_height=0.0):
     """*raster* (a rasterio dataset of heights in metres) through *model*: a
     GeoTIFF on the same grid, written where *output_file* says, opened.
 
-    A cell with no data is read as ground (0 m) for its neighbours' sake, and
-    has no data in the result."""
+    A cell lower than *min_height* (metres, the node's Lowest height widget)
+    reaches the model as ground (0 m). A cell with no data is read as ground
+    for its neighbours' sake, and has no data in the result."""
     band = raster.read(1, masked=True)
     heights = band.filled(0).astype(np.float32)
+    heights[heights < min_height] = 0  # lower than the lowest height: ground
 
     # The model reads (1, 1, rows, columns), as it was exported: NCHW.
     (relief,) = model.run({INPUT: heights[np.newaxis, np.newaxis]})

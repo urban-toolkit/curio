@@ -144,6 +144,9 @@ class ToolContract:
     description: str
     parameters: dict = field(default_factory=_no_params, compare=False)
     native_description: str | None = None
+    #: What the tool does, in plain words for people, where the agent details
+    #: window lists an agent's tools. A mutate contract's starts "Propose".
+    label: str = ""
 
     def __post_init__(self):
         if self.effect not in _EFFECTS:
@@ -157,6 +160,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="dataflow.read",
         contract_version="2",
         effect="read",
+        label="Read the dataflow",
         description=(
             "Read the project's saved dataflow, structure-first: every node "
             "(id, type, goal, content length, widgets) and ALL edges, plus each "
@@ -180,6 +184,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="web.fetch",
         contract_version="1",
         effect="read",
+        label="Read a web page",
         description=(
             'Fetch one public https URL and return its status, content type, '
             'and a bounded body preview. Params: {"url": "https://..."}. '
@@ -193,6 +198,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="web.search",
         contract_version="1",
         effect="read",
+        label="Search the web",
         description=(
             'Search the web for factual verification. Params: {"q": "<query>"}. '
             "Returns bounded {title, url, snippet} rows from this deployment's "
@@ -208,6 +214,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="node.runtime.read",
         contract_version="1",
         effect="read",
+        label="Read a node's last run",
         description=(
             "Read one node's LAST execution outcome: status, error traceback "
             "tail, stdout tail, output metadata, and whether the node's "
@@ -221,6 +228,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="node.read",
         contract_version="1",
         effect="read",
+        label="Read a node",
         description=(
             'Read one node from the saved spec. Params: {"nodeId": "..."} — '
             "defaults to the node this agent is attached to."
@@ -231,6 +239,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="node.content.write",
         contract_version="1",
         effect="mutate",
+        label="Propose a content change",
         description=(
             'Propose replacing one node\'s content. Params: {"nodeId": "...", '
             '"content": "..."}. The user reviews the proposal before anything '
@@ -248,6 +257,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="catalog.search",
         contract_version="1",
         effect="read",
+        label="Search the Data Catalog",
         description=(
             "Search the project's Data Catalog. Params (all optional): "
             '{"q": "<text>", "format": "<fmt>", "origin": "<origin>"}. '
@@ -272,6 +282,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="models.search",
         contract_version="1",
         effect="read",
+        label="Search the Model Catalog",
         description=(
             "Search the Model Catalog: the trained models node code can run. "
             'Params (all optional): {"q": "<text>", "limit": <1 to '
@@ -301,6 +312,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="examples.read",
         contract_version="1",
         effect="read",
+        label="Read worked examples",
         description=(
             "Read Curio's worked examples: shipped dataflows that show how "
             'nodes, code and specs fit together. Params (optional): {"key": '
@@ -324,6 +336,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="discovery.sources",
         contract_version="1",
         effect="read",
+        label="List the data portals",
         description=(
             "List the data portals and storage this deployment connects to. "
             "Params: none. Returns rows with sourceId, name, provider, "
@@ -339,6 +352,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="discovery.search",
         contract_version="1",
         effect="read",
+        label="Search the data portals",
         description=(
             "Search connected data portals LIVE. Params: "
             '{"q": "<text>", "sourceId": "<sourceId@major from '
@@ -363,6 +377,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="discovery.acquire",
         contract_version="1",
         effect="mutate",
+        label="Propose a download",
         description=(
             "Propose downloading ONE resource from a connected data portal "
             "into the Data Catalog, where it becomes an ordinary dataset. "
@@ -389,6 +404,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="packages.catalog",
         contract_version="1",
         effect="read",
+        label="Search the Node Catalog",
         description=(
             "List the Nodes Catalog's node packages with this project's "
             'install state. Params (optional): {"q": "<text>"} substring '
@@ -405,6 +421,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="packages.resolve",
         contract_version="1",
         effect="read",
+        label="Check a package's dependencies and permissions",
         description=(
             "Resolve one or more catalog packages against this account's "
             'installed set. Params: {"dirNames": ["<dirName from '
@@ -423,6 +440,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="dataflow.plan.write",
         contract_version="1",
         effect="mutate",
+        label="Propose a plan",
         description=(
             "Propose a reviewed plan that changes the dataflow graph, by ending "
             "a reply with a dataflowPlan block (not a toolRequest): "
@@ -483,6 +501,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="dataset.install",
         contract_version="1",
         effect="mutate",
+        label="Propose adding a dataset",
         description=(
             "Propose installing ONE dataset from the Data Catalog into this "
             'project. Params: {"datasetId": "<id from catalog.search results>"}. '
@@ -499,6 +518,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="package.install",
         contract_version="1",
         effect="mutate",
+        label="Propose a package install",
         description=(
             "Propose installing ONE node package from the Nodes Catalog into "
             'this project. Params: {"dirName": "<the versioned dirName, e.g. '
@@ -540,6 +560,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="node.create",
         contract_version="1",
         effect="mutate",
+        label="Propose a node",
         description=(
             "Propose adding ONE new node to the canvas. Params: "
             '{"nodeType": "<packageId>/<templateId>", "content": "...", '
@@ -577,6 +598,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="package.draft.apply",
         contract_version="1",
         effect="mutate",
+        label="Propose a package draft",
         description=(
             "Propose ONE built node package as a reviewed draft. Params: the "
             'typed build request — {"mode": "create"|"extend", '
@@ -630,6 +652,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="node.template.create",
         contract_version="1",
         effect="mutate",
+        label="Propose a node type",
         description=(
             "Propose a NEW custom node type — only after the Available node "
             "templates list has been considered and none can adequately hold "
