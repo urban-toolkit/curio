@@ -554,8 +554,8 @@ zip -r ../../../model.example.local-relief@1.curio.zip manifest.json models sour
 **Step 3: build the dataflow.**
 
 1. Drop a **Python Computation** node, name it **Make Heights**, and give it
-   this code. It writes a 64 by 64 raster, 10 m a cell, with a 30 m block, a
-   120 m tower and a 2 m shed on flat ground:
+   this code. It writes a 64 by 64 raster, 10 m a cell, with a 30 m block and
+   a 120 m tower on flat ground:
 
    ```python
    import numpy as np
@@ -565,7 +565,6 @@ zip -r ../../../model.example.local-relief@1.curio.zip manifest.json models sour
    heights = np.zeros((64, 64), dtype="float32")
    heights[8:20, 8:20] = 30      # a 30 m block
    heights[30:44, 36:50] = 120   # a 120 m tower
-   heights[52:56, 10:14] = 2     # a 2 m shed
 
    path = curio_output_file("heights.tif")
    with rasterio.open(
@@ -600,20 +599,20 @@ zip -r ../../../model.example.local-relief@1.curio.zip manifest.json models sour
    `colorMapCenter` puts 0 at the middle of the scheme, and `colorMapReverse`
    puts red above it ([USAGE.md, Layer titles and colors](USAGE.md#layer-titles-and-colors)).
 4. Click **Run All**. The map shows flat ground and the buildings' flat tops
-   white (0), the buildings' edges red, above the street around them, the
-   street beside them blue, below the buildings next to it, and the shed as a
-   faint red square.
-5. In Local Relief's **Widgets** tab, set **Lowest height** to 3 and run again.
-   The shed reaches the model as ground and leaves the map; the block and the
-   tower stay as they were.
+   white (0), the buildings' edges red, above the street around them, and the
+   street beside them blue, below the buildings next to it.
+5. In Local Relief's **Widgets** tab, set **Lowest height** to 40 and run
+   again. The 30 m block reaches the model as ground and leaves the map; the
+   tower stays as it was.
 
 With real data, connect any height raster in place of Make Heights.
 
 **Step 4: test it.** The tests read the example's files where they are in
-`docs/`:
+`docs/`. Run each suite on its own, from the repository's root:
 
 ```bash
-python -m pytest utk_curio/sandbox/tests/test_local_relief.py utk_curio/backend/tests/test_packages/test_model_packages.py
+python -m pytest utk_curio/sandbox/tests/test_local_relief.py
+python -m pytest utk_curio/backend/tests/test_packages/test_model_packages.py
 ```
 
 [`test_local_relief.py`](../utk_curio/sandbox/tests/test_local_relief.py)
