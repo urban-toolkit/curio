@@ -237,8 +237,9 @@ describe("agentIcon", () => {
   });
 
   it("keeps the category glyph for every other agent", () => {
-    expect(agentIcon("agent.node-content-builder@1.0.0", "node")).toBe(agentCategoryIcon("node"));
-    expect(agentIcon("agent.node-researcher@1.0.0", "evaluate")).toBe(agentCategoryIcon("evaluate"));
+    expect(agentIcon("agent.my-explainer@1.0.0", "node")).toBe(agentCategoryIcon("node"));
+    // An id that merely contains "researcher" is not the Researcher.
+    expect(agentIcon("agent.my-researcher@1.0.0", "evaluate")).toBe(agentCategoryIcon("evaluate"));
     expect(agentIcon("agent.dataflow-builder@1.0.0", "canvas")).toBe(agentCategoryIcon("canvas"));
     expect(agentIcon("user.my-chat-agent@1.0.0", "node")).toBe(agentCategoryIcon("node"));
   });
