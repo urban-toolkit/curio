@@ -175,67 +175,59 @@ A node tied to a dataset shows a pill on its title bar: **DATASET** when it read
 
 ### The Data Loading preview
 
-A **loader** is the Data Loading node, or a package's data node that runs code and takes no input, such as the Milan MRT Loader in `curio.weather`. A loader has two views: its **preview** and its **code**.
+A **loader** (Data Loading, or a package's data node with code and no input) shows a **preview** of what it loads instead of its editor.
 
-- **The preview** shows the data type: a database on a tile in the format's colour, with the type's glyph and name (GeoJSON, CSV, Parquet, Raster, NetCDF, JSON, OSM, Images, GTFS, Table, Geo table). It also shows what the node reads, and where it reads it from:
+```
+┌─ ⇪ Data Loading ─────────────── ▶  </>  ⚒ ┐
+│ ┌──────┐  GEOJSON                          │
+│ │  🛢 ◣ │  Chicago community areas          │
+│ └──────┘                                   ○ out
+│ ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄  │
+│ 📖 Data Catalog · data.utk.chicago-…        │
+│ ✓ Loaded                                    │
+└─────────────────────────────────────────────┘
+```
 
-  | Source | Shown as |
-  |---|---|
-  | **Data Catalog** | The dataset's title and its id. Clicking the id opens the dataset's details. |
-  | **File** | The file's name, with its full path in the tooltip. |
-  | **API** | The host only, such as `data.cityofchicago.org`. The path, the query and any key are never shown. |
-  | **Defined in code** | A table written out in the code, such as `pd.DataFrame({...})`. |
-  | **Custom loader** | Code Curio cannot read a source from. |
+- **Type**: a [`database`](https://fontawesome.com/icons/database?s=solid) on a tile in the format's colour (`--curio-format-*`), with the type's glyph as a badge.
+- **Source**: shown in neutral grey, never coloured.
+- **Status**: whether the node has run. The output log is hidden, so the node is shorter.
 
-  Under the source, a line says whether the node has run. The preview is shorter than the editor, and it has no output log.
-- **The code** view is the editor and its output, as on any code node.
+| Type | Glyph | | Source | Glyph | Shows |
+|---|---|---|---|---|---|
+| GeoJSON, SHP, GeoPackage, Geo table | [`draw-polygon`](https://fontawesome.com/icons/draw-polygon?s=solid) | | Data Catalog | [`book-open`](https://fontawesome.com/icons/book-open?s=solid) | title and id (opens details) |
+| CSV, Parquet | [`file-csv`](https://fontawesome.com/icons/file-csv?s=solid) | | File | [`hard-drive`](https://fontawesome.com/icons/hard-drive?s=solid) | file name (full path in tooltip) |
+| Raster | [`satellite`](https://fontawesome.com/icons/satellite?s=solid) | | API | [`plug`](https://fontawesome.com/icons/plug?s=solid) | host only, never a path, query or key |
+| NetCDF | [`wind`](https://fontawesome.com/icons/wind?s=solid) | | Defined in code | [`pen-to-square`](https://fontawesome.com/icons/pen-to-square?s=solid) | `pd.DataFrame({...})` and the like |
+| JSON | [`code`](https://fontawesome.com/icons/code?s=solid) | | Custom loader | [`code`](https://fontawesome.com/icons/code?s=solid) | nothing Curio can read |
+| OSM · Images · GTFS · Table | [`map`](https://fontawesome.com/icons/map?s=solid) · [`street-view`](https://fontawesome.com/icons/street-view?s=solid) · [`bus`](https://fontawesome.com/icons/bus?s=solid) · [`table`](https://fontawesome.com/icons/table?s=solid) | | | | |
 
-The **Code** pill on the title bar switches views. It shows what a click shows: `</>` in the preview, an eye in the code view. Nodes that are not loaders keep the plain Code pill. The view is saved with the dataflow and shared with collaborators. A viewer who cannot save the dataflow can still switch views, on their own screen only.
+**Toggle.** The header's Code pill shows what a click shows: [`code`](https://fontawesome.com/icons/code?s=solid) in the preview, [`eye`](https://fontawesome.com/icons/eye?s=solid) in the code view. The editor stays mounted underneath. The view (`metadata.loaderView`) is saved and shared.
 
-Which view a loader opens in:
+**Default view.**
+- **Preview:** a palette dataset drop, a package loader, and any loader with code.
+- **Editor:** the bare Data Loading tool. An empty loader always shows its editor.
 
-- A dataset dragged from the palette, or a package's loader, opens in the preview.
-- The bare Data Loading node from the Tools palette has no code yet, so it opens in the editor.
-- Examples, older dataflows and nodes an agent made have no saved view. They open in the preview when they have code, and in the editor when they have none.
-- An empty loader always shows its editor.
+**Type detection**, strongest first:
+1. The catalog format.
+2. The code (a reader or a file extension).
+3. This tab's last run.
+4. The journal's run of exactly this code.
+5. A single declared output type.
+6. If all are silent, **one background run**. It applies no output and saves nothing. It runs once per code version, and at most 8 per dataflow per session. It never runs code that sends a `curio_secret` to an API. The journal records it as `type-probe`.
 
-The data type comes from the strongest evidence available. In order:
+A failed run that needs a library shows its **Install** button under the preview.
 
-1. The catalog's format for the dataset.
-2. What the code reads: a reader such as `read_csv`, or a file extension.
-3. The node's last run in this tab.
-4. The node's last recorded run of exactly this code.
-5. The template's output type, when it declares only one.
+**Folded chip.** Every chip is one size (84 × 62). It has the [`upload`](https://fontawesome.com/icons/upload?s=solid) arrow and the typed [`database`](https://fontawesome.com/icons/database?s=solid), with the type's name inside the border:
 
-When all of these are silent, Curio runs the node once in the background to see what it returns. While it does, the preview says **Detecting type…**. That run shows nothing on the node, saves no dataset and starts nothing downstream. It runs only when:
+```
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│   ⇪   🛢 ◣    │  │   ⇪   🛢 ◣    │  │   ⇪   🛢 ⟳    │  │   ⇪   🛢      │
+│  [GeoJSON]   │  │   [Raster]   │  │     […]      │  │    [Data]    │
+└──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘
+   catalog GeoJSON    a GeoTIFF     detecting (spinner)    unknown type
+```
 
-- the dataflow is open and no run is in progress;
-- this version of the code has not been checked in this session;
-- fewer than eight such runs have happened in this dataflow this session.
-
-It never runs code that sends a saved connection key (`curio_secret`) to an API, or code with unresolved `[!! … !!]` references. Its record in the node's run journal is marked `type-probe`, so a failure is never shown as the node's own.
-
-**Minimizing** a loader folds it to a chip of one size for every type: the Data Loading arrow and the typed database, with the type's name under them.
-
-#### Design concepts
-
-These are the approved design concepts for the preview and the chip (Option A). The interactive version is at [Data Loading preview design](https://claude.ai/artifact/Dy9NzMmThAFb5q4WJpBHz6?sk=yaLvzSQZ7jsxzd4YZ6cE0g). Sample titles, paths and row counts are illustrative: the shipped status line says **Loaded** after a run.
-
-**Anatomy.** The typed database is used in both the preview and the folded chip: a tile in the format's tint, the database in the format's colour, and the type's glyph as a badge. The Code pill shows `</>` in the preview and an eye in the code view.
-
-![The folded chip's parts, and the same loader in its preview and in its code view](images/data-loading-preview/anatomy.png?raw=true)
-
-**By source.** The four source kinds. Only the type carries colour; the source line stays neutral.
-
-![Loaders reading from the Data Catalog, a file on disk, an API, and data defined in code](images/data-loading-preview/by-source.png?raw=true)
-
-**Folded chips.** Every type's chip at its real size on the canvas. All chips are the same size, with the type's name inside the border.
-
-![The folded chip for each data type](images/data-loading-preview/folded-chips.png?raw=true)
-
-**States.** What the preview and the chip show while a background run finds the type, when the type is unknown, after a failed run, and for an empty loader, which stays on its editor with the eye disabled.
-
-![A loader detecting its type, of unknown type, after a failed run, and empty](images/data-loading-preview/states.png?raw=true)
+While a background run finds the type, the badge is a [`spinner`](https://fontawesome.com/icons/spinner?s=solid).
 
 ### Collections
 
