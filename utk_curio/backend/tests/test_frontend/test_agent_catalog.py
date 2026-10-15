@@ -50,9 +50,9 @@ if TYPE_CHECKING:
     from .utils import FrontendPage
 
 # A built-in with no requiresAgents: the plain install path.
-AGENT_COORD = "agent.chat-agent@1.0.0"
-AGENT_ID = "agent.chat-agent"
-AGENT_NAME = "Chat"
+AGENT_COORD = "agent.researcher@1.0.0"
+AGENT_ID = "agent.researcher"
+AGENT_NAME = "Researcher"
 
 # A built-in that declares hard dependencies (on agent.dataset-finder and
 # agent.node-builder), which is what makes the closure assertable end to end.

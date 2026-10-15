@@ -8,13 +8,13 @@ from __future__ import annotations
 from utk_curio.backend.app.agents.repositories import storage
 from utk_curio.backend.app.projects.services import _user_dir_key
 
-from utk_curio.backend.tests._support.agent_routes import _auth
+from utk_curio.backend.tests._support.agent_routes import _auth, _write_def
 
 
 class TestAttachments:
     def test_attach_canvas_then_list_then_detach(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
-        coord = "agent.chat-agent@1.0.0"  # dual-compatible built-in (node + canvas)
+        coord = "agent.researcher@1.0.0"  # dual-compatible built-in (node + canvas)
         client.post(
             f"/api/agents/projects/{alice_project}/install",
             json={"coord": coord}, headers=_auth(token),
@@ -29,7 +29,7 @@ class TestAttachments:
         assert att["coord"] == coord
         assert att["target"] == {"kind": "canvas"}
         assert att["attachmentId"] and att["sessionId"]
-        assert att["name"] == "Chat"
+        assert att["name"] == "Researcher"
 
         listed = client.get(
             f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
@@ -50,14 +50,14 @@ class TestAttachments:
         _, token = user_and_token
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments",
-            json={"coord": "agent.connection-builder@1.0.0", "target": {"kind": "canvas"}},
+            json={"coord": "agent.researcher@1.0.0", "target": {"kind": "canvas"}},
             headers=_auth(token),
         )
         assert r.status_code == 400
 
     def test_attach_bad_node_target_rejected(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
-        coord = "agent.connection-builder@1.0.0"
+        coord = "agent.researcher@1.0.0"  # attaches to any node
         client.post(
             f"/api/agents/projects/{alice_project}/install",
             json={"coord": coord}, headers=_auth(token),
@@ -73,7 +73,7 @@ class TestAttachments:
         _, token = user_and_token
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments",
-            json={"coord": "agent.connection-builder@1.0.0"},
+            json={"coord": "agent.researcher@1.0.0"},
             headers=_auth(token),
         )
         assert r.status_code == 400
@@ -84,8 +84,9 @@ class TestPruneAttachmentsOnDelete:
     prunes the attachment bound to that node; canvas attachments survive."""
 
     def test_node_attachment_pruned_when_its_node_is_deleted(self, client, user_and_token, tmp_curio, alice_project):
-        _, token = user_and_token
-        node_coord = "agent.connection-builder@1.0.0"  # node or connection, never the canvas
+        user, token = user_and_token
+        # A made-up agent that attaches to nodes only: no card does.
+        node_coord = _write_def(user)
         canvas_coord = "agent.dataflow-builder@1.0.0"  # canvas-only
         for c in (node_coord, canvas_coord):
             client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": c}, headers=_auth(token))
@@ -151,10 +152,10 @@ class TestAttachCompatibility:
         assert self._attach(client, token, alice_project, coord, {"kind": "canvas"}).status_code == 201
 
     def test_node_only_agent_rejected_on_canvas(self, client, user_and_token, tmp_curio, alice_project):
-        _, token = user_and_token
-        # The Connection Builder attaches to a node or a connection: the one
-        # card that never attaches to the canvas.
-        coord = "agent.connection-builder@1.0.0"
+        user, token = user_and_token
+        # A made-up agent that attaches to nodes only: every card accepts the
+        # canvas.
+        coord = _write_def(user)
         self._install(client, token, alice_project, coord)
         r = self._attach(client, token, alice_project, coord, {"kind": "canvas"})
         assert r.status_code == 400
@@ -162,7 +163,7 @@ class TestAttachCompatibility:
 
     def test_dual_agent_attaches_to_either(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
-        coord = "agent.chat-agent@1.0.0"  # dual: node + canvas
+        coord = "agent.researcher@1.0.0"  # dual: node + canvas
         self._install(client, token, alice_project, coord)
         client.put(
             f"/api/projects/{alice_project}",
@@ -172,40 +173,41 @@ class TestAttachCompatibility:
         assert self._attach(client, token, alice_project, coord, {"kind": "canvas"}).status_code == 201
         assert self._attach(client, token, alice_project, coord, {"kind": "node", "targetId": "n1"}).status_code == 201
 
-    def test_chat_declares_both_targets(self, client, user_and_token, tmp_curio):
+    def test_the_researcher_declares_both_targets(self, client, user_and_token, tmp_curio):
         _, token = user_and_token
         cat = client.get("/api/agents/catalog", headers=_auth(token)).get_json()["agents"]
         by_id = {a["id"]: a for a in cat}
-        assert sorted(by_id["agent.chat-agent"]["hooks"]) == ["canvas", "node"]
+        assert sorted(by_id["agent.researcher"]["hooks"]) == ["canvas", "node"]
 
     def test_stale_materialized_builtin_resolves_fresh_roster_metadata(
         self, client, user_and_token, tmp_curio, alice_project
     ):
-        # An earlier install materialized Chat when it was node-only. The stale
-        # store copy must NOT override the roster's now-dual compatibleTargets:
-        # the palette shows both pills and a canvas attach is accepted.
+        # An earlier install materialized the Researcher when it was
+        # node-only. The stale store copy must NOT override the roster's
+        # dual compatibleTargets: the palette shows both pills and a canvas
+        # attach is accepted.
         user, token = user_and_token
         ukey = _user_dir_key(user)
-        coord = "agent.chat-agent@1.0.0"
+        coord = "agent.researcher@1.0.0"
         stale = {
-            "id": "agent.chat-agent",
-            "name": "Chat",
+            "id": "agent.researcher",
+            "name": "Researcher",
             "category": "node",
             "version": "1.0.0",
-            "purpose": "old node-only chat",
-            "capabilities": [{"id": "conversation.respond", "contractVersion": "1"}],
+            "purpose": "old node-only researcher",
+            "capabilities": [{"id": "research.notes.compose", "contractVersion": "1"}],
             "compatibleTargets": [{"kind": "node", "requires": []}],  # STALE
-            "prompts": {"instruction": {"path": "prompts/chat_prompt.txt", "variables": []}},
+            "prompts": {"instruction": {"path": "prompts/old_instruction.txt", "variables": []}},
             "provenance": {"publisher": "curio", "license": "MIT", "trust": "built-in"},
         }
-        storage.write_definition(ukey, coord, stale, {"prompts/chat_prompt.txt": "hi"})
+        storage.write_definition(ukey, coord, stale, {"prompts/old_instruction.txt": "hi"})
         client.post(
             f"/api/agents/projects/{alice_project}/install",
             json={"coord": coord}, headers=_auth(token),
         )
         listed = client.get(f"/api/agents/projects/{alice_project}", headers=_auth(token)).get_json()
-        chat = next(a for a in listed["agents"] if a["id"] == "agent.chat-agent")
-        assert sorted(chat["hooks"]) == ["canvas", "node"]  # fresh roster, not the stale copy
+        researcher = next(a for a in listed["agents"] if a["id"] == "agent.researcher")
+        assert sorted(researcher["hooks"]) == ["canvas", "node"]  # fresh roster, not the stale copy
         r = self._attach(client, token, alice_project, coord, {"kind": "canvas"})
         assert r.status_code == 201, r.get_data(as_text=True)
 
@@ -214,7 +216,7 @@ class TestIntent:
     """Attachment intent (memo dev/19): served from the prompt source unless
     edited; PATCH persists an override used as the run's system turn."""
 
-    def _attach_builtin(self, client, token, project_id, coord="agent.chat-agent@1.0.0"):
+    def _attach_builtin(self, client, token, project_id, coord="agent.researcher@1.0.0"):
         client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
         r = client.post(
             f"/api/agents/projects/{project_id}/attachments",
@@ -229,7 +231,7 @@ class TestIntent:
         _, token = user_and_token
         card = self._attach_builtin(client, token, alice_project)
         # Same file the runtime resolves — no literal duplicated in the test either.
-        assert card["intent"] == builtin.read_instruction_text("agent.chat-agent@1.0.0")
+        assert card["intent"] == builtin.read_instruction_text("agent.researcher@1.0.0")
         assert card["intentEdited"] is False
 
     def test_patch_persists_and_null_restores(self, client, user_and_token, tmp_curio, alice_project):
@@ -260,7 +262,7 @@ class TestIntent:
             headers=_auth(token),
         )
         card = r.get_json()
-        assert card["intent"] == builtin.read_instruction_text("agent.chat-agent@1.0.0")
+        assert card["intent"] == builtin.read_instruction_text("agent.researcher@1.0.0")
         assert card["intentEdited"] is False
 
     def test_patch_validation_and_404(self, client, user_and_token, tmp_curio, alice_project):
@@ -308,7 +310,7 @@ class TestIntent:
         from utk_curio.backend.app.agents.domain import builtin
         from utk_curio.backend.app.agents.domain import content as content_mod
 
-        preamble = builtin.read_prompt_text("agent.chat-agent@1.0.0", "system")
+        preamble = builtin.read_prompt_text("agent.researcher@1.0.0", "system")
         assert calls[0][0]["role"] == "system"
         assert calls[0][0]["content"].startswith(
             f"{preamble}\n\nanswer in one sentence\n\n{content_mod.TAIL_INSTRUCTION}"
@@ -319,7 +321,7 @@ class TestSession:
     """Persistent chat sessions (memo dev/20): the transcript survives across
     requests, feeds bounded context into runs, and dies with its attachment."""
 
-    def _attach_builtin(self, client, token, project_id, coord="agent.chat-agent@1.0.0"):
+    def _attach_builtin(self, client, token, project_id, coord="agent.researcher@1.0.0"):
         client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
         r = client.post(
             f"/api/agents/projects/{project_id}/attachments",

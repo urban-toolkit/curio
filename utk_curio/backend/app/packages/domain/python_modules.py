@@ -8,7 +8,7 @@ template named like a library must not hide that library.
 
 One rule over a package's file paths, asked by the installer and a run
 (``repositories/python_modules.py``, over a directory), by Save into a package
-(``builder/factory.py``) and by the Package Builder (``builder/deps.py``), over
+(``builder/factory.py``) and by the draft dependency review (``builder/deps.py``), over
 the files they are about to write. The last two hand the names to the import
 scanner, which leaves them out of the detected dependencies.
 """

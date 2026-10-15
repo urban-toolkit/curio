@@ -1,4 +1,4 @@
-"""The Package Builder's install paths for a draft: build it (Save-As preserving the unedited sources on disk), refuse a read-only target, and install the built archive into the user store.
+"""The package build pipeline's install paths for a draft: build it (Save-As preserving the unedited sources on disk), refuse a read-only target, and install the built archive into the user store.
 
 Application layer of the packages package (memo dev/143, B2-b): lifted out of ``routes.py`` so handlers
 parse, call and serialize and carry no rules; every function keeps its body.

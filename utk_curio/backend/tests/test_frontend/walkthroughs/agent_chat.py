@@ -5,7 +5,7 @@ import re
 
 from playwright.sync_api import expect
 
-from ..utils import require_owner_view
+from ..utils import NODE_ONLY_AGENT_NAME, ensure_node_only_agent, require_owner_view
 from .framework import Ctx, walkthrough
 from .steps import first_node_of_type, frame_until_on_top
 
@@ -60,10 +60,11 @@ def agent_chat_names_its_node(ctx: Ctx) -> None:
     project_id = page.url.rstrip("/").rsplit("/", 1)[-1]
     base = f"{ctx.backend}/api/agents/projects/{project_id}"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    # Never a canvas agent by roster (it attaches to a node or a connection),
-    # so the server cannot quietly fall back to a canvas attachment and leave
-    # this scene photographing the wrong header. It is the only such card.
-    coord = "agent.connection-builder@1.0.0"
+    # Never a canvas agent (it attaches to nodes only), so the server cannot
+    # quietly fall back to a canvas attachment and leave this scene
+    # photographing the wrong header. Every card accepts the canvas, so a
+    # made-up agent is uploaded to the account.
+    coord = ensure_node_only_agent(ctx.backend, token)
 
     installed = page.request.post(f"{base}/install", headers=headers, data={"coord": coord})
     assert installed.ok, f"install failed: {installed.status} {installed.text()[:200]}"
@@ -104,13 +105,13 @@ def agent_chat_names_its_node(ctx: Ctx) -> None:
     expect(node).to_contain_text(AGENT_CHAT_NODE_NAME)
 
     opener = page.get_by_role(
-        "button", name=re.compile("^Open chat with Connection Builder")
+        "button", name=re.compile(f"^Open chat with {re.escape(NODE_ONLY_AGENT_NAME)}")
     ).first
     ctx.focus(opener, hold=700)
     ctx.say("Open its chat", "One agent, attached to that one node.")
     opener.click()
 
-    panel = page.get_by_role("dialog", name=re.compile("^Chat with Connection Builder"))
+    panel = page.get_by_role("dialog", name=re.compile(f"^Chat with {re.escape(NODE_ONLY_AGENT_NAME)}"))
     expect(panel).to_be_visible(timeout=20000)
 
     subtitle = panel.get_by_text(re.compile(r"^Attached to "))

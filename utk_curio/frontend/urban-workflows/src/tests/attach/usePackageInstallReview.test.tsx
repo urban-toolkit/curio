@@ -24,7 +24,7 @@ const STORE_ONLY = {
   ...PKG,
   dirName: "curio.notes@1",
   name: "Simple Notes",
-  publisher: "Package Builder",
+  publisher: "Node Builder",
   permissions: [],
   dependencies: { python: {}, js: {}, packages: {} },
   installed: true,

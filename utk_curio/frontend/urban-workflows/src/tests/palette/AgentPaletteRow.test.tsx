@@ -4,10 +4,10 @@ import { AgentPaletteRow } from "../../components/menus/nodes/agentsPalette/Agen
 
 function card(over: Partial<any> = {}): any {
   return {
-    id: "agent.chat-agent",
+    id: "agent.researcher",
     version: "1.0.0",
-    dirName: "agent.chat-agent@1.0.0",
-    name: "Chat",
+    dirName: "agent.researcher@1.0.0",
+    name: "Researcher",
     category: "node",
     purpose: "assistant for a node or the canvas",
     capabilities: ["conversation.respond"],

@@ -64,7 +64,7 @@ describe("the settings page", () => {
   });
 
   it.each([
-    ["/settings/agents?agent=agent.chat-agent", { section: "agent-models", agentId: "agent.chat-agent" }],
+    ["/settings/agents?agent=agent.researcher", { section: "agent-models", agentId: "agent.researcher" }],
     ["/settings/keys?service=mapillary.token", { section: "source-key", slot: "mapillary.token" }],
     ["/settings/keys?config=llm-1", { section: "llm-configs", configId: "llm-1" }],
     ["/settings/keys?add=node&host=api.census.gov&name=census",

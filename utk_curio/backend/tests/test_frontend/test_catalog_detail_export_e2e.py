@@ -29,11 +29,13 @@ PACKAGE_NAME = "Urban Heat Vulnerability Index"
 PACKAGE_DIR = "ai.utk.uhvi@1"
 
 #: A built-in from the roster; readable without ever being imported. Its
-#: research.verify mode has a prompt of its own, so the bundle carries three.
+#: chat and each of its two modes have a prompt of their own, so the bundle
+#: carries four with the preamble.
 AGENT_NAME = "Researcher"
 AGENT_DIR = "agent.researcher@1.0.0"
 AGENT_PROMPTS = {
     "prompts/default_preamble.md",
+    "prompts/researcher_instruction.md",
     "prompts/researcher_notes_instruction.md",
     "prompts/research_instruction.md",
 }

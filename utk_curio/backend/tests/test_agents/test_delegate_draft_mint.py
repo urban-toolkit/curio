@@ -2,9 +2,10 @@
 delegation whose bounded child reply parses as a build request becomes a
 runtime-minted, reviewed ``package.draft.apply`` proposal at the parent's
 attachment (the dev/73 one-mint-policy extended). Covers the payload
-extractor, the happy Researcher→Package Builder path, recoverable failures
-(unparseable reply, invalid draft), the grant gate, and injection resistance
-(draft-shaped text outside the delegation-result path never mints).
+extractor, the happy path from the Researcher to the Node Builder's
+package-writing mode, the Node Builder asking its own mode, recoverable
+failures (unparseable reply, invalid draft), the grant gate, and injection
+resistance (draft-shaped text outside the delegation-result path never mints).
 """
 
 from __future__ import annotations
@@ -17,8 +18,10 @@ from utk_curio.backend.app.agents.application.turns.delegates import _extract_dr
 from utk_curio.backend.app.packages.builder import jobs as build_jobs
 
 RESEARCHER = "agent.researcher@1.0.0"
-PACKAGE_BUILDER = "agent.package-builder@1.0.0"
 NODE_BUILDER = "agent.node-builder@1.0.0"
+DATAFLOW_BUILDER = "agent.dataflow-builder@1.0.0"
+#: The agent whose package-writing mode a package-authoring delegation reaches.
+WRITER = NODE_BUILDER
 
 
 def _auth(token):
@@ -117,12 +120,13 @@ def _project(client, token):
 
 
 def _setup(client, token, project_id, monkeypatch, *, parent=RESEARCHER, replies):
-    """Install parent + Package Builder, attach the parent (canvas), and
-    script the shared provider mock (parent and child calls in order)."""
+    """Install the parent and the Node Builder, whose package-writing mode the
+    delegation reaches, attach the parent (canvas), and script the shared
+    provider mock (parent and child calls in order)."""
     client.post(f"/api/agents/projects/{project_id}/install",
                 json={"coord": parent}, headers=_auth(token))
     client.post(f"/api/agents/projects/{project_id}/install",
-                json={"coord": PACKAGE_BUILDER}, headers=_auth(token))
+                json={"coord": WRITER}, headers=_auth(token))
     att_id = client.post(
         f"/api/agents/projects/{project_id}/attachments",
         json={"coord": parent, "target": {"kind": "canvas"}},
@@ -169,7 +173,7 @@ class TestDelegateDraftMint:
         child_reply = "```json\n" + json.dumps({"packageDraft": _draft()}) + "\n```"
         att_id, calls = _setup(client, token, pid, monkeypatch, replies=[
             _delegate_tail(),          # parent round 1: delegate authoring
-            child_reply,               # CHILD (Package Builder): the draft
+            child_reply,               # CHILD (the writing mode): the draft
             "Proposed — review above.",  # parent round 2: final prose
         ])
         run = _run(client, token, pid, att_id)
@@ -244,11 +248,12 @@ class TestDelegateDraftMint:
 
     def test_parent_without_the_grant_keeps_text_only(
             self, client, user_and_token, tmp_curio, monkeypatch):
-        # Node Builder delegates authoring (dev/89) but does NOT declare
-        # package.draft.apply — the child's draft stays text, never a mint.
+        # The Dataflow Builder delegates package writing (dev/89) but does NOT
+        # declare package.draft.apply: the child's draft stays text, never a
+        # mint.
         _, token = user_and_token
         pid = _project(client, token)
-        att_id, calls = _setup(client, token, pid, monkeypatch, parent=NODE_BUILDER,
+        att_id, calls = _setup(client, token, pid, monkeypatch, parent=DATAFLOW_BUILDER,
                                replies=[
                                    _delegate_tail(),
                                    json.dumps(_draft()),
@@ -258,6 +263,41 @@ class TestDelegateDraftMint:
         assert all(p["type"] != "proposal" for p in run.get_json()["content"])
         assert "not\ngranted" in calls[2][-1]["content"] or (
             "not granted" in calls[2][-1]["content"].replace("\n", " "))
+
+    def test_the_node_builders_own_writing_mode_mints_the_reviewed_draft(
+            self, client, user_and_token, tmp_curio, monkeypatch):
+        """The Node Builder asks its own package-writing mode and holds the
+        draft tool, so the draft becomes a reviewed proposal in its chat
+        rather than text. The mode is its own, for no node, so no chat of
+        the delegate's opens: the record rides this turn."""
+        _, token = user_and_token
+        pid = _project(client, token)
+        child_reply = "```json\n" + json.dumps({"packageDraft": _draft()}) + "\n```"
+        att_id, calls = _setup(client, token, pid, monkeypatch, parent=NODE_BUILDER, replies=[
+            _delegate_tail(),
+            child_reply,
+            "Proposed, review the package above.",
+        ])
+        run = _run(client, token, pid, att_id)
+        assert run.status_code == 200, run.get_data(as_text=True)
+        parts = run.get_json()["content"]
+        proposal = next(p for p in parts if p["type"] == "proposal")
+        assert proposal["tool"] == "package.draft.apply"
+        assert proposal["pins"]["target"] == "ai.agent.notes@1"
+        entry = next(p for p in parts if p["type"] == "delegation")
+        assert (entry["coord"], entry["capability"], entry["status"]) == (
+            NODE_BUILDER, "node.kind.author", "ok")
+        assert entry["attachmentId"] is None
+        # The child ran the writing mode, not the Node Builder's chat.
+        from utk_curio.backend.app.agents.domain import builtin
+
+        child_system = calls[1][0]["content"]
+        assert builtin.read_prompt_text(NODE_BUILDER, "node.kind.author").strip() in child_system
+        assert builtin.read_prompt_text(NODE_BUILDER, "instruction").strip() not in child_system
+        cards = client.get(
+            f"/api/agents/projects/{pid}/attachments", headers=_auth(token),
+        ).get_json()["attachments"]
+        assert [c["attachmentId"] for c in cards] == [att_id]
 
     def test_draft_shaped_chat_text_never_mints(
             self, client, user_and_token, tmp_curio, monkeypatch):
@@ -321,9 +361,9 @@ class TestLargeLookSpecDelegation:
 
 
 class TestChildAnswersInToolRequestShape:
-    """dev/90 A7 route replay of the live screenshots: the Package Builder
-    child answers with its instruction's curio.v1 toolRequest tail (it is
-    tool-less as a delegate) — the runtime unwraps and mints anyway."""
+    """dev/90 A7 route replay of the live screenshots: the package-writing
+    child answers with a curio.v1 toolRequest tail (it is tool-less as a
+    delegate), and the runtime unwraps and mints anyway."""
 
     def test_delegation_mints_from_the_tool_request_reply(
             self, client, user_and_token, tmp_curio, monkeypatch):
@@ -405,7 +445,7 @@ class TestAuthoringInputEnrichment:
         assert run.status_code == 200, run.get_data(as_text=True)
         # The child call is the TWO-message list (own system + the framed
         # inputs) — parent calls alias the parent's one growing list, whose
-        # system also mentions "Package Builder" (the Researcher instruction).
+        # system also mentions "Node Builder" (the Researcher instruction).
         child_calls = [
             c for c in calls
             if len(c) == 2 and str(c[-1].get("content", "")).startswith(
@@ -697,8 +737,8 @@ def _ukey(client, user):
 
 def _write_store_package(user_key, dir_name, package_id, name, template_ids,
                          description="Colored note surfaces."):
-    """A package in the user's store — one a previous project's Package Builder
-    authored, which never enters the committed catalog."""
+    """A package in the user's store: one the Node Builder wrote for a
+    previous project, which never enters the committed catalog."""
     from utk_curio.backend.app.packages.repositories.store import user_packages_dir
 
     d = user_packages_dir(user_key) / dir_name
@@ -707,7 +747,7 @@ def _write_store_package(user_key, dir_name, package_id, name, template_ids,
         "id": package_id,
         "version": "1.0.0",
         "name": name,
-        "publisher": "Package Builder",
+        "publisher": "Node Builder",
         "description": description,
         "license": "MIT",
         "compatibility": {"curioRuntime": ">=0.5.0", "major": 1},
@@ -726,9 +766,9 @@ def _write_store_package(user_key, dir_name, package_id, name, template_ids,
 
 
 class TestAuthoringDelegateReuseEvidence:
-    """dev/94 — the Package Builder's instruction opens with "Reuse first.
+    """dev/94: the package agent's instruction opened with "Reuse first.
     Before authoring anything, read packages.catalog … never a duplicate
-    package", and it holds that tool only as a direct ATTACHMENT. As a DEC-046
+    package", and it held that tool only as a direct ATTACHMENT. As a DEC-046
     delegate it runs structurally tool-less — which is the path packages are
     actually authored on — so its first instruction was unexecutable and it had
     no way to know. The runtime now serves the evidence, exactly as it already
@@ -926,10 +966,10 @@ class TestAuthoringDelegateReuseEvidence:
 
 
 class TestRecommendationEvidence:
-    """A delegated package.recommend, the Package Builder's mode, is tool-less
-    too, so its rule to name only rows it was shown needs the rows: it
-    receives the existingPackages an authoring delegate does, as its only
-    candidates."""
+    """A delegated package.recommend, the Node Builder's mode the Dataflow
+    Builder asks for, is tool-less too, so its rule to name only rows it was
+    shown needs the rows: it receives the existingPackages an authoring
+    delegate does, as its only candidates."""
 
     RECOMMEND_TAIL = (
         '```curio.v1\n{"delegateRequest": {"capability": "package.recommend", '
@@ -970,7 +1010,7 @@ class TestRecommendationEvidence:
         key = _ukey(client, user)
         _write_store_package(key, "curio.notes@1", "curio.notes", "Simple Notes",
                              ["note-surface"])
-        att_id, calls = _setup(client, token, pid, monkeypatch, parent=NODE_BUILDER, replies=[
+        att_id, calls = _setup(client, token, pid, monkeypatch, parent=DATAFLOW_BUILDER, replies=[
             self.RECOMMEND_TAIL,
             "curio.notes@1: the notes need it, and this project does not have it yet.",
             "curio.notes@1 fits; I can propose installing it.",
@@ -979,15 +1019,15 @@ class TestRecommendationEvidence:
 
         entry = next(p for p in body["content"] if p["type"] == "delegation")
         assert (entry["coord"], entry["capability"], entry["status"]) == (
-            PACKAGE_BUILDER, "package.recommend", "ok")
+            NODE_BUILDER, "package.recommend", "ok")
         framed = calls[1][1]["content"]
-        assert "[delegated task from agent.node-builder@1.0.0" in framed
+        assert "[delegated task from agent.dataflow-builder@1.0.0" in framed
         assert '"existingPackages"' in framed
         assert "curio.notes@1" in framed and "curio.notes/note-surface" in framed
-        # The child ran the recommendation mode, not the authoring chat.
+        # The child ran the recommendation mode, not the Node Builder's chat.
         child_system = calls[1][0]["content"]
-        assert builtin.read_prompt_text(PACKAGE_BUILDER, "package.recommend").strip() in child_system
-        assert builtin.read_prompt_text(PACKAGE_BUILDER, "instruction").strip() not in child_system
+        assert builtin.read_prompt_text(NODE_BUILDER, "package.recommend").strip() in child_system
+        assert builtin.read_prompt_text(NODE_BUILDER, "instruction").strip() not in child_system
         # A recommendation mints nothing.
         assert all(p["type"] != "proposal" for p in body["content"])
 
@@ -1116,22 +1156,24 @@ class TestReuseInsteadOfAuthoring:
         assert _extract_reuse_finding(fenced)["dirName"] == "curio.notes@1"
 
 
-def test_package_builder_instruction_is_executable_on_both_paths():
-    """A prompt-marker test (the repo's dev/91 pattern): the reuse-first rule
-    must name where the evidence comes from on BOTH paths, or it reverts to
-    describing a tool-only workflow the delegate cannot run."""
+def test_package_writing_reuse_first_is_executable_on_both_paths():
+    """A prompt-marker test (the repo's dev/91 pattern): reuse-first must name
+    where the evidence comes from on BOTH paths, or it reverts to describing
+    a tool-only workflow the delegate cannot run. The writing mode is a
+    delegate and reads the existingPackages input; the chat that asks for it
+    holds the catalog tool."""
     from utk_curio.backend.app.agents.domain import builtin
 
-    text = builtin.read_prompt_text("agent.package-builder@1.0.0", "instruction")
+    text = builtin.read_prompt_text(NODE_BUILDER, "package.build")
     assert text
     assert "Reuse first" in text
-    # Both evidence paths, named.
-    assert "packages.catalog" in text
     assert "existingPackages" in text
     # The reachable outcome and the preferred alternative to duplicating.
     assert "insteadOfAuthoring" in text
     assert 'mode "extend"' in text
     assert "never a duplicate package" in text
+    # The other path: the chat reads the catalog before it asks for a package.
+    assert "packages.catalog" in builtin.read_prompt_text(NODE_BUILDER, "instruction")
 
 
 def test_build_request_contract_teaches_the_reuse_reply():

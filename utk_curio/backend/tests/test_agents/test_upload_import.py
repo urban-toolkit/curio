@@ -139,9 +139,9 @@ class TestUploadImport:
     def test_shadowing_a_materialized_builtin_is_409(self, client, user_and_token, tmp_curio):
         _, token = user_and_token
         client.post(
-            "/api/agents/imports", json={"coord": "agent.chat-agent@1.0.0"}, headers=_auth(token)
+            "/api/agents/imports", json={"coord": "agent.researcher@1.0.0"}, headers=_auth(token)
         )  # materializes the built-in into the store
-        r = _upload(client, token, _payload(agent_id="agent.chat-agent", version="1.0.0"))
+        r = _upload(client, token, _payload(agent_id="agent.researcher", version="1.0.0"))
         assert r.status_code == 409
 
     def test_missing_and_extra_prompt_files_400(self, client, user_and_token, tmp_curio):

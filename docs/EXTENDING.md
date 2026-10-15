@@ -594,8 +594,10 @@ one unless you are adding a behavior to Curio itself.
 ## 8. Agent-authored packages
 
 Everything above describes hand-authoring. Packages can also be **authored by
-agents**: the **Package Builder** (`agent.package-builder`) turns a described need into one
-reviewed draft through the `package.draft.apply` contract, and an **isolated build service**
+agents**: the **Node Builder** (`agent.node-builder`) writes them in its package-writing mode
+(`package.build`, `package.extend`, `node.kind.author`), which its own chat, the Researcher
+and the Dataflow Builder ask for. The mode turns a described need into one reviewed draft
+through the `package.draft.apply` contract, and an **isolated build service**
 does what `npm run build:packages` does for first-party packages - without ever touching this
 repo's build list:
 
@@ -624,7 +626,7 @@ repo's build list:
 4. The user reviews the diff, dependencies, and preview; Apply promotes the **exact reviewed
    artifact digest** through the normal installer (backup held, journaled, rollback honest).
 
-**Looks are prompt-driven, never repo fixtures**: the Package Builder's instruction
+**Looks are prompt-driven, never repo fixtures**: the package-writing mode's prompt
 carries one generic authoring contract (register exactly the manifest's behavior keys; hook
 `(data, nodeState) => { contentComponent }`; React elements only - never raw HTML; per-instance
 color via `data.appearance.backgroundColor` with derived ink; self-contained, no network). The

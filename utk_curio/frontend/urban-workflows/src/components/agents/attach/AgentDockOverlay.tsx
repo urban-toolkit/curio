@@ -153,8 +153,8 @@ export const AgentDockOverlay: React.FC = () => {
         onSelect={ctx.openChat}
         onDetach={onDetach}
         // Offered as soon as ANY agent is attached, not just a canvas one:
-        // the agents that read the goal most (Node Builder,
-        // Connection Builder) attach to nodes.
+        // the agent that reads the goal most (the Node Builder) attaches to
+        // nodes and connections.
         showGoal={ctx.attachments.length > 0}
         goal={workflowGoal}
         onGoalChange={setWorkflowGoal}

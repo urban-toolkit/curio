@@ -15,9 +15,9 @@ import { renderHook, act } from "@testing-library/react";
 
 const CARDS = [
   {
-    dirName: "agent.chat-agent",
-    id: "agent.chat-agent",
-    name: "Chat",
+    dirName: "agent.researcher",
+    id: "agent.researcher",
+    name: "Researcher",
     purpose: "Conversational assistant",
     category: "node",
     capabilities: [],
@@ -59,7 +59,7 @@ describe("/catalog/agents selection", () => {
   it("shows the first agent on arrival", async () => {
     const { result } = renderHook(() => useAgentCatalogBrowse());
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.selectedAgent?.dirName).toBe("agent.chat-agent");
+    expect(result.current.selectedAgent?.dirName).toBe("agent.researcher");
   });
 
   it("keeps the drawer closed after Close, and does not jump to another agent", async () => {
@@ -94,10 +94,10 @@ describe("/catalog/agents selection", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     act(() => result.current.setSelectedCoord("agent.my-debugger"));
-    act(() => result.current.setSearch("Chat"));
+    act(() => result.current.setSearch("Researcher"));
 
     await waitFor(() =>
-      expect(result.current.selectedAgent?.dirName).toBe("agent.chat-agent"),
+      expect(result.current.selectedAgent?.dirName).toBe("agent.researcher"),
     );
   });
 });
@@ -112,7 +112,7 @@ describe("/catalog/agents search matches the drawer", () => {
 
     act(() => result.current.setSearch("node"));
     expect(result.current.filtered.map((a) => a.dirName)).toEqual([
-      "agent.chat-agent",
+      "agent.researcher",
       "agent.my-debugger",
     ]);
   });
