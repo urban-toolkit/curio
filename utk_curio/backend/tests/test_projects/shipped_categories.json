@@ -256,6 +256,18 @@
       "Geometries"
     ]
   },
+  "26-several-inputs": {
+    "tags": [
+      "Autark",
+      "Vega-Lite",
+      "GeoPandas",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries"
+    ]
+  },
   "dataflows/AutkMap": {
     "tags": [
       "Autark",
