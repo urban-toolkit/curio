@@ -83,6 +83,18 @@ describe("the preview", () => {
     }
   });
 
+  it("never draws the play glyph, which is the header's Play button alone", () => {
+    // The e2e suite finds a node's Play by svg.fa-circle-play; a second one in
+    // the body would read as a button that does nothing.
+    const silent = detectLoaderProfile("x = build()\nreturn x");
+    for (const props of [{ profile: catalog }, { profile: silent }, { profile: catalog, outputCode: "success" }]) {
+      const { container, unmount } = render(<DataLoaderPreview {...(props as any)} />);
+      expect(container.querySelector('svg[data-icon="circle-play"]')).toBeNull();
+      expect(container.querySelector('svg[data-icon="clock"]') !== null || props.outputCode === "success").toBe(true);
+      unmount();
+    }
+  });
+
   it("titles every kind of source", () => {
     expect(loaderTitle({ kind: "disk", address: "" })).toBe("File (path built in code)");
     expect(loaderTitle({ kind: "api", address: "" })).toBe("API (address built in code)");
