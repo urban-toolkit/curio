@@ -446,7 +446,9 @@
     ]
   },
   "dataflows/ScoutShadows": {
-    "tags": [],
+    "tags": [
+      "Autark"
+    ],
     "data_type": [
       "Geometries"
     ]

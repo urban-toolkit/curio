@@ -2,18 +2,22 @@
 (``deep_umbra.py``). Curio's own code.
 
 - **input**: a raster of building heights in metres, in EPSG:3395 on the
-  zoom-16 tile grid SCOUT's tiles use (256 cells a tile): the mosaic of
-  Rasterize Buildings (``scout.raster-conversion@1``), or its ``(mosaic,
-  tiles)`` output, of which the node reads the mosaic. Every tile of the raster
-  is predicted, from the tile and its eight neighbours; cells beyond the raster
-  are ground.
+  zoom-16 tile grid SCOUT's tiles use (256 cells a tile): the raster of
+  Rasterize Buildings (``scout.raster-conversion@1``). Every tile of the raster
+  that holds a height is predicted, from the tile and its eight neighbours. A
+  tile with no data, which Rasterize Buildings gives a tile SCOUT wrote no file
+  for, is not predicted, as SCOUT predicts only the tiles it wrote; around the
+  tiles predicted, it and the cells beyond the raster are ground, as SCOUT
+  reads a missing neighbour.
 - **output**: the accumulated shadow on the input's own grid, one float32 band
   in minutes (Deep Umbra's output from 0 to 1, times the season's minutes),
   written with Curio's mosaic helper (``mosaic_rasters``), with NaN as its
   nodata, as Curio's raster tools write theirs: a GeoTIFF that names no nodata
   is read by autk-db with 0 as its nodata, which would leave every cell in the
-  sun out of an Autark map and a Compare Scenarios Difference. Its statistics
-  over the ground are a Raster Statistics node's, with the heights as the mask.
+  sun out of an Autark map and a Compare Scenarios Difference. A tile not
+  predicted is NaN. Its statistics over the ground are a Raster Statistics
+  node's, with the heights as the mask, so they count the ground of the tiles
+  predicted only.
 
 Deep Umbra reads 8-bit heights where 255 is 550 m: a height becomes
 ``255 * height / 550``, rounded half to even and kept within 0 to 255, as SCOUT's
@@ -63,13 +67,11 @@ def _is_raster(value):
 
 
 def height_raster(value):
-    """The one raster in the node's input: the input itself, or the one raster
-    among its parts (Rasterize Buildings hands on ``(mosaic, tiles)``)."""
-    parts = list(value) if isinstance(value, (list, tuple)) else [value]
-    rasters = [part for part in parts if _is_raster(part)]
-    if len(rasters) != 1:
+    """The node's input, the one raster Rasterize Buildings returns; anything
+    else is refused in a sentence."""
+    if not _is_raster(value):
         raise ValueError(NOT_A_HEIGHT_RASTER)
-    return rasters[0]
+    return value
 
 
 def tile_grid(raster):
@@ -117,6 +119,13 @@ def tile_grid(raster):
     return zoom, x, y, raster.width // TILE, raster.height // TILE
 
 
+def heights_of(raster):
+    """The raster's heights, float64, NaN where it holds none: its no data,
+    or a number that is not finite."""
+    heights = raster.read(1, masked=True).astype(np.float64).filled(np.nan)
+    return np.where(np.isfinite(heights), heights, np.nan)
+
+
 def gray_levels(raster):
     """The raster's heights as Deep Umbra's 8-bit levels, float32: ``255 *
     height / 550``, rounded half to even, within 0 to 255; no data is ground.
@@ -128,10 +137,20 @@ def gray_levels(raster):
             f"with {float(tags['max_height']):g} m. Set Rasterize Buildings' Maximum height to "
             f"{DEEP_UMBRA_MAX_HEIGHT:g}."
         )
-    heights = raster.read(1, masked=True).astype(np.float64).filled(np.nan)
-    levels = 255.0 * (heights / DEEP_UMBRA_MAX_HEIGHT)
+    levels = 255.0 * (heights_of(raster) / DEEP_UMBRA_MAX_HEIGHT)
     levels = np.where(np.isfinite(levels), levels, 0.0)
     return np.clip(np.rint(levels), 0, 255).astype(np.float32)
+
+
+def tiles_with_heights(raster, columns, rows):
+    """``[(column, row)]``: the tiles of *raster* that hold a height, row by
+    row; a tile with no data in every cell is one SCOUT wrote no file for."""
+    held = np.isfinite(heights_of(raster))
+    return [
+        (column, row)
+        for row in range(rows) for column in range(columns)
+        if held[row * TILE:(row + 1) * TILE, column * TILE:(column + 1) * TILE].any()
+    ]
 
 
 def neighbourhood(padded, column, row):
@@ -141,17 +160,19 @@ def neighbourhood(padded, column, row):
 
 
 def shadow_tiles(raster, season, model):
-    """Deep Umbra on every tile of *raster*: ``{(column, row): shadow}``, each
-    tile's shadow from 0 to 1, 256 by 256."""
+    """Deep Umbra on every tile of *raster* that holds a height: ``{(column,
+    row): shadow}``, each tile's shadow from 0 to 1, 256 by 256."""
     zoom, x, y, columns, rows = tile_grid(raster)
+    written = tiles_with_heights(raster, columns, rows)
+    if not written:
+        raise ValueError("The height raster holds no height: every cell is no data, so no tile has buildings.")
     padded = np.pad(gray_levels(raster), TILE)
     shadows = {}
-    for row in range(rows):
-        for column in range(columns):
-            _input_height, prediction = predict_shadow(
-                model, neighbourhood(padded, column, row), season, zoom, x + column, y + row
-            )
-            shadows[(column, row)] = shadow_fraction(prediction)
+    for column, row in written:
+        _input_height, prediction = predict_shadow(
+            model, neighbourhood(padded, column, row), season, zoom, x + column, y + row
+        )
+        shadows[(column, row)] = shadow_fraction(prediction)
     return shadows
 
 
@@ -170,17 +191,21 @@ def accumulated_shadow(value, season, model, output_file):
     if season not in SEASONS:
         raise ValueError(f"Accumulated Shadow knows the seasons spring, summer and winter, not {season!r}.")
     raster = height_raster(value)
-    zoom, x, y, _columns, _rows = tile_grid(raster)
+    zoom, x, y, columns, rows = tile_grid(raster)
     factor = season_factor(season)
     a, _b, c, _d, e, f = tuple(raster.transform)[:6]
-    # Each tile at its place on the heights' grid, so the shadow and the heights
-    # share one grid, as a Raster Statistics mask needs.
+    shadows = shadow_tiles(raster, season, model)
+    unpredicted = np.full((TILE, TILE), np.nan, dtype=np.float32)
+    # Every tile at its place on the heights' grid, a tile not predicted as no
+    # data, so the shadow and the heights share one grid, as a Raster
+    # Statistics mask needs.
     tiles = [
         {
             "transform": (a, 0.0, c + column * TILE * a, 0.0, e, f + row * TILE * e),
-            "width": TILE, "height": TILE, "cells": shadow * np.float32(factor),
+            "width": TILE, "height": TILE,
+            "cells": shadows[(column, row)] * np.float32(factor) if (column, row) in shadows else unpredicted,
         }
-        for (column, row), shadow in shadow_tiles(raster, season, model).items()
+        for row in range(rows) for column in range(columns)
     ]
     path = mosaic_rasters(
         tiles, output_file(mosaic_name(raster, season)), crs=raster.crs, dtype="float32",

@@ -138,9 +138,9 @@ EXPECTED_EMPTY = {
 #: ``autark_map_framing`` takes by default, by node id, with the share their
 #: drawing still spans. Example 24's height mosaic is framed on its raster,
 #: SCOUT's four zoom-16 tiles, like the shadow map on the same grid, but its
-#: ground cells are 0 m and a raster draws 0 clear when its GeoTIFF names no
-#: nodata, so only the buildings show: about 54% of the map's height, 9%
-#: before the map opened framed (CI run 37559438022).
+#: ground cells are 0 m, which its layer's transfer function draws clear, so
+#: only the buildings show: about 54% of the map's height, 9% before the map
+#: opened framed (CI run 37559438022).
 FRAMED_DRAWING_SPAN = {
     "ebac4811-abcc-50fe-a61a-cc9c9ac8c011": 0.5,
 }

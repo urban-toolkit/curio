@@ -521,12 +521,13 @@ def _write_mosaic_geotiff(tiles, path, grid, *, crs, dtype, bands, nodata, fill,
 
 
 def mosaic_web_tiles(tiles, zoom, path, *, crs="EPSG:3395", tile_size=256, dtype="float32", fill=0,
-                     band_descriptions=None, tags=None):
+                     nodata=None, band_descriptions=None, tags=None):
     """Web map tiles side by side in one GeoTIFF at *path* (:func:`mosaic_rasters`).
 
     *tiles* maps ``(x, y)`` to the tile's cells, *tile_size* square, rows from
     north to south. Columns of tiles run west to east with x and rows north to
-    south with y; a tile *tiles* lacks inside their span holds *fill*. The grid
+    south with y; a tile *tiles* lacks inside their span holds *fill*, and the
+    file names *nodata*, when given, as its no-data value. The grid
     is the tiles' own in *crs*: it starts at the north-west tile's corner, its
     cells are a tile's width over *tile_size* wide, and its rows split the span
     from the top row's north edge to the bottom row's south edge, so each tile
@@ -547,7 +548,7 @@ def mosaic_web_tiles(tiles, zoom, path, *, crs="EPSG:3395", tile_size=256, dtype
         for (x, y), cells in tiles.items()
     ]
     return mosaic_rasters(pieces, path, crs=crs, dtype=dtype, resolution=(x_res, y_res), fill=fill,
-                          band_descriptions=band_descriptions, tags=tags)
+                          nodata=nodata, band_descriptions=band_descriptions, tags=tags)
 
 
 def mosaic_collection(tiles, output_file):
