@@ -22,6 +22,7 @@ import { normalizeSelections, type SelectionTag } from "../utils/references/sele
 import { lineageFromSpec } from "../utils/scenarios/duplicateSelection";
 import { normalizeCompareSettings, type CompareSettings } from "../utils/compare/compareSettings";
 import { normalizeEditFeatures, type EditFeaturesSettings } from "../utils/editFeatures/editFeatures";
+import { isLoaderView, type LoaderView } from "../utils/loaderView";
 
 // Module-level singletons so every node shares the same interpreter
 // connection pool. Exported so collaboration's remote-graph handler can
@@ -96,6 +97,10 @@ type CreateCodeNodeOptions = {
     // run: the output it shows, and the source that produced it.
     output?: { code: string; content: string };
     executedCode?: string;
+    // A loader's view and its preview height (metadata.loaderView,
+    // metadata.loaderPreviewHeight; utils/loaderView).
+    loaderView?: LoaderView;
+    loaderPreviewHeight?: number;
 };
 
 /** What a load built, so a caller can hydrate against it. */
@@ -280,6 +285,12 @@ export function useCode(): IUseCode {
             if(node.metadata != undefined && node.metadata.editFeatures != undefined)
                 nodeMeta.editFeatures = normalizeEditFeatures(node.metadata.editFeatures);
 
+            // A loader's view, preview or code, and its preview's height.
+            if(node.metadata != undefined && isLoaderView(node.metadata.loaderView))
+                nodeMeta.loaderView = node.metadata.loaderView;
+            if(node.metadata != undefined && typeof node.metadata.loaderPreviewHeight === "number")
+                nodeMeta.loaderPreviewHeight = node.metadata.loaderPreviewHeight;
+
             if(typeof node.title === "string" && node.title)
                 nodeMeta.title = node.title;
 
@@ -448,6 +459,8 @@ export function useCode(): IUseCode {
             editFeatures = undefined,
             output = undefined,
             executedCode = undefined,
+            loaderView = undefined,
+            loaderPreviewHeight = undefined,
         } = options;
 
         const node: Node = {
@@ -512,6 +525,8 @@ export function useCode(): IUseCode {
                 ...(output !== undefined ? { output } : {}),
                 ...(executedCode !== undefined ? { executedCode } : {}),
                 ...(modelRefs !== undefined ? { modelRefs } : {}),
+                ...(loaderView !== undefined ? { loaderView } : {}),
+                ...(loaderPreviewHeight !== undefined ? { loaderPreviewHeight } : {}),
             },
         };
 

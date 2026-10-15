@@ -23,6 +23,7 @@ import {
     faExpand,
     faToolbox,
     faCode,
+    faEye,
     faList,
     faSpellCheck,
     faRotateLeft,
@@ -49,6 +50,20 @@ import { useSharedWidgets } from "../../hook/useSharedWidgets";
 import { useSelectionViews } from "../../hook/useSelectionViews";
 import { normalizeSelections, type SelectionTag } from "../../utils/references/selectionTags";
 
+/**
+ * A loader's preview and its toggle (plans/data-loading-expressive-preview-memo.md).
+ * The Code pill shows what a click shows: the code while previewing, the
+ * preview (an eye) while editing.
+ */
+export type LoaderPreviewProps = {
+    view: "preview" | "code";
+    /** There is code to preview; an empty loader stays on its editor. */
+    canPreview: boolean;
+    onToggle: () => void;
+    /** The preview body, shown over the editor while previewing. */
+    content: React.ReactNode;
+};
+
 const NO_WIDGETS: WidgetDef[] = [];
 const NO_SELECTIONS: SelectionTag[] = [];
 
@@ -71,6 +86,7 @@ type NodeEditorProps = {
     customWidgetsCallback?: any;
     contentComponent?: any;
     disableWidgets?: boolean; // Added prop to freeze widget buttons
+    loaderPreview?: LoaderPreviewProps;
 };
 
 function NodeEditor({
@@ -92,6 +108,7 @@ function NodeEditor({
     customWidgetsCallback,
     contentComponent,
     disableWidgets,
+    loaderPreview,
 }: NodeEditorProps) {
     const [userCode, setUserCode] = useState<string>(""); // python or grammar with marks unresolved
     // Seed from the prop so the editors receive the real content on their
@@ -343,6 +360,25 @@ function NodeEditor({
     // a notebook cell alike (nodeHeaderSlot, styled by `.curio-node-tabs` in
     // Node.css), or above the panes when the node has no header to hold them.
     const tabSlot = useNodeHeaderSlot();
+    // A loader's preview shows on the canvas only: a notebook cell keeps its
+    // editor over its output, and a dashboard tile has no editor to toggle.
+    const previewing = !!loaderPreview && !inCell && !dashboardOn && loaderPreview.view === "preview";
+    // Under the preview: where the editor puts a failed run's missing-library
+    // notice, so a loader that needs a library offers its install in place.
+    const [noticeSlot, setNoticeSlot] = useState<HTMLElement | null>(null);
+    const loaderPill = (() => {
+        if (!loaderPreview) return { icon: faCode, tip: "Code", disabled: false };
+        const onPane = effectiveTab === "code";
+        // What a click shows: from the pane, the other view; from another tab,
+        // the pane as it was left.
+        const showsPreview = onPane ? loaderPreview.view === "code" : loaderPreview.view === "preview";
+        if (showsPreview && onPane && !loaderPreview.canPreview) {
+            return { icon: faEye, tip: "Write a loader to preview it", disabled: true };
+        }
+        return showsPreview
+            ? { icon: faEye, tip: "Show preview", disabled: false }
+            : { icon: faCode, tip: "Show code", disabled: false };
+    })();
     const pillsInHeader = tabSlot !== null;
     const pills = !dashboardOn ? (
         <Nav
@@ -365,7 +401,33 @@ function NodeEditor({
                     paddingLeft: 0,
                 }}
             >
-                {code ? (
+                {code && loaderPreview && !inCell ? (
+                    <Col>
+                        <OverlayTrigger
+                            placement="right"
+                            delay={overlayTriggerProps}
+                            overlay={<Tooltip>{loaderPill.tip}</Tooltip>}
+                        >
+                            <Nav.Item style={navItemStyle}>
+                                <Nav.Link
+                                    eventKey="code"
+                                    style={{ ...navLinkStyle, ...(loaderPill.disabled ? { opacity: 0.35, cursor: "default" } : {}) }}
+                                    aria-label={loaderPill.tip}
+                                    disabled={loaderPill.disabled}
+                                    data-testid="loader-view-toggle"
+                                    data-loader-view={loaderPreview.view}
+                                    onClick={() => {
+                                        // A click on the pill while its pane shows flips the
+                                        // view; from another tab it opens the pane as it was.
+                                        if (effectiveTab === "code" && !loaderPill.disabled) loaderPreview.onToggle();
+                                    }}
+                                >
+                                    <FontAwesomeIcon icon={loaderPill.icon} />
+                                </Nav.Link>
+                            </Nav.Item>
+                        </OverlayTrigger>
+                    </Col>
+                ) : code ? (
                     <Col>
                         <OverlayTrigger
                             placement="right"
@@ -502,26 +564,55 @@ function NodeEditor({
                                         eventKey="code"
                                         style={paneStyle}
                                     >
-                                        <CodeEditor
-                                            floatCode={floatCode}
-                                            readOnly={readOnly}
-                                            defaultValue={defaultCode}
-                                            replacedCodeDirty={
-                                                replacedCodeDirty
-                                            }
-                                            replacedCode={replacedCode}
-                                            sendCodeToWidgets={primeWidgets}
-                                            setOutputCallback={
-                                                setOutputCallback
-                                            }
-                                            data={data}
-                                            output={output}
-                                            nodeType={nodeType}
-                                            references={scope}
-                                            stripInputs={inputs}
-                                            onLoadColumns={loadColumns}
-                                            widgetLanguage={widgetLanguage}
-                                        />
+                                        {(() => {
+                                            const editor = (
+                                            <CodeEditor
+                                                floatCode={floatCode}
+                                                readOnly={readOnly}
+                                                defaultValue={defaultCode}
+                                                replacedCodeDirty={
+                                                    replacedCodeDirty
+                                                }
+                                                replacedCode={replacedCode}
+                                                sendCodeToWidgets={primeWidgets}
+                                                setOutputCallback={
+                                                    setOutputCallback
+                                                }
+                                                data={data}
+                                                output={output}
+                                                nodeType={nodeType}
+                                                references={scope}
+                                                stripInputs={inputs}
+                                                onLoadColumns={loadColumns}
+                                                widgetLanguage={widgetLanguage}
+                                                noticeSlot={previewing ? noticeSlot : null}
+                                            />
+                                            );
+                                            if (!loaderPreview) return editor;
+                                            // The editor stays mounted under the preview: it holds the
+                                            // run, the cursor and the undo history (dev/70).
+                                            return (
+                                                <>
+                                                    {previewing ? (
+                                                        <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+                                                            <div style={{ flex: "none" }}>{loaderPreview.content}</div>
+                                                            <div
+                                                                ref={setNoticeSlot}
+                                                                className="nowheel nodrag nopan"
+                                                                data-testid="loader-notice-slot"
+                                                                style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto", fontSize: "11px" }}
+                                                            />
+                                                        </div>
+                                                    ) : null}
+                                                    <div
+                                                        style={previewing ? { display: "none" } : (inCell ? undefined : { height: "100%" })}
+                                                        aria-hidden={previewing || undefined}
+                                                    >
+                                                        {editor}
+                                                    </div>
+                                                </>
+                                            );
+                                        })()}
                                     </Tab.Pane>
                                 ) : null}
 

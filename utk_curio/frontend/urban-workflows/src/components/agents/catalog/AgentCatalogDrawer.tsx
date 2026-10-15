@@ -19,7 +19,7 @@ import shell from "../../packages/publishing/CatalogDrawerShell.module.css";
 import { useDrawerDragThrough } from "../../packages/publishing/useDrawerDragThrough";
 import { SortMode } from "../../../services/packages";
 import {
-  agentCategoryIcon,
+  agentIcon,
   agentCategoryKey,
 } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
 import tabStyles from "../../packages/publishing/DrawerTabs.module.css";
@@ -414,7 +414,7 @@ const AgentRow: React.FC<{
           onClick={() => onOpenDetails(card)}
         >
           <FontAwesomeIcon
-            icon={agentCategoryIcon(card.category)}
+            icon={agentIcon(card.dirName, card.category)}
             className={styles.avatarIcon}
             aria-hidden
           />

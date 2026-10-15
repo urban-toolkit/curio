@@ -1243,3 +1243,48 @@ class TestDataflowPlanEdgeKindGrammar:
         part, errors = content.parse_dataflow_plan_verbose({"goal": "g", "nodes": [], "edges": []})
         assert part is None
         assert any("the plan changes nothing" in e for e in errors)
+
+
+class TestExtractPackageDraftAttempt:
+    """The one reader of the Package Builder's build request, shared by the
+    delegated route and a direct chat (plans/package-builder-direct-draft-memo.md)."""
+
+    DRAFT = {"mode": "create", "manifest": {"id": "curio.notes", "templates": []},
+             "files": {"sources/note.tsx": {"text": "export {}"}}}
+
+    def test_bare_json_fence_with_prose_around_it(self):
+        reply = "Here is the package:\n\n```json\n" + json.dumps(self.DRAFT, indent=2) + "\n```\n\nReview it."
+        stripped, draft, why_not = content.extract_package_draft_attempt(reply)
+        assert draft == self.DRAFT and why_not == ""
+        assert "```" not in stripped
+        assert "Here is the package:" in stripped and "Review it." in stripped
+
+    def test_whole_reply_object(self):
+        stripped, draft, _ = content.extract_package_draft_attempt(json.dumps(self.DRAFT))
+        assert draft == self.DRAFT and stripped == ""
+
+    def test_package_draft_wrapper_and_tool_request_unwrap(self):
+        wrapped = "```json\n" + json.dumps({"packageDraft": self.DRAFT}) + "\n```"
+        assert content.extract_package_draft_attempt(wrapped)[1] == self.DRAFT
+        requested = "```curio.v1\n" + json.dumps(
+            {"toolRequest": {"tool": "package.draft.apply", "params": self.DRAFT}}) + "\n```"
+        assert content.extract_package_draft_attempt(requested)[1] == self.DRAFT
+
+    def test_json_that_is_not_a_draft_names_its_keys(self):
+        reply = "```json\n" + json.dumps({"answer": 42}) + "\n```"
+        stripped, draft, why_not = content.extract_package_draft_attempt(reply)
+        assert draft is None and stripped == reply
+        assert '"mode"' in why_not and "answer" in why_not
+
+    def test_broken_json_says_to_re_emit_the_complete_request(self):
+        reply = '```json\n{"mode": "create", "manifest": {"id": "curio.notes", \n```'
+        _, draft, why_not = content.extract_package_draft_attempt(reply)
+        assert draft is None
+        assert why_not.startswith("the JSON did not parse") and "COMPLETE build request" in why_not
+
+    def test_prose_only(self):
+        reply = "I would create a notes package with one template."
+        assert content.extract_package_draft_attempt(reply)[1:] == (None, (
+            "no JSON build request found in the reply: it must be ONE JSON "
+            "object, either the whole reply or a single ```json fenced block. "
+            "Prose describing the package is not a build request"))

@@ -250,6 +250,28 @@ class TestRequestedDatasets:
         assert verdict.ok, verdict.violations
         assert {ref["datasetId"] for ref in verdict.source["refs"]} == {self.ASKED, self.BOUNDARY}
 
+    def test_confirmed_external_urls_are_the_external_picks(self):
+        confirmed = {"note": "Load ONLY these.", "picks": [
+            {"lane": "catalog", "datasetId": self.BOUNDARY, "name": "Boundary"},
+            {"lane": "external", "url": "https://example.org/areas.geojson", "name": "Areas"},
+        ]}
+        assert sg.confirmed_external_urls(confirmed) == {"https://example.org/areas.geojson"}
+        assert sg.confirmed_external_urls(None) == set()
+
+    def test_a_confirmed_external_source_refuses_another_catalog_dataset(self):
+        """The user confirmed a portal dataset for the node; a loader that reads
+        a Data Catalog dataset instead put another source in its place."""
+        url = "https://data.cityofchicago.org/d/bbvz-uum9"
+        ctx = _ctx(is_data_loading=True, catalog_ids=self._refs(), confirmed_urls={url})
+        verdict = sg.check_grounding(f'p = curio_data_path("{self.OTHER}")\nreturn p', "python", ctx)
+        assert not verdict.ok
+        assert repr(url) in verdict.violations[0] and f"'{self.OTHER}'" in verdict.violations[0]
+
+    def test_a_confirmed_catalog_pick_still_decides_beside_an_external_one(self):
+        ctx = _ctx(is_data_loading=True, catalog_ids=self._refs(), requested_dataset_ids={self.ASKED},
+                   confirmed_urls={"https://example.org/areas.geojson"})
+        assert sg.check_grounding(f'p = curio_data_path("{self.ASKED}")\nreturn p', "python", ctx).ok
+
     def test_with_nothing_requested_any_catalog_dataset_is_grounded(self):
         ctx = _ctx(is_data_loading=True, catalog_ids=self._refs())
         assert sg.check_grounding(f'p = curio_data_path("{self.OTHER}")\nreturn p', "python", ctx).ok

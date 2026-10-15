@@ -10,6 +10,8 @@ import { getFlowNodeCanonicalType } from "./flowNodeCanonicalType";
 // Deep import rather than `../registry`, whose barrel pulls in every adapter
 // (vega included). This module has to stay a leaf so layout code can use it.
 import { tryGetNodeDescriptor } from "../registry/nodeRegistry";
+import { isLoaderTemplate } from "../registry/loaderTemplates";
+import { LOADER_PREVIEW_HEIGHT, resolveLoaderView } from "./loaderView";
 
 export interface NodeBox {
     width: number;
@@ -18,7 +20,15 @@ export interface NodeBox {
 
 export interface MeasurableNode {
     type?: string | null;
-    data?: { nodeType?: string | null; nodeWidth?: unknown; nodeHeight?: unknown } | null;
+    data?: {
+        nodeType?: string | null;
+        nodeWidth?: unknown;
+        nodeHeight?: unknown;
+        /** A loader's view and its preview height (utils/loaderView). */
+        loaderView?: unknown;
+        loaderPreviewHeight?: unknown;
+        code?: unknown;
+    } | null;
 }
 
 /** `typeof v === "number"` with NaN/Infinity excluded, mirroring the renderer. */
@@ -48,8 +58,8 @@ function finiteNumber(value: unknown): number | undefined {
  * Over-estimating costs a little slack, under-estimating costs the bug.
  */
 export function resolveNodeBoxSize(node: MeasurableNode): NodeBox {
-    const container = tryGetNodeDescriptor(getFlowNodeCanonicalType(node) as any)
-        ?.adapter?.container;
+    const descriptor = tryGetNodeDescriptor(getFlowNodeCanonicalType(node) as any);
+    const container = descriptor?.adapter?.container;
     const data = node?.data ?? undefined;
 
     if (container?.noContent) {
@@ -59,9 +69,13 @@ export function resolveNodeBoxSize(node: MeasurableNode): NodeBox {
         };
     }
 
+    // A loader in its preview is its own, smaller height.
+    const previewing = isLoaderTemplate(descriptor) && resolveLoaderView(data?.loaderView, data?.code) === "preview";
     return clampNodeBox(
         finiteNumber(data?.nodeWidth) ?? finiteNumber(container?.nodeWidth),
-        finiteNumber(data?.nodeHeight) ?? finiteNumber(container?.nodeHeight),
+        previewing
+            ? (finiteNumber(data?.loaderPreviewHeight) ?? LOADER_PREVIEW_HEIGHT)
+            : (finiteNumber(data?.nodeHeight) ?? finiteNumber(container?.nodeHeight)),
     );
 }
 

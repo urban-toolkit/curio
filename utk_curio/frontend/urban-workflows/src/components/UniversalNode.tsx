@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useSyncExternalStore } from 'react';
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import CSS from "csstype";
 import { useEdges, useUpdateNodeInternals } from 'reactflow';
 import { useNotebookViewContext } from '../providers/flow/notebookViewContext';
@@ -34,6 +34,21 @@ import { NodeAgentBadges } from './agents/attach/NodeAgentBadges';
 import { useCollab } from '../providers/CollaborationProvider';
 import ErrorBoundary from "./ErrorBoundary";
 import { NodeOutcomeStrip } from './nodes/NodeOutcomeStrip';
+import { DataLoaderPreview, loaderAccessibleName } from './nodes/DataLoaderPreview';
+import { DataLoaderChip } from './nodes/DataLoaderGlyph';
+import { isLoaderTemplate } from '../registry/loaderTemplates';
+import {
+  LOADER_CHIP_HEIGHT,
+  LOADER_CHIP_WIDTH,
+  LOADER_NOTICE_HEIGHT,
+  LOADER_PREVIEW_HEIGHT,
+  resolveLoaderView,
+  type LoaderView,
+} from '../utils/loaderView';
+import { hasLoaderCode } from '../services/datasetCatalog/loaderProfile';
+import { useLoaderProfile } from '../hook/useLoaderProfile';
+import { useSharedView } from '../hook/useSharedView';
+import { useDatasetDetails } from './datasets/catalog/datasetDetailsContext';
 import './Node.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
@@ -113,7 +128,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const showLoading = behavior.showLoading ?? false;
   const disablePlay = behavior.disablePlay ?? adapter.container.disablePlay ?? false;
 
-  const { signalNodeExecDone, dashboardOn, projectId, edges: flowEdges, isRunActive, serverRunActive, nodes: flowNodes } = useFlowContext();
+  const { signalNodeExecDone, dashboardOn, projectId, edges: flowEdges, isRunActive, serverRunActive, nodes: flowNodes, updateDataNode, markDirty } = useFlowContext();
   // In the notebook view the node is a cell: the page's width and as tall as
   // its content, its dots on the right edge where the bar draws its
   // connections, no cardinality markers.
@@ -149,6 +164,61 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const lockInfo = collab.lockedNodes[data.nodeId];
   const lockedByOther = Boolean(
     lockInfo && (collab.currentUserId == null || lockInfo.user_id !== collab.currentUserId),
+  );
+
+  // ── A loader's preview (plans/data-loading-expressive-preview-memo.md) ────
+  //
+  // `data.loaderView` is saved and shared; without it the view follows the
+  // code. A viewer who cannot save still toggles, on their screen only.
+  const isLoader = isLoaderTemplate(descriptor);
+  const sharedView = useSharedView();
+  const { openDatasetDetails } = useDatasetDetails();
+  const [localLoaderView, setLocalLoaderView] = useState<LoaderView | undefined>(undefined);
+  const loaderView = resolveLoaderView(localLoaderView ?? data.loaderView, nodeState.code);
+  const loaderCanvas = isLoader && !dashboardOn && !notebookOn;
+  const previewActive = loaderCanvas && loaderView === "preview";
+  // An empty loader with no view of its own (a node made elsewhere) keeps its
+  // editor while it is being written, rather than flipping to the preview at
+  // the first keystroke.
+  useEffect(() => {
+    if (isLoader && data.loaderView === undefined && !hasLoaderCode(nodeState.code)) {
+      data.loaderView = "code";
+    }
+  }, []);
+  const toggleLoaderView = () => {
+    const next: LoaderView = loaderView === "preview" ? "code" : "preview";
+    if (sharedView) {
+      setLocalLoaderView(next);
+      return;
+    }
+    // The live node, not the captured `data`, which can be stale.
+    const liveData = (flowNodes ?? []).find((n: any) => n.id === data.nodeId)?.data ?? data;
+    updateDataNode?.(data.nodeId, { ...liveData, loaderView: next });
+    markDirty?.();
+  };
+  const runBusy = !!isRunActive || !!serverRunActive || output?.code === "exec";
+  const outputPorts = descriptor.outputPorts ?? [];
+  const singlePort = outputPorts.length === 1 ? outputPorts[0].types : undefined;
+  const { profile: loaderProfile, detecting: loaderDetecting } = useLoaderProfile({
+    nodeId: data.nodeId,
+    nodeType: String(data.nodeType ?? ""),
+    code: nodeState.code,
+    enabled: isLoader && !dashboardOn,
+    canProbe: previewActive && !sharedView && !runBusy && !lockedByOther,
+    portTypes: singlePort,
+    outputCode: output?.code,
+    nodeDatasets: { datasetSource: data.datasetSource, appliedDatasets: data.appliedDatasets },
+  });
+  // The box changes size with the view: tell React Flow where the handles went.
+  const loaderViewRef = useRef(loaderView);
+  useEffect(() => {
+    if (!isLoader || loaderViewRef.current === loaderView) return;
+    loaderViewRef.current = loaderView;
+    const frame = requestAnimationFrame(() => updateNodeInternals(data.nodeId));
+    return () => cancelAnimationFrame(frame);
+  }, [isLoader, loaderView]);
+  const pendingCodeProposal = (collab.proposals ?? []).some(
+    (p: any) => p.nodeId === data.nodeId && p.kind === "code",
   );
 
   useEffect(() => {
@@ -405,6 +475,11 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
         handleType={adapter.container.handleType}
         isLoading={showLoading}
         noContent={adapter.container.noContent}
+        minimizedContent={isLoader && !dashboardOn ? <DataLoaderChip dataType={loaderProfile.dataType} detecting={loaderDetecting} /> : undefined}
+        minimizedLabel={isLoader && !dashboardOn ? `Data Loading · ${loaderAccessibleName(loaderProfile, loaderDetecting)}` : undefined}
+        minimizedBox={isLoader && !dashboardOn ? { width: LOADER_CHIP_WIDTH, height: LOADER_CHIP_HEIGHT } : undefined}
+        heightKey={previewActive ? "loaderPreviewHeight" : "nodeHeight"}
+        hideDatasetPill={previewActive}
         // A tile keeps its own size, which the dashboard's resize handle writes
         // to ``dashboardWidth``/``dashboardHeight``. Read only here: writing the
         // canvas fields from the dashboard would persist tile geometry as the
@@ -423,7 +498,11 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
         nodeHeight={
           dashboardOn
             ? (data.dashboardHeight ?? DASHBOARD_TILE_DEFAULT_HEIGHT)
-            : (data.nodeHeight ?? adapter.container.nodeHeight)
+            : previewActive
+              // The preview keeps its own, smaller height; the editor keeps the node's.
+              // A missing-library notice opens room under the preview for its install.
+              ? (data.loaderPreviewHeight ?? LOADER_PREVIEW_HEIGHT) + (output?.missingModule ? LOADER_NOTICE_HEIGHT : 0)
+              : (data.nodeHeight ?? adapter.container.nodeHeight)
         }
         // A notebook cell has the page's width and its content's height, at
         // least enough for its dots, passed on its own: the node's size props
@@ -484,6 +563,21 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
             readOnly={readOnly || lockedByOther}
             floatCode={nodeState.setCode}
             contentComponent={behavior.contentComponent}
+            loaderPreview={isLoader ? {
+              view: loaderView,
+              canPreview: hasLoaderCode(nodeState.code),
+              onToggle: toggleLoaderView,
+              content: (
+                <DataLoaderPreview
+                  profile={loaderProfile}
+                  detecting={loaderDetecting}
+                  outputCode={output?.code}
+                  onOpenDataset={(id) => openDatasetDetails(id)}
+                  pendingProposal={pendingCodeProposal}
+                  onShowCode={toggleLoaderView}
+                />
+              ),
+            } : undefined}
           />
         ) : (
           // ``editor: "none"`` in the manifest means there's no tabbed editor

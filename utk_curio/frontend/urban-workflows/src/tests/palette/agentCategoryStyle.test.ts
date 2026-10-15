@@ -5,9 +5,11 @@ import {
   AGENT_CATEGORY_FALLBACK,
   AGENT_CATEGORY_ICON,
   AGENT_CATEGORY_KEYS,
+  AGENT_ICON_OVERRIDE,
   AGENT_KIND_ICON,
   agentCategoryIcon,
   agentCategoryKey,
+  agentIcon,
 } from "../../components/menus/nodes/agentsPalette/agentCategoryStyle";
 import { AGENT_CATEGORIES } from "../../generated/agentCategories";
 
@@ -213,5 +215,32 @@ describe("agent category stylesheets", () => {
     expect(read("components/packages/publishing/PackageCard.module.css")).not.toContain(
       ".cardAccent",
     );
+  });
+});
+
+
+describe("agentIcon", () => {
+  // The Researcher is a `node` agent; its workshop slide draws it as an open book.
+  it("draws the Researcher as an open book", () => {
+    const { faBookOpen } = require("@fortawesome/free-solid-svg-icons");
+    expect(agentIcon("agent.researcher@1.0.0", "node")).toBe(faBookOpen);
+    expect(agentIcon("agent.researcher", "node")).toBe(faBookOpen);
+  });
+
+  it("keeps the category glyph for every other agent", () => {
+    expect(agentIcon("agent.my-explainer@1.0.0", "node")).toBe(agentCategoryIcon("node"));
+    // An id that merely contains "researcher" is not the Researcher.
+    expect(agentIcon("agent.my-researcher@1.0.0", "evaluate")).toBe(agentCategoryIcon("evaluate"));
+    expect(agentIcon("agent.dataflow-builder@1.0.0", "canvas")).toBe(agentCategoryIcon("canvas"));
+    expect(agentIcon("user.my-notes@1.0.0", "node")).toBe(agentCategoryIcon("node"));
+  });
+
+  it("falls back to the category for a missing ref", () => {
+    expect(agentIcon(undefined, "data")).toBe(agentCategoryIcon("data"));
+    expect(agentIcon("", null)).toBe(agentCategoryIcon(null));
+  });
+
+  it("only overrides agents that exist in the roster", () => {
+    expect(Object.keys(AGENT_ICON_OVERRIDE).sort()).toEqual(["agent.researcher"]);
   });
 });

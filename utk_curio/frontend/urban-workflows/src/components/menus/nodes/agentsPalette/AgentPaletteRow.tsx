@@ -2,7 +2,7 @@ import React, { memo, useCallback, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faRobot } from "@fortawesome/free-solid-svg-icons";
 import { AGENT_DRAG_MIME, type AgentCard } from "../../../../services/agents";
-import { agentCategoryIcon, agentCategoryKey } from "./agentCategoryStyle";
+import { agentIcon, agentCategoryKey } from "./agentCategoryStyle";
 import packageStyles from "../toolsMenuPackagePalette/ToolsMenuPackagePalette.module.css";
 import rowStyles from "./AgentPaletteRow.module.css";
 import { DetailsButton } from "../../../DetailsButton";
@@ -65,7 +65,7 @@ export const AgentPaletteRow = memo(function AgentPaletteRow({
         onDragStart={onDragStart}
         title="Drag onto a node or the canvas to attach"
       >
-        <FontAwesomeIcon icon={agentCategoryIcon(agent.category)} className={rowStyles.avatarIcon} />
+        <FontAwesomeIcon icon={agentIcon(agent.dirName, agent.category)} className={rowStyles.avatarIcon} />
       </div>
       <button
         type="button"

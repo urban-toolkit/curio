@@ -47,6 +47,8 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
 from .utils import (
+    LOADER_PREVIEW,
+    LOADER_VIEW_TOGGLE,
     activate_header_icon,
     allow_guest_login_env,
     assert_vega_canvas_rendered,
@@ -93,7 +95,7 @@ CHART_SPEC = json.dumps({
 }, indent=2)
 
 
-def _node(node_id: str, node_type: str, x: int, content: str) -> dict:
+def _node(node_id: str, node_type: str, x: int, content: str, **metadata) -> dict:
     return {
         "id": node_id,
         "type": node_type,
@@ -102,7 +104,7 @@ def _node(node_id: str, node_type: str, x: int, content: str) -> dict:
         "in": "DEFAULT",
         "out": "DEFAULT",
         "goal": "",
-        "metadata": {"keywords": []},
+        "metadata": {"keywords": [], **metadata},
         "content": content,
     }
 
@@ -116,7 +118,10 @@ def _spec() -> dict:
             "packages": [],
             "datasets": [],
             "nodes": [
-                _node(PRODUCER, "curio.builtin/data-loading", 0, PRODUCER_CODE),
+                # The card's tests need a code editor in its body: the loader is
+                # saved on its code view, as one a user switched to it is
+                # (a loader otherwise opens on its preview).
+                _node(PRODUCER, "curio.builtin/data-loading", 0, PRODUCER_CODE, loaderView="code"),
                 _node(CHART, "curio.builtin/vis-vega", 700, CHART_SPEC),
             ],
             "edges": [
@@ -491,6 +496,41 @@ def test_the_code_pill_in_the_header_still_switches_tabs(
     code_pill.click()
     expect(code_pill).to_have_class(ACTIVE)
     expect(editor).to_be_visible()
+
+
+def test_a_loaders_code_pill_switches_its_preview_and_its_code(
+    app_frontend: "FrontendPage", current_server, page,
+):
+    """plans/data-loading-expressive-preview-memo.md: the Code pill of a loader
+    shows what a press shows (an eye on the code view, the code on the
+    preview), the editor stays mounted under the preview, and the view is the
+    node's own (``data.loaderView``)."""
+    require_project_page()
+    require_user_auth()
+    _enter(page, app_frontend, current_server, prefix="card_preview")
+    _wait_for_header(page, PRODUCER)
+
+    node = node_locator(page, PRODUCER)
+    toggle = node.locator(LOADER_VIEW_TOGGLE)
+    editor = node.locator(".monaco-editor").first
+    preview = node.locator(LOADER_PREVIEW)
+    expect(editor).to_be_visible(timeout=30000)
+    expect(toggle).to_have_attribute("aria-label", "Show preview")
+
+    toggle.click()
+    expect(preview).to_be_visible()
+    expect(preview).to_have_attribute("data-source-kind", "inline")
+    expect(editor).to_be_attached()
+    expect(editor).to_be_hidden()
+    expect(toggle).to_have_attribute("aria-label", "Show code")
+    page.wait_for_function(
+        "(id) => window.__curio_reactFlow.getNodes().find((n) => n.id === id).data.loaderView === 'preview'",
+        arg=PRODUCER, timeout=5000,
+    )
+
+    toggle.click()
+    expect(editor).to_be_visible()
+    expect(preview).to_have_count(0)
 
 
 def test_the_node_still_resizes_and_minimizes(

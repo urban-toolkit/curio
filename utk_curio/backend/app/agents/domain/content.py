@@ -896,6 +896,81 @@ def extract_tool_request_attempt(reply: str) -> tuple[str, object]:
     return reply, None
 
 
+_DRAFT_FENCE_RE = re.compile(r"```(?:json|curio\.v1)?\s*\n(.*?)```", re.DOTALL)
+
+
+def extract_package_draft_attempt(reply: str) -> tuple[str, dict | None, str]:
+    """A reply's package build request, wherever the model put it.
+
+    The ONE reader of the Package Builder's output contract, used by the
+    delegated route (``turns/delegates``) and by a direct chat
+    (``tool_rounds``): the same agent must be understood the same way whoever
+    called it. Candidates, in order: the whole reply when it is one JSON
+    object, then every ```/```json/```curio.v1 fenced block. A candidate may
+    be the build request itself, ``{"packageDraft": {...}}``, or a
+    ``package.draft.apply`` toolRequest whose ``params`` are the request
+    (unwrapped, never executed here). It counts only with ``mode``
+    ('create' or 'extend') and a ``manifest`` object, so chatty JSON never
+    parses as a draft by accident.
+
+    Returns ``(reply_without_the_claimed_block, payload, "")`` or
+    ``(reply, None, why_not)``; ``why_not`` names the decode or shape error
+    so a correction round has something to correct against.
+    """
+    if not isinstance(reply, str) or not reply.strip():
+        return reply, None, "the delegate replied with no text at all"
+    candidates: list[tuple[str, tuple[int, int] | None]] = []
+    whole = reply.strip()
+    if whole.startswith("{"):
+        candidates.append((whole, None))
+    for match in _DRAFT_FENCE_RE.finditer(reply):
+        candidates.append((match.group(1).strip(), match.span()))
+    if not candidates:
+        return reply, None, (
+            "no JSON build request found in the reply: it must be ONE JSON "
+            "object, either the whole reply or a single ```json fenced block. "
+            "Prose describing the package is not a build request"
+        )
+    decode_errors: list[str] = []
+    shape_errors: list[str] = []
+    for body, span in candidates:
+        try:
+            payload = json.loads(body)
+        except (ValueError, TypeError) as exc:
+            decode_errors.append(str(exc))
+            continue
+        if not isinstance(payload, dict):
+            shape_errors.append(f"the JSON is a {type(payload).__name__}, not an object")
+            continue
+        tool_req = payload.get("toolRequest")
+        if (isinstance(tool_req, dict)
+                and tool_req.get("tool") == "package.draft.apply"
+                and isinstance(tool_req.get("params"), dict)):
+            payload = tool_req["params"]  # dev/90 A7: unwrap, never execute
+        wrapped = payload.get("packageDraft")
+        inner = wrapped if isinstance(wrapped, dict) else payload
+        if (isinstance(inner, dict) and inner.get("mode") in ("create", "extend")
+                and isinstance(inner.get("manifest"), dict)):
+            stripped = "" if span is None else (reply[:span[0]] + reply[span[1]:]).strip()
+            return stripped, inner, ""
+        keys = ", ".join(sorted(k for k in inner if isinstance(k, str))[:12]) or "none"
+        shape_errors.append(
+            "the JSON parsed but is not a build request — it must carry "
+            f"\"mode\" ('create' or 'extend') and a \"manifest\" object (top-level "
+            f"keys were: {keys})"
+        )
+    if decode_errors and not shape_errors:
+        # The overwhelmingly common weak-model failure: a long body containing
+        # an embedded source file, cut off mid-string. Say so explicitly —
+        # "invalid JSON" alone does not tell the model what to do differently.
+        return reply, None, (
+            f"the JSON did not parse ({decode_errors[0]}). If the reply was cut "
+            "off mid-object, re-emit the COMPLETE build request and keep the "
+            "file bodies short enough to finish"
+        )
+    return reply, None, (shape_errors or decode_errors)[0]
+
+
 def parse_delegate_request_verbose(raw: object) -> tuple[dict | None, list[str]]:
     """Validate one ``delegateRequest`` payload, naming what is wrong: the
     sibling :func:`parse_tool_request_verbose` has for tools. A native

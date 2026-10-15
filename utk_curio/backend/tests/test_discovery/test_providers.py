@@ -173,6 +173,34 @@ class TestSocrata:
             provider.describe(bad)
 
 
+class TestSocrataRecognisesItsLinks:
+    """The links a 4x4 appears in, including the dataset page a portal shows and
+    a model copies (``/<Category>/<Title>/<4x4>``): the probe refines them and
+    the agents' roster recovers a dataset's coordinate from them."""
+
+    @pytest.mark.parametrize("url", [
+        "https://data.cityofchicago.org/resource/bbvz-uum9.json",
+        "https://data.cityofchicago.org/api/views/bbvz-uum9.json",
+        "https://data.cityofchicago.org/d/bbvz-uum9",
+        "https://data.cityofchicago.org/Facilities-Geographic-Boundaries/Boundaries-Neighborhoods/bbvz-uum9",
+        "https://data.cityofchicago.org/Facilities-Geographic-Boundaries/Boundaries-Neighborhoods/bbvz-uum9/",
+        "https://data.cityofchicago.org/Facilities-Geographic-Boundaries/Boundaries-Neighborhoods/bbvz-uum9?x=1",
+    ])
+    def test_a_dataset_link_names_its_4x4(self, url):
+        from utk_curio.backend.app.discovery.providers import socrata
+
+        assert socrata.recognize(url) == "bbvz-uum9"
+
+    @pytest.mark.parametrize("url", [
+        "https://data.cityofchicago.org/browse?q=bike+routes",
+        "https://data.cityofchicago.org/stories/s/abcd-efgh/more",
+    ])
+    def test_a_page_that_is_not_a_dataset_names_none(self, url):
+        from utk_curio.backend.app.discovery.providers import socrata
+
+        assert socrata.recognize(url) is None
+
+
 class TestCkan:
     def test_one_package_becomes_one_row_per_file(self):
         """Curio's unit is the file, so a package with four CSVs is four rows.

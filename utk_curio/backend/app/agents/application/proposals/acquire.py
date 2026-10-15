@@ -95,6 +95,41 @@ def _acquire_confirmed_picks(rows: list[dict]) -> list[dict]:
     return summaries
 
 
+def _install_acquired_picks(project_id: str, rows: list[dict], user) -> list[dict]:
+    """Add every downloaded pick to the dataflow, as **Add to project** does.
+
+    A portal dataset the user confirmed is downloaded into their Data Catalog
+    (``_acquire_confirmed_picks``); confirming it is also choosing it for this
+    dataflow, so it is installed here through the same domain service the
+    reviewed ``dataset.install`` apply uses. A pick whose install fails stays
+    ``imported``: its file is in the account store and still loads. Returns one
+    summary per install attempted. ``user`` is the acting user (the request's,
+    or the one a Solve's entry resolved).
+    """
+    from utk_curio.backend.app.datasets.application.catalog_service import (
+        DatasetCatalogService,
+    )
+
+    summaries: list[dict] = []
+    service = None
+    for row in rows:
+        if not (row.get("lane") == "catalog" and row.get("imported") and row.get("discoverySource")
+                and row.get("datasetId") and not row.get("installed")):
+            continue
+        service = service or DatasetCatalogService(user)
+        try:
+            service.install_dataset(project_id, row["datasetId"])
+        except Exception as exc:  # noqa: BLE001 - the file still loads from the account store
+            log.warning("Could not install the downloaded dataset %s into project %s",
+                        row["datasetId"], project_id, exc_info=True)
+            summaries.append({"datasetId": row["datasetId"], "status": "failed",
+                              "error": str(exc)[:200]})
+            continue
+        row["installed"] = True
+        summaries.append({"datasetId": row["datasetId"], "status": "installed"})
+    return summaries
+
+
 def _acquisition_outcome(acquisitions: list[dict]) -> dict | None:
     """What the confirmation says when no builder was started: a download still
     running, or one that failed."""
@@ -144,6 +179,26 @@ def _settle_discovery_acquisitions(user_key: str, project_id: str) -> None:
         fresh = projects_storage.read_spec(user_key, project_id)
         if fresh is not None and agents_dataset_resolution.settle_acquisitions(fresh, held):
             projects_storage.write_spec(user_key, project_id, fresh)
+        else:
+            return
+    # A download that landed after the confirmation is added to the dataflow now,
+    # as one that landed in time was (``_install_acquired_picks``). The install
+    # writes the spec itself, so it runs outside the lock, and the picks are
+    # marked installed on a fresh read.
+    settled = [
+        pick for state in agents_dataset_resolution.selection_states(fresh)
+        for pick in state.get("picks") or []
+        if isinstance(pick, dict)
+    ]
+    installed = {s["datasetId"] for s in _install_acquired_picks(project_id, settled, user)
+                 if s["status"] == "installed"}
+    if installed:
+        with projects_storage.spec_write_lock(user_key, project_id):
+            fresh = projects_storage.read_spec(user_key, project_id)
+            if fresh is not None:
+                for dataset_id in installed:
+                    agents_dataset_resolution.mark_dataset_installed(fresh, dataset_id)
+                projects_storage.write_spec(user_key, project_id, fresh)
 
 
 def _discovery_service():
@@ -398,17 +453,30 @@ def _mint_row_acquirable(row: dict, roster: "_LazyRoster") -> None:
       whose ``resourceId`` is that same URL, so what is downloaded is what was
       probed.
 
-    A row with a plain link and no coordinate is tried as a ``direct`` row: the
-    coordinate is minted here, after parsing, so it is never model-supplied and
-    never meets the parser's length cap. It stays only when the row qualifies.
+    A row with a plain link and no coordinate is first matched to a configured
+    portal (``_LazyRoster.portal_coordinate``: the link's host and a dataset id
+    the provider recognises), else tried as a ``direct`` row: the coordinate is
+    minted here, after parsing, so it is never model-supplied and never meets
+    the parser's length cap. It stays only when the row qualifies.
     A downloadable row offers that and nothing else, so it carries no portal
     steps.
     """
     row.pop("acquirable", None)
     minted = False
+    # A search result names its source by the bare id (``source.x``) and the
+    # model copies it; the roster and the download key sources by ``dirName``.
+    resolved = roster.resolve(row.get("sourceId")) if row.get("sourceId") else None
+    if resolved:
+        row["sourceId"] = resolved
     if not (row.get("sourceId") and row.get("resourceId")) and str(row.get("url") or "").startswith("https://"):
-        direct = roster.direct()
-        if direct:
+        # A link to a dataset on a configured portal is that portal's resource:
+        # its connector downloads it, whatever page the link opens.
+        portal = roster.portal_coordinate(row["url"])
+        direct = None if portal else roster.direct()
+        if portal:
+            row["sourceId"], row["resourceId"] = portal
+            minted = True
+        elif direct:
             row["sourceId"], row["resourceId"] = direct, row["url"]
             minted = True
     if _acquirable(row, roster):

@@ -522,6 +522,89 @@ class TestAnAcquirableRowIsDownloaded:
         assert agent_jobs.latest_job(h.ukey, h.load) is None
 
 
+#: The 2026-10-14 field case: the Finder found the dataset with discovery.search
+#: but wrote only its portal link, no coordinate.
+PORTAL_LINK = "https://data.cityofchicago.org/Facilities-Geographic-Boundaries/Boundaries-Neighborhoods/bbvz-uum9"
+LINK_ONLY_CANDIDATES = json.dumps({"datasetCandidates": {"lanes": {
+    "external": [{"name": "Neighborhoods_2012b", "sourceType": "discovery", "url": PORTAL_LINK}],
+    "catalog": [],
+}}})
+
+
+class TestAConfirmedPortalDatasetJoinsTheDataflow:
+    """A portal dataset the user confirms is downloaded into their Data Catalog
+    as a new dataset, added to the dataflow, and is what the loader reads."""
+
+    def _harness(self, client, user, token, monkeypatch, fake):
+        roster = packages_roster._LazyRoster
+        monkeypatch.setattr(packages_roster, "_LazyRoster", lambda: roster({CHICAGO: {
+            **ROSTER[CHICAGO], "baseUrl": "https://data.cityofchicago.org", "kind": "portal",
+        }}))
+        monkeypatch.setattr(acquire, "_discovery_service", lambda: fake)
+        monkeypatch.setattr(acquire, "_DISCOVERY_APPLY_WAIT_S", 0.2)
+        installs: list = []
+        from utk_curio.backend.app.datasets.application import catalog_service
+
+        monkeypatch.setattr(catalog_service.DatasetCatalogService, "install_dataset",
+                            lambda self, project_id, dataset_id: installs.append((project_id, dataset_id)))
+        h, finder_id = _await_candidates(client, user, token, monkeypatch,
+                                         discover_replies=[LINK_ONLY_CANDIDATES])
+        monkeypatch.setattr(
+            'utk_curio.backend.app.agents.application.verify.verify_external_source',
+            lambda url, **k: dict(PORTAL_OBSERVATION),
+        )
+        return h, finder_id, installs
+
+    def test_a_portal_link_is_downloaded_through_its_portal_and_added(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="hoods.csv")
+        fake = _FakeDiscovery(started={"dataset": {"id": dataset_id}, "alreadyPresent": True})
+        h, finder_id, installs = self._harness(client, user, token, monkeypatch, fake)
+        loader = f'import pandas as pd\nreturn pd.read_csv(curio_data_path("{dataset_id}"))'
+        monkeypatch.setattr(
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn',
+            lambda config, messages, **k: (
+                "Title" if messages[0].get("content") == titles.TITLE_PROMPT else loader
+            ),
+        )
+        body = _select(h, finder_id, [{"lane": "external", "key": PORTAL_LINK}]).get_json()
+        assert fake.calls == [(CHICAGO, "bbvz-uum9", None)]
+        pick = body["picks"][0]
+        assert pick["lane"] == "catalog" and pick["datasetId"] == dataset_id
+        assert pick["installed"] is True and pick["imported"] is True
+        assert installs == [(h.pid, dataset_id)]
+        said = " ".join(str(t.get("text") or "") for t in h.session_turns(finder_id))
+        assert "added to this dataflow" in said
+        events = _drain(h, body["delegated"]["attachmentId"])
+        assert next(p for k, p in events if k == "done")["verdict"] == "pass"
+        assert f'curio_data_path("{dataset_id}")' in h.node_content(h.load)
+
+    def test_a_download_that_lands_later_is_added_when_it_settles(
+        self, app, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        fake = _FakeDiscovery(started={"jobId": "job-1", "status": "queued"}, job={"status": "running"})
+        h, finder_id, installs = self._harness(client, user, token, monkeypatch, fake)
+        body = _select(h, finder_id, [{"lane": "external", "key": PORTAL_LINK}]).get_json()
+        assert body["picks"][0]["acquiring"] == {"jobId": "job-1"} and installs == []
+
+        from utk_curio.backend.app.datasets.repositories import user_store
+
+        monkeypatch.setattr(
+            user_store.UserDatasetRepository, "discovery_resource_index",
+            lambda self: {(CHICAGO, "bbvz-uum9"): "source.hoods"},
+        )
+        monkeypatch.setattr(spec_reads, "_acting_user", lambda: user)
+        acquire._settle_discovery_acquisitions(h.ukey, h.pid)
+        record = dr.source_record(h.spec(), h.load)
+        assert record["status"] == dr.STATE_RESOLVED
+        assert record["picks"][0]["datasetId"] == "source.hoods"
+        assert record["picks"][0]["installed"] is True
+        assert installs == [(h.pid, "source.hoods")]
+
+
 class TestSettlingAcquisitions:
     def _spec(self, picks, status=dr.STATE_AWAITING_INSTALL):
         return {"dataflow": {"agentAttachments": [{

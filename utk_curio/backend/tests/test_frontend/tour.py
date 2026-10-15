@@ -49,6 +49,12 @@ def _switch(name: str) -> bool:
     return os.environ.get(name, "1").strip().lower() not in ("0", "false", "no", "off")
 
 
+def caption_pos() -> str:
+    """``CURIO_TOUR_CAPTION_POS=top`` moves the caption bar and the chapter chip
+    under the top menu bar; anything else keeps them at the foot of the frame."""
+    return "top" if os.environ.get("CURIO_TOUR_CAPTION_POS", "bottom").strip().lower() == "top" else "bottom"
+
+
 def captions_on() -> bool:
     """Whether the overlay narrates: captions, chapter cards and the chapter chip.
 
@@ -121,14 +127,34 @@ _INSTALL_OVERLAY_JS = r"""() => {
         70%  { box-shadow: 0 0 0 14px rgba(255,138,0,0); }
         100% { box-shadow: 0 0 0 0 rgba(255,138,0,0); }
       }
+      /* A click: a yellow ring that grows from the cursor tip and fades, as screen
+         recorders draw it. Two of them per click, the second a beat later. */
+      @keyframes curio-tour-ripple {
+        0%   { transform: translate(-50%, -50%) scale(.15); opacity: 1; }
+        100% { transform: translate(-50%, -50%) scale(1);   opacity: 0; }
+      }
+      .curio-tour-ripple {
+        position: absolute; width: 66px; height: 66px; border-radius: 50%;
+        border: 4px solid #FFC72C; box-shadow: 0 0 0 1px rgba(17,19,24,.35), inset 0 0 0 1px rgba(17,19,24,.25);
+        animation: curio-tour-ripple 760ms cubic-bezier(.2,.7,.3,1) forwards;
+      }
+      /* What is being dragged: a translucent copy of it, under the cursor. */
+      .curio-tour-ghost {
+        position: absolute; opacity: .85; margin: 0 !important;
+        box-shadow: 0 12px 28px rgba(0,0,0,.28); border-radius: 8px;
+        transform-origin: 0 0; transition: none;
+      }
     `;
 
-    // Caption bar: the running narration, bottom-centre so it sits clear of
-    // the top menu bar and the left node rail.
+    // Caption bar: the running narration. Bottom-centre by default, clear of
+    // the top menu bar and the left node rail; CURIO_TOUR_CAPTION_POS=top puts
+    // it just under the menu bar instead, for scenes whose action is at the
+    // foot of the frame (a chat composer, say).
+    const captionTop = (window.__curioTourCaptionPos || 'bottom') === 'top';
     const caption = document.createElement('div');
     caption.className = 'curio-tour-fade';
     Object.assign(caption.style, {
-        position: 'absolute', left: '50%', bottom: '26px',
+        position: 'absolute', left: '50%', [captionTop ? 'top' : 'bottom']: captionTop ? '74px' : '26px',
         transform: 'translateX(-50%)', maxWidth: '900px', opacity: '0',
         background: 'rgba(17,19,24,.92)', color: '#fff',
         border: '1px solid rgba(255,255,255,.12)', borderRadius: '12px',
@@ -151,7 +177,7 @@ _INSTALL_OVERLAY_JS = r"""() => {
     const chip = document.createElement('div');
     chip.className = 'curio-tour-fade';
     Object.assign(chip.style, {
-        position: 'absolute', right: '18px', bottom: '26px', opacity: '0',
+        position: 'absolute', right: '18px', [captionTop ? 'top' : 'bottom']: captionTop ? '74px' : '26px', opacity: '0',
         background: 'rgba(17,19,24,.82)', color: 'rgba(255,255,255,.85)',
         border: '1px solid rgba(255,255,255,.12)', borderRadius: '999px',
         padding: '6px 14px', fontSize: '12px', letterSpacing: '.4px',
@@ -181,12 +207,10 @@ _INSTALL_OVERLAY_JS = r"""() => {
         <path d="M5 3l14 8.5-6.2 1.4L9.6 20 5 3z" fill="#111318"
               stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>
       </svg>`;
+    // Where click ripples and the drag ghost are drawn, under the cursor.
     const clickHalo = document.createElement('div');
-    Object.assign(clickHalo.style, {
-        position: 'absolute', width: '34px', height: '34px', marginLeft: '-17px',
-        marginTop: '-17px', borderRadius: '50%', opacity: '0',
-        background: 'rgba(255,138,0,.35)', transition: 'transform 320ms ease, opacity 320ms ease',
-    });
+    Object.assign(clickHalo.style, { position: 'absolute', inset: '0' });
+    let ghost = null, ghostOffset = [0, 0];
 
     // Title card: full-frame chapter break.
     const card = document.createElement('div');
@@ -242,20 +266,62 @@ _INSTALL_OVERLAY_JS = r"""() => {
         },
         cursorTo(x, y) {
             cursor.style.opacity = '1';
+            cursor.style.transition = 'transform 460ms cubic-bezier(.22,.61,.36,1), opacity 300ms ease';
             cursor.style.transform = `translate(${x}px, ${y}px)`;
-            clickHalo.style.transform = `translate(${x}px, ${y}px) scale(.2)`;
+        },
+        // A step of a drag: no easing of its own, the caller paces the steps.
+        cursorStep(x, y) {
+            cursor.style.opacity = '1';
+            cursor.style.transition = 'opacity 300ms ease';
+            cursor.style.transform = `translate(${x}px, ${y}px)`;
+            if (ghost) ghost.style.transform = `translate(${x - ghostOffset[0]}px, ${y - ghostOffset[1]}px) scale(.96)`;
         },
         hideCursor() { cursor.style.opacity = '0'; },
         clickPulse(x, y) {
-            clickHalo.style.transition = 'none';
-            clickHalo.style.transform = `translate(${x}px, ${y}px) scale(.2)`;
-            clickHalo.style.opacity = '1';
-            requestAnimationFrame(() => {
-                clickHalo.style.transition = 'transform 340ms ease, opacity 340ms ease';
-                clickHalo.style.transform = `translate(${x}px, ${y}px) scale(1)`;
-                clickHalo.style.opacity = '0';
-            });
+            for (const delay of [0, 220]) {
+                const r = document.createElement('div');
+                r.className = 'curio-tour-ripple';
+                Object.assign(r.style, { left: x + 'px', top: y + 'px', animationDelay: delay + 'ms', opacity: delay ? '0' : '1' });
+                clickHalo.appendChild(r);
+                setTimeout(() => r.remove(), 1000 + delay);
+            }
         },
+        // Start dragging: copy the element under the press point; the copy then
+        // follows the cursor (cursorStep) until dragEnd.
+        dragStart(el, x, y) {
+            api.dragEnd();
+            if (!el) return;
+            const rect = el.getBoundingClientRect();
+            ghost = el.cloneNode(true);
+            ghost.removeAttribute('id');
+            ghost.classList.add('curio-tour-ghost');
+            const cs = getComputedStyle(el);
+            // The copy is shown outside its own panel, so it takes the colour it is
+            // seen on: its own background, else the nearest ancestor's (a palette
+            // tile is transparent, white on the dark rail).
+            // A faint tint (an rgba with little alpha) counts as transparent too: the
+            // agents palette row is white text on a 5 % white wash over the dark panel.
+            const seeThrough = (c) => {
+                if (!c || c === 'transparent') return true;
+                const m = c.match(/rgba?\(([^)]+)\)/);
+                const parts = m ? m[1].split(',').map(Number) : [];
+                return parts.length === 4 && parts[3] < 0.5;
+            };
+            let bg = cs.backgroundColor, up = el;
+            while (seeThrough(bg) && up.parentElement) {
+                up = up.parentElement; bg = getComputedStyle(up).backgroundColor;
+            }
+            if (seeThrough(bg)) bg = '#ffffff';
+            Object.assign(ghost.style, {
+                left: '0px', top: '0px', width: rect.width + 'px', height: rect.height + 'px',
+                background: bg, color: cs.color, font: cs.font,
+                display: cs.display === 'inline' ? 'inline-block' : cs.display,
+            });
+            ghostOffset = [x - rect.x, y - rect.y];
+            clickHalo.appendChild(ghost);
+            api.cursorStep(x, y);
+        },
+        dragEnd() { if (ghost) { ghost.remove(); ghost = null; } },
         card(kicker, title, sub) {
             cardKicker.textContent = kicker || '';
             cardTitle.textContent = title || '';
@@ -265,7 +331,7 @@ _INSTALL_OVERLAY_JS = r"""() => {
         hideCard() { card.style.opacity = '0'; },
         clearAll() {
             api.hideCaption(); api.hideCard(); api.ring(null); api.hideCursor();
-            api.chip(null);
+            api.chip(null); api.dragEnd();
         },
     };
     window.__curioTour = api;
@@ -296,6 +362,7 @@ class Tour:
         # the recording, so a mark is also a position in the video.
         self._started = time.monotonic()
         self.marks: list[dict[str, Any]] = []
+        page.add_init_script(f"window.__curioTourCaptionPos = {json.dumps(caption_pos())};")
         page.add_init_script(f"({_INSTALL_OVERLAY_JS})();")
 
     # -- plumbing ---------------------------------------------------------
@@ -431,11 +498,8 @@ class Tour:
         header icons under the canvas chrome).
         """
         point = self.focus(locator, hold=380, ring=ring)
-        if point and self.halo:
-            self._js(
-                "([x, y]) => window.__curioTour.clickPulse(x, y)",
-                [point[0], point[1]],
-            )
+        if point:
+            self.pulse(point[0], point[1])
         if dispatch:
             locator.dispatch_event("click")
         else:
@@ -445,6 +509,94 @@ class Tour:
         # canvas reads as a bug in the app rather than a flourish in the tour.
         self._js("() => window.__curioTour.ring(null)")
         self.beat(hold)
+
+    # -- dragging ---------------------------------------------------------
+
+    def pulse(self, x: float, y: float) -> None:
+        """The click ripple at (x, y), when the halo is on."""
+        if self.halo:
+            self._js("([x, y]) => window.__curioTour.clickPulse(x, y)", [x, y])
+
+    def pointer_move(self, x: float, y: float) -> None:
+        """One step of a drag the mouse is really doing (``page.mouse``): the
+        overlay's cursor (and ghost) follow it."""
+        self._js("([x, y]) => window.__curioTour.cursorStep(x, y)", [x, y])
+
+    def drag_motion(self, source, start, end, *, steps: int = 32, travel_ms: float = 1100) -> None:
+        """Draw a drag from *start* to *end* the way a person makes one.
+
+        The cursor goes to the press point on *source* (a locator), presses
+        (ripple), a translucent copy of *source* lifts and follows the cursor
+        along an eased path, and the release ripples at *end*. Drawing only: the
+        caller delivers the drop itself (the e2e helpers' synthetic drop, which
+        is what reliably reaches React's handlers). Nothing is drawn when the
+        page has no tour overlay.
+        """
+        sx, sy = start
+        ex, ey = end
+        self.point_at(sx, sy, hold=480)
+        self.pulse(sx, sy)
+        self.beat(160)
+        try:
+            handle = source.element_handle()
+        except Exception:  # noqa: BLE001 - a missing source just draws no ghost
+            handle = None
+        self.page.evaluate(_INSTALL_OVERLAY_JS)
+        self.page.evaluate("([el, x, y]) => window.__curioTour.dragStart(el, x, y)", [handle, sx, sy])
+        # A slight arc reads as a hand, a straight line as a robot.
+        lift = min(60.0, abs(ex - sx) * 0.12 + 18)
+        for i in range(1, steps + 1):
+            t = i / steps
+            e = t * t * (3 - 2 * t)  # smoothstep
+            x = sx + (ex - sx) * e
+            y = sy + (ey - sy) * e - lift * 4 * t * (1 - t)
+            self.page.evaluate("([x, y]) => window.__curioTour.cursorStep(x, y)", [x, y])
+            self.page.wait_for_timeout(max(8, travel_ms / steps / self.pace))
+        self.beat(180)
+        self.page.evaluate("() => window.__curioTour.dragEnd()")
+        self.pulse(ex, ey)
+
+    def type_code(self, node_id: str, code: str, *, chars_per_s: float = 45, max_s: float = 6.0) -> None:
+        """Type *code* into a node's Monaco editor, a few characters at a time.
+
+        Not keystrokes: the editor auto-closes brackets and formats on type, so
+        typed Python never round-trips (see ``set_node_code``). The text is
+        appended through ``executeEdits`` at the end of the model instead, with
+        the caret moved after it, which draws exactly what typing would. When
+        the editor already holds the start of *code*, only the rest is typed.
+        The caller still sets the exact text afterwards.
+        """
+        js_editor = """(nodeId) => {
+            const nodeEl = document.querySelector(`.react-flow__node[data-id="${nodeId}"]`);
+            const editorEl = nodeEl && nodeEl.querySelector('.monaco-editor');
+            const eds = (window.monaco && window.monaco.editor.getEditors && window.monaco.editor.getEditors()) || [];
+            return eds.find((e) => editorEl && editorEl.contains(e.getDomNode())) || null;
+        }"""
+        current = self.page.evaluate(f"(id) => {{ const ed = ({js_editor})(id); return ed ? ed.getValue() : null; }}", node_id)
+        if current is None:
+            return
+        editor_box = self.page.locator(f'.react-flow__node[data-id="{node_id}"] .monaco-editor').first.bounding_box()
+        if editor_box:
+            self.point_at(editor_box["x"] + 60, editor_box["y"] + 24, hold=380)
+            self.pulse(editor_box["x"] + 60, editor_box["y"] + 24)
+        keep = current if code.startswith(current) else ""
+        rest = code[len(keep):]
+        if not rest:
+            return
+        chunk = max(1, round(len(rest) / (chars_per_s * max_s))) if len(rest) > chars_per_s * max_s else 1
+        step_ms = max(12, 1000 * chunk / chars_per_s / self.pace)
+        self.page.evaluate(f"""([id, keep]) => {{ const ed = ({js_editor})(id); if (!ed) return;
+            if (ed.getValue() !== keep) ed.setValue(keep); ed.focus(); }}""", [node_id, keep])
+        append = f"""([id, text]) => {{ const ed = ({js_editor})(id); if (!ed) return;
+            const m = ed.getModel(); const end = m.getFullModelRange().getEndPosition();
+            const r = new window.monaco.Range(end.lineNumber, end.column, end.lineNumber, end.column);
+            ed.executeEdits('curio-tour', [{{ range: r, text, forceMoveMarkers: true }}]);
+            const after = m.getFullModelRange().getEndPosition();
+            ed.setPosition(after); ed.revealPosition(after); }}"""
+        for i in range(0, len(rest), chunk):
+            self.page.evaluate(append, [node_id, rest[i:i + chunk]])
+            self.page.wait_for_timeout(step_ms)
+        self.beat(300)
 
     def type_into(self, locator, text: str, *, delay: float = 55) -> None:
         """Fill a field visibly, one key at a time."""

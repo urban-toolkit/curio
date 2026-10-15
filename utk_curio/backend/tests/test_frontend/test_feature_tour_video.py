@@ -656,13 +656,16 @@ def _drag_agent_to(ctx: Ctx, coord: str, point) -> None:
     row = _agent_row(page, coord)
     row.wait_for(state="visible", timeout=20000)
     row.scroll_into_view_if_needed()
-    # Show the viewer where the drag is going before it happens; the synthetic
-    # cursor is the only pointer in the frame.
-    tour.focus(row, hold=700)
+    # Drawn as a person drags it: press on the row, the row's copy follows the
+    # cursor to the drop point, release. The synthetic cursor is the only
+    # pointer in the frame; the drop itself is the synthetic event below.
     resolved = point() if callable(point) else point
     assert resolved, "no drop point resolved for the agent drag"
     client_x, client_y = resolved
-    tour.point_at(client_x, client_y, hold=520)
+    grip = row.bounding_box()
+    if grip:
+        tour.drag_motion(row, (grip["x"] + min(grip["width"] / 2, 60), grip["y"] + grip["height"] / 2),
+                         (client_x, client_y))
     result = page.evaluate(
         _DRAG_TO_CANVAS_JS,
         {
@@ -1087,7 +1090,7 @@ def scene_build(ctx: Ctx) -> None:
     pane = page.locator(".curio-canvas-drop-target").bounding_box()
     if pane:
         tour.point_at(pane["x"] + POS_LOADER[0] + 240, pane["y"] + POS_LOADER[1] + 40)
-    loader_id = drag_to_canvas(page, row, at=POS_LOADER)
+    loader_id = drag_to_canvas(page, row, at=POS_LOADER, pointer=ctx.tour)
     tour.beat(1400)
     tour.hush()
     # The palette strip sits over the pane; from here on the graph is the point.
@@ -1108,7 +1111,7 @@ def scene_build(ctx: Ctx) -> None:
         hold=2200,
     )
     _reset_zoom(page)
-    transform_id = drag_to_canvas(page, page.locator(TRANSFORM_TILE), at=POS_TRANSFORM)
+    transform_id = drag_to_canvas(page, page.locator(TRANSFORM_TILE), at=POS_TRANSFORM, pointer=ctx.tour)
     tour.beat(900)
     _fit_view(page)
 
@@ -1117,7 +1120,7 @@ def scene_build(ctx: Ctx) -> None:
         "The upstream result arrives in the next node as `input_0`.",
         hold=2000,
     )
-    connect_nodes(page, loader_id, transform_id)
+    connect_nodes(page, loader_id, transform_id, pointer=ctx.tour)
     tour.beat(1200)
     tour.hush()
 
@@ -1127,7 +1130,7 @@ def scene_build(ctx: Ctx) -> None:
         hold=2400,
     )
     _center_on(page, transform_id, zoom=0.95)
-    set_node_code(page, transform_id, TRANSFORM_CODE)
+    set_node_code(page, transform_id, TRANSFORM_CODE, pointer=ctx.tour)
     tour.beat(1600)
 
     tour.say("Run the loader", "", hold=1200)
@@ -2387,12 +2390,12 @@ def scene_selection_tag(ctx: Ctx) -> None:
         [at[0], at[1]],
     )
     page.wait_for_timeout(800)
-    reader = drag_to_canvas(page, page.locator("#tile-computation-analysis"), at=(300 + 645, 650 - 415))
+    reader = drag_to_canvas(page, page.locator("#tile-computation-analysis"), at=(300 + 645, 650 - 415), pointer=ctx.tour)
     _fit_nodes(page, [ZIPS_LOADER, reader])
     dismiss_toasts(page)
-    connect_nodes(page, ZIPS_LOADER, reader)
+    connect_nodes(page, ZIPS_LOADER, reader, pointer=ctx.tour)
     frame_node(page, reader, zoom=1.0)
-    set_node_code(page, reader, PICKED_CODE)
+    set_node_code(page, reader, PICKED_CODE, pointer=ctx.tour)
 
     # A selection tag on the map, by ZIP code, dragged into the code.
     _open_tab(page, reader, "widgets")
@@ -2608,10 +2611,10 @@ def scene_quickstart(ctx: Ctx) -> None:
     _reset_zoom(page)
     loader_tile = page.locator(LOADING_TILE)
     tour.focus(loader_tile, hold=600)
-    loader_id = drag_to_canvas(page, loader_tile, at=POS_LOADER)
+    loader_id = drag_to_canvas(page, loader_tile, at=POS_LOADER, pointer=ctx.tour)
     tour.beat(900)
     tour.say("Write a few lines of pandas", "Whatever the code returns flows to the next node.", hold=2200)
-    set_node_code(page, loader_id, QUICKSTART_CODE)
+    set_node_code(page, loader_id, QUICKSTART_CODE, pointer=ctx.tour)
     tour.beat(900)
     tour.focus(node_locator(page, loader_id).locator("svg.fa-circle-play"), hold=500)
     run_node_and_wait(page, loader_id, node_type=LOADER_TYPE)
@@ -2627,10 +2630,10 @@ def scene_quickstart(ctx: Ctx) -> None:
     _reset_zoom(page)
     vega_tile = page.locator(VEGA_TILE)
     tour.focus(vega_tile, hold=600)
-    vega_id = drag_to_canvas(page, vega_tile, at=POS_TRANSFORM)
+    vega_id = drag_to_canvas(page, vega_tile, at=POS_TRANSFORM, pointer=ctx.tour)
     tour.beat(900)
     _fit_view(page)
-    connect_nodes(page, loader_id, vega_id)
+    connect_nodes(page, loader_id, vega_id, pointer=ctx.tour)
     tour.beat(900)
     _set_node_grammar(ctx, vega_id, QUICKSTART_SPEC)
     tour.beat(1200)
@@ -2665,8 +2668,8 @@ def scene_collaboration(ctx: Ctx) -> None:
     tour.beat(900)
     _rename_dataflow(ctx, "Shared dataflow")
     _reset_zoom(page)
-    loader_id = drag_to_canvas(page, page.locator(LOADING_TILE), at=POS_LOADER)
-    set_node_code(page, loader_id, QUICKSTART_CODE)
+    loader_id = drag_to_canvas(page, page.locator(LOADING_TILE), at=POS_LOADER, pointer=ctx.tour)
+    set_node_code(page, loader_id, QUICKSTART_CODE, pointer=ctx.tour)
     tour.beat(700)
     with page.expect_response(
         lambda r: "/api/projects" in r.url and r.request.method in ("POST", "PUT") and r.ok,

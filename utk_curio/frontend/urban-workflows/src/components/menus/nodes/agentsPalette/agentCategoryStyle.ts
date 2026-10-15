@@ -1,4 +1,5 @@
 import {
+  faBookOpen,
   faCircleNodes,
   faClipboardCheck,
   faCube,
@@ -98,4 +99,29 @@ export function agentCategoryKey(category: string | null | undefined): AgentPale
 /** The glyph for a category-ish string, with the same fallback. */
 export function agentCategoryIcon(category: string | null | undefined): IconDefinition {
   return AGENT_CATEGORY_ICON[agentCategoryKey(category)];
+}
+
+/**
+ * Agents drawn with a glyph of their own instead of their category's, keyed by
+ * agent id (the coordinate without its version). The Researcher is a `node`
+ * agent and would otherwise look like the Node Builder: it researches and
+ * writes its findings up as notes, so an open book, as its workshop slide draws
+ * it. Chat and the Connection Builder had glyphs of their own until they left
+ * the roster (the Researcher took over Chat, the Node Builder the Connection
+ * Builder); only built-ins are listed here.
+ */
+export const AGENT_ICON_OVERRIDE: Readonly<Record<string, IconDefinition>> = {
+  "agent.researcher": faBookOpen,
+};
+
+/**
+ * The glyph for one agent: its own when it has one, else its category's.
+ * *ref* is a dirName or coordinate (`agent.researcher@1.0.0`) or a bare id.
+ */
+export function agentIcon(
+  ref: string | null | undefined,
+  category: string | null | undefined,
+): IconDefinition {
+  const id = ref ? ref.split("@")[0] : "";
+  return AGENT_ICON_OVERRIDE[id] ?? agentCategoryIcon(category);
 }

@@ -33,6 +33,14 @@ from utk_curio.backend.config import CURIO_DEFAULT_SAVE_NODE_OUTPUT
 # had a chance to respond.
 SANDBOX_EXEC_TIMEOUT = 600
 
+# Why a run was asked for, when it is not a user's Play. A type probe is a
+# background run that finds the data type a Data Loading node returns, for the
+# node's preview (plans/data-loading-expressive-preview-memo.md): it never saves
+# a dataset, and the journal records it under this kind so the node never shows
+# its failure as its own and an agent can tell it apart.
+PURPOSE_TYPE_PROBE = "type-probe"
+PURPOSES = (PURPOSE_TYPE_PROBE,)
+
 # The route each language's runs were served by, kept as the log label.
 _LABELS = {"python": "/processPythonCode", "javascript": "/processJavaScriptCode"}
 
@@ -51,12 +59,19 @@ class NodeRun:
     # The wired circles, in circle order: the value on circle k is the code's
     # input_k (sandbox/util/input_names.py).
     input_slots: tuple[int, ...] | None = None
+    # One of PURPOSES, or None for a run the user asked for.
+    purpose: str | None = None
 
     @classmethod
     def from_request_json(cls, body: dict) -> "NodeRun":
         save_output_dataset = body.get('saveOutputDataset', CURIO_DEFAULT_SAVE_NODE_OUTPUT)
         if isinstance(save_output_dataset, str):
             save_output_dataset = save_output_dataset.strip().lower() not in ('0', 'false', 'no', 'off')
+        purpose = body.get('purpose')
+        purpose = purpose if purpose in PURPOSES else None
+        if purpose == PURPOSE_TYPE_PROBE:
+            # Whatever the request says: a probe only looks at the type.
+            save_output_dataset = False
         return cls(
             code=body['code'],
             node_type=body['nodeType'],
@@ -66,6 +81,7 @@ class NodeRun:
             node_name=body.get('nodeName') or None,
             save_output_dataset=bool(save_output_dataset),
             input_slots=parse_input_slots(body.get('inputSlots')),
+            purpose=purpose,
         )
 
 
@@ -200,7 +216,7 @@ def exec_user_key(user):
         return None
 
 
-def record_runtime_outcome(user, *, node_id, dataflow_id, code, stdout, stderr, output, duration_ms):
+def record_runtime_outcome(user, *, node_id, dataflow_id, code, stdout, stderr, output, duration_ms, kind=""):
     """Per-node runtime journal write (memo dev/67-2, DEC-052).
 
     Best-effort and observational: agents read this to answer "what ran, what
@@ -217,6 +233,7 @@ def record_runtime_outcome(user, *, node_id, dataflow_id, code, stdout, stderr, 
             code=code, stdout=stdout, stderr=stderr, output=output,
             started_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             duration_ms=duration_ms,
+            kind=kind,
         )
     except Exception:
         pass
@@ -378,6 +395,7 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         dataflow_id=run.dataflow_id,
         code=run.code, stdout=stdout, stderr=stderr, output=output,
         duration_ms=(time.perf_counter() - t0) * 1000.0,
+        kind=run.purpose or "",
     )
 
     # Deliberately a SIBLING of the journal call, not a line inside it:
@@ -426,6 +444,7 @@ def _unavailable_reply(user, run: NodeRun, input_ref: dict, unavailable: dict, *
     record_runtime_outcome(
         user, node_id=run.node_id, dataflow_id=run.dataflow_id, code=run.code,
         stdout=[], stderr=stderr, output=output, duration_ms=duration_ms,
+        kind=run.purpose or "",
     )
     _monitor_counters.record_execution(
         language="python", node_type=run.node_type, ok=False, duration_ms=duration_ms,

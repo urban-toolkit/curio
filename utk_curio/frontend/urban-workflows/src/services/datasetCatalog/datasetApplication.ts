@@ -55,6 +55,8 @@ export type DatasetLoaderNodeOptions = {
   appliedDatasets: Record<string, { id: string; title: string; uri: string; path?: string | null; format: string }>;
   /** Linkage marker — present only on palette-created nodes (see ``DatasetNodeSource``). */
   datasetSource: DatasetNodeSource;
+  /** A loader dropped from the palette opens on its preview (utils/loaderView). */
+  loaderView: "preview";
 };
 
 function datasetIdOf(dataset: DatasetLike): string {
@@ -84,6 +86,7 @@ export function buildDatasetLoaderNodeOptions(
     datasetRefs: refs,
     appliedDatasets: applied,
     datasetSource: buildDatasetSource(dataset),
+    loaderView: "preview",
   };
 }
 

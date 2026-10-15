@@ -394,7 +394,7 @@ def frame_node(page, node_id: str, *, zoom: float = 0.9,
 
 
 def drag_to_canvas(page, source, *, at: tuple[float, float] | None = None,
-                   timeout: float = 15000) -> str:
+                   timeout: float = 15000, pointer=None) -> str:
     """Drag *source* onto the canvas and return the id of the node it created.
 
     *source* is a locator for anything draggable that the canvas accepts: a
@@ -411,6 +411,10 @@ def drag_to_canvas(page, source, *, at: tuple[float, float] | None = None,
 
     Ids are ``uuid4`` and assigned inside ``createCodeNode``, so the only way to
     learn the new one is to diff the canvas before and after.
+
+    *pointer* is for recordings: an object with ``drag_motion(source, start,
+    end)`` (the video tour) that draws the drag as a person makes it before the
+    drop is delivered. ``None`` (every test) changes nothing.
     """
     before = {node["id"] for node in canvas_nodes(page)}
 
@@ -433,6 +437,11 @@ def drag_to_canvas(page, source, *, at: tuple[float, float] | None = None,
 
     source.wait_for(state="visible", timeout=timeout)
     source.scroll_into_view_if_needed()
+    if pointer is not None:
+        grip = source.bounding_box()
+        if grip:
+            pointer.drag_motion(source, (grip["x"] + min(grip["width"] / 2, 60), grip["y"] + grip["height"] / 2),
+                                (client_x, client_y))
     result = page.evaluate(
         _DRAG_TO_CANVAS_JS,
         {
@@ -622,6 +631,36 @@ def drag_to_canvas_with_the_mouse(page, grip, *, at: tuple[float, float],
     return node_id
 
 
+# A Data Loading node (and a package's loader) opens on its preview, with its
+# editor mounted but hidden under it (plans/data-loading-expressive-preview-memo.md).
+# Its Code pill shows what a press shows: the code from the preview, the
+# preview (an eye) from the code view.
+LOADER_PREVIEW = '[data-testid="data-loader-preview"]'
+LOADER_VIEW_TOGGLE = '[data-testid="loader-view-toggle"]'
+
+
+def show_node_code(page, node_id: str, *, timeout: float = 15000) -> bool:
+    """Show a loader's code view, as a person does with its header's Code pill.
+
+    Returns whether the node was on its preview. Any other node, or a loader
+    already showing its code, is left as it is. Two presses at most: from
+    another tab the first opens the pane as it was left, the second leaves the
+    preview.
+    """
+    node_el = node_locator(page, node_id)
+    toggle = node_el.locator(LOADER_VIEW_TOGGLE).first
+    switched = False
+    for _ in range(2):
+        if not toggle.count() or not node_el.locator(LOADER_PREVIEW).first.is_visible():
+            break
+        toggle.dispatch_event("click")
+        switched = True
+        page.wait_for_timeout(100)
+    if switched:
+        node_el.locator(".monaco-editor").first.wait_for(state="visible", timeout=timeout)
+    return switched
+
+
 # Monaco is bundled and pinned on ``window`` by index.tsx, so the editor
 # instance is reachable; it is found by DOM containment because a canvas holds
 # one editor per code node and ``getEditors()`` returns all of them.
@@ -648,7 +687,7 @@ _NODE_CODE_IS_JS = r"""({ nodeId, code }) => {
 }"""
 
 
-def set_node_code(page, node_id: str, code: str, *, timeout: float = 15000) -> None:
+def set_node_code(page, node_id: str, code: str, *, timeout: float = 15000, pointer=None) -> None:
     """Replace a code node's source with *code*.
 
     Goes through Monaco's ``setValue``, which fires
@@ -661,6 +700,9 @@ def set_node_code(page, node_id: str, code: str, *, timeout: float = 15000) -> N
     ``autoClosingBrackets: "always"`` and ``formatOnType: true``, so typed
     Python comes back with extra brackets and re-indentation and never
     round-trips.
+
+    *pointer* is for recordings (the video tour): the code is then typed in
+    visibly before it is set. ``None`` (every test) changes nothing.
     """
     node_el = node_locator(page, node_id)
     node_el.scroll_into_view_if_needed()
@@ -673,7 +715,13 @@ def set_node_code(page, node_id: str, code: str, *, timeout: float = 15000) -> N
             code_tab.dispatch_event("click")
     except PlaywrightTimeoutError:
         pass
+    # A loader on its preview is edited from its code view.
+    show_node_code(page, node_id, timeout=timeout)
     node_el.locator(".monaco-editor").first.wait_for(state="visible", timeout=timeout)
+    if pointer is not None:
+        # Recordings: the code is typed in first (``Tour.type_code``); the exact
+        # setValue below still decides what the node holds.
+        pointer.type_code(node_id, code)
 
     deadline = time.time() + timeout / 1000
     result = None
@@ -724,7 +772,7 @@ def _handle_locator(page, node_id: str, handle_id: str):
 
 def connect_nodes(page, source_id: str, target_id: str, *,
                   source_handle: str = "out", target_handle: str = "in",
-                  timeout: float = 15000) -> str:
+                  timeout: float = 15000, pointer=None) -> str:
     """Drag an edge from *source_id*'s output handle to *target_id*'s input.
 
     Returns the edge id, which React Flow derives deterministically as
@@ -735,6 +783,10 @@ def connect_nodes(page, source_id: str, target_id: str, *,
     lone pointerup on the target handle. The intermediate moves matter for the
     same reason. Coordinates come from ``bounding_box()`` so the viewport's CSS
     transform is already baked in.
+
+    *pointer* is for recordings (the video tour): the drag is then made at a
+    human pace, with the tour's cursor on the mouse and a ripple at the press
+    and the release. ``None`` (every test) keeps the fast 16-step drag.
     """
     src = _handle_locator(page, source_id, source_handle)
     tgt = _handle_locator(page, target_id, target_handle)
@@ -785,9 +837,23 @@ def connect_nodes(page, source_id: str, target_id: str, *,
     tgt_x = tgt_box["x"] + tgt_box["width"] / 2
     tgt_y = tgt_box["y"] + tgt_box["height"] / 2
 
+    if pointer is not None:
+        pointer.point_at(src_x, src_y, hold=520)
+        pointer.pulse(src_x, src_y)
     page.mouse.move(src_x, src_y)
     page.mouse.down()
-    page.mouse.move(tgt_x, tgt_y, steps=16)
+    if pointer is None:
+        page.mouse.move(tgt_x, tgt_y, steps=16)
+    else:
+        steps = 36
+        for i in range(1, steps + 1):
+            t = i / steps
+            e = t * t * (3 - 2 * t)
+            x, y = src_x + (tgt_x - src_x) * e, src_y + (tgt_y - src_y) * e
+            page.mouse.move(x, y)
+            pointer.pointer_move(x, y)
+            page.wait_for_timeout(30)
+        pointer.pulse(tgt_x, tgt_y)
     # A second move on the spot: React Flow only marks a handle "connectable"
     # from a pointermove it receives while already over it.
     page.mouse.move(tgt_x, tgt_y)
@@ -903,7 +969,8 @@ def read_node_error_text(node_el) -> str | None:
             # currently visible.
             pass
         output_area = node_el.locator("[data-curio-node-output]").first
-        output_area.wait_for(state="visible", timeout=2000)
+        # Hidden under a loader's preview, and readable all the same.
+        output_area.wait_for(state="attached", timeout=2000)
         return output_area.text_content()
     except Exception:
         return None
@@ -918,9 +985,12 @@ def read_node_output_text(page, node_id: str, *, timeout: float = 10000) -> str:
 
     The text is the Jupyter-style counter followed by the result, e.g.
     ``"[1]:Saved to file: xyz"`` or ``"[ ]:No output yet"``.
+
+    Attached, not visible: a loader on its preview keeps the box mounted under
+    it, hidden, and its text is the run's all the same.
     """
     box = node_locator(page, node_id).locator("[data-curio-node-output]").first
-    box.wait_for(state="visible", timeout=timeout)
+    box.wait_for(state="attached", timeout=timeout)
     return box.text_content() or ""
 
 

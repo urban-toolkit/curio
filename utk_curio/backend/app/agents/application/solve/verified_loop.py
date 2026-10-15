@@ -890,6 +890,10 @@ class VerifiedRounds:
             self.grounding_ctx.requested_dataset_ids |= source_grounding.confirmed_dataset_ids(
                 self.confirmed_source
             )
+            # ...and an external source they confirmed holds it as well.
+            self.grounding_ctx.confirmed_urls |= source_grounding.confirmed_external_urls(
+                self.confirmed_source
+            )
         if source_state.get("detail"):
             self.rounds_trace.append(f"source: {str(source_state['detail'])[:160]}")
         return None

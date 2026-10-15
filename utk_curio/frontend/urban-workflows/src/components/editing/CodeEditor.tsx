@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
 import "bootstrap/dist/css/bootstrap.min.css";
 import { NodeType } from "../../constants";
@@ -64,6 +65,12 @@ type CodeEditorProps = {
     /** Read an input's columns for its tags. */
     onLoadColumns?: (slot: number) => void;
     widgetLanguage?: CodeLanguage;
+    /**
+     * Where the missing-library notice goes instead of under the output: a
+     * Data Loading preview's slot, while the editor is hidden under it. The
+     * notice keeps its install state here, so it works the same in either place.
+     */
+    noticeSlot?: HTMLElement | null;
 };
 
 /** dev/117: how long after the last keystroke the code is scanned for a credential literal. */
@@ -127,6 +134,7 @@ function CodeEditor({
     stripInputs = NO_INPUTS,
     onLoadColumns,
     widgetLanguage = "python",
+    noticeSlot = null,
 }: CodeEditorProps) {
     const [code, setCode] = useState<string>(""); // code with all original markers
     const [execCount, setExecCount] = useState<number>(0);
@@ -511,6 +519,19 @@ function CodeEditor({
     useEffect(deferResizeObserverCallbacks, []);
 
     const execLabel = output.code === "exec" ? "[*]:" : execCount > 0 ? `[${execCount}]:` : "[ ]:";
+    const missingModuleNotice = output.missingModule ? (
+        <MissingModuleNotice
+            notice={output.missingModule}
+            state={installState}
+            retried={
+                !!output.missingModule.distribution
+                && installedOnceRef.current.has(output.missingModule.distribution)
+                && installState.kind === "idle"
+            }
+            onInstall={(d) => void installMissingLibrary(d)}
+            onRunNode={() => runNodeRef.current()}
+        />
+    ) : null;
     const outputText = output.code === "exec"
         ? "Running..."
         : typeof output.content === "string" && output.content
@@ -641,19 +662,8 @@ function CodeEditor({
             >
                 <span style={{ color: "#303F9F", fontWeight: "bold", marginRight: "6px" }}>{execLabel}</span>
                 {outputText}
-                {output.missingModule ? (
-                    <MissingModuleNotice
-                        notice={output.missingModule}
-                        state={installState}
-                        retried={
-                            !!output.missingModule.distribution
-                            && installedOnceRef.current.has(output.missingModule.distribution)
-                            && installState.kind === "idle"
-                        }
-                        onInstall={(d) => void installMissingLibrary(d)}
-                        onRunNode={() => runNodeRef.current()}
-                    />
-                ) : null}
+                {missingModuleNotice && !noticeSlot ? missingModuleNotice : null}
+                {missingModuleNotice && noticeSlot ? createPortal(missingModuleNotice, noticeSlot) : null}
             </div>
         </div>
     );

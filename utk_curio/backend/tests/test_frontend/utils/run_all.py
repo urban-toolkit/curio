@@ -181,6 +181,20 @@ def wait_for_run_guard_released(page, *, timeout_ms: int) -> None:
 # The page's requests are wrapped in the page rather than through
 # ``page.route``: the sync API runs a route handler on the dispatcher thread, so
 # blocking in one blocks the very wait it was supposed to make winnable.
+# A Data Loading preview may run a loader once in the background to learn the
+# type it returns (``purpose: "type-probe"``, plans/data-loading-expressive-preview-memo.md).
+# That is not a run of the dataflow: it is never held and never counted.
+TYPE_PROBE_PURPOSE = "type-probe"
+
+
+def is_type_probe(post_data: str | None) -> bool:
+    """Whether a ``/processPythonCode`` body is a preview's background type check."""
+    try:
+        return (json.loads(post_data or "{}") or {}).get("purpose") == TYPE_PROBE_PURPOSE
+    except (ValueError, AttributeError):
+        return False
+
+
 _HOLD_NODE_EXEC_JS = r"""() => {
     if (window.__curioHeldExec) return true;
     const real = window.fetch.bind(window);
@@ -189,6 +203,10 @@ _HOLD_NODE_EXEC_JS = r"""() => {
     window.fetch = (input, init) => {
         const url = typeof input === 'string' ? input : (input && input.url) || '';
         if (!/\/process(Python|JavaScript)Code/.test(url)) return real(input, init);
+        // A preview's background type check is not a run of the dataflow.
+        if (init && typeof init.body === 'string' && init.body.includes('"purpose":"type-probe"')) {
+            return real(input, init);
+        }
         state.seen += 1;
         return new Promise((resolve, reject) => {
             state.held.push(() => real(input, init).then(resolve, reject));
@@ -300,6 +318,8 @@ class SandboxRuns:
 
     def _record(self, request) -> None:
         if request.method != "POST" or not request.url.endswith("/processPythonCode"):
+            return
+        if is_type_probe(request.post_data):
             return
         try:
             body = json.loads(request.post_data or "{}")

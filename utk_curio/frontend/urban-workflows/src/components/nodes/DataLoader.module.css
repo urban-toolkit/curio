@@ -1,0 +1,253 @@
+/* The Data Loading preview, its typed database and its folded chip
+   (plans/data-loading-expressive-preview-memo.md). Every colour is a token: the
+   type's colours arrive as the --type-* custom properties set inline from
+   constants/dataTypeVisuals.ts. */
+
+/* ── The typed database: a tinted tile, the database in the type's colour, the
+      type's glyph as a badge at its bottom right. ─────────────────────────── */
+.glyph {
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    width: 42px;
+    height: 42px;
+    border-radius: 8px;
+    background: var(--type-bg);
+    color: var(--type-fg);
+}
+
+.glyph .db {
+    font-size: 18px;
+}
+
+.badge {
+    position: absolute;
+    right: -5px;
+    bottom: -5px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--curio-card-bg);
+    color: var(--type-on-tint);
+    font-size: 9.5px;
+    box-shadow: 0 0 0 1.5px var(--curio-card-bg);
+}
+
+.glyphSmall {
+    width: 32px;
+    height: 32px;
+}
+
+.glyphSmall .db {
+    font-size: 17px;
+}
+
+.glyphSmall .badge {
+    width: 17px;
+    height: 17px;
+    font-size: 9.5px;
+}
+
+/* ── The preview body. ─────────────────────────────────────────────────── */
+.preview {
+    display: flex;
+    flex-direction: column;
+    padding: 10px 2px 8px;
+    box-sizing: border-box;
+    min-width: 0;
+    background: var(--curio-card-bg);
+    overflow: hidden;
+}
+
+.identity {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    min-width: 0;
+}
+
+.meta {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.typeLabel {
+    color: var(--type-on-tint);
+    font-size: var(--curio-font-size-xs);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.extraTypes {
+    font-weight: 500;
+    color: var(--curio-text-secondary);
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.title {
+    font-size: var(--curio-font-size-md);
+    font-weight: 600;
+    color: var(--curio-text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.separator {
+    border-top: 1px dashed var(--curio-border);
+    margin: 10px 0 7px;
+}
+
+.facts {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.source {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    min-width: 0;
+    color: var(--curio-text-secondary);
+    font-size: var(--curio-font-size-xs);
+}
+
+.sourceIcon {
+    width: 13px;
+    flex: none;
+}
+
+.sourceKind {
+    flex: none;
+}
+
+.address {
+    font-family: var(--curio-font-mono);
+    font-size: var(--curio-font-size-xs);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+/* The catalog address opens the dataset's details. */
+.addressLink {
+    composes: address;
+    border: none;
+    background: none;
+    padding: 0;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
+}
+
+.addressLink:hover {
+    color: var(--curio-text-primary);
+}
+
+.addressLink:focus-visible,
+.inlineButton:focus-visible {
+    outline: 2px solid var(--curio-category-data-fg);
+    outline-offset: 1px;
+    border-radius: 2px;
+}
+
+.more {
+    flex: none;
+    color: var(--curio-text-meta);
+}
+
+.status {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    color: var(--curio-text-secondary);
+    font-size: var(--curio-font-size-xs);
+    min-width: 0;
+}
+
+.status > span:last-child {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ok {
+    color: var(--curio-success-text);
+}
+
+.failed {
+    color: var(--curio-danger-text);
+}
+
+.spin {
+    animation: loaderSpin 1.1s linear infinite;
+}
+
+@keyframes loaderSpin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .spin {
+        animation: none;
+    }
+}
+
+.inlineButton {
+    border: none;
+    background: none;
+    padding: 0;
+    color: var(--curio-category-data-on-tint);
+    font-size: var(--curio-font-size-xs);
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+/* ── The folded chip: arrow and typed database on one row, the type's label
+      under them, all inside the chip's border. ──────────────────────────── */
+.chip {
+    display: grid;
+    grid-template-columns: auto auto;
+    justify-content: center;
+    align-items: center;
+    column-gap: 10px;
+    row-gap: 8px;
+    width: 100%;
+    height: 100%;
+}
+
+.chipArrow {
+    color: var(--curio-category-data-fg);
+    font-size: 17px;
+}
+
+.chipLabel {
+    grid-column: 1 / -1;
+    justify-self: center;
+    white-space: nowrap;
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    line-height: 1;
+    padding: 2px 4px;
+    border-radius: 3px;
+    background: var(--type-on-tint);
+    color: var(--curio-card-bg);
+}

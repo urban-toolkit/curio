@@ -353,6 +353,44 @@ def test_the_wired_circles_ride_to_the_sandbox_as_input_slots(app, client, user_
     ]
 
 
+def test_a_type_probe_saves_nothing_and_is_journaled_as_one(app, client, user_and_token, monkeypatch):
+    """A Data Loading node of unknown type is run once in the background to
+    learn the type it returns (plans/data-loading-expressive-preview-memo.md).
+    That run is Play's run in every way but two: it never installs a dataset,
+    whatever the request says, and the journal records why it ran, so the node
+    never shows its failure as its own."""
+    from utk_curio.backend.app.execution import node_exec, runtime_journal
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    user_key = _user_dir_key(user)
+    project_id = create_project(client, token, name="Type probe")
+    sent = []
+    _fake_sandbox(monkeypatch, {"path": _json_artifact({"a": 1}), "dataType": "dict"}, sent)
+
+    body = _play_body("probe-node", project_id, saveOutputDataset=True, purpose=node_exec.PURPOSE_TYPE_PROBE)
+    reply = client.post("/processPythonCode", data=json.dumps(body), headers=auth_headers(token))
+
+    assert reply.status_code == 200, reply.get_data(as_text=True)
+    payload = reply.get_json()
+    assert payload["output"]["dataType"] == "dict"
+    assert payload["installedDataset"] is None and payload["datasetDiagnostic"] is None
+    ((path, sandbox_body),) = sent
+    assert path == "/exec" and sandbox_body["save_dataset"] is False
+    record = runtime_journal.read_record(user_key, project_id, "probe-node")
+    assert record["status"] == "ok"
+    assert record["kind"] == node_exec.PURPOSE_TYPE_PROBE
+
+
+def test_an_unknown_purpose_is_an_ordinary_run():
+    from utk_curio.backend.app.execution import node_exec
+
+    run = node_exec.NodeRun.from_request_json({
+        "code": "return 1", "nodeType": "curio.builtin/data-loading", "purpose": "anything", "saveOutputDataset": True,
+    })
+    assert run.purpose is None and run.save_output_dataset is True
+
+
 def test_a_sandbox_that_does_not_answer_raises_the_routes_error(app, user_and_token, monkeypatch):
     from utk_curio.backend.app.execution import node_exec, sandbox_client
     from utk_curio.backend.app.projects.services import _user_dir_key

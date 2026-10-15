@@ -86,6 +86,11 @@ export function DatasetPaletteProvider({ children }: { children: React.ReactNode
   return <DatasetPaletteContext.Provider value={value}>{children}</DatasetPaletteContext.Provider>;
 }
 
+/** The palette, or null outside its provider: for readers that can do without it. */
+export function useOptionalDatasetPalette(): DatasetPaletteContextValue | null {
+  return useContext(DatasetPaletteContext);
+}
+
 export function useDatasetPalette(): DatasetPaletteContextValue {
   const ctx = useContext(DatasetPaletteContext);
   if (!ctx) {

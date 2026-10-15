@@ -44,6 +44,8 @@ describe("the strip's readings", () => {
     expect(recordOutcome({ status: "error", stderrTail: "KeyError: 'tract_id'" })?.text)
       .toBe("KeyError: 'tract_id'");
     expect(recordOutcome({ status: "ok", stdoutTail: "ran" })).toBeNull();
+    // A background run that looked for a loader's type is not the user's run.
+    expect(recordOutcome({ status: "error", stderrTail: "Timeout", kind: "type-probe" })).toBeNull();
     expect(recordOutcome(null)).toBeNull();
   });
 
