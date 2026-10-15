@@ -81,7 +81,7 @@
         "metadata": {
           "keywords": []
         },
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"isColorMap\": false\n      }\n    ]\n  }\n}"
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"isColorMap\": false,\n        \"transferFunction\": {\n          \"mode\": \"far-zero\",\n          \"opacityMin\": 0,\n          \"opacityMax\": 1,\n          \"gamma\": 0.0001\n        }\n      }\n    ]\n  }\n}"
       },
       {
         "id": "b34c8c82-a802-53db-a1fd-c7758626fed4",
