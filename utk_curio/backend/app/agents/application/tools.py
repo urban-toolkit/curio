@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from typing import Iterable
 
 from utk_curio.backend.app.agents.application.turns import examples as worked_examples
+from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.agents.domain import plan_topology
 from utk_curio.backend.app.agents.domain.tool_names import (
     tool_id_of,
@@ -1106,11 +1107,14 @@ def _discovery_search_rows(params: dict) -> list[dict]:
         payload = service.search_all(
             q=query, fmt=fmt, limit=_DISCOVERY_MAX_ROWS, include_storage=False
         )
+    # The model copies ``sourceId`` into a candidate row, and Curio downloads by
+    # the source's ``dirName`` (``source.x@1``), so that is the id it is given.
+    roster = agents_roster._LazyRoster()
     rows = []
     for row in (payload.get("resources") or [])[:_DISCOVERY_MAX_ROWS]:
         rows.append(
             {
-                "sourceId": row.get("sourceId"),
+                "sourceId": roster.resolve(row.get("sourceId")) or row.get("sourceId"),
                 "sourceName": row.get("sourceName"),
                 "resourceId": row.get("resourceId"),
                 "name": row.get("name"),

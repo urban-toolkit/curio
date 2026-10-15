@@ -463,6 +463,11 @@ def _mint_row_acquirable(row: dict, roster: "_LazyRoster") -> None:
     """
     row.pop("acquirable", None)
     minted = False
+    # A search result names its source by the bare id (``source.x``) and the
+    # model copies it; the roster and the download key sources by ``dirName``.
+    resolved = roster.resolve(row.get("sourceId")) if row.get("sourceId") else None
+    if resolved:
+        row["sourceId"] = resolved
     if not (row.get("sourceId") and row.get("resourceId")) and str(row.get("url") or "").startswith("https://"):
         # A link to a dataset on a configured portal is that portal's resource:
         # its connector downloads it, whatever page the link opens.
