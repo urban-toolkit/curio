@@ -5,12 +5,12 @@ Deep Umbra is a model package: its weights under ``models/``, its node
 module ``deep_umbra``. The package's license is its code's, MIT; the model
 block holds the weights' license, SCOUT's permission.
 
-The node reads a height raster, the mosaic of Rasterize Buildings
-(``scout.raster-conversion@1``), runs Deep Umbra on every zoom-16 tile of it and
-returns the accumulated shadow as a raster on the same grid. SCOUT's metrics,
-the mean and median over the ground, are a Raster Statistics node's
-(``curio.builtin@1``) with the heights as its mask, as the shipped dataflow
-``ScoutShadows.json`` wires it.
+The node reads a height raster, the one raster of Rasterize Buildings
+(``scout.raster-conversion@1``), runs Deep Umbra on every zoom-16 tile of it
+that holds heights and returns the accumulated shadow as a raster on the same
+grid. SCOUT's metrics, the mean and median over the ground, are a Raster
+Statistics node's (``curio.builtin@1``) with the heights as its mask, as the
+shipped dataflow ``ScoutShadows.json`` wires it.
 
 The proof starts from SCOUT's own files, copied unchanged into
 ``fixtures/scout/`` (see its ``ATTRIBUTION.md``): SCOUT's committed height tiles
@@ -24,7 +24,11 @@ written by Rasterize Buildings' own ``write_mosaic``. Then:
   the model package), loaded as ``curio_load_model`` loads it, in summer, the
   shadow of each tile, in SCOUT's 8 bits, is SCOUT's committed shadow tile;
 - the dataflow's Raster Statistics node, run as it is written on the node's
-  shadow raster and the mosaic, gives SCOUT's committed mean and median.
+  shadow raster and the mosaic, gives SCOUT's committed mean and median;
+- on a tile set with a gap, as ``convert_raster`` leaves one where no building
+  is near a tile, the mosaic has no data there, the node predicts only the
+  tiles written, and the statistics count the ground of those tiles only, as
+  SCOUT's ``run_shadow_model`` does.
 
 Within a tolerance, not equal. Deep Umbra normalizes each layer by the tile's own
 mean and variance, which makes its float32 output sensitive to the order of its
@@ -218,11 +222,18 @@ def _mosaic(tmp_path, scenario: str = "A", *, zoom: int = 16, max_height: float 
     """SCOUT's committed height tiles of *scenario* as one mosaic, written by
     Rasterize Buildings' own ``write_mosaic``, as its node hands them on. With
     *zoom*, the tiles are named at that zoom level instead."""
-    folder = tmp_path / f"mosaic-{scenario}-{zoom}-{max_height:g}"
+    return _mosaic_of(tmp_path, FIXTURES / f"{scenario}_rasters", f"mosaic-{scenario}-{zoom}-{max_height:g}",
+                      zoom=zoom, max_height=max_height)
+
+
+def _mosaic_of(tmp_path, tiles: Path, name: str, *, zoom: int = 16, max_height: float = 550) -> Path:
+    """The height tiles in the folder *tiles* as one mosaic, written by
+    Rasterize Buildings' own ``read_tiles`` and ``write_mosaic``."""
+    folder = tmp_path / name
     folder.mkdir()
     with staged(folder, RASTER_PACKAGE / "sources", RASTER_MODULE, "node_outputs") as (raster_outputs,):
-        tiles = raster_outputs.read_tiles(str(FIXTURES / f"{scenario}_rasters")).assign(zoom=zoom)
-        return Path(raster_outputs.write_mosaic(tiles, max_height, str(folder / "mosaic.tif")))
+        table = raster_outputs.read_tiles(str(tiles)).assign(zoom=zoom)
+        return Path(raster_outputs.write_mosaic(table, max_height, str(folder / "mosaic.tif")))
 
 
 def _open(path):
@@ -263,6 +274,42 @@ def _scouts_input_grid(folder: Path, date: str, zoom: int, i: int, j: int):
     value = 0 if date == "winter" else 1 if date in ("spring", "fall") else 2
     all_date = np.full((512, 512, 1), value, dtype=np.float32)
     return all_input, all_lat, all_date
+
+
+def _scouts_run_shadow_model(folder: Path, season: str):
+    """SCOUT's ``run_shadow_model`` (``deep_umbra.py`` at b98369e5) on the
+    height tiles in *folder*, with its ``predict_shadow`` and
+    ``normalize_input``, and the ONNX export of its generator in place of the
+    TensorFlow one: ``({tile file: its shadow from 0 to 1}, the minutes its
+    metrics take)``. It predicts each tile file the folder holds, in name
+    order, and its metrics take the ground of those tiles only, the pixels
+    whose height level is 0; it writes no file here."""
+    import numpy as np
+
+    generator = _session()
+    factor = 360 if season == "winter" else 540 if season == "spring" else 720
+    shadows, all_vals = {}, []
+    for png_path in sorted(folder.glob("*.png")):
+        zoom, i, j = (int(part) for part in png_path.stem.split("_"))
+        input_height, input_lat, input_date = _scouts_input_grid(folder, season, zoom, i, j)
+        input_height = (input_height / 127.5) - 1
+        input_lat = ((input_lat + 90) / 90.0) - 1
+        input_date = input_date - 1
+        concat = [plane.reshape(1, 512, 512, 1) for plane in (input_height, input_lat, input_date)]
+        prediction = generator.run(None, dict(zip(("height", "latitude", "date"), concat)))[0]
+        prediction = prediction[:, 128:-128, 128:-128, :].reshape(256, 256)
+        input_height = concat[0][:, 128:-128, 128:-128, :].reshape(256, 256)
+        input_height = (input_height + 1) * 127.5
+        arr = prediction
+        arr_min, arr_max = float(arr.min()), float(arr.max())
+        if arr_max > arr_min:
+            arr_norm = (arr - (-1.0)) / (1.0 - (-1.0))
+        else:
+            arr_norm = np.zeros_like(arr)
+        vals = arr_norm[input_height == 0] * factor
+        all_vals.append(vals.ravel())
+        shadows[png_path.name] = arr_norm
+    return shadows, np.concatenate(all_vals)
 
 
 @pytest.fixture
@@ -349,9 +396,9 @@ def _statistics_code() -> str:
     return codes.pop()
 
 
-def run_statistics(shadow, heights, workspace) -> tuple[float, float]:
+def statistics_table(shadow, heights, workspace):
     """The dataflow's Raster Statistics node, its code as written, on *shadow*
-    (input_0) and *heights* (input_1, the mask): ``(mean, median)``."""
+    (input_0) and *heights* (input_1, the mask): its one-row table."""
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
     result = _execute(_statistics_code(), (shadow, heights), STATISTICS_TYPE, workspace, data_type="outputs")
@@ -359,6 +406,12 @@ def run_statistics(shadow, heights, workspace) -> tuple[float, float]:
     assert result["output"]["dataType"] == "dataframe", result["output"]
     table = load_from_duckdb(result["output"]["path"])
     assert list(table.columns) == ["mean", "median", "min", "max", "count"], list(table.columns)
+    return table
+
+
+def run_statistics(shadow, heights, workspace) -> tuple[float, float]:
+    """The dataflow's Raster Statistics node on *shadow* and *heights*: ``(mean, median)``."""
+    table = statistics_table(shadow, heights, workspace)
     return float(table["mean"].iloc[0]), float(table["median"].iloc[0])
 
 
@@ -455,6 +508,66 @@ def test_scouts_rasters_become_scouts_committed_shadows(workspace, tmp_path, sce
     for name in TILE_NAMES:
         gray = _gray(FIXTURES / f"{scenario}_shadows" / name)
         assert gray.max() >= 250 and (gray < 10).mean() > 0.1, name
+
+
+def test_on_a_tile_set_with_a_gap_only_the_written_tiles_count_as_in_scouts_function(workspace, tmp_path):
+    """SCOUT's committed A tiles without the south-east one: a tile set with a
+    gap, as ``convert_raster`` leaves one where no building is near a tile.
+    Rasterize Buildings' writer gives the gap no data; the node predicts only
+    the three tiles written and gives the gap no shadow; and the dataflow's
+    Raster Statistics node counts the ground of the written tiles only.
+
+    Against SCOUT's ``run_shadow_model`` on the same three files: each written
+    tile's shadow is SCOUT's, cell for cell (both read the gap as ground
+    around its neighbours); the ground count is SCOUT's exactly; and the mean
+    and median are SCOUT's, but for SCOUT summing in float32 where Raster
+    Statistics sums in float64. Filled as ground, the gap's 65,536 cells
+    would count too."""
+    import shutil
+
+    import numpy as np
+
+    gap = _tile_name(1, 1)
+    folder = tmp_path / "A_rasters_with_a_gap"
+    folder.mkdir()
+    for name in TILE_NAMES:
+        if name != gap:
+            shutil.copy(FIXTURES / "A_rasters" / name, folder / name)
+    scouts_shadows, scouts_ground = _scouts_run_shadow_model(folder, "summer")
+    assert sorted(scouts_shadows) == sorted(set(TILE_NAMES) - {gap})
+
+    heights_path = _mosaic_of(tmp_path, folder, "mosaic-with-a-gap")
+    with _open(heights_path) as heights:
+        assert (heights.width, heights.height) == (512, 512)
+        assert np.isnan(_block(heights.read(1), 1, 1)).all(), (
+            f"the gap {gap} holds heights, as if Rasterize Buildings had written it"
+        )
+    _art_id, shadow = run_node(_open(heights_path), workspace)
+    try:
+        with _open(heights_path) as heights:
+            assert (shadow.crs, shadow.transform, shadow.width, shadow.height) == (
+                heights.crs, heights.transform, heights.width, heights.height,
+            )
+        cells = shadow.read(1)
+        for row in range(2):
+            for column in range(2):
+                name = _tile_name(column, row)
+                block = _block(cells, column, row)
+                if name == gap:
+                    assert np.isnan(block).all(), f"the gap {gap} has a shadow, and SCOUT predicts no tile there"
+                else:
+                    assert np.array_equal(block, scouts_shadows[name] * np.float32(720)), name
+        with _open(heights_path) as heights:
+            table = statistics_table(shadow, heights, workspace)
+    finally:
+        shadow.close()
+    ours = {key: float(table[key].iloc[0]) for key in ("count", "mean", "median")}
+    scouts = {"count": float(scouts_ground.size), "mean": float(np.mean(scouts_ground)),
+              "median": float(np.median(scouts_ground))}
+    assert ours["count"] == scouts["count"], f"ground cells counted: ours {ours}, SCOUT's {scouts}"
+    assert 3 * 256 * 256 * 0.1 < ours["count"] < 3 * 256 * 256, ours
+    assert abs(ours["mean"] - scouts["mean"]) <= 1e-3, (ours, scouts)
+    assert abs(ours["median"] - scouts["median"]) <= 1e-3, (ours, scouts)
 
 
 def test_the_model_is_the_export_of_scouts_generator():
@@ -684,18 +797,21 @@ def test_the_season_reaches_the_call(workspace, tmp_path):
     assert len(set(round(m, 3) for m in means)) == 3, results
 
 
-def test_the_rasterizers_tuple_is_read_and_its_height_scale_checked(tmp_path):
-    """Wired straight to Rasterize Buildings, the node gets its ``(mosaic,
-    tiles)`` and reads the mosaic; a mosaic drawn with a maximum height other
-    than the 550 m Deep Umbra needs is refused in a sentence."""
+def test_the_node_reads_the_rasterizers_one_raster_and_checks_its_height_scale(tmp_path):
+    """Wired straight to Rasterize Buildings, the node reads the one raster it
+    returns; a raster with a table beside it is not a height raster and is
+    refused in a sentence; and a raster drawn with a maximum height other than
+    the 550 m Deep Umbra needs is refused in a sentence."""
     import pandas as pd
 
     with shadow_modules(tmp_path) as (_deep_umbra, outputs):
         with _open(_mosaic(tmp_path, "A")) as mosaic:
-            tiles = pd.DataFrame({"zoom": [16], "x": [16814], "y": [24355], "png": [""]})
-            assert outputs.height_raster([mosaic, tiles]) is mosaic
             assert outputs.height_raster(mosaic) is mosaic
             assert outputs.gray_levels(mosaic).max() > 0
+            table = pd.DataFrame({"zoom": [16], "x": [16814], "y": [24355]})
+            for value in ((mosaic, table), [mosaic, table], table):
+                with pytest.raises(ValueError, match="Accumulated Shadow reads a raster of building heights"):
+                    outputs.height_raster(value)
         with _open(_mosaic(tmp_path, "A", max_height=275)) as mosaic:
             with pytest.raises(ValueError, match="Set Rasterize Buildings' Maximum height to 550"):
                 outputs.gray_levels(mosaic)
@@ -786,7 +902,9 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     hold the templates' own sources and widgets, the shadow nodes reading the
     season from the one Parameter node both scenarios share; each scenario's
     Raster Statistics node reads its shadow on input_0 and its heights, the
-    mask, on input_1; the chart reads the statistics, the difference the shadows.
+    mask, on input_1, straight from Rasterize Buildings, which feeds the
+    shadow node too; each scenario maps its own shadow, with example 24's map;
+    the chart reads the statistics, the difference the shadows.
     The model is no dataset of the dataflow: the shadow nodes' code names it by
     id, and the lockfile names its package, so opening the dataflow adds it."""
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code, model_ids_in_code
@@ -826,10 +944,25 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     for node in statistics:
         shadow, heights = nodes[into[(node["id"], "in")]], nodes[into[(node["id"], "in_1")]]
         assert shadow["type"] == NODE_TYPE
-        assert heights["type"] == "curio.builtin/computation-analysis"
+        assert heights["type"] == "scout.raster-conversion/rasterize-buildings"
         assert into[(shadow["id"], "in")] == heights["id"]
-        assert nodes[into[(heights["id"], "in")]]["type"] == "scout.raster-conversion/rasterize-buildings"
-        assert heights["content"].rstrip().endswith("return input_0[0]")
+    assert "curio.builtin/computation-analysis" not in by_type, "a node still picks a part of the rasterizer's output"
+
+    # Each scenario's shadow on a map of its own: example 24's shadow map, fed
+    # by the scenario's Accumulated Shadow and inside the scenario.
+    example = json.loads(EXAMPLE.read_text(encoding="utf-8"))["dataflow"]
+    example_into = {(edge["target"], edge["targetHandle"]): edge["source"] for edge in example["edges"]}
+    example_types = {node["id"]: node["type"] for node in example["nodes"]}
+    (shadow_map,) = [node for node in example["nodes"] if node["type"] == "curio.builtin/autk-grammar"
+                     and example_types[example_into[(node["id"], "in")]] == NODE_TYPE]
+    assert len(by_type["curio.builtin/autk-grammar"]) == 2
+    for scenario in spec["scenarios"]:
+        members = set(scenario["nodes"])
+        (shadow_id,) = [n for n in members if nodes[n]["type"] == NODE_TYPE]
+        maps = [n for n in members if nodes[n]["type"] == "curio.builtin/autk-grammar"]
+        assert len(maps) == 1, (scenario["name"], maps)
+        assert into[(maps[0], "in")] == shadow_id, scenario["name"]
+        assert nodes[maps[0]]["content"] == shadow_map["content"], scenario["name"]
     chart, difference = sorted(by_type["curio.builtin/compare-scenarios"],
                                key=lambda n: n["metadata"]["compareScenarios"]["mode"])
     assert chart["metadata"]["compareScenarios"]["mode"] == "chart"
@@ -858,6 +991,27 @@ def test_example_24_holds_the_node_as_the_palette_drops_it_and_its_code_runs(wor
         assert (shadow.tags()["season"], shadow.tags()["minutes"]) == ("summer", "720")
     finally:
         shadow.close()
+
+
+def test_example_24_feeds_the_rasterizers_one_raster_to_the_node_and_the_mask():
+    """Example 24's Rasterize Buildings feeds its one raster straight to the
+    height map, to Accumulated Shadow and to Raster Statistics' mask (input_1),
+    with no node in between; the statistics read the shadow on input_0, and a
+    map draws the shadow."""
+    spec = json.loads(EXAMPLE.read_text(encoding="utf-8"))["dataflow"]
+    nodes = {node["id"]: node for node in spec["nodes"]}
+    into = {(edge["target"], edge["targetHandle"]): edge["source"] for edge in spec["edges"]}
+    out_of: dict[str, list[str]] = {}
+    for edge in spec["edges"]:
+        out_of.setdefault(edge["source"], []).append(nodes[edge["target"]]["type"])
+    (rasterizer,) = [n for n, node in nodes.items() if node["type"] == "scout.raster-conversion/rasterize-buildings"]
+    (shadow,) = [n for n, node in nodes.items() if node["type"] == NODE_TYPE]
+    (statistics,) = [n for n, node in nodes.items() if node["type"] == STATISTICS_TYPE]
+    assert sorted(out_of[rasterizer]) == sorted(["curio.builtin/autk-grammar", NODE_TYPE, STATISTICS_TYPE])
+    assert into[(shadow, "in")] == rasterizer
+    assert (into[(statistics, "in")], into[(statistics, "in_1")]) == (shadow, rasterizer)
+    assert sorted(out_of[shadow]) == sorted([STATISTICS_TYPE, "curio.builtin/autk-grammar"])
+    assert "curio.builtin/computation-analysis" not in {node["type"] for node in nodes.values()}
 
 
 def test_the_two_scenarios_are_scouts_two_building_sets(tmp_path):
