@@ -27,7 +27,6 @@ from typing import TYPE_CHECKING
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
-from .test_scenarios_canvas_e2e import _require_webgpu
 from .test_workflows import EXPECTED_EMPTY
 from .utils import (
     REPO_ROOT,
@@ -37,6 +36,7 @@ from .utils import (
     require_owner_view,
     require_project_page,
     require_user_auth,
+    require_webgpu,
     run_all_and_wait,
     stub_login_and_enter_workflow,
 )
@@ -85,7 +85,7 @@ def test_every_autark_map_draws_in_its_cell(
     for node in spec["dataflow"]["nodes"]:
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
     dismiss_toasts(page)
-    _require_webgpu(page)
+    require_webgpu(page)
 
     radio = page.locator(BAR).get_by_role("radio", name="Notebook view", exact=True)
     radio.click()

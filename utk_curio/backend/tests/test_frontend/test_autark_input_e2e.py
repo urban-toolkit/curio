@@ -20,13 +20,11 @@ Run::
 from __future__ import annotations
 
 import json
-import os
 import time
 from io import BytesIO
 from typing import TYPE_CHECKING
 
 import allure
-import pytest
 
 from .utils import (
     _AUTK_MAP_PIXELS_JS,
@@ -38,10 +36,12 @@ from .utils import (
     require_owner_view,
     require_project_page,
     require_user_auth,
+    require_webgpu,
     run_all_and_wait,
     run_node_and_wait,
     stub_login_and_enter_workflow,
     wait_for_node_settled,
+    webgpu_adapter,
 )
 
 if TYPE_CHECKING:
@@ -179,16 +179,6 @@ def _open(page, app_frontend, current_server, *, username: str, spec: dict) -> N
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
 
 
-def _require_webgpu(page) -> None:
-    has_adapter = bool(page.evaluate(
-        "async () => !!(navigator.gpu && await navigator.gpu.requestAdapter())"
-    ))
-    if not has_adapter:
-        if os.environ.get("CURIO_REQUIRE_HARDWARE_WEBGPU") == "1":
-            pytest.fail("CURIO_REQUIRE_HARDWARE_WEBGPU=1 but this browser has no WebGPU adapter")
-        pytest.skip("running an Autark node needs a WebGPU adapter; this browser has none")
-
-
 def _empty_reason(page, node_id: str) -> str | None:
     return node_locator(page, node_id).locator("[data-curio-node-empty]").first.get_attribute(
         "data-curio-node-empty", timeout=15000,
@@ -239,7 +229,7 @@ def test_a_dataframe_without_geometry_is_refused_with_the_reason(
 ):
     _open(page, app_frontend, current_server, username="autark_input_refused",
           spec=_spec(DF_WITHOUT_GEOMETRY, MAP_ON_INPUT))
-    _require_webgpu(page)
+    require_webgpu(page)
 
     run_node_and_wait(page, LOADER_ID, node_type="DATA_LOADING", timeout_ms=120000)
     play_node(page, AUTK_ID)
@@ -258,7 +248,7 @@ def test_a_dataframe_with_a_geometry_column_is_drawn(
 ):
     _open(page, app_frontend, current_server, username="autark_input_dataframe",
           spec=_spec(DF_WITH_GEOMETRY, MAP_ON_INPUT))
-    _require_webgpu(page)
+    require_webgpu(page)
 
     run_all_and_wait(page, timeout_ms=180000)
     status = wait_for_node_settled(page, AUTK_ID, node_type="autk-grammar", timeout_ms=120000)
@@ -318,7 +308,7 @@ def test_a_frame_that_names_its_layer_buildings_draws_every_building(
         ("loader-buildings-typed", TYPED_BUILDINGS, typed_map, MAP_ON_INPUT),
         ("loader-buildings-untyped", UNTYPED_BUILDINGS, untyped_map, MAP_ON_INPUT),
     ]))
-    _require_webgpu(page)
+    require_webgpu(page)
 
     run_all_and_wait(page, timeout_ms=180000)
     drawn = {}
@@ -371,9 +361,8 @@ def test_a_map_draws_a_layer_from_each_of_its_inputs(
         "edges": [edge(plain, alone, "in"), edge(plain, both, "in"), edge(buildings, both, "in_1")],
     }}
     _open(page, app_frontend, current_server, username="autark_inputs_two", spec=spec)
-    assert page.evaluate("async () => !!(navigator.gpu && await navigator.gpu.requestAdapter())"), (
-        "drawing an Autark map needs a WebGPU adapter, which CI's GPU job has"
-    )
+    adapter = webgpu_adapter(page)
+    assert adapter, f"drawing an Autark map needs a WebGPU adapter, which CI's GPU job has: {adapter}"
 
     run_all_and_wait(page, timeout_ms=180000)
     drawn = {}
@@ -405,9 +394,8 @@ def test_a_layer_chip_draws_the_one_frame_its_input_carries(
     }]}}, indent=2)
     _open(page, app_frontend, current_server, username="autark_input_layer_chip",
           spec=_spec(GRID_LOADER, chip_map))
-    assert page.evaluate("async () => !!(navigator.gpu && await navigator.gpu.requestAdapter())"), (
-        "drawing an Autark map needs a WebGPU adapter, which CI's GPU job has"
-    )
+    adapter = webgpu_adapter(page)
+    assert adapter, f"drawing an Autark map needs a WebGPU adapter, which CI's GPU job has: {adapter}"
 
     run_all_and_wait(page, timeout_ms=180000)
     status = wait_for_node_settled(page, AUTK_ID, node_type="autk-grammar", timeout_ms=120000)

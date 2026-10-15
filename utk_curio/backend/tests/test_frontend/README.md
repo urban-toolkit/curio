@@ -81,6 +81,8 @@ Autark workflows use the single `AUTK_GRAMMAR` node type, which renders its map/
 
 There is **no WebGPU tolerance**: an `AUTK_GRAMMAR` node that errors (including because WebGPU is unavailable) is a hard test failure. To run the autk examples you need a browser that provides WebGPU - which the system-Chrome `executable_path` above ensures. `_webgpu_diagnostics` still probes adapter/device state once per session and attaches it to the failure dump for debugging.
 
+A test that needs an adapter asks with `require_webgpu(page)` (fails on CI's GPU job, skips elsewhere) or asserts `webgpu_adapter(page)`, both in `utils/webgpu.py`. Never with one `requestAdapter()`: the first request can answer null, so these ask again by the app's own rule (`src/utils/webgpuSupport.ts`) before calling the adapter missing.
+
 `AUTK_GRAMMAR` is a `"grammar"` node (grammar/JSON editor + output tab) and exercises the full matrix: `test_node_type_and_content` checks the grammar editor; `test_node_execution` verifies each node reaches **Done**. Its grammar content (and any JavaScript/WGSL compute blocks) is excluded from the Python random-seed injection used by Python `CODE_TYPES` nodes.
 
 ## Multi-user stress tiers

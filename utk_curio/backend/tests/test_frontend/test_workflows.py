@@ -17,6 +17,8 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
     # compare_svg_structure,
 # )
 from .utils import (
+    ADAPTER_PROBE,
+    REQUEST_ADAPTER_JS,
     INTERACTION_MIN_CHANGED_PIXELS,
     INTERACTION_RESTORED_RATIO,
     INTERACTION_SHOWN_TIMEOUT_MS,
@@ -507,7 +509,7 @@ class TestWorkflowCanvas:
             return cached
         try:
             diagnostics = self.page.evaluate(
-                """async () => {
+                """async (probe) => {
                     const out = {
                         userAgent: navigator.userAgent,
                         url: location.href,
@@ -516,7 +518,9 @@ class TestWorkflowCanvas:
                     };
                     if (!navigator.gpu) return out;
                     try {
-                        const adapter = await navigator.gpu.requestAdapter();
+                        // Asked as the app asks (utils/webgpu.py): a null is asked again.
+                        const { adapter, answers } = await (REQUEST_ADAPTER_JS)(navigator.gpu, probe);
+                        out.adapterAnswers = answers;
                         if (!adapter) {
                             out.adapter = null;
                             return out;
@@ -552,7 +556,8 @@ class TestWorkflowCanvas:
                         out.requestAdapterError = String(e);
                     }
                     return out;
-                }"""
+                }""".replace("REQUEST_ADAPTER_JS", REQUEST_ADAPTER_JS),
+                ADAPTER_PROBE,
             )
         except Exception as exc:
             diagnostics = {"probeError": str(exc)}

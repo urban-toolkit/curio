@@ -40,10 +40,8 @@ Run::
 from __future__ import annotations
 
 import json
-import os
 from typing import TYPE_CHECKING
 
-import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, expect
 
 from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
@@ -59,6 +57,7 @@ from .utils import (
     require_owner_view,
     require_project_page,
     require_user_auth,
+    require_webgpu,
     run_all_and_wait,
     save_dataflow,
     save_dataflow_and_settle_header,
@@ -148,16 +147,6 @@ def _create_project(server: str, token: str, name: str, spec: dict) -> str:
     created = api_json(f"{server}/api/projects", token, method="POST",
                        payload={"name": name, "spec": spec, "outputs": []})
     return created["id"]
-
-
-def _require_webgpu(page) -> None:
-    has_adapter = bool(page.evaluate(
-        "async () => !!(navigator.gpu && await navigator.gpu.requestAdapter())"
-    ))
-    if not has_adapter:
-        if os.environ.get("CURIO_REQUIRE_HARDWARE_WEBGPU") == "1":
-            pytest.fail("CURIO_REQUIRE_HARDWARE_WEBGPU=1 but this browser has no WebGPU adapter")
-        pytest.skip("running an Autark node needs a WebGPU adapter; this browser has none")
 
 
 _STORE_NODES_JS = """() => window.__curio_reactFlow.getNodes().map((n) => ({
@@ -339,7 +328,7 @@ def test_a_scenario_dragged_into_another_project_brings_its_results_and_its_own_
     source = session["project"]["id"]
     for node_id in (LOADER, SCALE, MAP):
         node_locator(page, node_id).wait_for(state="visible", timeout=45000)
-    _require_webgpu(page)
+    require_webgpu(page)
 
     # The source runs and saves: its context and what its outcome shows are saved.
     run_all_and_wait(page, timeout_ms=240000)

@@ -205,6 +205,14 @@ from .node_drawings import (  # noqa: F401
     assert_editor_panes_clear_of_markers,
     assert_vega_node_empty_state,
 )
+from .webgpu import (  # noqa: F401
+    ADAPTER_PROBE,
+    REQUEST_ADAPTER_JS,
+    WebGpuAdapterRetried,
+    WebGpuAnswer,
+    webgpu_adapter,
+    require_webgpu,
+)
 from .offline_install import (  # noqa: F401
     TEST_PACKAGES_DIR,
     OfflineNode,

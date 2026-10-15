@@ -43,7 +43,6 @@ from .test_scenario_drop_e2e import (
     _open_scenario_catalog,
     _record_python_runs,
     _record_run_starts,
-    _require_webgpu,
     _saved_spec,
     _scenario_menu,
     _status,
@@ -60,6 +59,7 @@ from .utils import (
     require_owner_view,
     require_project_page,
     require_user_auth,
+    require_webgpu,
     save_dataflow,
     save_dataflow_and_settle_header,
     save_node_closeup,
@@ -187,7 +187,7 @@ def test_a_shipped_scenario_drops_from_a_project_never_run_and_runs(
     name = plan["scenario"]["name"]
     types = {node["id"]: node["type"] for node in plan["dataflow"]["nodes"]}
     if any(node_type.startswith(AUTARK) for node_type in types.values()):
-        _require_webgpu(page)
+        require_webgpu(page)
 
     # 1. The drop runs the context on the server, then brings the scenario.
     page.wait_for_function("() => !!window.__curio_reactFlow", timeout=45000)

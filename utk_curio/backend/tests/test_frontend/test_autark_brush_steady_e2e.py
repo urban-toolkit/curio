@@ -51,6 +51,7 @@ from .utils import (
     stub_login_and_enter_workflow,
     watch_bar_fills,
     watch_brush,
+    webgpu_adapter,
 )
 from .walkthroughs import load_example_spec
 
@@ -228,8 +229,8 @@ def test_a_histogram_brush_lights_its_bars_steadily(
     require_owner_view(page)
     for node in spec["dataflow"]["nodes"]:
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
-    assert page.evaluate("async () => !!(navigator.gpu && await navigator.gpu.requestAdapter())"), (
-        "this browser has no WebGPU adapter, and example 07 runs a WebGPU shader")
+    adapter = webgpu_adapter(page)
+    assert adapter, f"this browser has no WebGPU adapter, and example 07 runs a WebGPU shader: {adapter}"
 
     run_all_and_wait(page, timeout_ms=300000)
     dismiss_toasts(page)

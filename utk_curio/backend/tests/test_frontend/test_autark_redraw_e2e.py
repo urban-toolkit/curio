@@ -18,16 +18,14 @@ Run::
 from __future__ import annotations
 
 import json
-import os
 from typing import TYPE_CHECKING
-
-import pytest
 
 from .utils import (
     node_locator,
     require_owner_view,
     require_project_page,
     require_user_auth,
+    require_webgpu,
     run_all_and_wait,
     run_node_and_wait,
     stub_login_and_enter_workflow,
@@ -98,11 +96,7 @@ def _open(page, app_frontend, current_server, *, username: str, spec: dict) -> N
     require_owner_view(page)
     for node in spec["dataflow"]["nodes"]:
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
-    has_adapter = bool(page.evaluate("async () => !!(navigator.gpu && await navigator.gpu.requestAdapter())"))
-    if not has_adapter:
-        if os.environ.get("CURIO_REQUIRE_HARDWARE_WEBGPU") == "1":
-            pytest.fail("CURIO_REQUIRE_HARDWARE_WEBGPU=1 but this browser has no WebGPU adapter")
-        pytest.skip("drawing an Autark map needs a WebGPU adapter; this browser has none")
+    require_webgpu(page)
 
 
 # The map's canvas now, kept on window so a later check can ask whether it is
