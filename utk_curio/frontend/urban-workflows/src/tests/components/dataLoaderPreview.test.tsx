@@ -90,7 +90,7 @@ describe("the preview", () => {
     for (const props of [{ profile: catalog }, { profile: silent }, { profile: catalog, outputCode: "success" }]) {
       const { container, unmount } = render(<DataLoaderPreview {...(props as any)} />);
       expect(container.querySelector('svg[data-icon="circle-play"]')).toBeNull();
-      expect(container.querySelector('svg[data-icon="clock"]') !== null || props.outputCode === "success").toBe(true);
+      expect(container.querySelector('svg[data-icon="circle-minus"]') !== null || props.outputCode === "success").toBe(true);
       unmount();
     }
   });

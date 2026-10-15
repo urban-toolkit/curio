@@ -1,7 +1,7 @@
 import React from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
-import { faCircleCheck, faCircleXmark, faClock, faSpinner } from "@fortawesome/free-solid-svg-icons";
+import { faCircleCheck, faCircleMinus, faCircleXmark, faSpinner } from "@fortawesome/free-solid-svg-icons";
 import { dataTypeVisual, SOURCE_KIND_VISUALS } from "../../constants/dataTypeVisuals";
 import {
   shortenPath,
@@ -135,9 +135,9 @@ function StatusLine({
   }
   return (
     <span className={styles.status}>
-      {/* Not run: a clock, muted, the usual "pending" mark. Not the play glyph,
+      {/* Not run: a circle with a dash, in off-black. Never the play glyph,
           which is the header's Play button and must stay the only one. */}
-      <LineIcon icon={faClock} className={styles.notRun} />
+      <LineIcon icon={faCircleMinus} className={styles.notRun} />
       <span>{profile.dataType === "unknown" ? "Run to see the type" : "Not run yet"}</span>
     </span>
   );
