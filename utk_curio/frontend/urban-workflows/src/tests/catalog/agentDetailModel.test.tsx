@@ -210,9 +210,12 @@ describe("the details say what the agent does in the docs' three words", () => {
         "prompts/package_build_instruction.md": "Write the package.",
       },
     };
-    const { container } = render(<AgentDetailModal agent={NODE_BUILDER} onClose={jest.fn()} />);
-    await screen.findByText("Prompts (4)");
-    expect(Array.from(container.querySelectorAll("summary")).map((s) => s.textContent)).toEqual([
+    render(<AgentDetailModal agent={NODE_BUILDER} onClose={jest.fn()} />);
+    // The window is a portal into the document body, not the render
+    // container: read the Prompts section where the user sees it.
+    const heading = await screen.findByRole("heading", { name: "Prompts (4)", level: 3 });
+    const prompts = heading.closest("section") as HTMLElement;
+    expect(Array.from(prompts.querySelectorAll("summary")).map((s) => s.textContent)).toEqual([
       "every call · prompts/default_preamble.md",
       "a message you type · prompts/node_build_instruction.md",
       "Write a node's content · prompts/new_content_prompt.md",
