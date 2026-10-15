@@ -213,7 +213,7 @@
 }
 
 .notRun {
-    color: var(--curio-text-primary);
+    color: var(--curio-text-muted);
 }
 
 .spin {
