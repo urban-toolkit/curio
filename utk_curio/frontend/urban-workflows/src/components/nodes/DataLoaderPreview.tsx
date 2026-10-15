@@ -1,5 +1,6 @@
 import React from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 import { faCircleCheck, faCircleXmark, faSpinner } from "@fortawesome/free-solid-svg-icons";
 import { dataTypeVisual, SOURCE_KIND_VISUALS } from "../../constants/dataTypeVisuals";
 import {
@@ -53,7 +54,7 @@ function SourceLine({
   const shown = source.kind === "disk" ? shortenPath(source.address) : source.address;
   return (
     <span className={styles.source}>
-      <FontAwesomeIcon icon={visual.glyph} className={styles.sourceIcon} aria-hidden="true" />
+      <LineIcon icon={visual.glyph} />
       <span className={styles.sourceKind}>{visual.label}</span>
       {shown ? (
         <>
@@ -82,6 +83,15 @@ function SourceLine({
   );
 }
 
+/** A line's glyph, in the slot both lines share; none leaves the slot empty. */
+function LineIcon({ icon, className }: { icon?: IconDefinition; className?: string }) {
+  return (
+    <span className={styles.lineIcon} aria-hidden="true">
+      {icon ? <FontAwesomeIcon icon={icon} className={className} /> : null}
+    </span>
+  );
+}
+
 function StatusLine({
   outputCode,
   profile,
@@ -94,7 +104,7 @@ function StatusLine({
   if (outputCode === "exec") {
     return (
       <span className={styles.status}>
-        <FontAwesomeIcon icon={faSpinner} className={styles.spin} aria-hidden="true" />
+        <LineIcon icon={faSpinner} className={styles.spin} />
         <span>Running…</span>
       </span>
     );
@@ -102,7 +112,7 @@ function StatusLine({
   if (outputCode === "success") {
     return (
       <span className={styles.status}>
-        <FontAwesomeIcon icon={faCircleCheck} className={styles.ok} aria-hidden="true" />
+        <LineIcon icon={faCircleCheck} className={styles.ok} />
         <span>Loaded</span>
       </span>
     );
@@ -110,7 +120,7 @@ function StatusLine({
   if (outputCode === "error") {
     return (
       <span className={styles.status}>
-        <FontAwesomeIcon icon={faCircleXmark} className={styles.failed} aria-hidden="true" />
+        <LineIcon icon={faCircleXmark} className={styles.failed} />
         <span>The last run failed; the reason is below the node</span>
       </span>
     );
@@ -118,12 +128,14 @@ function StatusLine({
   if (detecting) {
     return (
       <span className={styles.status}>
+        <LineIcon />
         <span>Checking the returned data once</span>
       </span>
     );
   }
   return (
     <span className={styles.status}>
+      <LineIcon />
       <span>{profile.dataType === "unknown" ? "Run to see the type" : "Not run yet"}</span>
     </span>
   );
@@ -184,6 +196,7 @@ export function DataLoaderPreview({
         ) : null}
         {pendingProposal ? (
           <span className={styles.status}>
+            <LineIcon />
             <span>A code change is waiting for review.</span>
             {onShowCode ? (
               <button type="button" className={`${styles.inlineButton} nodrag`} onClick={onShowCode}>

@@ -121,11 +121,26 @@
     min-width: 0;
     color: var(--curio-text-secondary);
     font-size: var(--curio-font-size-xs);
+    /* One line box for every part (glyph, label, address), so a sans label and
+       a monospace address sit on the same centre line. */
+    line-height: 16px;
 }
 
-.sourceIcon {
-    width: 13px;
+/* The glyph's slot, the same on the source and the status line, so the text
+   after it starts in one column whether or not a line has a glyph. */
+.lineIcon {
     flex: none;
+    width: 13px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.lineIcon svg {
+    display: block;
+    width: 12px;
+    height: 12px;
 }
 
 .sourceKind {
@@ -135,6 +150,7 @@
 .address {
     font-family: var(--curio-font-mono);
     font-size: var(--curio-font-size-xs);
+    line-height: 16px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -144,6 +160,8 @@
 /* The catalog address opens the dataset's details. */
 .addressLink {
     composes: address;
+    display: block;
+    height: 16px;
     border: none;
     background: none;
     padding: 0;
@@ -176,6 +194,7 @@
     align-items: center;
     color: var(--curio-text-secondary);
     font-size: var(--curio-font-size-xs);
+    line-height: 16px;
     min-width: 0;
 }
 
