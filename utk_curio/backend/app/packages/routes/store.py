@@ -1,4 +1,4 @@
-"""The per-user package store on the wire: the installed list, sideload, uninstall, the metadata PATCH, the archive re-export, a model's weights license text and the package-file server.
+"""The per-user package store on the wire: the installed list, sideload, uninstall, the metadata PATCH, the archive re-export, the dataflows that use a package, a model's weights license text and the package-file server.
 
 Presentation layer of the packages package (memo dev/143, B4): handlers parse (``schemas.requests``),
 call the use case and serialize (``schemas.responses``); every exception is mapped once by
@@ -19,6 +19,7 @@ from utk_curio.backend.app.packages.application import (
     package_files as packages_package_files,
     project_packages as packages_project_packages,
     provisioning as packages_provisioning,
+    prune as packages_prune,
     seeding as packages_seeding,
     store_install as packages_store_install,
 )
@@ -135,6 +136,16 @@ def download_package_archive(dir_name: str):
     response.call_on_close(cleanup)
     response.headers["Content-Disposition"] = f'attachment; filename="{dir_name}.curio.zip"'
     return response
+
+
+@packages_bp.route("/<dir_name>/usage", methods=["GET"])
+@require_auth
+@_map_package_errors
+def get_package_usage(dir_name: str):
+    """``{"dataflows": [...]}``: the caller's dataflows that use the package,
+    as ``GET /api/datasets/<id>/usage`` answers for a dataset. ``codeOnly``
+    marks one whose nodes name the model in their code alone."""
+    return jsonify({"dataflows": packages_prune.package_usage(user_key(), dir_name)}), 200
 
 
 @packages_bp.route("/<dir_name>/weights-license", methods=["GET"])

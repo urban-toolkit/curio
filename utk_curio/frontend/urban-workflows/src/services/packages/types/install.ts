@@ -27,6 +27,12 @@ export interface InstallResponse {
   dependencyError?: string;
   /** Present exactly when pip changed a shared library under the server. */
   restartRecommended?: { libs: string[] };
+  /**
+   * Save as package node only: the id of the model the saved node loads,
+   * which the new model package copied (its weights and `model` block). The
+   * package's node names the package's own id in its place.
+   */
+  copiedModel?: string;
 }
 
 /** Response from ``factory/publish-catalog`` (fixture write). */

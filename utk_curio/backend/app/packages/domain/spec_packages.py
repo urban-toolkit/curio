@@ -24,7 +24,7 @@ skipped, not raised; backfill is best-effort.
 from __future__ import annotations
 
 import re
-from typing import Iterable, Mapping
+from typing import Callable, Iterable, Mapping
 
 
 _PKG_SEGMENT = r"[a-z][a-z0-9-]{0,62}"
@@ -128,18 +128,92 @@ def set_project_packages(spec: dict, dirs: Iterable[str]) -> dict:
     return spec
 
 
+def dir_name_from_model_ref(
+    model_id: object,
+    installed_majors_by_pkg: Mapping[str, Iterable[int]] | None = None,
+) -> str | None:
+    """The dirName of the model package a node's ``modelRefs`` entry names:
+    ``<id>@<major>`` as it is, a bare ``<id>`` at its highest installed major,
+    or ``None`` without one."""
+    if not isinstance(model_id, str):
+        return None
+    package_id, _, major = model_id.partition("@")
+    if not re.fullmatch(_PKG_ID, package_id):
+        return None
+    if major:
+        return f"{package_id}@{major}" if re.fullmatch(_MAJOR, major) else None
+    majors = list((installed_majors_by_pkg or {}).get(package_id, ()))
+    return f"{package_id}@{max(majors)}" if majors else None
+
+
+#: Reads the model ids a node's code names through literal
+#: ``curio_load_model("<id>")`` calls (``datasets.domain.code_refs``, which the
+#: callers hand in: this module imports no other feature).
+ModelIdsInCode = Callable[[object], Iterable[str]]
+
+
+def _model_ref_dir_names(
+    node: dict,
+    installed_majors_by_pkg: Mapping[str, Iterable[int]] | None,
+    model_ids_in: ModelIdsInCode | None = None,
+) -> set[str]:
+    """The model packages *node* is bound to: what its ``metadata.modelRefs``
+    names, as a drop of a model onto the node writes it. With *model_ids_in*,
+    a ref counts only while the node's code still names its model, as the
+    frontend's ``nodeLinkedModelIds`` counts it: a hand edit to another model
+    leaves the drop's ref behind, and that ref keeps nothing."""
+    metadata = node.get("metadata")
+    refs = metadata.get("modelRefs") if isinstance(metadata, dict) else None
+    named = None
+    if model_ids_in is not None:
+        named = {str(model_id).partition("@")[0] for model_id in model_ids_in(node.get("content"))}
+    out: set[str] = set()
+    for ref in refs if isinstance(refs, list) else ():
+        model_id = ref.get("id") if isinstance(ref, dict) else None
+        if named is not None and str(model_id).partition("@")[0] not in named:
+            continue
+        dir_name = dir_name_from_model_ref(model_id, installed_majors_by_pkg)
+        if dir_name:
+            out.add(dir_name)
+    return out
+
+
+def model_ref_packages(
+    spec: dict | None,
+    installed_majors_by_pkg: Mapping[str, Iterable[int]] | None = None,
+    model_ids_in: ModelIdsInCode | None = None,
+) -> set[str]:
+    """The model packages the canvas nodes of *spec* are bound to
+    (``metadata.modelRefs``, see :func:`_model_ref_dir_names`). A dataflow uses
+    each of them as it uses the packages its lockfile names. A literal
+    ``curio_load_model`` call in node code is only a code reference, and is not
+    one of them."""
+    dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+    if not isinstance(dataflow, dict):
+        return set()
+    out: set[str] = set()
+    for node in dataflow.get("nodes") or []:
+        if isinstance(node, dict):
+            out |= _model_ref_dir_names(node, installed_majors_by_pkg, model_ids_in)
+    return out
+
+
 def referencing_nodes(
     spec: dict | None,
     dir_name: str,
     installed_majors_by_pkg: Mapping[str, Iterable[int]] | None = None,
+    model_ids_in: ModelIdsInCode | None = None,
 ) -> list[str]:
-    """Ids of the canvas nodes whose type derives to *dir_name* (memo dev/101).
+    """Ids of the canvas nodes that use *dir_name* (memo dev/101): whose type
+    derives to it, or which are bound to it as their model (``modelRefs``, see
+    :func:`_model_ref_dir_names`).
 
     This is what an uninstall must refuse on: while any node of the package's
     types is on the canvas, the backfill in :func:`project_packages` would
     re-derive the package on the next read, so a "successful" uninstall would
-    be a permanent no-op. Nodes without an ``id`` are counted under a
-    positional placeholder so the count is still truthful.
+    be a permanent no-op; and a node bound to a model runs that model. Nodes
+    without an ``id`` are counted under a positional placeholder so the count
+    is still truthful.
     """
     dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
     if not isinstance(dataflow, dict):
@@ -148,10 +222,56 @@ def referencing_nodes(
     for index, node in enumerate(dataflow.get("nodes") or []):
         if not isinstance(node, dict):
             continue
-        if dir_name_from_node_type(node.get("type", ""), installed_majors_by_pkg) == dir_name:
+        if (dir_name_from_node_type(node.get("type", ""), installed_majors_by_pkg) == dir_name
+                or dir_name in _model_ref_dir_names(node, installed_majors_by_pkg, model_ids_in)):
             node_id = node.get("id")
             out.append(node_id if isinstance(node_id, str) else f"#{index}")
     return out
+
+
+def package_usage_in_spec(
+    spec: dict | None,
+    dir_name: str,
+    installed_majors_by_pkg: Mapping[str, Iterable[int]] | None = None,
+    model_ids_in: ModelIdsInCode | None = None,
+) -> tuple[list[dict], bool] | None:
+    """How *spec*'s dataflow uses the package *dir_name*, as a usage read
+    reports it: ``None`` when it does not, else its nodes that do
+    (``[{nodeId, nodeType}]``) and whether it uses the package only through
+    node code (``codeOnly``).
+
+    A node uses it when its type derives to it, when it is bound to it as its
+    model, or when its code names the model (a literal ``curio_load_model``
+    call, read by *model_ids_in*). The lockfile naming it is a use with no
+    node. ``codeOnly`` holds when node code is all there is: no lockfile
+    entry, no node of the package, no node bound to it. Such a dataflow keeps
+    nothing (see :func:`model_ref_packages`), as a dataset's usage read marks
+    a dataflow that loads the dataset in code alone."""
+    dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+    if not isinstance(dataflow, dict):
+        return None
+    package_id = dir_name.partition("@")[0]
+    kept = dir_name in project_packages(spec, installed_majors_by_pkg)
+    nodes: list[dict] = []
+    for index, node in enumerate(dataflow.get("nodes") or []):
+        if not isinstance(node, dict):
+            continue
+        keeps = (dir_name_from_node_type(node.get("type", ""), installed_majors_by_pkg) == dir_name
+                 or dir_name in _model_ref_dir_names(node, installed_majors_by_pkg, model_ids_in))
+        in_code = model_ids_in is not None and package_id in {
+            str(model_id).partition("@")[0] for model_id in model_ids_in(node.get("content"))
+        }
+        if keeps or in_code:
+            node_id = node.get("id")
+            node_type = node.get("type")
+            nodes.append({
+                "nodeId": node_id if isinstance(node_id, str) else f"#{index}",
+                "nodeType": node_type if isinstance(node_type, str) else None,
+            })
+            kept = kept or keeps
+    if not nodes and not kept:
+        return None
+    return nodes, bool(nodes) and not kept
 
 
 def preserve_project_packages(

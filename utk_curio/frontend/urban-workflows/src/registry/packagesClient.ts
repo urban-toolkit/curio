@@ -112,6 +112,8 @@ interface RawPackage {
   dirName?: string;
   /** `model` for a model package, which holds a model's weights. */
   kind?: 'node' | 'model';
+  /** A model package's model block, of which the registry keeps the type. */
+  model?: { type?: string } | null;
   lineage: {
     forkedFrom: { packageId: string; major: number };
     root: { packageId: string; major: number };
@@ -252,6 +254,9 @@ function buildDescriptor(pkg: RawPackage, template: RawPackageTemplate, order: n
       publisher: pkg.publisher,
       source: template.source ?? undefined,
       ...(defaultCellStarter ? { defaultCellStarter } : {}),
+      ...(pkg.kind === 'model'
+        ? { kind: 'model' as const, ...(pkg.model?.type ? { modelType: pkg.model.type } : {}) }
+        : {}),
       ...(pkg.lineage
         ? {
             lineage: {

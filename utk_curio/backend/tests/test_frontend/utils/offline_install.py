@@ -10,7 +10,8 @@ helpers let a test run those installs with the real pip and no network:
   that wheelhouse and no index (``PIP_NO_INDEX`` with ``PIP_FIND_LINKS``);
 * ``/api/testing/catalog-package`` puts a test package from
   ``test_frontend/packages/`` in the backend's shared catalog, so it is added
-  the way any catalog package is.
+  the way any catalog package is. A test model package's weights travel in
+  base64.
 
 ``offline_catalog_package`` does all three and undoes them.
 
@@ -123,15 +124,32 @@ def restore_wheelhouse(backend_url: str) -> dict:
     return _testing_post(backend_url, "wheelhouse", {"action": "restore"})
 
 
+#: The folder of a model package's weights, which travel as base64.
+WEIGHTS_DIR = "models"
+
+
+def planted_package_files(dir_name: str) -> dict:
+    """The body ``/api/testing/catalog-package`` plants ``packages/<dir_name>``
+    from: its text files, and a model package's weights in base64."""
+    root = TEST_PACKAGES_DIR / dir_name
+    files: dict[str, str] = {}
+    weights: dict[str, str] = {}
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or "__pycache__" in path.parts:
+            continue
+        rel = path.relative_to(root).as_posix()
+        if rel.split("/", 1)[0] == WEIGHTS_DIR:
+            weights[rel] = base64.b64encode(path.read_bytes()).decode("ascii")
+        else:
+            files[rel] = path.read_text(encoding="utf-8")
+    return {"files": files, "binaryFiles": weights} if weights else {"files": files}
+
+
 def plant_catalog_package(backend_url: str, dir_name: str) -> None:
     """Put the test package ``test_frontend/packages/<dir_name>`` in the shared catalog."""
-    root = TEST_PACKAGES_DIR / dir_name
-    files = {
-        path.relative_to(root).as_posix(): path.read_text(encoding="utf-8")
-        for path in sorted(root.rglob("*"))
-        if path.is_file()
-    }
-    _testing_post(backend_url, "catalog-package", {"action": "plant", "dirName": dir_name, "files": files})
+    _testing_post(backend_url, "catalog-package", {
+        "action": "plant", "dirName": dir_name, **planted_package_files(dir_name),
+    })
 
 
 def remove_catalog_package(backend_url: str, dir_name: str) -> None:

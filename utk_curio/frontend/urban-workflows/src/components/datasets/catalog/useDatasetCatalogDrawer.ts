@@ -30,6 +30,7 @@ import { buildSaveableLiveOutputs } from "../../../utils/saveOutputDataset";
 import { resolveComputedInstallTitle } from "../../../utils/palettePackageFactoryDraft";
 import { dataflowRefFromCatalogItem } from "./dataflowDatasetRef";
 import { permanentDeletionNotice } from "../../../services/retentionCopy";
+import { codeOnlyDataflowNames, codeOnlyWarning } from "../../../services/codeOnlyUsage";
 import type { DrawerTab } from "./datasetCatalogDrawerTypes";
 import { tabOrigin } from "./datasetCatalogDrawerTypes";
 
@@ -330,10 +331,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
   const codeOnlyUsers = useCallback(
     async (dataset: DatasetCatalogItem): Promise<string[]> => {
       try {
-        const usage = await datasetCatalogApi.datasetUsage(dataset.id);
-        return usage
-          .filter((u) => u.codeOnly)
-          .map((u) => u.dataflowName || "Untitled dataflow");
+        return codeOnlyDataflowNames(await datasetCatalogApi.datasetUsage(dataset.id));
       } catch {
         return [];
       }
@@ -348,15 +346,12 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         uninstallAlsoDeletes(dataset),
         codeOnlyUsers(dataset),
       ]);
-      const codeWarning = codeUsers.length
-        ? `
-
-${codeUsers.length === 1 ? "A node in" : "Nodes in"} ${codeUsers.join(", ")} ${
-            codeUsers.length === 1 ? "loads" : "load"
-          } this dataset in code. That code is left as it is and will fail the next time ${
-            codeUsers.length === 1 ? "it runs" : "those nodes run"
-          }.`
-        : "";
+      // The Model Catalog's Remove says it the same way (`codeOnlyUsage`).
+      const codeWarning = codeOnlyWarning(
+        codeUsers,
+        "dataset",
+        (several) => `That code is left as it is and will fail the next time ${several ? "those nodes run" : "it runs"}.`,
+      );
       setConfirmAction({
         title: `Remove ${title}?`,
         body:

@@ -37,7 +37,7 @@ A package is a folder with a `manifest.json` (the contract), an optional `source
 | `ai.utk.uhvi@1`, `curio.weather@1` | Example packages you can install from the catalog drawer to see the package workflow end to end. Both are plain Python nodes. `curio.weather@1` is also installed for you when Curio starts with `--with-examples`; you can still uninstall it. |
 | `curio.example-ui@1` | A minimal node with its **own interface** rather than a code editor: no API keys and no Python dependencies. The one to read and fork for custom-UI nodes; see [AUTHORING-NODES.md](AUTHORING-NODES.md). |
 | `scout.raster-conversion@1` | SCOUT's building rasterizer, ported from [SCOUT](https://github.com/urban-toolkit/scout): one **Rasterize Buildings** code node turns a buildings layer into the height tiles SCOUT's Deep Umbra shadow model reads, and a mosaic of them an Autark map draws. Read-only, depends on `datashader`, `spatialpandas`, `dask`, `rasterio`, `geopandas`, `numpy`, `pandas`, `pillow`, `pyarrow`, `pyproj` and `shapely`, and installed when Curio starts with `--with-examples`. See its [README](../packages/scout.raster-conversion@1/README.md). |
-The Node Catalog's drawer and page list node packages only. Model packages (kind `model`), such as the `model.curio.ddrnet23-slim@1`, `model.scout.deep-umbra@1` and `model.scout.weather-gnn@1` that ship with Curio, are the [Model Catalog](MODEL-CATALOG.md)'s: you add, remove and publish them there, the same way.
+The Node Catalog's drawer and page list node packages only. Model packages (kind `model`), such as the `model.curio.ddrnet23-slim@1`, `model.scout.deep-umbra@1` and `model.scout.weather-gnn@1` that ship with Curio, are the [Model Catalog](MODEL-CATALOG.md)'s: you add, remove and publish them there, the same way. Their nodes are not in the Node Catalog dropdown either: a model's node comes from dropping its card from the Model Catalog drawer onto the canvas.
 
 You can install any number of other packages, your own or archives shared by others.
 
@@ -109,6 +109,8 @@ The flow is **Save as package node**: build the node on the canvas, then save it
 3. Click **Save as package node…**. A picker appears.
 4. Choose **New package…** (a fresh package containing this kind) or an installed package as the target. Read-only packages, including `curio.builtin@1`, are not offered; the way to change a read-only package is to fork it into a new one.
 5. After the save, the canvas node is rebound to the new package's kind.
+
+A new package from a node whose code loads one of your models (`curio_load_model("<id>")`) is a model package: it holds a copy of that model's weights and its `model` block, it is in the [Model Catalog](MODEL-CATALOG.md) rather than the Node Catalog, and its node names the new package's id.
 
 Saving into a package you added from the catalog makes that copy your own. Curio keeps it as you saved it when the shared catalog's copy changes, and **Update** replaces it with the catalog's version when the catalog has a higher one. The same holds after you edit the package's metadata or import an archive over it.
 

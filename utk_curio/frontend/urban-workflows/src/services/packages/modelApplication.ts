@@ -1,18 +1,28 @@
 import type { ModelBlockPayload, PackagePayload } from "./types";
 import { hasRewritableModelCall, modelIdsInCode, rewriteFirstModelCall } from "./modelCode";
+import { MODEL_TYPE_LABEL } from "./modelPackages";
+import {
+  beginPackageCardDrag,
+  endPackageCardDrag,
+  writePackageCardDragData,
+  type PackageCardNode,
+} from "./packageCardDrag";
 
 /**
  * A model package (kind `model`) on the canvas: dragged from the Model
- * Catalog onto a node, whose `curio_load_model("<id>")` call it then names,
- * or onto the canvas, where it becomes a node that runs it. A model's id is
- * its package's `packageId`.
+ * Catalog onto a node, whose `curio_load_model("<id>")` call it then names
+ * when the node runs a model of its known type, or onto the canvas, where it is its
+ * package's card and becomes the package's node. A model's id is its
+ * package's `packageId`.
  */
 
-/** What a model drag carries: enough to rewrite a call and to say so. */
+/** What a model drag carries: enough to rewrite a call, to check the node's
+ *  type and to say so. */
 export interface ModelDragPayload {
   modelId: string;
   name: string;
   runtime: ModelBlockPayload["runtime"];
+  type?: ModelBlockPayload["type"];
 }
 
 /** The binding a node keeps for the model it runs, beside its code. Saved at
@@ -35,9 +45,15 @@ const MODEL_DRAG_PLAIN_PREFIX = "curio-model:";
 /** In-memory payload for the current drag (HTML5 getData is unreliable for custom MIME). */
 let activeModelDrag: ModelDragPayload | null = null;
 
-/** The drag of a model package. Its `model` block says how its weights run. */
+/** The drag of a model package. Its `model` block says how its weights run,
+ *  and which type of model it is. */
 export function createModelDragPayload(model: PackagePayload): ModelDragPayload {
-  return { modelId: model.packageId, name: model.name, runtime: model.model?.runtime ?? "onnx" };
+  return {
+    modelId: model.packageId,
+    name: model.name,
+    runtime: model.model?.runtime ?? "onnx",
+    ...(model.model?.type ? { type: model.model.type } : {}),
+  };
 }
 
 function parseModelDragJson(raw: string): ModelDragPayload | null {
@@ -86,6 +102,104 @@ export function hasModelDrag(dataTransfer: DataTransfer): boolean {
   if (activeModelDrag) return true;
   const types = Array.from(dataTransfer.types || []);
   return types.includes(MODEL_DRAG_MIME);
+}
+
+/**
+ * Call from `dragStart` on a model's card or palette row: the drag is the
+ * model, for a node that runs one, and its package's card, which the canvas
+ * takes as the Node Catalog drawer's cards (`usePackageCardDrop`).
+ */
+export function writeModelCardDrag(dataTransfer: DataTransfer, model: PackagePayload): void {
+  const card = beginPackageCardDrag(model);
+  if (card) writePackageCardDragData(dataTransfer, card);
+  writeModelDragData(dataTransfer, beginModelDrag(model));
+}
+
+/** Call from `dragEnd` on a model's card or palette row. */
+export function endModelCardDrag(): void {
+  endPackageCardDrag();
+  endModelDrag();
+}
+
+/**
+ * What the node a card's drop makes opens with, beside its type and place.
+ * A model package's node is bound to its model (`modelRefs`) and, once its
+ * template's code has arrived (*starter*), opens with that code naming the
+ * model: its own code, or the default cell of the model's type the backend
+ * writes for a template without one. A node package's node opens with its
+ * template's code as a palette drop does, so nothing is added.
+ */
+export function packageCardNodeOptions(
+  node: PackageCardNode,
+  starter: string | undefined,
+): { code?: string; modelRefs?: ModelRef[] } {
+  if (!node.model) return {};
+  const model = { packageId: node.model.id, name: node.model.name };
+  const made = modelNodeForCanvas([{ nodeType: node.nodeType, label: node.label, code: starter }], model);
+  if (made) return { code: made.code, modelRefs: made.modelRefs };
+  return {
+    ...(starter !== undefined ? { code: starter } : {}),
+    modelRefs: [{ id: model.packageId, name: model.name }],
+  };
+}
+
+/**
+ * The ids of the canvas *nodes* that name the model *modelId* in their code
+ * alone: not a node of its package (whose type keeps the package in the
+ * dataflow), and not bound to it (`modelRefs`, which keeps it too). Removing
+ * the model leaves their code as it is, which the Remove dialog says.
+ */
+export function nodesNamingModelInCodeOnly(
+  nodes: ReadonlyArray<{ id: string; data?: any }>,
+  modelId: string,
+): string[] {
+  return nodes
+    .filter(({ data }) => {
+      if (String(data?.nodeType ?? "").startsWith(`${modelId}/`)) return false;
+      if ((data?.modelRefs || []).some((ref: any) => String(ref?.id ?? "").split("@")[0] === modelId)) return false;
+      return modelIdsInCode(currentCode(data)).includes(modelId);
+    })
+    .map((node) => node.id);
+}
+
+/**
+ * The type of model a node runs: the type of the first model its code names
+ * whose type *typeOf* knows, else *ownType*, the type of the model package
+ * the node comes from. `undefined` when neither is known.
+ */
+export function nodeModelType(
+  data: any,
+  typeOf: (modelId: string) => string | undefined,
+  ownType?: string,
+): string | undefined {
+  for (const id of modelIdsInCode(currentCode(data))) {
+    const type = typeOf(id);
+    if (type) return type;
+  }
+  return ownType || undefined;
+}
+
+function modelTypeText(type: string): string {
+  const label = (MODEL_TYPE_LABEL as Record<string, string>)[type] ?? type;
+  return label.charAt(0).toLowerCase() + label.slice(1);
+}
+
+/**
+ * Why a node that runs models of *nodeType* does not take *model*: a model
+ * swaps another of its own type only, so the node takes it only when both
+ * types are known and equal. `null` when the node takes it; else the reason,
+ * an unknown type (the node's said first) or the two types.
+ */
+export function modelSwapRefusal(
+  nodeType: string | null | undefined,
+  model: Pick<ModelDragPayload, "name" | "type">,
+): string | null {
+  if (!nodeType) return `This node's model type is unknown, so it does not take ${model.name}.`;
+  if (!model.type) return `The model type of ${model.name} is unknown, so this node does not take it.`;
+  if (nodeType === model.type) return null;
+  const dropped = modelTypeText(model.type);
+  const article = /^[aeiou]/i.test(dropped) ? "an" : "a";
+  return `This node runs ${modelTypeText(nodeType)} models, and ${model.name} is ${article} ${dropped} model.`;
 }
 
 /** The code a node runs: its own once it has any, else its template's. */

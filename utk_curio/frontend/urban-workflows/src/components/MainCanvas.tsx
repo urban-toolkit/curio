@@ -58,9 +58,8 @@ import {
 } from "../services/datasetCatalog";
 import {
     hasModelDrag,
-    modelNodeForCanvas,
+    packageCardNodeOptions,
     readModelDragPayload,
-    type ModelDropTemplate,
 } from "../services/packages/modelApplication";
 import {
     endPackageCardDrag,
@@ -68,14 +67,15 @@ import {
     readPackageCardDragPayload,
     type PackageCardNode,
 } from "../services/packages/packageCardDrag";
+import type { PackageAddRequest } from "../services/packages/packageAddRequests";
+import { useModelCatalogDrawer } from "../providers/modelCatalog";
 import { usePackageCardDrop } from "./packages/usePackageCardDrop";
 import { useHostedGuest } from "./apiSettings/useHostedGuest";
 import { endScenarioDrag, hasScenarioDrag, readScenarioDragPayload } from "../services/scenarioCatalog/scenarioDrag";
 import { useScenarioDrop } from "./scenarios/useScenarioDrop";
 import { packageStarterCode } from "../adapters/node/packageNodeBehavior";
 import { useStarterContext } from "../providers/StarterProvider";
-import { getAllNodeTypes, getPaletteNodeTypes } from "../registry/nodeRegistry";
-import type { NodeDescriptor } from "../registry/types";
+import { tryGetNodeDescriptor } from "../registry/nodeRegistry";
 import {
   agentsApi,
   readAgentDragCoord,
@@ -421,57 +421,52 @@ export function MainCanvas() {
         }
     }, [dropPosition, revealCreated, createCodeNode, markDirty, showToast, openDatasetDetails]);
 
-    // A model dropped on the empty canvas becomes a node that runs it, as a
-    // dataset becomes a Data Loading node. A drop on a node never gets here:
-    // the node's own listener takes it (styles.tsx).
+    // A model dragged onto the empty canvas is its package's card (it carries
+    // both drags): the card drop below makes its package's node. Only a model
+    // whose package has no node at all gets here.
     const { getStarters } = useStarterContext();
     const handleModelCanvasDrop = useCallback((event: React.DragEvent) => {
         event.preventDefault();
         event.stopPropagation();
         const model = readModelDragPayload(event.dataTransfer);
-        if (!model) return;
-        const templates = (descriptors: NodeDescriptor[]): ModelDropTemplate[] =>
-            descriptors.map((d) => ({
-                nodeType: String(d.id),
-                label: d.label,
-                code: packageStarterCode(d, getStarters),
-                packageName: d.package?.name,
-            }));
-        const node = modelNodeForCanvas(templates(getPaletteNodeTypes()), model);
-        if (!node) {
-            const elsewhere = modelNodeForCanvas(templates(getAllNodeTypes()), model);
-            showToast(
-                elsewhere?.packageName
-                    ? `${model.name} needs a node that runs models: add ${elsewhere.packageName} to this project from the Model Catalog.`
-                    : "No installed node runs a model.",
-                "warning",
-            );
-            return;
-        }
-        const position = dropPosition(event);
-        revealCreated(createCodeNode(node.nodeType, { position, code: node.code, modelRefs: node.modelRefs }));
-        const article = /^[aeiou]/i.test(node.label) ? "an" : "a";
-        showToast(`Created ${article} ${node.label} node for ${model.name}.`, "success");
-        markDirty();
-    }, [getStarters, dropPosition, revealCreated, createCodeNode, markDirty, showToast]);
+        if (model) showToast(`${model.name} has no node to add.`, "warning");
+    }, [showToast]);
 
     // A package's card from the Node Catalog drawer becomes one of the
     // package's nodes: its one node, or the one picked from a menu of its
-    // nodes at the drop point (usePackageCardDrop). A package the dataflow has
-    // not added goes through the drawer's own Add first (the review, then the
-    // install of its libraries), and the node is made once it is added; a
-    // hosted guest's drop is refused, since guests never install.
+    // nodes at the drop point (usePackageCardDrop). A model's card from the
+    // Model Catalog drawer or the Models palette is its package's card: its
+    // one node runs the model, opening with its template's code, which names
+    // the model. A package the dataflow has not added goes through the
+    // drawer's own Add first (the review, then the install of its libraries),
+    // and the node is made once it is added; a model dropped from the Models
+    // palette with the Model Catalog drawer closed opens that drawer on its
+    // Add. A hosted guest's drop is refused, since guests never install.
+    const { openModelCatalogDrawer } = useModelCatalogDrawer();
+    const openModelCatalogOnAdd = useCallback(
+        (addRequest: PackageAddRequest) => openModelCatalogDrawer({ addRequest }),
+        [openModelCatalogDrawer],
+    );
     const createPackageNode = useCallback((node: PackageCardNode, position: XYPosition) => {
-        revealCreated(createCodeNode(node.nodeType as NodeType, { position }));
+        const starter = node.model
+            ? packageStarterCode(tryGetNodeDescriptor(node.nodeType as NodeType), getStarters)
+            : undefined;
+        revealCreated(createCodeNode(node.nodeType as NodeType, { position, ...packageCardNodeOptions(node, starter) }));
         const article = /^[aeiou]/i.test(node.label) ? "an" : "a";
-        showToast(`Created ${article} ${node.label} node.`, "success");
+        showToast(
+            node.model
+                ? `Created ${article} ${node.label} node for ${node.model.name}.`
+                : `Created ${article} ${node.label} node.`,
+            "success",
+        );
         markDirty();
-    }, [revealCreated, createCodeNode, showToast, markDirty]);
+    }, [getStarters, revealCreated, createCodeNode, showToast, markDirty]);
     const { drop: dropPackageCard, menu: packageNodeMenu } = usePackageCardDrop({
         dataflowPackages,
         hostedGuest,
         createNode: createPackageNode,
         showToast,
+        openModelCatalog: openModelCatalogOnAdd,
     });
     const handlePackageCardCanvasDrop = useCallback((event: React.DragEvent) => {
         event.preventDefault();
@@ -513,12 +508,12 @@ export function MainCanvas() {
             handleCanvasDrop(event);
             return;
         }
-        if (hasModelDrag(event.dataTransfer)) {
-            handleModelCanvasDrop(event);
-            return;
-        }
         if (hasPackageCardDrag(event.dataTransfer)) {
             handlePackageCardCanvasDrop(event);
+            return;
+        }
+        if (hasModelDrag(event.dataTransfer)) {
+            handleModelCanvasDrop(event);
             return;
         }
         if (hasScenarioDrag(event.dataTransfer)) {

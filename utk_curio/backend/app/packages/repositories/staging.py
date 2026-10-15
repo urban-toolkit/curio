@@ -35,6 +35,7 @@ import time
 from pathlib import Path
 from typing import IO, Iterator
 
+from utk_curio.backend.app.packages.repositories.archive import _model_caps
 from utk_curio.backend.app.packages.repositories.store import (
     _user_key_segment,
     _users_base,
@@ -44,10 +45,11 @@ log = logging.getLogger(__name__)
 
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 
-# Staged archives are compressed .curio.zip bytes; the installer's
-# uncompressed ceiling is 128 MiB, so the compressed artifact is bounded
-# by the same figure with room to spare.
-MAX_ARTIFACT_BYTES = 128 * 1024 * 1024
+# Staged archives are compressed .curio.zip bytes, bounded by what the
+# installer takes uncompressed. The builder may stage a model package, whose
+# weights may reach 2 GiB beside a node package's 128 MiB for everything else,
+# so the artifact is bounded by a model package's whole archive.
+MAX_ARTIFACT_BYTES = _model_caps()[1]
 
 # Default artifact lifetime. A proposal older than this must be rebuilt from
 # its immutable request (same input digest → same build), never trusted.
@@ -97,7 +99,6 @@ def stage_artifact(user_key: str, data: bytes | os.PathLike) -> str:
     """
     if isinstance(data, (bytes, bytearray)):
         size = len(data)
-        digest = hashlib.sha256(data).hexdigest() if data else ""
         source = None
     else:
         try:
@@ -105,16 +106,18 @@ def stage_artifact(user_key: str, data: bytes | os.PathLike) -> str:
             size = source.stat().st_size if source.is_file() else 0
         except (TypeError, OSError):
             size, source = 0, None
-        digest = ""
-        if size:
-            with open(source, "rb") as handle:
-                digest = _stream_digest(handle)
     if not size:
         raise StagingError("artifact must be non-empty bytes")
+    # Checked on the size alone, before any byte of it is hashed or copied.
     if size > MAX_ARTIFACT_BYTES:
         raise StagingError(
             f"artifact exceeds the staging limit ({size} > {MAX_ARTIFACT_BYTES} bytes)"
         )
+    if source is None:
+        digest = hashlib.sha256(data).hexdigest()
+    else:
+        with open(source, "rb") as handle:
+            digest = _stream_digest(handle)
     base = user_build_staging_dir(user_key)
     base.mkdir(parents=True, exist_ok=True)
     target = _artifact_path(user_key, digest)

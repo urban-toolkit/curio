@@ -180,6 +180,22 @@ export function getAllNodeTypes(): NodeDescriptor[] {
 }
 
 /**
+ * The model type of the model package *modelId* names (`<id>` or
+ * `<id>@<major>`), read from a node of it the registry holds: a model the
+ * account's store holds. `undefined` for any other.
+ */
+export function modelTypeOfPackage(modelId: string): string | undefined {
+  const [packageId, major] = modelId.split('@');
+  for (const d of registry.values()) {
+    const pkg = d.package;
+    if (pkg?.kind !== 'model' || pkg.packageId !== packageId) continue;
+    if (major !== undefined && String(pkg.major) !== major) continue;
+    if (pkg.modelType) return pkg.modelType;
+  }
+  return undefined;
+}
+
+/**
  * Is *d* offered by a dataflow whose lockfile is *scope*?
  *
  * ``null`` scope means no dataflow is open (the project list, the catalog
