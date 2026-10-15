@@ -258,17 +258,15 @@ _TOOL_PARAM_BUDGETS = {
 #
 # The budget is scoped to the CONTENT FIELD, not to the tool: a per-tool
 # budget would also hand the tool's other params a 256KB allowance, which is
-# exactly the smuggling shape the dev/89 tail tests pin against. The path is
-# per-tool because node.template.create NESTS its content one level down.
+# exactly the smuggling shape the dev/89 tail tests pin against. The field is
+# named by its path in the params, so a field nested in an object is lifted
+# the same way.
 _CONTENT_PARAM_PATHS = {
     "node.create": ("content",),
     "node.content.write": ("content",),
-    "node.template.create": ("template", "content"),
 }
-# Everything BESIDE the content field keeps a classic-tail budget: nodeType,
-# nodeId, title, goal and appearance are tiny, and node.template.create's
-# justification is prose the review card shows. Not the 1KB tool cap (that
-# would starve the justification), and never the plan budget.
+# Everything BESIDE the content field (nodeType, nodeId, title, goal,
+# appearance, widgets) keeps a classic-tail budget, never the plan budget.
 _CONTENT_PARAM_REST_MAX_BYTES = TAIL_MAX_BYTES
 
 #: The tools whose TAIL may exceed TAIL_MAX_BYTES (both gates in parse_parts).

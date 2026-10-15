@@ -568,11 +568,12 @@ REGISTRY: dict[str, ToolContract] = {
     ),
     # dev/89, consumers: agent.node-builder (its package-writing mode's drafts)
     # and agent.researcher (the drafts it asks for). The ONE package-authoring
-    # mutate contract: requesting it runs the isolated build service
-    # (validate → resolve → compile → preview → package, all staged and
-    # content-addressed) and mints the reviewed package-draft proposal;
-    # Apply promotes the exact reviewed artifact digest through the
-    # promotion coordinator — never a silent install.
+    # mutate contract, and the one way an agent makes a node type: requesting
+    # it checks every template the draft adds (justification, label, grounded
+    # code), runs the isolated build service (validate → resolve → compile →
+    # preview → package, all staged and content-addressed) and mints the
+    # reviewed package-draft proposal; Apply promotes the exact reviewed
+    # artifact digest through the promotion coordinator, never a silent install.
     "package.draft.apply": ToolContract(
         id="package.draft.apply",
         contract_version="1",
@@ -591,7 +592,13 @@ REGISTRY: dict[str, ToolContract] = {
             '{"python"|"js"|"packages": {name: constraint}}, '
             '"previewTemplates": [...], "nodes": [{"templateId": "...", '
             '"title": "...", "content": "...", "appearance": '
-            '{"backgroundColor": "<palette name or #RRGGBB>"}}]}. The build '
+            '{"backgroundColor": "<palette name or #RRGGBB>"}}], '
+            '"justification": "<the closest existing templates and why each is '
+            'inadequate>"}. A draft that adds a template (every template of a '
+            "create, a new one in an extend) needs the justification, which "
+            "the user judges during review, and gives each new template a "
+            "label no existing template has: one that already does the job is "
+            "reused, not drafted again. The build "
             "service compiles/validates/previews the draft; the user reviews "
             "the diff, dependencies, and preview before anything installs. "
             "Never claim the package exists before the user applies it."
@@ -619,43 +626,12 @@ REGISTRY: dict[str, ToolContract] = {
                     ),
                     "description": "Nodes to add once the package is applied.",
                 },
+                "justification": _text(
+                    "The closest existing templates, and why each is inadequate. "
+                    "Needed when the draft adds a template."
+                ),
             },
             "mode", "manifest",
-        ),
-    ),
-    # dev/48 §3.2b — consumer: agent.node-builder. The justified creation
-    # fallback: ONLY when no available template fits; the apply endpoint
-    # executes it solely through the existing package factory.
-    "node.template.create": ToolContract(
-        id="node.template.create",
-        contract_version="1",
-        effect="mutate",
-        description=(
-            "Propose a NEW custom node type — only after the Available node "
-            "templates list has been considered and none can adequately hold "
-            'the task. Params: {"justification": "...", "template": {"label": '
-            '"...", "description": "...", "engine": "python"|"javascript", '
-            '"content": "..."}}. justification must name the closest existing '
-            "templates and why each is inadequate — the user judges it during "
-            "review. Applying registers the node type in this project AND "
-            "adds its first node; nothing happens without the user's approval."
-        ),
-        parameters=_object(
-            {
-                "justification": _text(
-                    "The closest existing templates, and why each is inadequate."
-                ),
-                "template": _object(
-                    {
-                        "label": _text("The node type's name."),
-                        "description": _text("What the node type does."),
-                        "engine": {"type": "string", "enum": ["python", "javascript"]},
-                        "content": _text("The first node's content."),
-                    },
-                    "label", "content",
-                ),
-            },
-            "justification", "template",
         ),
     ),
 }
