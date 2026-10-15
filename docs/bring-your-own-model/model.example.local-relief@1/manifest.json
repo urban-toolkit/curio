@@ -40,12 +40,12 @@
     {
       "behavior": "code",
       "category": "computation",
-      "description": "How many metres each cell of a building-height raster stands above the mean of the 5 by 5 cells around it. Input: a height raster in metres. Output: a raster on the same grid.",
+      "description": "How many metres each cell of a building-height raster stands above the mean of the 5 by 5 cells around it. Input: a height raster in metres. Output: a raster on the same grid. The Widgets tab sets the lowest height: a cell lower than it is read as ground.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
       "hasGrammar": false,
-      "hasWidgets": false,
+      "hasWidgets": true,
       "iconRef": "fa-solid:city",
       "id": "local-relief",
       "inputPorts": [
@@ -65,7 +65,20 @@
           ]
         }
       ],
-      "source": "sources/local-relief.py"
+      "source": "sources/local-relief.py",
+      "widgets": [
+        {
+          "name": "min_height",
+          "type": "number",
+          "label": "Lowest height",
+          "default": 0,
+          "options": {
+            "min": 0,
+            "step": 0.5,
+            "units": "m"
+          }
+        }
+      ]
     }
   ],
   "version": "1.0.0"

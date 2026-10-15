@@ -13,6 +13,8 @@ The shipped example is Local Relief, in ``docs/bring-your-own-model/``.
   are read where they ship, or where a pip install fetches them, and a
   weight left out of the pip package counts as present until then.
 - ``curio_load_model("<id>")`` reaches a model package's weights.
+- Local Relief's widget reaches its model: the node, run through the package
+  as a run runs it, with the widget at two values.
 
 No test opens a socket (``FakeGitHub``). The code under test is imported
 inside each test, so a tree without it fails test by test.
@@ -623,6 +625,153 @@ def test_a_node_whose_model_was_never_added_is_given_none(client, user_and_token
     install_package_from_directory(_key(user), catalog / DIR)
     assert _run_loader(client, token).status_code == 200
     assert sent[-1]["models"] == {MODEL_ID: str((catalog / DIR).resolve())}
+
+
+# ---------------------------------------------------------------------------
+# Local Relief's widget: what the user sets reaches the model
+# ---------------------------------------------------------------------------
+
+#: Local Relief's one widget, as its template declares it: heights lower than
+#: it reach the model as ground (0 m).
+LOWEST_HEIGHT = {
+    "name": "min_height", "type": "number", "label": "Lowest height", "default": 0,
+    "options": {"min": 0, "step": 0.5, "units": "m"},
+}
+
+
+def _relief_reference(height):
+    """Each cell's height minus the mean of the 5 by 5 cells around it (the
+    cells that are there, at the edge), by hand."""
+    import numpy as np
+
+    rows, cols = height.shape
+    out = np.empty(height.shape, dtype=np.float64)
+    for r in range(rows):
+        for c in range(cols):
+            around = height[max(0, r - 2):r + 3, max(0, c - 2):c + 3]
+            out[r, c] = height[r, c] - around.mean()
+    return out
+
+
+def _template_and_source(package: Path) -> tuple[dict, str]:
+    (template,) = json.loads((package / "manifest.json").read_text(encoding="utf-8"))["templates"]
+    return template, (package / template["source"]).read_text(encoding="utf-8")
+
+
+@pytest.fixture
+def relief_package(catalog, monkeypatch):
+    """Local Relief added to the account's store from the test catalog's copy,
+    and a sandbox store of the test's own, as the sandbox suites make one. The
+    node runs from the copy, so no bytecode lands in ``docs/``."""
+    from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+    from utk_curio.sandbox.util.db import init_db, release_connection
+
+    monkeypatch.setenv("CURIO_SHARED_DATA", str(catalog.parent / "data"))
+    release_connection()
+    init_db()
+    install_package_from_directory("guest", catalog / DIR)
+    yield catalog / DIR
+    release_connection()
+
+
+def _run_local_relief(package: Path, heights_path: Path, media: Path, **values):
+    """Local Relief's node as a drop makes it, run as a run runs it: the
+    template's code, its widget at *values* as the Widgets tab sets one,
+    resolved as a run resolves it, in the sandbox in process with the
+    package's module and the model the account's store resolves. The band of
+    the raster it returns."""
+    import textwrap
+
+    import rasterio
+
+    from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
+    from utk_curio.backend.app.execution.code_references import resolve_references
+    from utk_curio.backend.app.packages.service import resolve_model_dirs
+    from utk_curio.sandbox.app.worker import _worker_init, execute_code
+    from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
+
+    template, source = _template_and_source(package)
+    widgets = [dict(widget) for widget in template.get("widgets") or []]
+    for widget in widgets:
+        if widget["name"] in values:
+            widget["value"] = values[widget["name"]]
+    code, problems = resolve_references(source, widgets, "python", inputs=[{"slot": 0}])
+    assert problems == [], problems
+    models = resolve_model_dirs("guest", model_ids_in_code(source))
+    assert models == {MODEL_ID: str(package.resolve())}, models
+
+    _worker_init()
+    with rasterio.open(heights_path) as heights:
+        upstream = save_to_duckdb(heights, node_id="upstream")
+    result = execute_code(
+        textwrap.indent(code, "    "), upstream, f"{MODEL_ID}/{template['id']}", "raster",
+        save_dataset=False, media_dir=str(media),
+        package_modules={"root": str(package / "sources"), "names": ["local_relief"]},
+        models=models,
+    )
+    assert result["stderr"] == "", result["stderr"]
+    assert result["output"]["dataType"] == "raster", result["output"]
+    relief = load_from_duckdb(result["output"]["path"])
+    try:
+        return relief.read(1)
+    finally:
+        relief.close()
+
+
+def test_local_reliefs_template_declares_its_widget_and_its_code_reads_it():
+    """One widget, Lowest height, which the Widgets tab takes as it is, read
+    by the node's code as ``[!! min_height !!]``; the code loads the model by
+    its id."""
+    import re
+
+    from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
+    from utk_curio.backend.app.execution.code_references import check_widget_def
+
+    template, source = _template_and_source(LOCAL_RELIEF)
+    assert template["hasWidgets"] is True
+    assert template["widgets"] == [LOWEST_HEIGHT]
+    assert check_widget_def(LOWEST_HEIGHT) is None
+    assert re.findall(r"\[!!\s*(@?\w+)\s*!!\]", source) == ["min_height"]
+    assert model_ids_in_code(source) == [MODEL_ID]
+
+
+def test_local_reliefs_lowest_height_reaches_its_model(relief_package, tmp_path):
+    """The node on a raster of a 25 m block, a 2 m shed and a cell with no data:
+    at the default, the model reads every height, the shed among them; at 3 m,
+    the shed reaches the model as ground. Each run gives the model's answer for
+    its own heights, so the two differ around the shed and nowhere near the
+    block, and the cell with no data has none in either."""
+    import numpy as np
+    import rasterio
+    from rasterio.transform import from_origin
+
+    heights = np.zeros((12, 14), dtype=np.float32)
+    heights[2:5, 3:6] = 25.0
+    heights[8:10, 9:11] = 2.0
+    heights[0, 13] = -9999.0
+    path = tmp_path / "heights.tif"
+    with rasterio.open(path, "w", driver="GTiff", width=14, height=12, count=1, dtype="float32",
+                       crs="EPSG:3857", transform=from_origin(-9757000, 5143000, 10, 10),
+                       nodata=-9999.0) as out:
+        out.write(heights, 1)
+    ground = heights.copy()
+    ground[0, 13] = 0.0
+    without_shed = ground.copy()
+    without_shed[8:10, 9:11] = 0.0
+    (tmp_path / "media").mkdir()
+
+    at_default = _run_local_relief(relief_package, path, tmp_path / "media")
+    at_three = _run_local_relief(relief_package, path, tmp_path / "media", min_height=3)
+
+    for relief, model_input in ((at_default, ground), (at_three, without_shed)):
+        assert relief.shape == heights.shape
+        assert np.isnan(relief[0, 13])
+        mask = ~np.isnan(relief)
+        assert mask.sum() == heights.size - 1
+        assert np.abs(relief[mask] - _relief_reference(model_input)[mask]).max() <= 1e-3
+    assert at_default[8, 9] == pytest.approx(2.0 - 8.0 / 25.0, abs=1e-3)
+    assert at_three[8, 9] == pytest.approx(0.0, abs=1e-3)
+    assert np.allclose(at_default[0:6, 0:8], at_three[0:6, 0:8], atol=1e-6)
 
 
 # ---------------------------------------------------------------------------

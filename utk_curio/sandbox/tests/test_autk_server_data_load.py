@@ -6,7 +6,7 @@ the frontend's ``dist/autk-data-compile.cjs``) and posts it to ``/execJs``, as
 the node's own run in the browser does. This runs that compiled JavaScript for
 the loaders of examples 06 (Back Bay), 07 (Chicago Loop), 08 (Niterói) and 11
 (Lower Manhattan) through ``execute_js_code`` and pins what it hands on with
-autk-db 4.1.0: each layer's name, type, feature count and CRS, and its first
+autk-db 4.1.1: each layer's name, type, feature count and CRS, and its first
 feature's keys.
 
 No socket: the extract is served from disk by a ``fetch`` placed before the
@@ -23,7 +23,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES = REPO_ROOT / "docs" / "examples"
-AUTK_DB_VERSION = "4.1.0"
+AUTK_DB_VERSION = "4.1.1"
 EPSG_3395 = "urn:ogc:def:crs:EPSG::3395"
 #: A feature's keys: autk-db gives an OSM element's id, not a surface's or a
 #: building part's.
@@ -35,14 +35,14 @@ BACK_BAY = [
     ("table_osm_parks", "parks", 116, EPSG_3395, WITH_ID),
     ("table_osm_water", "water", 8, EPSG_3395, WITH_ID),
     ("table_osm_roads", "roads", 736, EPSG_3395, WITH_ID),
-    ("table_osm_buildings", "buildings", 2120, EPSG_3395, WITHOUT_ID),
+    ("table_osm_buildings", "buildings", 2102, EPSG_3395, WITHOUT_ID),
 ]
 CHICAGO_LOOP = [
     ("table_osm_surface", "surface", 1, EPSG_3395, WITHOUT_ID),
-    ("table_osm_parks", "parks", 275, EPSG_3395, WITH_ID),
+    ("table_osm_parks", "parks", 280, EPSG_3395, WITH_ID),
     ("table_osm_water", "water", 52, EPSG_3395, WITH_ID),
-    ("table_osm_roads", "roads", 2098, EPSG_3395, WITH_ID),
-    ("table_osm_buildings", "buildings", 1507, EPSG_3395, WITHOUT_ID),
+    ("table_osm_roads", "roads", 2120, EPSG_3395, WITH_ID),
+    ("table_osm_buildings", "buildings", 1501, EPSG_3395, WITHOUT_ID),
 ]
 #: The land of Niterói: its coastline splits the surface.
 NITEROI = [
@@ -54,10 +54,10 @@ NITEROI = [
 #: Battery Park City and the Financial District, a surface each.
 LOWER_MANHATTAN = [
     ("table_osm_surface", "surface", 2, EPSG_3395, WITHOUT_ID),
-    ("table_osm_parks", "parks", 284, EPSG_3395, WITH_ID),
-    ("table_osm_water", "water", 41, EPSG_3395, WITH_ID),
-    ("table_osm_roads", "roads", 766, EPSG_3395, WITH_ID),
-    ("table_osm_buildings", "buildings", 2321, EPSG_3395, WITHOUT_ID),
+    ("table_osm_parks", "parks", 287, EPSG_3395, WITH_ID),
+    ("table_osm_water", "water", 42, EPSG_3395, WITH_ID),
+    ("table_osm_roads", "roads", 767, EPSG_3395, WITH_ID),
+    ("table_osm_buildings", "buildings", 2326, EPSG_3395, WITHOUT_ID),
 ]
 
 #: Put before the compiled code: serves the one extract the document loads,
