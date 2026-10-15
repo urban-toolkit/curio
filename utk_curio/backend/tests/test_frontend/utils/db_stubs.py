@@ -101,6 +101,40 @@ def api_json(
         return body if raw else json.loads(body.decode("utf-8") or "{}")
 
 
+#: A made-up agent that attaches to nodes only. Every catalog card accepts the
+#: canvas, so the browser tests that need a node-only agent (a canvas drop it
+#: refuses, a node chat's header) upload this one to the account.
+NODE_ONLY_AGENT = "agent.my-node-reader@1.0.0"
+NODE_ONLY_AGENT_NAME = "My Node Reader"
+
+
+def ensure_node_only_agent(backend_url: str, token: str) -> str:
+    """Upload :data:`NODE_ONLY_AGENT` to the account behind *token*, once, and
+    return its coordinate. It still has to be installed in a project."""
+    held = api_json(f"{backend_url}/api/agents/imports", token)["agents"]
+    if NODE_ONLY_AGENT not in {row.get("dirName") for row in held}:
+        api_json(
+            f"{backend_url}/api/agents/imports/upload", token, method="POST",
+            payload={
+                "manifest": {
+                    "id": NODE_ONLY_AGENT.split("@", 1)[0],
+                    "name": NODE_ONLY_AGENT_NAME,
+                    "category": "node",
+                    "version": NODE_ONLY_AGENT.split("@", 1)[1],
+                    "purpose": "Answer questions about the node it is attached to.",
+                    "capabilities": [{"id": "node.explain", "contractVersion": "1"}],
+                    "compatibleTargets": [{"kind": "node", "requires": []}],
+                    "prompts": {"instruction": {"path": "prompts/instruction.md", "variables": []}},
+                    "provenance": {"publisher": "e2e"},
+                },
+                "prompts": {
+                    "prompts/instruction.md": "You answer questions about the node you are attached to.",
+                },
+            },
+        )
+    return NODE_ONLY_AGENT
+
+
 def install_session_cookie(page, frontend_url: str, token: str) -> None:
     """Install *token* as the ``session_token`` cookie on *page*'s context.
 

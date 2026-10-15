@@ -29,10 +29,12 @@ from utk_curio.backend.app.agents.infrastructure.providers import (
     NativeToolsRefused,
     ProviderConfig,
 )
-from utk_curio.backend.tests._support.agent_routes import _auth
+from utk_curio.backend.tests._support.agent_routes import READER, _auth, _write_reader
 from utk_curio.backend.tests.test_agents import test_routes_proposals as routes_proposals
 
-CHAT = "agent.chat-agent@1.0.0"
+#: An agent that only chats and reads: the three read tools, no delegates.
+#: No card is one, so a made-up one stands in (``_support.agent_routes``).
+CHAT = READER
 NB = "agent.node-builder@1.0.0"
 DFB = "agent.dataflow-builder@1.0.0"
 DF = "agent.dataset-finder@1.0.0"
@@ -55,6 +57,7 @@ def project(client, user_and_token):
     from utk_curio.backend.app.projects.services import _user_dir_key
 
     routes_proposals.TestNodeCreate()._write_builtin_package(_user_dir_key(user), templates=TEMPLATES)
+    _write_reader(user)
     body = {
         "name": "p",
         "spec": {"dataflow": {"nodes": [

@@ -23,7 +23,7 @@ import { AgentChatPanel } from "../../components/agents/attach/AgentChatPanel";
 function attachment(over: Partial<any> = {}): any {
   return {
     attachmentId: "att-1",
-    coord: "agent.chat-agent@1.0.0",
+    coord: "agent.researcher@1.0.0",
     target: { kind: "canvas" },
     sessionId: "s1",
     revision: 1,
@@ -31,7 +31,7 @@ function attachment(over: Partial<any> = {}): any {
     intentEdited: false,
     title: null,
     titleEdited: false,
-    name: "Chat",
+    name: "Researcher",
     category: "canvas",
     hooks: ["canvas"],
     ...over,

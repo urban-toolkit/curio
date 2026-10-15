@@ -18,9 +18,9 @@
 import { renderHook, act, waitFor } from "@testing-library/react";
 
 const BUILTIN = {
-  dirName: "agent.chat-agent",
-  id: "agent.chat-agent",
-  name: "Chat",
+  dirName: "agent.researcher",
+  id: "agent.researcher",
+  name: "Researcher",
   purpose: "Conversational assistant",
   category: "node",
   capabilities: [],
@@ -85,7 +85,7 @@ describe("/catalog/agents lists the account's own agents", () => {
   it("shows an agent that exists only in the account's imports", async () => {
     const result = await browse();
     expect(result.current.agents.map((a) => a.dirName)).toEqual(
-      expect.arrayContaining(["agent.chat-agent", "me.my-agent"]),
+      expect.arrayContaining(["agent.researcher", "me.my-agent"]),
     );
   });
 
@@ -132,7 +132,7 @@ describe("/catalog/agents lists the account's own agents", () => {
     // not blank the roster the user is reading.
     mockImports.mockRejectedValue(new Error("imports are down"));
     const result = await browse();
-    expect(result.current.agents.map((a) => a.dirName)).toEqual(["agent.chat-agent"]);
+    expect(result.current.agents.map((a) => a.dirName)).toEqual(["agent.researcher"]);
   });
 
   it("re-reads both lists after an action, so a fresh import appears", async () => {

@@ -161,13 +161,13 @@ _DEFAULT_BASE_URL = "https://sage200.evl.uic.edu/"
 _DEFAULT_MODEL = "gemma4"
 
 # Agents the tour adds to the dataflow. The order matters on screen:
-#   chat-agent       attaches to a node and is the one that answers live;
-#   connection-builder is the only built-in that accepts a connection target,
+#   researcher       attaches to a node and is the one that answers live;
+#   node-builder     is the only built-in that accepts a connection target,
 #                    which is the gesture this branch added;
-#   dataflow-builder is the only built-in declaring requiresAgents, so its
-#                    button reads "Add to project (+1 required)".
-AGENT_EXPLAINER = "agent.chat-agent@1.0.0"
-AGENT_CONNECTION = "agent.connection-builder@1.0.0"
+#   dataflow-builder declares requiresAgents, so its Add button counts the
+#                    agents it requires.
+AGENT_EXPLAINER = "agent.researcher@1.0.0"
+AGENT_CONNECTION = "agent.node-builder@1.0.0"
 AGENT_BUILDER = "agent.dataflow-builder@1.0.0"
 
 AGENT_SEARCH_PLACEHOLDER = "Search agents, publishers, tags…"
@@ -284,21 +284,18 @@ GEO_CHART_SPEC = json.dumps(
     indent=2,
 )
 GEO_GOAL = "Map and chart the size of downtown Chicago's ZIP codes."
-# Every catalog agent is added, so the rail counts seven; these are the ones
-# attached, each where it works.
+# Every catalog agent is added, so the rail counts four; these are the
+# attachments, each where it works.
 GEO_AGENTS = [
-    "agent.chat-agent@1.0.0", "agent.connection-builder@1.0.0",
-    "agent.dataflow-builder@1.0.0", "agent.dataset-finder@1.0.0",
-    "agent.node-builder@1.0.0", "agent.package-builder@1.0.0",
-    "agent.researcher@1.0.0",
+    "agent.researcher@1.0.0", "agent.node-builder@1.0.0",
+    "agent.dataset-finder@1.0.0", "agent.dataflow-builder@1.0.0",
 ]
 GEO_ATTACH = [
     ("agent.dataset-finder@1.0.0", {"kind": "node", "targetId": GEO_LOADER}),
     ("agent.node-builder@1.0.0", {"kind": "node", "targetId": GEO_TRANSFORM}),
-    ("agent.chat-agent@1.0.0", {"kind": "node", "targetId": GEO_MAP}),
-    ("agent.package-builder@1.0.0", {"kind": "node", "targetId": GEO_CHART}),
+    ("agent.researcher@1.0.0", {"kind": "node", "targetId": GEO_MAP}),
     (
-        "agent.connection-builder@1.0.0",
+        "agent.node-builder@1.0.0",
         {"kind": "connection", "targetId": f"reactflow__edge-{GEO_TRANSFORM}out-{GEO_CHART}in"},
     ),
     ("agent.dataflow-builder@1.0.0", {"kind": "canvas"}),
@@ -1317,7 +1314,7 @@ def scene_agent_catalog(ctx: Ctx) -> None:
     drawer = _open_agent_drawer(ctx)
     tour.say(
         "Nodes, data - and agents",
-        "Seven ship built in, each a versioned package like any other.",
+        "Four ship built in, each a versioned package like any other.",
         hold=2900,
     )
     tour.say(
@@ -1344,7 +1341,7 @@ def scene_agent_catalog(ctx: Ctx) -> None:
     tour.beat(900)
     tour.say(
         "Agents can require other agents",
-        "This one reads 'Add to project (+1 required)': the closure comes with it.",
+        "Its Add button counts the agents it requires: the closure comes with it.",
         hold=3000,
     )
     _add_agent(ctx, drawer, AGENT_BUILDER, hold=1800)
@@ -1453,7 +1450,7 @@ def scene_agent_run(ctx: Ctx) -> None:
         "A live model, answering about this dataflow.",
     )
     badge = page.get_by_role(
-        "button", name=re.compile(r"^Open chat with Chat")
+        "button", name=re.compile(r"^Open chat with Researcher")
     ).first
     badge.wait_for(state="visible", timeout=20000)
     tour.click(badge)

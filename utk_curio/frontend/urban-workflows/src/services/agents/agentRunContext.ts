@@ -92,11 +92,10 @@ function readFragment(
     case "workflowGoal":
       return canvas.workflowGoal ? "Task: " + canvas.workflowGoal : null;
     case "connectionSide": {
-      // Only an agent attached to a connection has a side. The vocabulary is
-      // the one new_connection_prompt.md is written against: it expects to be
-      // "informed if the nodes you are suggesting will be connected into the
-      // input or output of the node", so name both ends in those terms rather
-      // than inventing a source/target framing the prompt does not use.
+      // Only an agent attached to a connection has a side. The Node Builder's
+      // chat suggests nodes for the input side or the output side of a node,
+      // so name both ends in those terms rather than inventing a
+      // source/target framing the prompt does not use.
       if (attachment.target.kind !== "connection") return null;
       const edge = (canvas.edges as { id?: string; source?: string; target?: string }[])
         .find((e) => e?.id === attachment.target.targetId);
@@ -203,14 +202,21 @@ function readFragment(
 
 /**
  * Compose the run's grounded context for one attachment, or `null` when the
- * agent declares nothing composable (e.g. the chat agent).
+ * agent declares nothing composable (e.g. only `userMessage`).
+ *
+ * An attachment that reads both `targetContext` and `dataflowContext` (the
+ * Researcher) gets the whole dataflow once: away from a node, `targetContext`
+ * already IS the live Trill, so `dataflowContext` composes nothing there. On a
+ * node, `targetContext` is that node's snapshot and both compose.
  */
 export function composeAgentRunContext(
   attachment: AgentAttachment,
   canvas: AgentCanvasState,
 ): string | null {
   const reads = attachment.reads ?? [];
+  const targetIsTheDataflow = reads.includes("targetContext") && targetNodeId(attachment) == null;
   const fragments = reads
+    .filter((read) => !(read === "dataflowContext" && targetIsTheDataflow))
     .map((read) => readFragment(read, attachment, canvas))
     .filter((f): f is string => f != null);
   return fragments.length ? fragments.join("\n") : null;

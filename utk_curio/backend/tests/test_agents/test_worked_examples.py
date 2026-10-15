@@ -235,7 +235,6 @@ class TestWhoTakesThem:
             ("agent.dataflow-builder", None),
             ("agent.node-builder", None),
             ("agent.node-builder", "node.content.generate"),
-            ("agent.connection-builder", None),
             ("agent.dataflow-reader", "workflow.suggest"),
         }
         # The Autark variant replaces the instruction of the same content
@@ -343,7 +342,7 @@ class TestTheBlockReachesRuns:
         user, token = user_and_token
         att_id, calls = helper._setup(
             client, user, token, alice_project, monkeypatch,
-            replies=["chatting"], coord="agent.chat-agent@1.0.0",
+            replies=["chatting"], coord="agent.researcher@1.0.0",
         )
         helper._run(client, token, alice_project, att_id, message=IMAGES)
         assert examples.HEADING not in calls[0][0]["content"]

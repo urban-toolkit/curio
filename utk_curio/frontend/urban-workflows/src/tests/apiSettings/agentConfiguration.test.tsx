@@ -26,7 +26,7 @@ const listingOf = (overrides: Record<string, unknown> = {}) => ({
   default: WORK.id,
   assignments: { "agent.node-builder": LOCAL.id },
   agents: [
-    { id: "agent.chat-agent", name: "Chat", category: "chat", choice: null, answers: answering("Work", "gpt-4o-mini") },
+    { id: "agent.researcher", name: "Researcher", category: "node", choice: null, answers: answering("Work", "gpt-4o-mini") },
     { id: "agent.dataflow-builder", name: "Dataflow Builder", category: "dataflow", choice: null,
       answers: answering("Work", "gpt-4o-mini") },
     { id: "agent.node-builder", name: "Node Builder", category: "node", choice: LOCAL.id,
@@ -120,7 +120,7 @@ describe("Agent configuration", () => {
     render(<Panel />);
     const section = await models();
     expect(section.getAllByRole("combobox")).toHaveLength(3);
-    expect(select("Chat").value).toBe("");
+    expect(select("Researcher").value).toBe("");
     expect(select("Node Builder").value).toBe(LOCAL.id);
     expect(section.getByText("Runs on Local · llama3")).toBeInTheDocument();
   });
@@ -128,7 +128,7 @@ describe("Agent configuration", () => {
   it("offers Default, every configuration and the Deployment default", async () => {
     render(<Panel />);
     await models();
-    const options = Array.from(select("Chat").options).map((o) => [o.value, o.textContent]);
+    const options = Array.from(select("Researcher").options).map((o) => [o.value, o.textContent]);
     expect(options).toEqual([
       ["", "Default (Work)"],
       [WORK.id, "Work · gpt-4o-mini"],
@@ -140,8 +140,8 @@ describe("Agent configuration", () => {
   it("saves a choice on change, and Default clears it", async () => {
     render(<Panel />);
     await models();
-    fireEvent.change(select("Chat"), { target: { value: LOCAL.id } });
-    await waitFor(() => expect(mockApi.setAssignments).toHaveBeenCalledWith({ "agent.chat-agent": LOCAL.id }));
+    fireEvent.change(select("Researcher"), { target: { value: LOCAL.id } });
+    await waitFor(() => expect(mockApi.setAssignments).toHaveBeenCalledWith({ "agent.researcher": LOCAL.id }));
     await waitFor(() => expect(select("Node Builder")).toBeEnabled());
     fireEvent.change(select("Node Builder"), { target: { value: "" } });
     await waitFor(() =>
@@ -158,8 +158,8 @@ describe("Agent configuration", () => {
 
   it("shows why an agent has nothing to run on", async () => {
     mockListing = listingOf({
-      agents: [{ id: "agent.chat-agent", name: "Chat", category: "chat", choice: "llm-gone",
-        answers: { source: null, error: "The LLM configuration chosen for agent.chat-agent no longer exists." } }],
+      agents: [{ id: "agent.researcher", name: "Researcher", category: "node", choice: "llm-gone",
+        answers: { source: null, error: "The LLM configuration chosen for agent.researcher no longer exists." } }],
     });
     render(<Panel />);
     const section = await models();

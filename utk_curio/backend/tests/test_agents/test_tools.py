@@ -112,7 +112,7 @@ class TestExecuteReadTool:
             "dataflow": {
                 "nodes": nodes if nodes is not None else [{"id": "n1", "type": "CODE", "content": "print(1)"}],
                 "edges": [],
-                "agents": ["agent.chat-agent@1.0.0"] if with_agents else [],
+                "agents": ["agent.researcher@1.0.0"] if with_agents else [],
                 "agentAttachments": [{"attachmentId": "a1", "sessionId": "s1"}] if with_agents else [],
             }
         }

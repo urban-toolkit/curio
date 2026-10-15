@@ -499,7 +499,7 @@ def test_a_refusal_of_native_tools_falls_back_to_the_fenced_protocol(current_ser
     round again on the fenced protocol, and the run completes."""
     require_project_page()
     require_user_auth()
-    spec = next(s for s in _CARDS if s.agent_id == "agent.chat-agent")
+    spec = next(s for s in _CARDS if s.agent_id == "agent.researcher")
     token, base, attachment_id = _attached(spec, current_server, "fallback")
     script_agent_replies(
         current_server,

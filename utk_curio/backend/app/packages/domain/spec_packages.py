@@ -164,7 +164,7 @@ def preserve_project_packages(
     ``dataflow.packages`` is backend-owned on UPDATE, exactly like
     ``dataflow.datasets`` (dev/81) and the agent sections: the client
     serialises its mirror of the lockfile on every save, and honouring it let
-    a stale tab overwrite what the Package Builder's promotion (or the
+    a stale tab overwrite what a package draft's promotion (or the
     drawer) had just written. The value carried forward is the on-disk
     *effective* lockfile — backfill included — so a legacy ``[]``-with-nodes
     spec becomes explicit on its first save after this change.

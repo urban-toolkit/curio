@@ -56,7 +56,7 @@ class TestTheFallbackOrder:
     def test_the_default_configuration_answers(self, deployment):
         created = _own(deployment)
         deployment.set_default(USER, created["id"])
-        out = pc.resolve_llm(USER, "agent.chat-agent")
+        out = pc.resolve_llm(USER, "agent.researcher")
         assert (out.api_type, out.base_url, out.api_key, out.model) == (
             "openai_compatible", "https://api.openai.com/v1", "user-secret-key", "gpt-4o-mini",
         )
@@ -73,9 +73,9 @@ class TestTheFallbackOrder:
     def test_nothing_configured_is_a_refusal_with_a_remedy(self, deployment, monkeypatch):
         monkeypatch.setattr(config, "DEFAULT_LLM_MODEL", "")
         with pytest.raises(pc.ProviderConfigError) as refused:
-            pc.resolve_llm(USER, "agent.chat-agent")
+            pc.resolve_llm(USER, "agent.researcher")
         assert "API Settings" in str(refused.value)
-        assert refused.value.remedy == {"kind": "llm-config", "agentId": "agent.chat-agent"}
+        assert refused.value.remedy == {"kind": "llm-config", "agentId": "agent.researcher"}
 
     def test_an_unchosen_delegate_answers_with_its_callers(self, deployment):
         caller = ProviderConfig(api_key="k", api_type="anthropic", base_url="", model="claude",
@@ -95,8 +95,8 @@ class TestAChoicePerAgent:
     def test_an_attached_agent_runs_on_its_choice_over_the_default(self, deployment):
         default = _own(deployment, label="Default")
         deployment.set_default(USER, default["id"])
-        chosen = self._chosen(deployment, "agent.chat-agent")
-        out = pc.resolve_llm(USER, "agent.chat-agent")
+        chosen = self._chosen(deployment, "agent.researcher")
+        out = pc.resolve_llm(USER, "agent.researcher")
         assert (out.config_id, out.model, out.source) == (chosen["id"], "chosen-model", "assigned")
         # Another agent still follows the default.
         assert pc.resolve_llm(USER, "agent.dataflow-builder").config_id == default["id"]
@@ -120,26 +120,26 @@ class TestAChoicePerAgent:
         assert (out.api_key, out.model, out.source) == ("k", "claude", "caller")
 
     def test_the_deployment_default_can_be_chosen(self, deployment):
-        deployment.set_choices(USER, {"agent.chat-agent": "deployment"},
-                               choosable=frozenset({"agent.chat-agent"}), deployment_default=True)
-        out = pc.resolve_llm(USER, "agent.chat-agent")
+        deployment.set_choices(USER, {"agent.researcher": "deployment"},
+                               choosable=frozenset({"agent.researcher"}), deployment_default=True)
+        out = pc.resolve_llm(USER, "agent.researcher")
         assert (out.model, out.source, out.label) == ("llama4", "assigned", "Deployment default")
 
     def test_a_choice_that_names_nothing_is_refused_not_replaced(self, deployment):
-        chosen = self._chosen(deployment, "agent.chat-agent")
+        chosen = self._chosen(deployment, "agent.researcher")
         doc = deployment.read(USER)
         del doc["configs"][chosen["id"]]  # a hand-edited file
         deployment._write(USER, doc)
-        with pytest.raises(pc.ProviderConfigError, match="chosen for agent.chat-agent") as refused:
-            pc.resolve_llm(USER, "agent.chat-agent")
-        assert refused.value.remedy == {"kind": "llm-config", "agentId": "agent.chat-agent"}
+        with pytest.raises(pc.ProviderConfigError, match="chosen for agent.researcher") as refused:
+            pc.resolve_llm(USER, "agent.researcher")
+        assert refused.value.remedy == {"kind": "llm-config", "agentId": "agent.researcher"}
 
     def test_a_withdrawn_deployment_choice_is_refused(self, deployment, monkeypatch):
-        deployment.set_choices(USER, {"agent.chat-agent": "deployment"},
-                               choosable=frozenset({"agent.chat-agent"}), deployment_default=True)
+        deployment.set_choices(USER, {"agent.researcher": "deployment"},
+                               choosable=frozenset({"agent.researcher"}), deployment_default=True)
         monkeypatch.setattr(config, "DEFAULT_LLM_MODEL", "")
         with pytest.raises(pc.ProviderConfigError, match="no longer offers"):
-            pc.resolve_llm(USER, "agent.chat-agent")
+            pc.resolve_llm(USER, "agent.researcher")
 
     def test_a_guest_caller_keeps_its_delegates_on_the_guest_configuration(self, deployment):
         self._chosen(deployment)
@@ -220,7 +220,7 @@ class TestKeysStayWithTheirEndpoint:
 
 class TestGuests:
     def test_a_hosted_guest_runs_on_the_guest_configuration(self, deployment):
-        out = pc.resolve_llm("guest", "agent.chat-agent")
+        out = pc.resolve_llm("guest", "agent.researcher")
         assert (out.base_url, out.api_key, out.model, out.source) == (
             "https://guest.example.edu/v1", "guest-secret-key", "small-model", "guest",
         )

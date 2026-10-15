@@ -571,12 +571,17 @@ class TestDelegationTailAndBudget:
         assert "research.verify \N{EM DASH} handled by Researcher" in system
 
     def test_non_delegating_agent_gets_no_delegation_paragraph(self, client, user_and_token, tmp_curio, monkeypatch):
+        from utk_curio.backend.tests._support.agent_routes import _write_reader
+
         user, token = user_and_token
         pid = _project(client, token)
-        client.post(f"/api/agents/projects/{pid}/install", json={"coord": "agent.chat-agent@1.0.0"}, headers=_auth(token))
+        # Every card delegates something, so a made-up agent with no
+        # delegates stands in.
+        coord = _write_reader(user)
+        client.post(f"/api/agents/projects/{pid}/install", json={"coord": coord}, headers=_auth(token))
         att_id = client.post(
             f"/api/agents/projects/{pid}/attachments",
-            json={"coord": "agent.chat-agent@1.0.0", "target": {"kind": "canvas"}},
+            json={"coord": coord, "target": {"kind": "canvas"}},
             headers=_auth(token),
         ).get_json()["attachmentId"]
         calls = []
@@ -747,15 +752,19 @@ class TestCapabilityFirstResolution:
         return builtin.get_builtin_manifest(self.DFB)
 
     def test_non_delegates_to_installed_template_resolves(self, client, user_and_token, tmp_curio):
-        # Chat declares conversation.respond and is NOT in dataflow-builder's
-        # delegatesTo — capability-first finds it once installed.
+        # The Researcher declares research.notes.compose, which the Dataset
+        # Finder's delegatesTo does NOT delegate (its entry for the Researcher
+        # is scoped to research.verify): capability-first finds it once
+        # installed.
         user, token = user_and_token
         key = _user_dir_key(user)
         pid = _project(client, token)
-        client.post(f"/api/agents/projects/{pid}/install", json={"coord": "agent.chat-agent@1.0.0"}, headers=_auth(token))
-        r = delegation.resolve(key, pid, self._manifest(), "conversation.respond")
+        df = builtin.get_builtin_manifest("agent.dataset-finder@1.0.0")
+        assert not df.delegates("agent.researcher", "research.notes.compose")
+        client.post(f"/api/agents/projects/{pid}/install", json={"coord": RS}, headers=_auth(token))
+        r = delegation.resolve(key, pid, df, "research.notes.compose")
         assert r.outcome == "ok"
-        assert r.coord == "agent.chat-agent@1.0.0"
+        assert r.coord == RS
 
     def test_delegates_to_preference_still_wins(self, client, user_and_token, tmp_curio):
         # For dataflow-builder, node.build is declared by node-builder (in its
@@ -777,10 +786,11 @@ class TestCapabilityFirstResolution:
         key = _user_dir_key(user)
         pid_a = _project(client, token)
         pid_b = _project(client, token)
-        client.post(f"/api/agents/projects/{pid_b}/install", json={"coord": "agent.chat-agent@1.0.0"}, headers=_auth(token))
-        r = delegation.resolve(key, pid_a, self._manifest(), "conversation.respond")
+        df = builtin.get_builtin_manifest("agent.dataset-finder@1.0.0")
+        client.post(f"/api/agents/projects/{pid_b}/install", json={"coord": RS}, headers=_auth(token))
+        r = delegation.resolve(key, pid_a, df, "research.notes.compose")
         assert r.outcome == "not-installed"
-        assert r.coord == "agent.chat-agent@1.0.0"
+        assert r.coord == RS
 
     def test_missing_delegates_to_entry_still_preferred_over_fallback_absence(self, client, user_and_token, tmp_curio):
         # Nothing installed declares dataset.discover, but dataset-finder (a
@@ -1213,48 +1223,41 @@ class TestChatContentReviewMintStream:
 
 
 class TestPackageRecommendDelegation:
-    """dev/84: the three build parents resolve package.recommend to the
-    Package Builder, whose mode it is: current-project-only, missing template =
-    the reviewed missing-specialist path."""
+    """dev/84: the Dataflow Builder's "Recommend packages" step resolves
+    package.recommend to the Node Builder, whose mode it is:
+    current-project-only, missing template = the reviewed missing-specialist
+    path. The Node Builder recommends in its own chat, with its catalog
+    tools, so it never asks for the mode."""
 
-    PB = "agent.package-builder@1.0.0"
-    PARENTS = ("agent.node-builder@1.0.0", "agent.dataflow-builder@1.0.0",
-               "agent.connection-builder@1.0.0")
+    DFB = "agent.dataflow-builder@1.0.0"
 
-    def test_parents_declare_the_delegate(self):
-        for parent in self.PARENTS:
-            m = builtin.get_builtin_manifest(parent)
-            assert "agent.package-builder" in m.delegates_to, parent
-            assert m.delegates("agent.package-builder", "package.recommend"), parent
+    def test_the_dataflow_builder_declares_the_delegate(self):
+        m = builtin.get_builtin_manifest(self.DFB)
+        assert "agent.node-builder" in m.delegates_to
+        assert m.delegates("agent.node-builder", "package.recommend")
+        nb = builtin.get_builtin_manifest(NB)
+        assert not nb.delegates("agent.node-builder", "package.recommend")
+        assert "packages.catalog" in [t.id for t in nb.tools]
 
-    def test_the_connection_builder_is_offered_only_the_recommendation(self, client, user_and_token, tmp_curio):
-        user, _ = user_and_token
-        cb = builtin.get_builtin_manifest("agent.connection-builder@1.0.0")
-        assert cb.delegate_scopes == {"agent.package-builder": ("package.recommend",)}
-        offered = delegation.visible_capability_entries(_user_dir_key(user), cb)
-        assert offered == [("package.recommend", "Package Builder")]
-
-    def test_installed_package_builder_resolves_the_recommendation(self, client, user_and_token, tmp_curio):
+    def test_the_installed_node_builder_resolves_the_recommendation(self, client, user_and_token, tmp_curio):
         user, token = user_and_token
         key = _user_dir_key(user)
         pid = _project(client, token)
-        client.post(f"/api/agents/projects/{pid}/install", json={"coord": self.PB}, headers=_auth(token))
-        for parent in self.PARENTS:
-            r = delegation.resolve(key, pid, builtin.get_builtin_manifest(parent), "package.recommend")
-            assert r.outcome == "ok", parent
-            assert r.coord == self.PB
-            assert r.manifest.capability("package.recommend").instruction == "package.recommend"
+        client.post(f"/api/agents/projects/{pid}/install", json={"coord": NB}, headers=_auth(token))
+        r = delegation.resolve(key, pid, builtin.get_builtin_manifest(self.DFB), "package.recommend")
+        assert r.outcome == "ok"
+        assert r.coord == NB
+        assert r.manifest.capability("package.recommend").instruction == "package.recommend"
 
-    def test_missing_package_builder_is_missing_specialist(self, client, user_and_token, tmp_curio):
+    def test_a_missing_node_builder_is_missing_specialist(self, client, user_and_token, tmp_curio):
         user, token = user_and_token
         key = _user_dir_key(user)
         pid = _project(client, token)
         r = delegation.resolve(
-            key, pid, builtin.get_builtin_manifest("agent.dataflow-builder@1.0.0"),
-            "package.recommend",
+            key, pid, builtin.get_builtin_manifest(self.DFB), "package.recommend",
         )
         assert r.outcome == "not-installed"  # → the reviewed project.install proposal
-        assert r.coord == self.PB
+        assert r.coord == NB
 
 
 class TestEvaluatorDelegation:
@@ -1347,6 +1350,20 @@ class TestMergedAgentModes:
         offered = {cap for cap, _ in delegation.visible_capability_entries(key, nb)}
         assert "execution.followup.plan" in offered
         assert "workflow.plan.create" not in offered
+
+    def test_a_card_is_offered_exactly_what_its_scoped_entries_name(self, client, user_and_token, tmp_curio):
+        # The Dataset Finder's every entry is scoped: two of the Node Builder's
+        # capabilities, one mode of each internal agent and the Researcher's
+        # checking mode. Its runs are offered those, by the delegate's name,
+        # and nothing else of the same agents.
+        user, _ = user_and_token
+        df = builtin.get_builtin_manifest(DF)
+        offered = delegation.visible_capability_entries(_user_dir_key(user), df)
+        assert offered == [
+            ("node.build", "Node Builder"), ("dataset.fetch.author", "Node Builder"),
+            ("workflow.suggest", "Dataflow Reader"), ("workflow.keyword.bind", "Dataflow Planner"),
+            ("research.verify", "Researcher"),
+        ]
 
     def test_a_delegated_mode_runs_its_own_instruction(self, client, user_and_token, tmp_curio, monkeypatch):
         from utk_curio.backend.app.agents.domain import contracts

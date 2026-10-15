@@ -1,6 +1,6 @@
 """memo dev/91 commit 6 — the backend-package DOD: the agent lane REFUSES a
 violating draft with the finding in the model's face (the A4 refusal rule),
-the Package Builder's prompt carries the ONE backend authoring contract
+the package-writing prompt carries the ONE backend authoring contract
 (and no longer the dev/89 refusal paragraph), and the server-owned
 buildRequestContract teaches the same schema (the A8 lesson — nobody invents
 a schema they were shown). The happy path — mint with real-worker probe →

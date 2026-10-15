@@ -22,7 +22,7 @@ captures stay legible.
 Run::
 
     pytest utk_curio/backend/tests/test_frontend/test_agent_chat_e2e.py -v
-    pytest utk_curio/backend/tests/test_frontend/test_agent_chat_e2e.py -k chat-agent -v --headed
+    pytest utk_curio/backend/tests/test_frontend/test_agent_chat_e2e.py -k researcher -v --headed
 """
 from __future__ import annotations
 
@@ -49,12 +49,15 @@ from .test_agent_runs_e2e import (
     _target_for,
 )
 from .utils import (
+    NODE_ONLY_AGENT,
+    NODE_ONLY_AGENT_NAME,
     _wait_for_reactflow_ready,
     api_json,
     captured_agent_offers,
     captured_agent_prompts,
     read_node_code,
     dismiss_toasts,
+    ensure_node_only_agent,
     install_session_cookie,
     leave_agent_badge,
     require_owner_view,
@@ -541,12 +544,14 @@ class TestNodeAttachedChatHeader:
     renders.
     """
 
-    # Never a canvas agent by roster (it attaches to a node or a connection),
-    # so the server cannot answer a node attachment with a canvas one and
-    # leave this reading the wrong header. It is the only card without a
-    # canvas target; the Node Builder, which writes node content now, has one.
-    SPEC = next(
-        s for s in builtin.BUILTIN_AGENTS if s.agent_id == "agent.connection-builder"
+    # Never a canvas agent (it attaches to nodes only), so the server cannot
+    # answer a node attachment with a canvas one and leave this reading the
+    # wrong header. Every card accepts the canvas, so a made-up agent, uploaded
+    # to the account, stands in; this spec only describes it to the helpers.
+    SPEC = builtin.BuiltinAgentSpec(
+        NODE_ONLY_AGENT.split("@", 1)[0], NODE_ONLY_AGENT_NAME, "node",
+        "Answer questions about the node it is attached to.",
+        "instruction.md", ("node.explain",), targets=("node",),
     )
 
     def test_the_header_names_the_node_and_keeps_the_ids_on_the_tooltip(
@@ -555,10 +560,13 @@ class TestNodeAttachedChatHeader:
         require_project_page()
         require_user_auth()
         assert "canvas" not in self.SPEC.target_kinds(), (
-            f"{self.SPEC.agent_id} now attaches to the canvas; this test needs a "
-            "card that never does"
+            f"{self.SPEC.agent_id} attaches to the canvas; this test needs an "
+            "agent that never does"
         )
         page = agent_chat_session["page"]
+        assert ensure_node_only_agent(
+            agent_chat_session["backend"], agent_chat_session["token"],
+        ) == _coord(self.SPEC)
 
         _open_dataflow_with_agent(
             agent_chat_session, self.SPEC,

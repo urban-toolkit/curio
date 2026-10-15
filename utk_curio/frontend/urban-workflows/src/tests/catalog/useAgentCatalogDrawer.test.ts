@@ -47,7 +47,7 @@ function card(id: string) {
 beforeEach(() => {
   jest.clearAllMocks();
   api.catalog.mockResolvedValue({ agents: [card("agent.my-explainer")] });
-  api.listImports.mockResolvedValue({ agents: [card("agent.chat-agent")] });
+  api.listImports.mockResolvedValue({ agents: [card("agent.researcher")] });
   api.listProjectAgents.mockResolvedValue({ agents: [card("agent.my-debugger")] });
   api.import.mockResolvedValue({ coord: "x", imported: true });
   api.installToProject.mockResolvedValue({ agents: [], installed: [], required: [] });

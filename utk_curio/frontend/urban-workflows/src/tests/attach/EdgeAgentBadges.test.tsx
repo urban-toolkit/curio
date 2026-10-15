@@ -26,7 +26,7 @@ import { EDGE_AGENT_BADGES_ATTR } from "../../services/agents";
 function attachment(over: Partial<any> = {}): any {
   return {
     attachmentId: "att-1",
-    coord: "agent.connection-builder@1.0.0",
+    coord: "agent.node-builder@1.0.0",
     target: { kind: "connection", targetId: "edge-1" },
     sessionId: "s1",
     revision: 1,
@@ -34,7 +34,7 @@ function attachment(over: Partial<any> = {}): any {
     intentEdited: false,
     title: null,
     titleEdited: false,
-    name: "Connection Builder",
+    name: "Node Builder",
     category: "canvas",
     hooks: ["connection"],
     ...over,
@@ -121,7 +121,7 @@ describe("EdgeAgentBadges", () => {
     const c = ctx({ attachments: [attachment()] });
     mockCtx.mockReturnValue(c);
     renderBadges();
-    fireEvent.click(screen.getByRole("button", { name: "Open chat with Connection Builder" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open chat with Node Builder" }));
     expect(c.openChat).toHaveBeenCalledWith("att-1");
   });
 
@@ -129,7 +129,7 @@ describe("EdgeAgentBadges", () => {
     const c = ctx({ attachments: [attachment()], selectedId: "att-1" });
     mockCtx.mockReturnValue(c);
     renderBadges();
-    fireEvent.click(screen.getByRole("button", { name: "Detach Connection Builder" }));
+    fireEvent.click(screen.getByRole("button", { name: "Detach Node Builder" }));
     expect(c.closeChat).toHaveBeenCalled();
     expect(c.detach).toHaveBeenCalledWith("att-1");
   });
@@ -138,7 +138,7 @@ describe("EdgeAgentBadges", () => {
     const c = ctx({ attachments: [attachment()], selectedId: "someone-else" });
     mockCtx.mockReturnValue(c);
     renderBadges();
-    fireEvent.click(screen.getByRole("button", { name: "Detach Connection Builder" }));
+    fireEvent.click(screen.getByRole("button", { name: "Detach Node Builder" }));
     expect(c.closeChat).not.toHaveBeenCalled();
     expect(c.detach).toHaveBeenCalledWith("att-1");
   });

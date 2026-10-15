@@ -1,6 +1,6 @@
-"""Tests for the built-in agent roster: the prompt-agent migrations, two of
-them merged agents with modes, the P5 composites (memo dev/48), and the three
-cards that took another agent over and run its prompt as a mode."""
+"""Tests for the built-in agent roster: two internal agents made of modes, the
+P5 composites (memo dev/48), the authored evaluator, and the two cards that
+took other agents over and run their prompts as modes."""
 
 from __future__ import annotations
 
@@ -8,12 +8,25 @@ from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain.manifest import AgentManifest
 
 
-# The dev/06 canonical map: agent id -> its prompt file and capabilities.
-_EXPECTED = {
-    # The chat agent explains and diagnoses as well as chatting.
-    "agent.chat-agent": ("chat_prompt.md", ["conversation.respond", "attachment.refine",
-                                             "node.explain", "code.debug.diagnose"]),
-    "agent.connection-builder": ("new_connection_prompt.md", ["connection.propose"]),
+#: Every built-in, in roster order (the catalog lists the cards in this
+#: order): the instruction its chat runs, which for an internal agent is its
+#: first mode's, and its capabilities in order.
+_ROSTER = {
+    "agent.researcher": ("researcher_instruction.md", ["research.notes.compose", "research.verify"]),
+    "agent.dataflow-planner": ("new_subtasks_prompt.md", [
+        "workflow.plan.create", "execution.followup.plan", "workflow.plan.refresh",
+        "workflow.coherence.validate", "workflow.keyword.bind", "workflow.keywords.extract",
+    ]),
+    "agent.dataflow-reader": ("explanation_prompt.md", ["dataflow.explain", "workflow.suggest"]),
+    "agent.node-builder": ("node_build_instruction.md", [
+        "node.build", "dataset.fetch.author", "node.content.generate",
+        "package.recommend", "package.build", "package.extend", "node.kind.author",
+    ]),
+    "agent.dataset-finder": ("discovery_instruction.md", ["dataset.discover", "dataset.select"]),
+    "agent.dataflow-builder": ("orchestration_instruction.md", ["dataflow.orchestrate"]),
+    "agent.generated-content-evaluator": (
+        "evaluate_generated_content_prompt.md", ["content.quality.evaluate"],
+    ),
 }
 
 #: The merged agents: each capability is a mode that runs its own instruction.
@@ -34,33 +47,42 @@ _MODES = {
     },
 }
 
-#: The cards that took another agent over (2026-10-14): each keeps its own
-#: instruction for its chat and runs the absorbed prompt as a mode.
+#: The cards that took other agents over: each keeps its own instruction for
+#: its chat and runs each absorbed prompt as a mode. The Node Builder writes
+#: node content, recommends packages and writes packages (one prompt for the
+#: three writing capabilities); the Researcher composes notes from search
+#: results and checks a fact.
 _CARD_MODES = {
-    "agent.node-builder": {"node.content.generate": "new_content_prompt.md"},
-    "agent.researcher": {"research.verify": "research_instruction.md"},
-    "agent.package-builder": {"package.recommend": "package_recommendation_instruction.md"},
+    "agent.node-builder": {
+        "node.content.generate": "new_content_prompt.md",
+        "package.recommend": "package_recommendation_instruction.md",
+        "package.build": "package_build_instruction.md",
+        "package.extend": "package_build_instruction.md",
+        "node.kind.author": "package_build_instruction.md",
+    },
+    "agent.researcher": {
+        "research.notes.compose": "researcher_notes_instruction.md",
+        "research.verify": "research_instruction.md",
+    },
 }
 
-#: What each parent may delegate. The merges kept every set as it was, save
-#: the syntax analysis the package recommender delegated expecting import
-#: extraction, which it never did, and two capabilities no caller asked for
-#: (research.summarize, package.identify). The Connection Builder delegates
-#: only the recommendation; the Researcher checks facts itself, so it
-#: delegates only package authoring.
+#: What each parent may delegate: the "who asks" of every mode. The Node
+#: Builder asks its own modes for node content and for a package to be
+#: written, and recommends packages in its own chat; the Researcher asks the
+#: Node Builder to write a package; only the Dataflow Builder asks for a
+#: recommendation and for notes.
 _DELEGABLE = {
-    "agent.connection-builder": {"package.recommend"},
     "agent.node-builder": {
         "content.quality.evaluate", "dataset.discover", "dataset.select",
         "execution.followup.plan", "node.content.generate", "node.kind.author",
-        "package.build", "package.extend", "package.recommend", "research.verify",
+        "package.build", "package.extend", "research.verify",
     },
     "agent.dataset-finder": {
         "dataset.fetch.author", "node.build", "research.verify",
         "workflow.keyword.bind", "workflow.suggest",
     },
     "agent.dataflow-builder": {
-        "connection.propose", "content.quality.evaluate", "dataflow.explain",
+        "content.quality.evaluate", "dataflow.explain",
         "dataset.discover", "dataset.fetch.author", "dataset.select",
         "execution.followup.plan", "node.build", "node.content.generate",
         "node.kind.author", "package.build", "package.extend",
@@ -90,25 +112,23 @@ def _instructions():
 #: The catalog cards, pinned by id rather than recomputed from the rule they
 #: follow, which would only restate it. A card acts on the project (P1), has a
 #: capability whose input or reply the runtime treats as structure (P2), or is
-#: the only agent for a canvas target (P3); the chat agent is the one
-#: conversational surface.
+#: the only agent for a canvas target (P3).
 _CARDS = {
     "agent.dataflow-builder", "agent.dataset-finder", "agent.node-builder",
-    "agent.package-builder", "agent.researcher", "agent.connection-builder",
-    "agent.chat-agent",
+    "agent.researcher",
 }
 
 
 class TestRoster:
-    def test_ten_agents(self):
-        # 2 migrations and the 2 agents merged from 8 more + the three
-        # composites (dev/48, dev/50, dev/52) + the authored evaluator
-        # (DEC-055, dev/85/86) + the package builder (dev/89) + the notes
-        # researcher (dev/90). The content builder, the node researcher and
-        # the package recommender run as modes of three of them.
-        assert len(builtin.BUILTIN_AGENTS) == 10
+    def test_seven_agents(self):
+        # The 2 agents merged from 8 + the three composites (dev/48, dev/50,
+        # dev/52) + the authored evaluator (DEC-055, dev/85/86) + the
+        # Researcher (dev/90). The chat agent, the node researcher and the
+        # notes run in the Researcher; the content builder, the connection
+        # builder and both package agents in the Node Builder.
+        assert len(builtin.BUILTIN_AGENTS) == 7
 
-    def test_the_seven_cards_and_the_rest_internal(self):
+    def test_the_four_cards_and_the_rest_internal(self):
         cards = {s.agent_id for s in builtin.BUILTIN_AGENTS if s.in_catalog}
         assert cards == _CARDS
         assert builtin.internal_agent_ids() == {
@@ -131,8 +151,7 @@ class TestRoster:
                 kind not in {k for o in others for k in o.target_kinds()}
                 for kind in spec.target_kinds()
             )
-            surface = spec.agent_id == "agent.chat-agent"
-            assert acts or understood or owns_target or surface, spec.agent_id
+            assert acts or understood or owns_target, spec.agent_id
 
     def test_no_internal_agent_meets_the_rule(self):
         # Otherwise it would be a card.
@@ -152,7 +171,7 @@ class TestRoster:
         assert builtin.is_internal("agent.dataflow-planner@1.0.0")
         # The owner's own definition under the same id is not the built-in.
         assert not builtin.is_internal("agent.dataflow-planner@2.0.0")
-        assert not builtin.is_internal("agent.chat-agent@1.0.0")
+        assert not builtin.is_internal("agent.researcher@1.0.0")
 
     def test_evaluator_authored_under_dec055(self):
         # OQ-007 resolved by dev/85 (DEC-055): the evaluator exists as a
@@ -161,36 +180,34 @@ class TestRoster:
         ids = {s.agent_id for s in builtin.BUILTIN_AGENTS}
         assert "agent.generated-content-evaluator" in ids
 
-    def test_matches_dev06_map(self):
+    def test_matches_the_roster(self):
         got = {
             s.agent_id: (s.prompt_file, list(s.capabilities))
             for s in builtin.BUILTIN_AGENTS
-            if s.agent_id in _EXPECTED
         }
-        assert got == _EXPECTED
+        assert got == _ROSTER
+        # In this order: the catalog lists the cards as the roster does, the
+        # agent you talk to about anything first.
+        assert [s.agent_id for s in builtin.BUILTIN_AGENTS] == list(_ROSTER)
         modes = {
             s.agent_id: {m.capability: m.prompt_file for m in s.modes}
             for s in builtin.BUILTIN_AGENTS
             if s.modes
         }
         assert modes == {**_MODES, **_CARD_MODES}
-        # The composites are the only non-migration entries (dev/48, dev/50).
-        extras = {s.agent_id for s in builtin.BUILTIN_AGENTS} - set(_EXPECTED) - set(_MODES)
-        assert extras == {"agent.node-builder", "agent.dataset-finder",
-                          "agent.dataflow-builder",
-                          "agent.generated-content-evaluator",
-                          "agent.package-builder",
-                          "agent.researcher"}
+        # The rest run one instruction for everything.
+        single = {s.agent_id for s in builtin.BUILTIN_AGENTS} - set(_MODES) - set(_CARD_MODES)
+        assert single == {"agent.dataset-finder", "agent.dataflow-builder",
+                          "agent.generated-content-evaluator"}
 
     def test_a_card_with_a_mode_keeps_its_own_chat_instruction(self):
         """A card that took another agent over is a card still: its chat runs
-        its own instruction and reads its own context, and the absorbed
+        its own instruction and reads its own context, and each absorbed
         prompt is a mode beside it (not the ``_merged`` shape, whose default
         is its first mode)."""
         chats = {
             "agent.node-builder": "node_build_instruction.md",
-            "agent.researcher": "researcher_notes_instruction.md",
-            "agent.package-builder": "package_build_instruction.md",
+            "agent.researcher": "researcher_instruction.md",
         }
         assert set(chats) == set(_CARD_MODES)
         for agent_id, modes in _CARD_MODES.items():
@@ -202,24 +219,48 @@ class TestRoster:
                 assert capability in spec.capabilities, (agent_id, capability)
             mode_reads = {r for m in spec.modes for r in m.reads}
             assert not mode_reads <= set(spec.reads), agent_id
-        # The package recommendation is listed before the authoring
-        # capabilities, so reuse stays ahead of authoring.
-        pb = builtin.get_builtin_spec("agent.package-builder@1.0.0")
-        assert pb.capabilities[0] == "package.recommend"
+        # The package recommendation is listed before the writing
+        # capabilities, so reuse stays ahead of writing.
+        caps = builtin.get_builtin_spec("agent.node-builder@1.0.0").capabilities
+        for writing in ("package.build", "package.extend", "node.kind.author"):
+            assert caps.index("package.recommend") < caps.index(writing), writing
 
     def test_only_the_node_builder_hands_work_to_its_own_mode(self):
-        # Its chat asks for node content through the entry naming itself,
-        # first in its preference order and scoped to that mode. The
-        # Researcher checks facts in its own chat, and the Package Builder
-        # proposes installs in its own, so neither names itself.
+        # Its chat asks for node content and for a package to be written
+        # through the entry naming itself, first in its preference order and
+        # scoped to those modes; it recommends packages in its own chat, with
+        # its catalog tools. The Researcher composes notes and checks facts in
+        # its own chat, so it names no entry for itself.
         selves = {
             m.agent_id: m.delegate_scopes.get(m.agent_id)
             for m in builtin.list_builtin_manifests()
             if m.agent_id in m.delegates_to
         }
-        assert selves == {"agent.node-builder": ("node.content.generate",)}
+        assert selves == {"agent.node-builder": (
+            "node.content.generate", "package.build", "package.extend", "node.kind.author",
+        )}
         nb = builtin.get_builtin_manifest("agent.node-builder@1.0.0")
         assert nb.delegates_to[0] == "agent.node-builder"
+
+    def test_no_card_chat_carries_a_json_only_delegate_section(self):
+        """A chat runs with its tools and answers the user. The JSON-only
+        reply a delegated call owes its caller lives in the mode that call
+        runs, never in a card's chat instruction."""
+        for spec in builtin.BUILTIN_AGENTS:
+            if not spec.in_catalog:
+                continue
+            chat = builtin.read_prompt_text(f"{spec.agent_id}@1.0.0", "instruction")
+            low = chat.lower()
+            assert "delegated task from" not in low, spec.agent_id
+            assert "exactly one json object" not in low, spec.agent_id
+            assert "as a delegate" not in low, spec.agent_id
+        # The modes that answer in JSON say so.
+        for agent_id, capability in (("agent.researcher", "research.notes.compose"),
+                                     ("agent.node-builder", "package.build")):
+            mode = builtin.read_prompt_text(f"{agent_id}@1.0.0", capability)
+            assert mode, (agent_id, capability)
+            assert "EXACTLY ONE JSON object" in mode, (agent_id, capability)
+            assert "delegated task from" in mode.lower(), (agent_id, capability)
 
     def test_every_prompt_file_exists(self):
         for spec in builtin.BUILTIN_AGENTS:
@@ -262,14 +303,13 @@ class TestRoster:
 class TestManifests:
     def test_all_validate(self):
         manifests = builtin.list_builtin_manifests()
-        assert len(manifests) == 10
+        assert len(manifests) == 7
         assert all(isinstance(m, AgentManifest) for m in manifests)
 
     def test_coords_and_capabilities(self):
         by_id = {m.agent_id: m for m in builtin.list_builtin_manifests()}
-        expected = {**{a: caps for a, (_, caps) in _EXPECTED.items()},
-                    **{a: list(modes) for a, modes in _MODES.items()}}
-        for agent_id, caps in expected.items():
+        assert set(by_id) == set(_ROSTER)
+        for agent_id, (_, caps) in _ROSTER.items():
             m = by_id[agent_id]
             assert m.dir_name == f"{agent_id}@1.0.0"
             assert m.capability_ids == caps
@@ -281,22 +321,32 @@ class TestManifests:
             declared = m.capability(capability)
             assert declared.instruction == capability
             assert m.prompts[capability].path == f"prompts/{filename}"
-        # So does a card's mode, beside the card's own instruction.
+        # So does a card's mode, beside the card's own chat instruction, which
+        # is no mode's file. A capability that is not a mode runs the chat
+        # instruction. Every capability of the Researcher is a mode other
+        # agents ask for, so its chat is its instruction alone.
         for agent_id, modes in _CARD_MODES.items():
             card = builtin.get_builtin_manifest(f"{agent_id}@1.0.0")
             for capability, filename in modes.items():
                 assert card.capability(capability).instruction == capability, agent_id
                 assert card.prompts[capability].path == f"prompts/{filename}", agent_id
+            chat = card.prompts["instruction"].path
+            assert chat not in {card.prompts[c].path for c in modes}, agent_id
             others = [c for c in card.capabilities if c.id not in modes]
-            assert others and all(c.instruction is None for c in others), agent_id
+            assert all(c.instruction is None for c in others), agent_id
+        nb = builtin.get_builtin_manifest("agent.node-builder@1.0.0")
+        assert [c.id for c in nb.capabilities if c.instruction is None] == [
+            "node.build", "dataset.fetch.author",
+        ]
         # A single-instruction agent declares no modes.
-        chat = builtin.get_builtin_manifest("agent.chat-agent@1.0.0")
-        assert all(c.instruction is None for c in chat.capabilities)
+        for agent_id in ("agent.dataset-finder", "agent.dataflow-builder"):
+            single = builtin.get_builtin_manifest(f"{agent_id}@1.0.0")
+            assert all(c.instruction is None for c in single.capabilities), agent_id
 
     def test_get_by_coord(self):
-        m = builtin.get_builtin_manifest("agent.chat-agent@1.0.0")
-        assert m is not None and m.agent_id == "agent.chat-agent"
-        assert builtin.get_builtin_manifest("agent.chat-agent@9.9.9") is None
+        m = builtin.get_builtin_manifest("agent.researcher@1.0.0")
+        assert m is not None and m.agent_id == "agent.researcher"
+        assert builtin.get_builtin_manifest("agent.researcher@9.9.9") is None
         assert builtin.get_builtin_manifest("curio.builtin@1") is None
 
 
@@ -325,7 +375,7 @@ class TestPreambleAndInputs:
         assert bind == (builtin.PROMPT_SOURCE_DIR / "keywords_binding_prompt.md").read_text(encoding="utf-8")
         # An undeclared key reads nothing, not the preamble.
         assert builtin.read_prompt_text(coord, "workflow.nope") is None
-        assert builtin.read_prompt_text("agent.chat-agent@1.0.0", "dataflow.explain") is None
+        assert builtin.read_prompt_text("agent.researcher@1.0.0", "dataflow.explain") is None
 
     def test_preamble_exemplars_never_read_a_bare_filename(self):
         # dev/114: the shared preamble's worked dataflow was the ONLY data-
@@ -409,30 +459,37 @@ class TestPreambleAndInputs:
 
 
 class TestNodeBuilderComposite:
-    """The dev/48 roster entry — spec per dev/15 §3.4 minus recorded deviations."""
+    """The dev/48 roster entry, spec per dev/15 §3.4 minus recorded
+    deviations. It also writes node content, suggests nodes for a connection,
+    and installs or writes node packages."""
 
     COORD = "agent.node-builder@1.0.0"
 
     def test_manifest_surface(self):
         m = builtin.get_builtin_manifest(self.COORD)
         assert m is not None
-        assert m.capability_ids == ["node.build", "dataset.fetch.author", "node.content.generate"]
+        assert m.capability_ids == [
+            "node.build", "dataset.fetch.author", "node.content.generate",
+            "package.recommend", "package.build", "package.extend", "node.kind.author",
+        ]
         assert m.delegates_to == [
-            "agent.node-builder",  # its own content mode
+            "agent.node-builder",  # its own content and package-writing modes
             "agent.dataflow-planner",  # its follow-up planning only
             "agent.researcher",  # dev/67-4: chainable verification, its mode only
-            "agent.package-builder",  # dev/84 recommendation, then dev/89 authoring
             "agent.generated-content-evaluator",  # dev/86: advisory semantic check
             "agent.dataset-finder",  # dev/114 (DEC-072): source resolution for data-loading nodes
         ]
         assert m.delegate_scopes == {
-            "agent.node-builder": ("node.content.generate",),
+            "agent.node-builder": (
+                "node.content.generate", "package.build", "package.extend", "node.kind.author",
+            ),
             "agent.dataflow-planner": ("execution.followup.plan",),
             "agent.researcher": ("research.verify",),
         }
         # dev/67-6 lifts the dev/48 canvas-only limitation: modify-existing
-        # attaches to the node it modifies.
-        assert [t.kind for t in m.compatible_targets] == ["canvas", "node"]
+        # attaches to the node it modifies. On a connection it suggests what
+        # could go there.
+        assert [t.kind for t in m.compatible_targets] == ["canvas", "node", "connection"]
         assert [t.id for t in m.tools] == [
             "dataflow.read",
             "node.read",  # the content mode's own read, kept by the merge
@@ -441,55 +498,63 @@ class TestNodeBuilderComposite:
             "node.content.write",  # dev/67-6: modify-existing, reviewed
             "catalog.search",  # dev/114 (DEC-072): the only source of a real local path
             "models.search",  # the Model Catalog: a model this account can run
+            "packages.catalog", "packages.resolve",  # dev/84: what exists, what it needs
+            "package.install",  # dev/84: the reviewed install lane
+            "package.draft.apply",  # dev/89: a written package's reviewed draft
         ]
         assert m.provenance.trust == "built-in"
 
-    def test_node_content_is_its_mode_with_the_autark_variant(self):
+    def test_its_chat_and_each_mode_read_their_own_prompt(self):
         # The prompt keys a run selects: the chat its instruction, a
-        # node.content.generate run the content prompt, and an Autark
-        # document under the reply schema the Autark prompt.
+        # node.content.generate run the content prompt (an Autark document
+        # under the reply schema the Autark prompt), a recommendation its own
+        # prompt, and the three package-writing capabilities one prompt.
         spec = builtin.get_builtin_spec(self.COORD)
         assert spec.prompt_files() == {
             "system": "default_preamble.md",
             "instruction": "node_build_instruction.md",
             "node.content.generate": "new_content_prompt.md",
             "autk-grammar": "new_content_autk_prompt.md",
+            "package.recommend": "package_recommendation_instruction.md",
+            "package.build": "package_build_instruction.md",
+            "package.extend": "package_build_instruction.md",
+            "node.kind.author": "package_build_instruction.md",
         }
         m = builtin.get_builtin_manifest(self.COORD)
         assert m.capability("node.content.generate").reads == (
             "dataflowContext", "nodeId", "subtask", "workflowGoal",
         )
-        # Worked examples under its chat and under its mode alike.
+        assert m.capability("package.recommend").reads == (
+            "mission", "targetContext", "existingPackages",
+        )
+        for writing in ("package.build", "package.extend", "node.kind.author"):
+            assert m.capability(writing).reads == (
+                "packageIntent", "targetContext", "existingPackages",
+            ), writing
+        # Worked examples under its chat and its content mode; the package
+        # modes take none.
         assert builtin.gets_worked_examples(self.COORD)
         assert builtin.gets_worked_examples(self.COORD, "node.content.generate")
+        for capability in ("package.recommend", "package.build", "package.extend", "node.kind.author"):
+            assert not builtin.gets_worked_examples(self.COORD, capability), capability
 
-    def test_review_policy_and_thirteen_byte_parity(self):
-        # The composite declares review-before-apply; every migrated manifest
-        # dict stays byte-identical (no delegatesTo key, report-only runtime) —
-        # the dev/48 regression requirement, amended by dev/84 (D4): Connection
-        # Builder is the ONE migrated manifest that gains delegatesTo (the
-        # dev/16 §3.3 addendum); everything else about it is unchanged.
+    def test_review_policy_and_byte_parity(self):
+        # The composite declares review-before-apply; every agent that is not
+        # a composite keeps its manifest dict byte-identical (no delegatesTo
+        # key, report-only runtime): the dev/48 regression requirement.
         nb = builtin.build_builtin_manifest(builtin.get_builtin_spec(self.COORD))
         assert nb["runtime"] == {"execution": "foreground", "reviewPolicy": "review-before-apply"}
         assert nb["delegatesTo"] == [
-            {"id": "agent.node-builder", "capabilities": ["node.content.generate"]},
+            {"id": "agent.node-builder", "capabilities": [
+                "node.content.generate", "package.build", "package.extend", "node.kind.author",
+            ]},
             {"id": "agent.dataflow-planner", "capabilities": ["execution.followup.plan"]},
             {"id": "agent.researcher", "capabilities": ["research.verify"]},
-            "agent.package-builder",  # dev/84, dev/89
             "agent.generated-content-evaluator",
             "agent.dataset-finder",  # dev/114
         ]
-        cb = builtin.build_builtin_manifest(
-            builtin.get_builtin_spec("agent.connection-builder@1.0.0")
-        )
-        assert cb["delegatesTo"] == [  # dev/84 D4
-            {"id": "agent.package-builder", "capabilities": ["package.recommend"]},
-        ]
-        assert cb["runtime"] == {"execution": "foreground", "reviewPolicy": "report-only"}
         composites = {"agent.node-builder", "agent.dataset-finder", "agent.dataflow-builder",
-                      "agent.package-builder",  # dev/84, dev/89: asserted in its class
-                      "agent.researcher",  # dev/90 — asserted in its class
-                      "agent.connection-builder"}  # dev/84 D4 — asserted above
+                      "agent.researcher"}  # dev/90: asserted in its class
         for spec in builtin.BUILTIN_AGENTS:
             if spec.agent_id in composites:
                 continue
@@ -527,6 +592,27 @@ class TestNodeBuilderComposite:
         assert "params.content" in text
         assert "code in your reply is not a node" in text
 
+    def test_on_a_connection_it_suggests_nodes_and_never_wires_them(self):
+        """Attached to a connection it is told which end is which (the
+        ``connectionSide`` read, composed only for a connection), and its chat
+        suggests up to three nodes in prose, specific to the dataflow, then
+        creates the one the user picks. The user wires it."""
+        m = builtin.get_builtin_manifest(self.COORD)
+        assert "connectionSide" in m.inputs_reads
+        text = builtin.read_prompt_text(self.COORD, "instruction")
+        section = text.split("## On a connection", 1)[1].split("\n## ", 1)[0]
+        low = section.lower()
+        assert "or the user asks what could come before or after a node" in low
+        assert "suggest up to three nodes, in prose" in low
+        assert "a node for the input side is a step that can run before the node and feed it" in low
+        assert "a node for the output side is a next step that uses the node's output" in low
+        assert "in at most 50 words" in low
+        assert '"transform the data to required format"' in low
+        assert "never repeating the connected node's goal or node type" in low
+        assert "include a visualization whenever one fits" in low
+        assert "one node.create tool request" in low
+        assert "you never wire connections" in low
+
 
 class TestCatalogReadGrants:
     """Which built-ins hold the catalog read tools that no other agent needs."""
@@ -551,6 +637,12 @@ class TestCatalogReadGrants:
     def test_the_dataflow_builder_reads_the_worked_examples(self):
         assert self._holders("examples.read") == {"agent.dataflow-builder"}
         assert "examples.read" in self._granted("agent.dataflow-builder")
+
+    def test_only_the_node_builder_reads_the_node_catalog(self):
+        # It recommends and installs packages in its chat.
+        for tool in ("packages.catalog", "packages.resolve"):
+            assert self._holders(tool) == {"agent.node-builder"}, tool
+            assert tool in self._granted("agent.node-builder"), tool
 
 
 class TestDatasetFinderComposite:
@@ -659,13 +751,15 @@ class TestDataflowBuilderComposite:
         assert m.capability_ids == ["dataflow.orchestrate"]
         assert m.delegates_to == [
             "agent.dataset-finder",
-            "agent.node-builder",  # dev/73: chat-path content updates, its mode
-            "agent.connection-builder",
+            # dev/73: chat-path content updates; dev/84 Recommend packages,
+            # dev/89 package-scale steps: its modes.
+            "agent.node-builder",
             "agent.dataflow-planner", "agent.dataflow-reader",
-            "agent.package-builder",  # dev/84 Recommend packages, dev/89 package-scale steps
             "agent.generated-content-evaluator",  # dev/86: advisory semantic check
             "agent.researcher",  # dev/95 (Follow-up D) reviewed notes, dev/67-4 verification
         ]
+        # The Researcher is asked for its two modes, never its chat.
+        assert m.delegate_scopes["agent.researcher"] == ("research.notes.compose", "research.verify")
         assert [t.kind for t in m.compatible_targets] == ["canvas"]
         # dev/95: node.create is the reviewed lane the delegated Researcher's
         # note proposals mint on (grant-gated at the parent).
@@ -693,17 +787,18 @@ class TestDataflowBuilderComposite:
         assert builtin.read_prompt_text(self.COORD, "system")  # default preamble
 
 
-class TestPackageRecommendation:
-    """The dev/84 recommendation (spec per dev/16 / DEC-035), now the Package
-    Builder's package.recommend mode: a delegated call, tool-less, over the
-    packages the runtime passes. The reviewed install lane it used to hold is
-    the Package Builder's chat."""
+class TestNodeBuilderPackages:
+    """The dev/84 recommendation (spec per dev/16 / DEC-035) and the dev/89
+    package writing, in the Node Builder. Its chat installs a package that
+    already fits, with its catalog tools, and climbs the node type ladder; its
+    package-writing mode drafts a new or extended package for its chat, the
+    Researcher and the Dataflow Builder, and its recommendation mode answers
+    the Dataflow Builder. Both modes are delegated calls with no tools."""
 
-    COORD = "agent.package-builder@1.0.0"
+    COORD = "agent.node-builder@1.0.0"
 
-    def test_manifest_surface(self):
+    def test_the_recommendation_mode(self):
         m = builtin.get_builtin_manifest(self.COORD)
-        assert m is not None
         recommend = m.capability("package.recommend")
         assert recommend.instruction == "package.recommend"
         assert recommend.reads == ("mission", "targetContext", "existingPackages")
@@ -711,12 +806,26 @@ class TestPackageRecommendation:
         # The install lane and the catalog reads it grounds on, in its chat.
         for tool in ("packages.catalog", "packages.resolve", "package.install"):
             assert tool in [t.id for t in m.tools], tool
-        assert m.provenance.trust == "built-in"
 
-    def test_review_policy(self):
+    def test_every_tool_it_declares_is_granted(self):
+        from utk_curio.backend.app.agents.application import tools
+
+        m = builtin.get_builtin_manifest(self.COORD)
+        # dev/89 commit 8 registered the package.draft.apply ToolContract
+        # (mutate, grantable for proposal purposes only, DEC-017).
+        granted = tools.resolve_grants(m.tools)
+        assert granted == [t.id for t in m.tools]
+        for tool in ("packages.catalog", "packages.resolve", "package.install", "package.draft.apply"):
+            assert tool in granted, tool
+
+    def test_no_card_ships_in_the_package_category(self):
+        # The category stays: it is the frontend's fallback colour key.
+        from utk_curio.backend.app.agents.domain.manifest import AGENT_CATEGORIES
+
+        assert "package" in AGENT_CATEGORIES
+        assert [s.agent_id for s in builtin.BUILTIN_AGENTS if s.category == "package"] == []
         raw = builtin.build_builtin_manifest(builtin.get_builtin_spec(self.COORD))
-        assert raw["runtime"] == {"execution": "foreground", "reviewPolicy": "review-before-apply"}
-        assert raw["category"] == "package"
+        assert raw["category"] == "node"
 
     def test_the_mode_recommends_from_its_evidence_and_the_chat_proposes_installs(self):
         text = builtin.read_prompt_text(self.COORD, "package.recommend")
@@ -728,6 +837,115 @@ class TestPackageRecommendation:
         chat = builtin.read_prompt_text(self.COORD, "instruction")
         assert "packages.catalog" in chat and "package.install" in chat
         assert builtin.read_prompt_text(self.COORD, "system")  # default preamble
+
+    def test_delegation_wiring(self):
+        # dev/89 topology: the Node Builder's chat, the Researcher's notes
+        # ladder and the Dataflow Builder's package-scale plan steps resolve
+        # the package.create-or-extend intent to the Node Builder's writing
+        # mode. Only the Dataflow Builder asks it which packages a task needs:
+        # the Node Builder recommends in its own chat. Reuse (the
+        # recommendation) stays ahead of writing in its capability order.
+        nb = builtin.get_builtin_manifest(self.COORD)
+        rs = builtin.get_builtin_manifest("agent.researcher@1.0.0")
+        dfb = builtin.get_builtin_manifest("agent.dataflow-builder@1.0.0")
+        for parent in (nb, rs, dfb):
+            assert "agent.node-builder" in parent.delegates_to, parent.agent_id
+            for capability in ("package.build", "package.extend", "node.kind.author"):
+                assert parent.delegates("agent.node-builder", capability), (parent.agent_id, capability)
+        assert dfb.delegates("agent.node-builder", "package.recommend")
+        assert not nb.delegates("agent.node-builder", "package.recommend")
+        assert not rs.delegates("agent.node-builder", "package.recommend")
+        caps = nb.capability_ids
+        for writing in ("package.build", "package.extend", "node.kind.author"):
+            assert caps.index("package.recommend") < caps.index(writing)
+
+    def test_the_writing_mode_carries_the_contract(self):
+        text = builtin.read_prompt_text(self.COORD, "package.build")
+        assert text
+        low = text.lower()
+        # Reuse-first posture and the two ways to write a package.
+        assert "reuse first" in low
+        assert "CREATE" in text and "EXTEND" in text
+        # The never-rules: no self-install or publish, no read-only mutation.
+        assert "never install" in low
+        assert "read-only" in low
+        # Backend generation stays out of scope (dev/89 Follow-up A).
+        assert "backend sandbox" in low
+        # The three writing capabilities read the one prompt.
+        for capability in ("package.extend", "node.kind.author"):
+            assert builtin.read_prompt_text(self.COORD, capability) == text, capability
+        # The draft reaches review through the chat's one draft tool, and the
+        # chat never pretends a package was built before then.
+        chat = builtin.read_prompt_text(self.COORD, "instruction")
+        assert "package.draft.apply" in chat
+        assert "never pretend" in chat.lower()
+
+    def test_its_chat_proposes_installing_a_package_that_fits(self):
+        # The dev/84 install rules, on the ladder's second rung: a fitting
+        # package is proposed for install there, not only named.
+        text = builtin.read_prompt_text(self.COORD, "instruction")
+        rungs = text.split("## Node types and packages", 1)[1].split("\n## ", 1)[0]
+        low = rungs.lower()
+        assert "proposed for install, not only named" in low
+        assert "one package.install tool request per package" in low
+        assert "dirname from the packages.catalog results" in low
+        assert "is stated, not proposed" in low
+        assert "builtin are always present" in low
+        assert "packages.resolve" in rungs and "never force-resolve" in low
+        assert "never present an install as done" in low
+
+    def test_its_chat_climbs_the_node_type_ladder_in_order(self):
+        # An existing template, a catalog package to install,
+        # node.template.create for a plain code node type, and only then a
+        # package written by its writing mode.
+        text = builtin.read_prompt_text(self.COORD, "instruction")
+        rungs = text.split("## Node types and packages", 1)[1].split("\n## ", 1)[0]
+        starts = [rungs.index(f"\n{n}. ") for n in (1, 2, 3, 4)]
+        assert starts == sorted(starts)
+        one, rest = rungs.split("\n2. ", 1)
+        two, rest = rest.split("\n3. ", 1)
+        three, four = rest.split("\n4. ", 1)
+        assert "Available node templates" in one
+        assert "packages.catalog" in two and "package.install" in two
+        assert "node.template.create" in three
+        assert "justification must name the closest existing templates" in three
+        assert '"node.kind.author"' in four and "package.draft.apply" in four
+        # The procedure sends the model to the ladder.
+        procedure = text.split("## Procedure", 1)[1].split("\n## ", 1)[0]
+        assert "node type ladder" in procedure
+
+    def test_the_writing_mode_teaches_the_generic_authoring_contract(self):
+        # dev/90 commit 2: ONE authoring contract for every custom look:
+        # hook shape, registration, externals, safe rendering, appearance,
+        # self-containment, with the gates named as the enforcement.
+        text = builtin.read_prompt_text(self.COORD, "package.build")
+        low = text.lower()
+        assert "registerBehavior" in text
+        assert "contentComponent" in text
+        assert "(data, nodeState)" in text
+        assert "dangerouslySetInnerHTML" in text and "never" in low
+        assert "never bundled" in low  # react/react-dom/reactflow → host copies
+        assert "appearance.backgroundColor" in text
+        for color in ("yellow", "pink", "blue", "green", "orange", "lavender"):
+            assert color in low
+        assert "preview sandbox" in low  # enforcement, not advice
+        # dev/90 A5: dependency-minimal authoring is the default: write it
+        # yourself before importing it through a supply chain.
+        assert "ZERO JavaScript dependencies" in text
+        assert "markdown-lite" in low
+        # dev/90 A7: the delegate posture: a tool-less call replies with ONE
+        # JSON build request, never a tool request it cannot execute.
+        assert "DELEGATE" in text
+        assert "delegated task from" in low
+        assert "EXACTLY ONE JSON object" in text
+        # dev/90 A8: the schema arrives as a runtime-supplied input: the
+        # prompt points at it and bans the observed invented keys.
+        assert "buildRequestContract" in text
+        assert "behaviorKey" in text
+        # No scenario content: looks come from CALLERS (dev/90: the post-it
+        # recipe lives with the Researcher, never with the writing mode).
+        assert "post-it" not in low
+        assert "carr" in low and "no built-in looks" in low
 
 
 class TestGeneratedContentEvaluator:
@@ -767,132 +985,12 @@ class TestGeneratedContentEvaluator:
         assert builtin.read_prompt_text(self.COORD, "system")  # default preamble
 
 
-class TestPackageBuilder:
-    """The dev/89 roster entry, the package specialist: its chat reuses first
-    (a reviewed install of a package that already fits), then authors the
-    package artifact as a reviewed draft; the dev/84 recommendation is its
-    mode, listed first."""
-
-    COORD = "agent.package-builder@1.0.0"
-
-    def test_manifest_surface(self):
-        m = builtin.get_builtin_manifest(self.COORD)
-        assert m is not None
-        assert m.capability_ids == [
-            "package.recommend", "package.build", "package.extend", "node.kind.author",
-        ]
-        # Depth-1 leaf: it authors, its callers orchestrate.
-        assert m.delegates_to == []
-        assert [t.kind for t in m.compatible_targets] == ["node", "canvas"]
-        assert [t.id for t in m.tools] == [
-            "packages.catalog", "packages.resolve",
-            "package.install",  # dev/84: the reviewed install lane, in its chat
-            "dataflow.read", "package.draft.apply",
-        ]
-        assert m.provenance.trust == "built-in"
-
-    def test_draft_tool_granted_now_that_the_contract_landed(self):
-        from utk_curio.backend.app.agents.application import tools
-
-        m = builtin.get_builtin_manifest(self.COORD)
-        # dev/89 commit 8 registered the package.draft.apply ToolContract
-        # (mutate — grantable for proposal purposes only, DEC-017).
-        assert tools.resolve_grants(m.tools) == [
-            "packages.catalog", "packages.resolve", "package.install",
-            "dataflow.read", "package.draft.apply",
-        ]
-
-    def test_review_policy(self):
-        raw = builtin.build_builtin_manifest(builtin.get_builtin_spec(self.COORD))
-        assert raw["runtime"] == {"execution": "foreground", "reviewPolicy": "review-before-apply"}
-        assert raw["category"] == "package"
-        assert "delegatesTo" not in raw
-
-    def test_delegation_wiring(self):
-        # dev/89 topology: Node Builder's template fallback and Dataflow
-        # Builder's package-scale plan steps both resolve the
-        # package.create-or-extend intent to the Package Builder; reuse
-        # (the recommendation) stays ahead of authoring in its capability
-        # order, and both callers reach both.
-        nb = builtin.get_builtin_manifest("agent.node-builder@1.0.0")
-        dfb = builtin.get_builtin_manifest("agent.dataflow-builder@1.0.0")
-        for parent in (nb, dfb):
-            assert "agent.package-builder" in parent.delegates_to
-            for capability in ("package.recommend", "package.build", "node.kind.author"):
-                assert parent.delegates("agent.package-builder", capability), capability
-        caps = builtin.get_builtin_manifest(self.COORD).capability_ids
-        for authoring in ("package.build", "package.extend", "node.kind.author"):
-            assert caps.index("package.recommend") < caps.index(authoring)
-
-    def test_net_new_instruction_carries_the_contract(self):
-        text = builtin.read_prompt_text(self.COORD, "instruction")
-        assert text
-        low = text.lower()
-        # Reuse-first posture, the two modes, and the single draft tool.
-        assert "reuse first" in low
-        assert "CREATE" in text and "EXTEND" in text
-        assert "package.draft.apply" in text
-        # The never-rules: no self-install/publish, no read-only mutation,
-        # no pretended builds (drafts degrade to findings, loudly).
-        assert "never install" in low
-        assert "never pretend" in low
-        assert "read-only" in low
-        # Backend generation stays out of scope (dev/89 Follow-up A).
-        assert "backend sandbox" in low
-        assert builtin.read_prompt_text(self.COORD, "system")  # default preamble
-
-    def test_its_chat_proposes_installing_a_package_that_fits(self):
-        # The dev/84 install rules, moved into the chat's reuse step: a
-        # fitting package is proposed for install there, not only named.
-        text = builtin.read_prompt_text(self.COORD, "instruction")
-        reuse = text.split("## Reuse first", 1)[1].split("\n## ", 1)[0]
-        low = reuse.lower()
-        assert "proposed for install, not only named" in low
-        assert "one package.install tool request per package" in low
-        assert "dirname from the packages.catalog results" in low
-        assert "is stated, not proposed" in low
-        assert "builtin are always present" in low
-        assert "packages.resolve" in reuse and "never force-resolve" in low
-        assert "never present an install as done" in low
-
-    def test_instruction_teaches_the_generic_authoring_contract(self):
-        # dev/90 commit 2: ONE authoring contract for every custom look —
-        # hook shape, registration, externals, safe rendering, appearance,
-        # self-containment — with the gates named as the enforcement.
-        text = builtin.read_prompt_text(self.COORD, "instruction")
-        low = text.lower()
-        assert "registerBehavior" in text
-        assert "contentComponent" in text
-        assert "(data, nodeState)" in text
-        assert "dangerouslySetInnerHTML" in text and "never" in low
-        assert "never bundled" in low  # react/react-dom/reactflow → host copies
-        assert "appearance.backgroundColor" in text
-        for color in ("yellow", "pink", "blue", "green", "orange", "lavender"):
-            assert color in low
-        assert "preview sandbox" in low  # enforcement, not advice
-        # dev/90 A5: dependency-minimal authoring is the default — write it
-        # yourself before importing it through a supply chain.
-        assert "ZERO JavaScript dependencies" in text
-        assert "markdown-lite" in low
-        # dev/90 A7: the delegate posture — a tool-less child replies with
-        # ONE JSON build request, never a tool request it cannot execute.
-        assert "DELEGATE" in text
-        assert "delegated task from" in low
-        assert "EXACTLY ONE JSON object" in text
-        # dev/90 A8: the schema arrives as a runtime-supplied input — the
-        # instruction points at it and bans the observed invented keys.
-        assert "buildRequestContract" in text
-        assert "behaviorKey" in text
-        # No scenario content: looks come from CALLERS (dev/90 — the post-it
-        # recipe lives with the Researcher, never with the generic specialist).
-        assert "post-it" not in low
-        assert "carr" in low and "no built-in looks" in low
-
-
 class TestResearcher:
-    """The dev/90 roster entry — the NOTES scenario owner: post-it recipe in
-    its instruction, reuse-first, authoring delegated to the Package Builder,
-    Dataflow Builder deliberately untouched (Follow-up D)."""
+    """The dev/90 roster entry, the agent you talk to about a node or the
+    whole dataflow. Its chat explains, debugs and helps define a task, answers
+    a web question as post-it notes (reuse-first, package writing delegated to
+    the Node Builder) and checks facts. Composing notes from search results
+    and checking a fact are its modes, for other agents."""
 
     COORD = "agent.researcher@1.0.0"
 
@@ -916,25 +1014,31 @@ class TestResearcher:
     def test_manifest_surface(self):
         m = builtin.get_builtin_manifest(self.COORD)
         assert m is not None
-        # Composing notes in its chat; checking a fact is its mode.
+        # Composing notes from search results and checking a fact: its modes.
         assert m.capability_ids == ["research.notes.compose", "research.verify"]
-        # It delegates package authoring only: it checks facts itself.
-        assert m.delegates_to == ["agent.package-builder"]
+        # It delegates package writing only, to the Node Builder's mode.
+        assert m.delegates_to == ["agent.node-builder"]
         assert m.delegate_scopes == {
-            "agent.package-builder": ("package.build", "package.extend", "node.kind.author"),
+            "agent.node-builder": ("package.build", "package.extend", "node.kind.author"),
         }
         assert [t.kind for t in m.compatible_targets] == ["node", "canvas"]
-        # dataflow.read grounds reuse-first; web.search/web.fetch gather the
-        # findings (dev/90 A1 — the recording's question→web→post-it loop);
-        # node.create carries notes onto an installed template;
-        # package.install is the dev/93 D4 middle rung — it enlists a package
+        # It reads the dataflow as it is on screen, unsaved edits included,
+        # beside what it is attached to (on a node, that node's last run).
+        assert list(m.inputs_reads) == [
+            "mission", "targetContext", "installedTemplates", "dataflowContext",
+        ]
+        # dataflow.read, node.read and node.runtime.read answer about the
+        # dataflow and a node's last run; web.search/web.fetch gather the
+        # findings (dev/90 A1, the recording's question to web to post-it
+        # loop); node.create carries notes onto an installed template;
+        # package.install is the dev/93 D4 middle rung: it enlists a package
         # the user already owns, without which a notes package outside this
         # project's lockfile was unreachable and authoring a near-duplicate
         # was the only move left; package.draft.apply authorizes the dev/90
-        # delegate-draft MINT only — the draft content always comes from the
-        # Package Builder delegate. node.read: the verification mode's own read.
+        # delegate-draft MINT only: the draft content always comes from the
+        # Node Builder's writing mode.
         assert [t.id for t in m.tools] == [
-            "dataflow.read", "node.read", "web.search", "web.fetch",
+            "dataflow.read", "node.read", "node.runtime.read", "web.search", "web.fetch",
             "node.create", "package.install", "package.draft.apply",
         ]
         assert m.provenance.trust == "built-in"
@@ -944,26 +1048,33 @@ class TestResearcher:
         assert raw["runtime"] == {"execution": "foreground", "reviewPolicy": "review-before-apply"}
         assert raw["category"] == "node"
 
-    def test_checking_a_fact_is_its_own_mode(self):
-        # Verification (dev/67-4) is a mode of the Researcher: delegated
-        # research.verify runs research_instruction.md, its chat its notes
-        # prompt, and capability-keyed resolution finds both on one agent.
+    def test_its_chat_and_its_two_modes(self):
+        # A message typed to it runs researcher_instruction.md. Delegated
+        # research.verify (dev/67-4) runs research_instruction.md, delegated
+        # research.notes.compose (dev/95) runs researcher_notes_instruction.md,
+        # and capability-keyed resolution finds both on this one agent.
         m = builtin.get_builtin_manifest(self.COORD)
+        assert m.prompts["instruction"].path == "prompts/researcher_instruction.md"
         assert m.capability("research.verify").instruction == "research.verify"
         assert m.capability("research.verify").reads == ("mission", "nodeContext")
         assert m.prompts["research.verify"].path == "prompts/research_instruction.md"
-        assert m.prompts["instruction"].path == "prompts/researcher_notes_instruction.md"
-        assert m.capability("research.notes.compose").instruction is None
-        holders = {s.agent_id for s in builtin.BUILTIN_AGENTS if "research.verify" in s.capabilities}
-        assert holders == {"agent.researcher"}
-        # And the purpose line says it checks facts.
+        notes = m.capability("research.notes.compose")
+        assert notes.instruction == "research.notes.compose"
+        assert notes.reads == ("question", "searchResults", "notesTemplates")
+        assert m.prompts["research.notes.compose"].path == "prompts/researcher_notes_instruction.md"
+        for capability in ("research.verify", "research.notes.compose"):
+            holders = {s.agent_id for s in builtin.BUILTIN_AGENTS if capability in s.capabilities}
+            assert holders == {"agent.researcher"}, capability
+        # And the purpose line says what it does in chat.
         spec = builtin.get_builtin_spec(self.COORD)
-        assert "check a fact" in spec.purpose
+        for words in ("a node or the whole dataflow", "diagnoses errors",
+                      "define what to build", "as notes on the canvas", "checks facts"):
+            assert words in spec.purpose, words
 
     def test_dataflow_builder_prompt_stays_pinned_and_delegation_is_wired(self):
         # dev/90 Follow-up D DELIVERED by dev/95: the delegatesTo growth this
         # pin used to forbid is now the deliberate change (the dev/48 D4
-        # precedent — a byte-pin updates WITH its memo, never incidentally).
+        # precedent: a byte-pin updates WITH its memo, never incidentally).
         # The prompt sha updates only with the dev/95 prompt edit itself.
         import hashlib
 
@@ -971,8 +1082,48 @@ class TestResearcher:
         assert hashlib.sha256(prompt).hexdigest() == self.DATAFLOW_BUILDER_PROMPT_SHA256
         dfb = builtin.get_builtin_manifest("agent.dataflow-builder@1.0.0")
         assert "agent.researcher" in dfb.delegates_to  # dev/95 Follow-up D
+        # It asks for the notes mode and the checking mode, never the chat.
+        assert dfb.delegate_scopes["agent.researcher"] == ("research.notes.compose", "research.verify")
 
-    def test_net_new_instruction_carries_the_recipe(self):
+    def test_its_chat_routes_what_the_user_wants(self):
+        """The LLM picks what to do, in the call that answers: about the
+        dataflow (explain, debug, define what to build) it answers from the
+        dataflow and its read tools, with no web and no notes; a question the
+        dataflow cannot answer is searched on the web, answered in prose and
+        given notes; a fact to check gets labeled findings and no notes."""
+        text = builtin.read_prompt_text(self.COORD, "instruction")
+        low = text.lower()
+        route = low.split("## what the user wants", 1)[1].split("\n## ", 1)[0]
+        assert "explain it, debug it, or define what to build" in route
+        assert "answer from the dataflow you were given and your read tools" in route
+        assert "use no web tools and propose no notes" in route
+        assert "a question the dataflow cannot answer" in route
+        assert "search the web, answer in prose, and propose notes" in route
+        assert "a fact to check" in route and "labeled findings" in route
+        # The sections the routes name, in this order.
+        headings = ["## explain", "## debug", "## define a task", "## gather findings",
+                    "## check a fact", "## reuse first", "## notes", "## failures",
+                    "## changes to the dataflow"]
+        at = [low.index("\n" + heading + "\n") for heading in headings]
+        assert at == sorted(at)
+        # It reads the dataflow on screen and looks further with its tools.
+        assert "unsaved edits included" in low
+        for tool in ("dataflow.read", "node.read", "node.runtime.read"):
+            assert tool in text, tool
+        # A finished task definition ends in the fixed summary, and nothing
+        # else in that reply.
+        assert "Task:\n**{task}**\nIf you would like to change it let me know!" in text
+        assert "output the summary in exactly this form, and nothing else in that reply" in low
+        # Debugging reads the node's last run and states the cause, then the fix.
+        assert "state the cause in one or two sentences, then the fix" in low
+        # Explaining names nodes by title or type, never by internal ids.
+        assert "never by internal ids" in low
+        # Changes go to the agents that make them.
+        changes = low.split("## changes to the dataflow", 1)[1]
+        assert "the dataflow builder plans and builds a whole dataflow" in changes
+        assert "the node builder creates or changes one node" in changes
+
+    def test_its_chat_carries_the_recipe(self):
         text = builtin.read_prompt_text(self.COORD, "instruction")
         assert text
         low = text.lower()
@@ -1059,26 +1210,3 @@ class TestResearcher:
         assert "https link" in low
         assert "never invent findings" in low
         assert builtin.read_prompt_text(self.COORD, "system")  # default preamble
-
-
-class TestConnectionBuilderCanBindToAnEdge:
-    """Connection Builder attaches to a node OR to a connection.
-
-    It declares a ``connectionSide`` read, which only means something for an
-    agent bound to one edge: it tells the agent which end it is reasoning from,
-    and its prompt is written to be "informed if the nodes you are suggesting
-    will be connected into the input or output of the node".
-
-    The backend has always accepted ``connection`` targets and the palette has
-    always advertised the kind, but no drop gesture produced one and no agent
-    declared the target, so the read had no producer and the advertised gesture
-    silently attached to the canvas instead.
-    """
-
-    def test_it_declares_both_targets(self):
-        m = builtin.get_builtin_manifest("agent.connection-builder@1.0.0")
-        assert {t.kind for t in m.compatible_targets} == {"node", "connection"}
-
-    def test_it_still_declares_the_side_it_reads(self):
-        m = builtin.get_builtin_manifest("agent.connection-builder@1.0.0")
-        assert "connectionSide" in m.inputs_reads

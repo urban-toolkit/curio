@@ -83,6 +83,39 @@ def _write_def(user, agent_id="agent.my-explainer", version="1.0.0"):
     return f"{agent_id}@{version}"
 
 
+#: A made-up agent with a plain chat profile: the three read tools and nothing
+#: else, node and canvas targets, no delegates and no modes. Tests whose
+#: subject is "an agent that only chats and reads" use it, so no built-in's
+#: roster change moves them.
+READER = "agent.my-reader@1.0.0"
+READER_TOOLS = ("dataflow.read", "node.read", "node.runtime.read")
+READER_PREAMBLE = "You are part of a visual analytics dataflow editor."
+READER_PROMPT = "You are My Reader. Answer questions about this dataflow."
+
+
+def _write_reader(user) -> str:
+    """Materialize My Reader in the user's store and return its coordinate."""
+    manifest = {
+        "id": "agent.my-reader",
+        "name": "My Reader",
+        "category": "node",
+        "version": "1.0.0",
+        "capabilities": [{"id": "conversation.respond", "contractVersion": "1"}],
+        "prompts": {
+            "system": {"path": "prompts/system.md", "variables": []},
+            "instruction": {"path": "prompts/chat.md", "variables": []},
+        },
+        "compatibleTargets": [{"kind": "node", "requires": []}, {"kind": "canvas", "requires": []}],
+        "inputs": {"reads": ["userMessage", "nodeContext", "dataflowContext"], "requiredConfig": []},
+        "tools": [{"id": tool} for tool in READER_TOOLS],
+        "provenance": {"publisher": "me", "trust": "imported"},
+    }
+    storage.write_definition(_user_dir_key(user), READER, manifest, {
+        "prompts/system.md": READER_PREAMBLE, "prompts/chat.md": READER_PROMPT,
+    })
+    return READER
+
+
 def db_user(client, user):
     """Re-fetch the ORM user in the current app context (route fixtures hand
     back a detached instance)."""
