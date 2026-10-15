@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import re
 
+from playwright.sync_api import expect
+
 from ..utils import accept_confirm_dialog
 from .framework import Ctx, walkthrough
 
@@ -329,3 +331,54 @@ def agent_catalog_action_labels_fit(ctx: Ctx) -> None:
     ctx.capture("labels-fit")
     ctx.say("Every label inside its button",
             "The longest one in the product, on the surface that now owns it.")
+
+
+@walkthrough(
+    slug="agent-details-use-the-docs-words",
+    title="An agent's details use the docs' three words",
+    premise="Open the Node Builder's details on the Agent Catalog page and read them.",
+    note="The window listed the agent's capability ids under Capabilities and its "
+         "prompts by file name. It now says what you ask the agent in chat, the "
+         "tools it uses there and its modes, each with who asks for it, in the "
+         "words of docs/AGENT-CATALOG.md, and each prompt says when it runs.",
+    tests=["src/tests/catalog/agentDetailModel.test.tsx",
+           "backend/tests/test_agents/test_agent_details.py",
+           "test_frontend/test_walkthrough_baselines.py"],
+    clip_selector='[data-curio-modal-shell="true"]',
+    fit_reactflow=False,
+)
+def agent_details_use_the_docs_words(ctx: Ctx) -> None:
+    page = ctx.page
+
+    ctx.say("The Agent Catalog page", "Every card offers View details.")
+    page.goto(f"{ctx.frontend}/catalog/agents")
+    expect(page.get_by_role("heading", name="Agent Catalog", level=1)).to_be_visible(
+        timeout=30000
+    )
+    card = page.locator("article").filter(
+        has=page.get_by_role("heading", name="Node Builder", level=2, exact=True)
+    ).first
+    card.wait_for(state="visible", timeout=30000)
+    ctx.click(card.get_by_role("button", name="View details"))
+
+    dialog = page.get_by_role("dialog", name="Agent details")
+    expect(dialog).to_be_visible(timeout=15000)
+    expect(dialog.get_by_role("heading", level=3)).to_have_text(
+        ["In chat", "Tools", "Modes (who asks)", "Agent info", re.compile(r"^Prompts"),
+         "Requires"],
+        timeout=15000,
+    )
+    modes = dialog.locator("section").filter(
+        has=page.get_by_role("heading", name="Modes (who asks)", exact=True)
+    )
+    expect(modes.get_by_text(
+        "Write a node's content: asked by Node Builder, Dataflow Builder, Solve", exact=True,
+    )).to_be_visible(timeout=15000)
+    # The prompts and the model arrive after the window opens: wait for both,
+    # so the frame catches neither loading.
+    expect(dialog.get_by_text("every call", exact=True)).to_be_visible(timeout=15000)
+    expect(dialog.get_by_text("…", exact=True)).to_have_count(0, timeout=15000)
+
+    ctx.focus(modes, hold=900)
+    ctx.say("In chat, tools and modes",
+            "The docs' three words, and who asks for each mode.")
