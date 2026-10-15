@@ -71,6 +71,18 @@ describe("the preview", () => {
     expect(show).toHaveBeenCalled();
   });
 
+  it("starts every line with the same glyph slot, so the text lines up with or without a glyph", () => {
+    const silent = detectLoaderProfile("x = build()\nreturn x");
+    for (const props of [{ profile: catalog }, { profile: catalog, outputCode: "success" }, { profile: silent }, { profile: silent, detecting: true }]) {
+      const { container, unmount } = render(<DataLoaderPreview {...(props as any)} />);
+      const facts = container.querySelector('[data-testid="data-loader-preview"]')!.lastElementChild!;
+      for (const line of Array.from(facts.children)) {
+        expect(line.firstElementChild?.className).toContain("lineIcon");
+      }
+      unmount();
+    }
+  });
+
   it("titles every kind of source", () => {
     expect(loaderTitle({ kind: "disk", address: "" })).toBe("File (path built in code)");
     expect(loaderTitle({ kind: "api", address: "" })).toBe("API (address built in code)");
