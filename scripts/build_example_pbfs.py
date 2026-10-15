@@ -69,7 +69,7 @@ class Area(NamedTuple):
 AREAS = {
     # Example 06.
     "back_bay": Area(place="Back Bay, Boston, Massachusetts, USA", boundaries=("Back Bay",)),
-    # Example 07, Interaction_Autark and WeatherRouting.
+    # Example 07 and Interaction_Autark.
     "chicago_loop": Area(place="Loop, Chicago, Illinois, USA", boundaries=("Loop",)),
     # Example 08 and Regression.
     "niteroi": Area(place="Niterói, Rio de Janeiro, Brazil", boundaries=("Niterói",)),
@@ -77,7 +77,7 @@ AREAS = {
     # west so that it holds Battery Park City whole.
     "lower_mnt": Area(box=(40.698762, -74.0194416, 40.756338, -73.962192),
                       boundaries=("Battery Park City", "Financial District")),
-    # SCOUT's weather routing box, with the Chicago city boundary.
+    # WeatherRouting: SCOUT's weather routing box, with the Chicago city boundary.
     "chicago_downtown": Area(box=(41.859, -87.662, 41.898, -87.613), boundaries=("Chicago",)),
 }
 

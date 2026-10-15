@@ -76,8 +76,8 @@ are SCOUT's `rain_model.pth`, exported to ONNX by
 ## A dataflow
 
 ```
-[ Autark: Loop roads ] ──► [ Weather Routing ] ──► [ Routes ] ──► [ Autark: map of the routes ]
-                                              └─► [ Route metrics ] ──► [ Compare Scenarios ]
+[ Autark: roads ] ──► [ Weather Routing ] ──► [ Routes ] ──► [ Autark: map of the routes ]
+                                         └─► [ Route metrics ] ──► [ Compare Scenarios ]
 ```
 
 An Autark node that only loads data hands on its layers, each under its table
@@ -110,8 +110,10 @@ several layers without a `table_osm_roads` one, the node fails with a message
 naming the layers its input has.
 
 The test dataflow [WeatherRouting](../../docs/examples/dataflows/WeatherRouting.json)
-is this dataflow in two scenarios, "Avoid rain" and "Avoid wind", over the
-Chicago Loop's roads and a start time they share.
+is SCOUT's weather routing example as this dataflow: one Weather Routing node
+over the roads of SCOUT's box in downtown Chicago, and two scenarios, "Fastest
+route" and "Weather-aware route", that each keep one of its routes, drawn on
+one map and charted in their colors.
 
 ## Setup
 

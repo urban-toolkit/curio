@@ -1,20 +1,20 @@
-"""Write the roads layer the WeatherRouting example hands its Weather Routing nodes.
+"""Write the Chicago Loop's roads layer, as an Autark node hands it to Weather Routing.
 
-The shipped test dataflow `docs/examples/dataflows/WeatherRouting.json` loads the
-Chicago Loop's roads with an Autark node whose `data` section reads the committed
-OpenStreetMap extract `docs/examples/data/chicago_loop.osm.pbf`. Such a section
+An Autark node whose `data` section loads the roads of the committed
+OpenStreetMap extract `docs/examples/data/chicago_loop.osm.pbf` (`SOURCE` below)
 runs in the sandbox, through autk-db in Node (`run_js_script`, as the canvas runs
 it), and hands on its layer array, `[{name, type, geojson}]` in autk-db's
-EPSG:3395, each FeatureCollection naming that CRS. The Weather Routing nodes read
-the roads layer through their layer chip, `[!! input_0:table_osm_roads !!]`,
+EPSG:3395, each FeatureCollection naming that CRS. A Weather Routing node reads
+the roads layer through its layer chip, `[!! input_0:table_osm_roads !!]`,
 which runs as `curio_layer` (`utk_curio/sandbox/util/input_layers.py`) and gives
 it as a GeoDataFrame.
 
 This script runs that section the same way, then `curio_layer` on its layers,
 and writes the roads' lines and the tags routing reads (highway, oneway and
 maxspeed) as the model.scout.weather-gnn tests' fixture
-`utk_curio/backend/tests/test_packages/fixtures/scout_routing/loop_roads.parquet`.
-The roads are OpenStreetMap data, as the extract is.
+`utk_curio/backend/tests/test_packages/fixtures/scout_routing/loop_roads.parquet`,
+which the node's widget tests route on. The roads are OpenStreetMap data, as the
+extract is.
 
     python scripts/scout/loop_roads_fixture.py [--node-modules <folder>] [--out <file>]
 
@@ -29,18 +29,18 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-EXAMPLE = REPO_ROOT / "docs" / "examples" / "dataflows" / "WeatherRouting.json"
 OUT = REPO_ROOT / "utk_curio" / "backend" / "tests" / "test_packages" / "fixtures" / "scout_routing" / "loop_roads.parquet"
-#: The layer the Weather Routing nodes' layer chip reads, and the tags routing reads.
+#: The Autark data source the roads come from: the Loop's extract, its roads layer.
+SOURCE = {
+    "type": "osm",
+    "pbfFileUrl": "docs/examples/data/chicago_loop.osm.pbf",
+    "queryArea": {"geocodeArea": "Chicago", "areas": ["Loop"]},
+    "outputTableName": "table_osm",
+    "autoLoadLayers": {"layers": ["roads"]},
+}
+#: The layer the Weather Routing node's layer chip reads, and the tags routing reads.
 ROADS_LAYER = "table_osm_roads"
 ROUTING_TAGS = ["highway", "oneway", "maxspeed"]
-
-
-def autark_document():
-    spec = json.loads(EXAMPLE.read_text(encoding="utf-8"))["dataflow"]
-    (autark,) = [n for n in spec["nodes"]
-                 if n["type"] == "curio.builtin/autk-grammar" and "data" in json.loads(n["content"])]
-    return json.loads(autark["content"])
 
 
 def code_for(source):
@@ -77,9 +77,8 @@ def main():
     from utk_curio.sandbox.util.input_layers import curio_layer
 
     node_modules = Path(args.node_modules).resolve() if args.node_modules else None
-    (source,) = autark_document()["data"]
     result, _logs, errors = worker.run_js_script(
-        code_for(source), None, cwd=str(REPO_ROOT), node_type="AUTK_GRAMMAR", node_modules=node_modules,
+        code_for(SOURCE), None, cwd=str(REPO_ROOT), node_type="AUTK_GRAMMAR", node_modules=node_modules,
     )
     payload = json.loads(result) if result else {}
     if not payload.get("success"):

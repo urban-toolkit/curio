@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/WeatherRouting.json",
-    "sha256": "8f27ab4779c2ad1ee0f5d4defe6d2961bac3f9fd65ceabf1e0c5cbead159da1c",
+    "sha256": "4a3b5e22e6b3785a14eee9bdd790dfb55dddedd6cb94fa9db1d9c3f684e4ed96",
     "walkthrough": null
   },
-  "prompt": "Compare two weather-aware routes across the Chicago Loop at noon on 6 July 2025, using SCOUT's routing model and its forecast. Load the Loop's roads from the OpenStreetMap extract the examples ship, and set the start time once for both scenarios. In the first scenario rain counts most and wind least; the second is a copy of it with the two the other way round. Each scenario finds the rain-aware, the wind-aware and the fastest route between the same two points, then takes the routes and their metrics apart. Draw both scenarios' routes over the roads on one map, and chart each route's duration, distance, rain exposure and wind exposure in each scenario. The routing model is not part of the standard node set, so whatever provides it needs installing first.",
+  "prompt": "Reproduce SCOUT's weather routing example in downtown Chicago, using SCOUT's routing model and its forecast. Load the roads of SCOUT's routing box from the OpenStreetMap extract the examples ship, and route between SCOUT's two points with its default weights, starting at the hour of the forecast SCOUT's own run read. Make two scenarios: one keeps the fastest route, the other the route the weather weights favor, and each takes its route and its metrics apart. Draw both routes over the roads on one map, each in its scenario's color, and chart the two routes' duration, distance, rain exposure and wind exposure in the same colors. The routing model is not part of the standard node set, so whatever provides it needs installing first.",
   "context": null,
   "required": {
     "datasets": [
@@ -21,7 +21,7 @@
       "model.scout.weather-gnn@1"
     ],
     "paths": [
-      "docs/examples/data/chicago_loop.osm.pbf"
+      "docs/examples/data/chicago_downtown.osm.pbf"
     ]
   },
   "expected": {
@@ -97,21 +97,7 @@
         "hasContent": true
       },
       {
-        "ref": "endpoint1",
-        "type": "curio.builtin/parameter",
-        "role": "endpoint",
-        "executable": false,
-        "hasContent": false
-      },
-      {
         "ref": "analysis5",
-        "type": "model.scout.weather-gnn/weather-routing",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis6",
         "type": "model.scout.weather-gnn/weather-routing",
         "role": "analysis",
         "executable": true,
@@ -127,11 +113,6 @@
       {
         "from": "visualization1",
         "to": "analysis5",
-        "kind": "data"
-      },
-      {
-        "from": "visualization1",
-        "to": "analysis6",
         "kind": "data"
       },
       {
@@ -197,16 +178,16 @@
       },
       {
         "from": "analysis5",
-        "to": "analysis3",
-        "kind": "data"
-      },
-      {
-        "from": "analysis6",
         "to": "analysis2",
         "kind": "data"
       },
       {
-        "from": "analysis6",
+        "from": "analysis5",
+        "to": "analysis3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis5",
         "to": "analysis4",
         "kind": "data"
       }
@@ -220,7 +201,7 @@
         "data.scout.wrf-wspd10"
       ],
       "paths": [
-        "docs/examples/data/chicago_loop.osm.pbf"
+        "docs/examples/data/chicago_downtown.osm.pbf"
       ],
       "urls": []
     }
@@ -228,12 +209,6 @@
   "intents": [
     {
       "ref": "analysis5",
-      "mustMention": [
-        "route"
-      ]
-    },
-    {
-      "ref": "analysis6",
       "mustMention": [
         "route"
       ]
@@ -263,7 +238,7 @@
   "split": "train",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "the SCOUT routing step (#662), from the example JSON, 2026-10-05",
+    "draftedBy": "the SCOUT routing example step (#819's port, step 8), from the example JSON, 2026-10-15",
     "reviewedBy": null,
     "reviewedAt": null
   },
@@ -294,5 +269,5 @@
     ],
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids. The datasets, and the weather GNN the routing nodes name from the Model Catalog, are SCOUT's (urban-toolkit/scout), used with the permission of its authors; the datasets carry no licence string."
   },
-  "notes": "A package node with widgets in two scenarios over Autark's roads and a shared Parameter node: SCOUT's weather routing with rain or wind weighed most, mapped through Autark and compared on four charts."
+  "notes": "A package node with widgets set as SCOUT's example sets them, over Autark's roads of SCOUT's box, read by two scenarios that each keep one of its routes: SCOUT's weather routing, mapped through Autark in the scenarios' colors and compared on four charts."
 }
