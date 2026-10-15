@@ -50,7 +50,7 @@ Agent ids always begin with **`agent.`**, which keeps them apart from node packa
 
 | Agent | In chat | Tools | Modes (who asks) |
 |---|---|---|---|
-| **Researcher** | Explains a node or the dataflow, diagnoses errors, helps define what to build, answers web questions as notes, checks facts | Read the dataflow and a node's last run; search and read the web; propose notes; propose a notes package | Check a fact (Node Builder, Dataset Finder, Dataflow Builder); Notes from search results (Dataflow Builder) |
+| **Researcher** | Explains a node or the dataflow, diagnoses errors, helps define what to build, answers web questions as notes, checks facts | Read the dataflow and a node's last run; search and read the web; propose notes; propose a notes package | Notes from search results (Dataflow Builder); Check a fact (Node Builder, Dataset Finder, Dataflow Builder) |
 | **Node Builder** | Builds a node, rewrites a node's content, suggests nodes for a connection, finds or writes node types | Read the dataflow and a node's last run; search the Data and Model Catalogs; propose a node, a content change, a node type, a package install or a package draft | Write a node's content (Node Builder, Dataflow Builder, Solve); Recommend packages (Dataflow Builder); Write a package (Node Builder, Researcher, Dataflow Builder) |
 | **Dataflow Builder** | Plans a whole dataflow, then solves its nodes | Read the dataflow and runs; propose a plan or a node; read worked examples | None |
 | **Dataset Finder** | Finds datasets in the Data Catalog and in portals | Search the catalog and portals; propose a download | Find datasets (Node Builder, Dataflow Builder, Solve) |
@@ -78,8 +78,8 @@ Each agent's prompts, by the key its manifest gives them:
 |---|---|---|
 | `system` | [`default_preamble.md`](../utk_curio/llm-prompts/default_preamble.md) | every call |
 | `instruction` | [`researcher_instruction.md`](../utk_curio/llm-prompts/researcher_instruction.md) | a message you type |
-| `research.verify` | [`research_instruction.md`](../utk_curio/llm-prompts/research_instruction.md) | another agent asks for a fact to be checked |
 | `research.notes.compose` | [`researcher_notes_instruction.md`](../utk_curio/llm-prompts/researcher_notes_instruction.md) | the Dataflow Builder asks for notes from search results |
+| `research.verify` | [`research_instruction.md`](../utk_curio/llm-prompts/research_instruction.md) | another agent asks for a fact to be checked |
 
 **Node Builder**
 
@@ -448,8 +448,8 @@ The modes of the agents Curio ships, each with its capability id and its prompt 
 
 | Mode | Capability id | Prompt |
 |---|---|---|
-| Researcher: check a fact | `research.verify` | `research_instruction.md` |
 | Researcher: notes from search results | `research.notes.compose` | `researcher_notes_instruction.md` |
+| Researcher: check a fact | `research.verify` | `research_instruction.md` |
 | Node Builder: write a node's content | `node.content.generate` | `new_content_prompt.md`, or `new_content_autk_prompt.md` for an Autark document |
 | Node Builder: recommend packages | `package.recommend` | `package_recommendation_instruction.md` |
 | Node Builder: write a package | `package.build`, `package.extend`, `node.kind.author` | `package_build_instruction.md` |
