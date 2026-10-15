@@ -2,11 +2,9 @@ import {
   faBookOpen,
   faCircleNodes,
   faClipboardCheck,
-  faComment,
   faCube,
   faDatabase,
   faDiagramProject,
-  faLink,
   faRobot,
 } from "@fortawesome/free-solid-svg-icons";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
@@ -105,22 +103,20 @@ export function agentCategoryIcon(category: string | null | undefined): IconDefi
 
 /**
  * Agents drawn with a glyph of their own instead of their category's, keyed by
- * agent id (the coordinate without its version). Chat and the Connection
- * Builder are both `node` agents and would otherwise look exactly like the
- * other three: Chat talks, so a speech balloon; the Connection Builder works on
- * a connection, so a link (the icon of its workshop slide). The Researcher, also
- * a `node` agent, researches and writes its findings up as notes: an open book,
- * as its workshop slide draws it (not the Node Researcher, which keeps its own).
+ * agent id (the coordinate without its version). The Researcher is a `node`
+ * agent and would otherwise look like the Node Builder: it researches and
+ * writes its findings up as notes, so an open book, as its workshop slide draws
+ * it. Chat and the Connection Builder had glyphs of their own until they left
+ * the roster (the Researcher took over Chat, the Node Builder the Connection
+ * Builder); only built-ins are listed here.
  */
 export const AGENT_ICON_OVERRIDE: Readonly<Record<string, IconDefinition>> = {
-  "agent.chat-agent": faComment,
-  "agent.connection-builder": faLink,
   "agent.researcher": faBookOpen,
 };
 
 /**
  * The glyph for one agent: its own when it has one, else its category's.
- * *ref* is a dirName or coordinate (`agent.chat-agent@1.0.0`) or a bare id.
+ * *ref* is a dirName or coordinate (`agent.researcher@1.0.0`) or a bare id.
  */
 export function agentIcon(
   ref: string | null | undefined,
