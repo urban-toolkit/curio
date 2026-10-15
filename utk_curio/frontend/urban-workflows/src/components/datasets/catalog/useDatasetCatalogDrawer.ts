@@ -13,6 +13,7 @@ import { useDatasetDetails, viewDatasetDetailsToast } from "./datasetDetailsCont
 import { useToastContext } from "../../../providers/ToastProvider";
 import {
   beginDatasetDrag,
+  canvasLoadsDatasetInCodeOnly,
   endDatasetDrag,
   writeDatasetDragData,
   DatasetCatalogItem,
@@ -30,7 +31,7 @@ import { buildSaveableLiveOutputs } from "../../../utils/saveOutputDataset";
 import { resolveComputedInstallTitle } from "../../../utils/palettePackageFactoryDraft";
 import { dataflowRefFromCatalogItem } from "./dataflowDatasetRef";
 import { permanentDeletionNotice } from "../../../services/retentionCopy";
-import { codeOnlyDataflowNames, codeOnlyWarning } from "../../../services/codeOnlyUsage";
+import { codeOnlyDataflows, codeOnlyWarning } from "../../../services/codeOnlyUsage";
 import type { DrawerTab } from "./datasetCatalogDrawerTypes";
 import { tabOrigin } from "./datasetCatalogDrawerTypes";
 
@@ -47,7 +48,7 @@ export interface DatasetConfirmAction {
 
 export function useDatasetCatalogDrawer(presented: boolean) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { projectId, ensureProjectId, setDataflowDatasets, outputs, nodes, defaultSaveOutputDataset, pendingInstalls, beginPendingInstall, endPendingInstall } = useFlowContext();
+  const { projectId, projectName, ensureProjectId, setDataflowDatasets, outputs, nodes, defaultSaveOutputDataset, pendingInstalls, beginPendingInstall, endPendingInstall } = useFlowContext();
   // The canvas's one dataset details modal, the same one the palettes and the
   // Dataset Finder open (`CanvasDatasetDetailsProvider`), and the one this
   // drawer's toasts offer.
@@ -327,16 +328,22 @@ export function useDatasetCatalogDrawer(presented: boolean) {
    *  raise a per-id error on the node's next run. That is worth saying BEFORE
    *  the removal, because applying a dataset is what wrote the call in the
    *  first place - so this is the ordinary flow, not a corner case.
+   *
+   *  This dataflow is read from its canvas, as the Model Catalog's Remove
+   *  reads its own (`codeOnlyDataflows`): the ref the removal takes out is
+   *  what makes its saved row count the dataset as kept.
    */
   const codeOnlyUsers = useCallback(
-    async (dataset: DatasetCatalogItem): Promise<string[]> => {
-      try {
-        return codeOnlyDataflowNames(await datasetCatalogApi.datasetUsage(dataset.id));
-      } catch {
-        return [];
-      }
-    },
-    [],
+    (dataset: DatasetCatalogItem): Promise<string[]> =>
+      codeOnlyDataflows(
+        {
+          id: projectId,
+          name: projectName,
+          inCodeOnly: canvasLoadsDatasetInCodeOnly(nodes ?? [], dataset, projectId),
+        },
+        () => datasetCatalogApi.datasetUsage(dataset.id),
+      ),
+    [nodes, projectId, projectName],
   );
 
   const onUninstall = useCallback(

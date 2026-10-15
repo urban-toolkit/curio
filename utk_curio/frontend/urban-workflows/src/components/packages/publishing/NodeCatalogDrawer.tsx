@@ -20,12 +20,7 @@ import {
   usePackageCatalog,
   withRestartNotice,
 } from "../../../services/packages";
-import {
-  UNTITLED_DATAFLOW,
-  byDataflowName,
-  codeOnlyDataflowNames,
-  codeOnlyWarning,
-} from "../../../services/codeOnlyUsage";
+import { codeOnlyDataflows, codeOnlyWarning } from "../../../services/codeOnlyUsage";
 import type {
   DrawerTab,
   PackageAddRequest,
@@ -345,21 +340,22 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
    *
    * This dataflow is read from its canvas, which may hold edits not saved
    * yet: its lockfile entry is the one going, so its saved row would count
-   * it as kept. Every other one comes from the usage read, as saved.
+   * it as kept. Every other one comes from the usage read, as saved. The
+   * Data Catalog's Remove names them through the same code
+   * (`codeOnlyDataflows`).
    */
-  const modelCodeOnlyUsers = useCallback(async (pkg: PackagePayload): Promise<string[]> => {
-    const here = nodesNamingModelInCodeOnly(nodes ?? [], pkg.packageId).length
-      ? [projectName || UNTITLED_DATAFLOW]
-      : [];
-    let elsewhere: string[] = [];
-    try {
-      const usage = await packagesApi.usage(pkg.dirName);
-      elsewhere = codeOnlyDataflowNames(usage.filter((row) => row.dataflowId !== projectId));
-    } catch {
-      // Unread, no other dataflow is named; the removal is the same either way.
-    }
-    return byDataflowName([...here, ...elsewhere]);
-  }, [nodes, projectName, projectId]);
+  const modelCodeOnlyUsers = useCallback(
+    (pkg: PackagePayload): Promise<string[]> =>
+      codeOnlyDataflows(
+        {
+          id: projectId,
+          name: projectName,
+          inCodeOnly: nodesNamingModelInCodeOnly(nodes ?? [], pkg.packageId).length > 0,
+        },
+        () => packagesApi.usage(pkg.dirName),
+      ),
+    [nodes, projectName, projectId],
+  );
 
   const onUninstall = useCallback(async (pkg: PackagePayload) => {
     const codeWarning = codeOnlyWarning(

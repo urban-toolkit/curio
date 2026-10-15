@@ -1,3 +1,4 @@
+import { currentCode } from "../codeOnlyUsage";
 import type { ModelBlockPayload, PackagePayload } from "./types";
 import { hasRewritableModelCall, modelIdsInCode, rewriteFirstModelCall } from "./modelCode";
 import { MODEL_TYPE_LABEL } from "./modelPackages";
@@ -200,13 +201,6 @@ export function modelSwapRefusal(
   const dropped = modelTypeText(model.type);
   const article = /^[aeiou]/i.test(dropped) ? "an" : "a";
   return `This node runs ${modelTypeText(nodeType)} models, and ${model.name} is ${article} ${dropped} model.`;
-}
-
-/** The code a node runs: its own once it has any, else its template's. */
-function currentCode(data: any): string | undefined {
-  if (typeof data?.code === "string") return data.code;
-  if (typeof data?.defaultCode === "string") return data.defaultCode;
-  return undefined;
 }
 
 /**
