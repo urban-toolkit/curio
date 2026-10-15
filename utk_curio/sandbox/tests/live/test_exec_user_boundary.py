@@ -511,6 +511,7 @@ def test_scouts_rasterizer_runs_as_the_exec_user():
     sandbox's home."""
     body = textwrap.indent(textwrap.dedent("""
         import geopandas as gpd
+        import numpy as np
         from shapely.geometry import box
         from scout_raster_conversion.node_outputs import rasterize_buildings
 
@@ -524,10 +525,16 @@ def test_scouts_rasterizer_runs_as_the_exec_user():
             ],
             crs="EPSG:4326",
         )
-        mosaic, tiles = rasterize_buildings(buildings, "height", 16, 550, curio_output_file)
-        print(mosaic.crs.to_epsg(), mosaic.width, mosaic.height)
-        print(",".join(f"{z}_{x}_{y}" for z, x, y in zip(tiles["zoom"], tiles["x"], tiles["y"])))
-        return mosaic, tiles
+        heights = rasterize_buildings(buildings, "height", 16, 550, curio_output_file)
+        print(heights.crs.to_epsg(), heights.width, heights.height)
+        # The tiles that hold heights: the tiles convert_raster wrote.
+        tags, cells = heights.tags(), heights.read(1)
+        print(",".join(
+            f"{tags['zoom']}_{int(tags['tile_x']) + column}_{int(tags['tile_y']) + row}"
+            for row in range(heights.height // 256) for column in range(heights.width // 256)
+            if not np.isnan(cells[256 * row:256 * (row + 1), 256 * column:256 * (column + 1)]).all()
+        ))
+        return heights
     """).strip("\n"), "    ")
     result = assert_ran(_request("/exec", {
         "code": body + "\n",
@@ -541,7 +548,7 @@ def test_scouts_rasterizer_runs_as_the_exec_user():
     grid, names = printed(result).splitlines()[-2:]
     assert grid == "3395 512 256", grid
     assert names == "16_16814_24356,16_16815_24356", names
-    assert result["output"]["dataType"] == "outputs", result["output"]
+    assert result["output"]["dataType"] == "raster", result["output"]
 
 
 #: The weather GNN's model package in the image: its module, which the node

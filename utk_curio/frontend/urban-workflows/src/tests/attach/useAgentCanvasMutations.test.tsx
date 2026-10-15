@@ -147,27 +147,6 @@ describe("useAgentCanvasMutations (the apply→canvas bridge, dev/48 §3.3 + dev
     expect(mockSetCenter).not.toHaveBeenCalled();
   });
 
-  it("a created TEMPLATE lands in the store + registry BEFORE the node inserts", async () => {
-    const order: string[] = [];
-    mockSetCurrentProjectPackages.mockImplementation(() => order.push("store"));
-    mockRefreshPackageRegistry.mockImplementation(() => {
-      order.push("registry");
-      return Promise.resolve();
-    });
-    mockCreateCodeNode.mockImplementation(() => order.push("insert"));
-    render(<Host />);
-    act(() =>
-      notifyAgentCanvasMutation({
-        kind: "node-created",
-        node: { ...NODE, type: "curio.agent.scorer/scorer" },
-        createdPackageDir: "curio.agent.scorer@1",
-      }),
-    );
-    await waitFor(() => expect(order).toEqual(["store", "registry", "insert"]));
-    const stored = mockSetCurrentProjectPackages.mock.calls[0][0] as string[];
-    expect(Array.from(stored)).toEqual(["curio.builtin@1", "curio.agent.scorer@1"]);
-  });
-
   it("node-content-applied routes through FlowProvider.applyNodeContent (dev/51 defect 2)", () => {
     render(<Host />);
     act(() =>

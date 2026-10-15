@@ -228,18 +228,18 @@ class TestContentClassToolBudgets:
             self._request("node.content.write", {"nodeId": "n1", "content": "z" * 20000}))
         assert part["tool"] == "node.content.write"
 
-    def test_node_template_create_nests_its_content(self):
-        # The fallback rung of the reuse ladder carries its source one level
-        # down, at params.template.content (services.py::_mint_node_template_create).
-        (part,) = content.parse_parts(self._request("node.template.create", {
-            "justification": "j" * 2000,
-            "template": {"label": "L", "engine": "python", "content": "y" * 20000}}))
-        assert len(part["params"]["template"]["content"]) == 20000
-        assert content.parse_parts(self._request("node.template.create", {
-            "template": {"content": "y" * (content.PROPOSAL_CONTENT_MAX_CHARS + 1)}})) is None
-        # The justification is prose for the review card, not a code channel.
-        assert content.parse_parts(self._request("node.template.create", {
-            "justification": "j" * 6000, "template": {"content": "y"}})) is None
+    def test_a_nested_content_field_is_lifted_by_its_path(self):
+        # The content field is named by its path in the params, so a field
+        # one level down is budgeted the same way, and the caller's params
+        # are never mutated.
+        params = {"template": {"label": "L", "content": "y" * 20000}, "pad": "p"}
+        text, rest = content._pop_content_field(params, ("template", "content"))
+        assert text == "y" * 20000
+        assert rest == {"template": {"label": "L"}, "pad": "p"}
+        assert params["template"]["content"] == "y" * 20000
+        # A wrong-typed field stays where it is, for the mint's own refusal.
+        wrong = {"template": {"content": {"not": "a string"}}}
+        assert content._pop_content_field(wrong, ("template", "content")) == (None, wrong)
 
     def test_wrong_typed_content_still_reaches_the_mint(self):
         # A non-str content field is left in the remainder so the mint's own
@@ -260,10 +260,14 @@ class TestContentClassToolBudgets:
 
     def test_verbose_errors_name_the_real_field_path(self):
         _, errors = content.parse_tool_request_verbose({
-            "tool": "node.template.create",
-            "params": {"template": {"content": "y" * (content.PROPOSAL_CONTENT_MAX_CHARS + 1)}}})
+            "tool": "node.content.write",
+            "params": {"nodeId": "n1", "content": "y" * (content.PROPOSAL_CONTENT_MAX_CHARS + 1)}})
         # The model cannot correct what the error does not name.
-        assert errors and "params.template.content" in errors[0]
+        assert errors and "params.content" in errors[0]
+        _, errors = content.parse_tool_request_verbose({
+            "tool": "node.create",
+            "params": {"nodeType": "a/b", "content": "y", "pad": "x" * (content.TAIL_MAX_BYTES + 1)}})
+        assert errors and "params.content" in errors[0] and "not in other fields" in errors[0]
         _, errors = content.parse_tool_request_verbose({"tool": "node.create", "params": []})
         assert errors == ["toolRequest.params must be an object"]
 

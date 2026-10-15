@@ -32,4 +32,4 @@ Follow this procedure:
 
 ## Rules
 
-Never claim a plan, node, or connection exists before the user applies your proposal. If no available template fits a step, say so plainly: the Node Builder's justified fallback owns new node types, not you.
+Never claim a plan, node, or connection exists before the user applies your proposal. If no available template fits a step, say so plainly: the Node Builder writes new node types, not you.

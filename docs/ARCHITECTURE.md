@@ -731,7 +731,7 @@ Between nodes a raster travels as autk-db's `getRaster` collection in an envelop
 
 `curio_load_data("<id>", part="<file>")` reads one file of a bundle (`catalog_helpers.bundle_part`): the dataset's path comes from the same dataset-path map, and the part must be one `listed_bundle_parts` gives, the `bundle.json` entries that are regular files inside the dataset's folder. Staging stages the same list under isolation, so both modes and the headless runner read the same files; any other name is refused with the dataset's files. The agents' source scanner treats a `part=` value of a `curio_load_data` call, literal or f-string, as a file of the dataset, not a path on disk.
 
-`rasters.mosaic_rasters` lays rasters that lie on one grid side by side (`mosaic_grid`: the tiles' north-west corner, the first tile's cell size or a given one, each tile at the nearest cell): a GDAL VRT that points at their files, or a GeoTIFF of their cells. `curio.media@1`'s Mosaic Rasters calls it through `mosaic_collection` (a raster collection's rows); `mosaic_web_tiles` places web map tiles on their own grid (`tile_bounds`) for `scout.raster-conversion@1`. Package modules import them from `utk_curio.sandbox.util.rasters`.
+`rasters.mosaic_rasters` lays rasters that lie on one grid side by side (`mosaic_grid`: the tiles' north-west corner, the first tile's cell size or a given one, each tile at the nearest cell): a GDAL VRT that points at their files, or a GeoTIFF of their cells. `curio.media@1`'s Mosaic Rasters calls it through `mosaic_collection` (a raster collection's rows); `mosaic_web_tiles` places web map tiles on their own grid (`tile_bounds`), a tile it lacks holding `fill` and the file naming `nodata`, for `scout.raster-conversion@1`, whose missing tiles are no data. Package modules import them from `utk_curio.sandbox.util.rasters`.
 
 A `dataRef` that names an unavailable table, whether an empty layer, a layer that was never loaded, or one dropped by an upstream node, is dropped before the grammar executes: the behavior removes the `map.layerRefs` entry or `plot` block and logs a console warning, which for a missing table lists the non-empty table names that *are* available; a `compute` block whose `dataRef` matches no layer is skipped. A map that keeps some of its layers renders them, and its success output notes the ones it lost, naming an empty table apart from one the dataflow does not produce. One left with nothing to draw is reported as an empty render (see [Render Outcomes](#render-outcomes)), and a reference to a table that exists but holds no rows is blamed on that table's source rather than on the reference.
 
@@ -1398,6 +1398,16 @@ Every removed connection is named on the card, and every applied result ends wit
 
 A planned node may declare its widgets, checked by the Widgets tab's own rules (`checkWidgetDef` and `checkWidgetValue` in `widgetModel.ts`, twinned in `execution/code_references.py` and pinned by `widgetChecks.cases.json`), and the apply writes them at `metadata.widgets`. A plan may also save scenarios (`domain/plan_scenarios.py`, `proposals/plan_scenarios.py`): a selection names plan refs or existing node ids, and a duplicate names an earlier selection, the ref each copy takes, and the widget values a copy changes. The grammar expands a duplicate into plan nodes and edges by the canvas's own rule (`scenario_catalog/domain/duplicate.py`, the twin of `duplicateSelection.ts`, pinned by `duplicateSelection.cases.json`), so the card reviews each copy as a node and each copied connection as one. A copy carries `copyOf`, which the apply turns into `metadata.copiedFrom`; it is created after its original, by the whole-plan apply and the per-node one alike. A scenario is saved once all of its nodes exist, with the next of `SCENARIO_COLORS` when the plan gives none, and is refused when another scenario took one of its nodes since the plan was proposed. A plan is complete once its nodes, connections and scenarios all exist.
 
+### Package drafts
+
+A package draft (`package.draft.apply`) is the one way an agent makes a node type. `proposals/mint._mint_package_draft_apply` parses the build request, then holds every template the draft adds (each template of a create; in an extend, each one the installed target does not declare) to three checks before anything is built (`_new_template_checks`):
+
+- **A justification.** The request's `justification` names the closest existing templates and why each is inadequate, in at most `_JUSTIFICATION_MAX_CHARS` (2,000) characters. It is review prose, not build input: it never reaches the build request or its digest, and the review card shows it before the draft's details.
+- **No reuse territory.** A new template whose label is the label of a template the project can use (`available_templates`), or whose label's slug (`template_slug`) is that template's id, is refused with that template named.
+- **Grounded code.** A new template whose nodes hold code (`template_content_kind` is `code`) passes the [source-grounding gate](#source-grounding) with its source file and the content of each node the draft creates from it. Its `source` block rides the card.
+
+Each refusal names what to change and is a free correction. A draft the Node Builder's writing mode returns takes the same mint (`turns/delegates._mint_package_draft_from_delegate`), so a refusal goes back to the mode as a correction round. The mode learns the justification and the label rule from its prompt and from the build-request contract in its inputs.
+
 ### Required agents
 
 The Dataflow Builder requires two agents: the Dataset Finder (resolving a data-loading node asks it for candidates) and the Node Builder (its Solve generates content through the Node Builder's content mode, and every node an applied plan creates is given one). The runtime calls each of them on a fixed path, not at the model's choice. The Node Builder in turn requires the Dataset Finder.
@@ -1406,7 +1416,7 @@ A dataflow that lacks an agent's required agents is repaired the next time the u
 
 ### Source grounding
 
-An agent never decides on its own that a file exists. Every piece of node content an agent authors (a Node Builder `node.create`, a content replacement, a new node type's first node, and every node the Dataflow Builder's Solve fills) passes one runtime **source-grounding gate** before it can become a review card or reach the saved dataflow:
+An agent never decides on its own that a file exists. Every piece of node content an agent authors (a Node Builder `node.create`, a content replacement, the code of each template a package draft adds, and every node the Dataflow Builder's Solve fills) passes one runtime **source-grounding gate** before it can become a review card or reach the saved dataflow:
 
 | The code opens or fetches | Grounded only when |
 |---|---|

@@ -4,7 +4,7 @@ SCOUT's accumulated shadow simulation, ported from
 [SCOUT](https://github.com/urban-toolkit/scout)
 (`backend/compute/accumulated_shadow_simulation`). Deep Umbra, SCOUT's shadow
 model, predicts how much of a season's day the ground spends in shadow, from the
-height mosaic of [SCOUT Raster Conversion](../scout.raster-conversion@1/README.md).
+height raster of [SCOUT Raster Conversion](../scout.raster-conversion@1/README.md).
 
 This is a model package: its weights, its node and the module the node imports.
 The [Model Catalog](../../docs/MODEL-CATALOG.md) lists it.
@@ -19,7 +19,7 @@ The [Model Catalog](../../docs/MODEL-CATALOG.md) lists it.
 
 | Canonical id | Label | Input | Output |
 |---|---|---|---|
-| `model.scout.deep-umbra/accumulated-shadow` | Accumulated Shadow | The height mosaic of Rasterize Buildings, or its `(mosaic, tiles)` output | One RASTER: the accumulated shadow in minutes |
+| `model.scout.deep-umbra/accumulated-shadow` | Accumulated Shadow | The height raster of Rasterize Buildings | One RASTER: the accumulated shadow in minutes |
 
 The node's cell:
 
@@ -39,14 +39,15 @@ The node's **Widgets** tab holds its setting:
 
 The input is a raster of building heights in metres in EPSG:3395 (World
 Mercator) on the zoom-16 tile grid, 256 cells a tile: Rasterize Buildings'
-mosaic at its defaults. Deep Umbra reads heights where 255 is 550 m, so the node
+raster at its defaults. Deep Umbra reads heights where 255 is 550 m, so the node
 refuses a raster at another zoom level, off the tile grid, or drawn with another
 maximum height.
 
 ## Output
 
-The accumulated shadow of every tile of the input, on the input's own grid, one
-band in minutes. An Autark map draws it as `input_0`:
+The accumulated shadow of every tile of the input that holds heights, on the
+input's own grid, one band in minutes. A tile with no data, a tile SCOUT wrote
+no file for, gets no shadow, as in SCOUT. An Autark map draws it as `input_0`:
 
 ```json
 {"map": {"layerRefs": [{"dataRef": "input_0", "getFnv": "band_1"}]}}
@@ -61,8 +62,10 @@ gray level 0, a height under 1.08 m:
 return curio_raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)
 ```
 
-Deep Umbra predicts each tile from the tile and its eight neighbours, so a tile
-at the edge of the raster sees no buildings beyond it.
+The ground counted is the ground of the tiles with heights only, as in SCOUT's
+metrics. Deep Umbra predicts each tile from the tile and its eight neighbours,
+so a tile at the edge of the raster, or beside a tile with no data, sees no
+buildings there.
 
 ## The model
 
@@ -77,20 +80,16 @@ A pip install downloads the weights from GitHub the first time the node runs.
 ## A dataflow
 
 ```
-[ Buildings ] ──► [ Rasterize Buildings ] ──► [ Height mosaic ] ──► [ Accumulated Shadow ] ──► [ Autark: map of the shadow ]
-                                                    │                        │
-                                                    └──── mask ──► [ Raster Statistics ] ◄──┘
+[ Buildings ] ──► [ Rasterize Buildings ] ──► [ Accumulated Shadow ] ──► [ Autark: map of the shadow ]
+                            │                          │
+                            └──── mask ──► [ Raster Statistics ] ◄──┘
 ```
-
-The Height mosaic node is a Python node that keeps the mosaic of Rasterize
-Buildings' `(mosaic, tiles)` (`return input_0[0]`), since Raster Statistics reads
-rasters only.
 
 [Example 24](../../docs/examples/24-scout-building-rasters.md) maps the shadow
 of SCOUT's Chicago Loop buildings. The test dataflow
 [ScoutShadows](../../docs/examples/dataflows/ScoutShadows.json) compares SCOUT's
-two building sets of the Chicago Loop as two scenarios: the buildings as they
-are, and with 15 of them removed.
+two building sets of the Chicago Loop as two scenarios, each with a map of its
+shadow: the buildings as they are, and with 15 of them removed.
 
 ## Setup
 

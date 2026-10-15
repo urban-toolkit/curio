@@ -731,9 +731,9 @@ Things worth knowing before adding to these:
   creations. No card's first match is `node.content.write` (node content is
   the Node Builder's mode), so `TestAgentReviewCard` in
   `test_agent_chat_e2e.py` applies a content replacement. The remaining mutate contracts
-  (`dataset.install`, `package.install`, `package.draft.apply`,
-  `node.template.create`) each need a real catalog row, or a run of the isolated
-  build service; their mints are covered in-process by
+  (`dataset.install`, `package.install`, `package.draft.apply`) each need a real
+  catalog row, or a run of the isolated build service; their mints are covered
+  in-process by
   `test_agents/test_routes_turns.py` and `test_agents/test_routes_proposals.py`,
   and an agent declaring only those falls through
   to the read-tool leg.

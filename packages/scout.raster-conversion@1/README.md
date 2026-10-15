@@ -2,14 +2,14 @@
 
 SCOUT's building rasterizer ("OSM vector to raster"), ported from
 [SCOUT](https://github.com/urban-toolkit/scout) (`backend/compute/raster_conversion`).
-It draws each building's height into map tiles, the input of SCOUT's Deep Umbra
-shadow model, and joins the tiles into one raster an Autark map draws.
+It draws each building's height into map tiles and joins the tiles into one
+raster, which an Autark map draws and SCOUT's Deep Umbra shadow model reads.
 
 ## Nodes
 
 | Canonical id | Label | Input | Output |
 |---|---|---|---|
-| `scout.raster-conversion/rasterize-buildings` | Rasterize Buildings | A buildings GeoDataFrame: polygons, a CRS and a column of heights in metres | `(mosaic, tiles)`: one RASTER and one table |
+| `scout.raster-conversion/rasterize-buildings` | Rasterize Buildings | A buildings GeoDataFrame: polygons, a CRS and a column of heights in metres | One RASTER of heights in metres |
 
 ## Settings
 
@@ -23,29 +23,28 @@ The node's **Widgets** tab holds its settings:
 
 Deep Umbra reads zoom-16 tiles where 255 is 550 m.
 
-## Outputs
+## Output
 
-- **mosaic**: the tiles side by side in one GeoTIFF in EPSG:3395 (World Mercator),
-  one band of heights in metres: each gray level is the maximum height over 255
-  (2.16 m at 550 m). An Autark map draws it as `input_0`:
+The tiles side by side in one GeoTIFF in EPSG:3395 (World Mercator), one band of
+heights in metres. Each tile is 256 by 256 cells of 8-bit gray, drawn between
+the tile's corners, as SCOUT writes `<zoom>_<x>_<y>.png`, and each gray level is
+the maximum height over 255 (2.16 m at 550 m). An Autark map draws it as
+`input_0`:
 
-  ```json
-  {"map": {"layerRefs": [{"dataRef": "input_0", "getFnv": "band_1"}]}}
-  ```
+```json
+{"map": {"layerRefs": [{"dataRef": "input_0", "getFnv": "band_1"}]}}
+```
 
-- **tiles**: one row per tile, with `zoom`, `x`, `y` and `png`, the tile's PNG file
-  in base64: 256 by 256 pixels of 8-bit gray, drawn in EPSG:3395 between the
-  tile's corners and named `<zoom>_<x>_<y>.png` in SCOUT.
-
-A tile is written when a building is near it. In the mosaic, the area of a tile
-that is not written is 0, the ground, and so is every pixel with no building. A
-building with no value in the height column adds nothing, and a building taller
-than the maximum height is drawn at the maximum.
+A tile is written when a building is near it. A tile that is not written is no
+data (NaN, the file's no-data value): a map leaves it out, and so do Raster
+Statistics and Accumulated Shadow. Inside a written tile, every pixel with no
+building is 0, the ground. A building with no value in the height column adds
+nothing, and a building taller than the maximum height is drawn at the maximum.
 
 ## A dataflow
 
 ```
-[ Data Loading: buildings ] ──► [ Rasterize Buildings ] ──► [ Autark: map of the mosaic ]
+[ Data Loading: buildings ] ──► [ Rasterize Buildings ] ──► [ Autark: map of the heights ]
 ```
 
 The test dataflow [BuildingRasters](../../docs/examples/dataflows/BuildingRasters.json)

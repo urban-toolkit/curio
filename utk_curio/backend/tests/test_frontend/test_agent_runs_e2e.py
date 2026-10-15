@@ -72,8 +72,8 @@ SAFE_READ_TOOLS = (
 )
 
 # Mutate tools whose mint needs only what a test can state up front. The other
-# mutate contracts (dataset.install, package.install, package.draft.apply,
-# node.template.create) each need a real catalog row or, for the draft, a run of
+# mutate contracts (dataset.install, package.install, package.draft.apply)
+# each need a real catalog row or, for the draft, a run of
 # the isolated build service; their mints are covered in-process by
 # test_agents/test_routes_turns.py and test_agents/test_routes_proposals.py. An
 # agent declaring only those falls through to the

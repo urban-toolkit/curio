@@ -198,11 +198,7 @@ function bridgeApplyResult(proposalId: string, result: AgentApplyResult): void {
       nodes: result.createdNodes ?? [],
     });
   } else if (result.createdNode) {
-    notifyAgentCanvasMutation({
-      kind: "node-created",
-      node: result.createdNode,
-      createdPackageDir: result.createdTemplate?.packageDir,
-    });
+    notifyAgentCanvasMutation({ kind: "node-created", node: result.createdNode });
   } else if (result.appliedContent) {
     notifyAgentCanvasMutation({
       kind: "node-content-applied",

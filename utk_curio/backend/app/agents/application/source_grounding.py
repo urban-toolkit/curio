@@ -33,7 +33,8 @@ Pure by construction: no Flask, no provider, no store. The catalog read, the
 session read, and the egress-budgeted probe are supplied by the caller
 through :class:`GroundingContext`, so the same verdict runs at every boundary
 (node.create, node.insert, node.content.write, the dev/73 runtime review
-mint, Solve, plan-carried content, node.template.create).
+mint, Solve, plan-carried content, the code of each template a package
+draft adds).
 """
 
 from __future__ import annotations

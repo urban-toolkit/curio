@@ -1,8 +1,8 @@
 """Playwright E2E: Accumulated Shadow's widgets, on the model package's node.
 
 Example 24's chain from SCOUT's buildings to their shadow statistics, without
-its maps: Data Loading, Rasterize Buildings, the height mosaic, Accumulated
-Shadow and Raster Statistics. The shadow node is the node of the model package
+its maps: Data Loading, Rasterize Buildings, Accumulated Shadow and Raster
+Statistics. The shadow node is the node of the model package
 ``model.scout.deep-umbra@1`` as the Node Catalog drops it: its three-line cell
 and its Season widget. This drives the widgets as a user does:
 
@@ -67,7 +67,6 @@ STATISTICS_TYPE = "curio.builtin/raster-statistics"
 CHAIN_TYPES = {
     "curio.builtin/data-loading",
     "scout.raster-conversion/rasterize-buildings",
-    "curio.builtin/computation-analysis",
     SHADOW_TYPE,
     STATISTICS_TYPE,
 }

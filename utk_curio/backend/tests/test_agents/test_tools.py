@@ -24,7 +24,7 @@ class TestRegistry:
         # speculative lives here.
         assert set(tools.REGISTRY) == {
             "dataflow.read", "node.read", "node.content.write", "node.create",
-            "node.template.create", "catalog.search", "dataset.install",
+            "catalog.search", "dataset.install",
             "dataflow.plan.write", "node.runtime.read",
             "web.fetch", "web.search",
             "packages.catalog", "packages.resolve", "package.install",  # dev/84
@@ -38,7 +38,6 @@ class TestRegistry:
         assert tools.REGISTRY["node.read"].effect == "read"
         assert tools.REGISTRY["node.content.write"].effect == "mutate"
         assert tools.REGISTRY["node.create"].effect == "mutate"
-        assert tools.REGISTRY["node.template.create"].effect == "mutate"
         assert tools.REGISTRY["catalog.search"].effect == "read"
         assert tools.REGISTRY["dataset.install"].effect == "mutate"
         assert tools.REGISTRY["dataflow.plan.write"].effect == "mutate"
@@ -60,6 +59,16 @@ class TestRegistry:
     def test_contract_validates_effect(self):
         with pytest.raises(ValueError):
             ToolContract(id="x.y", contract_version="1", effect="write", description="")
+
+    def test_a_package_draft_carries_the_justification_of_its_new_node_types(self):
+        # A package draft is the one way an agent makes a node type. Its
+        # justification is a param, required only of a draft that adds a
+        # template (an extend may only revise), so the schema does not require it.
+        draft = tools.REGISTRY["package.draft.apply"]
+        assert "justification" in draft.parameters["properties"]
+        assert "justification" not in draft.parameters["required"]
+        assert '"justification"' in draft.description
+        assert "a label no existing template has" in draft.description
 
 
 class TestGrantResolution:

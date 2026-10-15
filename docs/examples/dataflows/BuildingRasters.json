@@ -24,10 +24,10 @@
         "type": "scout.raster-conversion/rasterize-buildings",
         "x": 800,
         "y": 300,
-        "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: (mosaic, tiles).\n- mosaic: one raster in EPSG:3395, each cell a height in metres. An Autark map\n  draws it as input_0, band band_1.\n- tiles: one row per map tile, with zoom, x, y and png, the 8-bit grayscale\n  PNG (base64) SCOUT's Deep Umbra shadow model reads, where 255 is the\n  maximum height.\nThe Widgets tab sets the height column, the zoom level and the maximum height.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_raster_conversion.node_outputs import rasterize_buildings\n\nreturn rasterize_buildings(\n    input_0,\n    attribute=[!! attribute !!],\n    zoom=int([!! zoom !!]),\n    max_height=float([!! max_height !!]),\n    output_file=curio_output_file,\n)\n",
+        "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: one raster in EPSG:3395, each cell a height in metres: the 256 by 256\nmap tiles SCOUT draws, 8-bit gray where 255 is the maximum height, side by\nside. A tile SCOUT writes no file for, because no building is near it, is no\ndata. An Autark map draws it as input_0, band band_1, and SCOUT's Deep Umbra\nshadow model (Accumulated Shadow) reads it.\nThe Widgets tab sets the height column, the zoom level and the maximum height.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_raster_conversion.node_outputs import rasterize_buildings\n\nreturn rasterize_buildings(\n    input_0,\n    attribute=[!! attribute !!],\n    zoom=int([!! zoom !!]),\n    max_height=float([!! max_height !!]),\n    output_file=curio_output_file,\n)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Rasterize the buildings' heights into zoom-16 tiles and their mosaic.",
+        "goal": "Rasterize the buildings' heights into zoom-16 tiles, side by side in one raster.",
         "metadata": {
           "keywords": [],
           "widgets": [
