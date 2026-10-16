@@ -52,3 +52,23 @@ def app(tmp_path):
     else:
         os.environ.pop("CURIO_SHARED_DATA", None)
 
+
+@pytest.fixture()
+def file_db_app(app, tmp_path):
+    """The app on a SQLite file, so each thread gets its own connection.
+
+    A server opens one connection per thread. The in-memory engine the other
+    tests use hands every thread the same connection, which SQLite does not let
+    two threads use at once. ``app`` still wires the workspace this one uses.
+    """
+    class FileTestConfig(TestConfig):
+        SQLALCHEMY_DATABASE_URI = f"sqlite:///{tmp_path / 'index.db'}"
+
+    application = create_app(FileTestConfig)
+    with application.app_context():
+        _db.create_all()
+        yield application
+        _db.session.remove()
+        _db.drop_all()
+        _db.engine.dispose()
+

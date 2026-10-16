@@ -775,6 +775,11 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
     scenarios.normalize_spec_scenarios(data.spec)
 
     storage.write_spec(ukey, project_id, data.spec)
+    # The new row is committed once its spec is on disk (a listing drops a row
+    # without one), and before anything below asks for a spec lock: seeding
+    # the account's default datasets installs them under one, and no thread
+    # may wait for it holding an uncommitted write (#909, ``spec_write_lock``).
+    db.session.commit()
     output_refs = list(data.outputs)
     install_warnings: list = []
     effective_spec = _auto_install_computed_outputs(
@@ -846,22 +851,13 @@ def may_save(user, project_id: str) -> bool:
 def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
     project = _project_to_save(user, project_id)
     ukey = _user_dir_key(user)
-    existing_spec = storage.read_spec(ukey, project_id)
-
-    folder = str(storage.project_dir(ukey, project_id))
-    project = repo.upsert_project(
-        user_id=user.id,
-        name=data.name or project.name,
-        folder_path=folder,
-        description=data.description if data.description is not None else project.description,
-        thumbnail_accent=data.thumbnail_accent or project.thumbnail_accent,
-        project_id=project_id,
-    )
 
     # Serialize the spec read-modify-write so a concurrent dataset mutation
     # (replace_dataflow_datasets) or Play-All can't clobber freshly-installed
-    # refs. Re-read existing_spec INSIDE the lock so we merge/preserve against
-    # the latest on-disk spec, not the snapshot read before the lock.
+    # refs. Read existing_spec INSIDE the lock so we merge/preserve against
+    # the latest on-disk spec. The project row is written inside it too, and
+    # only once the outputs are installed: the lock comes before any database
+    # write (#909, see ``spec_write_lock``).
     install_warnings: list = []
     labels = _labels_for_unnamed(ukey, project_id, data.outputs) if data.outputs is not None else None
     with storage.spec_write_lock(ukey, project_id):
@@ -973,6 +969,18 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
         if pruned_spec is not effective_spec:
             effective_spec = pruned_spec
             spec_dirty = True
+
+        # The row just before the spec is written, so its write transaction
+        # stays short: it bumps ``spec_revision`` and holds SQLite's write lock
+        # until the commit below.
+        project = repo.upsert_project(
+            user_id=user.id,
+            name=data.name or project.name,
+            folder_path=str(storage.project_dir(ukey, project_id)),
+            description=data.description if data.description is not None else project.description,
+            thumbnail_accent=data.thumbnail_accent or project.thumbnail_accent,
+            project_id=project_id,
+        )
 
         # A rename renames the dataflow, not just the DB row (#230): the canvas
         # title reads ``spec.dataflow.name``. Deliberately OUTSIDE the

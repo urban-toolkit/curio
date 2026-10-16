@@ -201,6 +201,10 @@ def list_project_ids(user_key: str) -> list[str]:
     return ids
 
 
+class SpecLockOrderError(RuntimeError):
+    """A thread asked for a spec lock while holding an uncommitted database write."""
+
+
 @contextmanager
 def spec_write_lock(user_key: str, project_id: str):
     """Serialize read-modify-write of a project's spec across processes.
@@ -214,7 +218,21 @@ def spec_write_lock(user_key: str, project_id: str):
     same-process threads) and a cross-process file lock (POSIX ``flock`` or, on
     Windows, ``msvcrt.locking``). Only a platform with neither falls back to the
     in-process layer alone. Both live in ``common.file_locks``.
+
+    The lock comes before the database: a thread that has written and not
+    committed holds SQLite's write lock, and the holder of this lock needs that
+    write lock to index each output it installs, so the two would wait for each
+    other until the busy timeout (#909). Such a thread is refused here with
+    :class:`SpecLockOrderError` before it waits.
     """
+    from utk_curio.backend.extensions import session_holds_write_lock
+
+    if session_holds_write_lock():
+        raise SpecLockOrderError(
+            f"Spec lock for project {project_id} asked for while this thread "
+            "holds an uncommitted database write. Take the spec lock first, "
+            "then write to the database, or commit before asking for it."
+        )
     d = ensure_project_dir(user_key, project_id)
     with exclusive_lock(
         d / ".spec.lock",
