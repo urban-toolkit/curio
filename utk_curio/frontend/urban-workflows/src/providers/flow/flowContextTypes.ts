@@ -109,7 +109,13 @@ export interface FlowContextProps {
     setScenarios: (next: Scenario[]) => void;
     /** Turn auto-run on or off; the dataflow is dirty until the next save. */
     setAutoRun: (on: boolean) => void;
+    /** Save now, whatever else is saving. Only the save queue and the dashboard's
+     * Save layout call it; everything else uses `requestProjectSave`. */
     saveCurrentProject: (nameOverride?: string, options?: { omitOutputs?: boolean }) => Promise<any>;
+    /** Save once every save already requested has answered, so no two saves of
+     * the open dataflow go out at once (#909, #941). Resolves to the save's
+     * answer, or rejects with its error. */
+    requestProjectSave: () => Promise<any>;
     saveAsNewProject: (name: string) => Promise<any>;
     ensureProjectId: () => Promise<string | null>;
     persistDataflowForInstall: (nodeIds?: readonly string[]) => Promise<InstallSyncOutcome>;

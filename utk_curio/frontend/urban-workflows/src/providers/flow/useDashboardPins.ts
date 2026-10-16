@@ -99,7 +99,10 @@ export function useDashboardPinSave({
         if (workflowOps.viewerMode === "shared") return;
         if (pinSaveTimerRef.current) clearTimeout(pinSaveTimerRef.current);
         pinSaveTimerRef.current = setTimeout(() => {
-            workflowOps.saveCurrentProject().catch((err: unknown) => {
+            // Through the save queue, after any save already out: a Save
+            // clicked within the debounce used to go out beside this one, and
+            // two PUTs of one dataflow at once were behind #909 and #941.
+            workflowOps.requestProjectSave().catch((err: unknown) => {
                 // Loud, unlike the 30 second auto-save: the user just asked for
                 // something whose only visible effect is on another page, so a
                 // silent failure would look like the dashboard ignoring them.

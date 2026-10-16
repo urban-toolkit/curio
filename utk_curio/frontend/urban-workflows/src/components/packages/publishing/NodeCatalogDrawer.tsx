@@ -128,7 +128,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
 
   // The drawer is *per-project*: Install/Uninstall write to the current
   // project's lockfile (see docs/NODE-CATALOG.md).
-  const { projectId, projectName, packages: projectPackages, saveCurrentProject, projectDirty, nodes } = useFlowContext();
+  const { projectId, projectName, packages: projectPackages, requestProjectSave, projectDirty, nodes } = useFlowContext();
   const { showToast } = useToastContext();
 
   const [tab, setTab] = useState<DrawerTab>("browse");
@@ -148,11 +148,13 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
    * A dataflow is created on its FIRST SAVE, so every lockfile write (Install,
    * Remove, Import) saves first when there is no id (#220); the hook owns the
    * sequencing and reports a refused save. Mirrors ``useDatasetCatalogDrawer``.
+   * Through the save queue: this save creates the project, and beside a create
+   * already out (an install save after a run) it would make a second dataflow.
    */
   const onEnsureProject = useCallback(async () => {
-    const detail = await saveCurrentProject();
+    const detail = await requestProjectSave();
     return (detail as { id?: string } | undefined)?.id ?? null;
-  }, [saveCurrentProject]);
+  }, [requestProjectSave]);
 
   /** memo dev/101: when the backend's lockfile differs from the mirror, the
    *  palette/registry must follow — not only the drawer's pill. */

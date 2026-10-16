@@ -123,7 +123,7 @@ export function MainCanvas() {
         onEdgesDelete,
         onNodesDelete,
         markDirty,
-        saveCurrentProject,
+        requestProjectSave,
         notebookOn,
         notebookContentHeight,
         setNotebookPane,
@@ -538,11 +538,13 @@ export function MainCanvas() {
             // For a node target, persist the graph first so the (possibly
             // freshly-added) node is in the saved spec the backend validates
             // against — otherwise the attach 400s. See attachAgentOnDrop.
+            // Through the save queue, so it never goes out beside another
+            // save of this dataflow (#909, #941).
             attachAgentOnDrop({
                 projectId,
                 target,
                 agentCoord,
-                saveProject: saveCurrentProject,
+                saveProject: requestProjectSave,
                 attach: (pid, coord, t) => agentsApi.attach(pid, coord, t),
             })
                 .then(() => {
@@ -559,7 +561,7 @@ export function MainCanvas() {
         const position = dropPosition(event);
         revealCreated(createCodeNode(type, { position }));
         markDirty();
-    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, saveCurrentProject, reactFlow]);
+    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, requestProjectSave, reactFlow]);
 
     // The Delete key reaches these through React Flow, which sends the
     // selected edges plus every edge attached to a deleted node first, then
