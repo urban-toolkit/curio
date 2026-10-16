@@ -6,9 +6,10 @@ canvas copies them into the node it creates, so a package node opens with its
 controls in the Widgets tab instead of an old ``[!! name$TYPE$default !!]``
 marker in its code.
 
-A widget may not take an input's name, ``input_0``, ``input_1`` and so on: a
-manifest that declares one is refused as the Widgets tab and a Parameter node
-refuse it, with the same words.
+A widget's name is letters, digits and underscores, not starting with a digit,
+and not an input's name, ``input_0``, ``input_1`` and so on: a manifest that
+breaks either rule is refused as the Widgets tab and a Parameter node refuse
+the name, with the same words.
 """
 from __future__ import annotations
 
@@ -110,6 +111,62 @@ def test_a_name_that_only_looks_like_an_input_is_kept(tmp_path, name):
     assert _load(tmp_path, _with_template(hasWidgets=True, widgets=widgets)).templates[0].widgets == widgets
 
 
+#: Names the schema's widget name pattern refuses, and the Widgets tab with its
+#: sentence for a name's shape.
+BADLY_SHAPED = {
+    "a space": "has space",
+    "a leading digit": "2x",
+    "no name": "",
+    "a dash": "rain-mm",
+    "a letter outside A to Z": "café",
+    "65 characters": "x" * 65,
+}
+
+#: The schema's pattern is ECMA-262, as an editor and the canvas read it, where
+#: ``$`` ends the text, so it refuses a name that ends in a line break, and so
+#: does the Widgets tab (``widgetChecks.cases.json``). Python's ``re.match``
+#: lets one through, its ``$`` matching before a final line break, and so does
+#: the Python ``jsonschema``, which reads the pattern with ``re.search``.
+ENDS_IN_A_LINE_BREAK = "src\n"
+
+#: Names of the widget shape, the longest included.
+WELL_SHAPED = {
+    "a leading underscore": "_x",
+    "mixed case with a digit": "Rain_mm_2",
+    "64 characters": "x" * 64,
+}
+
+
+@pytest.mark.parametrize(
+    "name",
+    [*BADLY_SHAPED.values(), ENDS_IN_A_LINE_BREAK],
+    ids=[*BADLY_SHAPED, "a line break at its end"],
+)
+def test_a_badly_shaped_name_is_refused_as_the_widgets_tab_refuses_it(tmp_path, name):
+    """The canvas drops a widget whose name has another shape, so the manifest
+    is refused, with the words the Widgets tab and a Parameter node refuse the
+    name with."""
+    tab_says = check_widget_def(_number(name))
+    assert tab_says
+    with pytest.raises(ManifestError) as refused:
+        _load(tmp_path, _with_template(hasWidgets=True, widgets=[WIDGETS[0], _number(name)]))
+    assert str(refused.value).endswith(f".templates[0].widgets[1]: {tab_says}")
+
+
+def test_a_package_declaring_a_badly_shaped_name_is_not_installed(install_package):
+    with pytest.raises(InstallerError) as refused:
+        install_package("guest", _with_template(hasWidgets=True, widgets=[_number("has space")]))
+    assert str(refused.value).endswith(f".templates[0].widgets[0]: {check_widget_def(_number('has space'))}")
+
+
+@pytest.mark.parametrize("name", list(WELL_SHAPED.values()), ids=list(WELL_SHAPED))
+def test_a_well_shaped_name_is_kept(tmp_path, name):
+    """The Widgets tab takes these names, so a template may declare them."""
+    assert check_widget_def(_number(name)) is None
+    widgets = [_number(name)]
+    assert _load(tmp_path, _with_template(hasWidgets=True, widgets=widgets)).templates[0].widgets == widgets
+
+
 class TestTheSchema:
     def _errors(self, widgets) -> list:
         return list(Draft202012Validator(SCHEMA).iter_errors(_with_template(widgets=widgets)))
@@ -130,6 +187,14 @@ class TestTheSchema:
 
     def test_a_name_that_only_looks_like_an_input_validates(self):
         assert not self._errors([_number("input"), _number("inputs"), _number("my_input_0")])
+
+    @pytest.mark.parametrize("name", list(BADLY_SHAPED.values()), ids=list(BADLY_SHAPED))
+    def test_a_badly_shaped_name_is_refused(self, name):
+        """The names a manifest is refused for, above."""
+        assert self._errors([_number(name)])
+
+    def test_a_well_shaped_name_validates(self):
+        assert not self._errors([_number(name) for name in WELL_SHAPED.values()])
 
     @pytest.mark.parametrize(
         "widget",

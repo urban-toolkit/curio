@@ -55,7 +55,7 @@ INPUT_REFERENCE_RE = re.compile(r"^input_(\d+|\?)(?::([^.]+))?(?:\.(.+))?$")
 LEGACY_INPUT_REFERENCE_RE = re.compile(r"^input\s+(\d+|\?)((?:[:.].*)?)$")
 
 #: An input's name and nothing else, which no widget takes
-#: (:func:`input_name_problem`). Kept in sync with ``INPUT_NAME_ONLY_PATTERN``
+#: (:func:`widget_name_problem`). Kept in sync with ``INPUT_NAME_ONLY_PATTERN``
 #: in ``widgetModel.ts`` and with the widget name's ``not`` in
 #: ``docs/schemas/node-package.v4.json``.
 INPUT_NAME_ONLY_RE = re.compile(r"^input_\d+$")
@@ -85,7 +85,9 @@ LAYER_HELPER = "curio_layer"
 #: counts one. Kept in sync with ``ONE_FRAME_TYPES`` in ``codeReferences.ts``.
 ONE_FRAME_TYPES = ("dataframe", "geodataframe")
 
-#: A widget name. Kept in sync with ``WIDGET_NAME_PATTERN`` in ``widgetModel.ts``.
+#: A widget name. Kept in sync with ``WIDGET_NAME_PATTERN`` in ``widgetModel.ts``
+#: and with the widget name's ``pattern`` in ``docs/schemas/node-package.v4.json``
+#: and ``docs/schemas/trill.v1.json``.
 WIDGET_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 
 LANGUAGES = ("python", "javascript", "json")
@@ -614,11 +616,17 @@ def check_widget_value(widget: dict, value) -> str | None:
     return "Unknown widget type."
 
 
-def input_name_problem(name: str) -> str | None:
-    """Why a widget may not be named *name*, or None: ``input_<k>`` names one
+def widget_name_problem(name: object) -> str | None:
+    """Why a widget may not be named *name*, or None. A name has the shape of
+    :data:`WIDGET_NAME_RE`, matched whole: the browser and the schemas read the
+    pattern as ECMA-262 does, where ``$`` ends the text, while Python's
+    ``re.match`` lets a final line break through. And ``input_<k>`` names one
     of the node's inputs, in its code as in its chips. The Widgets tab and a
-    Parameter node refuse it (:func:`check_widget_def`), and so does a package
-    manifest for a template's widgets (``packages/repositories/manifests.py``)."""
+    Parameter node refuse such a name (:func:`check_widget_def`), and so does a
+    package manifest for a template's widgets
+    (``packages/repositories/manifests.py``)."""
+    if not isinstance(name, str) or not WIDGET_NAME_RE.fullmatch(name):
+        return "A name is letters, digits and underscores, and does not start with a digit."
     if INPUT_NAME_ONLY_RE.match(name):
         return f"{name} names one of the node's inputs. Pick another name."
     return None
@@ -630,9 +638,7 @@ def check_widget_def(definition: dict, others=(), parameter: bool = False) -> st
     are the node's other widgets, whose names it must not reuse; for a
     Parameter node's widget (*parameter*), the other Parameter nodes'."""
     name = definition.get("name")
-    if not isinstance(name, str) or not WIDGET_NAME_RE.match(name):
-        return "A name is letters, digits and underscores, and does not start with a digit."
-    if problem := input_name_problem(name):
+    if problem := widget_name_problem(name):
         return problem
     if any(isinstance(w, dict) and w.get("name") == name for w in others):
         return f"Another Parameter node is named {name}." if parameter else f"This node already has a widget named {name}."

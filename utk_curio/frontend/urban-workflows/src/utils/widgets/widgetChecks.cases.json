@@ -22,7 +22,13 @@
     {"name":"the name input 12 is read by","def":{"name":"input_12","type":"number","default":1},"expected":"input_12 names one of the node's inputs. Pick another name."},
     {"name":"the word input","def":{"name":"input","type":"number","default":1},"expected":null},
     {"name":"the word inputs","def":{"name":"inputs","type":"number","default":1},"expected":null},
-    {"name":"a name that ends like an input's","def":{"name":"my_input_0","type":"number","default":1},"expected":null}
+    {"name":"a name that ends like an input's","def":{"name":"my_input_0","type":"number","default":1},"expected":null},
+    {"name":"a name with a space","def":{"name":"has space","type":"text","default":""},"expected":"A name is letters, digits and underscores, and does not start with a digit."},
+    {"name":"no name","def":{"name":"","type":"number","default":1},"expected":"A name is letters, digits and underscores, and does not start with a digit."},
+    {"name":"a name with a letter outside A to Z","def":{"name":"café","type":"number","default":1},"expected":"A name is letters, digits and underscores, and does not start with a digit."},
+    {"name":"a name that ends in a line break","def":{"name":"factor\n","type":"number","default":1},"expected":"A name is letters, digits and underscores, and does not start with a digit."},
+    {"name":"a name of 64 characters","def":{"name":"abcdefghijklmnopqrstuvwxyz_ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789","type":"number","default":1},"expected":null},
+    {"name":"a name of 65 characters","def":{"name":"abcdefghijklmnopqrstuvwxyz_ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789_","type":"number","default":1},"expected":"A name is letters, digits and underscores, and does not start with a digit."}
   ],
   "values": [
     {"name":"a number","widget":{"type":"number"},"value":2.5,"expected":null},
