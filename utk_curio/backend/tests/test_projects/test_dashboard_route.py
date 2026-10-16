@@ -382,6 +382,43 @@ def test_a_dashboard_too_large_to_embed_is_refused_by_its_dataflows_name(
     )
 
 
+def test_a_dashboard_whose_saved_output_cannot_be_read_says_try_again(
+    client, user_and_token, tmp_curio, monkeypatch
+):
+    # A page built without the output would draw its tile empty, as if the
+    # dataflow had never run (#941). A 503: reading it again usually works.
+    _, token = user_and_token
+    pid = _create(client, token)
+
+    def unreadable():
+        def read(filename):
+            raise KeyError(filename)
+
+        return read
+
+    monkeypatch.setattr(services, "_dashboard_envelope_reader", unreadable)
+    monkeypatch.setattr(
+        services,
+        "load_shared_project",
+        lambda project_id: {
+            "project": type("D", (), {"name": "Trips by hour"})(),
+            "spec": _spec_with_pinned_chart(),
+            "outputs": [{"node_id": "py", "filename": "py.parquet", "data_type": "dataframe"}],
+        },
+    )
+
+    resp = client.get(f"/api/projects/{pid}/dashboard")
+
+    assert resp.status_code == 503, resp.get_data(as_text=True)
+    body = resp.get_json()
+    assert "Try again" in body["error"]
+    assert "py" in body["error"]
+    assert body["nodes"] == ["py"]
+    assert body.get("name") == "Trips by hour", (
+        "the refusal does not name its dataflow, so the page that shows it cannot either"
+    )
+
+
 def test_a_tile_that_loads_its_own_data_is_refused_by_name(client, user_and_token, tmp_curio):
     _, token = user_and_token
     spec = _spec_with_pinned_chart()

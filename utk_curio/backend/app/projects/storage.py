@@ -463,6 +463,10 @@ def hydrate_outputs(
     (``parsers.load_shared_output_file``).
     That folder is checked on every load, whether or not the output's own
     copy is already here.
+
+    An output found in neither place is left out, with a warning in the log.
+    A project load calls this under the project's spec lock, so it never
+    meets an output a save is installing again (#941).
     """
     from utk_curio.sandbox.util.catalog_helpers import hydrated_bundle
 
@@ -482,6 +486,12 @@ def hydrate_outputs(
         if source is not None:
             shutil.copy2(str(source), str(dst))
             hydrated.append(ref)
+            continue
+        logger.warning(
+            "Saved output %s of node %s in project %s has no copy left to load; "
+            "it is left out",
+            ref.filename, ref.node_id, project_id,
+        )
     return hydrated
 
 

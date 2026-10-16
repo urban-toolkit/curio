@@ -226,9 +226,12 @@ class TestBuildPayload:
         # that reads a fetched one, so any reshaping here would be a new format.
         assert payload.outputs["1234_abcd_output.parquet"] == wire
 
-    def test_an_unreadable_output_is_skipped_rather_than_fatal(self):
-        # Same outcome as today when an artifact has gone: the tile shows its
-        # own empty state. Refusing to build the whole page would be worse.
+    def test_an_output_a_tile_needs_that_cannot_be_read_refuses_the_page(self):
+        # A page built without it would draw the tile empty, as if the
+        # dataflow had never run (#941). Reading it again usually works, so
+        # the refusal says to try again.
+        from utk_curio.backend.app.projects.dashboard_payload import DashboardOutputUnreadableError
+
         spec = spec_of(
             [
                 node("py", "curio.builtin/computation-analysis"),
@@ -240,13 +243,66 @@ class TestBuildPayload:
         def boom(name):
             raise KeyError(name)
 
-        payload = build_dashboard_payload(
-            spec=spec,
-            output_refs=refs(("py", "gone.parquet")),
-            fetch_envelope=boom,
+        with pytest.raises(DashboardOutputUnreadableError) as caught:
+            build_dashboard_payload(
+                spec=spec,
+                output_refs=refs(("py", "gone.parquet")),
+                fetch_envelope=boom,
+                meta={"name": "Trips"},
+            )
+
+        assert caught.value.offenders == ["py"]
+        assert caught.value.name == "Trips"
+        assert "Try again" in caught.value.describe()
+        assert "py" in caught.value.describe()
+
+    def test_an_output_the_load_could_not_restore_refuses_the_page_unasked(self):
+        # Listed in the manifest, but the load found no copy of it to put
+        # where the sandbox reads it: there is nothing to ask the sandbox for.
+        from utk_curio.backend.app.projects.dashboard_payload import DashboardOutputUnreadableError
+
+        spec = spec_of(
+            [
+                node("py", "curio.builtin/computation-analysis"),
+                node("chart", "curio.builtin/vis-vega", dashboardPinned=True),
+            ],
+            [edge("py", "chart")],
+        )
+        asked = []
+
+        def fetch(name):
+            asked.append(name)
+            return envelope()
+
+        with pytest.raises(DashboardOutputUnreadableError) as caught:
+            build_dashboard_payload(
+                spec=spec,
+                output_refs=[],
+                missing_refs=refs(("py", "gone.parquet")),
+                fetch_envelope=fetch,
+            )
+
+        assert caught.value.offenders == ["py"]
+        assert asked == []
+
+    def test_an_output_no_tile_needs_may_be_missing(self):
+        spec = spec_of(
+            [
+                node("py", "curio.builtin/computation-analysis"),
+                node("other", "curio.builtin/computation-analysis"),
+                node("chart", "curio.builtin/vis-vega", dashboardPinned=True),
+            ],
+            [edge("py", "chart")],
         )
 
-        assert payload.outputs == {}
+        payload = build_dashboard_payload(
+            spec=spec,
+            output_refs=refs(("py", "py.parquet")),
+            missing_refs=refs(("other", "other.parquet")),
+            fetch_envelope=lambda name: envelope(),
+        )
+
+        assert set(payload.outputs) == {"py.parquet"}
 
     def test_the_spec_travels_untouched(self):
         spec = spec_of(
@@ -486,7 +542,8 @@ class TestARasterBehindAPinnedMap:
         assert payload.to_dict()["rasters"] == [{"filename": "r_output", "part": None, **refusal}]
 
     def test_a_raster_the_sandbox_cannot_be_asked_for_is_left_out(self):
-        # As an envelope that cannot be read is.
+        # Unlike an envelope that cannot be read, which refuses the page: the
+        # map asks /raster for this one when it draws.
         def unreachable(filename, part):
             raise KeyError(filename)
 
@@ -576,6 +633,24 @@ class TestSizeLimit:
 
         assert caught.value.weights[0].node_id == "heavy"
         assert "heavy" in caught.value.describe()
+
+    def test_over_budget_it_refuses_as_too_large_even_with_an_output_unread(self):
+        # Reading the missing output again could only add to the page, so
+        # trying again would not help: the size is the refusal to give.
+        def fetch(name):
+            if name == "l.parquet":
+                raise KeyError(name)
+            return envelope(5000)
+
+        with pytest.raises(DashboardTooLargeError) as caught:
+            build_dashboard_payload(
+                spec=self._spec(),
+                output_refs=refs(("heavy", "h.parquet"), ("light", "l.parquet")),
+                fetch_envelope=fetch,
+                limit_bytes=1024,
+            )
+
+        assert [weight.node_id for weight in caught.value.weights] == ["heavy"]
 
     def test_a_rasters_geotiff_counts_toward_the_budget(self):
         # Its envelope is a path, a few bytes; the page carries the GeoTIFF.
