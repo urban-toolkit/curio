@@ -77,7 +77,7 @@ export default function UpMenu() {
         serverCategories,
         scenarios,
         updateDataflowCategories,
-        saveCurrentProject,
+        requestProjectSave,
         saveAsNewProject,
         discardProject,
         packages,
@@ -223,7 +223,11 @@ export default function UpMenu() {
         setSaving(true);
         const wasNew = !projectId;
         try {
-            const detail = await saveCurrentProject();
+            // Through the save queue, after any save already out (the pin's
+            // save, the autosave, an install save): two PUTs of one dataflow
+            // at once were behind #909 and #941. "Saving" lasts until this
+            // save has answered.
+            const detail = await requestProjectSave();
             // First save of a brand-new dataflow: promote the placeholder
             // ``/dataflow/new`` URL to the canonical, shareable one. We use
             // replace so the user's back button still works as expected.

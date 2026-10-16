@@ -118,6 +118,8 @@ export function DashboardTopBar({ id, onArranged }: { id: string; onArranged?: (
     try {
       // ``omitOutputs``: this page writes where the tiles sit. Which outputs the
       // dataflow has is the canvas's business, and nothing here ran.
+      // Directly, not through the save queue the canvas uses: nothing else
+      // saves on this page, and this button is disabled while it saves.
       await saveCurrentProject(undefined, { omitOutputs: true });
       setDashboardLocked(true);
       showToast("Dashboard layout saved.", "success");
