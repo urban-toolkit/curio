@@ -36,6 +36,7 @@ include docs/examples/data/mapillary-ATTRIBUTION.md
 # their nodes spell (test_pip_wheel_layout.py checks it): the Autark examples'
 # OpenStreetMap extracts, which /file/ serves, and the files node code opens.
 include docs/examples/data/back_bay.osm.pbf
+include docs/examples/data/chicago_downtown.osm.pbf
 include docs/examples/data/chicago_loop.osm.pbf
 include docs/examples/data/lower_mnt.osm.pbf
 include docs/examples/data/niteroi.osm.pbf
