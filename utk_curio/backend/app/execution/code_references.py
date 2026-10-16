@@ -92,7 +92,10 @@ WIDGET_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 
 LANGUAGES = ("python", "javascript", "json")
 
-#: The widget kinds. Kept in sync with ``WIDGET_KINDS`` in ``widgetModel.ts``.
+#: The widget kinds. Kept in sync with ``WIDGET_KINDS`` in ``widgetModel.ts``
+#: and with the widget's ``type`` enum in ``docs/schemas/node-package.v4.json``
+#: and ``docs/schemas/trill.v1.json``. A package manifest's template widgets
+#: are checked against it too (:func:`widget_name_or_type_problem`).
 WIDGET_KINDS = (
     "number",
     "slider",
@@ -632,19 +635,32 @@ def widget_name_problem(name: object) -> str | None:
     return None
 
 
-def check_widget_def(definition: dict, others=(), parameter: bool = False) -> str | None:
-    """What is wrong with a widget being added, or None: ``checkWidgetDef`` in
-    ``widgetModel.ts``, what the Widgets tab checks a widget with. *others*
-    are the node's other widgets, whose names it must not reuse; for a
-    Parameter node's widget (*parameter*), the other Parameter nodes'."""
+def widget_name_or_type_problem(definition: dict, others=(), parameter: bool = False) -> str | None:
+    """What the Widgets tab refuses in a widget before it reads its options
+    and its default, or None: a name :func:`widget_name_problem` refuses, a
+    name one of *others* has, or a type outside :data:`WIDGET_KINDS`. The
+    canvas drops such a widget (``normalizeWidgets``), unless it only has an
+    input's name. :func:`check_widget_def` checks these first, and a package
+    manifest checks only these for a template's widgets, whose default it may
+    leave out (``packages/repositories/manifests.py``)."""
     name = definition.get("name")
     if problem := widget_name_problem(name):
         return problem
     if any(isinstance(w, dict) and w.get("name") == name for w in others):
         return f"Another Parameter node is named {name}." if parameter else f"This node already has a widget named {name}."
-    kind = definition.get("type")
-    if kind not in WIDGET_KINDS:
+    if definition.get("type") not in WIDGET_KINDS:
         return "Pick a widget type."
+    return None
+
+
+def check_widget_def(definition: dict, others=(), parameter: bool = False) -> str | None:
+    """What is wrong with a widget being added, or None: ``checkWidgetDef`` in
+    ``widgetModel.ts``, what the Widgets tab checks a widget with. *others*
+    are the node's other widgets, whose names it must not reuse; for a
+    Parameter node's widget (*parameter*), the other Parameter nodes'."""
+    if problem := widget_name_or_type_problem(definition, others, parameter):
+        return problem
+    kind = definition.get("type")
     options = definition.get("options") if isinstance(definition.get("options"), dict) else {}
     if kind in CHOICE_KINDS:
         choices = options.get("choices") if isinstance(options.get("choices"), list) else []
@@ -664,8 +680,10 @@ def check_widget_def(definition: dict, others=(), parameter: bool = False) -> st
 
 
 def normalize_widgets(raw) -> list:
-    """The well-formed widgets in *raw* (a spec's ``metadata.widgets``). A
-    widget without a default gets its kind's, as the browser gives it."""
+    """The well-formed widgets in *raw* (a spec's ``metadata.widgets``), as
+    ``normalizeWidgets`` in ``widgetModel.ts`` keeps them: each name once, of
+    the :data:`WIDGET_NAME_RE` shape matched whole, as the browser matches it.
+    A widget without a default gets its kind's, as the browser gives it."""
     if not isinstance(raw, list):
         return []
     out, seen = [], set()
@@ -673,7 +691,7 @@ def normalize_widgets(raw) -> list:
         if not isinstance(entry, dict):
             continue
         name = entry.get("name")
-        if not isinstance(name, str) or not WIDGET_NAME_RE.match(name) or name in seen:
+        if not isinstance(name, str) or not WIDGET_NAME_RE.fullmatch(name) or name in seen:
             continue
         if entry.get("type") not in WIDGET_KINDS:
             continue
@@ -696,9 +714,10 @@ def normalize_shared(raw) -> list:
 
 def normalize_selections(raw) -> list:
     """The well-formed selection tags in *raw* (a spec's
-    ``metadata.selections``), one per name: ``{name, node, column, ids}``, or
-    ``count`` in place of ``ids``. Kept in sync with ``normalizeSelections`` in
-    ``selectionTags.ts``."""
+    ``metadata.selections``), one per name, of the :data:`WIDGET_NAME_RE`
+    shape matched whole, as the browser matches it: ``{name, node, column,
+    ids}``, or ``count`` in place of ``ids``. Kept in sync with
+    ``normalizeSelections`` in ``selectionTags.ts``."""
     if not isinstance(raw, list):
         return []
     out, seen = [], set()
@@ -706,7 +725,7 @@ def normalize_selections(raw) -> list:
         if not isinstance(entry, dict):
             continue
         name = entry.get("name")
-        if not isinstance(name, str) or not WIDGET_NAME_RE.match(name) or name in seen:
+        if not isinstance(name, str) or not WIDGET_NAME_RE.fullmatch(name) or name in seen:
             continue
         if not isinstance(entry.get("node"), str) or not entry["node"]:
             continue

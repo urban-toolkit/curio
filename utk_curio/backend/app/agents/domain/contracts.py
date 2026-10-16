@@ -808,9 +808,11 @@ def _widget_kinds(_src: _Sources) -> str:
 
 
 def _widget_name(name: str) -> str:
+    """*name*, of the ``WIDGET_NAME_RE`` shape matched whole, as the Widgets
+    tab matches it."""
     from utk_curio.backend.app.execution.code_references import WIDGET_NAME_RE
 
-    if not WIDGET_NAME_RE.match(name):
+    if not WIDGET_NAME_RE.fullmatch(name):
         raise PromptTemplateError(f"{name!r} is not a widget name")
     return name
 

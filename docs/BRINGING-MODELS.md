@@ -368,14 +368,15 @@ definition (`$defs.widget`) of [the node package schema](schemas/node-package.v4
 
 Each widget has:
 
-- `name`: letters, digits and underscores, not starting with a digit. Not
-  `input_0`, `input_1` and so on: those names read the node's inputs. Curio
-  refuses a manifest whose widget name breaks either rule, as the Widgets tab
-  refuses the name.
+- `name`: letters, digits and underscores, not starting with a digit, and
+  unique among the template's widgets. Not `input_0`, `input_1` and so on:
+  those names read the node's inputs. Curio refuses a manifest whose widget
+  name breaks one of these rules, as the Widgets tab refuses the name.
 - `type`: one of 13 kinds: `number`, `slider`, `text`, `choice`, `checkbox`,
   `checkbox-group`, `multi-select`, `datetime`, `location`, `number-list`,
-  `text-list`, `range` and `file`. [USAGE.md, Widgets](USAGE.md#widgets) shows
-  the control each kind draws and the value the code gets.
+  `text-list`, `range` and `file`. Curio refuses a manifest whose widget has
+  another type. [USAGE.md, Widgets](USAGE.md#widgets) shows the control each
+  kind draws and the value the code gets.
 - `label`: what the Widgets tab calls it.
 - `default`: the value a dropped node starts with.
 - `options`: `choices` for a `choice`, `checkbox-group` or `multi-select`, and

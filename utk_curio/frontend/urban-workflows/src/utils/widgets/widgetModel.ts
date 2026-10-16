@@ -5,6 +5,10 @@
  * The value a run uses is `value` when the user set one, else `default`.
  */
 
+/** The widget kinds. Kept in sync with `WIDGET_KINDS` in
+ * `utk_curio/backend/app/execution/code_references.py`, which a package
+ * manifest's template widgets are checked with too, and with the widget's
+ * `type` enum in `docs/schemas/node-package.v4.json` and `docs/schemas/trill.v1.json`. */
 export const WIDGET_KINDS = [
   "number",
   "slider",
