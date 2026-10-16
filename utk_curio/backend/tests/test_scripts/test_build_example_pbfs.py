@@ -11,7 +11,8 @@ The cut runs here on small hand-made extracts, in a box from (0, 0) to (1, 1).
 Then each committed extract is read (``_support/osm_pbf.py``, no pyosmium): it
 holds, whole, each boundary relation the shipped specs that load it clip to,
 it is the script's and records its box, and cutting it again at that box
-changes nothing.
+changes nothing. A shipped spec whose area is a box (``queryArea.bbox``) loads
+the box its extract is cut at.
 
 The script is loaded inside each test: it must load without pyosmium, which
 is not one of Curio's dependencies.
@@ -48,7 +49,7 @@ def _script():
 
 
 def _pbf_loads():
-    """(dataflow, node id, extract path, queryArea.areas) of every shipped node that loads a .pbf."""
+    """(dataflow, node id, extract path, queryArea) of every shipped node that loads a .pbf."""
     loads = []
     for path in sorted(EXAMPLES.rglob("*.json")):
         if "expected_outputs" in path.parts:
@@ -66,12 +67,16 @@ def _pbf_loads():
             for source in json.loads(content).get("data", []):
                 if source.get("pbfFileUrl"):
                     loads.append((path.relative_to(EXAMPLES).as_posix(), node["id"], source["pbfFileUrl"],
-                                  tuple(source["queryArea"]["areas"])))
+                                  source["queryArea"]))
     return loads
 
 
 PBF_LOADS = _pbf_loads()
-PBF_LOAD_IDS = [f"{dataflow}:{node_id}" for dataflow, node_id, _extract, _names in PBF_LOADS]
+#: The loads whose area is named, by boundaries autk-db clips to: (dataflow,
+#: node id, extract path, queryArea.areas). A box area names none.
+NAMED_LOADS = [(dataflow, node_id, extract, tuple(area["areas"]))
+               for dataflow, node_id, extract, area in PBF_LOADS if "bbox" not in area]
+NAMED_LOAD_IDS = [f"{dataflow}:{node_id}" for dataflow, node_id, _extract, _names in NAMED_LOADS]
 EXTRACTS = sorted(path.name for path in DATA.glob("*.osm.pbf"))
 
 
@@ -414,7 +419,7 @@ def test_scouts_routing_box_is_an_area_with_the_chicago_boundary():
     ]
 
 
-@pytest.mark.parametrize("dataflow, node_id, extract, names", PBF_LOADS, ids=PBF_LOAD_IDS)
+@pytest.mark.parametrize("dataflow, node_id, extract, names", NAMED_LOADS, ids=NAMED_LOAD_IDS)
 def test_the_script_carries_every_boundary_a_spec_clips_to(dataflow, node_id, extract, names):
     areas = _script().AREAS
     key = Path(extract).name.removesuffix(".osm.pbf")
@@ -444,7 +449,23 @@ def test_every_committed_extract_is_the_scripts(name):
     ), "cutting the extract again at its box changes it"
 
 
-@pytest.mark.parametrize("dataflow, node_id, extract, names", PBF_LOADS, ids=PBF_LOAD_IDS)
+def test_a_box_spec_loads_the_box_its_extract_is_cut_at():
+    """A shipped spec whose area is a box (``queryArea.bbox``: west, south,
+    east, north) loads the box its extract is cut at, the box the extract's
+    header records. WeatherRouting's loader is one: SCOUT's routing box."""
+    boxes = [(dataflow, node_id, extract, area["bbox"])
+             for dataflow, node_id, extract, area in PBF_LOADS if "bbox" in area]
+
+    assert [(dataflow, extract) for dataflow, _node_id, extract, _bbox in boxes] == [
+        ("dataflows/WeatherRouting.json", "docs/examples/data/chicago_downtown.osm.pbf"),
+    ]
+    for dataflow, node_id, extract, (west, south, east, north) in boxes:
+        assert read_pbf(REPO_ROOT / extract).box == pytest.approx((south, west, north, east), abs=1e-7), (
+            f"{dataflow} ({node_id}) loads the box {[west, south, east, north]}, not the box {extract} is cut at"
+        )
+
+
+@pytest.mark.parametrize("dataflow, node_id, extract, names", NAMED_LOADS, ids=NAMED_LOAD_IDS)
 def test_each_spec_finds_its_boundary_relations_whole_in_its_extract(dataflow, node_id, extract, names):
     data = read_pbf(REPO_ROOT / extract)
 
