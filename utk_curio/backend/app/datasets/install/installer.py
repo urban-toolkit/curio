@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import filecmp
 import hashlib
 import logging
 import os
@@ -15,6 +16,8 @@ from utk_curio.backend.app.datasets.domain.manifest import (
     DatasetManifest,
     ManifestError,
     load_dataset_manifest,
+    manifest_text,
+    replace_manifest,
     write_manifest,
 )
 from utk_curio.backend.app.common.record_clock import utc_now
@@ -323,6 +326,60 @@ def _held_manifest(dest: Path) -> DatasetManifest | None:
         return None
 
 
+def _same_file(a: Path, b: Path) -> bool:
+    """Whether *a* and *b* hold the same bytes: one file under two names (a
+    hard link), or two files with equal contents."""
+    try:
+        return os.path.samefile(a, b) or filecmp.cmp(a, b, shallow=False)
+    except OSError:
+        return False
+
+
+def _holds_data(
+    dest: Path, data_file: str, *, source_path: Path | None, file_bytes: bytes | None,
+) -> bool:
+    """Whether the dataset folder *dest* already holds this data file, byte for
+    byte, with the same parquet decode sidecar (:func:`copy_decode_sidecar`)."""
+    from utk_curio.sandbox.util.codec import PARQUET_DECODE_SIDECAR_SUFFIX
+
+    data_path = dest / data_file
+    if source_path is not None:
+        if not _same_file(source_path, data_path):
+            return False
+        sidecar = source_path.with_name(source_path.name + PARQUET_DECODE_SIDECAR_SUFFIX)
+        held_sidecar = data_path.with_name(data_path.name + PARQUET_DECODE_SIDECAR_SUFFIX)
+        if sidecar.is_file() or held_sidecar.is_file():
+            return _same_file(sidecar, held_sidecar)
+        return True
+    if file_bytes is not None:
+        try:
+            return data_path.read_bytes() == file_bytes
+        except OSError:
+            return False
+    return False
+
+
+def keep_installed_output(user_key: str, dest: Path, manifest: DatasetManifest) -> InstallResult:
+    """Keep the output a dataset folder already holds, under *manifest*.
+
+    A save sends the output of every node the canvas keeps, and a run records
+    the output its play has just installed, so most installs find their output
+    already there. Installing it again would remove the folder first, and a
+    reader that does not take the project's spec lock would find no output
+    (#941). The folder stays; its manifest is replaced only when it changed,
+    a renamed node for one.
+    """
+    try:
+        held_text = (dest / "manifest.json").read_text(encoding="utf-8")
+    except OSError:
+        held_text = None
+    if held_text != manifest_text(manifest):
+        replace_manifest(manifest, dest)
+    return _index(
+        user_key, InstallResult(manifest=load_dataset_manifest(dest), dest=dest, replaced=False),
+    )
+
+
 def _computed_dates(held: DatasetManifest | None, *, same_output: bool) -> tuple[str, str]:
     """``(created_at, updated_at)`` for a computed dataset being written.
 
@@ -357,10 +414,11 @@ def install_computed_file_for_node(
     Uses ``computed.<sanitized_dataflow_id>.<sanitized_node_id>@1`` (namespaced by
     the producing dataflow so the same node id in two dataflows stays distinct)
     so re-executing the same node always replaces the same dataset folder,
-    keeping a stable dataset identity across multiple executions.  The
-    destination is always (re-)written — no fast-path skip — so that the latest
-    execution's file is always reflected. Writing again the output the folder
-    already holds keeps the dataset's dates (:func:`_computed_dates`).
+    keeping a stable dataset identity across multiple executions. A new
+    output replaces the folder, so the latest execution's file is always
+    reflected. The output the folder already holds, the same data file byte
+    for byte, is not written again (:func:`keep_installed_output`), and
+    writing it again keeps the dataset's dates (:func:`_computed_dates`).
 
     The producer/upstream arguments are persisted as lineage on the manifest so
     the account-level dataset stays connected to its workflow, source node, and
@@ -384,24 +442,13 @@ def install_computed_file_for_node(
 
     dest = dataset_dir(user_key, dir_name)
     held = _held_manifest(dest)
-
-    # Always replace so the folder reflects the latest execution.
-    if dest.exists():
-        shutil.rmtree(dest, ignore_errors=True)
-    dest.mkdir(parents=True, exist_ok=True)
-    (dest / "data").mkdir(exist_ok=True)
-
     safe_filename = _validate_store_filename(safe_filename)
-    data_path = dest / "data" / safe_filename
-    if source_path is not None:
-        _link_or_copy(source_path, data_path)
-        copy_decode_sidecar(source_path, data_path, copy=_link_or_copy)
-    elif file_bytes is not None:
-        data_path.write_bytes(file_bytes)
-    else:
-        raise InstallerError("install_computed_file_for_node requires file_bytes or source_path")
-
     data_file = f"data/{safe_filename}"
+    holds_data = (
+        held is not None
+        and held.data_file == data_file
+        and _holds_data(dest, data_file, source_path=source_path, file_bytes=file_bytes)
+    )
     created_at, updated_at = _computed_dates(
         held,
         same_output=(
@@ -434,6 +481,24 @@ def install_computed_file_for_node(
         producer_dataflow_name=dataflow_name,
         upstream_inputs=list(upstream_inputs) if upstream_inputs else None,
     )
+    if holds_data:
+        return keep_installed_output(user_key, dest, manifest_obj)
+
+    # A new output replaces the folder, so it reflects the latest execution.
+    if dest.exists():
+        shutil.rmtree(dest, ignore_errors=True)
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / "data").mkdir(exist_ok=True)
+
+    data_path = dest / data_file
+    if source_path is not None:
+        _link_or_copy(source_path, data_path)
+        copy_decode_sidecar(source_path, data_path, copy=_link_or_copy)
+    elif file_bytes is not None:
+        data_path.write_bytes(file_bytes)
+    else:
+        raise InstallerError("install_computed_file_for_node requires file_bytes or source_path")
+
     write_manifest(manifest_obj, dest)
 
     try:

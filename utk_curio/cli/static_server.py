@@ -20,9 +20,10 @@ DASHBOARD_EMBED_TIMEOUT = 30
 
 # How ``GET /api/projects/<id>/dashboard`` refuses to build a dashboard as a page
 # of its own: 413, its data is over the page's size limit; 409, a pinned tile
-# loads its own data. The page then carries the backend's reason instead of the
-# data (``_refused_page``), shows it, and fetches nothing.
-DASHBOARD_REFUSALS = (409, 413)
+# loads its own data; 503, a tile's saved output could not be read, so try
+# again. The page then carries the backend's reason instead of the data
+# (``_refused_page``), shows it, and fetches nothing.
+DASHBOARD_REFUSALS = (409, 413, 503)
 
 # ``/dashboard/<uuid>`` is the only route whose HTML carries data. Matched here
 # rather than "any path under /dashboard" so a typo serves an ordinary page

@@ -542,7 +542,8 @@ class TestARasterBehindAPinnedMap:
         assert payload.to_dict()["rasters"] == [{"filename": "r_output", "part": None, **refusal}]
 
     def test_a_raster_the_sandbox_cannot_be_asked_for_is_left_out(self):
-        # As an envelope that cannot be read is.
+        # Unlike an envelope that cannot be read, which refuses the page: the
+        # map asks /raster for this one when it draws.
         def unreachable(filename, part):
             raise KeyError(filename)
 

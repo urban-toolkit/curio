@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -246,13 +248,28 @@ def build_manifest_dict(manifest: DatasetManifest) -> dict[str, Any]:
     }
 
 
+def manifest_text(manifest: DatasetManifest) -> str:
+    """The text :func:`write_manifest` writes for *manifest*."""
+    return json.dumps(build_manifest_dict(manifest), indent=2, ensure_ascii=False)
+
+
 def write_manifest(manifest: DatasetManifest, dataset_root: Path) -> None:
     """Write a complete manifest.json to *dataset_root*, replacing any existing file."""
     manifest_path = dataset_root / "manifest.json"
-    manifest_path.write_text(
-        json.dumps(build_manifest_dict(manifest), indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    manifest_path.write_text(manifest_text(manifest), encoding="utf-8")
+
+
+def replace_manifest(manifest: DatasetManifest, dataset_root: Path) -> None:
+    """:func:`write_manifest` for a dataset already in place: a temp file in
+    the same folder, then ``os.replace``, so a reader finds the whole old
+    manifest or the whole new one, never a half-written file."""
+    manifest_path = dataset_root / "manifest.json"
+    partial = manifest_path.with_name(f".{manifest_path.name}.{uuid.uuid4().hex}.part")
+    try:
+        partial.write_text(manifest_text(manifest), encoding="utf-8")
+        os.replace(partial, manifest_path)
+    finally:
+        partial.unlink(missing_ok=True)
 
 
 def load_dataset_manifest(dataset_root: Path) -> DatasetManifest:
