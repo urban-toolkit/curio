@@ -142,6 +142,14 @@ describe("the Node catalog offers only tabs that do something", () => {
     expect(src).toContain('export type DrawerTab = "browse" | "installed";');
   });
 
+  test("the Scenario drawer has the same strip, and its list follows the tab", () => {
+    // Its In project tab is this dataflow's scenarios, which the Scenarios
+    // panel listed; Browse all is every project's.
+    const src = read("components/scenarios/catalog/ScenarioCatalogDrawer.tsx");
+    expect(src).toContain("<DrawerTabs");
+    expect(src).toContain('tab === "installed"');
+  });
+
   test("the drawer no longer collapses two tabs onto a third", () => {
     const src = read("components/packages/publishing/NodeCatalogDrawer.tsx");
     expect(src).not.toContain('tab === "featured"');

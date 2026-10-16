@@ -43,8 +43,8 @@ from .test_scenario_drop_e2e import (
     _open_scenario_catalog,
     _record_python_runs,
     _record_run_starts,
+    _run_scenario,
     _saved_spec,
-    _scenario_menu,
     _status,
     _toast,
 )
@@ -239,19 +239,17 @@ def test_a_shipped_scenario_drops_from_a_project_never_run_and_runs(
     # 2. Run scenario ends with every outcome done.
     outcomes = [(copies[outcome["nodeId"]], outcome) for outcome in plan["outcomes"]]
     assert outcomes, f"{name} has no outcomes"
-    _scenario_menu(page, "Show scenarios")
     for node_id, _outcome in outcomes:
         watch_node_run(page, node_id)
-    page.get_by_test_id(f"scenario-card-{dropped['id']}").get_by_role("button", name="Run scenario").click()
+    # From its card in the In project tab; the drawer, which lies over the
+    # right of the canvas where the outcomes are, is closed again.
+    _run_scenario(page, dropped["id"])
     for node_id, outcome in outcomes:
         status = wait_for_node_run_to_end(page, node_id, node_type=types[outcome["nodeId"]], timeout_ms=RUN_MS)
         assert status == "done", (
             f"{outcome['label']} ({node_id}) ended {status}: {read_node_error_text(node_locator(page, node_id))}"
         )
     wait_for_run_guard_released(page, timeout_ms=60000)
-    # The panel lies over the right of the canvas, where the outcomes are.
-    _scenario_menu(page, "Hide scenarios")
-    page.get_by_test_id("scenarios-panel").wait_for(state="detached", timeout=10000)
 
     # 3. Expanded, each outcome shows its output.
     _expand(page, dropped["id"], members)

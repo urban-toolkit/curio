@@ -47,6 +47,15 @@ const DRAWER_HOOKS = [
   "components/scenarios/catalog/useScenarioCatalogDrawer.ts",
 ];
 
+/** The drawers of what a dataflow holds: each has an In project tab beside
+ *  Browse all. The Scenario drawer's took over the Scenarios panel. */
+const TABBED_DRAWERS = [
+  "components/packages/publishing/NodeCatalogDrawer.tsx",
+  "components/datasets/catalog/DatasetCatalogDrawer.tsx",
+  "components/agents/catalog/AgentCatalogDrawer.tsx",
+  "components/scenarios/catalog/ScenarioCatalogDrawer.tsx",
+];
+
 const PROVIDERS = [
   "providers/packages/NodeCatalogDrawerProvider.tsx",
   "providers/datasetCatalog/DatasetCatalogDrawerProvider.tsx",
@@ -132,6 +141,13 @@ describe("canvas catalog drawer parity", () => {
     expect(css).toMatch(
       /\.overlayRoot\[data-dragging="true"\]\s*>\s*\.drawer\s*\{\s*pointer-events:\s*auto;\s*\}/,
     );
+  });
+
+  test.each(TABBED_DRAWERS)("%s draws its In project tab in the shared tab strip", (drawer) => {
+    const source = read(drawer);
+    // The strip itself, or its stylesheet with the drawer's own buttons.
+    expect(source).toMatch(/<DrawerTabs\b|DrawerTabs\.module\.css/);
+    expect(source).toMatch(/In project|<DrawerTabs\b/);
   });
 
   test.each(PROVIDERS)(
