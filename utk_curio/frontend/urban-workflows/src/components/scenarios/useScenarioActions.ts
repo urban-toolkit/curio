@@ -22,7 +22,9 @@ import {
   type ScenarioEdit,
 } from "../../utils/scenarios/scenarioEdits";
 import { liveScenarios, scenarioParts } from "../../utils/scenarios/scenarioParts";
-import { useScenarioUi } from "./scenarioUi";
+// The context's own module, not the provider's: the provider mounts the
+// drawer, whose In project tab runs these commands.
+import { useScenarioCatalogDrawer } from "../../providers/scenarioCatalog/scenarioCatalogDrawerContext";
 
 /** Room left between a selection and its duplicate, below it. */
 const DUPLICATE_GAP = 80;
@@ -30,8 +32,10 @@ const DUPLICATE_GAP = 80;
 /**
  * The canvas's scenario commands (#662): saving a selection or the whole
  * dataflow as a scenario, Duplicate selection, Run scenario, collapse and
- * expand, and the panel's edits. Every change goes through the flow's
- * `setScenarios`, so the dataflow is dirty until its next save.
+ * expand, and the edits of the Scenario Catalog drawer's In project tab. Every
+ * change goes through the flow's `setScenarios`, so the dataflow is dirty until
+ * its next save. A command that makes a scenario opens that tab, where the new
+ * scenario is listed.
  */
 export function useScenarioActions() {
   const { scenarios: saved, nodes, setScenarios, playNodesUpTo, markDirty, workflowNameRef, workflowGoal } =
@@ -42,7 +46,11 @@ export function useScenarioActions() {
   const { loadTrill } = useCode();
   const reactFlow = useReactFlow();
   const { showToast } = useToastContext();
-  const { setPanelOpen } = useScenarioUi();
+  const { openScenarioCatalogDrawer } = useScenarioCatalogDrawer();
+  const showInProject = useCallback(
+    () => openScenarioCatalogDrawer({ tab: "installed" }),
+    [openScenarioCatalogDrawer],
+  );
 
   const selectedIds = useCallback(
     () => reactFlow.getNodes().filter((n) => n.selected && !isDrawnHidden(n)).map((n) => n.id),
@@ -65,9 +73,9 @@ export function useScenarioActions() {
   const saveSelectionAsScenario = useCallback(() => {
     const edit = createScenario(scenarios, selectedIds(), { id: uuid() });
     if (apply(edit, edit.scenarios ? `Saved the selection as "${edit.scenarios.at(-1)!.name}".` : undefined)) {
-      setPanelOpen(true);
+      showInProject();
     }
-  }, [scenarios, selectedIds, apply, setPanelOpen]);
+  }, [scenarios, selectedIds, apply, showInProject]);
 
   const saveDataflowAsScenario = useCallback(() => {
     const all = reactFlow.getNodes().map((n) => n.id);
@@ -77,9 +85,9 @@ export function useScenarioActions() {
     }
     const edit = createScenario(scenarios, all, { id: uuid() });
     if (apply(edit, edit.scenarios ? `Saved the dataflow as "${edit.scenarios.at(-1)!.name}".` : undefined)) {
-      setPanelOpen(true);
+      showInProject();
     }
-  }, [reactFlow, scenarios, apply, showToast, setPanelOpen]);
+  }, [reactFlow, scenarios, apply, showToast, showInProject]);
 
   /**
    * Copy the selected nodes below them, with the edges between them, and wire
@@ -132,10 +140,10 @@ export function useScenarioActions() {
         nodes: [...copy.ids.values()],
       };
       setScenarios([...next, twin]);
-      setPanelOpen(true);
+      showInProject();
       showToast(`Duplicated the selection as "${twin.name}".`, "success");
     },
-    [selectedIds, scenarios, reactFlow, workflowNameRef, workflowGoal, loadTrill, markDirty, showToast, setScenarios, setPanelOpen],
+    [selectedIds, scenarios, reactFlow, workflowNameRef, workflowGoal, loadTrill, markDirty, showToast, setScenarios, showInProject],
   );
 
   /** Run the scenario's levers, and only those of its context nodes that cannot be reused. */

@@ -21,10 +21,11 @@ scenario, in the same colors. Run All drives the whole path:
    (``EXAMPLE`` in ``test_packages/test_scout_routing.py``).
 4. What differs lists two levers, each scenario's two nodes, each with the one
    code line that names the route it keeps; nothing is warned.
-5. The Fastest route's box takes another color in the Scenarios panel, and
-   Run All runs the flow again: the map draws that route in the new color and
-   none in the old one, and every chart fills its bar with the new color; the
-   other scenario keeps its own.
+5. The Fastest route's box takes another color in the scenario's details, from
+   the Scenario Catalog drawer's In project tab, and Run All runs the flow
+   again: the map draws that route in the new color and none in the old one,
+   and every chart fills its bar with the new color; the other scenario keeps
+   its own.
 
 A route's color is read from the pixels of the map's canvas, which its close-up
 shows. A bar's color is the fill Vega gives it, read from the chart's scene
@@ -52,15 +53,18 @@ import pytest
 from utk_curio.backend.tests.test_packages.test_scout_routing import EXAMPLE, EXAMPLE_CHARTS, EXAMPLE_SCENARIOS
 
 from .test_compare_scenarios_e2e import _CHART_STATE_JS, _COLOR_PIXELS_JS, _OUTPUT_ARTIFACT_JS
-from .test_scenario_drop_e2e import _scenario_menu
 from .utils import (
     REPO_ROOT,
     api_json,
     assert_autark_map_drawn,
     assert_vega_canvas_rendered,
+    close_scenario_details,
+    close_scenario_drawer,
     frame_nodes,
     load_artifact_as_dict,
     node_locator,
+    open_in_project_tab,
+    open_scenario_details,
     park_pointer,
     read_node_error_text,
     require_owner_view,
@@ -374,15 +378,16 @@ def test_two_routing_scenarios_are_mapped_and_charted(
     # 5. The Fastest route's box takes another color, and the flow runs again:
     # its route and its bars follow, and the other scenario keeps its color.
     name = EXAMPLE_SCENARIOS[RECOLORED][0]
-    _scenario_menu(page, "Show scenarios")
-    page.get_by_test_id(f"scenario-card-{RECOLORED}").get_by_label(f"Color of {name}").fill(NEW_COLOR)
+    open_in_project_tab(page)
+    open_scenario_details(page, RECOLORED).get_by_label(f"Color of {name}").fill(NEW_COLOR)
     page.wait_for_function(
         f"([id, color]) => {{ const read = {_BOX_COLOR_JS}; return read(id) === color; }}",
         arg=[RECOLORED, "rgb({}, {}, {})".format(*_rgb(NEW_COLOR))],
         timeout=10000,
     )
-    _scenario_menu(page, "Hide scenarios")
-    page.get_by_test_id("scenarios-panel").wait_for(state="detached", timeout=10000)
+    # The details and the drawer lie over the canvas, where the routes are.
+    close_scenario_details(page)
+    close_scenario_drawer(page)
     recolored = {**colors, RECOLORED: NEW_COLOR}
     assert _box_colors(page) == recolored
     watch_node_run(page, map_id)

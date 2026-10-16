@@ -1,18 +1,18 @@
-"""Playwright E2E: the Scenarios panel and the collaboration panel share the
-canvas's right edge.
+"""Playwright E2E: the collaboration panel on the canvas's right edge.
 
 With collaboration on (``curio.py start --collab``), the collaboration panel
-opens by default on the right of the canvas, under the top bar, and View, Show
-scenarios opens the Scenarios panel there too. The Scenarios panel opens under
-the collaboration panel while that one is open, and moves up to the top bar
-once it is closed, so neither covers the other.
+opens by default on the right of the canvas, under the top bar, inside the
+window and with nothing over its sections, and the bar's Collaboration button
+closes and reopens it where it was. It is the one panel of that dock: a
+dataflow's scenarios are the Scenario Catalog drawer's In project tab
+(``test_scenarios_in_project_e2e.py``).
 
 CI's stacks start without ``--collab``. The page learns whether collaboration
 is on from ``/api/config/public``, so this test answers that request with the
 backend's own answer and ``enable_collab`` set: the page then shows the
 collaboration panel and its bar button as it does under ``--collab``, with
-nobody else in the room. Where the two panels sit is decided by the page
-alone, which is what is under test.
+nobody else in the room. Where the panel sits is decided by the page alone,
+which is what is under test.
 
 The same rule, read from the source: ``canvasSidePanels.test.ts``.
 
@@ -70,41 +70,30 @@ def _collaboration_panel(page):
     )
 
 
-def _assert_stacked(page, collaboration, scenarios) -> dict:
-    """Both panels open inside the window, the Scenarios panel under the
-    collaboration panel, their boxes apart and nothing over either. Returns
-    the collaboration panel's box."""
+def _assert_in_place(page, collaboration) -> dict:
+    """The panel opens inside the window, under the top bar, with nothing over
+    its sections. Returns its box."""
     window = page.viewport_size
-    boxes = {"collaboration panel": collaboration.bounding_box(), "Scenarios panel": scenarios.bounding_box()}
-    for name, box in boxes.items():
-        assert box and box["width"] > 0 and box["height"] > 0, f"the {name} has no box: {box}"
-        assert box["x"] >= 0 and box["x"] + box["width"] <= window["width"] + 0.5, (
-            f"the {name} runs past the window's sides: {box} in {window}"
-        )
-        assert box["y"] >= 0 and box["y"] + box["height"] <= window["height"] + 0.5, (
-            f"the {name} runs past the window's top or bottom: {box} in {window}"
-        )
-    a, b = boxes["collaboration panel"], boxes["Scenarios panel"]
-    across = min(a["x"] + a["width"], b["x"] + b["width"]) - max(a["x"], b["x"])
-    down = min(a["y"] + a["height"], b["y"] + b["height"]) - max(a["y"], b["y"])
-    assert across <= 0.5 or down <= 0.5, (
-        f"the Scenarios panel {b} covers the collaboration panel {a}: "
-        f"they share {across:.0f} x {down:.0f} px"
+    box = collaboration.bounding_box()
+    assert box and box["width"] > 0 and box["height"] > 0, f"the collaboration panel has no box: {box}"
+    assert box["x"] >= 0 and box["x"] + box["width"] <= window["width"] + 0.5, (
+        f"the collaboration panel runs past the window's sides: {box} in {window}"
     )
-    assert b["y"] >= a["y"] + a["height"] - 0.5, (
-        f"the Scenarios panel {b} does not open under the collaboration panel {a}"
+    assert box["y"] >= 0 and box["y"] + box["height"] <= window["height"] + 0.5, (
+        f"the collaboration panel runs past the window's top or bottom: {box} in {window}"
+    )
+    bar = page.locator('header[data-curio-menu-bar="true"]').first.bounding_box()
+    assert bar and box["y"] >= bar["y"] + bar["height"] - 0.5, (
+        f"the collaboration panel {box} is not under the top bar {bar}"
     )
     for section in SECTIONS:
         assert _section_title(collaboration, section).evaluate(_ON_TOP_JS), (
             f"the collaboration panel's {section} section is covered"
         )
-    assert scenarios.get_by_role("heading", name="Scenarios").evaluate(_ON_TOP_JS), (
-        "the Scenarios panel's title is covered"
-    )
-    return a
+    return box
 
 
-def test_the_scenarios_panel_opens_under_the_collaboration_panel(
+def test_the_collaboration_panel_opens_under_the_top_bar_and_its_button_toggles_it(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     require_project_page()
@@ -119,30 +108,18 @@ def test_the_scenarios_panel_opens_under_the_collaboration_panel(
         project_name="Side panels",
     )
 
-    # The collaboration panel opens by itself; the Scenarios panel from View.
+    # The collaboration panel opens by itself.
     collaboration = _collaboration_panel(page)
     collaboration.wait_for(state="visible", timeout=30000)
-    page.get_by_role("button", name="View menu").click()
-    page.get_by_role("button", name="Show scenarios", exact=True).click()
-    scenarios = page.get_by_test_id("scenarios-panel")
-    scenarios.wait_for(state="visible", timeout=10000)
-    top = _assert_stacked(page, collaboration, scenarios)["y"]
+    first = _assert_in_place(page, collaboration)
 
-    # Closed from its bar button, the collaboration panel gives its place to
-    # the Scenarios panel, which moves up to the top bar.
+    # Its bar button closes it, and opens it again where it was.
     toggle = page.get_by_role("button", name="Collaboration", exact=True)
     toggle.click()
     collaboration.wait_for(state="hidden", timeout=10000)
-    page.wait_for_function(
-        """(top) => {
-            const box = document.querySelector('[data-testid="scenarios-panel"]').getBoundingClientRect();
-            return Math.abs(box.top - top) <= 0.5;
-        }""",
-        arg=top,
-        timeout=10000,
-    )
-
-    # Opened again, it takes the top back and the Scenarios panel goes under it.
     toggle.click()
     collaboration.wait_for(state="visible", timeout=10000)
-    _assert_stacked(page, collaboration, scenarios)
+    again = _assert_in_place(page, collaboration)
+    assert abs(again["y"] - first["y"]) <= 0.5 and abs(again["x"] - first["x"]) <= 0.5, (
+        f"the collaboration panel opened again at {again}, not where it was, {first}"
+    )

@@ -42,7 +42,8 @@ path.react-flow__edge-path:hover {
     border-radius: var(--curio-radius-lg);
 }
 
-/* The fixed context of the scenario the Scenarios panel points at. */
+/* The fixed context of the scenario pointed at in the Scenario Catalog
+   drawer's In project tab. */
 .react-flow__node.curio-scenario-fixed {
     outline: 3px dashed var(--curio-text-secondary);
     outline-offset: 6px;

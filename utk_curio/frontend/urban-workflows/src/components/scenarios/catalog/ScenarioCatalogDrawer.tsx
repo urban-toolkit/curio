@@ -1,14 +1,18 @@
-import React, { useCallback, useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { DrawerHeader } from "../../packages/publishing/DrawerHeader";
+import { DrawerTabs } from "../../packages/publishing/DrawerTabs";
 import { PackageSearchRow } from "../../packages/publishing/PackageSearchRow";
 import shell from "../../packages/publishing/CatalogDrawerShell.module.css";
 import { useDrawerDragThrough } from "../../packages/publishing/useDrawerDragThrough";
 import { modalStackDepth } from "../../ModalShell";
 import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
 import { useFlowContext } from "../../../providers/FlowProvider";
+import type { DrawerTab } from "../../../services/packages";
 import { SCENARIO_SORT_OPTIONS, type ScenarioRow } from "../../../services/scenarioCatalog";
+import { liveScenarios } from "../../../utils/scenarios/scenarioParts";
+import { InProjectScenarios } from "./InProjectScenarios";
 import { ScenarioCard } from "./ScenarioCard";
 import { ScenarioDetailModal } from "./ScenarioDetailModal";
 import { scenarioProjectPath } from "./scenarioFacts";
@@ -19,28 +23,46 @@ export interface ScenarioCatalogDrawerProps {
   presented: boolean;
   onRequestClose: () => void;
   onExitComplete: () => void;
+  /** The tab shown, held by the provider so a scenario command can open the
+   *  drawer on In project. Without it the drawer holds its own, from Browse
+   *  all. */
+  tab?: DrawerTab;
+  onTabChange?: (tab: DrawerTab) => void;
 }
 
 /**
- * The Scenario Catalog on the canvas: every scenario saved in this account's
- * projects, each a card with its project's graph.
+ * The Scenario Catalog on the canvas, in two tabs as the other catalogs are.
  *
- * Built like the Model drawer (the same shell, header and search row, the same
- * card shape, Escape and pin rules). A scenario lives in its project and is
- * edited there, so a card changes nothing in it. A card offers its details,
- * the way to its project, which asks first when this dataflow has unsaved
- * changes, and a drag onto the canvas, which brings a copy of the scenario
- * into this dataflow. While a card is dragged, the scrim lets the drag through
- * to the canvas beneath it, as in every drawer (useDrawerDragThrough).
+ * Browse all is every scenario saved in this account's projects, each a card
+ * with its project's graph. A scenario lives in its project and is edited
+ * there, so such a card changes nothing in it. It offers its details, the way
+ * to its project, which asks first when this dataflow has unsaved changes, and
+ * a drag onto the canvas, which brings a copy of the scenario into this
+ * dataflow. While a card is dragged, the scrim lets the drag through to the
+ * canvas beneath it, as in every drawer (useDrawerDragThrough).
+ *
+ * In project is this dataflow's scenarios, read off the canvas, with what can
+ * be done to them (`InProjectScenarios`); its tab counts them.
+ *
+ * Built like the Model drawer (the same shell, header, search row and tabs,
+ * the same card shape, Escape and pin rules).
  */
 export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
   presented,
   onRequestClose,
   onExitComplete,
+  tab: heldTab,
+  onTabChange,
 }) => {
   const drawerRef = useRef<HTMLElement>(null);
   const navigate = useNavigate();
-  const { projectDirty, projectId } = useFlowContext();
+  const { projectDirty, projectId, scenarios, nodes } = useFlowContext();
+  const [ownTab, setOwnTab] = useState<DrawerTab>("browse");
+  const tab = heldTab ?? ownTab;
+  const setTab = onTabChange ?? setOwnTab;
+  // This dataflow's scenarios, with members deleted since the last save left
+  // out: the In project tab and its count.
+  const inProject = useMemo(() => liveScenarios(scenarios ?? [], nodes ?? []), [scenarios, nodes]);
   const { leave, dialog: leaveDialog } = useLeaveGuard(projectDirty, LEAVE_DATAFLOW, {
     layer: "overlay",
   });
@@ -144,39 +166,47 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
             sortOptions={SCENARIO_SORT_OPTIONS}
           />
 
+          <DrawerTabs tab={tab} installedCount={inProject.length} onChange={setTab} />
+
           <main className={shell.scrollBody}>
-            {catalog.error ? (
-              <div className={shell.error} role="alert">
-                {catalog.error}
-                <button type="button" className={styles.retry} onClick={catalog.reload}>
-                  Retry
-                </button>
-              </div>
-            ) : null}
-            {catalog.loading && items.length === 0 ? (
-              <div className={shell.empty} aria-busy="true">
-                Loading scenarios…
-              </div>
-            ) : null}
-            {!catalog.loading && !catalog.error && items.length === 0 ? (
-              <div className={shell.empty}>
-                {searching
-                  ? "No scenarios match the current search."
-                  : "No scenarios yet. Select nodes on a canvas and choose View > Save selection as scenario."}
-              </div>
-            ) : null}
-            <div className={shell.cardList}>
-              {items.map((scenario) => (
-                <ScenarioCard
-                  key={scenario.key}
-                  scenario={scenario}
-                  onOpenDetails={openScenarioDetails}
-                  onOpenProject={openProject}
-                  onDragStart={(event) => handleScenarioDragStart(scenario, event)}
-                  onDragEnd={handleScenarioDragEnd}
-                />
-              ))}
-            </div>
+            {tab === "installed" ? (
+              <InProjectScenarios scenarios={inProject} search={search} sort={sort} presented={presented} />
+            ) : (
+              <>
+                {catalog.error ? (
+                  <div className={shell.error} role="alert">
+                    {catalog.error}
+                    <button type="button" className={styles.retry} onClick={catalog.reload}>
+                      Retry
+                    </button>
+                  </div>
+                ) : null}
+                {catalog.loading && items.length === 0 ? (
+                  <div className={shell.empty} aria-busy="true">
+                    Loading scenarios…
+                  </div>
+                ) : null}
+                {!catalog.loading && !catalog.error && items.length === 0 ? (
+                  <div className={shell.empty}>
+                    {searching
+                      ? "No scenarios match the current search."
+                      : "No scenarios yet. Select nodes on a canvas and choose View > Save selection as scenario."}
+                  </div>
+                ) : null}
+                <div className={shell.cardList}>
+                  {items.map((scenario) => (
+                    <ScenarioCard
+                      key={scenario.key}
+                      scenario={scenario}
+                      onOpenDetails={openScenarioDetails}
+                      onOpenProject={openProject}
+                      onDragStart={(event) => handleScenarioDragStart(scenario, event)}
+                      onDragEnd={handleScenarioDragEnd}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
           </main>
         </aside>
       </div>

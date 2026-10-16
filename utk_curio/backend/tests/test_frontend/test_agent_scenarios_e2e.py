@@ -12,7 +12,8 @@ The browser shows what a person judges:
 3. **Solve** writes code that places the widget as a reference, and the
    comparison, run on the canvas, reads two different outcomes: the copy's
    shadows are twice as long.
-4. **A reload** brings both scenarios back in the Scenarios panel.
+4. **A reload** brings both scenarios back in the Scenario Catalog drawer's
+   In project tab.
 
 Driven by the scripted provider, so no model is called and no socket leaves the
 stack.
@@ -29,10 +30,13 @@ from playwright.sync_api import expect
 from .utils import (
     _wait_for_reactflow_ready,
     api_json,
+    close_scenario_details,
     dismiss_toasts,
     install_session_cookie,
     leave_agent_badge,
     node_locator,
+    open_in_project_tab,
+    open_scenario_details,
     play_node,
     read_node_code,
     read_node_output_text,
@@ -271,14 +275,12 @@ class TestTheDataflowBuilderBuildsTwoScenarios:
         _wait_for_reactflow_ready(page)
         dismiss_toasts(page)
         node_locator(page, copy["id"]).wait_for(state="attached", timeout=45000)
-        page.get_by_role("button", name="View menu").click()
-        page.get_by_role("button", name="Show scenarios", exact=True).click()
-        scenarios_panel = page.get_by_test_id("scenarios-panel")
-        expect(scenarios_panel).to_be_visible(timeout=10000)
+        open_in_project_tab(page)
         names = [s["name"] for s in saved["scenarios"]]
         for scenario in saved["scenarios"]:
-            card = page.get_by_test_id(f"scenario-card-{scenario['id']}")
-            expect(card.get_by_label("Scenario name")).to_have_value(scenario["name"])
+            details = open_scenario_details(page, scenario["id"])
+            expect(details.get_by_label("Scenario name")).to_have_value(scenario["name"])
+            close_scenario_details(page)
         assert names == ["Real heights", "Twice as tall"]
         reloaded = {n["id"]: n for n in page.evaluate(_STORE_NODES_JS)}
         assert reloaded[copy["id"]]["widgets"][0]["value"] == 2

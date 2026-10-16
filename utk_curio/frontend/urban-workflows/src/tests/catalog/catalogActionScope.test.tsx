@@ -874,7 +874,7 @@ describe("a catalog's palette and its drawer describe the same dataflow", () => 
 
 // ── Every drawer counts its dataflow the same way ───────────────────────────
 
-describe("all three drawers put a count on their In project tab", () => {
+describe("all four drawers put a count on their In project tab", () => {
   test("the data drawer does", () => {
     expect(read("components/datasets/catalog/DatasetCatalogDrawer.tsx")).toContain(
       "tabInstalledCount",
@@ -893,6 +893,14 @@ describe("all three drawers put a count on their In project tab", () => {
     const drawer = read("components/agents/catalog/AgentCatalogDrawer.tsx");
     expect(drawer).toContain("c.installedCount");
     expect(drawer).toContain("tabStyles.tabBadge");
+  });
+
+  test("the scenario drawer does, with the node drawer's tab strip", () => {
+    // Its In project tab took over the Scenarios panel: the count is this
+    // dataflow's scenarios, read off the canvas, so it needs no tab opened.
+    const drawer = read("components/scenarios/catalog/ScenarioCatalogDrawer.tsx");
+    expect(drawer).toContain("<DrawerTabs");
+    expect(drawer).toMatch(/installedCount=\{inProject\.length\}/);
   });
 
   test("the agent count does not wait for its own tab to be opened", () => {

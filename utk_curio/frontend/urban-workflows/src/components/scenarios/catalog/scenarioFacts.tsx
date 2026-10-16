@@ -110,11 +110,17 @@ export function scenarioResultLine(result: ScenarioResult): string {
 }
 
 /** The rows the browse drawer and the details view both list. The counts of
- *  the fixed context and the outcomes need the scenario's details. */
-export function scenarioInfoRows(row: ScenarioRow, details?: ScenarioDetails | null): ScenarioFact[] {
+ *  the fixed context and the outcomes need the scenario's details. A scenario
+ *  of the open dataflow (`origin: false`) has no origin to tell: the canvas
+ *  does not know whether its dataflow came from an example. */
+export function scenarioInfoRows(
+  row: ScenarioRow,
+  details?: ScenarioDetails | null,
+  { origin = true }: { origin?: boolean } = {},
+): ScenarioFact[] {
   const rows: (ScenarioFact | null)[] = [
     { label: "Project", value: row.project.name },
-    { label: "Origin", value: scenarioOriginLabel(row) },
+    origin ? { label: "Origin", value: scenarioOriginLabel(row) } : null,
     { label: "Levers", value: String(row.nodeCount) },
     details ? { label: "Fixed context", value: String(details.context.length) } : null,
     details ? { label: "Outcomes", value: String(details.outcomes.length) } : null,
@@ -123,9 +129,15 @@ export function scenarioInfoRows(row: ScenarioRow, details?: ScenarioDetails | n
 }
 
 /** One section of the details view: its nodes, each with its parameter value
- *  and its saved outputs. */
-export const ScenarioNodeList: React.FC<{ entries: ScenarioNodeEntry[] }> = ({ entries }) => {
-  if (entries.length === 0) return <p className={styles.none}>None.</p>;
+ *  and its saved outputs. Without *results*, the nodes alone: a scenario read
+ *  off the canvas, whose outputs may not be saved yet. */
+export const ScenarioNodeList: React.FC<{
+  entries: ScenarioNodeEntry[];
+  /** What an empty section says. */
+  empty?: string;
+  results?: boolean;
+}> = ({ entries, empty = "None.", results = true }) => {
+  if (entries.length === 0) return <p className={styles.none}>{empty}</p>;
   return (
     <ul className={styles.nodeList}>
       {entries.map((entry) => (
@@ -134,7 +146,7 @@ export const ScenarioNodeList: React.FC<{ entries: ScenarioNodeEntry[] }> = ({ e
           {entry.parameter ? (
             <span className={styles.nodeParameter}>{scenarioParameterLine(entry.parameter)}</span>
           ) : null}
-          {entry.results.length > 0 ? (
+          {!results ? null : entry.results.length > 0 ? (
             <ul className={styles.resultList}>
               {entry.results.map((result) => (
                 <li key={result.datasetId}>{scenarioResultLine(result)}</li>
