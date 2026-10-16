@@ -253,6 +253,16 @@ class TestThePatternsAreShared:
         for schema in self._schemas():
             assert schema["properties"]["name"]["pattern"] == WIDGET_NAME_RE.pattern
 
+    def test_the_input_name_no_widget_takes(self):
+        """The Widgets tab, a Parameter node and a package manifest refuse one
+        name pattern; the schema refuses it in an editor too."""
+        from utk_curio.backend.app.execution.code_references import INPUT_NAME_ONLY_RE
+
+        written = re.search(r"INPUT_NAME_ONLY_PATTERN = String\.raw`(.*?)`", self._ts("widgetModel.ts"))
+        assert written and written.group(1) == INPUT_NAME_ONLY_RE.pattern
+        package = self._schemas()[1]
+        assert package["properties"]["name"]["not"] == {"pattern": INPUT_NAME_ONLY_RE.pattern}
+
     def test_the_widget_types(self):
         from utk_curio.backend.app.execution.code_references import WIDGET_KINDS
 

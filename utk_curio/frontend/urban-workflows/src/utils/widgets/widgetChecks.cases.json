@@ -18,7 +18,11 @@
     {"name":"a checkbox group whose default repeats a choice","def":{"name":"w","type":"checkbox-group","default":["a","a"],"options":{"choices":["a","b"]}},"expected":"Pick among the choices, each at most once."},
     {"name":"a location","def":{"name":"here","type":"location","default":{"lat":41.88,"lon":-87.63}},"expected":null},
     {"name":"the name an input is read by","def":{"name":"input_2","type":"number","default":1},"expected":"input_2 names one of the node's inputs. Pick another name."},
-    {"name":"a Parameter node named as an input is read","def":{"name":"input_0","type":"text","default":""},"parameter":true,"expected":"input_0 names one of the node's inputs. Pick another name."}
+    {"name":"a Parameter node named as an input is read","def":{"name":"input_0","type":"text","default":""},"parameter":true,"expected":"input_0 names one of the node's inputs. Pick another name."},
+    {"name":"the name input 12 is read by","def":{"name":"input_12","type":"number","default":1},"expected":"input_12 names one of the node's inputs. Pick another name."},
+    {"name":"the word input","def":{"name":"input","type":"number","default":1},"expected":null},
+    {"name":"the word inputs","def":{"name":"inputs","type":"number","default":1},"expected":null},
+    {"name":"a name that ends like an input's","def":{"name":"my_input_0","type":"number","default":1},"expected":null}
   ],
   "values": [
     {"name":"a number","widget":{"type":"number"},"value":2.5,"expected":null},

@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 
 from utk_curio.backend.app.common.record_clock import utc_now
+from utk_curio.backend.app.execution.code_references import input_name_problem
 from utk_curio.backend.app.packages.domain.manifest import (
     ManifestError,
     package_manifest_from_dict,
@@ -30,9 +31,25 @@ def load_package_manifest(package_dir_path: Path) -> PackageManifest:
         raw = json.loads(manifest_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ManifestError(f"{manifest_path}: invalid JSON: {exc}") from exc
-    return package_manifest_from_dict(
+    manifest = package_manifest_from_dict(
         raw, manifest_path=manifest_path, dir_name=package_dir_path.name,
     )
+    _refuse_widgets_named_as_inputs(manifest, manifest_path)
+    return manifest
+
+
+def _refuse_widgets_named_as_inputs(manifest: PackageManifest, manifest_path: Path) -> None:
+    """Refuse a template widget named ``input_0``, ``input_1``, ..., with the
+    words the Widgets tab and a Parameter node refuse that name with: the rule
+    is ``input_name_problem``, which ``check_widget_def`` (the Widgets tab's
+    check, ``checkWidgetDef``) reads too. It is checked here and not in
+    ``domain/manifest.py`` because the domain imports no other feature
+    (``tests/test_packages/test_layering.py``); every install, listing and
+    build reads its manifest through this function."""
+    for i, template in enumerate(manifest.templates):
+        for j, widget in enumerate(template.widgets or []):
+            if problem := input_name_problem(widget["name"]):
+                raise ManifestError(f"{manifest_path}.templates[{i}].widgets[{j}]: {problem}")
 
 
 def merge_missing_manifest_created_at(package_root: Path) -> bool:
