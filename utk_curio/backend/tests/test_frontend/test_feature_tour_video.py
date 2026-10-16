@@ -29,7 +29,8 @@ Environment:
 Stills: a scene can call ``ctx.tour.still(name)`` to save a PNG screenshot of
 that moment to ``<out>/stills/<name>.png``; the marks file records when.
 
-Scene ids, in order: see ``SCENES`` at the bottom of this file.
+Scene ids, in order: see ``SCENES`` at the bottom of this file. Naming a scene
+that starts from another scene's work records that one too (``NEEDS``).
 
 The AI provider:
 
@@ -65,6 +66,7 @@ import re
 import sys
 import time
 import traceback
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -994,6 +996,9 @@ def scene_canvas(ctx: Ctx) -> None:
         if not locator.count():
             continue
         tour.say(label, hold=200)
+        # The rail's tile block scrolls when the window is short, as the
+        # 1280x800 take is: the map and chart tiles start below its fold.
+        locator.scroll_into_view_if_needed()
         tour.focus(locator, hold=800)
     tour.hush()
     tour.say(
@@ -1823,6 +1828,26 @@ def _drag_node_by(page, node_id: str, dx: float, dy: float) -> None:
     page.wait_for_timeout(600)
 
 
+@contextmanager
+def _maps_ignore_the_pointer(page):
+    """No Autark map canvas takes pointer events while inside.
+
+    For a drag that only passes over a map, such as an edge drawn across one:
+    autk-map pans its camera on any move of a pressed pointer over its canvas,
+    even one pressed elsewhere (see ``_drag_node_by``), and the pan can carry
+    the whole drawing out of view. Back on leaving, for picks and brushes."""
+    js = """(value) => {
+        for (const el of document.querySelectorAll('[id^="autk-grammar-map-"]')) {
+            el.style.pointerEvents = value;
+        }
+    }"""
+    page.evaluate(js, "none")
+    try:
+        yield
+    finally:
+        page.evaluate(js, "")
+
+
 def _frame_nodes(
     page, node_ids: list[str], box: tuple[int, int, int, int], max_zoom: float | None = None,
 ) -> None:
@@ -2397,7 +2422,11 @@ def scene_selection_tag(ctx: Ctx) -> None:
     reader = drag_to_canvas(page, page.locator("#tile-computation-analysis"), at=(300 + 645, 650 - 415))
     _fit_nodes(page, [ZIPS_LOADER, reader])
     dismiss_toasts(page)
-    connect_nodes(page, ZIPS_LOADER, reader)
+    # The edge is drawn from the loader, below and left of the map, to the
+    # reader above and right of it, straight across the map: a drag that
+    # would pan the ZIP codes out of view.
+    with _maps_ignore_the_pointer(page):
+        connect_nodes(page, ZIPS_LOADER, reader)
     frame_node(page, reader, zoom=1.0)
     set_node_code(page, reader, PICKED_CODE)
 
@@ -2493,6 +2522,12 @@ def scene_node_from_function(ctx: Ctx) -> None:
     tour.beat(1500)
     _still_with_boxes(ctx, "node-from-function", {"dialog": "[data-node-from-function]"})
     tour.click(dialog.get_by_role("button", name="Cancel"))
+    # The drawer too: its scrim covers the top bar, so left open it takes the
+    # next scene's first click there (quickstart's File menu) and only closes.
+    drawer.locator("header").get_by_role(
+        "button", name="Close Node Catalog drawer"
+    ).click()
+    expect(page.locator(DRAWER_NODES)).to_have_count(0, timeout=8000)
     page.set_viewport_size(VIDEO_SIZE)
 
 
@@ -2614,6 +2649,8 @@ def scene_quickstart(ctx: Ctx) -> None:
     )
     _reset_zoom(page)
     loader_tile = page.locator(LOADING_TILE)
+    # Into the rail's view first: its tile block scrolls in a short window.
+    loader_tile.scroll_into_view_if_needed()
     tour.focus(loader_tile, hold=600)
     loader_id = drag_to_canvas(page, loader_tile, at=POS_LOADER)
     tour.beat(900)
@@ -2633,6 +2670,7 @@ def scene_quickstart(ctx: Ctx) -> None:
     )
     _reset_zoom(page)
     vega_tile = page.locator(VEGA_TILE)
+    vega_tile.scroll_into_view_if_needed()
     tour.focus(vega_tile, hold=600)
     vega_id = drag_to_canvas(page, vega_tile, at=POS_TRANSFORM)
     tour.beat(900)
@@ -2959,6 +2997,12 @@ NAMED_ONLY = {
 }
 
 
+#: Scenes that start from another scene's work, each mapped to that scene,
+#: which CURIO_TOUR_SCENES then records too. build drags the dataset that
+#: datacatalog adds, and the datasets palette lists only the open dataflow's.
+NEEDS = {"build": "datacatalog"}
+
+
 def _selected_scenes() -> list[tuple[str, Callable[[Ctx], None]]]:
     wanted = os.environ.get("CURIO_TOUR_SCENES")
     if not wanted:
@@ -2970,6 +3014,7 @@ def _selected_scenes() -> list[tuple[str, Callable[[Ctx], None]]]:
         raise ValueError(
             f"unknown scene(s) {unknown}; valid ids: {[n for n, _ in SCENES]}"
         )
+    names += [NEEDS[n] for n in names if n in NEEDS]
     return [(name, fn) for name, fn in SCENES if name in names]
 
 
