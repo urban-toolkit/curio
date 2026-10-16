@@ -5,6 +5,12 @@
  * closed dataflow), even one its run made after it left. The node keeps
  * working: its new map draws.
  *
+ * autk-map pans when the pointer moves over its canvas with a button held,
+ * wherever the press began. So while a press that began off the node's canvas
+ * is held (an edge, a node or a selection box dragged across the map), the
+ * canvas ignores the pointer, and takes it again when the press ends. A press
+ * on the canvas itself still pans the map.
+ *
  * The grammar is a stand-in that draws one real autk-map map on the node's
  * canvas, as autk-grammar does (`new AutkMap(canvas)`, then `draw()`, which
  * draws on demand), and keeps it as autk-grammar does (`grammarThatRan`).
@@ -85,13 +91,13 @@ type MountedNode = {
   canvases: () => HTMLCanvasElement[];
 };
 
-function mountNode(): MountedNode {
+function mountNode(nodeId = 'map-1'): MountedNode {
   let apply: (spec: string) => Promise<void> = async () => { };
   const setOutput = jest.fn();
   let host: HTMLElement | null = null;
   const Probe: React.FC = () => {
     const behavior = useAutkGrammarBehavior(
-      { nodeId: 'map-1', input: { path: 'art-1', dataType: 'geodataframe' }, defaultCode: '{}' } as any,
+      { nodeId, input: { path: 'art-1', dataType: 'geodataframe' }, defaultCode: '{}' } as any,
       {
         output: { code: '', content: '' },
         setOutput,
@@ -210,4 +216,96 @@ test('a map its run made after the node left is destroyed at once', async () => 
     await running;
   });
   expect(drawn.map._isDestroyed).toBe(true);
+});
+
+/**
+ * A pointer event as the page gets it, on *target*, with the primary button
+ * held. jsdom has no PointerEvent, and a MouseEvent carries every field read
+ * here: the target, `button` and `buttons`.
+ */
+function pointer(target: EventTarget, type: string, init: MouseEventInit = {}): void {
+  target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: 1, ...init }));
+}
+
+describe('a press that began off the map', () => {
+  test('makes the map canvas ignore the pointer until the press ends', async () => {
+    const node = mountNode();
+    await node.run();
+    const [canvas] = node.canvases();
+    expect(canvas.style.pointerEvents).toBe('');
+
+    // A press on a handle, a node's header or the pane, then moves with it held.
+    pointer(document.body, 'pointerdown');
+    expect(canvas.style.pointerEvents).toBe('none');
+    pointer(document.body, 'pointermove');
+    expect(canvas.style.pointerEvents).toBe('none');
+
+    pointer(document.body, 'pointerup', { buttons: 0 });
+    expect(canvas.style.pointerEvents).toBe('');
+  });
+
+  test.each<[string, (target: EventTarget) => void]>([
+    // A native drag and drop, such as a catalog card's, cancels the pointer as
+    // it starts, and no pointerup follows its drop.
+    ['a cancelled pointer', (target) => pointer(target, 'pointercancel', { buttons: 0 })],
+    ['a move with no button held', (target) => pointer(target, 'pointermove', { buttons: 0 })],
+    ['the window losing focus', () => window.dispatchEvent(new Event('blur'))],
+  ])('ends with %s', async (_, end) => {
+    const node = mountNode();
+    await node.run();
+    const [canvas] = node.canvases();
+
+    pointer(document.body, 'pointerdown');
+    expect(canvas.style.pointerEvents).toBe('none');
+    end(document.body);
+    expect(canvas.style.pointerEvents).toBe('');
+  });
+
+  test('on another map makes this one ignore the pointer, and a press on its own canvas does not', async () => {
+    const first = mountNode('map-1');
+    await first.run();
+    const second = mountNode('map-2');
+    await second.run();
+    const [one] = first.canvases();
+    const [other] = second.canvases();
+
+    // The drag that pans the first map passes over the second one.
+    pointer(one, 'pointerdown');
+    expect(one.style.pointerEvents).toBe('');
+    expect(other.style.pointerEvents).toBe('none');
+    pointer(one, 'pointerup', { buttons: 0 });
+    expect(other.style.pointerEvents).toBe('');
+  });
+
+  test('with the right button leaves the canvas alone: autk-map does not pan with it', async () => {
+    const node = mountNode();
+    await node.run();
+    const [canvas] = node.canvases();
+
+    pointer(document.body, 'pointerdown', { button: 2, buttons: 2 });
+    expect(canvas.style.pointerEvents).toBe('');
+    pointer(document.body, 'pointerup', { button: 2, buttons: 0 });
+  });
+
+  test('is no longer watched for a canvas the next run replaced, nor once the node left', async () => {
+    const node = mountNode();
+    await node.run();
+    const [replaced] = node.canvases();
+    await node.run();
+    const [shown] = node.canvases();
+    expect(shown).not.toBe(replaced);
+
+    pointer(document.body, 'pointerdown');
+    expect(replaced.style.pointerEvents).toBe('');
+    expect(shown.style.pointerEvents).toBe('none');
+
+    // A node that leaves the page during the press gives its canvas the pointer
+    // back, and later presses leave the canvas alone.
+    node.unmount();
+    expect(shown.style.pointerEvents).toBe('');
+    pointer(document.body, 'pointerup', { buttons: 0 });
+    pointer(document.body, 'pointerdown');
+    expect(shown.style.pointerEvents).toBe('');
+    pointer(document.body, 'pointerup', { buttons: 0 });
+  });
 });
