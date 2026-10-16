@@ -332,7 +332,7 @@ def test_reads_do_not_trip_the_spec_lock_guard(file_db_app, user_id):
     from utk_curio.backend.app.users.models import User
 
     assert db.session.execute(select(User.name)).scalars().all() == ["Alice"]
-    assert db.session.in_transaction()
+    assert db.session().in_transaction()
 
     with storage.spec_write_lock(str(user_id), "after-a-read"):
         assert db.session.execute(select(User.name)).scalars().all() == ["Alice"]
