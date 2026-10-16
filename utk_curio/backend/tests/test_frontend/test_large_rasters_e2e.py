@@ -121,9 +121,10 @@ CAP_WORDS = (
 ABSOLUTE_LINES = (*DIFFERENCE_LINES, "], absolute=True)")
 
 #: The longest the page may stop answering while an Autark map draws SCOUT's
-#: whole flood grid. On test-gpu, Chrome stops for 6.8 to 8.3 s with autk-map
-#: 4.1.1, which builds a color scale for every cell, and for 4.3 to 5.0 s with
-#: autk-map from urban-toolkit/autark#118, which builds one for the raster.
+#: whole flood grid. On test-gpu, with this test alone, Chrome stops for 6.8 to
+#: 8.3 s with autk-map 4.1.1, which builds a color scale for every cell, and
+#: for 4.3 to 5.0 s with autk-map from urban-toolkit/autark#118, which builds
+#: one for the raster; inside the whole GPU suite, 8.5 to 8.7 s and 5.3 s.
 STALL_LIMIT_MS = 5900
 #: How many times the map draws the raster while the timer runs.
 DRAWS = 3
