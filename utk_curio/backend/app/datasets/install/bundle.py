@@ -328,6 +328,18 @@ def _bundle_parent(dest: Path) -> str | None:
     return parent if isinstance(parent, str) and parent else None
 
 
+def _holds_bundle(dest: Path, bundle_spec: dict[str, Any]) -> bool:
+    """Whether *dest* holds this bundle: the ``bundle.json`` it would be
+    written with, and every part that lists. An artifact id names one output
+    for good, so a bundle of the same parent artifact holds the same parts."""
+    try:
+        if (dest / "data" / "bundle.json").read_text(encoding="utf-8") != json.dumps(bundle_spec, indent=2):
+            return False
+    except OSError:
+        return False
+    return all((dest / part["file"]).is_file() for part in bundle_spec["parts"])
+
+
 def install_computed_bundle_for_node(
     user_key: str,
     parts: list[BundlePart],
@@ -346,11 +358,15 @@ def install_computed_bundle_for_node(
     ``bundle.json`` records *container*, the one the output holds its parts in
     (``BUNDLE_CONTAINERS``), and a dict part's ``key``. Writing again the output
     the folder already holds (the same *parent_artifact_id*) keeps the
-    dataset's dates.
+    dataset's dates, and leaves the folder as it is when it holds every part
+    (:func:`_holds_bundle`, ``installer.keep_installed_output``).
 
     A *dataflow_id* is required — see ``install_computed_file_for_node`` (#166).
     """
-    from utk_curio.backend.app.datasets.install.installer import InstallResult
+    from utk_curio.backend.app.datasets.install.installer import (
+        InstallResult,
+        keep_installed_output,
+    )
 
     if not dataflow_id:
         raise InstallerError(
@@ -368,53 +384,18 @@ def install_computed_bundle_for_node(
         _names_one_output(parent_artifact_id) and _bundle_parent(dest) == parent_artifact_id
     )
 
-    if dest.exists():
-        shutil.rmtree(dest, ignore_errors=True)
-    parts_dir = dest / "data" / "parts"
-    parts_dir.mkdir(parents=True, exist_ok=True)
-
     bundle_spec: dict[str, Any] = {
         "version": 1,
         "parentArtifactId": parent_artifact_id,
         "container": container,
         "parts": [],
     }
-
+    part_files: list[tuple[BundlePart, str]] = []
     for part in parts:
         suffix = FORMAT_TO_EXTENSION.get(part.format, ".json")
         safe_kind = part.kind.replace("_", "-")[:24] or "part"
         filename = f"{part.index:02d}_{safe_kind}{suffix}"
-        dest_file = parts_dir / filename
-
-        if part.source_path is not None and part.source_path.is_file():
-            if part.source_path.name.endswith(".json.zlib"):
-                # list/dict artifacts are stored zlib-compressed, but the bundle
-                # part is declared as plain .json — decompress into the part file
-                # so preview/loader json.load gets real JSON, not compressed bytes.
-                import zlib
-
-                dest_file.write_bytes(zlib.decompress(part.source_path.read_bytes()))
-            else:
-                shutil.copy2(part.source_path, dest_file)
-                if part.kind in FRAME_KINDS:
-                    _write_frame_sidecar(dest_file, part.meta_json)
-        elif part.kind in {"int", "float", "bool", "str", "null"}:
-            _serialize_scalar_part(dest_file, part.kind, part.artifact_id)
-        else:
-            # Best-effort: write placeholder pointing at artifact id.
-            dest_file.write_text(
-                json.dumps(
-                    {
-                        "artifactId": part.artifact_id,
-                        "kind": part.kind,
-                        "note": "Source file was not available at install time.",
-                    },
-                    indent=2,
-                ),
-                encoding="utf-8",
-            )
-
-        rel_file = f"data/parts/{filename}"
+        part_files.append((part, filename))
         bundle_spec["parts"].append({
             "index": part.index,
             **({"key": part.key} if part.key is not None else {}),
@@ -422,12 +403,9 @@ def install_computed_bundle_for_node(
             "kind": part.kind,
             "format": part.format,
             "artifactId": part.artifact_id,
-            "file": rel_file,
+            "file": f"data/parts/{filename}",
             **_layer_of(part.meta_json),
         })
-
-    bundle_path = dest / "data" / "bundle.json"
-    bundle_path.write_text(json.dumps(bundle_spec, indent=2), encoding="utf-8")
 
     created_at, updated_at = _computed_dates(held, same_output=same_output)
     part_count = len(bundle_spec["parts"])
@@ -468,6 +446,48 @@ def install_computed_bundle_for_node(
         producer_dataflow_name=dataflow_name,
         upstream_inputs=list(upstream_inputs) if upstream_inputs else None,
     )
+    if same_output and held is not None and _holds_bundle(dest, bundle_spec):
+        return keep_installed_output(user_key, dest, manifest_obj)
+
+    if dest.exists():
+        shutil.rmtree(dest, ignore_errors=True)
+    parts_dir = dest / "data" / "parts"
+    parts_dir.mkdir(parents=True, exist_ok=True)
+
+    for part, filename in part_files:
+        dest_file = parts_dir / filename
+
+        if part.source_path is not None and part.source_path.is_file():
+            if part.source_path.name.endswith(".json.zlib"):
+                # list/dict artifacts are stored zlib-compressed, but the bundle
+                # part is declared as plain .json: decompress into the part file
+                # so preview/loader json.load gets real JSON, not compressed bytes.
+                import zlib
+
+                dest_file.write_bytes(zlib.decompress(part.source_path.read_bytes()))
+            else:
+                shutil.copy2(part.source_path, dest_file)
+                if part.kind in FRAME_KINDS:
+                    _write_frame_sidecar(dest_file, part.meta_json)
+        elif part.kind in {"int", "float", "bool", "str", "null"}:
+            _serialize_scalar_part(dest_file, part.kind, part.artifact_id)
+        else:
+            # Best-effort: write placeholder pointing at artifact id.
+            dest_file.write_text(
+                json.dumps(
+                    {
+                        "artifactId": part.artifact_id,
+                        "kind": part.kind,
+                        "note": "Source file was not available at install time.",
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+
+    bundle_path = dest / "data" / "bundle.json"
+    bundle_path.write_text(json.dumps(bundle_spec, indent=2), encoding="utf-8")
+
     write_manifest(manifest_obj, dest)
     try:
         manifest = load_dataset_manifest(dest)
