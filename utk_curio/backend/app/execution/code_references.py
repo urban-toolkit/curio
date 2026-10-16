@@ -54,7 +54,10 @@ INPUT_REFERENCE_RE = re.compile(r"^input_(\d+|\?)(?::([^.]+))?(?:\.(.+))?$")
 #: sandbox's ``util/input_names.py``.
 LEGACY_INPUT_REFERENCE_RE = re.compile(r"^input\s+(\d+|\?)((?:[:.].*)?)$")
 
-#: An input's name and nothing else, which no widget takes.
+#: An input's name and nothing else, which no widget takes
+#: (:func:`input_name_problem`). Kept in sync with ``INPUT_NAME_ONLY_PATTERN``
+#: in ``widgetModel.ts`` and with the widget name's ``not`` in
+#: ``docs/schemas/node-package.v4.json``.
 INPUT_NAME_ONLY_RE = re.compile(r"^input_\d+$")
 
 #: What a shared reference starts with. Kept in sync with ``SHARED_PREFIX`` in
@@ -611,6 +614,16 @@ def check_widget_value(widget: dict, value) -> str | None:
     return "Unknown widget type."
 
 
+def input_name_problem(name: str) -> str | None:
+    """Why a widget may not be named *name*, or None: ``input_<k>`` names one
+    of the node's inputs, in its code as in its chips. The Widgets tab and a
+    Parameter node refuse it (:func:`check_widget_def`), and so does a package
+    manifest for a template's widgets (``packages/repositories/manifests.py``)."""
+    if INPUT_NAME_ONLY_RE.match(name):
+        return f"{name} names one of the node's inputs. Pick another name."
+    return None
+
+
 def check_widget_def(definition: dict, others=(), parameter: bool = False) -> str | None:
     """What is wrong with a widget being added, or None: ``checkWidgetDef`` in
     ``widgetModel.ts``, what the Widgets tab checks a widget with. *others*
@@ -619,9 +632,8 @@ def check_widget_def(definition: dict, others=(), parameter: bool = False) -> st
     name = definition.get("name")
     if not isinstance(name, str) or not WIDGET_NAME_RE.match(name):
         return "A name is letters, digits and underscores, and does not start with a digit."
-    # ``input_<k>`` names one of the node's inputs, in its code as in its chips.
-    if INPUT_NAME_ONLY_RE.match(name):
-        return f"{name} names one of the node's inputs. Pick another name."
+    if problem := input_name_problem(name):
+        return problem
     if any(isinstance(w, dict) and w.get("name") == name for w in others):
         return f"Another Parameter node is named {name}." if parameter else f"This node already has a widget named {name}."
     kind = definition.get("type")
