@@ -94,6 +94,7 @@ from .utils import (
     dismiss_toasts,
     drag_to_canvas,
     frame_node,
+    in_project_card,
     lit_marks,
     mark_point,
     node_locator,
@@ -101,6 +102,7 @@ from .utils import (
     play_node,
     run_node_and_wait,
     save_dataflow,
+    scenario_card_button,
     set_node_code,
     stub_db_login,
     wait_for_drawer_closed,
@@ -2183,9 +2185,10 @@ def _drag_on_camera(ctx: Ctx, start, end, *, dragging: str | None = None) -> Non
 
 
 def scene_scenarios(ctx: Ctx) -> None:
-    """Example 06 run and saved, its Scenarios panel, and one of its scenarios
-    collapsed into a box. The save is what the Scenario Catalog shows and what
-    a drop copies, so scenariocatalog and scenariodrop come after this one."""
+    """Example 06 run and saved, its scenarios in the Scenario Catalog drawer's
+    In project tab, and one of them collapsed into a box. The save is what the
+    Scenario Catalog shows and what a drop copies, so scenariocatalog and
+    scenariodrop come after this one."""
     page, tour = ctx.page, ctx.tour
     project = _account_project(ctx, WHATIF_NAME)
     ctx.state["whatif"] = project
@@ -2200,25 +2203,29 @@ def scene_scenarios(ctx: Ctx) -> None:
     save_dataflow(page)
     page.set_viewport_size(STILL_SIZE)
     page.wait_for_timeout(1500)
-
-    tour.click(_menu(page, "View"), force=True)
-    tour.click(page.get_by_role("button", name="Show scenarios", exact=True))
-    card = page.get_by_test_id(f"scenario-card-{WHATIF_BASELINE}")
-    card.wait_for(state="visible", timeout=15000)
+    # Framed before the drawer opens over the canvas's right side.
     _fit_view(page, padding=0.06)
+
+    tour.click(page.get_by_role("button", name="Scenario Catalog", exact=True))
+    drawer = page.locator(f'{DRAWER_SCENARIOS}[aria-hidden="false"]')
+    drawer.wait_for(state="visible", timeout=15000)
+    tour.click(drawer.get_by_role("button", name=re.compile(r"^In project")))
+    card = in_project_card(page, WHATIF_BASELINE)
+    card.wait_for(state="visible", timeout=15000)
     # Pointing at a scenario's card marks its fixed context on the canvas.
-    tour.focus(card.get_by_label("Scenario name"), hold=600)
-    box = card.get_by_label("Scenario name").bounding_box()
-    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    tour.focus(card, hold=600)
+    box = card.bounding_box()
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + 24)
     tour.beat(1500)
-    _still_with_boxes(ctx, "scenarios-panel", {"panel": '[data-testid="scenarios-panel"]'})
+    _still_with_boxes(ctx, "scenarios-in-project", {"drawer": f"{DRAWER_SCENARIOS} aside"})
 
     # Baseline, collapsed into one box that lists its context and outcomes. Its
     # box is drawn where its first node stood, clear of the other scenarios.
-    tour.click(page.get_by_test_id(f"scenario-card-{WHATIF_BASELINE}").get_by_role("button", name="Collapse"))
+    tour.click(scenario_card_button(page, WHATIF_BASELINE, "Collapse"))
     collapsed = _box(page, WHATIF_BASELINE)
     collapsed.wait_for(state="attached", timeout=10000)
-    tour.click(page.get_by_role("button", name="Close the Scenarios panel"))
+    page.keyboard.press("Escape")
+    wait_for_drawer_closed(page, DRAWER_SCENARIOS)
     _frame_with_boxes(page, [WHATIF_POOL], (230, 140, 1870, 1160))
     collapsed.wait_for(state="visible", timeout=10000)
     page.wait_for_function(

@@ -50,6 +50,35 @@
   text-decoration: underline;
 }
 
+/* In project: a scenario's buttons, a row under its card, in the catalogs'
+   two treatments (PackageCard.module.css: the dark fill acts, the bordered
+   light one takes away). Two classes deep, so the row's smaller box wins over
+   the shared buttons' whatever order the stylesheets load in. */
+.cardControls {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cardControls > button,
+.inProjectActions > button {
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  font-size: var(--curio-font-size-sm);
+  white-space: nowrap;
+}
+
+/* On top of the In project tab: the commands that make scenarios of the
+   canvas selection. */
+.inProjectActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
 .retry {
   margin-left: 8px;
   border: 0;

@@ -1,6 +1,6 @@
 import React from "react";
 
-import DataflowThumbnail from "../../DataflowThumbnail";
+import DataflowThumbnail, { type ThumbnailHighlight } from "../../DataflowThumbnail";
 import type { ScenarioRow } from "../../../services/scenarioCatalog";
 import { ScenarioName, scenarioNodeCount } from "./scenarioFacts";
 import styles from "../../packages/publishing/PackageCard.module.css";
@@ -13,6 +13,15 @@ export interface ScenarioCardProps {
   /** With these, the whole card is a drag source onto the canvas. */
   onDragStart?: (event: React.DragEvent<HTMLElement>) => void;
   onDragEnd?: () => void;
+  /** In the In project tab: what can be done to this dataflow's scenario, a
+   *  row of buttons under the card. */
+  controls?: React.ReactNode;
+  /** In the In project tab: the pointer entering (true) or leaving (false)
+   *  the card, which marks the scenario's fixed context on the canvas. */
+  onPoint?: (on: boolean) => void;
+  /** The scenario's nodes marked on the graph, when they are known. */
+  highlight?: ThumbnailHighlight | null;
+  testId?: string;
 }
 
 /**
@@ -21,10 +30,12 @@ export interface ScenarioCardProps {
  * The Model drawer's card body: an avatar with the way into the details
  * beneath it, a title and ONE meta line, then the description. The avatar is
  * the project's graph, the picture that tells two scenarios apart; which of its
- * nodes the scenario holds shows in the details, which load them. The whole
- * card is the drag source, as a model card is: dropped on the canvas, the
- * scenario arrives as a copy. The card changes nothing in its project, where
- * the scenario is edited.
+ * nodes the scenario holds shows in the details, which load them. In Browse
+ * all the whole card is the drag source, as a model card is: dropped on the
+ * canvas, the scenario arrives as a copy, and the card changes nothing in its
+ * project, where the scenario is edited. In the In project tab the scenario is
+ * this dataflow's: the card marks its nodes on the graph and carries its
+ * buttons.
  */
 export const ScenarioCard: React.FC<ScenarioCardProps> = ({
   scenario,
@@ -32,6 +43,10 @@ export const ScenarioCard: React.FC<ScenarioCardProps> = ({
   onOpenProject,
   onDragStart,
   onDragEnd,
+  controls,
+  onPoint,
+  highlight = null,
+  testId,
 }) => {
   const detailsLabel = `View ${scenario.name} (${scenario.project.name}) details`;
   const draggable = Boolean(onDragStart);
@@ -42,9 +57,12 @@ export const ScenarioCard: React.FC<ScenarioCardProps> = ({
       /* Same attribute the browse cards carry, so a scenario shares one
          identifier across surfaces. */
       data-scenario-key={scenario.key}
+      data-testid={testId}
       draggable={draggable || undefined}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
+      onMouseEnter={onPoint ? () => onPoint(true) : undefined}
+      onMouseLeave={onPoint ? () => onPoint(false) : undefined}
     >
       <div className={styles.cardAvatarCol}>
         <button
@@ -54,7 +72,7 @@ export const ScenarioCard: React.FC<ScenarioCardProps> = ({
           aria-label={detailsLabel}
           onClick={() => onOpenDetails?.(scenario)}
         >
-          <DataflowThumbnail preview={scenario.preview} />
+          <DataflowThumbnail preview={scenario.preview} highlight={highlight} />
         </button>
         {onOpenDetails ? (
           <button
@@ -86,8 +104,8 @@ export const ScenarioCard: React.FC<ScenarioCardProps> = ({
         ) : null}
       </div>
 
-      <div className={styles.cardAction}>
-        {onOpenProject ? (
+      {onOpenProject ? (
+        <div className={styles.cardAction}>
           <button
             type="button"
             className={local.openLink}
@@ -96,8 +114,10 @@ export const ScenarioCard: React.FC<ScenarioCardProps> = ({
           >
             Open source project
           </button>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
+
+      {controls ? <div className={local.cardControls}>{controls}</div> : null}
     </article>
   );
 };

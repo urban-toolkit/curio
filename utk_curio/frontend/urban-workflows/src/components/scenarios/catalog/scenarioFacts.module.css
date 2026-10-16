@@ -81,3 +81,41 @@
   font-size: 13px;
   color: var(--curio-text-meta);
 }
+
+/* The name, color and description of a scenario of the open dataflow, edited
+   in its details: a label column and a field column. */
+.fields {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: center;
+  margin: 0 0 20px;
+}
+
+.fieldLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--curio-text-secondary);
+}
+
+.fieldInput {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: 6px;
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.fieldColor {
+  width: 44px;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: 6px;
+  background: var(--curio-card-bg);
+  cursor: pointer;
+}

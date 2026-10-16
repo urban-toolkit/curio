@@ -16,6 +16,7 @@ import { PackagePaletteProvider } from "../providers/packages";
 import { DatasetPaletteProvider } from "../providers/DatasetPaletteContext";
 import { ProjectLoader } from "./ProjectLoader";
 import { CanvasDatasetDetailsProvider } from "./datasets/catalog/CanvasDatasetDetailsProvider";
+import { ScenarioUiProvider } from "./scenarios/scenarioUi";
 
 /**
  * Everything a dataflow's nodes need, for either route that renders them.
@@ -60,6 +61,9 @@ export const DataflowProviders: React.FC<{
             {/* Inside FlowProvider like its peers: a model's details ask
                 before a link leaves a dataflow with unsaved changes. */}
             <ModelCatalogDrawerProvider>
+              {/* The scenario pointed at in the Scenario drawer's In project
+                  tab, which the canvas marks: above both. */}
+              <ScenarioUiProvider>
               {/* Beside the Model drawer's, for the same reason: opening a
                   scenario's project asks before leaving unsaved changes. */}
               <ScenarioCatalogDrawerProvider>
@@ -75,6 +79,7 @@ export const DataflowProviders: React.FC<{
                 </StarterProvider>
               </DiscoveryCatalogDrawerProvider>
               </ScenarioCatalogDrawerProvider>
+              </ScenarioUiProvider>
             </ModelCatalogDrawerProvider>
           </AgentCatalogDrawerProvider>
         </DatasetCatalogDrawerProvider>

@@ -7,16 +7,19 @@ With the total selected on the canvas, the drawer opened from the top bar's
 Scenario Catalog button shows, on its In project tab, the scenario's card, and
 the tab counts this dataflow's one scenario. Then:
 
-1. Add selected puts the selected total into the scenario, and the scenario's
-   frame on the canvas grows around it. Frames before and after.
-2. Its details change its name and its color: the card, the frame on the
-   canvas and the saved dataflow follow.
-3. Pointing at its card outlines its fixed context, the loader, on the canvas,
+1. Pointing at its card outlines its fixed context, the loader, on the canvas,
    and nothing else; leaving the card takes the outline away.
-4. Run scenario runs it: the loader, which has not run, and both levers, each
+2. Add selected puts the selected total into the scenario, and the scenario's
+   frame on the canvas grows around it; Remove selected takes it out again.
+3. Its details change its name and its color: the card and the frame on the
+   canvas follow.
+4. Run scenario runs it: the loader, which has not run, and its lever, each
    once.
+5. The saved dataflow keeps the new name and color, and the total, still
+   selected, is added again for the frames, before and after Add selected.
 
-Python nodes only, so it runs on any runner.
+Every check comes before the frames, so a frame with no baseline yet hides
+none. Python nodes only, so it runs on any runner.
 
 Run::
 
@@ -43,7 +46,6 @@ from .utils import (
     require_owner_view,
     require_project_page,
     require_user_auth,
-    save_dataflow,
     save_dataflow_and_settle_header,
     save_workflow_test_screenshot,
     scenario_card_button,
@@ -62,7 +64,7 @@ TOTAL = "inp-total"
 SCENARIO = "inp-doubled"
 DATAFLOW = "Heights study"
 NAME, COLOR = "Doubled", "#e86a3c"
-NEW_NAME, NEW_COLOR = "Doubled and totalled", "#2f8f4a"
+NEW_NAME, NEW_COLOR = "Twice as tall", "#2f8f4a"
 TEST_NAME = "test_the_in_project_tab_adds_renames_marks_and_runs_a_scenario"
 
 #: The canvas zoom the frames show: every node left of where the drawer opens.
@@ -200,9 +202,6 @@ def test_the_in_project_tab_adds_renames_marks_and_runs_a_scenario(
     # The total, selected on the canvas before the drawer opens.
     _select_with_shift_drag(page, TOTAL)
     assert page.evaluate(_SELECTED_JS) == [TOTAL], f"the Shift-drag selected {page.evaluate(_SELECTED_JS)}"
-    # Saved before each frame, so the header shows the save whatever the
-    # autosave reached (#584).
-    save_dataflow_and_settle_header(page)
 
     drawer = open_in_project_tab(page)
     expect(drawer.get_by_role("button", name=re.compile(r"^In project"))).to_have_text("In project1")
@@ -211,28 +210,27 @@ def test_the_in_project_tab_adds_renames_marks_and_runs_a_scenario(
     expect(card).to_contain_text(f"{DATAFLOW} · 1 node")
     assert page.evaluate(_FRAMED_JS, [SCENARIO, SCALE]), "the scenario's frame does not surround its node"
     assert not page.evaluate(_FRAMED_JS, [SCENARIO, TOTAL]), "the frame surrounds the total before it is added"
-    _park_on_the_canvas(page)
-    save_workflow_test_screenshot(
-        page, "scenarios-in-project-before-add", test_name=TEST_NAME, fit_reactflow=False, sweep_toasts=True,
-    )
 
-    # 1. Add selected: the total joins the scenario, and its frame grows around it.
+    # 1. Pointing at its card outlines its fixed context, the loader, alone.
+    assert page.evaluate(_OUTLINED_JS, FIXED_CLASS) == []
+    card.hover()
+    page.wait_for_function(f"() => ({_OUTLINED_JS})('{FIXED_CLASS}').length > 0", timeout=10000)
+    assert page.evaluate(_OUTLINED_JS, FIXED_CLASS) == [LOADER], page.evaluate(_OUTLINED_JS, FIXED_CLASS)
+    drawer.get_by_placeholder("Search scenarios, projects…").hover()
+    page.wait_for_function(f"() => ({_OUTLINED_JS})('{FIXED_CLASS}').length === 0", timeout=10000)
+
+    # 2. Add selected: the total joins the scenario, and its frame grows around
+    # it. Remove selected takes it out again.
     scenario_card_button(page, SCENARIO, "Add selected").click()
     expect(card).to_contain_text(f"{DATAFLOW} · 2 nodes")
     page.wait_for_function(_FRAMED_JS, arg=[SCENARIO, TOTAL], timeout=10000)
     assert page.evaluate(_FRAMED_JS, [SCENARIO, SCALE])
-    close_scenario_drawer(page)
-    save_dataflow_and_settle_header(page)
-    [saved] = _saved_scenarios(current_server, token, project_id)
-    assert sorted(saved["nodes"]) == sorted([SCALE, TOTAL]), saved
-    open_in_project_tab(page)
-    expect(card).to_contain_text(f"{DATAFLOW} · 2 nodes")
-    _park_on_the_canvas(page)
-    save_workflow_test_screenshot(
-        page, "scenarios-in-project-after-add", test_name=TEST_NAME, fit_reactflow=False, sweep_toasts=True,
-    )
+    scenario_card_button(page, SCENARIO, "Remove selected").click()
+    expect(card).to_contain_text(f"{DATAFLOW} · 1 node")
+    page.wait_for_function(f"(args) => !({_FRAMED_JS})(args)", arg=[SCENARIO, TOTAL], timeout=10000)
+    assert page.evaluate(_FRAMED_JS, [SCENARIO, SCALE])
 
-    # 2. Its details change its name and its color; the card and the frame follow.
+    # 3. Its details change its name and its color; the card and the frame follow.
     details = open_scenario_details(page, SCENARIO)
     name = details.get_by_label("Scenario name")
     expect(name).to_have_value(NAME)
@@ -246,28 +244,44 @@ def test_the_in_project_tab_adds_renames_marks_and_runs_a_scenario(
     close_scenario_details(page)
     expect(card).to_contain_text(NEW_NAME)
 
-    # 3. Pointing at its card outlines its fixed context, the loader, alone.
-    assert page.evaluate(_OUTLINED_JS, FIXED_CLASS) == []
-    card.hover()
-    page.wait_for_function(f"() => ({_OUTLINED_JS})('{FIXED_CLASS}').length > 0", timeout=10000)
-    assert page.evaluate(_OUTLINED_JS, FIXED_CLASS) == [LOADER], page.evaluate(_OUTLINED_JS, FIXED_CLASS)
-    drawer.get_by_placeholder("Search scenarios, projects…").hover()
-    page.wait_for_function(f"() => ({_OUTLINED_JS})('{FIXED_CLASS}').length === 0", timeout=10000)
-
-    # 4. Run scenario runs the loader, which has not run, and both levers.
+    # 4. Run scenario runs the loader, which has not run, and its lever.
     sent = SandboxRuns(page, token, project_id)
     scenario_card_button(page, SCENARIO, "Run scenario").click()
     close_scenario_drawer(page)
-    for node_id in (LOADER, SCALE, TOTAL):
+    for node_id in (LOADER, SCALE):
         status = wait_for_node_settled(page, node_id, timeout_ms=120000)
         assert status == "done", f"{node_id} ended {status}: {read_node_error_text(node_locator(page, node_id))}"
     wait_for_run_guard_released(page, timeout_ms=60000)
     executed = sent.stop()
-    assert sorted(executed) == sorted([LOADER, SCALE, TOTAL]), (
-        f"Run scenario sent {executed}: the loader it reads has not run, so it runs once, then each lever once"
+    assert sorted(executed) == sorted([LOADER, SCALE]), (
+        f"Run scenario sent {executed}: the loader it reads has not run, so it runs once, then its lever once"
     )
 
-    # The saved dataflow keeps the new name, the new color and both nodes.
-    save_dataflow(page)
+    # 5. The saved dataflow keeps the new name and color. Saved before each
+    # frame, so the header shows the save whatever the autosave reached (#584).
+    save_dataflow_and_settle_header(page)
+    [saved] = _saved_scenarios(current_server, token, project_id)
+    assert (saved["name"], saved["color"], saved["nodes"]) == (NEW_NAME, NEW_COLOR, [SCALE]), saved
+    # The selection made before the drawer first opened is still there.
+    assert page.evaluate(_SELECTED_JS) == [TOTAL], f"the selection is now {page.evaluate(_SELECTED_JS)}"
+
+    # The frames, before and after Add selected.
+    open_in_project_tab(page)
+    expect(card).to_contain_text(f"{DATAFLOW} · 1 node")
+    _park_on_the_canvas(page)
+    save_workflow_test_screenshot(
+        page, "scenarios-in-project-before-add", test_name=TEST_NAME, fit_reactflow=False, sweep_toasts=True,
+    )
+    scenario_card_button(page, SCENARIO, "Add selected").click()
+    expect(card).to_contain_text(f"{DATAFLOW} · 2 nodes")
+    page.wait_for_function(_FRAMED_JS, arg=[SCENARIO, TOTAL], timeout=10000)
+    close_scenario_drawer(page)
+    save_dataflow_and_settle_header(page)
     [saved] = _saved_scenarios(current_server, token, project_id)
     assert (saved["name"], saved["color"], sorted(saved["nodes"])) == (NEW_NAME, NEW_COLOR, sorted([SCALE, TOTAL])), saved
+    open_in_project_tab(page)
+    expect(card).to_contain_text(f"{DATAFLOW} · 2 nodes")
+    _park_on_the_canvas(page)
+    save_workflow_test_screenshot(
+        page, "scenarios-in-project-after-add", test_name=TEST_NAME, fit_reactflow=False, sweep_toasts=True,
+    )
