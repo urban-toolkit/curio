@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 
 from utk_curio.backend.app.common.record_clock import utc_now
-from utk_curio.backend.app.execution.code_references import widget_name_or_type_problem
+from utk_curio.backend.app.execution.code_references import check_widget_def, widget_with_default
 from utk_curio.backend.app.packages.domain.manifest import (
     ManifestError,
     package_manifest_from_dict,
@@ -34,27 +34,27 @@ def load_package_manifest(package_dir_path: Path) -> PackageManifest:
     manifest = package_manifest_from_dict(
         raw, manifest_path=manifest_path, dir_name=package_dir_path.name,
     )
-    _refuse_badly_named_or_typed_widgets(manifest, manifest_path)
+    _refuse_widgets_the_widgets_tab_refuses(manifest, manifest_path)
     return manifest
 
 
-def _refuse_badly_named_or_typed_widgets(manifest: PackageManifest, manifest_path: Path) -> None:
-    """Refuse a template widget whose name or type the Widgets tab refuses,
-    with its words: a name of another shape than the schema's widget name
-    ``pattern`` (``has space``), an input's name (``input_0``, ``input_1``,
-    ...), a name an earlier widget of the template has, or a type outside the
-    schema's widget ``type`` enum. The canvas would drop all of them but the
-    input's name, and keep the first of two widgets that share a name. The
-    rule is ``widget_name_or_type_problem``, which ``check_widget_def`` (the
-    Widgets tab's check, ``checkWidgetDef``) reads first; a widget's options
-    and its default, which a manifest may leave out, are not checked here. It
-    is checked here and not in ``domain/manifest.py`` because the domain
-    imports no other feature (``tests/test_packages/test_layering.py``); every
-    install, listing and build reads its manifest through this function."""
+def _refuse_widgets_the_widgets_tab_refuses(manifest: PackageManifest, manifest_path: Path) -> None:
+    """Refuse a template widget the Widgets tab refuses, with its words. The
+    widget is checked as the canvas makes it, with its kind's default when it
+    gives none (``widget_with_default``), by ``check_widget_def``, the twin of
+    the Widgets tab's ``checkWidgetDef``, beside the template's earlier
+    widgets: its name (the schema's widget name ``pattern``, not an input's
+    name such as ``input_0``, not an earlier widget's), its type (the schema's
+    widget ``type`` enum), its options (choices for a choice kind, each once;
+    a slider's bounds; a minimum below the maximum; a step above 0) and its
+    default. The manifest keeps the widget as written. It is checked here and
+    not in ``domain/manifest.py`` because the domain imports no other feature
+    (``tests/test_packages/test_layering.py``); every install, listing and
+    build reads its manifest through this function."""
     for i, template in enumerate(manifest.templates):
         widgets = template.widgets or []
         for j, widget in enumerate(widgets):
-            if problem := widget_name_or_type_problem(widget, widgets[:j]):
+            if problem := check_widget_def(widget_with_default(widget), widgets[:j]):
                 raise ManifestError(f"{manifest_path}.templates[{i}].widgets[{j}]: {problem}")
 
 

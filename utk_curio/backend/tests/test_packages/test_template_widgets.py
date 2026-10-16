@@ -12,6 +12,13 @@ breaks either rule is refused as the Widgets tab and a Parameter node refuse
 the name, with the same words. Its type is one of the Widgets tab's kinds, and
 no two widgets of a template share a name: a manifest that breaks either is
 refused as the Widgets tab refuses the widget, with the same words.
+
+Each widget gets the Widgets tab's whole check, its options and its default
+too, as the canvas makes the widget: with its kind's default when it gives
+none, and without its malformed options. A manifest with a widget the tab
+would refuse is refused with the tab's sentence and the widget's place; the
+cases are the Widgets tab's own table, ``widgetChecks.cases.json``, which Jest
+runs through ``normalizeWidgets`` and ``checkWidgetDef``.
 """
 from __future__ import annotations
 
@@ -30,6 +37,10 @@ from utk_curio.backend.tests.test_packages.conftest import _manifest_dict
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SCHEMA = json.loads((REPO_ROOT / "docs/schemas/node-package.v4.json").read_text(encoding="utf-8"))
+#: The Widgets tab's own cases, which Jest runs through ``checkWidgetDef``.
+TAB_CASES = json.loads(
+    (REPO_ROOT / "utk_curio/frontend/urban-workflows/src/utils/widgets/widgetChecks.cases.json").read_text(encoding="utf-8")
+)
 
 WIDGETS = [
     {"name": "src", "type": "text", "label": "Raster path", "default": "./a.tif"},
@@ -199,13 +210,38 @@ def test_a_package_declaring_an_unknown_type_is_not_installed(install_package):
     assert str(refused.value).endswith(f".templates[0].widgets[0]: {check_widget_def(widget)}")
 
 
+#: What the Widgets tab needs of a kind besides a name and a type: a slider's
+#: bounds, and a choice kind's choices. Without them it is refused (the
+#: declared cases of ``widgetChecks.cases.json``, below).
+KIND_NEEDS = {
+    "slider": {"min": 0, "max": 10},
+    "choice": {"choices": ["a"]},
+    "checkbox-group": {"choices": ["a"]},
+    "multi-select": {"choices": ["a"]},
+}
+
+
 @pytest.mark.parametrize("kind", SCHEMA["$defs"]["widget"]["properties"]["type"]["enum"])
 def test_every_kind_the_schema_names_is_kept(tmp_path, kind):
     """The schema's kinds are the Widgets tab's (``test_the_widget_types`` in
     ``test_execution/test_code_references.py``): a template may declare a
-    widget of any of them, without a default. Any other type is refused, above."""
-    widgets = [{"name": "w", "type": kind}]
+    widget of any of them, without a default, given what the tab needs of its
+    kind (``KIND_NEEDS``). Any other type is refused, above."""
+    widget = {"name": "w", "type": kind}
+    if kind in KIND_NEEDS:
+        widget["options"] = KIND_NEEDS[kind]
+    widgets = [widget]
     assert _load(tmp_path, _with_template(hasWidgets=True, widgets=widgets)).templates[0].widgets == widgets
+
+
+def test_the_kinds_that_need_options_are_refused_without_them():
+    """``KIND_NEEDS`` names only kinds of the schema, and the declared cases
+    refuse exactly those kinds without options or a default."""
+    kinds = SCHEMA["$defs"]["widget"]["properties"]["type"]["enum"]
+    assert set(KIND_NEEDS) <= set(kinds)
+    refused = {case["widget"]["type"] for case in TAB_CASES["declared"]
+               if case["expected"] and "options" not in case["widget"] and "default" not in case["widget"]}
+    assert refused == set(KIND_NEEDS)
 
 
 def test_two_widgets_of_one_name_are_refused_as_the_widgets_tab_refuses_the_second(tmp_path):
@@ -235,6 +271,84 @@ def test_one_name_in_two_templates_is_kept(tmp_path):
     raw["templates"].append({**raw["templates"][0], "id": "other-kind", "label": "Other"})
     manifest = _load(tmp_path, raw)
     assert [template.widgets for template in manifest.templates] == [[_number("factor")], [_number("factor")]]
+
+
+def _loads_or_is_refused_with(tmp_path, widgets: list, expected: str | None) -> None:
+    """A template declaring *widgets* loads with them when *expected* is None,
+    and is refused at its last widget with the sentence *expected* otherwise."""
+    raw = _with_template(hasWidgets=True, widgets=widgets)
+    if expected is None:
+        assert _load(tmp_path, raw).templates[0].widgets == widgets
+        return
+    with pytest.raises(ManifestError) as refused:
+        _load(tmp_path, raw)
+    assert str(refused.value).endswith(f".templates[0].widgets[{len(widgets) - 1}]: {expected}")
+
+
+#: The Widgets tab's cases for a widget beside the node's other widgets. A
+#: Parameter node's own cases are about other Parameter nodes, not a template.
+DEFINITIONS = [case for case in TAB_CASES["definitions"] if not case.get("parameter")]
+
+
+def test_every_definition_but_a_parameter_nodes_is_a_templates():
+    left_out = [case for case in TAB_CASES["definitions"] if case not in DEFINITIONS]
+    assert DEFINITIONS and all(case.get("parameter") is True for case in left_out)
+
+
+@pytest.mark.parametrize("case", DEFINITIONS, ids=[case["name"] for case in DEFINITIONS])
+def test_a_template_widget_is_refused_as_the_widgets_tab_refuses_it(tmp_path, case):
+    """Each of the Widgets tab's cases, as a template's widget after the
+    node's other widgets: the manifest loads when the tab takes the widget, and
+    is refused at the widget's place with the tab's sentence when it does not,
+    for its options and its default as for its name and its type."""
+    _loads_or_is_refused_with(tmp_path, [*case.get("others", []), case["def"]], case["expected"])
+
+
+@pytest.mark.parametrize("case", TAB_CASES["declared"], ids=[case["name"] for case in TAB_CASES["declared"]])
+def test_a_template_widget_is_checked_as_the_canvas_makes_it(tmp_path, case):
+    """A widget as a template declares it: the canvas gives it its kind's
+    default when it gives none, and drops its malformed options, before the
+    Widgets tab checks it (Jest runs these cases through ``normalizeWidgets``
+    and ``checkWidgetDef``). The manifest gets the same answer."""
+    _loads_or_is_refused_with(tmp_path, [case["widget"]], case["expected"])
+
+
+def _tab_says(name: str) -> str:
+    """The Widgets tab's sentence for its case *name*."""
+    (expected,) = [case["expected"] for case in TAB_CASES["definitions"] if case["name"] == name]
+    assert expected
+    return expected
+
+
+def test_a_package_declaring_a_default_outside_its_choices_is_not_installed(install_package):
+    widget = {"name": "season", "type": "choice", "label": "Season", "default": "autumn",
+              "options": {"choices": ["summer", "winter"]}}
+    with pytest.raises(InstallerError) as refused:
+        install_package("guest", _with_template(hasWidgets=True, widgets=[widget]))
+    assert str(refused.value).endswith(f".templates[0].widgets[0]: {_tab_says('a choice whose default is not one of them')}")
+
+
+#: The shipped folders whose manifest declares template widgets: the Node and
+#: Model Catalogs' packages, and the bring-your-own-model example.
+SHIPPED_WITH_WIDGETS = sorted(
+    path.parent
+    for path in [*(REPO_ROOT / "packages").glob("*/manifest.json"),
+                 *(REPO_ROOT / "docs/bring-your-own-model").glob("*@*/manifest.json")]
+    if any(template.get("widgets") for template in json.loads(path.read_text(encoding="utf-8")).get("templates", []))
+)
+
+
+def test_the_shipped_packages_with_widgets_are_found():
+    assert any(folder.parent.name == "packages" for folder in SHIPPED_WITH_WIDGETS)
+    assert any(folder.parent.name == "bring-your-own-model" for folder in SHIPPED_WITH_WIDGETS)
+
+
+@pytest.mark.parametrize("folder", SHIPPED_WITH_WIDGETS, ids=[folder.name for folder in SHIPPED_WITH_WIDGETS])
+def test_every_shipped_template_widget_loads(folder):
+    """The shipped packages declare only widgets the Widgets tab takes, as the
+    canvas makes them, so each loads with its widgets."""
+    manifest = load_package_manifest(folder)
+    assert any(template.widgets for template in manifest.templates)
 
 
 class TestTheSchema:
