@@ -67,8 +67,9 @@ NAME, COLOR = "Doubled", "#e86a3c"
 NEW_NAME, NEW_COLOR = "Twice as tall", "#2f8f4a"
 TEST_NAME = "test_the_in_project_tab_adds_renames_marks_and_runs_a_scenario"
 
-#: The canvas zoom the frames show: every node left of where the drawer opens.
-ZOOM = 0.5
+#: The canvas zoom the frames show: every node between the tools rail and
+#: where the drawer opens, under the dataflow's title.
+ZOOM = 0.45
 #: The drawer's width (``CatalogDrawerShell.module.css``: ``min(520px, 100vw)``).
 DRAWER_WIDTH = 520
 #: The class the canvas gives the fixed context of the scenario pointed at.
@@ -91,9 +92,9 @@ def _spec() -> dict:
             "timestamp": 1789193389280,
             "provenance_id": DATAFLOW,
             "nodes": [
-                node(LOADER, "curio.builtin/data-loading", 160, 260, LOADER_CODE),
-                node(SCALE, "curio.builtin/computation-analysis", 760, 260, SCALE_CODE),
-                node(TOTAL, "curio.builtin/computation-analysis", 760, 760, TOTAL_CODE),
+                node(LOADER, "curio.builtin/data-loading", 400, 340, LOADER_CODE),
+                node(SCALE, "curio.builtin/computation-analysis", 1045, 340, SCALE_CODE),
+                node(TOTAL, "curio.builtin/computation-analysis", 1045, 840, TOTAL_CODE),
             ],
             "edges": [
                 {"id": "e-load-scale", "source": LOADER, "target": SCALE,
@@ -141,17 +142,28 @@ def _saved_scenarios(server: str, token: str, project_id: str) -> list[dict]:
     return api_json(f"{server}/api/projects/{project_id}", token)["spec"]["dataflow"].get("scenarios") or []
 
 
-def _assert_left_of_the_drawer(page, node_ids: list[str]) -> None:
-    """Every node shows on the canvas beside the open drawer, under the top bar."""
+# The bottom of what is fixed over the top of the canvas: the top bar, and the
+# dataflow's title with its category chips.
+_TOP_OVERLAYS_JS = """() => Math.max(...[
+    ...document.querySelectorAll('[data-curio-menu-bar]'),
+    ...document.querySelectorAll('[data-curio-canvas-title], [data-curio-canvas-title] [data-curio-category-chips]'),
+].map((el) => el.getBoundingClientRect().bottom))"""
+
+
+def _assert_beside_the_drawer(page, node_ids: list[str]) -> None:
+    """Every node shows whole between the tools rail and where the drawer
+    opens, under the top bar and the dataflow's title."""
     window = page.viewport_size
-    bar = page.locator('header[data-curio-menu-bar="true"]').first.bounding_box()
+    rail = page.locator("#tools-palette-dock").bounding_box()
+    top = page.evaluate(_TOP_OVERLAYS_JS)
     for node_id in node_ids:
         box = node_locator(page, node_id).bounding_box()
-        assert box and box["x"] >= 0 and box["x"] + box["width"] <= window["width"] - DRAWER_WIDTH, (
+        assert box and box["x"] >= rail["x"] + rail["width"], f"{node_id} at {box} is under the tools rail {rail}"
+        assert box["x"] + box["width"] <= window["width"] - DRAWER_WIDTH, (
             f"{node_id} at {box} is not left of the drawer"
         )
-        assert box["y"] >= bar["y"] + bar["height"] and box["y"] + box["height"] <= window["height"], (
-            f"{node_id} at {box} is not under the top bar, in the window"
+        assert box["y"] >= top and box["y"] + box["height"] <= window["height"], (
+            f"{node_id} at {box} is not under the top bar and the title (bottom {top}), in the window"
         )
 
 
@@ -197,7 +209,7 @@ def test_the_in_project_tab_adds_renames_marks_and_runs_a_scenario(
     for node_id in (LOADER, SCALE, TOTAL):
         node_locator(page, node_id).wait_for(state="visible", timeout=45000)
     set_canvas_zoom(page, ZOOM)
-    _assert_left_of_the_drawer(page, [LOADER, SCALE, TOTAL])
+    _assert_beside_the_drawer(page, [LOADER, SCALE, TOTAL])
 
     # The total, selected on the canvas before the drawer opens.
     _select_with_shift_drag(page, TOTAL)
