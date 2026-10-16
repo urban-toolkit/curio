@@ -75,7 +75,8 @@ export const CHOICE_KINDS: readonly WidgetKind[] = ["choice", "checkbox-group", 
 export const NUMERIC_KINDS: readonly WidgetKind[] = ["number", "slider"];
 
 /** A widget name: what a reference names. Kept in sync with
- * `WIDGET_NAME_RE` in `utk_curio/backend/app/execution/code_references.py`. */
+ * `WIDGET_NAME_RE` in `utk_curio/backend/app/execution/code_references.py`,
+ * which a package manifest's template widgets are checked with too. */
 export const WIDGET_NAME_PATTERN = String.raw`^[A-Za-z_][A-Za-z0-9_]{0,63}$`;
 export const WIDGET_NAME_RE = new RegExp(WIDGET_NAME_PATTERN);
 

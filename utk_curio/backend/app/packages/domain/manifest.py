@@ -355,7 +355,7 @@ class TemplateManifest:
                 f"{backend_contract.HANDLER_NAME_RE.pattern} when present"
             )
         widgets_raw = raw.get("widgets")
-        # A widget named as an input is read (``input_0``) is refused where the
+        # A widget's name (its shape, and not ``input_0``) is checked where the
         # manifest is read, ``repositories/manifests.py``: the rule is the
         # Widgets tab's, in another feature, which the domain does not import.
         if widgets_raw is not None and not (
