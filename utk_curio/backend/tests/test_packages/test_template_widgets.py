@@ -9,7 +9,9 @@ marker in its code.
 A widget's name is letters, digits and underscores, not starting with a digit,
 and not an input's name, ``input_0``, ``input_1`` and so on: a manifest that
 breaks either rule is refused as the Widgets tab and a Parameter node refuse
-the name, with the same words.
+the name, with the same words. Its type is one of the Widgets tab's kinds, and
+no two widgets of a template share a name: a manifest that breaks either is
+refused as the Widgets tab refuses the widget, with the same words.
 """
 from __future__ import annotations
 
@@ -165,6 +167,74 @@ def test_a_well_shaped_name_is_kept(tmp_path, name):
     assert check_widget_def(_number(name)) is None
     widgets = [_number(name)]
     assert _load(tmp_path, _with_template(hasWidgets=True, widgets=widgets)).templates[0].widgets == widgets
+
+
+#: Types outside the schema's widget ``type`` enum, which the Widgets tab
+#: refuses and the canvas drops.
+UNKNOWN_TYPES = {
+    "the old marker's type": "INPUT_TEXT",
+    "a control Curio has no widget for": "colour",
+    "a kind in capitals": "Number",
+    "an empty type": "",
+}
+
+
+@pytest.mark.parametrize("kind", list(UNKNOWN_TYPES.values()), ids=list(UNKNOWN_TYPES))
+def test_a_widget_of_an_unknown_type_is_refused_as_the_widgets_tab_refuses_it(tmp_path, kind):
+    """The canvas drops a widget whose type is not one of the Widgets tab's
+    kinds, so the manifest is refused, with the words the Widgets tab refuses
+    the type with. The widget has no default, which a manifest may leave out."""
+    widget = {"name": "tint", "type": kind, "label": "Tint"}
+    tab_says = check_widget_def(widget)
+    assert tab_says
+    with pytest.raises(ManifestError) as refused:
+        _load(tmp_path, _with_template(hasWidgets=True, widgets=[WIDGETS[0], widget]))
+    assert str(refused.value).endswith(f".templates[0].widgets[1]: {tab_says}")
+
+
+def test_a_package_declaring_an_unknown_type_is_not_installed(install_package):
+    widget = {"name": "tint", "type": "colour", "label": "Tint", "default": "red"}
+    with pytest.raises(InstallerError) as refused:
+        install_package("guest", _with_template(hasWidgets=True, widgets=[widget]))
+    assert str(refused.value).endswith(f".templates[0].widgets[0]: {check_widget_def(widget)}")
+
+
+@pytest.mark.parametrize("kind", SCHEMA["$defs"]["widget"]["properties"]["type"]["enum"])
+def test_every_kind_the_schema_names_is_kept(tmp_path, kind):
+    """The schema's kinds are the Widgets tab's (``test_the_widget_types`` in
+    ``test_execution/test_code_references.py``): a template may declare a
+    widget of any of them, without a default. Any other type is refused, above."""
+    widgets = [{"name": "w", "type": kind}]
+    assert _load(tmp_path, _with_template(hasWidgets=True, widgets=widgets)).templates[0].widgets == widgets
+
+
+def test_two_widgets_of_one_name_are_refused_as_the_widgets_tab_refuses_the_second(tmp_path):
+    """The canvas keeps the first of two widgets that share a name and drops
+    the other, so the manifest is refused at the second, with the words the
+    Widgets tab refuses a name the node already has with. Neither has a
+    default, which a manifest may leave out."""
+    first = {"name": "factor", "type": "number", "label": "Factor"}
+    second = {"name": "factor", "type": "text", "label": "Factor as text"}
+    tab_says = check_widget_def(second, [first])
+    assert tab_says
+    with pytest.raises(ManifestError) as refused:
+        _load(tmp_path, _with_template(hasWidgets=True, widgets=[first, WIDGETS[0], second]))
+    assert str(refused.value).endswith(f".templates[0].widgets[2]: {tab_says}")
+
+
+def test_a_package_declaring_one_name_twice_is_not_installed(install_package):
+    widgets = [_number("factor"), _number("factor")]
+    with pytest.raises(InstallerError) as refused:
+        install_package("guest", _with_template(hasWidgets=True, widgets=widgets))
+    assert str(refused.value).endswith(f".templates[0].widgets[1]: {check_widget_def(widgets[1], widgets[:1])}")
+
+
+def test_one_name_in_two_templates_is_kept(tmp_path):
+    """Each template makes a node of its own, and a name is unique in its node."""
+    raw = _with_template(hasWidgets=True, widgets=[_number("factor")])
+    raw["templates"].append({**raw["templates"][0], "id": "other-kind", "label": "Other"})
+    manifest = _load(tmp_path, raw)
+    assert [template.widgets for template in manifest.templates] == [[_number("factor")], [_number("factor")]]
 
 
 class TestTheSchema:
