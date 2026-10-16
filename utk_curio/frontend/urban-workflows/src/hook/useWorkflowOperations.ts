@@ -1093,8 +1093,15 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
 
     // Serialize project saves so concurrent callers (e.g. two producing nodes
     // finishing back-to-back) can never run two creates in parallel and POST
-    // duplicate projects. Each request runs strictly after all prior ones; once
-    // the first create has set projectIdRef, every chained save takes the update
+    // duplicate projects, nor two updates of one dataflow at once: overlapping
+    // PUTs held the database for SQLite's busy timeout (#909) and let a
+    // dashboard read outputs mid-rewrite (#941). Every save of the open
+    // dataflow comes through here (Save, the pin's save, the autosave, install
+    // saves, server runs, the agent drop, the catalog drawers); only the
+    // dashboard's Save layout, the one writer on its page, saves directly.
+    //
+    // Each request runs strictly after all prior ones; once the first create
+    // has set projectIdRef, every chained save takes the update
     // branch. Because saveCurrentProject reads dataflowDatasetsRef/projectIdRef/
     // projectNameRef live (not from a closure), a save enqueued after a ref was
     // staged persists that ref even if it rode in on an already-running chain.
@@ -1326,13 +1333,15 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         if (presentation) return;
         const id = window.setInterval(async () => {
             try {
-                await saveCurrentProject();
+                // Queued: a tick that comes due while a save is out waits for
+                // it instead of going out beside it (#909).
+                await requestProjectSave();
             } catch (err) {
                 console.error("Auto-save failed:", err);
             }
         }, 30_000);
         return () => window.clearInterval(id);
-    }, [projectId, projectDirty, saveCurrentProject, blockGuestSaves, viewerMode, presentation]);
+    }, [projectId, projectDirty, requestProjectSave, blockGuestSaves, viewerMode, presentation]);
 
     const saveAsNewProject = useCallback(async (name: string) => {
         if (blockGuestSaves) {
