@@ -1,0 +1,1 @@
+`urban-toolkit-autk-map-4.1.1-curio.1.tgz` is `@urban-toolkit/autk-map` packed from urban-toolkit/autark#118 (a raster's colors built with one color function, not a d3 scale per cell) at `60cebe0e5f91590866ed0db3f6d7e87018ecb885`; Curio installs it in place of autk-map 4.1.1 from npm until Autark releases that change.
