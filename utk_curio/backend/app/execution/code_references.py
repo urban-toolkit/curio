@@ -503,16 +503,31 @@ def _finite(x) -> bool:
     return isinstance(x, (int, float)) and not isinstance(x, bool) and x == x and x not in (float("inf"), float("-inf"))
 
 
+def _choices(options: dict) -> list:
+    """A widget's choices as the canvas reads them (``normalizeOptions`` in
+    ``widgetModel.ts``): the texts of a list."""
+    choices = options.get("choices")
+    return [c for c in choices if isinstance(c, str)] if isinstance(choices, list) else []
+
+
+def _number_option(options: dict, key: str):
+    """A widget's ``min``, ``max`` or ``step`` as the canvas reads it
+    (``normalizeOptions``): a finite number, else None."""
+    value = options.get(key)
+    return value if _finite(value) else None
+
+
 def default_value_for(kind, options) -> object:
     """A kind's value when a widget gives no default, as ``defaultValueFor`` in
     ``widgetModel.ts`` writes it."""
     options = options if isinstance(options, dict) else {}
     if kind in ("number", "slider"):
-        return options["min"] if _finite(options.get("min")) else 0
+        low = _number_option(options, "min")
+        return 0 if low is None else low
     if kind == "checkbox":
         return False
     if kind == "choice":
-        choices = [c for c in options.get("choices") or [] if isinstance(c, str)]
+        choices = _choices(options)
         return choices[0] if choices else ""
     if kind in ("checkbox-group", "multi-select", "number-list", "text-list"):
         return []
@@ -640,9 +655,7 @@ def widget_name_or_type_problem(definition: dict, others=(), parameter: bool = F
     and its default, or None: a name :func:`widget_name_problem` refuses, a
     name one of *others* has, or a type outside :data:`WIDGET_KINDS`. The
     canvas drops such a widget (``normalizeWidgets``), unless it only has an
-    input's name. :func:`check_widget_def` checks these first, and a package
-    manifest checks only these for a template's widgets, whose default it may
-    leave out (``packages/repositories/manifests.py``)."""
+    input's name. :func:`check_widget_def` checks these first."""
     name = definition.get("name")
     if problem := widget_name_problem(name):
         return problem
@@ -657,19 +670,24 @@ def check_widget_def(definition: dict, others=(), parameter: bool = False) -> st
     """What is wrong with a widget being added, or None: ``checkWidgetDef`` in
     ``widgetModel.ts``, what the Widgets tab checks a widget with. *others*
     are the node's other widgets, whose names it must not reuse; for a
-    Parameter node's widget (*parameter*), the other Parameter nodes'."""
+    Parameter node's widget (*parameter*), the other Parameter nodes'. Its
+    options are read as the canvas reads them before the tab checks them
+    (:func:`_choices`, :func:`_number_option`), so a malformed option counts
+    as missing. A package manifest's template widgets are checked here too,
+    each with its kind's default when it gives none
+    (:func:`widget_with_default`, ``packages/repositories/manifests.py``)."""
     if problem := widget_name_or_type_problem(definition, others, parameter):
         return problem
     kind = definition.get("type")
     options = definition.get("options") if isinstance(definition.get("options"), dict) else {}
     if kind in CHOICE_KINDS:
-        choices = options.get("choices") if isinstance(options.get("choices"), list) else []
+        choices = _choices(options)
         if not choices:
             return "Give at least one choice."
         if len(set(choices)) != len(choices):
             return "Each choice can appear only once."
     if kind in NUMERIC_KINDS:
-        low, high, step = options.get("min"), options.get("max"), options.get("step")
+        low, high, step = (_number_option(options, key) for key in ("min", "max", "step"))
         if kind == "slider" and (low is None or high is None):
             return "A slider needs a minimum and a maximum."
         if low is not None and high is not None and not low < high:
@@ -679,11 +697,22 @@ def check_widget_def(definition: dict, others=(), parameter: bool = False) -> st
     return check_widget_value(definition, definition.get("default"))
 
 
+def widget_with_default(widget: dict) -> dict:
+    """*widget* with its kind's default (:func:`default_value_for`) when it
+    gives none, or ``null``, as ``normalizeWidgets`` in ``widgetModel.ts``
+    gives it one. A dataflow's widgets (:func:`normalize_widgets`), an
+    agent's (``agents/domain/widget_grammar.py``) and a package template's
+    (``packages/repositories/manifests.py``) get theirs here."""
+    if widget.get("default") is None:
+        return {**widget, "default": default_value_for(widget.get("type"), widget.get("options"))}
+    return widget
+
+
 def normalize_widgets(raw) -> list:
     """The well-formed widgets in *raw* (a spec's ``metadata.widgets``), as
     ``normalizeWidgets`` in ``widgetModel.ts`` keeps them: each name once, of
     the :data:`WIDGET_NAME_RE` shape matched whole, as the browser matches it.
-    A widget without a default gets its kind's, as the browser gives it."""
+    A widget without a default gets its kind's (:func:`widget_with_default`)."""
     if not isinstance(raw, list):
         return []
     out, seen = [], set()
@@ -696,9 +725,7 @@ def normalize_widgets(raw) -> list:
         if entry.get("type") not in WIDGET_KINDS:
             continue
         seen.add(name)
-        if entry.get("default") is None:
-            entry = {**entry, "default": default_value_for(entry.get("type"), entry.get("options"))}
-        out.append(entry)
+        out.append(widget_with_default(entry))
     return out
 
 

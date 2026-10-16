@@ -20,8 +20,8 @@ import json
 from utk_curio.backend.app.execution.code_references import (
     check_widget_def,
     check_widget_value,
-    default_value_for,
     normalize_widgets,
+    widget_with_default,
 )
 
 #: The keys a widget has, in the order a node stores them.
@@ -131,9 +131,7 @@ def parse_widgets(raw: object, where: str) -> tuple[list[dict], list[str]]:
         if shape:
             problems.extend(shape)
             continue
-        widget = {key: entry[key] for key in WIDGET_KEYS if entry.get(key) is not None}
-        if "default" not in widget:
-            widget["default"] = default_value_for(widget["type"], widget.get("options"))
+        widget = widget_with_default({key: entry[key] for key in WIDGET_KEYS if entry.get(key) is not None})
         message = check_widget_def(widget, kept)
         if message is None and "value" in widget:
             message = check_widget_value(widget, widget["value"])
