@@ -270,6 +270,8 @@ class TestThePatternsAreShared:
         assert package["properties"]["name"]["not"] == {"pattern": INPUT_NAME_ONLY_RE.pattern}
 
     def test_the_widget_types(self):
+        """The Widgets tab, an agent's widget and a package manifest refuse a
+        type outside these kinds; the schemas refuse it in an editor too."""
         from utk_curio.backend.app.execution.code_references import WIDGET_KINDS
 
         block = re.search(r"WIDGET_KINDS = \[(.*?)\]", self._ts("widgetModel.ts"), re.S)
@@ -367,6 +369,21 @@ class TestTheSpecCarriesWidgets:
         ]
         assert normalize_widgets(raw) == [raw[0]]
         assert normalize_widgets({"name": "ok"}) == []
+
+    def test_a_name_that_ends_in_a_line_break_is_dropped_as_the_browser_drops_it(self):
+        """The browser's ``normalizeWidgets`` reads the name pattern as
+        ECMA-262 does, where ``$`` ends the text, so it drops this widget, a
+        node's own or a Parameter node's. Python's ``re.match`` lets a final
+        line break through."""
+        from utk_curio.backend.app.execution.code_references import normalize_shared, normalize_widgets
+
+        widget = {"name": "factor\n", "type": "number", "default": 1}
+        assert normalize_widgets([widget]) == []
+        assert normalize_shared([widget]) == []
+        spec = parse_workflow_dict({"dataflow": {"nodes": [
+            {"id": "a", "type": "curio.builtin/data-loading", "content": "x", "metadata": {"widgets": [widget]}},
+        ], "edges": []}})
+        assert spec.nodes[0].widgets == []
 
 
 def _spec(nodes, edges=()):
@@ -625,6 +642,16 @@ class TestSelectionTags:
             "not an object",
         ]
         assert normalize_selections(raw) == [PICKED, raw[2]]
+
+    def test_a_tag_whose_name_ends_in_a_line_break_is_dropped_as_the_browser_drops_it(self):
+        """The browser's ``normalizeSelections`` reads the name pattern as
+        ECMA-262 does, where ``$`` ends the text. Python's ``re.match`` lets a
+        final line break through."""
+        from utk_curio.backend.app.execution.code_references import normalize_selections
+
+        assert normalize_selections([{**PICKED, "name": "picked\n"}]) == []
+        spec = parse_workflow_dict(_spec([_picker("a", "x", [{**PICKED, "name": "picked\n"}])]))
+        assert spec.nodes[0].selections == []
 
     def test_the_sandbox_gets_the_ids(self, tmp_curio):
         rec = _RecordingExec()

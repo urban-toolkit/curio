@@ -65,6 +65,10 @@ describe("normalizeWidgets", () => {
     expect(normalizeWidgets({ name: "x" })).toEqual([]);
   });
 
+  test("drops a name that ends in a line break, as normalize_widgets does on the server", () => {
+    expect(normalizeWidgets([{ name: "factor\n", type: "number", default: 1 }])).toEqual([]);
+  });
+
   test("keeps every option the controls read, and drops malformed ones", () => {
     const [slider, choice] = normalizeWidgets([
       { name: "s", type: "slider", default: 2, options: { min: 0, max: 10, step: 0.5, units: "m", extra: 1 } },

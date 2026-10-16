@@ -240,6 +240,14 @@ class TestThePromptFacts:
         for stem in contracts.PROMPT_TEMPLATES:
             assert "$TYPE$" not in contracts.render_prompt(stem), stem
 
+    def test_a_widget_name_that_ends_in_a_line_break_is_refused(self):
+        """A marker's argument may hold a line break, and a widget name is read
+        whole, as the Widgets tab reads it (``widgetChecks.cases.json``).
+        Python's ``re.match`` lets a final line break through."""
+        for marker in ("{{widgets.reference:factor\n}}", "{{widgets.shared:season\n}}"):
+            with pytest.raises(contracts.PromptTemplateError, match="not a widget name"):
+                contracts.render_template(marker)
+
     def test_the_note_palette_is_the_named_colors(self):
         from utk_curio.backend.app.packages.domain.node_appearance import NAMED_COLORS
 

@@ -214,6 +214,10 @@ describe("saved tags", () => {
     ]);
   });
 
+  test("drop a name that ends in a line break, as normalize_selections does on the server", () => {
+    expect(normalizeSelections([{ name: "picked\n", node: "chart", column: "osm_id", ids: [1] }])).toEqual([]);
+  });
+
   test("a new tag is named after its view, unlike the node's other tags", () => {
     expect(suggestTagName("Buildings (Vega-Lite)", [])).toBe("buildings_vega_lite");
     expect(suggestTagName("2D plot", [])).toBe("_2d_plot");
