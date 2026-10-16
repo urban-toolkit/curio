@@ -75,8 +75,11 @@ def _note_writer(conn, _cursor, statement, _parameters, _context, _executemany):
 @event.listens_for(Engine, "commit")
 @event.listens_for(Engine, "rollback")
 def _forget_writer(conn):
-    """The write ends with its transaction."""
-    conn.info.pop(_WRITER_THREAD, None)
+    """The write ends with its transaction. A closed or invalidated connection
+    is left alone: it holds no transaction, and reading its ``info`` would
+    reconnect it."""
+    if not conn.closed and not conn.invalidated:
+        conn.info.pop(_WRITER_THREAD, None)
 
 
 def session_holds_write_lock() -> bool:
@@ -90,9 +93,10 @@ def session_holds_write_lock() -> bool:
     if not has_app_context():
         return False
     try:
-        if not db.session.in_transaction():
+        session = db.session()  # this app context's Session, not the scoped proxy
+        if not session.in_transaction():
             return False
-        connection = db.session.connection()
+        connection = session.connection()
         dbapi_connection = connection.connection.dbapi_connection
     except (RuntimeError, SQLAlchemyError):
         # An app without this SQLAlchemy instance, or a session whose failed
