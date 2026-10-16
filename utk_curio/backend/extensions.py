@@ -1,12 +1,15 @@
 import random
+import re
 import sqlite3
+import threading
 import time
 
+from flask import has_app_context
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
 
 db = SQLAlchemy()
@@ -45,6 +48,59 @@ def _sqlite_pragmas(dbapi_connection, _record):
         cursor.execute("PRAGMA busy_timeout=30000")
     finally:
         cursor.close()
+
+
+# ---------------------------------------------------------------------------
+# Who holds the write lock
+# ---------------------------------------------------------------------------
+
+# The statements the sqlite3 driver opens a transaction for: it keeps its
+# legacy transaction control here, so a SELECT runs outside any transaction
+# and only these begin one, which holds SQLite's write lock until the commit
+# or rollback.
+_WRITE_STATEMENT = re.compile(r"\s*(?:INSERT|UPDATE|DELETE|REPLACE)\b", re.IGNORECASE)
+_WRITER_THREAD = "curio_writer_thread"
+
+
+@event.listens_for(Engine, "before_cursor_execute")
+def _note_writer(conn, _cursor, statement, _parameters, _context, _executemany):
+    """Note the thread that writes on a connection, for
+    :func:`session_holds_write_lock`. The in-memory test database hands every
+    thread one shared connection, so a transaction open on it is not always
+    the asking thread's."""
+    if _WRITE_STATEMENT.match(statement):
+        conn.info[_WRITER_THREAD] = threading.get_ident()
+
+
+@event.listens_for(Engine, "commit")
+@event.listens_for(Engine, "rollback")
+def _forget_writer(conn):
+    """The write ends with its transaction."""
+    conn.info.pop(_WRITER_THREAD, None)
+
+
+def session_holds_write_lock() -> bool:
+    """Whether this thread's session has written and not yet committed or
+    rolled back, and so holds SQLite's write lock.
+
+    Reads never count: they open no transaction (see ``_WRITE_STATEMENT``).
+    Unflushed changes do not count either; they write when they are flushed.
+    False outside an app context, where there is no session.
+    """
+    if not has_app_context():
+        return False
+    try:
+        if not db.session.in_transaction():
+            return False
+        connection = db.session.connection()
+        dbapi_connection = connection.connection.dbapi_connection
+    except (RuntimeError, SQLAlchemyError):
+        # An app without this SQLAlchemy instance, or a session whose failed
+        # flush has already rolled its transaction back: no write lock held.
+        return False
+    return bool(getattr(dbapi_connection, "in_transaction", False)) and (
+        connection.info.get(_WRITER_THREAD) == threading.get_ident()
+    )
 
 
 # ---------------------------------------------------------------------------
