@@ -853,7 +853,7 @@ failed.
 | Variable | Purpose |
 |---|---|
 | `CURIO_TOUR` | Must be `1`; the module skips otherwise. |
-| `CURIO_TOUR_SCENES` | Comma-separated scene ids (see `SCENES`); default all. A subset that starts mid-tour stub-logs-in and opens a scratch dataflow first. |
+| `CURIO_TOUR_SCENES` | Comma-separated scene ids (see `SCENES`); default all. A subset that starts mid-tour stub-logs-in and opens a scratch dataflow first. A scene that starts from another scene's work brings that scene along (`NEEDS`: `build` records `datacatalog` too). |
 | `CURIO_TOUR_OUT` | Output directory (default `.curio/tour/`, which is gitignored). |
 | `CURIO_TOUR_SPEED` | Pacing multiplier: `2` halves every hold, `0.8` lengthens them. Caption holds are derived from their word count, so this scales reading time too. |
 
