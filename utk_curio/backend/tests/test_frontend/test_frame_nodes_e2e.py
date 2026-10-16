@@ -17,6 +17,15 @@ window. An init script, installed before the app loads, defers every
 which take that function when the app loads, wait as they do on a runner that
 draws no frame.
 
+The wait reads the viewport in the page, so a long task on the page's main
+thread leaves it no time to read. In #932 (runs 38663620211 and 38762616708)
+decoding SCOUT's 2592x2064 flood grid did that: the wait gave up after its
+10 s with the fit, React Flow's viewport and the drawn transform all equal,
+the page having made fewer than the four reads a pass needs. One test keeps
+the page busy for 11 s in the fit's first call and checks that ``frame_nodes``
+still frames the node; a guard moves the viewport every 50 ms and checks that
+the wait still fails, in well under a minute.
+
 Run::
 
     CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/test_frame_nodes_e2e.py -v
@@ -27,6 +36,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
+import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from .utils import (
@@ -44,6 +54,14 @@ if TYPE_CHECKING:
 NEAR = "frame-near"
 MIDDLE = "frame-middle"
 FAR = "frame-far"
+
+#: How long the fit's first call keeps the page busy: one long task, longer
+#: than the 10 s the viewport wait allowed before #932.
+BUSY_MS = 11_000
+
+#: The longest a viewport wait may take to give up on a viewport that never
+#: holds. It used to give up after 10 s.
+GIVE_UP_WITHIN_S = 60
 
 # Before the app's own scripts, so what takes requestAnimationFrame when the
 # app loads (d3's timers, which move React Flow's viewport) goes through it.
@@ -94,6 +112,44 @@ _IN_WINDOW_JS = """(id) => {
     return r.left >= 0 && r.top >= 0 && r.right <= window.innerWidth && r.bottom <= window.innerHeight;
 }"""
 
+# The fit the viewport wait calls, wrapped so its first call keeps the page's
+# main thread busy for *ms* before it fits, as one long task (a raster decode)
+# does: the page reads nothing until it ends. It records how long it was busy.
+_BUSY_FIRST_FIT_JS = """(ms) => {
+    const fit = window.__curio_fitViewWithMenuOffset;
+    window.__curioTestFit = fit;
+    window.__curioTestBusyMs = null;
+    window.__curio_fitViewWithMenuOffset = (options) => {
+        if (window.__curioTestBusyMs === null) {
+            const start = performance.now();
+            while (performance.now() - start < ms) { /* one long task */ }
+            window.__curioTestBusyMs = performance.now() - start;
+        }
+        return fit(options);
+    };
+}"""
+
+_RESTORE_FIT_JS = """() => {
+    if (window.__curioTestFit) window.__curio_fitViewWithMenuOffset = window.__curioTestFit;
+}"""
+
+# Moves the viewport every *ms*, framing *ids* in turn through the fit hook,
+# which sets the viewport at once, with no animation frame. Counts its moves.
+_KEEP_MOVING_JS = """({ ids, ms }) => {
+    const fit = window.__curio_fitViewWithMenuOffset;
+    window.__curioTestMoves = 0;
+    window.__curioTestMover = setInterval(() => {
+        const id = ids[window.__curioTestMoves % ids.length];
+        fit({ nodes: [{ id }], padding: 0.2, duration: 0, includeHiddenNodes: true, maxZoom: 1 });
+        window.__curioTestMoves += 1;
+    }, ms);
+}"""
+
+_STOP_MOVING_JS = """() => {
+    clearInterval(window.__curioTestMover);
+    return window.__curioTestMoves;
+}"""
+
 
 def _spec() -> dict:
     node = lambda node_id, node_type, x, content: {  # noqa: E731
@@ -127,19 +183,15 @@ def _in_window(box: dict) -> bool:
     )
 
 
-def test_frame_nodes_brings_a_node_into_view_while_the_page_draws_no_frame(
-    app_frontend: "FrontendPage", current_server: str, page,
-):
-    require_project_page()
-    require_user_auth()
-    page.context.add_init_script(_HOLD_FRAMES_JS)
+def _open_dataflow(page, frontend_url: str, backend_url: str, *, username: str) -> None:
+    """Open the three-node dataflow and let the load's own fit finish."""
     spec = _spec()
     stub_login_and_enter_workflow(
         page,
-        frontend_url=app_frontend.base_url,
-        backend_url=current_server,
+        frontend_url=frontend_url,
+        backend_url=backend_url,
         name="Frame Nodes",
-        username="frame_nodes_e2e",
+        username=username,
         project_name="Frame nodes",
         project_spec=spec,
     )
@@ -150,6 +202,15 @@ def test_frame_nodes_brings_a_node_into_view_while_the_page_draws_no_frame(
     # finish first, or it would reframe the canvas after the near node is framed.
     page.wait_for_function(_IN_WINDOW_JS, arg=FAR, polling=100, timeout=30000)
     page.wait_for_timeout(1000)
+
+
+def test_frame_nodes_brings_a_node_into_view_while_the_page_draws_no_frame(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    require_project_page()
+    require_user_auth()
+    page.context.add_init_script(_HOLD_FRAMES_JS)
+    _open_dataflow(page, app_frontend.base_url, current_server, username="frame_nodes_e2e")
     assert page.evaluate("() => typeof window.__curioTestHoldFrames === 'function'"), (
         "the init script that holds animation frames back is not in the page"
     )
@@ -184,3 +245,64 @@ def test_frame_nodes_brings_a_node_into_view_while_the_page_draws_no_frame(
         page.evaluate("() => window.__curioTestHoldFrames(false)")
     # Frames come again once released: the hold was real.
     page.wait_for_function("() => window.__curioTestFrameRan === true", polling=100, timeout=10000)
+
+
+def test_frame_nodes_frames_a_node_after_a_long_task_keeps_the_page_from_reading(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    require_project_page()
+    require_user_auth()
+    _open_dataflow(page, app_frontend.base_url, current_server, username="frame_nodes_busy_e2e")
+    frame_nodes(page, [NEAR])
+    box = _box(page, FAR)
+    assert not _in_window(box), f"{FAR} is already in the window before it is framed: {box}"
+
+    # Nothing moves the viewport here: only the first fit is slow to return.
+    page.evaluate(_BUSY_FIRST_FIT_JS, BUSY_MS)
+    started = time.monotonic()
+    try:
+        try:
+            frame_nodes(page, [FAR])
+        except AssertionError as error:
+            raise AssertionError(
+                f"frame_nodes gave up after {time.monotonic() - started:.1f} s, although nothing "
+                "moved the viewport and the page was busy only in the first fit, for "
+                f"{page.evaluate('() => window.__curioTestBusyMs')} ms: {error}"
+            ) from None
+        took = time.monotonic() - started
+    finally:
+        page.evaluate(_RESTORE_FIT_JS)
+    busy_ms = page.evaluate("() => window.__curioTestBusyMs")
+    assert busy_ms is not None and busy_ms > 10_000, (
+        f"the first fit kept the page busy for {busy_ms} ms, no longer than the 10 s the "
+        "viewport wait used to allow, so this test proves nothing"
+    )
+    box = _box(page, FAR)
+    assert _in_window(box), (
+        f"frame_nodes returned after {took:.1f} s with {FAR} at {box}, outside the window"
+    )
+
+
+def test_frame_nodes_still_fails_while_the_viewport_keeps_moving(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    require_project_page()
+    require_user_auth()
+    _open_dataflow(page, app_frontend.base_url, current_server, username="frame_nodes_moving_e2e")
+
+    page.evaluate(_KEEP_MOVING_JS, {"ids": [NEAR, MIDDLE], "ms": 50})
+    started = time.monotonic()
+    try:
+        with pytest.raises(AssertionError, match="did not hold where the fit set it") as failure:
+            frame_nodes(page, [FAR])
+    finally:
+        moves = page.evaluate(_STOP_MOVING_JS)
+    took = time.monotonic() - started
+    assert moves >= 20, (
+        f"the viewport moved only {moves} times in the {took:.1f} s frame_nodes waited, so this "
+        "test proves nothing"
+    )
+    assert took < GIVE_UP_WITHIN_S, (
+        f"frame_nodes took {took:.1f} s to give up on a viewport that never held, not under "
+        f"{GIVE_UP_WITHIN_S} s: {failure.value}"
+    )
