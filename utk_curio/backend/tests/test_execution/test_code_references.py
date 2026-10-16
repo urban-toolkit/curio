@@ -246,12 +246,18 @@ class TestThePatternsAreShared:
         assert tag["count"]["minimum"] == SELECTION_ID_CAP + 1
 
     def test_the_name_pattern(self):
+        """The Widgets tab, a Parameter node and a package manifest refuse a
+        name of another shape; the schemas refuse it in an editor too. The
+        packages domain, which imports no other feature, keeps its own copy for
+        the widgets a function's parameters suggest."""
         from utk_curio.backend.app.execution.code_references import WIDGET_NAME_RE
+        from utk_curio.backend.app.packages.domain import function_nodes
 
         written = re.search(r"WIDGET_NAME_PATTERN = String\.raw`(.*?)`", self._ts("widgetModel.ts"))
         assert written and written.group(1) == WIDGET_NAME_RE.pattern
         for schema in self._schemas():
             assert schema["properties"]["name"]["pattern"] == WIDGET_NAME_RE.pattern
+        assert function_nodes.WIDGET_NAME_RE.pattern == WIDGET_NAME_RE.pattern
 
     def test_the_input_name_no_widget_takes(self):
         """The Widgets tab, a Parameter node and a package manifest refuse one
