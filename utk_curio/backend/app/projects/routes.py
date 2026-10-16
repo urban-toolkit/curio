@@ -178,12 +178,16 @@ def get_dashboard_payload(project_id: str):
     page that looks standalone and is not, and the owner would only find out
     when somebody opened it where the server is unreachable.
 
-    Both refusals name the dataflow too: the page server carries a refusal in
+    A tile whose saved output could not be read is a 503 that says to try
+    again, not a page with that tile drawn empty (#941).
+
+    Every refusal names the dataflow too: the page server carries a refusal in
     the page instead of the data (``cli/static_server.py``), and the page shows
     it under the dataflow's name.
     """
     from utk_curio.backend.app.projects.dashboard_payload import (
         DashboardCannotBeStandaloneError,
+        DashboardOutputUnreadableError,
         DashboardTooLargeError,
     )
 
@@ -196,6 +200,8 @@ def get_dashboard_payload(project_id: str):
         # needs no server. Named here so the owner can move the data upstream,
         # where its output is saved and travels with the page.
         return jsonify({"error": exc.describe(), "tiles": exc.offenders, "name": exc.name}), 409
+    except DashboardOutputUnreadableError as exc:
+        return jsonify({"error": exc.describe(), "nodes": exc.offenders, "name": exc.name}), 503
     except DashboardTooLargeError as exc:
         return jsonify({
             "error": exc.describe(),
