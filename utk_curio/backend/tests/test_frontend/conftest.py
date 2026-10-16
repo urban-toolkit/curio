@@ -139,6 +139,9 @@ WORKFLOW_FILES = [
     "docs/examples/24-scout-building-rasters.json",
     # One Spatial Join per operation (#576).
     "docs/examples/25-spatial-join-operations.json",
+    # One node fed by several others, in every kind of node that takes several
+    # inputs, one input a tuple (#819).
+    "docs/examples/26-several-inputs.json",
 ]
 
 

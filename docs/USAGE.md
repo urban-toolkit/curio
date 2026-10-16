@@ -623,6 +623,9 @@ input: on circle 1 it is `input_1`, and `input_1[0]` is its first item. Several
 edges into one circle, as a port that takes many has, are that circle's list,
 in edge order.
 
+[Example 26](examples/26-several-inputs.md) wires several inputs into each of
+these node kinds, with a tuple on one of them.
+
 ## Scenarios
 
 A scenario is a named selection of a dataflow's nodes, or the whole dataflow, used
