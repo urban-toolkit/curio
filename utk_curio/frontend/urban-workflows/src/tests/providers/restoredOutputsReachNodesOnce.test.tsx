@@ -98,6 +98,16 @@ jest.mock('../../providers/CollaborationProvider', () => ({
   }),
 }));
 
+// The scenario commands open the Scenario Catalog drawer, whose provider this
+// suite does not mount.
+jest.mock('../../providers/scenarioCatalog/scenarioCatalogDrawerContext', () => ({
+  useScenarioCatalogDrawer: () => ({
+    openScenarioCatalogDrawer: jest.fn(),
+    closeScenarioCatalogDrawer: jest.fn(),
+    isScenarioCatalogDrawerOpen: false,
+  }),
+}));
+
 jest.mock('../../hook/useVega', () => ({
   useVega: () => ({ handleCompileGrammar: jest.fn().mockResolvedValue(undefined) }),
 }));

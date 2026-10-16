@@ -659,18 +659,23 @@ To make one:
 Then change the copy's levers: a widget value, a line of code. Each copy remembers
 the node it was copied from.
 
-**View → Show scenarios** opens the Scenarios panel on the right of the canvas,
-under the collaboration panel when collaboration is on and that panel is open.
-For each scenario it shows its fixed context, levers and outcomes, and lets you:
+The dataflow's scenarios are in the Scenario Catalog drawer's **In project** tab:
+click **Scenario** in the top bar, then **In project**, which shows how many the
+dataflow has. Saving a selection or duplicating it as a scenario opens that tab.
+On top of it are **Save selection as scenario** and **Duplicate as scenario**,
+and each scenario's card offers:
 
-- rename it, recolor it and describe it;
 - **Run scenario**: run its levers, and of its fixed context only the nodes that
   have not run or have changed since;
-- **Collapse** or **Expand** it;
-- **Add selected** or **Remove selected** nodes;
-- **Delete** it. Its nodes stay on the canvas.
+- **Collapse** or **Expand**;
+- **Add selected** or **Remove selected**: the nodes selected on the canvas
+  before the drawer opened;
+- **Delete**. Its nodes stay on the canvas.
 
-Pointing at a scenario in the panel marks its fixed context on the canvas.
+**View details** on a card renames, recolors and describes the scenario, and
+lists its fixed context, levers and outcomes. Pointing at a card marks the
+scenario's fixed context on the canvas. In a dataflow someone shares with you,
+the tab lists the scenarios without these controls.
 
 On the canvas, an expanded scenario's nodes wear its color inside a frame, with its
 name and a **Collapse** button above. A collapsed scenario is one box in its color

@@ -63,7 +63,6 @@ jest.mock("../../components/agents/attach/AgentDockOverlay", () => ({ AgentDockO
 jest.mock("../../components/scenarios/useScenarioDrop", () => ({ useScenarioDrop: () => mockDropScenario }));
 jest.mock("../../components/scenarios/ScenarioLayers", () => ({ BOX_WIDTH: 0, boxLayout: () => ({ height: 0 }) }));
 jest.mock("../../components/scenarios/CanvasScenarioLayers", () => ({ CanvasScenarioLayers: () => null }));
-jest.mock("../../components/scenarios/ScenariosPanel", () => ({ ScenariosPanel: () => null }));
 jest.mock("../../services/datasetCatalog", () => ({
   buildDatasetLoaderNodeOptions: jest.fn(),
   hasDatasetDrag: () => false,

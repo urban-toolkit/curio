@@ -1,34 +1,39 @@
-import React, {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-} from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { ScenarioCatalogDrawer } from "../../components/scenarios/catalog";
 import { useSlideDrawerPresentation } from "../../hook/useSlideDrawerPresentation";
-
-type ScenarioCatalogDrawerContextValue = {
-  openScenarioCatalogDrawer: () => void;
-  closeScenarioCatalogDrawer: () => void;
-  isScenarioCatalogDrawerOpen: boolean;
-};
-
-const ScenarioCatalogDrawerContext = createContext<ScenarioCatalogDrawerContextValue | null>(null);
+import type { DrawerTab } from "../../services/packages";
+import {
+  ScenarioCatalogDrawerContext,
+  type OpenScenarioCatalogDrawerOptions,
+} from "./scenarioCatalogDrawerContext";
 
 /**
  * Mounts the canvas Scenario Catalog drawer and exposes open/close controls,
  * shaped like `ModelCatalogDrawerProvider`: the same two-phase slide, the same
- * scroll lock, and the drawer unmounted once its exit slide ends.
+ * scroll lock, and the drawer unmounted once its exit slide ends. It holds the
+ * drawer's tab, so a scenario command can open the drawer on In project, or
+ * turn it to In project when it is open already.
  */
 export function ScenarioCatalogDrawerProvider({ children }: { children: React.ReactNode }) {
   const {
     mounted,
     presented,
-    open: openScenarioCatalogDrawer,
+    open: present,
     close: closeScenarioCatalogDrawer,
     finishExit: finishClose,
   } = useSlideDrawerPresentation();
+  const [tab, setTab] = useState<DrawerTab>("browse");
+
+  const openScenarioCatalogDrawer = useCallback(
+    (options?: OpenScenarioCatalogDrawerOptions) => {
+      setTab(options?.tab === "installed" ? "installed" : "browse");
+      // Open already, it only turns to the tab: opening it again would slide
+      // it out of view and in again.
+      if (!presented) present();
+    },
+    [present, presented],
+  );
 
   // Gated on `mounted`, like its peers: `presented` goes false a frame into
   // the exit slide, and releasing the lock then let the page jump behind it.
@@ -54,6 +59,8 @@ export function ScenarioCatalogDrawerProvider({ children }: { children: React.Re
     ? createPortal(
         <ScenarioCatalogDrawer
           presented={presented}
+          tab={tab}
+          onTabChange={setTab}
           onRequestClose={closeScenarioCatalogDrawer}
           onExitComplete={finishClose}
         />,
@@ -67,12 +74,4 @@ export function ScenarioCatalogDrawerProvider({ children }: { children: React.Re
       {drawer}
     </ScenarioCatalogDrawerContext.Provider>
   );
-}
-
-export function useScenarioCatalogDrawer(): ScenarioCatalogDrawerContextValue {
-  const value = useContext(ScenarioCatalogDrawerContext);
-  if (!value) {
-    throw new Error("useScenarioCatalogDrawer must be used within ScenarioCatalogDrawerProvider");
-  }
-  return value;
 }

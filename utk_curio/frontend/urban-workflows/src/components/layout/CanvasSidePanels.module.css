@@ -1,5 +1,5 @@
-/* The canvas's right-hand panels (CanvasSidePanels.tsx): one column under the
-   top bar, the collaboration panel above the Scenarios panel. */
+/* The canvas's right-hand panel (CanvasSidePanels.tsx): the collaboration
+   panel, under the top bar, scrolling within the window. */
 
 .dock {
   position: absolute;

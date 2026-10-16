@@ -52,6 +52,16 @@ from .capture_waits import (  # noqa: F401
 )
 from .images import _compare_images  # noqa: F401
 from .dialogs import accept_confirm_dialog, leave_agent_badge, wait_for_drawer_closed  # noqa: F401
+from .scenario_drawer import (  # noqa: F401
+    SCENARIO_DRAWER,
+    close_scenario_details,
+    close_scenario_drawer,
+    in_project_card,
+    open_in_project_tab,
+    open_scenario_details,
+    scenario_card_button,
+    scenario_part,
+)
 from .screenshots import (  # noqa: F401
     WORKFLOW_SCREENSHOT_EXPECTED_DIR,
     dump_browser_log,

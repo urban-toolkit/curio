@@ -95,8 +95,7 @@ import { frameNodesInView, revealRectInView } from "../utils/focusDatasetNodes";
 import { scenarioCanvasView } from "../utils/scenarios/scenarioCanvasView";
 import { BOX_WIDTH, boxLayout } from "./scenarios/ScenarioLayers";
 import { CanvasScenarioLayers } from "./scenarios/CanvasScenarioLayers";
-import { ScenariosPanel } from "./scenarios/ScenariosPanel";
-import { ScenarioUiContext, type ScenarioUi } from "./scenarios/scenarioUi";
+import { useScenarioUi } from "./scenarios/scenarioUi";
 
 const FILL_STYLE: React.CSSProperties = { width: "100%", height: "100%" };
 // The notebook is a white page, as a Jupyter notebook is, under its cells.
@@ -135,15 +134,9 @@ export function MainCanvas() {
     } = useFlowContext();
     const hostedGuest = useHostedGuest();
 
-    // The Scenarios panel, and the scenario it highlights (#662). Never saved.
-    const [scenarioPanelOpen, setScenarioPanelOpen] = useState(false);
-    const [highlightedScenario, setHighlightedScenario] = useState<string | null>(null);
-    const scenarioUi = useMemo<ScenarioUi>(() => ({
-        panelOpen: scenarioPanelOpen,
-        setPanelOpen: setScenarioPanelOpen,
-        highlighted: highlightedScenario,
-        setHighlighted: setHighlightedScenario,
-    }), [scenarioPanelOpen, highlightedScenario]);
+    // The scenario pointed at in the Scenario Catalog drawer's In project tab
+    // (#662), whose fixed context the canvas marks. Never saved.
+    const { highlighted: highlightedScenario } = useScenarioUi();
 
     // What React Flow draws: the flow's own nodes and edges, with collapsed
     // scenarios hidden and their members marked, plus the boxes, frames and
@@ -656,7 +649,6 @@ export function MainCanvas() {
 
     return (
         <AgentAttachmentsProvider enabled={!isSharedView}>
-        <ScenarioUiContext.Provider value={scenarioUi}>
         {!loading ? <div
             style={{ width: "100vw", height: "100vh", backgroundColor: "#f0f0f0" }}
         >
@@ -666,7 +658,6 @@ export function MainCanvas() {
             <UpMenu />
             <CanvasSidePanels>
                 <CollaborationSidePanel />
-                {!isSharedView ? <ScenariosPanel /> : null}
             </CanvasSidePanels>
             <div
                 className="curio-canvas-drop-target"
@@ -741,7 +732,6 @@ export function MainCanvas() {
         </div> : loadingAnimation() }
         {packageNodeMenu}
         <VersionBadge />
-        </ScenarioUiContext.Provider>
         </AgentAttachmentsProvider>
     );
 }

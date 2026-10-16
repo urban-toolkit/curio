@@ -14,9 +14,10 @@ matched by their shapes.
 
 The first test drives the example as it ships:
 
-1. Its three scenarios are listed over the shared pool. Each shadow step's
-   ``height_factor`` tag sits in its Widgets tab, with its value, and as a chip
-   in its spec.
+1. Its three scenarios are listed in the Scenario Catalog drawer's In project
+   tab, each with the shared pool as the fixed context its details list. Each
+   shadow step's ``height_factor`` tag sits in its Widgets tab, with its value,
+   and as a chip in its spec.
 2. All collapsed, Run All: the loader loads once for all, on the server, the
    scenarios run hidden, and each box shows its outcome done. The Edit Features node reads the
    loader's layers through the pool and hands them on without every part of
@@ -66,19 +67,24 @@ from .test_scenario_drop_e2e import (
     _status,
     _toast,
 )
-from .test_scenarios_canvas_e2e import _box, _frame_box, _scenario_menu
+from .test_scenarios_canvas_e2e import _box, _frame_box
 from .test_widget_tags_e2e import _open_tab, _panel
 from .utils import (
     REPO_ROOT,
     api_json,
     assert_autark_map_drawn,
     assert_vega_canvas_rendered,
+    close_scenario_details,
+    close_scenario_drawer,
     connect_nodes,
     dismiss_toasts,
     drag_to_canvas,
     frame_nodes,
+    in_project_card,
     load_artifact_as_dict,
     node_locator,
+    open_in_project_tab,
+    open_scenario_details,
     read_node_code,
     read_node_error_text,
     require_owner_view,
@@ -87,6 +93,8 @@ from .utils import (
     require_webgpu,
     run_all_and_wait,
     save_dataflow,
+    scenario_card_button,
+    scenario_part,
     stub_login_and_enter_workflow,
     wait_for_drawer_closed,
     wait_for_node_settled,
@@ -436,15 +444,21 @@ def _frame_color(page, scenario_id: str) -> str:
 
 
 def _assert_cards(page) -> None:
-    """The Scenarios panel lists the three scenarios, by name and colour, each
-    with the data pool as the fixed context it reads."""
+    """The In project tab lists the three scenarios, and each one's details
+    hold its name and colour and list the data pool as the fixed context it
+    reads. The drawer is closed again after."""
+    open_in_project_tab(page)
     for scenario_id, name in NAMES.items():
-        card = page.get_by_test_id(f"scenario-card-{scenario_id}")
+        card = in_project_card(page, scenario_id)
         card.wait_for(state="visible", timeout=15000)
-        assert card.get_by_label("Scenario name").input_value() == name
-        assert card.get_by_label(f"Color of {name}").input_value().lower() == COLORS[scenario_id]
-        context = card.locator('[data-scenario-part="context"]').inner_text()
+        assert name in card.inner_text(), f"the {scenario_id} card reads {card.inner_text()!r}"
+        details = open_scenario_details(page, scenario_id)
+        assert details.get_by_label("Scenario name").input_value() == name
+        assert details.get_by_label(f"Color of {name}").input_value().lower() == COLORS[scenario_id]
+        context = scenario_part(details, "Fixed context")
         assert "Data Pool" in context, f"{name} lists {context!r} as its fixed context"
+        close_scenario_details(page)
+    close_scenario_drawer(page)
 
 
 def test_example_06_compares_its_three_scenarios_in_the_canvas(
@@ -470,7 +484,6 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
     require_webgpu(page)
 
     # 1. Three scenarios over the shared pool, and each shadow step's tag.
-    _scenario_menu(page, "Show scenarios")
     _assert_cards(page)
     for scenario_id in NAMES:
         assert _frame_color(page, scenario_id) == _rgb(COLORS[scenario_id])
@@ -479,11 +492,13 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
     _assert_tag_and_chip(page, E_COMPUTE, "1")
 
     # 2. All collapsed, Run All: the loader loads once, and every scenario runs.
+    open_in_project_tab(page)
     for scenario_id in NAMES:
-        page.get_by_test_id(f"scenario-card-{scenario_id}").get_by_role("button", name="Collapse").click()
+        scenario_card_button(page, scenario_id, "Collapse").click()
         _box(page, scenario_id).wait_for(state="attached", timeout=10000)
         for node_id in MEMBERS[scenario_id]:
             assert not node_locator(page, node_id).is_visible(), f"{node_id} shows inside a collapsed scenario"
+    close_scenario_drawer(page)
     python, loads, stop = _record_runs(page, DATA)
     left_out, stop_left_out = _record_batched_left_out(page)
     run_all_and_wait(page, timeout_ms=RUN_MS)
@@ -606,7 +621,6 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
     assert _frame_color(page, BASELINE) == _rgb(COLORS[BASELINE])
     for node_id in (DATA, B_COMPUTE, T_COMPUTE, E_COMPUTE):
         assert _status(page, node_id) == "done", f"{node_id} reads {_status(page, node_id)!r}: its saved output was not restored"
-    _scenario_menu(page, "Show scenarios")
     _assert_cards(page)
     _assert_tag_and_chip(page, B_COMPUTE, "1")
     box = _frame_box(page, TWICE, MEMBERS[TWICE])
