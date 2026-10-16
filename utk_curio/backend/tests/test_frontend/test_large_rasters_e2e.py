@@ -15,6 +15,9 @@ map does. SCOUT's whole flood grid is 2592 by 2064 cells.
    west's cells as positive as the east's, under "band_1 absolute change".
 2. Rasters of 4097 by 4096 cells are refused, in a map and in Difference,
    with the cap's own figures.
+3. The page keeps answering while an Autark map draws the Baseline's raster:
+   a 20 ms timer runs while the map draws it 3 times, and no gap between its
+   ticks reaches 5.9 s.
 
 The map's and the difference's close-ups are the frames, the difference before
 and after **Change**, and the map's refusal.
@@ -60,6 +63,7 @@ from .utils import (
     run_all_and_wait,
     save_dataflow,
     save_node_closeup,
+    wait_for_node_done,
     wait_for_node_run_to_end,
     wait_for_node_settled,
     watch_node_run,
@@ -115,6 +119,36 @@ CAP_WORDS = (
 )
 
 ABSOLUTE_LINES = (*DIFFERENCE_LINES, "], absolute=True)")
+
+#: The longest the page may stop answering while an Autark map draws SCOUT's
+#: whole flood grid. On test-gpu, Chrome stops for 6.8 to 8.3 s with autk-map
+#: 4.1.1, which builds a color scale for every cell, and for 4.3 to 5.0 s with
+#: autk-map from urban-toolkit/autark#118, which builds one for the raster.
+STALL_LIMIT_MS = 5900
+#: How many times the map draws the raster while the timer runs.
+DRAWS = 3
+
+# A 20 ms timer, from the click that draws the map to 3 s after its run ends.
+# The longest gap between its ticks is the longest the page stopped answering.
+_START_TIMER_JS = """() => {
+    const timer = { ticks: [performance.now()] };
+    timer.id = setInterval(() => timer.ticks.push(performance.now()), 20);
+    window.__curioStallTimer = timer;
+}"""
+
+_LONGEST_STALL_JS = """() => {
+    const timer = window.__curioStallTimer;
+    clearInterval(timer.id);
+    const ticks = [...timer.ticks, performance.now()];
+    let longest = 0;
+    for (let i = 1; i < ticks.length; i++) longest = Math.max(longest, ticks[i] - ticks[i - 1]);
+    return Math.round(longest);
+}"""
+
+_NOT_RUNNING_JS = """(nodeId) => {
+    const el = document.querySelector(`.react-flow__node[data-id="${nodeId}"] [data-curio-node-status]`);
+    return !el || el.getAttribute('data-curio-node-status') !== 'running';
+}"""
 
 
 def _ramp() -> np.ndarray:
@@ -293,4 +327,55 @@ def test_a_raster_over_4096_by_4096_cells_is_refused_in_a_map_and_in_the_differe
         page, "large-raster-refused", MAP,
         test_name="test_a_raster_over_4096_by_4096_cells_is_refused_in_a_map_and_in_the_difference",
         sweep_toasts=True,
+    )
+
+
+def test_the_page_keeps_answering_while_an_autark_map_draws_scouts_whole_flood_grid(
+    app_frontend: "FrontendPage", current_server: str, page, record_property,
+):
+    raster = "lgr-raster"
+    spec = {"dataflow": {
+        "name": "Large Raster Stall",
+        "task": "",
+        "nodes": [
+            {
+                "id": raster, "type": PYTHON_TYPE, "x": 0, "y": 0,
+                "content": RAMP_CODE.replace("[!! factor !!]", "1"),
+                "in": "DEFAULT", "out": "DEFAULT", "goal": "", "metadata": {"keywords": []},
+            },
+            {
+                "id": MAP, "type": MAP_TYPE, "x": 760, "y": 0,
+                "content": json.dumps(MAP_SPEC, indent=2),
+                "in": "DEFAULT", "out": "DEFAULT", "goal": "", "metadata": {"keywords": []},
+            },
+        ],
+        "edges": [{
+            "id": f"reactflow__edge-{raster}out-{MAP}in",
+            "source": raster, "target": MAP, "sourceHandle": "out", "targetHandle": "in",
+        }],
+    }}
+    _enter(page, app_frontend, current_server, spec, "large_raster_stall_e2e")
+
+    play_node(page, raster)
+    wait_for_node_done(page, raster, node_type=PYTHON_TYPE, timeout_ms=300000)
+    # The map draws the raster when it arrives; that draw ends before the timer starts.
+    page.wait_for_function(_NOT_RUNNING_JS, arg=MAP, timeout=300000, polling=250)
+    page.wait_for_timeout(3000)
+
+    stalls = []
+    for _ in range(DRAWS):
+        page.evaluate(_START_TIMER_JS)
+        watch_node_run(page, MAP)
+        play_node(page, MAP)
+        status = wait_for_node_run_to_end(page, MAP, node_type=MAP_TYPE, timeout_ms=300000)
+        page.wait_for_timeout(3000)
+        stalls.append(page.evaluate(_LONGEST_STALL_JS))
+        # A stall measured while a map failed to draw would mean nothing.
+        assert status == "done", f"the map did not draw the raster: {read_node_error_text(node_locator(page, MAP))}"
+        assert_autark_map_drawn(page, MAP, timeout=120000)
+
+    record_property("longest stall of each draw (ms)", json.dumps(stalls))
+    assert max(stalls) < STALL_LIMIT_MS, (
+        f"the page stopped answering for {max(stalls)} ms while an Autark map drew a {WIDTH} by {HEIGHT} raster; "
+        f"the longest stall of each of the {DRAWS} draws was {stalls} ms, and the limit is {STALL_LIMIT_MS} ms"
     )
