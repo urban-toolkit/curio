@@ -285,6 +285,27 @@ def test_a_tile_that_loads_its_own_data_says_why_and_carries_no_data(tmp_path):
         }, "the page carries no refusal, so it is an ordinary page that fetches its data itself"
 
 
+def test_a_dashboard_whose_data_cannot_be_read_says_try_again_and_carries_no_data(tmp_path):
+    # A page that fetched its rows itself would look standalone and not be,
+    # and one built without them would draw the tile empty (#941).
+    from utk_curio.backend.app.projects.dashboard_payload import (
+        DashboardOutputUnreadableError,
+    )
+
+    reason = DashboardOutputUnreadableError(["trips-by-hour"]).describe()
+    body = {"error": reason, "nodes": ["trips-by-hour"], "name": "Trips"}
+    with _StubBackend(body, status=503) as backend:
+        spa = _start_spa(tmp_path, backend.url)
+
+        html = _get(spa, f"/dashboard/{DASHBOARD_ID}")
+
+        assert _embedded(html) == {
+            "meta": {"projectId": DASHBOARD_ID, "name": "Trips"},
+            "refused": {"status": 503, "message": reason},
+        }, "the page carries no refusal, so it is an ordinary page that fetches its data itself"
+        assert "Try again" in reason
+
+
 def test_a_refusal_survives_a_script_tag_in_the_dataflow_name(tmp_path):
     # The name is the owner's text, and travels in the same tag as a payload.
     hostile = "</script><img src=x onerror=alert(1)>"
