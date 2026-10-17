@@ -6,14 +6,14 @@ cell of SCOUT's 2592 by 2064 cell grid; three Data Loading nodes reading the
 region's window of SCOUT's rasters, which the Data Catalog holds whole; and two
 scenarios, "No NbS" and "NbS" (its copy), each holding a Raster Calculator that
 chooses the depth by nature-based solution (NbS) class, with its choice of NbS,
-a Raster Statistics node and an Autark map of the depth. One Compare Scenarios
+a second that takes the depth's statistics, and an Autark map of the depth. One Compare Scenarios
 node, in Difference, maps the size of NbS minus No NbS through the Autark
 node's map code (#723, #901); the other charts each scenario's median flood
 depth (#720). Run All drives the whole path:
 
 1. The loaders read SCOUT's rasters by id, for the region and the period
-   (2020 - 2040) the Parameter nodes hold, and both calculators, statistics
-   and maps run.
+   (2020 - 2040) the Parameter nodes hold, and the four calculators and both
+   maps run.
 2. Each scenario's map draws its depth, its legend titled "Flood depth (m)".
 3. The difference is a 2592 by 2064 cell raster in EPSG:4326 on SCOUT's grid,
    whose cells are the size of SCOUT's depths with NbS minus SCOUT's depths
@@ -23,9 +23,9 @@ depth (#720). Run All drives the whole path:
 4. The chart draws both scenarios in their colors from the stacked table,
    whose medians and means are SCOUT's for its whole grid: a median flood depth
    of 7.164 m without NbS and 4.900 m with every NbS (``test_scout_flood.py``).
-5. What differs lists one lever, the Raster Calculator, and in it one widget,
-   the NbS choice; no code line differs, the statistics and the maps are the
-   same, and nothing is warned.
+5. What differs lists one lever, the Raster Calculator that chooses, and in it
+   one widget, the NbS choice; no code line differs, the calculators of
+   statistics and the maps are the same, and nothing is warned.
 
 The close-ups of the two maps, the difference and the chart are the frames.
 Nothing is pinned to the dashboard: a difference of the whole grid is over a
@@ -71,7 +71,6 @@ if TYPE_CHECKING:
 DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "FloodScenarios.json"
 TEST_NAME = "test_two_flood_scenarios_are_mapped_and_charted"
 CALCULATOR_TYPE = "curio.builtin/raster-calculator"
-STATISTICS_TYPE = "curio.builtin/raster-statistics"
 MAP_TYPE = "curio.builtin/autk-grammar"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
 COLORS = {"no-nbs": "#e76f51", "nbs": "#2a9d8f"}
@@ -162,8 +161,12 @@ def test_two_flood_scenarios_are_mapped_and_charted(
     compares = _compare_nodes(spec)
     maps = _maps_by_scenario(spec)
     steps = [(node["id"], node["type"]) for node in spec["dataflow"]["nodes"]
-             if node["type"] in (CALCULATOR_TYPE, STATISTICS_TYPE, MAP_TYPE)]
+             if node["type"] in (CALCULATOR_TYPE, MAP_TYPE)]
     assert len(steps) == 6, steps
+    # Two of the four Raster Calculators take the depth's statistics.
+    statistics = [node["id"] for node in spec["dataflow"]["nodes"] if node["type"] == CALCULATOR_TYPE
+                  and "\nreturn curio_raster_statistics(" in node["content"]]
+    assert len(statistics) == 2, statistics
 
     # 1. Run All: both scenarios read SCOUT's rasters for the shared region and period.
     run_all_and_wait(page, timeout_ms=600000)
@@ -229,7 +232,7 @@ def test_two_flood_scenarios_are_mapped_and_charted(
     assert '"Constructed wetlands"' in compare.locator('[data-compare-value="nbs"]').inner_text()
     assert compare.locator("[data-compare-code-added]").count() == 0
     assert compare.locator("[data-compare-code-removed]").count() == 0
-    # The Raster Statistics pair and the map pair are the same in both scenarios.
+    # The pair of calculators of statistics and the map pair are the same in both scenarios.
     assert compare.locator("[data-compare-same]").get_attribute("data-compare-same") == "2"
     assert compare.locator("[data-compare-warning]").count() == 0
     compare.get_by_role("tab", name="Chart", exact=True).click()

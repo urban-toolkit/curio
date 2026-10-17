@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/FloodScenarios.json",
-    "sha256": "10a0515435cd61de02c53fff980e9a3d46940940e859c44638de3f2ebc5dca4a",
+    "sha256": "5fce2f86b820558439716c27b222059eff937976252f5a2f785c99e388edaa6a",
     "walkthrough": null
   },
   "prompt": "Compare two scenarios of SCOUT's Quad Cities flood projection over SCOUT's whole area: one with no nature-based solutions, and a copy of it with all six solutions in place. Three shared settings hold the projection period, 2020 to 2040, and the area's top-left and bottom-right corners. Read that area of the solutions' class raster and of the period's flood depth with and without the solutions. In each scenario, take the depth with the solutions where a cell's class is one of the chosen solutions and the depth without them elsewhere, then the median and mean of that depth, and map the depth. Map how much the solutions change the depth, the size of the second scenario minus the first, and chart each scenario's median flood depth.",
@@ -110,14 +110,14 @@
       },
       {
         "ref": "analysis3",
-        "type": "curio.builtin/raster-statistics",
+        "type": "curio.builtin/raster-calculator",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis4",
-        "type": "curio.builtin/raster-statistics",
+        "type": "curio.builtin/raster-calculator",
         "role": "analysis",
         "executable": true,
         "hasContent": true
@@ -311,5 +311,5 @@
     ],
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
   },
-  "notes": "Built-in nodes only, in two scenarios over three shared Parameter nodes: windowed raster loads, and per scenario a Raster Calculator choosing by class, a Raster Statistics node and an Autark map of the depth, compared on an absolute difference map and a chart. It reproduces SCOUT's flood function on SCOUT's whole grid."
+  "notes": "Built-in nodes only, in two scenarios over three shared Parameter nodes: windowed raster loads, and per scenario a Raster Calculator choosing by class, a Raster Calculator taking the depth's statistics and an Autark map of the depth, compared on an absolute difference map and a chart. It reproduces SCOUT's flood function on SCOUT's whole grid."
 }

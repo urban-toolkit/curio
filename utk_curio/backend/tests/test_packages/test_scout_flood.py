@@ -5,8 +5,9 @@ The shipped test dataflow ``FloodScenarios.json`` does what SCOUT's
 read the region's window of SCOUT's rasters, which the Data Catalog holds whole
 (``curio_load_data(..., bounds=...)``), a Raster Calculator per scenario takes
 the depth with nature-based solutions (NbS) where the class is a chosen one and
-the depth without elsewhere (``choose``), a Raster Statistics node gives the
-median and the mean, and an Autark map draws the depth. Its Parameter nodes
+the depth without elsewhere (``choose``), a second takes the depth's
+statistics, the median and the mean among them, and an Autark map draws the
+depth. Its Parameter nodes
 hold SCOUT's flood example's corners, which take every cell of SCOUT's 2592 by
 2064 cell grid, and its period, 2020 - 2040.
 
@@ -43,7 +44,10 @@ NODE_CODE_TS = REPO / "utk_curio" / "frontend" / "urban-workflows" / "src" / "ut
 COMPARE_CODE_TS = REPO / "utk_curio" / "frontend" / "urban-workflows" / "src" / "utils" / "compare" / "compareCode.ts"
 LOADING = "curio.builtin/data-loading"
 CALCULATOR = "curio.builtin/raster-calculator"
-STATISTICS = "curio.builtin/raster-statistics"
+#: What a Raster Calculator's code returns: an operation cell by cell, which
+#: gives a raster, or statistics, which give a table of one row.
+CALCULATE = "curio_raster_calculate"
+STATISTICS = "curio_raster_statistics"
 PARAMETER = "curio.builtin/parameter"
 COMPARE = "curio.builtin/compare-scenarios"
 MAP = "curio.builtin/autk-grammar"
@@ -319,6 +323,30 @@ def _starter(name: str) -> str:
     return match.group(1)
 
 
+def _starters_statistics() -> str:
+    """The statistics a Raster Calculator's code starts by showing: its lines
+    from ``# Statistics:`` to the statistics call, that call uncommented, as a
+    node that takes them holds them."""
+    lines = _starter("RASTER_CALCULATOR_CODE").splitlines()
+    starts = [i for i, line in enumerate(lines) if line.startswith("# Statistics:")]
+    calls = [i for i, line in enumerate(lines) if line.startswith("#   return curio_raster_statistics(")]
+    assert len(starts) == len(calls) == 1 and starts[0] < calls[0], lines
+    return "\n".join([*lines[starts[0]:calls[0]], lines[calls[0]][len("#   "):], ""])
+
+
+def _returns(node: dict) -> str:
+    """The raster algebra call a Raster Calculator's code returns, on its one
+    uncommented ``return`` line: ``CALCULATE`` or ``STATISTICS``."""
+    calls = re.findall(r"^return (curio_raster_\w+)\(", node["content"], re.M)
+    assert len(calls) == 1, node["content"]
+    return calls[0]
+
+
+def _calculators(call: str) -> list:
+    """The Raster Calculators whose code returns *call*, in the dataflow's order."""
+    return [n for n in _nodes(CALCULATOR) if _returns(n) == call]
+
+
 def _code_note(name: str) -> list[str]:
     """The comment lines ``compareCode.ts`` starts a Compare Scenarios node's code with."""
     source = COMPARE_CODE_TS.read_text(encoding="utf-8")
@@ -349,11 +377,11 @@ def _function_body(code: str) -> str:
 
 
 def test_the_dataflow_is_made_of_curios_own_nodes():
-    """No package: three Parameter nodes, three Data Loading nodes, a Raster
-    Calculator, a Raster Statistics node and an Autark map per scenario, two
-    Compare Scenarios nodes, and the seven rasters. Nothing is pinned to the
-    dashboard: a difference of SCOUT's whole grid is over a dashboard page's
-    25 MB."""
+    """No package: three Parameter nodes, three Data Loading nodes, two Raster
+    Calculators per scenario, one choosing the depth and one taking its
+    statistics, and an Autark map per scenario, two Compare Scenarios nodes,
+    and the seven rasters. Nothing is pinned to the dashboard: a difference of
+    SCOUT's whole grid is over a dashboard page's 25 MB."""
     spec = _dataflow()
     assert spec["packages"] == []
     assert all(n["type"].startswith("curio.builtin/") for n in spec["nodes"])
@@ -361,7 +389,8 @@ def test_the_dataflow_is_made_of_curios_own_nodes():
     counts = {}
     for n in spec["nodes"]:
         counts[n["type"]] = counts.get(n["type"], 0) + 1
-    assert counts == {PARAMETER: 3, LOADING: 3, CALCULATOR: 2, STATISTICS: 2, MAP: 2, COMPARE: 2}
+    assert counts == {PARAMETER: 3, LOADING: 3, CALCULATOR: 4, MAP: 2, COMPARE: 2}
+    assert sorted(_returns(n) for n in _nodes(CALCULATOR)) == [CALCULATE, CALCULATE, STATISTICS, STATISTICS]
     assert [n["id"] for n in spec["nodes"] if n.get("dashboardPinned")] == []
 
 
@@ -395,15 +424,15 @@ def test_the_loaders_read_the_rasters_by_id_with_the_regions_bounds():
 
 
 def test_each_scenario_chooses_by_scouts_classes_takes_the_statistics_and_maps_the_depth():
-    """The two Raster Calculators hold one code, SCOUT's class table, and
-    differ in the solutions their widget chooses; the NbS scenario is a copy of
-    the other. Each feeds a Raster Statistics node that holds the code it starts
-    with, and an Autark map of its depth."""
+    """The two Raster Calculators that choose hold one code, SCOUT's class
+    table, and differ in the solutions their widget chooses; the NbS scenario
+    is a copy of the other. Each feeds a Raster Calculator holding the
+    statistics its code starts by showing, and an Autark map of its depth."""
     from utk_curio.backend.app.execution.code_references import resolve_references
 
     spec = _dataflow()
     nodes = {n["id"]: n for n in spec["nodes"]}
-    calculators = _nodes(CALCULATOR)
+    calculators = _calculators(CALCULATE)
     (code,) = {n["content"] for n in calculators}
     for calculator in calculators:
         # The code reads its widget through a chip, so it parses once resolved,
@@ -412,7 +441,7 @@ def test_each_scenario_chooses_by_scouts_classes_takes_the_statistics_and_maps_t
         assert problems == [], (calculator["id"], problems)
         assert _literal_dict(_function_body(resolved), "NBS_CLASSES") == _scout_classes()
     assert "return curio_raster_calculate(\"choose\", [input_0, input_1, input_2], codes=codes)" in code
-    assert {n["content"] for n in _nodes(STATISTICS)} == {_starter("RASTER_STATISTICS_CODE")}
+    assert {n["content"] for n in _calculators(STATISTICS)} == {_starters_statistics()}
 
     loaders = {}
     for n in _nodes(LOADING):
@@ -427,9 +456,9 @@ def test_each_scenario_chooses_by_scouts_classes_takes_the_statistics_and_maps_t
     chosen = {}
     for scenario in scenarios.values():
         members = [nodes[i] for i in scenario["nodes"]]
-        assert sorted(n["type"] for n in members) == [MAP, CALCULATOR, STATISTICS]
-        (calculator,) = [n for n in members if n["type"] == CALCULATOR]
-        (statistics,) = [n for n in members if n["type"] == STATISTICS]
+        assert sorted(n["type"] for n in members) == [MAP, CALCULATOR, CALCULATOR]
+        (calculator,) = [n for n in members if n["type"] == CALCULATOR and _returns(n) == CALCULATE]
+        (statistics,) = [n for n in members if n["type"] == CALCULATOR and _returns(n) == STATISTICS]
         (depth_map,) = [n for n in members if n["type"] == MAP]
         feeds = {e["targetHandle"]: e["source"] for e in spec["edges"] if e["target"] == calculator["id"]}
         assert feeds == {"in": loaders["classes"], "in_1": loaders["nbs"], "in_2": loaders["no-nbs"]}
@@ -463,7 +492,7 @@ def test_every_nodes_code_resolves_with_nothing_left_over():
 
     shared = list(_parameters().values())
     for n in _dataflow()["nodes"]:
-        if n["type"] in (LOADING, CALCULATOR, STATISTICS):
+        if n["type"] in (LOADING, CALCULATOR):
             code, problems = resolve_references(n["content"], n["metadata"].get("widgets") or [], "python", shared=shared)
             assert problems == [], (n["id"], problems)
             assert "[!!" not in code
@@ -495,10 +524,11 @@ def test_the_shipped_dataflows_compare_nodes_hold_the_code_they_write():
     assert compares["chart"]["metadata"]["compareScenarios"]["chart"] == {"preset": "bar", "y": "median"}
     scenario_of = {i: s["id"] for s in spec["scenarios"] for i in s["nodes"]}
     kinds = {n["id"]: n["type"] for n in spec["nodes"]}
-    for mode, kind in (("difference", CALCULATOR), ("chart", STATISTICS)):
+    calls = {n["id"]: _returns(n) for n in _nodes(CALCULATOR)}
+    for mode, call in (("difference", CALCULATE), ("chart", STATISTICS)):
         sources = {e["targetHandle"]: e["source"] for e in spec["edges"] if e["target"] == compares[mode]["id"]}
-        assert {h: (scenario_of[s], kinds[s]) for h, s in sources.items()} == {
-            "in": ("no-nbs", kind), "in_1": ("nbs", kind),
+        assert {h: (scenario_of[s], kinds[s], calls.get(s)) for h, s in sources.items()} == {
+            "in": ("no-nbs", CALCULATOR, call), "in_1": ("nbs", CALCULATOR, call),
         }
 
 
@@ -579,9 +609,9 @@ def _run_loaders(run) -> tuple[dict, str | None]:
 
 
 def _run_scenario(run, loaded: dict, calculator: dict, statistics: dict, chosen=None):
-    """One scenario's Raster Calculator, its widget at *chosen* when given,
-    else at the value the dataflow holds, then its Raster Statistics node:
-    ``(depth output, statistics output, error)``."""
+    """One scenario's Raster Calculator that chooses, its widget at *chosen*
+    when given, else at the value the dataflow holds, then its Raster
+    Calculator of statistics: ``(depth output, statistics output, error)``."""
     spec = _dataflow()
     feeds = {e["targetHandle"]: e["source"] for e in spec["edges"] if e["target"] == calculator["id"]}
     inputs = repr([loaded[feeds[handle]] for handle in ("in", "in_1", "in_2")])
@@ -600,8 +630,9 @@ def _run_scenario(run, loaded: dict, calculator: dict, statistics: dict, chosen=
 
 
 def run_dataflow(workspace, region=None, period=None, chosen=ALL_NBS, *, fails=False):
-    """Run the dataflow's loaders, one Raster Calculator and its Raster
-    Statistics node, as Run All runs them in the sandbox, with the Parameter
+    """Run the dataflow's loaders and one scenario's two Raster Calculators,
+    the one that chooses, then the one of statistics, as Run All runs them in
+    the sandbox, with the Parameter
     nodes at *region* and *period* (the dataflow's own when not given) and the
     calculator's widget at *chosen*: ``(depth artifact id, depth, statistics)``,
     or with *fails* the first error."""
@@ -611,7 +642,7 @@ def run_dataflow(workspace, region=None, period=None, chosen=ALL_NBS, *, fails=F
     loaded, error = _run_loaders(run)
     if error:
         return error
-    depth, statistics, error = _run_scenario(run, loaded, _nodes(CALCULATOR)[0], _nodes(STATISTICS)[0], chosen)
+    depth, statistics, error = _run_scenario(run, loaded, _calculators(CALCULATE)[0], _calculators(STATISTICS)[0], chosen)
     if error:
         return error
     return depth["path"], load_from_duckdb(depth["path"]), load_from_duckdb(statistics["path"])
@@ -657,8 +688,9 @@ SCOUT_DEPTHS = {
 @pytest.mark.parametrize("period", sorted(SCOUT_DEPTHS))
 def test_both_scenarios_at_the_dataflows_corners_give_scouts_median_and_mean(workspace, monkeypatch, period):
     """Run All's path at the dataflow's own corners: the loaders once, then
-    each scenario's Raster Calculator, with the solutions its widget holds, and
-    its Raster Statistics node. Without NbS the median flood depth is 7.164 m
+    each scenario's Raster Calculator that chooses, with the solutions its
+    widget holds, and its Raster Calculator of statistics. Without NbS the
+    median flood depth is 7.164 m
     and with every NbS 4.900 m in 2020 - 2040; 7.083 m and 5.667 m in
     2050 - 2080, SCOUT's numbers on its whole grid."""
     from utk_curio.sandbox.util.parsers import load_from_duckdb
@@ -672,8 +704,8 @@ def test_both_scenarios_at_the_dataflows_corners_give_scouts_median_and_mean(wor
     found = {}
     for scenario in spec["scenarios"]:
         members = [nodes[i] for i in scenario["nodes"]]
-        (calculator,) = [n for n in members if n["type"] == CALCULATOR]
-        (statistics,) = [n for n in members if n["type"] == STATISTICS]
+        (calculator,) = [n for n in members if n["type"] == CALCULATOR and _returns(n) == CALCULATE]
+        (statistics,) = [n for n in members if n["type"] == CALCULATOR and _returns(n) == STATISTICS]
         depth, table, error = _run_scenario(run, loaded, calculator, statistics)
         assert error is None, error
         raster = load_from_duckdb(depth["path"])
