@@ -517,9 +517,14 @@ def _reset_db_via_http(backend_url: str) -> None:
     """POST to ``/api/testing/reset-db`` so the *running* backend truncates
     its own mutable tables.  Used when ``CURIO_E2E_USE_EXISTING=1`` because
     the pytest process may not share the same sqlite file as the backend.
+
+    The reset first waits, up to ``RESET_WAIT_SECONDS``, for the requests the
+    last test's page left running, so the timeout covers that wait too.
     """
     from urllib.request import Request, urlopen
     import json as _json
+
+    from utk_curio.backend.app.testing.in_flight import RESET_WAIT_SECONDS
 
     req = Request(
         f"{backend_url}/api/testing/reset-db",
@@ -527,7 +532,7 @@ def _reset_db_via_http(backend_url: str) -> None:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urlopen(req, timeout=10) as resp:  # noqa: S310
+    with urlopen(req, timeout=RESET_WAIT_SECONDS + 30) as resp:  # noqa: S310
         resp.read()
 
 
