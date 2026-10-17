@@ -311,7 +311,7 @@ def _run_and_read_output(page, attach_as: str, legend: str) -> dict:
     return load_artifact_as_dict(artifact)
 
 
-def test_two_rasters_are_compared_in_difference_and_mapped(
+def test_two_rasters_are_compared_in_difference_and_drawn_by_an_autark_map(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     spec = _spec()
@@ -386,17 +386,17 @@ def test_two_rasters_are_compared_in_difference_and_mapped(
 
     save_node_closeup(
         page, "compare-difference", COMPARE,
-        test_name="test_two_rasters_are_compared_in_difference_and_mapped",
+        test_name="test_two_rasters_are_compared_in_difference_and_drawn_by_an_autark_map",
         sweep_toasts=True,
     )
     save_node_closeup(
         page, "compare-difference-map", MAP,
-        test_name="test_two_rasters_are_compared_in_difference_and_mapped",
+        test_name="test_two_rasters_are_compared_in_difference_and_drawn_by_an_autark_map",
         sweep_toasts=True,
     )
 
 
-def test_two_layers_are_joined_on_their_osm_id_and_mapped(
+def test_two_layers_are_joined_on_their_osm_id_and_drawn_by_an_autark_map(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     """Two layers that have run: Difference again, a Python join on osm_id, and
