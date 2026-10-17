@@ -2,11 +2,41 @@
 outputs they saved to its Data Catalog. Nothing of its own is stored."""
 from __future__ import annotations
 
+import logging
+from dataclasses import dataclass
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class ProjectNotFound(Exception):
     pass
+
+
+class OutputGone(Exception):
+    """The saved output of *node_id* that a drop copies is no longer there."""
+
+    def __init__(self, node_id: str) -> None:
+        super().__init__(node_id)
+        self.node_id = node_id
+
+
+class CopyFailed(Exception):
+    """The saved output of *node_id* could not be copied: its folder could
+    not be read, or the copy could not be written. Trying again may work."""
+
+    def __init__(self, node_id: str) -> None:
+        super().__init__(node_id)
+        self.node_id = node_id
+
+
+@dataclass(frozen=True)
+class CopiedOutputs:
+    """What :func:`copy_outputs` did: ``{node: datasetId}``, the dataset each
+    copy's node reads, and the output refs restored for the canvas."""
+
+    dataset_ids: dict[str, str]
+    restored: list
 
 
 def project_summaries(user) -> list:
@@ -84,6 +114,17 @@ def saved_output(user, project_id: str, spec: dict, node_id: str) -> dict | None
     return None
 
 
+def saved_outputs_of(user, project_id: str, spec: dict, node_ids: list[str]) -> dict[str, dict | None]:
+    """``{nodeId: saved_output(...)}`` for *node_ids*, read under *project_id*'s
+    spec lock, so a save of it installing an output again is waited for rather
+    than met halfway (#941). The caller holds no spec lock and no uncommitted
+    database write (#909)."""
+    from utk_curio.backend.app.projects import storage
+
+    with storage.spec_write_lock(user_key(user), project_id):
+        return {node_id: saved_output(user, project_id, spec, node_id) for node_id in node_ids}
+
+
 def output_refs(user, project_id: str) -> dict[str, Any]:
     """``{nodeId: OutputRef}``: the outputs *project_id*'s manifest restores."""
     from utk_curio.backend.app.projects import storage
@@ -93,27 +134,69 @@ def output_refs(user, project_id: str) -> dict[str, Any]:
     return {ref.node_id: ref for ref in _output_refs_from_manifest(manifest)}
 
 
-def copy_output(user, dir_name: str, *, node_id: str, project_id: str, project_name: str) -> str:
-    """Copy a saved output to *node_id* of *project_id*; returns the copy's id."""
-    from utk_curio.backend.app.datasets.install.copy import copy_computed_dataset
+def copy_outputs(
+    user, source_id: str, spec: dict, pairs: list[tuple[str, str]], *, target_id: str, target_name: str,
+) -> CopiedOutputs:
+    """Copy the saved output of each ``(source, node)`` pair's *source* in
+    *source_id*, whose spec is *spec*, to *node* in *target_id*, and put the
+    copies where a canvas reads outputs from, as opening the project does.
 
-    result = copy_computed_dataset(
-        user_key(user), dir_name, node_id=node_id, dataflow_id=project_id, dataflow_name=project_name,
-    )
-    return result.manifest.id
+    A save installs each output it sends again under its project's spec lock,
+    and installing one replaces its folder. So each project is read or written
+    under its own lock, one lock at a time (#941):
 
+    1. Under the source's lock: the refs its manifest restores, each pair's
+       saved output, and a whole copy of each computed one in a staging folder
+       (``copy.stage_computed_copy``). Nothing is written to the database.
+    2. Under the target's lock: each staged copy takes its place and is indexed
+       (``copy.place_staged_copy``), then the copies' refs are restored
+       (``storage.hydrate_outputs``).
 
-def restore_outputs(user, project_id: str, refs: list) -> list:
-    """Put *refs*, whose datasets *project_id* now holds, where a canvas reads
-    outputs from, as opening the project does: under *project_id*'s spec lock,
-    so a save of it installing an output again is never met halfway (#941).
-    The caller holds no spec lock and no uncommitted database write (#909).
-    Returns the refs restored."""
+    The source may be the target, and two drops each way between two projects
+    never wait for each other. The caller holds no spec lock and no uncommitted
+    database write (#909). A saved output that is gone raises
+    :class:`OutputGone`, one that cannot be copied :class:`CopyFailed`, and a
+    staged copy that never took its place is removed.
+    """
+    from utk_curio.backend.app.datasets.install import copy as dataset_copy
+    from utk_curio.backend.app.datasets.install.installer import InstallerError
     from utk_curio.backend.app.projects import storage
 
     ukey = user_key(user)
-    with storage.spec_write_lock(ukey, project_id):
-        return storage.hydrate_outputs(ukey, project_id, refs)
+    staged: list[tuple[str, str, Any]] = []
+    dataset_ids: dict[str, str] = {}
+    refs: list = []
+    source = ""
+    try:
+        with storage.spec_write_lock(ukey, source_id):
+            restorable = output_refs(user, source_id)
+            for source, node in pairs:
+                saved = saved_output(user, source_id, spec, source)
+                if saved is None:
+                    raise OutputGone(source)
+                if not saved["computed"]:
+                    dataset_ids[node] = saved["datasetId"]
+                    continue
+                staged.append((source, node, dataset_copy.stage_computed_copy(
+                    ukey, saved["dirName"], node_id=node, dataflow_id=target_id, dataflow_name=target_name,
+                )))
+                ref = restorable.get(source)
+                if ref is not None:
+                    refs.append(output_ref(node, ref.filename, ref.data_type))
+        with storage.spec_write_lock(ukey, target_id):
+            while staged:
+                source, node, copy = staged.pop(0)
+                dataset_ids[node] = dataset_copy.place_staged_copy(ukey, copy).manifest.id
+            restored = storage.hydrate_outputs(ukey, target_id, refs)
+    except InstallerError as exc:
+        logger.warning(
+            "Could not copy the saved output of %s in %s into %s: %s", source, source_id, target_id, exc,
+        )
+        raise CopyFailed(source) from exc
+    finally:
+        for _source, _node, copy in staged:
+            dataset_copy.discard_staged_copy(copy)
+    return CopiedOutputs(dataset_ids=dataset_ids, restored=restored)
 
 
 def output_ref(node_id: str, filename: str, data_type: str | None):
