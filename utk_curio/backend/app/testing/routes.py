@@ -22,6 +22,10 @@ password. ``CURIO_TESTING`` is the deliberate "this process is a test rig"
 signal: ``tests/conftest.py`` exports it at import time and the e2e harness
 passes it to the server subprocess it starts, so both suites see the routes and
 a normal ``curio.py start`` does not.
+
+An app built with ``CURIO_TESTING`` also counts the requests it is serving
+(``in_flight.py``), so ``reset-db`` can wait for the ones a test's closed page
+left running before it deletes their user.
 """
 
 from __future__ import annotations
@@ -29,9 +33,10 @@ from __future__ import annotations
 import logging
 import re
 import shutil
+import time
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 
 from utk_curio.backend.app.common import record_clock
 from utk_curio.backend.app.common.safe_paths import is_within
@@ -39,6 +44,7 @@ from utk_curio.backend import config
 from utk_curio.backend.config import _is_dev, _is_testing
 from utk_curio.backend.app.agents.infrastructure import testing_provider
 from utk_curio.backend.extensions import db
+from utk_curio.backend.app.testing.in_flight import RESET_WAIT_SECONDS, InFlightRequests
 from utk_curio.backend.app.users import repositories as user_repo
 from utk_curio.backend.app.users import security
 from utk_curio.backend.app.projects import services as project_services
@@ -77,6 +83,55 @@ def _guard():
     if not _is_dev() or not _is_testing():
         return jsonify({"error": "not found"}), 404
     return None
+
+
+#: Where an app built for a test rig keeps its :class:`InFlightRequests`.
+_IN_FLIGHT = "curio.testing.in_flight"
+#: Where a counted request keeps its token.
+_IN_FLIGHT_TOKEN = "curio.testing.in_flight_token"
+
+
+def _count_request_in():
+    """Count each request but the harness's own, or refuse it while a reset runs.
+
+    Refused rather than held: a request that arrives during a reset comes from
+    a page whose test is over, and it would only run against the next test's
+    empty database.
+    """
+    in_flight = current_app.extensions.get(_IN_FLIGHT)
+    if in_flight is None or request.blueprint == testing_bp.name:
+        return None
+    token = in_flight.enter(f"{request.method} {request.path}")
+    if token is None:
+        return jsonify({"error": "The test database is being reset."}), 503
+    request.environ[_IN_FLIGHT_TOKEN] = token
+    return None
+
+
+def _count_request_out(_exc=None):
+    """Count a request out when it is done, a streamed answer included: a
+    stream keeps its request open until it ends."""
+    token = request.environ.pop(_IN_FLIGHT_TOKEN, None)
+    in_flight = current_app.extensions.get(_IN_FLIGHT)
+    if token is not None and in_flight is not None:
+        in_flight.leave(token)
+
+
+def _count_requests(state) -> None:
+    """Give an app built for a test rig its request count.
+
+    Decided once, when the blueprint is registered: ``CURIO_ENV`` defaults to
+    dev, so a developer's own ``curio.py start`` mounts this blueprint too, and
+    without ``CURIO_TESTING`` its requests must not pass through any of this.
+    """
+    if not _is_testing():
+        return
+    state.app.extensions[_IN_FLIGHT] = InFlightRequests()
+    state.app.before_request(_count_request_in)
+    state.app.teardown_request(_count_request_out)
+
+
+testing_bp.record_once(_count_requests)
 
 
 #: The only tables ``reset-db`` will empty. Ordered child-before-parent so the
@@ -306,7 +361,14 @@ def reset_db():
         ids it is about to free. Pass ``false`` only to inspect what a previous
         test left behind; a test that skips it is asking to inherit it.
 
-    Response: ``{"truncated": [...], "stores_cleared": [...]}``
+    Before it deletes anything, it refuses new requests (503) and waits, up to
+    ``RESET_WAIT_SECONDS``, for the ones already running, so none of them
+    outlives its user (``in_flight.py``). One still running after that is
+    named in ``still_running`` and in the log, and the reset goes ahead.
+
+    Response: ``{"truncated": [...], "stores_cleared": [...], "waited_for":
+    [...], "waited_seconds": n, "still_running": [...]}``, each request named
+    by its method and path.
     """
     body = request.get_json(silent=True) or {}
     requested = body.get("tables")
@@ -328,23 +390,47 @@ def reset_db():
             )
         tables = requested
 
-    truncated = []
-    for table in tables:
-        try:
-            db.session.execute(db.text(f'DELETE FROM "{table}"'))
-            truncated.append(table)
-        except Exception:
-            pass
-    db.session.commit()
+    in_flight = current_app.extensions.get(_IN_FLIGHT) or InFlightRequests()
+    waited_for = in_flight.close()
+    try:
+        # A hold a failed test left standing would stop the next test's runs,
+        # and a held run's stream would hold this reset for the whole wait.
+        run_jobs.set_hold(False)
+        if waited_for:
+            log.info("reset-db waits for %d request(s) in flight: %s",
+                     len(waited_for), ", ".join(waited_for))
+        started = time.monotonic()
+        still_running = in_flight.drain(RESET_WAIT_SECONDS)
+        waited_seconds = round(time.monotonic() - started, 3)
+        if still_running:
+            log.warning("reset-db waited %.1f s and resets under %d request(s) still running: %s",
+                        waited_seconds, len(still_running), ", ".join(still_running))
+        elif waited_for:
+            log.info("reset-db waited %.2f s for %s", waited_seconds, ", ".join(waited_for))
 
-    stores_cleared = []
-    if body.get("stores", True):
-        stores_cleared = _clear_test_user_stores()
-    # A hold a failed test left standing would stop the next test's runs, and a
-    # clock it left set would date the next test's records.
-    run_jobs.set_hold(False)
-    record_clock.set_now(None)
-    return jsonify({"truncated": truncated, "stores_cleared": stores_cleared}), 200
+        truncated = []
+        for table in tables:
+            try:
+                db.session.execute(db.text(f'DELETE FROM "{table}"'))
+                truncated.append(table)
+            except Exception:
+                pass
+        db.session.commit()
+
+        stores_cleared = []
+        if body.get("stores", True):
+            stores_cleared = _clear_test_user_stores()
+        # A clock a failed test left set would date the next test's records.
+        record_clock.set_now(None)
+    finally:
+        in_flight.open()
+    return jsonify({
+        "truncated": truncated,
+        "stores_cleared": stores_cleared,
+        "waited_for": waited_for,
+        "waited_seconds": waited_seconds,
+        "still_running": still_running,
+    }), 200
 
 
 @testing_bp.route("/run-hold", methods=["GET", "POST"])
