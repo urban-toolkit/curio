@@ -125,6 +125,19 @@ describe('the area field', () => {
     expect(screen.getByText(/of at most 4\.0 km²/)).toBeInTheDocument();
   });
 
+  test('a pasted minus sign or dash reads as a minus', () => {
+    // Coordinates copied from a document or a web page often carry the
+    // typographic minus sign (U+2212) or a dash instead of "-".
+    const onChange = jest.fn();
+    render(<AreaField parameter={AREA} value={null} onChange={onChange} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Coordinates' }));
+    const pasted = ['\u221287.64', '41.875', '\u201387.62', '41.89'];
+    ['West', 'South', 'East', 'North'].forEach((name, i) =>
+      fireEvent.change(screen.getByLabelText(name), { target: { value: pasted[i] } }),
+    );
+    expect(onChange).toHaveBeenLastCalledWith({ box: LOOP });
+  });
+
   test('a place search gives a box and the place name', async () => {
     mockSearchPlaces.mockResolvedValue({
       places: [{ name: 'Loop', label: 'Loop, Chicago, Illinois', box: LOOP, kind: 'boundary/administrative', boundary: true }],
