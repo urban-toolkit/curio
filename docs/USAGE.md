@@ -795,7 +795,10 @@ The node has two tabs:
 - **Chart** draws the stacked table in the scenarios' colors, as **Bars**, **Grouped
   bars**, **Lines**, **Points**, a **Pie**, **Lollipops** or a **Table**. Pick the
   columns it reads (**X**, **Y**) and how the Y values of a group are combined
-  (**Combine**: mean, sum, median, minimum, maximum, or a count of rows).
+  (**Combine**: mean, sum, median, minimum, maximum, a count of rows, or none).
+  **None** plots each row's value as it is, with the Y column as the axis title; a
+  scenario with several rows stacks them in one bar. A pie writes each slice's
+  value on it.
 - **Difference**, in its place in Difference, maps a raster's or a layer's
   difference, colored by a band or a number column, or by `change` (**Color by**).
   **Change** picks **Signed**, input_1 minus input_0, or **Absolute**, its size.

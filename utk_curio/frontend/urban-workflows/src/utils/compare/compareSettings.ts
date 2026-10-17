@@ -6,7 +6,8 @@
  *   scenario, the node's name and a neutral color. The node's code is written
  *   from them, and the stacked table carries them.
  * - `chart`, what its Chart tab draws from that table: a preset, the columns it
- *   reads as x and y, and the aggregate that combines the y values.
+ *   reads as x and y, and the aggregate that combines the y values (`none`
+ *   plots each row's value as it is).
  * - `mode`, Chart or Difference, once the user has chosen one; without it the
  *   node picks (`compareMode.ts`).
  * - `difference`, what Difference joins rows on (`key`), what its map
@@ -30,7 +31,8 @@ export interface CompareInputLabel {
 export const COMPARE_PRESETS = ["bar", "grouped-bar", "line", "scatter", "pie", "lollipop", "table"] as const;
 export type ComparePreset = (typeof COMPARE_PRESETS)[number];
 
-export const COMPARE_AGGREGATES = ["mean", "sum", "median", "min", "max", "count"] as const;
+// "none" plots each row's value as it is, for a table of one row per scenario.
+export const COMPARE_AGGREGATES = ["mean", "sum", "median", "min", "max", "count", "none"] as const;
 export type CompareAggregate = (typeof COMPARE_AGGREGATES)[number];
 
 export interface CompareChart {
