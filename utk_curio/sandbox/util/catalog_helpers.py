@@ -14,7 +14,7 @@
     windows it if it is a GeoTIFF.
 ``curio_raster_calculate(operation, rasters, codes=None)``,
 ``curio_raster_statistics(raster, band=1, mask=None, mask_values=None, where=None)``
-    The Raster Calculator and Raster Statistics nodes' steps
+    The Raster Calculator's operations: cell by cell, and statistics
     (``util/raster_algebra.py``).
 ``curio_data_path("<id>")``
     The dataset's file, for a reader of your own (``pd.read_csv(..., sep=";")``,
@@ -449,7 +449,7 @@ def install_catalog_helpers(
         return calculate(operation, rasters, codes=codes, output_file=raster_output_file)
 
     def curio_raster_statistics(raster, band=1, mask=None, mask_values=None, where=None):
-        """The Raster Statistics node's step: a raster's mean, median, minimum,
+        """The Raster Calculator's statistics: a raster's mean, median, minimum,
         maximum and count, nodata left out (``util/raster_algebra.statistics``)."""
         from utk_curio.sandbox.util.raster_algebra import statistics
 

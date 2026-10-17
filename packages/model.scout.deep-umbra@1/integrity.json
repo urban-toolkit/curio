@@ -1,11 +1,11 @@
 {
   "sha256": {
-    "README.md": "c0167202ba7e1914f54782457a96e042bc5a9e53de7e549a2dce09a0ea5eeb23",
-    "manifest.json": "101576c3bb60df4297908c5cb522fdfa0fabd9ece4690546c7131d0b53e41b0b",
+    "README.md": "8d9f239b31fa011a72468e16f51bf42b504cc49a649667e4df4a0f576ab6e735",
+    "manifest.json": "33989f527cf8d3156c8bac8dfa92486228693eb71a20b61af13494e6a4dace91",
     "models/deep_umbra.onnx": "67afb9d2d56bd0a12164e6e651214d56860ff689728c5b6f29486f21c3cb188e",
     "sources/accumulated-shadow.py": "8d7f91c0d46298757a08a92b1adf3520d98dc8c245f5168ab5905b61ab6c08d0",
     "sources/deep_umbra/__init__.py": "1bdadc7426e584b112413bf9435f5dd6e4947300fefd68616f215cef1446fd8b",
     "sources/deep_umbra/deep_umbra.py": "beb65c909c8aee31f2cab4fc317127cd724c29768f29813437575ebdeb01a0c1",
-    "sources/deep_umbra/node_outputs.py": "66ab919308afef73e49bd44836e34ec34267c1528bc1241e1c259ec3732dd80c"
+    "sources/deep_umbra/node_outputs.py": "88ab20084f7fe95828d77da17643e7db0c7f2fc1ce2639afa288f9f8b46e6291"
   }
 }

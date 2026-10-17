@@ -234,11 +234,11 @@ def split_inputs(value, slots, data_type="") -> dict[str, object]:
 def missing_input(code: str, bound: dict, *, javascript: bool = False) -> str | None:
     """The message for code that reads an input when none arrived.
 
-    A circle with no edge is None, so a node can take an optional input (a
-    Raster Statistics node's mask on input_1). But code that reads its inputs
-    and got none at all would fail on the first ``input_0[...]`` with a
-    confusing ``'NoneType' object is not subscriptable``; this names the
-    circle instead, so the user looks at what feeds it.
+    A circle with no edge is None, so a node can take an optional input (the
+    mask on input_1 of a Raster Calculator's statistics). But code that reads
+    its inputs and got none at all would fail on the first ``input_0[...]``
+    with a confusing ``'NoneType' object is not subscriptable``; this names
+    the circle instead, so the user looks at what feeds it.
     """
     if any(value is not None for value in bound.values()):
         return None

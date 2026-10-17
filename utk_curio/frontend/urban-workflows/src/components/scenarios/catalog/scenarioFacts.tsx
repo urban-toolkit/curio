@@ -44,6 +44,12 @@ export function scenarioNodeCount(row: Pick<ScenarioRow, "nodeCount">): string {
   return `${row.nodeCount} ${row.nodeCount === 1 ? "node" : "nodes"}`;
 }
 
+/** How many scenarios a project's group holds: `"2 scenarios"`, singular for
+ *  one. */
+export function scenarioCount(count: number): string {
+  return `${count} ${count === 1 ? "scenario" : "scenarios"}`;
+}
+
 /** Where its project came from: one of Curio's examples, or the account's own. */
 export function scenarioOriginLabel(row: Pick<ScenarioRow, "project">): string {
   return row.project.isExample ? "Example" : "Your dataflow";
