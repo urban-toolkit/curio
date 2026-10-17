@@ -26,6 +26,7 @@ from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.tests.test_agents.test_document_validation import (
     AUTK,
     VEGA,
+    _flood_depth_map,
     _shipped_autk_documents,
 )
 from utk_curio.backend.tests.test_agents.test_verified_rounds import _drive, _Exec
@@ -131,6 +132,18 @@ class TestTheProjection:
             decoded = json.loads(reply.decode(json.dumps(encoded)))
             assert decoded == _without(document, dropped), where
             assert document_validation.validate(AUTK, json.dumps(decoded))["status"] == "valid", where
+
+    def test_a_layers_color_range_is_written_and_read_back(self, flavor):
+        """A constrained reply keeps autk-grammar 4.4.0's ``colorMapRange``.
+        Every projected object is closed, so a key the vendored schema does
+        not declare is dropped from the reply."""
+        reply = rs.autk_reply_schema(flavor)
+        document = _flood_depth_map(colorMapRange=[-2, 2], colorMapCenter=0, colorMapReverse=True)
+        encoded, dropped = reply.encode(document)
+        assert dropped == []
+        assert jsonschema.Draft202012Validator(reply.schema).is_valid(encoded)
+        assert json.loads(reply.decode(json.dumps(encoded))) == document
+        assert document_validation.validate(AUTK, json.dumps(document))["status"] == "valid"
 
 
 def _without(document, paths):
