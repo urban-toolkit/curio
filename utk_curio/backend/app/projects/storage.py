@@ -465,8 +465,9 @@ def hydrate_outputs(
     copy is already here.
 
     An output found in neither place is left out, with a warning in the log.
-    A project load calls this under the project's spec lock, so it never
-    meets an output a save is installing again (#941).
+    Every caller holds the project's spec lock: a project load, and a scenario
+    drop restoring the outputs it copied. So this never meets an output a save
+    is installing again (#941).
     """
     from utk_curio.sandbox.util.catalog_helpers import hydrated_bundle
 

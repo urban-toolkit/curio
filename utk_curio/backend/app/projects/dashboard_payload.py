@@ -470,12 +470,11 @@ def build_dashboard_payload(
     the output's rows.
 
     A dashboard over *limit_bytes* raises :class:`DashboardTooLargeError`.
-    Under it, a tile that needs a missing output, or one whose envelope cannot
-    be read, raises :class:`DashboardOutputUnreadableError`, which says to try
-    again, rather than drawing the tile empty. A raster the sandbox could not
-    be asked for is left out, and the map asks ``/raster`` for it when it
-    draws. Every refusal carries *meta*'s ``name``, and every output or raster
-    that cannot be read is logged.
+    Under it, a tile that needs a missing output, one whose envelope cannot be
+    read, or one whose raster the sandbox could not be asked for, raises
+    :class:`DashboardOutputUnreadableError`, which says to try again, rather
+    than drawing the tile without it. Every refusal carries *meta*'s ``name``,
+    and every output or raster that cannot be read is logged.
     """
     name = (meta or {}).get("name")
     _refuse_tiles_that_fetch_their_own_data(spec, name=name)
@@ -525,13 +524,13 @@ def build_dashboard_payload(
             try:
                 answer = fetch_raster(filename, part)
             except Exception as exc:
-                logger.warning(
-                    "Dashboard %s left out raster %s (part %s) of node %s: %s",
-                    (meta or {}).get("projectId"), filename, part, node_id,
-                    f"{type(exc).__name__}: {exc}",
+                cannot_read(
+                    node_id, filename,
+                    f"the sandbox could not be asked for its raster (part {part}): {type(exc).__name__}: {exc}",
                 )
                 continue
             if not isinstance(answer, dict):
+                cannot_read(node_id, filename, f"the sandbox answered nothing for its raster (part {part})")
                 continue
             record = _raster_record(filename, part, answer)
             rasters.append(record)

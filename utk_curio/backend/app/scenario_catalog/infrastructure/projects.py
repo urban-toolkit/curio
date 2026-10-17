@@ -105,10 +105,15 @@ def copy_output(user, dir_name: str, *, node_id: str, project_id: str, project_n
 
 def restore_outputs(user, project_id: str, refs: list) -> list:
     """Put *refs*, whose datasets *project_id* now holds, where a canvas reads
-    outputs from, as opening the project does. Returns the refs restored."""
+    outputs from, as opening the project does: under *project_id*'s spec lock,
+    so a save of it installing an output again is never met halfway (#941).
+    The caller holds no spec lock and no uncommitted database write (#909).
+    Returns the refs restored."""
     from utk_curio.backend.app.projects import storage
 
-    return storage.hydrate_outputs(user_key(user), project_id, refs)
+    ukey = user_key(user)
+    with storage.spec_write_lock(ukey, project_id):
+        return storage.hydrate_outputs(ukey, project_id, refs)
 
 
 def output_ref(node_id: str, filename: str, data_type: str | None):
