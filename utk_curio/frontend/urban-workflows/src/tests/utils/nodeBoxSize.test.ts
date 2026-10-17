@@ -107,6 +107,18 @@ describe("resolveNodeBoxSize", () => {
         });
     });
 
+    // A node saved minimized opens as its chip, so the load's layout pass
+    // measures the chip: chips laid out close together stay where they were.
+    test("a node saved minimized measures as its chip, whatever size it opens back to", () => {
+        registerNode(descriptor("curio.builtin/vis-vega@1", {}));
+
+        expect(
+            resolveNodeBoxSize(
+                node("curio.builtin/vis-vega@1", { nodeWidth: 640, nodeHeight: 480, minimized: true }),
+            ),
+        ).toEqual({ width: 70, height: 40 });
+    });
+
     test("the node's own size overrides the template's", () => {
         registerNode(descriptor("curio.builtin/spatial-join@1", {
             nodeWidth: 280,
