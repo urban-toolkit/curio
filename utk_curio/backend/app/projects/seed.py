@@ -8,7 +8,8 @@ import uuid
 from pathlib import Path
 from typing import Iterable, Optional
 
-from utk_curio.backend.extensions import db
+from utk_curio.backend.extensions import db, retry_on_write_conflict
+from utk_curio.backend.app.common.file_locks import exclusive_lock
 from utk_curio.backend.app.projects import repositories as repo
 from utk_curio.backend.app.projects import storage
 from utk_curio.backend.app.projects.models import Project
@@ -34,6 +35,10 @@ logger = logging.getLogger(__name__)
 _EXAMPLES_NAMESPACE = uuid.UUID("a3f1c0d4-1111-4b8e-9a6e-c0ff33ee5eed")
 
 _ACCENT_CYCLE = sorted(VALID_ACCENTS)
+
+# ``common.file_locks`` namespace of the lock that lets one back-fill run per
+# account at a time (``ensure_user_examples_seeded``).
+_SEED_LOCK_NAMESPACE = "examples-seed"
 
 
 def _repo_root() -> Path:
@@ -125,6 +130,26 @@ def is_example_project(user, project_id: str) -> bool:
     return project_id in example_project_ids(user)
 
 
+def _take_write_lock() -> bool:
+    """Begin this session's transaction holding SQLite's write lock
+    (``BEGIN IMMEDIATE``), so it waits on the busy timeout for the lock.
+
+    The driver begins a transaction only at the first write, and a SAVEPOINT
+    begins one without the lock. That one's reads pin a snapshot, and SQLite
+    then refuses its write at once, without the busy handler, whenever another
+    connection holds the lock or has committed since. Returns whether it began
+    the transaction: one already open is left as it is, and so is any database
+    that is not SQLite.
+    """
+    connection = db.session.connection()
+    if connection.dialect.name != "sqlite":
+        return False
+    if connection.connection.dbapi_connection.in_transaction:
+        return False
+    connection.exec_driver_sql("BEGIN IMMEDIATE")
+    return True
+
+
 def seed_example_projects(
     user,
     *,
@@ -177,77 +202,87 @@ def seed_example_projects(
     # seeded last leads a fresh gallery, and that should be the examples. The
     # accent stays keyed to the file's place in the list.
     in_seed_order = sorted(enumerate(shipped), key=lambda pair: pair[1].source != SOURCE_TEST)
-    for i, entry in in_seed_order:
-        if wanted is not None and entry.key not in wanted:
-            continue
-        json_path = entry.path
-        try:
-            spec = json.loads(json_path.read_text(encoding="utf-8"))
-        except Exception:
-            logger.exception("Failed to read example %s", json_path)
-            continue
+    # One transaction for the whole walk, holding SQLite's write lock from its
+    # start, so another writer waits for it instead of landing between two
+    # examples (an account deleted mid-walk, say). Each example's SAVEPOINT
+    # then keeps a failure to that example.
+    began = retry_on_write_conflict(_take_write_lock)
+    try:
+        for i, entry in in_seed_order:
+            if wanted is not None and entry.key not in wanted:
+                continue
+            json_path = entry.path
+            try:
+                spec = json.loads(json_path.read_text(encoding="utf-8"))
+            except Exception:
+                logger.exception("Failed to read example %s", json_path)
+                continue
 
-        stem = json_path.stem
-        project_id = _example_id(entry.key, user)
-        name = _name_from_spec(spec) or _name_from_stem(stem)
-        description = _description_from_spec(spec)
-        accent = _ACCENT_CYCLE[i % len(_ACCENT_CYCLE)]
+            stem = json_path.stem
+            project_id = _example_id(entry.key, user)
+            name = _name_from_spec(spec) or _name_from_stem(stem)
+            description = _description_from_spec(spec)
+            accent = _ACCENT_CYCLE[i % len(_ACCENT_CYCLE)]
 
-        # Keep the canvas title in sync with the project name so TrillGenerator
-        # never falls back to "DefaultWorkflow". `name` is now the spec's own
-        # `dataflow.name` whenever it has one, so this is a no-op for every
-        # curated example and only fills in a name for a spec that lacks one.
-        if isinstance(spec.get("dataflow"), dict):
-            spec["dataflow"]["name"] = name
+            # Keep the canvas title in sync with the project name so TrillGenerator
+            # never falls back to "DefaultWorkflow". `name` is now the spec's own
+            # `dataflow.name` whenever it has one, so this is a no-op for every
+            # curated example and only fills in a name for a spec that lacks one.
+            if isinstance(spec.get("dataflow"), dict):
+                spec["dataflow"]["name"] = name
 
-        try:
-            with db.session.begin_nested():
-                folder = str(storage.project_dir(ukey, project_id))
-                existing = db.session.get(Project, project_id)
-                if existing is not None and existing.user_id == user.id and not overwrite:
-                    # Theirs now. Repair a missing spec file (the row without
-                    # its spec is unopenable) and otherwise leave it alone.
-                    if storage.read_spec(ukey, project_id) is None:
-                        storage.write_spec(ukey, project_id, spec)
-                    continue
-                if existing is not None and existing.user_id == user.id:
-                    existing.name = name
-                    existing.description = description
-                    existing.thumbnail_accent = accent
-                    existing.folder_path = folder
-                    existing.spec_revision = (existing.spec_revision or 0) + 1
-                    existing.slug = repo._unique_slug(
-                        user.id, _slugify(name), exclude_id=project_id
-                    )
-                    project = existing
-                else:
-                    project = Project(
-                        id=project_id,
-                        user_id=user.id,
+            try:
+                with db.session.begin_nested():
+                    folder = str(storage.project_dir(ukey, project_id))
+                    existing = db.session.get(Project, project_id)
+                    if existing is not None and existing.user_id == user.id and not overwrite:
+                        # Theirs now. Repair a missing spec file (the row without
+                        # its spec is unopenable) and otherwise leave it alone.
+                        if storage.read_spec(ukey, project_id) is None:
+                            storage.write_spec(ukey, project_id, spec)
+                        continue
+                    if existing is not None and existing.user_id == user.id:
+                        existing.name = name
+                        existing.description = description
+                        existing.thumbnail_accent = accent
+                        existing.folder_path = folder
+                        existing.spec_revision = (existing.spec_revision or 0) + 1
+                        existing.slug = repo._unique_slug(
+                            user.id, _slugify(name), exclude_id=project_id
+                        )
+                        project = existing
+                    else:
+                        project = Project(
+                            id=project_id,
+                            user_id=user.id,
+                            name=name,
+                            slug=repo._unique_slug(user.id, _slugify(name)),
+                            description=description,
+                            folder_path=folder,
+                            thumbnail_accent=accent,
+                        )
+                        db.session.add(project)
+                        db.session.flush()
+
+                    storage.write_spec(ukey, project_id, spec)
+                    storage.write_manifest(
+                        ukey,
+                        project_id,
+                        project.spec_revision,
+                        [],
                         name=name,
-                        slug=repo._unique_slug(user.id, _slugify(name)),
                         description=description,
-                        folder_path=folder,
                         thumbnail_accent=accent,
                     )
-                    db.session.add(project)
-                    db.session.flush()
+                    seeded += 1
+            except Exception:
+                logger.exception("Failed to seed example %s", stem)
+    except BaseException:
+        # End what the walk began, rather than hold the lock until teardown.
+        db.session.rollback()
+        raise
 
-                storage.write_spec(ukey, project_id, spec)
-                storage.write_manifest(
-                    ukey,
-                    project_id,
-                    project.spec_revision,
-                    [],
-                    name=name,
-                    description=description,
-                    thumbnail_accent=accent,
-                )
-                seeded += 1
-        except Exception:
-            logger.exception("Failed to seed example %s", stem)
-
-    if seeded:
+    if seeded or began:
         db.session.commit()
 
     if prune:
@@ -307,49 +342,68 @@ def ensure_user_examples_seeded(user) -> int:
     gallery - which is exactly what the e2e harness produces, since it
     truncates ``user`` between tests. Recording the username and requiring it
     to match costs one line and makes the marker mean what it says.
+
+    **One back-fill per account at a time.** Two requests listing a new
+    account's projects at once both found no marker and both seeded. The
+    second one's writes failed, and its listing, read before the first one
+    committed, showed no examples. The second now waits on a lock beside the
+    marker, then reads the marker the first one wrote. Like the spec lock
+    (#909), it is asked for before any database write, since its holder needs
+    SQLite's write lock to seed.
     """
     # Read at call time, not import time, so the launcher's value is honoured
     # and a test can flip it. Default off, matching ``config.CURIO_SEED_EXAMPLES``:
     # a stack started without ``--with-examples`` seeds nobody, exactly as before.
     if not _env_flag("CURIO_SEED_EXAMPLES"):
         return 0
+    user_id = user.id
     ukey = _user_dir_key(user)
     marker = _seeded_marker(ukey)
     owner = str(getattr(user, "username", "") or "")
     shipped_keys = [s.key for s in shipped_dataflows()]
-
-    recorded: set[str] = set()
-    if marker.exists():
-        marker_owner, marker_keys = _read_marker(marker)
-        if marker_owner == owner:
-            if marker_keys is None:
-                ids = {
-                    row.id for row in
-                    Project.query.filter(Project.user_id == user.id).all()
-                }
-                marker_keys = {k for k in shipped_keys if _example_id(k, user) in ids}
-            recorded = marker_keys
-    missing = [k for k in shipped_keys if k not in recorded]
-    if not missing:
-        return 0
-    try:
-        seeded = seed_example_projects(
-            user, prune=False, overwrite=False, only_keys=missing,
-        )
-    except Exception:
-        logger.exception("Back-filling examples failed for user %s", user.id)
-        return 0
-    # Written even for a zero-seed: a missing examples directory is not a
-    # reason to retry the whole walk on every listing.
-    keys = ",".join(sorted(recorded | set(missing)))
     try:
         marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.write_text(
-            f"user={owner}\nkeys={keys}\ncount={seeded}\n", encoding="utf-8",
-        )
     except OSError:
-        logger.exception("Could not write the examples marker at %s", marker)
-    return seeded
+        logger.exception("Could not create the account folder %s", marker.parent)
+        return 0
+
+    with exclusive_lock(
+        marker.with_name(f".{marker.name}.lock"),
+        namespace=_SEED_LOCK_NAMESPACE,
+        key=ukey,
+    ):
+        recorded: set[str] = set()
+        if marker.exists():
+            marker_owner, marker_keys = _read_marker(marker)
+            if marker_owner == owner:
+                if marker_keys is None:
+                    ids = {
+                        row.id for row in
+                        Project.query.filter(Project.user_id == user_id).all()
+                    }
+                    marker_keys = {k for k in shipped_keys if _example_id(k, user) in ids}
+                recorded = marker_keys
+        missing = [k for k in shipped_keys if k not in recorded]
+        if not missing:
+            return 0
+        try:
+            seeded = seed_example_projects(
+                user, prune=False, overwrite=False, only_keys=missing,
+            )
+        except Exception:
+            logger.exception("Back-filling examples failed for user %s", user_id)
+            return 0
+        # Written even for a zero-seed: a missing examples directory is not a
+        # reason to retry the whole walk on every listing.
+        keys = ",".join(sorted(recorded | set(missing)))
+        try:
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(
+                f"user={owner}\nkeys={keys}\ncount={seeded}\n", encoding="utf-8",
+            )
+        except OSError:
+            logger.exception("Could not write the examples marker at %s", marker)
+        return seeded
 
 
 def _prune_non_example_projects(user, ukey: str, keep_ids: set[str]) -> int:
