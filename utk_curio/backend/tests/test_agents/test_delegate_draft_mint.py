@@ -176,8 +176,14 @@ class TestDelegateDraftMint:
         from utk_curio.backend.app.projects import storage as projects_storage
         from utk_curio.backend.app.projects.services import _user_dir_key
 
+        from .test_routes_proposals import TestNodeCreate
+
         user, token = user_and_token
         pid = _project(client, token)
+        # No notes template anywhere: a built-in package without the Note, the
+        # store in which the Researcher asks for a notes package.
+        with client.application.app_context():
+            TestNodeCreate()._write_builtin_package(_user_dir_key(user))
         child_reply = "```json\n" + json.dumps({"packageDraft": _draft()}) + "\n```"
         att_id, calls = _setup(client, token, pid, monkeypatch, replies=[
             _delegate_tail(),          # parent round 1: delegate authoring
@@ -186,6 +192,7 @@ class TestDelegateDraftMint:
         ])
         run = _run(client, token, pid, att_id)
         assert run.status_code == 200, run.get_data(as_text=True)
+        assert "None of these renders a note" in calls[0][0]["content"]
         parts = run.get_json()["content"]
         proposal = next(p for p in parts if p["type"] == "proposal")
         assert proposal["tool"] == "package.draft.apply"
