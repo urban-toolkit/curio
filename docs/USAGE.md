@@ -10,6 +10,7 @@
   - [Keys for node code](#keys-for-node-code)
   - [Guest users](#guest-users)
 - [Inside a node](#inside-a-node)
+- [Notes](#notes)
 - [Running a dataflow](#running-a-dataflow)
 - [Widgets](#widgets)
 - [Scenarios](#scenarios)
@@ -387,6 +388,23 @@ Drag a node's bottom-right corner to resize it. For viewers of a shared dataflow
 nodes keep their size and have no delete. A minimized node is a small chip; click it
 to open the node again. Double-click a node where you would drag it, such as its
 header, to zoom the view onto it.
+
+## Notes
+
+A **Note** node holds a title and a short text on a color, to explain a part of
+the dataflow. Drag **Note** from the palette onto the canvas, write its title
+and text, pick its color and click **Save**. **Edit** on the note opens them
+again.
+
+- The text is simple markdown: `#` headings, `-` lists, `**bold**`,
+  `*italics*`, `` `code` `` and links. Only an `https` link is a link, and it
+  opens in a new tab. HTML in the text is not shown, and an image shows its alt
+  text.
+- A note has no inputs or outputs, and a run skips it.
+- The **Researcher** answers questions from the web with notes (see
+  [Agent Catalog](#agent-catalog)).
+- On the dashboard and on a shared dataflow, a note shows its text and cannot be
+  edited.
 
 ## Running a dataflow
 
@@ -1327,8 +1345,8 @@ For the full guide, covering runtimes, libraries, the manifest, and sharing a da
 Agents are AI assistants you attach to your dataflow. The catalog lists four:
 
 - **Researcher**: explains a node or the whole dataflow, diagnoses errors,
-  helps you define what to build, answers questions from the web as notes, and
-  checks facts.
+  helps you define what to build, answers questions from the web as
+  [notes](#notes), and checks facts.
 - **Node Builder**: builds a node or rewrites one's content, suggests nodes for
   a connection, and installs or writes the node packages your nodes need.
 - **Dataflow Builder**: plans a whole dataflow, then solves its nodes.

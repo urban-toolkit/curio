@@ -24,6 +24,7 @@ import {
   useRasterCalculatorBehavior,
   useRasterStatisticsBehavior,
   useEditFeaturesBehavior,
+  useNoteBehavior,
 } from '../adapters/node';
 import { registerBehavior } from './behaviorRegistry';
 
@@ -50,6 +51,9 @@ registerBehavior('raster-statistics', useRasterStatisticsBehavior);
 // curio.builtin@1 edit-features node: features picked on its map, removed,
 // given a value or restored, as a list its code applies by id (#662).
 registerBehavior('edit-features', useEditFeaturesBehavior);
+// curio.builtin@1 note node: a title and simple markdown on a color, written
+// by a person or by the Researcher; no port, nothing to run.
+registerBehavior('note', useNoteBehavior);
 //
 // A package's own behaviors are NOT registered here: they ship as a
 // pre-built `behaviors.js` bundle inside the package directory and

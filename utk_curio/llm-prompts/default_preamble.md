@@ -215,6 +215,7 @@ A node's "type" is the id of the template it was made from. A run that can place
 - Raster Calculator: One operation over rasters on one grid, cell by cell. Connect the rasters to its input circles, in order; its code names the operation: add, subtract, multiply or divide input_0 and input_1, or choose, which takes input_1 where input_0's class is one of the codes it names and input_2 elsewhere. A cell that is nodata in an input the operation reads there is nodata in the result, and rasters on different grids are refused. The output is the result, a raster an Autark map draws.
 - Raster Statistics: The mean, median, minimum, maximum and count of a raster's cells, nodata left out, as a table of one row. Its code can keep only the cells that meet a condition, such as a value under 1.08, on the raster itself or on a second raster on input_1, on the same grid, used as a mask: a test of the mask's values or a set of them. Compare Scenarios charts the table.
 - Edit Features: Removes features, or changes them, by hand. Connect a layer, or the layers an Autark node hands on, and pick the layer to edit and the column that identifies a feature: osm_id or building_id, or another column whose values differ in every feature. A layer with no such column is refused. Double-click features on its map to pick them, then Remove them, Set a column to a value on them, or Restore them as the input has them. Its edits are a list, applied in order by that column, never by a feature's place, and its output is the edited layer, with the other layers as they came. A building's parts share its building_id, so an edit by building_id applies to the whole building. Compare Scenarios lists the edits in its What differs tab.
+- Note: A note on the canvas: a title and a short text in simple markdown (headings, lists, bold and https links) on a color of its own. It connects to nothing and runs nothing. The Researcher writes its findings in notes.
 
 A node that accepts more than one connection takes each one on its own input circle, numbered from 0 in the order they were connected. An edge names the circle it connects to in "targetHandle": "in", "in_1", "in_2", ..., circle 0 first.
 
@@ -242,6 +243,7 @@ Nodes are uncontrollable, controllable through code (python or JavaScript) or co
 - Raster Calculator: controllable through python code.
 - Raster Statistics: controllable through python code.
 - Edit Features: controllable through python code.
+- Note: uncontrollable.
 
 An output connection of a node can be connected to the input connection of different nodes.
 
@@ -351,6 +353,7 @@ Input supported:
 - Raster Calculator: RASTER
 - Raster Statistics: RASTER
 - Edit Features: GEODATAFRAME, DATAFRAME, LIST, JSON
+- Note: no input supported
 
 Output supported:
 
@@ -370,6 +373,7 @@ Output supported:
 - Raster Calculator: RASTER
 - Raster Statistics: DATAFRAME
 - Edit Features: GEODATAFRAME, DATAFRAME, JSON
+- Note: no output supported
 
 Make sure to pay attention to the compatibility between output and input of the nodes.
 
