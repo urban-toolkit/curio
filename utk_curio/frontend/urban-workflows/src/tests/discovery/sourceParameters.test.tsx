@@ -306,6 +306,18 @@ const portalRow = (over: Partial<DiscoveryResource> = {}): DiscoveryResource => 
   ...over,
 });
 
+describe('the dialog over the canvas drawer', () => {
+  test("stacks above a catalog drawer's scrim, so a click in it stays in it", () => {
+    // The canvas's Discovery Catalog drawer opens this dialog too. On the
+    // default layer the drawer and its scrim lay over the dialog.
+    render(
+      <DiscoveryAddDialog resource={portalRow({ parameters: [AREA] })} splitBy={[]} onAdd={jest.fn()} onCancel={jest.fn()} />,
+    );
+    expect(screen.getByRole('dialog').className).toMatch(/\bmodalOverlay\b/);
+    expect(document.querySelector('.backdropOverlay')).not.toBeNull();
+  });
+});
+
 describe('what an add or a download sends', () => {
   test('the dialog sends the answers with the title', () => {
     const onAdd = jest.fn();
