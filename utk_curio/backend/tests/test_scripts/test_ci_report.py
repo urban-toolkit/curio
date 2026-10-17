@@ -357,6 +357,36 @@ def test_a_minted_baseline_has_its_own_group_ahead_of_the_passes(tmp_path):
     assert summary.read_text(encoding="utf-8").rstrip().endswith("Minted: 1 new baselines.")
 
 
+def test_a_comparison_with_a_gpu_kinds_baseline_says_which_baseline_it_used(tmp_path):
+    compare = tmp_path / "compare"
+    _comparison(compare, "a_default", status="passed", ratio=0.01)
+    _comparison(compare, "k_kind", status="passed", ratio=0.01,
+                baseline="screenshot_k_kind.utk-gpu.png", gpu_kind="utk-gpu")
+    _comparison(compare, "n_new", status="reminted", ratio=0.0606, remint_ratio=0.0606,
+                recapture_ratio=0.0, volatile_pixels=0, remint_min_ratio=0.0005,
+                baseline="screenshot_n_new.utk-gpu.png", gpu_kind="utk-gpu",
+                compared_with="screenshot_n_new.png")
+    _comparison(compare, "r_default", status="reminted", ratio=0.02, remint_ratio=0.02,
+                recapture_ratio=0.0, volatile_pixels=0, remint_min_ratio=0.0005)
+    out = tmp_path / "report.html"
+    assert ci_report.main(["--comparisons", str(compare), "--out", str(out)]) == 0
+    page = out.read_text(encoding="utf-8")
+
+    assert "utk-gpu baseline" in _card(page, "screenshot_k_kind.utk-gpu.png")
+    assert "utk-gpu baseline" not in _card(page, "screenshot_a_default.png")
+    # A new baseline of a GPU kind shows the default one it was compared with.
+    new = _card(page, "screenshot_n_new.utk-gpu.png")
+    assert "utk-gpu baseline" in new
+    assert "<figcaption>Default baseline</figcaption>" in new
+    assert "<figcaption>New utk-gpu baseline</figcaption>" in new
+    assert "from the default baseline screenshot_n_new.png" in new
+    # An ordinary re-mint reads as before.
+    replaced = _card(page, "screenshot_r_default.png")
+    assert "<figcaption>Committed baseline</figcaption>" in replaced
+    assert "<figcaption>Re-minted</figcaption>" in replaced
+    assert "utk-gpu" not in replaced
+
+
 def test_close_ups_get_a_badge_and_a_filter_across_the_groups(tmp_path):
     compare = tmp_path / "compare"
     _comparison(compare, "full", status="passed", ratio=0.0)
