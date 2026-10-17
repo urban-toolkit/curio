@@ -4,8 +4,8 @@
  * input's scenario, which is its output; a chart of that table in the
  * scenarios' colors, drawn by the Vega-Lite node's code; and a What differs
  * tab over the scenarios' levers. In Difference, its code subtracts input_0
- * from input_1 instead, and the difference, its output, is drawn on a map by
- * the Autark node's code (a table difference as a table).
+ * from input_1 instead; the difference is its output, which an Autark node
+ * after it draws on a map (a table difference is shown as a table).
  *
  * Its code is written for it: one line per input, reading the input through
  * its chip under the scenario's id and name (`utils/compare/compareCode`). When

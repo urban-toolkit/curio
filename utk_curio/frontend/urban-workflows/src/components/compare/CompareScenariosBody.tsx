@@ -1,10 +1,11 @@
 /**
  * The Compare Scenarios node's body (#662), its output pane: the warnings, the
  * Chart tab (its settings and the chart of the stacked table) or, in
- * Difference, the Difference tab (its settings and the map of the difference),
- * and the What differs tab. Read from the live graph, so a renamed scenario, a
- * new widget value or an edited line shows at once; the chart and the map
- * redraw when the node runs.
+ * Difference, the Difference tab (its settings, and a table's difference as a
+ * table; an Autark node after this one draws a raster's or a layer's), and the
+ * What differs tab. Read from the live graph, so a renamed scenario, a new
+ * widget value or an edited line shows at once; the chart redraws when the
+ * node runs.
  */
 import React, { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useFlowContext } from "../../providers/FlowProvider";

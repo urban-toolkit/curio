@@ -91,14 +91,12 @@ def test_the_schema_lists_the_modes_the_frontend_offers():
 @pytest.mark.parametrize(
     "settings",
     [
-        {"inputs": LABELS, "mode": "difference", "difference": {"key": "osm_id", "value": "sunlight"}},
+        {"inputs": LABELS, "mode": "difference", "difference": {"key": "osm_id"}},
         {"mode": "chart", "chart": {"preset": "bar"}},
-        {"inputs": LABELS, "difference": {"value": "band_1"}},
         {"inputs": LABELS, "mode": "difference", "difference": {"absolute": True}},
         {"mode": "chart", "chart": {"preset": "pie", "aggregate": "none"}},
     ],
-    ids=["difference with a key and a value", "chart chosen", "a value alone", "each difference's size",
-         "a chart that combines nothing"],
+    ids=["difference with a key", "chart chosen", "each difference's size", "a chart that combines nothing"],
 )
 def test_the_schema_takes_a_chosen_view_and_what_difference_joins_on(settings):
     assert _errors(_doc(copy.deepcopy(settings))) == []

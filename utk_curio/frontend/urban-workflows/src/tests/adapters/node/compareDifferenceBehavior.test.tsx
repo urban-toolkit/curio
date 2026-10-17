@@ -2,9 +2,9 @@
  * The Compare Scenarios node (#662) in Difference, on the canvas. The node
  * picks Difference for two rasters or two layers that have run and Chart for
  * anything else, writes its code for the view (and the key it joins rows on),
- * and the user can switch. Its body maps a raster's or a layer's difference
- * through the Autark node's map code, and shows a table's through the
- * Vega-Lite node's.
+ * and the user can switch. Its body shows a table's difference through the
+ * Vega-Lite node's code, and leaves a raster's or a layer's to an Autark node
+ * after it: it calls no Autark map code.
  */
 import React from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -42,7 +42,7 @@ jest.mock("../../../utils/grammarInput", () => ({
   ),
 }));
 
-// The Autark node's map code, as the difference map calls it.
+// The Autark node's map code, which the node never calls.
 const mockApply = jest.fn().mockResolvedValue(undefined);
 const mockAutk = jest.fn((_data: any, _state: any, _options: any) => ({
   applyGrammar: mockApply,
@@ -228,72 +228,6 @@ describe("its body in Difference", () => {
     expect(mockMarkDirty).toHaveBeenCalled();
   });
 
-  test("a raster's difference is mapped by the Autark node's map code, which hands nothing on", async () => {
-    mockFrames["diff-1"] = [{
-      dataType: "raster",
-      payload: { envelope: { dataType: "raster", data: { features: [{ properties: { bands: [{ id: "band_1" }] } }] } } },
-      schema: null,
-      geometryName: null,
-    }];
-    mount({ inputSlots: holding("raster"), code: DIFFERENCE }, nodeState(ran));
-    await screen.findByTestId("autark-map");
-    const [data, state, options] = mockAutk.mock.calls.at(-1)!;
-    // The node's own canvas, autk-grammar-map-<its id>, over its own output,
-    // read as the table the document names; its title titles the legend.
-    expect(data.nodeId).toBe(COMPARE);
-    expect(data.input).toEqual({ path: "diff-1", layerName: "band_1_change" });
-    expect(data.outputCallback).toBeUndefined();
-    expect(data.interactionsCallback).toBeUndefined();
-    // A map that cannot draw leaves the node's outcome as its run left it.
-    expect(options).toEqual({ marksNodeErrored: false });
-    expect(state.output).toEqual({ code: "", content: "" });
-    await waitFor(() => expect(mockApply).toHaveBeenCalled());
-    expect(JSON.parse(mockApply.mock.calls.at(-1)![0])).toEqual({
-      map: {
-        layerRefs: [{
-          dataRef: "band_1_change",
-          title: "band_1 change",
-          getFnv: "band_1",
-          getFnvType: "quantitative",
-          colorMapInterpolator: "interpolateViridis",
-        }],
-      },
-    });
-    expect(screen.getByText("Dark purple is the lowest difference and yellow the highest.")).not.toBeNull();
-    expect(screen.queryByRole("combobox", { name: "Key" })).toBeNull();
-    // The map says it drew once the Autark code reports so, for this document.
-    const map = () => document.querySelector("[data-compare-map-state]")!;
-    expect(map().getAttribute("data-compare-map-state")).toBe("drawing");
-    expect(map().getAttribute("data-compare-map-color")).toBe("band_1");
-    act(() => state.setOutput({ code: "success", content: "" }));
-    expect(map().getAttribute("data-compare-map-state")).toBe("drawn");
-  });
-
-  test("a layer's difference is colored by its first number, or by its change", async () => {
-    mockFrames["diff-1"] = [{
-      dataType: "geodataframe",
-      payload: { type: "FeatureCollection", features: [{ properties: { osm_id: 1, change: "changed", sunlight: -2 } }] },
-      schema: { osm_id: "int64", change: "object", sunlight: "float64" },
-      geometryName: "geometry",
-    }];
-    mount({ inputSlots: holding("geodataframe"), code: DIFFERENCE }, nodeState(ran));
-    await screen.findByTestId("autark-map");
-    await waitFor(() => expect(mockApply).toHaveBeenCalled());
-    expect(JSON.parse(mockApply.mock.calls.at(-1)![0]).map.layerRefs[0]).toEqual({
-      dataRef: "sunlight_change", getFnv: "sunlight", getFnvType: "quantitative", colorMapInterpolator: "interpolateViridis",
-      title: "sunlight change",
-    });
-    expect(mockAutk.mock.calls.at(-1)![0].input).toEqual({
-      path: "diff-1", dataType: "geodataframe", layerName: "sunlight_change",
-    });
-    expect(screen.getByText("Dark purple is the lowest difference and yellow the highest.")).not.toBeNull();
-    fireEvent.change(screen.getByRole("combobox", { name: "Color by" }), { target: { value: "change" } });
-    expect(mockUpdateDataNode).toHaveBeenCalledWith(
-      COMPARE,
-      expect.objectContaining({ compareScenarios: { inputs: [BASE, TALL], difference: { value: "change" } } }),
-    );
-  });
-
   test("a raster's difference draws no map in the node: the tab leaves it to an Autark node after it", async () => {
     mockFrames["diff-1"] = RASTER_DIFFERENCE;
     const { view } = mount({ inputSlots: holding("raster"), code: DIFFERENCE }, nodeState(ran));
@@ -451,18 +385,4 @@ describe("each difference's size, absolute", () => {
     expect(mockAutk).not.toHaveBeenCalled();
   });
 
-  test("code already written for it is left as it is, and its map's legend says absolute change", async () => {
-    mockFrames["diff-1"] = [{
-      dataType: "raster",
-      payload: { envelope: { dataType: "raster", data: { features: [{ properties: { bands: [{ id: "band_1" }] } }] } } },
-      schema: null,
-      geometryName: null,
-    }];
-    mount(inDifference({ absolute: true }, ABSOLUTE), nodeState(ran));
-    expect(mockUpdateDataNode).not.toHaveBeenCalled();
-    await screen.findByTestId("autark-map");
-    await waitFor(() => expect(mockApply).toHaveBeenCalled());
-    expect(JSON.parse(mockApply.mock.calls.at(-1)![0]).map.layerRefs[0].title).toBe("band_1 absolute change");
-    expect((screen.getByRole("combobox", { name: "Change" }) as HTMLSelectElement).value).toBe("absolute");
-  });
 });

@@ -139,14 +139,14 @@ describe("the code it writes in Difference", () => {
 });
 
 describe("the node's settings", () => {
-  test("keep a chosen view and what Difference joins on and maps, and nothing else", () => {
+  test("keep a chosen view and what Difference joins on, and nothing else", () => {
     expect(
       normalizeCompareSettings({
         inputs: [BASE, TALL],
         mode: "difference",
         difference: { key: "osm_id", value: "sunlight", band: 1 },
       }),
-    ).toEqual({ inputs: [BASE, TALL], mode: "difference", difference: { key: "osm_id", value: "sunlight" } });
+    ).toEqual({ inputs: [BASE, TALL], mode: "difference", difference: { key: "osm_id" } });
     expect(normalizeCompareSettings({ mode: "chart" })).toEqual({ mode: "chart" });
   });
 

@@ -1,6 +1,5 @@
 /* The Compare Scenarios node's body (#662): its warnings, its two tabs, the
-   chart's settings and the chart, the difference and its map, and the What
-   differs list. */
+   chart's settings and the chart, the difference, and the What differs list. */
 
 .body {
   height: 100%;
@@ -101,12 +100,6 @@
   margin: 4px 0 0;
   color: var(--curio-danger-text);
   font-size: var(--curio-font-size-xs);
-}
-
-.map {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
 }
 
 .mapCanvas {

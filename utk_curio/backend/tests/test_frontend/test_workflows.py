@@ -1336,15 +1336,15 @@ class TestWorkflowCanvas:
 
         # Each map opens framed on the layers it draws (#773): not a speck in
         # the middle of the map, nor a crop past its edges. That is every
-        # Autark map, and the maps Compare Scenarios and Edit Features draw
-        # with the Autark node's map code. Checked once every close-up is
-        # taken, and for every map before failing on one.
+        # Autark map, and the map Edit Features draws with the Autark node's
+        # map code. Checked once every close-up is taken, and for every map
+        # before failing on one.
         maps = [
             node.id for node in self._drawing_autark_nodes()
             if "map" in json.loads(self.spec.node_code(node, "json"))
         ] + [
             node.id for node in self.spec.nodes
-            if node.type in (COMPARE_SCENARIOS, EDIT_FEATURES)
+            if node.type == EDIT_FEATURES
             and self.page.locator(f"#autk-grammar-map-{node.id}").count()
         ]
         unframed = [
