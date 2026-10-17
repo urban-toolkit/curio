@@ -848,6 +848,30 @@ def may_save(user, project_id: str) -> bool:
     return True
 
 
+#: What a save numbered lower than one its tab already had applied is told.
+#: The page gave up on that save before it landed, so no one but a log reads it.
+OLDER_SAVE_REFUSAL = (
+    "A newer save of this dataflow from this tab has already been applied, "
+    "so this older one was not."
+)
+
+
+def _refuse_an_older_save(ukey: str, project_id: str, data: ProjectUpdate) -> None:
+    """Refuse a save numbered lower than the latest one applied from its tab.
+
+    The page gives up on a save after 2 minutes and sends the next, but the
+    server may still be working on the first: on its way, or waiting for the
+    spec lock. Applied after the next one, it would put the older dataflow
+    back. Checked under the spec lock, before anything is written, like the
+    stale-basis guard.
+    """
+    if data.save_tab is None or data.save_number is None:
+        return
+    last = storage.last_save_number(ukey, project_id, data.save_tab)
+    if last is not None and data.save_number < last:
+        raise ProjectError(OLDER_SAVE_REFUSAL, 409)
+
+
 def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
     project = _project_to_save(user, project_id)
     ukey = _user_dir_key(user)
@@ -861,6 +885,7 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
     install_warnings: list = []
     labels = _labels_for_unnamed(ukey, project_id, data.outputs) if data.outputs is not None else None
     with storage.spec_write_lock(ukey, project_id):
+        _refuse_an_older_save(ukey, project_id, data)
         existing_spec = storage.read_spec(ukey, project_id)
         effective_spec = data.spec if data.spec is not None else existing_spec
         spec_dirty = False
@@ -1000,6 +1025,12 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
                 dataflow["categories"] = data.categories
                 _normalize_spec_categories(effective_spec)
                 spec_dirty = True
+
+        if data.save_tab is not None and data.save_number is not None:
+            # Just before the spec, as the counter is bumped before it: a crash
+            # between the two leaves the number ahead, which refuses nothing
+            # the tab still sends, since its next save is numbered higher.
+            storage.record_save_number(ukey, project_id, data.save_tab, data.save_number)
 
         if data.spec is not None or spec_dirty:
             storage.write_spec(ukey, project_id, effective_spec)

@@ -94,6 +94,42 @@ export interface UpdateBody {
   baseRevision?: number;
   /** Replaces the hand-set categories (`dataflow.categories`). */
   categories?: HandCategories;
+  /** This tab's id and the save's number among its saves (`saveOrder.ts`).
+   *  The server refuses a number lower than one it has already applied from
+   *  the same tab. Omitting them means the save is not checked. */
+  saveTab?: string;
+  saveNumber?: number;
+}
+
+/** How long the page waits for a save before it gives up. Generous, since a
+ *  save installs every output it sends. Giving up frees the save queue for
+ *  the next save; the server may still finish this one, which the save's
+ *  number (`saveOrder.ts`) keeps from landing over a newer save. */
+export const SAVE_TIMEOUT_MS = 2 * 60 * 1000;
+
+export const SAVE_TIMEOUT_MESSAGE =
+  "Saving took longer than 2 minutes, so Curio stopped waiting. Your changes " +
+  "are still on this page; save again to try once more.";
+
+/** Send a save, and give up after {@link SAVE_TIMEOUT_MS}: the request is
+ *  aborted and the save rejects with {@link SAVE_TIMEOUT_MESSAGE}, which
+ *  callers show as it is. */
+async function sendSave<T>(send: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const gaveUp = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      // Rejected before the abort, so the timeout is the answer rather than
+      // the AbortError the request then fails with.
+      reject(new Error(SAVE_TIMEOUT_MESSAGE));
+      controller.abort();
+    }, SAVE_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([send(controller.signal), gaveUp]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export interface LoadResponse {
@@ -125,17 +161,23 @@ export const projectsApi = {
   },
 
   create(body: SaveBody): Promise<ProjectDetail> {
-    return apiFetch<ProjectDetail>("/api/projects", {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
+    return sendSave((signal) =>
+      apiFetch<ProjectDetail>("/api/projects", {
+        method: "POST",
+        body: JSON.stringify(body),
+        signal,
+      }),
+    );
   },
 
   update(id: string, body: UpdateBody): Promise<ProjectDetail> {
-    return apiFetch<ProjectDetail>(`/api/projects/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(body),
-    });
+    return sendSave((signal) =>
+      apiFetch<ProjectDetail>(`/api/projects/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+        signal,
+      }),
+    );
   },
 
   /** Hard-deletes the project and its files. There is no soft variant (#261). */
