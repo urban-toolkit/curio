@@ -70,6 +70,29 @@ def test_every_prompt_template_is_registered():
         assert output in registered, f"{path.name} has no entry in GENERATED_OUTPUTS"
 
 
+def test_a_note_draws_the_colors_an_agents_note_is_saved_in():
+    """The Note node's palette, inks, links and contrast are the node-appearance
+    rule's, through which an agent's note is saved."""
+    from utk_curio.backend.app.packages.domain import node_appearance
+
+    relative = "utk_curio/frontend/urban-workflows/src/generated/noteColors.ts"
+    assert relative in contracts.GENERATED_OUTPUTS
+    text = contracts.GENERATED_OUTPUTS[relative]()
+    for name, color in node_appearance.NAMED_COLORS.items():
+        assert f'  {name}: "{color}",' in text
+    assert f'export const DEFAULT_NOTE_COLOR = "{node_appearance.DEFAULT_BACKGROUND}";' in text
+    assert f"export const NOTE_MIN_CONTRAST = {node_appearance.MIN_CONTRAST};" in text
+    light, dark = node_appearance.derived_colors("yellow"), node_appearance.derived_colors("#000000")
+    assert (
+        f'export const NOTE_INKS = {{ dark: "{light["foreground"]}", light: "{dark["foreground"]}" }} as const;'
+        in text
+    )
+    assert (
+        f'export const NOTE_LINKS = {{ onLight: "{light["link"]}", onDark: "{dark["link"]}" }} as const;'
+        in text
+    )
+
+
 class TestRenderPrompt:
     """A template's markers are filled from ``PROMPT_FIELDS`` alone, and no
     marker ever reaches the model."""
