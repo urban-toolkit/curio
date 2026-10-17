@@ -271,6 +271,7 @@ re-mint run of the Full stack build:
 gh workflow run docker-compose.yml --ref <branch> -f remint=true
 # only some tests: add -f remint_filter='<a pytest -k expression>'
 # frames a fix changes by only a few words: add -f remint_force='<name part>,<name part>'
+# a frame the two GPU models draw differently: see "Baselines per GPU kind" below
 ```
 
 That run is the e2e suite alone, under `--remint-baselines`, on the GPU share
@@ -403,6 +404,39 @@ CURIO_E2E_COMPARE_DIR=$PWD/.curio/compare PYTEST_ADDOPTS=--junitxml=$PWD/.curio/
 python scripts/ci_report.py --junit "End-to-end tests=.curio/e2e.xml" \
   --comparisons .curio/compare --failures .curio/playwright/failures --out report.html
 ```
+
+### Baselines per GPU kind
+
+The GPU job runs on one of two GPU models: an arcade runner (arcade-gpu-01 to
+04 share an H100) or utk-gpu (an RTX PRO 6000). Nearly every frame draws the
+same on both. A frame that does not, like example 07's plot close-up, whose
+GPU-computed histogram draws 6% apart, may also keep a baseline of one GPU kind
+beside its default one: `<name>.utk-gpu.png` or `<name>.arcade-gpu.png`.
+
+- The test-gpu job sets `CURIO_E2E_GPU_KIND` from its runner's name. A frame
+  with a baseline of that kind is compared with it. Every other frame, and every
+  run without a kind (a local run, a CPU runner), uses the default baseline.
+  The report's card names the baseline each comparison used, and a badge marks
+  a GPU kind's.
+- A re-mint writes the baseline it compared with, so on utk-gpu it rewrites a
+  frame's `.utk-gpu.png` and never its default. When the screen of such a frame
+  changes, re-mint it on each kind: the run on the other kind refreshes the
+  default.
+- A frame's first baseline of a kind comes from a re-mint that names it and
+  whose test-gpu job runs on that kind:
+
+  ```
+  gh workflow run docker-compose.yml --ref <branch> -f remint=true \
+    -f remint_filter='<the test that captures it>' \
+    -f remint_gpu_kind='utk-gpu:<baseline name>.png' -f gpu_pool=utk
+  ```
+
+  `remint_gpu_kind` names frames the way `remint_force` does. That run writes
+  only the frames it names, each only when the kind draws it more than 0.05%
+  apart from the default, and compares every other frame without writing it.
+  It refuses to run on another GPU kind. Each new baseline's card shows it
+  next to the default one it was compared with.
+- Delete a kind's baseline once the two GPU models draw the frame alike again.
 
 ## Workflow Subset Filtering
 
@@ -955,6 +989,7 @@ the autouse `e2e_clean_db` must not truncate between them.
 | `CURIO_SANDBOX_TOKEN` | The sandbox's shared secret for `/exec`, `/execJs`, `/get`, `/artifact-meta` and `/monitor` (`sandbox/app/auth.py`). The self-managed path mints one and publishes it to this process; **with `CURIO_E2E_USE_EXISTING=1` you must set it yourself, to the same value the running stack was started with**: `curio.py start` mints a random one otherwise, and nothing can recover it. A mismatch fails with that sentence. |
 | `CURIO_E2E_FRONTEND_PORT` | Frontend port for existing servers (default: `8080`) |
 | `CURIO_E2E_COMPARE_DIR` | Record every screenshot comparison, passing or not, into this directory: one folder each with the expected, created and difference images and `record.json`, which `scripts/ci_report.py` turns into one HTML page. Unset, nothing is recorded. |
+| `CURIO_E2E_GPU_KIND` | The run's GPU kind, `arcade-gpu` or `utk-gpu`: a frame with a baseline of that kind is compared with it (see *Baselines per GPU kind*). CI's test-gpu job sets it from its runner's name. Unset, every frame is compared with its default baseline. |
 | `CURIO_TESTING` | Two jobs: switches the backend to test-only DB paths under `.curio/test/`, **and** is the second factor the `/api/testing/*` blueprint and the scripted LLM provider require. Exported by `../conftest.py`; externally-booted servers (compose stacks included) must be given it explicitly. |
 | `DATABASE_URL_TEST` | SQLAlchemy URL for the test DB (defaults to `sqlite:///…/.curio/test/urban_workflow_test.db`). |
 | `CURIO_TEST_WORKSPACE` | Persist the per-session test workspace here instead of a temp dir (debugging). |
