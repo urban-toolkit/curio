@@ -8,9 +8,9 @@ within one gray level. Both are SCOUT's own files, copied unchanged into
 
 The node: its template, with the widgets its manifest declares, resolved the
 way a run resolves a node's widgets, runs in the sandbox with its package's
-modules (#719). It returns ``(mosaic, tiles)``: the tiles are SCOUT's, the
-mosaic is one raster the Autark node's raster path (#718) loads, and each
-widget reaches the call.
+modules (#719). It returns one raster of heights: SCOUT's tiles side by side,
+no data where ``convert_raster`` wrote no tile, a raster the Autark node's
+raster path (#718) loads; and each widget reaches the call.
 
 Package code is imported inside each test, through a run's staged copy of the
 package's modules, so a checkout without the package or its libraries fails
@@ -44,7 +44,7 @@ TILE_NAMES = [
     "16_16815_24356.png",
 ]
 #: What #718's Autark raster path loads at its own size (utils/raster/rasterLoad.ts).
-AUTARK_MAX_CELLS = 2048 * 2048
+AUTARK_MAX_CELLS = 4096 * 4096
 AUTARK_MAX_SIDE = 8192
 
 
@@ -146,7 +146,7 @@ def run_node(buildings, workspace, *, fails=False, **values):
         assert result["stderr"], f"the node ran: {result['output']}"
         return result["stderr"]
     assert result["stderr"] == "", result["stderr"]
-    assert result["output"]["dataType"] == "outputs", result["output"]
+    assert result["output"]["dataType"] == "raster", result["output"]
     return result["output"]["path"], load_from_duckdb(result["output"]["path"])
 
 
@@ -191,6 +191,13 @@ def test_the_template_declares_the_widgets_its_source_reads():
     assert re.findall(r"\[!!\s*(\w+)\s*!!\]", source) == ["attribute", "zoom", "max_height"]
 
 
+def test_its_one_output_is_a_raster():
+    """One buildings layer in, one raster of heights out: no table of tiles."""
+    template = _template()
+    assert template["inputPorts"] == [{"cardinality": "1", "types": ["GEODATAFRAME"]}]
+    assert template["outputPorts"] == [{"cardinality": "1", "types": ["RASTER"]}]
+
+
 def test_the_shipped_dataflow_runs_the_template_as_the_palette_drops_it():
     """``BuildingRasters.json`` is how its CI run reaches this package: its node
     holds the template's own source and widgets, so the dataflow cannot drift
@@ -207,43 +214,106 @@ def test_the_shipped_dataflow_runs_the_template_as_the_palette_drops_it():
 # The node, in the sandbox
 # ---------------------------------------------------------------------------
 
-def test_the_node_returns_scouts_tiles_and_their_mosaic(workspace):
+def _levels(cells):
+    """A raster's heights back as the gray levels they were drawn from (level
+    times 550 over 255), checked to be whole levels."""
+    import numpy as np
+
+    levels = np.asarray(cells, dtype="float64") * (255.0 / 550.0)
+    assert np.abs(levels - np.rint(levels)).max() < 1e-3
+    return np.rint(levels).astype(int)
+
+
+def _blocks(cells, columns: int = 2, rows: int = 2) -> dict:
+    """``{(column, row): the tile's 256 by 256 cells}``; columns of tiles run
+    west to east with x, rows north to south with y."""
+    return {
+        (column, row): cells[256 * row:256 * (row + 1), 256 * column:256 * (column + 1)]
+        for row in range(rows) for column in range(columns)
+    }
+
+
+def test_the_node_returns_one_raster_of_scouts_tiles(workspace):
+    """One raster out: SCOUT's four tiles side by side in EPSG:3395, each cell
+    a height in metres whose gray level is within one of SCOUT's committed
+    tile's. NaN names its no data, and no cell is no data, since a building
+    lies near every one of the four tiles."""
     import numpy as np
     import rasterio
 
     from utk_curio.sandbox.util.rasters import epsg_name
 
-    _art_id, (mosaic, tiles) = run_node(_buildings(), workspace)
+    _art_id, raster = run_node(_buildings(), workspace)
     try:
-        assert list(tiles.columns) == ["zoom", "x", "y", "png"]
-        names = [f"{r.zoom}_{r.x}_{r.y}.png" for r in tiles.itertuples(index=False)]
-        assert names == TILE_NAMES
-        grays = {f"{r.zoom}_{r.x}_{r.y}.png": _gray(r.png) for r in tiles.itertuples(index=False)}
-        worst = {name: _worst(grays[name], _gray(SCOUT_TILES / name)) for name in TILE_NAMES}
+        assert isinstance(raster, rasterio.io.DatasetReader)
+        assert epsg_name(raster.crs) == "EPSG:3395"
+        assert (raster.width, raster.height, raster.count) == (512, 512, 1)
+        assert raster.dtypes[0] == "float32"
+        assert raster.nodata is not None and np.isnan(raster.nodata), raster.nodata
+        assert raster.descriptions == ("height (m)",)
+        cells = raster.read(1)
+        assert not np.isnan(cells).any()
+        tags = raster.tags()
+        assert (tags["zoom"], tags["tile_x"], tags["tile_y"], tags["max_height"]) == ("16", "16814", "24355", "550.0")
+        worst = {
+            f"16_{16814 + column}_{24355 + row}.png": _worst(_levels(block), _gray(SCOUT_TILES / f"16_{16814 + column}_{24355 + row}.png"))
+            for (column, row), block in _blocks(cells).items()
+        }
+        assert sorted(worst) == TILE_NAMES
         assert all(levels <= 1 for levels in worst.values()), worst
-
-        assert isinstance(mosaic, rasterio.io.DatasetReader)
-        assert epsg_name(mosaic.crs) == "EPSG:3395"
-        assert (mosaic.width, mosaic.height, mosaic.count) == (512, 512, 1)
-        assert mosaic.dtypes[0] == "float32"
-        cells = mosaic.read(1)
-        # Columns of tiles run west to east with x, rows north to south with y.
-        for name, (row, col) in {
-            "16_16814_24355.png": (0, 0), "16_16815_24355.png": (0, 1),
-            "16_16814_24356.png": (1, 0), "16_16815_24356.png": (1, 1),
-        }.items():
-            block = cells[256 * row:256 * (row + 1), 256 * col:256 * (col + 1)]
-            assert np.allclose(block, grays[name] * (550.0 / 255.0), atol=1e-3), name
     finally:
-        mosaic.close()
+        raster.close()
+
+
+def test_tiles_convert_raster_never_writes_are_no_data(workspace, tmp_path):
+    """Two buildings in diagonal tiles: SCOUT's ``convert_raster`` writes those
+    two tiles and not the two beside them, as it writes a tile only where a
+    building is near. The raster spans the four, and the two it never wrote
+    are no data, which a masked read leaves out, while each written tile is
+    ``convert_raster``'s, its ground a height of 0."""
+    import geopandas as gpd
+    import numpy as np
+    from shapely.geometry import box
+
+    zoom, x, y = 16, 16814, 24355
+    centres = [_tile_corner(x + 0.5, y + 0.5, zoom), _tile_corner(x + 1.5, y + 1.5, zoom)]
+    buildings = gpd.GeoDataFrame(
+        {"height": [120.0, 300.0]},
+        geometry=[box(lon - 0.0005, lat - 0.0003, lon + 0.0005, lat + 0.0003) for lon, lat in centres],
+        crs="EPSG:4326",
+    )
+    with scout_modules(tmp_path) as (convert, _outputs):
+        written_folder = tmp_path / "written"
+        convert.convert_raster(vector_in=buildings, attribute="height", zoom=zoom, raster_out=str(written_folder))
+    written = sorted(p.name for p in written_folder.iterdir())
+    assert written == [f"{zoom}_{x}_{y}.png", f"{zoom}_{x + 1}_{y + 1}.png"], written
+
+    _art_id, raster = run_node(buildings, workspace)
+    try:
+        assert (raster.width, raster.height) == (512, 512)
+        assert (raster.tags()["tile_x"], raster.tags()["tile_y"]) == (str(x), str(y))
+        assert raster.nodata is not None and np.isnan(raster.nodata), raster.nodata
+        holding = []
+        for (column, row), block in _blocks(raster.read(1)).items():
+            name = f"{zoom}_{x + column}_{y + row}.png"
+            if np.isnan(block).all():
+                continue
+            holding.append(name)
+            assert not np.isnan(block).any(), f"{name} is written and partly no data"
+            assert np.array_equal(_levels(block), _gray(written_folder / name)), name
+        assert sorted(holding) == written, f"tiles holding heights {holding}, tiles written {written}"
+        # Only the written tiles' cells are values: 2 tiles of 256 by 256.
+        assert int(raster.read(1, masked=True).count()) == 2 * 256 * 256
+    finally:
+        raster.close()
 
 
 def test_the_mosaic_lies_on_the_tiles_corners(workspace):
-    """The mosaic's grid is the tiles' own: its corners are the outer corners
+    """The raster's grid is the tiles' own: its corners are the outer corners
     of its corner tiles in EPSG:3395, where ``compute_tile`` draws them."""
     from pyproj import Transformer
 
-    _art_id, (mosaic, _tiles) = run_node(_buildings(), workspace)
+    _art_id, mosaic = run_node(_buildings(), workspace)
     try:
         to_3395 = Transformer.from_crs(4326, 3395, always_xy=True)
         west, north = to_3395.transform(*_tile_corner(16814, 24355, 16))
@@ -268,16 +338,16 @@ def _tile_corner(x, y, zoom):
 
 
 def test_the_mosaic_is_a_raster_the_autark_node_loads(workspace):
-    """What #718's raster route serves for the tuple's first part, and what
-    the Autark node then requires of it: an EPSG CRS, a north-up grid, at
-    most 2048 by 2048 cells and 8192 on a side."""
+    """What #718's raster route serves for the node's raster, and what the
+    Autark node then requires of it: an EPSG CRS, a north-up grid, at most
+    4096 by 4096 cells and 8192 on a side."""
     from rasterio.io import MemoryFile
 
     from utk_curio.sandbox.util.rasters import serve_raster
 
-    art_id, (mosaic, _tiles) = run_node(_buildings(), workspace)
+    art_id, mosaic = run_node(_buildings(), workspace)
     try:
-        payload, meta = serve_raster(art_id, part=0, max_cells=AUTARK_MAX_CELLS, max_side=AUTARK_MAX_SIDE)
+        payload, meta = serve_raster(art_id, max_cells=AUTARK_MAX_CELLS, max_side=AUTARK_MAX_SIDE)
         assert meta["crs"] == "EPSG:3395"
         a, b, c, d, e, f = meta["transform"]
         assert b == 0 and d == 0 and a > 0 and e < 0
@@ -290,32 +360,33 @@ def test_the_mosaic_is_a_raster_the_autark_node_loads(workspace):
 
 
 def test_each_widget_reaches_the_call(workspace):
-    """A value set in each widget changes what the node returns."""
+    """A value set in each widget changes the raster the node returns."""
     import numpy as np
 
     default = run_node(_buildings(), workspace)[1]
     try:
-        tiles = default[1]
+        heights = default.read(1)
+        levels = _levels(heights)
 
-        zoomed = run_node(_buildings(), workspace, zoom=15)[1]
-        zoomed[0].close()
-        assert {int(z) for z in zoomed[1]["zoom"]} == {15}
-        assert sorted(zip(zoomed[1]["x"], zoomed[1]["y"])) == [(8407, 12177), (8407, 12178)]
+        # Zoom 15: one column of two tiles, x 8407 and y 12177 to 12178.
+        with run_node(_buildings(), workspace, zoom=15)[1] as zoomed:
+            tags = zoomed.tags()
+            assert (tags["zoom"], tags["tile_x"], tags["tile_y"]) == ("15", "8407", "12177"), tags
+            assert (zoomed.width, zoomed.height) == (256, 512)
 
         # Half the maximum height: every gray level doubles.
-        lower = run_node(_buildings(), workspace, max_height=275)[1]
-        lower[0].close()
-        assert len(lower[1]) == len(tiles)
-        for ours, half in zip(lower[1]["png"], tiles["png"]):
-            assert _worst(_gray(ours), np.clip(2 * _gray(half), 0, 255)) <= 1
-        assert max(_gray(png).max() for png in lower[1]["png"]) > max(_gray(png).max() for png in tiles["png"])
+        with run_node(_buildings(), workspace, max_height=275)[1] as lower:
+            assert lower.tags()["max_height"] == "275.0"
+            assert (lower.width, lower.height) == (default.width, default.height)
+            doubled = np.rint(lower.read(1).astype("float64") * (255.0 / 275.0)).astype(int)
+            assert _worst(doubled, np.clip(2 * levels, 0, 255)) <= 1
+            assert doubled.max() > levels.max()
 
         renamed = _buildings().rename(columns={"height": "roof_m"})
-        by_column = run_node(renamed, workspace, attribute="roof_m")[1]
-        by_column[0].close()
-        assert list(by_column[1]["png"]) == list(tiles["png"])
+        with run_node(renamed, workspace, attribute="roof_m")[1] as by_column:
+            assert np.array_equal(by_column.read(1), heights)
     finally:
-        default[0].close()
+        default.close()
 
 
 @pytest.mark.parametrize(

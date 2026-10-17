@@ -355,6 +355,10 @@ class TemplateManifest:
                 f"{backend_contract.HANDLER_NAME_RE.pattern} when present"
             )
         widgets_raw = raw.get("widgets")
+        # Each widget gets the Widgets tab's check (its name, type, options
+        # and default) where the manifest is read, ``repositories/manifests.py``:
+        # the rule is the Widgets tab's, in another feature, which the domain
+        # does not import.
         if widgets_raw is not None and not (
             isinstance(widgets_raw, list)
             and all(

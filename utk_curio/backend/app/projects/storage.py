@@ -181,6 +181,62 @@ def _bump_spec_revision(project_dir_path: Path) -> int:
     return nxt
 
 
+#: The number of the latest save applied to this project from each tab, as a
+#: JSON object of tab id to number, beside the write counter. A tab numbers its
+#: saves one after another (``api/saveOrder.ts``) and the page gives up on a
+#: save after 2 minutes, but the server may still be working on it: a save
+#: numbered lower than one already applied from its tab is refused
+#: (``services.update_project``), so it cannot land over the newer one.
+SAVE_ORDER_FILE = ".save.order.json"
+
+#: How many tabs the record keeps. The tab that saved longest ago goes first,
+#: and a save from a tab no longer on record is not checked.
+SAVE_ORDER_TABS = 32
+
+
+def _read_save_order(path: Path) -> dict:
+    """The record at *path*; empty when it is missing or cannot be read, which
+    refuses nothing."""
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(tab): number for tab, number in raw.items()
+        if isinstance(number, int) and not isinstance(number, bool)
+    }
+
+
+def last_save_number(user_key: str, project_id: str, tab: str) -> Optional[int]:
+    """The number of the latest save applied to this project from *tab*, or
+    ``None`` when there is none on record."""
+    try:
+        path = project_dir(user_key, project_id) / SAVE_ORDER_FILE
+    except (PathTraversalError, ValueError):
+        return None
+    return _read_save_order(path).get(tab)
+
+
+def record_save_number(user_key: str, project_id: str, tab: str, number: int) -> None:
+    """Record *number* as the latest save applied from *tab*. Called under the
+    spec lock, like every other write of the project's files."""
+    path = ensure_project_dir(user_key, project_id) / SAVE_ORDER_FILE
+    order = _read_save_order(path)
+    order.pop(tab, None)
+    order[tab] = int(number)
+    while len(order) > SAVE_ORDER_TABS:
+        order.pop(next(iter(order)))
+    try:
+        _write_json_atomically(path, order)
+    except OSError:
+        # Like the counter: a record that cannot be written must not fail the
+        # save. A missing record refuses nothing, which is the behaviour from
+        # before saves were numbered.
+        logger.warning("Could not record the save order of project %s", project_id, exc_info=True)
+
+
 def read_spec(user_key: str, project_id: str) -> Optional[dict]:
     d = project_dir(user_key, project_id)
     p = d / "spec.trill.json"
@@ -201,6 +257,10 @@ def list_project_ids(user_key: str) -> list[str]:
     return ids
 
 
+class SpecLockOrderError(RuntimeError):
+    """A thread asked for a spec lock while holding an uncommitted database write."""
+
+
 @contextmanager
 def spec_write_lock(user_key: str, project_id: str):
     """Serialize read-modify-write of a project's spec across processes.
@@ -214,7 +274,21 @@ def spec_write_lock(user_key: str, project_id: str):
     same-process threads) and a cross-process file lock (POSIX ``flock`` or, on
     Windows, ``msvcrt.locking``). Only a platform with neither falls back to the
     in-process layer alone. Both live in ``common.file_locks``.
+
+    The lock comes before the database: a thread that has written and not
+    committed holds SQLite's write lock, and the holder of this lock needs that
+    write lock to index each output it installs, so the two would wait for each
+    other until the busy timeout (#909). Such a thread is refused here with
+    :class:`SpecLockOrderError` before it waits.
     """
+    from utk_curio.backend.extensions import session_holds_write_lock
+
+    if session_holds_write_lock():
+        raise SpecLockOrderError(
+            f"Spec lock for project {project_id} asked for while this thread "
+            "holds an uncommitted database write. Take the spec lock first, "
+            "then write to the database, or commit before asking for it."
+        )
     d = ensure_project_dir(user_key, project_id)
     with exclusive_lock(
         d / ".spec.lock",
@@ -445,6 +519,11 @@ def hydrate_outputs(
     (``parsers.load_shared_output_file``).
     That folder is checked on every load, whether or not the output's own
     copy is already here.
+
+    An output found in neither place is left out, with a warning in the log.
+    Every caller holds the project's spec lock: a project load, and a scenario
+    drop restoring the outputs it copied. So this never meets an output a save
+    is installing again (#941).
     """
     from utk_curio.sandbox.util.catalog_helpers import hydrated_bundle
 
@@ -464,6 +543,12 @@ def hydrate_outputs(
         if source is not None:
             shutil.copy2(str(source), str(dst))
             hydrated.append(ref)
+            continue
+        logger.warning(
+            "Saved output %s of node %s in project %s has no copy left to load; "
+            "it is left out",
+            ref.filename, ref.node_id, project_id,
+        )
     return hydrated
 
 

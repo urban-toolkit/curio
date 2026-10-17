@@ -36,6 +36,7 @@ include docs/examples/data/mapillary-ATTRIBUTION.md
 # their nodes spell (test_pip_wheel_layout.py checks it): the Autark examples'
 # OpenStreetMap extracts, which /file/ serves, and the files node code opens.
 include docs/examples/data/back_bay.osm.pbf
+include docs/examples/data/chicago_downtown.osm.pbf
 include docs/examples/data/chicago_loop.osm.pbf
 include docs/examples/data/lower_mnt.osm.pbf
 include docs/examples/data/niteroi.osm.pbf
@@ -69,5 +70,12 @@ recursive-exclude utk_curio/frontend *.map
 exclude datasets/data.cityofchicago.red-light-violations@1/data/red-light-violations.parquet
 exclude datasets/data.cityofchicago.speed-camera-violations@1/data/speed-camera-violations.parquet
 exclude datasets/data.projectsidewalk.chicago-labels@1/data/chicago-labels.parquet
+exclude datasets/data.scout.flood-depth-2020-2040-nbs@1/data/flood-depth-2020-2040-nbs.tif
+exclude datasets/data.scout.flood-depth-2020-2040-no-nbs@1/data/flood-depth-2020-2040-no-nbs.tif
+exclude datasets/data.scout.flood-depth-2050-2080-nbs@1/data/flood-depth-2050-2080-nbs.tif
+exclude datasets/data.scout.flood-depth-2050-2080-no-nbs@1/data/flood-depth-2050-2080-no-nbs.tif
+exclude datasets/data.scout.flood-depth-2080-2100-nbs@1/data/flood-depth-2080-2100-nbs.tif
+exclude datasets/data.scout.flood-depth-2080-2100-no-nbs@1/data/flood-depth-2080-2100-no-nbs.tif
+exclude datasets/data.scout.flood-nbs-classes@1/data/flood-nbs-classes.tif
 exclude datasets/data.utk.milan-mrt@1/data/milan-mrt.tif
 exclude packages/model.scout.deep-umbra@1/models/deep_umbra.onnx

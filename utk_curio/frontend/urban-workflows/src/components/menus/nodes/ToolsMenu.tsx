@@ -120,10 +120,12 @@ const ToolsMenu = memo(function ToolsMenu() {
     const paletteTypes = getPaletteNodeTypes();
     // The curio.builtin package is manifest-driven like any other, but the UI
     // anchors it in the left-side "Built-in" rail. Only third-party packages land
-    // in the right-side Packages dropdown.
+    // in the right-side Packages dropdown, and never a model package's node: a
+    // model's node is added by dropping its card from the Model Catalog.
     const isBuiltin = (d: NodeDescriptor) => d.package?.packageId === BUILTIN_PACKAGE_ID;
+    const isModelNode = (d: NodeDescriptor) => d.package?.kind === "model";
     const coreTypes = paletteTypes.filter(isBuiltin);
-    const packageTypes = paletteTypes.filter((d) => !isBuiltin(d));
+    const packageTypes = paletteTypes.filter((d) => !isBuiltin(d) && !isModelNode(d));
     const coreGroups = groupPaletteTypes(coreTypes);
     const packageGroups = groupPalettePackages(packageTypes);
 

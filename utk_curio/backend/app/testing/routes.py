@@ -22,6 +22,10 @@ password. ``CURIO_TESTING`` is the deliberate "this process is a test rig"
 signal: ``tests/conftest.py`` exports it at import time and the e2e harness
 passes it to the server subprocess it starts, so both suites see the routes and
 a normal ``curio.py start`` does not.
+
+An app built with ``CURIO_TESTING`` also counts the requests it is serving
+(``in_flight.py``), so ``reset-db`` can wait for the ones a test's closed page
+left running before it deletes their user.
 """
 
 from __future__ import annotations
@@ -29,9 +33,10 @@ from __future__ import annotations
 import logging
 import re
 import shutil
+import time
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 
 from utk_curio.backend.app.common import record_clock
 from utk_curio.backend.app.common.safe_paths import is_within
@@ -39,6 +44,7 @@ from utk_curio.backend import config
 from utk_curio.backend.config import _is_dev, _is_testing
 from utk_curio.backend.app.agents.infrastructure import testing_provider
 from utk_curio.backend.extensions import db
+from utk_curio.backend.app.testing.in_flight import RESET_WAIT_SECONDS, InFlightRequests
 from utk_curio.backend.app.users import repositories as user_repo
 from utk_curio.backend.app.users import security
 from utk_curio.backend.app.projects import services as project_services
@@ -77,6 +83,55 @@ def _guard():
     if not _is_dev() or not _is_testing():
         return jsonify({"error": "not found"}), 404
     return None
+
+
+#: Where an app built for a test rig keeps its :class:`InFlightRequests`.
+_IN_FLIGHT = "curio.testing.in_flight"
+#: Where a counted request keeps its token.
+_IN_FLIGHT_TOKEN = "curio.testing.in_flight_token"
+
+
+def _count_request_in():
+    """Count each request but the harness's own, or refuse it while a reset runs.
+
+    Refused rather than held: a request that arrives during a reset comes from
+    a page whose test is over, and it would only run against the next test's
+    empty database.
+    """
+    in_flight = current_app.extensions.get(_IN_FLIGHT)
+    if in_flight is None or request.blueprint == testing_bp.name:
+        return None
+    token = in_flight.enter(f"{request.method} {request.path}")
+    if token is None:
+        return jsonify({"error": "The test database is being reset."}), 503
+    request.environ[_IN_FLIGHT_TOKEN] = token
+    return None
+
+
+def _count_request_out(_exc=None):
+    """Count a request out when it is done, a streamed answer included: a
+    stream keeps its request open until it ends."""
+    token = request.environ.pop(_IN_FLIGHT_TOKEN, None)
+    in_flight = current_app.extensions.get(_IN_FLIGHT)
+    if token is not None and in_flight is not None:
+        in_flight.leave(token)
+
+
+def _count_requests(state) -> None:
+    """Give an app built for a test rig its request count.
+
+    Decided once, when the blueprint is registered: ``CURIO_ENV`` defaults to
+    dev, so a developer's own ``curio.py start`` mounts this blueprint too, and
+    without ``CURIO_TESTING`` its requests must not pass through any of this.
+    """
+    if not _is_testing():
+        return
+    state.app.extensions[_IN_FLIGHT] = InFlightRequests()
+    state.app.before_request(_count_request_in)
+    state.app.teardown_request(_count_request_out)
+
+
+testing_bp.record_once(_count_requests)
 
 
 #: The only tables ``reset-db`` will empty. Ordered child-before-parent so the
@@ -306,7 +361,14 @@ def reset_db():
         ids it is about to free. Pass ``false`` only to inspect what a previous
         test left behind; a test that skips it is asking to inherit it.
 
-    Response: ``{"truncated": [...], "stores_cleared": [...]}``
+    Before it deletes anything, it refuses new requests (503) and waits, up to
+    ``RESET_WAIT_SECONDS``, for the ones already running, so none of them
+    outlives its user (``in_flight.py``). One still running after that is
+    named in ``still_running`` and in the log, and the reset goes ahead.
+
+    Response: ``{"truncated": [...], "stores_cleared": [...], "waited_for":
+    [...], "waited_seconds": n, "still_running": [...]}``, each request named
+    by its method and path.
     """
     body = request.get_json(silent=True) or {}
     requested = body.get("tables")
@@ -328,23 +390,47 @@ def reset_db():
             )
         tables = requested
 
-    truncated = []
-    for table in tables:
-        try:
-            db.session.execute(db.text(f'DELETE FROM "{table}"'))
-            truncated.append(table)
-        except Exception:
-            pass
-    db.session.commit()
+    in_flight = current_app.extensions.get(_IN_FLIGHT) or InFlightRequests()
+    waited_for = in_flight.close()
+    try:
+        # A hold a failed test left standing would stop the next test's runs,
+        # and a held run's stream would hold this reset for the whole wait.
+        run_jobs.set_hold(False)
+        if waited_for:
+            log.info("reset-db waits for %d request(s) in flight: %s",
+                     len(waited_for), ", ".join(waited_for))
+        started = time.monotonic()
+        still_running = in_flight.drain(RESET_WAIT_SECONDS)
+        waited_seconds = round(time.monotonic() - started, 3)
+        if still_running:
+            log.warning("reset-db waited %.1f s and resets under %d request(s) still running: %s",
+                        waited_seconds, len(still_running), ", ".join(still_running))
+        elif waited_for:
+            log.info("reset-db waited %.2f s for %s", waited_seconds, ", ".join(waited_for))
 
-    stores_cleared = []
-    if body.get("stores", True):
-        stores_cleared = _clear_test_user_stores()
-    # A hold a failed test left standing would stop the next test's runs, and a
-    # clock it left set would date the next test's records.
-    run_jobs.set_hold(False)
-    record_clock.set_now(None)
-    return jsonify({"truncated": truncated, "stores_cleared": stores_cleared}), 200
+        truncated = []
+        for table in tables:
+            try:
+                db.session.execute(db.text(f'DELETE FROM "{table}"'))
+                truncated.append(table)
+            except Exception:
+                pass
+        db.session.commit()
+
+        stores_cleared = []
+        if body.get("stores", True):
+            stores_cleared = _clear_test_user_stores()
+        # A clock a failed test left set would date the next test's records.
+        record_clock.set_now(None)
+    finally:
+        in_flight.open()
+    return jsonify({
+        "truncated": truncated,
+        "stores_cleared": stores_cleared,
+        "waited_for": waited_for,
+        "waited_seconds": waited_seconds,
+        "still_running": still_running,
+    }), 200
 
 
 @testing_bp.route("/run-hold", methods=["GET", "POST"])
@@ -1006,3 +1092,245 @@ def package_store():
             "dirName": dir_name,
         }
     return jsonify(answer), 200
+
+
+#: The pip settings ``wheelhouse`` overrides, with the values they had before
+#: the first stage, so ``restore`` puts back exactly what was there: a variable
+#: that was unset is removed again, not left empty. Module level, like
+#: ``_PIP_ORIGINALS``: the install it has to reach happens in a LATER request.
+_WHEELHOUSE_ENV_KEYS = ("PIP_NO_INDEX", "PIP_FIND_LINKS", "PIP_DISABLE_PIP_VERSION_CHECK")
+_WHEELHOUSE_ENV_ORIGINALS: dict = {}
+
+#: Staging uninstalls the distributions it stages from the interpreter every
+#: sandbox of the stack imports from, so only a test library's name may reach
+#: it: ``curio-wheelhouse-<name>``, a name no index carries.
+_WHEELHOUSE_DIST_RE = re.compile(r"curio[-_.]wheelhouse[-_.][a-z0-9][a-z0-9_.-]{0,40}", re.IGNORECASE)
+_WHEEL_FILE_RE = re.compile(
+    r"(?P<dist>[A-Za-z0-9][A-Za-z0-9_.]*)-(?P<version>[0-9][0-9A-Za-z.]*)-py3-none-any\.whl"
+)
+#: A test wheel is a few hundred bytes.
+_WHEEL_MAX_BYTES = 64 * 1024
+
+
+def _wheelhouse_root():
+    """Where the staged wheels live: inside the test rig's state tree."""
+    from utk_curio.backend.app.common.user_storage import curio_root
+
+    return curio_root() / "test-wheelhouse"
+
+
+def _staged_dists() -> list[str]:
+    """The distributions of the wheels in the wheelhouse, as their files name them."""
+    root = _wheelhouse_root()
+    if not root.is_dir():
+        return []
+    dists = []
+    for path in sorted(root.glob("*.whl")):
+        match = _WHEEL_FILE_RE.fullmatch(path.name)
+        if match:
+            dists.append(match.group("dist"))
+    return dists
+
+
+def _installed_map(dists) -> dict:
+    """Whether pip's metadata holds each distribution, asked afresh."""
+    import importlib
+
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
+
+    # The metadata finder caches directory listings, and pip ran in a child.
+    importlib.invalidate_caches()
+    pip_runner.forget_import_probes()
+    return {dist: pip_runner.is_satisfied(dist, "") for dist in dists}
+
+
+@testing_bp.route("/wheelhouse", methods=["POST"])
+def wheelhouse():
+    """Make this backend's pip install from a local wheelhouse, and from nothing else.
+
+    A package declares its libraries, and Curio installs them when the package
+    is added, when a dataflow whose lockfile names it is opened, and at launch.
+    A test of those installs has to run the real pip and stay offline. pip
+    reads both from its environment (``PIP_NO_INDEX`` with ``PIP_FIND_LINKS``,
+    as ``test_backend_runtime.py`` sets them), and only this process's
+    environment reaches the pip it spawns, so the wheelhouse is staged here,
+    for the same reason ``broken-library`` and ``package-store`` act here.
+
+    Body (JSON):
+      * ``action`` - ``"stage"``, ``"status"`` or ``"restore"``.
+      * ``wheels`` - stage: ``[{"filename", "content"}]``, the content in
+        base64, each a ``curio-wheelhouse-*`` distribution.
+      * ``names``  - status: the distributions to ask about.
+
+    ``stage`` writes the wheels, points pip at them with no index, and
+    uninstalls any copy of their distributions an earlier run left, so the
+    install a test then sets off is a real one. ``status`` and ``stage`` answer
+    ``installed``, per distribution. ``restore`` puts pip's settings back,
+    removes the wheelhouse and uninstalls what it held.
+    """
+    import base64
+    import binascii
+    import os
+
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
+
+    body = request.get_json(silent=True) or {}
+    action = (body.get("action") or "").strip()
+    if action not in ("stage", "status", "restore"):
+        return jsonify({"error": "action must be 'stage', 'status' or 'restore'"}), 400
+
+    if action == "status":
+        names = body.get("names")
+        if not isinstance(names, list) or not names or not all(
+            isinstance(name, str) and _WHEELHOUSE_DIST_RE.fullmatch(name) for name in names
+        ):
+            return jsonify({"error": "names must list curio-wheelhouse-* distributions"}), 400
+        return jsonify({"installed": _installed_map(names)}), 200
+
+    root = _wheelhouse_root()
+    if action == "restore":
+        staged = _staged_dists()
+        # Settings first: whatever the uninstall below answers, no later pip in
+        # this process may be left reading only a wheelhouse.
+        for key, value in _WHEELHOUSE_ENV_ORIGINALS.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        _WHEELHOUSE_ENV_ORIGINALS.clear()
+        shutil.rmtree(root, ignore_errors=True)
+        pip_runner.uninstall_python_deps(staged)
+        return jsonify({"restored": True, "installed": _installed_map(staged)}), 200
+
+    wheels = body.get("wheels")
+    if not isinstance(wheels, list) or not wheels:
+        return jsonify({"error": "wheels must be a non-empty list"}), 400
+    decoded: dict[str, bytes] = {}
+    for wheel in wheels:
+        wheel = wheel if isinstance(wheel, dict) else {}
+        filename = str(wheel.get("filename") or "")
+        match = _WHEEL_FILE_RE.fullmatch(filename)
+        if not match or not _WHEELHOUSE_DIST_RE.fullmatch(match.group("dist")):
+            return jsonify({"error": f"not a curio-wheelhouse-* wheel: {filename!r}"}), 400
+        try:
+            data = base64.b64decode(str(wheel.get("content") or ""), validate=True)
+        except (binascii.Error, ValueError):
+            return jsonify({"error": f"{filename}: the content is not base64"}), 400
+        if not data or len(data) > _WHEEL_MAX_BYTES:
+            return jsonify({"error": f"{filename}: {len(data)} bytes is not a test wheel"}), 400
+        decoded[filename] = data
+
+    shutil.rmtree(root, ignore_errors=True)
+    root.mkdir(parents=True)
+    for filename, data in decoded.items():
+        (root / filename).write_bytes(data)
+    dists = _staged_dists()
+    # A copy an earlier run left would make pip answer "already satisfied", and
+    # a test would pass over an install that never ran.
+    pip_runner.uninstall_python_deps(dists)
+
+    if not _WHEELHOUSE_ENV_ORIGINALS:
+        _WHEELHOUSE_ENV_ORIGINALS.update({key: os.environ.get(key) for key in _WHEELHOUSE_ENV_KEYS})
+    os.environ["PIP_NO_INDEX"] = "1"
+    os.environ["PIP_FIND_LINKS"] = str(root)
+    os.environ["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
+    return jsonify({
+        "wheelhouse": str(root),
+        "wheels": sorted(decoded),
+        "installed": _installed_map(dists),
+    }), 200
+
+
+#: Only a test package may be planted in the shared catalog or removed from it
+#: through here, so no test can replace or delete a package Curio ships.
+_TEST_PACKAGE_DIR_RE = re.compile(r"test\.[a-z][a-z0-9-]{0,62}@(?:0|[1-9][0-9]{0,3})")
+#: A test package is a manifest and a starter or two.
+_TEST_PACKAGE_MAX_FILES = 16
+_TEST_PACKAGE_MAX_BYTES = 256 * 1024
+
+
+@testing_bp.route("/catalog-package", methods=["POST"])
+def catalog_package():
+    """Put a test package in this backend's shared catalog, or take it out.
+
+    Adding a package copies it from the shared catalog (``catalog_root()``)
+    into the user's store and installs the libraries its manifest declares. A
+    test of that install needs a package only the test has, in the catalog, and
+    not yet in the user's store: a store copy is answered as already added and
+    installs nothing. The catalog is in the stack's own filesystem, which a
+    pytest process talking to a container cannot write, so it is written here.
+    Each e2e shard has its own catalog (``tests/shards.py``).
+
+    Body (JSON):
+      * ``action``      - ``"plant"`` or ``"remove"``.
+      * ``dirName``     - ``test.<name>@<major>``; nothing else passes.
+      * ``files``       - plant: ``{relative path: text}``, with ``manifest.json``.
+      * ``binaryFiles`` - plant, optional: ``{relative path: base64}`` under
+        ``models/``, a test model package's weights.
+
+    ``plant`` replaces any earlier copy and writes its ``integrity.json``;
+    ``remove`` deletes the folder. Neither touches a user's store.
+    """
+    import base64 as _base64
+    import binascii as _binascii
+    import json as _json
+
+    from utk_curio.backend.app.packages.repositories.archive import refresh_package_integrity
+    from utk_curio.backend.app.packages.repositories.catalog_dir import catalog_root as _catalog_root
+
+    body = request.get_json(silent=True) or {}
+    action = (body.get("action") or "").strip()
+    dir_name = (body.get("dirName") or "").strip()
+    if action not in ("plant", "remove"):
+        return jsonify({"error": "action must be 'plant' or 'remove'"}), 400
+    if not _TEST_PACKAGE_DIR_RE.fullmatch(dir_name):
+        return jsonify({"error": f"not a test package: {dir_name!r}"}), 400
+
+    target = _catalog_root() / dir_name
+    if action == "remove":
+        shutil.rmtree(target, ignore_errors=True)
+        return jsonify({"removed": dir_name, "present": target.exists()}), 200
+
+    def _safe(rel) -> bool:
+        return (isinstance(rel, str) and bool(rel) and not rel.startswith("/") and "\\" not in rel
+                and ".." not in rel.split("/") and rel != "integrity.json")
+
+    files = body.get("files")
+    if not isinstance(files, dict) or "manifest.json" not in files:
+        return jsonify({"error": "files must map relative paths to text, with manifest.json"}), 400
+    binary_files = body.get("binaryFiles") or {}
+    if not isinstance(binary_files, dict):
+        return jsonify({"error": "binaryFiles must map paths under models/ to base64"}), 400
+    weights: dict[str, bytes] = {}
+    for rel, encoded in binary_files.items():
+        if not _safe(rel) or not rel.startswith("models/") or rel in files or not isinstance(encoded, str):
+            return jsonify({"error": f"invalid weights file: {rel!r}"}), 400
+        try:
+            weights[rel] = _base64.b64decode(encoded, validate=True)
+        except (_binascii.Error, ValueError):
+            return jsonify({"error": f"{rel!r} is not base64"}), 400
+    size = sum(len(str(t)) for t in files.values()) + sum(len(b) for b in weights.values())
+    if len(files) + len(weights) > _TEST_PACKAGE_MAX_FILES or size > _TEST_PACKAGE_MAX_BYTES:
+        return jsonify({"error": "a test package is a manifest and a few small files"}), 400
+    for rel, text in files.items():
+        if not _safe(rel) or not isinstance(text, str):
+            return jsonify({"error": f"invalid file: {rel!r}"}), 400
+    try:
+        manifest = _json.loads(files["manifest.json"])
+    except ValueError:
+        return jsonify({"error": "manifest.json is not JSON"}), 400
+    declared = f"{manifest.get('id')}@{(manifest.get('compatibility') or {}).get('major')}"
+    if declared != dir_name:
+        return jsonify({"error": f"manifest.json declares {declared}, not {dir_name}"}), 400
+
+    shutil.rmtree(target, ignore_errors=True)
+    for rel, text in files.items():
+        path = target / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    for rel, data in weights.items():
+        path = target / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    refresh_package_integrity(target)
+    return jsonify({"planted": dir_name, "files": sorted([*files, *weights])}), 200

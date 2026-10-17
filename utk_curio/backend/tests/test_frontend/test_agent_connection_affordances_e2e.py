@@ -53,10 +53,11 @@ USERNAME = "agentconnaff"
 USER_NAME = "Connection Affordances User"
 
 # The one built-in that declares ``connection`` among its compatibleTargets
-# (builtin.py, targets=("node", "connection")). The fixture asserts that is
-# still true, so a roster change fails loudly here instead of quietly attaching
-# to a node and testing nothing.
-AGENT_ID = "agent.connection-builder"
+# (builtin.py, targets=("canvas", "node", "connection")): the Node Builder,
+# which suggests the nodes that could go on a connection. The fixture asserts
+# that is still true, so a roster change fails loudly here instead of quietly
+# attaching to a node and testing nothing.
+AGENT_ID = "agent.node-builder"
 
 # The edge id in the shared spec both agent e2e modules build their canvas from.
 EDGE_ID = "agent-e2e-edge"

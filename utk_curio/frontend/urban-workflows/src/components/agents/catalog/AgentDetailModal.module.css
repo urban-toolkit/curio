@@ -94,6 +94,24 @@
     color: var(--curio-text-primary);
 }
 
+/* A section's one paragraph, such as what an agent does in chat: the purpose's
+   type, with the section keeping the spacing. */
+.sectionText {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--curio-text-primary);
+}
+
+/* The capability ids under a mode, for developers: the prompts' type. */
+.modeIds {
+    font-family: var(--curio-font-mono, ui-monospace, monospace);
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--curio-text-secondary);
+    overflow-wrap: anywhere;
+}
+
 /* ── Export, and the prompts it exports ──────────────────────────────────── */
 
 .actions {
@@ -139,6 +157,11 @@
   font-family: var(--curio-font-mono, ui-monospace, monospace);
   color: var(--curio-text-primary);
   cursor: pointer;
+}
+
+/* When the prompt runs, in plain words before its file name. */
+.promptRuns {
+  font-family: var(--curio-font-family);
 }
 
 /* Prompts are long and contain their own hard wrapping, so preserve it and let

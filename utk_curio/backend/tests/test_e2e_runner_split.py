@@ -60,8 +60,11 @@ class ClassificationTest(unittest.TestCase):
 
         self.assertTrue(runner_split.item_needs_webgpu(
             drop("docs/examples/06-autark-what-if-shadow-study.json")))
-        self.assertFalse(runner_split.item_needs_webgpu(
+        # Each FloodScenarios scenario maps its depth on an Autark map.
+        self.assertTrue(runner_split.item_needs_webgpu(
             drop("docs/examples/dataflows/FloodScenarios.json")))
+        self.assertFalse(runner_split.item_needs_webgpu(
+            drop("docs/examples/dataflows/Scenarios.json")))
 
     def test_a_test_that_needs_the_parallel_stack_is_on_utk(self):
         marked = SimpleNamespace(

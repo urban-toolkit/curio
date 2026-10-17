@@ -35,10 +35,7 @@ const CENTER_ANIMATION_MS = 400;
  *   callbacks as a palette drop) with the SERVER-minted id, then **center the
  *   viewport on it** — the backend places new nodes right of the whole graph
  *   extent, which is usually off-screen (dev/51 defect 1: the node existed
- *   but out of view, and only the load-time fitView made it visible). A new
- *   node type first lands in the project-packages store + client registry
- *   (the same bootstrap refresh the Save-as flow uses) so `UniversalNode`
- *   resolves its descriptor without a reload.
+ *   but out of view, and only the load-time fitView made it visible).
  * - ``node-content-applied`` → `FlowProvider.applyNodeContent` (provider
  *   state — dev/51 defect 2: direct RF-store writes are clobbered by the
  *   controlled re-sync and never reached the serializer or editor).
@@ -199,31 +196,20 @@ export function useAgentCanvasMutations(): void {
       });
       return;
     }
-    const { node, createdPackageDir } = mutation;
-    if (processedRef.current.has(node.id)) return; // re-fired event — no-op
-    if (getNodes().some((n) => n.id === node.id)) return; // already live — no-op
+    const { node } = mutation;
+    if (processedRef.current.has(node.id)) return; // re-fired event: no-op
+    if (getNodes().some((n) => n.id === node.id)) return; // already live: no-op
     processedRef.current.add(node.id);
-    const insert = () => {
-      insertNode(node);
-      // The backend placement is right of the whole graph extent — bring the
-      // node into view so "created" is visible, not off-screen (dev/51). In the
-      // notebook view that is its cell, scrolled into view.
-      if (!reveal([node.id])) {
-        setCenter(node.x + NODE_CENTER_X, node.y + NODE_CENTER_Y, {
-          zoom: getZoom(),
-          duration: CENTER_ANIMATION_MS,
-        });
-      }
-    };
-    if (createdPackageDir) {
-      // A brand-new node type (dev/48 §3.2b): make its descriptor
-      // client-resolvable first — store entry, then the registry pulse.
-      const current = getCurrentProjectPackages();
-      setCurrentProjectPackages([...(current ?? []), createdPackageDir]);
-      void refreshPackageRegistry().then(insert);
-      return;
+    insertNode(node);
+    // The backend placement is right of the whole graph extent: bring the
+    // node into view so "created" is visible, not off-screen (dev/51). In the
+    // notebook view that is its cell, scrolled into view.
+    if (!reveal([node.id])) {
+      setCenter(node.x + NODE_CENTER_X, node.y + NODE_CENTER_Y, {
+        zoom: getZoom(),
+        duration: CENTER_ANIMATION_MS,
+      });
     }
-    insert();
   };
 
   useEffect(

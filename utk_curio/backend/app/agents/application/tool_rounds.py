@@ -308,7 +308,6 @@ def _refuse_params(text: str) -> tuple[str, str, None]:
 MUTATE_PROPOSAL_TOOLS = frozenset({
     "node.content.write",
     "node.create",
-    "node.template.create",
     "dataset.install",
     "discovery.acquire",
     "package.install",  # dev/84

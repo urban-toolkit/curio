@@ -81,6 +81,8 @@ Autark workflows use the single `AUTK_GRAMMAR` node type, which renders its map/
 
 There is **no WebGPU tolerance**: an `AUTK_GRAMMAR` node that errors (including because WebGPU is unavailable) is a hard test failure. To run the autk examples you need a browser that provides WebGPU - which the system-Chrome `executable_path` above ensures. `_webgpu_diagnostics` still probes adapter/device state once per session and attaches it to the failure dump for debugging.
 
+A test that needs an adapter asks with `require_webgpu(page)` (fails on CI's GPU job, skips elsewhere) or asserts `webgpu_adapter(page)`, both in `utils/webgpu.py`. Never with its own `requestAdapter()`: these ask through the app's probe itself (`window.__curio_probeWebGpu`, from `src/utils/webgpuSupport.ts`), which waits until the page has drawn a frame and asks again after a null before calling the adapter missing. A request made before the page draws can be dropped by Chrome's switch to software compositing.
+
 `AUTK_GRAMMAR` is a `"grammar"` node (grammar/JSON editor + output tab) and exercises the full matrix: `test_node_type_and_content` checks the grammar editor; `test_node_execution` verifies each node reaches **Done**. Its grammar content (and any JavaScript/WGSL compute blocks) is excluded from the Python random-seed injection used by Python `CODE_TYPES` nodes.
 
 ## Multi-user stress tiers
@@ -206,6 +208,8 @@ palette drag and the edge drag.
 |---|---|
 | `drag_to_canvas(page, source, *, at=None)` | One synthetic HTML5 drag from any draggable palette source onto `.curio-canvas-drop-target`; returns the new node's id, diffed from the canvas because ids are `uuid4`. |
 | `drag_to_canvas_with_the_mouse(page, grip, *, at)` | The same drag with `page.mouse`: press on *grip* (a card's title, a palette row's grip), move in steps, release over the canvas. The browser routes every event, so it is the only one that meets what lies over the canvas, such as an open drawer's scrim. Fails with the element that took the drop, or none. |
+| `drag_with_the_mouse_onto_canvas(page, grip, *, at)` | That mouse drag without waiting for a node, for a drop that opens a dialog first or is refused. Answers what the drop did: the element that took it, whether it is the canvas, and the drop effect. |
+| `offline_catalog_package(backend_url, dir_name, libraries)` | A context manager: a test package from `packages/` in the backend's catalog, and its libraries as wheels in a wheelhouse the backend's pip reads instead of an index (`PIP_NO_INDEX` with `PIP_FIND_LINKS`). Undone afterwards. `library_installed(backend_url, library)` says whether pip installed one. `offline_package(dir_name)` reads a test package's manifest: its name, its one library and its nodes. Each test of an install path has a package and a library of its own. |
 | `connect_nodes(page, source_id, target_id, *, source_handle="out", target_handle="in")` | Draws an edge with real pointer moves between two `.react-flow__handle`s and returns the derived edge id. |
 | `set_node_code(page, node_id, code)` / `read_node_code(page, node_id)` | Writes / reads a code node's source through that node's own Monaco instance. |
 | `canvas_nodes(page)` / `canvas_node_type(page, node_id)` | `{id, nodeType}` for the canvas, read from `window.__curio_reactFlow`. Projected, because `node.data` holds a `PythonInterpreter` and callbacks that Playwright cannot serialize. |
@@ -463,8 +467,10 @@ test_frontend/
     canvas_authoring.py       # drag_to_canvas, connect_nodes, set_node_code, play_node
     run_all.py                # Run All state, holding a run open
     node_drawings.py          # assert_vega_canvas_rendered and the other drawing checks
+    offline_install.py        # a test package in the catalog, its library in a wheelhouse
     page.py                   # FrontendPage
     scripted_llm.py           # scripted agent turns
+  packages/                   # test packages, planted in a backend's catalog for one test
   test_alive.py               # smoke tests: backend, sandbox, frontend are live
   test_auth_flow.py           # signup → projects → signout → signin (UI path)
   test_workflows.py           # TestWorkflowCanvas - DB-stubbed auth via loaded_workflow
@@ -508,6 +514,11 @@ test_frontend/
   test_package_roundtrip_e2e.py    # canvas node -> package -> archive -> import -> run it
   test_package_metadata_roundtrip_e2e.py  # Node settings + package metadata survive the archive
   test_workflow_deps_e2e.py   # loading a dataflow auto-installs its declared packages
+  test_package_libraries_offline_e2e.py  # a package's library installs on every path that adds
+                                   # it: a drawer card drop (and its menu of a package's
+                                   # nodes), a dataflow's lockfile, the catalog page
+                                   # (offline via /api/testing/wheelhouse and
+                                   # /api/testing/catalog-package)
   test_library_install_integration.py  # library install -> sandbox import (NO browser)
   tour.py                     # screencast toolkit: caption/cursor overlay, pacing, video output
   test_feature_tour_video.py  # records the feature-tour screencast (CURIO_TOUR=1; not a test)
@@ -550,7 +561,7 @@ CURIO_NO_PROJECT=1 pytest \
 content: the Node Catalog reads `<repo_root>/packages/`, the Data Catalog reads
 `<repo_root>/datasets/` (surfacing as `origin: "hub"`), and the Agent Catalog
 reads the built-in roster in `app/agents/builtin.py`. A fresh test user already
-sees five packages, three datasets and seven agents.
+sees five packages, three datasets and four agents.
 
 **Only `curio.example-ui@1` may be installed in a test.** It declares no python
 dependencies, so nothing shells out to pip. `curio.weather@1`,
@@ -650,13 +661,14 @@ agent arriving by some other path cannot slip past.
 | `test_agent_runs_e2e.py` | no | The correctness gate: install -> attach -> run -> the reply, the minted proposal or tool round, and the persisted transcript. ~1-2 s per agent. Each agent runs twice, fenced and on native tools, and one run falls back from native to fenced. One more writes an Autark document under its reply schema. |
 | `test_agent_chat_e2e.py` | yes | Drives a real chat turn per agent and captures the baselines below. A mutate-capable agent additionally **applies its proposal and is held to the canvas actually changing**; a report-only one is held to the canvas NOT changing. |
 
-**What gets captured, and why it differs by agent.** Only 3 of the 7 catalog agents
-can mutate anything - the rest are `report-only` by contract - so there are two
-kinds of evidence and two capture shapes.
+**What gets captured, and why it differs by agent.** 3 of the 4 catalog agents
+mint a proposal these tests can apply; the Dataset Finder's turn is a read
+(its one mutation, a dataset install, needs a real catalog row) - so there are
+two kinds of evidence and two capture shapes.
 
 | Agent kind | Baselines under `agent-run` | The assertion behind it |
 |---|---|---|
-| report-only (4) | `<agent-id>.png` - the chat panel, clipped | the reply rendered, and the saved dataflow is byte-identical afterwards |
+| report-only (1) | `<agent-id>.png` - the chat panel, clipped | the reply rendered, and the saved dataflow is byte-identical afterwards |
 | mutate-capable (3) | `<agent-id>_chat.png` (panel) + `<agent-id>.png` (full canvas) | the proposal was applied and the node was really created or rewritten, on the server *and* on the canvas |
 
 Three things about those captures are deliberate:
@@ -719,9 +731,9 @@ Things worth knowing before adding to these:
   creations. No card's first match is `node.content.write` (node content is
   the Node Builder's mode), so `TestAgentReviewCard` in
   `test_agent_chat_e2e.py` applies a content replacement. The remaining mutate contracts
-  (`dataset.install`, `package.install`, `package.draft.apply`,
-  `node.template.create`) each need a real catalog row, or a run of the isolated
-  build service; their mints are covered in-process by
+  (`dataset.install`, `package.install`, `package.draft.apply`) each need a real
+  catalog row, or a run of the isolated build service; their mints are covered
+  in-process by
   `test_agents/test_routes_turns.py` and `test_agents/test_routes_proposals.py`,
   and an agent declaring only those falls through
   to the read-tool leg.
@@ -841,7 +853,7 @@ failed.
 | Variable | Purpose |
 |---|---|
 | `CURIO_TOUR` | Must be `1`; the module skips otherwise. |
-| `CURIO_TOUR_SCENES` | Comma-separated scene ids (see `SCENES`); default all. A subset that starts mid-tour stub-logs-in and opens a scratch dataflow first. |
+| `CURIO_TOUR_SCENES` | Comma-separated scene ids (see `SCENES`); default all. A subset that starts mid-tour stub-logs-in and opens a scratch dataflow first. A scene that starts from another scene's work brings that scene along (`NEEDS`: `build` records `datacatalog` too). |
 | `CURIO_TOUR_OUT` | Output directory (default `.curio/tour/`, which is gitignored). |
 | `CURIO_TOUR_SPEED` | Pacing multiplier: `2` halves every hold, `0.8` lengthens them. Caption holds are derived from their word count, so this scales reading time too. |
 

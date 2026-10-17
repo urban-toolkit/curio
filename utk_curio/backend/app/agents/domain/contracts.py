@@ -683,7 +683,6 @@ def builtin_lists(manifest: dict) -> dict[str, str]:
 #: Every prompt rendered from a template, by stem.
 PROMPT_TEMPLATES: tuple[str, ...] = (
     "default_preamble",
-    "chat_prompt",
     "discovery_instruction",
     "evaluate_coherence_subtasks_prompt",
     "evaluate_generated_content_prompt",
@@ -694,17 +693,25 @@ PROMPT_TEMPLATES: tuple[str, ...] = (
     "package_contract",
     "package_recommendation_instruction",
     "research_instruction",
+    "research_notes_rules",
     "research_verify_rules",
+    "researcher_instruction",
     "researcher_notes_instruction",
 )
-#: The Package Builder's backend contract: a fragment the Package Builder's
-#: instruction includes whole, and a delegated Package Builder receives as an
-#: input (``turns/delegates.py``).
+#: The package backend contract: a fragment the Node Builder's
+#: package-writing prompt (``package_build_instruction``) includes whole, and
+#: a delegated call of that mode receives as an input (``turns/delegates.py``).
 PACKAGE_CONTRACT = "package_contract"
-#: The Researcher's rules for checking a fact: a fragment both of its prompts
-#: include whole, its chat (``researcher_notes_instruction``) and its
+#: The Researcher's rules for checking a fact: a fragment two of its prompts
+#: include whole, its chat (``researcher_instruction``) and its
 #: ``research.verify`` mode (``research_instruction``).
 RESEARCH_VERIFY_RULES = "research_verify_rules"
+#: The Researcher's notes format: a fragment two of its prompts include whole,
+#: its chat (``researcher_instruction``), which answers a web question with
+#: notes, and its ``research.notes.compose`` mode
+#: (``researcher_notes_instruction``), which composes notes from search
+#: results for another agent.
+RESEARCH_NOTES_RULES = "research_notes_rules"
 
 #: A marker: a field name, then the argument after a colon when it takes one.
 _MARKER_RE = re.compile(r"\{\{([a-z][a-z0-9_.]*)(?::([^{}]+))?\}\}")
@@ -801,9 +808,11 @@ def _widget_kinds(_src: _Sources) -> str:
 
 
 def _widget_name(name: str) -> str:
+    """*name*, of the ``WIDGET_NAME_RE`` shape matched whole, as the Widgets
+    tab matches it."""
     from utk_curio.backend.app.execution.code_references import WIDGET_NAME_RE
 
-    if not WIDGET_NAME_RE.match(name):
+    if not WIDGET_NAME_RE.fullmatch(name):
         raise PromptTemplateError(f"{name!r} is not a widget name")
     return name
 
@@ -929,13 +938,18 @@ def _data_dir_env(_src: _Sources) -> str:
 
 
 def _package_contract(_src: _Sources) -> str:
-    """The Package Builder's backend contract, rendered, to include whole."""
+    """The package backend contract, rendered, to include whole."""
     return render_prompt(PACKAGE_CONTRACT).rstrip("\n")
 
 
 def _research_verify_rules(_src: _Sources) -> str:
     """The Researcher's rules for checking a fact, rendered, to include whole."""
     return render_prompt(RESEARCH_VERIFY_RULES).rstrip("\n")
+
+
+def _research_notes_rules(_src: _Sources) -> str:
+    """The Researcher's notes format, rendered, to include whole."""
+    return render_prompt(RESEARCH_NOTES_RULES).rstrip("\n")
 
 
 _NUMBER_WORDS = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
@@ -1045,6 +1059,7 @@ PROMPT_FIELDS: dict[str, PromptField] = {
     "backend.data_dir_env": PromptField(_data_dir_env),
     "package.contract": PromptField(_package_contract),
     "research.verify_rules": PromptField(_research_verify_rules),
+    "research.notes_rules": PromptField(_research_notes_rules),
     "vega.schema_url": PromptField(lambda _src: VEGA_SCHEMA_URL),
     "vega.starter_ladder": PromptField(lambda _src: render_starter_ladder(VEGA_STARTER_LADDER)),
     "autk.starter_ladder": PromptField(lambda _src: render_starter_ladder(AUTK_STARTER_LADDER)),

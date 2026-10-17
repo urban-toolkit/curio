@@ -2,6 +2,8 @@
 webfont, and no node running.
 """
 
+import time
+
 import allure
 from playwright.sync_api import (
     Page,
@@ -14,43 +16,90 @@ from playwright.sync_api import (
 #: without drawing one.
 VIEWPORT_READ_MS = 100
 
+#: How many reads the viewport wait makes before it gives up: what 10 s allowed
+#: at one read every ``VIEWPORT_READ_MS``. The page counts them, so a long task
+#: on its main thread (decoding a large raster, #932) delays the reads without
+#: using them up.
+VIEWPORT_MAX_READS = 100
+
+#: The most the viewport wait takes in wall-clock time, for a page that stops
+#: answering.
+VIEWPORT_WALL_CAP_MS = 120_000
+
 # One read of the viewport wait. It fits the canvas through the hook
 # MainCanvas.tsx (and the dashboard) expose, which sets the viewport at once and
 # returns it, or null while a node it frames is not measured yet. It fits again
 # whenever React Flow's viewport is no longer the one the fit set (the
 # canvas's own load fit lands later, say), and passes once that viewport, as
-# the page draws it, has held for *reads* reads in a row.
-_FIT_AND_HOLD_JS = """({ options, reads }) => {
-    const fit = window.__curio_fitViewWithMenuOffset;
-    const flow = window.__curio_reactFlow;
-    if (typeof fit !== 'function' || !flow) return false;
-    const wait = window.__curio_fitWait = window.__curio_fitWait || { target: null, shown: null, held: 0 };
-    const at = flow.getViewport();
-    const target = wait.target;
-    if (!target || at.x !== target.x || at.y !== target.y || at.zoom !== target.zoom) {
-        const set = fit(options);
-        wait.target = set ? { x: set.x, y: set.y, zoom: set.zoom } : null;
-        wait.shown = null;
-        wait.held = 0;
-        return false;
-    }
-    const viewport = document.querySelector('.react-flow__viewport');
-    const shown = viewport ? viewport.style.transform : '';
-    if (!shown || shown !== wait.shown) {
-        wait.shown = shown;
-        wait.held = 1;
-        return false;
-    }
-    wait.held += 1;
-    return wait.held >= reads;
+# the page draws it, has held for *reads* reads in a row. It counts its reads,
+# and returns false while it waits, then 'held', or 'out of reads' once it has
+# made *maxReads*. Its record on window.__curio_fitWait says how the wait went.
+_FIT_AND_HOLD_JS = """({ options, reads, maxReads }) => {
+    const wait = window.__curio_fitWait = window.__curio_fitWait || {
+        target: null, shown: null, held: 0,
+        reads: 0, fits: 0, mostHeld: 0, lastReadAt: null, longestGapMs: 0,
+    };
+    const now = performance.now();
+    if (wait.lastReadAt !== null) wait.longestGapMs = Math.max(wait.longestGapMs, now - wait.lastReadAt);
+    wait.lastReadAt = now;
+    wait.reads += 1;
+    const holds = (() => {
+        const fit = window.__curio_fitViewWithMenuOffset;
+        const flow = window.__curio_reactFlow;
+        if (typeof fit !== 'function' || !flow) return false;
+        const at = flow.getViewport();
+        const target = wait.target;
+        if (!target || at.x !== target.x || at.y !== target.y || at.zoom !== target.zoom) {
+            const set = fit(options);
+            wait.fits += 1;
+            wait.target = set ? { x: set.x, y: set.y, zoom: set.zoom } : null;
+            wait.shown = null;
+            wait.held = 0;
+            return false;
+        }
+        const viewport = document.querySelector('.react-flow__viewport');
+        const shown = viewport ? viewport.style.transform : '';
+        if (!shown || shown !== wait.shown) {
+            wait.shown = shown;
+            wait.held = 1;
+            return false;
+        }
+        wait.held += 1;
+        return wait.held >= reads;
+    })();
+    wait.mostHeld = Math.max(wait.mostHeld, wait.held);
+    if (holds) return 'held';
+    return wait.reads >= maxReads ? 'out of reads' : false;
 }"""
 
-_FIT_WAIT_STATE_JS = """() => ({
-    hook: typeof window.__curio_fitViewWithMenuOffset,
-    fitSet: (window.__curio_fitWait || {}).target || null,
-    viewport: window.__curio_reactFlow ? window.__curio_reactFlow.getViewport() : null,
-    drawn: [...document.querySelectorAll('.react-flow__viewport')].map((v) => v.style.transform),
-})"""
+_FIT_WAIT_STATE_JS = """() => {
+    const wait = window.__curio_fitWait || {};
+    return {
+        hook: typeof window.__curio_fitViewWithMenuOffset,
+        fitSet: wait.target || null,
+        viewport: window.__curio_reactFlow ? window.__curio_reactFlow.getViewport() : null,
+        drawn: [...document.querySelectorAll('.react-flow__viewport')].map((v) => v.style.transform),
+        reads: wait.reads || 0,
+        fits: wait.fits || 0,
+        held: wait.held || 0,
+        mostHeld: wait.mostHeld || 0,
+        longestGapMs: Math.round(wait.longestGapMs || 0),
+    };
+}"""
+
+
+def _did_not_hold(page: Page, options: dict, stable_reads: int, limit: str, took_s: float) -> str:
+    """Why the viewport wait gave up, from its record in the page."""
+    state = page.evaluate(_FIT_WAIT_STATE_JS)
+    reads, fits = state.pop("reads"), state.pop("fits")
+    held, most_held = state.pop("held"), state.pop("mostHeld")
+    gap_ms = state.pop("longestGapMs")
+    return (
+        f"the canvas viewport did not hold where the fit set it within {limit} (fit {options}): "
+        f"{reads} reads in {took_s:.1f} s, {max(fits - 1, 0)} re-fits, held for {held} of the "
+        f"{stable_reads} reads it needs at the end ({most_held} at most), longest gap between "
+        f"reads {gap_ms} ms: {state}"
+    )
 
 
 def _wait_for_reactflow_ready(
@@ -81,6 +130,13 @@ def _wait_for_reactflow_ready(
     a frame, until React Flow's viewport is the one the fit set and the page
     has drawn the same transform for *stable_reads* reads in a row
     (``test_frame_nodes_e2e.py`` holds the frames back).
+
+    It gives up after ``VIEWPORT_MAX_READS`` reads rather than after a time.
+    The reads run on the page's main thread, and one long task there (decoding
+    a large raster, #932) used to leave the wait fewer reads than a pass needs
+    inside its 10 s, with the viewport long settled. A page that stops
+    answering still fails after ``VIEWPORT_WALL_CAP_MS``. *timeout_ms* bounds
+    the wait for a first node.
     """
     page.wait_for_function(
         "() => document.querySelectorAll('.react-flow__node').length > 0",
@@ -94,18 +150,21 @@ def _wait_for_reactflow_ready(
     if max_zoom is not None:
         options["maxZoom"] = max_zoom
     page.evaluate("() => { delete window.__curio_fitWait; }")
+    started = time.monotonic()
     try:
-        page.wait_for_function(
+        outcome = page.wait_for_function(
             _FIT_AND_HOLD_JS,
-            arg={"options": options, "reads": stable_reads},
+            arg={"options": options, "reads": stable_reads, "maxReads": VIEWPORT_MAX_READS},
             polling=VIEWPORT_READ_MS,
-            timeout=timeout_ms,
-        )
+            timeout=VIEWPORT_WALL_CAP_MS,
+        ).json_value()
     except PlaywrightTimeoutError:
+        outcome = None
+    if outcome != "held":
+        limit = f"{VIEWPORT_MAX_READS} reads" if outcome else f"{VIEWPORT_WALL_CAP_MS} ms"
         raise AssertionError(
-            f"the canvas viewport did not hold where the fit set it within {timeout_ms} ms "
-            f"(fit {options}): {page.evaluate(_FIT_WAIT_STATE_JS)}"
-        ) from None
+            _did_not_hold(page, options, stable_reads, limit, time.monotonic() - started)
+        )
     page.evaluate("() => { delete window.__curio_fitWait; }")
 
 

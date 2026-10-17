@@ -317,6 +317,30 @@ def test_a_raster_too_large_for_a_map_travels_as_the_editors_refusal(
     }]
 
 
+def test_a_raster_the_sandbox_cannot_be_asked_for_says_try_again(
+    client, user_and_token, tmp_curio, monkeypatch
+):
+    # A page built without it would draw the map without its raster. A 503,
+    # as for a saved output that cannot be read: asking again usually works.
+    from flask import jsonify
+
+    _, token = user_and_token
+    pid = _create(client, token, spec=_spec_with_pinned_raster_map())
+    # What ``_sandbox_call`` answers when the sandbox could not be reached.
+    asked = _sandbox_serving_a_raster(monkeypatch, (jsonify({"error": "sandbox_unreachable"}), 502))
+
+    resp = client.get(f"/api/projects/{pid}/dashboard")
+
+    assert resp.status_code == 503, resp.get_data(as_text=True)
+    body = resp.get_json()
+    assert "Try again" in body["error"]
+    assert "py" in body["error"]
+    assert body["nodes"] == ["py"]
+    assert body.get("name") == "Dashboard"
+    # The envelope was read: the raster is what could not be.
+    assert [path for path, _params in asked] == ["/get", "/raster"]
+
+
 def test_a_raster_over_the_page_limit_is_refused_in_the_limits_own_words(
     client, user_and_token, tmp_curio, monkeypatch
 ):
@@ -378,6 +402,43 @@ def test_a_dashboard_too_large_to_embed_is_refused_by_its_dataflows_name(
 
     assert resp.status_code == 413
     assert resp.get_json().get("name") == "Trips by hour", (
+        "the refusal does not name its dataflow, so the page that shows it cannot either"
+    )
+
+
+def test_a_dashboard_whose_saved_output_cannot_be_read_says_try_again(
+    client, user_and_token, tmp_curio, monkeypatch
+):
+    # A page built without the output would draw its tile empty, as if the
+    # dataflow had never run (#941). A 503: reading it again usually works.
+    _, token = user_and_token
+    pid = _create(client, token)
+
+    def unreadable():
+        def read(filename):
+            raise KeyError(filename)
+
+        return read
+
+    monkeypatch.setattr(services, "_dashboard_envelope_reader", unreadable)
+    monkeypatch.setattr(
+        services,
+        "load_shared_project",
+        lambda project_id: {
+            "project": type("D", (), {"name": "Trips by hour"})(),
+            "spec": _spec_with_pinned_chart(),
+            "outputs": [{"node_id": "py", "filename": "py.parquet", "data_type": "dataframe"}],
+        },
+    )
+
+    resp = client.get(f"/api/projects/{pid}/dashboard")
+
+    assert resp.status_code == 503, resp.get_data(as_text=True)
+    body = resp.get_json()
+    assert "Try again" in body["error"]
+    assert "py" in body["error"]
+    assert body["nodes"] == ["py"]
+    assert body.get("name") == "Trips by hour", (
         "the refusal does not name its dataflow, so the page that shows it cannot either"
     )
 

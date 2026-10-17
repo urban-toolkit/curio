@@ -1,8 +1,8 @@
 /**
  * Collapsible right-docked panel that surfaces real-time collaboration
  * state: connected users, pending code-change proposals, and a recent
- * activity feed. ``CanvasSidePanels`` places it at the top of the canvas's
- * right-hand column, above the Scenarios panel.
+ * activity feed. ``CanvasSidePanels`` places it on the canvas's right edge,
+ * under the top bar.
  *
  * Renders nothing when ``--collab`` is off or the panel is closed.
  */

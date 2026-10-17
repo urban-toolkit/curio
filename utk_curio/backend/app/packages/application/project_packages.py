@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
+from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
 from utk_curio.backend.app.packages.domain.spec_packages import (
@@ -161,7 +162,9 @@ def uninstall_from_project(
     # that reported success — the drawer showed the package installed again
     # on every reload with no explanation. Name the count instead.
     spec = projects_storage.read_spec(user_key, project_id)
-    users = referencing_nodes(spec, dir_name, packages_store_reads._installed_majors_by_pkg(user_key))
+    users = referencing_nodes(
+        spec, dir_name, packages_store_reads._installed_majors_by_pkg(user_key), model_ids_in_code,
+    )
     if users:
         raise PackageServiceError(
             f"{len(users)} node{'s' if len(users) != 1 else ''} on this canvas "

@@ -76,10 +76,10 @@ expects. The downstream compute and map nodes reference these layers by name (`t
 | Twice as tall | orange | copies of the two, each naming its twin | 2 |
 | Two towers removed | green | Edit Features, then copies of the two | 1 |
 
-The **Scenarios** panel (View > Show scenarios) lists the three, with the data pool as the fixed
-context each one reads. Collapse them and press **Run All**: each scenario is one box, the loader
-and the pool run once for all three, and each box shows its outcome once it is done. Double-click a
-box to expand it in place.
+The **Scenario** catalog's **In project** tab (**Scenario** in the top bar) lists the three, and each
+one's details list the data pool as the fixed context it reads. Collapse them there and press
+**Run All**: each scenario is one box, the loader and the pool run once for all three, and each box
+shows its outcome once it is done. Double-click a box to expand it in place.
 
 ## Removing two towers
 

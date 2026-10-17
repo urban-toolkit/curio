@@ -34,7 +34,7 @@ No scenario ships with Curio. The catalog lists the scenarios in your own projec
 
 | Layer | On disk | Written by |
 |---|---|---|
-| **A project's scenarios** | `dataflow.scenarios` in the project's saved dataflow | **Save selection as scenario**, **Save dataflow as scenario**, **Duplicate as scenario**, a scenario dragged in from the catalog, and the Scenarios panel, saved with the dataflow. |
+| **A project's scenarios** | `dataflow.scenarios` in the project's saved dataflow | **Save selection as scenario**, **Save dataflow as scenario**, **Duplicate as scenario**, a scenario dragged in from the catalog, and the canvas drawer's **In project** tab, saved with the dataflow. |
 | **Their saved results** | Your Data Catalog, as the project's saved outputs | Running the project: a scenario's fixed context and outcomes save their outputs. A scenario dragged into a dataflow brings copies of them, saved as that dataflow's own. |
 
 ---
@@ -42,17 +42,21 @@ No scenario ships with Curio. The catalog lists the scenarios in your own projec
 ## 2. Surfaces and workflows
 
 - **The `/catalog/scenarios` page** lists every scenario in your projects. Reach it from the **Scenario Catalog** tab. Search with **Search scenarios**, sort by **Recently edited**, **Name** or **Project**, and filter by **By project** or **By origin** (**Your dataflows** or **Examples**) in the left rail. Click a card to describe it in the right-hand drawer.
-- **The Scenario Catalog drawer**, on the canvas. Open it from the **Scenario** button in the top bar, and drag a card onto the canvas to bring the scenario into the open dataflow.
+- **The Scenario Catalog drawer**, on the canvas. Open it from the **Scenario** button in the top bar. It has two tabs:
+  - **Browse all** lists every scenario in your projects. Drag a card onto the canvas to bring the scenario into the open dataflow.
+  - **In project** lists the open dataflow's own scenarios, saved or not, and the tab shows how many there are. Each card runs, collapses or expands its scenario, adds or removes the nodes selected on the canvas, or deletes it, and its details rename, recolor and describe it (see [Scenarios](USAGE.md#scenarios)).
 
-Each card shows a square of the scenario's color before its name, then its project, how many nodes it holds, its description, and its project's graph. On the `/catalog/scenarios` page, the strip at the top is the same on every card.
+Each card shows a square of the scenario's color before its name, then its project, how many nodes it holds, its description, and its project's graph; in the **In project** tab the graph marks the scenario's nodes. On the `/catalog/scenarios` page, the strip at the top is the same on every card.
 
 ### Action matrix
 
 | Action | Where | What it changes | What you see |
 |---|---|---|---|
-| **View details** | A card, the drawer, or the canvas drawer | Nothing | The scenario's fixed context, levers and outcomes, with their saved results. |
-| **Open source project** | A card, the drawer, the canvas drawer, or the details | Nothing | The project the scenario lives in, on the canvas. From an open dataflow with unsaved changes, Curio asks first. |
-| **Drag onto the canvas** | A card in the canvas drawer | The open dataflow: it gains a copy of the scenario, and the packages its nodes need | The scenario, collapsed where you dropped it, with its fixed context beside it and its saved results. See [4. Using a scenario in a dataflow](#4-using-a-scenario-in-a-dataflow). |
+| **View details** | A card, the drawer, or the canvas drawer | Nothing | The scenario's fixed context, levers and outcomes, with their saved results. In the **In project** tab, the nodes as the canvas holds them. |
+| **Open source project** | A card, the drawer, the canvas drawer's **Browse all** tab, or the details | Nothing | The project the scenario lives in, on the canvas. From an open dataflow with unsaved changes, Curio asks first. |
+| **Drag onto the canvas** | A card in the canvas drawer's **Browse all** tab | The open dataflow: it gains a copy of the scenario, and the packages its nodes need | The scenario, collapsed where you dropped it, with its fixed context beside it and its saved results. See [4. Using a scenario in a dataflow](#4-using-a-scenario-in-a-dataflow). |
+| **Run scenario**, **Collapse** or **Expand**, **Add selected**, **Remove selected**, **Delete** | A card in the canvas drawer's **In project** tab | The open dataflow's scenario | Its levers run, its box closes or opens, its nodes change, or it is gone and its nodes stay. |
+| **Rename, recolor, describe** | The details of a card in the **In project** tab | The open dataflow's scenario | Its new name, color or description, on its card and on the canvas. |
 
 ### Workflows
 
@@ -111,6 +115,6 @@ Scenarios are not imported or published on their own: they travel with their dat
 
 ## See also
 
-- [`docs/USAGE.md`](USAGE.md#scenarios): making scenarios on the canvas, the Scenarios panel, and collapsing a scenario.
+- [`docs/USAGE.md`](USAGE.md#scenarios): making scenarios on the canvas, the **In project** tab, and collapsing a scenario.
 - [`docs/DATA-CATALOG.md`](DATA-CATALOG.md): where a project's saved outputs land.
 - [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#scenario-catalog): how the catalog reads projects, and its routes.

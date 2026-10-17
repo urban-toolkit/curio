@@ -10,7 +10,8 @@
  *   are hidden, and each edge crossing the scenario's edge is drawn to or from
  *   its box instead, as a stand-in.
  * - An expanded scenario's members wear its color, inside a frame.
- * - The fixed context of the scenario the panel highlights is marked.
+ * - The fixed context of the scenario pointed at in the Scenario Catalog
+ *   drawer's In project tab is marked.
  *
  * Boxes, frames and stand-ins are not React Flow nodes or edges: React Flow's
  * store is what `reactFlow.getNodes()` returns to Run All and to a save, so

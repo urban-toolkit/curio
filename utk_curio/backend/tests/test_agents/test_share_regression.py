@@ -33,9 +33,9 @@ class TestStripAgentState:
             "dataflow": {
                 "nodes": [{"id": "n1"}],
                 "packages": ["curio.builtin@1"],
-                "agents": ["agent.chat-agent@1.0.0"],
+                "agents": ["agent.researcher@1.0.0"],
                 "agentAttachments": [{"attachmentId": "a", "sessionId": "s", "intent": "x"}],
-                "agentDefaults": {"agent.chat-agent@1.0.0": {"revision": 1, "settings": {}}},
+                "agentDefaults": {"agent.researcher@1.0.0": {"revision": 1, "settings": {}}},
             }
         }
         out = project_agents.strip_agent_state(spec)
@@ -67,7 +67,7 @@ def shared_project_with_agent_state(client, user_and_token, tmp_curio, monkeypat
         "outputs": [],
     }
     project_id = client.post("/api/projects", json=body, headers=_auth(token)).get_json()["id"]
-    coord = "agent.chat-agent@1.0.0"
+    coord = "agent.researcher@1.0.0"
     client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
     att = client.post(
         f"/api/agents/projects/{project_id}/attachments",
@@ -111,7 +111,7 @@ class TestSharedRouteExcludesAgentPrivateData:
         for private in (
             "agentAttachments",
             "agentDefaults",
-            "agent.chat-agent",
+            "agent.researcher",
             ctx["attachment"]["attachmentId"],
             ctx["attachment"]["sessionId"],
             SECRET_INTENT,
@@ -128,7 +128,7 @@ class TestSharedRouteExcludesAgentPrivateData:
         client.get(f"/api/projects/{ctx['project_id']}/shared").get_data()
         ukey = _user_dir_key(ctx["user"])
         spec = projects_storage.read_spec(ukey, ctx["project_id"])
-        assert spec["dataflow"]["agents"] == ["agent.chat-agent@1.0.0"]
+        assert spec["dataflow"]["agents"] == ["agent.researcher@1.0.0"]
         att = spec["dataflow"]["agentAttachments"][0]
         assert att["intent"] == SECRET_INTENT and att["title"] == SECRET_TITLE
         # `agentDefaults` is no longer written: it held the per-dataflow half

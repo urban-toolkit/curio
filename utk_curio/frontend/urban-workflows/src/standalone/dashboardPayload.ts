@@ -13,7 +13,8 @@
  * replaces, so degrading to it is safe.
  *
  * A dashboard the backend refuses to build as a page of its own, too large to
- * carry or with a tile that loads its own data, is not null: its page carries
+ * carry, with a tile that loads its own data, or with a saved output it could
+ * not read, is not null: its page carries
  * the backend's reason instead of the data (`refused`), says it, and fetches
  * nothing, since fetching the data instead is what the refusal rules out.
  *
@@ -51,7 +52,10 @@ export interface EmbeddedRaster {
  * in place of its spec and rows (`cli/static_server.py`).
  */
 export interface DashboardRefusal {
-  /** The backend's answer: 413 over the page's size limit, 409 a tile that loads its own data. */
+  /**
+   * The backend's answer: 413 over the page's size limit, 409 a tile that loads
+   * its own data, 503 a tile's saved output could not be read (try again).
+   */
   status: number;
   /** The backend's own words, which name the nodes or tiles to change. */
   message: string;

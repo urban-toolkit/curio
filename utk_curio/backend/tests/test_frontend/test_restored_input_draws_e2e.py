@@ -20,10 +20,7 @@ Run::
 from __future__ import annotations
 
 import json
-import os
 from typing import TYPE_CHECKING
-
-import pytest
 
 from .utils import (
     assert_autark_map_drawn,
@@ -34,6 +31,7 @@ from .utils import (
     require_owner_view,
     require_project_page,
     require_user_auth,
+    require_webgpu,
     run_all_and_wait,
     save_dataflow,
     stub_login_and_enter_workflow,
@@ -133,11 +131,7 @@ def test_a_reopened_autark_map_draws_from_its_saved_input(
     session = _open(page, app_frontend, current_server, username="restored_input_map",
                     spec=_spec("Restored map", (producer, GRID_CODE),
                                (drawer, "curio.builtin/autk-grammar", MAP_SPEC)))
-    has_adapter = bool(page.evaluate("async () => !!(navigator.gpu && await navigator.gpu.requestAdapter())"))
-    if not has_adapter:
-        if os.environ.get("CURIO_REQUIRE_HARDWARE_WEBGPU") == "1":
-            pytest.fail("CURIO_REQUIRE_HARDWARE_WEBGPU=1 but this browser has no WebGPU adapter")
-        pytest.skip("running an Autark node needs a WebGPU adapter; this browser has none")
+    require_webgpu(page)
 
     _run_save_and_reopen(page, app_frontend, session, producer)
 

@@ -69,7 +69,7 @@ function card(id: string, over: Record<string, unknown> = {}) {
 beforeEach(() => {
   jest.clearAllMocks();
   api.catalog.mockResolvedValue({ agents: [card("agent.my-explainer")] } as any);
-  api.listImports.mockResolvedValue({ agents: [card("agent.chat-agent", { scope: "imports", imported: true })] } as any);
+  api.listImports.mockResolvedValue({ agents: [card("agent.researcher", { scope: "imports", imported: true })] } as any);
   api.listProjectAgents.mockResolvedValue({ agents: [] } as any);
   api.installToProject.mockResolvedValue({ agents: [] } as any);
   api.uninstallFromProject.mockResolvedValue({ agents: [] } as any);
@@ -410,7 +410,7 @@ describe("AgentCatalogDrawer", () => {
     // editor. Curio no longer caps either, so the editor and its three scopes
     // are gone and a card's actions are add, remove, publish.
     api.listProjectAgents = jest.fn().mockResolvedValue({
-      agents: [card("agent.chat-agent", { scope: "installed", installedInProject: true })],
+      agents: [card("agent.researcher", { scope: "installed", installedInProject: true })],
     } as any);
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("my-explainer")).toBeInTheDocument());
@@ -419,7 +419,7 @@ describe("AgentCatalogDrawer", () => {
       await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
       // Scoped to the card: the drawer header keeps its own API Settings
       // button, which is the provider, not a per-agent policy.
-      const row = screen.getByText("chat-agent").closest("article")!;
+      const row = screen.getByText("researcher").closest("article")!;
       expect(
         within(row).queryByRole("button", { name: /settings/i }),
       ).not.toBeInTheDocument();

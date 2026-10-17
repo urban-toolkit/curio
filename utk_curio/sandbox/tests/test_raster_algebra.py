@@ -589,6 +589,24 @@ class TestTileMosaic:
             assert mosaic.descriptions == ("height (m)",)
             assert mosaic.tags()["zoom"] == "5"
 
+    def test_a_web_tile_missing_inside_the_span_is_nodata_when_the_mosaic_names_one(self, tmp_path):
+        """Filled with NaN and naming NaN its nodata, the tiles never given are
+        no data, which a masked read leaves out; a given tile's 0 stays a value."""
+        import rasterio
+
+        tiles = {(10, 20): np.full((4, 4), 1.0, dtype="float32"), (11, 21): np.zeros((4, 4), dtype="float32")}
+        path = rasters().mosaic_web_tiles(tiles, 5, str(tmp_path / "m.tif"), crs="EPSG:3395", tile_size=4,
+                                          fill=float("nan"), nodata=float("nan"))
+        with rasterio.open(path) as mosaic:
+            assert mosaic.nodata is not None and math.isnan(mosaic.nodata), mosaic.nodata
+            cells = mosaic.read(1)
+            assert cells[:4, :4].tolist() == [[1.0] * 4] * 4
+            assert cells[4:, 4:].tolist() == [[0.0] * 4] * 4
+            assert np.isnan(cells[:4, 4:]).all() and np.isnan(cells[4:, :4]).all()
+            masked = mosaic.read(1, masked=True)
+            assert masked.mask[:4, 4:].all() and masked.mask[4:, :4].all()
+            assert not masked.mask[:4, :4].any() and not masked.mask[4:, 4:].any()
+
     def test_files_are_laid_side_by_side_in_a_vrt_that_points_at_them(self, tmp_path):
         import rasterio
         from affine import Affine

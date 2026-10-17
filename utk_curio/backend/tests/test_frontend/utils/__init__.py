@@ -52,6 +52,16 @@ from .capture_waits import (  # noqa: F401
 )
 from .images import _compare_images  # noqa: F401
 from .dialogs import accept_confirm_dialog, leave_agent_badge, wait_for_drawer_closed  # noqa: F401
+from .scenario_drawer import (  # noqa: F401
+    SCENARIO_DRAWER,
+    close_scenario_details,
+    close_scenario_drawer,
+    in_project_card,
+    open_in_project_tab,
+    open_scenario_details,
+    scenario_card_button,
+    scenario_part,
+)
 from .screenshots import (  # noqa: F401
     WORKFLOW_SCREENSHOT_EXPECTED_DIR,
     dump_browser_log,
@@ -123,8 +133,11 @@ from .auth import (  # noqa: F401
 from .db_stubs import (  # noqa: F401
     SESSION_COOKIE_NAME,
     HTTP_TIMEOUT_S,
+    NODE_ONLY_AGENT,
+    NODE_ONLY_AGENT_NAME,
     _post_json,
     api_json,
+    ensure_node_only_agent,
     install_session_cookie,
     stub_db_user,
     stub_db_login,
@@ -155,6 +168,7 @@ from .canvas_authoring import (  # noqa: F401
     assert_header_shows_save,
     frame_node,
     drag_to_canvas,
+    drag_with_the_mouse_onto_canvas,
     drag_to_canvas_with_the_mouse,
     set_node_code,
     read_node_code,
@@ -200,6 +214,28 @@ from .node_drawings import (  # noqa: F401
     assert_autark_drawing_fits,
     assert_editor_panes_clear_of_markers,
     assert_vega_node_empty_state,
+)
+from .webgpu import (  # noqa: F401
+    PROBE_JS,
+    WebGpuAdapterRetried,
+    WebGpuAnswer,
+    wait_for_probe,
+    webgpu_adapter,
+    require_webgpu,
+)
+from .offline_install import (  # noqa: F401
+    TEST_PACKAGES_DIR,
+    OfflineNode,
+    OfflinePackage,
+    offline_package,
+    wheelhouse_library,
+    stage_wheelhouse,
+    library_installed,
+    restore_wheelhouse,
+    planted_package_files,
+    plant_catalog_package,
+    remove_catalog_package,
+    offline_catalog_package,
 )
 from .page import FrontendPage  # noqa: F401
 from .scripted_llm import (  # noqa: F401

@@ -143,6 +143,7 @@ export const FlowContext = createContext<FlowContextProps>({
     setScenarios: () => {},
     setAutoRun: () => {},
     saveCurrentProject: async () => {},
+    requestProjectSave: async () => {},
     saveAsNewProject: async () => {},
     ensureProjectId: async () => null,
     persistDataflowForInstall: async () => ({ saved: false, failedNodeIds: [] }),

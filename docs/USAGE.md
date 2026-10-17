@@ -168,7 +168,7 @@ A pip install keeps the datasets, Discovery sources, models and node packages th
 
 Autark data nodes and OpenStreetMap downloads need Node.js 26 and npm (`conda install -c conda-forge nodejs=26`). On every start, `curio start` installs their Node.js packages with `npm install` into `.curio/nodejs/` in the folder you start Curio from.
 
-Five large files are not in the pip package: the data of four Data Catalog datasets (Milan Mean Radiant Temperature, Project Sidewalk Chicago Labels, Chicago Red-Light Violations and Chicago Speed Camera Violations) and the Model Catalog's Deep Umbra model. Curio downloads each one from GitHub the first time something reads it: a preview in the Data Catalog, adding the dataset to a dataflow, or a node that loads it. Downloaded files go to `.curio/fetched/` in the folder you start Curio from.
+Twelve files are not in the pip package: the data of eleven Data Catalog datasets (Milan Mean Radiant Temperature, Project Sidewalk Chicago Labels, Chicago Red-Light Violations, Chicago Speed Camera Violations and SCOUT's seven flood rasters) and the Model Catalog's Deep Umbra model. Curio downloads each one from GitHub the first time something reads it: a preview in the Data Catalog, adding the dataset to a dataflow, or a node that loads it. Downloaded files go to `.curio/fetched/` in the folder you start Curio from.
 
 Offline, reading one of those files fails with a message that gives its address on GitHub and the path to save it to. Download the file from that address on a machine that is online and copy it to that path, or install Curio from git, which holds every file.
 
@@ -623,6 +623,9 @@ input: on circle 1 it is `input_1`, and `input_1[0]` is its first item. Several
 edges into one circle, as a port that takes many has, are that circle's list,
 in edge order.
 
+[Example 26](examples/26-several-inputs.md) wires several inputs into each of
+these node kinds, with a tuple on one of them.
+
 ## Scenarios
 
 A scenario is a named selection of a dataflow's nodes, or the whole dataflow, used
@@ -656,18 +659,23 @@ To make one:
 Then change the copy's levers: a widget value, a line of code. Each copy remembers
 the node it was copied from.
 
-**View → Show scenarios** opens the Scenarios panel on the right of the canvas,
-under the collaboration panel when collaboration is on and that panel is open.
-For each scenario it shows its fixed context, levers and outcomes, and lets you:
+The dataflow's scenarios are in the Scenario Catalog drawer's **In project** tab:
+click **Scenario** in the top bar, then **In project**, which shows how many the
+dataflow has. Saving a selection or duplicating it as a scenario opens that tab.
+On top of it are **Save selection as scenario** and **Duplicate as scenario**,
+and each scenario's card offers:
 
-- rename it, recolor it and describe it;
 - **Run scenario**: run its levers, and of its fixed context only the nodes that
   have not run or have changed since;
-- **Collapse** or **Expand** it;
-- **Add selected** or **Remove selected** nodes;
-- **Delete** it. Its nodes stay on the canvas.
+- **Collapse** or **Expand**;
+- **Add selected** or **Remove selected**: the nodes selected on the canvas
+  before the drawer opened;
+- **Delete**. Its nodes stay on the canvas.
 
-Pointing at a scenario in the panel marks its fixed context on the canvas.
+**View details** on a card renames, recolors and describes the scenario, and
+lists its fixed context, levers and outcomes. Pointing at a card marks the
+scenario's fixed context on the canvas. In a dataflow someone shares with you,
+the tab lists the scenarios without these controls.
 
 On the canvas, an expanded scenario's nodes wear its color inside a frame, with its
 name and a **Collapse** button above. A collapsed scenario is one box in its color
@@ -1309,7 +1317,7 @@ For the full guide, covering searching, downloading, storage sources, collection
 
 ## Model Catalog
 
-The **Model Catalog** holds the trained models your nodes can run. A model is a package: its weights and the node that runs it. DDRNet23-Slim, which labels street photos with the 19 Cityscapes classes, ships with Curio, with an **Image Segmentation** node; models you add from the Discovery Catalog's **Hugging Face models** land here too, each with an Image Segmentation node of its own. A node runs the model its code names with `curio_load_model("<id>")`: drag a model from **Model Catalog** in the left Tools panel onto the node to change it.
+The **Model Catalog** holds the trained models your nodes can run. A model is a package: its weights and the node that runs it. DDRNet23-Slim, which labels street photos with the 19 Cityscapes classes, ships with Curio, with an **Image Segmentation** node; models you add from the Discovery Catalog's **Hugging Face models** land here too, each with an Image Segmentation node of its own. A node runs the model its code names with `curio_load_model("<id>")`. Drag a model's card from the Model Catalog drawer, or from **Model Catalog** in the left Tools panel, onto the canvas to add its node, or onto a node to change the node's model for another of the same type. **Save as package node…** on a node that loads a model makes a model package of your own, a copy of the model.
 
 A node runs a model once the model's package is in your account: added from the Model Catalog (**Add to project** in its canvas drawer, **Add to all projects** on its page), or brought by a dataflow that names it, such as example 10. Shipped models are packages under `<repo_root>/packages/`, relocated with **`--packages-root`**; models you add from the Discovery Catalog are yours, in your package store.
 
@@ -1317,12 +1325,20 @@ For the full guide, covering runtimes, libraries, the manifest, and sharing a da
 
 ## Agent Catalog
 
-Agents are AI assistants you attach to your dataflow. The catalog lists seven:
-**Chat**, which explains a node or the whole dataflow, diagnoses errors and
-helps you define what to build, and six that build dataflows and nodes, find
-data, connect nodes, research, and recommend or author packages. Each agent
-answers with the LLM configuration chosen for it on the **Agent configuration**
-tab of **API Settings** (above), else your default.
+Agents are AI assistants you attach to your dataflow. The catalog lists four:
+
+- **Researcher**: explains a node or the whole dataflow, diagnoses errors,
+  helps you define what to build, answers questions from the web as notes, and
+  checks facts.
+- **Node Builder**: builds a node or rewrites one's content, suggests nodes for
+  a connection, and installs or writes the node packages your nodes need.
+- **Dataflow Builder**: plans a whole dataflow, then solves its nodes.
+- **Dataset Finder**: finds datasets in the Data Catalog and in portals.
+
+What each does in chat, the tools it uses and the modes other agents ask it
+for are in [AGENT-CATALOG.md](AGENT-CATALOG.md#the-agents). Each agent answers
+with the LLM configuration chosen for it on the **Agent configuration** tab of
+**API Settings** (above), else your default.
 
 There are two scopes:
 

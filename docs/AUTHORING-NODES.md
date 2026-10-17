@@ -465,6 +465,8 @@ archive whose `<packageId>@<major>` you already have is refused.
 
 ## Where to go next
 
+- [BRINGING-MODELS.md](BRINGING-MODELS.md): a node that runs a model you
+  trained, in a model package with its weights.
 - [NODE-CATALOG.md](NODE-CATALOG.md): how packages are stored, installed,
   versioned, forked, published and shared.
 - [EXTENDING.md](EXTENDING.md): the reference for backend blueprints, calling

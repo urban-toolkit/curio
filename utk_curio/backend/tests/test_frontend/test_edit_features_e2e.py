@@ -33,7 +33,6 @@ from typing import TYPE_CHECKING
 
 from .test_compare_scenarios_e2e import _OUTPUT_ARTIFACT_JS
 from .test_scenario_drop_e2e import _saved_spec
-from .test_scenarios_canvas_e2e import _require_webgpu
 from .test_widget_tags_e2e import _open_tab
 from .utils import (
     assert_in_view,
@@ -48,6 +47,7 @@ from .utils import (
     require_owner_view,
     require_project_page,
     require_user_auth,
+    require_webgpu,
     run_all_and_wait,
     save_dataflow,
     save_node_closeup,
@@ -201,7 +201,7 @@ def test_a_building_picked_and_removed_drops_the_count_and_is_listed_as_what_dif
     token, project_id = session["token"], session["project"]["id"]
     for node_id in (LOAD, EDIT, EDIT_2, COUNT, COUNT_2, COMPARE):
         node_locator(page, node_id).wait_for(state="visible", timeout=45000)
-    _require_webgpu(page)
+    require_webgpu(page)
 
     run_all_and_wait(page, timeout_ms=300000)
     for node_id in (EDIT, EDIT_2):

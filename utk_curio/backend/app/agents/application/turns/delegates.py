@@ -465,7 +465,7 @@ def _mint_content_review_from_delegate(
 
 
 # dev/90: the package-authoring capabilities whose delegation success feeds
-# the delegate-draft mint below (the Package Builder's surface; the
+# the delegate-draft mint below (the Node Builder's package-writing mode; the
 # `package.create-or-extend` intent resolves to these). Canonical definition
 # lives in content.py (dev/90 A6 — the tail contract sizes their inputs).
 PACKAGE_AUTHORING_CAPABILITIES = content.PACKAGE_AUTHORING_CAPABILITIES
@@ -501,6 +501,8 @@ _BUILD_REQUEST_CONTRACT: dict = {
     ),
     "shape": {
         "mode": "create | extend",
+        "justification": ("<the closest existing templates you considered and why "
+                          "each is inadequate: needed when the draft adds a template>"),
         "baseDigest": "<64-hex digest of the installed target — extend only>",
         "manifest": {
             "id": ("reverse-DNS: two or more dot-separated lowercase segments, "
@@ -547,6 +549,11 @@ _BUILD_REQUEST_CONTRACT: dict = {
         }],
     },
     "rules": [
+        "every template the draft adds (all of a create's, the new ones of an "
+        "extend) needs the top-level justification, which the user reads "
+        "first on the review card, and a label no existing template has: a "
+        "template that already does the job is reused (insteadOfAuthoring), "
+        "never drafted again",
         "a presentation-only template is engine 'javascript', editor 'none', "
         "hasCode false, empty ports",
         "the behavior source registers EXACTLY the template's behavior key: "
@@ -567,13 +574,13 @@ _BUILD_REQUEST_CONTRACT: dict = {
 
 
 def _build_request_contract() -> dict:
-    """The build-request contract a delegated Package Builder receives.
+    """The build-request contract a delegated package-writing call receives.
 
     memo dev/91: the backend authoring contract rides it as
     ``backendContract``, stated where the delegate can see it (the A8 lesson:
     nobody invents a schema they were shown). Its text is the generated
-    ``llm-prompts/package_contract.md``, the same text the Package Builder's
-    own instruction includes, read on every run like any prompt."""
+    ``llm-prompts/package_contract.md``, the same text the package-writing
+    mode's own prompt includes, read on every run like any prompt."""
     backend = builtin.read_prompt_file(
         builtin.PACKAGE_CONTRACT_FILE, wanted_by="the build-request contract"
     )
@@ -1214,8 +1221,8 @@ def _authoring_reuse_evidence(
     and, under *note*, for a delegated ``package.recommend``, which has no
     catalog tool either.
 
-    The Package Builder's instruction opens with "Reuse first. Before authoring
-    anything, read packages.catalog … never a duplicate package" — and it holds
+    The package agent's instruction opened with "Reuse first. Before authoring
+    anything, read packages.catalog … never a duplicate package", and it held
     that tool only as a direct attachment. As a DEC-046 delegate it runs
     structurally tool-less, which is the path packages are actually authored
     on, so its first instruction was unexecutable and it had no way to know:

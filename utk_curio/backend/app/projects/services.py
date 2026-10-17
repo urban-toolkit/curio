@@ -775,6 +775,11 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
     scenarios.normalize_spec_scenarios(data.spec)
 
     storage.write_spec(ukey, project_id, data.spec)
+    # The new row is committed once its spec is on disk (a listing drops a row
+    # without one), and before anything below asks for a spec lock: seeding
+    # the account's default datasets installs them under one, and no thread
+    # may wait for it holding an uncommitted write (#909, ``spec_write_lock``).
+    db.session.commit()
     output_refs = list(data.outputs)
     install_warnings: list = []
     effective_spec = _auto_install_computed_outputs(
@@ -843,28 +848,44 @@ def may_save(user, project_id: str) -> bool:
     return True
 
 
+#: What a save numbered lower than one its tab already had applied is told.
+#: The page gave up on that save before it landed, so no one but a log reads it.
+OLDER_SAVE_REFUSAL = (
+    "A newer save of this dataflow from this tab has already been applied, "
+    "so this older one was not."
+)
+
+
+def _refuse_an_older_save(ukey: str, project_id: str, data: ProjectUpdate) -> None:
+    """Refuse a save numbered lower than the latest one applied from its tab.
+
+    The page gives up on a save after 2 minutes and sends the next, but the
+    server may still be working on the first: on its way, or waiting for the
+    spec lock. Applied after the next one, it would put the older dataflow
+    back. Checked under the spec lock, before anything is written, like the
+    stale-basis guard.
+    """
+    if data.save_tab is None or data.save_number is None:
+        return
+    last = storage.last_save_number(ukey, project_id, data.save_tab)
+    if last is not None and data.save_number < last:
+        raise ProjectError(OLDER_SAVE_REFUSAL, 409)
+
+
 def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
     project = _project_to_save(user, project_id)
     ukey = _user_dir_key(user)
-    existing_spec = storage.read_spec(ukey, project_id)
-
-    folder = str(storage.project_dir(ukey, project_id))
-    project = repo.upsert_project(
-        user_id=user.id,
-        name=data.name or project.name,
-        folder_path=folder,
-        description=data.description if data.description is not None else project.description,
-        thumbnail_accent=data.thumbnail_accent or project.thumbnail_accent,
-        project_id=project_id,
-    )
 
     # Serialize the spec read-modify-write so a concurrent dataset mutation
     # (replace_dataflow_datasets) or Play-All can't clobber freshly-installed
-    # refs. Re-read existing_spec INSIDE the lock so we merge/preserve against
-    # the latest on-disk spec, not the snapshot read before the lock.
+    # refs. Read existing_spec INSIDE the lock so we merge/preserve against
+    # the latest on-disk spec. The project row is written inside it too, and
+    # only once the outputs are installed: the lock comes before any database
+    # write (#909, see ``spec_write_lock``).
     install_warnings: list = []
     labels = _labels_for_unnamed(ukey, project_id, data.outputs) if data.outputs is not None else None
     with storage.spec_write_lock(ukey, project_id):
+        _refuse_an_older_save(ukey, project_id, data)
         existing_spec = storage.read_spec(ukey, project_id)
         effective_spec = data.spec if data.spec is not None else existing_spec
         spec_dirty = False
@@ -974,6 +995,18 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
             effective_spec = pruned_spec
             spec_dirty = True
 
+        # The row just before the spec is written, so its write transaction
+        # stays short: it bumps ``spec_revision`` and holds SQLite's write lock
+        # until the commit below.
+        project = repo.upsert_project(
+            user_id=user.id,
+            name=data.name or project.name,
+            folder_path=str(storage.project_dir(ukey, project_id)),
+            description=data.description if data.description is not None else project.description,
+            thumbnail_accent=data.thumbnail_accent or project.thumbnail_accent,
+            project_id=project_id,
+        )
+
         # A rename renames the dataflow, not just the DB row (#230): the canvas
         # title reads ``spec.dataflow.name``. Deliberately OUTSIDE the
         # ``data.spec is not None`` block, so a name-only PUT - what the Projects
@@ -992,6 +1025,12 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
                 dataflow["categories"] = data.categories
                 _normalize_spec_categories(effective_spec)
                 spec_dirty = True
+
+        if data.save_tab is not None and data.save_number is not None:
+            # Just before the spec, as the counter is bumped before it: a crash
+            # between the two leaves the number ahead, which refuses nothing
+            # the tab still sends, since its next save is numbered higher.
+            storage.record_save_number(ukey, project_id, data.save_tab, data.save_number)
 
         if data.spec is not None or spec_dirty:
             storage.write_spec(ukey, project_id, effective_spec)
@@ -1125,6 +1164,27 @@ def _with_effective_packages(spec, ukey: str, project_id: str):
     return spec
 
 
+def _saved_outputs(
+    ukey: str, project_id: str,
+) -> tuple[Optional[dict], List[OutputRef], List[OutputRef]]:
+    """The spec, the saved outputs put where the sandbox reads them
+    (``storage.hydrate_outputs``), and those the manifest lists that could not
+    be, all read under the project's spec lock.
+
+    A save writes the spec, the manifest and each new output it installs under
+    that lock, and installing an output replaces its folder. A load that read
+    the manifest without the lock could meet an output mid-rewrite, find no
+    copy of it, and drop it (#941). The lock comes before any database write
+    (#909), and nothing here writes to the database.
+    """
+    with storage.spec_write_lock(ukey, project_id):
+        spec = storage.read_spec(ukey, project_id)
+        listed = _output_refs_from_manifest(storage.read_manifest(ukey, project_id))
+        hydrated = storage.hydrate_outputs(ukey, project_id, listed, spec=spec)
+    missing = [ref for ref in listed if ref not in hydrated]
+    return spec, hydrated, missing
+
+
 def load_project(user, project_id: str) -> dict:
     from utk_curio.backend.app.datasets.seed import (
         ensure_dataflow_datasets_installed,
@@ -1132,35 +1192,25 @@ def load_project(user, project_id: str) -> dict:
     from utk_curio.backend.app.packages.service import ensure_user_packages_initialized
 
     project = repo.get_for_user(project_id, user.id)
-    repo.touch_last_opened(project_id, user.id)
 
     ukey = _user_dir_key(user)
     # Defense in depth: a user who has projects from before the builtin-seed
     # fix still needs builtin in their store to render the palette.
     ensure_user_packages_initialized(ukey)
-    spec = storage.read_spec(ukey, project_id)
     # Same argument for datasets: the startup seeder only covers ``guest``, so a
     # real user opening a seeded example needs the datasets its
     # ``dataflow.datasets`` refs name copied into their own store, or the Data
     # palette renders dirName-titled placeholders instead of real rows. Scoped to
     # this spec's refs, so opening a project never copies data it does not use.
-    ensure_dataflow_datasets_installed(ukey, spec)
-    manifest = storage.read_manifest(ukey, project_id)
-
-    output_refs: List[OutputRef] = []
-    if manifest and "outputs" in manifest:
-        output_refs = [
-            OutputRef(
-                node_id=o["node_id"],
-                filename=o["filename"],
-                data_type=o.get("data_type"),
-            )
-            for o in manifest["outputs"]
-        ]
-
-    hydrated = storage.hydrate_outputs(ukey, project_id, output_refs, spec=spec)
+    # Before the outputs are restored: one a node reads from such a dataset is
+    # restored from it.
+    ensure_dataflow_datasets_installed(ukey, storage.read_spec(ukey, project_id))
+    spec, hydrated, _missing = _saved_outputs(ukey, project_id)
     spec = _with_effective_packages(spec, ukey, project_id)
 
+    # After the spec lock: a thread holding a database write may not wait for
+    # it (#909).
+    repo.touch_last_opened(project_id, user.id)
     db.session.commit()
     return {
         "project": _to_detail(
@@ -1183,6 +1233,10 @@ def load_shared_project(project_id: str) -> dict:
     Used by the unauthenticated ``GET /api/projects/<id>/shared`` route to
     power link-based sharing. A deleted project 404s because its row is gone
     — deletion is a hard delete since Archive was removed (#261).
+
+    ``missing_outputs`` are the saved outputs the manifest lists that no copy
+    was left to load (``_saved_outputs``): a dashboard that needs one says to
+    try again rather than draw its tile empty.
     """
     from utk_curio.backend.app.projects.models import Project
 
@@ -1191,7 +1245,11 @@ def load_shared_project(project_id: str) -> dict:
         raise repo.NotFoundError(f"Project {project_id} not found")
 
     ukey = _owner_user_dir_key(project)
-    spec = storage.read_spec(ukey, project_id)
+    # Asked before the spec lock, which would make a folder for a project
+    # that has none.
+    if storage.read_spec(ukey, project_id) is None:
+        raise repo.NotFoundError(f"Project {project_id} not found")
+    spec, hydrated, missing = _saved_outputs(ukey, project_id)
     if spec is None:
         raise repo.NotFoundError(f"Project {project_id} not found")
 
@@ -1201,20 +1259,6 @@ def load_shared_project(project_id: str) -> dict:
     # defaults) from the served copy. The on-disk spec is untouched.
     from utk_curio.backend.app.agents.repositories.project_agents import strip_agent_state
     spec = strip_agent_state(spec)
-
-    manifest = storage.read_manifest(ukey, project_id)
-    output_refs: List[OutputRef] = []
-    if manifest and "outputs" in manifest:
-        output_refs = [
-            OutputRef(
-                node_id=o["node_id"],
-                filename=o["filename"],
-                data_type=o.get("data_type"),
-            )
-            for o in manifest["outputs"]
-        ]
-
-    hydrated = storage.hydrate_outputs(ukey, project_id, output_refs, spec=spec)
     spec = _with_effective_packages(spec, ukey, project_id)
 
     detail = _to_detail(
@@ -1229,6 +1273,7 @@ def load_shared_project(project_id: str) -> dict:
         "project": detail,
         "spec": spec,
         "outputs": [_output_ref_dict(r) for r in hydrated],
+        "missing_outputs": [_output_ref_dict(r) for r in missing],
     }
 
 
@@ -1391,7 +1436,10 @@ def build_standalone_dashboard(
     dashboard is opened by whoever holds the link and the two must see the same
     thing. Raises :class:`DashboardTooLargeError` when the rows, and the
     GeoTIFFs of the rasters an Autark map reads, would not fit in a page; the
-    caller turns that into a message naming the heavy tiles.
+    caller turns that into a message naming the heavy tiles. Raises
+    :class:`DashboardOutputUnreadableError` when a tile needs a saved output
+    that could not be read, one the load found no copy of included, or a
+    raster of one the sandbox could not be asked for.
     """
     from utk_curio.backend.app.projects.dashboard_payload import (
         DEFAULT_PAYLOAD_LIMIT_BYTES,
@@ -1403,6 +1451,7 @@ def build_standalone_dashboard(
     payload = build_dashboard_payload(
         spec=loaded["spec"],
         output_refs=loaded["outputs"],
+        missing_refs=loaded.get("missing_outputs", ()),
         fetch_envelope=fetch_envelope or _dashboard_envelope_reader(),
         fetch_raster=fetch_raster or _dashboard_raster_reader(),
         meta={

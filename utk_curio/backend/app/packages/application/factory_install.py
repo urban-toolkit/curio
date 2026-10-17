@@ -1,22 +1,30 @@
-"""The Package Builder's install paths for a draft: build it (Save-As preserving the unedited sources on disk), refuse a read-only target, and install the built archive into the user store.
+"""The package build pipeline's install paths for a draft: build it (Save-As preserving the unedited sources on disk), refuse a read-only target, and install the built archive into the user store.
 
 Application layer of the packages package (memo dev/143, B2-b): lifted out of ``routes.py`` so handlers
 parse, call and serialize and carry no rules; every function keeps its body.
+
+A new package whose node loads a model the account holds is built as a model
+package of its own, a copy of that model (:func:`model_source_for_draft`).
 """
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
+from typing import Callable
 
+from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
 from utk_curio.backend.app.packages.application import (
+    model_packages as packages_model_packages,
     provisioning as packages_provisioning,
     python_modules as packages_python_modules,
     store_install as packages_store_install,
 )
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
 from utk_curio.backend.app.packages.builder.factory import (
-    BuildResult,
-    build_package_archive,
+    BuiltArchive,
+    ModelSource,
+    build_package_archive_to,
     preserve_unedited_sources,
 )
 from utk_curio.backend.app.packages.domain.manifest import ManifestError
@@ -86,8 +94,37 @@ def refuse_read_only_draft(user_key: str, manifest_raw: object) -> None:
                 pass  # Let the install path surface a more specific error.
 
 
-def build_draft(user_key: str, draft: dict) -> BuildResult:
-    """Validate a draft and produce its ``.curio.zip``.
+def model_source_for_draft(user_key: str, draft: dict, existing_dir: Path | None) -> ModelSource | None:
+    """The model a new package's one node loads, which the package then
+    copies: Save as package node of a node that loads a model makes a model
+    package of its own. The first model the node's code names
+    (``curio_load_model("<id>")``) that the account's store holds is the one.
+
+    None, and a node package as before, for a draft saved into an installed
+    package, a draft of more than one node or of a declared kind, and a node
+    that names no model the account holds. Raises ``ModelWeightsUnavailable``
+    when the model's weights cannot be had (a pip install's left-out weight
+    whose download fails)."""
+    manifest = draft.get("manifest") if isinstance(draft, dict) else None
+    templates = manifest.get("templates") if isinstance(manifest, dict) else None
+    if existing_dir is not None or not isinstance(templates, list) or len(templates) != 1 or "kind" in manifest:
+        return None
+    codes = [
+        entry["code"] for entry in (draft.get("sources") or {}).values()
+        if isinstance(entry, dict) and isinstance(entry.get("code"), str)
+    ]
+    for model_id in model_ids_in_code("\n".join(codes)):
+        copy = packages_model_packages.model_copy(user_key, model_id)
+        if copy is not None:
+            raw, files = copy
+            python = (raw.get("dependencies") or {}).get("python") or {}
+            return ModelSource(model_id=model_id, block=raw["model"], python=dict(python), files=files)
+    return None
+
+
+def _build_into(user_key: str, draft: dict, folder: Path) -> BuiltArchive:
+    """Validate a draft and write its ``.curio.zip`` into *folder*: a model
+    package's weights never sit in memory.
 
     Same preservation the install path does: a Save-As draft over an existing
     package carries real source only for the edited template, so building
@@ -96,12 +133,26 @@ def build_draft(user_key: str, draft: dict) -> BuildResult:
     """
     existing_dir = installed_dir_for_draft(user_key, draft.get("manifest"))
     draft = preserve_unedited_sources(draft, existing_dir)
-    return build_package_archive(
-        draft, onto=existing_dir, imported_modules=imported_modules_for_draft(user_key, draft),
+    return build_package_archive_to(
+        folder / "draft.curio.zip", draft, onto=existing_dir,
+        imported_modules=imported_modules_for_draft(user_key, draft),
+        model=model_source_for_draft(user_key, draft, existing_dir),
     )
 
 
-def install_draft(user_key: str, draft: dict, *, replace: bool) -> tuple[BuildResult, InstallResult]:
+def build_draft_for_download(user_key: str, draft: dict) -> tuple[BuiltArchive, Callable[[], None]]:
+    """A draft's ``.curio.zip`` written to a file, and the call that removes
+    it, which the route makes once the response is sent."""
+    stack = contextlib.ExitStack()
+    folder = stack.enter_context(packages_store_install.staging_scratch(user_key))
+    try:
+        return _build_into(user_key, draft, folder), stack.close
+    except BaseException:
+        stack.close()
+        raise
+
+
+def install_draft(user_key: str, draft: dict, *, replace: bool) -> tuple[BuiltArchive, InstallResult]:
     """Build a draft and install it into the user store in one shot (the wizard's "Save and install").
 
     Save-As over an existing package only carries real source bytes for the
@@ -109,17 +160,14 @@ def install_draft(user_key: str, draft: dict, *, replace: bool) -> tuple[BuildRe
     with the STARTER_CODE placeholder. Read the unedited templates' real
     source from disk before the rebuild so we don't clobber them, and build
     onto the installed package so what the draft does not model survives.
+    A new package whose node loads a model is that model's copy
+    (:func:`model_source_for_draft`).
     FactoryError / InstallerError propagate for the route to answer.
     """
     packages_provisioning.assert_may_install()
-    manifest_raw = draft.get("manifest")
-    refuse_read_only_draft(user_key, manifest_raw)
-    existing_dir = installed_dir_for_draft(user_key, manifest_raw)
-    draft = preserve_unedited_sources(draft, existing_dir)
-    built = build_package_archive(
-        draft, onto=existing_dir, imported_modules=imported_modules_for_draft(user_key, draft),
-    )
-    result = packages_store_install.install_package_from_archive(
-        user_key, built.archive, replace=replace,
-    )
+    refuse_read_only_draft(user_key, draft.get("manifest"))
+    with packages_store_install.staging_scratch(user_key) as folder:
+        built = _build_into(user_key, draft, folder)
+        with open(built.path, "rb") as stream:
+            result = packages_store_install.install_package_from_archive(user_key, stream, replace=replace)
     return built, result

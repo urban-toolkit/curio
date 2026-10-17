@@ -1,7 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useReactFlow, useStore } from "reactflow";
 import ModalShell from "../../ModalShell";
-import { packagesApi, triggerBlobDownload, dependencyFailureNotice, withRestartNotice } from "../../../services/packages";
+import {
+  packagesApi,
+  triggerBlobDownload,
+  dependencyFailureNotice,
+  renameModelCalls,
+  withRestartNotice,
+} from "../../../services/packages";
 import { getPaletteNodeTypes } from "../../../registry";
 import { useStarterContext } from "../../../providers/StarterProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
@@ -184,7 +190,13 @@ export function NodeSaveAsModal({
       const matchNorm = normalizeTemplateLabel(nodeLabel);
       const newKind = result.package.templates.find((k) => normalizeTemplateLabel(k.label) === matchNorm);
       if (newKind) {
-        const savedBody = runtimeCodeFromRfNode(canvasNode);
+        // A node that loads a model was saved as a model package of its own,
+        // a copy of that model: the node runs the copy, named by the new id,
+        // as the package's node does.
+        const copied = result.copiedModel;
+        const savedBody = copied
+          ? renameModelCalls(runtimeCodeFromRfNode(canvasNode), copied, result.package.packageId)
+          : runtimeCodeFromRfNode(canvasNode);
         setNodes((nodes) =>
           nodes.map((n) =>
             String(n.id) === nodeId
@@ -195,6 +207,7 @@ export function NodeSaveAsModal({
                     nodeType: newKind.id,
                     code: savedBody,
                     defaultCode: savedBody,
+                    ...(copied ? { modelRefs: [{ id: result.package.packageId, name: result.package.name }] } : {}),
                   },
                 }
               : n,

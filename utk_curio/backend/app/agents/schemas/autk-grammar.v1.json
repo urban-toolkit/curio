@@ -1528,8 +1528,61 @@
       ],
       "type": "string"
     },
+    "OsmBoundingBoxArea": {
+      "description": "An area given as a box instead of boundary names. The box is the whole area: no boundary is read.",
+      "properties": {
+        "areas": {
+          "description": "Not with `bbox`.",
+          "not": {}
+        },
+        "bbox": {
+          "description": "The box as `[west, south, east, north]` in degrees (WGS84), with west less than east and south less than north. A box across the antimeridian is not supported. The Autark adapter cuts each layer to the box, but keeps or drops each building whole.",
+          "items": [
+            {
+              "description": "A longitude in degrees (WGS84).",
+              "maximum": 180,
+              "minimum": -180,
+              "title": "west",
+              "type": "number"
+            },
+            {
+              "description": "A latitude in degrees (WGS84).",
+              "maximum": 90,
+              "minimum": -90,
+              "title": "south",
+              "type": "number"
+            },
+            {
+              "description": "A longitude in degrees (WGS84).",
+              "maximum": 180,
+              "minimum": -180,
+              "title": "east",
+              "type": "number"
+            },
+            {
+              "description": "A latitude in degrees (WGS84).",
+              "maximum": 90,
+              "minimum": -90,
+              "title": "north",
+              "type": "number"
+            }
+          ],
+          "maxItems": 4,
+          "minItems": 4,
+          "type": "array"
+        },
+        "geocodeArea": {
+          "description": "Not with `bbox`.",
+          "not": {}
+        }
+      },
+      "required": [
+        "bbox"
+      ],
+      "type": "object"
+    },
     "OsmDataSourceSpec": {
-      "description": "Loads OpenStreetMap data for a named area, from Overpass or from a PBF extract.",
+      "description": "Loads OpenStreetMap data for a named area or a box, from Overpass or from a PBF extract.",
       "properties": {
         "autoLoadLayers": {
           "description": "Split the raw OSM table into one table per layer, named `<outputTableName>_<layer>`.",
@@ -1559,25 +1612,15 @@
           "type": "string"
         },
         "queryArea": {
-          "description": "Area to load: the named sub-areas inside a geocoded region.",
-          "properties": {
-            "areas": {
-              "description": "Sub-areas inside the region, for example neighborhood names.",
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
+          "anyOf": [
+            {
+              "$ref": "#/definitions/OsmNamedArea"
             },
-            "geocodeArea": {
-              "description": "Region to geocode, for example a city name.",
-              "type": "string"
+            {
+              "$ref": "#/definitions/OsmBoundingBoxArea"
             }
-          },
-          "required": [
-            "geocodeArea",
-            "areas"
           ],
-          "type": "object"
+          "description": "Area to load: sub-areas inside a geocoded region (`geocodeArea` with `areas`), or a box (`bbox`), not both."
         },
         "type": {
           "const": "osm",
@@ -1588,6 +1631,31 @@
         "outputTableName",
         "queryArea",
         "type"
+      ],
+      "type": "object"
+    },
+    "OsmNamedArea": {
+      "description": "An area named by OpenStreetMap boundaries: sub-areas inside a geocoded region.",
+      "properties": {
+        "areas": {
+          "description": "Sub-areas inside the region, for example neighborhood names.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "bbox": {
+          "description": "Not with `geocodeArea` and `areas`.",
+          "not": {}
+        },
+        "geocodeArea": {
+          "description": "Region to geocode, for example a city name.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "geocodeArea",
+        "areas"
       ],
       "type": "object"
     },

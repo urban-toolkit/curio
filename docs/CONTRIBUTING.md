@@ -99,7 +99,7 @@ pip install utk-curio
 curio start
 ```
 
-This installs the CLI and a pre-built version of the frontend. You won’t be able to modify or rebuild the UI from this setup. Five large catalog files are not in the package: Curio downloads each from GitHub the first time it reads it ([Installation from pip](USAGE.md#installation-from-pip)).
+This installs the CLI and a pre-built version of the frontend. You won’t be able to modify or rebuild the UI from this setup. Twelve catalog files are not in the package: Curio downloads each from GitHub the first time it reads it ([Installation from pip](USAGE.md#installation-from-pip)).
 
 ### From GitHub (for development)
 
@@ -325,9 +325,17 @@ refused with 409. A caller that sends no basis is not checked. If you add a path
 that writes a project spec, you get the counter for free; if you add a client
 that saves one, send the basis.
 
+The page gives up on a save after 2 minutes (`SAVE_TIMEOUT_MS` in
+`src/api/projectsApi.ts`), and the server may still apply it later. So a canvas
+save also sends its tab's id and a number one higher than the tab's last save
+(`saveTab` and `saveNumber`, from `src/api/saveOrder.ts`), and a save numbered
+lower than one already applied from its tab is refused with 409 before anything
+is written. A save without them is not checked.
+
 ```bash
 pytest utk_curio/backend/tests/test_projects/test_save_concurrency.py \
-       utk_curio/backend/tests/test_projects/test_routes.py
+       utk_curio/backend/tests/test_projects/test_routes.py \
+       utk_curio/backend/tests/test_datasets/test_save_order.py
 ```
 
 ### Frontend Unit Tests

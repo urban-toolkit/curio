@@ -21,7 +21,6 @@ import {
     faClone,
     faCodeBranch,
     faCubes,
-    faListUl,
     faObjectGroup,
     faFileArrowDown,
     faFileImport,
@@ -55,7 +54,6 @@ import DataflowCategoryInput from "../../projects/DataflowCategoryInput";
 import { projectsApi, type ProjectSummary } from "../../../api/projectsApi";
 import { SHARE_UUID_RE } from "../../../utils/shareLinks";
 import { useScenarioActions } from "../../scenarios/useScenarioActions";
-import { useScenarioUi } from "../../scenarios/scenarioUi";
 
 export default function UpMenu() {
     const [isEditing, setIsEditing] = useState(false);
@@ -79,7 +77,7 @@ export default function UpMenu() {
         serverCategories,
         scenarios,
         updateDataflowCategories,
-        saveCurrentProject,
+        requestProjectSave,
         saveAsNewProject,
         discardProject,
         packages,
@@ -135,7 +133,6 @@ export default function UpMenu() {
 
     // #662: named selections of the dataflow, compared in the canvas.
     const scenarioActions = useScenarioActions();
-    const scenarioUi = useScenarioUi();
     const scenarioItem = (action: () => void) => () => {
         setActiveMenu(null);
         action();
@@ -226,7 +223,11 @@ export default function UpMenu() {
         setSaving(true);
         const wasNew = !projectId;
         try {
-            const detail = await saveCurrentProject();
+            // Through the save queue, after any save already out (the pin's
+            // save, the autosave, an install save): two PUTs of one dataflow
+            // at once were behind #909 and #941. "Saving" lasts until this
+            // save has answered.
+            const detail = await requestProjectSave();
             // First save of a brand-new dataflow: promote the placeholder
             // ``/dataflow/new`` URL to the canonical, shareable one. We use
             // replace so the user's back button still works as expected.
@@ -482,8 +483,9 @@ export default function UpMenu() {
                     >
                         Provenance
                     </HeaderMenuItem>
-                    {/* Scenarios (#662): save a selection as one, duplicate it
-                        as another, and the panel that lists them. Here rather
+                    {/* Scenarios (#662): save a selection as one, or duplicate
+                        it as another; either opens the Scenario Catalog
+                        drawer's In project tab, which lists them. Here rather
                         than a menu of their own: the bar has no room for one
                         beside every catalog's label. An edit, so not for a
                         shared viewer. */}
@@ -511,12 +513,6 @@ export default function UpMenu() {
                                 disabled={canvasView === "notebook"}
                             >
                                 Duplicate as scenario
-                            </HeaderMenuItem>
-                            <HeaderMenuItem
-                                icon={faListUl}
-                                onClick={scenarioItem(() => scenarioUi.setPanelOpen(!scenarioUi.panelOpen))}
-                            >
-                                {scenarioUi.panelOpen ? "Hide scenarios" : "Show scenarios"}
                             </HeaderMenuItem>
                         </>
                     )}

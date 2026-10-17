@@ -32,16 +32,7 @@ export type AgentCreatedNode = {
 };
 
 export type AgentCanvasMutation =
-  | {
-      kind: "node-created";
-      node: AgentCreatedNode;
-      /**
-       * Present when the apply also registered a NEW node type
-       * (`node.template.create`): the package dirName to add to the
-       * project-packages store before the registry refresh.
-       */
-      createdPackageDir?: string;
-    }
+  | { kind: "node-created"; node: AgentCreatedNode }
   | { kind: "node-content-applied"; nodeId: string; content: string }
   | {
       /** dev/52: a whole applied plan graph — bulk nodes + edges, then a

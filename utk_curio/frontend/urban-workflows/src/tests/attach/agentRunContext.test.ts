@@ -17,7 +17,7 @@ import { composeAgentRunContext, type AgentAttachment } from "../../services/age
 
 const attachment = (over: Partial<AgentAttachment>): AgentAttachment => ({
   attachmentId: "a1",
-  coord: "agent.chat-agent@1.0.0",
+  coord: "agent.researcher@1.0.0",
   target: { kind: "canvas" },
   sessionId: "s1",
   revision: 1,
@@ -119,18 +119,45 @@ describe("composeAgentRunContext (memo dev/44)", () => {
     expect(composeAgentRunContext(att, canvas)).toBeNull();
   });
 
-  it("the chat agent sees the dataflow on screen, and its node when attached to one", () => {
+  it("the Researcher sees the dataflow on screen once, and on a node that node's last run", () => {
     // It explains and debugs, so it reads the live canvas, unsaved nodes
-    // included.
-    const reads = ["userMessage", "nodeContext", "dataflowContext"];
+    // included, beside what it is attached to. On the canvas, targetContext
+    // IS the whole dataflow, so dataflowContext composes nothing there
+    // rather than send the same Trill twice.
+    const reads = ["mission", "targetContext", "installedTemplates", "dataflowContext"];
+    const trill = JSON.stringify(TrillGenerator.generateTrill(nodes, [], "wf", "analyze heat risk"));
     const onCanvas = composeAgentRunContext(attachment({ reads }), canvas);
+    expect(onCanvas).toBe(
+      "Workflow: wf\nMission: analyze heat risk\n" +
+      "Current Trill: " + trill,
+    );
     expect(onCanvas).toContain("n2-unsaved");
+    // On a node: the node with what it received and produced, then the
+    // whole dataflow, unsaved nodes included.
     const onNode = composeAgentRunContext(
       attachment({ reads, target: { kind: "node", targetId: "n1" } }),
       canvas,
-    );
-    expect(onNode).toContain("print('old')");
+    )!;
+    const [mission, target, dataflow] = [
+      onNode.indexOf("Mission: analyze heat risk"),
+      onNode.indexOf("Target node: "),
+      onNode.indexOf("Current Trill: " + trill),
+    ];
+    expect(mission).toBeGreaterThanOrEqual(0);
+    expect(target).toBeGreaterThan(mission);
+    expect(dataflow).toBeGreaterThan(target);
+    const snapshot = JSON.parse(onNode.slice(target + "Target node: ".length).split("\n")[0]);
+    expect(snapshot.id).toBe("n1");
+    expect(snapshot.content).toBe("print('old')");
+    expect(snapshot.current_output).toContain("never-executed");
     expect(onNode).toContain("n2-unsaved");
+  });
+
+  it("a canvas attachment that does not read targetContext still gets dataflowContext", () => {
+    // Only the duplicate is dropped: an agent reading the dataflow alone keeps it.
+    const att = attachment({ coord: "agent.my-reader@1.0.0", reads: ["dataflowContext"] });
+    const trill = TrillGenerator.generateTrill(nodes, [], "wf", "analyze heat risk");
+    expect(composeAgentRunContext(att, canvas)).toBe("Current Trill: " + JSON.stringify(trill));
   });
 });
 
@@ -169,13 +196,15 @@ describe("composite producers (dev/67-2 — the composites stop running blind)",
     const att = attachment({
       coord: "agent.node-builder@1.0.0",
       target: { kind: "canvas" },
-      reads: ["nodeIntent", "targetContext", "externalSelection"],
+      reads: ["nodeIntent", "targetContext", "externalSelection", "connectionSide"],
     });
     const context = composeAgentRunContext(att, wiredCanvas);
     expect(context).toContain("Current Trill:");
     expect(context).toContain('"source":"n1"');
     // nodeIntent has no node target; externalSelection rides the prompt.
     expect(context).not.toContain("Node intent:");
+    // connectionSide names a side only on a connection target.
+    expect(context).not.toContain("Connection:");
   });
 
   it("Node Builder on a node target composes the node snapshot + intent", () => {

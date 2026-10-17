@@ -21,7 +21,7 @@ def _auth(token):
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
-COORD = "agent.chat-agent@1.0.0"
+COORD = "agent.researcher@1.0.0"
 
 
 @pytest.fixture()

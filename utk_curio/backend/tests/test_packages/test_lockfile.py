@@ -769,3 +769,214 @@ class TestRemoveFromAccount:
         assert resp.status_code == 204, resp.get_data(as_text=True)
         assert not (user_packages_dir(user_key) / UHVI_DIR).is_dir()
         assert UHVI_DIR not in defaults_io.load_defaults(user_key)
+
+
+# ---------------------------------------------------------------------------
+# A node bound to a model (metadata.modelRefs) uses the model's package
+# ---------------------------------------------------------------------------
+
+DDRNET_DIR = "model.curio.ddrnet23-slim@1"
+DDRNET_ID = "model.curio.ddrnet23-slim"
+
+
+def _python_node(node_id: str, *, bound: bool, model_ref: str = DDRNET_ID, runs: str = DDRNET_ID) -> dict:
+    """A built-in Python node whose code runs the model *runs* (DDRNet): bound
+    to DDRNet as a drop of the model onto the node binds it
+    (``metadata.modelRefs``), or naming it in its code only."""
+    metadata: dict = {"keywords": []}
+    if bound:
+        metadata["modelRefs"] = [{"id": model_ref, "name": "DDRNet23-Slim (street scenes)"}]
+    return {
+        "id": node_id,
+        "type": "curio.builtin/computation-analysis",
+        "content": f'model = curio_load_model("{runs}")\nreturn 1\n',
+        "metadata": metadata,
+    }
+
+
+def _with_nodes(user_key: str, project_id: str, nodes: list[dict], packages: list[str] | None = None) -> None:
+    spec = projects_storage.read_spec(user_key, project_id)
+    spec["dataflow"]["nodes"] = nodes
+    if packages is not None:
+        spec["dataflow"]["packages"] = packages
+    projects_storage.write_spec(user_key, project_id, spec)
+
+
+class TestModelRefsCountAsInUse:
+    """A model package is in use while a node's type or its ``modelRefs``
+    names it. A literal ``curio_load_model`` call is only a code reference:
+    the drawer's Remove dialog warns about it, and it keeps nothing."""
+
+    def test_a_node_bound_to_the_model_references_its_package(self):
+        spec = {"dataflow": {"nodes": [
+            _python_node("bound", bound=True),
+            _python_node("by-major", bound=True, model_ref=DDRNET_DIR),
+            _python_node("in-code-only", bound=False),
+            {"id": "loader", "type": "curio.builtin/data-loading@1"},
+        ]}}
+        assert referencing_nodes(spec, DDRNET_DIR, {DDRNET_ID: [1]}) == ["bound", "by-major"]
+        assert referencing_nodes(spec, "model.curio.other@1", {DDRNET_ID: [1]}) == []
+
+    def test_a_binding_counts_only_while_the_code_still_names_its_model(self):
+        """A hand edit to another model leaves the drop's ref behind, as the
+        canvas's ``nodeLinkedModelIds`` reads it: that ref keeps nothing."""
+        from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
+
+        spec = {"dataflow": {"nodes": [
+            _python_node("bound", bound=True),
+            _python_node("edited", bound=True, runs="model.example.local-relief"),
+        ]}}
+        assert referencing_nodes(spec, DDRNET_DIR, {DDRNET_ID: [1]}, model_ids_in_code) == ["bound"]
+
+    def test_remove_from_project_takes_a_model_whose_binding_the_code_no_longer_names(
+        self, app, user_and_token, alice_project,
+    ):
+        user, _ = user_and_token
+        user_key = _user_key_for(user)
+        packages_services.install_to_project(user_key, alice_project, DDRNET_DIR)
+        _with_nodes(user_key, alice_project, [_python_node("edited", bound=True, runs="model.example.local-relief")])
+
+        result = packages_services.uninstall_from_project(user_key, alice_project, DDRNET_DIR)
+
+        assert result["packages"] == []
+        assert result["pruned"] == [DDRNET_DIR]
+
+    def test_remove_from_project_is_refused_while_a_node_is_bound_to_the_model(
+        self, app, user_and_token, alice_project,
+    ):
+        user, _ = user_and_token
+        user_key = _user_key_for(user)
+        packages_services.install_to_project(user_key, alice_project, DDRNET_DIR)
+        _with_nodes(user_key, alice_project, [_python_node("bound", bound=True)])
+
+        with pytest.raises(packages_services.PackageServiceError) as exc:
+            packages_services.uninstall_from_project(user_key, alice_project, DDRNET_DIR)
+        assert exc.value.status == 409
+        assert f"1 node on this canvas uses {DDRNET_DIR}" in str(exc.value)
+        assert DDRNET_DIR in projects_storage.read_spec(user_key, alice_project)["dataflow"]["packages"]
+
+    def test_a_call_in_code_alone_keeps_no_model(self, app, user_and_token, alice_project):
+        user, _ = user_and_token
+        user_key = _user_key_for(user)
+        packages_services.install_to_project(user_key, alice_project, DDRNET_DIR)
+        _with_nodes(user_key, alice_project, [_python_node("in-code-only", bound=False)])
+
+        result = packages_services.uninstall_from_project(user_key, alice_project, DDRNET_DIR)
+
+        assert result["packages"] == []
+        assert result["pruned"] == [DDRNET_DIR]
+
+    def test_remove_from_account_is_refused_while_a_node_is_bound_to_the_model(
+        self, client, user_and_token, alice_project,
+    ):
+        """The node's dataflow does not name the model in its lockfile: the
+        binding alone keeps it."""
+        user, token = user_and_token
+        user_key = _user_key_for(user)
+        store_install.install_from_catalog(user_key, DDRNET_DIR, replace=False)
+        _with_nodes(user_key, alice_project, [_python_node("bound", bound=True)], packages=["curio.builtin@1"])
+
+        assert _store_rows(client, token, "?usage=true")[DDRNET_DIR]["inUse"] is True
+        resp = client.delete(f"/api/packages/{DDRNET_DIR}?unusedOnly=true", headers=_auth(token))
+        assert resp.status_code == 409, resp.get_data(as_text=True)
+        assert (package_dir(user_key, DDRNET_DIR) / "manifest.json").is_file()
+
+        # Bound no longer, it leaves.
+        _with_nodes(user_key, alice_project, [_python_node("in-code-only", bound=False)])
+        resp = client.delete(f"/api/packages/{DDRNET_DIR}?unusedOnly=true", headers=_auth(token))
+        assert resp.status_code == 204, resp.get_data(as_text=True)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/packages/<dir>/usage: the dataflows that use a package
+# ---------------------------------------------------------------------------
+
+LOCAL_RELIEF_ID = "model.example.local-relief"
+
+
+class TestPackageUsage:
+    """The account's dataflows that use a package, as ``GET
+    /api/datasets/<id>/usage`` answers for a dataset. ``codeOnly`` marks a
+    dataflow whose nodes name the model in their code alone: a literal
+    ``curio_load_model("<id>")``, with no binding, no node of the package and
+    no lockfile entry. Nothing in it keeps the model, so the Model Catalog's
+    Remove names it, as the Data Catalog's names a dataflow that loads a
+    dataset in code."""
+
+    @staticmethod
+    def _project(client, token, name: str, nodes: list[dict], packages: list[str] | None = None) -> str:
+        # A lockfile of its own: an empty one would take the account's defaults.
+        spec = {"dataflow": {
+            "name": name, "nodes": nodes, "edges": [], "packages": packages or ["curio.builtin@1"],
+        }}
+        resp = client.post("/api/projects", json={"name": name, "spec": spec, "outputs": []}, headers=_auth(token))
+        assert resp.status_code == 201, resp.get_data(as_text=True)
+        return resp.get_json()["id"]
+
+    @staticmethod
+    def _usage(client, token, dir_name: str) -> list[dict]:
+        resp = client.get(f"/api/packages/{dir_name}/usage", headers=_auth(token))
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        return resp.get_json()["dataflows"]
+
+    def test_lists_each_dataflow_that_uses_the_model_and_marks_those_that_only_name_it_in_code(
+        self, client, user_and_token,
+    ):
+        user, token = user_and_token
+        store_install.install_from_catalog(_user_key_for(user), DDRNET_DIR, replace=False)
+        own_node = {
+            "id": "segment", "type": "model.curio.ddrnet23-slim/image-segmentation@1",
+            "content": f'model = curio_load_model("{DDRNET_ID}")\n', "metadata": {"keywords": []},
+        }
+        ids = {
+            "Code only": self._project(client, token, "Code only", [_python_node("in-code", bound=False)]),
+            "Bound": self._project(client, token, "Bound", [_python_node("bound", bound=True)]),
+            "Its own node": self._project(client, token, "Its own node", [own_node]),
+            "In its lockfile": self._project(
+                client, token, "In its lockfile", [_python_node("in-code", bound=False)],
+                packages=["curio.builtin@1", DDRNET_DIR],
+            ),
+            "Bound and in code": self._project(
+                client, token, "Bound and in code",
+                [_python_node("bound", bound=True), _python_node("in-code", bound=False)],
+            ),
+        }
+        other = self._project(
+            client, token, "Another model", [_python_node("relief", bound=False, runs=LOCAL_RELIEF_ID)],
+        )
+
+        rows = self._usage(client, token, DDRNET_DIR)
+
+        ours = [row for row in rows if row["dataflowId"] in ids.values()]
+        assert [(row["dataflowName"], row["codeOnly"]) for row in ours] == [
+            ("Bound", False),
+            ("Bound and in code", False),
+            ("Code only", True),
+            ("In its lockfile", False),
+            ("Its own node", False),
+        ]
+        by_name = {row["dataflowName"]: row for row in ours}
+        assert by_name["Code only"]["dataflowId"] == ids["Code only"]
+        assert by_name["Code only"]["nodes"] == [
+            {"nodeId": "in-code", "nodeType": "curio.builtin/computation-analysis"},
+        ]
+        assert by_name["Bound and in code"]["nodeCount"] == 2
+        assert [node["nodeId"] for node in by_name["Bound and in code"]["nodes"]] == ["bound", "in-code"]
+        assert other not in {row["dataflowId"] for row in rows}
+
+    def test_a_binding_the_code_no_longer_names_keeps_nothing_and_the_model_the_code_names_is_in_code_only(
+        self, client, user_and_token,
+    ):
+        """A hand edit to another model leaves the drop's ref behind: the
+        dataflow no longer uses the model the ref names, and names the other
+        one in its code alone."""
+        user, token = user_and_token
+        store_install.install_from_catalog(_user_key_for(user), DDRNET_DIR, replace=False)
+        edited = self._project(
+            client, token, "Edited by hand", [_python_node("edited", bound=True, runs=LOCAL_RELIEF_ID)],
+        )
+
+        assert edited not in {row["dataflowId"] for row in self._usage(client, token, DDRNET_DIR)}
+        relief = {row["dataflowId"]: row for row in self._usage(client, token, f"{LOCAL_RELIEF_ID}@1")}
+        assert relief[edited]["codeOnly"] is True
+        assert [node["nodeId"] for node in relief[edited]["nodes"]] == ["edited"]

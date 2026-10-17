@@ -54,7 +54,10 @@ INPUT_REFERENCE_RE = re.compile(r"^input_(\d+|\?)(?::([^.]+))?(?:\.(.+))?$")
 #: sandbox's ``util/input_names.py``.
 LEGACY_INPUT_REFERENCE_RE = re.compile(r"^input\s+(\d+|\?)((?:[:.].*)?)$")
 
-#: An input's name and nothing else, which no widget takes.
+#: An input's name and nothing else, which no widget takes
+#: (:func:`widget_name_problem`). Kept in sync with ``INPUT_NAME_ONLY_PATTERN``
+#: in ``widgetModel.ts`` and with the widget name's ``not`` in
+#: ``docs/schemas/node-package.v4.json``.
 INPUT_NAME_ONLY_RE = re.compile(r"^input_\d+$")
 
 #: What a shared reference starts with. Kept in sync with ``SHARED_PREFIX`` in
@@ -82,12 +85,17 @@ LAYER_HELPER = "curio_layer"
 #: counts one. Kept in sync with ``ONE_FRAME_TYPES`` in ``codeReferences.ts``.
 ONE_FRAME_TYPES = ("dataframe", "geodataframe")
 
-#: A widget name. Kept in sync with ``WIDGET_NAME_PATTERN`` in ``widgetModel.ts``.
+#: A widget name. Kept in sync with ``WIDGET_NAME_PATTERN`` in ``widgetModel.ts``
+#: and with the widget name's ``pattern`` in ``docs/schemas/node-package.v4.json``
+#: and ``docs/schemas/trill.v1.json``.
 WIDGET_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 
 LANGUAGES = ("python", "javascript", "json")
 
-#: The widget kinds. Kept in sync with ``WIDGET_KINDS`` in ``widgetModel.ts``.
+#: The widget kinds. Kept in sync with ``WIDGET_KINDS`` in ``widgetModel.ts``
+#: and with the widget's ``type`` enum in ``docs/schemas/node-package.v4.json``
+#: and ``docs/schemas/trill.v1.json``. A package manifest's template widgets
+#: are checked against it too (:func:`widget_name_or_type_problem`).
 WIDGET_KINDS = (
     "number",
     "slider",
@@ -495,16 +503,31 @@ def _finite(x) -> bool:
     return isinstance(x, (int, float)) and not isinstance(x, bool) and x == x and x not in (float("inf"), float("-inf"))
 
 
+def _choices(options: dict) -> list:
+    """A widget's choices as the canvas reads them (``normalizeOptions`` in
+    ``widgetModel.ts``): the texts of a list."""
+    choices = options.get("choices")
+    return [c for c in choices if isinstance(c, str)] if isinstance(choices, list) else []
+
+
+def _number_option(options: dict, key: str):
+    """A widget's ``min``, ``max`` or ``step`` as the canvas reads it
+    (``normalizeOptions``): a finite number, else None."""
+    value = options.get(key)
+    return value if _finite(value) else None
+
+
 def default_value_for(kind, options) -> object:
     """A kind's value when a widget gives no default, as ``defaultValueFor`` in
     ``widgetModel.ts`` writes it."""
     options = options if isinstance(options, dict) else {}
     if kind in ("number", "slider"):
-        return options["min"] if _finite(options.get("min")) else 0
+        low = _number_option(options, "min")
+        return 0 if low is None else low
     if kind == "checkbox":
         return False
     if kind == "choice":
-        choices = [c for c in options.get("choices") or [] if isinstance(c, str)]
+        choices = _choices(options)
         return choices[0] if choices else ""
     if kind in ("checkbox-group", "multi-select", "number-list", "text-list"):
         return []
@@ -611,31 +634,60 @@ def check_widget_value(widget: dict, value) -> str | None:
     return "Unknown widget type."
 
 
+def widget_name_problem(name: object) -> str | None:
+    """Why a widget may not be named *name*, or None. A name has the shape of
+    :data:`WIDGET_NAME_RE`, matched whole: the browser and the schemas read the
+    pattern as ECMA-262 does, where ``$`` ends the text, while Python's
+    ``re.match`` lets a final line break through. And ``input_<k>`` names one
+    of the node's inputs, in its code as in its chips. The Widgets tab and a
+    Parameter node refuse such a name (:func:`check_widget_def`), and so does a
+    package manifest for a template's widgets
+    (``packages/repositories/manifests.py``)."""
+    if not isinstance(name, str) or not WIDGET_NAME_RE.fullmatch(name):
+        return "A name is letters, digits and underscores, and does not start with a digit."
+    if INPUT_NAME_ONLY_RE.match(name):
+        return f"{name} names one of the node's inputs. Pick another name."
+    return None
+
+
+def widget_name_or_type_problem(definition: dict, others=(), parameter: bool = False) -> str | None:
+    """What the Widgets tab refuses in a widget before it reads its options
+    and its default, or None: a name :func:`widget_name_problem` refuses, a
+    name one of *others* has, or a type outside :data:`WIDGET_KINDS`. The
+    canvas drops such a widget (``normalizeWidgets``), unless it only has an
+    input's name. :func:`check_widget_def` checks these first."""
+    name = definition.get("name")
+    if problem := widget_name_problem(name):
+        return problem
+    if any(isinstance(w, dict) and w.get("name") == name for w in others):
+        return f"Another Parameter node is named {name}." if parameter else f"This node already has a widget named {name}."
+    if definition.get("type") not in WIDGET_KINDS:
+        return "Pick a widget type."
+    return None
+
+
 def check_widget_def(definition: dict, others=(), parameter: bool = False) -> str | None:
     """What is wrong with a widget being added, or None: ``checkWidgetDef`` in
     ``widgetModel.ts``, what the Widgets tab checks a widget with. *others*
     are the node's other widgets, whose names it must not reuse; for a
-    Parameter node's widget (*parameter*), the other Parameter nodes'."""
-    name = definition.get("name")
-    if not isinstance(name, str) or not WIDGET_NAME_RE.match(name):
-        return "A name is letters, digits and underscores, and does not start with a digit."
-    # ``input_<k>`` names one of the node's inputs, in its code as in its chips.
-    if INPUT_NAME_ONLY_RE.match(name):
-        return f"{name} names one of the node's inputs. Pick another name."
-    if any(isinstance(w, dict) and w.get("name") == name for w in others):
-        return f"Another Parameter node is named {name}." if parameter else f"This node already has a widget named {name}."
+    Parameter node's widget (*parameter*), the other Parameter nodes'. Its
+    options are read as the canvas reads them before the tab checks them
+    (:func:`_choices`, :func:`_number_option`), so a malformed option counts
+    as missing. A package manifest's template widgets are checked here too,
+    each with its kind's default when it gives none
+    (:func:`widget_with_default`, ``packages/repositories/manifests.py``)."""
+    if problem := widget_name_or_type_problem(definition, others, parameter):
+        return problem
     kind = definition.get("type")
-    if kind not in WIDGET_KINDS:
-        return "Pick a widget type."
     options = definition.get("options") if isinstance(definition.get("options"), dict) else {}
     if kind in CHOICE_KINDS:
-        choices = options.get("choices") if isinstance(options.get("choices"), list) else []
+        choices = _choices(options)
         if not choices:
             return "Give at least one choice."
         if len(set(choices)) != len(choices):
             return "Each choice can appear only once."
     if kind in NUMERIC_KINDS:
-        low, high, step = options.get("min"), options.get("max"), options.get("step")
+        low, high, step = (_number_option(options, key) for key in ("min", "max", "step"))
         if kind == "slider" and (low is None or high is None):
             return "A slider needs a minimum and a maximum."
         if low is not None and high is not None and not low < high:
@@ -645,9 +697,22 @@ def check_widget_def(definition: dict, others=(), parameter: bool = False) -> st
     return check_widget_value(definition, definition.get("default"))
 
 
+def widget_with_default(widget: dict) -> dict:
+    """*widget* with its kind's default (:func:`default_value_for`) when it
+    gives none, or ``null``, as ``normalizeWidgets`` in ``widgetModel.ts``
+    gives it one. A dataflow's widgets (:func:`normalize_widgets`), an
+    agent's (``agents/domain/widget_grammar.py``) and a package template's
+    (``packages/repositories/manifests.py``) get theirs here."""
+    if widget.get("default") is None:
+        return {**widget, "default": default_value_for(widget.get("type"), widget.get("options"))}
+    return widget
+
+
 def normalize_widgets(raw) -> list:
-    """The well-formed widgets in *raw* (a spec's ``metadata.widgets``). A
-    widget without a default gets its kind's, as the browser gives it."""
+    """The well-formed widgets in *raw* (a spec's ``metadata.widgets``), as
+    ``normalizeWidgets`` in ``widgetModel.ts`` keeps them: each name once, of
+    the :data:`WIDGET_NAME_RE` shape matched whole, as the browser matches it.
+    A widget without a default gets its kind's (:func:`widget_with_default`)."""
     if not isinstance(raw, list):
         return []
     out, seen = [], set()
@@ -655,14 +720,12 @@ def normalize_widgets(raw) -> list:
         if not isinstance(entry, dict):
             continue
         name = entry.get("name")
-        if not isinstance(name, str) or not WIDGET_NAME_RE.match(name) or name in seen:
+        if not isinstance(name, str) or not WIDGET_NAME_RE.fullmatch(name) or name in seen:
             continue
         if entry.get("type") not in WIDGET_KINDS:
             continue
         seen.add(name)
-        if entry.get("default") is None:
-            entry = {**entry, "default": default_value_for(entry.get("type"), entry.get("options"))}
-        out.append(entry)
+        out.append(widget_with_default(entry))
     return out
 
 
@@ -678,9 +741,10 @@ def normalize_shared(raw) -> list:
 
 def normalize_selections(raw) -> list:
     """The well-formed selection tags in *raw* (a spec's
-    ``metadata.selections``), one per name: ``{name, node, column, ids}``, or
-    ``count`` in place of ``ids``. Kept in sync with ``normalizeSelections`` in
-    ``selectionTags.ts``."""
+    ``metadata.selections``), one per name, of the :data:`WIDGET_NAME_RE`
+    shape matched whole, as the browser matches it: ``{name, node, column,
+    ids}``, or ``count`` in place of ``ids``. Kept in sync with
+    ``normalizeSelections`` in ``selectionTags.ts``."""
     if not isinstance(raw, list):
         return []
     out, seen = [], set()
@@ -688,7 +752,7 @@ def normalize_selections(raw) -> list:
         if not isinstance(entry, dict):
             continue
         name = entry.get("name")
-        if not isinstance(name, str) or not WIDGET_NAME_RE.match(name) or name in seen:
+        if not isinstance(name, str) or not WIDGET_NAME_RE.fullmatch(name) or name in seen:
             continue
         if not isinstance(entry.get("node"), str) or not entry["node"]:
             continue

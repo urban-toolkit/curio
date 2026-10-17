@@ -5,8 +5,8 @@ output (dev/90 §3 "tests own their scenarios") — nothing here ships as
 first-party code, and two visually dissimilar looks (post-it, status badge)
 prove the stack is look-agnostic. The recorded route-level scenario drives
 the corrected dev/90 topology: the Researcher delegates authoring with the
-post-it requirements, the Package Builder child returns a draft, the runtime
-mints the reviewed proposal, and Apply lands colored notes.
+post-it requirements, the Node Builder's package-writing mode returns a draft,
+the runtime mints the reviewed proposal, and Apply lands colored notes.
 
 Visual baselines note: the pinned preview runner is deployment infrastructure
 (CURIO_BUILD_PREVIEW_RUNNER); these tests drive the preview CONTRACT (five
@@ -125,6 +125,15 @@ def _violating_scenario() -> dict:
                      behavior="postit-note", source=_VIOLATING_TSX)
 
 
+def _justified(draft: dict) -> dict:
+    """The draft as an agent sends it, with the justification a draft that
+    adds a template carries. The build request never holds it."""
+    return {**draft, "justification": (
+        "Considered curio.builtin/vis-simple and curio.builtin/data-summary: "
+        "neither draws a colored note surface."
+    )}
+
+
 _NOTES = [
     {"templateId": "postit-note", "title": "Transit findings", "content": "# Findings",
      "appearance": {"backgroundColor": "pink"}},
@@ -233,11 +242,11 @@ class TestLookAgnosticPipeline:
 
 class TestDodThroughTheResearcher:
     """The recorded dev/90 scenario: Researcher delegates the post-it
-    requirements → the Package Builder child returns the draft → the runtime
+    requirements → the Node Builder's writing mode returns the draft → the runtime
     mints the reviewed proposal → Apply installs and creates colored notes."""
 
     RESEARCHER = "agent.researcher@1.0.0"
-    PACKAGE_BUILDER = "agent.package-builder@1.0.0"
+    NODE_BUILDER = "agent.node-builder@1.0.0"
 
     def _auth(self, token):
         return {"Authorization": f"Bearer {token}"}
@@ -253,7 +262,7 @@ class TestDodThroughTheResearcher:
             "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
             "outputs": [],
         }, headers=self._auth(token)).get_json()["id"]
-        for coord in (self.RESEARCHER, self.PACKAGE_BUILDER):
+        for coord in (self.RESEARCHER, self.NODE_BUILDER):
             client.post(f"/api/agents/projects/{pid}/install",
                         json={"coord": coord}, headers=self._auth(token))
         att_id = client.post(
@@ -268,7 +277,7 @@ class TestDodThroughTheResearcher:
             '"#336699"]}}}\n```'
         )
         child_reply = ("```json\n"
-                       + json.dumps({"packageDraft": _postit_scenario(_NOTES)})
+                       + json.dumps({"packageDraft": _justified(_postit_scenario(_NOTES))})
                        + "\n```")
         replies = [delegate_tail, child_reply, "Proposed — review the draft above."]
         calls: list = []
@@ -324,7 +333,7 @@ class TestCoolRoofsScenario:
     the finding and its source link."""
 
     RESEARCHER = "agent.researcher@1.0.0"
-    PACKAGE_BUILDER = "agent.package-builder@1.0.0"
+    NODE_BUILDER = "agent.node-builder@1.0.0"
 
     def _auth(self, token):
         return {"Authorization": f"Bearer {token}"}
@@ -353,7 +362,7 @@ class TestCoolRoofsScenario:
             "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
             "outputs": [],
         }, headers=self._auth(token)).get_json()["id"]
-        for coord in (self.RESEARCHER, self.PACKAGE_BUILDER):
+        for coord in (self.RESEARCHER, self.NODE_BUILDER):
             client.post(f"/api/agents/projects/{pid}/install",
                         json={"coord": coord}, headers=self._auth(token))
         att_id = client.post(
@@ -384,9 +393,9 @@ class TestCoolRoofsScenario:
             '"inputs": {"look": "post-it note", "finding": '
             '"Chicago: white roofs ran 18\\u00b0C cooler", '
             '"source": "https://heat.test/cool-roofs"}}}\n```',
-            # The CHILD (Package Builder) returns the draft with the note.
+            # The CHILD (the Node Builder's writing mode) returns the draft with the note.
             "```json\n" + json.dumps(
-                {"packageDraft": _postit_scenario(roof_notes)}) + "\n```",
+                {"packageDraft": _justified(_postit_scenario(roof_notes))}) + "\n```",
             # Round 3: the Researcher's visible answer.
             "White roofs ran 18°C cooler in Chicago; the note above awaits your review.",
         ]
@@ -478,9 +487,9 @@ class TestCurioNotesRetry:
     """dev/90 A4+A5 — the live transcript's request, corrected and replayed:
     reverse-DNS id (curio.notes), NO target (derived), NO react-markdown
     (self-contained markdown-lite), through mint → build → preview → Apply
-    at the Package Builder's own attachment, exactly the failed live flow."""
+    at the Node Builder's own attachment, which holds the draft tool."""
 
-    COORD = "agent.package-builder@1.0.0"
+    COORD = "agent.node-builder@1.0.0"
 
     def _auth(self, token):
         return {"Authorization": f"Bearer {token}"}
@@ -504,11 +513,12 @@ class TestCurioNotesRetry:
             headers=self._auth(token),
         ).get_json()["attachmentId"]
 
-        params = _scenario(package_id="curio.notes", template_id="note",
-                           behavior="note-behavior", source=_CURIO_NOTES_TSX,
-                           notes=[{"templateId": "note", "title": "Docs note",
-                                   "content": "# Pipeline\n- loads GTFS\n- joins zones",
-                                   "appearance": {"backgroundColor": "blue"}}])
+        params = _justified(_scenario(
+            package_id="curio.notes", template_id="note",
+            behavior="note-behavior", source=_CURIO_NOTES_TSX,
+            notes=[{"templateId": "note", "title": "Docs note",
+                    "content": "# Pipeline\n- loads GTFS\n- joins zones",
+                    "appearance": {"backgroundColor": "blue"}}]))
         params.pop("target")  # A4: identity is manifest.id@major
         assert params["manifest"]["dependencies"]["js"] == {}  # A5: zero deps
         tail = ("```curio.v1\n" + json.dumps(
@@ -561,7 +571,7 @@ class TestReuseFirstNoteCreation:
     applied nodes themselves carry — was refused by the exact-match gate."""
 
     RESEARCHER = "agent.researcher@1.0.0"
-    PACKAGE_BUILDER = "agent.package-builder@1.0.0"
+    NODE_BUILDER = "agent.node-builder@1.0.0"
 
     def _auth(self, token):
         return {"Authorization": f"Bearer {token}"}
@@ -591,7 +601,7 @@ class TestReuseFirstNoteCreation:
             "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
             "outputs": [],
         }, headers=self._auth(token)).get_json()["id"]
-        for coord in (self.RESEARCHER, self.PACKAGE_BUILDER):
+        for coord in (self.RESEARCHER, self.NODE_BUILDER):
             client.post(f"/api/agents/projects/{pid}/install",
                         json={"coord": coord}, headers=self._auth(token))
         att_id = client.post(
@@ -619,7 +629,7 @@ class TestReuseFirstNoteCreation:
         script["replies"] = [
             '```curio.v1\n{"delegateRequest": {"capability": "node.kind.author", '
             '"inputs": {"look": "post-it"}}}\n```',
-            json.dumps({"packageDraft": _postit_scenario()}),
+            json.dumps({"packageDraft": _justified(_postit_scenario())}),
             "Package proposed.",
         ]
         run1 = client.post(

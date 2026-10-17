@@ -37,24 +37,27 @@ Run::
 from __future__ import annotations
 
 import json
-import os
 import time
 from typing import TYPE_CHECKING
 
-import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from .utils import (
     activate_header_icon,
     assert_autark_map_drawn,
+    close_scenario_drawer,
     frame_nodes,
+    in_project_card,
     node_locator,
+    open_in_project_tab,
     play_node,
     read_node_error_text,
     require_owner_view,
     require_project_page,
     require_user_auth,
+    require_webgpu,
     run_all_and_wait,
+    scenario_card_button,
     stub_login_and_enter_workflow,
     wait_for_node_settled,
 )
@@ -268,19 +271,6 @@ def _spec(*, scenario: bool) -> dict:
     return {"dataflow": dataflow}
 
 
-def _require_webgpu(page) -> None:
-    has_adapter = bool(page.evaluate(
-        "async () => !!(navigator.gpu && await navigator.gpu.requestAdapter())"
-    ))
-    if not has_adapter:
-        if os.environ.get("CURIO_REQUIRE_HARDWARE_WEBGPU") == "1":
-            pytest.fail("CURIO_REQUIRE_HARDWARE_WEBGPU=1 but this browser has no WebGPU adapter")
-        pytest.skip("running an Autark node needs a WebGPU adapter; this browser has none")
-    assert page.evaluate("() => window.__curio_countsMapFrames"), (
-        "the browser has WebGPU but no GPUCanvasContext to count a map's frames on"
-    )
-
-
 def _open_dataflow(page, app_frontend, current_server: str, *, username: str, scenario: bool) -> dict:
     """Open the dataflow with the frame counter installed, and run it."""
     require_project_page()
@@ -300,7 +290,10 @@ def _open_dataflow(page, app_frontend, current_server: str, *, username: str, sc
     require_owner_view(page)
     for node in spec["dataflow"]["nodes"]:
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
-    _require_webgpu(page)
+    require_webgpu(page)
+    assert page.evaluate("() => window.__curio_countsMapFrames"), (
+        "the browser has WebGPU but no GPUCanvasContext to count a map's frames on"
+    )
     run_all_and_wait(page, timeout_ms=240000)
     _assert_map_ran(page, "after Run All")
     return session
@@ -406,8 +399,13 @@ def _assert_no_problems(problems: list[str]) -> None:
     )
 
 
-def _scenario_card(page):
-    return page.get_by_test_id(f"scenario-card-{SCENARIO}")
+def _from_the_card(page, button: str) -> None:
+    """Click one of the scenario's buttons on its In project card, and close
+    the drawer again, which lies over the canvas."""
+    open_in_project_tab(page)
+    in_project_card(page, SCENARIO).wait_for(state="visible", timeout=10000)
+    scenario_card_button(page, SCENARIO, button).click()
+    close_scenario_drawer(page)
 
 
 def _leave_the_dataflow(page) -> None:
@@ -431,36 +429,39 @@ def test_a_map_in_a_collapsed_scenario_draws_nothing_until_it_is_expanded(
     problems: list[str] = []
     frame_nodes(page, [MAP])
     _check_idle(page, "the map, shown and idle", problems, shown=True)
-    page.get_by_role("button", name="View menu").click()
-    page.get_by_role("button", name="Show scenarios", exact=True).click()
-    _scenario_card(page).wait_for(state="visible", timeout=10000)
 
-    # Collapsed, its map is hidden in the box: it draws nothing.
-    _scenario_card(page).get_by_role("button", name="Collapse", exact=True).click()
+    # Collapsed from its In project card, its map is hidden in the box: it
+    # draws nothing.
+    _from_the_card(page, "Collapse")
     node_locator(page, MAP).wait_for(state="hidden", timeout=10000)
     _check_idle(page, "the map of a collapsed scenario", problems, shown=False)
 
-    # Expanded, it draws again, then rests.
+    # Expanded, it draws again, then rests. The drawer opens before the count
+    # starts, so only the Expand click is counted.
+    open_in_project_tab(page)
     _draws(page, "expanding the scenario", lambda: (
-        _scenario_card(page).get_by_role("button", name="Expand", exact=True).click(),
+        scenario_card_button(page, SCENARIO, "Expand").click(),
         node_locator(page, MAP).wait_for(state="visible", timeout=10000),
     ), problems)
+    close_scenario_drawer(page)
     frame_nodes(page, [MAP])
     _check_idle(page, "the map expanded", problems, shown=True)
 
     # Run inside the collapsed box, the new map draws nothing once it settles,
     # and the one it replaced is destroyed; expanded, the new one draws (#711).
-    _scenario_card(page).get_by_role("button", name="Collapse", exact=True).click()
+    _from_the_card(page, "Collapse")
     node_locator(page, MAP).wait_for(state="hidden", timeout=10000)
     _keep_canvas(page, "replaced")
     run_all_and_wait(page, timeout_ms=240000)
     _assert_map_ran(page, "inside the collapsed box")
     _check_dead_map(page, "replaced", "the map Run All replaced inside the collapsed box", problems)
     _check_idle(page, "a map run inside a collapsed scenario", problems, shown=False)
+    open_in_project_tab(page)
     _draws(page, "expanding the scenario after a run inside it", lambda: (
-        _scenario_card(page).get_by_role("button", name="Expand", exact=True).click(),
+        scenario_card_button(page, SCENARIO, "Expand").click(),
         node_locator(page, MAP).wait_for(state="visible", timeout=10000),
     ), problems)
+    close_scenario_drawer(page)
     frame_nodes(page, [MAP])
     _check_idle(page, "the map run collapsed, then expanded", problems, shown=True)
 

@@ -29,6 +29,34 @@ export interface AgentCard {
   /** Whether the agent is a catalog card. Every listing shows cards only; an
    * internal built-in runs as a delegate and is never listed or attached. */
   inCatalog?: boolean;
+  /** The tools it uses in a chat, what it reads before what it proposes. */
+  tools?: AgentTool[];
+  /** What another agent, Solve or the agent itself can ask it to do. */
+  modes?: AgentMode[];
+  /** When each of its prompt files runs, in the order to show them. */
+  promptRuns?: AgentPromptRuns[];
+}
+
+/** One tool an agent uses in a chat, by its plain-word label. */
+export interface AgentTool {
+  id: string;
+  label: string;
+}
+
+/** One mode of an agent: the capabilities it covers, the prompt file it runs,
+ *  and who asks for it (agents by name, and "Solve"). */
+export interface AgentMode {
+  label: string;
+  capabilities: string[];
+  prompt: string | null;
+  askedBy: string[];
+}
+
+/** When one prompt file runs: "every call", "a message you type", or the
+ *  label of each mode that runs it. */
+export interface AgentPromptRuns {
+  path: string;
+  runs: string[];
 }
 
 /** An agent, and optionally one of its capabilities, that reads a catalog

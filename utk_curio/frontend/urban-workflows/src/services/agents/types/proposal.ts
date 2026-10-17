@@ -101,7 +101,7 @@ export type AgentProposalStatus = "pending" | "applied" | "dismissed" | "superse
 export interface AgentProposalPart {
   type: "proposal";
   proposalId: string;
-  /** "node.content.write" | "node.create" | "node.template.create" | "project.install" | future kinds. */
+  /** "node.content.write" | "node.create" | "project.install" | "package.draft.apply" | future kinds. */
   tool: string;
   summary: string;
   /** The full proposed content (plain text — rendered inert). */
@@ -119,7 +119,8 @@ export interface AgentProposalPart {
     executable?: boolean;
   };
   status: AgentProposalStatus;
-  /** node.template.create only (dev/48 §3.2b): the model's written reasoning — what the user judges. */
+  /** package.draft.apply, when the draft adds node types: the closest existing
+   * templates the model considered and why each is inadequate. The user judges it. */
   justification?: string;
   /** package.draft.apply only (dev/91 §5): the backend trust edge stated on
    * the card — declared handlers, permission strings, and network posture. */
@@ -170,8 +171,6 @@ export interface AgentProposalPart {
     };
     requestedNodes?: { rows: Array<{ title: string; color: string }>; total: number };
   };
-  /** node.template.create only: the proposed type definition summary. */
-  template?: { label: string; engine: string; description?: string };
   /** dev/114 (DEC-072): how the proposed content's sources were grounded —
    * runtime-derived at mint (never model-claimed); display + provenance,
    * not a pin. Absent when the content opens no file and fetches no URL. */
@@ -266,10 +265,8 @@ export interface AgentApplyResult {
   proposalId: string;
   status: AgentProposalStatus;
   mutationApplied?: boolean;
-  /** node.create / node.template.create: the inserted node, for the live canvas. */
+  /** node.create: the inserted node, for the live canvas. */
   createdNode?: AgentCreatedNodePayload;
-  /** node.template.create: the registered template ({id, label, packageDir, …}). */
-  createdTemplate?: { id: string; label: string; packageDir?: string };
   /** node.content.write: the applied content, for the live node. */
   appliedContent?: { nodeId: string; content: string };
   /** project.install: the installed agent coordinate. */

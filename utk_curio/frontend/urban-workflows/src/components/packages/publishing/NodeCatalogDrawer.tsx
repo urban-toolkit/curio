@@ -12,12 +12,22 @@ import {
   catalogAndOwnPackages,
   isNewerPackageVersion,
   matchesSearch,
+  nodesNamingModelInCodeOnly,
+  packagesApi,
   restartNotice,
   sortPackages,
+  usePackageAddRequests,
   usePackageCatalog,
   withRestartNotice,
 } from "../../../services/packages";
-import type { DrawerTab, PackageKind, PackagePayload, SortMode } from "../../../services/packages";
+import { codeOnlyDataflows, codeOnlyWarning } from "../../../services/codeOnlyUsage";
+import type {
+  DrawerTab,
+  PackageAddRequest,
+  PackageKind,
+  PackagePayload,
+  SortMode,
+} from "../../../services/packages";
 import type { CatalogItemKind } from "../../catalog/CatalogKindVisuals";
 import { InstallPermissionsDialog } from "./InstallPermissionsDialog";
 import { DrawerHeader } from "./DrawerHeader";
@@ -51,6 +61,10 @@ export interface NodeCatalogDrawerProps {
   /** Which catalog this drawer is: the Node Catalog (`node`, the default) or
    *  the Model Catalog (`model`), the same drawer over model packages. */
   packageKind?: PackageKind;
+  /** The Add of the drop that opened this drawer (the Model Catalog's, from
+   *  the Tools panel's Models dropdown): run once the listings have loaded,
+   *  as a drop of one of its own cards runs it. */
+  addRequest?: PackageAddRequest | null;
 }
 
 const BUILTIN_PACKAGE_DIR = `${BUILTIN_PACKAGE_ID}@1`;
@@ -79,7 +93,7 @@ const DRAWER_COPY: Record<PackageKind, {
   model: {
     title: "Model Catalog",
     titleId: "model-catalog-title",
-    subtitle: "Model packages available in this project. Drag a model onto a node that runs one.",
+    subtitle: "Model packages available in this project. Drag a model onto the canvas to add its node, or onto a node to swap its model.",
     kindIcon: "model",
     rootAttribute: "data-curio-model-catalog-drawer",
     searchPlaceholder: "Search models, publishers, tags…",
@@ -106,6 +120,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   onExitComplete,
   initialSearch = "",
   packageKind = "node",
+  addRequest = null,
 }) => {
   const copy = DRAWER_COPY[packageKind];
   const drawerRef = useRef<HTMLElement>(null);
@@ -113,7 +128,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
 
   // The drawer is *per-project*: Install/Uninstall write to the current
   // project's lockfile (see docs/NODE-CATALOG.md).
-  const { projectId, packages: projectPackages, saveCurrentProject, projectDirty } = useFlowContext();
+  const { projectId, projectName, packages: projectPackages, requestProjectSave, projectDirty, nodes } = useFlowContext();
   const { showToast } = useToastContext();
 
   const [tab, setTab] = useState<DrawerTab>("browse");
@@ -133,11 +148,13 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
    * A dataflow is created on its FIRST SAVE, so every lockfile write (Install,
    * Remove, Import) saves first when there is no id (#220); the hook owns the
    * sequencing and reports a refused save. Mirrors ``useDatasetCatalogDrawer``.
+   * Through the save queue: this save creates the project, and beside a create
+   * already out (an install save after a run) it would make a second dataflow.
    */
   const onEnsureProject = useCallback(async () => {
-    const detail = await saveCurrentProject();
+    const detail = await requestProjectSave();
     return (detail as { id?: string } | undefined)?.id ?? null;
-  }, [saveCurrentProject]);
+  }, [requestProjectSave]);
 
   /** memo dev/101: when the backend's lockfile differs from the mirror, the
    *  palette/registry must follow — not only the drawer's pill. */
@@ -148,7 +165,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   }, []);
 
   const {
-    installed, catalogByDir, catalog, catalogPublishedDirs, busy, cardActionDir, actionError, restartNoticeText,
+    installed, catalogByDir, catalog, catalogPublishedDirs, loaded, busy, cardActionDir, actionError, restartNoticeText,
     installCandidate, installMode, conflictReport, effectiveProjectId, ensureProjectId, kindOfDir,
     reload, reportActionError, dismissActionError, dismissRestartNotice,
     probeInstall: onInstall,
@@ -239,6 +256,29 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     [installed, projectInstalledDirs, search],
   );
 
+  // A card of this drawer dropped on the canvas, whose package the dataflow
+  // has not added: the same Add as the card's button, and the node once the
+  // package is added.
+  const takeAddRequest = useCallback((request: PackageAddRequest) => {
+    if (request.kind !== packageKind) return false;
+    const pkg = catalogAndOwnPackages(catalog, installed).find((p) => p.dirName === request.dirName);
+    if (!pkg) return false;
+    void onInstall(pkg, { onAdded: request.onAdded });
+    return true;
+  }, [packageKind, catalog, installed, onInstall]);
+  usePackageAddRequests(takeAddRequest, presented);
+
+  // The drop that opened this drawer: the same Add, once the listings it is
+  // looked up in have loaded, and once per drop.
+  const takenAddRequest = useRef<PackageAddRequest | null>(null);
+  useEffect(() => {
+    if (!presented || !loaded || !addRequest || takenAddRequest.current === addRequest) return;
+    takenAddRequest.current = addRequest;
+    if (!takeAddRequest(addRequest)) {
+      showToast(`${addRequest.name ?? addRequest.dirName} is not in the ${copy.title}.`, "warning");
+    }
+  }, [presented, loaded, addRequest, takeAddRequest, showToast, copy.title]);
+
   // The shared import pathway the Node Catalog PAGE header calls too, so the
   // two surfaces cannot drift; the drawer alone has a lockfile to land it in.
   const [importBusy, setImportBusy] = useState(false);
@@ -292,7 +332,39 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     [ensureProjectId, importArchive, reportActionError],
   );
 
-  const onUninstall = useCallback((pkg: PackagePayload) => {
+  /**
+   * The dataflows whose nodes name the model in their code alone, which the
+   * Remove names, as the Data Catalog's names those that load a dataset in
+   * code. A node that does keeps nothing: nothing rewrites node code on
+   * removal, so that code stays behind. A node of the package, or one bound
+   * to its model (`modelRefs`), keeps it, and the backend refuses the removal
+   * while one is on this canvas.
+   *
+   * This dataflow is read from its canvas, which may hold edits not saved
+   * yet: its lockfile entry is the one going, so its saved row would count
+   * it as kept. Every other one comes from the usage read, as saved. The
+   * Data Catalog's Remove names them through the same code
+   * (`codeOnlyDataflows`).
+   */
+  const modelCodeOnlyUsers = useCallback(
+    (pkg: PackagePayload): Promise<string[]> =>
+      codeOnlyDataflows(
+        {
+          id: projectId,
+          name: projectName,
+          inCodeOnly: nodesNamingModelInCodeOnly(nodes ?? [], pkg.packageId).length > 0,
+        },
+        () => packagesApi.usage(pkg.dirName),
+      ),
+    [nodes, projectName, projectId],
+  );
+
+  const onUninstall = useCallback(async (pkg: PackagePayload) => {
+    const codeWarning = codeOnlyWarning(
+      packageKind === "model" ? await modelCodeOnlyUsers(pkg) : [],
+      "model",
+      () => "That code is left as it is, and fails once the model leaves your account.",
+    );
     // No `projectId` guard: an unsaved dataflow saves itself on confirm (the
     // hook's ``uninstallFromProject``). Guarding here hid the action entirely.
     setConfirmAction({
@@ -305,11 +377,12 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
         `Remove ${pkg.name} (${pkg.dirName}) from this project?` +
         `\n\nIf no other dataflow uses it, it is also deleted from your account ` +
         `and its Python libraries are uninstalled from the shared environment, ` +
-        `which affects every dataflow and everyone using this Curio.`,
+        `which affects every dataflow and everyone using this Curio.` +
+        codeWarning,
       confirmLabel: "Remove",
       run: () => performUninstall(pkg),
     });
-  }, [performUninstall]);
+  }, [packageKind, modelCodeOnlyUsers, performUninstall]);
 
   const anyBusy = busy || importBusy;
   // dev/92 B-2: the restart-honesty line (backend-declared, never inferred) from

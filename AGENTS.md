@@ -84,6 +84,7 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
   - `capture_waits.py`: what a capture waits for: `_wait_for_reactflow_ready`, `dismiss_toasts`, `_wait_for_webfont`, running nodes. `images.py`: captures, `_compare_images`.
   - `screenshots.py`: `save_workflow_test_screenshot`, `MAX_DIFF_RATIO`, mint and re-mint, `frame_nodes`, `dump_browser_log`.
   - `closeups.py`: `save_node_closeup`, the close-up budgets, viewport hints. `dialogs.py`: `accept_confirm_dialog`, `wait_for_drawer_closed`, `leave_agent_badge`.
+  - `scenario_drawer.py`: the open dataflow's scenarios in the Scenario Catalog drawer's In project tab: `open_in_project_tab`, `in_project_card`, `scenario_card_button`, `open_scenario_details`, `scenario_part`, `close_scenario_drawer`.
   - `interactions.py`: interaction frames, brush and mark probes.
   - `servers.py`: ports, `e2e_existing_servers`, `serve_built_frontend` (the production page server on the built bundle, host-side).
   - `auth.py`: UI signup, the projects page, `require_owner_view`.
@@ -93,6 +94,8 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
   - `canvas_authoring.py`: `drag_to_canvas`, `drag_to_canvas_with_the_mouse`, `connect_nodes`, `set_node_code`, `play_node`, `run_node_and_wait`.
   - `run_all.py`: Run All state, holding a run open.
   - `node_drawings.py`: `assert_vega_canvas_rendered`, `assert_autark_map_drawn` and the other drawing checks.
+  - `webgpu.py`: `require_webgpu` and `webgpu_adapter`, which ask for a WebGPU adapter through the app's own probe (`window.__curio_probeWebGpu`, `src/utils/webgpuSupport.ts`): it waits for a drawn frame, then asks again after a null for up to 3 s.
+  - `offline_install.py`: `offline_catalog_package`, a test package from `test_frontend/packages/` in the backend's catalog with its libraries in a local wheelhouse (`/api/testing/wheelhouse`, `/api/testing/catalog-package`); `offline_package` reads a test package's manifest; the wheels come from `tests/_support/offline_wheels.py`.
   - `scripted_llm.py`: scripted agent turns.
 - Walkthroughs, `test_frontend/walkthroughs/`: importing a scene module registers its scenes in `WALKTHROUGHS`, and `__init__.py` imports them in registry order:
   - `framework.py`: `Narrator`, `SilentNarrator`, `Ctx`, `Walkthrough`, `FULL_PAGE_DIFF_FLOOR`, `WALKTHROUGHS` and the `@walkthrough` decorator.

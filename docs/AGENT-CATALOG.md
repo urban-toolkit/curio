@@ -6,7 +6,7 @@ Curio has six catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you 
 
 This guide is in six parts, plus operator notes:
 
-- [1. What is the Agent Catalog?](#1-what-is-the-agent-catalog): agents, what ships, and the storage layers.
+- [1. What is the Agent Catalog?](#1-what-is-the-agent-catalog): agents, the ones that ship and how each picks what to run, and the storage layers.
 - [2. Surfaces and workflows](#2-surfaces-and-workflows): the three places you manage agents, the action matrix, walkthroughs, and catalog settings.
 - [3. Using an agent in a dataflow](#3-using-an-agent-in-a-dataflow): adding, attaching, and the difference between the two.
 - [4. LLM configurations](#4-llm-configurations): which model answers, and where it is set.
@@ -23,31 +23,131 @@ This guide is in six parts, plus operator notes:
 An **agent** in Curio is a small self-contained folder, shaped like a node package, identified by an id and a version:
 
 ```
-<agentId>@<version>     e.g.   agent.chat-agent@1.0.0
+<agentId>@<version>     e.g.   agent.researcher@1.0.0
                                agent.dataflow-builder@1.0.0
 ```
 
 The folder holds a `manifest.json` (the contract) and the prompt files the manifest references:
 
 ```
-agent.chat-agent@1.0.0/
+agent.researcher@1.0.0/
   manifest.json
-  prompts/chat_prompt.md
+  prompts/default_preamble.md
+  prompts/researcher_instruction.md
+  prompts/researcher_notes_instruction.md
+  prompts/research_instruction.md
 ```
 
 Agent ids always begin with **`agent.`**, which keeps them apart from node package ids (`curio.builtin`, `ai.utk.uhvi`) and dataset ids (`data.utk.chicago-boundary`). The version is a full semver string.
 
-### What ships with Curio
+### The agents
 
-**Ten agents ship with Curio.** Seven of them are the catalog: **Chat**, **Dataflow Builder**, **Dataset Finder**, **Node Builder**, **Package Builder**, **Researcher** and **Connection Builder**. Chat is the one agent for conversation: it explains a node or the whole dataflow, diagnoses errors, and helps you define what to build.
+**Seven agents ship with Curio.** Four of them are the catalog: **Researcher**, **Node Builder**, **Dataflow Builder** and **Dataset Finder**. This guide uses three words for what an agent does:
 
-**Node Builder** also writes a node's content. The model decides when: your message goes to Node Builder's chat prompt, and when the node's code or spec needs writing, the model asks for its content [mode](#modes), whose prompt runs as a second call. You review the change it writes.
+- **In chat:** what you can ask an agent where you dropped it.
+- **Tools:** the actions an agent takes during a chat, such as reading the dataflow, searching the web, proposing a node or proposing a package install. Anything that changes your dataflow is a proposal you apply.
+- **Modes:** what another agent, Solve or the agent itself can ask it to do. A mode runs as a separate call with no tools, on evidence Curio gathers for it, and has its own prompt when it needs one. You never chat with a mode. Each mode's capability id and prompt are listed under [Modes](#modes).
 
-**Researcher** also checks facts. Ask it whether a dataset id, an endpoint or a field name is real, and it answers in its chat with what it verified, one labeled finding per line, and places no notes. When Node Builder or Dataset Finder needs a fact checked, Researcher's checking mode answers it as a second call.
+| Agent | In chat | Tools | Modes (who asks) |
+|---|---|---|---|
+| **Researcher** | Explains a node or the dataflow, diagnoses errors, helps define what to build, answers web questions as notes, checks facts | Read the dataflow and a node's last run; search and read the web; propose notes; propose a notes package | Notes from search results (Dataflow Builder); Check a fact (Node Builder, Dataset Finder, Dataflow Builder) |
+| **Node Builder** | Builds a node, rewrites a node's content, suggests nodes for a connection, finds or writes node types | Read the dataflow and a node's last run; search the Data and Model Catalogs; propose a node, a content change, a package install or a package draft | Write a node's content (Node Builder, Dataflow Builder, Solve); Recommend packages (Dataflow Builder); Write a package (Node Builder, Researcher, Dataflow Builder) |
+| **Dataflow Builder** | Plans a whole dataflow, then solves its nodes | Read the dataflow and runs; propose a plan or a node; read worked examples | None |
+| **Dataset Finder** | Finds datasets in the Data Catalog and in portals | Search the catalog and portals; propose a download | Find datasets (Node Builder, Dataflow Builder, Solve) |
 
-**Package Builder** also recommends packages. In its chat it reuses first: a catalog package that already does what you need is proposed for install, for your review, before anything new is authored. When Connection Builder, Node Builder or Dataflow Builder needs packages recommended, Package Builder's recommendation mode answers as a second call, from the packages your account has.
+The other three are helpers. They have modes only, never a chat: they are never listed, added or attached, and a catalog agent asks for their modes without them being added to the dataflow.
 
-The other three work only on behalf of those seven: the **Dataflow Planner** plans, refreshes and checks a dataflow's tasks and extracts and binds the keywords that describe it, the **Dataflow Reader** explains a whole dataflow and suggests its next steps, and the **Generated Content Evaluator** checks generated node content against its goal. They are never listed, added or attached, and a catalog agent can delegate to one without it being added to the dataflow.
+| Helper | Modes (who asks) |
+|---|---|
+| **Dataflow Planner** | Plan a dataflow's tasks, refresh them and check a plan's coherence (Dataflow Builder); plan a follow-up from a node's run (Node Builder, Dataflow Builder); bind the keywords of a description (Dataset Finder); extract them (no agent asks for this) |
+| **Dataflow Reader** | Explain the whole dataflow (Dataflow Builder); suggest its next steps (Dataset Finder, Dataflow Builder) |
+| **Generated Content Evaluator** | Check generated node content against its goal (Node Builder, Dataflow Builder) |
+
+### How an agent picks what to run
+
+- Every model call is the shared preamble plus one instruction, never two combined.
+- A message you type goes to the agent's chat instruction, and the model follows its rules: in the same call that answers you, it decides what you asked for and which tools to use.
+- A mode runs only when another agent, Solve or the agent itself asks for it, as a separate call with no tools.
+- Curio picks the file from what the call is for; the model does not.
+
+Each agent's prompts, by the key its manifest gives them:
+
+**Researcher**
+
+| Key | File | When it runs |
+|---|---|---|
+| `system` | [`default_preamble.md`](../utk_curio/llm-prompts/default_preamble.md) | every call |
+| `instruction` | [`researcher_instruction.md`](../utk_curio/llm-prompts/researcher_instruction.md) | a message you type |
+| `research.notes.compose` | [`researcher_notes_instruction.md`](../utk_curio/llm-prompts/researcher_notes_instruction.md) | the Dataflow Builder asks for notes from search results |
+| `research.verify` | [`research_instruction.md`](../utk_curio/llm-prompts/research_instruction.md) | another agent asks for a fact to be checked |
+
+**Node Builder**
+
+| Key | File | When it runs |
+|---|---|---|
+| `system` | [`default_preamble.md`](../utk_curio/llm-prompts/default_preamble.md) | every call |
+| `instruction` | [`node_build_instruction.md`](../utk_curio/llm-prompts/node_build_instruction.md) | a message you type |
+| `node.content.generate` | [`new_content_prompt.md`](../utk_curio/llm-prompts/new_content_prompt.md) | someone asks for a node's content |
+| `autk-grammar` | [`new_content_autk_prompt.md`](../utk_curio/llm-prompts/new_content_autk_prompt.md) | the same, for an Autark node |
+| `package.recommend` | [`package_recommendation_instruction.md`](../utk_curio/llm-prompts/package_recommendation_instruction.md) | the Dataflow Builder asks which packages a task needs |
+| `package.build`, `package.extend`, `node.kind.author` | [`package_build_instruction.md`](../utk_curio/llm-prompts/package_build_instruction.md) | someone asks for a package to be written |
+
+**Dataflow Builder**
+
+| Key | File | When it runs |
+|---|---|---|
+| `system` | [`default_preamble.md`](../utk_curio/llm-prompts/default_preamble.md) | every call |
+| `instruction` | [`orchestration_instruction.md`](../utk_curio/llm-prompts/orchestration_instruction.md) | a message you type |
+
+**Dataset Finder**
+
+| Key | File | When it runs |
+|---|---|---|
+| `system` | [`default_preamble.md`](../utk_curio/llm-prompts/default_preamble.md) | every call |
+| `instruction` | [`discovery_instruction.md`](../utk_curio/llm-prompts/discovery_instruction.md) | a message you type, and another agent or Solve asking for datasets |
+
+### Walk-throughs
+
+**Node Builder on a node: "turn this into a bar chart".**
+
+1. Your message goes to the chat: the preamble and `node_build_instruction.md`, with the node, its last run and the Node Builder's tools. The model may read the node first, then asks for its content mode, with the node's id and what you asked for.
+2. The content mode runs: the preamble and `new_content_prompt.md`, or the Autark prompt for an Autark node, with no tools. Curio hands it the node, what feeds it and the dataflow's task, and it replies with the node's new content.
+3. Curio turns that content into a review card, and the chat runs again to tell you what changed. The node changes when you apply the card.
+
+**Node Builder on a connection.**
+
+1. Drop the Node Builder on the connection between two nodes and ask what could go there. The chat runs with `node_build_instruction.md`, told which node's output feeds which node's input, and suggests up to three nodes in prose.
+2. Tell it which one you want. The chat proposes that node, and you review it. You connect the new node on the canvas yourself.
+
+**Node Builder writing a node type: "score the sentiment of each review".**
+
+1. The chat runs with `node_build_instruction.md`. No template on the dataflow does this and no catalog package fits, so the model asks for its package-writing mode, naming the templates it considered and why each falls short.
+2. The writing mode runs: the preamble and `package_build_instruction.md`, with no tools. Curio hands it the packages you have and the shape of a draft, and it replies in JSON with a package draft and a justification: the closest existing templates and why each is inadequate.
+3. Before building the draft, Curio checks each template it adds: the draft carries the justification, the template's label is not the label of a template the dataflow can use, and its code reads only files and web addresses Curio can ground. A draft that fails a check goes back to the writing mode with what to change.
+4. Curio builds the package, and the review card shows the justification first, then the files, dependencies and preview. The package installs, with the nodes the draft asks for, when you apply the card.
+
+**Researcher on a failed node: "why did this node fail?"**
+
+1. The chat runs with `researcher_instruction.md`, the node, its last run and the dataflow on screen. The model reads the node's last run with its read tool.
+2. The chat runs again with what it read, and answers with the cause and the fix. It uses no web tools and places no notes.
+
+**Researcher on a web question: "which open datasets give building heights for downtown Chicago?"**
+
+1. The chat runs with `researcher_instruction.md` and searches the web; a further round reads a page it will cite.
+2. It answers in prose and proposes notes: a notes template on the dataflow carries them; else it proposes installing a notes package you already have; else it asks the Node Builder to write one, whose package-writing mode runs as a separate call. Each proposal waits for your review.
+
+**Researcher on a fact check: "is the dataset id abcd-1234 real?"**
+
+1. The chat runs with `researcher_instruction.md` and fetches the dataset's address.
+2. It answers in the chat, one labeled finding per line: VERIFIED, REPORTED or UNVERIFIED, with what it checked. It places no notes.
+
+**Dataflow Builder asking the Researcher for notes.**
+
+1. You ask the Dataflow Builder a research question. Its chat runs with `orchestration_instruction.md` and asks for the Researcher's notes mode, with your question.
+2. Curio runs one web search. The notes mode runs: the preamble and `researcher_notes_instruction.md`, with no tools, given the search results, the notes templates the dataflow can use and the reply shape. It replies in JSON.
+3. Curio turns the reply into note proposals in the Dataflow Builder's chat, and that chat runs again to state the answer. The notes are placed when you apply them.
+
+### Categories
 
 Every agent declares one **category**, which the browse page's rail counts:
 
@@ -57,7 +157,7 @@ Every agent declares one **category**, which the browse page's rail counts:
 | `canvas` | The whole dataflow: planning, explanation, suggestion. |
 | `data` | Datasets and data shape. |
 | `evaluate` | Review, validation, and scoring. No catalog agent ships in it; the Generated Content Evaluator does. |
-| `package` | Node packages: recommending, resolving and authoring them. |
+| `package` | Node packages: recommending, resolving and writing them. No card ships in it. |
 
 Each category has its own colour and glyph in the interface, so a card is identifiable at a glance.
 
@@ -88,9 +188,11 @@ Agent state lives in files under `.curio/` and inside each project's spec. Knowi
 
 There are three places you work with agents, and as with the Data Catalog they are **not** interchangeable:
 
-- **The `/catalog/agents` page** is the account-level library. Reach it from `/projects` and the **Agent Catalog** tab. It lists the built-in agents, every published one, and the ones you imported yourself. Filter by status (**All agents**, **In all projects**) and by category, search, and read an agent's full details. **Add to all projects**, **Publish**, **Unpublish**, **Settings** and **Import agent** live here. You cannot add an agent to just one dataflow from this page: that is the drawer's job.
+- **The `/catalog/agents` page** is the account-level library. Reach it from `/projects` and the **Agent Catalog** tab. It lists the built-in agents, every published one, and the ones you imported yourself. Filter by status (**All agents**, **In all projects**) and by category, search, and read an agent's full details. **Add to all projects**, **Publish**, **Unpublish**, **Settings** and **Import agent** live here. You cannot add an agent to just one dataflow from this page: the drawer does that.
 - **The Agent Catalog drawer**, inside the canvas, is the working surface. Open it from the **Agent Catalog** button in the top bar, or from the left Tools panel's **Agent Catalog** dropdown and **Browse Agent Catalog +**. Its tabs are **Browse all** (the default) and **In project**, and everything scoped to the open dataflow happens here, including **Import agent** in its footer.
 - **The Agent palette**, the **Agent Catalog** dropdown in the left Tools panel, holds the agents already added to this dataflow, ready to drag onto a node, a connection, or the canvas. It sits below the **Node Catalog** and **Data Catalog** dropdowns.
+
+**View details**, on any agent card and beside each agent in the palette, opens the agent's details window. Its first three sections use the three words defined in [The agents](#the-agents): **In chat** says what you can ask the agent where you drop it, **Tools** lists the actions it takes in that chat, what it reads before what it proposes, and **Modes (who asks)** lists each mode with the agents, or Solve, that ask for it, and the mode's capability ids beneath it. **Agent info** gives its identifier, version, category, publisher, what it attaches to and the model it runs on. **Prompts** shows each prompt file, labeled by when it runs: every call, a message you type, or the mode that reads it. **Requires** names the agents it cannot work without, and **Export** saves the agent as one file.
 
 ### Action matrix
 
@@ -146,9 +248,9 @@ While you drag a palette row across the canvas, the connection that would receiv
 
 A connection agent is listed in **both** places. The badge says *which* connection the agent is about; the dock is the roster, always reachable. Detaching works from either.
 
-Not every agent accepts every target: an agent declares which kinds it works with. A `canvas` agent dropped on a node is refused.
+Not every agent accepts every target: an agent declares which kinds it works with. A `canvas` agent dropped on a node is refused. Of the four catalog agents, the Node Builder is the one that accepts a connection.
 
-Chat reads the dataflow as it is on screen with every message, unsaved edits included, and when it is attached to a node, that node's content, what feeds it and its last run.
+The Researcher reads the dataflow as it is on screen with every message, unsaved edits included, and when it is attached to a node, that node's content, what feeds it and its last run.
 
 Each attachment has its own chat transcript and its own **intent**, the editable first instruction, which starts as the definition's own prompt. An agent must be added to the dataflow before you can attach it.
 
@@ -215,12 +317,12 @@ To add a configuration:
 
 ### Default and Agent models
 
-The **Agent configuration** tab chooses which configuration answers. Its **Default** section names what answers your agents (**Answering now:** a label and a model) and sets your default in **Default for agents**: the Deployment default or any of your configurations. Below it, **Agent models** lists the ten catalog agents plus your imported and published agents, each with a select: **Default** (your default configuration), any of your configurations, or the Deployment default. A change is saved at once. Which configuration answers a run:
+The **Agent configuration** tab chooses which configuration answers. Its **Default** section names what answers your agents (**Answering now:** a label and a model) and sets your default in **Default for agents**: the Deployment default or any of your configurations. Below it, **Agent models** lists the four catalog agents plus your imported and published agents, each with a select: **Default** (your default configuration), any of your configurations, or the Deployment default. A change is saved at once. Which configuration answers a run:
 
 | Run | Configuration |
 |---|---|
 | An agent you attach (chat, Solve, Simulation, the per-node Solve) | Its choice, else your default, else the Deployment default |
-| An agent another agent calls | Its choice, else its caller's |
+| A mode another agent asks for | Its agent's choice, else its caller's |
 | An internal helper (the Dataflow Planner, the Dataflow Reader, the content evaluator) | Always its caller's |
 | A guest on a `--deploy` instance | The guest configuration, for every agent |
 
@@ -228,9 +330,9 @@ A choice that names nothing, such as a removed configuration or a Deployment def
 
 A Solve of the Dataflow Builder runs on the Builder's configuration, and writes each node's content through Node Builder's content mode and each source through Dataset Finder, each on its own choice. The choices a Solve needs are checked before it starts, and one that names nothing refuses it. After a dataset selection, the node is built on its builder's configuration, not the Dataset Finder's.
 
-The choice is per account, for every version of the agent and every project. A shared project carries none, so it runs on the configurations of whoever runs it. An agent's details show what it runs on, with **Change in API Settings**, which opens the **Agent configuration** tab on its row; a reply's status line says, on hover, which configuration and model answered it; and a delegated task in the chat names what the delegate ran on.
+The choice is per account, for every version of the agent and every project. A shared project carries none, so it runs on the configurations of whoever runs it. An agent's details show what it runs on, with **Change in API Settings**, which opens the **Agent configuration** tab on its row; a reply's status line says, on hover, which configuration and model answered it; and a mode another agent asked for names, in the chat, what it ran on.
 
-An agent's tools (reading the dataflow, searching the Data Catalog or the Model Catalog, reading a shipped example dataflow, proposing a node or a plan, handing a task to another agent) work the same on every configuration, and every change waits for your review. For a Custom endpoint, Curio asks once per model whether it calls tools, the first time an agent with tools runs on it: one short request, billed like any other and kept in the usage record.
+An agent's tools (reading the dataflow, searching the Data Catalog or the Model Catalog, reading a shipped example dataflow, proposing a node or a plan, asking another agent for one of its modes) work the same on every configuration, and every change waits for your review. For a Custom endpoint, Curio asks once per model whether it calls tools, the first time an agent with tools runs on it: one short request, billed like any other and kept in the usage record.
 
 ### Choosing the model
 
@@ -295,7 +397,7 @@ A minimal, complete manifest:
 | `id` | Yes | `agent.`-prefixed, kebab-case package id. Together with `version` it forms the folder name `<id>@<version>`. |
 | `version` | Yes | Semver-style version string. |
 | `name` | Yes | Human-readable name shown in the catalog. |
-| `category` | Yes | One of `data`, `node`, `canvas`, `package`, `evaluate`. See [What ships with Curio](#what-ships-with-curio). |
+| `category` | Yes | One of `data`, `node`, `canvas`, `package`, `evaluate`. See [Categories](#categories). |
 | `capabilities` | Yes | Non-empty list of `{ id, contractVersion }`: the contracts this agent implements. A capability that also names an `instruction` is a mode; see [Modes](#modes). |
 | `provenance` | Yes | `{ publisher, license?, trust? }`; `trust` is one of `built-in`, `global`, `imported`. |
 | `purpose`, `roles` | | One-line description and display roles. |
@@ -315,7 +417,7 @@ A **capability** is a contract, meaning *what* an agent does, separate from the 
 
 ```
 node.explain            dataflow.orchestrate       package.recommend
-node.output.interpret   dataset.fetch.author       connection.propose
+node.output.interpret   dataset.fetch.author       research.verify
 ```
 
 Capability ids drive catalog discovery, orchestration and substitution, and are **never** used for authorization. A capability id must not contain a prompt filename, a path separator, an underscore, `.txt` or `.md`: `node.explain` is valid, while `explain_node_prompt` and `prompts/explain.txt` are rejected. A prompt can then be edited or replaced without changing the contract.
@@ -348,6 +450,26 @@ An agent can also hand work to one of its own modes. List the agent itself in `d
 A chat with the agent then runs the `instruction` prompt, and when the model asks for `node.output.interpret`, that mode runs as a second call, with no tools, and its answer comes back to the chat. A task for no node opens no chat of its own: it shows in the agent's reply.
 
 A definition that declares `node.content.generate` may also declare an `autk-grammar` prompt. A run that writes an Autark document on a provider that takes a reply schema uses it in place of the capability's instruction, and holds the reply to the Autark schema. Without that prompt, its runs are never held to the schema.
+
+The modes of the agents Curio ships, each with its capability id and its prompt in [`utk_curio/llm-prompts/`](../utk_curio/llm-prompts/):
+
+| Mode | Capability id | Prompt |
+|---|---|---|
+| Researcher: notes from search results | `research.notes.compose` | `researcher_notes_instruction.md` |
+| Researcher: check a fact | `research.verify` | `research_instruction.md` |
+| Node Builder: write a node's content | `node.content.generate` | `new_content_prompt.md`, or `new_content_autk_prompt.md` for an Autark document |
+| Node Builder: recommend packages | `package.recommend` | `package_recommendation_instruction.md` |
+| Node Builder: write a package | `package.build`, `package.extend`, `node.kind.author` | `package_build_instruction.md` |
+| Dataset Finder: find datasets | `dataset.discover` | its own `discovery_instruction.md`, with no separate prompt |
+| Dataflow Planner: plan a dataflow's tasks | `workflow.plan.create` | `new_subtasks_prompt.md` |
+| Dataflow Planner: plan a follow-up from a node's run | `execution.followup.plan` | `new_subtask_from_exec_prompt.md` |
+| Dataflow Planner: refresh a task | `workflow.plan.refresh` | `task_refresh_prompt.md` |
+| Dataflow Planner: check a plan's coherence | `workflow.coherence.validate` | `evaluate_coherence_subtasks_prompt.md` |
+| Dataflow Planner: bind keywords | `workflow.keyword.bind` | `keywords_binding_prompt.md` |
+| Dataflow Planner: extract keywords | `workflow.keywords.extract` | `syntax_analysis_prompt.md` |
+| Dataflow Reader: explain the dataflow | `dataflow.explain` | `explanation_prompt.md` |
+| Dataflow Reader: suggest next steps | `workflow.suggest` | `workflow_suggestions_prompt.md` |
+| Generated Content Evaluator: check generated content | `content.quality.evaluate` | `evaluate_generated_content_prompt.md` |
 
 Once written, import the package with the drawer's **Import agent** button ([part 5](#5-importing-publishing-and-sharing)).
 

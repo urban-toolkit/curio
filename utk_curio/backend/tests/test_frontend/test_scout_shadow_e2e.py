@@ -3,14 +3,14 @@
 The shipped test dataflow ``ScoutShadows.json``: SCOUT's Chicago Loop buildings
 (the Data Catalog dataset ``data.scout.loop-buildings``) and a season Parameter
 node are the fixed context. In "Existing", Rasterize Buildings
-(``scout.raster-conversion@1``) draws them into a zoom-16 height mosaic,
+(``scout.raster-conversion@1``) draws them into one zoom-16 height raster,
 Accumulated Shadow, the node of the model package ``model.scout.deep-umbra@1``,
-runs SCOUT's Deep Umbra model on it, in the season both scenarios share,
-and Raster Statistics (``curio.builtin@1``) takes the shadow's mean and median
-over the ground, the heights as its mask. "Towers removed" first removes the 15
-buildings SCOUT's second scenario removes. Two Compare Scenarios nodes read the
-scenarios' outcomes: one charts the mean accumulated shadow, the other maps its
-change through Autark.
+runs SCOUT's Deep Umbra model on it, in the season both scenarios share, an
+Autark map draws the shadow, and Raster Statistics (``curio.builtin@1``) takes
+the shadow's mean and median over the ground, the heights as its mask.
+"Towers removed" first removes the 15 buildings SCOUT's second scenario
+removes. Two Compare Scenarios nodes read the scenarios' outcomes: one charts
+the mean accumulated shadow, the other maps its change through Autark.
 
 Run All in the browser runs the whole dataflow:
 
@@ -21,6 +21,8 @@ Run All in the browser runs the whole dataflow:
 2. The difference is a raster on the shadow mosaics' grid, 512 by 512 cells in
    EPSG:3395, in minutes: towers removed minus existing, which takes shadow away
    on the whole, and the map draws it.
+3. Each scenario's map draws its shadow, under the title "Accumulated shadow
+   (minutes)"; the close-ups of the two maps are the frames.
 
 The packages are in every account's store and their libraries are installed
 because the stack starts with ``--with-examples`` and this dataflow declares the
@@ -38,11 +40,17 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .test_compare_difference_e2e import _OUTPUT_ARTIFACT_JS, _assert_difference_mapped, _band
+from .test_compare_difference_e2e import (
+    _OUTPUT_ARTIFACT_JS,
+    _assert_difference_mapped,
+    _assert_legend_title,
+    _band,
+)
 from .test_compare_scenarios_e2e import _CHART_STATE_JS, _COLOR_PIXELS_JS
 from .utils import (
     REPO_ROOT,
     api_json,
+    assert_autark_map_drawn,
     assert_vega_canvas_rendered,
     frame_nodes,
     load_artifact_as_dict,
@@ -52,6 +60,7 @@ from .utils import (
     require_project_page,
     require_user_auth,
     run_all_and_wait,
+    save_node_closeup,
     stub_login_and_enter_workflow,
     wait_for_node_settled,
 )
@@ -60,12 +69,25 @@ if TYPE_CHECKING:
     from .utils import FrontendPage
 
 DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "ScoutShadows.json"
+TEST_NAME = "test_two_building_sets_are_shadowed_charted_and_mapped"
 SHADOW_TYPE = "model.scout.deep-umbra/accumulated-shadow"
 STATISTICS_TYPE = "curio.builtin/raster-statistics"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
+MAP_TYPE = "curio.builtin/autk-grammar"
 PACKAGES = ("model.scout.deep-umbra@1", "scout.raster-conversion@1")
 #: SCOUT's A_shadows_metric.csv and B_shadows_metric.csv.
 SCOUT_MEANS = {"existing": 128.63593, "towers-removed": 106.73111}
+
+
+def _maps_by_scenario(dataflow: dict) -> dict:
+    """Each scenario's Autark map, by the scenario's id."""
+    maps = {node["id"] for node in dataflow["nodes"] if node["type"] == MAP_TYPE}
+    found = {}
+    for scenario in dataflow["scenarios"]:
+        members = [node_id for node_id in scenario["nodes"] if node_id in maps]
+        assert len(members) == 1, f"scenario {scenario['name']!r} holds {len(members)} maps, not one of its shadow"
+        found[scenario["id"]] = members[0]
+    return found
 
 
 def _assert_chart_drew(page, node_id: str, colors: list[str]) -> None:
@@ -116,6 +138,10 @@ def test_two_building_sets_are_shadowed_charted_and_mapped(
     (difference,) = [n for n, node in nodes.items() if node["type"] == COMPARE_TYPE
                      and node["metadata"]["compareScenarios"]["mode"] == "difference"]
     colors = [scenario["color"] for scenario in dataflow["scenarios"]]
+    maps = _maps_by_scenario(dataflow)
+    into = {edge["target"]: edge["source"] for edge in dataflow["edges"] if edge["targetHandle"] == "in"}
+    for scenario, map_id in maps.items():
+        assert nodes[into[map_id]]["type"] == SHADOW_TYPE, f"the {scenario} map does not draw its shadow"
 
     session = stub_login_and_enter_workflow(
         page,
@@ -134,7 +160,7 @@ def test_two_building_sets_are_shadowed_charted_and_mapped(
         node_locator(page, node_id).wait_for(state="attached", timeout=45000)
 
     run_all_and_wait(page, timeout_ms=600000)
-    for node_id in [*shadows, *statistics, chart, difference]:
+    for node_id in [*shadows, *statistics, *maps.values(), chart, difference]:
         status = wait_for_node_settled(page, node_id, node_type=nodes[node_id]["type"], timeout_ms=180000)
         assert status == "done", (
             f"{nodes[node_id]['type']} {node_id} ended {status}: {read_node_error_text(node_locator(page, node_id))}"
@@ -175,3 +201,10 @@ def test_two_building_sets_are_shadowed_charted_and_mapped(
     assert -720 <= min(cells) and max(cells) <= 720, (min(cells), max(cells))
     frame_nodes(page, [difference])
     _assert_difference_mapped(page, difference, "the change in accumulated shadow when the towers are removed")
+
+    # 3. Each scenario's map draws its shadow, under the grammar's title.
+    for scenario, map_id in maps.items():
+        frame_nodes(page, [map_id])
+        assert_autark_map_drawn(page, map_id, timeout=60000, attach_as=f"the {scenario} shadow map")
+        _assert_legend_title(page, map_id, "Accumulated shadow (minutes)")
+        save_node_closeup(page, f"scout-shadow-map-{scenario}", map_id, test_name=TEST_NAME, sweep_toasts=True)

@@ -124,9 +124,20 @@ class TestRenderPrompt:
         assert contracts.render_prompt("orchestration_instruction").startswith(
             "# Flow Architect\n\nYou are the Flow Architect: "
         )
-        chat = contracts.render_prompt("chat_prompt")
-        assert "the Flow Architect plans and builds a whole dataflow" in chat
-        assert "Dataflow Builder" not in chat
+        # Every other template that names it follows too, and none keeps the
+        # old name.
+        marker = "{{agent.name:agent.dataflow-builder}}"
+        naming = [
+            stem for stem in contracts.PROMPT_TEMPLATES
+            if marker in (REPO_ROOT / contracts.PROMPTS_DIR / f"{stem}.template.md").read_text(encoding="utf-8")
+        ]
+        assert len(naming) >= 2, naming
+        rendered = {stem: contracts.render_prompt(stem) for stem in naming}
+        for stem, text in rendered.items():
+            assert "Flow Architect" in text and "Dataflow Builder" not in text, stem
+        assert any(
+            "the Flow Architect plans and builds a whole dataflow" in text for text in rendered.values()
+        )
 
     def test_an_unknown_agent_raises(self):
         with pytest.raises(contracts.PromptTemplateError, match="agent.nobody"):
@@ -229,17 +240,29 @@ class TestThePromptFacts:
         for stem in contracts.PROMPT_TEMPLATES:
             assert "$TYPE$" not in contracts.render_prompt(stem), stem
 
+    def test_a_widget_name_that_ends_in_a_line_break_is_refused(self):
+        """A marker's argument may hold a line break, and a widget name is read
+        whole, as the Widgets tab reads it (``widgetChecks.cases.json``).
+        Python's ``re.match`` lets a final line break through."""
+        for marker in ("{{widgets.reference:factor\n}}", "{{widgets.shared:season\n}}"):
+            with pytest.raises(contracts.PromptTemplateError, match="not a widget name"):
+                contracts.render_template(marker)
+
     def test_the_note_palette_is_the_named_colors(self):
         from utk_curio.backend.app.packages.domain.node_appearance import NAMED_COLORS
 
         palette = ", ".join(NAMED_COLORS)
-        for stem in ("package_build_instruction", "researcher_notes_instruction"):
+        # The package-writing mode, and the post-it look the Researcher's chat
+        # asks for when it has a notes package written.
+        for stem in ("package_build_instruction", "researcher_instruction"):
             assert f"a palette name ({palette})" in contracts.render_prompt(stem), stem
 
     def test_the_web_call_budget_is_the_egress_policys(self):
         from utk_curio.backend.app.common.egress_policy import MAX_CALLS_PER_RUN
 
-        for stem in ("research_instruction", "researcher_notes_instruction"):
+        # The Researcher's chat and its checking mode; the notes mode makes
+        # no web call of its own.
+        for stem in ("research_instruction", "researcher_instruction"):
             assert f"at most {MAX_CALLS_PER_RUN} web calls per run" in contracts.render_prompt(stem), stem
 
     def test_the_rows_per_lane_are_the_candidate_cards(self):
@@ -291,7 +314,7 @@ class TestThePromptFacts:
         assert f"(add '{bc.PERMISSION_SERVER_NETWORK}' if and only if" in fragment
         assert f"rides the {bc.DATA_DIR_ENV} env var" in fragment
 
-    def test_the_package_builder_includes_the_contract_whole(self):
+    def test_the_package_writing_mode_includes_the_contract_whole(self):
         fragment = contracts.render_prompt(contracts.PACKAGE_CONTRACT)
         assert fragment.endswith(".\n") and not fragment.endswith("\n\n")
         instruction = contracts.render_prompt("package_build_instruction")

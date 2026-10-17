@@ -36,6 +36,7 @@ import {
     resolveDataSourceUrls as resolveDataSourceUrlsWithBase,
 } from './autkDataCompile';
 import { attachMapInteractionZoomFix } from './autkMapZoom';
+import { attachMapPressGuard } from './autkMapPressGuard';
 import {
     countedItem, describeAutkRun, emptyStateWords, featureCount, hasFeatures, totalCount,
 } from './autkRunDescriptions';
@@ -112,8 +113,9 @@ export const useAutkGrammarBehavior = (
     // Unsubscribe functions returned by grammar.interactions.on(); cleared and
     // re-populated on every applyGrammar call and on unmount.
     const interactionOffRef = useRef<Array<() => void>>([]);
-    // Disposer for the map interaction zoom-fix listeners (window-bound), cleared
-    // and re-populated on each applyGrammar run with a map, and on unmount.
+    // Disposer for the map canvas's window-bound pointer listeners (the
+    // interaction zoom fix and the press guard), cleared and re-populated on
+    // each applyGrammar run with a map, and on unmount.
     const pickFixCleanupRef = useRef<(() => void) | null>(null);
     // Destroys the last run's maps (adapters/node/autkMapDrawing): when the
     // next run removes their canvas, and when the node leaves the page.
@@ -300,7 +302,7 @@ export const useAutkGrammarBehavior = (
         destroyLastMaps();
         const wrapper = wrapperRef.current;
         if (wrapper) {
-            // Dispose the previous run's interaction-zoom-fix listeners (they live on
+            // Dispose the previous run's canvas pointer listeners (they live on
             // window, so they'd leak and fire for the now-stale canvas otherwise).
             pickFixCleanupRef.current?.();
             pickFixCleanupRef.current = null;
@@ -311,7 +313,14 @@ export const useAutkGrammarBehavior = (
                 canvas.id = mapCanvasId;
                 canvas.style.cssText = 'display:block;width:100%;height:100%;';
                 wrapper.appendChild(canvas);
-                pickFixCleanupRef.current = attachMapInteractionZoomFix(canvas);
+                // A drag that only passes over the map, begun on a handle, a
+                // node or the pane, leaves the map's view (autkMapPressGuard).
+                const disposeZoomFix = attachMapInteractionZoomFix(canvas);
+                const disposePressGuard = attachMapPressGuard(canvas);
+                pickFixCleanupRef.current = () => {
+                    disposeZoomFix();
+                    disposePressGuard();
+                };
             } else if (hasPlot) {
                 const plotDiv = document.createElement('div');
                 plotDiv.id = plotDivId;
@@ -1239,8 +1248,8 @@ export const useAutkGrammarBehavior = (
         return () => { ro.disconnect(); if (timer) clearTimeout(timer); };
     }, []);
 
-    // Unsubscribe grammar event listeners and remove the interaction zoom-fix
-    // window listeners when the node is removed from the canvas (a deleted
+    // Unsubscribe grammar event listeners and remove the map canvas's window
+    // pointer listeners when the node is removed from the canvas (a deleted
     // node, a closed dataflow), and destroy its maps.
     useEffect(() => {
         mountedRef.current = true;

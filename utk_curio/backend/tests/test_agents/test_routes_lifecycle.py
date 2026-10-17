@@ -195,7 +195,7 @@ class TestMaterialize:
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
-        coord = "agent.connection-builder@1.0.0"
+        coord = "agent.dataset-finder@1.0.0"
         # Not in the store before install (it's a built-in resolved from the roster).
         assert storage.load_installed_agent_definition(_user_dir_key(user), coord) is None
         client.post(
@@ -205,15 +205,15 @@ class TestMaterialize:
         # After install, the definition + its prompt asset are on disk in the store.
         d = storage.agent_definition_dir(_user_dir_key(user), coord)
         assert (d / "manifest.json").is_file()
-        assert (d / "prompts" / "new_connection_prompt.md").is_file()
+        assert (d / "prompts" / "discovery_instruction.md").is_file()
 
     def test_materialized_builtin_is_not_publishable(self, client, user_and_token, tmp_curio):
         # Even after its bytes are in the store, a built-in stays non-publishable.
         _, token = user_and_token
-        coord = "agent.connection-builder@1.0.0"
+        coord = "agent.dataset-finder@1.0.0"
         client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
         by_id = {a["id"]: a for a in client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]}
-        assert by_id["agent.connection-builder"]["publishable"] is False
+        assert by_id["agent.dataset-finder"]["publishable"] is False
         r = client.post("/api/agents/publications", json={"coord": coord}, headers=_auth(token))
         assert r.status_code == 400
 
@@ -246,7 +246,7 @@ class TestSavePreservesAgentState:
 
     def test_attachment_survives_a_canvas_save(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
-        coord = "agent.chat-agent@1.0.0"  # dual-compatible, so a canvas attachment is valid
+        coord = "agent.researcher@1.0.0"  # dual-compatible, so a canvas attachment is valid
         client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token))
         att = client.post(
             f"/api/agents/projects/{alice_project}/attachments",
@@ -366,13 +366,13 @@ class TestMaterializePreamble:
         from utk_curio.backend.app.agents.repositories import storage as agents_storage
 
         user, token = user_and_token
-        coord = "agent.connection-builder@1.0.0"
+        coord = "agent.dataset-finder@1.0.0"
         r = client.post(
             f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token)
         )
         assert r.status_code == 201, r.get_data(as_text=True)
         d = agents_storage.agent_definition_dir(_user_dir_key(user), coord)
-        assert (d / "prompts/new_connection_prompt.md").is_file()
+        assert (d / "prompts/discovery_instruction.md").is_file()
         assert (d / "prompts/default_preamble.md").is_file()
 
 

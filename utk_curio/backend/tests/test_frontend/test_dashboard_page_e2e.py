@@ -31,7 +31,6 @@ Run::
 from __future__ import annotations
 
 import json
-import os
 import re
 import uuid
 from typing import TYPE_CHECKING
@@ -53,6 +52,7 @@ from .utils import (
     require_owner_view,
     require_project_page,
     require_user_auth,
+    require_webgpu,
     serve_built_frontend,
     stub_db_login,
     stub_login_and_enter_workflow,
@@ -864,12 +864,6 @@ _WEBGPU_ANSWERS_LATE_JS = """(() => {
 })();""" % WEBGPU_ANSWER_MS
 
 
-def _webgpu_adapter(page) -> bool:
-    return bool(page.evaluate(
-        "async () => !!(navigator.gpu && await navigator.gpu.requestAdapter())"
-    ))
-
-
 def _autark_tile_pinned_and_saved(page, app_frontend: "FrontendPage", current_server) -> str:
     """Example 07 run once on the canvas, its map pinned and saved; its project id."""
     require_project_page()
@@ -888,10 +882,7 @@ def _autark_tile_pinned_and_saved(page, app_frontend: "FrontendPage", current_se
     )
     require_owner_view(page)
     page.wait_for_selector(".react-flow__node", timeout=45000)
-    if not _webgpu_adapter(page):
-        if os.environ.get("CURIO_REQUIRE_HARDWARE_WEBGPU") == "1":
-            pytest.fail("CURIO_REQUIRE_HARDWARE_WEBGPU=1 but this browser has no WebGPU adapter")
-        pytest.skip("Autark tiles need a WebGPU adapter; this browser has none")
+    require_webgpu(page)
     project_id = session["project"]["id"]
 
     run_all_and_wait(page, timeout_ms=300000)

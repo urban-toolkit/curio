@@ -49,7 +49,7 @@ import {
     SupportedType,
 } from "../constants";
 import { clampNodeBox } from "../utils/nodeBoxSize";
-import { getNodeDescriptor, tryGetNodeDescriptor } from "../registry";
+import { getNodeDescriptor, modelTypeOfPackage, tryGetNodeDescriptor } from "../registry";
 import { NodeCategory, NodeTemplateId } from "../registry/types";
 import {
     applyDatasetToNodeData,
@@ -61,6 +61,8 @@ import {
     applyModelToNodeData,
     canApplyModelToNode,
     hasModelDrag,
+    modelSwapRefusal,
+    nodeModelType,
     readModelDragPayload,
 } from "../services/packages/modelApplication";
 import "./styles.css";
@@ -474,10 +476,11 @@ export const NodeContainer = ({
     canApplyRef.current = canApplyDatasetToNode(data);
 
     // --- Model drag-and-drop, through the same capture-phase listeners ---
-    // A model goes only onto a node whose code calls `curio_load_model("...")`. Every
+    // A model goes only onto a node whose code calls `curio_load_model("...")`,
+    // and only in place of a model of its own type, both types known. Every
     // other node still takes the drop, so it can say why nothing changed rather
-    // than letting the drop fall through to the canvas, which would make a new
-    // node that runs the model.
+    // than letting the drop fall through to the canvas, which would make the
+    // model's own node.
     const modelDropHandlerRef = useRef<(e: DragEvent) => void>(() => {});
     modelDropHandlerRef.current = (e: DragEvent) => {
         if (!e.dataTransfer) return;
@@ -489,6 +492,15 @@ export const NodeContainer = ({
         const live = { ...data, code: code ?? data.code ?? data.defaultCode };
         if (!canApplyModelToNode(live)) {
             showToast("This node does not run a model", "warning");
+            return;
+        }
+        // The type of model the node runs: the model its code names, else the
+        // model package the node comes from. Refused when it or the dropped
+        // model's type is unknown, or the two differ.
+        const ownType = tryGetNodeDescriptor(data.nodeType as NodeTemplateId)?.package?.modelType;
+        const refused = modelSwapRefusal(nodeModelType(live, modelTypeOfPackage, ownType), model);
+        if (refused) {
+            showToast(refused, "warning");
             return;
         }
         const applied = applyModelToNodeData(live, model);

@@ -14,6 +14,7 @@ import ReactFlow, {
     useReactFlow,
     useStore,
     useStoreApi,
+    type XYPosition,
 } from "reactflow";
 import {
     CANVAS_TITLE_ATTR,
@@ -57,16 +58,24 @@ import {
 } from "../services/datasetCatalog";
 import {
     hasModelDrag,
-    modelNodeForCanvas,
+    packageCardNodeOptions,
     readModelDragPayload,
-    type ModelDropTemplate,
 } from "../services/packages/modelApplication";
+import {
+    endPackageCardDrag,
+    hasPackageCardDrag,
+    readPackageCardDragPayload,
+    type PackageCardNode,
+} from "../services/packages/packageCardDrag";
+import type { PackageAddRequest } from "../services/packages/packageAddRequests";
+import { useModelCatalogDrawer } from "../providers/modelCatalog";
+import { usePackageCardDrop } from "./packages/usePackageCardDrop";
+import { useHostedGuest } from "./apiSettings/useHostedGuest";
 import { endScenarioDrag, hasScenarioDrag, readScenarioDragPayload } from "../services/scenarioCatalog/scenarioDrag";
 import { useScenarioDrop } from "./scenarios/useScenarioDrop";
 import { packageStarterCode } from "../adapters/node/packageNodeBehavior";
 import { useStarterContext } from "../providers/StarterProvider";
-import { getAllNodeTypes, getPaletteNodeTypes } from "../registry/nodeRegistry";
-import type { NodeDescriptor } from "../registry/types";
+import { tryGetNodeDescriptor } from "../registry/nodeRegistry";
 import {
   agentsApi,
   readAgentDragCoord,
@@ -86,8 +95,7 @@ import { frameNodesInView, revealRectInView } from "../utils/focusDatasetNodes";
 import { scenarioCanvasView } from "../utils/scenarios/scenarioCanvasView";
 import { BOX_WIDTH, boxLayout } from "./scenarios/ScenarioLayers";
 import { CanvasScenarioLayers } from "./scenarios/CanvasScenarioLayers";
-import { ScenariosPanel } from "./scenarios/ScenariosPanel";
-import { ScenarioUiContext, type ScenarioUi } from "./scenarios/scenarioUi";
+import { useScenarioUi } from "./scenarios/scenarioUi";
 
 const FILL_STYLE: React.CSSProperties = { width: "100%", height: "100%" };
 // The notebook is a white page, as a Jupyter notebook is, under its cells.
@@ -115,24 +123,20 @@ export function MainCanvas() {
         onEdgesDelete,
         onNodesDelete,
         markDirty,
-        saveCurrentProject,
+        requestProjectSave,
         notebookOn,
         notebookContentHeight,
         setNotebookPane,
         registerNotebookScroller,
         revealNodes,
         scenarios,
+        packages: dataflowPackages,
     } = useFlowContext();
+    const hostedGuest = useHostedGuest();
 
-    // The Scenarios panel, and the scenario it highlights (#662). Never saved.
-    const [scenarioPanelOpen, setScenarioPanelOpen] = useState(false);
-    const [highlightedScenario, setHighlightedScenario] = useState<string | null>(null);
-    const scenarioUi = useMemo<ScenarioUi>(() => ({
-        panelOpen: scenarioPanelOpen,
-        setPanelOpen: setScenarioPanelOpen,
-        highlighted: highlightedScenario,
-        setHighlighted: setHighlightedScenario,
-    }), [scenarioPanelOpen, highlightedScenario]);
+    // The scenario pointed at in the Scenario Catalog drawer's In project tab
+    // (#662), whose fixed context the canvas marks. Never saved.
+    const { highlighted: highlightedScenario } = useScenarioUi();
 
     // What React Flow draws: the flow's own nodes and edges, with collapsed
     // scenarios hidden and their members marked, plus the boxes, frames and
@@ -333,13 +337,14 @@ export function MainCanvas() {
 
     const handleDragOver = useCallback((event: React.DragEvent) => {
         event.preventDefault();
-        // Dataset, model, scenario AND agent drags use effectAllowed="copy"; a
-        // "move" dropEffect is an incompatible pair, so the browser cancels the
-        // drop (handleDrop never fires and the agent silently fails to attach).
-        // Node-creation drags keep "move".
+        // Dataset, model, package card, scenario AND agent drags use
+        // effectAllowed="copy"; a "move" dropEffect is an incompatible pair, so
+        // the browser cancels the drop (handleDrop never fires and the agent
+        // silently fails to attach). Node-creation drags keep "move".
         const wantsCopy =
             hasDatasetDrag(event.dataTransfer) ||
             hasModelDrag(event.dataTransfer) ||
+            hasPackageCardDrag(event.dataTransfer) ||
             hasScenarioDrag(event.dataTransfer) ||
             hasAgentDrag(event.dataTransfer);
         event.dataTransfer.dropEffect = wantsCopy ? "copy" : "move";
@@ -409,39 +414,61 @@ export function MainCanvas() {
         }
     }, [dropPosition, revealCreated, createCodeNode, markDirty, showToast, openDatasetDetails]);
 
-    // A model dropped on the empty canvas becomes a node that runs it, as a
-    // dataset becomes a Data Loading node. A drop on a node never gets here:
-    // the node's own listener takes it (styles.tsx).
+    // A model dragged onto the empty canvas is its package's card (it carries
+    // both drags): the card drop below makes its package's node. Only a model
+    // whose package has no node at all gets here.
     const { getStarters } = useStarterContext();
     const handleModelCanvasDrop = useCallback((event: React.DragEvent) => {
         event.preventDefault();
         event.stopPropagation();
         const model = readModelDragPayload(event.dataTransfer);
-        if (!model) return;
-        const templates = (descriptors: NodeDescriptor[]): ModelDropTemplate[] =>
-            descriptors.map((d) => ({
-                nodeType: String(d.id),
-                label: d.label,
-                code: packageStarterCode(d, getStarters),
-                packageName: d.package?.name,
-            }));
-        const node = modelNodeForCanvas(templates(getPaletteNodeTypes()), model);
-        if (!node) {
-            const elsewhere = modelNodeForCanvas(templates(getAllNodeTypes()), model);
-            showToast(
-                elsewhere?.packageName
-                    ? `${model.name} needs a node that runs models: add ${elsewhere.packageName} to this project from the Model Catalog.`
-                    : "No installed node runs a model.",
-                "warning",
-            );
-            return;
-        }
-        const position = dropPosition(event);
-        revealCreated(createCodeNode(node.nodeType, { position, code: node.code, modelRefs: node.modelRefs }));
+        if (model) showToast(`${model.name} has no node to add.`, "warning");
+    }, [showToast]);
+
+    // A package's card from the Node Catalog drawer becomes one of the
+    // package's nodes: its one node, or the one picked from a menu of its
+    // nodes at the drop point (usePackageCardDrop). A model's card from the
+    // Model Catalog drawer or the Models palette is its package's card: its
+    // one node runs the model, opening with its template's code, which names
+    // the model. A package the dataflow has not added goes through the
+    // drawer's own Add first (the review, then the install of its libraries),
+    // and the node is made once it is added; a model dropped from the Models
+    // palette with the Model Catalog drawer closed opens that drawer on its
+    // Add. A hosted guest's drop is refused, since guests never install.
+    const { openModelCatalogDrawer } = useModelCatalogDrawer();
+    const openModelCatalogOnAdd = useCallback(
+        (addRequest: PackageAddRequest) => openModelCatalogDrawer({ addRequest }),
+        [openModelCatalogDrawer],
+    );
+    const createPackageNode = useCallback((node: PackageCardNode, position: XYPosition) => {
+        const starter = node.model
+            ? packageStarterCode(tryGetNodeDescriptor(node.nodeType as NodeType), getStarters)
+            : undefined;
+        revealCreated(createCodeNode(node.nodeType as NodeType, { position, ...packageCardNodeOptions(node, starter) }));
         const article = /^[aeiou]/i.test(node.label) ? "an" : "a";
-        showToast(`Created ${article} ${node.label} node for ${model.name}.`, "success");
+        showToast(
+            node.model
+                ? `Created ${article} ${node.label} node for ${node.model.name}.`
+                : `Created ${article} ${node.label} node.`,
+            "success",
+        );
         markDirty();
-    }, [getStarters, dropPosition, revealCreated, createCodeNode, markDirty, showToast]);
+    }, [getStarters, revealCreated, createCodeNode, showToast, markDirty]);
+    const { drop: dropPackageCard, menu: packageNodeMenu } = usePackageCardDrop({
+        dataflowPackages,
+        hostedGuest,
+        createNode: createPackageNode,
+        showToast,
+        openModelCatalog: openModelCatalogOnAdd,
+    });
+    const handlePackageCardCanvasDrop = useCallback((event: React.DragEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const card = readPackageCardDragPayload(event.dataTransfer);
+        endPackageCardDrag();
+        if (!card) return;
+        dropPackageCard({ card, position: dropPosition(event), at: { x: event.clientX, y: event.clientY } });
+    }, [dropPosition, dropPackageCard]);
 
     // A scenario from the Scenario Catalog arrives as a copy: its box where it
     // was dropped, its context as fixed data (useScenarioDrop). The notebook
@@ -472,6 +499,10 @@ export function MainCanvas() {
     const handleDrop = useCallback((event: React.DragEvent) => {
         if (hasDatasetDrag(event.dataTransfer)) {
             handleCanvasDrop(event);
+            return;
+        }
+        if (hasPackageCardDrag(event.dataTransfer)) {
+            handlePackageCardCanvasDrop(event);
             return;
         }
         if (hasModelDrag(event.dataTransfer)) {
@@ -507,11 +538,13 @@ export function MainCanvas() {
             // For a node target, persist the graph first so the (possibly
             // freshly-added) node is in the saved spec the backend validates
             // against — otherwise the attach 400s. See attachAgentOnDrop.
+            // Through the save queue, so it never goes out beside another
+            // save of this dataflow (#909, #941).
             attachAgentOnDrop({
                 projectId,
                 target,
                 agentCoord,
-                saveProject: saveCurrentProject,
+                saveProject: requestProjectSave,
                 attach: (pid, coord, t) => agentsApi.attach(pid, coord, t),
             })
                 .then(() => {
@@ -528,7 +561,7 @@ export function MainCanvas() {
         const position = dropPosition(event);
         revealCreated(createCodeNode(type, { position }));
         markDirty();
-    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleModelCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, saveCurrentProject, reactFlow]);
+    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, requestProjectSave, reactFlow]);
 
     // The Delete key reaches these through React Flow, which sends the
     // selected edges plus every edge attached to a deleted node first, then
@@ -618,7 +651,6 @@ export function MainCanvas() {
 
     return (
         <AgentAttachmentsProvider enabled={!isSharedView}>
-        <ScenarioUiContext.Provider value={scenarioUi}>
         {!loading ? <div
             style={{ width: "100vw", height: "100vh", backgroundColor: "#f0f0f0" }}
         >
@@ -628,7 +660,6 @@ export function MainCanvas() {
             <UpMenu />
             <CanvasSidePanels>
                 <CollaborationSidePanel />
-                {!isSharedView ? <ScenariosPanel /> : null}
             </CanvasSidePanels>
             <div
                 className="curio-canvas-drop-target"
@@ -701,8 +732,8 @@ export function MainCanvas() {
             </div>
 
         </div> : loadingAnimation() }
+        {packageNodeMenu}
         <VersionBadge />
-        </ScenarioUiContext.Provider>
         </AgentAttachmentsProvider>
     );
 }

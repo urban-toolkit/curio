@@ -136,7 +136,9 @@ class ToolContract:
 
     ``parameters`` is the JSON Schema of its params, offered to a model that
     calls tools natively. ``native_description`` replaces ``description`` there
-    when the fenced one teaches a block syntax a native call does not use."""
+    when the fenced one teaches a block syntax a native call does not use, or
+    spells out params the schema already gives: a native description holds at
+    most 1,024 characters (OpenAI's limit)."""
 
     id: str
     contract_version: str
@@ -144,6 +146,9 @@ class ToolContract:
     description: str
     parameters: dict = field(default_factory=_no_params, compare=False)
     native_description: str | None = None
+    #: What the tool does, in plain words for people, where the agent details
+    #: window lists an agent's tools. A mutate contract's starts "Propose".
+    label: str = ""
 
     def __post_init__(self):
         if self.effect not in _EFFECTS:
@@ -157,6 +162,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="dataflow.read",
         contract_version="2",
         effect="read",
+        label="Read the dataflow",
         description=(
             "Read the project's saved dataflow, structure-first: every node "
             "(id, type, goal, content length, widgets) and ALL edges, plus each "
@@ -180,6 +186,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="web.fetch",
         contract_version="1",
         effect="read",
+        label="Read a web page",
         description=(
             'Fetch one public https URL and return its status, content type, '
             'and a bounded body preview. Params: {"url": "https://..."}. '
@@ -193,6 +200,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="web.search",
         contract_version="1",
         effect="read",
+        label="Search the web",
         description=(
             'Search the web for factual verification. Params: {"q": "<query>"}. '
             "Returns bounded {title, url, snippet} rows from this deployment's "
@@ -208,6 +216,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="node.runtime.read",
         contract_version="1",
         effect="read",
+        label="Read a node's last run",
         description=(
             "Read one node's LAST execution outcome: status, error traceback "
             "tail, stdout tail, output metadata, and whether the node's "
@@ -221,6 +230,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="node.read",
         contract_version="1",
         effect="read",
+        label="Read a node",
         description=(
             'Read one node from the saved spec. Params: {"nodeId": "..."} — '
             "defaults to the node this agent is attached to."
@@ -231,6 +241,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="node.content.write",
         contract_version="1",
         effect="mutate",
+        label="Propose a content change",
         description=(
             'Propose replacing one node\'s content. Params: {"nodeId": "...", '
             '"content": "..."}. The user reviews the proposal before anything '
@@ -248,6 +259,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="catalog.search",
         contract_version="1",
         effect="read",
+        label="Search the Data Catalog",
         description=(
             "Search the project's Data Catalog. Params (all optional): "
             '{"q": "<text>", "format": "<fmt>", "origin": "<origin>"}. '
@@ -272,6 +284,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="models.search",
         contract_version="1",
         effect="read",
+        label="Search the Model Catalog",
         description=(
             "Search the Model Catalog: the trained models node code can run. "
             'Params (all optional): {"q": "<text>", "limit": <1 to '
@@ -301,6 +314,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="examples.read",
         contract_version="1",
         effect="read",
+        label="Read worked examples",
         description=(
             "Read Curio's worked examples: shipped dataflows that show how "
             'nodes, code and specs fit together. Params (optional): {"key": '
@@ -324,6 +338,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="discovery.sources",
         contract_version="1",
         effect="read",
+        label="List the data portals",
         description=(
             "List the data portals and storage this deployment connects to. "
             "Params: none. Returns rows with sourceId, name, provider, "
@@ -339,6 +354,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="discovery.search",
         contract_version="1",
         effect="read",
+        label="Search the data portals",
         description=(
             "Search connected data portals LIVE. Params: "
             '{"q": "<text>", "sourceId": "<sourceId@major from '
@@ -363,6 +379,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="discovery.acquire",
         contract_version="1",
         effect="mutate",
+        label="Propose a download",
         description=(
             "Propose downloading ONE resource from a connected data portal "
             "into the Data Catalog, where it becomes an ordinary dataset. "
@@ -382,13 +399,14 @@ REGISTRY: dict[str, ToolContract] = {
             "sourceId", "resourceId",
         ),
     ),
-    # dev/84, consumer: agent.package-builder, in its chat. Grounds package
+    # dev/84, consumer: agent.node-builder, in its chat. Grounds package
     # recommendations in the real Nodes Catalog + this project's lockfile
     # (the packages domain owns the data; this module owns none of its own).
     "packages.catalog": ToolContract(
         id="packages.catalog",
         contract_version="1",
         effect="read",
+        label="Search the Node Catalog",
         description=(
             "List the Nodes Catalog's node packages with this project's "
             'install state. Params (optional): {"q": "<text>"} substring '
@@ -399,12 +417,13 @@ REGISTRY: dict[str, ToolContract] = {
         ),
         parameters=_object({"q": _text("Text a package's name or description must contain.")}),
     ),
-    # dev/84, consumer: agent.package-builder, in its chat.
+    # dev/84, consumer: agent.node-builder, in its chat.
     # deps/permissions/conflicts come from the real resolver, never invented.
     "packages.resolve": ToolContract(
         id="packages.resolve",
         contract_version="1",
         effect="read",
+        label="Check a package's dependencies and permissions",
         description=(
             "Resolve one or more catalog packages against this account's "
             'installed set. Params: {"dirNames": ["<dirName from '
@@ -423,6 +442,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="dataflow.plan.write",
         contract_version="1",
         effect="mutate",
+        label="Propose a plan",
         description=(
             "Propose a reviewed plan that changes the dataflow graph, by ending "
             "a reply with a dataflowPlan block (not a toolRequest): "
@@ -483,6 +503,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="dataset.install",
         contract_version="1",
         effect="mutate",
+        label="Propose adding a dataset",
         description=(
             "Propose installing ONE dataset from the Data Catalog into this "
             'project. Params: {"datasetId": "<id from catalog.search results>"}. '
@@ -491,7 +512,7 @@ REGISTRY: dict[str, ToolContract] = {
         ),
         parameters=_object({"datasetId": _text("A dataset id from catalog.search results.")}, "datasetId"),
     ),
-    # dev/84, consumers: agent.package-builder and agent.researcher. The reviewed install
+    # dev/84, consumers: agent.node-builder and agent.researcher. The reviewed install
     # lane: applying routes through the existing package install flow
     # (permissions + dependencies + conflicts); never a silent install,
     # never a built-in.
@@ -499,6 +520,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="package.install",
         contract_version="1",
         effect="mutate",
+        label="Propose a package install",
         description=(
             "Propose installing ONE node package from the Nodes Catalog into "
             'this project. Params: {"dirName": "<the versioned dirName, e.g. '
@@ -540,6 +562,7 @@ REGISTRY: dict[str, ToolContract] = {
         id="node.create",
         contract_version="1",
         effect="mutate",
+        label="Propose a node",
         description=(
             "Propose adding ONE new node to the canvas. Params: "
             '{"nodeType": "<packageId>/<templateId>", "content": "...", '
@@ -566,33 +589,56 @@ REGISTRY: dict[str, ToolContract] = {
             "nodeType", "content",
         ),
     ),
-    # dev/89 — consumer: agent.package-builder. The ONE package-authoring
-    # mutate contract: requesting it runs the isolated build service
-    # (validate → resolve → compile → preview → package, all staged and
-    # content-addressed) and mints the reviewed package-draft proposal;
-    # Apply promotes the exact reviewed artifact digest through the
-    # promotion coordinator — never a silent install.
+    # dev/89, consumers: agent.node-builder (its package-writing mode's drafts)
+    # and agent.researcher (the drafts it asks for). The ONE package-authoring
+    # mutate contract, and the one way an agent makes a node type: requesting
+    # it checks every template the draft adds (justification, label, grounded
+    # code), runs the isolated build service (validate → resolve → compile →
+    # preview → package, all staged and content-addressed) and mints the
+    # reviewed package-draft proposal; Apply promotes the exact reviewed
+    # artifact digest through the promotion coordinator, never a silent install.
     "package.draft.apply": ToolContract(
         id="package.draft.apply",
         contract_version="1",
         effect="mutate",
+        label="Propose a package draft",
         description=(
             "Propose ONE built node package as a reviewed draft. Params: the "
-            'typed build request — {"mode": "create"|"extend", '
+            'typed build request, {"mode": "create"|"extend", '
             '"baseDigest": "<64-hex, extend only>", '
             '"manifest": {...}, "files": {"<path>": {"text"|"base64": "..."}}, '
             "The draft's identity is manifest.id + compatibility.major; the "
             "package id MUST be reverse-DNS (two or more dot-separated "
-            "segments, e.g. curio.notes — never a single segment like "
+            "segments, e.g. curio.notes, never a single segment like "
             'curio-notes). An optional "target": "<packageId>@<major>" may '
             "restate it but must agree. Other params: "
             '"behaviorEntries": ["sources/<entry>.tsx", ...], "dependencies": '
             '{"python"|"js"|"packages": {name: constraint}}, '
             '"previewTemplates": [...], "nodes": [{"templateId": "...", '
             '"title": "...", "content": "...", "appearance": '
-            '{"backgroundColor": "<palette name or #RRGGBB>"}}]}. The build '
+            '{"backgroundColor": "<palette name or #RRGGBB>"}}], '
+            '"justification": "<the closest existing templates and why each is '
+            'inadequate>"}. A draft that adds a template (every template of a '
+            "create, a new one in an extend) needs the justification, which "
+            "the user judges during review, and gives each new template a "
+            "label no existing template has: one that already does the job is "
+            "reused, not drafted again. The build "
             "service compiles/validates/previews the draft; the user reviews "
             "the diff, dependencies, and preview before anything installs. "
+            "Never claim the package exists before the user applies it."
+        ),
+        # The same rules without the param shapes, which the schema gives.
+        native_description=(
+            "Propose ONE built node package as a reviewed draft, from the "
+            "typed build request in the params. Its identity is manifest.id + "
+            "compatibility.major; the id MUST be reverse-DNS (two or more "
+            "dot-separated segments: curio.notes, never curio-notes), and an "
+            'optional "target": "<packageId>@<major>" must agree with it. A '
+            "draft that adds a template (every template of a create, a new one "
+            'in an extend) needs the "justification" and gives each new '
+            "template a label no existing template has: one that already does "
+            "the job is reused, not drafted again. The user reviews the built "
+            "draft's diff, dependencies and preview before anything installs. "
             "Never claim the package exists before the user applies it."
         ),
         parameters=_object(
@@ -618,43 +664,12 @@ REGISTRY: dict[str, ToolContract] = {
                     ),
                     "description": "Nodes to add once the package is applied.",
                 },
+                "justification": _text(
+                    "The closest existing templates, and why each is inadequate. "
+                    "Needed when the draft adds a template."
+                ),
             },
             "mode", "manifest",
-        ),
-    ),
-    # dev/48 §3.2b — consumer: agent.node-builder. The justified creation
-    # fallback: ONLY when no available template fits; the apply endpoint
-    # executes it solely through the existing package factory.
-    "node.template.create": ToolContract(
-        id="node.template.create",
-        contract_version="1",
-        effect="mutate",
-        description=(
-            "Propose a NEW custom node type — only after the Available node "
-            "templates list has been considered and none can adequately hold "
-            'the task. Params: {"justification": "...", "template": {"label": '
-            '"...", "description": "...", "engine": "python"|"javascript", '
-            '"content": "..."}}. justification must name the closest existing '
-            "templates and why each is inadequate — the user judges it during "
-            "review. Applying registers the node type in this project AND "
-            "adds its first node; nothing happens without the user's approval."
-        ),
-        parameters=_object(
-            {
-                "justification": _text(
-                    "The closest existing templates, and why each is inadequate."
-                ),
-                "template": _object(
-                    {
-                        "label": _text("The node type's name."),
-                        "description": _text("What the node type does."),
-                        "engine": {"type": "string", "enum": ["python", "javascript"]},
-                        "content": _text("The first node's content."),
-                    },
-                    "label", "content",
-                ),
-            },
-            "justification", "template",
         ),
     ),
 }

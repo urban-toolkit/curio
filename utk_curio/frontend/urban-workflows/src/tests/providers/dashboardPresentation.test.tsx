@@ -34,6 +34,9 @@ const mockPersistDataflowForInstall = jest.fn().mockResolvedValue({ saved: true,
 const mockMarkDirty = jest.fn();
 const mockShowToast = jest.fn();
 const mockSaveCurrentProject = jest.fn().mockResolvedValue(undefined);
+// The save queue. It hands each save on, so what these tests say about the
+// save holds when the save goes through it.
+const mockRequestProjectSave = jest.fn(() => mockSaveCurrentProject());
 let mockProjectId: string | null = 'project-1';
 let mockViewerMode: 'owner' | 'shared' = 'owner';
 
@@ -62,6 +65,7 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     cleanCanvas: jest.fn(),
     discardProject: jest.fn(),
     saveCurrentProject: mockSaveCurrentProject,
+    requestProjectSave: mockRequestProjectSave,
     projectId: mockProjectId,
     viewerMode: mockViewerMode,
   }),
@@ -198,6 +202,16 @@ describe('pinning saves straight away', () => {
   test('it writes the pin to disk', async () => {
     await pin(true);
 
+    expect(mockSaveCurrentProject).toHaveBeenCalledTimes(1);
+  });
+
+  test('it saves through the save queue, so it never overlaps another save', async () => {
+    // Saved directly, the pin's save and a Save clicked within its 400 ms
+    // debounce went out together (#909, #941).
+    await pin(true);
+
+    expect(mockRequestProjectSave).toHaveBeenCalledTimes(1);
+    // The one save there was: the queue's.
     expect(mockSaveCurrentProject).toHaveBeenCalledTimes(1);
   });
 

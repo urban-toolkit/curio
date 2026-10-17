@@ -40,10 +40,8 @@ Run::
 from __future__ import annotations
 
 import json
-import os
 from typing import TYPE_CHECKING
 
-import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, expect
 
 from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
@@ -52,17 +50,21 @@ from .utils import (
     api_json,
     assert_autark_map_drawn,
     assert_in_view,
+    close_scenario_drawer,
     frame_nodes,
     node_locator,
+    open_in_project_tab,
     play_node,
     read_node_error_text,
     require_owner_view,
     require_project_page,
     require_user_auth,
+    require_webgpu,
     run_all_and_wait,
     save_dataflow,
     save_dataflow_and_settle_header,
     save_workflow_test_screenshot,
+    scenario_card_button,
     set_node_code,
     stub_login_and_enter_workflow,
     wait_for_drawer_closed,
@@ -148,16 +150,6 @@ def _create_project(server: str, token: str, name: str, spec: dict) -> str:
     created = api_json(f"{server}/api/projects", token, method="POST",
                        payload={"name": name, "spec": spec, "outputs": []})
     return created["id"]
-
-
-def _require_webgpu(page) -> None:
-    has_adapter = bool(page.evaluate(
-        "async () => !!(navigator.gpu && await navigator.gpu.requestAdapter())"
-    ))
-    if not has_adapter:
-        if os.environ.get("CURIO_REQUIRE_HARDWARE_WEBGPU") == "1":
-            pytest.fail("CURIO_REQUIRE_HARDWARE_WEBGPU=1 but this browser has no WebGPU adapter")
-        pytest.skip("running an Autark node needs a WebGPU adapter; this browser has none")
 
 
 _STORE_NODES_JS = """() => window.__curio_reactFlow.getNodes().map((n) => ({
@@ -288,10 +280,12 @@ def _toast(page, text: str, timeout: float = 30000):
     return toast.first.inner_text()
 
 
-def _scenario_menu(page, item: str) -> None:
-    """The scenario commands sit in the View menu."""
-    page.get_by_role("button", name="View menu").click()
-    page.get_by_role("button", name=item, exact=True).click()
+def _run_scenario(page, scenario_id: str) -> None:
+    """Run scenario, from the scenario's card in the In project tab. The drawer
+    is closed again, so the run's nodes are in sight."""
+    open_in_project_tab(page)
+    scenario_card_button(page, scenario_id, "Run scenario").click()
+    close_scenario_drawer(page)
 
 
 def _box(page, scenario_id: str):
@@ -339,7 +333,7 @@ def test_a_scenario_dragged_into_another_project_brings_its_results_and_its_own_
     source = session["project"]["id"]
     for node_id in (LOADER, SCALE, MAP):
         node_locator(page, node_id).wait_for(state="visible", timeout=45000)
-    _require_webgpu(page)
+    require_webgpu(page)
 
     # The source runs and saves: its context and what its outcome shows are saved.
     run_all_and_wait(page, timeout_ms=240000)
@@ -391,8 +385,7 @@ def test_a_scenario_dragged_into_another_project_brings_its_results_and_its_own_
 
     # 2. Run scenario: the lever runs, the copied context is reused.
     sent, _outputs, stop = _record_python_runs(page)
-    _scenario_menu(page, "Show scenarios")
-    page.get_by_test_id(f"scenario-card-{dropped['id']}").get_by_role("button", name="Run scenario").click()
+    _run_scenario(page, dropped["id"])
     status = wait_for_node_settled(page, map_copy, node_type="autk-grammar", timeout_ms=180000)
     wait_for_run_guard_released(page, timeout_ms=60000)
     stop()
@@ -431,11 +424,10 @@ def test_a_scenario_dragged_into_another_project_brings_its_results_and_its_own_
     frame_nodes(page, [OWN, scale])
     connect_nodes(page, OWN, scale)
     sent, outputs, stop = _record_python_runs(page)
-    _scenario_menu(page, "Show scenarios")
     # The map still shows the result it drew when the page opened, so wait for
     # its own run, which starts when the lever's new output reaches it (#892).
     watch_node_run(page, map_copy)
-    page.get_by_test_id(f"scenario-card-{dropped['id']}").get_by_role("button", name="Run scenario").click()
+    _run_scenario(page, dropped["id"])
     status = wait_for_node_run_to_end(page, map_copy, node_type="autk-grammar", timeout_ms=180000)
     wait_for_run_guard_released(page, timeout_ms=60000)
     stop()
@@ -753,9 +745,8 @@ def test_a_scenario_from_a_project_never_run_runs_its_context_there_and_drops(
     # The box's outcome reads that output: Run scenario runs the lever on it.
     [dropped] = _saved_spec(current_server, token, target)["dataflow"]["scenarios"]
     sent, _outputs, stop = _record_python_runs(page)
-    _scenario_menu(page, "Show scenarios")
     watch_node_run(page, scale)
-    page.get_by_test_id(f"scenario-card-{dropped['id']}").get_by_role("button", name="Run scenario").click()
+    _run_scenario(page, dropped["id"])
     status = wait_for_node_run_to_end(page, scale, timeout_ms=180000)
     wait_for_run_guard_released(page, timeout_ms=60000)
     stop()

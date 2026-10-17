@@ -41,7 +41,7 @@ class TestPromptFilesResolve:
             assert text, f"{coord} resolved no {name} prompt"
 
 
-#: Which instruction a call of each card that took another agent over reads:
+#: Which instruction a call of each card that took other agents over reads:
 #: a chat message carries no capability and reads the chat prompt, and a
 #: delegated call reads its capability's mode, else the chat prompt. Every
 #: call composes the shared preamble with exactly one of these.
@@ -51,18 +51,15 @@ PROMPT_TABLE = {
         "node.build": "node_build_instruction.md",
         "dataset.fetch.author": "node_build_instruction.md",
         "node.content.generate": "new_content_prompt.md",
-    },
-    "agent.researcher": {
-        None: "researcher_notes_instruction.md",
-        "research.notes.compose": "researcher_notes_instruction.md",
-        "research.verify": "research_instruction.md",
-    },
-    "agent.package-builder": {
-        None: "package_build_instruction.md",
+        "package.recommend": "package_recommendation_instruction.md",
         "package.build": "package_build_instruction.md",
         "package.extend": "package_build_instruction.md",
         "node.kind.author": "package_build_instruction.md",
-        "package.recommend": "package_recommendation_instruction.md",
+    },
+    "agent.researcher": {
+        None: "researcher_instruction.md",
+        "research.notes.compose": "researcher_notes_instruction.md",
+        "research.verify": "research_instruction.md",
     },
 }
 
@@ -117,7 +114,7 @@ class TestTheResearchersCheckingRules:
             if path != fragment:
                 text = path.read_text(encoding="utf-8")
                 assert not [line for line in lines if line in text], path.name
-        for template in ("research_instruction", "researcher_notes_instruction"):
+        for template in ("research_instruction", "researcher_instruction"):
             text = (builtin.PROMPT_SOURCE_DIR / f"{template}.template.md").read_text(encoding="utf-8")
             assert text.count("{{research.verify_rules}}") == 1, template
         # Both rendered prompts carry them whole: the chat and the mode.
@@ -137,6 +134,46 @@ class TestTheResearchersCheckingRules:
         # in prose.
         assert "findings first, one per line" in mode.lower()
         assert "findings first, one per line" not in chat.lower()
+        # The notes mode checks nothing, so it carries none of them.
+        notes = builtin.read_prompt_text(coord, "research.notes.compose")
+        assert notes and rules not in notes
+
+
+class TestTheResearchersNotesRules:
+    def test_they_are_written_once_and_ride_both_notes_prompts(self):
+        """The notes format, written once: the chat that answers a web
+        question with notes and the mode that composes notes from search
+        results include the same fragment, ``{{research.notes_rules}}``."""
+        from utk_curio.backend.app.agents.domain import contracts
+
+        stem = contracts.RESEARCH_NOTES_RULES
+        fragment = builtin.PROMPT_SOURCE_DIR / f"{stem}.template.md"
+        lines = [line for line in fragment.read_text(encoding="utf-8").splitlines() if line.strip()]
+        assert len(lines) == 5, (
+            "the pattern, the question note, the answer notes, the markdown, one note per finding"
+        )
+        # One template holds them: no other template repeats a line of them,
+        # and each notes template includes them by their field, once.
+        for path in sorted(builtin.PROMPT_SOURCE_DIR.glob("*.template.md")):
+            if path != fragment:
+                text = path.read_text(encoding="utf-8")
+                assert not [line for line in lines if line in text], path.name
+        for template in ("researcher_instruction", "researcher_notes_instruction"):
+            text = (builtin.PROMPT_SOURCE_DIR / f"{template}.template.md").read_text(encoding="utf-8")
+            assert text.count("{{research.notes_rules}}") == 1, template
+        # Both rendered prompts carry them whole.
+        rules = contracts.render_prompt(stem).rstrip("\n")
+        coord = f"agent.researcher@{builtin.BUILTIN_VERSION}"
+        chat = builtin.read_prompt_text(coord, "instruction")
+        mode = builtin.read_prompt_text(coord, "research.notes.compose")
+        assert chat and chat.count(rules) == 1
+        assert mode and mode.count(rules) == 1
+        low = rules.lower()
+        assert "yellow note carrying the user's question verbatim" in low
+        assert "one green note per answer" in low
+        assert "as clean markdown" in low
+        assert "one note per finding" in low
+        assert "never invent facts" in low
 
 
 class TestTheRecommendationMode:
@@ -147,14 +184,36 @@ class TestTheRecommendationMode:
 
         from utk_curio.backend.app.agents.application.tools import REGISTRY
 
-        text = builtin.read_prompt_text(f"agent.package-builder@{builtin.BUILTIN_VERSION}", "package.recommend")
-        assert text, "the Package Builder has no package.recommend prompt"
+        text = builtin.read_prompt_text(f"agent.node-builder@{builtin.BUILTIN_VERSION}", "package.recommend")
+        assert text, "the Node Builder has no package.recommend prompt"
         named = sorted(t for t in REGISTRY if re.search(rf"(?<![\w.]){re.escape(t)}(?![\w])", text))
         assert named == []
         for syntax in ("toolRequest", "delegateRequest", "curio.v1", "```"):
             assert syntax not in text, syntax
         assert "never with a tool request" in text
         assert '"existingPackages"' in text
+
+
+class TestTheJsonModes:
+    @pytest.mark.parametrize("agent_id, capability", [
+        ("agent.node-builder", "package.build"),
+        ("agent.researcher", "research.notes.compose"),
+    ])
+    def test_a_mode_that_answers_in_json_asks_for_no_tool(self, agent_id, capability):
+        """Each runs only as a delegate, with no tools, and answers in one
+        JSON object the runtime turns into reviewed proposals: it names no
+        tool a run could call and shows no request syntax."""
+        import re
+
+        from utk_curio.backend.app.agents.application.tools import REGISTRY
+
+        text = builtin.read_prompt_text(f"{agent_id}@{builtin.BUILTIN_VERSION}", capability)
+        assert text, (agent_id, capability)
+        named = sorted(t for t in REGISTRY if re.search(rf"(?<![\w.]){re.escape(t)}(?![\w])", text))
+        assert named == [], (agent_id, capability)
+        for syntax in ("toolRequest", "delegateRequest", "curio.v1"):
+            assert syntax not in text, (agent_id, capability, syntax)
+        assert "EXACTLY ONE JSON object" in text
 
 
 class TestUserOwnedValuesStayOutOfPrompts:

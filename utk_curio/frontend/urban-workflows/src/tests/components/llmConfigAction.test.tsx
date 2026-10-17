@@ -35,9 +35,9 @@ it("renders nothing for another remedy, or none", () => {
 it("reads the remedy off a refused request's body", () => {
   const refused = Object.assign(new Error("No LLM configuration answers this run."), {
     status: 400,
-    body: { error: "No LLM configuration answers this run.", remedy: { kind: "llm-config", agentId: "agent.chat-agent" } },
+    body: { error: "No LLM configuration answers this run.", remedy: { kind: "llm-config", agentId: "agent.researcher" } },
   });
-  expect(remedyOf(refused)).toEqual({ kind: "llm-config", agentId: "agent.chat-agent" });
+  expect(remedyOf(refused)).toEqual({ kind: "llm-config", agentId: "agent.researcher" });
   expect(remedyOf(new Error("plain"))).toBeNull();
   expect(remedyOf(null)).toBeNull();
 });

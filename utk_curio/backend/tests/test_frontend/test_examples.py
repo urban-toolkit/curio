@@ -89,15 +89,23 @@ EXAMPLE_INVARIANTS = [
     ("23-storage-folder-of-different-files.json", 4, 3,
      {"curio.builtin/data-loading": 2, "curio.builtin/computation-analysis": 1,
       "curio.builtin/vis-vega": 1}, False),
-    ("24-scout-building-rasters.json", 8, 8,
+    # Rasterize Buildings returns one raster, so no node picks it out (#819).
+    ("24-scout-building-rasters.json", 7, 7,
      {"curio.builtin/data-loading": 1, "scout.raster-conversion/rasterize-buildings": 1,
-      "curio.builtin/computation-analysis": 1, "model.scout.deep-umbra/accumulated-shadow": 1,
+      "model.scout.deep-umbra/accumulated-shadow": 1,
       "curio.builtin/raster-statistics": 1, "curio.builtin/autk-grammar": 3}, False),
     # #576: one Spatial Join per operation, plus two over a point on an edge.
     ("25-spatial-join-operations.json", 25, 28,
      {"curio.builtin/data-loading": 6, "curio.builtin/data-transformation": 1,
       "curio.builtin/spatial-join": 9, "curio.builtin/vis-vega": 7,
       "curio.builtin/vis-simple": 2}, False),
+    # #819: one node fed by several others in every kind that takes several
+    # inputs, one input a tuple from another Python node.
+    ("26-several-inputs.json", 10, 14,
+     {"curio.builtin/data-loading": 3, "curio.builtin/computation-analysis": 2,
+      "curio.builtin/data-transformation": 1, "curio.builtin/js-computation": 1,
+      "curio.builtin/vis-vega": 1, "curio.builtin/autk-grammar": 1,
+      "curio.builtin/data-pool": 1}, False),
 ]
 
 
@@ -117,6 +125,9 @@ FAN_IN_NODES = {
     "23-storage-folder-of-different-files.json": 1,
     "24-scout-building-rasters.json": 1,
     "25-spatial-join-operations.json": 9,
+    # #819: Python (three inputs), Data Transformation, JS Computation,
+    # Vega-Lite, Autark and Data Pool.
+    "26-several-inputs.json": 6,
 }
 
 

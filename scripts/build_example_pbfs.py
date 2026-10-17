@@ -69,8 +69,7 @@ class Area(NamedTuple):
 AREAS = {
     # Example 06.
     "back_bay": Area(place="Back Bay, Boston, Massachusetts, USA", boundaries=("Back Bay",)),
-    # Example 07, Interaction_Autark and WeatherRouting. Not rebuilt yet: autk-db
-    # 4.1.0 skips the Loop's 3D building relations (test_build_example_pbfs.py).
+    # Example 07 and Interaction_Autark.
     "chicago_loop": Area(place="Loop, Chicago, Illinois, USA", boundaries=("Loop",)),
     # Example 08 and Regression.
     "niteroi": Area(place="Niterói, Rio de Janeiro, Brazil", boundaries=("Niterói",)),
@@ -78,7 +77,9 @@ AREAS = {
     # west so that it holds Battery Park City whole.
     "lower_mnt": Area(box=(40.698762, -74.0194416, 40.756338, -73.962192),
                       boundaries=("Battery Park City", "Financial District")),
-    # SCOUT's weather routing box, with the Chicago city boundary.
+    # WeatherRouting: SCOUT's weather routing box, which its loader loads as a box
+    # (queryArea.bbox), so no spec clips to the Chicago city boundary. The area
+    # keeps it so that the script builds the committed extract, which carries it whole.
     "chicago_downtown": Area(box=(41.859, -87.662, 41.898, -87.613), boundaries=("Chicago",)),
 }
 
@@ -420,7 +421,9 @@ def cut(nodes: dict, ways: dict, relations: dict, box, boundaries) -> tuple[dict
 
     - a relation with a ``boundary`` tag named in *boundaries* is kept whole;
     - a polygon is clipped at the box (``clip_polygon``): a closed way that is
-      an area (``is_area``) keeps its id when the clip leaves one piece, and
+      an area (``is_area``), or has no tags and a building relation lists it
+      (a building's untagged part or outline), keeps its id when the clip
+      leaves one piece, and
       becomes a multipolygon of its pieces, with its tags, when it leaves
       several; a multipolygon keeps its id and tags, with new ways for its
       clipped rings. A polygon inside the box is kept as it is, and a
@@ -463,12 +466,15 @@ def cut(nodes: dict, ways: dict, relations: dict, box, boundaries) -> tuple[dict
     whole = {rel_id for rel_id, (_members, tags) in relations.items()
              if "boundary" in tags and tags.get("name") in boundaries}
     listed: set = set()
+    in_building: set = set()
     for rel_id in sorted(relations):
         members, tags = relations[rel_id]
         if rel_id in whole:
             continue
         if tags.get("type") != "multipolygon":
             listed.update(ref for t, ref, _role in members if t == "w")
+            if tags.get("type") == "building":
+                in_building.update(ref for t, ref, _role in members if t == "w")
             continue
         rings = multipolygon_rings(members, ways, nodes)
         if rings is None:
@@ -488,7 +494,8 @@ def cut(nodes: dict, ways: dict, relations: dict, box, boundaries) -> tuple[dict
         refs, tags = ways[way_id]
         if way_id in whole_ways:
             kept_ways[way_id] = (refs, tags)
-        elif is_closed(refs) and is_area(tags) and all(r in nodes for r in refs):
+        elif (is_closed(refs) and (is_area(tags) or (not tags and way_id in in_building))
+              and all(r in nodes for r in refs)):
             ring = _points(refs, nodes)
             if all(in_box(x, y, box) for _ref, x, y in ring):
                 kept_ways[way_id] = (refs, tags)

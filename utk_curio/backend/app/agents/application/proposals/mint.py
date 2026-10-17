@@ -1,4 +1,4 @@
-"""Minting proposals from tool params: node content, template create, dataset/package/project installs, package drafts, node create, row access.
+"""Minting proposals from tool params: node content, dataset/package/project installs, package drafts, node create, row access.
 
 Application layer of the agents package (memo dev/142, B2; re-derived on enh/agent-catalog): cut from
 ``services.py`` by responsibility; every function keeps its name and body. Sibling modules are reached
@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import uuid
 
+from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.application import verify
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import widget_grammar
@@ -23,118 +24,6 @@ from utk_curio.backend.app.agents.application.turns import delegates as agents_d
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.projects import storage as projects_storage
-
-
-_TEMPLATE_ENGINES = ("python", "javascript")
-
-
-def _mint_node_template_create(
-    user_key: str, project_id: str, loop_ctx: dict, req: dict
-) -> tuple[str, str, dict | None]:
-    """The dev/48 §3.2b creation fallback: a reviewed proposal for a NEW
-    custom node type. The runtime cannot judge adequacy — the review card is
-    the adequacy gate, so a written justification is mandatory, and a label
-    that collides with an available template is refused as reuse territory."""
-    from utk_curio.backend.app.packages import service as packages_services
-
-    params = req.get("params") or {}
-    justification = params.get("justification")
-    if not isinstance(justification, str) or not justification.strip():
-        return (
-            "refused",
-            "the review needs your reasoning — state which existing templates you "
-            "considered and why they don't fit (params.justification)",
-            None,
-        )
-    template = params.get("template")
-    if not isinstance(template, dict):
-        return "refused", "params.template must be an object", None
-    label = str(template.get("label") or "").strip()
-    slug = packages_services.template_slug(label)
-    if not slug:
-        return "refused", "template.label must be a non-empty name", None
-    engine = template.get("engine") or "python"
-    if engine not in _TEMPLATE_ENGINES:
-        return "refused", "template.engine must be 'python' or 'javascript'", None
-    code = content.extract_node_content(template.get("content"))
-    if not code:
-        return "refused", "template.content must be a non-empty string", None
-    if len(code) > content.PROPOSAL_CONTENT_MAX_CHARS:
-        return "refused", "template.content exceeds the proposal size bound", None
-    # dev/114 (DEC-072): a new type's first-node content passes the same gate
-    # for path/URL literals (the no-source rule needs a known data-loading
-    # type, which a brand-new template is not).
-    verdict, refusal = agents_grounding._gate_generated_content(
-        user_key, project_id, loop_ctx,
-        code=code, engine=engine, node_type=None, params=params, is_data_loading=False,
-    )
-    if refusal:
-        return agents_tool_rounds._refuse_params(refusal)
-    try:
-        existing = packages_services.available_templates(user_key, project_id)
-    except Exception as exc:
-        return "refused", f"the node template registry is unavailable: {exc}", None
-    collision = next(
-        (
-            t
-            for t in existing
-            if t["id"].rsplit("/", 1)[-1] == slug
-            or t["label"].strip().lower() == label.lower()
-        ),
-        None,
-    )
-    if collision is not None:
-        return (
-            "refused",
-            f"a template like this already exists ({collision['id']}) — that is reuse "
-            "territory: propose a node.create with it instead",
-            None,
-        )
-    spec = projects_storage.read_spec(user_key, project_id)
-    if spec is None:
-        return "refused", "no saved project spec is available", None
-    proposal_id = uuid.uuid4().hex
-    summary = f"Create a new custom node type · {label}"
-    description = str(template.get("description") or "").strip()
-    part = content.make_proposal_part(
-        proposal_id=proposal_id,
-        tool="node.template.create",
-        summary=summary,
-        preview=code,
-        pins={"templateSlug": slug},
-    )
-    # The justification + definition ride the part for the review card —
-    # the justification is what the user judges (memo dev/48 §3.2b).
-    part["justification"] = justification.strip()
-    part["template"] = {"label": label, "engine": engine, "description": description}
-    if verdict.source:
-        part["source"] = verdict.source  # dev/114
-    agents_store._store_proposal(
-        user_key,
-        project_id,
-        spec,
-        loop_ctx,
-        {
-            "proposalId": proposal_id,
-            "tool": "node.template.create",
-            "justification": justification.strip(),
-            "template": {
-                "label": label,
-                "engine": engine,
-                "description": description,
-                "content": code,
-            },
-            "summary": summary,
-            "status": "pending",
-        },
-        part,
-    )
-    return (
-        "proposed",
-        f"proposal {proposal_id} created for a new custom node type {label!r}; it "
-        "awaits the user's explicit review — do NOT assume the type or node exists",
-        part,
-    )
 
 
 def _resolve_catalog_dataset(project_id: str, dataset_id: object) -> tuple[dict | None, str]:
@@ -371,6 +260,141 @@ def _mint_package_install(
     )
 
 
+#: How long a draft's justification may be: the review card shows it whole.
+_JUSTIFICATION_MAX_CHARS = 2000
+
+
+def _draft_new_templates(user_key: str, request) -> list[dict]:
+    """The templates a package draft adds, as its manifest writes them: every
+    template of a create, and the templates of an extend that its installed
+    target does not declare (the build's merge plan counts additions the same
+    way). An extend whose target cannot be read adds none here: its build
+    refuses it."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    templates = [
+        t for t in request.manifest.get("templates") or []
+        if isinstance(t, dict) and isinstance(t.get("id"), str)
+    ]
+    if request.mode != "extend":
+        return templates
+    try:
+        target = packages_services.load_package_manifest(
+            packages_services.package_dir(user_key, request.target))
+    except (packages_services.ManifestError, OSError):
+        return []
+    kept = {t.template_id for t in target.templates}
+    return [t for t in templates if t["id"] not in kept]
+
+
+def _reuse_twin(template: dict, existing: list[dict]) -> dict | None:
+    """The available template a new one would duplicate (reuse territory):
+    one with the same label, or one whose id is the slug of the new label."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    label = str(template.get("label") or template["id"]).strip()
+    slug = packages_services.template_slug(label)
+    for entry in existing:
+        if str(entry.get("label") or "").strip().lower() == label.lower():
+            return entry
+        if slug and str(entry.get("id") or "").rsplit("/", 1)[-1] == slug:
+            return entry
+    return None
+
+
+def _new_template_code(request, template: dict) -> list[tuple[str, str, str]]:
+    """``(where, code, engine)`` for the code a new template brings, when its
+    nodes hold code (derived from the manifest's own facts, never from a list
+    of names): its source file and the content of each node the draft
+    creates from it. A template the manifest rules refuse brings none here:
+    its build refuses it."""
+    from utk_curio.backend.app.packages import service as packages_services
+    from utk_curio.backend.app.packages.domain.manifest import TemplateManifest
+
+    try:
+        parsed = TemplateManifest.from_json(template, where=f"template {template['id']!r}")
+    except packages_services.ManifestError:
+        return []
+    if packages_services.template_content_kind(parsed) != packages_services.CONTENT_KIND_CODE:
+        return []
+    pieces: list[tuple[str, str, str]] = []
+    source = request.files.get(parsed.source or "")
+    if source is not None:
+        try:
+            pieces.append((f"its source file {parsed.source}", source.decode("utf-8"), parsed.engine))
+        except UnicodeDecodeError:
+            pass
+    for index, node in enumerate(request.nodes):
+        if node.template_id == parsed.template_id and node.content:
+            pieces.append((f"nodes[{index}].content", node.content, parsed.engine))
+    return pieces
+
+
+def _new_template_checks(
+    user_key: str, project_id: str, loop_ctx: dict, request, justification: object,
+) -> tuple[tuple[str, str, None] | None, str, dict | None]:
+    """What every template a package draft adds must pass before it is built,
+    since a draft is the one way an agent makes a node type: a justification
+    the user judges on the review card, a label no available template has,
+    and code that reads only grounded sources.
+
+    Returns ``(refusal, justification, source)``: the mint's refusal, or None
+    with the reviewed justification (empty when the draft adds no template)
+    and the ``source`` payload of what the new code reads. Each refusal says
+    what to change and is a free correction."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    added = _draft_new_templates(user_key, request)
+    if not added:
+        return None, "", None
+    names = ", ".join(t["id"] for t in added)
+    reason = justification.strip() if isinstance(justification, str) else ""
+    if not reason:
+        return agents_tool_rounds._refuse_params(
+            f"the review needs your reasoning: this draft adds the new node "
+            f"type{'s' if len(added) > 1 else ''} {names}, so the build request needs a "
+            '"justification" beside "mode" that names the closest existing templates '
+            "you considered and why each is inadequate"
+        ), "", None
+    if len(reason) > _JUSTIFICATION_MAX_CHARS:
+        return agents_tool_rounds._refuse_params(
+            f"the justification is {len(reason)} characters and the review card shows "
+            f"at most {_JUSTIFICATION_MAX_CHARS}: name the closest existing templates and "
+            "why each is inadequate, briefly"
+        ), "", None
+    try:
+        existing = packages_services.available_templates(user_key, project_id)
+    except Exception as exc:  # noqa: BLE001: a broken registry is data, not a run error
+        return ("refused", f"the node template registry is unavailable: {exc}", None), "", None
+    for template in added:
+        twin = _reuse_twin(template, existing)
+        if twin is not None:
+            return agents_tool_rounds._refuse_params(
+                f"the new template {template['id']!r} matches the existing template "
+                f"{twin['id']} ({twin['label']!r}): that is reuse territory. Use "
+                f"{twin['id']} instead of a new node type; when it cannot do the job, give "
+                "the new template a label no existing template has, and say in the "
+                f"justification why {twin['id']} is inadequate"
+            ), "", None
+    refs: list[dict] = []
+    for template in added:
+        for where, code, engine in _new_template_code(request, template):
+            # dev/114 (DEC-072): the gate for path and URL literals. The
+            # no-source rule needs a known data-loading type, which a new
+            # template is not.
+            verdict, refusal = agents_grounding._gate_generated_content(
+                user_key, project_id, loop_ctx,
+                code=code, engine=engine, node_type=None, is_data_loading=False,
+            )
+            if refusal:
+                return agents_tool_rounds._refuse_params(
+                    f"the new template {template['id']!r}, {where}: {refusal}"
+                ), "", None
+            if verdict.source:
+                refs.extend(verdict.source.get("refs") or [])
+    return None, reason, (source_grounding.source_payload(refs) if refs else None)
+
+
 def _mint_package_draft_apply(
     user_key: str, project_id: str, loop_ctx: dict, req: dict
 ) -> tuple[str, str, dict | None]:
@@ -378,6 +402,11 @@ def _mint_package_draft_apply(
     isolated build service (resolve → compile → preview → package — all
     staged, content-addressed, digest-idempotent), and mint the reviewed
     package-draft proposal from its provenance.
+
+    Every template the draft adds first passes :func:`_new_template_checks`,
+    before anything is built. The ``justification`` is review prose, not
+    build input: it never reaches the build request or its digest, so a
+    reworded justification reuses the same build.
 
     A build failure is a refusal carrying the findings — the model revises
     the draft; nothing dangles. The proposal persists only bounded
@@ -389,10 +418,19 @@ def _mint_package_draft_apply(
     from utk_curio.backend.app.packages.builder import pipeline as build_pipeline
 
     params = req.get("params") or {}
+    justification = None
+    if isinstance(params, dict):
+        params = dict(params)
+        justification = params.pop("justification", None)
     try:
         request = build_models.parse_build_request(params)
     except (build_models.BuildRequestError, ValueError) as exc:
         return "refused", f"invalid build request: {exc}", None
+    refusal, justification, source = _new_template_checks(
+        user_key, project_id, loop_ctx, request, justification,
+    )
+    if refusal is not None:
+        return refusal
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
         return "refused", "no saved project spec is available", None
@@ -457,33 +495,33 @@ def _mint_package_draft_apply(
     # reload-safe render source) — the Apply text's review claim, finally true.
     draft_card = agents_cards._draft_card_payload(request, result)
     part["draft"] = draft_card
-    agents_store._store_proposal(
-        user_key,
-        project_id,
-        spec,
-        loop_ctx,
-        {
-            "proposalId": proposal_id,
-            "tool": "package.draft.apply",
-            "mode": request.mode,
-            "target": request.target,
-            "draftCard": draft_card,  # mirror copy — listing symmetry (dev/96)
-            "packageName": manifest_name,
-            "buildId": job.build_id,
-            "artifactDigest": result.artifact_digest,
-            "baseDigest": request.base_digest,
-            "diff": diff,
-            "policyFindings": list(result.policy_findings),
-            "preview": result.preview,
-            # dev/91: full backend provenance (probe rows, scan findings)
-            # persists with the proposal for reload and the apply record.
-            "backend": result.backend,
-            "requestedNodes": [n.to_payload() for n in request.nodes],
-            "summary": summary,
-            "status": "pending",
-        },
-        part,
-    )
+    proposal = {
+        "proposalId": proposal_id,
+        "tool": "package.draft.apply",
+        "mode": request.mode,
+        "target": request.target,
+        "draftCard": draft_card,  # mirror copy: listing symmetry (dev/96)
+        "packageName": manifest_name,
+        "buildId": job.build_id,
+        "artifactDigest": result.artifact_digest,
+        "baseDigest": request.base_digest,
+        "diff": diff,
+        "policyFindings": list(result.policy_findings),
+        "preview": result.preview,
+        # dev/91: full backend provenance (probe rows, scan findings)
+        # persists with the proposal for reload and the apply record.
+        "backend": result.backend,
+        "requestedNodes": [n.to_payload() for n in request.nodes],
+        "summary": summary,
+        "status": "pending",
+    }
+    # The justification is what the user judges first, and the source block
+    # says what the new code reads: both ride the card and the record.
+    for key, value in (("justification", justification), ("source", source)):
+        if value:
+            part[key] = value
+            proposal[key] = value
+    agents_store._store_proposal(user_key, project_id, spec, loop_ctx, proposal, part)
     return (
         "proposed",
         f"proposal {proposal_id} created: {summary.lower()} (artifact "
@@ -514,8 +552,6 @@ def _mint_proposal(
         return _mint_node_content_write(user_key, project_id, loop_ctx, req)
     if tool == "node.create":
         return _mint_node_create(user_key, project_id, loop_ctx, req)
-    if tool == "node.template.create":
-        return _mint_node_template_create(user_key, project_id, loop_ctx, req)
     if tool == "dataset.install":
         return _mint_dataset_install(user_key, project_id, loop_ctx, req)
     if tool == "discovery.acquire":

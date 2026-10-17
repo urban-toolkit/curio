@@ -594,14 +594,20 @@ one unless you are adding a behavior to Curio itself.
 ## 8. Agent-authored packages
 
 Everything above describes hand-authoring. Packages can also be **authored by
-agents**: the **Package Builder** (`agent.package-builder`) turns a described need into one
-reviewed draft through the `package.draft.apply` contract, and an **isolated build service**
+agents**: the **Node Builder** (`agent.node-builder`) writes them in its package-writing mode
+(`package.build`, `package.extend`, `node.kind.author`), which its own chat, the Researcher
+and the Dataflow Builder ask for. The mode turns a described need into one reviewed draft
+through the `package.draft.apply` contract, and an **isolated build service**
 does what `npm run build:packages` does for first-party packages - without ever touching this
 repo's build list:
 
 1. The typed draft (manifest, sources, behavior entries, dependencies, requested nodes) is
    validated under the same rules as §6 - installer path safety, `node-package.v4`, the works.
    `scripts/` is builder-owned: agents ship behavior **source**; the service compiles it.
+   Every template the draft adds needs the draft's `justification` (the closest existing
+   templates and why each is inadequate) and a label no template of the dataflow has, and
+   when its nodes hold code, that code reads only sources Curio can ground. A draft that
+   misses one of these is refused before it is built, with what to change.
 2. JS dependencies resolve against the operator's approved registry only (pinned versions,
    SRI-verified, SBOM'd); the deployment-pinned compiler (`CURIO_BUILD_ESBUILD`) bundles them
    offline and externalizes React/ReactDOM/ReactFlow to the §5 host globals - the same
@@ -621,10 +627,11 @@ repo's build list:
    a backend probe or call) is bounded in CPU time, wall time, file size and open files, and
    on Windows in process count. On Linux all but the preview are also bounded in address
    space.
-4. The user reviews the diff, dependencies, and preview; Apply promotes the **exact reviewed
-   artifact digest** through the normal installer (backup held, journaled, rollback honest).
+4. The user reviews the justification, the diff, dependencies, and preview; Apply promotes
+   the **exact reviewed artifact digest** through the normal installer (backup held,
+   journaled, rollback honest).
 
-**Looks are prompt-driven, never repo fixtures**: the Package Builder's instruction
+**Looks are prompt-driven, never repo fixtures**: the package-writing mode's prompt
 carries one generic authoring contract (register exactly the manifest's behavior keys; hook
 `(data, nodeState) => { contentComponent }`; React elements only - never raw HTML; per-instance
 color via `data.appearance.backgroundColor` with derived ink; self-contained, no network). The

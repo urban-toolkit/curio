@@ -34,7 +34,7 @@
         "y": 430,
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Rasterize the buildings' heights into SCOUT's zoom-16 tiles and their mosaic.",
+        "goal": "Rasterize the buildings' heights into SCOUT's zoom-16 tiles, side by side in one raster.",
         "metadata": {
           "keywords": [],
           "widgets": [
@@ -68,7 +68,7 @@
             }
           ]
         },
-        "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: (mosaic, tiles).\n- mosaic: one raster in EPSG:3395, each cell a height in metres. An Autark map\n  draws it as input_0, band band_1.\n- tiles: one row per map tile, with zoom, x, y and png, the 8-bit grayscale\n  PNG (base64) SCOUT's Deep Umbra shadow model reads, where 255 is the\n  maximum height.\nThe Widgets tab sets the height column, the zoom level and the maximum height.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_raster_conversion.node_outputs import rasterize_buildings\n\nreturn rasterize_buildings(\n    input_0,\n    attribute=[!! attribute !!],\n    zoom=int([!! zoom !!]),\n    max_height=float([!! max_height !!]),\n    output_file=curio_output_file,\n)\n"
+        "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: one raster in EPSG:3395, each cell a height in metres: the 256 by 256\nmap tiles SCOUT draws, 8-bit gray where 255 is the maximum height, side by\nside. A tile SCOUT writes no file for, because no building is near it, is no\ndata. An Autark map draws it as input_0, band band_1, and SCOUT's Deep Umbra\nshadow model (Accumulated Shadow) reads it.\nThe Widgets tab sets the height column, the zoom level and the maximum height.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_raster_conversion.node_outputs import rasterize_buildings\n\nreturn rasterize_buildings(\n    input_0,\n    attribute=[!! attribute !!],\n    zoom=int([!! zoom !!]),\n    max_height=float([!! max_height !!]),\n    output_file=curio_output_file,\n)\n"
       },
       {
         "id": "ebac4811-abcc-50fe-a61a-cc9c9ac8c011",
@@ -81,26 +81,13 @@
         "metadata": {
           "keywords": []
         },
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"isColorMap\": false\n      }\n    ]\n  }\n}"
-      },
-      {
-        "id": "b34c8c82-a802-53db-a1fd-c7758626fed4",
-        "type": "curio.builtin/computation-analysis",
-        "x": 1290,
-        "y": 645,
-        "out": "DEFAULT",
-        "in": "DEFAULT",
-        "goal": "Take the height mosaic.",
-        "metadata": {
-          "keywords": []
-        },
-        "content": "# Rasterize Buildings returns (mosaic, tiles): the height mosaic.\nreturn input_0[0]"
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"isColorMap\": false,\n        \"transferFunction\": {\n          \"mode\": \"far-zero\",\n          \"opacityMin\": 0,\n          \"opacityMax\": 1,\n          \"gamma\": 0.0001\n        }\n      }\n    ]\n  }\n}"
       },
       {
         "id": "45abcfa2-7705-50d4-adf2-db8f556a59c6",
         "type": "model.scout.deep-umbra/accumulated-shadow",
-        "x": 1935,
-        "y": 538,
+        "x": 1290,
+        "y": 645,
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Predict how many minutes of a summer day the ground around the buildings is in shadow, with SCOUT's Deep Umbra model.",
@@ -128,8 +115,8 @@
       {
         "id": "8a914e39-4cb1-535d-9a8b-19b45f6be288",
         "type": "curio.builtin/raster-statistics",
-        "x": 2580,
-        "y": 752,
+        "x": 1935,
+        "y": 430,
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Take the mean and median accumulated shadow over the ground.",
@@ -141,8 +128,8 @@
       {
         "id": "6cef8611-e3ec-52d4-9caf-aa5d6cff3d6a",
         "type": "curio.builtin/autk-grammar",
-        "x": 2580,
-        "y": 322,
+        "x": 1935,
+        "y": 860,
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Draw the minutes of shadow on a map.",
@@ -175,20 +162,6 @@
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-333949c8-983a-5cdb-845b-04abe06c2dc7out-b34c8c82-a802-53db-a1fd-c7758626fed4in",
-        "source": "333949c8-983a-5cdb-845b-04abe06c2dc7",
-        "target": "b34c8c82-a802-53db-a1fd-c7758626fed4",
-        "sourceHandle": "out",
-        "targetHandle": "in"
-      },
-      {
-        "id": "reactflow__edge-b34c8c82-a802-53db-a1fd-c7758626fed4out-45abcfa2-7705-50d4-adf2-db8f556a59c6in",
-        "source": "b34c8c82-a802-53db-a1fd-c7758626fed4",
-        "target": "45abcfa2-7705-50d4-adf2-db8f556a59c6",
-        "sourceHandle": "out",
-        "targetHandle": "in"
-      },
-      {
         "id": "reactflow__edge-45abcfa2-7705-50d4-adf2-db8f556a59c6out-8a914e39-4cb1-535d-9a8b-19b45f6be288in",
         "source": "45abcfa2-7705-50d4-adf2-db8f556a59c6",
         "target": "8a914e39-4cb1-535d-9a8b-19b45f6be288",
@@ -196,18 +169,25 @@
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-b34c8c82-a802-53db-a1fd-c7758626fed4out-8a914e39-4cb1-535d-9a8b-19b45f6be288in_1",
-        "source": "b34c8c82-a802-53db-a1fd-c7758626fed4",
-        "target": "8a914e39-4cb1-535d-9a8b-19b45f6be288",
-        "sourceHandle": "out",
-        "targetHandle": "in_1"
-      },
-      {
         "id": "reactflow__edge-45abcfa2-7705-50d4-adf2-db8f556a59c6out-6cef8611-e3ec-52d4-9caf-aa5d6cff3d6ain",
         "source": "45abcfa2-7705-50d4-adf2-db8f556a59c6",
         "target": "6cef8611-e3ec-52d4-9caf-aa5d6cff3d6a",
         "sourceHandle": "out",
         "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-333949c8-983a-5cdb-845b-04abe06c2dc7out-45abcfa2-7705-50d4-adf2-db8f556a59c6in",
+        "source": "333949c8-983a-5cdb-845b-04abe06c2dc7",
+        "target": "45abcfa2-7705-50d4-adf2-db8f556a59c6",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-333949c8-983a-5cdb-845b-04abe06c2dc7out-8a914e39-4cb1-535d-9a8b-19b45f6be288in_1",
+        "source": "333949c8-983a-5cdb-845b-04abe06c2dc7",
+        "target": "8a914e39-4cb1-535d-9a8b-19b45f6be288",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
       }
     ],
     "name": "SCOUT building rasters",

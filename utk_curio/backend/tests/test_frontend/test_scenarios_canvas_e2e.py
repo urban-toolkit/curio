@@ -4,9 +4,10 @@ A loader feeds a branch: a Python node that scales a column, and an Autark map
 of the result. This drives the whole path in a browser:
 
 1. Select the branch (Shift and drag) and choose View, Duplicate as
-   scenario. The copy reads the same loader, so the loader is the two
-   scenarios' fixed context, and each copy names its original.
-2. Collapse the copy: one box, its nodes hidden. Drag the box.
+   scenario, which opens the Scenario Catalog drawer on its In project tab.
+   The copy reads the same loader, so the loader is the two scenarios' fixed
+   context, as their details say, and each copy names its original.
+2. Collapse the copy from its card: one box, its nodes hidden. Drag the box.
 3. Run All with it collapsed: the shared loader runs once, and both branches
    run, the hidden one included.
 4. Double-click the box: it expands in place and its map is drawn.
@@ -28,23 +29,28 @@ Run::
 from __future__ import annotations
 
 import json
-import os
 from typing import TYPE_CHECKING
-
-import pytest
 
 from .utils import (
     SandboxRuns,
     api_json,
     assert_autark_map_drawn,
+    close_scenario_details,
+    close_scenario_drawer,
     frame_nodes,
+    in_project_card,
     node_locator,
+    open_in_project_tab,
+    open_scenario_details,
     read_node_error_text,
     require_owner_view,
     require_project_page,
     require_user_auth,
+    require_webgpu,
     run_all_and_wait,
     save_dataflow,
+    scenario_card_button,
+    scenario_part,
     stub_login_and_enter_workflow,
     wait_for_node_settled,
     wait_for_run_guard_released,
@@ -118,16 +124,6 @@ _STORE_EDGES_JS = """() => window.__curio_reactFlow.getEdges().map((e) => ({
 }))"""
 
 
-def _require_webgpu(page) -> None:
-    has_adapter = bool(page.evaluate(
-        "async () => !!(navigator.gpu && await navigator.gpu.requestAdapter())"
-    ))
-    if not has_adapter:
-        if os.environ.get("CURIO_REQUIRE_HARDWARE_WEBGPU") == "1":
-            pytest.fail("CURIO_REQUIRE_HARDWARE_WEBGPU=1 but this browser has no WebGPU adapter")
-        pytest.skip("running an Autark node needs a WebGPU adapter; this browser has none")
-
-
 _ON_PANE_JS = """([x, y]) => {
     const hit = document.elementFromPoint(x, y);
     return !!hit && !!hit.closest('.react-flow__pane') && !hit.closest('.react-flow__node');
@@ -198,14 +194,14 @@ def test_a_branch_duplicated_as_a_scenario_collapses_runs_and_expands(
     require_owner_view(page)
     for node in spec["dataflow"]["nodes"]:
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
-    _require_webgpu(page)
+    require_webgpu(page)
 
     # 1. Select the branch and duplicate it as a scenario.
     _shift_drag_around(page, [SCALE, MAP])
     selected = sorted(n["id"] for n in page.evaluate(_STORE_NODES_JS) if n["selected"])
     assert selected == [MAP, SCALE], f"the Shift-drag selected {selected}, not the branch"
     _scenario_menu(page, "Duplicate as scenario")
-    page.get_by_test_id("scenarios-panel").wait_for(state="visible", timeout=10000)
+    open_in_project_tab(page, opened_by_command=True)
 
     copies = {n["copiedFrom"][-1]: n["id"] for n in page.evaluate(_STORE_NODES_JS) if n["copiedFrom"]}
     assert sorted(copies) == [MAP, SCALE], f"the copies name {sorted(copies)} as their originals"
@@ -215,6 +211,8 @@ def test_a_branch_duplicated_as_a_scenario_collapses_runs_and_expands(
     assert {"source": LOADER, "target": scale_copy, "targetHandle": "in"} in wiring, wiring
     assert {"source": scale_copy, "target": map_copy, "targetHandle": "in"} in wiring, wiring
 
+    # The drawer's scrim covers the File menu.
+    close_scenario_drawer(page)
     save_dataflow(page)
     saved = _saved_spec(current_server, session)["dataflow"]
     scenarios = saved.get("scenarios") or []
@@ -224,14 +222,16 @@ def test_a_branch_duplicated_as_a_scenario_collapses_runs_and_expands(
     assert by_id[scale_copy]["metadata"].get("copiedFrom") == [SCALE], by_id[scale_copy]
     assert by_id[scale_copy]["content"] == SCALE_CODE
 
-    # The panel lists the shared loader as each one's fixed context.
+    # Each one's details list the shared loader as its fixed context.
+    open_in_project_tab(page)
     for scenario_id in (original_id, copy_id):
-        card = page.get_by_test_id(f"scenario-card-{scenario_id}")
-        context = card.locator('[data-scenario-part="context"]').inner_text()
+        context = scenario_part(open_scenario_details(page, scenario_id), "Fixed context")
         assert "Data Loading" in context, f"scenario {scenario_id} lists {context!r} as its fixed context"
+        close_scenario_details(page)
 
     # 2. Collapse the copy: one box, its nodes hidden but still there.
-    page.get_by_test_id(f"scenario-card-{copy_id}").get_by_role("button", name="Collapse").click()
+    scenario_card_button(page, copy_id, "Collapse").click()
+    close_scenario_drawer(page)
     box = _frame_box(page, copy_id, [scale_copy, map_copy])
     for node_id in (scale_copy, map_copy):
         member = node_locator(page, node_id)
@@ -279,7 +279,9 @@ def test_a_branch_duplicated_as_a_scenario_collapses_runs_and_expands(
     assert_autark_map_drawn(page, map_copy, timeout=60000, attach_as="expanded after a collapsed run")
 
     # 5. Collapse it again, save, and reopen: everything is back.
-    page.get_by_test_id(f"scenario-card-{copy_id}").get_by_role("button", name="Collapse").click()
+    open_in_project_tab(page)
+    scenario_card_button(page, copy_id, "Collapse").click()
+    close_scenario_drawer(page)
     _box(page, copy_id).wait_for(state="visible", timeout=10000)
     save_dataflow(page)
     saved = _saved_spec(current_server, session)["dataflow"]
@@ -296,9 +298,10 @@ def test_a_branch_duplicated_as_a_scenario_collapses_runs_and_expands(
         member = node_locator(page, node_id)
         member.wait_for(state="attached", timeout=30000)
         assert not member.is_visible(), f"{node_id} shows after a reopen, though its scenario was saved collapsed"
-    _scenario_menu(page, "Show scenarios")
+    open_in_project_tab(page)
     for scenario_id in (original_id, copy_id):
-        page.get_by_test_id(f"scenario-card-{scenario_id}").wait_for(state="visible", timeout=10000)
+        in_project_card(page, scenario_id).wait_for(state="visible", timeout=10000)
+    close_scenario_drawer(page)
     # The outputs the scenario saved are back: its context and the node that
     # feeds its map read as having run.
     for node_id in (LOADER, scale_copy):
@@ -323,10 +326,13 @@ def test_a_branch_duplicated_as_a_scenario_collapses_runs_and_expands(
 
     # 6. Collapsed once more, Run scenario runs its levers, the restored loader
     # is reused, and the map runs inside the hidden box, its canvas made there.
-    page.get_by_test_id(f"scenario-card-{copy_id}").get_by_role("button", name="Collapse").click()
-    _box(page, copy_id).wait_for(state="visible", timeout=10000)
+    open_in_project_tab(page)
+    scenario_card_button(page, copy_id, "Collapse").click()
+    _box(page, copy_id).wait_for(state="attached", timeout=10000)
     sent = SandboxRuns(page, session["token"], session["project"]["id"])
-    page.get_by_test_id(f"scenario-card-{copy_id}").get_by_role("button", name="Run scenario").click()
+    scenario_card_button(page, copy_id, "Run scenario").click()
+    close_scenario_drawer(page)
+    _box(page, copy_id).wait_for(state="visible", timeout=10000)
     status = wait_for_node_settled(page, map_copy, node_type="autk-grammar", timeout_ms=180000)
     wait_for_run_guard_released(page, timeout_ms=60000)
     executed = sent.stop()

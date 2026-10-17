@@ -437,7 +437,7 @@ def test_the_default_chosen_here_answers_the_next_run(signed_in):
                  "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
                  "outputs": []},
     )["id"]
-    coord = f"agent.chat-agent@{builtin.BUILTIN_VERSION}"
+    coord = f"agent.researcher@{builtin.BUILTIN_VERSION}"
     base = f"{session.backend}/api/agents/projects/{project}"
     api_json(f"{base}/install", session.token, method="POST", payload={"coord": coord})
     attachment = api_json(

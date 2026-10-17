@@ -480,13 +480,14 @@ _NAME_ELEMENT_JS = r"""(el) => {
 # drop (none when no element accepted it), and the drop effect it ended with.
 _WATCH_MOUSE_DRAG_JS = r"""() => {
     const name = """ + _NAME_ELEMENT_JS + r""";
-    const seen = { started: false, droppedOn: null, onCanvas: false, dropEffect: null };
+    const seen = { started: false, droppedOn: null, onCanvas: false, dropEffect: null, ended: false };
     const onStart = () => { seen.started = true; };
     const onDrop = (event) => {
         seen.droppedOn = name(event.target);
         seen.onCanvas = !!(event.target.closest && event.target.closest(".curio-canvas-drop-target"));
     };
     const onEnd = (event) => {
+        seen.ended = true;
         seen.dropEffect = event.dataTransfer ? event.dataTransfer.dropEffect : null;
         window.removeEventListener("dragstart", onStart, true);
         window.removeEventListener("drop", onDrop, true);
@@ -513,23 +514,21 @@ _PRESSES_ON_DRAGGABLE_JS = r"""(grip, [x, y]) => {
 }"""
 
 
-def drag_to_canvas_with_the_mouse(page, grip, *, at: tuple[float, float],
-                                  timeout: float = 15000) -> str:
-    """Drag with the mouse, as a person does, from *grip* onto the canvas, and
-    return the id of the node the drop created.
+def drag_with_the_mouse_onto_canvas(page, grip, *, at: tuple[float, float],
+                                    timeout: float = 15000) -> dict:
+    """Press on *grip*, move onto the canvas and release, as a person does, and
+    answer what the drop did.
 
-    ``drag_to_canvas`` fires its drop on the pane itself, so nothing that lies
-    over the canvas can stop it. A catalog drawer's scrim covers the whole
-    window while the drawer is open, so only a real drag shows whether a card
-    dragged out of the drawer reaches the canvas beneath it. This one presses,
-    moves in steps and releases, and the browser decides where each event goes.
+    Waits for no node: a card whose package the dataflow has not added opens
+    the Add review first, and a refused drop makes none.
+    ``drag_to_canvas_with_the_mouse`` is this drag and the node it made.
 
-    *grip* is where the press lands: an element of the draggable card or row
-    that is not a control, such as a card's title or a palette row's drag grip.
-    *at* is an offset from the pane's top-left corner, as for
-    ``drag_to_canvas``. Fails with where the drop went when no node arrives.
+    The answer: ``started`` and ``ended`` (the drag began and ended),
+    ``droppedOn`` (the element that took the drop, None when none did),
+    ``onCanvas`` (that element is the canvas), ``dropEffect`` (what the drag
+    ended with), ``target`` (the drop point) and ``reached`` (what a pointer
+    there reached before the drag).
     """
-    before = {node["id"] for node in canvas_nodes(page)}
     grip.wait_for(state="visible", timeout=timeout)
     grip.scroll_into_view_if_needed()
     box = grip.bounding_box()
@@ -565,6 +564,37 @@ def drag_to_canvas_with_the_mouse(page, grip, *, at: tuple[float, float],
         ) from None
     page.mouse.move(*target, steps=12)
     page.mouse.up()
+    # dragend ends every drag, taken or not, and records the drop effect.
+    try:
+        page.wait_for_function("() => window.__curioMouseDrag.ended", timeout=5000)
+    except PlaywrightTimeoutError:
+        raise AssertionError(
+            f"the drag to ({target[0]:.0f}, {target[1]:.0f}) never ended: "
+            f"{page.evaluate('() => window.__curioMouseDrag')}"
+        ) from None
+    seen = page.evaluate("() => window.__curioMouseDrag")
+    return {**seen, "target": list(target), "reached": over_the_target}
+
+
+def drag_to_canvas_with_the_mouse(page, grip, *, at: tuple[float, float],
+                                  timeout: float = 15000) -> str:
+    """Drag with the mouse, as a person does, from *grip* onto the canvas, and
+    return the id of the node the drop created.
+
+    ``drag_to_canvas`` fires its drop on the pane itself, so nothing that lies
+    over the canvas can stop it. A catalog drawer's scrim covers the whole
+    window while the drawer is open, so only a real drag shows whether a card
+    dragged out of the drawer reaches the canvas beneath it. This one presses,
+    moves in steps and releases, and the browser decides where each event goes.
+
+    *grip* is where the press lands: an element of the draggable card or row
+    that is not a control, such as a card's title or a palette row's drag grip.
+    *at* is an offset from the pane's top-left corner, as for
+    ``drag_to_canvas``. Fails with where the drop went when no node arrives.
+    """
+    before = {node["id"] for node in canvas_nodes(page)}
+    drop = drag_with_the_mouse_onto_canvas(page, grip, at=at, timeout=timeout)
+    target = drop["target"]
 
     try:
         page.wait_for_function(
@@ -578,7 +608,7 @@ def drag_to_canvas_with_the_mouse(page, grip, *, at: tuple[float, float],
         raise AssertionError(
             f"the drag to ({target[0]:.0f}, {target[1]:.0f}) made no node: its drop {dropped} "
             f"(drop effect {seen['dropEffect']!r}), and before the drag a pointer there "
-            f"reached {over_the_target}"
+            f"reached {drop['reached']}"
         ) from None
 
     created = [n for n in canvas_nodes(page) if n["id"] not in before]

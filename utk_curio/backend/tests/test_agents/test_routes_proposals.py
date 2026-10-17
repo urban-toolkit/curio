@@ -697,261 +697,6 @@ class TestNodeCreate:
         assert len(self._spec_nodes(user, alice_project)) == 1
 
 
-class TestNodeTemplateCreate:
-    """dev/48 §3.2b — the justified creation fallback: reviewed, factory-
-    backed, transactional (template + first node together or neither)."""
-
-    COORD = "agent.node-builder@1.0.0"
-
-    def _template_tail(self, label="Sentiment Scorer", justification="Considered curio.builtin/computation-analysis: it cannot hold the required streaming shape.", content="print('score')"):
-        import json as _json
-
-        payload = {
-            "toolRequest": {
-                "tool": "node.template.create",
-                "params": {
-                    "justification": justification,
-                    "template": {
-                        "label": label,
-                        "description": "Scores text sentiment.",
-                        "engine": "python",
-                        "content": content,
-                    },
-                },
-            }
-        }
-        return f"```curio.v1\n{_json.dumps(payload)}\n```"
-
-    def _setup(self, client, user, token, project_id, monkeypatch, replies=None):
-        helper = TestNodeCreate()
-        return helper._setup(
-            client, user=user, token=token, project_id=project_id,
-            monkeypatch=monkeypatch,
-            replies=replies or [self._template_tail(), "Proposed — review it above."],
-        )
-
-    def _run(self, client, token, project_id, att_id, message="make a scorer node"):
-        return client.post(
-            f"/api/agents/projects/{project_id}/attachments/{att_id}/run",
-            json={"message": message}, headers=_auth(token),
-        )
-
-    def _proposal_from_run(self, response):
-        body = response.get_json()
-        return next(p for p in body["content"] if p["type"] == "proposal")
-
-    def test_mint_requires_justification(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        user, token = user_and_token
-        att_id, calls = self._setup(
-            client, user, token, alice_project, monkeypatch,
-            replies=[self._template_tail(justification="  "), "done"],
-        )
-        r = self._run(client, token, alice_project, att_id)
-        assert all(p["type"] != "proposal" for p in r.get_json()["content"])
-        assert "the review needs your reasoning" in calls[1][-1]["content"]
-
-    def test_mint_refuses_reuse_territory_collision(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        user, token = user_and_token
-        att_id, calls = self._setup(
-            client, user, token, alice_project, monkeypatch,
-            replies=[self._template_tail(label="Computation Analysis"), "done"],
-        )
-        self._run(client, token, alice_project, att_id)
-        assert "reuse territory" in calls[1][-1]["content"]
-
-    def test_proposal_carries_justification_for_the_review_card(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        user, token = user_and_token
-        att_id, _ = self._setup(client, user, token, alice_project, monkeypatch)
-        proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
-        assert proposal["tool"] == "node.template.create"
-        assert "cannot hold the required streaming shape" in proposal["justification"]
-        assert proposal["template"]["label"] == "Sentiment Scorer"
-        assert proposal["pins"] == {"templateSlug": "sentiment-scorer"}
-
-    def test_apply_registers_template_installs_and_inserts_node(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        from utk_curio.backend.app.packages.application import agent_reads
-        from utk_curio.backend.app.packages.application import project_packages
-        from utk_curio.backend.app.packages.application import store_reads
-        from utk_curio.backend.app.packages.application import templates as packages_templates
-        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
-        from utk_curio.backend.app.projects.services import _user_dir_key
-
-        user, token = user_and_token
-        key = _user_dir_key(user)
-        att_id, _ = self._setup(client, user, token, alice_project, monkeypatch)
-        proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
-        resp = client.post(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
-            headers=_auth(token),
-        )
-        assert resp.status_code == 200
-        body = resp.get_json()
-        assert body["createdTemplate"]["id"] == "curio.agent.sentiment-scorer/sentiment-scorer"
-        assert body["createdNode"]["type"] == "curio.agent.sentiment-scorer/sentiment-scorer"
-        # Both effects landed: store package + project lockfile + spec node.
-        assert (user_packages_dir(key) / "curio.agent.sentiment-scorer@1").is_dir()
-        assert "curio.agent.sentiment-scorer@1" in project_packages.get_project_lockfile(key, alice_project)
-        nodes = TestNodeCreate()._spec_nodes(user, alice_project)
-        assert any(n.get("type") == "curio.agent.sentiment-scorer/sentiment-scorer" for n in nodes)
-        # Round-trip (dev/48): the created type is instantiable by plain
-        # node.create in a later run — it is now an available template.
-        available = {t["id"] for t in packages_templates.available_templates(key, alice_project)}
-        assert "curio.agent.sentiment-scorer/sentiment-scorer" in available
-
-    def test_factory_failure_at_apply_is_transactional_409(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
-        from utk_curio.backend.app.projects.services import _user_dir_key
-
-        user, token = user_and_token
-        key = _user_dir_key(user)
-        att_id, _ = self._setup(client, user, token, alice_project, monkeypatch)
-        proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
-        # A colliding store package appears between mint and apply → the
-        # installer's collision handling surfaces verbatim.
-        (user_packages_dir(key) / "curio.agent.sentiment-scorer@1").mkdir(parents=True)
-        resp = client.post(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
-            headers=_auth(token),
-        )
-        assert resp.status_code == 409
-        # Nothing half-applied: proposal stale, no node inserted.
-        cards = client.get(
-            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
-        ).get_json()["attachments"]
-        assert cards[0]["activeProposal"]["status"] == "stale"
-        nodes = TestNodeCreate()._spec_nodes(user, alice_project)
-        assert all(n.get("type") != "curio.agent.sentiment-scorer/sentiment-scorer" for n in nodes)
-
-    # #565: the template's own imports are its declared libraries, and the
-    # apply is the only install the package ever gets.
-
-    def _apply_importing(self, client, user, token, project_id, monkeypatch, *, pip, imports):
-        from utk_curio.backend.app.packages.infrastructure import pip_runner
-
-        asked: list[dict] = []
-
-        def _install(deps, on_line=None):
-            asked.append(dict(deps))
-            return pip(deps)
-
-        monkeypatch.setattr(pip_runner, "install_python_deps", _install)
-        monkeypatch.setattr(pip_runner, "import_failures", lambda deps: imports)
-        att_id, _ = self._setup(
-            client, user, token, project_id, monkeypatch,
-            replies=[self._template_tail(content="import shapely\nreturn input_0\n"),
-                     "Proposed - review it above."],
-        )
-        proposal = self._proposal_from_run(self._run(client, token, project_id, att_id))
-        resp = client.post(
-            f"/api/agents/projects/{project_id}/attachments/{att_id}"
-            f"/proposals/{proposal['proposalId']}/apply",
-            headers=_auth(token),
-        )
-        turns = client.get(
-            f"/api/agents/projects/{project_id}/attachments/{att_id}/session",
-            headers=_auth(token),
-        ).get_json()["turns"]
-        applied = [t.get("text") or "" for t in turns
-                   if "node type registered" in (t.get("text") or "")]
-        return resp, asked, applied
-
-    def test_apply_installs_the_libraries_the_template_imports(
-        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
-    ):
-        from utk_curio.backend.app.packages.infrastructure import pip_runner
-
-        user, token = user_and_token
-        resp, asked, applied = self._apply_importing(
-            client, user, token, alice_project, monkeypatch,
-            pip=lambda deps: pip_runner.InstallReport(installed=sorted(deps), skipped=[]),
-            imports={},
-        )
-        assert resp.status_code == 200, resp.get_data(as_text=True)
-        assert asked == [{"shapely": "*"}]
-        assert resp.get_json()["createdTemplate"]["importErrors"] == {}
-        assert applied and "cannot be imported" not in applied[-1]
-
-    def test_a_library_that_cannot_be_imported_is_reported_on_the_applied_turn(
-        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
-    ):
-        from utk_curio.backend.app.packages.infrastructure import pip_runner
-
-        user, token = user_and_token
-        resp, _, applied = self._apply_importing(
-            client, user, token, alice_project, monkeypatch,
-            pip=lambda deps: pip_runner.InstallReport(installed=[], skipped=sorted(deps)),
-            imports={"shapely": "ImportError: GEOS"},
-        )
-        assert resp.status_code == 200, resp.get_data(as_text=True)
-        assert resp.get_json()["createdTemplate"]["importErrors"] == {"shapely": "ImportError: GEOS"}
-        assert applied and "shapely cannot be imported (ImportError: GEOS)" in applied[-1]
-
-    def test_a_pip_failure_is_reported_and_the_node_type_stays(
-        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
-    ):
-        """Reported, not undone: the other file-first installs keep the package
-        when pip fails, and the user's fix is a reachable index."""
-        from utk_curio.backend.app.packages.infrastructure import pip_runner
-        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
-
-        def _fail(deps):
-            raise pip_runner.PipInstallError("ERROR: No matching distribution found")
-
-        user, token = user_and_token
-        resp, _, applied = self._apply_importing(
-            client, user, token, alice_project, monkeypatch, pip=_fail, imports={},
-        )
-        assert resp.status_code == 200, resp.get_data(as_text=True)
-        assert "No matching distribution" in resp.get_json()["createdTemplate"]["dependencyError"]
-        assert applied and "could not be installed" in applied[-1]
-        assert (user_packages_dir(_user_dir_key(user)) / "curio.agent.sentiment-scorer@1").is_dir()
-
-    def test_a_hosted_guest_is_refused_before_anything_lands(
-        self, client, db, tmp_curio, monkeypatch,
-    ):
-        """#451's rule on the one store write it did not reach.
-
-        The shared guest is every anonymous visitor, so a package in its store
-        is in every visitor's palette, and its libraries would be one pip run
-        away. The refusal has to come before the files, not after them.
-        """
-        from utk_curio.backend import config
-        from utk_curio.backend.app.packages.infrastructure import backend_runtime
-        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
-        from utk_curio.backend.app.users.models import User, UserSession
-
-        monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
-        monkeypatch.setattr(backend_runtime, "per_user_node_envs", lambda: True)
-        # A hosted guest runs on the deployment's GUEST_LLM_* endpoint, not the
-        # DEFAULT_LLM_* one the conftest configures.
-        monkeypatch.setattr(config, "GUEST_LLM_API_TYPE", "openai_compatible")
-        monkeypatch.setattr(config, "GUEST_LLM_BASE_URL", "http://127.0.0.1:9/v1")
-        monkeypatch.setattr(config, "GUEST_LLM_MODEL", "test-model")
-        monkeypatch.setattr(config, "GUEST_LLM_API_KEY", "test-key")
-        guest = User(username=config.CURIO_SHARED_GUEST_USERNAME, name="Guest",
-                     email="guest@test.com", is_guest=True)
-        db.session.add(guest)
-        db.session.flush()
-        db.session.add(UserSession(user_id=guest.id, token="guest-token"))
-        db.session.commit()
-        project = client.post(
-            "/api/projects",
-            json={"name": "p", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
-                  "outputs": []},
-            headers=_auth("guest-token"),
-        ).get_json()["id"]
-
-        resp, asked, _ = self._apply_importing(
-            client, guest, "guest-token", project, monkeypatch,
-            pip=lambda deps: None, imports={},
-        )
-
-        assert resp.status_code == 409, resp.get_data(as_text=True)
-        assert "guest" in resp.get_json()["error"].lower()
-        assert asked == []
-        assert not (user_packages_dir(_user_dir_key(guest)) / "curio.agent.sentiment-scorer@1").exists()
-
-
 class TestDataflowPlanMint:
     """dev/52 — a validated dataflowPlan tail on the final reply mints the
     reviewed plan proposal in one step (runtime-minted, never model-requested)."""
@@ -1094,27 +839,28 @@ class TestDataflowPlanMint:
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
         """`REQ-ORCH-001` is untouched: only requiresAgents members are
-        repaired. A merely PREFERRED delegate still reaches the user as a
+        repaired. A merely PREFERRED delegate (the Researcher, which the
+        Dataflow Builder asks to check a fact) still reaches the user as a
         reviewed install proposal."""
         user, token = user_and_token
         att_id, _ = self._setup(
             client, user, token, alice_project, monkeypatch,
             replies=[
-                '```curio.v1\n{"delegateRequest": {"capability": "connection.propose", '
-                '"inputs": {"subtask": "connect these"}}}\n```',
+                '```curio.v1\n{"delegateRequest": {"capability": "research.verify", '
+                '"inputs": {"intent": "check the dataset id"}}}\n```',
                 "I asked for an install.",
             ],
         )
         body = self._run(client, token, alice_project, att_id).get_json()
         proposal = next(p for p in body["content"] if p["type"] == "proposal")
         assert proposal["tool"] == "project.install"
-        assert proposal["pins"]["coord"] == "agent.connection-builder@1.0.0"
+        assert proposal["pins"]["coord"] == "agent.researcher@1.0.0"
         installed = {
             a["dirName"] for a in client.get(
                 f"/api/agents/projects/{alice_project}", headers=_auth(token)
             ).get_json()["agents"]
         }
-        assert "agent.connection-builder@1.0.0" not in installed
+        assert "agent.researcher@1.0.0" not in installed
 
     def test_unavailable_template_yields_error_card_not_proposal(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
@@ -1136,7 +882,7 @@ class TestDataflowPlanMint:
         user, token = user_and_token
         att_id, _ = self._setup(
             client, user, token, alice_project, monkeypatch,
-            coord="agent.chat-agent@1.0.0",
+            coord="agent.researcher@1.0.0",
             replies=["idea!\n" + self._plan_tail()],
         )
         body = self._run(client, token, alice_project, att_id).get_json()
@@ -2389,21 +2135,30 @@ class TestPlanEdgeApply:
         assert body["status"] == "pending"  # a refused edge never completes
 
 
-class TestPackageBuilderTools:
-    """dev/89 commit 8 — package.draft.apply: the Package Builder's ONE
-    authoring mutate contract. Mint runs the isolated build service and
-    persists bounded provenance; Apply promotes the exact reviewed artifact
-    digest, inserts the requested nodes server-side (normalized appearance at
-    metadata.appearance), and tells the frontend to refresh registries before
-    painting (registry-before-canvas)."""
+#: Why a test draft's node type is new. A draft that adds a template carries
+#: one: the closest existing templates and why each is inadequate.
+DRAFT_JUSTIFICATION = (
+    "Considered curio.builtin/data-summary and curio.builtin/vis-simple: "
+    "neither keeps a research note with its own title and color."
+)
 
-    COORD = "agent.package-builder@1.0.0"
+
+class TestPackageBuilderTools:
+    """dev/89 commit 8, package.draft.apply: the ONE package-writing mutate
+    contract, which the Node Builder's chat holds. Mint runs the isolated
+    build service and persists bounded provenance; Apply promotes the exact
+    reviewed artifact digest, inserts the requested nodes server-side
+    (normalized appearance at metadata.appearance), and tells the frontend to
+    refresh registries before painting (registry-before-canvas)."""
+
+    COORD = "agent.node-builder@1.0.0"
     TARGET = "ai.agent.notes@1"
 
     def _draft_params(self, *, color="pink", template_id="note-kind"):
         return {
             "mode": "create",
             "target": self.TARGET,
+            "justification": DRAFT_JUSTIFICATION,
             "manifest": {
                 "id": "ai.agent.notes",
                 "version": "1.0.0",
@@ -2630,6 +2385,323 @@ class TestPackageBuilderTargetErgonomics:
         assert "curio.notes" in refusal  # the fix is IN the refusal
 
 
+class TestNewNodeTypesInADraft:
+    """A package draft is the one way an agent makes a node type. Before the
+    build, every template a draft adds (all of a create's, the new ones of an
+    extend) passes the three checks the retired one-template tool had: a
+    justification the user judges on the card, a label no available template
+    has (reuse territory), and code that reads only grounded sources. Each
+    refusal says what to change."""
+
+    @pytest.fixture(autouse=True)
+    def _fresh_build_jobs(self):
+        from utk_curio.backend.app.packages.builder import jobs as build_jobs
+
+        build_jobs.reset_registry()
+        yield
+        build_jobs.reset_registry()
+
+    def _mint(self, client, token, project_id, monkeypatch, params):
+        """One Node Builder chat whose model asks for the draft *params*:
+        the attachment, the run's parts, and what the model was handed back."""
+        helper = TestPackageBuilderTools()
+        att_id, calls = helper._setup(
+            client, token, project_id, monkeypatch,
+            replies=[helper._draft_tail(params), "Done."],
+        )
+        run = helper._run(client, token, project_id, att_id)
+        assert run.status_code == 200, run.get_data(as_text=True)
+        return att_id, run.get_json()["content"], calls[1][-1]["content"]
+
+    def _refusal(self, client, token, project_id, monkeypatch, params):
+        _, parts, handed_back = self._mint(client, token, project_id, monkeypatch, params)
+        assert all(p["type"] != "proposal" for p in parts), parts
+        assert "package.draft.apply: refused" in handed_back, handed_back
+        return handed_back
+
+    def _apply(self, client, token, project_id, att_id, proposal_id):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}"
+            f"/proposals/{proposal_id}/apply",
+            headers=_auth(token),
+        )
+
+    @pytest.mark.parametrize("justification", [None, "   "])
+    def test_a_draft_that_adds_a_node_type_needs_its_justification(
+            self, client, user_and_token, tmp_curio, alice_project, monkeypatch, justification):
+        _, token = user_and_token
+        params = TestPackageBuilderTools()._draft_params()
+        if justification is None:
+            del params["justification"]
+        else:
+            params["justification"] = justification
+        refusal = self._refusal(client, token, alice_project, monkeypatch, params)
+        assert "the review needs your reasoning" in refusal
+        assert "note-kind" in refusal  # the node type the draft adds
+        assert '"justification"' in refusal
+        assert "closest existing templates" in refusal
+        assert "why each is inadequate" in refusal
+
+    def test_an_overlong_justification_is_refused(
+            self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.agents.application.proposals import mint
+
+        _, token = user_and_token
+        params = TestPackageBuilderTools()._draft_params()
+        params["justification"] = "x" * (mint._JUSTIFICATION_MAX_CHARS + 1)
+        refusal = self._refusal(client, token, alice_project, monkeypatch, params)
+        assert f"at most {mint._JUSTIFICATION_MAX_CHARS}" in refusal
+
+    @pytest.mark.parametrize("label", [
+        "Computation Analysis",  # its slug is the built-in's template id
+        "python computation",    # the built-in's label, in another case
+    ])
+    def test_a_new_template_like_an_existing_one_is_reuse_territory(
+            self, client, user_and_token, tmp_curio, alice_project, monkeypatch, label):
+        _, token = user_and_token
+        params = TestPackageBuilderTools()._draft_params()
+        params["manifest"]["templates"][0]["label"] = label
+        refusal = self._refusal(client, token, alice_project, monkeypatch, params)
+        assert "reuse territory" in refusal
+        assert "curio.builtin/computation-analysis" in refusal  # the template to use
+        assert "note-kind" in refusal
+        assert "a label no existing template has" in refusal
+
+    @pytest.mark.parametrize("where", [
+        "its source file sources/note_kind.py",
+        "nodes[0].content",
+    ])
+    def test_the_code_of_a_new_template_reads_only_grounded_sources(
+            self, client, user_and_token, tmp_curio, alice_project, monkeypatch, where):
+        # Issue #298's shape: a file nobody gave and no catalog dataset holds.
+        code = 'import pandas as pd\nreturn pd.read_csv("bras_ibge_data.csv")\n'
+        _, token = user_and_token
+        params = TestPackageBuilderTools()._draft_params()
+        if where.startswith("its source file"):
+            params["manifest"]["templates"][0]["source"] = "sources/note_kind.py"
+            params["files"]["sources/note_kind.py"] = {"text": code}
+        else:
+            params["nodes"][0]["content"] = code
+        refusal = self._refusal(client, token, alice_project, monkeypatch, params)
+        assert "source grounding refused" in refusal
+        assert "bras_ibge_data.csv" in refusal
+        assert f"'note-kind', {where}" in refusal
+
+    def test_a_justified_draft_mints_with_its_reasoning_and_its_type_is_reusable(
+            self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.agents.application import attachments
+        from utk_curio.backend.app.packages.application import templates as packages_templates
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        att_id, parts, handed_back = self._mint(
+            client, token, alice_project, monkeypatch, TestPackageBuilderTools()._draft_params(),
+        )
+        proposal = next(p for p in parts if p["type"] == "proposal")
+        assert proposal["tool"] == "package.draft.apply"
+        assert "awaits the user's explicit review" in handed_back
+        # The reasoning is what the user judges: on the card's part, on the
+        # part a reload renders, and on the stored proposal.
+        assert proposal["justification"] == DRAFT_JUSTIFICATION
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        persisted = next(p for t in turns for p in t.get("content", [])
+                         if p.get("type") == "proposal")
+        assert persisted["justification"] == DRAFT_JUSTIFICATION
+        stored = attachments.find_proposal(
+            projects_storage.read_spec(key, alice_project), att_id, proposal["proposalId"])
+        assert stored["justification"] == DRAFT_JUSTIFICATION
+        # Applied, the new type is one node.create can use in a later run.
+        resp = self._apply(client, token, alice_project, att_id, proposal["proposalId"])
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        available = {t["id"] for t in packages_templates.available_templates(key, alice_project)}
+        assert "ai.agent.notes/note-kind" in available
+
+    def test_an_extend_justifies_only_the_templates_it_adds(
+            self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.packages.builder.extension import installed_package_digest
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        helper = TestPackageBuilderTools()
+        created = helper._draft_params()
+        att_id, parts, _ = self._mint(client, token, alice_project, monkeypatch, created)
+        proposal = next(p for p in parts if p["type"] == "proposal")
+        resp = self._apply(client, token, alice_project, att_id, proposal["proposalId"])
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        kept = created["manifest"]["templates"][0]
+
+        def extend(templates, **extra):
+            return {
+                "mode": "extend",
+                "baseDigest": installed_package_digest(key, helper.TARGET),
+                "manifest": {**created["manifest"], "version": "1.1.0", "templates": templates},
+                **extra,
+            }
+
+        added = {**kept, "id": "summary-kind", "label": "Research summary"}
+        refusal = self._refusal(client, token, alice_project, monkeypatch, extend([kept, added]))
+        assert "the review needs your reasoning" in refusal
+        assert "summary-kind" in refusal and "note-kind" not in refusal
+        _, parts, _ = self._mint(client, token, alice_project, monkeypatch,
+                                 extend([kept, added], justification=DRAFT_JUSTIFICATION))
+        assert next(p for p in parts if p["type"] == "proposal")["justification"] == DRAFT_JUSTIFICATION
+        # A change to a template the package has adds no node type.
+        revised = {**kept, "description": "A research note, revised."}
+        _, parts, _ = self._mint(client, token, alice_project, monkeypatch, extend([revised]))
+        assert "justification" not in next(p for p in parts if p["type"] == "proposal")
+
+    def test_a_library_a_new_template_imports_is_installed_at_apply(
+            self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        """#565 on the draft path: the libraries a new template's code imports
+        are its dependencies, installed by the Apply that installs the type."""
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
+
+        asked: list = []
+        monkeypatch.setattr(
+            pip_runner, "install_python_deps",
+            lambda deps, on_line=None: asked.append(dict(deps))
+            or pip_runner.InstallReport(installed=sorted(deps), skipped=[]),
+        )
+        monkeypatch.setattr(pip_runner, "import_failures", lambda deps: {})
+        _, token = user_and_token
+        params = TestPackageBuilderTools()._draft_params()
+        params["manifest"]["templates"][0]["source"] = "sources/note_kind.py"
+        params["files"]["sources/note_kind.py"] = {"text": "import shapely\nreturn input_0\n"}
+        att_id, parts, _ = self._mint(client, token, alice_project, monkeypatch, params)
+        proposal = next(p for p in parts if p["type"] == "proposal")
+        resp = self._apply(client, token, alice_project, att_id, proposal["proposalId"])
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        assert asked == [{"shapely": "*"}]
+
+    def test_a_hosted_guests_draft_is_refused_at_apply_before_anything_lands(
+            self, client, db, tmp_curio, monkeypatch):
+        """#451's rule on the agent apply path. The shared guest is every
+        anonymous visitor, so a package in its store is in every visitor's
+        palette, with its libraries one pip run away: the refusal comes
+        before the files, not after them."""
+        from utk_curio.backend import config
+        from utk_curio.backend.app.packages.infrastructure import backend_runtime
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
+        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
+        from utk_curio.backend.app.users.models import User, UserSession
+
+        monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
+        monkeypatch.setattr(backend_runtime, "per_user_node_envs", lambda: True)
+        # A hosted guest runs on the deployment's GUEST_LLM_* endpoint, not the
+        # DEFAULT_LLM_* one the conftest configures.
+        monkeypatch.setattr(config, "GUEST_LLM_API_TYPE", "openai_compatible")
+        monkeypatch.setattr(config, "GUEST_LLM_BASE_URL", "http://127.0.0.1:9/v1")
+        monkeypatch.setattr(config, "GUEST_LLM_MODEL", "test-model")
+        monkeypatch.setattr(config, "GUEST_LLM_API_KEY", "test-key")
+        asked: list = []
+        monkeypatch.setattr(pip_runner, "install_python_deps",
+                            lambda deps, on_line=None: asked.append(dict(deps)))
+        guest = User(username=config.CURIO_SHARED_GUEST_USERNAME, name="Guest",
+                     email="guest@test.com", is_guest=True)
+        db.session.add(guest)
+        db.session.flush()
+        db.session.add(UserSession(user_id=guest.id, token="guest-token"))
+        db.session.commit()
+        project = client.post(
+            "/api/projects",
+            json={"name": "p", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
+                  "outputs": []},
+            headers=_auth("guest-token"),
+        ).get_json()["id"]
+        params = TestPackageBuilderTools()._draft_params()
+        params["dependencies"] = {"python": {"weather-sdk": "1.2.0"}}
+        att_id, parts, _ = self._mint(client, "guest-token", project, monkeypatch, params)
+        proposal = next(p for p in parts if p["type"] == "proposal")
+
+        resp = self._apply(client, "guest-token", project, att_id, proposal["proposalId"])
+
+        assert resp.status_code == 409, resp.get_data(as_text=True)
+        assert "guest" in resp.get_json()["error"].lower()
+        assert asked == []
+        assert not (user_packages_dir(_user_dir_key(guest)) / TestPackageBuilderTools.TARGET).exists()
+
+
+class TestTheOneTemplateToolIsRetired:
+    """node.template.create is retired: a package draft is the one way an
+    agent makes a node type. No agent is offered the tool, a request for it
+    mints nothing, and a proposal of it saved before no longer applies."""
+
+    RETIRED = "node.template.create"
+    COORD = "agent.node-builder@1.0.0"
+
+    def test_no_agent_is_offered_it(self):
+        from utk_curio.backend.app.agents.application import tools
+        from utk_curio.backend.app.agents.domain import builtin
+
+        assert self.RETIRED not in tools.REGISTRY
+        for spec in builtin.BUILTIN_AGENTS:
+            assert self.RETIRED not in spec.tools, spec.agent_id
+        granted = tools.resolve_grants(builtin.get_builtin_manifest(self.COORD).tools)
+        offered = [t["name"] for t in tools.native_tools(granted)]
+        assert tools.wire_name(self.RETIRED) not in offered
+        for key in ("instruction", "package.build"):
+            assert self.RETIRED not in builtin.read_prompt_text(self.COORD, key), key
+
+    def test_a_request_for_it_mints_nothing(
+            self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
+
+        user, token = user_and_token
+        request = {"toolRequest": {"tool": self.RETIRED, "params": {
+            "justification": "Considered curio.builtin/computation-analysis: it cannot score.",
+            "template": {"label": "Sentiment Scorer", "engine": "python",
+                         "content": "print('score')"},
+        }}}
+        helper = TestPackageBuilderTools()
+        att_id, calls = helper._setup(
+            client, token, alice_project, monkeypatch,
+            replies=["```curio.v1\n" + json.dumps(request) + "\n```", "No node type."],
+        )
+        run = helper._run(client, token, alice_project, att_id, message="make a scorer node")
+        assert run.status_code == 200, run.get_data(as_text=True)
+        assert all(p["type"] != "proposal" for p in run.get_json()["content"])
+        assert f"tool {self.RETIRED!r} is not granted" in calls[1][-1]["content"]
+        assert not list(user_packages_dir(_user_dir_key(user)).glob("curio.agent.*"))
+
+    def test_a_saved_proposal_of_it_no_longer_applies(
+            self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.agents.application import attachments
+        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        att_id, _ = TestPackageBuilderTools()._setup(
+            client, token, alice_project, monkeypatch, replies=["Hello."])
+        spec = projects_storage.read_spec(key, alice_project)
+        attachments.get_attachment(spec, att_id)["activeProposal"] = {
+            "proposalId": "saved-before",
+            "tool": self.RETIRED,
+            "justification": "Considered curio.builtin/computation-analysis: it cannot score.",
+            "template": {"label": "Sentiment Scorer", "engine": "python",
+                         "description": "", "content": "print('score')"},
+            "summary": "Create a new custom node type: Sentiment Scorer",
+            "status": "pending",
+        }
+        projects_storage.write_spec(key, alice_project, spec)
+
+        resp = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}"
+            "/proposals/saved-before/apply",
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 409, resp.get_data(as_text=True)
+        assert f"no apply flow exists for tool {self.RETIRED!r}" in resp.get_json()["error"]
+        assert not list(user_packages_dir(key).glob("curio.agent.*"))
+        nodes = (projects_storage.read_spec(key, alice_project).get("dataflow") or {}).get("nodes") or []
+        assert nodes == []
+
+
 class TestBackendDraftEndToEnd:
     """dev/91 commit 4 — a backend-bearing draft through the WHOLE lane:
     mint (build + policy scan + real-worker probe) → the card states the
@@ -2642,6 +2714,10 @@ class TestBackendDraftEndToEnd:
     def _backend_draft_params(self):
         return {
             "mode": "create",
+            "justification": (
+                "Considered curio.builtin/computation-analysis: it runs in the shared "
+                "sandbox, and this count runs in its own package backend."
+            ),
             "manifest": {
                 "id": "ai.agent.wordcount",
                 "version": "1.0.0",

@@ -6,6 +6,8 @@ import path from "path";
  * the canvas bar has no room for a menu of their own beside every catalog's
  * label at 1280px (`test_canvas_header_e2e.py`). File can save the whole
  * dataflow as a scenario. Both are edits, so a shared viewer sees neither.
+ * The dataflow's scenarios are listed in the Scenario Catalog drawer's In
+ * project tab, so View has no item that shows or hides them.
  *
  * Source-read like `upMenuTriggers.test.ts`: UpMenu needs the whole provider
  * stack to render.
@@ -28,7 +30,7 @@ describe("the scenario commands", () => {
     expect(UP_MENU).not.toMatch(/<HeaderMenu\s+label="Scenarios"/);
   });
 
-  test.each(["Save selection as scenario", "Duplicate selection", "Duplicate as scenario", "Show scenarios"])(
+  test.each(["Save selection as scenario", "Duplicate selection", "Duplicate as scenario"])(
     "View offers %s, to an editor only",
     (item) => {
       const view = menuSource("View", "</HeaderMenu>");
@@ -37,6 +39,16 @@ describe("the scenario commands", () => {
       expect(scenarios).toContain(item);
     },
   );
+
+  test("View has no Show scenarios or Hide scenarios: the scenarios are the Scenario Catalog's In project tab", () => {
+    const view = menuSource("View", "</HeaderMenu>");
+    expect(view).not.toContain("Show scenarios");
+    expect(view).not.toContain("Hide scenarios");
+    // Nor the panel's open state it toggled. (`collab.panelOpen` is the
+    // collaboration panel's, which stays.)
+    expect(UP_MENU).not.toContain("scenarioUi.panelOpen");
+    expect(UP_MENU).not.toContain("useScenarioUi");
+  });
 
   test("File saves the whole dataflow as a scenario, for an editor only", () => {
     const file = menuSource("File", /<HeaderMenu\s+label="View"/);

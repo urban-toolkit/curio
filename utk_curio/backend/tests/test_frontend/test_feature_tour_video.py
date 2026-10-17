@@ -29,7 +29,8 @@ Environment:
 Stills: a scene can call ``ctx.tour.still(name)`` to save a PNG screenshot of
 that moment to ``<out>/stills/<name>.png``; the marks file records when.
 
-Scene ids, in order: see ``SCENES`` at the bottom of this file.
+Scene ids, in order: see ``SCENES`` at the bottom of this file. Naming a scene
+that starts from another scene's work records that one too (``NEEDS``).
 
 The AI provider:
 
@@ -65,6 +66,7 @@ import re
 import sys
 import time
 import traceback
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -94,6 +96,7 @@ from .utils import (
     dismiss_toasts,
     drag_to_canvas,
     frame_node,
+    in_project_card,
     lit_marks,
     mark_point,
     node_locator,
@@ -101,6 +104,7 @@ from .utils import (
     play_node,
     run_node_and_wait,
     save_dataflow,
+    scenario_card_button,
     set_node_code,
     stub_db_login,
     wait_for_drawer_closed,
@@ -161,13 +165,13 @@ _DEFAULT_BASE_URL = "https://sage200.evl.uic.edu/"
 _DEFAULT_MODEL = "gemma4"
 
 # Agents the tour adds to the dataflow. The order matters on screen:
-#   chat-agent       attaches to a node and is the one that answers live;
-#   connection-builder is the only built-in that accepts a connection target,
+#   researcher       attaches to a node and is the one that answers live;
+#   node-builder     is the only built-in that accepts a connection target,
 #                    which is the gesture this branch added;
-#   dataflow-builder is the only built-in declaring requiresAgents, so its
-#                    button reads "Add to project (+1 required)".
-AGENT_EXPLAINER = "agent.chat-agent@1.0.0"
-AGENT_CONNECTION = "agent.connection-builder@1.0.0"
+#   dataflow-builder declares requiresAgents, so its Add button counts the
+#                    agents it requires.
+AGENT_EXPLAINER = "agent.researcher@1.0.0"
+AGENT_CONNECTION = "agent.node-builder@1.0.0"
 AGENT_BUILDER = "agent.dataflow-builder@1.0.0"
 
 AGENT_SEARCH_PLACEHOLDER = "Search agents, publishers, tags…"
@@ -284,21 +288,18 @@ GEO_CHART_SPEC = json.dumps(
     indent=2,
 )
 GEO_GOAL = "Map and chart the size of downtown Chicago's ZIP codes."
-# Every catalog agent is added, so the rail counts seven; these are the ones
-# attached, each where it works.
+# Every catalog agent is added, so the rail counts four; these are the
+# attachments, each where it works.
 GEO_AGENTS = [
-    "agent.chat-agent@1.0.0", "agent.connection-builder@1.0.0",
-    "agent.dataflow-builder@1.0.0", "agent.dataset-finder@1.0.0",
-    "agent.node-builder@1.0.0", "agent.package-builder@1.0.0",
-    "agent.researcher@1.0.0",
+    "agent.researcher@1.0.0", "agent.node-builder@1.0.0",
+    "agent.dataset-finder@1.0.0", "agent.dataflow-builder@1.0.0",
 ]
 GEO_ATTACH = [
     ("agent.dataset-finder@1.0.0", {"kind": "node", "targetId": GEO_LOADER}),
     ("agent.node-builder@1.0.0", {"kind": "node", "targetId": GEO_TRANSFORM}),
-    ("agent.chat-agent@1.0.0", {"kind": "node", "targetId": GEO_MAP}),
-    ("agent.package-builder@1.0.0", {"kind": "node", "targetId": GEO_CHART}),
+    ("agent.researcher@1.0.0", {"kind": "node", "targetId": GEO_MAP}),
     (
-        "agent.connection-builder@1.0.0",
+        "agent.node-builder@1.0.0",
         {"kind": "connection", "targetId": f"reactflow__edge-{GEO_TRANSFORM}out-{GEO_CHART}in"},
     ),
     ("agent.dataflow-builder@1.0.0", {"kind": "canvas"}),
@@ -995,6 +996,9 @@ def scene_canvas(ctx: Ctx) -> None:
         if not locator.count():
             continue
         tour.say(label, hold=200)
+        # The rail's tile block scrolls when the window is short, as the
+        # 1280x800 take is: the map and chart tiles start below its fold.
+        locator.scroll_into_view_if_needed()
         tour.focus(locator, hold=800)
     tour.hush()
     tour.say(
@@ -1317,7 +1321,7 @@ def scene_agent_catalog(ctx: Ctx) -> None:
     drawer = _open_agent_drawer(ctx)
     tour.say(
         "Nodes, data - and agents",
-        "Seven ship built in, each a versioned package like any other.",
+        "Four ship built in, each a versioned package like any other.",
         hold=2900,
     )
     tour.say(
@@ -1344,7 +1348,7 @@ def scene_agent_catalog(ctx: Ctx) -> None:
     tour.beat(900)
     tour.say(
         "Agents can require other agents",
-        "This one reads 'Add to project (+1 required)': the closure comes with it.",
+        "Its Add button counts the agents it requires: the closure comes with it.",
         hold=3000,
     )
     _add_agent(ctx, drawer, AGENT_BUILDER, hold=1800)
@@ -1453,7 +1457,7 @@ def scene_agent_run(ctx: Ctx) -> None:
         "A live model, answering about this dataflow.",
     )
     badge = page.get_by_role(
-        "button", name=re.compile(r"^Open chat with Chat")
+        "button", name=re.compile(r"^Open chat with Researcher")
     ).first
     badge.wait_for(state="visible", timeout=20000)
     tour.click(badge)
@@ -1824,6 +1828,26 @@ def _drag_node_by(page, node_id: str, dx: float, dy: float) -> None:
     page.wait_for_timeout(600)
 
 
+@contextmanager
+def _maps_ignore_the_pointer(page):
+    """No Autark map canvas takes pointer events while inside.
+
+    For a drag that only passes over a map, such as an edge drawn across one:
+    autk-map pans its camera on any move of a pressed pointer over its canvas,
+    even one pressed elsewhere (see ``_drag_node_by``), and the pan can carry
+    the whole drawing out of view. Back on leaving, for picks and brushes."""
+    js = """(value) => {
+        for (const el of document.querySelectorAll('[id^="autk-grammar-map-"]')) {
+            el.style.pointerEvents = value;
+        }
+    }"""
+    page.evaluate(js, "none")
+    try:
+        yield
+    finally:
+        page.evaluate(js, "")
+
+
 def _frame_nodes(
     page, node_ids: list[str], box: tuple[int, int, int, int], max_zoom: float | None = None,
 ) -> None:
@@ -2186,9 +2210,10 @@ def _drag_on_camera(ctx: Ctx, start, end, *, dragging: str | None = None) -> Non
 
 
 def scene_scenarios(ctx: Ctx) -> None:
-    """Example 06 run and saved, its Scenarios panel, and one of its scenarios
-    collapsed into a box. The save is what the Scenario Catalog shows and what
-    a drop copies, so scenariocatalog and scenariodrop come after this one."""
+    """Example 06 run and saved, its scenarios in the Scenario Catalog drawer's
+    In project tab, and one of them collapsed into a box. The save is what the
+    Scenario Catalog shows and what a drop copies, so scenariocatalog and
+    scenariodrop come after this one."""
     page, tour = ctx.page, ctx.tour
     project = _account_project(ctx, WHATIF_NAME)
     ctx.state["whatif"] = project
@@ -2203,25 +2228,29 @@ def scene_scenarios(ctx: Ctx) -> None:
     save_dataflow(page)
     page.set_viewport_size(STILL_SIZE)
     page.wait_for_timeout(1500)
-
-    tour.click(_menu(page, "View"), force=True)
-    tour.click(page.get_by_role("button", name="Show scenarios", exact=True))
-    card = page.get_by_test_id(f"scenario-card-{WHATIF_BASELINE}")
-    card.wait_for(state="visible", timeout=15000)
+    # Framed before the drawer opens over the canvas's right side.
     _fit_view(page, padding=0.06)
+
+    tour.click(page.get_by_role("button", name="Scenario Catalog", exact=True))
+    drawer = page.locator(f'{DRAWER_SCENARIOS}[aria-hidden="false"]')
+    drawer.wait_for(state="visible", timeout=15000)
+    tour.click(drawer.get_by_role("button", name=re.compile(r"^In project")))
+    card = in_project_card(page, WHATIF_BASELINE)
+    card.wait_for(state="visible", timeout=15000)
     # Pointing at a scenario's card marks its fixed context on the canvas.
-    tour.focus(card.get_by_label("Scenario name"), hold=600)
-    box = card.get_by_label("Scenario name").bounding_box()
-    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    tour.focus(card, hold=600)
+    box = card.bounding_box()
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + 24)
     tour.beat(1500)
-    _still_with_boxes(ctx, "scenarios-panel", {"panel": '[data-testid="scenarios-panel"]'})
+    _still_with_boxes(ctx, "scenarios-in-project", {"drawer": f"{DRAWER_SCENARIOS} aside"})
 
     # Baseline, collapsed into one box that lists its context and outcomes. Its
     # box is drawn where its first node stood, clear of the other scenarios.
-    tour.click(page.get_by_test_id(f"scenario-card-{WHATIF_BASELINE}").get_by_role("button", name="Collapse"))
+    tour.click(scenario_card_button(page, WHATIF_BASELINE, "Collapse"))
     collapsed = _box(page, WHATIF_BASELINE)
     collapsed.wait_for(state="attached", timeout=10000)
-    tour.click(page.get_by_role("button", name="Close the Scenarios panel"))
+    page.keyboard.press("Escape")
+    wait_for_drawer_closed(page, DRAWER_SCENARIOS)
     _frame_with_boxes(page, [WHATIF_POOL], (230, 140, 1870, 1160))
     collapsed.wait_for(state="visible", timeout=10000)
     page.wait_for_function(
@@ -2393,7 +2422,11 @@ def scene_selection_tag(ctx: Ctx) -> None:
     reader = drag_to_canvas(page, page.locator("#tile-computation-analysis"), at=(300 + 645, 650 - 415))
     _fit_nodes(page, [ZIPS_LOADER, reader])
     dismiss_toasts(page)
-    connect_nodes(page, ZIPS_LOADER, reader)
+    # The edge is drawn from the loader, below and left of the map, to the
+    # reader above and right of it, straight across the map: a drag that
+    # would pan the ZIP codes out of view.
+    with _maps_ignore_the_pointer(page):
+        connect_nodes(page, ZIPS_LOADER, reader)
     frame_node(page, reader, zoom=1.0)
     set_node_code(page, reader, PICKED_CODE)
 
@@ -2489,6 +2522,12 @@ def scene_node_from_function(ctx: Ctx) -> None:
     tour.beat(1500)
     _still_with_boxes(ctx, "node-from-function", {"dialog": "[data-node-from-function]"})
     tour.click(dialog.get_by_role("button", name="Cancel"))
+    # The drawer too: its scrim covers the top bar, so left open it takes the
+    # next scene's first click there (quickstart's File menu) and only closes.
+    drawer.locator("header").get_by_role(
+        "button", name="Close Node Catalog drawer"
+    ).click()
+    expect(page.locator(DRAWER_NODES)).to_have_count(0, timeout=8000)
     page.set_viewport_size(VIDEO_SIZE)
 
 
@@ -2610,6 +2649,8 @@ def scene_quickstart(ctx: Ctx) -> None:
     )
     _reset_zoom(page)
     loader_tile = page.locator(LOADING_TILE)
+    # Into the rail's view first: its tile block scrolls in a short window.
+    loader_tile.scroll_into_view_if_needed()
     tour.focus(loader_tile, hold=600)
     loader_id = drag_to_canvas(page, loader_tile, at=POS_LOADER)
     tour.beat(900)
@@ -2629,6 +2670,7 @@ def scene_quickstart(ctx: Ctx) -> None:
     )
     _reset_zoom(page)
     vega_tile = page.locator(VEGA_TILE)
+    vega_tile.scroll_into_view_if_needed()
     tour.focus(vega_tile, hold=600)
     vega_id = drag_to_canvas(page, vega_tile, at=POS_TRANSFORM)
     tour.beat(900)
@@ -2955,6 +2997,12 @@ NAMED_ONLY = {
 }
 
 
+#: Scenes that start from another scene's work, each mapped to that scene,
+#: which CURIO_TOUR_SCENES then records too. build drags the dataset that
+#: datacatalog adds, and the datasets palette lists only the open dataflow's.
+NEEDS = {"build": "datacatalog"}
+
+
 def _selected_scenes() -> list[tuple[str, Callable[[Ctx], None]]]:
     wanted = os.environ.get("CURIO_TOUR_SCENES")
     if not wanted:
@@ -2966,6 +3014,7 @@ def _selected_scenes() -> list[tuple[str, Callable[[Ctx], None]]]:
         raise ValueError(
             f"unknown scene(s) {unknown}; valid ids: {[n for n, _ in SCENES]}"
         )
+    names += [NEEDS[n] for n in names if n in NEEDS]
     return [(name, fn) for name, fn in SCENES if name in names]
 
 

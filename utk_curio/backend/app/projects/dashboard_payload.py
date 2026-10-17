@@ -37,14 +37,19 @@ riding along in a page they hand out by link.
 The size limit is a refusal, not a fallback. A dashboard over budget fails to
 build and names the tiles responsible, because the alternative is a page that
 looks standalone and silently is not, or one so large a browser cannot open it.
+So is a saved output a tile needs that cannot be read: a page built without it
+would draw the tile empty, as if the dataflow had never run.
 """
 from __future__ import annotations
 
 import base64
 import json
+import logging
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Set
+
+logger = logging.getLogger(__name__)
 
 # Node kinds that re-derive their own content from whatever reaches them, so a
 # walk upward from a pinned tile passes through them looking for the node that
@@ -199,6 +204,29 @@ class DashboardCannotBeStandaloneError(Exception):
             "its own cannot be published. Move the data section into its own "
             "node upstream of the tile, so its output is saved and travels with "
             "the page."
+        )
+
+
+class DashboardOutputUnreadableError(Exception):
+    """Raised when a tile needs a saved output that could not be read.
+
+    Same channel as the other refusals: a page built without the output would
+    draw its tile empty, as if the dataflow had never run (#941). Reading it
+    again usually works, so the message says to try again. Carries the nodes
+    whose outputs could not be read, and the dataflow's *name*, as the other
+    refusals do.
+    """
+
+    def __init__(self, offenders: Sequence[str], name: Optional[str] = None):
+        self.offenders = list(offenders)
+        self.name = name
+        super().__init__(self.describe())
+
+    def describe(self) -> str:
+        names = ", ".join(self.offenders)
+        return (
+            f"This dashboard could not read the saved output of these nodes: {names}.\n\n"
+            "Try again in a moment. If it keeps failing, run the dataflow and save it again."
         )
 
 
@@ -419,12 +447,15 @@ def build_dashboard_payload(
     fetch_raster: Optional[Callable[[str, Optional[int]], dict]] = None,
     meta: Optional[dict] = None,
     limit_bytes: int = DEFAULT_PAYLOAD_LIMIT_BYTES,
+    missing_refs: Iterable = (),
 ) -> DashboardPayload:
     """Assemble the standalone payload for one dashboard.
 
     *output_refs* are the project's saved outputs, each carrying ``node_id``,
     ``filename`` and ``data_type`` (the manifest shape; either objects with
-    those attributes or plain dicts).
+    those attributes or plain dicts). *missing_refs*, in the same shape, are
+    the saved outputs the manifest lists that the load found no copy of
+    (``load_shared_project``'s ``missing_outputs``).
 
     *fetch_envelope* is handed a filename and returns that artifact's
     ``{dataType, data, schema}`` envelope. Injected rather than called directly
@@ -438,16 +469,31 @@ def build_dashboard_payload(
     "message"}`` for a refusal. Its GeoTIFF counts toward *limit_bytes* with
     the output's rows.
 
-    An output whose envelope cannot be read is skipped rather than fatal: the
-    tile it feeds shows its own empty state, which is the same thing that
-    happens today when an artifact has gone. So is a raster the sandbox could
-    not be asked for. A dashboard over *limit_bytes* raises
-    :class:`DashboardTooLargeError`. Both refusals carry *meta*'s ``name``.
+    A dashboard over *limit_bytes* raises :class:`DashboardTooLargeError`.
+    Under it, a tile that needs a missing output, one whose envelope cannot be
+    read, or one whose raster the sandbox could not be asked for, raises
+    :class:`DashboardOutputUnreadableError`, which says to try again, rather
+    than drawing the tile without it. Every refusal carries *meta*'s ``name``,
+    and every output or raster that cannot be read is logged.
     """
     name = (meta or {}).get("name")
     _refuse_tiles_that_fetch_their_own_data(spec, name=name)
 
     needed = dashboard_source_node_ids(spec)
+    unreadable: List[str] = []
+
+    def cannot_read(node_id: str, filename: str, reason: str) -> None:
+        logger.warning(
+            "Dashboard %s cannot read the saved output %s of node %s: %s",
+            (meta or {}).get("projectId"), filename, node_id, reason,
+        )
+        if node_id not in unreadable:
+            unreadable.append(node_id)
+
+    for ref in missing_refs:
+        node_id = _ref_field(ref, "node_id")
+        if node_id in needed:
+            cannot_read(node_id, _ref_field(ref, "filename"), "no copy of it was left to load")
 
     outputs: Dict[str, dict] = {}
     weights: List[TileWeight] = []
@@ -466,18 +512,25 @@ def build_dashboard_payload(
             continue
         try:
             envelope = fetch_envelope(filename)
-        except Exception:
+        except Exception as exc:
+            cannot_read(node_id, filename, f"{type(exc).__name__}: {exc}")
             continue
         if envelope is None:
+            cannot_read(node_id, filename, "the sandbox answered nothing")
             continue
         outputs[filename] = envelope
         size = _json_bytes(envelope)
         for part in raster_places(envelope, data_type) if fetch_raster else []:
             try:
                 answer = fetch_raster(filename, part)
-            except Exception:
+            except Exception as exc:
+                cannot_read(
+                    node_id, filename,
+                    f"the sandbox could not be asked for its raster (part {part}): {type(exc).__name__}: {exc}",
+                )
                 continue
             if not isinstance(answer, dict):
+                cannot_read(node_id, filename, f"the sandbox answered nothing for its raster (part {part})")
                 continue
             record = _raster_record(filename, part, answer)
             rasters.append(record)
@@ -493,7 +546,10 @@ def build_dashboard_payload(
 
     total = sum(weight.bytes for weight in weights)
     if total > limit_bytes:
+        # Reading the rest could only add to it, so trying again would not help.
         raise DashboardTooLargeError(total, limit_bytes, weights, name=name)
+    if unreadable:
+        raise DashboardOutputUnreadableError(unreadable, name=name)
 
     return DashboardPayload(
         spec=spec,

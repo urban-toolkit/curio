@@ -34,11 +34,8 @@ Run::
 from __future__ import annotations
 
 import json
-import os
 import time
 from typing import TYPE_CHECKING
-
-import pytest
 
 from .test_selection_tags_e2e import _UNSCROLL_JS, _bars_by_tooltip
 from .utils import (
@@ -54,6 +51,7 @@ from .utils import (
     require_owner_view,
     require_project_page,
     require_user_auth,
+    require_webgpu,
     run_all_and_wait,
     stub_login_and_enter_workflow,
 )
@@ -233,11 +231,7 @@ def _open(page, app_frontend, current_server, *, username: str, spec: dict, auta
     for node in spec["dataflow"]["nodes"]:
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
     if autark:
-        has_adapter = bool(page.evaluate("async () => !!(navigator.gpu && await navigator.gpu.requestAdapter())"))
-        if not has_adapter:
-            if os.environ.get("CURIO_REQUIRE_HARDWARE_WEBGPU") == "1":
-                pytest.fail("CURIO_REQUIRE_HARDWARE_WEBGPU=1 but this browser has no WebGPU adapter")
-            pytest.skip("drawing an Autark map or plot needs a WebGPU adapter; this browser has none")
+        require_webgpu(page)
     run_all_and_wait(page, timeout_ms=180000)
     dismiss_toasts(page)
 

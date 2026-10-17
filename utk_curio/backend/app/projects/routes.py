@@ -1,6 +1,7 @@
 """Flask blueprint: /api/projects - all endpoints require @require_auth."""
 from __future__ import annotations
 
+import re
 from dataclasses import asdict
 from flask import Blueprint, g, jsonify, request
 
@@ -63,6 +64,17 @@ def _optional_int(value):
         return None
 
 
+_TAB_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+
+def _optional_tab(value):
+    """A tab id as the page makes one (a UUID), or ``None`` for anything else,
+    which leaves the save unchecked, as a malformed basis does."""
+    if isinstance(value, str) and _TAB_ID.fullmatch(value):
+        return value
+    return None
+
+
 # ---------------------------------------------------------------------------
 # PUT /api/projects/:id - update
 # ---------------------------------------------------------------------------
@@ -90,6 +102,9 @@ def update_project(project_id: str):
                 body.get("baseRevision", body.get("base_revision"))
             ),
             categories=body.get("categories"),
+            # Which tab sent this save, and its number among the tab's saves.
+            save_tab=_optional_tab(body.get("saveTab", body.get("save_tab"))),
+            save_number=_optional_int(body.get("saveNumber", body.get("save_number"))),
         )
     except (ValueError, TypeError) as exc:
         return _error(str(exc))
@@ -178,12 +193,16 @@ def get_dashboard_payload(project_id: str):
     page that looks standalone and is not, and the owner would only find out
     when somebody opened it where the server is unreachable.
 
-    Both refusals name the dataflow too: the page server carries a refusal in
+    A tile whose saved output, or a raster of it, could not be read is a 503
+    that says to try again, not a page with that tile drawn without it (#941).
+
+    Every refusal names the dataflow too: the page server carries a refusal in
     the page instead of the data (``cli/static_server.py``), and the page shows
     it under the dataflow's name.
     """
     from utk_curio.backend.app.projects.dashboard_payload import (
         DashboardCannotBeStandaloneError,
+        DashboardOutputUnreadableError,
         DashboardTooLargeError,
     )
 
@@ -196,6 +215,8 @@ def get_dashboard_payload(project_id: str):
         # needs no server. Named here so the owner can move the data upstream,
         # where its output is saved and travels with the page.
         return jsonify({"error": exc.describe(), "tiles": exc.offenders, "name": exc.name}), 409
+    except DashboardOutputUnreadableError as exc:
+        return jsonify({"error": exc.describe(), "nodes": exc.offenders, "name": exc.name}), 503
     except DashboardTooLargeError as exc:
         return jsonify({
             "error": exc.describe(),

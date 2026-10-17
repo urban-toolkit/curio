@@ -256,6 +256,18 @@
       "Geometries"
     ]
   },
+  "26-several-inputs": {
+    "tags": [
+      "Autark",
+      "Vega-Lite",
+      "GeoPandas",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries"
+    ]
+  },
   "dataflows/AutkMap": {
     "tags": [
       "Autark",
@@ -324,8 +336,11 @@
     "data_type": []
   },
   "dataflows/FloodScenarios": {
-    "tags": [],
+    "tags": [
+      "Autark"
+    ],
     "data_type": [
+      "Geometries",
       "Rasters"
     ]
   },
@@ -443,7 +458,9 @@
     ]
   },
   "dataflows/ScoutShadows": {
-    "tags": [],
+    "tags": [
+      "Autark"
+    ],
     "data_type": [
       "Geometries"
     ]

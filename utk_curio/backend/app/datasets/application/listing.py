@@ -835,18 +835,15 @@ class CatalogListing:
         """
         if self.user is None:
             raise DatasetCatalogError("Authorization required", 401)
-        from utk_curio.backend.app.projects import repositories as projects_repo
-        from utk_curio.backend.app.projects import storage as project_storage
+        # The scan the Model Catalog's usage read makes too (``projects.usage``).
+        from utk_curio.backend.app.projects.usage import dataflow_usage
 
-        user_key = self._paths._user_key()
-        usages: list[dict[str, Any]] = []
-        for project in projects_repo.list_for_user(self.user.id):
-            spec = project_storage.read_spec(user_key, project.id) or {}
+        def uses(spec: dict, project_id: str) -> tuple[list[dict[str, Any]], bool] | None:
             consumers = _dataset_consumer_nodes_in_spec(
-                spec, dataset_id, project.id, include_code_refs=include_code_refs
+                spec, dataset_id, project_id, include_code_refs=include_code_refs
             )
             if consumers is None:
-                continue
+                return None
             # ``codeOnly`` is what tells a caller whether the destructive gate
             # will see this usage at all: the gate ignores code mentions, so a
             # dataflow that uses the dataset *only* through a node's source does
@@ -857,19 +854,13 @@ class CatalogListing:
             if include_code_refs:
                 code_only = (
                     _dataset_consumer_nodes_in_spec(
-                        spec, dataset_id, project.id, include_code_refs=False
+                        spec, dataset_id, project_id, include_code_refs=False
                     )
                     is None
                 )
-            usages.append({
-                "dataflowId": project.id,
-                "dataflowName": project.name,
-                "nodeCount": len(consumers),
-                "nodes": consumers,
-                "codeOnly": code_only,
-            })
-        usages.sort(key=lambda u: (u["dataflowName"] or "").casefold())
-        return usages
+            return consumers, code_only
+
+        return dataflow_usage(self.user.id, self._paths._user_key(), uses)
 
     def _consumer_counts(self, dataset_ids: set[str]) -> dict[str, int]:
         """Total nodes consuming each id in *dataset_ids*, summed across all of

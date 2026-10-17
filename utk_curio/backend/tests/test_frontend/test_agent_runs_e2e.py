@@ -72,8 +72,8 @@ SAFE_READ_TOOLS = (
 )
 
 # Mutate tools whose mint needs only what a test can state up front. The other
-# mutate contracts (dataset.install, package.install, package.draft.apply,
-# node.template.create) each need a real catalog row or, for the draft, a run of
+# mutate contracts (dataset.install, package.install, package.draft.apply)
+# each need a real catalog row or, for the draft, a run of
 # the isolated build service; their mints are covered in-process by
 # test_agents/test_routes_turns.py and test_agents/test_routes_proposals.py. An
 # agent declaring only those falls through to the
@@ -499,7 +499,7 @@ def test_a_refusal_of_native_tools_falls_back_to_the_fenced_protocol(current_ser
     round again on the fenced protocol, and the run completes."""
     require_project_page()
     require_user_auth()
-    spec = next(s for s in _CARDS if s.agent_id == "agent.chat-agent")
+    spec = next(s for s in _CARDS if s.agent_id == "agent.researcher")
     token, base, attachment_id = _attached(spec, current_server, "fallback")
     script_agent_replies(
         current_server,

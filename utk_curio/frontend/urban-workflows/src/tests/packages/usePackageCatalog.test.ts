@@ -155,6 +155,56 @@ describe("usePackageCatalog — the install review", () => {
   });
 });
 
+describe("usePackageCatalog: a card dropped on the canvas (drop-to-Add)", () => {
+  it("makes its node once the confirmed review has added the package and refreshed the registry", async () => {
+    const h = projectHook();
+    await waitFor(() => expect(h.result.current.installed).toHaveLength(1));
+    const onAdded = jest.fn(() => {
+      // The node's kind has to be known by now.
+      expect(h.refreshRegistry).toHaveBeenCalled();
+      expect(api.installToProject).toHaveBeenCalledWith("p1", "ai.test.beta@1");
+    });
+    await act(() => h.result.current.probeInstall(CATALOG[1], { onAdded }));
+    expect(h.result.current.installCandidate?.dirName).toBe("ai.test.beta@1");
+    expect(onAdded).not.toHaveBeenCalled();
+    await act(() => h.result.current.confirmInstall());
+    expect(onAdded).toHaveBeenCalledTimes(1);
+  });
+
+  it("makes no node when the review is cancelled, and a later Add makes none either", async () => {
+    const h = projectHook();
+    await waitFor(() => expect(h.result.current.installed).toHaveLength(1));
+    const onAdded = jest.fn();
+    await act(() => h.result.current.probeInstall(CATALOG[1], { onAdded }));
+    act(() => h.result.current.cancelInstall());
+    await act(() => h.result.current.probeInstall(CATALOG[1]));
+    await act(() => h.result.current.confirmInstall());
+    expect(api.installToProject).toHaveBeenCalledTimes(1);
+    expect(onAdded).not.toHaveBeenCalled();
+  });
+
+  it("makes no node when the install fails", async () => {
+    api.installToProject.mockRejectedValueOnce(Object.assign(new Error("nope"), { status: 502 }));
+    const h = projectHook();
+    await waitFor(() => expect(h.result.current.installed).toHaveLength(1));
+    const onAdded = jest.fn();
+    await act(() => h.result.current.probeInstall(CATALOG[1], { onAdded }));
+    await act(() => h.result.current.confirmInstall());
+    expect(h.result.current.actionError).toBe("Couldn't add ai.test.beta: nope");
+    expect(onAdded).not.toHaveBeenCalled();
+  });
+
+  it("makes no node when the dataflow could not be saved first", async () => {
+    const onEnsureProject = jest.fn(async () => null);
+    const h = projectHook({ scope: { kind: "project", projectId: null }, onEnsureProject });
+    await waitFor(() => expect(h.result.current.installed).toHaveLength(1));
+    const onAdded = jest.fn();
+    await act(() => h.result.current.probeInstall(CATALOG[1], { onAdded }));
+    expect(h.result.current.installCandidate).toBeNull();
+    expect(onAdded).not.toHaveBeenCalled();
+  });
+});
+
 describe("usePackageCatalog — project install and uninstall", () => {
   it("confirmInstall installs into the project, syncs the mirror, refreshes the registry, reloads and toasts success", async () => {
     const h = projectHook();

@@ -73,8 +73,8 @@ def test_removed_legacy_routes_stay_removed(app):
         "/upload",
         "/datasets",
         "/api/packages/install-deps",
-        # The pre-agent LLM assistance. The Chat agent (agent.chat-agent)
-        # explains a node, from the nodeContext it reads.
+        # The pre-agent LLM assistance. The Researcher (agent.researcher)
+        # explains a node, from the context it reads.
         "/llm/chat",
         "/llm/check",
         "/llm/clean",
