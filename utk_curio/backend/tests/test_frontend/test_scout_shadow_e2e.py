@@ -6,8 +6,8 @@ node are the fixed context. In "Existing", Rasterize Buildings
 (``scout.raster-conversion@1``) draws them into one zoom-16 height raster,
 Accumulated Shadow, the node of the model package ``model.scout.deep-umbra@1``,
 runs SCOUT's Deep Umbra model on it, in the season both scenarios share, an
-Autark map draws the shadow, and Raster Statistics (``curio.builtin@1``) takes
-the shadow's mean and median over the ground, the heights as its mask.
+Autark map draws the shadow, and a Raster Calculator (``curio.builtin@1``)
+takes the shadow's statistics over the ground, the heights as its mask.
 "Towers removed" first removes the 15 buildings SCOUT's second scenario
 removes. Two Compare Scenarios nodes read the scenarios' outcomes: one charts
 the mean accumulated shadow, the other maps its change through Autark.
@@ -71,7 +71,7 @@ if TYPE_CHECKING:
 DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "ScoutShadows.json"
 TEST_NAME = "test_two_building_sets_are_shadowed_charted_and_mapped"
 SHADOW_TYPE = "model.scout.deep-umbra/accumulated-shadow"
-STATISTICS_TYPE = "curio.builtin/raster-statistics"
+CALCULATOR_TYPE = "curio.builtin/raster-calculator"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
 MAP_TYPE = "curio.builtin/autk-grammar"
 PACKAGES = ("model.scout.deep-umbra@1", "scout.raster-conversion@1")
@@ -131,7 +131,8 @@ def test_two_building_sets_are_shadowed_charted_and_mapped(
     dataflow = spec["dataflow"]
     nodes = {node["id"]: node for node in dataflow["nodes"]}
     shadows = [n for n, node in nodes.items() if node["type"] == SHADOW_TYPE]
-    statistics = [n for n, node in nodes.items() if node["type"] == STATISTICS_TYPE]
+    statistics = [n for n, node in nodes.items() if node["type"] == CALCULATOR_TYPE
+                  and "\nreturn curio_raster_statistics(" in node["content"]]
     assert len(shadows) == len(statistics) == 2, (shadows, statistics)
     (chart,) = [n for n, node in nodes.items() if node["type"] == COMPARE_TYPE
                 and node["metadata"]["compareScenarios"]["mode"] == "chart"]
