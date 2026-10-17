@@ -49,11 +49,18 @@ class _StubPage:
         raise RuntimeError("no browser")
 
 
+#: Names the GPU kind of a run (CI's test-gpu job sets it from its runner).
+GPU_KIND_ENV = "CURIO_E2E_GPU_KIND"
+
+
 @pytest.fixture()
 def expected_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(
         e2e_utils, "WORKFLOW_SCREENSHOT_EXPECTED_DIR", str(tmp_path)
     )
+    # A run without a GPU kind, unless a test gives it one.
+    monkeypatch.delenv(GPU_KIND_ENV, raising=False)
+    monkeypatch.setattr(e2e_utils, "REMINT_GPU_KIND_FRAMES", (), raising=False)
     return tmp_path
 
 
@@ -85,6 +92,60 @@ class TestOnlyOnCI:
         monkeypatch.setattr(e2e_utils, "MINT_BASELINES", False)
         monkeypatch.setattr(e2e_utils, "REMINT_BASELINES", False)
         monkeypatch.setattr(e2e_utils, "REMINT_FORCE", ())
+        monkeypatch.setattr(e2e_utils, "REMINT_GPU_KIND_FRAMES", (), raising=False)
+
+    def test_a_gpu_kind_remint_needs_a_remint(self):
+        with pytest.raises(pytest.UsageError) as exc:
+            e2e_utils.allow_baseline_writes(
+                mint=False, remint=False, gpu_kind="utk-gpu:07-x.png",
+                environ={"GITHUB_ACTIONS": "true", GPU_KIND_ENV: "utk-gpu"})
+        assert "--remint-gpu-kind" in str(exc.value)
+        assert e2e_utils.REMINT_GPU_KIND_FRAMES == ()
+
+    @pytest.mark.parametrize("value", [
+        "07-x.png",            # no kind
+        "h100:07-x.png",       # not a GPU kind
+        "utk-gpu:",            # no frame
+        "utk-gpu: , ",         # no frame either
+    ])
+    def test_a_gpu_kind_remint_names_a_kind_and_its_frames(self, value):
+        with pytest.raises(pytest.UsageError) as exc:
+            e2e_utils.allow_baseline_writes(
+                mint=False, remint=True, gpu_kind=value,
+                environ={"GITHUB_ACTIONS": "true", GPU_KIND_ENV: "utk-gpu"})
+        assert "--remint-gpu-kind" in str(exc.value)
+        assert "utk-gpu" in str(exc.value) and "arcade-gpu" in str(exc.value)
+        assert e2e_utils.REMINT_GPU_KIND_FRAMES == ()
+
+    @pytest.mark.parametrize("run_kind", ["arcade-gpu", None])
+    def test_a_gpu_kind_remint_runs_only_on_that_kind(self, run_kind):
+        # A baseline of a GPU kind is what that GPU draws: a job on another
+        # GPU, or on none, would write its own drawing under that kind's name.
+        environ = {"GITHUB_ACTIONS": "true"}
+        if run_kind:
+            environ[GPU_KIND_ENV] = run_kind
+        with pytest.raises(pytest.UsageError) as exc:
+            e2e_utils.allow_baseline_writes(
+                mint=False, remint=True, gpu_kind="utk-gpu:07-x.png", environ=environ)
+        assert "utk-gpu" in str(exc.value)
+        assert "gpu_pool" in str(exc.value)
+        assert e2e_utils.REMINT_BASELINES is False
+        assert e2e_utils.REMINT_GPU_KIND_FRAMES == ()
+
+    def test_a_gpu_kind_remint_is_refused_off_ci(self):
+        with pytest.raises(pytest.UsageError) as exc:
+            e2e_utils.allow_baseline_writes(
+                mint=False, remint=True, gpu_kind="utk-gpu:07-x.png",
+                environ={GPU_KIND_ENV: "utk-gpu"})
+        assert "--remint-baselines runs on CI only" in str(exc.value)
+        assert e2e_utils.REMINT_GPU_KIND_FRAMES == ()
+
+    def test_a_gpu_kind_remint_is_kept_on_a_job_of_that_kind(self):
+        e2e_utils.allow_baseline_writes(
+            mint=False, remint=True, gpu_kind="utk-gpu: 07-x.png, ,08-y.png",
+            environ={"GITHUB_ACTIONS": "true", GPU_KIND_ENV: "utk-gpu"})
+        assert e2e_utils.REMINT_BASELINES is True
+        assert e2e_utils.REMINT_GPU_KIND_FRAMES == ("07-x.png", "08-y.png")
 
     def test_force_needs_a_remint(self):
         with pytest.raises(pytest.UsageError) as exc:
@@ -298,6 +359,185 @@ class TestRemint:
         self._captures(monkeypatch, _painted(), _painted())
         path = _save()
         assert os.path.isfile(path)
+
+
+def _default_drawing() -> Image.Image:
+    return _painted_at((1, 1))
+
+
+def _other_gpus_drawing() -> Image.Image:
+    """The same frame from another GPU model: a quarter of it, past any budget."""
+    return _painted_at(*[(x, y) for x in range(20) for y in range(20)])
+
+
+def _holds(path, img) -> bool:
+    return Image.open(path).convert("RGB").tobytes() == img.tobytes()
+
+
+class TestBaselinesPerGpuKind:
+    """A frame two GPU models draw differently keeps a baseline per GPU kind.
+
+    Example 07's plot close-up draws 6.06% differently on utk-gpu (an RTX PRO
+    6000) than on the arcade runners (an H100), past its 5% budget, so a run
+    whose GPU job landed on utk-gpu failed against arcade's baseline. Such a
+    frame also has ``<name>.<kind>.png``, and a run of that GPU kind compares
+    with it. Every other run, and every frame without one, uses the default
+    baseline as before.
+    """
+
+    DEFAULT = "screenshot_some-scene_a-step.png"
+    UTK = "screenshot_some-scene_a-step.utk-gpu.png"
+
+    @pytest.fixture(autouse=True)
+    def _ordinary_run(self, expected_dir, monkeypatch):
+        monkeypatch.setattr(e2e_utils, "MINT_BASELINES", False)
+        monkeypatch.setattr(e2e_utils, "REMINT_BASELINES", False)
+        monkeypatch.setattr(e2e_utils, "REMINT_FORCE", ())
+        monkeypatch.setattr(e2e_utils, "_wait_for_webfont", lambda page: True)
+
+    def _baselines(self, expected_dir, *, utk=True):
+        _default_drawing().save(expected_dir / self.DEFAULT)
+        if utk:
+            _other_gpus_drawing().save(expected_dir / self.UTK)
+        return expected_dir / self.DEFAULT, expected_dir / self.UTK
+
+    def _captures(self, monkeypatch, *images):
+        taken = list(images)
+        monkeypatch.setattr(e2e_utils, "_capture_full_page", lambda page: taken.pop(0))
+        return taken
+
+    def test_the_kinds_baseline_sits_beside_the_default_one(self):
+        # Built from the default name, never parsed back out of a file name:
+        # baseline names hold dots of their own.
+        default = "/x/screenshot_agent-run_agent.dataflow-builder.png"
+        assert e2e_utils.kind_baseline(default, "utk-gpu") == (
+            "/x/screenshot_agent-run_agent.dataflow-builder.utk-gpu.png")
+        assert e2e_utils.GPU_KINDS == ("arcade-gpu", "utk-gpu")
+
+    def test_a_run_of_a_kind_compares_with_its_kinds_baseline(self, expected_dir, monkeypatch):
+        _, utk = self._baselines(expected_dir)
+        monkeypatch.setenv(GPU_KIND_ENV, "utk-gpu")
+        self._captures(monkeypatch, _other_gpus_drawing())
+        assert _save() == str(utk)
+
+    def test_a_run_without_a_kind_compares_with_the_default(self, expected_dir, monkeypatch):
+        # A local run or a CPU runner: nothing changes.
+        default, _ = self._baselines(expected_dir)
+        self._captures(monkeypatch, _default_drawing())
+        assert _save() == str(default)
+
+    def test_a_run_of_another_kind_compares_with_the_default(self, expected_dir, monkeypatch):
+        default, _ = self._baselines(expected_dir)
+        monkeypatch.setenv(GPU_KIND_ENV, "arcade-gpu")
+        self._captures(monkeypatch, _other_gpus_drawing())
+        with pytest.raises(AssertionError, match=r"Screenshot regression for screenshot_some-scene_a-step\.png"):
+            _save()
+
+    def test_a_frame_without_a_baseline_of_the_runs_kind_compares_with_the_default(self, expected_dir, monkeypatch):
+        default, _ = self._baselines(expected_dir, utk=False)
+        monkeypatch.setenv(GPU_KIND_ENV, "utk-gpu")
+        self._captures(monkeypatch, _default_drawing())
+        assert _save() == str(default)
+
+    def test_an_unknown_kind_is_refused(self, expected_dir, monkeypatch):
+        self._baselines(expected_dir)
+        monkeypatch.setenv(GPU_KIND_ENV, "h100")
+        self._captures(monkeypatch, _default_drawing())
+        with pytest.raises(ValueError) as exc:
+            _save()
+        assert "arcade-gpu" in str(exc.value) and "utk-gpu" in str(exc.value)
+
+    def test_a_remint_on_a_kind_rewrites_that_kinds_baseline_not_the_default(self, expected_dir, monkeypatch):
+        # Re-mint a frame on the GPU kind its baseline came from: a utk-gpu
+        # capture written over the default would fail every arcade run.
+        monkeypatch.setattr(e2e_utils, "REMINT_BASELINES", True)
+        default, utk = self._baselines(expected_dir)
+        before = default.read_bytes()
+        monkeypatch.setenv(GPU_KIND_ENV, "utk-gpu")
+        new = _painted_at(*[(x, 30) for x in range(40)])
+        self._captures(monkeypatch, new, new.copy())
+        assert _save() == str(utk)
+        assert _holds(utk, new)
+        assert default.read_bytes() == before
+
+    def test_a_frame_named_for_its_kind_gets_a_baseline_of_that_kind(self, expected_dir, monkeypatch):
+        monkeypatch.setattr(e2e_utils, "REMINT_BASELINES", True)
+        monkeypatch.setattr(e2e_utils, "REMINT_GPU_KIND_FRAMES", ("some-scene_a-step.png",), raising=False)
+        default, utk = self._baselines(expected_dir, utk=False)
+        before = default.read_bytes()
+        monkeypatch.setenv(GPU_KIND_ENV, "utk-gpu")
+        left = self._captures(monkeypatch, _other_gpus_drawing(), _other_gpus_drawing())
+        assert _save() == str(utk)
+        assert _holds(utk, _other_gpus_drawing())
+        assert default.read_bytes() == before
+        assert left == []  # captured twice: the new baseline, and the check that it held
+
+    def test_a_named_frame_its_kind_draws_like_the_default_gets_no_baseline_of_its_own(self, expected_dir, monkeypatch):
+        monkeypatch.setattr(e2e_utils, "REMINT_BASELINES", True)
+        monkeypatch.setattr(e2e_utils, "REMINT_GPU_KIND_FRAMES", ("some-scene_a-step.png",), raising=False)
+        default, utk = self._baselines(expected_dir, utk=False)
+        before = default.read_bytes()
+        monkeypatch.setenv(GPU_KIND_ENV, "utk-gpu")
+        self._captures(monkeypatch, _default_drawing())
+        assert _save() == str(default)
+        assert not utk.exists()
+        assert default.read_bytes() == before
+
+    def test_a_gpu_kind_remint_writes_only_the_frames_it_names(self, expected_dir, monkeypatch):
+        # The run is on another GPU than most baselines came from, so every
+        # frame it does not name is compared, never written: not over its
+        # default baseline, and not as a baseline of the kind.
+        monkeypatch.setattr(e2e_utils, "REMINT_BASELINES", True)
+        monkeypatch.setattr(e2e_utils, "REMINT_GPU_KIND_FRAMES", ("another-scene",), raising=False)
+        default, _ = self._baselines(expected_dir, utk=False)
+        before = default.read_bytes()
+        monkeypatch.setenv(GPU_KIND_ENV, "utk-gpu")
+        moved = _painted_at((1, 1), *[(x, 30) for x in range(4)])  # over the re-mint floor, within budget
+        left = self._captures(monkeypatch, moved, moved.copy())
+        assert _save() == str(default)
+        assert default.read_bytes() == before
+        assert sorted(p.name for p in expected_dir.iterdir()) == [self.DEFAULT]
+        assert len(left) == 1  # one capture: a comparison, not a re-mint
+
+    def test_a_gpu_kind_remint_compares_the_frames_it_does_not_name(self, expected_dir, monkeypatch):
+        monkeypatch.setattr(e2e_utils, "REMINT_BASELINES", True)
+        monkeypatch.setattr(e2e_utils, "REMINT_GPU_KIND_FRAMES", ("another-scene",), raising=False)
+        self._baselines(expected_dir, utk=False)
+        monkeypatch.setenv(GPU_KIND_ENV, "utk-gpu")
+        self._captures(monkeypatch, _other_gpus_drawing(), _other_gpus_drawing())
+        with pytest.raises(AssertionError, match="Screenshot regression"):
+            _save()
+        assert sorted(p.name for p in expected_dir.iterdir()) == [
+            self.DEFAULT, "screenshot_some-scene_a-step_actual.png"]
+
+    def test_a_new_kind_baseline_that_did_not_settle_is_taken_away(self, expected_dir, monkeypatch):
+        monkeypatch.setattr(e2e_utils, "REMINT_BASELINES", True)
+        monkeypatch.setattr(e2e_utils, "REMINT_GPU_KIND_FRAMES", ("some-scene_a-step.png",), raising=False)
+        default, utk = self._baselines(expected_dir, utk=False)
+        before = default.read_bytes()
+        monkeypatch.setenv(GPU_KIND_ENV, "utk-gpu")
+        self._captures(monkeypatch, _other_gpus_drawing(), Image.new("RGB", (40, 40), (0, 0, 0)))
+        with pytest.raises(AssertionError) as exc:
+            _save()
+        assert "had not settled" in str(exc.value)
+        assert not utk.exists()
+        assert default.read_bytes() == before
+
+    def test_force_names_a_frame_by_its_default_name_when_it_has_a_kinds_baseline(self, expected_dir, monkeypatch):
+        # `remint_force` parts end in the default name's `.png`; that must
+        # still reach the kind's baseline the frame is compared with.
+        monkeypatch.setattr(e2e_utils, "REMINT_BASELINES", True)
+        monkeypatch.setattr(e2e_utils, "REMINT_MIN_RATIO", 0.001)
+        monkeypatch.setattr(e2e_utils, "REMINT_FORCE", ("some-scene_a-step.png",))
+        default, utk = self._baselines(expected_dir)
+        before = default.read_bytes()
+        monkeypatch.setenv(GPU_KIND_ENV, "utk-gpu")
+        new = _other_gpus_drawing()
+        new.putpixel((30, 30), (0, 0, 0))  # 1 pixel of 1,600, under the floor
+        self._captures(monkeypatch, new, new.copy())
+        _save()
+        assert _holds(utk, new)
+        assert default.read_bytes() == before
 
 
 class TestVolatileText:
