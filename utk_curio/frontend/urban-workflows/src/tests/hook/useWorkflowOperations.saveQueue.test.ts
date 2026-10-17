@@ -13,7 +13,7 @@ import { renderHook, act, waitFor } from "@testing-library/react";
  */
 
 // What the canvas holds when a save reads it.
-let mockCanvasNodes: { id: string }[] = [];
+let mockCanvasNodes: object[] = [];
 // One object for every render. A new one per render would give
 // saveCurrentProject a new identity on every render, which re-arms the
 // 30 second autosave interval each time.
@@ -429,17 +429,28 @@ describe("autosaves that come due while a save hangs", () => {
       const { result, answerHung, hung } = await hungSaveWithAutosaveArmed();
       autosavesComeDue(4);
       // A node added after the last autosave came due.
-      mockCanvasNodes = [{ id: "added-during-the-hang" }];
+      const added = {
+        id: "added-during-the-hang",
+        type: "curioUniversalNode",
+        position: { x: 0, y: 0 },
+        data: {
+          nodeId: "added-during-the-hang",
+          nodeType: "curio.builtin/data-loading@1",
+          input: "",
+        },
+      };
+      mockCanvasNodes = [added];
       act(() => {
         result.current.markDirty();
       });
 
       await answerAndDrain(answerHung, hung);
-      const [hungBody, autosaveBody] = (projectsApi.update as jest.Mock).mock.calls.map(
-        (call) => call[1],
-      );
+      const bodies = (projectsApi.update as jest.Mock).mock.calls.map((call) => call[1]);
+      // The hung save, then the autosave that waited.
+      expect(bodies.length).toBeGreaterThanOrEqual(2);
+      const [hungBody, autosaveBody] = bodies;
       expect(hungBody.spec.dataflow.nodes).toEqual([]);
-      expect(autosaveBody.spec.dataflow.nodes).toEqual([{ id: "added-during-the-hang" }]);
+      expect(autosaveBody.spec.dataflow.nodes).toEqual([added]);
       expect(autosaveBody.saveTab).toBe(hungBody.saveTab);
       expect(autosaveBody.saveNumber).toBe(hungBody.saveNumber + 1);
     } finally {
