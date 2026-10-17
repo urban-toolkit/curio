@@ -156,6 +156,31 @@ export function sortScenarios(items: ScenarioRow[], mode: ScenarioSortMode): Sce
   return rows.sort((a, b) => b.project.updatedAt.localeCompare(a.project.updatedAt));
 }
 
+/** One project's scenarios, as Browse all lists them under its name. */
+export interface ScenarioGroup {
+  project: ScenarioProjectRef;
+  items: ScenarioRow[];
+}
+
+/**
+ * *items*, already sorted, under the projects they come from: a group per
+ * project, placed where its first scenario is, with its scenarios in the same
+ * order. So the sort orders the groups by their first scenario and the
+ * scenarios within each group.
+ */
+export function groupScenariosByProject(items: readonly ScenarioRow[]): ScenarioGroup[] {
+  const byProject = new Map<string, ScenarioGroup>();
+  for (const row of items) {
+    const group = byProject.get(row.project.id);
+    if (group) {
+      group.items.push(row);
+    } else {
+      byProject.set(row.project.id, { project: row.project, items: [row] });
+    }
+  }
+  return Array.from(byProject.values());
+}
+
 /** The address of a scenario's details over the Scenario Catalog page. */
 export function scenarioCatalogPath(row?: Pick<ScenarioRow, "project" | "id"> | null): string {
   if (!row) return "/catalog/scenarios";
