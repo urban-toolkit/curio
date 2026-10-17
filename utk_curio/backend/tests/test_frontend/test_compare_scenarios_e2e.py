@@ -21,6 +21,11 @@ input yet. This drives the whole path in a browser:
 8. A second loader wired into the copy: the node warns that the two inputs read
    different context, and names them. Its close-up is the frame.
 
+A second test charts two scenarios of four rows and of two (#819's Chart
+extras): Combine's None plots each row as it is, so the bars stack each
+scenario's rows, and a pie writes each slice's value on it. Its close-ups are
+the chart before and after each change.
+
 Run::
 
     CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/test_compare_scenarios_e2e.py -v
@@ -83,17 +88,19 @@ def _factor(value: int) -> dict:
     return {"widgets": [{"name": "factor", "type": "number", "default": 1, "value": value}]}
 
 
-def _spec() -> dict:
-    def node(node_id, node_type, x, y, content, title=None, metadata=None, **fields):
-        saved = {
-            "id": node_id, "type": node_type, "x": x, "y": y, "content": content,
-            "in": "DEFAULT", "out": "DEFAULT", "goal": "",
-            "metadata": {"keywords": [], **(metadata or {})}, **fields,
-        }
-        if title:
-            saved["title"] = title
-        return saved
+def _node(node_id, node_type, x, y, content, title=None, metadata=None, **fields) -> dict:
+    saved = {
+        "id": node_id, "type": node_type, "x": x, "y": y, "content": content,
+        "in": "DEFAULT", "out": "DEFAULT", "goal": "",
+        "metadata": {"keywords": [], **(metadata or {})}, **fields,
+    }
+    if title:
+        saved["title"] = title
+    return saved
 
+
+def _spec() -> dict:
+    node = _node
     return {
         "dataflow": {
             "name": "Compare Scenarios",
@@ -317,3 +324,194 @@ def test_two_scenarios_are_stacked_charted_and_compared(
         test_name="test_two_scenarios_are_stacked_charted_and_compared",
         sweep_toasts=True,
     )
+
+
+#: "Twice as tall" keeps its first two rows, so the two scenarios have four
+#: rows (6, 5, 7, 4) and two (3, 2.5): their means are 5.5 and 2.75, their sums
+#: 22 and 5.5.
+HEAD_CODE = 'df = input_0.copy()\ndf["sunlight"] = df["sunlight"] / [!! factor !!]\nreturn df.head(2)\n'
+CHART_CLOSEUPS = "compare-chart-extras"
+
+
+def _chart_spec() -> dict:
+    return {
+        "dataflow": {
+            "name": "Compare Chart Extras",
+            "task": "",
+            "timestamp": 1789193389280,
+            "provenance_id": "Compare Chart Extras",
+            "nodes": [
+                _node(LOAD, "curio.builtin/data-loading", 0, 0, LOAD_CODE, "Roads"),
+                _node(BASE, "curio.builtin/computation-analysis", 700, 0, SHADE_CODE, "Shade", _factor(1)),
+                _node(TALL, "curio.builtin/computation-analysis", 700, 500, HEAD_CODE, "Shade",
+                      {**_factor(2), "copiedFrom": [BASE]}),
+                _node(COMPARE, COMPARE_TYPE, 1400, 0, ""),
+            ],
+            "edges": [
+                {"id": "e-load-base", "source": LOAD, "target": BASE, "sourceHandle": "out", "targetHandle": "in"},
+                {"id": "e-load-tall", "source": LOAD, "target": TALL, "sourceHandle": "out", "targetHandle": "in"},
+            ],
+            "scenarios": [
+                {"id": "s-base", "name": "Baseline", "color": "#2a9d8f", "nodes": [BASE]},
+                {"id": "s-tall", "name": "Twice as tall", "color": "#e76f51", "nodes": [TALL]},
+            ],
+        }
+    }
+
+
+# The height of each color's tallest column of pixels in the chart's canvas:
+# a bar's height, for the legend's swatches are far shorter.
+_BAR_HEIGHTS_JS = """([id, colors]) => {
+    const canvas = document.querySelector(`#vega${id} canvas`);
+    if (!canvas || !canvas.width || !canvas.height) return null;
+    const { width, height } = canvas;
+    const { data } = canvas.getContext("2d").getImageData(0, 0, width, height);
+    const targets = colors.map((hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)));
+    return targets.map((t) => {
+        let tallest = 0;
+        for (let x = 0; x < width; x++) {
+            let top = -1, bottom = -1;
+            for (let y = 0; y < height; y++) {
+                const p = (y * width + x) * 4;
+                if (data[p + 3] < 200) continue;
+                if (Math.abs(data[p] - t[0]) <= 12 && Math.abs(data[p + 1] - t[1]) <= 12
+                    && Math.abs(data[p + 2] - t[2]) <= 12) {
+                    if (top < 0) top = y;
+                    bottom = y;
+                }
+            }
+            if (top >= 0) tallest = Math.max(tallest, bottom - top + 1);
+        }
+        return tallest;
+    });
+}"""
+
+
+# How many white pixels each color holds closed in on the left, the right, above
+# and below: letters written on its slice. The chart's white background is
+# never closed in by one color on all four sides, and a dark pixel (the legend's
+# text) on the way out stops the search.
+_WRITTEN_ON_JS = """([id, colors]) => {
+    const canvas = document.querySelector(`#vega${id} canvas`);
+    if (!canvas || !canvas.width || !canvas.height) return null;
+    const { width, height } = canvas;
+    const { data } = canvas.getContext("2d").getImageData(0, 0, width, height);
+    const targets = colors.map((hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)));
+    const at = (x, y) => (y * width + x) * 4;
+    const white = (p) => data[p + 3] >= 200 && data[p] >= 235 && data[p + 1] >= 235 && data[p + 2] >= 235;
+    const dark = (p) => data[p + 3] >= 200 && data[p] + data[p + 1] + data[p + 2] < 300;
+    const is = (p, t) => data[p + 3] >= 200 && Math.abs(data[p] - t[0]) <= 24
+        && Math.abs(data[p + 1] - t[1]) <= 24 && Math.abs(data[p + 2] - t[2]) <= 24;
+    const reaches = (x, y, dx, dy, t) => {
+        for (let k = 1; k <= 16; k++) {
+            const nx = x + dx * k, ny = y + dy * k;
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height) return false;
+            const p = at(nx, ny);
+            if (is(p, t)) return true;
+            if (dark(p)) return false;
+        }
+        return false;
+    };
+    return targets.map((t) => {
+        let count = 0;
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                if (!white(at(x, y))) continue;
+                if (reaches(x, y, -1, 0, t) && reaches(x, y, 1, 0, t)
+                    && reaches(x, y, 0, -1, t) && reaches(x, y, 0, 1, t)) count += 1;
+            }
+        }
+        return count;
+    });
+}"""
+
+
+def _bar_ratio(page, node_id: str, expected: float) -> float:
+    """Baseline's bar over the other's, once it is *expected*, give or take."""
+    colors = [BASELINE["color"], TWICE["color"]]
+    heights = None
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        heights = page.evaluate(_BAR_HEIGHTS_JS, [node_id, colors])
+        if heights and min(heights) > 0 and abs(heights[0] / heights[1] - expected) <= 0.25:
+            return heights[0] / heights[1]
+        page.wait_for_timeout(250)
+    raise AssertionError(f"Baseline's bar is not {expected} times the other's: heights {heights} for {colors}")
+
+
+def _written_on(page, node_id: str) -> list:
+    return page.evaluate(_WRITTEN_ON_JS, [node_id, [BASELINE["color"], TWICE["color"]]])
+
+
+def test_a_chart_combines_nothing_and_a_pie_writes_its_values(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    require_project_page()
+    require_user_auth()
+    page.emulate_media(reduced_motion="reduce")
+    spec = _chart_spec()
+    session = stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Compare Chart Extras",
+        username="compare_chart_extras_e2e",
+        project_name="Compare Chart Extras",
+        project_spec=spec,
+    )
+    require_owner_view(page)
+    project_id = session["project"]["id"]
+    for node in spec["dataflow"]["nodes"]:
+        node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
+
+    # Both outcomes into the node's circles, and Run All: bars of the means.
+    _wait_for_circles(page, COMPARE, ["in"])
+    frame_nodes(page, [BASE, COMPARE])
+    connect_nodes(page, BASE, COMPARE)
+    _wait_for_circles(page, COMPARE, ["in", "in_1"])
+    frame_nodes(page, [TALL, COMPARE])
+    connect_nodes(page, TALL, COMPARE, target_handle="in_1")
+    _wait_for_code(page, COMPARE, ENTRY_LINES)
+    run_all_and_wait(page, timeout_ms=240000)
+    compare = node_locator(page, COMPARE)
+    status = wait_for_node_settled(page, COMPARE, node_type=COMPARE_TYPE, timeout_ms=120000)
+    assert status == "done", f"Compare Scenarios did not stack its inputs: {read_node_error_text(compare)}"
+    frame_nodes(page, [COMPARE])
+    _assert_chart_drew(page, COMPARE, "bar")
+
+    # Combine offers None, after the aggregates.
+    combine = compare.locator('select[aria-label="Combine"]')
+    assert combine.input_value() == "mean"
+    offered = combine.locator("option").evaluate_all("(options) => options.map((o) => [o.value, o.textContent])")
+    assert offered[-1] == ["none", "None"], offered
+    # The means, 5.5 and 2.75: one bar twice the other.
+    _bar_ratio(page, COMPARE, 2.0)
+    save_node_closeup(page, CHART_CLOSEUPS, COMPARE, test_name="bars_of_the_means", sweep_toasts=True)
+
+    # None: each scenario's rows stack as they are, 22 against 5.5.
+    combine.select_option("none")
+    _bar_ratio(page, COMPARE, 4.0)
+    _assert_chart_drew(page, COMPARE, "bar")
+    assert _written_on(page, COMPARE) == [0, 0], "a bar chart has nothing written on its bars"
+    save_node_closeup(page, CHART_CLOSEUPS, COMPARE, test_name="bars_of_each_row", sweep_toasts=True)
+    save_dataflow(page)
+    project = api_json(f"{current_server}/api/projects/{project_id}", session["token"])
+    saved = {n["id"]: n for n in project["spec"]["dataflow"]["nodes"]}
+    assert saved[COMPARE]["metadata"]["compareScenarios"] == {
+        "inputs": [BASELINE, TWICE],
+        "chart": {"preset": "bar", "y": "sunlight", "aggregate": "none"},
+    }, saved[COMPARE]["metadata"]
+
+    # A pie of the sums, each slice's value written on it in white.
+    compare.locator('select[aria-label="Chart"]').select_option("pie")
+    _assert_chart_drew(page, COMPARE, "pie")
+    assert combine.input_value() == "sum"
+    written = None
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        written = _written_on(page, COMPARE)
+        if written and min(written) >= 10:
+            break
+        page.wait_for_timeout(250)
+    assert written and min(written) >= 10, f"the pie's slices hold {written} white pixels of writing, not its values"
+    save_node_closeup(page, CHART_CLOSEUPS, COMPARE, test_name="pie_with_its_values", sweep_toasts=True)
