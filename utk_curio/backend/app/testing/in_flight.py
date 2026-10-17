@@ -22,8 +22,9 @@ from __future__ import annotations
 
 import threading
 
-#: How long a reset waits for the requests running when it starts.
-RESET_WAIT_SECONDS = 10.0
+#: How long a reset waits for the requests running when it starts. A page's
+#: workflow dependency check alone took up to 9.4 s on CI.
+RESET_WAIT_SECONDS = 30.0
 
 
 class InFlightRequests:
