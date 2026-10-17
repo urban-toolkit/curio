@@ -385,8 +385,11 @@ def test_a_scenario_dragged_into_another_project_brings_its_results_and_its_own_
 
     # 2. Run scenario: the lever runs, the copied context is reused.
     sent, _outputs, stop = _record_python_runs(page)
+    # The map drew from the lever's result when the scenario arrived, so wait
+    # for its own run, which starts when the lever's new output reaches it (#892).
+    watch_node_run(page, map_copy)
     _run_scenario(page, dropped["id"])
-    status = wait_for_node_settled(page, map_copy, node_type="autk-grammar", timeout_ms=180000)
+    status = wait_for_node_run_to_end(page, map_copy, node_type="autk-grammar", timeout_ms=180000)
     wait_for_run_guard_released(page, timeout_ms=60000)
     stop()
     assert status == "done", read_node_error_text(node_locator(page, map_copy))
@@ -402,8 +405,11 @@ def test_a_scenario_dragged_into_another_project_brings_its_results_and_its_own_
     page.goto(f"{app_frontend.base_url}/dataflow/{source}")
     node_locator(page, LOADER).wait_for(state="visible", timeout=45000)
     set_node_code(page, LOADER, _grid_code(100))
+    # The loader still shows the result the source saved, which also passes
+    # play_node's check that the run started: wait for the run itself (#892).
+    watch_node_run(page, LOADER)
     play_node(page, LOADER)
-    assert wait_for_node_settled(page, LOADER, timeout_ms=120000) == "done"
+    assert wait_for_node_run_to_end(page, LOADER, timeout_ms=120000) == "done"
     save_dataflow(page)
     assert _rows(_preview(current_server, token, computed_dataset_id(LOADER, source))) != source_before, (
         "the source's saved output did not change, so this proves nothing"
