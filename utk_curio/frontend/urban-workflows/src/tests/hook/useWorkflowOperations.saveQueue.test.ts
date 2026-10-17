@@ -6,6 +6,9 @@ import { renderHook, act, waitFor } from "@testing-library/react";
  * save stuck for SQLite's 30 s busy timeout) and #941 (a dashboard reading
  * outputs while a second save rewrote them), and most of them came from the
  * browser: the pin's save and the autosave saved directly, beside the queue.
+ * A save the server never answers gives up after 2 minutes, so it cannot hold
+ * the saves behind it, and each save is numbered so the server can refuse one
+ * the page gave up on that lands after the next.
  */
 
 // One object for every render. A new one per render would give
@@ -236,5 +239,95 @@ describe("the save queue", () => {
     });
     // And goes out once the save before it has answered.
     await waitFor(() => expect(projectsApi.update).toHaveBeenCalledTimes(2));
+  });
+
+  it("names this tab on each save and numbers it one higher than the last", async () => {
+    // A save the page gave up on may still land on the server; the number
+    // lets the server refuse it once a later save of this tab has landed.
+    const deps = makeDeps();
+    const { result } = renderHook(() => useWorkflowOperations(deps));
+    await loadedProject(result);
+
+    await act(async () => {
+      await result.current.requestProjectSave();
+      await result.current.requestProjectSave();
+    });
+
+    const [first, second] = (projectsApi.update as jest.Mock).mock.calls.map(
+      (call) => call[1],
+    );
+    expect(typeof first.saveTab).toBe("string");
+    expect(first.saveTab).not.toBe("");
+    expect(second.saveTab).toBe(first.saveTab);
+    expect(Number.isInteger(first.saveNumber)).toBe(true);
+    expect(second.saveNumber).toBe(first.saveNumber + 1);
+  });
+
+  it("gives up on a save the server never answers after 2 minutes, and sends the next", async () => {
+    // A PUT left waiting forever would hold every save behind it. This one
+    // goes through the real API client, down to fetch.
+    jest.useFakeTimers();
+    const actual = jest.requireActual("../../api/projectsApi");
+    (projectsApi.update as jest.Mock).mockImplementation(
+      (id: string, body: unknown) => actual.projectsApi.update(id, body),
+    );
+    const realFetch = global.fetch;
+    const sent: RequestInit[] = [];
+    global.fetch = jest.fn((_url: string, opts: RequestInit = {}) => {
+      sent.push(opts);
+      if (sent.length === 1) {
+        // The first PUT is never answered.
+        return new Promise((_resolve, reject) => {
+          opts.signal?.addEventListener("abort", () => {
+            reject(new DOMException("The operation was aborted.", "AbortError"));
+          });
+        });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => SAVED });
+    }) as unknown as typeof fetch;
+    try {
+      const deps = makeDeps();
+      const { result } = renderHook(() => useWorkflowOperations(deps));
+      await loadedProject(result);
+
+      let first!: Promise<unknown>;
+      let second!: Promise<unknown>;
+      act(() => {
+        first = result.current.requestProjectSave();
+        second = result.current.requestProjectSave();
+      });
+      let firstOutcome: unknown = "waiting";
+      first.then(
+        () => {
+          firstOutcome = "answered";
+        },
+        (err: unknown) => {
+          firstOutcome = err;
+        },
+      );
+      expect(sent).toHaveLength(1);
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(2 * 60 * 1000);
+      });
+      expect(firstOutcome).toBeInstanceOf(Error);
+      expect((firstOutcome as Error).message).toMatch(/longer than 2 minutes/);
+
+      // The queue moved on: the next save went out and was answered.
+      await act(async () => {
+        await expect(second).resolves.toEqual(SAVED);
+      });
+      expect(sent).toHaveLength(2);
+      // From the same tab and numbered after the first, so the server can
+      // refuse the first if it still lands.
+      const [firstBody, secondBody] = sent.map((opts) => JSON.parse(String(opts.body)));
+      expect(typeof firstBody.saveTab).toBe("string");
+      expect(firstBody.saveTab).not.toBe("");
+      expect(secondBody.saveTab).toBe(firstBody.saveTab);
+      expect(secondBody.saveNumber).toBe(firstBody.saveNumber + 1);
+    } finally {
+      global.fetch = realFetch;
+      (projectsApi.update as jest.Mock).mockResolvedValue(SAVED);
+    }
   });
 });

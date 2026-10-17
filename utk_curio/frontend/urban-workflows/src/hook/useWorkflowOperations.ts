@@ -26,6 +26,7 @@ import { updateNodeData, updateNodesByMap, updateEdgesByMap, extractNodeFieldMap
 import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
 import { TrillGenerator } from "../TrillGenerator";
 import { projectsApi, OutputRef, DatasetInstallWarning } from "../api/projectsApi";
+import { nextSaveOrder } from "../api/saveOrder";
 import type { DataflowCategories, HandCategories } from "../utils/dataflowCategories";
 import { normalizeScenarios, type Scenario } from "../utils/scenarios/scenarioModel";
 import { buildSaveableLiveOutputs } from "../utils/saveOutputDataset";
@@ -1023,6 +1024,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 ...(baseRevisionRef.current !== null
                     ? { baseRevision: baseRevisionRef.current }
                     : {}),
+                // Numbered after this tab's last save, so a save the page gave
+                // up on cannot land over this one (api/saveOrder.ts).
+                ...nextSaveOrder(),
             });
             baseRevisionRef.current = detail.spec_revision ?? null;
             syncDatasetsFromSavedSpec(detail.spec);
@@ -1099,6 +1103,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // dataflow comes through here (Save, the pin's save, the autosave, install
     // saves, server runs, the agent drop, the catalog drawers); only the
     // dashboard's Save layout, the one writer on its page, saves directly.
+    // A save the server never answers gives up after SAVE_TIMEOUT_MS
+    // (projectsApi.ts), so it cannot hold the saves behind it.
     //
     // Each request runs strictly after all prior ones; once the first create
     // has set projectIdRef, every chained save takes the update
