@@ -1,11 +1,12 @@
-"""Playwright E2E: the Edit Features node (#662).
+"""Playwright E2E: the Interaction node (#662; its type is still
+``curio.builtin/edit-features``, the Edit Features node it was).
 
-Two scenarios count the buildings of one layer: "Every building", whose Edit
-Features node has no edits, and "One removed", a copy of it. The layer holds
+Two scenarios count the buildings of one layer: "Every building", whose
+Interaction node has no edits, and "One removed", a copy of it. The layer holds
 three building parts, two of them one building's, so they share its
-``building_id``, as Autark's buildings do. In One removed's Edit Features node
-a building is picked with a double-click on the node's map, the Autark node's
-own map code, and removed:
+``building_id``, as Autark's buildings do. In One removed's Interaction node a
+building is picked with a double-click on the node's map, the Autark node's own
+map code, and removed:
 
 1. The node's map is drawn, its id column is ``building_id``, and it says an
    edit applies to every part of a building.
@@ -16,6 +17,11 @@ own map code, and removed:
 5. A Compare Scenarios node over both counts lists the edit in its What differs
    tab, against no edits in Every building.
 6. The edit list is saved with the dataflow.
+
+A second test sums the buildings' heights instead, and edits by condition: a
+scale on the features ``height >= 50`` picks, a removal by condition switched
+off, then Update results, which runs the node and every node after it. What
+differs lists the entry switched off as off.
 
 It runs an Autark map, which needs WebGPU: without an adapter it skips, unless
 ``CURIO_REQUIRE_HARDWARE_WEBGPU=1`` (CI's GPU job), where it fails.
@@ -28,8 +34,11 @@ Run::
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import TYPE_CHECKING
+
+from playwright.sync_api import expect
 
 from .test_compare_scenarios_e2e import _OUTPUT_ARTIFACT_JS
 from .test_scenario_drop_e2e import _saved_spec
@@ -52,7 +61,9 @@ from .utils import (
     save_dataflow,
     save_node_closeup,
     stub_login_and_enter_workflow,
+    wait_for_node_run_to_end,
     wait_for_node_settled,
+    watch_node_run,
 )
 
 if TYPE_CHECKING:
@@ -282,3 +293,149 @@ def test_a_building_picked_and_removed_drops_the_count_and_is_listed_as_what_dif
     }, json.dumps(saved[EDIT_2]["metadata"])
     assert saved[EDIT_2]["content"] == code
     assert saved[EDIT]["metadata"]["editFeatures"] == {"key": "building_id"}
+
+
+#: The Interaction test's last nodes sum the buildings' heights, which a scale
+#: changes and a removal would cut.
+TOTAL_CODE = 'return float(input_0["height"].sum())\n'
+TOTAL = 20.0 + 35.0 + 50.0
+#: The two entries the test makes, as the node keeps them.
+SCALE_TALL = {"op": "scale", "where": "height >= 50", "column": "height", "value": 0.5}
+REMOVE_FIRST_OFF = {"op": "remove", "where": "building_id == 1", "enabled": False}
+
+
+def _total(page, node_id: str) -> float:
+    artifact = page.evaluate(_OUTPUT_ARTIFACT_JS, node_id)
+    assert artifact, f"{node_id} shows no saved output"
+    stored = load_artifact_as_dict(artifact)
+    assert stored["dataType"] in ("float", "int"), stored
+    return float(stored["data"])
+
+
+def _apply_where(edit, condition: str, op: str, column: str = "", value: str = "") -> None:
+    """Make an entry from the node's condition row."""
+    edit.get_by_test_id("interaction-where").fill(condition)
+    edit.get_by_test_id("interaction-where-op").select_option(op)
+    if column:
+        edit.get_by_test_id("interaction-where-column").select_option(column)
+    if value:
+        edit.get_by_test_id("interaction-where-value").fill(value)
+    edit.get_by_test_id("interaction-where-apply").click()
+
+
+def test_the_interaction_node_edits_by_condition_switches_an_entry_off_and_updates_the_results(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """A condition picks building 2 (``height >= 50``) and halves its height; a
+    removal of building 1 by condition is switched off; Update results runs the
+    node and every node after it, so the total height drops by 25 m, the
+    switched-off removal skipped. What differs lists both entries, the second
+    as off, and the log is saved with the dataflow."""
+    require_project_page()
+    require_user_auth()
+    page.emulate_media(reduced_motion="reduce")
+    spec = _spec()
+    for node in spec["dataflow"]["nodes"]:
+        if node["id"] in (COUNT, COUNT_2):
+            node["content"], node["title"] = TOTAL_CODE, "Total height"
+    session = stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Interaction",
+        username="interaction_e2e",
+        project_name="Interaction",
+        project_spec=spec,
+    )
+    require_owner_view(page)
+    token, project_id = session["token"], session["project"]["id"]
+    for node_id in (LOAD, EDIT, EDIT_2, COUNT, COUNT_2, COMPARE):
+        node_locator(page, node_id).wait_for(state="visible", timeout=45000)
+    require_webgpu(page)
+
+    run_all_and_wait(page, timeout_ms=300000)
+    for node_id in (EDIT, EDIT_2):
+        _done(page, node_id, EDIT_TYPE)
+    for node_id in (COUNT, COUNT_2):
+        _done(page, node_id)
+    assert (_total(page, COUNT), _total(page, COUNT_2)) == (TOTAL, TOTAL), "with no edits every height is summed"
+
+    edit = node_locator(page, EDIT_2)
+    frame_nodes(page, [EDIT_2])
+    _open_tab(page, EDIT_2, "output")
+    edit.locator('[data-edit-map-state="drawn"]').wait_for(state="attached", timeout=90000)
+    # The node header names it Interaction.
+    assert "Interaction" in edit.inner_text()
+
+    # 1. A condition says how many features it picks: building 2's one part.
+    edit.get_by_test_id("interaction-where").fill("height >= 50")
+    expect(edit.get_by_test_id("interaction-matching")).to_have_text("1 feature", timeout=10000)
+    _apply_where(edit, "height >= 50", "scale", "height", "0.5")
+    expect(edit.locator('[data-edit-op="scale"]')).to_contain_text("Scale height by 0.5 where height >= 50", timeout=10000)
+
+    # 2. A removal by condition, then switched off: kept in the log, skipped.
+    _apply_where(edit, "building_id == 1", "remove")
+    edit.locator('[data-edit-list="2"]').wait_for(state="attached", timeout=10000)
+    edit.get_by_label("Use edit 2", exact=True).uncheck()
+    expect(edit.locator('[data-edit-op="remove"]')).to_have_attribute("data-edit-enabled", "false", timeout=10000)
+
+    deadline = time.time() + 15
+    code = ""
+    while time.time() < deadline:
+        code = read_node_code(page, EDIT_2)
+        if '"enabled": False' in code:
+            break
+        page.wait_for_timeout(250)
+    assert '{"op": "scale", "where": "height >= 50", "column": "height", "value": 0.5},' in code, code
+    assert '{"op": "remove", "where": "building_id == 1", "enabled": False},' in code, code
+
+    # 3. The node and the nodes after it are out of date until Update results.
+    update = edit.get_by_test_id("interaction-update")
+    expect(update).to_have_text(re.compile(r"^Update results \(\d+\)$"), timeout=10000)
+    watch_node_run(page, EDIT_2)
+    watch_node_run(page, COUNT_2)
+    update.click()
+    assert wait_for_node_run_to_end(page, EDIT_2, node_type=EDIT_TYPE, timeout_ms=180000) == "done", (
+        read_node_error_text(edit)
+    )
+    assert wait_for_node_run_to_end(page, COUNT_2, timeout_ms=180000) == "done", (
+        read_node_error_text(node_locator(page, COUNT_2))
+    )
+    deadline = time.time() + 30
+    while time.time() < deadline and _total(page, COUNT_2) == TOTAL:
+        page.wait_for_timeout(500)
+    assert _total(page, COUNT_2) == TOTAL - 25.0, (
+        f"halving building 2 (50 m) left a total of {_total(page, COUNT_2)}, not {TOTAL - 25.0}: "
+        "the switched-off removal of building 1 would leave 25"
+    )
+    assert _total(page, COUNT) == TOTAL, "the other scenario's total changed"
+
+    # 4. What differs lists both entries, the one switched off as off.
+    compare = node_locator(page, COMPARE)
+    frame_nodes(page, [COMPARE])
+    _open_tab(page, COMPARE, "output")
+    compare.get_by_role("tab", name="What differs", exact=True).click()
+    lever = compare.locator(f'[data-compare-lever="{EDIT}"]')
+    lever.wait_for(state="visible", timeout=15000)
+    edits = lever.locator(f'[data-compare-edits="{LESS}"]').inner_text()
+    assert "Scale height by 0.5 where height >= 50" in edits, edits
+    assert "Remove where building_id == 1 (off)" in edits, edits
+    assert "no edits" in lever.locator(f'[data-compare-edits="{EVERY}"]').inner_text()
+
+    # 5. The log is saved with the dataflow.
+    save_dataflow(page)
+    saved = {node["id"]: node for node in _saved_spec(current_server, token, project_id)["dataflow"]["nodes"]}
+    assert saved[EDIT_2]["metadata"]["editFeatures"] == {
+        "key": "building_id",
+        "edits": [SCALE_TALL, REMOVE_FIRST_OFF],
+    }, json.dumps(saved[EDIT_2]["metadata"])
+    assert saved[EDIT]["metadata"]["editFeatures"] == {"key": "building_id"}
+
+    # The node after the run: its map, its log with the entry switched off.
+    _open_tab(page, EDIT_2, "output")
+    edit.locator('[data-edit-map-state="drawn"]').wait_for(state="attached", timeout=90000)
+    save_node_closeup(
+        page, "interaction-log", EDIT_2,
+        test_name="test_the_interaction_node_edits_by_condition_switches_an_entry_off_and_updates_the_results",
+        sweep_toasts=True,
+    )
