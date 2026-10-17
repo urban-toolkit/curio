@@ -541,22 +541,41 @@ class TestARasterBehindAPinnedMap:
 
         assert payload.to_dict()["rasters"] == [{"filename": "r_output", "part": None, **refusal}]
 
-    def test_a_raster_the_sandbox_cannot_be_asked_for_is_left_out(self):
-        # Unlike an envelope that cannot be read, which refuses the page: the
-        # map asks /raster for this one when it draws.
+    def test_a_raster_the_sandbox_cannot_be_asked_for_refuses_the_page(self):
+        # As an envelope that cannot be read does: a page built without it
+        # would draw the map without its raster. Asking again usually works,
+        # so the refusal says to try again (#941).
+        from utk_curio.backend.app.projects.dashboard_payload import DashboardOutputUnreadableError
+
         def unreachable(filename, part):
             raise KeyError(filename)
 
-        payload = build_dashboard_payload(
-            spec=raster_map_spec(),
-            output_refs=raster_refs(),
-            fetch_envelope=lambda name: RASTER_ENVELOPE,
-            fetch_raster=unreachable,
-        )
-        body = payload.to_dict()
+        with pytest.raises(DashboardOutputUnreadableError) as caught:
+            build_dashboard_payload(
+                spec=raster_map_spec(),
+                output_refs=raster_refs(),
+                fetch_envelope=lambda name: RASTER_ENVELOPE,
+                fetch_raster=unreachable,
+                meta={"name": "Floods"},
+            )
 
-        assert body["rasters"] == []
-        assert body["outputs"] == {"r_output": RASTER_ENVELOPE}
+        assert caught.value.offenders == ["py"]
+        assert caught.value.name == "Floods"
+        assert "Try again" in caught.value.describe()
+        assert "py" in caught.value.describe()
+
+    def test_a_raster_the_sandbox_answers_nothing_for_refuses_the_page(self):
+        from utk_curio.backend.app.projects.dashboard_payload import DashboardOutputUnreadableError
+
+        with pytest.raises(DashboardOutputUnreadableError) as caught:
+            build_dashboard_payload(
+                spec=raster_map_spec(),
+                output_refs=raster_refs(),
+                fetch_envelope=lambda name: RASTER_ENVELOPE,
+                fetch_raster=lambda filename, part: None,
+            )
+
+        assert caught.value.offenders == ["py"]
 
     def test_it_asks_for_no_more_than_the_editors_map_loads(self):
         # The page's map refuses a larger raster with the editor's sentence; the

@@ -2,7 +2,8 @@
 
 The common ``client``/``db``/``user_and_token`` fixtures, on the dataset
 tests' ``app``, which wires ``CURIO_SHARED_DATA`` so a project save can record
-its outputs in the Data Catalog.
+its outputs in the Data Catalog, and its ``file_db_app``, the app on a SQLite
+file, for tests that run requests on several threads.
 """
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ from utk_curio.backend.tests._unit_fixtures import (  # noqa: F401
     db,
     user_and_token,
 )
-from utk_curio.backend.tests.test_datasets.conftest import app  # noqa: F401
+from utk_curio.backend.tests.test_datasets.conftest import app, file_db_app  # noqa: F401
 
 
 @pytest.fixture()

@@ -1407,7 +1407,8 @@ def build_standalone_dashboard(
     GeoTIFFs of the rasters an Autark map reads, would not fit in a page; the
     caller turns that into a message naming the heavy tiles. Raises
     :class:`DashboardOutputUnreadableError` when a tile needs a saved output
-    that could not be read, one the load found no copy of included.
+    that could not be read, one the load found no copy of included, or a
+    raster of one the sandbox could not be asked for.
     """
     from utk_curio.backend.app.projects.dashboard_payload import (
         DEFAULT_PAYLOAD_LIMIT_BYTES,
