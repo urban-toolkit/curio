@@ -1271,7 +1271,7 @@ combine, and **All dataflows** clears them.
 |---|---|
 | **Your dataflows** | the ones you created, imported or duplicated |
 | **By source** | Use cases, Examples and Tests that ship with Curio |
-| **Tags** | the tools a dataflow uses, such as Autark, Vega-Lite, GeoPandas, Pandas, GPU compute and Computer vision; scout when it uses a SCOUT node, model or dataset; plus tags you add |
+| **Tags** | the tools a dataflow uses, such as Autark, Vega-Lite, GeoPandas, Pandas, GPU compute and Computer vision; SCOUT when it uses a SCOUT node, model or dataset; plus tags you add |
 | **Data type** | Tables, Geometries, Imagery, OpenStreetMap, Rasters, Video, Audio |
 | **City**, **Topic**, **Complexity** | what you or Curio set for the dataflow |
 

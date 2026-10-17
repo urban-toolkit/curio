@@ -4,7 +4,7 @@
 shipped dataflows (2026-09-30), and the Scenarios, BuildingRasters,
 FloodScenarios, ScoutShadows, WeatherRouting and NetCDF test dataflows and
 example 24 placed by the same rules (#662, 2026-10-05), example 25 (#576) and
-example 26 (#819), with the computed ``scout`` tag on the six SCOUT dataflows
+example 26 (#819), with the computed ``SCOUT`` tag on the six SCOUT dataflows
 (2026-10-17). The automatic
 sections must reproduce it from
 the files alone, and the hand-set ones live in the files themselves.
@@ -121,7 +121,7 @@ def test_an_empty_dataflow_has_no_automatic_categories():
 
 
 # ---------------------------------------------------------------------------
-# The scout tag: a node or model from a SCOUT package, or a SCOUT dataset
+# The SCOUT tag: a node or model from a SCOUT package, or a SCOUT dataset
 # ---------------------------------------------------------------------------
 
 def _tags(nodes: list[dict], datasets: list[dict] | None = None) -> list[str]:
@@ -134,12 +134,12 @@ def _tags(nodes: list[dict], datasets: list[dict] | None = None) -> list[str]:
 
 def test_a_node_from_a_scout_package_tags_the_dataflow_scout():
     node = {"id": "a", "type": "scout.raster-conversion/rasterize-buildings@1", "content": ""}
-    assert _tags([node]) == ["scout"]
+    assert _tags([node]) == ["SCOUT"]
 
 
 def test_a_node_from_a_scout_model_package_tags_the_dataflow_scout():
     node = {"id": "a", "type": "model.scout.deep-umbra/accumulated-shadow@1", "content": ""}
-    assert _tags([node]) == ["scout"]
+    assert _tags([node]) == ["SCOUT"]
 
 
 def test_a_scout_model_loaded_in_a_code_node_tags_the_dataflow_scout():
@@ -148,7 +148,7 @@ def test_a_scout_model_loaded_in_a_code_node_tags_the_dataflow_scout():
         "type": "curio.builtin/computation-analysis@1",
         "content": 'model = curio_load_model("model.scout.weather-gnn")\nreturn model',
     }
-    assert _tags([node]) == ["scout"]
+    assert _tags([node]) == ["SCOUT"]
 
 
 @pytest.mark.parametrize("content, datasets", [
@@ -159,7 +159,7 @@ def test_a_scout_model_loaded_in_a_code_node_tags_the_dataflow_scout():
 def test_a_scout_dataset_alone_tags_the_dataflow_scout(content, datasets):
     """FloodScenarios and NetCDF have no SCOUT node, only SCOUT's datasets."""
     node = {"id": "a", "type": "curio.builtin/data-loading@1", "content": content}
-    assert _tags([node], datasets) == ["scout"]
+    assert _tags([node], datasets) == ["SCOUT"]
 
 
 def test_a_dataflow_that_only_mentions_scout_is_not_tagged_scout():

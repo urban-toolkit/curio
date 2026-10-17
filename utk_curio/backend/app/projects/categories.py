@@ -109,13 +109,13 @@ _MOSAIC_RASTERS = "curio.media/mosaic-rasters"
 #: SCOUT's node and model packages (``scout.raster-conversion``,
 #: ``model.scout.deep-umbra``) and datasets (``data.scout.wrf-rain``). A
 #: dataflow with a node or model from one of those packages, or that names one
-#: of those datasets, is tagged ``scout``.
+#: of those datasets, is tagged ``SCOUT``.
 _SCOUT_PACKAGES = ("scout.", "model.scout.")
 _SCOUT_DATASETS = "data.scout."
 
 #: Display order within each automatic section.
 TAG_ORDER = (
-    "Autark", "Vega-Lite", "GeoPandas", "Pandas", "GPU compute", "Computer vision", "scout",
+    "Autark", "Vega-Lite", "GeoPandas", "Pandas", "GPU compute", "Computer vision", "SCOUT",
 )
 DATA_TYPE_ORDER = (
     "Tables", "Geometries", "Imagery", "OpenStreetMap", "Rasters", "Video", "Audio",
@@ -188,7 +188,7 @@ def derive(spec: object, dataset_kind: Optional[DatasetKind] = None) -> dict[str
     if (any(isinstance(t, str) and t.startswith(_SCOUT_PACKAGES) for t in types)
             or any(m.startswith(_SCOUT_PACKAGES) for m in model_ids)
             or any(d.startswith(_SCOUT_DATASETS) for d in dataset_ids)):
-        tags.add("scout")
+        tags.add("SCOUT")
 
     data: set[str] = set()
     if has_pandas or formats & {"csv", "parquet"}:
