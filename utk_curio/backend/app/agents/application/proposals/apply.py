@@ -358,16 +358,14 @@ def _queue_enlisted_notes(
     if not notes:
         return [], [], " No notes rode this request — ask the Researcher to create them."
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
-    from utk_curio.backend.app.packages.service import ManifestError
+    from utk_curio.backend.app.packages.service import ManifestError, is_note_template
     from utk_curio.backend.app.packages.repositories.store import user_packages_dir
 
     try:
         manifest = load_package_manifest(user_packages_dir(user_key) / dir_name)
     except (ManifestError, OSError) as exc:
         return [], [], f" Notes skipped: the package manifest is unreadable ({exc})."
-    template = next(
-        (t for t in manifest.templates if t.behavior and t.editor == "none"), None
-    )
+    template = next((t for t in manifest.templates if is_note_template(t)), None)
     if template is None:
         return [], [], (
             f" Notes skipped: {manifest.package_id} has no presentation (note) "

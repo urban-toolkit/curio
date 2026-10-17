@@ -24,6 +24,7 @@ import {
   faFilm,
   faMap,
   faMapLocationDot,
+  faNoteSticky,
   faObjectGroup,
   faRectangleList,
   faServer,
@@ -81,6 +82,7 @@ registerIcon('fa-solid:sliders', faSliders);
 registerIcon('fa-solid:code-compare', faCodeCompare);
 registerIcon('fa-solid:calculator', faCalculator);
 registerIcon('fa-solid:eraser', faEraser);
+registerIcon('fa-solid:note-sticky', faNoteSticky);
 registerIcon('fa-solid:street-view', faStreetView);
 registerIcon('fa-solid:wand-magic-sparkles', faWandMagicSparkles);
 // curio.media@1.
