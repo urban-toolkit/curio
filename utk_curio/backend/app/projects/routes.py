@@ -193,8 +193,8 @@ def get_dashboard_payload(project_id: str):
     page that looks standalone and is not, and the owner would only find out
     when somebody opened it where the server is unreachable.
 
-    A tile whose saved output could not be read is a 503 that says to try
-    again, not a page with that tile drawn empty (#941).
+    A tile whose saved output, or a raster of it, could not be read is a 503
+    that says to try again, not a page with that tile drawn without it (#941).
 
     Every refusal names the dataflow too: the page server carries a refusal in
     the page instead of the data (``cli/static_server.py``), and the page shows
