@@ -113,9 +113,11 @@ def test_the_schema_takes_a_chosen_view_and_what_difference_joins_on(settings):
         {"difference": {"key": "osm_id", "band": 1}},
         {"difference": "osm_id"},
         {"chart": {"aggregate": "first"}},
+        {"difference": {"value": "band_1"}},
     ],
     ids=["a view the node does not have", "an empty view", "an empty key", "a field the format does not have",
-         "difference as a name", "an aggregate the node does not have"],
+         "difference as a name", "an aggregate the node does not have",
+         "a map color, as an Autark node after it colors the map"],
 )
 def test_the_schema_refuses_what_the_node_does_not_write(settings):
     assert _errors(_doc(settings)) != []

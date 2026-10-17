@@ -93,6 +93,15 @@ SCOUT = "https://github.com/urban-toolkit/scout"
 MODEL_SHA256 = "67afb9d2d56bd0a12164e6e651214d56860ff689728c5b6f29486f21c3cb188e"
 BUILDINGS = REPO / "datasets" / "data.scout.loop-buildings@1" / "data" / "loop-buildings.geojson"
 DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "ScoutShadows.json"
+#: The Autark map after the Compare Scenarios node in Difference: towers
+#: removed minus existing, on a diverging scale centered on no change.
+DIFFERENCE_MAP_DOCUMENT = {"map": {"layerRefs": [{
+    "dataRef": "[!! input_0 !!]",
+    "getFnv": "band_1",
+    "colorMapInterpolator": "interpolateRdBu",
+    "colorMapCenter": 0,
+    "title": "Shadow change (minutes)",
+}]}}
 EXAMPLE = REPO / "docs" / "examples" / "24-scout-building-rasters.json"
 RASTER_PACKAGE = REPO / "packages" / "scout.raster-conversion@1"
 RASTER_MODULE = "scout_raster_conversion"
@@ -904,7 +913,8 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     Raster Statistics node reads its shadow on input_0 and its heights, the
     mask, on input_1, straight from Rasterize Buildings, which feeds the
     shadow node too; each scenario maps its own shadow, with example 24's map;
-    the chart reads the statistics, the difference the shadows.
+    the chart reads the statistics, the difference the shadows, and an Autark
+    map after the difference, in no scenario, draws the change in shadow.
     The model is no dataset of the dataflow: the shadow nodes' code names it by
     id, and the lockfile names its package, so opening the dataflow adds it."""
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code, model_ids_in_code
@@ -955,7 +965,7 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     example_types = {node["id"]: node["type"] for node in example["nodes"]}
     (shadow_map,) = [node for node in example["nodes"] if node["type"] == "curio.builtin/autk-grammar"
                      and example_types[example_into[(node["id"], "in")]] == NODE_TYPE]
-    assert len(by_type["curio.builtin/autk-grammar"]) == 2
+    assert len(by_type["curio.builtin/autk-grammar"]) == 3
     for scenario in spec["scenarios"]:
         members = set(scenario["nodes"])
         (shadow_id,) = [n for n in members if nodes[n]["type"] == NODE_TYPE]
@@ -969,6 +979,21 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     assert chart["metadata"]["compareScenarios"]["chart"]["y"] == "mean"
     assert {nodes[into[(chart["id"], h)]]["type"] for h in ("in", "in_1")} == {STATISTICS_TYPE}
     assert {nodes[into[(difference["id"], h)]]["type"] for h in ("in", "in_1")} == {NODE_TYPE}
+
+    # The difference draws no map of its own: an Autark map after it, in no
+    # scenario, draws the change in shadow on a scale centered on no change,
+    # valid for the grammar.
+    from utk_curio.backend.app.agents.domain import document_validation
+
+    members = {node_id for scenario in spec["scenarios"] for node_id in scenario["nodes"]}
+    (difference_map,) = [n for n in by_type["curio.builtin/autk-grammar"] if n["id"] not in members]
+    assert into[(difference_map["id"], "in")] == difference["id"]
+    assert [e["sourceHandle"] for e in spec["edges"] if e["target"] == difference_map["id"]] == ["out"]
+    assert json.loads(difference_map["content"]) == DIFFERENCE_MAP_DOCUMENT, difference_map["content"]
+    named = difference_map["content"].replace("[!! input_0 !!]", "input_0")
+    assert document_validation.validate(
+        "curio.builtin/autk-grammar", named,
+    ) == {"status": document_validation.STATUS_VALID}
 
 
 def test_example_24_holds_the_node_as_the_palette_drops_it_and_its_code_runs(workspace, tmp_path):

@@ -150,6 +150,14 @@ describe("the node's settings", () => {
     expect(normalizeCompareSettings({ mode: "chart" })).toEqual({ mode: "chart" });
   });
 
+  test("drop a map's colors, which an Autark node after the node chooses", () => {
+    expect(normalizeCompareSettings({ mode: "difference", difference: { key: "osm_id", value: "sunlight" } })).toEqual({
+      mode: "difference",
+      difference: { key: "osm_id" },
+    });
+    expect(normalizeCompareSettings({ difference: { value: "band_1" } })).toBeUndefined();
+  });
+
   test("drop a view the node does not have and an empty key, so nothing is written", () => {
     expect(normalizeCompareSettings({ mode: "map", difference: { key: "", value: " " } })).toBeUndefined();
     expect(normalizeCompareSettings({ difference: "osm_id" })).toBeUndefined();

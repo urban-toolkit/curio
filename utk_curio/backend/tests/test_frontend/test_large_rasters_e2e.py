@@ -9,15 +9,16 @@ map does. SCOUT's whole flood grid is 2592 by 2064 cells.
    its middle column and above 0 east of it, with 4 by 4 nodata cells in its
    north-west corner, and "Twice as tall" the same ramp times 2. An Autark map
    draws the second, and a Compare Scenarios node in Difference subtracts the
-   first from the second: the ramp itself, below 0 in the west. Then
+   first from the second: the ramp itself, below 0 in the west, which a second
+   Autark map, after the node, draws on a scale centered on 0. Then
    **Change** asks for each difference's size: the node writes
-   ``absolute=True`` into its code, runs again, and maps the ramp's size, the
-   west's cells as positive as the east's, under "band_1 absolute change".
+   ``absolute=True`` into its code and runs again, and the map after it draws
+   the ramp's size, the west's cells as positive as the east's.
 2. Rasters of 4097 by 4096 cells are refused, in a map and in Difference,
    with the cap's own figures.
 
-The map's and the difference's close-ups are the frames, the difference before
-and after **Change**, and the map's refusal.
+The close-ups of the two maps are the frames, the difference's before and
+after **Change**, and the first map's refusal.
 
 Run::
 
@@ -28,7 +29,6 @@ from __future__ import annotations
 
 import base64
 import json
-import time
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -69,8 +69,18 @@ if TYPE_CHECKING:
     from .utils import FrontendPage
 
 MAP = "lgr-map"
+DIFFERENCE_MAP = "lgr-difference-map"
 MAP_TYPE = "curio.builtin/autk-grammar"
 MAP_SPEC = {"map": {"layerRefs": [{"dataRef": "input_0", "getFnv": "band_1"}]}}
+#: The map after the Compare Scenarios node: its difference on a diverging
+#: scale centered on 0, under its own title.
+DIFFERENCE_MAP_SPEC = {"map": {"layerRefs": [{
+    "dataRef": "input_0",
+    "getFnv": "band_1",
+    "colorMapInterpolator": "interpolateRdBu",
+    "colorMapCenter": 0,
+    "title": "Ramp change",
+}]}}
 
 #: SCOUT's flood grid, width by height.
 WIDTH, HEIGHT = 2592, 2064
@@ -126,9 +136,10 @@ def _ramp() -> np.ndarray:
 
 
 def _spec(code: str, name: str) -> dict:
-    """Both outcomes, the Compare Scenarios node and an Autark map of the
-    comparison. Nothing is pinned to the dashboard: a difference this large is
-    over a dashboard page's 25 MB."""
+    """Both outcomes, the Compare Scenarios node, an Autark map of the
+    comparison and an Autark map of the difference, after the node. Nothing is
+    pinned to the dashboard: a difference this large is over a dashboard
+    page's 25 MB."""
     def node(node_id, node_type, x, y, content, title=None, metadata=None):
         saved = {
             "id": node_id, "type": node_type, "x": x, "y": y, "content": content,
@@ -138,6 +149,12 @@ def _spec(code: str, name: str) -> dict:
         if title:
             saved["title"] = title
         return saved
+
+    def edge(source, target):
+        return {
+            "id": f"reactflow__edge-{source}out-{target}in",
+            "source": source, "target": target, "sourceHandle": "out", "targetHandle": "in",
+        }
 
     return {
         "dataflow": {
@@ -150,11 +167,9 @@ def _spec(code: str, name: str) -> dict:
                 node(TALL, PYTHON_TYPE, 0, 520, code, "Outcome", {**_factor(2), "copiedFrom": [BASE]}),
                 node(COMPARE, COMPARE_TYPE, 760, 0, ""),
                 node(MAP, MAP_TYPE, 760, 560, json.dumps(MAP_SPEC, indent=2)),
+                node(DIFFERENCE_MAP, MAP_TYPE, 1440, 0, json.dumps(DIFFERENCE_MAP_SPEC, indent=2)),
             ],
-            "edges": [{
-                "id": f"reactflow__edge-{TALL}out-{MAP}in",
-                "source": TALL, "target": MAP, "sourceHandle": "out", "targetHandle": "in",
-            }],
+            "edges": [edge(TALL, MAP), edge(COMPARE, DIFFERENCE_MAP)],
             "scenarios": [
                 {"id": "s-base", "name": "Baseline", "color": "#2a9d8f", "nodes": [BASE]},
                 {"id": "s-tall", "name": "Twice as tall", "color": "#e76f51", "nodes": [TALL]},
@@ -163,30 +178,15 @@ def _spec(code: str, name: str) -> dict:
     }
 
 
-# Where the difference map stands and the output it draws
-# (components/compare/CompareMap.tsx).
-_MAP_OF_JS = """(id) => {
-    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
-    const map = node && node.querySelector("[data-compare-map-state]");
-    return map ? [map.getAttribute("data-compare-map-state"), map.getAttribute("data-compare-map-path")] : null;
-}"""
-
-
-def _difference_cells(page, attach_as: str, legend: str) -> np.ndarray:
-    """The node's output once its map has drawn it, with its legend titled
-    *legend*: the difference's band, rows north to south."""
+def _difference_cells(page, attach_as: str) -> np.ndarray:
+    """The node's output once the map after it has drawn it: the difference's
+    band, rows north to south. The Compare Scenarios node draws no map of it."""
     artifact = page.evaluate(_OUTPUT_ARTIFACT_JS, COMPARE)
     assert artifact, "Compare Scenarios shows no saved output"
-    # The map has drawn this output, not the one before it.
-    deadline = time.time() + 180
-    state = None
-    while time.time() < deadline:
-        state = page.evaluate(_MAP_OF_JS, COMPARE)
-        if state and state[1] == artifact and state[0] in ("drawn", "problem"):
-            break
-        page.wait_for_timeout(250)
-    assert state and state[1] == artifact, f"the difference map shows {state!r}, not output {artifact}"
-    _assert_difference_mapped(page, COMPARE, attach_as, legend=legend)
+    frame_nodes(page, [COMPARE, DIFFERENCE_MAP])
+    _assert_difference_mapped(
+        page, COMPARE, DIFFERENCE_MAP, attach_as, legend=DIFFERENCE_MAP_SPEC["map"]["layerRefs"][0]["title"],
+    )
 
     stored = load_artifact_as_dict(artifact)
     envelope = stored.get("data") if stored.get("dataType") == "dict" else stored
@@ -212,8 +212,9 @@ def test_a_raster_of_scouts_whole_flood_grid_draws_on_a_map_and_in_an_absolute_d
     _run_outcomes_then_wire_them(page)
     _wait_for_code(page, COMPARE, DIFFERENCE_LINES)
 
-    # Run All: the map draws the comparison at its own size, and the node
-    # subtracts the two through Autark and maps the difference.
+    # Run All: the map draws the comparison at its own size, the node
+    # subtracts the two through Autark, and the map after it draws the
+    # difference.
     run_all_and_wait(page, timeout_ms=600000)
     status = wait_for_node_settled(page, MAP, node_type=MAP_TYPE, timeout_ms=240000)
     assert status == "done", f"the map did not draw the raster: {read_node_error_text(node_locator(page, MAP))}"
@@ -223,33 +224,45 @@ def test_a_raster_of_scouts_whole_flood_grid_draws_on_a_map_and_in_an_absolute_d
 
     status = wait_for_node_settled(page, COMPARE, node_type=COMPARE_TYPE, timeout_ms=240000)
     assert status == "done", f"Compare Scenarios did not subtract its inputs: {read_node_error_text(node_locator(page, COMPARE))}"
-    frame_nodes(page, [COMPARE])
+    status = wait_for_node_settled(page, DIFFERENCE_MAP, node_type=MAP_TYPE, timeout_ms=240000)
+    assert status == "done", (
+        f"the map after Compare Scenarios did not draw the difference: "
+        f"{read_node_error_text(node_locator(page, DIFFERENCE_MAP))}"
+    )
     ramp = _ramp()
-    signed = _difference_cells(page, "the difference of two 2592 by 2064 rasters", "band_1 change")
+    signed = _difference_cells(page, "the difference of two 2592 by 2064 rasters")
     # Twice the ramp less the ramp is the ramp: the south-west corner fell by
     # 10.897, the north-east one rose by 12.95, and nodata stays nodata.
     assert np.array_equal(signed, ramp, equal_nan=True)
     assert round(float(signed[HEIGHT - 1, 0]), 3) == -10.897
     assert round(float(signed[0, WIDTH - 1]), 3) == 12.95
     assert int(np.isnan(signed).sum()) == 16
-    save_node_closeup(page, "large-raster-difference", COMPARE, test_name=test_name, sweep_toasts=True)
+    save_node_closeup(page, "large-raster-difference-map", DIFFERENCE_MAP, test_name=test_name, sweep_toasts=True)
 
-    # Change: each difference's size. The code says so, and the node runs again.
+    # Change: each difference's size. The code says so, the node runs again,
+    # and its new output reaches the map after it, which draws it.
     compare = node_locator(page, COMPARE)
     change = compare.locator('select[aria-label="Change"]')
     assert change.input_value() == "signed"
     change.select_option("absolute")
     content = _wait_for_code(page, COMPARE, ABSOLUTE_LINES)
     watch_node_run(page, COMPARE)
+    watch_node_run(page, DIFFERENCE_MAP)
     play_node(page, COMPARE)
     status = wait_for_node_run_to_end(page, COMPARE, node_type=COMPARE_TYPE, timeout_ms=240000)
     assert status == "done", f"Compare Scenarios did not run again: {read_node_error_text(node_locator(page, COMPARE))}"
-    frame_nodes(page, [COMPARE])
-    absolute = _difference_cells(page, "the absolute difference of two 2592 by 2064 rasters", "band_1 absolute change")
+    status = wait_for_node_run_to_end(page, DIFFERENCE_MAP, node_type=MAP_TYPE, timeout_ms=240000)
+    assert status == "done", (
+        f"the map after Compare Scenarios did not draw the new difference: "
+        f"{read_node_error_text(node_locator(page, DIFFERENCE_MAP))}"
+    )
+    absolute = _difference_cells(page, "the absolute difference of two 2592 by 2064 rasters")
     assert np.array_equal(absolute, np.abs(ramp), equal_nan=True)
     assert round(float(absolute[HEIGHT - 1, 0]), 3) == 10.897
     assert int(np.isnan(absolute).sum()) == 16
-    save_node_closeup(page, "large-raster-absolute-difference", COMPARE, test_name=test_name, sweep_toasts=True)
+    save_node_closeup(
+        page, "large-raster-absolute-difference-map", DIFFERENCE_MAP, test_name=test_name, sweep_toasts=True,
+    )
 
     # The choice is saved with the code it wrote.
     save_dataflow(page)

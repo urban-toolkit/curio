@@ -81,6 +81,17 @@ const holding = (dataType: string) => [
   { path: `${dataType}-b`, dataType },
 ];
 
+/** What the Difference tab says of a raster's or a layer's difference. */
+const AUTARK_NOTE = "Draw this difference on a map with an Autark node after this one.";
+
+/** A raster's difference, as a read of the node's output finds it. */
+const RASTER_DIFFERENCE = [{
+  dataType: "raster",
+  payload: { envelope: { dataType: "raster", data: { features: [{ properties: { bands: [{ id: "band_1" }] } }] } } },
+  schema: null,
+  geometryName: null,
+}];
+
 function graph(compareData: Record<string, unknown> = {}) {
   const nodes = [
     node("a", { title: "Shade" }),
@@ -283,6 +294,36 @@ describe("its body in Difference", () => {
     );
   });
 
+  test("a raster's difference draws no map in the node: the tab leaves it to an Autark node after it", async () => {
+    mockFrames["diff-1"] = RASTER_DIFFERENCE;
+    const { view } = mount({ inputSlots: holding("raster"), code: DIFFERENCE }, nodeState(ran));
+    const note = await screen.findByText(AUTARK_NOTE);
+    expect(note.getAttribute("data-compare-difference-map")).toBe("autark");
+    expect(view.container.querySelector('[data-compare-difference="raster"]')).not.toBeNull();
+    // The Autark node's map code is never called from here, and the node holds no map.
+    expect(mockAutk).not.toHaveBeenCalled();
+    expect(view.container.querySelector("canvas, [data-compare-map-state]")).toBeNull();
+    // Whether it gives each difference's size stays; what a map colors by is the map's.
+    expect(screen.getByRole("combobox", { name: "Change" })).not.toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Color by" })).toBeNull();
+    expect(screen.queryByText("Dark purple is the lowest difference and yellow the highest.")).toBeNull();
+  });
+
+  test("a layer's difference too, with the key it joins rows on", async () => {
+    mockFrames["diff-1"] = [{
+      dataType: "geodataframe",
+      payload: { type: "FeatureCollection", features: [{ properties: { osm_id: 1, change: "changed", sunlight: -2 } }] },
+      schema: { osm_id: "int64", change: "object", sunlight: "float64" },
+      geometryName: "geometry",
+    }];
+    const { view } = mount({ inputSlots: holding("geodataframe"), code: DIFFERENCE }, nodeState(ran));
+    expect(await screen.findByText(AUTARK_NOTE)).not.toBeNull();
+    expect(view.container.querySelector('[data-compare-difference="layer"]')).not.toBeNull();
+    expect(mockAutk).not.toHaveBeenCalled();
+    expect(screen.getByRole("combobox", { name: "Key" })).not.toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Color by" })).toBeNull();
+  });
+
   test("the key it joins on is offered from the columns both inputs have", async () => {
     mockFrames["dataframe-a"] = [{ dataType: "dataframe", payload: { segment: { 0: "r1" }, sunlight: { 0: 1 } }, schema: { segment: "object", sunlight: "float64" }, geometryName: null }];
     mockFrames["dataframe-b"] = [{ dataType: "dataframe", payload: { segment: { 0: "r1" }, shade: { 0: 1 } }, schema: { segment: "object", shade: "float64" }, geometryName: null }];
@@ -399,6 +440,15 @@ describe("each difference's size, absolute", () => {
     mockFlow = flowOf(back);
     view.rerender(<Harness data={back.nodes.find((n) => n.id === COMPARE)!.data} state={state} />);
     expect(writtenCode()).toBe(DIFFERENCE);
+  });
+
+  test("code already written for it is left as it is, Change reads Absolute, and the node draws no map", async () => {
+    mockFrames["diff-1"] = RASTER_DIFFERENCE;
+    mount(inDifference({ absolute: true }, ABSOLUTE), nodeState(ran));
+    expect(mockUpdateDataNode).not.toHaveBeenCalled();
+    expect(await screen.findByText(AUTARK_NOTE)).not.toBeNull();
+    expect((screen.getByRole("combobox", { name: "Change" }) as HTMLSelectElement).value).toBe("absolute");
+    expect(mockAutk).not.toHaveBeenCalled();
   });
 
   test("code already written for it is left as it is, and its map's legend says absolute change", async () => {
