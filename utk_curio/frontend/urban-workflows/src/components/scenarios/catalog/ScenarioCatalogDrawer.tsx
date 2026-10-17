@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { DrawerHeader } from "../../packages/publishing/DrawerHeader";
@@ -15,7 +15,7 @@ import { liveScenarios } from "../../../utils/scenarios/scenarioParts";
 import { InProjectScenarios } from "./InProjectScenarios";
 import { ScenarioCard } from "./ScenarioCard";
 import { ScenarioDetailModal } from "./ScenarioDetailModal";
-import { scenarioProjectPath } from "./scenarioFacts";
+import { scenarioCount, scenarioProjectPath } from "./scenarioFacts";
 import { useScenarioCatalogDrawer } from "./useScenarioCatalogDrawer";
 import styles from "./ScenarioCatalogDrawer.module.css";
 
@@ -34,7 +34,10 @@ export interface ScenarioCatalogDrawerProps {
  * The Scenario Catalog on the canvas, in two tabs as the other catalogs are.
  *
  * Browse all is every scenario saved in this account's projects, each a card
- * with its project's graph. A scenario lives in its project and is edited
+ * with its project's graph, under a heading per project: its name and how
+ * many of the scenarios listed it holds. The groups keep the sort: each sits
+ * where its first scenario would, with its scenarios in the sort's order
+ * (`groupScenariosByProject`). A scenario lives in its project and is edited
  * there, so such a card changes nothing in it. It offers its details, the way
  * to its project, which asks first when this dataflow has unsaved changes, and
  * a drag onto the canvas, which brings a copy of the scenario into this
@@ -75,6 +78,7 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
     setPinned,
     catalog,
     items,
+    groups,
     handleScenarioDragStart,
     handleScenarioDragEnd,
     detailScenario,
@@ -82,6 +86,9 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
     closeScenarioDetails,
   } = useScenarioCatalogDrawer(presented);
   const dragThrough = useDrawerDragThrough();
+  // Each group on Browse all is named by its project's name, which its
+  // heading shows beside the count.
+  const groupIds = useId();
 
   // Escape dismisses this drawer, as it does its peers: a modal on top (a
   // scenario's details, the leave question) owns Escape while it is open, and
@@ -193,18 +200,32 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
                       : "No scenarios yet. Select nodes on a canvas and choose View > Save selection as scenario."}
                   </div>
                 ) : null}
-                <div className={shell.cardList}>
-                  {items.map((scenario) => (
-                    <ScenarioCard
-                      key={scenario.key}
-                      scenario={scenario}
-                      onOpenDetails={openScenarioDetails}
-                      onOpenProject={openProject}
-                      onDragStart={(event) => handleScenarioDragStart(scenario, event)}
-                      onDragEnd={handleScenarioDragEnd}
-                    />
-                  ))}
-                </div>
+                {groups.map((group, index) => (
+                  <section
+                    key={group.project.id}
+                    aria-labelledby={`${groupIds}-${index}`}
+                    data-scenario-group={group.project.id}
+                  >
+                    <h3 className={styles.groupHeading}>
+                      <span id={`${groupIds}-${index}`} className={styles.groupName}>
+                        {group.project.name}
+                      </span>{" "}
+                      <span className={styles.groupCount}>{scenarioCount(group.items.length)}</span>
+                    </h3>
+                    <div className={shell.cardList}>
+                      {group.items.map((scenario) => (
+                        <ScenarioCard
+                          key={scenario.key}
+                          scenario={scenario}
+                          onOpenDetails={openScenarioDetails}
+                          onOpenProject={openProject}
+                          onDragStart={(event) => handleScenarioDragStart(scenario, event)}
+                          onDragEnd={handleScenarioDragEnd}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                ))}
               </>
             )}
           </main>
