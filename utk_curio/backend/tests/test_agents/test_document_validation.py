@@ -54,6 +54,16 @@ OWNERS_AUTK = json.dumps({
 })
 
 
+def _flood_depth_map(**options) -> dict:
+    """A map of one raster layer, written as FloodScenarios writes its "Flood
+    depth (m)" maps, with *options* added to the layer."""
+    return {"map": {"layerRefs": [{
+        "dataRef": "input_0", "getFnv": "band_1",
+        "colorMapInterpolator": "interpolateBlues", "title": "Flood depth (m)",
+        **options,
+    }]}}
+
+
 class TestVegaLite:
     def test_the_owners_spec_is_invalid_and_the_message_names_the_property(self):
         verdict = dv.validate(VEGA, OWNERS_VEGA)
@@ -173,6 +183,29 @@ class TestAutkGrammar:
         grammar = {"note": "x", "map": {"layerRefs": [{"dataRef": "t", "custom": 1}],
                                         "initialView": {"zoom": 3}}}
         assert dv.validate(AUTK, json.dumps(grammar)) == {"status": dv.STATUS_VALID}
+
+    @pytest.mark.parametrize("value,where", [
+        ([1], "map.layerRefs[0].colorMapRange"),
+        ([1, 2, 3], "map.layerRefs[0].colorMapRange"),
+        ([3, 3], "map.layerRefs[0].colorMapRange"),
+        (["0", "5"], "map.layerRefs[0].colorMapRange[0]"),
+    ], ids=["one-end", "three-ends", "equal-ends", "not-numbers"])
+    def test_a_layers_color_range_is_two_different_numbers(self, value, where):
+        """autk-grammar 4.4.0's ``colorMapRange`` is ``[low, high]``, the ends
+        of a layer's color scale. Keys the schema does not name are allowed, so
+        under a schema without it any value passed."""
+        verdict = dv.validate(AUTK, json.dumps(_flood_depth_map(colorMapRange=value)))
+        assert verdict["status"] == dv.STATUS_INVALID
+        assert verdict["detail"].startswith(f"{where}: ")
+
+    def test_a_layers_color_range_is_never_written_with_a_category_domain(self):
+        """A categorical scheme ignores ``colorMapRange``, so the grammar
+        refuses it beside ``colorMapDomain``, the categories' own list."""
+        document = _flood_depth_map(colorMapRange=[0, 5], colorMapDomain=["a", "b"])
+        verdict = dv.validate(AUTK, json.dumps(document))
+        assert verdict["status"] == dv.STATUS_INVALID
+        assert verdict["detail"].startswith("map.layerRefs[0]: ")
+        assert "colorMapDomain" in verdict["detail"]
 
     def test_at_most_five_complaints_are_reported(self):
         grammar = {"map": {"layerRefs": [{} for _ in range(8)]}}
