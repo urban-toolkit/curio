@@ -181,6 +181,62 @@ def _bump_spec_revision(project_dir_path: Path) -> int:
     return nxt
 
 
+#: The number of the latest save applied to this project from each tab, as a
+#: JSON object of tab id to number, beside the write counter. A tab numbers its
+#: saves one after another (``api/saveOrder.ts``) and the page gives up on a
+#: save after 2 minutes, but the server may still be working on it: a save
+#: numbered lower than one already applied from its tab is refused
+#: (``services.update_project``), so it cannot land over the newer one.
+SAVE_ORDER_FILE = ".save.order.json"
+
+#: How many tabs the record keeps. The tab that saved longest ago goes first,
+#: and a save from a tab no longer on record is not checked.
+SAVE_ORDER_TABS = 32
+
+
+def _read_save_order(path: Path) -> dict:
+    """The record at *path*; empty when it is missing or cannot be read, which
+    refuses nothing."""
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(tab): number for tab, number in raw.items()
+        if isinstance(number, int) and not isinstance(number, bool)
+    }
+
+
+def last_save_number(user_key: str, project_id: str, tab: str) -> Optional[int]:
+    """The number of the latest save applied to this project from *tab*, or
+    ``None`` when there is none on record."""
+    try:
+        path = project_dir(user_key, project_id) / SAVE_ORDER_FILE
+    except (PathTraversalError, ValueError):
+        return None
+    return _read_save_order(path).get(tab)
+
+
+def record_save_number(user_key: str, project_id: str, tab: str, number: int) -> None:
+    """Record *number* as the latest save applied from *tab*. Called under the
+    spec lock, like every other write of the project's files."""
+    path = ensure_project_dir(user_key, project_id) / SAVE_ORDER_FILE
+    order = _read_save_order(path)
+    order.pop(tab, None)
+    order[tab] = int(number)
+    while len(order) > SAVE_ORDER_TABS:
+        order.pop(next(iter(order)))
+    try:
+        _write_json_atomically(path, order)
+    except OSError:
+        # Like the counter: a record that cannot be written must not fail the
+        # save. A missing record refuses nothing, which is the behaviour from
+        # before saves were numbered.
+        logger.warning("Could not record the save order of project %s", project_id, exc_info=True)
+
+
 def read_spec(user_key: str, project_id: str) -> Optional[dict]:
     d = project_dir(user_key, project_id)
     p = d / "spec.trill.json"
