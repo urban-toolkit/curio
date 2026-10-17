@@ -1278,6 +1278,11 @@
     },
     "MapLayerSpec": {
       "description": "One layer drawn by a map.",
+      "if": {
+        "required": [
+          "colorMapRange"
+        ]
+      },
       "properties": {
         "catchAllCategory": {
           "type": "string"
@@ -1287,11 +1292,11 @@
           "description": "Color of the layer, as `#rrggbb`. A layer with a color is drawn in it rather than by its `getFnv` value, unless `isColorMap` is `true`. Raster layers are always colored by value. Read by the Autark adapter; the deck.gl adapter ignores it."
         },
         "colorMapCenter": {
-          "description": "Value at the middle of a raster layer's color scale: the scale runs from this value less the farthest value's distance to it, to this value plus that distance, so a diverging scheme's middle color marks it. Read by the Autark adapter for raster layers; other layers and the deck.gl adapter ignore it.",
+          "description": "Value at the middle of a raster layer's color scale, so a diverging scheme's middle color marks it. With `colorMapRange`, the scale runs from the range's low through this value to its high (a sequential scheme keeps only the ends); without it, from this value less the farthest value's distance to it, to this value plus that distance. Read by the Autark adapter for raster layers; other layers and the deck.gl adapter ignore it.",
           "type": "number"
         },
         "colorMapDomain": {
-          "description": "Allowed category values; anything else is drawn as the catch-all category. Only used when `getFnvType` is `categorical`.",
+          "description": "Allowed category values; anything else is drawn as the catch-all category. Only used when `getFnvType` is `categorical`. Not with `colorMapRange`.",
           "items": {
             "type": "string"
           },
@@ -1308,8 +1313,25 @@
           },
           "type": "array"
         },
+        "colorMapRange": {
+          "description": "Ends of the layer's color scale, as `[low, high]` with low less than high. The layer is colored over this range instead of its own lowest and highest values, so layers that set the same range color the same value alike, in one map or in maps side by side. On a raster layer, `colorMapCenter` and `colorMapReverse` apply within it, and a `transferFunction` still sets opacity from the layer's own values. A categorical scheme ignores it, and it cannot be set with `colorMapDomain`. Read by the Autark adapter for raster and vector layers; the deck.gl adapter ignores it.",
+          "items": [
+            {
+              "title": "low",
+              "type": "number"
+            },
+            {
+              "title": "high",
+              "type": "number"
+            }
+          ],
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array",
+          "uniqueItems": true
+        },
         "colorMapReverse": {
-          "description": "Run a raster layer's color scale from its highest value to its lowest, so the scheme's first color marks the highest value. Read by the Autark adapter for raster layers; other layers and the deck.gl adapter ignore it.",
+          "description": "Run a raster layer's color scale from its highest value to its lowest, so the scheme's first color marks the highest value; with `colorMapRange`, from the range's high to its low. Read by the Autark adapter for raster layers; other layers and the deck.gl adapter ignore it.",
           "type": "boolean"
         },
         "dataRef": {
@@ -1414,6 +1436,13 @@
       "required": [
         "dataRef"
       ],
+      "then": {
+        "not": {
+          "required": [
+            "colorMapDomain"
+          ]
+        }
+      },
       "type": "object"
     },
     "MapSpec": {
