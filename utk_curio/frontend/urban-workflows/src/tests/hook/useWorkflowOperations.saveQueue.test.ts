@@ -8,13 +8,16 @@ import { renderHook, act, waitFor } from "@testing-library/react";
  * browser: the pin's save and the autosave saved directly, beside the queue.
  * A save the server never answers gives up after 2 minutes, so it cannot hold
  * the saves behind it, and each save is numbered so the server can refuse one
- * the page gave up on that lands after the next.
+ * the page gave up on that lands after the next. Autosaves that come due
+ * while a save hangs wait as one, so they do not go out one after another.
  */
 
+// What the canvas holds when a save reads it.
+let mockCanvasNodes: object[] = [];
 // One object for every render. A new one per render would give
 // saveCurrentProject a new identity on every render, which re-arms the
 // 30 second autosave interval each time.
-const mockReactFlow = { getNodes: () => [], getEdges: () => [] };
+const mockReactFlow = { getNodes: () => mockCanvasNodes, getEdges: () => [] };
 jest.mock("reactflow", () => ({
   useReactFlow: () => mockReactFlow,
   useNodesInitialized: () => false,
@@ -56,6 +59,7 @@ jest.mock("../../registry/projectPackagesStore", () => ({
 import { useWorkflowOperations } from "../../hook/useWorkflowOperations";
 import { useDashboardPinSave } from "../../providers/flow/useDashboardPins";
 import { projectsApi } from "../../api/projectsApi";
+import { TrillGenerator } from "../../TrillGenerator";
 
 /** Made once per test, so every render gets the same refs. */
 const makeDeps = () => {
@@ -118,6 +122,7 @@ function holdNextUpdate(): () => void {
 beforeEach(() => {
   jest.clearAllMocks();
   (projectsApi.update as jest.Mock).mockResolvedValue(SAVED);
+  mockCanvasNodes = [];
 });
 
 afterEach(() => {
@@ -328,6 +333,130 @@ describe("the save queue", () => {
     } finally {
       global.fetch = realFetch;
       (projectsApi.update as jest.Mock).mockResolvedValue(SAVED);
+    }
+  });
+});
+
+/**
+ * An edited dataflow whose next save hangs: a Save the server has not
+ * answered. Fake timers are on, so the 30 second autosave comes due only when
+ * a test moves the clock.
+ */
+async function hungSaveWithAutosaveArmed() {
+  jest.useFakeTimers();
+  const deps = makeDeps();
+  const { result } = renderHook(() => useWorkflowOperations(deps));
+  await loadedProject(result);
+  // An edit, so the autosave is armed.
+  act(() => {
+    result.current.renameDataflow("Edited");
+  });
+  const answerHung = holdNextUpdate();
+  let hung!: Promise<unknown>;
+  act(() => {
+    hung = result.current.requestProjectSave();
+  });
+  return { result, answerHung, hung };
+}
+
+/** Let `count` 30 second autosaves come due, one after another. */
+function autosavesComeDue(count: number) {
+  for (let tick = 0; tick < count; tick += 1) {
+    act(() => {
+      jest.advanceTimersByTime(30_000);
+    });
+  }
+}
+
+/** Answer the hung save, then let every save waiting behind it go out. */
+async function answerAndDrain(answerHung: () => void, hung: Promise<unknown>) {
+  jest.useRealTimers();
+  await act(async () => {
+    answerHung();
+    await hung;
+  });
+  // The saves behind it are answered at once, so the whole queue has gone
+  // out by the next macrotask.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
+describe("autosaves that come due while a save hangs", () => {
+  it("send one autosave once the hung save is answered", async () => {
+    // A save waits up to 2 minutes for its answer: four autosaves come due.
+    const { answerHung, hung } = await hungSaveWithAutosaveArmed();
+    autosavesComeDue(4);
+    expect(projectsApi.update).toHaveBeenCalledTimes(1);
+
+    await answerAndDrain(answerHung, hung);
+    // The hung save, then one autosave.
+    expect(projectsApi.update).toHaveBeenCalledTimes(2);
+  });
+
+  it("leave a Save clicked during the hang in its place, after the autosave waiting before it", async () => {
+    const { result, answerHung, hung } = await hungSaveWithAutosaveArmed();
+    autosavesComeDue(1);
+    let save!: Promise<unknown>;
+    act(() => {
+      save = result.current.requestProjectSave();
+    });
+    let putsWhenSaveAnswered = -1;
+    save.then(
+      () => {
+        putsWhenSaveAnswered = (projectsApi.update as jest.Mock).mock.calls.length;
+      },
+      () => undefined,
+    );
+    autosavesComeDue(3);
+    expect(projectsApi.update).toHaveBeenCalledTimes(1);
+
+    await answerAndDrain(answerHung, hung);
+    await act(async () => {
+      await expect(save).resolves.toEqual(SAVED);
+    });
+    // The hung save, the autosave that was waiting, then the Save; the
+    // autosaves that came due after the click joined the one before it.
+    expect(putsWhenSaveAnswered).toBe(3);
+    expect(projectsApi.update).toHaveBeenCalledTimes(3);
+  });
+
+  it("send the canvas as it is when the autosave goes, numbered right after the hung save", async () => {
+    (TrillGenerator.generateTrill as jest.Mock).mockImplementation(
+      (nodes: unknown) => ({ dataflow: { datasets: [], nodes } }),
+    );
+    try {
+      const { result, answerHung, hung } = await hungSaveWithAutosaveArmed();
+      autosavesComeDue(4);
+      // A node added after the last autosave came due.
+      const added = {
+        id: "added-during-the-hang",
+        type: "curioUniversalNode",
+        position: { x: 0, y: 0 },
+        data: {
+          nodeId: "added-during-the-hang",
+          nodeType: "curio.builtin/data-loading@1",
+          input: "",
+        },
+      };
+      mockCanvasNodes = [added];
+      act(() => {
+        result.current.markDirty();
+      });
+
+      await answerAndDrain(answerHung, hung);
+      const bodies = (projectsApi.update as jest.Mock).mock.calls.map((call) => call[1]);
+      // The hung save, then the autosave that waited.
+      expect(bodies.length).toBeGreaterThanOrEqual(2);
+      const [hungBody, autosaveBody] = bodies;
+      expect(hungBody.spec.dataflow.nodes).toEqual([]);
+      expect(autosaveBody.spec.dataflow.nodes).toEqual([added]);
+      expect(autosaveBody.saveTab).toBe(hungBody.saveTab);
+      expect(autosaveBody.saveNumber).toBe(hungBody.saveNumber + 1);
+    } finally {
+      (TrillGenerator.generateTrill as jest.Mock).mockImplementation(() => ({
+        dataflow: { datasets: [] },
+      }));
     }
   });
 });

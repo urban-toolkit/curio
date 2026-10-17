@@ -1104,7 +1104,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // saves, server runs, the agent drop, the catalog drawers); only the
     // dashboard's Save layout, the one writer on its page, saves directly.
     // A save the server never answers gives up after SAVE_TIMEOUT_MS
-    // (projectsApi.ts), so it cannot hold the saves behind it.
+    // (projectsApi.ts), so it cannot hold the saves behind it. The autosave
+    // queues through requestAutosave, so at most one autosave waits.
     //
     // Each request runs strictly after all prior ones; once the first create
     // has set projectIdRef, every chained save takes the update
@@ -1115,16 +1116,22 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // The chained call goes through a ref too (#270): ``prior.then(() =>
     // saveCurrentProject())`` captured the *identity* of saveCurrentProject at
     // enqueue time, so any state it still closes over was as of then.
+    //
+    // ``onStart`` runs when a queued save leaves the queue, just before it
+    // reads the canvas.
     const saveChainRef = useRef<Promise<any> | null>(null);
     const saveCurrentProjectRef = useRef(saveCurrentProject);
     saveCurrentProjectRef.current = saveCurrentProject;
-    const requestProjectSave = useCallback((): Promise<any> => {
+    const enqueueSave = useCallback((onStart?: () => void): Promise<any> => {
         const prior = saveChainRef.current;
         // Start immediately when idle (so the create/update fires synchronously);
         // otherwise chain strictly after the previous save so two creates never run
         // in parallel. ``prior`` is always a never-rejecting tail.
         const next = prior
-            ? prior.then(() => saveCurrentProjectRef.current())
+            ? prior.then(() => {
+                onStart?.();
+                return saveCurrentProjectRef.current();
+            })
             : saveCurrentProject();
         // Track a caught tail for chaining + cleanup so a failed save can neither
         // surface as an unhandled rejection nor wedge the chain. The caller still
@@ -1139,6 +1146,26 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         });
         return next;
     }, [saveCurrentProject]);
+    const requestProjectSave = useCallback((): Promise<any> => enqueueSave(), [enqueueSave]);
+
+    // The 30 second autosave. A save can wait up to SAVE_TIMEOUT_MS for its
+    // answer, and the autosaves that come due meanwhile would each queue and
+    // then go out one after another. Instead, a tick that finds an autosave
+    // still waiting in the queue joins it: the one waiting reads the canvas
+    // when it leaves the queue, so it saves what those ticks would have. Any
+    // other save queued behind it keeps its place.
+    const waitingAutosaveRef = useRef<Promise<any> | null>(null);
+    const requestAutosave = useCallback((): Promise<any> => {
+        if (waitingAutosaveRef.current) return waitingAutosaveRef.current;
+        // Nothing saving: it goes out now, so nothing waits.
+        if (!saveChainRef.current) return enqueueSave();
+        const waiting: Promise<any> = enqueueSave(() => {
+            // Leaving the queue: a tick from now on queues the next autosave.
+            if (waitingAutosaveRef.current === waiting) waitingAutosaveRef.current = null;
+        });
+        waitingAutosaveRef.current = waiting;
+        return waiting;
+    }, [enqueueSave]);
 
     // Resolve the current project id, creating+saving the project when this is a
     // brand-new dataflow that has never been persisted. Centralizes the rule that
@@ -1340,14 +1367,15 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         const id = window.setInterval(async () => {
             try {
                 // Queued: a tick that comes due while a save is out waits for
-                // it instead of going out beside it (#909).
-                await requestProjectSave();
+                // it instead of going out beside it (#909), and joins an
+                // autosave already waiting.
+                await requestAutosave();
             } catch (err) {
                 console.error("Auto-save failed:", err);
             }
         }, 30_000);
         return () => window.clearInterval(id);
-    }, [projectId, projectDirty, requestProjectSave, blockGuestSaves, viewerMode, presentation]);
+    }, [projectId, projectDirty, requestAutosave, blockGuestSaves, viewerMode, presentation]);
 
     const saveAsNewProject = useCallback(async (name: string) => {
         if (blockGuestSaves) {
