@@ -1,7 +1,7 @@
 /**
  * The Compare Scenarios node's Difference view (#662): what it joins rows on,
- * whether it gives each difference's size (Change), what its map colors by and
- * in which color scale (Colors), and the difference itself, the node's output
+ * whether it gives each difference's size (Change), what its map colors by,
+ * and the difference itself, the node's output
  * (`utk_curio/sandbox/util/scenario_difference.py`). A raster or a layer is
  * drawn on a map by the Autark node's map code (`CompareMap`), a table by the
  * Vega-Lite node's (`CompareChart`), as the Chart view draws its chart.
@@ -12,16 +12,14 @@ import { readGrammarInput, type GrammarInput } from "../../utils/grammarInput";
 import { toRows } from "../../utils/rowSource";
 import { classifyColumns, type ClassifiedColumn } from "../../utils/starterSpec";
 import {
-  DIFFERENCE_SCALES,
   differenceMapDoc,
-  differenceScale,
   differenceTableSpec,
   differenceValues,
   isDifference,
   resolveValue,
   type DifferenceKind,
 } from "../../utils/compare/compareDifference";
-import type { CompareDifference as DifferenceSettings, DifferenceColors } from "../../utils/compare/compareSettings";
+import type { CompareDifference as DifferenceSettings } from "../../utils/compare/compareSettings";
 import { CompareChart } from "./CompareChart";
 import styles from "./CompareScenarios.module.css";
 
@@ -214,7 +212,6 @@ export function CompareDifference({
   const kind = drawn?.kind ?? null;
   const values = kind === "raster" || kind === "layer" ? differenceValues(kind, drawn!, settings?.key) : [];
   const value = resolveValue(settings?.value, values);
-  const scale = differenceScale(settings?.colors);
 
   const set = (patch: Partial<DifferenceSettings>) => {
     const next: DifferenceSettings = { ...(settings ?? {}), ...patch };
@@ -247,7 +244,7 @@ export function CompareDifference({
   } else if (drawn.kind === "table") {
     stage = <CompareChart nodeData={nodeData} stacked={drawn.ref} specText={JSON.stringify(differenceTableSpec(drawn.names))} />;
   } else {
-    const docText = JSON.stringify(differenceMapDoc(value, settings?.absolute === true, settings?.colors));
+    const docText = JSON.stringify(differenceMapDoc(value, settings?.absolute === true));
     stage = (
       <Suspense fallback={<NodeEmptyState reason="not-run" hint="Loading the map." />}>
         <CompareMap nodeId={nodeData.nodeId} difference={drawn.ref} docText={docText} />
@@ -284,23 +281,12 @@ export function CompareDifference({
               onChange={(next) => set({ value: next })}
             />
           ) : null}
-          {value && !value.categorical ? (
-            <Select
-              label="Colors"
-              value={scale.value}
-              disabled={!editable}
-              options={DIFFERENCE_SCALES.map((option) => ({ value: option.value, text: option.text }))}
-              onChange={(next) =>
-                set({ colors: next === DIFFERENCE_SCALES[0].value ? undefined : (next as DifferenceColors) })
-              }
-            />
-          ) : null}
         </div>
       ) : null}
       <div className={styles.mapCanvas}>{stage}</div>
       {drawn && drawn.kind !== "table" && value && !value.categorical ? (
         <p className={styles.note} data-compare-difference-note="true">
-          {scale.note}
+          Dark purple is the lowest difference and yellow the highest.
         </p>
       ) : null}
     </div>

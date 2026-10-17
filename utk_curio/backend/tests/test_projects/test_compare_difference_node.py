@@ -88,13 +88,6 @@ def test_the_schema_lists_the_modes_the_frontend_offers():
     assert compare["mode"]["enum"] == _frontend_list("COMPARE_MODES")
 
 
-def test_the_schema_lists_the_color_scales_the_frontend_offers():
-    compare = _schema()["$defs"]["nodeMetadata"]["properties"]["compareScenarios"]["properties"]
-    offered = _frontend_list("DIFFERENCE_COLORS")
-    assert offered[0] == "interpolateViridis", offered
-    assert compare["difference"]["properties"]["colors"]["enum"] == offered
-
-
 @pytest.mark.parametrize(
     "settings",
     [
@@ -102,11 +95,10 @@ def test_the_schema_lists_the_color_scales_the_frontend_offers():
         {"mode": "chart", "chart": {"preset": "bar"}},
         {"inputs": LABELS, "difference": {"value": "band_1"}},
         {"inputs": LABELS, "mode": "difference", "difference": {"absolute": True}},
-        {"inputs": LABELS, "mode": "difference", "difference": {"value": "band_1", "colors": "interpolateReds"}},
         {"mode": "chart", "chart": {"preset": "pie", "aggregate": "none"}},
     ],
     ids=["difference with a key and a value", "chart chosen", "a value alone", "each difference's size",
-         "a color scale", "a chart that combines nothing"],
+         "a chart that combines nothing"],
 )
 def test_the_schema_takes_a_chosen_view_and_what_difference_joins_on(settings):
     assert _errors(_doc(copy.deepcopy(settings))) == []
@@ -120,12 +112,10 @@ def test_the_schema_takes_a_chosen_view_and_what_difference_joins_on(settings):
         {"difference": {"key": ""}},
         {"difference": {"key": "osm_id", "band": 1}},
         {"difference": "osm_id"},
-        {"difference": {"colors": "interpolateRdBu"}},
-        {"difference": {"colors": "Reds"}},
         {"chart": {"aggregate": "first"}},
     ],
     ids=["a view the node does not have", "an empty view", "an empty key", "a field the format does not have",
-         "difference as a name", "a centered scale", "a scale by its plain name", "an aggregate the node does not have"],
+         "difference as a name", "an aggregate the node does not have"],
 )
 def test_the_schema_refuses_what_the_node_does_not_write(settings):
     assert _errors(_doc(settings)) != []

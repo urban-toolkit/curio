@@ -804,11 +804,10 @@ The node has two tabs:
   **Change** picks **Signed**, input_1 minus input_0, or **Absolute**, its size.
   The legend is titled with what it shows: `sunlight change` for the
   column `sunlight`, `sunlight absolute change` for its size, or `change`. A raster's
-  or a layer's colors run from the lowest difference to the highest in the scale
-  picked in **Colors**: **Viridis**, from dark purple to yellow, or **Reds**,
-  **Blues**, **Greens**, **Oranges** or **Purples**, each from pale to dark. A
-  raster cell that is nodata in either raster is clear. A table's difference is
-  shown as a table, each row in the color of its change.
+  or a layer's colors run from the lowest
+  difference, dark purple, to the highest, yellow; a raster cell that is nodata in
+  either raster is clear. A table's difference is shown as a table, each
+  row in the color of its change.
 - **What differs** lists the levers that differ between the scenarios: for each, the
   widget values and the code lines that changed, read against the first scenario's,
   or, for an Edit Features node, each scenario's edits. A node and the copies made

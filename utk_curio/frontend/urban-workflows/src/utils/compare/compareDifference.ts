@@ -15,7 +15,6 @@
 import { VEGA_SCHEMA_URL } from "../../generated/visDefaults";
 import type { ClassifiedColumn } from "../starterSpec";
 import { TABLE_COLUMNS, TABLE_ROWS, vegaField } from "./comparePresets";
-import type { DifferenceColors } from "./compareSettings";
 
 /** The column a difference of layers or tables adds, and what it holds. */
 export const CHANGE_FIELD = "change";
@@ -45,32 +44,11 @@ export function differenceLegendTitle(value: DifferenceValue, absolute = false):
   return absolute ? `${value.value} absolute change` : `${value.value} change`;
 }
 
-export interface DifferenceScale {
-  value: DifferenceColors;
-  /** Its name in the Colors menu. */
-  text: string;
-  /** What the map's note says its colors mean. */
-  note: string;
-}
-
 /**
- * The color scales a raster's or a layer's difference can be drawn in, from
- * its lowest value to its highest, in the order of `DIFFERENCE_COLORS`. The
- * first, Viridis, is the default.
+ * A raster's or a layer's difference, from its lowest value (dark purple) to
+ * its highest (yellow).
  */
-export const DIFFERENCE_SCALES: readonly DifferenceScale[] = [
-  { value: "interpolateViridis", text: "Viridis", note: "Dark purple is the lowest difference and yellow the highest." },
-  { value: "interpolateReds", text: "Reds", note: "Pale red is the lowest difference and dark red the highest." },
-  { value: "interpolateBlues", text: "Blues", note: "Pale blue is the lowest difference and dark blue the highest." },
-  { value: "interpolateGreens", text: "Greens", note: "Pale green is the lowest difference and dark green the highest." },
-  { value: "interpolateOranges", text: "Oranges", note: "Pale orange is the lowest difference and dark orange the highest." },
-  { value: "interpolatePurples", text: "Purples", note: "Pale purple is the lowest difference and dark purple the highest." },
-];
-
-/** The scale *wanted* when it is one of `DIFFERENCE_SCALES`, else Viridis. */
-export function differenceScale(wanted: string | undefined): DifferenceScale {
-  return DIFFERENCE_SCALES.find((scale) => scale.value === wanted) ?? DIFFERENCE_SCALES[0];
-}
+export const DIFFERENCE_INTERPOLATOR = "interpolateViridis";
 
 export type DifferenceKind = "raster" | "layer" | "table";
 
@@ -119,14 +97,9 @@ export function resolveValue(wanted: string | undefined, values: readonly Differ
 /**
  * The Autark document that draws the difference, one raster or layer colored
  * by *value*, read as the table `differenceTableName` names, its legend titled
- * by `differenceLegendTitle` (*absolute* when the difference is its size). A
- * number is drawn in the scale *colors* names (`differenceScale`).
+ * by `differenceLegendTitle` (*absolute* when the difference is its size).
  */
-export function differenceMapDoc(
-  value: DifferenceValue | undefined,
-  absolute = false,
-  colors?: string,
-): Record<string, unknown> {
+export function differenceMapDoc(value: DifferenceValue | undefined, absolute = false): Record<string, unknown> {
   const table = differenceTableName(value);
   if (!value) return { map: { layerRefs: [{ dataRef: table }] } };
   const title = differenceLegendTitle(value, absolute);
@@ -151,7 +124,7 @@ export function differenceMapDoc(
         title,
         getFnv: value.value,
         getFnvType: "quantitative",
-        colorMapInterpolator: differenceScale(colors).value,
+        colorMapInterpolator: DIFFERENCE_INTERPOLATOR,
       }],
     },
   };

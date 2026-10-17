@@ -20,11 +20,6 @@ in a browser:
 
 Its close-up is the frame.
 
-A third test picks the map's color scale (#819's plain scales): Reds in place
-of Viridis draws the cells, the legend and the note in reds with no run, the
-choice is saved, and a reopen draws it so. Its close-ups are the map before
-and after.
-
 Run::
 
     CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/test_compare_difference_e2e.py -v
@@ -38,7 +33,6 @@ import struct
 import time
 from typing import TYPE_CHECKING
 
-from .test_autark_layer_options_e2e import _LEGEND_JS, _canvas, _distance, _drawn_box, _rgb
 from .test_multi_input_e2e import _wait_for_circles
 from .utils import (
     api_json,
@@ -374,101 +368,3 @@ def test_two_layers_are_joined_on_their_osm_id_and_mapped(
     _assert_difference_mapped(
         page, COMPARE, "the difference of two layers by its change", color="change", legend="change",
     )
-
-
-#: d3's viridis and reds at 0, where the legend's bar starts.
-VIRIDIS_LOW = (68, 1, 84)
-REDS_LOW = (255, 245, 240)
-SCALES = [
-    ["interpolateViridis", "Viridis"],
-    ["interpolateReds", "Reds"],
-    ["interpolateBlues", "Blues"],
-    ["interpolateGreens", "Greens"],
-    ["interpolateOranges", "Oranges"],
-    ["interpolatePurples", "Purples"],
-]
-VIRIDIS_NOTE = "Dark purple is the lowest difference and yellow the highest."
-REDS_NOTE = "Pale red is the lowest difference and dark red the highest."
-
-
-def _legend_starts_at(page, node_id: str, rgb: tuple) -> dict:
-    """The node's map legend once its color bar starts at *rgb*, give or take."""
-    deadline = time.time() + 30
-    shown = None
-    while time.time() < deadline:
-        shown = page.evaluate(_LEGEND_JS, node_id)
-        if shown and shown["visible"] and shown["colors"] and _distance(_rgb(shown["colors"][0]), rgb) < 25:
-            return shown
-        page.wait_for_timeout(250)
-    raise AssertionError(f"the map's legend does not start at {rgb}: {shown!r}")
-
-
-def _red_share(page, node_id: str) -> float:
-    """The share of the map's drawn cells that are plainly red: red over green
-    and over blue by more than 30, which no color of Viridis is."""
-    image = _canvas(page, node_id)
-    left, top, right, bottom = _drawn_box(image)
-    pixels = [image.getpixel((x, y)) for x in range(left, right) for y in range(top, bottom)]
-    red = [p for p in pixels if p[0] > p[1] + 30 and p[0] > p[2] + 30]
-    return len(red) / max(1, len(pixels))
-
-
-def _note(page, node_id: str) -> str:
-    return node_locator(page, node_id).locator("[data-compare-difference-note]").inner_text()
-
-
-def test_a_difference_map_takes_the_color_scale_the_node_picks(
-    app_frontend: "FrontendPage", current_server: str, page,
-):
-    spec = _spec(name="Compare Difference Colors")
-    session = _enter(page, app_frontend, current_server, spec, "compare_difference_colors_e2e")
-    project_id = session["project"]["id"]
-    _run_outcomes_then_wire_them(page)
-    _wait_for_code(page, COMPARE, DIFFERENCE_LINES)
-    _run_and_read_output(page, "the difference in viridis", "band_1 change")
-    compare = node_locator(page, COMPARE)
-
-    # Colors offers Viridis, the default, then the plain scales.
-    colors = compare.locator('select[aria-label="Colors"]')
-    assert colors.count() == 1, "the Difference offers no color scale"
-    offered = colors.locator("option").evaluate_all("(options) => options.map((o) => [o.value, o.textContent])")
-    assert offered == SCALES, offered
-    assert colors.input_value() == "interpolateViridis"
-    _legend_starts_at(page, COMPARE, VIRIDIS_LOW)
-    assert _note(page, COMPARE) == VIRIDIS_NOTE
-    viridis = _red_share(page, COMPARE)
-    assert viridis < 0.05, f"{viridis:.0%} of the Viridis map's cells are red"
-    save_node_closeup(page, "compare-difference-colors", COMPARE, test_name="viridis", sweep_toasts=True)
-
-    # Reds: the map draws again from the same output, with no run.
-    code = read_node_code(page, COMPARE)
-    colors.select_option("interpolateReds")
-    _legend_starts_at(page, COMPARE, REDS_LOW)
-    _assert_difference_mapped(page, COMPARE, "the difference in reds", legend="band_1 change")
-    assert _note(page, COMPARE) == REDS_NOTE
-    reds = _red_share(page, COMPARE)
-    assert reds > 0.6, f"only {reds:.0%} of the Reds map's cells are red"
-    assert read_node_code(page, COMPARE) == code
-    save_node_closeup(page, "compare-difference-colors", COMPARE, test_name="reds", sweep_toasts=True)
-
-    save_dataflow(page)
-    project = api_json(f"{current_server}/api/projects/{project_id}", session["token"])
-    saved = {n["id"]: n for n in project["spec"]["dataflow"]["nodes"]}
-    assert saved[COMPARE]["metadata"]["compareScenarios"] == {
-        "inputs": [BASELINE, TWICE],
-        "difference": {"colors": "interpolateReds"},
-    }, saved[COMPARE]["metadata"]
-
-    # Reopened, it maps the saved difference in reds, with no run.
-    page.goto(f"{app_frontend.base_url}/projects")
-    page.wait_for_load_state("domcontentloaded")
-    page.goto(f"{app_frontend.base_url}/dataflow/{project_id}")
-    compare = node_locator(page, COMPARE)
-    compare.wait_for(state="visible", timeout=45000)
-    assert _wait_for_code(page, COMPARE, DIFFERENCE_LINES) == code
-    frame_nodes(page, [COMPARE])
-    compare.locator('.nav-link[data-rr-ui-event-key="output"]').click()
-    _assert_difference_mapped(page, COMPARE, "the difference in reds after a reopen", legend="band_1 change")
-    _legend_starts_at(page, COMPARE, REDS_LOW)
-    assert compare.locator('select[aria-label="Colors"]').input_value() == "interpolateReds"
-    assert _note(page, COMPARE) == REDS_NOTE
