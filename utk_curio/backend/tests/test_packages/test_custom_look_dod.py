@@ -125,6 +125,22 @@ def _violating_scenario() -> dict:
                      behavior="postit-note", source=_VIOLATING_TSX)
 
 
+def _write_builtin_without_the_note(user_key: str) -> None:
+    """The user's store holds the shipped ``curio.builtin@1`` manifest with its
+    Note left out: a store with no notes template, where a notes package is
+    written to place notes."""
+    from pathlib import Path
+
+    from utk_curio.backend.app.packages.repositories.store import user_packages_dir
+
+    shipped = Path(__file__).resolve().parents[4] / "packages" / "curio.builtin@1" / "manifest.json"
+    manifest = json.loads(shipped.read_text(encoding="utf-8"))
+    manifest["templates"] = [t for t in manifest["templates"] if t["id"] != "note"]
+    dest = user_packages_dir(user_key) / "curio.builtin@1"
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+
 def _justified(draft: dict) -> dict:
     """The draft as an agent sends it, with the justification a draft that
     adds a template carries. The build request never holds it."""
@@ -505,6 +521,10 @@ class TestCurioNotesRetry:
             "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
             "outputs": [],
         }, headers=self._auth(token)).get_json()["id"]
+        # No notes template anywhere: the shipped built-in package without its
+        # Note, whose label and id this draft's template would repeat.
+        with client.application.app_context():
+            _write_builtin_without_the_note(_user_dir_key(user))
         client.post(f"/api/agents/projects/{pid}/install",
                     json={"coord": self.COORD}, headers=self._auth(token))
         att_id = client.post(
