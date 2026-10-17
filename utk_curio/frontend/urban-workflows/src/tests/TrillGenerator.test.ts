@@ -344,6 +344,57 @@ describe("TrillGenerator node comments (#237)", () => {
   });
 });
 
+describe("TrillGenerator writes no node comments", () => {
+  beforeEach(() => {
+    TrillGenerator.reset();
+  });
+
+  test("a node whose data still carries comments saves without them", () => {
+    // Comments as the canvas once kept them on a node. A note on a dataflow is
+    // a Note node: the serializer writes no comment thread, and the rest of
+    // the node's metadata is written as before.
+    const comments = [
+      {
+        id: "c-1",
+        text: "check the CRS before the join",
+        author: "ada",
+        authorName: "Ada Lovelace",
+        createdAt: "2026-08-30T12:00:00.000Z",
+        resolved: false,
+      },
+    ];
+    const spec = TrillGenerator.generateTrill(
+      [
+        {
+          type: "CURIO_UNIVERSAL_NODE",
+          position: { x: 0, y: 0 },
+          data: {
+            nodeId: "discussed-1",
+            nodeType: "curio.builtin/computation-analysis",
+            comments,
+          },
+        },
+        {
+          type: "CURIO_UNIVERSAL_NODE",
+          position: { x: 5, y: 5 },
+          data: {
+            nodeId: "renamed-1",
+            nodeType: "curio.builtin/computation-analysis",
+            packageTemplateLabel: "Clean the parcels",
+            comments,
+          },
+        },
+      ],
+      [],
+      "Imported Workflow"
+    );
+
+    const byId = Object.fromEntries(spec.dataflow.nodes.map((n: any) => [n.id, n]));
+    expect(byId["discussed-1"].metadata).toBeUndefined();
+    expect(byId["renamed-1"].metadata).toEqual({ packageTemplateLabel: "Clean the parcels" });
+  });
+});
+
 describe("the dataflow goal", () => {
   beforeEach(() => {
     TrillGenerator.reset();

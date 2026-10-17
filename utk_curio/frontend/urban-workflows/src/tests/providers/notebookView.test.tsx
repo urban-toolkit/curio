@@ -293,12 +293,12 @@ describe('the notebook view shows the nodes as cells', () => {
     await setPane();
     await show('notebook');
 
-    // As a comment, a rename or a widget edit would from a stale copy of data.
+    // As a rename or a widget edit would from a stale copy of data.
     await act(async () => {
       api.onNodesChange(
         rf.getNodes().map((n: any) => {
           const { workflowPosition, ...rest } = n.data;
-          return { type: 'reset', item: { ...n, data: { ...rest, comments: [] } } };
+          return { type: 'reset', item: { ...n, data: { ...rest, packageTemplateLabel: 'Renamed' } } };
         }) as any,
       );
     });
