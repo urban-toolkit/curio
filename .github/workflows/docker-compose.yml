@@ -386,7 +386,8 @@ jobs:
       CURIO_REMINT: ${{ inputs.remint && '1' || '' }}
       CURIO_REMINT_FILTER: ${{ inputs.remint_filter }}
       CURIO_REMINT_FORCE: ${{ inputs.remint_force }}
-      # Only this job draws on a GPU, so only it takes remint_gpu_kind.
+      # Only this job draws on a GPU, so only it writes remint_gpu_kind's
+      # frames; e2e-desktop then only compares.
       CURIO_REMINT_GPU_KIND: ${{ inputs.remint_gpu_kind }}
       # Isolation from prod on the same host: distinct compose project
       # (-p curio-ci below) + its own host ports (CURIO_E2E_*_PORT below, which
@@ -943,6 +944,7 @@ jobs:
       CURIO_REMINT: ${{ inputs.remint && '1' || '' }}
       CURIO_REMINT_FILTER: ${{ inputs.remint_filter }}
       CURIO_REMINT_FORCE: ${{ inputs.remint_force }}
+      CURIO_REMINT_GPU_KIND: ${{ inputs.remint_gpu_kind }}
       CURIO_E2E_BACKEND_URL: "http://localhost:5022"
       CURIO_E2E_HOST: localhost
       CURIO_E2E_BACKEND_PORT: "5022"
@@ -994,14 +996,18 @@ jobs:
           set -euo pipefail
           extra=()
           if [ "${CURIO_REMINT:-}" = 1 ]; then
-            PYTEST_ADDOPTS="$PYTEST_ADDOPTS --remint-baselines"
+            # A remint_gpu_kind run writes only the frames it names, which
+            # test-gpu draws, so these parts then compare without writing.
+            if [ -z "${CURIO_REMINT_GPU_KIND:-}" ]; then
+              PYTEST_ADDOPTS="$PYTEST_ADDOPTS --remint-baselines"
+            fi
             if [ -n "${CURIO_REMINT_FILTER:-}" ]; then
               printf -v quoted '%q' "$CURIO_REMINT_FILTER"
               PYTEST_ADDOPTS="$PYTEST_ADDOPTS -k $quoted"
               # A filter may name only tests the utk runner owns.
               extra+=(--allow-empty)
             fi
-            if [ -n "${CURIO_REMINT_FORCE:-}" ]; then
+            if [ -n "${CURIO_REMINT_FORCE:-}" ] && [ -z "${CURIO_REMINT_GPU_KIND:-}" ]; then
               printf -v quoted '%q' "$CURIO_REMINT_FORCE"
               PYTEST_ADDOPTS="$PYTEST_ADDOPTS --remint-force $quoted"
             fi

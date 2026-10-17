@@ -1177,9 +1177,9 @@ def render_comparison(report, record):
 
     head = [badge(group, COMPARISON_LABEL.get(status, status)), f"<h3>{esc(baseline)}</h3>"]
     # The baseline of the run's GPU kind, kept beside the default one.
-    kind = record.get("gpu_kind")
-    if kind:
-        head.append(badge("gpukind", f"{kind} baseline"))
+    gpu_kind = record.get("gpu_kind")
+    if gpu_kind:
+        head.append(badge("gpukind", f"{gpu_kind} baseline"))
     if record.get("closeup"):
         head.append(badge("closeup", "close-up"))
     meta = record.get("interaction")
@@ -1197,7 +1197,7 @@ def render_comparison(report, record):
         against = "the committed baseline"
         # A new baseline of a GPU kind, shown against the default one.
         if record.get("compared_with"):
-            captions = (("expected", "Default baseline"), ("created", f"New {kind} baseline"),
+            captions = (("expected", "Default baseline"), ("created", f"New {gpu_kind} baseline"),
                         ("diff", "Difference"))
             against = f"the default baseline {record['compared_with']}"
         recapture = record.get("recapture_ratio")
