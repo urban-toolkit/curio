@@ -354,32 +354,44 @@ node whose code it writes itself:
   `compareDifference.ts` writes; a table goes through `CompareChart`.
 - `whatDiffers.ts` reads each compared scenario's parts through `scenarioParts`,
   pairs levers whose ids and `copiedFrom` lists meet, and compares their widget
-  values and code lines, or, for Edit Features nodes, their edit lists;
-  `contextWarnings` compares their fixed context.
+  values and code lines, or, for Interaction nodes, their edit logs, an edit
+  switched off marked off; `contextWarnings` compares their fixed context.
 - A pinned Compare Scenarios node draws its own output, so it is its own dashboard
   source (`SELF_DRAWN_NODE_TYPES` in `dashboardLayout.ts`, `_SELF_DRAWN_KINDS` in
   `projects/dashboard_payload.py`), and its inputs are not walked.
 
 ### Editing features
 
-The Edit Features node (`curio.builtin/edit-features`) is a Python code node whose
-code is written from its edit list (`metadata.editFeatures`: `key`, `layer`, `edits`):
+The Interaction node (type `curio.builtin/edit-features`) is a Python code node
+whose code is written from its edit log (`metadata.editFeatures`: `key`, `layer`,
+`edits`):
 
-- `src/utils/editFeatures/editFeatures.ts` normalizes the list and writes the code,
+- `src/utils/editFeatures/editFeatures.ts` normalizes the log and writes the code,
   one call of `curio_edit_features` (`utk_curio/sandbox/util/feature_edits.py`),
   seeded in both namespaces as the Compare Scenarios steps are.
-  `adapters/node/editFeaturesBehavior.tsx` writes the list and the code together
-  when the body changes the list, and marks the node stale.
+  `adapters/node/editFeaturesBehavior.tsx` writes the log and the code together
+  when the body changes the log, and marks the node stale with every node below it
+  that ran, the nodes `autoRunTargets` (`providers/flow/useAutoRun.ts`) gives.
 - `components/editFeatures/EditFeaturesBody.tsx` reads the input as the Autark map
   reads it (`readAutkInput`, `autkSourcesFrom`), offers the id columns a selection
   tag offers (`idColumns` in `utils/references/selectionTags.ts`) and refuses a layer
   with none. `EditFeaturesMap.tsx` draws the input with `useAutkGrammarBehavior`, the
   layer to edit with `isPick`, and turns a pick's rows into ids with `selectedIds`.
+  The body takes its keys with the `nokey` class, so React Flow neither deletes nor
+  moves the node on them. Its Update results calls the flow's `runDownstream`, which
+  starts the run an automatic run starts (#845) for `autoRunTargets` of the node,
+  on the server or, where runs stay in the browser, there.
+- Conditions (`where`) and `expr` edits are one small expression language written
+  twice, `utk_curio/sandbox/util/edit_expr.py` for runs and
+  `src/utils/editFeatures/editExpr.ts` for the body, neither through `eval`.
+  `applyEdits.ts` applies the log in the browser, so the picked features' table and
+  a condition's count show what a run hands on. Both twins read
+  `src/utils/editFeatures/editExpr.cases.json`, in Jest and in pytest.
 - `feature_edits.edit_features` matches features by `key`, never by position, and
   edits GeoJSON as it is when the input is an Autark node's layers: the other
   features, properties and layers pass through untouched, and the result is the
-  envelope `persistLayersToBackend` stores for an Autark node. A table gives a table.
-  Unknown ids are printed, and the run goes on.
+  envelope `persistLayersToBackend` stores for an Autark node. A table gives a table,
+  its columns keeping their types. Unknown ids are printed, and the run goes on.
 - A Data Pool's layers read from one artifact, one or several, name it (`filename`),
   and a code node is sent that artifact (`executionInputRef`), as a run on the
   server passes the pool through. In-process, the layers of a stored

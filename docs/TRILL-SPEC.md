@@ -119,15 +119,29 @@ it, `osm_id` or `building_id`), passed to `curio_difference_scenarios` as `key=`
 `true`, gives each difference's size instead of input_1 minus input_0, passed as
 `absolute=True`.
 
-`metadata.editFeatures` holds a `curio.builtin/edit-features` node's edit list,
-written only when it has one of its fields. `key` is the column that identifies a
-feature (`osm_id`, `building_id`, or another column whose values differ in every
-feature), and `layer` the layer the edits apply to when the input names its
-layers. `edits` lists the edits in the order they were made, each `{op, ids}`:
-`remove` drops the features whose `key` is one of `ids`, `set` also names a
-`column` and a `value` and writes the value there, and `restore` puts those
-features back as the node's input has them. The node's `content` is written from
-the list, one call of `curio_edit_features` with the edits, `key=` and `layer=`.
+`metadata.editFeatures` holds the edit log of an Interaction node (type
+`curio.builtin/edit-features`), written only when it has one of its fields.
+`key` is the column that identifies a feature (`osm_id`, `building_id`, or
+another column whose values differ in every feature), and `layer` the layer the
+edits apply to when the input names its layers. `edits` lists the edits in the
+order they were made. Each has an `op` and names its features by `ids`, the
+`key` values of the features, or by `where`, a condition over a feature's
+columns such as `height > 100`, never both:
+
+- `remove` drops the features, and `restore` puts them back as the node's input
+  has them.
+- `set` writes `value` into `column`.
+- `scale` multiplies the number in `column` by `value`, and `offset` adds
+  `value` to it; both take a number.
+- `expr` writes into `column` what the expression `value` makes of each
+  feature, such as `levels * 3.2`.
+
+`label` names an edit for people, and `enabled: false` keeps it in the log and
+skips it in a run. The node's `content` is written from the log, one call of
+`curio_edit_features` with the edits, `key=` and `layer=`. The expressions are
+the language `utk_curio/sandbox/util/edit_expr.py` describes: columns,
+numbers, texts, `true`, `false`, `null`, `+ - * / %`, comparisons, `and`,
+`or`, `not`, and `abs`, `round`, `min` and `max`.
 
 `metadata.comments` carries the node's discussion, written only when non-empty.
 Each entry is `{id, text, author, authorName, createdAt, resolved}`. The author's
