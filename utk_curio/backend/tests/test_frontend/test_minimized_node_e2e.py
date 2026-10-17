@@ -3,9 +3,13 @@ and opened again.
 
 The report (komar41's #914): a node folded to its chip with the header's
 Minimize opened full again after a reload. The gesture is the owner's own:
-Minimize in the node's header, Save from the File menu, a reload of the page.
-The node is then still a chip, the node beside it, never minimized, is still
-open, and the saved spec says the same.
+Minimize in a node's header, Save from the File menu, a reload of the page. The
+node is then still a chip, the node beside it, never minimized, is still open,
+and the saved spec says the same.
+
+The dataflow is loaded from a file on a new canvas, so it is the browser user's
+own (#751) with accounts and on a stack without them, where the one local user
+saves.
 
 Run::
 
@@ -20,11 +24,11 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from .utils import (
     activate_header_icon,
-    api_json,
     node_locator,
     require_owner_view,
     save_dataflow,
-    stub_login_and_enter_workflow,
+    stub_db_login,
+    upload_workflow,
 )
 
 if TYPE_CHECKING:
@@ -72,13 +76,14 @@ _DRAWN_JS = """(ids) => {
 
 
 def _drawn_once_settled(page, expected: dict) -> dict:
-    """What the canvas draws, once it draws *expected* or ten seconds pass."""
+    """What the canvas draws, once it draws *expected* or twenty seconds pass."""
     try:
         page.wait_for_function(
             f"([ids, expected]) => {{ const drawn = ({_DRAWN_JS})(ids);"
             " return ids.every((id) => drawn[id] === expected[id]); }",
             arg=[NODE_IDS, expected],
-            timeout=10000,
+            polling=100,
+            timeout=20000,
         )
     except PlaywrightTimeoutError:
         pass
@@ -89,17 +94,21 @@ def test_a_minimized_node_is_still_minimized_after_a_save_and_a_reload(
     app_frontend: "FrontendPage",
     current_server: str,
     page,
+    tmp_path,
 ):
-    session = stub_login_and_enter_workflow(
+    stub_db_login(
         page,
-        frontend_url=app_frontend.base_url,
-        backend_url=current_server,
+        app_frontend.base_url,
+        current_server,
         name="Minimized Node",
         username="minimized_node",
-        project_name="Minimized node",
-        project_spec=_spec(),
     )
+    page.goto(f"{app_frontend.base_url}/dataflow/new", timeout=120000)
+    page.locator("#tools-menu").wait_for(state="visible", timeout=45000)
     require_owner_view(page)
+    spec_file = tmp_path / "minimized-node.json"
+    spec_file.write_text(json.dumps(_spec()), encoding="utf-8")
+    upload_workflow(page, app_frontend, str(spec_file), len(NODE_IDS))
     for node_id in NODE_IDS:
         node_locator(page, node_id).wait_for(state="visible", timeout=45000)
     folded = {FOLDED_ID: "chip", OPEN_ID: "card"}
@@ -108,12 +117,12 @@ def test_a_minimized_node_is_still_minimized_after_a_save_and_a_reload(
     activate_header_icon(page.locator(f'[id="{FOLDED_ID}resizable"] .curio-node-tools [title="Minimize"]'))
     minimized = _drawn_once_settled(page, folded)
 
-    # Saved from the File menu.
-    save_dataflow(page)
-    project = api_json(f"{current_server}/api/projects/{session['project']['id']}", session["token"])
+    # Saved from the File menu: the spec as the server stored it.
+    project = save_dataflow(page)
     saved = {node["id"]: node.get("minimized") for node in project["spec"]["dataflow"]["nodes"]}
 
-    # And opened again.
+    # And opened again, from the dataflow's own address.
+    page.wait_for_url(f"**/dataflow/{project['id']}", timeout=30000)
     page.reload()
     for node_id in NODE_IDS:
         node_locator(page, node_id).wait_for(state="visible", timeout=45000)

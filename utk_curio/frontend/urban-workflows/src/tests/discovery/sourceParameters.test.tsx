@@ -131,7 +131,7 @@ describe('the area field', () => {
     const onChange = jest.fn();
     render(<AreaField parameter={AREA} value={null} onChange={onChange} />);
     fireEvent.click(screen.getByRole('tab', { name: 'Coordinates' }));
-    const pasted = ['−87.64', '41.875', '–87.62', '41.89'];
+    const pasted = ['\u221287.64', '41.875', '\u201387.62', '41.89'];
     ['West', 'South', 'East', 'North'].forEach((name, i) =>
       fireEvent.change(screen.getByLabelText(name), { target: { value: pasted[i] } }),
     );
