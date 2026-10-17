@@ -43,7 +43,11 @@ SEED_LOGGER = "utk_curio.backend.app.projects.seed"
 # How long the second caller waits, at the seeding lock or on the database,
 # before the held one goes on.
 WAIT_SECONDS = 0.2
-_INSERT_PROJECT = re.compile(r"\s*INSERT\s+INTO\s+project\b", re.IGNORECASE)
+# What asks SQLite for its write lock: a ``BEGIN IMMEDIATE``, or a project row's
+# ``INSERT`` in a transaction that has not taken the lock yet.
+_ASKS_FOR_THE_WRITE_LOCK = re.compile(
+    r"\s*(?:BEGIN\s+IMMEDIATE\b|INSERT\s+INTO\s+project\b)", re.IGNORECASE,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -130,10 +134,11 @@ def _hold_at_first_spec_write(monkeypatch, thread_name: str):
 
 
 @contextlib.contextmanager
-def _signal_at_project_insert(signal: threading.Event, thread_name: str):
-    """Set *signal* when *thread_name* sends an ``INSERT INTO project``."""
+def _signal_at_write_lock(signal: threading.Event, thread_name: str):
+    """Set *signal* when *thread_name* asks SQLite for its write lock."""
     def observe(_conn, _cursor, statement, _parameters, _context, _executemany):
-        if threading.current_thread().name == thread_name and _INSERT_PROJECT.match(statement):
+        if (threading.current_thread().name == thread_name
+                and _ASKS_FOR_THE_WRITE_LOCK.match(statement)):
             signal.set()
 
     engine = db.engine
@@ -193,13 +198,13 @@ def test_two_first_listings_seed_the_examples_once(
     _signal_at_seed_lock(monkeypatch, in_position, "second listing")
 
     threads: list = []
-    with _signal_at_project_insert(in_position, "second listing"):
+    with _signal_at_write_lock(in_position, "second listing"):
         try:
             first = _start(threads, "first listing", lambda: _seed_and_list(file_db_app, user_id))
             assert reached.wait(STEP_SECONDS), "the first listing never wrote its first example"
             second = _start(threads, "second listing", lambda: _seed_and_list(file_db_app, user_id))
             assert in_position.wait(STEP_SECONDS), (
-                "the second listing neither asked for the seeding lock nor wrote an example"
+                "the second listing asked for neither the seeding lock nor the write lock"
             )
             time.sleep(WAIT_SECONDS)
         finally:
@@ -220,22 +225,22 @@ def test_a_first_listing_during_a_save_waits_for_the_database(
     file_db_app, user_id, squeezed_busy_timeout, monkeypatch, caplog,
 ):
     """A new account's first listing seeds its examples while a save of one of
-    its projects holds SQLite's write lock. Each example's write must wait for
-    the save rather than fail at once: the marker then still listed every
+    its projects holds SQLite's write lock. The seeding must wait for the save
+    rather than fail every example at once: the marker then still listed every
     example, so the account never got them."""
     caplog.set_level(logging.WARNING, logger=SEED_LOGGER)
     examples = _example_ids(user_id)
     project_id = _create_project(file_db_app)
     reached, release = _hold_at_first_spec_write(monkeypatch, "save")
-    wrote = threading.Event()
+    asked = threading.Event()
 
     threads: list = []
-    with _signal_at_project_insert(wrote, "listing"):
+    with _signal_at_write_lock(asked, "listing"):
         try:
             save = _start(threads, "save", lambda: _save(file_db_app, project_id))
             assert reached.wait(STEP_SECONDS), "the save never wrote its project's row"
             listing = _start(threads, "listing", lambda: _seed_and_list(file_db_app, user_id))
-            assert wrote.wait(STEP_SECONDS), "the listing never wrote its first example"
+            assert asked.wait(STEP_SECONDS), "the listing never asked for the write lock"
             time.sleep(WAIT_SECONDS)
         finally:
             released_at = _release_and_join(threads, release)
