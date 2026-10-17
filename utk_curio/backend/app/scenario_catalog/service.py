@@ -166,6 +166,13 @@ class ScenarioCatalogService:
         nodes, edges = spec_nodes_and_edges(spec)
         by_id = {n["id"]: n for n in nodes}
         plan = copy_plan(scenario, nodes, edges)
+        # What the scenario's project saved, read at once under its spec lock,
+        # before anything else, so a save of it is waited for (#941).
+        saved = projects.saved_outputs_of(self.user, project_id, spec, [
+            entry["source"]["nodeId"]
+            for entry in plan["context"]
+            if not entry.get("parameter") and entry.get("source") is not None
+        ] + [source for outcome in plan["outcomes"] for source in outcome["sources"]])
         name = scenario["name"]
         problems: list[str] = []
         to_run: list[dict[str, str]] = []
@@ -183,9 +190,9 @@ class ScenarioCatalogService:
                     "can arrive as data."
                 )
                 continue
-            saved = projects.saved_output(self.user, project_id, spec, source["nodeId"])
-            if saved is not None:
-                source["datasetId"] = saved["datasetId"]
+            found = saved.get(source["nodeId"])
+            if found is not None:
+                source["datasetId"] = found["datasetId"]
                 continue
             # A run on the server makes the output in the scenario's project,
             # where the account's runs go to the server and the server can run
@@ -206,10 +213,7 @@ class ScenarioCatalogService:
 
         # An outcome without a saved output shows once the scenario runs.
         for outcome in plan["outcomes"]:
-            outcome["sources"] = [
-                s for s in outcome["sources"]
-                if (projects.saved_output(self.user, project_id, spec, s) or {}).get("computed")
-            ]
+            outcome["sources"] = [s for s in outcome["sources"] if (saved.get(s) or {}).get("computed")]
 
         ukey = projects.user_key(self.user)
         needed = requirements(plan["dataflow"]["nodes"])
@@ -262,8 +266,11 @@ class ScenarioCatalogService:
         """Do what :meth:`copy_plan` says, for a drop into *target_id* whose
         copies have the node ids *outputs* names (``[{source, node}]``): add
         the packages it needs, copy each saved output to its copy, and restore
-        those for the canvas. Refused, changing nothing, while the plan has a
-        problem or a context node still to run."""
+        those for the canvas. Each project is read or written under its own
+        spec lock, one at a time (``projects.copy_outputs``). Refused, changing
+        nothing, while the plan has a problem or a context node still to run;
+        a saved output that is gone, or that cannot be copied, is a 409, the
+        second saying to try again."""
         plan, row, spec, (target_row, target_spec) = self._plan(project_id, scenario_id, target_id)
         unsaved = [
             f'"{plan["scenario"]["name"]}" reads {item["label"]}, which has no saved output in {row.name}: '
@@ -291,24 +298,17 @@ class ScenarioCatalogService:
                 )
             added.append(dir_name)
 
-        saved_refs = projects.output_refs(self.user, project_id)
-        restored = []
-        loaders: dict[str, str] = {}
-        for source, node in copies:
-            saved = projects.saved_output(self.user, project_id, spec, source)
-            if saved is None:
-                raise ScenarioCatalogError(f"The saved output of {source} in {row.name} is gone.", 409)
-            if saved["computed"]:
-                dataset_id = projects.copy_output(
-                    self.user, saved["dirName"], node_id=node, project_id=target_id, project_name=target_row.name,
-                )
-                ref = saved_refs.get(source)
-                if ref is not None:
-                    restored.append(projects.output_ref(node, ref.filename, ref.data_type))
-            else:
-                dataset_id = saved["datasetId"]
-            if source in context:
-                loaders[node] = dataset_id
+        try:
+            copied = projects.copy_outputs(
+                self.user, project_id, spec, copies, target_id=target_id, target_name=target_row.name,
+            )
+        except projects.OutputGone as gone:
+            raise ScenarioCatalogError(f"The saved output of {gone.node_id} in {row.name} is gone.", 409) from None
+        except projects.CopyFailed as failed:
+            raise ScenarioCatalogError(
+                f"The saved output of {failed.node_id} in {row.name} could not be copied. Try again in a moment.", 409,
+            ) from None
+        loaders = {node: copied.dataset_ids[node] for source, node in copies if source in context}
 
         items = projects.dataset_items(self.user, target_id, set(loaders.values()))
         return {
@@ -317,7 +317,7 @@ class ScenarioCatalogService:
             "datasets": {node: items[d] for node, d in loaders.items() if d in items},
             "outputs": [
                 {"node_id": ref.node_id, "filename": ref.filename, **({"data_type": ref.data_type} if ref.data_type else {})}
-                for ref in projects.restore_outputs(self.user, target_id, restored)
+                for ref in copied.restored
             ],
         }
 
