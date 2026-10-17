@@ -63,9 +63,6 @@ type CreateCodeNodeOptions = {
     appearance?: { backgroundColor?: string };
     // dev/89: optional display title (post-it header et al.).
     title?: string;
-    // #237: persisted per-node comments (canonical shape metadata.comments).
-    // Opaque here - utils/nodeComments owns the mapping to live IComment.
-    comments?: unknown[];
     // #576: the Spatial Join's operation and output (canonical shape
     // metadata.spatialJoin). #276: Simple View's image column
     // (metadata.simpleVis). Both were read off the spec in loadTrill and then
@@ -234,11 +231,6 @@ export function useCode(): IUseCode {
             // fall back at render, never here).
             if(node.metadata != undefined && node.metadata.appearance != undefined)
                 nodeMeta.appearance = node.metadata.appearance;
-
-            // #237: comments round-trip through the canvas node's data, which
-            // is what NodeContainer renders and what TrillGenerator re-reads.
-            if(node.metadata != undefined && Array.isArray(node.metadata.comments))
-                nodeMeta.comments = node.metadata.comments;
 
             // #262: the Spatial Join's polygon property round-trips into node data.
             if(node.metadata != undefined && node.metadata.spatialJoin != undefined)
@@ -435,7 +427,6 @@ export function useCode(): IUseCode {
             saveOutputDataset = undefined,
             appearance = undefined,
             title = undefined,
-            comments = undefined,
             spatialJoin = undefined,
             simpleVis = undefined,
             packageTemplateLabel = undefined,
@@ -488,7 +479,6 @@ export function useCode(): IUseCode {
                 datasetSource,
                 appearance,
                 title,
-                comments,
                 spatialJoin,
                 simpleVis,
                 packageTemplateLabel,

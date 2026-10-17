@@ -5,7 +5,7 @@
  * (`spatial-join` left the set in #262, when it gained a body, and Merge Flow
  * was removed); a package template still can. They start minimized (`useState(!!noContent)`),
  * both un-minimize paths are gated by `if (!noContent)` so they can never be
- * expanded, and the whole header band — pin, comments, delete — is gated on
+ * expanded, and the whole header band (pin, delete) is gated on
  * `{!noContent && !dashboardOn ? …}`. The result was a node with no on-node
  * control of any kind: drop one by mistake and the only way to remove
  * it is the Delete key, which nothing on screen suggests. The stress run found

@@ -380,7 +380,7 @@ python curio.py start --deploy --guest-llm-provider anthropic --guest-llm-model 
 A node's header shows **Play** at its left, the node's name and kind, and its run
 status. Its other buttons show while the pointer is over the node or the node is
 selected: the editor's tabs (code, widgets, spec, provenance, output), the **Save
-output dataset** toggle, settings, about, pin, comments, **Minimize** and delete.
+output dataset** toggle, settings, about, pin, **Minimize** and delete.
 Code and specs sit in a gray box, and a code node's output is below its code.
 
 Drag a node's bottom-right corner to resize it. For viewers of a shared dataflow,

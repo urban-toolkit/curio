@@ -129,12 +129,6 @@ layers. `edits` lists the edits in the order they were made, each `{op, ids}`:
 features back as the node's input has them. The node's `content` is written from
 the list, one call of `curio_edit_features` with the edits, `key=` and `layer=`.
 
-`metadata.comments` carries the node's discussion, written only when non-empty.
-Each entry is `{id, text, author, authorName, createdAt, resolved}`. The author's
-avatar is not stored, because `profile_image` may be a full data URL; `canDelete`
-is not stored either, because it is derived on read by comparing `author` to the
-current user.
-
 ### An edge
 
 `id`, `source` and `target` are required. `type` is present only on an interaction
