@@ -187,6 +187,13 @@ describe("normalizeCompareSettings", () => {
     expect(normalizeCompareSettings({ layer: "" })).toBeUndefined();
     expect(normalizeCompareSettings({ layer: 3 })).toBeUndefined();
   });
+
+  test("keeps a chart that combines nothing, none, and drops an aggregate it does not offer", () => {
+    expect(normalizeCompareSettings({ chart: { preset: "bar", aggregate: "none" } })).toEqual({
+      chart: { preset: "bar", aggregate: "none" },
+    });
+    expect(normalizeCompareSettings({ chart: { aggregate: "first" } })).toBeUndefined();
+  });
 });
 
 describe("layersToPick", () => {
