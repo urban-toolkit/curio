@@ -54,9 +54,9 @@ no file for, gets no shadow, as in SCOUT. An Autark map draws it as `input_0`:
 ```
 
 SCOUT's metrics, the mean and median accumulated shadow over the ground, come
-from a **Raster Statistics** node (`curio.builtin@1`): the shadow on its input_0,
-the heights on its input_1 as the mask, and the ground where Deep Umbra reads
-gray level 0, a height under 1.08 m:
+from the statistics of a **Raster Calculator** node (`curio.builtin@1`): the
+shadow on its input_0, the heights on its input_1 as the mask, and the ground
+where Deep Umbra reads gray level 0, a height under 1.08 m:
 
 ```python
 return curio_raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)
@@ -82,7 +82,7 @@ A pip install downloads the weights from GitHub the first time the node runs.
 ```
 [ Buildings ] ──► [ Rasterize Buildings ] ──► [ Accumulated Shadow ] ──► [ Autark: map of the shadow ]
                             │                          │
-                            └──── mask ──► [ Raster Statistics ] ◄──┘
+                            └──── mask ──► [ Raster Calculator ] ◄──┘
 ```
 
 [Example 24](../../docs/examples/24-scout-building-rasters.md) maps the shadow
