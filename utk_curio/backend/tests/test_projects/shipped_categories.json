@@ -330,9 +330,11 @@
   "dataflows/FloodScenarios": {
     "tags": [
       "Autark",
+      "Pandas",
       "SCOUT"
     ],
     "data_type": [
+      "Tables",
       "Geometries",
       "Rasters"
     ]

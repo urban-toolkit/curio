@@ -582,7 +582,9 @@ def test_scouts_flood_rasters_are_downloaded_the_first_time_the_flood_dataflows_
     package. On a pip install's catalog, the first run of each of the
     FloodScenarios dataflow's Data Loading nodes downloads the rasters its code
     names, each once, and hands the sandbox the files where they were placed;
-    a second run downloads nothing."""
+    a second run downloads nothing. The census tracts and the waterways it
+    also reads ship in the package: their loaders get the package's own files,
+    and nothing is downloaded for them."""
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
     from utk_curio.backend.app.execution.code_references import resolve_references
 
@@ -592,31 +594,45 @@ def test_scouts_flood_rasters_are_downloaded_the_first_time_the_flood_dataflows_
     root = tmp_path / "site-packages"
     for repo_path in FLOOD:
         catalog_copy("/".join(repo_path.split("/")[:2]), root)
+    spec = json.loads(FLOOD_DATAFLOW.read_text(encoding="utf-8"))["dataflow"]
+    flood_ids = {repo_path.split("/")[1].rsplit("@", 1)[0] for repo_path in FLOOD}
+    held = {}
+    for ref in spec["datasets"]:
+        if ref["datasetId"] in flood_ids:
+            continue
+        folder = catalog_copy(f"datasets/{ref['dirName']}", root)
+        held[ref["datasetId"]] = folder / json.loads((folder / "manifest.json").read_text(encoding="utf-8"))["dataFile"]
+        assert held[ref["datasetId"]].is_file(), f"{ref['datasetId']} is left out of the package"
+    assert sorted(held) == ["data.cdc.quad-cities-svi-tracts", "data.usgs.quad-cities-waterways"]
     monkeypatch.setenv("CURIO_CATALOG_ROOT", str(root / "datasets"))
     monkeypatch.setattr(module, "RECORD_PATH", write_record(tmp_path / "record.json", FLOOD))
     assert not any((root / repo_path).exists() for repo_path in FLOOD)
     github = FakeGitHub().serve(monkeypatch)
     captured = _capture_sandbox(monkeypatch)
 
-    spec = json.loads(FLOOD_DATAFLOW.read_text(encoding="utf-8"))["dataflow"]
     shared = [n["metadata"]["widgets"][0] for n in spec["nodes"] if n["type"] == "curio.builtin/parameter"]
     codes = []
     for loader in (n for n in spec["nodes"] if n["type"] == "curio.builtin/data-loading"):
         code, problems = resolve_references(loader["content"], [], "python", shared=shared)
         assert problems == [], problems
         codes.append(textwrap.indent(code, "    "))
-    fetched = []
+    fetched, read_in_place = [], []
     for code in codes:
         resp = _run_code(client, token, code)
         assert resp.status_code == 200, resp.get_data(as_text=True)
         paths = captured["body"]["dataset_paths"]
         assert sorted(paths) == sorted(dataset_ids_in_code(code)), paths
         for dataset_id, path in paths.items():
+            if dataset_id in held:
+                assert Path(path).resolve() == held[dataset_id].resolve()
+                read_in_place.append(dataset_id)
+                continue
             (repo_path,) = [p for p in FLOOD if p.startswith(f"datasets/{dataset_id}@1/")]
             assert Path(path) == module.fetched_root(COMMIT) / repo_path
             assert Path(path).read_bytes() == (REPO / repo_path).read_bytes()
             fetched.append(repo_path)
     assert sorted(fetched) == sorted(FLOOD)
+    assert sorted(read_in_place) == sorted(held)
     assert sorted(github.urls) == sorted(url_of(repo_path) for repo_path in FLOOD)
 
     # Run again: every raster is where it was placed, and nothing is downloaded.
