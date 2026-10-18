@@ -17,7 +17,7 @@
  */
 import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { faXmark, faComments } from "@fortawesome/free-solid-svg-icons";
+import { faXmark, faMinus } from "@fortawesome/free-solid-svg-icons";
 
 import { HeaderIconButton } from "../../components/HeaderIconButton";
 
@@ -33,11 +33,11 @@ describe("HeaderIconButton", () => {
 
   it("keeps a hover tooltip", () => {
     render(
-      <HeaderIconButton icon={faComments} title="Comments" onActivate={() => {}} />,
+      <HeaderIconButton icon={faMinus} title="Minimize" onActivate={() => {}} />,
     );
-    expect(screen.getByRole("button", { name: "Comments" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Minimize" })).toHaveAttribute(
       "title",
-      "Comments",
+      "Minimize",
     );
   });
 

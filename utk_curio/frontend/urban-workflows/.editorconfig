@@ -18,7 +18,7 @@ max_line_length = 100
 [.babelrc]
 indent_size = 4
 
-[{src/components/edges/,src/components/comments/,src/hook/,src/components/login/}*.{js,jsx,ts,tsx}]
+[{src/components/edges/,src/hook/,src/components/login/}*.{js,jsx,ts,tsx}]
 indent_size = 2
 
 [src/hook/useCode.ts]
