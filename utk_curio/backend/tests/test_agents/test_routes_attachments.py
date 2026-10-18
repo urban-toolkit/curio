@@ -332,11 +332,6 @@ class TestSession:
 
     def _mock_provider(self, monkeypatch, replies):
         from utk_curio.backend.app.agents.application import catalog
-        from utk_curio.backend.app.agents.application.solve import session as packages_session
-        from utk_curio.backend.app.agents.application.solve import simulation
-        from utk_curio.backend.app.agents.application import spec_reads
-        from utk_curio.backend.app.agents.application.turns import delegates
-        from utk_curio.backend.app.agents.application.turns import policy
         from utk_curio.backend.app.agents.application.turns import titles
         from utk_curio.backend.app.agents.infrastructure import providers
 

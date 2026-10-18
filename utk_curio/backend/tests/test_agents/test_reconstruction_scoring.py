@@ -18,8 +18,6 @@ import pytest
 
 from utk_curio.backend.app.agents.evaluation.canonical import (
     CanonicalGraph,
-    CEdge,
-    CNode,
     Sources,
     canonical_graph_from_spec,
 )
@@ -38,7 +36,6 @@ from utk_curio.backend.app.agents.evaluation.report import (
 from utk_curio.backend.app.agents.evaluation.scoring import (
     WEIGHTS,
     ExecutionOutcome,
-    IntentOutcome,
     evaluate_intents,
     score_reconstruction,
 )

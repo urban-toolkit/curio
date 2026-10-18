@@ -1,6 +1,5 @@
 """Tests for Phase 2 cache.py scaffold — no-op contract."""
 import os
-import pytest
 
 from utk_curio.backend.app.projects import cache
 

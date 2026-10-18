@@ -29,7 +29,6 @@ malicious node would actually do, and each must fail *inside the child* and be
 reported as an ordinary node error, at HTTP 200, never as a crash or a hang.
 """
 
-import json
 import os
 import re
 import shutil

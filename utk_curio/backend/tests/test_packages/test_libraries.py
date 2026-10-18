@@ -13,7 +13,6 @@ import pytest
 
 from utk_curio.backend.app.packages.application import libraries as libs
 from utk_curio.backend.app.packages.infrastructure import pip_runner
-from utk_curio.backend.app.packages import routes as packages_routes
 from utk_curio.backend.app.packages.infrastructure.pip_runner import (
     InstallReport,
     UninstallReport,

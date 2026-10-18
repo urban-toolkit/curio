@@ -32,7 +32,6 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-import pytest
 from playwright.sync_api import expect
 
 from .utils import (

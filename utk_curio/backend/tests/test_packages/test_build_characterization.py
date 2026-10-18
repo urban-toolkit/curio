@@ -37,7 +37,6 @@ from utk_curio.backend.app.packages.builder.promotion import (
     load_journal,
     promote,
 )
-from utk_curio.backend.app.packages.domain import backend_contract as bc
 from utk_curio.backend.app.packages.infrastructure import backend_runtime as rt
 from utk_curio.backend.app.packages.infrastructure.pip_runner import PipInstallError
 from utk_curio.backend.tests.test_packages.conftest import write_fake_tool

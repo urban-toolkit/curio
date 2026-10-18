@@ -37,7 +37,6 @@ from playwright.sync_api import expect
 from .utils import (
     accept_confirm_dialog,
     api_json,
-    connect_nodes,
     drag_to_canvas,
     require_owner_view,
     require_project_page,

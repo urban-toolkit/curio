@@ -172,8 +172,6 @@ class TestAuthAndLimits:
         assert client.get(path).status_code == 401
 
     def test_exhausting_the_bucket_is_a_429(self, client, auth, live):
-        from utk_curio.backend.app.discovery.infrastructure import ratelimit
-
         for _ in range(40):
             res = client.get(
                 "/api/discovery/sources/source.saopaulo.geosampa@1/search?q=ciclo",

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from utk_curio.backend.app.packages.domain.dependency_scanner import (
     scan_imports_for_filename,
     scan_js_imports,

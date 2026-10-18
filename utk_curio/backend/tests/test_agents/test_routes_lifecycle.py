@@ -287,8 +287,6 @@ class TestMaterializationHeal:
     """Stale built-in store copies self-heal on install/import (memo dev/44)."""
 
     def test_pre_dev38_copy_gains_the_system_asset(self, client, user_and_token, tmp_curio, alice_project):
-        import json as _json
-
         from utk_curio.backend.app.agents.domain import builtin
         from utk_curio.backend.app.agents.repositories import storage
         from utk_curio.backend.app.projects.services import _user_dir_key
@@ -339,11 +337,6 @@ class TestMaterializationHeal:
 
     def test_imported_shadow_is_never_overwritten(self, client, user_and_token, tmp_curio):
         from utk_curio.backend.app.agents.application import catalog
-        from utk_curio.backend.app.agents.application.solve import session as packages_session
-        from utk_curio.backend.app.agents.application.solve import simulation
-        from utk_curio.backend.app.agents.application import spec_reads
-        from utk_curio.backend.app.agents.application.turns import delegates
-        from utk_curio.backend.app.agents.application.turns import policy
         from utk_curio.backend.app.agents.application.turns import titles
         from utk_curio.backend.app.agents.infrastructure import providers
         from utk_curio.backend.app.projects.services import _user_dir_key
@@ -409,11 +402,6 @@ class TestBuiltinPromptPropagation:
 
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application import catalog
-            from utk_curio.backend.app.agents.application.solve import session as packages_session
-            from utk_curio.backend.app.agents.application.solve import simulation
-            from utk_curio.backend.app.agents.application import spec_reads
-            from utk_curio.backend.app.agents.application.turns import delegates
-            from utk_curio.backend.app.agents.application.turns import policy
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
@@ -448,8 +436,6 @@ class TestBuiltinPromptPropagation:
     def test_owned_import_shadow_keeps_its_bytes(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         # A deliberate user shadow of a built-in coord is authoritative for
         # its OWN bytes — dev/60 must not steamroll it (regression).
-        import json as _json
-
         user, token = user_and_token
         manifest = {
             "id": "agent.dataflow-builder", "name": "My Builder", "category": "canvas",
@@ -484,11 +470,6 @@ class TestBuiltinPromptPropagation:
 
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application import catalog
-            from utk_curio.backend.app.agents.application.solve import session as packages_session
-            from utk_curio.backend.app.agents.application.solve import simulation
-            from utk_curio.backend.app.agents.application import spec_reads
-            from utk_curio.backend.app.agents.application.turns import delegates
-            from utk_curio.backend.app.agents.application.turns import policy
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 

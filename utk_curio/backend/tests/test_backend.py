@@ -4,7 +4,7 @@ import sys
 import json
 from unittest.mock import patch, MagicMock
 import requests
-from flask import Flask, jsonify
+from flask import Flask
 from utk_curio.backend.app.api.routes import bp
 
 # Initialize the Flask app for testing

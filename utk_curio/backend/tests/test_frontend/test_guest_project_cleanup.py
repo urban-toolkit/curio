@@ -1,7 +1,6 @@
 """Playwright E2E: guest project cleanup (simulated 24h TTL)."""
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING
 
 import pytest

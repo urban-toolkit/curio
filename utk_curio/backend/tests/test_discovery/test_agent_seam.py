@@ -14,8 +14,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.application import tools
 from utk_curio.backend.app.agents.application import verify

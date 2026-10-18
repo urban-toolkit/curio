@@ -8,7 +8,6 @@ whole, each file at its own relative path.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 import pytest
 

@@ -10,7 +10,6 @@ scrubs non-finite floats to ``null`` and forbids NaN/Infinity at dump time.
 from __future__ import annotations
 
 import json
-import math
 import zlib
 
 import numpy as np

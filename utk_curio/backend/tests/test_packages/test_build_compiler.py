@@ -20,7 +20,6 @@ from .conftest import write_fake_tool
 
 from utk_curio.backend.app.packages.builder.compiler import (
     CompileError,
-    CompilerToolchain,
     compile_behavior_bundle,
     materialize_node_modules,
     toolchain_from_env,

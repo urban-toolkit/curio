@@ -17,7 +17,6 @@ from utk_curio.backend.app.datasets.infrastructure.catalog_utils import looks_li
 from utk_curio.backend.app.datasets.install.installer import (
     computed_dataset_id,
     install_computed_file_for_node,
-    sanitize_node_id_segment,
 )
 from utk_curio.backend.app.datasets.application.catalog_service import DatasetCatalogService
 from utk_curio.backend.app.projects.services import _user_dir_key

@@ -446,7 +446,6 @@ class TestCatalogOverlayRouting:
 
         from utk_curio.backend.app.packages.infrastructure import backend_runtime
         from utk_curio.backend.app.packages.infrastructure import pip_runner
-        from utk_curio.backend.app.packages import service as svc
 
         user, _ = user_and_token
         user_key = _user_key_for(user)

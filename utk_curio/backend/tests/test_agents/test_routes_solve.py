@@ -158,12 +158,9 @@ class TestSolve:
         return client.post("/api/agents/llm/configs", json=body, headers=_auth(token)).get_json()["config"]["id"]
 
     def _record_models(self, monkeypatch, on_call=None):
-        from utk_curio.backend.app.agents.application import catalog
         from utk_curio.backend.app.agents.application.solve import session as packages_session
         from utk_curio.backend.app.agents.application.solve import simulation
-        from utk_curio.backend.app.agents.application import spec_reads
         from utk_curio.backend.app.agents.application.turns import delegates
-        from utk_curio.backend.app.agents.application.turns import policy
         from utk_curio.backend.app.agents.application.turns import titles
         from utk_curio.backend.app.agents.infrastructure import providers
 
@@ -283,12 +280,9 @@ class TestSolve:
         state = {"n": 0}
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents.application import catalog
             from utk_curio.backend.app.agents.application.solve import session as packages_session
             from utk_curio.backend.app.agents.application.solve import simulation
-            from utk_curio.backend.app.agents.application import spec_reads
             from utk_curio.backend.app.agents.application.turns import delegates
-            from utk_curio.backend.app.agents.application.turns import policy
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
@@ -474,12 +468,9 @@ class TestStreamedSolve:
         assert "apply a plan first" in r.get_json()["error"]
 
     def _solve_gen(self, user, project_id, att_id):
-        from utk_curio.backend.app.agents.application import catalog
         from utk_curio.backend.app.agents.application.solve import session as packages_session
         from utk_curio.backend.app.agents.application.solve import simulation
-        from utk_curio.backend.app.agents.application import spec_reads
         from utk_curio.backend.app.agents.application.turns import delegates
-        from utk_curio.backend.app.agents.application.turns import policy
         from utk_curio.backend.app.agents.application.turns import titles
         from utk_curio.backend.app.agents.infrastructure import providers
         from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
@@ -494,12 +485,9 @@ class TestStreamedSolve:
         import json as _json
         import threading
 
-        from utk_curio.backend.app.agents.application import catalog
         from utk_curio.backend.app.agents.application.solve import session as packages_session
         from utk_curio.backend.app.agents.application.solve import simulation
-        from utk_curio.backend.app.agents.application import spec_reads
         from utk_curio.backend.app.agents.application.turns import delegates
-        from utk_curio.backend.app.agents.application.turns import policy
         from utk_curio.backend.app.agents.application.turns import titles
         from utk_curio.backend.app.agents.infrastructure import providers
         from utk_curio.backend.app.projects.services import _user_dir_key
@@ -656,19 +644,15 @@ class TestGeneratedContentExtraction:
     def test_solve_strips_child_response_formatting(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         solve_helper = TestSolve()
-        helper = TestDataflowPlanMint()
         att_id, _, _ = None, None, None
         att_id, applied, _ = solve_helper._applied_plan(client, user, token, alice_project, monkeypatch)
         wrapped = "Here is the code:\n```python\nprint('clean')\n```\nEnjoy!"
         state = {"n": 0}
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents.application import catalog
             from utk_curio.backend.app.agents.application.solve import session as packages_session
             from utk_curio.backend.app.agents.application.solve import simulation
-            from utk_curio.backend.app.agents.application import spec_reads
             from utk_curio.backend.app.agents.application.turns import delegates
-            from utk_curio.backend.app.agents.application.turns import policy
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
@@ -1158,12 +1142,9 @@ class TestSimulationDriver:
         assert set(done["builderSession"]["nodeStates"].values()) == {"approved"}
 
     def test_cancel_stops_at_the_next_boundary(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        from utk_curio.backend.app.agents.application import catalog
         from utk_curio.backend.app.agents.application.solve import session as packages_session
         from utk_curio.backend.app.agents.application.solve import simulation
-        from utk_curio.backend.app.agents.application import spec_reads
         from utk_curio.backend.app.agents.application.turns import delegates
-        from utk_curio.backend.app.agents.application.turns import policy
         from utk_curio.backend.app.agents.application.turns import titles
         from utk_curio.backend.app.agents.infrastructure import providers
         from utk_curio.backend.app.projects.services import _user_dir_key
@@ -1394,12 +1375,9 @@ class TestNodeContextEnrichment:
         assert '"runtimeStatus"' in framed
 
     def test_delegate_inputs_enriched_only_for_content_generation(self, tmp_curio):
-        from utk_curio.backend.app.agents.application import catalog
         from utk_curio.backend.app.agents.application.solve import session as packages_session
         from utk_curio.backend.app.agents.application.solve import simulation
-        from utk_curio.backend.app.agents.application import spec_reads
         from utk_curio.backend.app.agents.application.turns import delegates
-        from utk_curio.backend.app.agents.application.turns import policy
         from utk_curio.backend.app.agents.application.turns import titles
         from utk_curio.backend.app.agents.infrastructure import providers
         from utk_curio.backend.app.projects import storage as projects_storage

@@ -32,7 +32,7 @@ from .utils import (
     save_workflow_test_screenshot,
     stub_login_and_enter_workflow,
 )
-from .walkthroughs import PROVENANCE_EXAMPLE, TOAST_REGION, load_example_spec
+from .walkthroughs import TOAST_REGION, load_example_spec
 
 
 def _walkthrough_params():

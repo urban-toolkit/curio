@@ -16,9 +16,6 @@ wrong moment leaving a package directory behind.
 """
 from __future__ import annotations
 
-import io
-import json
-import zipfile
 from pathlib import Path
 
 from utk_curio.backend.app.packages import service as packages_service
