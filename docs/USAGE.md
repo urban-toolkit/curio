@@ -868,7 +868,8 @@ The node has two tabs:
   (**Combine**: mean, sum, median, minimum, maximum, a count of rows, or none).
   **None** plots each row's value as it is, with the Y column as the axis title; a
   scenario with several rows stacks them in one bar. A pie writes each slice's
-  value on it.
+  value on it. A table writes a scenario whose color is too light to read on
+  white in a darker shade of that color.
 - **Difference**, in its place in Difference, holds the difference's settings:
   **Key**, for two layers or tables, and **Change**, which picks **Signed**, input_1
   minus input_0, or **Absolute**, its size. A table's difference is shown as a table,

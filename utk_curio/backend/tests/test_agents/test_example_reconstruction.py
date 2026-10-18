@@ -163,6 +163,7 @@ class TestReachability:
         assert {f.fixture_id for f in with_widgets} == {
             "Widget", "Scenarios", "FloodScenarios", "06-autark-what-if-shadow-study",
             "ScoutShadows", "24-scout-building-rasters", "WeatherRouting", "lower-manhattan-park-shade",
+            "scenario-comparison-charts",
         }
         for fixture in with_widgets:
             example = _example(fixture)

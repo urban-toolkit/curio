@@ -1,7 +1,8 @@
 /**
  * The Compare Scenarios node's chart presets (#662): bars, grouped bars, lines,
  * points, a pie, lollipops and a table, each over the stacked table and colored
- * by scenario in the scenarios' own colors.
+ * by scenario in the scenarios' own colors, a table's text in a shade of them
+ * that reads on white.
  *
  * `comparePresets.cases.json` holds one spec per preset. This checks that the
  * presets write exactly those specs; `test_compare_scenarios_node.py` checks
@@ -23,10 +24,20 @@ import {
   type CompareChart,
   type CompareInputLabel,
 } from "../../utils/compare/compareSettings";
+import { SCENARIO_COLORS } from "../../utils/scenarios/scenarioEdits";
 import type { ClassifiedColumn } from "../../utils/starterSpec";
 
 const labels = cases.labels as CompareInputLabel[];
 const columns = cases.columns as ClassifiedColumn[];
+
+/** A `#rrggbb` color's contrast on white (WCAG 2), worked out here apart from the presets. */
+function contrastOnWhite(color: string): number {
+  const [r, g, b] = [1, 3, 5].map((at) => {
+    const value = parseInt(color.slice(at, at + 2), 16) / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return 1.05 / (0.2126 * r + 0.7152 * g + 0.0722 * b + 0.05);
+}
 
 describe("the preset specs", () => {
   test("every preset has a case", () => {
@@ -100,6 +111,41 @@ describe("a pie writes each slice's value on it", () => {
       for (const layer of spec.layer) {
         expect(Object.keys(layer.encoding ?? {}).filter((channel) => channel !== "text")).toEqual([]);
       }
+    }
+  });
+});
+
+describe("a table's text reads on white", () => {
+  // The scenario comparison charts' green roofs: 1.6:1, 2.9:1 and 6.5:1 on white.
+  const roofs: CompareInputLabel[] = [
+    { name: "Extensive roof", color: "#a1d99b" },
+    { name: "Semi-intensive roof", color: "#41ab5d" },
+    { name: "Intensive roof", color: "#006d2c" },
+  ];
+  const tableScale = (scenarios: CompareInputLabel[]) => {
+    const drawn = compareChartSpec(resolveChart({ preset: "table" }, columns), scenarios, columns) as { spec: any };
+    return drawn.spec.encoding.color.scale;
+  };
+
+  test("a scenario color under 3:1 is drawn in its lightest shade that reaches 3:1, the others as they are", () => {
+    const scale = tableScale(roofs);
+    expect(scale.domain).toEqual(["Extensive roof", "Semi-intensive roof", "Intensive roof"]);
+    expect(scale.range).toEqual(["#769e71", "#40a85b", "#006d2c"]);
+    for (const color of scale.range) expect(contrastOnWhite(color)).toBeGreaterThanOrEqual(3);
+  });
+
+  test("Curio's eight default scenario colors reach 3:1, so a table draws them as they are", () => {
+    expect(SCENARIO_COLORS).toHaveLength(8);
+    for (const color of SCENARIO_COLORS) expect(contrastOnWhite(color)).toBeGreaterThanOrEqual(3);
+    const defaults = SCENARIO_COLORS.map((color, i) => ({ name: `Scenario ${i + 1}`, color }));
+    expect(tableScale(defaults).range).toEqual([...SCENARIO_COLORS]);
+  });
+
+  test("only a table's text: every other preset draws the scenarios' own colors", () => {
+    for (const c of cases.cases) {
+      if ((c.resolved as { preset: string }).preset === "table") continue;
+      const drawn = compareChartSpec(resolveChart(c.chart as CompareChart, columns), roofs, columns) as { spec: unknown };
+      expect(JSON.stringify(drawn.spec)).toContain('"range":["#a1d99b","#41ab5d","#006d2c"]');
     }
   });
 });

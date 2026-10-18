@@ -1,0 +1,24 @@
+{
+  "id": "data.curio.example-building-carbon",
+  "name": "Example table: building carbon by life-cycle stage",
+  "version": "1.0.0",
+  "format": "csv",
+  "description": "The carbon of a school building per m2 of floor over its life, stage by stage, with a concrete frame and with a timber frame. One of nine example tables that illustrate ways to chart a comparison of scenarios, each row's scenario in its case column. The Nine ways to chart scenario comparisons test dataflow draws it as stacked bars with their totals. Curio's seeded script scripts/build_example_scenario_charts.py writes it.",
+  "publisher": "Curio",
+  "license": "MIT",
+  "tags": [
+    "example",
+    "scenarios",
+    "csv"
+  ],
+  "dataFile": "data/building_carbon.csv",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "Curio example tables",
+  "rowCount": 10,
+  "featureCount": null,
+  "schema": null,
+  "createdAt": "2026-10-17T00:00:00Z",
+  "updatedAt": "2026-10-17T00:00:00Z"
+}

@@ -1,0 +1,249 @@
+case,damage_state,depth_m,probability
+As built,Slight,0.0,0.0
+As built,Slight,0.1,0.014
+As built,Slight,0.2,0.209
+As built,Slight,0.3,0.5
+As built,Slight,0.4,0.717
+As built,Slight,0.5,0.847
+As built,Slight,0.6,0.917
+As built,Slight,0.7,0.955
+As built,Slight,0.8,0.975
+As built,Slight,0.9,0.986
+As built,Slight,1.0,0.992
+As built,Slight,1.1,0.995
+As built,Slight,1.2,0.997
+As built,Slight,1.3,0.998
+As built,Slight,1.4,0.999
+As built,Slight,1.5,0.999
+As built,Slight,1.6,1.0
+As built,Slight,1.7,1.0
+As built,Slight,1.8,1.0
+As built,Slight,1.9,1.0
+As built,Slight,2.0,1.0
+As built,Slight,2.1,1.0
+As built,Slight,2.2,1.0
+As built,Slight,2.3,1.0
+As built,Slight,2.4,1.0
+As built,Slight,2.5,1.0
+As built,Slight,2.6,1.0
+As built,Slight,2.7,1.0
+As built,Slight,2.8,1.0
+As built,Slight,2.9,1.0
+As built,Slight,3.0,1.0
+As built,Moderate,0.0,0.0
+As built,Moderate,0.1,0.0
+As built,Moderate,0.2,0.003
+As built,Moderate,0.3,0.025
+As built,Moderate,0.4,0.083
+As built,Moderate,0.5,0.174
+As built,Moderate,0.6,0.283
+As built,Moderate,0.7,0.395
+As built,Moderate,0.8,0.5
+As built,Moderate,0.9,0.593
+As built,Moderate,1.0,0.672
+As built,Moderate,1.1,0.738
+As built,Moderate,1.2,0.791
+As built,Moderate,1.3,0.834
+As built,Moderate,1.4,0.868
+As built,Moderate,1.5,0.896
+As built,Moderate,1.6,0.917
+As built,Moderate,1.7,0.934
+As built,Moderate,1.8,0.948
+As built,Moderate,1.9,0.958
+As built,Moderate,2.0,0.967
+As built,Moderate,2.1,0.973
+As built,Moderate,2.2,0.978
+As built,Moderate,2.3,0.983
+As built,Moderate,2.4,0.986
+As built,Moderate,2.5,0.989
+As built,Moderate,2.6,0.991
+As built,Moderate,2.7,0.993
+As built,Moderate,2.8,0.994
+As built,Moderate,2.9,0.995
+As built,Moderate,3.0,0.996
+As built,Extensive,0.0,0.0
+As built,Extensive,0.1,0.0
+As built,Extensive,0.2,0.0
+As built,Extensive,0.3,0.001
+As built,Extensive,0.4,0.006
+As built,Extensive,0.5,0.02
+As built,Extensive,0.6,0.045
+As built,Extensive,0.7,0.083
+As built,Extensive,0.8,0.132
+As built,Extensive,0.9,0.188
+As built,Extensive,1.0,0.25
+As built,Extensive,1.1,0.315
+As built,Extensive,1.2,0.379
+As built,Extensive,1.3,0.441
+As built,Extensive,1.4,0.5
+As built,Extensive,1.5,0.555
+As built,Extensive,1.6,0.605
+As built,Extensive,1.7,0.651
+As built,Extensive,1.8,0.692
+As built,Extensive,1.9,0.729
+As built,Extensive,2.0,0.762
+As built,Extensive,2.1,0.791
+As built,Extensive,2.2,0.817
+As built,Extensive,2.3,0.84
+As built,Extensive,2.4,0.859
+As built,Extensive,2.5,0.877
+As built,Extensive,2.6,0.892
+As built,Extensive,2.7,0.906
+As built,Extensive,2.8,0.917
+As built,Extensive,2.9,0.927
+As built,Extensive,3.0,0.936
+As built,Complete,0.0,0.0
+As built,Complete,0.1,0.0
+As built,Complete,0.2,0.0
+As built,Complete,0.3,0.0
+As built,Complete,0.4,0.0
+As built,Complete,0.5,0.001
+As built,Complete,0.6,0.004
+As built,Complete,0.7,0.009
+As built,Complete,0.8,0.017
+As built,Complete,0.9,0.03
+As built,Complete,1.0,0.048
+As built,Complete,1.1,0.07
+As built,Complete,1.2,0.097
+As built,Complete,1.3,0.127
+As built,Complete,1.4,0.16
+As built,Complete,1.5,0.196
+As built,Complete,1.6,0.234
+As built,Complete,1.7,0.273
+As built,Complete,1.8,0.312
+As built,Complete,1.9,0.351
+As built,Complete,2.0,0.39
+As built,Complete,2.1,0.428
+As built,Complete,2.2,0.465
+As built,Complete,2.3,0.5
+As built,Complete,2.4,0.534
+As built,Complete,2.5,0.566
+As built,Complete,2.6,0.597
+As built,Complete,2.7,0.626
+As built,Complete,2.8,0.653
+As built,Complete,2.9,0.679
+As built,Complete,3.0,0.702
+Floodproofed,Slight,0.0,0.0
+Floodproofed,Slight,0.1,0.001
+Floodproofed,Slight,0.2,0.031
+Floodproofed,Slight,0.3,0.144
+Floodproofed,Slight,0.4,0.314
+Floodproofed,Slight,0.5,0.484
+Floodproofed,Slight,0.6,0.627
+Floodproofed,Slight,0.7,0.737
+Floodproofed,Slight,0.8,0.816
+Floodproofed,Slight,0.9,0.872
+Floodproofed,Slight,1.0,0.911
+Floodproofed,Slight,1.1,0.938
+Floodproofed,Slight,1.2,0.956
+Floodproofed,Slight,1.3,0.969
+Floodproofed,Slight,1.4,0.978
+Floodproofed,Slight,1.5,0.985
+Floodproofed,Slight,1.6,0.989
+Floodproofed,Slight,1.7,0.992
+Floodproofed,Slight,1.8,0.994
+Floodproofed,Slight,1.9,0.996
+Floodproofed,Slight,2.0,0.997
+Floodproofed,Slight,2.1,0.998
+Floodproofed,Slight,2.2,0.998
+Floodproofed,Slight,2.3,0.999
+Floodproofed,Slight,2.4,0.999
+Floodproofed,Slight,2.5,0.999
+Floodproofed,Slight,2.6,0.999
+Floodproofed,Slight,2.7,1.0
+Floodproofed,Slight,2.8,1.0
+Floodproofed,Slight,2.9,1.0
+Floodproofed,Slight,3.0,1.0
+Floodproofed,Moderate,0.0,0.0
+Floodproofed,Moderate,0.1,0.0
+Floodproofed,Moderate,0.2,0.0
+Floodproofed,Moderate,0.3,0.001
+Floodproofed,Moderate,0.4,0.007
+Floodproofed,Moderate,0.5,0.023
+Floodproofed,Moderate,0.6,0.051
+Floodproofed,Moderate,0.7,0.092
+Floodproofed,Moderate,0.8,0.144
+Floodproofed,Moderate,0.9,0.204
+Floodproofed,Moderate,1.0,0.269
+Floodproofed,Moderate,1.1,0.336
+Floodproofed,Moderate,1.2,0.401
+Floodproofed,Moderate,1.3,0.464
+Floodproofed,Moderate,1.4,0.523
+Floodproofed,Moderate,1.5,0.578
+Floodproofed,Moderate,1.6,0.627
+Floodproofed,Moderate,1.7,0.672
+Floodproofed,Moderate,1.8,0.712
+Floodproofed,Moderate,1.9,0.748
+Floodproofed,Moderate,2.0,0.78
+Floodproofed,Moderate,2.1,0.808
+Floodproofed,Moderate,2.2,0.832
+Floodproofed,Moderate,2.3,0.853
+Floodproofed,Moderate,2.4,0.872
+Floodproofed,Moderate,2.5,0.888
+Floodproofed,Moderate,2.6,0.903
+Floodproofed,Moderate,2.7,0.915
+Floodproofed,Moderate,2.8,0.926
+Floodproofed,Moderate,2.9,0.935
+Floodproofed,Moderate,3.0,0.943
+Floodproofed,Extensive,0.0,0.0
+Floodproofed,Extensive,0.1,0.0
+Floodproofed,Extensive,0.2,0.0
+Floodproofed,Extensive,0.3,0.0
+Floodproofed,Extensive,0.4,0.0
+Floodproofed,Extensive,0.5,0.001
+Floodproofed,Extensive,0.6,0.003
+Floodproofed,Extensive,0.7,0.007
+Floodproofed,Extensive,0.8,0.015
+Floodproofed,Extensive,0.9,0.026
+Floodproofed,Extensive,1.0,0.041
+Floodproofed,Extensive,1.1,0.061
+Floodproofed,Extensive,1.2,0.085
+Floodproofed,Extensive,1.3,0.113
+Floodproofed,Extensive,1.4,0.144
+Floodproofed,Extensive,1.5,0.178
+Floodproofed,Extensive,1.6,0.214
+Floodproofed,Extensive,1.7,0.25
+Floodproofed,Extensive,1.8,0.288
+Floodproofed,Extensive,1.9,0.326
+Floodproofed,Extensive,2.0,0.364
+Floodproofed,Extensive,2.1,0.401
+Floodproofed,Extensive,2.2,0.438
+Floodproofed,Extensive,2.3,0.473
+Floodproofed,Extensive,2.4,0.507
+Floodproofed,Extensive,2.5,0.539
+Floodproofed,Extensive,2.6,0.57
+Floodproofed,Extensive,2.7,0.6
+Floodproofed,Extensive,2.8,0.627
+Floodproofed,Extensive,2.9,0.654
+Floodproofed,Extensive,3.0,0.678
+Floodproofed,Complete,0.0,0.0
+Floodproofed,Complete,0.1,0.0
+Floodproofed,Complete,0.2,0.0
+Floodproofed,Complete,0.3,0.0
+Floodproofed,Complete,0.4,0.0
+Floodproofed,Complete,0.5,0.0
+Floodproofed,Complete,0.6,0.0
+Floodproofed,Complete,0.7,0.0
+Floodproofed,Complete,0.8,0.001
+Floodproofed,Complete,0.9,0.002
+Floodproofed,Complete,1.0,0.003
+Floodproofed,Complete,1.1,0.006
+Floodproofed,Complete,1.2,0.009
+Floodproofed,Complete,1.3,0.014
+Floodproofed,Complete,1.4,0.02
+Floodproofed,Complete,1.5,0.028
+Floodproofed,Complete,1.6,0.037
+Floodproofed,Complete,1.7,0.048
+Floodproofed,Complete,1.8,0.06
+Floodproofed,Complete,1.9,0.074
+Floodproofed,Complete,2.0,0.09
+Floodproofed,Complete,2.1,0.107
+Floodproofed,Complete,2.2,0.125
+Floodproofed,Complete,2.3,0.144
+Floodproofed,Complete,2.4,0.164
+Floodproofed,Complete,2.5,0.186
+Floodproofed,Complete,2.6,0.207
+Floodproofed,Complete,2.7,0.229
+Floodproofed,Complete,2.8,0.252
+Floodproofed,Complete,2.9,0.275
+Floodproofed,Complete,3.0,0.298

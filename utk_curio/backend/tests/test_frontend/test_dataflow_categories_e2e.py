@@ -61,13 +61,13 @@ def test_the_rail_lists_the_tests(app_frontend: "FrontendPage", frontend_server:
     """The deploy question that started this: the fixtures were never seeded."""
     _sign_up(page, frontend_server)
 
-    # 27 test dataflows: #662 added Scenarios, FloodScenarios, ScoutShadows,
-    # WeatherRouting and NetCDF, and the plan for #914
-    # lower-manhattan-park-shade.
-    _rail_entry(page, "Tests", 27).click()
+    # 28 test dataflows: #662 added Scenarios, FloodScenarios, ScoutShadows,
+    # WeatherRouting and NetCDF, the plan for #914 lower-manhattan-park-shade,
+    # and komar41's #914 the scenario comparison charts.
+    _rail_entry(page, "Tests", 28).click()
 
     expect(project_card(page, FIXTURE)).to_have_count(1, timeout=10000)
-    expect(page.locator("[data-curio-projects-scroll] [data-project-id]")).to_have_count(27)
+    expect(page.locator("[data-curio-projects-scroll] [data-project-id]")).to_have_count(28)
 
     # One entry per section: picking the use case replaces the tests.
     _rail_entry(page, "Use cases", 1).click()

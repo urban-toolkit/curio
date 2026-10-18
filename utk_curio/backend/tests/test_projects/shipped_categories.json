@@ -509,5 +509,13 @@
       "OpenStreetMap",
       "Rasters"
     ]
+  },
+  "dataflows/scenario-comparison-charts": {
+    "tags": [
+      "Vega-Lite"
+    ],
+    "data_type": [
+      "Tables"
+    ]
   }
 }
