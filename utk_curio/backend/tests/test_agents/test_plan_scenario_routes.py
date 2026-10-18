@@ -102,10 +102,6 @@ def _apply_node(client, token, project_id, att_id, proposal_id, ref):
     return routes.TestPerNodePlanApply()._apply_node(client, token, project_id, att_id, proposal_id, ref)
 
 
-def _by_goal(spec) -> dict:
-    return {n["goal"]: n for n in spec["dataflow"]["nodes"] if n.get("id") != "n1"}
-
-
 class TestTheReview:
     def test_the_card_names_each_scenario_its_nodes_the_copy_and_the_lever(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch

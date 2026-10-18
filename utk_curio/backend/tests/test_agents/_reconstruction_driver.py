@@ -440,11 +440,6 @@ class InProcessDriver:
             return {}
         return parsed if isinstance(parsed, dict) else {}
 
-    def prompts_sent(self) -> str:
-        """Every byte the provider was handed this run -- what a leak test
-        reads to prove the answer key never travelled."""
-        return json.dumps(self.calls)
-
 
 def oracle_responder(plan_reply: str, contents: Mapping) -> Callable:
     """A scripted provider that plays the oracle.

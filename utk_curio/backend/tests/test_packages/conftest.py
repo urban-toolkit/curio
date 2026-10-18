@@ -13,7 +13,6 @@ import zipfile
 
 import pytest
 
-from utk_curio.backend.app.packages.repositories.store import user_packages_dir
 from utk_curio.backend.tests._unit_fixtures import (  # noqa: F401
     app,
     client,
@@ -156,12 +155,6 @@ def install_package(tmp_curio, make_archive):
         archive = make_archive(manifest=manifest, sources=sources)
         return install_package_from_archive(user_key, archive)
     return _install
-
-
-@pytest.fixture()
-def packages_base(tmp_curio):
-    """Path to ``.curio/users/`` for the current test workspace."""
-    return user_packages_dir("guest").parent.parent
 
 
 def write_fake_tool(directory, name: str, source: str):

@@ -37,7 +37,6 @@ TEST_PACKAGES = Path(__file__).resolve().parents[1] / "test_frontend" / "package
 #: One test package per e2e test of an install path, each with its own library.
 TEST_PACKAGE_DIRS = sorted(path.name for path in TEST_PACKAGES.iterdir() if path.is_dir())
 TEST_PACKAGE_DIR = "test.wheelhouse-probe@1"
-TEST_PACKAGE = TEST_PACKAGES / TEST_PACKAGE_DIR
 
 
 def _post(client, route: str, **body):

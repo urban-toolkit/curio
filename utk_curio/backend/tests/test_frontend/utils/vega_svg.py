@@ -53,15 +53,6 @@ def save_expected_svg(dataflow_name: str, node_id: str, svg_content: str) -> str
     return path
 
 
-def load_expected_svg(dataflow_name: str, node_id: str) -> str | None:
-    """Load a previously saved expected SVG, or return ``None``."""
-    path = os.path.join(PLAYWRIGHT_EXPECTED_DIR, dataflow_name, f"{node_id}.svg")
-    if not os.path.isfile(path):
-        return None
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read()
-
-
 def compare_svg_structure(
     actual_svg: str,
     expected_svg: str,

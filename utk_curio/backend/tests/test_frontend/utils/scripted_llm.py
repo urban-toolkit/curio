@@ -1,6 +1,6 @@
 """Scripted agent turns: point a user at the scripted LLM and drive its queue."""
 
-from .db_stubs import _get_json, _post_json, _request_json, api_json
+from .db_stubs import _get_json, _post_json, api_json
 
 
 # ── scripted agent turns ─────────────────────────────────────────────────────
@@ -114,8 +114,3 @@ def captured_system_prompt(backend_url: str, *, call: int = 0) -> str:
         for m in captured[call]
         if m.get("role") == "system"
     )
-
-
-def reset_agent_script(backend_url: str) -> None:
-    """Drop the scripted queue and the capture log."""
-    _request_json(f"{backend_url}/api/testing/agent-script", method="DELETE")
