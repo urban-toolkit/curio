@@ -414,12 +414,14 @@ class TestTheShippedCorpus:
         """Example 09 declares ``curio.weather@1`` for its python LIBRARIES
         while using only builtin templates -- a different resolution route
         from examples 10, 18, 21, 22 and 24 and the chicago-loop-shadow-towers,
-        chicago-rain-wind-routing and lower-manhattan-park-shade test dataflows, whose
+        chicago-rain-wind-routing, lower-manhattan-park-shade and
+        quad-cities-flood-vulnerability test dataflows, whose
         templates themselves live in a package (``curio.media@1``,
-        ``scout.raster-conversion@1``, and the model packages
+        ``scout.rasters@1``, and the model packages
         ``model.curio.ddrnet23-slim@1``, ``model.scout.deep-umbra@1`` and
-        ``model.scout.weather-gnn@1``). The
-        quad-cities-flood-vulnerability test dataflow is made of built-in nodes only."""
+        ``model.scout.weather-gnn@1``). quad-cities-flood-vulnerability's only
+        package nodes are its Raster Calculators, which left the built-in
+        nodes for ``scout.rasters@1`` (the owner's call, 2026-10-18)."""
         needs_package_templates = {}
         for path in example_paths():
             spec = json.loads(path.read_text(encoding="utf-8"))
@@ -438,11 +440,26 @@ class TestTheShippedCorpus:
             "chicago-loop-shadow-towers",
             "chicago-rain-wind-routing",
             "lower-manhattan-park-shade",
+            "quad-cities-flood-vulnerability",
         ]
         # SCOUT's two models are packages with nodes of their own.
         for stem in ("24-scout-shadow-model-chicago-loop", "chicago-loop-shadow-towers", "lower-manhattan-park-shade"):
             assert "model.scout.deep-umbra/accumulated-shadow" in needs_package_templates[stem], stem
         assert needs_package_templates["chicago-rain-wind-routing"] == ["model.scout.weather-gnn/weather-routing"]
+        # SCOUT's raster nodes are scout.rasters@1's: the shadow dataflows
+        # rasterize their buildings with it, and the two that take the
+        # shadow's statistics and the flood dataflow use its Raster Calculator.
+        assert needs_package_templates["24-scout-shadow-model-chicago-loop"] == needs_package_templates[
+            "chicago-loop-shadow-towers"] == [
+            "model.scout.deep-umbra/accumulated-shadow",
+            "scout.rasters/raster-calculator",
+            "scout.rasters/rasterize-buildings",
+        ]
+        assert needs_package_templates["lower-manhattan-park-shade"] == [
+            "model.scout.deep-umbra/accumulated-shadow",
+            "scout.rasters/rasterize-buildings",
+        ]
+        assert needs_package_templates["quad-cities-flood-vulnerability"] == ["scout.rasters/raster-calculator"]
         assert declared_dependencies(
             json.loads(
                 (REPO_ROOT / "docs/examples/09-heterogeneous-data-linked-views.json").read_text()

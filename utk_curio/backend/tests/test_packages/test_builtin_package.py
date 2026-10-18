@@ -1,9 +1,10 @@
 """Smoke tests for the committed ``packages/curio.builtin@1`` catalog entry.
 
-The built-in package is auto-installed for every user and provides the 11
+The built-in package is auto-installed for every user and provides the 15
 default node templates. A regression in its manifest would silently strand
 users with an empty palette, so we exercise the load + payload-serialize
-paths against the on-disk artefact.
+paths against the on-disk artefact. The Raster Calculator is not one of them:
+it is a node of SCOUT's ``scout.rasters@1`` (``test_scout_rasters.py``).
 """
 
 from __future__ import annotations
@@ -36,7 +37,6 @@ EXPECTED_TEMPLATE_IDS: frozenset[str] = frozenset({
     "spatial-join",
     "parameter",
     "compare-scenarios",
-    "raster-calculator",
     "edit-features",
     "note",
 })
@@ -44,7 +44,7 @@ EXPECTED_TEMPLATE_IDS: frozenset[str] = frozenset({
 EXPECTED_BEHAVIORS: frozenset[str] = frozenset({
     "code", "data-export", "data-pool", "data-summary", "vega",
     "simple-vis", "autk-grammar", "spatial-join", "parameter",
-    "compare-scenarios", "raster-calculator",
+    "compare-scenarios",
     "edit-features", "note",
 })
 
@@ -113,17 +113,14 @@ def test_the_note_holds_text_and_runs_nothing(builtin_package_dir: Path):
     assert note.icon_ref == "fa-solid:note-sticky"
 
 
-def test_the_raster_calculator_gives_a_raster_or_a_table_of_statistics(builtin_package_dir: Path):
-    """One Raster Calculator: its operations work cell by cell and give a
-    raster, or take a raster's statistics and give a table of one row."""
+def test_no_raster_node_is_built_in(builtin_package_dir: Path):
+    """The Raster Calculator left the built-in nodes for SCOUT's
+    ``scout.rasters@1``, and no other raster node took its place."""
     manifest = load_package_manifest(builtin_package_dir)
-    (calculator,) = [t for t in manifest.templates if t.template_id == "raster-calculator"]
-    assert calculator.label == "Raster Calculator"
-    assert [sorted(port.types) for port in calculator.output_ports] == [["DATAFRAME", "RASTER"]]
-    assert [(port.types, port.cardinality) for port in calculator.input_ports] == [(["RASTER"], "[1,3]")]
-    for words in ("add, subtract, multiply or divide", "choose", "Statistics: the mean, median, minimum, maximum and count",
-                  "a table of one row"):
-        assert words in calculator.description, calculator.description
+    assert not [t.template_id for t in manifest.templates if "raster" in t.template_id], (
+        [t.template_id for t in manifest.templates]
+    )
+    assert not [t.label for t in manifest.templates if "Raster" in t.label]
 
 
 def test_builtin_package_ships_no_sources(builtin_package_dir: Path):

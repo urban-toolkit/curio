@@ -6,10 +6,10 @@ module ``deep_umbra``. The package's license is its code's, MIT; the model
 block holds the weights' license, SCOUT's permission.
 
 The node reads a height raster, the one raster of Rasterize Buildings
-(``scout.raster-conversion@1``), runs Deep Umbra on every zoom-16 tile of it
+(``scout.rasters@1``), runs Deep Umbra on every zoom-16 tile of it
 that holds heights and returns the accumulated shadow as a raster on the same
 grid. SCOUT's metrics, the mean and median over the ground, are the
-statistics of a Raster Calculator (``curio.builtin@1``) with the heights as
+statistics of a Raster Calculator (``scout.rasters@1`` too) with the heights as
 its mask, as the shipped dataflow ``chicago-loop-shadow-towers.json`` wires it.
 
 The proof starts from SCOUT's own files, copied unchanged into
@@ -75,7 +75,8 @@ PACKAGE = REPO / "packages" / f"{MODEL_ID}@1"
 SOURCES = PACKAGE / "sources"
 MODULE = "deep_umbra"
 NODE_TYPE = "model.scout.deep-umbra/accumulated-shadow"
-CALCULATOR_TYPE = "curio.builtin/raster-calculator"
+CALCULATOR_TYPE = "scout.rasters/raster-calculator"
+RASTERIZE_TYPE = "scout.rasters/rasterize-buildings"
 #: The line a Raster Calculator's code takes statistics with.
 STATISTICS_CALL = re.compile(r"^return curio_raster_statistics\(", re.M)
 MODEL = PACKAGE / "models" / "deep_umbra.onnx"
@@ -109,8 +110,8 @@ DIFFERENCE_MAP_DOCUMENT = {"map": {"layerRefs": [{
 #: season.
 SHADOW_RANGE = [0, 720]
 EXAMPLE = REPO / "docs" / "examples" / "24-scout-shadow-model-chicago-loop.json"
-RASTER_PACKAGE = REPO / "packages" / "scout.raster-conversion@1"
-RASTER_MODULE = "scout_raster_conversion"
+RASTER_PACKAGE = REPO / "packages" / "scout.rasters@1"
+RASTER_MODULE = "scout_rasters"
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scout"
 TILE_NAMES = [
@@ -968,16 +969,19 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code, model_ids_in_code
 
     spec = _dataflow()
-    assert spec["packages"] == [f"{MODEL_ID}@1", "scout.raster-conversion@1"]
+    assert spec["packages"] == [f"{MODEL_ID}@1", "scout.rasters@1"]
     assert [ref["datasetId"] for ref in spec["datasets"]] == ["data.scout.loop-buildings"]
     nodes = {node["id"]: node for node in spec["nodes"]}
     by_type: dict[str, list] = {}
     for node in spec["nodes"]:
         by_type.setdefault(node["type"], []).append(node)
 
-    (raster_template,) = json.loads((RASTER_PACKAGE / "manifest.json").read_text(encoding="utf-8"))["templates"]
+    (raster_template,) = [
+        t for t in json.loads((RASTER_PACKAGE / "manifest.json").read_text(encoding="utf-8"))["templates"]
+        if t["id"] == "rasterize-buildings"
+    ]
     raster_source = (RASTER_PACKAGE / raster_template["source"]).read_text(encoding="utf-8")
-    rasterizers = by_type["scout.raster-conversion/rasterize-buildings"]
+    rasterizers = by_type[RASTERIZE_TYPE]
     assert len(rasterizers) == 2
     for node in rasterizers:
         assert node["content"] == raster_source
@@ -1002,7 +1006,7 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     for node in statistics:
         shadow, heights = nodes[into[(node["id"], "in")]], nodes[into[(node["id"], "in_1")]]
         assert shadow["type"] == NODE_TYPE
-        assert heights["type"] == "scout.raster-conversion/rasterize-buildings"
+        assert heights["type"] == RASTERIZE_TYPE
         assert into[(shadow["id"], "in")] == heights["id"]
     assert "curio.builtin/computation-analysis" not in by_type, "a node still picks a part of the rasterizer's output"
 
@@ -1079,7 +1083,7 @@ def test_example_24_holds_the_node_as_the_palette_drops_it_and_its_code_runs(wor
     from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
 
     spec = json.loads(EXAMPLE.read_text(encoding="utf-8"))["dataflow"]
-    assert spec["packages"] == [f"{MODEL_ID}@1", "scout.raster-conversion@1"]
+    assert spec["packages"] == [f"{MODEL_ID}@1", "scout.rasters@1"]
     (node,) = [node for node in spec["nodes"] if node["type"] == NODE_TYPE]
     assert node["content"] == _source() == CELL
     assert node["metadata"]["widgets"] == _template()["widgets"]
@@ -1104,7 +1108,7 @@ def test_example_24_feeds_the_rasterizers_one_raster_to_the_node_and_the_mask():
     out_of: dict[str, list[str]] = {}
     for edge in spec["edges"]:
         out_of.setdefault(edge["source"], []).append(nodes[edge["target"]]["type"])
-    (rasterizer,) = [n for n, node in nodes.items() if node["type"] == "scout.raster-conversion/rasterize-buildings"]
+    (rasterizer,) = [n for n, node in nodes.items() if node["type"] == RASTERIZE_TYPE]
     (shadow,) = [n for n, node in nodes.items() if node["type"] == NODE_TYPE]
     (statistics,) = [n for n, node in nodes.items() if node["type"] == CALCULATOR_TYPE]
     assert _takes_statistics(nodes[statistics])
@@ -1141,7 +1145,7 @@ def test_the_two_scenarios_are_scouts_two_building_sets(tmp_path):
     (loader,) = [n for n, node in nodes.items() if node["type"] == "curio.builtin/data-loading"]
     assert into[(lever["id"], "in")] == loader
     (rasterizer,) = [n for n in scenarios["Towers removed"]["nodes"]
-                     if nodes[n]["type"] == "scout.raster-conversion/rasterize-buildings"]
+                     if nodes[n]["type"] == RASTERIZE_TYPE]
     assert into[(rasterizer, "in")] == lever["id"]
 
     from utk_curio.sandbox.util.feature_edits import edit_features

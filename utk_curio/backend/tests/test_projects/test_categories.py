@@ -135,8 +135,12 @@ def _tags(nodes: list[dict], datasets: list[dict] | None = None) -> list[str]:
     return derive({"dataflow": dataflow})["tags"]
 
 
-def test_a_node_from_a_scout_package_tags_the_dataflow_scout():
-    node = {"id": "a", "type": "scout.raster-conversion/rasterize-buildings@1", "content": ""}
+@pytest.mark.parametrize("node_type", [
+    "scout.rasters/rasterize-buildings@1",
+    "scout.rasters/raster-calculator@1",
+])
+def test_a_node_from_a_scout_package_tags_the_dataflow_scout(node_type):
+    node = {"id": "a", "type": node_type, "content": ""}
     assert _tags([node]) == ["SCOUT"]
 
 
@@ -160,7 +164,7 @@ def test_a_scout_model_loaded_in_a_code_node_tags_the_dataflow_scout():
     ("", [{"datasetId": "data.scout.flood-nbs-classes", "dirName": "data.scout.flood-nbs-classes@1"}]),
 ], ids=["loaded-in-code", "path-in-code", "in-the-dataflow-datasets"])
 def test_a_scout_dataset_alone_tags_the_dataflow_scout(content, datasets):
-    """quad-cities-flood-vulnerability and netcdf-hourly-rain have no SCOUT node, only SCOUT's datasets."""
+    """netcdf-hourly-rain has no SCOUT node, only SCOUT's datasets."""
     node = {"id": "a", "type": "curio.builtin/data-loading@1", "content": content}
     assert _tags([node], datasets) == ["SCOUT"]
 
@@ -179,6 +183,22 @@ def test_the_park_shade_dataflow_is_tagged_scout_by_its_package_nodes_alone():
         n for n in nodes if not n["type"].startswith(("scout.", "model.scout."))
     ]}}
     assert "SCOUT" not in derive(without, DatasetKinds(None))["tags"]
+
+
+def test_the_flood_dataflow_is_tagged_scout_by_its_raster_calculators_alone():
+    """``quad-cities-flood-vulnerability`` reads SCOUT's datasets, and its
+    Raster Calculators are SCOUT's ``scout.rasters`` nodes: with no dataset
+    and no code, its nodes alone still tag it, as computed tags are."""
+    spec = _spec("dataflows/quad-cities-flood-vulnerability")
+    assert "tags" not in hand_categories(spec)
+    nodes = spec["dataflow"]["nodes"]
+    calculators = [n for n in nodes if n["type"] == "scout.rasters/raster-calculator"]
+    assert len(calculators) == 4
+    bare = {"dataflow": {
+        **{k: v for k, v in spec["dataflow"].items() if k != "datasets"},
+        "nodes": [{**n, "content": ""} for n in nodes],
+    }}
+    assert derive(bare, DatasetKinds(None))["tags"] == ["Autark", "SCOUT"]
 
 
 def test_a_dataflow_that_only_mentions_scout_is_not_tagged_scout():

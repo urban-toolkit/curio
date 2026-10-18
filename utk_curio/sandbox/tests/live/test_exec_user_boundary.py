@@ -497,10 +497,11 @@ def test_utci_computes_as_the_exec_user():
     assert warm < warmer < warmest, "UTCI does not rise with radiant heat: %r" % (grid,)
 
 
-#: ``scout.raster-conversion@1``'s modules, in the image. The stack's
+#: ``scout.rasters@1``'s modules, in the image. The stack's
 #: ``--with-examples`` boot installs its libraries: shipped dataflows (example
 #: 24 among them) declare it.
-RASTER_CONVERSION_SOURCES = LAUNCH_DIR + "/packages/scout.raster-conversion@1/sources"
+SCOUT_RASTERS_SOURCES = LAUNCH_DIR + "/packages/scout.rasters@1/sources"
+SCOUT_RASTERS_MODULE = "scout_rasters"
 
 
 def test_scouts_rasterizer_runs_as_the_exec_user():
@@ -513,7 +514,7 @@ def test_scouts_rasterizer_runs_as_the_exec_user():
         import geopandas as gpd
         import numpy as np
         from shapely.geometry import box
-        from scout_raster_conversion.node_outputs import rasterize_buildings
+        from scout_rasters.node_outputs import rasterize_buildings
 
         buildings = gpd.GeoDataFrame(
             {"height": [35.0, 110.0, 240.0, 420.0]},
@@ -539,11 +540,11 @@ def test_scouts_rasterizer_runs_as_the_exec_user():
     result = assert_ran(_request("/exec", {
         "code": body + "\n",
         "file_path": "",
-        "nodeType": "scout.raster-conversion/rasterize-buildings",
+        "nodeType": "scout.rasters/rasterize-buildings",
         "dataType": "",
         "user_key": USER_KEY,
         "save_dataset": False,
-        "package_modules": {"root": RASTER_CONVERSION_SOURCES, "names": ["scout_raster_conversion"]},
+        "package_modules": {"root": SCOUT_RASTERS_SOURCES, "names": [SCOUT_RASTERS_MODULE]},
     }), "rasterizing buildings")
     grid, names = printed(result).splitlines()[-2:]
     assert grid == "3395 512 256", grid
@@ -673,18 +674,18 @@ def test_scouts_shadow_model_runs_as_the_exec_user(model_folder):
     package, or the one a pip install downloads Deep Umbra's weights into."""
     heights = textwrap.indent(textwrap.dedent("""
         import rasterio
-        from scout_raster_conversion.node_outputs import read_tiles, write_mosaic
+        from scout_rasters.node_outputs import read_tiles, write_mosaic
 
         return rasterio.open(write_mosaic(read_tiles(%r), 550, curio_output_file("scout-a-heights.tif")))
     """ % SCOUT_A_RASTERS).strip("\n"), "    ")
     produced = assert_ran(_request("/exec", {
         "code": heights + "\n",
         "file_path": "",
-        "nodeType": "scout.raster-conversion/rasterize-buildings",
+        "nodeType": "scout.rasters/rasterize-buildings",
         "dataType": "",
         "user_key": USER_KEY,
         "save_dataset": False,
-        "package_modules": {"root": RASTER_CONVERSION_SOURCES, "names": ["scout_raster_conversion"]},
+        "package_modules": {"root": SCOUT_RASTERS_SOURCES, "names": [SCOUT_RASTERS_MODULE]},
     }), "writing SCOUT's tiles as one mosaic")
     assert produced["output"]["dataType"] == "raster", produced["output"]
     body = textwrap.indent(textwrap.dedent("""

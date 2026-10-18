@@ -18,7 +18,7 @@ context:
 Three scenarios: Existing; Towers removed, whose Interaction node removes the
 marked parts; and Height cap, whose Interaction node cuts them down to the
 Tall building height. Each rasterizes its buildings
-(``scout.raster-conversion@1``), runs Deep Umbra on them
+(``scout.rasters@1``), runs Deep Umbra on them
 (``model.scout.deep-umbra@1``), measures the shade in each park, and draws its
 buildings in 3D and its shadow on Autark maps. Compare Scenarios nodes chart
 each park's mean minutes of shadow in the three scenarios and take, for each
@@ -52,7 +52,8 @@ REPO = Path(__file__).resolve().parents[4]
 DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "lower-manhattan-park-shade.json"
 NAME = "Lower Manhattan park shade with towers removed or capped"
 EXTRACT = "docs/examples/data/lower_mnt.osm.pbf"
-RASTER_PACKAGE = REPO / "packages" / "scout.raster-conversion@1"
+RASTER_PACKAGE = REPO / "packages" / "scout.rasters@1"
+RASTER_MODULE = "scout_rasters"
 MODEL_PACKAGE = REPO / "packages" / "model.scout.deep-umbra@1"
 MODEL_ID = "model.scout.deep-umbra"
 
@@ -61,7 +62,7 @@ PYTHON = "curio.builtin/computation-analysis"
 PARAMETER = "curio.builtin/parameter"
 INTERACTION = "curio.builtin/edit-features"
 COMPARE = "curio.builtin/compare-scenarios"
-RASTERIZE = "scout.raster-conversion/rasterize-buildings"
+RASTERIZE = "scout.rasters/rasterize-buildings"
 SHADOW = "model.scout.deep-umbra/accumulated-shadow"
 
 #: The scenarios, in the order every Compare Scenarios node reads them, and the
@@ -243,8 +244,11 @@ def _into(spec: dict) -> dict:
     return {(edge["target"], edge["targetHandle"]): edge["source"] for edge in spec["edges"]}
 
 
-def _template(package: Path) -> tuple[dict, str]:
-    (template,) = json.loads((package / "manifest.json").read_text(encoding="utf-8"))["templates"]
+def _template(package: Path, node_type: str) -> tuple[dict, str]:
+    """The template of *node_type* in *package*, and its source."""
+    template_id = node_type.split("/", 1)[1]
+    (template,) = [t for t in json.loads((package / "manifest.json").read_text(encoding="utf-8"))["templates"]
+                   if t["id"] == template_id]
     return template, (package / template["source"]).read_text(encoding="utf-8")
 
 
@@ -264,7 +268,7 @@ def test_it_is_three_scenarios_over_one_context_from_the_extract():
     from the extract. The lockfile names both packages."""
     spec = _dataflow()
     assert spec["name"] == NAME
-    assert spec["packages"] == ["model.scout.deep-umbra@1", "scout.raster-conversion@1"]
+    assert spec["packages"] == ["model.scout.deep-umbra@1", "scout.rasters@1"]
     assert not spec.get("datasets"), spec.get("datasets")
     assert spec["categories"] == {"city": ["New York"], "topic": ["Heat and climate", "Greenery"],
                                   "complexity": ["Beginner"]}
@@ -333,8 +337,8 @@ def test_the_package_nodes_are_as_the_palette_drops_them():
     from the Season Parameter, whose widget is the template's."""
     spec = _dataflow()
     nodes = _nodes(spec)
-    raster_template, raster_source = _template(RASTER_PACKAGE)
-    umbra_template, umbra_source = _template(MODEL_PACKAGE)
+    raster_template, raster_source = _template(RASTER_PACKAGE, RASTERIZE)
+    umbra_template, umbra_source = _template(MODEL_PACKAGE, SHADOW)
     for _scenario, _name, _color, key in SCENARIOS:
         rasterizer, shadow = nodes[_node_id(key, "rasterize")], nodes[_node_id(key, "shadow")]
         assert rasterizer["type"] == RASTERIZE and rasterizer["content"] == raster_source
@@ -449,7 +453,7 @@ def test_every_map_is_valid_and_the_maps_side_by_side_share_one_range(tmp_path):
         assert json.loads(maps[node_id]["content"]) == document, node_id
         named = maps[node_id]["content"].replace("[!! input_0 !!]", "input_0")
         assert document_validation.validate(AUTARK, named) == {"status": document_validation.STATUS_VALID}
-    raster_template, _source = _template(RASTER_PACKAGE)
+    raster_template, _source = _template(RASTER_PACKAGE, RASTERIZE)
     (max_height,) = [w["default"] for w in raster_template["widgets"] if w["name"] == "max_height"]
     assert HEIGHT_RANGE == [0, max_height]
     from utk_curio.sandbox.util.package_modules import importable
@@ -489,7 +493,7 @@ _FETCH_FROM_DISK = """{
 
 #: Each package node's modules, as a run stages them.
 _PACKAGE_MODULES = {
-    RASTERIZE: {"root": str(RASTER_PACKAGE / "sources"), "names": ["scout_raster_conversion"]},
+    RASTERIZE: {"root": str(RASTER_PACKAGE / "sources"), "names": [RASTER_MODULE]},
     SHADOW: {"root": str(MODEL_PACKAGE / "sources"), "names": ["deep_umbra"]},
 }
 

@@ -1,10 +1,11 @@
-"""SCOUT's flood example on SCOUT's whole grid, in two scenarios from Curio's own nodes, each on an Autark map, compared on an absolute difference and a chart, and weighed against CDC's Social Vulnerability Index on the riverside tracts (#662, step 18; #819; #914).
+"""SCOUT's flood example on SCOUT's whole grid, in two scenarios from Curio's own nodes and SCOUT Rasters' Raster Calculator, each on an Autark map, compared on an absolute difference and a chart, and weighed against CDC's Social Vulnerability Index on the riverside tracts (#662, step 18; #819; #914).
 
 The shipped test dataflow ``quad-cities-flood-vulnerability.json``: Parameter nodes for the
 period and the region's corners, at SCOUT's flood example's, which take every
 cell of SCOUT's 2592 by 2064 cell grid; three Data Loading nodes reading the
 region's window of SCOUT's rasters, which the Data Catalog holds whole; and two
-scenarios, "No NbS" and "NbS" (its copy), each holding a Raster Calculator that
+scenarios, "No NbS" and "NbS" (its copy), each holding a Raster Calculator
+(``scout.rasters@1``) that
 chooses the depth by nature-based solution (NbS) class, with its choice of NbS,
 a second that takes the depth's statistics, and an Autark map of the depth.
 One Compare Scenarios node, in Difference, takes the size of NbS minus No NbS,
@@ -69,6 +70,7 @@ from .test_compare_difference_e2e import _assert_difference_mapped, _assert_lege
 from .test_compare_scenarios_e2e import _CHART_STATE_JS, _COLOR_PIXELS_JS, _OUTPUT_ARTIFACT_JS
 from .utils import (
     REPO_ROOT,
+    api_json,
     assert_autark_map_drawn,
     assert_vega_canvas_rendered,
     frame_nodes,
@@ -89,7 +91,8 @@ if TYPE_CHECKING:
 
 DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "quad-cities-flood-vulnerability.json"
 TEST_NAME = "test_two_flood_scenarios_are_mapped_and_charted"
-CALCULATOR_TYPE = "curio.builtin/raster-calculator"
+CALCULATOR_TYPE = "scout.rasters/raster-calculator"
+RASTERS_PACKAGE = "scout.rasters@1"
 MAP_TYPE = "curio.builtin/autk-grammar"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
 TRANSFORMATION_TYPE = "curio.builtin/data-transformation"
@@ -259,7 +262,7 @@ def test_two_flood_scenarios_are_mapped_and_charted(
     page.emulate_media(reduced_motion="reduce")
     spec = json.loads(DATAFLOW.read_text(encoding="utf-8"))
     outside = _record_outside_requests(page, app_frontend.base_url, current_server)
-    stub_login_and_enter_workflow(
+    session = stub_login_and_enter_workflow(
         page,
         frontend_url=app_frontend.base_url,
         backend_url=current_server,
@@ -269,6 +272,11 @@ def test_two_flood_scenarios_are_mapped_and_charted(
         project_spec=spec,
     )
     require_owner_view(page)
+    # The Raster Calculators are SCOUT Rasters' nodes: the account has the
+    # package because the stack starts --with-examples and the dataflow
+    # declares it.
+    store = [p.get("dirName") for p in api_json(f"{current_server}/api/packages", session["token"])["packages"]]
+    assert RASTERS_PACKAGE in store, f"{RASTERS_PACKAGE} is not in the account's store {store}: start the stack --with-examples"
     for node in spec["dataflow"]["nodes"]:
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
     compares = _compare_nodes(spec)

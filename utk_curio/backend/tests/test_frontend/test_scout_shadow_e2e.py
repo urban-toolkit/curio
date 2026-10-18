@@ -3,10 +3,10 @@
 The shipped test dataflow ``chicago-loop-shadow-towers.json``: SCOUT's Chicago Loop buildings
 (the Data Catalog dataset ``data.scout.loop-buildings``) and a season Parameter
 node are the fixed context. In "Existing", Rasterize Buildings
-(``scout.raster-conversion@1``) draws them into one zoom-16 height raster,
+(``scout.rasters@1``) draws them into one zoom-16 height raster,
 Accumulated Shadow, the node of the model package ``model.scout.deep-umbra@1``,
 runs SCOUT's Deep Umbra model on it, in the season both scenarios share, an
-Autark map draws the shadow, and a Raster Calculator (``curio.builtin@1``)
+Autark map draws the shadow, and a Raster Calculator (``scout.rasters@1`` too)
 takes the shadow's statistics over the ground, the heights as its mask.
 "Towers removed" first reads the buildings through an Interaction node, its
 lever, whose edit log removes the 15 buildings SCOUT's second scenario
@@ -92,10 +92,10 @@ if TYPE_CHECKING:
 DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "chicago-loop-shadow-towers.json"
 TEST_NAME = "test_two_building_sets_are_shadowed_charted_and_mapped"
 SHADOW_TYPE = "model.scout.deep-umbra/accumulated-shadow"
-CALCULATOR_TYPE = "curio.builtin/raster-calculator"
+CALCULATOR_TYPE = "scout.rasters/raster-calculator"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
 MAP_TYPE = "curio.builtin/autk-grammar"
-PACKAGES = ("model.scout.deep-umbra@1", "scout.raster-conversion@1")
+PACKAGES = ("model.scout.deep-umbra@1", "scout.rasters@1")
 #: SCOUT's A_shadows_metric.csv and B_shadows_metric.csv.
 SCOUT_MEANS = {"existing": 128.63593, "towers-removed": 106.73111}
 #: The color range both scenarios' shadow maps share, in minutes

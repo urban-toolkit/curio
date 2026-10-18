@@ -16,7 +16,7 @@ the outputs SCOUT committed for its high-rise shadow example. Their publisher is
 - `A_shadows_metric.csv`, `B_shadows_metric.csv`: the mean and median accumulated
   shadow, in minutes, that it wrote with them.
 
-The `scout.raster-conversion@1` tests rasterize `A_buildings.geojson` with the
+The `scout.rasters@1` tests rasterize `A_buildings.geojson` with the
 package's port of `convert_raster` and compare the result with `A_rasters/`. The
 `model.scout.deep-umbra@1` tests run the package's port of SCOUT's shadow model on
 `A_rasters/` and `B_rasters/` and compare the results with the shadow tiles and

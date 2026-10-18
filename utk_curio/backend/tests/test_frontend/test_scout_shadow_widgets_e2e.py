@@ -62,16 +62,17 @@ if TYPE_CHECKING:
 EXAMPLE = Path(REPO_ROOT) / "docs" / "examples" / "24-scout-shadow-model-chicago-loop.json"
 PACKAGE = Path(REPO_ROOT) / "packages" / "model.scout.deep-umbra@1"
 SHADOW_TYPE = "model.scout.deep-umbra/accumulated-shadow"
-#: The node that takes the shadow's statistics: example 24's one Raster Calculator.
-STATISTICS_TYPE = "curio.builtin/raster-calculator"
+#: The node that takes the shadow's statistics: example 24's one Raster
+#: Calculator, SCOUT Rasters' node.
+STATISTICS_TYPE = "scout.rasters/raster-calculator"
 #: The nodes of the example's chain, from the buildings to their statistics.
 CHAIN_TYPES = {
     "curio.builtin/data-loading",
-    "scout.raster-conversion/rasterize-buildings",
+    "scout.rasters/rasterize-buildings",
     SHADOW_TYPE,
     STATISTICS_TYPE,
 }
-PACKAGES = ("model.scout.deep-umbra@1", "scout.raster-conversion@1")
+PACKAGES = ("model.scout.deep-umbra@1", "scout.rasters@1")
 #: The first run rasterizes the buildings and runs Deep Umbra on four tiles.
 FIRST_RUN_MS = 300000
 RERUN_MS = 180000

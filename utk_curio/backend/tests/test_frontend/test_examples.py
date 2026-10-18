@@ -90,10 +90,11 @@ EXAMPLE_INVARIANTS = [
      {"curio.builtin/data-loading": 2, "curio.builtin/computation-analysis": 1,
       "curio.builtin/vis-vega": 1}, False),
     # Rasterize Buildings returns one raster, so no node picks it out (#819).
+    # It and the Raster Calculator are SCOUT Rasters' (scout.rasters@1).
     ("24-scout-shadow-model-chicago-loop.json", 7, 7,
-     {"curio.builtin/data-loading": 1, "scout.raster-conversion/rasterize-buildings": 1,
+     {"curio.builtin/data-loading": 1, "scout.rasters/rasterize-buildings": 1,
       "model.scout.deep-umbra/accumulated-shadow": 1,
-      "curio.builtin/raster-calculator": 1, "curio.builtin/autk-grammar": 3}, False),
+      "scout.rasters/raster-calculator": 1, "curio.builtin/autk-grammar": 3}, False),
     # #576: one Spatial Join per operation, plus two over a point on an edge.
     ("25-spatial-join-operations.json", 25, 28,
      {"curio.builtin/data-loading": 6, "curio.builtin/data-transformation": 1,
