@@ -304,8 +304,7 @@ export async function readGrammarInput(input: any, opts: ReadOptions): Promise<G
   if (declared !== undefined && !accepts(declared)) return refused(declared, opts.label);
 
   // A reference can name the table it is read as, as an envelope's
-  // `layerName` does: Compare Scenarios' difference map names it after what
-  // it maps (#662).
+  // `layerName` does.
   const named = isObject(input) && typeof input.layerName === "string" && input.layerName ? input.layerName : null;
 
   // A raster artifact is not fetched here: the frame names it, and the node

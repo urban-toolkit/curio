@@ -21,8 +21,8 @@ It works on two kinds of raster:
   returns;
 - an Autark raster envelope (``utils/raster/rasterWire.ts``): the float32
   bands autk-db's ``getRaster`` exports. Compare Scenarios subtracts two of
-  them, because its output is the envelope its map, a reopen and a dashboard
-  tile read.
+  them, because its output is the envelope the Autark map after it, a reopen
+  and a dashboard tile read.
 
 The numbers in a refusal are written as JavaScript writes them, so a sentence
 reads the same whichever side made it.
