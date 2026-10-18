@@ -280,7 +280,7 @@
         "type": "curio.builtin/autk-grammar",
         "x": 1935,
         "y": 450,
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"title\": \"Accumulated shadow (minutes)\"\n      }\n    ]\n  }\n}",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"colorMapRange\": [\n          0,\n          720\n        ],\n        \"title\": \"Accumulated shadow (minutes)\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Draw the existing buildings' accumulated shadow on a map.",
@@ -294,7 +294,7 @@
         "type": "curio.builtin/autk-grammar",
         "x": 2580,
         "y": 1350,
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"title\": \"Accumulated shadow (minutes)\"\n      }\n    ]\n  }\n}",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"colorMapRange\": [\n          0,\n          720\n        ],\n        \"title\": \"Accumulated shadow (minutes)\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Draw the remaining buildings' accumulated shadow on a map.",
@@ -302,6 +302,20 @@
           "keywords": []
         },
         "title": "Shadow map"
+      },
+      {
+        "id": "f09ef56c-42c4-56b6-ab30-cf7d3c752e6b",
+        "type": "curio.builtin/autk-grammar",
+        "x": 3870,
+        "y": 450,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateRdBu\",\n        \"colorMapCenter\": 0,\n        \"title\": \"Shadow change (minutes)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the change in accumulated shadow when the towers are removed on a map.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Shadow change map"
       }
     ],
     "edges": [
@@ -407,6 +421,13 @@
         "id": "reactflow__edge-a2c5b8ed-658d-52ea-8e5b-18041d9385deout-4d8f9df6-6320-538d-9d58-ec45cb2af5f4in",
         "source": "a2c5b8ed-658d-52ea-8e5b-18041d9385de",
         "target": "4d8f9df6-6320-538d-9d58-ec45cb2af5f4",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-608c35fc-5b51-546f-8305-7612a680f16aout-f09ef56c-42c4-56b6-ab30-cf7d3c752e6bin",
+        "source": "608c35fc-5b51-546f-8305-7612a680f16a",
+        "target": "f09ef56c-42c4-56b6-ab30-cf7d3c752e6b",
         "sourceHandle": "out",
         "targetHandle": "in"
       }

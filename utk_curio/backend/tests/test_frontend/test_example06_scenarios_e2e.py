@@ -9,8 +9,8 @@ Baseline's nodes. The
 factor is a ``height_factor`` widget on each shadow step, read as an Autark
 uniform. Two Compare Scenarios nodes compare the roads layer each scenario's map
 hands on, picked in their Layer menu: a chart of the three scenarios' mean road
-sunlight, and a map of each road's sunlight change in Twice as tall, the roads
-matched by their shapes.
+sunlight, and each road's sunlight change in Twice as tall, the roads matched by
+their shapes, which an Autark map after it draws.
 
 The first test drives the example as it ships:
 
@@ -30,7 +30,9 @@ The first test drives the example as it ships:
    about.
 4. The difference: each road's sunlight change, below zero where the taller
    shadows reach it and zero elsewhere, in its ``sunlight`` and in its nested
-   ``compute`` values, mapped.
+   ``compute`` values, within -360 to 360 minutes. The node draws no map of it;
+   the Autark map after it does, under the title "Sunlight change (minutes)",
+   its legend labelled -360, 0 and 360: a scale centered on no change.
 5. A save and a reopen: the scenarios, their colours, the collapsed ones, the
    widgets and their values, the edit list, and the saved outputs come back.
 
@@ -56,7 +58,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from .test_compare_difference_e2e import _assert_difference_mapped
+from .test_compare_difference_e2e import _assert_difference_mapped, _assert_legend_reads
 from .test_compare_scenarios_e2e import _CHART_STATE_JS, _COLOR_PIXELS_JS, _OUTPUT_ARTIFACT_JS
 from .test_multi_input_e2e import _wait_for_circles
 from .test_scenario_drop_e2e import (
@@ -113,6 +115,12 @@ B_COMPUTE, B_MAP = "whatif-baseline-compute", "whatif-baseline-map"
 T_COMPUTE, T_MAP = "whatif-modified-compute", "whatif-modified-map"
 E_EDIT, E_COMPUTE, E_MAP = "whatif-towers-edit", "whatif-towers-compute", "whatif-towers-map"
 CHART, DIFFERENCE = "whatif-compare-chart", "whatif-compare-difference"
+#: The Autark map after the Difference, which draws each road's sunlight change.
+DIFFERENCE_MAP = "whatif-difference-map"
+#: Its color range in minutes, symmetric about no change, which takes the
+#: diverging scheme's middle: its legend reads the ends and the middle, and
+#: every road's change lies within it.
+CHANGE_RANGE = (-360, 360)
 BASELINE, TWICE, TOWERS = "s-baseline", "s-twice", "s-towers"
 NAMES = {BASELINE: "Baseline", TWICE: "Twice as tall", TOWERS: "Two towers removed"}
 COLORS = {BASELINE: "#3567c7", TWICE: "#e86a3c", TOWERS: "#2f8f4a"}
@@ -504,6 +512,7 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
     run_all_and_wait(page, timeout_ms=RUN_MS)
     for node_id, node_type in (
         (B_MAP, AUTARK), (T_MAP, AUTARK), (E_EDIT, EDIT_TYPE), (E_MAP, AUTARK), (CHART, COMPARE), (DIFFERENCE, COMPARE),
+        (DIFFERENCE_MAP, AUTARK),
     ):
         _settled_done(page, node_id, node_type)
     stop()
@@ -566,10 +575,15 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
     )
     _assert_factor_and_edit_differ(page, CHART)
 
-    # 4. The difference: each road's change, below zero where shadows grew.
+    # 4. The difference: each road's change, below zero where shadows grew, on
+    # a scale centered on no change.
     baseline_roads = [row for row in stacked if row["scenario_name"] == "Baseline"]
-    frame_nodes(page, [DIFFERENCE])
-    _assert_difference_mapped(page, DIFFERENCE, "the sunlight change per road", color="sunlight")
+    frame_nodes(page, [DIFFERENCE, DIFFERENCE_MAP])
+    _assert_difference_mapped(
+        page, DIFFERENCE, DIFFERENCE_MAP, "the sunlight change per road", legend="Sunlight change (minutes)",
+    )
+    low, high = CHANGE_RANGE
+    _assert_legend_reads(page, DIFFERENCE_MAP, (low, (low + high) / 2, high))
     rows = _rows(page, DIFFERENCE)
     assert len(rows) == len(baseline_roads), f"{len(rows)} rows for {len(baseline_roads)} roads"
     assert {row["change"] for row in rows} <= {"changed", "unchanged"}, (
@@ -581,6 +595,7 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
         assert row["compute"]["sunlight"] == row["sunlight"], (
             f"the nested compute value is not the difference too: {row}"
         )
+        assert low <= row["sunlight"] <= high, f"a road's change is outside the map's color range {CHANGE_RANGE}: {row}"
     assert any(row["sunlight"] < 0 for row in rows), "no road lost sunlight to the taller buildings"
 
     # 5. Saved and reopened: everything comes back.

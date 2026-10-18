@@ -1,4 +1,4 @@
-"""SCOUT's flood example on SCOUT's whole grid, in two scenarios from Curio's own nodes, each on an Autark map, compared on an absolute difference map and a chart (#662, step 18; #819).
+"""SCOUT's flood example on SCOUT's whole grid, in two scenarios from Curio's own nodes, each on an Autark map, compared on an absolute difference and a chart (#662, step 18; #819).
 
 The shipped test dataflow ``FloodScenarios.json``: Parameter nodes for the
 period and the region's corners, at SCOUT's flood example's, which take every
@@ -6,20 +6,22 @@ cell of SCOUT's 2592 by 2064 cell grid; three Data Loading nodes reading the
 region's window of SCOUT's rasters, which the Data Catalog holds whole; and two
 scenarios, "No NbS" and "NbS" (its copy), each holding a Raster Calculator that
 chooses the depth by nature-based solution (NbS) class, with its choice of NbS,
-a second that takes the depth's statistics, and an Autark map of the depth. One Compare Scenarios
-node, in Difference, maps the size of NbS minus No NbS through the Autark
-node's map code (#723, #901); the other charts each scenario's median flood
-depth (#720). Run All drives the whole path:
+a second that takes the depth's statistics, and an Autark map of the depth.
+One Compare Scenarios node, in Difference, takes the size of NbS minus No NbS,
+which an Autark map after it draws on a sequential scale; the other charts
+each scenario's median flood depth (#720). Run All drives the whole path:
 
 1. The loaders read SCOUT's rasters by id, for the region and the period
-   (2020 - 2040) the Parameter nodes hold, and the four calculators and both
-   maps run.
-2. Each scenario's map draws its depth, its legend titled "Flood depth (m)".
+   (2020 - 2040) the Parameter nodes hold, and the four calculators and the
+   three maps run.
+2. Each scenario's map draws its depth, its legend titled "Flood depth (m)"
+   and labelled 0 to 11, the color range both maps share.
 3. The difference is a 2592 by 2064 cell raster in EPSG:4326 on SCOUT's grid,
    whose cells are the size of SCOUT's depths with NbS minus SCOUT's depths
    without, as autk-db reads both (float32): 267,494 cells changed, 842,515
    the same and 4,239,879 with no depth on one side or both, the counts
-   SCOUT's rasters give. Its legend says it is the absolute change.
+   SCOUT's rasters give. The node draws no map of it; the Autark map after it
+   does, its legend titled "Absolute flood depth change (m)".
 4. The chart draws both scenarios in their colors from the stacked table,
    whose medians and means are SCOUT's for its whole grid: a median flood depth
    of 7.164 m without NbS and 4.900 m with every NbS (``test_scout_flood.py``).
@@ -27,9 +29,9 @@ depth (#720). Run All drives the whole path:
    one widget, the NbS choice; no code line differs, the calculators of
    statistics and the maps are the same, and nothing is warned.
 
-The close-ups of the two maps, the difference and the chart are the frames.
-Nothing is pinned to the dashboard: a difference of the whole grid is over a
-dashboard page's 25 MB.
+The close-ups of the three maps and the chart are the frames. Nothing is
+pinned to the dashboard: a difference of the whole grid is over a dashboard
+page's 25 MB.
 
 Run::
 
@@ -46,7 +48,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
-from .test_compare_difference_e2e import _assert_difference_mapped, _assert_legend_title
+from .test_compare_difference_e2e import _assert_difference_mapped, _assert_legend_reads, _assert_legend_title
 from .test_compare_scenarios_e2e import _CHART_STATE_JS, _COLOR_PIXELS_JS, _OUTPUT_ARTIFACT_JS
 from .utils import (
     REPO_ROOT,
@@ -74,6 +76,11 @@ CALCULATOR_TYPE = "curio.builtin/raster-calculator"
 MAP_TYPE = "curio.builtin/autk-grammar"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
 COLORS = {"no-nbs": "#e76f51", "nbs": "#2a9d8f"}
+#: The legend title of the Autark map after the Compare Scenarios node in Difference.
+DIFFERENCE_TITLE = "Absolute flood depth change (m)"
+#: The color range both scenarios' depth maps share, in metres
+#: (``colorMapRange``): both legends read its ends.
+DEPTH_RANGE = (0, 11)
 CELL = 0.00010133941049058334
 #: SCOUT's grid: its size, width by height, and its north-west corner.
 WIDTH, HEIGHT = 2592, 2064
@@ -107,6 +114,15 @@ def _maps_by_scenario(spec: dict) -> dict:
         (map_id,) = [node_id for node_id in scenario["nodes"] if node_id in maps]
         found[scenario["id"]] = map_id
     return found
+
+
+def _map_after(spec: dict, node_id: str) -> str:
+    """The Autark map *node_id* feeds."""
+    maps = set(_nodes_of(spec, MAP_TYPE))
+    found = [edge["target"] for edge in spec["dataflow"]["edges"]
+             if edge["source"] == node_id and edge["target"] in maps]
+    assert len(found) == 1, f"{node_id} feeds the Autark maps {found}, not one"
+    return found[0]
 
 
 def _assert_chart_drew(page, node_id: str) -> None:
@@ -160,9 +176,10 @@ def test_two_flood_scenarios_are_mapped_and_charted(
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
     compares = _compare_nodes(spec)
     maps = _maps_by_scenario(spec)
+    difference_map = _map_after(spec, compares["difference"])
     steps = [(node["id"], node["type"]) for node in spec["dataflow"]["nodes"]
              if node["type"] in (CALCULATOR_TYPE, MAP_TYPE)]
-    assert len(steps) == 6, steps
+    assert len(steps) == 7, steps
     # Two of the four Raster Calculators take the depth's statistics.
     statistics = [node["id"] for node in spec["dataflow"]["nodes"] if node["type"] == CALCULATOR_TYPE
                   and "\nreturn curio_raster_statistics(" in node["content"]]
@@ -177,17 +194,20 @@ def test_two_flood_scenarios_are_mapped_and_charted(
         status = wait_for_node_settled(page, node_id, node_type=COMPARE_TYPE, timeout_ms=240000)
         assert status == "done", f"Compare Scenarios did not compare: {read_node_error_text(node_locator(page, node_id))}"
 
-    # 2. Each scenario's map draws its depth, under the grammar's title.
+    # 2. Each scenario's map draws its depth, under the grammar's title, on the
+    # color range both maps share, so a color is the same depth on both.
     for scenario, map_id in maps.items():
         frame_nodes(page, [map_id])
         assert_autark_map_drawn(page, map_id, timeout=60000, attach_as=f"the {scenario} flood depth map")
         _assert_legend_title(page, map_id, "Flood depth (m)")
+        _assert_legend_reads(page, map_id, DEPTH_RANGE)
         save_node_closeup(page, f"scout-flood-depth-map-{scenario}", map_id, test_name=TEST_NAME, sweep_toasts=True)
 
-    # 3. The difference, the size of NbS minus No NbS, on SCOUT's grid, mapped.
-    frame_nodes(page, [compares["difference"]])
-    _assert_difference_mapped(page, compares["difference"], "the size of NbS minus No NbS flood depth",
-                              legend="band_1 absolute change")
+    # 3. The difference, the size of NbS minus No NbS, on SCOUT's grid: the
+    # node draws no map of it, and the Autark map after it does.
+    frame_nodes(page, [compares["difference"], difference_map])
+    _assert_difference_mapped(page, compares["difference"], difference_map,
+                              "the size of NbS minus No NbS flood depth", legend=DIFFERENCE_TITLE)
     artifact = page.evaluate(_OUTPUT_ARTIFACT_JS, compares["difference"])
     assert artifact, "Compare Scenarios shows no saved difference"
     stored = load_artifact_as_dict(artifact)
@@ -237,9 +257,10 @@ def test_two_flood_scenarios_are_mapped_and_charted(
     assert compare.locator("[data-compare-warning]").count() == 0
     compare.get_by_role("tab", name="Chart", exact=True).click()
 
-    frame_nodes(page, [compares["difference"]])
-    _assert_difference_mapped(page, compares["difference"], "the flood depth change before its close-up")
-    save_node_closeup(page, "scout-flood-depth-change", compares["difference"], test_name=TEST_NAME, sweep_toasts=True)
+    frame_nodes(page, [compares["difference"], difference_map])
+    _assert_difference_mapped(page, compares["difference"], difference_map,
+                              "the flood depth change before its close-up", legend=DIFFERENCE_TITLE)
+    save_node_closeup(page, "scout-flood-depth-change-map", difference_map, test_name=TEST_NAME, sweep_toasts=True)
     frame_nodes(page, [compares["chart"]])
     _assert_chart_drew(page, compares["chart"])
     save_node_closeup(page, "scout-flood-median-depth", compares["chart"], test_name=TEST_NAME, sweep_toasts=True)

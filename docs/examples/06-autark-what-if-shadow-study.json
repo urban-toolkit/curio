@@ -212,7 +212,7 @@
       {
         "id": "whatif-compare-chart",
         "type": "curio.builtin/compare-scenarios",
-        "x": 3728,
+        "x": 3828,
         "y": 1135,
         "title": "Mean sunlight",
         "content": "# Compare Scenarios writes this code from its inputs: each input, under the\n# id and the name of its scenario. It is written again when they change.\nreturn curio_stack_scenarios([\n    (\"s-baseline\", \"Baseline\", [!! input_0 !!]),\n    (\"s-twice\", \"Twice as tall\", [!! input_1 !!]),\n    (\"s-towers\", \"Two towers removed\", [!! input_2 !!]),\n], layer=\"table_osm_roads\")\n",
@@ -275,11 +275,24 @@
               }
             ],
             "mode": "difference",
-            "difference": {
-              "value": "sunlight"
-            },
             "layer": "table_osm_roads"
           }
+        }
+      },
+      {
+        "id": "whatif-difference-map",
+        "type": "curio.builtin/autk-grammar",
+        "x": 3728,
+        "y": 415,
+        "width": 759,
+        "height": 640,
+        "title": "Roads by sunlight change",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"sunlight\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateRdYlBu\",\n        \"colorMapRange\": [\n          -360,\n          360\n        ],\n        \"title\": \"Sunlight change (minutes)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Render the roads coloured by the sunlight each one loses in Twice as tall.",
+        "metadata": {
+          "keywords": []
         }
       }
     ],
@@ -358,6 +371,13 @@
         "target": "whatif-compare-difference",
         "sourceHandle": "out",
         "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-whatif-compare-differenceout-whatif-difference-mapin",
+        "source": "whatif-compare-difference",
+        "target": "whatif-difference-map",
+        "sourceHandle": "out",
+        "targetHandle": "in"
       }
     ],
     "scenarios": [
@@ -398,6 +418,6 @@
     "timestamp": 1748990000000,
     "provenance_id": "DefaultWorkflow",
     "packages": [],
-    "description": "A what-if shadow study for Boston's Back Bay as three scenarios over one fixed context, built on Example 7's per-road sunlight shader. A data node loads the PBF once and a data pool hands the layers to every scenario. In each, the shader adds up every road's minutes of June-solstice sunlight with the buildings' heights scaled by a height_factor widget: 1 in Baseline, 2 in Twice as tall, and 1 in Two towers removed, where an Edit Features node first removes two towers, 200 Clarendon and Raffles, by their building_id. A map shows each scenario's roads by sunlight, and two Compare Scenarios nodes compare them: a chart of each scenario's mean road sunlight, and a map of the sunlight each road loses in Twice as tall."
+    "description": "A what-if shadow study for Boston's Back Bay as three scenarios over one fixed context, built on Example 7's per-road sunlight shader. A data node loads the PBF once and a data pool hands the layers to every scenario. In each, the shader adds up every road's minutes of June-solstice sunlight with the buildings' heights scaled by a height_factor widget: 1 in Baseline, 2 in Twice as tall, and 1 in Two towers removed, where an Edit Features node first removes two towers, 200 Clarendon and Raffles, by their building_id. A map shows each scenario's roads by sunlight, and two Compare Scenarios nodes compare them: a chart of each scenario's mean road sunlight, and the sunlight each road loses in Twice as tall, which an Autark map after it draws."
   }
 }

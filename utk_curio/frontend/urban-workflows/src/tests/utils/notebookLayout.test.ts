@@ -184,8 +184,8 @@ describe("the height of a cell's output", () => {
     expect(notebookOutputBox("curio.builtin/compare-scenarios@1")).toEqual({ height: 400 });
   });
 
-  test("a table, a summary or a control takes its own height up to 360px", () => {
-    for (const kind of ["data-pool", "vis-simple", "data-summary", "parameter", "spatial-join", "data-export"]) {
+  test("a table, a summary, a control or a note takes its own height up to 360px", () => {
+    for (const kind of ["data-pool", "vis-simple", "data-summary", "parameter", "spatial-join", "data-export", "note"]) {
       expect(notebookOutputBox(`curio.builtin/${kind}@1`)).toEqual({ maxHeight: 360, overflow: "auto" });
     }
   });

@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/06-autark-what-if-shadow-study.json",
-    "sha256": "fcd54626f3d8d7a0d514c774ce23cb0e10e839fbb521c9dd42885c003e218232",
+    "sha256": "9a046cf89a967e482e03d518b8541ea0487431b50b6d008101f152fe088793cb",
     "walkthrough": "docs/examples/06-autark-what-if-shadow-study.md"
   },
-  "prompt": "I want a what-if shadow study for the Back Bay area of Boston, set up as three scenarios I can compare. The OSM extract is a file in this checkout at docs/examples/data/back_bay.osm.pbf. Load its layers in the browser with Autark once, and hand them to every scenario through a shared fan-out. In each scenario a GPU shader adds up every road segment's minutes of sunlight over the June solstice, with the building heights scaled by a height factor I set in a widget: 1 in a scenario called Baseline, 2 in a copy of it called Twice as tall, and 1 in a third copy called Two towers removed, where the buildings first lose two towers, 200 Clarendon and Raffles (building_id 29623484 and 29628154), every part of each. Show each scenario's roads on its own 3D map coloured by sunlight. Then compare the scenarios' roads: a bar chart of the three scenarios' mean road sunlight, and a map of how much sunlight each road loses in Twice as tall.",
+  "prompt": "I want a what-if shadow study for the Back Bay area of Boston, set up as three scenarios I can compare. The OSM extract is a file in this checkout at docs/examples/data/back_bay.osm.pbf. Load its layers in the browser with Autark once, and hand them to every scenario through a shared fan-out. In each scenario a GPU shader adds up every road segment's minutes of sunlight over the June solstice, with the building heights scaled by a height factor I set in a widget: 1 in a scenario called Baseline, 2 in a copy of it called Twice as tall, and 1 in a third copy called Two towers removed, where the buildings first lose two towers, 200 Clarendon and Raffles (building_id 29623484 and 29628154), every part of each. Show each scenario's roads on its own 3D map coloured by sunlight. Then compare the scenarios' roads: a bar chart of the three scenarios' mean road sunlight, and a map of how much sunlight each road loses in Twice as tall, on a red, yellow and blue scale from -360 to 360 minutes with no change in its middle.",
   "context": null,
   "required": {
     "datasets": [],
@@ -41,6 +41,13 @@
       },
       {
         "ref": "visualization4",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization10",
         "type": "curio.builtin/autk-grammar",
         "role": "visualization",
         "executable": false,
@@ -146,6 +153,11 @@
         "kind": "data"
       },
       {
+        "from": "visualization8",
+        "to": "visualization10",
+        "kind": "data"
+      },
+      {
         "from": "pool1",
         "to": "visualization5",
         "kind": "data"
@@ -206,7 +218,7 @@
   "split": "validation",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "the example 06 scenario study (#662), from the example JSON and its walkthrough, 2026-10-05; its third scenario from the Edit Features step, 2026-10-06",
+    "draftedBy": "the example 06 scenario study (#662), from the example JSON and its walkthrough, 2026-10-05; its third scenario from the Edit Features step, 2026-10-06; its difference map on an Autark node after the Compare Scenarios node, 2026-10-17; that map on a scale centered on no change, 2026-10-17",
     "reviewedBy": null,
     "reviewedAt": null
   },
@@ -215,5 +227,5 @@
     "licence": "MIT (this repository)",
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
   },
-  "notes": "The Autark steps run in the browser, and the Python steps in the sandbox: the Edit Features step between the pool and a shadow step, and the Compare Scenarios steps after the maps. GPU shader work, so execution is opt-in."
+  "notes": "The Autark steps run in the browser, and the Python steps in the sandbox: the Edit Features step between the pool and a shadow step, and the Compare Scenarios steps after the maps. An Autark map after the Difference draws each road's sunlight change on a diverging scale centered on no change. GPU shader work, so execution is opt-in."
 }

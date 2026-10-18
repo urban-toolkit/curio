@@ -55,6 +55,9 @@ class TestTemplateContentKind:
         assert kinds["data-export"] == "none"
         # Set through the widget it holds (#662), not through written content.
         assert kinds["parameter"] == "none"
+        # Its title and text are what its author wrote: a person, or the
+        # Researcher placing its findings.
+        assert kinds["note"] == "note"
         # Every shipped template is routed above, and no other ships: the
         # Merge Flow left the manifest (#662), its fan-in now lands on the
         # input circles of the node it fed.
@@ -63,7 +66,7 @@ class TestTemplateContentKind:
             "computation-analysis", "data-summary", "js-computation",
             "vis-vega", "vis-simple", "autk-grammar", "spatial-join", "parameter",
             "compare-scenarios", "raster-calculator",
-            "edit-features",
+            "edit-features", "note",
         }
 
     def test_no_content_makes_a_presentation_without_input_author_nothing(self):

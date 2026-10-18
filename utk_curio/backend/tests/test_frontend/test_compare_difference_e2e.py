@@ -1,24 +1,27 @@
-"""Playwright E2E: two scenarios' rasters compared in Difference, on an Autark map (#662).
+"""Playwright E2E: two scenarios' rasters compared in Difference, drawn by an Autark node after it (#662).
 
 Two scenarios each hold one Python node that writes a raster from the small
 committed GeoTIFF of #718 (``data/autark_raster_utm16n.tif``, 40 by 30 cells
 of 100 m in UTM zone 16N, nine of them nodata): "Baseline" scales it by its
 factor widget, 1, and "Twice as tall", its copy, by 2. A Compare Scenarios
-node, pinned to the dashboard, stands beside them. This drives the whole path
-in a browser:
+node stands beside them, and after it an Autark map, pinned to the dashboard,
+whose spec draws the node's output with the grammar's own options: a
+diverging scale centered on 0, under a title. This drives the whole path in a
+browser:
 
 1. Both outcomes run, then go into the node's circles: they are two rasters,
    so the node picks Difference and writes its code for it.
 2. Run All subtracts them in the sandbox's Node process, through Autark: the
    node's output is a raster envelope whose cells are comparison minus
-   reference, the original raster itself, nodata kept; and the node maps it
-   through the Autark node's map code.
+   reference, the original raster itself, nodata kept. The node draws no map
+   of it and says that an Autark node after it does; the Autark map draws it,
+   its legend under the spec's title.
 3. Compare as switches the node to Chart and back: its code follows, and the
    choice is saved.
-4. The dashboard maps the pinned difference from the saved output, with no run.
-5. A reopen maps it again from the saved output, and writes nothing.
+4. The dashboard draws the pinned map from the saved difference, with no run.
+5. A reopen draws it again from the saved difference, and writes nothing.
 
-Its close-up is the frame.
+The close-ups of the node and of the map are the frames.
 
 Run::
 
@@ -28,6 +31,7 @@ Run::
 from __future__ import annotations
 
 import base64
+import json
 import math
 import struct
 import time
@@ -60,9 +64,11 @@ if TYPE_CHECKING:
 
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
 PYTHON_TYPE = "curio.builtin/computation-analysis"
+MAP_TYPE = "curio.builtin/autk-grammar"
 BASE = "cdf-base"
 TALL = "cdf-tall"
 COMPARE = "cdf-compare"
+MAP = "cdf-map"
 BASELINE = {"scenario": "s-base", "name": "Baseline", "color": "#2a9d8f"}
 TWICE = {"scenario": "s-tall", "name": "Twice as tall", "color": "#e76f51"}
 
@@ -93,6 +99,27 @@ RASTER_CODE = (
     "return rasterio.open(path)\n"
 )
 
+#: The Autark map after the node, for a raster's difference: input_1 minus
+#: input_0 on a diverging scale centered on no change, under its own title.
+RASTER_MAP_SPEC = {"map": {"layerRefs": [{
+    "dataRef": "[!! input_0 !!]",
+    "getFnv": "band_1",
+    "colorMapInterpolator": "interpolateRdBu",
+    "colorMapCenter": 0,
+    "title": "Change when twice as tall",
+}]}}
+
+#: The Autark map after the node, for a layer's difference: each row colored
+#: by its change, one color for added, removed, changed and unchanged.
+LAYER_MAP_SPEC = {"map": {"layerRefs": [{
+    "dataRef": "[!! input_0 !!]",
+    "getFnv": "change",
+    "getFnvType": "categorical",
+    "colorMapInterpolator": "schemeTableau10",
+    "colorMapDomain": ["added", "removed", "changed", "unchanged"],
+    "title": "Change",
+}]}}
+
 # The lines the node writes in Difference and in Chart (utils/compare/compareCode.ts).
 ENTRY_LINES = (
     '    ("s-base", "Baseline", [!! input_0 !!]),',
@@ -106,7 +133,7 @@ def _factor(value: int) -> dict:
     return {"widgets": [{"name": "factor", "type": "number", "default": 1, "value": value}]}
 
 
-def _spec(code: str = RASTER_CODE, name: str = "Compare Difference") -> dict:
+def _spec(code: str = RASTER_CODE, name: str = "Compare Difference", map_spec: dict = RASTER_MAP_SPEC) -> dict:
     def node(node_id, node_type, x, y, content, title=None, metadata=None, **fields):
         saved = {
             "id": node_id, "type": node_type, "x": x, "y": y, "content": content,
@@ -126,9 +153,13 @@ def _spec(code: str = RASTER_CODE, name: str = "Compare Difference") -> dict:
             "nodes": [
                 node(BASE, PYTHON_TYPE, 0, 0, code, "Outcome", _factor(1)),
                 node(TALL, PYTHON_TYPE, 0, 520, code, "Outcome", {**_factor(2), "copiedFrom": [BASE]}),
-                node(COMPARE, COMPARE_TYPE, 760, 160, "", dashboardPinned=True),
+                node(COMPARE, COMPARE_TYPE, 760, 160, ""),
+                node(MAP, MAP_TYPE, 1440, 160, json.dumps(map_spec, indent=2), "Difference map", dashboardPinned=True),
             ],
-            "edges": [],
+            "edges": [{
+                "id": f"reactflow__edge-{COMPARE}out-{MAP}in",
+                "source": COMPARE, "target": MAP, "sourceHandle": "out", "targetHandle": "in",
+            }],
             "scenarios": [
                 {"id": "s-base", "name": "Baseline", "color": "#2a9d8f", "nodes": [BASE]},
                 {"id": "s-tall", "name": "Twice as tall", "color": "#e76f51", "nodes": [TALL]},
@@ -155,23 +186,24 @@ _OUTPUT_ARTIFACT_JS = """(id) => {
     return match ? match[1] : null;
 }"""
 
-# The view the body shows, where its map stands ("drawing", "drawn" or
-# "problem", for the document it shows now) and what the map colors by
-# (components/compare/CompareMap.tsx).
-_MAP_STATE_JS = """(id) => {
+# What a Compare Scenarios node shows in Difference (components/compare/
+# CompareDifference.tsx): its view, the kind of difference it holds, whether it
+# says an Autark node after it draws the map, and how many maps it holds itself.
+_COMPARE_DIFFERENCE_JS = """(id) => {
     const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
     const body = node && node.querySelector("[data-compare-mode]");
-    const map = node && node.querySelector("[data-compare-map-state]");
     if (!body) return null;
-    return [
-        body.getAttribute("data-compare-mode"),
-        map ? map.getAttribute("data-compare-map-state") : null,
-        map ? map.getAttribute("data-compare-map-color") : null,
-    ];
+    const difference = node.querySelector("[data-compare-difference]");
+    return {
+        mode: body.getAttribute("data-compare-mode"),
+        kind: difference ? difference.getAttribute("data-compare-difference") : null,
+        note: !!node.querySelector('[data-compare-difference-map="autark"]'),
+        maps: node.querySelectorAll('canvas[id^="autk-grammar-map-"], [data-compare-map-state]').length,
+    };
 }"""
 
 
-# The title of the node's map legend, which autk-map writes as the legend's
+# The title of a node's map legend, which autk-map writes as the legend's
 # first child (`#autkMapLegend`, one per map, so read inside the node).
 _LEGEND_TITLE_JS = """(id) => {
     const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
@@ -182,7 +214,7 @@ _LEGEND_TITLE_JS = """(id) => {
 
 def _assert_legend_title(page, node_id: str, title: str) -> None:
     """The node's map legend is titled *title*, the layerRef's title,
-    not the table the difference is read as."""
+    not the table the layer is read as."""
     deadline = time.time() + 15
     shown = None
     while time.time() < deadline:
@@ -193,23 +225,70 @@ def _assert_legend_title(page, node_id: str, title: str) -> None:
     assert shown == title, f"the map's legend reads {shown!r}, not {title!r}"
 
 
-def _assert_difference_mapped(page, node_id: str, attach_as: str, color: str = "", legend: str = "") -> None:
-    """The body is in Difference, its map's run of the document it shows (one
-    that colors by *color*, when given) settled with no problem, the node's
-    canvas holds a drawn map, and its legend reads *legend*, when given."""
+#: The minus sign d3's number format writes, U+2212.
+MINUS_SIGN = chr(0x2212)
+
+# The labels under a node's map legend, which autk-map writes as the texts of
+# the legend's color bar, in order: a sequential scale's ends, and a diverging
+# scale's ends and middle.
+_LEGEND_LABELS_JS = """(id) => {
+    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+    const legend = node && node.querySelector("#autkMapLegend");
+    return legend ? Array.from(legend.querySelectorAll("svg text"), (label) => label.textContent) : null;
+}"""
+
+
+def _legend_numbers(labels) -> list | None:
+    """*labels* as numbers. autk-core formats them with d3, which writes a
+    minus as U+2212 and groups thousands with commas."""
+    try:
+        return [float(label.replace(MINUS_SIGN, "-").replace(",", "")) for label in labels]
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _assert_legend_reads(page, node_id: str, numbers) -> None:
+    """The node's map legend labels its color scale with *numbers*, in order:
+    the ends of the layer's ``colorMapRange``, and its middle on a diverging
+    scheme."""
+    expected = [float(number) for number in numbers]
+    deadline = time.time() + 15
+    shown = None
+    while time.time() < deadline:
+        shown = page.evaluate(_LEGEND_LABELS_JS, node_id)
+        if shown and _legend_numbers(shown) == expected:
+            return
+        page.wait_for_timeout(250)
+    raise AssertionError(f"the map's legend reads {shown!r}, not {list(numbers)!r}")
+
+
+def _assert_compare_draws_no_map(page, node_id: str) -> str:
+    """The Compare Scenarios node is in Difference and holds a raster's or a
+    layer's difference, and draws no map of it: its tab says that an Autark
+    node after it draws the map, and the node holds no map canvas. Returns the
+    difference's kind."""
     deadline = time.time() + 90
     state = None
     while time.time() < deadline:
-        state = page.evaluate(_MAP_STATE_JS, node_id)
-        if state and state[1] in ("drawn", "problem") and (not color or state[2] == color):
+        state = page.evaluate(_COMPARE_DIFFERENCE_JS, node_id)
+        if state and state["kind"] in ("raster", "layer") and state["note"]:
             break
         page.wait_for_timeout(250)
-    problem = node_locator(page, node_id).locator("[data-compare-map-problem]").all_inner_texts()
-    assert state and state[:2] == ["difference", "drawn"], f"the difference map ended {state!r}: {problem}"
-    assert not color or state[2] == color, f"the map colors by {state[2]!r}, not {color!r}"
-    assert_autark_map_drawn(page, node_id, timeout=60000, attach_as=attach_as)
+    assert state and state["mode"] == "difference" and state["kind"] in ("raster", "layer") and state["note"], (
+        f"Compare Scenarios {node_id} does not leave its difference's map to an Autark node: {state!r}"
+    )
+    assert state["maps"] == 0, f"Compare Scenarios {node_id} draws a map of its own: {state!r}"
+    return state["kind"]
+
+
+def _assert_difference_mapped(page, compare_id: str, map_id: str, attach_as: str, legend: str = "") -> None:
+    """The Compare Scenarios node draws no map of its difference, and the
+    Autark node after it holds a drawn map, its legend titled *legend* when
+    given."""
+    _assert_compare_draws_no_map(page, compare_id)
+    assert_autark_map_drawn(page, map_id, timeout=60000, attach_as=attach_as)
     if legend:
-        _assert_legend_title(page, node_id, legend)
+        _assert_legend_title(page, map_id, legend)
 
 
 def _band(envelope: dict) -> list[float]:
@@ -254,32 +333,36 @@ def _run_outcomes_then_wire_them(page) -> None:
 
 
 def _run_and_read_output(page, attach_as: str, legend: str) -> dict:
-    """Run All; the node subtracts its inputs and maps the difference, its
-    legend titled *legend*. Returns its output as the sandbox stores it."""
+    """Run All; the node subtracts its inputs, and the Autark map after it
+    draws the difference, its legend titled *legend*. Returns the node's
+    output as the sandbox stores it."""
     run_all_and_wait(page, timeout_ms=240000)
-    compare = node_locator(page, COMPARE)
     status = wait_for_node_settled(page, COMPARE, node_type=COMPARE_TYPE, timeout_ms=120000)
-    assert status == "done", f"Compare Scenarios did not subtract its inputs: {read_node_error_text(compare)}"
-    frame_nodes(page, [COMPARE])
-    _assert_difference_mapped(page, COMPARE, attach_as, legend=legend)
+    assert status == "done", f"Compare Scenarios did not subtract its inputs: {read_node_error_text(node_locator(page, COMPARE))}"
+    status = wait_for_node_settled(page, MAP, node_type=MAP_TYPE, timeout_ms=120000)
+    assert status == "done", f"the Autark map did not draw the difference: {read_node_error_text(node_locator(page, MAP))}"
+    frame_nodes(page, [COMPARE, MAP])
+    _assert_difference_mapped(page, COMPARE, MAP, attach_as, legend=legend)
     artifact = page.evaluate(_OUTPUT_ARTIFACT_JS, COMPARE)
     assert artifact, "Compare Scenarios shows no saved output"
     return load_artifact_as_dict(artifact)
 
 
-def test_two_rasters_are_compared_in_difference_and_mapped(
+def test_two_rasters_are_compared_in_difference_and_drawn_by_an_autark_map(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     spec = _spec()
     session = _enter(page, app_frontend, current_server, spec, "compare_difference_e2e")
     project_id = session["project"]["id"]
+    legend = RASTER_MAP_SPEC["map"]["layerRefs"][0]["title"]
 
     # 1. Both outcomes run, then go into the circles: two rasters, so Difference.
     _run_outcomes_then_wire_them(page)
     _wait_for_code(page, COMPARE, DIFFERENCE_LINES)
 
-    # 2. Run All subtracts them through Autark, and the node maps the difference.
-    stored = _run_and_read_output(page, "the difference of two rasters", "band_1 change")
+    # 2. Run All subtracts them through Autark; the Autark map after the node
+    # draws the difference, and the node draws none.
+    stored = _run_and_read_output(page, "the difference of two rasters", legend)
     compare = node_locator(page, COMPARE)
     envelope = stored.get("data") if stored.get("dataType") == "dict" else stored
     assert envelope["dataType"] == "raster", stored.get("dataType")
@@ -296,6 +379,8 @@ def test_two_rasters_are_compared_in_difference_and_mapped(
     assert all(math.isnan(v) for v in cells[1160:1163]), cells[1160:1163]
     assert [round(v, 4) for v in cells[1163:1166]] == [0.75, 1.0, 1.25], cells[1163:1166]
     assert sum(1 for v in cells if math.isnan(v)) == 9
+    # The node offers no colors: the map's spec chooses them.
+    assert compare.locator('select[aria-label="Color by"]').count() == 0
 
     # 3. Compare as: Chart, then Difference again. The code follows the view.
     switch = compare.locator('select[aria-label="Compare as"]')
@@ -311,47 +396,55 @@ def test_two_rasters_are_compared_in_difference_and_mapped(
         "mode": "difference",
     }, saved[COMPARE]["metadata"]
     assert saved[COMPARE]["content"] == content
+    assert saved[MAP]["dashboardPinned"] is True and "dashboardPinned" not in saved[COMPARE]
     recorded = {output["node_id"] for output in project["outputs"]}
-    assert COMPARE in recorded, f"the save recorded the outputs of {sorted(recorded)}, not the pinned node's own"
+    assert COMPARE in recorded, f"the save recorded the outputs of {sorted(recorded)}, not the difference the pinned map draws"
 
-    # 4. The dashboard maps the pinned difference from the saved output, no run.
+    # 4. The dashboard draws the pinned map from the saved difference, no run.
     page.goto(f"{app_frontend.base_url}/dashboard/{project_id}")
     page.get_by_test_id("open-dataflow-link").wait_for(state="visible", timeout=45000)
-    node_locator(page, COMPARE).wait_for(state="visible", timeout=45000)
-    _assert_difference_mapped(page, COMPARE, "the difference on the dashboard")
+    node_locator(page, MAP).wait_for(state="visible", timeout=45000)
+    assert_autark_map_drawn(page, MAP, timeout=60000, attach_as="the difference on the dashboard")
+    _assert_legend_title(page, MAP, legend)
 
-    # 5. Reopened, it maps the saved difference with no run and writes nothing.
+    # 5. Reopened, the map draws the saved difference with no run, the node
+    # draws none, and nothing is written.
     page.goto(f"{app_frontend.base_url}/projects")
     page.wait_for_load_state("domcontentloaded")
     page.goto(f"{app_frontend.base_url}/dataflow/{project_id}")
     compare = node_locator(page, COMPARE)
     compare.wait_for(state="visible", timeout=45000)
     assert _wait_for_code(page, COMPARE, DIFFERENCE_LINES) == content
-    frame_nodes(page, [COMPARE])
+    frame_nodes(page, [COMPARE, MAP])
     compare.locator('.nav-link[data-rr-ui-event-key="output"]').click()
-    _assert_difference_mapped(page, COMPARE, "the difference after a reopen", legend="band_1 change")
+    _assert_difference_mapped(page, COMPARE, MAP, "the difference after a reopen", legend=legend)
     assert compare.locator('select[aria-label="Compare as"]').input_value() == "difference"
     assert page.locator("[data-curio-save-state]").first.get_attribute("data-curio-save-state") == "saved"
 
     save_node_closeup(
         page, "compare-difference", COMPARE,
-        test_name="test_two_rasters_are_compared_in_difference_and_mapped",
+        test_name="test_two_rasters_are_compared_in_difference_and_drawn_by_an_autark_map",
+        sweep_toasts=True,
+    )
+    save_node_closeup(
+        page, "compare-difference-map", MAP,
+        test_name="test_two_rasters_are_compared_in_difference_and_drawn_by_an_autark_map",
         sweep_toasts=True,
     )
 
 
-def test_two_layers_are_joined_on_their_osm_id_and_mapped(
+def test_two_layers_are_joined_on_their_osm_id_and_drawn_by_an_autark_map(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     """Two layers that have run: Difference again, a Python join on osm_id, and
-    the difference layer mapped through the Autark node's map code, by its
-    number column and then by its change."""
-    spec = _spec(LAYER_CODE, "Compare Difference Layers")
+    the difference layer drawn by the Autark map after the node, each row in
+    the color of its change."""
+    spec = _spec(LAYER_CODE, "Compare Difference Layers", LAYER_MAP_SPEC)
     _enter(page, app_frontend, current_server, spec, "compare_difference_layers_e2e")
 
     _run_outcomes_then_wire_them(page)
     _wait_for_code(page, COMPARE, DIFFERENCE_LINES)
-    stored = _run_and_read_output(page, "the difference of two layers", "sunlight change")
+    stored = _run_and_read_output(page, "the difference of two layers by its change", "Change")
     assert stored["dataType"] == "geodataframe", stored["dataType"]
     rows = [feature["properties"] for feature in stored["data"]["features"]]
     # The reference's squares in its order, the first gone, then the new one.
@@ -362,9 +455,6 @@ def test_two_layers_are_joined_on_their_osm_id_and_mapped(
     assert [row["sunlight"] for row in rows[1:4]] == [-1.0, -1.5, -2.0], rows[1:4]
 
     compare = node_locator(page, COMPARE)
-    color_by = compare.locator('select[aria-label="Color by"]')
-    assert color_by.input_value() == "sunlight"
-    color_by.select_option("change")
-    _assert_difference_mapped(
-        page, COMPARE, "the difference of two layers by its change", color="change", legend="change",
-    )
+    assert _assert_compare_draws_no_map(page, COMPARE) == "layer"
+    assert compare.locator('select[aria-label="Color by"]').count() == 0
+    assert compare.locator('select[aria-label="Key"]').count() == 1

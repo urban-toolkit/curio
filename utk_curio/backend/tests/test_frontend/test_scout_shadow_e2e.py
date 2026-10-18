@@ -10,7 +10,8 @@ Autark map draws the shadow, and a Raster Calculator (``curio.builtin@1``)
 takes the shadow's statistics over the ground, the heights as its mask.
 "Towers removed" first removes the 15 buildings SCOUT's second scenario
 removes. Two Compare Scenarios nodes read the scenarios' outcomes: one charts
-the mean accumulated shadow, the other maps its change through Autark.
+the mean accumulated shadow, the other takes its change, which an Autark map
+after it draws on a scale centered on no change.
 
 Run All in the browser runs the whole dataflow:
 
@@ -20,9 +21,11 @@ Run All in the browser runs the whole dataflow:
    colors.
 2. The difference is a raster on the shadow mosaics' grid, 512 by 512 cells in
    EPSG:3395, in minutes: towers removed minus existing, which takes shadow away
-   on the whole, and the map draws it.
+   on the whole. The node draws no map of it; the Autark map after it does,
+   under the title "Shadow change (minutes)".
 3. Each scenario's map draws its shadow, under the title "Accumulated shadow
-   (minutes)"; the close-ups of the two maps are the frames.
+   (minutes)", its legend labelled 0 to 720, the color range both maps share.
+   The close-ups of the three maps are the frames.
 
 The packages are in every account's store and their libraries are installed
 because the stack starts with ``--with-examples`` and this dataflow declares the
@@ -43,6 +46,7 @@ from typing import TYPE_CHECKING
 from .test_compare_difference_e2e import (
     _OUTPUT_ARTIFACT_JS,
     _assert_difference_mapped,
+    _assert_legend_reads,
     _assert_legend_title,
     _band,
 )
@@ -77,6 +81,9 @@ MAP_TYPE = "curio.builtin/autk-grammar"
 PACKAGES = ("model.scout.deep-umbra@1", "scout.raster-conversion@1")
 #: SCOUT's A_shadows_metric.csv and B_shadows_metric.csv.
 SCOUT_MEANS = {"existing": 128.63593, "towers-removed": 106.73111}
+#: The color range both scenarios' shadow maps share, in minutes
+#: (``colorMapRange``): both legends read its ends.
+SHADOW_RANGE = (0, 720)
 
 
 def _maps_by_scenario(dataflow: dict) -> dict:
@@ -143,6 +150,9 @@ def test_two_building_sets_are_shadowed_charted_and_mapped(
     into = {edge["target"]: edge["source"] for edge in dataflow["edges"] if edge["targetHandle"] == "in"}
     for scenario, map_id in maps.items():
         assert nodes[into[map_id]]["type"] == SHADOW_TYPE, f"the {scenario} map does not draw its shadow"
+    after = [n for n, node in nodes.items() if node["type"] == MAP_TYPE and into.get(n) == difference]
+    assert len(after) == 1, f"the difference feeds the Autark maps {after}, not one"
+    (difference_map,) = after
 
     session = stub_login_and_enter_workflow(
         page,
@@ -161,7 +171,7 @@ def test_two_building_sets_are_shadowed_charted_and_mapped(
         node_locator(page, node_id).wait_for(state="attached", timeout=45000)
 
     run_all_and_wait(page, timeout_ms=600000)
-    for node_id in [*shadows, *statistics, *maps.values(), chart, difference]:
+    for node_id in [*shadows, *statistics, *maps.values(), chart, difference, difference_map]:
         status = wait_for_node_settled(page, node_id, node_type=nodes[node_id]["type"], timeout_ms=180000)
         assert status == "done", (
             f"{nodes[node_id]['type']} {node_id} ended {status}: {read_node_error_text(node_locator(page, node_id))}"
@@ -200,12 +210,18 @@ def test_two_building_sets_are_shadowed_charted_and_mapped(
     record_property("difference (minutes)", json.dumps({"min": min(cells), "max": max(cells), "mean": mean_change}))
     assert min(cells) < -100 and mean_change < 0, (min(cells), max(cells), mean_change)
     assert -720 <= min(cells) and max(cells) <= 720, (min(cells), max(cells))
-    frame_nodes(page, [difference])
-    _assert_difference_mapped(page, difference, "the change in accumulated shadow when the towers are removed")
+    frame_nodes(page, [difference, difference_map])
+    _assert_difference_mapped(
+        page, difference, difference_map, "the change in accumulated shadow when the towers are removed",
+        legend="Shadow change (minutes)",
+    )
+    save_node_closeup(page, "scout-shadow-change-map", difference_map, test_name=TEST_NAME, sweep_toasts=True)
 
-    # 3. Each scenario's map draws its shadow, under the grammar's title.
+    # 3. Each scenario's map draws its shadow, under the grammar's title, on the
+    # color range both maps share, so a color is the same minutes on both.
     for scenario, map_id in maps.items():
         frame_nodes(page, [map_id])
         assert_autark_map_drawn(page, map_id, timeout=60000, attach_as=f"the {scenario} shadow map")
         _assert_legend_title(page, map_id, "Accumulated shadow (minutes)")
+        _assert_legend_reads(page, map_id, SHADOW_RANGE)
         save_node_closeup(page, f"scout-shadow-map-{scenario}", map_id, test_name=TEST_NAME, sweep_toasts=True)

@@ -8,6 +8,7 @@ an instruction must be executable on every path its agent runs on)."""
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -142,6 +143,60 @@ class TestPresentationTemplates:
 
         self._install(tmp_path, monkeypatch)  # no project lockfile entry
         assert presentation_templates("guest", "p-other") == []
+
+
+# ── the built-in Note is the notes template ──────────────────────────────────
+#: The shipped built-in package, which every user's store holds.
+SHIPPED_BUILTIN = Path(__file__).resolve().parents[4] / "packages" / "curio.builtin@1"
+NOTE = "curio.builtin/note"
+#: The Note's line in a roster of templates (``roster._template_line``).
+ROSTER_LINE = f"- {NOTE} {chr(0x2014)} Note: "
+
+
+def _write_shipped_builtin(user_key: str) -> None:
+    """The user's store holds the shipped ``curio.builtin@1`` manifest, as the
+    seeder leaves it."""
+    dest = users_base() / user_key / "packages" / "curio.builtin@1"
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / "manifest.json").write_text(
+        (SHIPPED_BUILTIN / "manifest.json").read_text(encoding="utf-8"), encoding="utf-8")
+
+
+class TestTheBuiltInNoteIsTheNotesTemplate:
+    """Every dataflow can hold a Note, so the Researcher finds it with no
+    package to enlist or write. The built-ins that draw their input (Data
+    Export, Data Pool, Simple View, Spatial Join) or hold a widget (Parameter)
+    are not notes, although they too have a behavior and no editor."""
+
+    def _store(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+        _write_shipped_builtin("guest")
+
+    def test_the_built_in_note_is_the_only_built_in_notes_template(self, tmp_path, monkeypatch):
+        from utk_curio.backend.app.packages.application.templates import presentation_templates
+
+        self._store(tmp_path, monkeypatch)
+        rows = presentation_templates("guest", "p1")
+        assert [row["id"] for row in rows] == [NOTE]
+        assert rows[0]["label"] == "Note"
+
+    def test_a_delegated_notes_run_is_handed_the_built_in_note(self, tmp_path, monkeypatch):
+        self._store(tmp_path, monkeypatch)
+        enriched = _enriched_delegate_inputs(
+            "guest", "p1", {}, "research.notes.compose",
+            {"question": "q", "searchResults": {"query": "q", "results": []}})
+        assert [row["id"] for row in enriched["notesTemplates"]] == [NOTE]
+
+    def test_the_researchers_roster_offers_the_note_as_its_notes_template(self, tmp_path, monkeypatch):
+        from utk_curio.backend.app.agents.application.turns.roster import _available_templates_block
+        from utk_curio.backend.app.packages import service as packages_services
+
+        self._store(tmp_path, monkeypatch)
+        available = packages_services.available_templates("guest", "p1")
+        assert [t["id"] for t in available if t["presentation"]] == [NOTE]
+        block = _available_templates_block("p1", {"available": available}, notes_agent=True)
+        assert ROSTER_LINE in block
+        assert "None of these renders a note" not in block
 
 
 # ── the reply parser (commit 2) ──────────────────────────────────────────────
@@ -352,6 +407,139 @@ class TestDataflowBuilderNotesLane:
             json={"message": "hi"}, headers=_auth(token))
         assert run.status_code == 200
         assert all(p["type"] != "proposal" for p in run.get_json()["content"])
+
+
+class TestNotesLandOnTheBuiltInNote:
+    """With nothing but the built-in package, both ways the Researcher writes
+    notes place them on the Note: its notes mode, asked by the Dataflow
+    Builder, and its own chat."""
+
+    QUESTION = "how much do cool roofs lower summer surface temperatures in Chicago?"
+    ANSWER = "**Roof surface:** about 30°F cooler\n\n- [source](https://w.test)"
+
+    def _setup(self, client, user, token, monkeypatch, *, parent, replies):
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        resp = client.post("/api/projects", json={
+            "name": "p",
+            "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
+            "outputs": [],
+        }, headers=_auth(token))
+        assert resp.status_code == 201
+        pid = resp.get_json()["id"]
+        with client.application.app_context():
+            user_key = _user_dir_key(user)
+        _write_shipped_builtin(user_key)
+        for coord in (DFB, RESEARCHER):
+            client.post(f"/api/agents/projects/{pid}/install",
+                        json={"coord": coord}, headers=_auth(token))
+        att_id = client.post(
+            f"/api/agents/projects/{pid}/attachments",
+            json={"coord": parent, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        ).get_json()["attachmentId"]
+        calls = []
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents.application.turns import titles as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            calls.append(messages)
+            return replies[min(len(calls) - 1, len(replies) - 1)]
+
+        monkeypatch.setattr(
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
+        monkeypatch.setattr(
+            agent_tools, "_execute_web_search",
+            lambda params: ("ok", json.dumps({"results": [
+                {"title": "Chicago cool roofs", "url": "https://w.test",
+                 "snippet": "30F cooler roofs"}]})))
+        return pid, att_id, calls, user_key
+
+    def _apply_all(self, client, token, pid, att_id, proposals):
+        for proposal in proposals:
+            resp = client.post(
+                f"/api/agents/projects/{pid}/attachments/{att_id}"
+                f"/proposals/{proposal['proposalId']}/apply",
+                headers=_auth(token))
+            assert resp.status_code == 200, resp.get_data(as_text=True)
+
+    def _notes(self, user_key, pid):
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        nodes = projects_storage.read_spec(user_key, pid)["dataflow"]["nodes"]
+        return {n.get("title"): n for n in nodes}
+
+    def test_the_notes_mode_places_the_findings_on_the_built_in_note(
+            self, client, user_and_token, tmp_curio, monkeypatch):
+        from utk_curio.backend.app.packages.domain.node_appearance import NAMED_COLORS
+
+        user, token = user_and_token
+        delegate = ('```curio.v1\n{"delegateRequest": {"capability": '
+                    '"research.notes.compose", "inputs": '
+                    '{"question": "' + self.QUESTION + '"}}}\n```')
+        child = json.dumps({
+            "answer": "Cool roofs run about 30°F cooler than dark roofs.",
+            "nodeType": NOTE,
+            "notes": [
+                {"title": "Question", "content": self.QUESTION, "color": "yellow"},
+                {"title": "Cool roofs in Chicago", "content": self.ANSWER, "color": "green"},
+            ],
+        })
+        pid, att_id, calls, user_key = self._setup(
+            client, user, token, monkeypatch, parent=DFB,
+            replies=[delegate, child, "Answered: review the notes above."])
+        run = client.post(f"/api/agents/projects/{pid}/attachments/{att_id}/run",
+                          json={"message": self.QUESTION}, headers=_auth(token))
+        assert run.status_code == 200, run.get_data(as_text=True)
+        # The notes mode was handed the Note as its notes template.
+        assert NOTE in json.dumps(calls[1])
+        proposals = [p for p in run.get_json()["content"] if p["type"] == "proposal"]
+        assert [(p["tool"], p["pins"]["nodeType"]) for p in proposals] == [("node.create", NOTE)] * 2
+
+        self._apply_all(client, token, pid, att_id, proposals)
+        notes = self._notes(user_key, pid)
+        assert notes["Question"]["type"] == NOTE
+        assert notes["Question"]["content"] == self.QUESTION
+        assert notes["Question"]["metadata"]["appearance"] == {"backgroundColor": NAMED_COLORS["yellow"]}
+        assert notes["Cool roofs in Chicago"]["type"] == NOTE
+        assert notes["Cool roofs in Chicago"]["content"] == self.ANSWER
+        assert notes["Cool roofs in Chicago"]["metadata"]["appearance"] == {"backgroundColor": NAMED_COLORS["green"]}
+
+    def test_the_researchers_chat_places_its_notes_on_the_built_in_note(
+            self, client, user_and_token, tmp_curio, monkeypatch):
+        from utk_curio.backend.app.packages.domain.node_appearance import NAMED_COLORS
+
+        def create(title, content):
+            return "```curio.v1\n" + json.dumps({"toolRequest": {"tool": "node.create", "params": {
+                "nodeType": NOTE, "title": title, "content": content}}}) + "\n```"
+
+        user, token = user_and_token
+        pid, att_id, calls, user_key = self._setup(
+            client, user, token, monkeypatch, parent=RESEARCHER, replies=[
+                create("Question", self.QUESTION),
+                create("Cool roofs in Chicago", self.ANSWER),
+                "Cool roofs run about 30°F cooler; the notes await your review.",
+            ])
+        run = client.post(f"/api/agents/projects/{pid}/attachments/{att_id}/run",
+                          json={"message": self.QUESTION}, headers=_auth(token))
+        assert run.status_code == 200, run.get_data(as_text=True)
+        # Its roster offers the Note, so nothing says a notes template is missing.
+        system = calls[0][0]["content"]
+        assert ROSTER_LINE in system
+        assert "None of these renders a note" not in system
+        proposals = [p for p in run.get_json()["content"] if p["type"] == "proposal"]
+        assert [(p["tool"], p["pins"]["nodeType"]) for p in proposals] == [("node.create", NOTE)] * 2
+
+        self._apply_all(client, token, pid, att_id, proposals)
+        notes = self._notes(user_key, pid)
+        # No color was asked for: the question is yellow and the answer green.
+        assert notes["Question"]["type"] == NOTE
+        assert notes["Question"]["metadata"]["appearance"] == {"backgroundColor": NAMED_COLORS["yellow"]}
+        assert notes["Cool roofs in Chicago"]["type"] == NOTE
+        assert notes["Cool roofs in Chicago"]["content"] == self.ANSWER
+        assert notes["Cool roofs in Chicago"]["metadata"]["appearance"] == {"backgroundColor": NAMED_COLORS["green"]}
 
 
 # ── the prompts carry the contract (commit 3) ────────────────────────────────

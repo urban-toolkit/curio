@@ -437,6 +437,17 @@ def pytest_addoption(parser):
             "change them by less than the re-mint's threshold"
         ),
     )
+    parser.addoption(
+        "--remint-gpu-kind",
+        dest="remint_gpu_kind",
+        default="",
+        help=(
+            "with --remint-baselines: <kind>:<baseline name part>,... writes "
+            "those frames as baselines of that GPU kind (<name>.<kind>.png) "
+            "and compares every other frame without writing it. Only on a job "
+            "whose CURIO_E2E_GPU_KIND is that kind"
+        ),
+    )
 
 
 def pytest_configure(config):
@@ -477,10 +488,11 @@ def pytest_configure(config):
     mint = getattr(config.option, "mint_baselines", False)
     remint = getattr(config.option, "remint_baselines", False)
     force = [part.strip() for part in (getattr(config.option, "remint_force", "") or "").split(",")]
-    if mint or remint or any(force):
+    gpu_kind = getattr(config.option, "remint_gpu_kind", "") or ""
+    if mint or remint or any(force) or gpu_kind.strip():
         from utk_curio.backend.tests.test_frontend import utils as e2e_utils
 
-        e2e_utils.allow_baseline_writes(mint=mint, remint=remint, force=force)
+        e2e_utils.allow_baseline_writes(mint=mint, remint=remint, force=force, gpu_kind=gpu_kind)
 
     excluded = []
     if not config.option.longrun:

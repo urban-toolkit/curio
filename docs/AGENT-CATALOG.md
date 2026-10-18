@@ -50,7 +50,7 @@ Agent ids always begin with **`agent.`**, which keeps them apart from node packa
 
 | Agent | In chat | Tools | Modes (who asks) |
 |---|---|---|---|
-| **Researcher** | Explains a node or the dataflow, diagnoses errors, helps define what to build, answers web questions as notes, checks facts | Read the dataflow and a node's last run; search and read the web; propose notes; propose a notes package | Notes from search results (Dataflow Builder); Check a fact (Node Builder, Dataset Finder, Dataflow Builder) |
+| **Researcher** | Explains a node or the dataflow, diagnoses errors, helps define what to build, answers web questions as notes, checks facts | Read the dataflow and a node's last run; search and read the web; propose notes as Note nodes; propose a notes package | Notes from search results (Dataflow Builder); Check a fact (Node Builder, Dataset Finder, Dataflow Builder) |
 | **Node Builder** | Builds a node, rewrites a node's content, suggests nodes for a connection, finds or writes node types | Read the dataflow and a node's last run; search the Data and Model Catalogs; propose a node, a content change, a package install or a package draft | Write a node's content (Node Builder, Dataflow Builder, Solve); Recommend packages (Dataflow Builder); Write a package (Node Builder, Researcher, Dataflow Builder) |
 | **Dataflow Builder** | Plans a whole dataflow, then solves its nodes | Read the dataflow and runs; propose a plan or a node; read worked examples | None |
 | **Dataset Finder** | Finds datasets in the Data Catalog and in portals | Search the catalog and portals; propose a download | Find datasets (Node Builder, Dataflow Builder, Solve) |
@@ -134,7 +134,7 @@ Each agent's prompts, by the key its manifest gives them:
 **Researcher on a web question: "which open datasets give building heights for downtown Chicago?"**
 
 1. The chat runs with `researcher_instruction.md` and searches the web; a further round reads a page it will cite.
-2. It answers in prose and proposes notes: a notes template on the dataflow carries them; else it proposes installing a notes package you already have; else it asks the Node Builder to write one, whose package-writing mode runs as a separate call. Each proposal waits for your review.
+2. It answers in prose and proposes notes as Note nodes: the question in yellow, then each answer in green with its sources. Each proposal waits for your review.
 
 **Researcher on a fact check: "is the dataset id abcd-1234 real?"**
 

@@ -1214,6 +1214,9 @@ class TestResearcher:
         # because the contract named only nodeType/content/goal).
         assert '"title": "<short header>"' in text
         assert '"appearance": {"backgroundColor"' in text
+        # Its notes go on the built-in Note, which every dataflow can hold.
+        reuse = low.split("1. reuse.", 1)[1].split("2. enlist.", 1)[0]
+        assert '"nodetype": "curio.builtin/note"' in reuse
         # dev/105 A3: the ENLIST rung carries the findings like AUTHOR does, so
         # Apply on the install card proceeds to the notes without a second turn.
         assert 'an install request without "notes" enlists a package and places nothing' in low

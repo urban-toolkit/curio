@@ -10,6 +10,7 @@
   - [Keys for node code](#keys-for-node-code)
   - [Guest users](#guest-users)
 - [Inside a node](#inside-a-node)
+- [Notes](#notes)
 - [Running a dataflow](#running-a-dataflow)
 - [Widgets](#widgets)
 - [Scenarios](#scenarios)
@@ -388,6 +389,23 @@ nodes keep their size and have no delete. A minimized node is a small chip, and 
 save keeps it one; click it to open the node again. Double-click a node where you
 would drag it, such as its header, to zoom the view onto it.
 
+## Notes
+
+A **Note** node holds a title and a short text on a color, to explain a part of
+the dataflow. Drag **Note** from the palette onto the canvas, write its title
+and text, pick its color and click **Save**. **Edit** on the note opens them
+again.
+
+- The text is simple markdown: `#` headings, `-` lists, `**bold**`,
+  `*italics*`, `` `code` `` and links. Only an `https` link is a link, and it
+  opens in a new tab. HTML in the text is not shown, and an image shows its alt
+  text.
+- A note has no inputs or outputs, and a run skips it.
+- The **Researcher** answers questions from the web with notes (see
+  [Agent Catalog](#agent-catalog)).
+- On the dashboard and on a shared dataflow, a note shows its text and cannot be
+  edited.
+
 ## Running a dataflow
 
 **Run All** runs every node. A node's **Play** button, or Ctrl+Enter (Cmd+Enter
@@ -638,7 +656,7 @@ boundary splits the dataflow into three parts:
   common context.
 - **Levers:** the nodes in the scenario, which is what an alternative changes: its
   data loaders, widget values, code and specs, and the features it removes or
-  changes by hand (see [Editing features by hand](#editing-features-by-hand)).
+  changes by hand (see [The Interaction node](#the-interaction-node)).
 - **Outcomes:** the outputs of the scenario's last nodes, which is what gets
   compared.
 
@@ -690,42 +708,75 @@ chart or a Data Pool saves nothing itself: the node feeding it does. Scenarios,
 their colors, descriptions, collapsed state and box positions are saved with the
 dataflow. Deleting a node removes it from its scenario.
 
-### Editing features by hand
+### The Interaction node
 
-The **Edit Features** node removes features from a layer, or changes them, by hand:
-two towers taken out of a city's buildings, say.
+The **Interaction** node removes features from a layer, or changes them, by hand or
+by a condition: two towers taken out of a city's buildings, or every building over
+100 m lowered, say. It is a node of its own, apart from the interaction edges that
+link charts (see [Linking charts](#linking-charts)).
 
-1. Drag **Edit Features** from the palette onto the canvas and connect a layer to it:
+1. Drag **Interaction** from the palette onto the canvas and connect a layer to it:
    a Python node's GeoDataFrame, or the layers an Autark node or a Data Pool hands on.
 2. Pick the layer to edit in **Layer**, when the input carries several, and the column
    that identifies a feature in **Id**: `osm_id` or `building_id` when the layer has
    them, or another column whose values differ in every feature. A layer with no such
    column is refused: a feature's place in a layer is not an id. While the node has
    edits, the two menus stay as they are: delete the edits to pick another.
-3. Double-click features on the node's map to pick them. **Picked** lists their ids.
-4. Press **Remove**, **Restore**, or **Set value** with a column and a value. Each
-   press adds an edit to the node's list, under the map: Remove drops the picked
-   features, Set value writes the value into their column, and Restore puts them
-   back as the input has them. The × beside an edit deletes it.
-5. Run the node.
+3. Double-click features on the node's map to pick them. **Picked** lists their ids,
+   and a table lists the picked features with their values.
+4. Make an edit of the picked features:
+   - **Remove**, or the Delete key, drops them, and **Restore** puts them back as the
+     input has them. **Clear pick**, or Escape, forgets the pick.
+   - **▲** and **▼**, or the up and down arrow keys, raise or lower the number column
+     picked in **Nudge** by the step beside it: 3 for a height, else 1. Pressing again
+     changes the same edit.
+   - **Scale** multiplies that column by the factor beside it.
+   - **Set value** writes a value into the column picked in **Set**, and typing a new
+     value into a cell of the table, then Enter, does the same for that feature.
+5. Or make an edit of every feature a condition picks: type the condition in
+   **Where**, such as `height > 100` or `kind == 'tower' and levels >= 30`, and the
+   node says how many features it picks. Choose what to do to them, remove, scale,
+   offset (add a number), set, expr or restore, with the column and the value it
+   needs, and press **Apply**. An expr edit writes into the column what an
+   expression makes of each feature, such as `levels * 3.2`.
+6. Press **Update results** to run the node and every node below it with the edits.
 
-The edits apply in order, to every feature whose id is one of the edit's ids. A
-building's parts share its `building_id`, so an edit by `building_id` applies to the
-whole building, every part. The output is the edited layer, with the input's other
-layers as they came; the input itself is never changed. An id no feature has is
-reported in the node's output, and the run goes on.
+Each edit is added to the node's log, under the map. The box before an edit switches
+it off: it stays in the log, and the run skips it. The × beside an edit deletes it,
+and **Undo** and **Redo**, or Ctrl+Z and Shift+Ctrl+Z (Cmd on a Mac), take back the
+last edit and make it again. The keys act while the node has the focus, after a pick
+on its map or a click in it.
 
-The edit list is saved with the dataflow, and the node's code is written from it:
+The edits apply in order. An edit by ids applies to every feature whose id is one of
+them; an edit by a condition applies to the features the condition picks after the
+edits before it, and a restore by a condition reads the input. A building's parts
+share its `building_id`, so an edit by `building_id` applies to the whole building,
+every part. A raise, a lower or a scale leaves a feature with no number in its column
+as it is. The output is the edited layer, with the input's other layers as they came;
+the input itself is never changed. An id no feature has is reported in the node's
+output, and the run goes on.
+
+A condition or an expression reads a feature's columns by name (`height`,
+`building:levels`), or in backticks when the name has spaces (`` `Mean Acc shadow` ``).
+It takes numbers, texts in quotes, `true`, `false` and `null`, `+ - * / %`, the
+comparisons `== != < <= > >=`, `and`, `or`, `not`, parentheses, and `abs`, `round`,
+`min` and `max`. A column a feature lacks is null, arithmetic with null or a text is
+null, and a comparison with null is false.
+
+The log is saved with the dataflow, and the node's code is written from it:
 
 ```python
 return curio_edit_features(input_0, [
     {"op": "remove", "ids": [29623484, 29628154]},
-    {"op": "set", "ids": [42], "column": "height", "value": 30},
+    {"op": "scale", "where": "height > 100", "column": "height", "value": 0.5},
+    {"op": "set", "ids": [42], "column": "height", "value": 30, "enabled": False},
 ], key="building_id", layer="table_osm_buildings")
 ```
 
-A change of the list writes the code again, and the node then waits for a run. In a
-scenario, an Edit Features node is a lever, and **What differs** lists its edits.
+A change of the log writes the code again, and the node and the nodes below it that
+ran then wait for a run; **Update results** says how many. In a scenario, an
+Interaction node is a lever, and **What differs** lists its edits, each switched off
+one marked off.
 
 ### Comparing scenarios
 
@@ -787,8 +838,27 @@ passes `absolute=True` to `curio_difference_scenarios`.
   for a removed row. A key that is empty or repeated on one side stops the run, as
   does a layer beside a table.
 
-A raster's difference is a raster, which an Autark map draws and a Python node reads
-as a `rasterio` dataset.
+A raster's difference is a raster, which a Python node reads as a `rasterio`
+dataset, and a layer's difference is a layer. To draw either on a map, connect the
+node's output to an [Autark node](#autark-node), whose spec picks what the map colors
+by, its scale and its legend's `title`. A signed difference of rasters reads best on a
+diverging scheme centered on 0, and an absolute one on a sequential scheme:
+
+```json
+{
+  "map": {
+    "layerRefs": [
+      {
+        "dataRef": "[!! input_0 !!]",
+        "getFnv": "band_1",
+        "colorMapInterpolator": "interpolateRdBu",
+        "colorMapCenter": 0,
+        "title": "Shadow change (minutes)"
+      }
+    ]
+  }
+}
+```
 
 The node has two tabs:
 
@@ -799,21 +869,18 @@ The node has two tabs:
   **None** plots each row's value as it is, with the Y column as the axis title; a
   scenario with several rows stacks them in one bar. A pie writes each slice's
   value on it.
-- **Difference**, in its place in Difference, maps a raster's or a layer's
-  difference, colored by a band or a number column, or by `change` (**Color by**).
-  **Change** picks **Signed**, input_1 minus input_0, or **Absolute**, its size.
-  The legend is titled with what it shows: `sunlight change` for the
-  column `sunlight`, `sunlight absolute change` for its size, or `change`. A raster's
-  or a layer's colors run from the lowest
-  difference, dark purple, to the highest, yellow; a raster cell that is nodata in
-  either raster is clear. A table's difference is shown as a table, each
-  row in the color of its change.
+- **Difference**, in its place in Difference, holds the difference's settings:
+  **Key**, for two layers or tables, and **Change**, which picks **Signed**, input_1
+  minus input_0, or **Absolute**, its size. A table's difference is shown as a table,
+  each row in the color of its change. For a raster's or a layer's, the tab says to
+  draw it with an Autark node after this one.
 - **What differs** lists the levers that differ between the scenarios: for each, the
   widget values and the code lines that changed, read against the first scenario's,
-  or, for an Edit Features node, each scenario's edits. A node and the copies made
-  from it with **Duplicate selection** or **Duplicate as scenario** are one lever. A
-  node with no copy in another scenario is listed as only in the scenarios that have
-  it, with its edits when it is an Edit Features node.
+  or, for an Interaction node, each scenario's edits, an edit switched off marked
+  off. A node and the copies made from it with **Duplicate selection** or
+  **Duplicate as scenario** are one lever. A node with no copy in another scenario
+  is listed as only in the scenarios that have it, with its edits when it is an
+  Interaction node.
 
 Above both tabs it warns when the scenarios read different fixed context, naming the
 inputs and the context only one of them reads, when an input comes from a node in no
@@ -1095,7 +1162,10 @@ line layer takes a `width` in meters, and a polygon layer a `stroke` color, or
 `"stroke": false` for no outline. A raster layer takes `colorMapReverse` to
 run its scheme from its highest value to its lowest, `colorMapCenter` to put a
 value at the middle of its scheme, and `transferFunction` for how opaque its
-cells are; every cell with a value is opaque unless it says otherwise.
+cells are; every cell with a value is opaque unless it says otherwise. A
+layer colored by a number takes `colorMapRange`, `[low, high]`, to color from
+`low` to `high` instead of from its own lowest value to its highest, so maps
+that set the same range color a value alike.
 
 A layer that names a scenario of the dataflow by its id, `"scenario":
 "weather-aware"`, is drawn in that scenario's color, the color of its box.
@@ -1272,7 +1342,7 @@ combine, and **All dataflows** clears them.
 |---|---|
 | **Your dataflows** | the ones you created, imported or duplicated |
 | **By source** | Use cases, Examples and Tests that ship with Curio |
-| **Tags** | the tools a dataflow uses, such as Autark, Vega-Lite, GeoPandas, Pandas, GPU compute and Computer vision, plus tags you add |
+| **Tags** | the tools a dataflow uses, such as Autark, Vega-Lite, GeoPandas, Pandas, GPU compute and Computer vision; SCOUT when it uses a SCOUT node, model or dataset; plus tags you add |
 | **Data type** | Tables, Geometries, Imagery, OpenStreetMap, Rasters, Video, Audio |
 | **City**, **Topic**, **Complexity** | what you or Curio set for the dataflow |
 
@@ -1280,7 +1350,7 @@ A dataflow file opened with **File → Load dataflow** is a new dataflow: saving
 your dataflows under its own name, and the dataflow that was open stays as it was.
 
 Tags and data types come from the dataflow itself: its nodes, the libraries its code
-imports and the formats of its datasets. They change when you save, and cannot be
+imports, the models it loads and its datasets. They change when you save, and cannot be
 removed by hand. Add a tag, a city, a topic or a complexity with **+ Category** under
 the dataflow's title on the canvas, which saves with the dataflow, or with **Edit
 categories** on the Projects page.
@@ -1328,8 +1398,8 @@ For the full guide, covering runtimes, libraries, the manifest, and sharing a da
 Agents are AI assistants you attach to your dataflow. The catalog lists four:
 
 - **Researcher**: explains a node or the whole dataflow, diagnoses errors,
-  helps you define what to build, answers questions from the web as notes, and
-  checks facts.
+  helps you define what to build, answers questions from the web as
+  [notes](#notes), and checks facts.
 - **Node Builder**: builds a node or rewrites one's content, suggests nodes for
   a connection, and installs or writes the node packages your nodes need.
 - **Dataflow Builder**: plans a whole dataflow, then solves its nodes.
