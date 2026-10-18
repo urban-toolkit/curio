@@ -381,7 +381,7 @@ python curio.py start --deploy --guest-llm-provider anthropic --guest-llm-model 
 A node's header shows **Play** at its left, the node's name and kind, and its run
 status. Its other buttons show while the pointer is over the node or the node is
 selected: the editor's tabs (code, widgets, spec, provenance, output), the **Save
-output dataset** toggle, settings, about, pin, comments, **Minimize** and delete.
+output dataset** toggle, settings, about, pin, **Minimize** and delete.
 Code and specs sit in a gray box, and a code node's output is below its code.
 
 Drag a node's bottom-right corner to resize it. For viewers of a shared dataflow,
@@ -868,7 +868,8 @@ The node has two tabs:
   (**Combine**: mean, sum, median, minimum, maximum, a count of rows, or none).
   **None** plots each row's value as it is, with the Y column as the axis title; a
   scenario with several rows stacks them in one bar. A pie writes each slice's
-  value on it.
+  value on it. A table writes a scenario whose color is too light to read on
+  white in a darker shade of that color.
 - **Difference**, in its place in Difference, holds the difference's settings:
   **Key**, for two layers or tables, and **Change**, which picks **Signed**, input_1
   minus input_0, or **Absolute**, its size. A table's difference is shown as a table,
@@ -1162,7 +1163,10 @@ line layer takes a `width` in meters, and a polygon layer a `stroke` color, or
 `"stroke": false` for no outline. A raster layer takes `colorMapReverse` to
 run its scheme from its highest value to its lowest, `colorMapCenter` to put a
 value at the middle of its scheme, and `transferFunction` for how opaque its
-cells are; every cell with a value is opaque unless it says otherwise.
+cells are; every cell with a value is opaque unless it says otherwise. A
+layer colored by a number takes `colorMapRange`, `[low, high]`, to color from
+`low` to `high` instead of from its own lowest value to its highest, so maps
+that set the same range color a value alike.
 
 A layer that names a scenario of the dataflow by its id, `"scenario":
 "weather-aware"`, is drawn in that scenario's color, the color of its box.

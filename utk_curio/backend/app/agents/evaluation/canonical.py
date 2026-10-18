@@ -291,20 +291,24 @@ def edge_slot(edge: Mapping) -> int | None:
 
 
 #: Node visits allowed while searching for a canonical labeling. Reached only
-#: by a graph with large non-automorphic symmetry; the corpus's biggest example
-#: (27 nodes) settles in well under a hundred. On exhaustion the search keeps
+#: by a graph with large non-automorphic symmetry. Most examples settle in well
+#: under a hundred; the scenario comparison charts dataflow (49 nodes, groups
+#: of nodes that feed one node's circles) settles only on the second search,
+#: the one that refines outgoing circles too. On exhaustion the search keeps
 #: the best order it found and reports ``exact=False`` so a caller can say so
 #: rather than quietly comparing two differently-labeled graphs.
 _LABELING_BUDGET = 20000
 
 
-def _refine(colors: list, in_adj: list, out_adj: list) -> list:
+def _refine(colors: list, in_adj: list, out_adj: list, out_slots: bool = False) -> list:
     """Colour refinement (Weisfeiler-Leman) to a fixed point.
 
     A node's next colour is its current colour plus the multiset of its
     incoming ``(colour, kind, slot)`` and outgoing ``(colour, kind)`` -- so a
     Data Transformation that feeds two charts separates from one that feeds a
-    single chart without either of them being named.
+    single chart without either of them being named. With *out_slots*, an
+    outgoing edge's circle counts too, ``(colour, kind, slot)``: the nodes
+    that feed one node's circles then separate by circle.
     """
     current = list(colors)
     while True:
@@ -312,7 +316,10 @@ def _refine(colors: list, in_adj: list, out_adj: list) -> list:
             (
                 current[i],
                 tuple(sorted((current[src], kind, slot) for src, kind, slot in in_adj[i])),
-                tuple(sorted((current[dst], kind) for dst, kind, _ in out_adj[i])),
+                tuple(sorted(
+                    (current[dst], kind, slot) if out_slots else (current[dst], kind)
+                    for dst, kind, slot in out_adj[i]
+                )),
             )
             for i in range(len(current))
         ]
@@ -341,7 +348,26 @@ def _canonical_order(attr_keys: list, in_adj: list, out_adj: list) -> tuple:
     Individualization-refinement: refine; if every colour class is a singleton
     the order is forced; otherwise individualize each member of the smallest
     ambiguous class in turn and keep the branch whose edge tuple is smallest.
+
+    Nodes that differ only in which circle of one node they feed (each
+    scenario's node into a Compare Scenarios node) refine alike, so a graph
+    of many such groups runs the search out of its budget. Such a graph is
+    searched again with outgoing circles refined too, and that order is used
+    when it is exact. A graph the first search labels exactly keeps the order
+    it always had.
     """
+    order, exact = _search_order(attr_keys, in_adj, out_adj, out_slots=False)
+    if exact:
+        return order, True
+    again, again_exact = _search_order(attr_keys, in_adj, out_adj, out_slots=True)
+    if again_exact:
+        return again, True
+    return order, False
+
+
+def _search_order(attr_keys: list, in_adj: list, out_adj: list, *, out_slots: bool) -> tuple:
+    """One individualization-refinement search of :func:`_canonical_order`,
+    refining outgoing circles when *out_slots*."""
     size = len(attr_keys)
     if size <= 1:
         return list(range(size)), True
@@ -352,7 +378,7 @@ def _canonical_order(attr_keys: list, in_adj: list, out_adj: list) -> tuple:
     exact = [True]
 
     def search(colors: list) -> None:
-        refined = _refine(colors, in_adj, out_adj)
+        refined = _refine(colors, in_adj, out_adj, out_slots)
         classes: dict = {}
         for index, colour in enumerate(refined):
             classes.setdefault(colour, []).append(index)

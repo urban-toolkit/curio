@@ -2,7 +2,7 @@
 
 A node on the canvas is a card: Play first in its header, then its title, its
 pills and its run status, then its tools (the editor's tabs, Save output, info,
-pin, comments, minimize and delete), which show only while the pointer is over
+pin, minimize and delete), which show only while the pointer is over
 the node or the node is selected. There is no row under the body: the body
 reaches the node's bottom edge. The canvas keeps what a cell lacks: the node
 still resizes and still minimizes.

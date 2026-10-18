@@ -1,9 +1,10 @@
 /**
  * The Vega-Lite specs a Compare Scenarios node (#662) draws its stacked table
  * with. Each preset reads the table's `scenario_name` column and colors by it,
- * in the scenarios' own colors, in the order of the node's inputs. The spec
- * goes through the Vega-Lite node's code path (`useVega`), which puts the rows
- * in as `input_0`, so no spec here has a `data` block.
+ * in the scenarios' own colors (a table's text in a shade of them that reads
+ * on white), in the order of the node's inputs. The spec goes through the
+ * Vega-Lite node's code path (`useVega`), which puts the rows in as `input_0`,
+ * so no spec here has a `data` block.
  *
  * `comparePresets.cases.json` holds one spec per preset: Jest checks that
  * these functions write exactly those, and pytest checks each against the
@@ -12,6 +13,7 @@
  * Pure, with no `vega` / `vega-lite` import, so it is testable under jest.
  */
 import { VEGA_SCHEMA_URL } from "../../generated/visDefaults";
+import { SCENARIO_COLOR_RE } from "../scenarios/scenarioModel";
 import { classifyColumns, type ClassifiedColumn } from "../starterSpec";
 import {
   COMPARE_PRESETS,
@@ -139,6 +141,37 @@ export function scenarioScale(labels: readonly CompareInputLabel[]): { domain: s
   return { domain, range };
 }
 
+/**
+ * A table writes its text in the scenarios' colors, and a light one reads pale
+ * on white (#a1d99b is 1.6:1). So a color under TABLE_TEXT_CONTRAST, WCAG's
+ * 3:1 for large text, is drawn in its lightest shade that reaches it, taking
+ * TABLE_TEXT_SHADE_STEP percent toward black at a time: the text keeps its
+ * scenario's hue, and the scenario keeps its color everywhere else. Curio's
+ * own scenario colors all reach 3:1.
+ */
+const TABLE_TEXT_CONTRAST = 3;
+const TABLE_TEXT_SHADE_STEP = 1;
+
+function contrastOnWhite(channels: readonly number[]): number {
+  const [r, g, b] = channels.map((channel) => {
+    const value = channel / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return 1.05 / (0.2126 * r + 0.7152 * g + 0.0722 * b + 0.05);
+}
+
+/** *color* as a table's text draws it: itself when it reads on white, else its lightest shade that does. */
+function tableTextColor(color: string): string {
+  if (!SCENARIO_COLOR_RE.test(color)) return color;
+  const channels = [1, 3, 5].map((at) => parseInt(color.slice(at, at + 2), 16));
+  for (let left = 100; left > 0; left -= TABLE_TEXT_SHADE_STEP) {
+    const shade = channels.map((channel) => Math.round((channel * left) / 100));
+    if (contrastOnWhite(shade) < TABLE_TEXT_CONTRAST) continue;
+    return left === 100 ? color : `#${shade.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+  }
+  return "#000000";
+}
+
 function measure(y: string, aggregate: CompareAggregate | null, type = "quantitative"): Record<string, unknown> {
   if (aggregate === "count") return { aggregate: "count", type, title: "Rows" };
   // "none" plots the values as they are: one mark per row, titled by the column.
@@ -259,6 +292,7 @@ export function compareChartSpec(
     }
     case "table": {
       const shown = [SCENARIO_NAME_FIELD, ...columns.map((column) => column.name)].slice(0, TABLE_COLUMNS);
+      const text = { domain: scale.domain, range: scale.range.map(tableTextColor) };
       return {
         spec: {
           ...base,
@@ -278,7 +312,7 @@ export function compareChartSpec(
               axis: { orient: "top", labelAngle: 0, domain: false, ticks: false },
             },
             text: { field: "curio_cell", type: "nominal" },
-            color: { ...color, legend: null },
+            color: { ...color, scale: text, legend: null },
           },
         },
       };

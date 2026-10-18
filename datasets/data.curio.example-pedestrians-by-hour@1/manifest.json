@@ -1,0 +1,24 @@
+{
+  "id": "data.curio.example-pedestrians-by-hour",
+  "name": "Example table: pedestrians per hour",
+  "version": "1.0.0",
+  "format": "csv",
+  "description": "Pedestrians counted per hour on four streets, on weekdays and on weekends: the mean count of the days, and their low and high counts. One of nine example tables that illustrate ways to chart a comparison of scenarios, each row's scenario in its case column. The Nine ways to chart scenario comparisons test dataflow draws it as lines with a band, one panel per street. Curio's seeded script scripts/build_example_scenario_charts.py writes it.",
+  "publisher": "Curio",
+  "license": "MIT",
+  "tags": [
+    "example",
+    "scenarios",
+    "csv"
+  ],
+  "dataFile": "data/pedestrians_by_hour.csv",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "Curio example tables",
+  "rowCount": 192,
+  "featureCount": null,
+  "schema": null,
+  "createdAt": "2026-10-17T00:00:00Z",
+  "updatedAt": "2026-10-17T00:00:00Z"
+}

@@ -1,0 +1,4 @@
+case,rain_held_pct,roof_cooling_c,cost_per_m2
+Extensive roof,45,13.7,90
+Semi-intensive roof,61,19.0,170
+Intensive roof,76,26.2,310

@@ -2,11 +2,11 @@
 ran, and runs where it lands.
 
 The shipped dataflows with scenarios are example 06 and the test dataflows
-``Scenarios``, ``ScoutShadows``, ``FloodScenarios`` and ``WeatherRouting``;
-there is one test per scenario. Each signs in a fresh account, whose first
-listing seeds its own copies of the shipped dataflows. Those have never run,
-so the scenario's fixed context has no saved output. Then, in an empty
-dataflow:
+``Scenarios``, ``ScoutShadows``, ``FloodScenarios``, ``WeatherRouting``,
+``lower-manhattan-park-shade`` and ``scenario-comparison-charts``; there is one
+test per scenario. Each signs in a fresh account, whose first listing seeds its
+own copies of the shipped dataflows. Those have never run, so the scenario's
+fixed context has no saved output. Then, in an empty dataflow:
 
 1. The scenario is dragged in from the Scenario Catalog drawer. The drop runs
    its context on the server, in the seeded project: the plan lists those
@@ -15,8 +15,9 @@ dataflow:
    output that run saved.
 2. Run scenario ends with every outcome done.
 3. Expanded, every outcome shows its output: a map drawn, a chart drawn, or
-   the result of a code node. Each map gets a close-up, and a frame of the
-   whole dataflow is taken.
+   the result of a code node. Each map gets a close-up. An Interaction node
+   among the levers has drawn its own map, and a frame of the whole dataflow
+   is taken.
 
 A test whose dataflow has an Autark node runs on the GPU runner
 (``runner_split.SHIPPED_DROPS_MODULE``), the others on the CPU runners.
@@ -48,6 +49,7 @@ from .test_scenario_drop_e2e import (
     _status,
     _toast,
 )
+from .test_widget_tags_e2e import _open_tab
 from .utils import (
     REPO_ROOT,
     api_json,
@@ -81,11 +83,15 @@ SHIPPED = (
     "docs/examples/dataflows/ScoutShadows.json",
     "docs/examples/dataflows/FloodScenarios.json",
     "docs/examples/dataflows/WeatherRouting.json",
+    "docs/examples/dataflows/lower-manhattan-park-shade.json",
+    "docs/examples/dataflows/scenario-comparison-charts.json",
 )
 
 DRAWER = '[data-curio-scenario-catalog-drawer="true"]'
 AUTARK = "curio.builtin/autk-grammar"
 VEGA = "curio.builtin/vis-vega"
+#: The Interaction node, a lever that draws its input on a map of its own.
+INTERACTION = "curio.builtin/edit-features"
 TEST_NAME = "test_a_shipped_scenario_drops_from_a_project_never_run_and_runs"
 
 #: How long the drop may take, its run of the context on the server included.
@@ -271,6 +277,18 @@ def test_a_shipped_scenario_drops_from_a_project_never_run_and_runs(
             assert output and output["code"] == "success" and "Saved to file:" in output["content"], (
                 f"{outcome['label']} ({node_id}) shows no output: {output}"
             )
+    # A lever that draws a map of its own, an Interaction node, has drawn it
+    # before the whole dataflow is framed.
+    for lever in plan["levers"]:
+        if types[lever].startswith(INTERACTION):
+            box = node_locator(page, copies[lever])
+            _open_tab(page, copies[lever], "output")
+            box.locator('[data-edit-map-state]:not([data-edit-map-state="drawing"])').wait_for(
+                state="attached", timeout=90000,
+            )
+            state = box.locator("[data-edit-map-state]").get_attribute("data-edit-map-state")
+            problem = box.locator("[data-edit-map-problem]").all_inner_texts()
+            assert state == "drawn", f"{name}: the Interaction node {copies[lever]}'s map ended {state!r}: {problem}"
     # Saved first, so the header shows the save whatever the autosave reached (#584).
     save_dataflow_and_settle_header(page)
     save_workflow_test_screenshot(

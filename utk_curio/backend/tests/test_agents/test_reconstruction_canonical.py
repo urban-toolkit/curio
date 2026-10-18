@@ -362,7 +362,7 @@ class TestTheShippedCorpus:
         curated = [p for p in paths if p.parent.name == "examples"]
         legacy = [p for p in paths if p.parent.name == "dataflows"]
         assert len(curated) == 26, [p.name for p in curated]
-        assert len(legacy) == 26, [p.name for p in legacy]
+        assert len(legacy) == 28, [p.name for p in legacy]
 
     @pytest.mark.parametrize("path", example_paths(), ids=lambda p: p.stem)
     def test_every_example_canonicalizes_with_known_templates(self, path):
@@ -413,9 +413,9 @@ class TestTheShippedCorpus:
     def test_these_are_the_examples_whose_templates_need_a_package(self):
         """Example 09 declares ``curio.weather@1`` for its python LIBRARIES
         while using only builtin templates -- a different resolution route
-        from examples 10, 18, 21, 22 and 24 and the ScoutShadows and
-        WeatherRouting test dataflows, whose templates
-        themselves live in a package (``curio.media@1``,
+        from examples 10, 18, 21, 22 and 24 and the ScoutShadows,
+        WeatherRouting and lower-manhattan-park-shade test dataflows, whose
+        templates themselves live in a package (``curio.media@1``,
         ``scout.raster-conversion@1``, and the model packages
         ``model.curio.ddrnet23-slim@1``, ``model.scout.deep-umbra@1`` and
         ``model.scout.weather-gnn@1``). The
@@ -437,9 +437,10 @@ class TestTheShippedCorpus:
             "24-scout-building-rasters",
             "ScoutShadows",
             "WeatherRouting",
+            "lower-manhattan-park-shade",
         ]
         # SCOUT's two models are packages with nodes of their own.
-        for stem in ("24-scout-building-rasters", "ScoutShadows"):
+        for stem in ("24-scout-building-rasters", "ScoutShadows", "lower-manhattan-park-shade"):
             assert "model.scout.deep-umbra/accumulated-shadow" in needs_package_templates[stem], stem
         assert needs_package_templates["WeatherRouting"] == ["model.scout.weather-gnn/weather-routing"]
         assert declared_dependencies(
@@ -485,6 +486,44 @@ class TestExpectedBlockRoundTrip:
         )
         with pytest.raises(ValueError):
             graph.as_expected_dict(refs=["a", "b"])
+
+
+def _feeding_circles(groups: int, feeders: int, *, charted: int | None = None, swapped: bool = False) -> dict:
+    """*groups* copies of one shape: a loader whose rows *feeders* steps take,
+    each step handing its rows to its own circle of one node, as each
+    scenario's node feeds a Compare Scenarios node. With *charted*, the first
+    group's step on that circle also feeds a chart; with *swapped*, the first
+    group's first two steps trade circles."""
+    nodes, edges = [], []
+    for group in range(groups):
+        nodes += [_node(f"l{group}", LOADER), _node(f"c{group}", ANALYSIS)]
+        for step in range(feeders):
+            nodes.append(_node(f"s{group}-{step}", TRANSFORM))
+            edges.append(_edge(f"l{group}", f"s{group}-{step}"))
+            circle = 1 - step if swapped and group == 0 and step in (0, 1) else step
+            edges.append(_edge(f"s{group}-{step}", f"c{group}",
+                               targetHandle="in" if circle == 0 else f"in_{circle}"))
+    if charted is not None:
+        nodes.append(_node("chart", VEGA, content="{}"))
+        edges.append(_edge(f"s0-{charted}", "chart"))
+    return _spec(nodes, edges)
+
+
+def _record_searches(monkeypatch) -> list:
+    """``(refines outgoing circles, exact)`` for each labeling search a
+    canonicalization runs."""
+    from utk_curio.backend.app.agents.evaluation import canonical
+
+    runs: list = []
+    search = canonical._search_order
+
+    def recording(*args, **kwargs):
+        order, exact = search(*args, **kwargs)
+        runs.append((kwargs["out_slots"], exact))
+        return order, exact
+
+    monkeypatch.setattr(canonical, "_search_order", recording)
+    return runs
 
 
 class TestCanonicalLabeling:
@@ -549,6 +588,40 @@ class TestCanonicalLabeling:
         assert one != other
         assert sorted(e.slot is None for e in one.edges) == [False, True]
         assert {n.role for n in one.nodes if n.type == ANALYSIS} == {"analysis"}
+
+    def test_steps_that_feed_one_nodes_circles_are_labeled_exactly(self, monkeypatch):
+        """The steps of a group differ only in the circle they feed. Refined
+        without the circles of their outgoing edges they stay alike, and four
+        such groups run the search out of its budget. The labeling searches
+        again with those circles refined too, and that order is exact and
+        does not depend on the file's order (the fallback of komar41's #914,
+        for the scenario comparison charts dataflow)."""
+        spec = _feeding_circles(4, 3)
+        runs = _record_searches(monkeypatch)
+        graph = canonical_graph_from_spec(spec, templates=TEMPLATES)
+        assert runs == [(False, False), (True, True)], runs
+        assert graph.exact_labeling
+        flow = spec["dataflow"]
+        reversed_spec = _spec(list(reversed(flow["nodes"])), list(reversed(flow["edges"])))
+        assert canonical_graph_from_spec(reversed_spec, templates=TEMPLATES) == graph
+
+    def test_the_second_search_still_tells_the_circles_apart(self):
+        """One step of the first group also feeds a chart. Wired into circle 0
+        or into circle 1, that is two graphs, and an exact labeling of each
+        must keep them apart."""
+        one = canonical_graph_from_spec(_feeding_circles(4, 3, charted=0), templates=TEMPLATES)
+        other = canonical_graph_from_spec(_feeding_circles(4, 3, charted=0, swapped=True), templates=TEMPLATES)
+        assert one.exact_labeling and other.exact_labeling
+        assert one != other
+
+    def test_a_graph_the_first_search_labels_exactly_keeps_that_labeling(self, monkeypatch):
+        """Three groups fit in the budget, so no second search runs and the
+        order is the one the first search gives, as for every shipped example
+        before the fallback (their fixtures' expected graphs pin it)."""
+        runs = _record_searches(monkeypatch)
+        graph = canonical_graph_from_spec(_feeding_circles(3, 3), templates=TEMPLATES)
+        assert runs == [(False, True)], runs
+        assert graph.exact_labeling
 
     @pytest.mark.parametrize("path", example_paths(), ids=lambda p: p.stem)
     def test_the_labeling_is_exact_for_every_shipped_example(self, path):

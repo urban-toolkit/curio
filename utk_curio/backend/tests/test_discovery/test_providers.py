@@ -9,7 +9,9 @@ it loudly if one tried.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -253,6 +255,173 @@ class TestArcgis:
         provider, _, _ = _provider("source.esri.hub-opendata@1")
         ids = [r.resource_id for r in provider.search(SearchQuery(text="bike lanes")).resources]
         assert any("_" in i for i in ids), ids
+
+
+class _Answer:
+    """What ``requests.request`` returns, for the real transport to read."""
+
+    def __init__(self, body: bytes) -> None:
+        self.status_code = 200
+        self.headers = {"Content-Type": "application/json"}
+        self._body = body
+
+    def iter_content(self, chunk_size=8192):
+        for start in range(0, len(self._body), chunk_size):
+            yield self._body[start:start + chunk_size]
+
+    def close(self) -> None:
+        pass
+
+
+class _ArcgisSearchPortal:
+    """hub.arcgis.com's ``/api/v3/datasets`` search, as it answered on 2026-10-17.
+
+    Every row carries every attribute, unless the request names some in a
+    JSON:API sparse fieldset (``fields[datasets]=name,owner``): then it carries
+    only those. Each row here is a census tract layer of 160 columns, which a
+    full answer carries four times over (``fields``, ``layer``, ``layers`` and
+    ``statistics``) along with the layer's metadata, as CDC's SVI 2020 layers
+    do. "SVI 2020 tract" at 20 rows answered 2,674,086 bytes that day.
+    """
+
+    TOTAL = 645346
+    COLUMNS = 160
+
+    def __init__(self) -> None:
+        self.asked: list[str] = []
+
+    @classmethod
+    def row(cls, n: int) -> dict:
+        columns = [
+            {
+                "name": f"EP_COLUMN_{c}", "alias": f"Percentage estimate {c}, 2016-2020 ACS",
+                "type": "esriFieldTypeDouble", "length": 8, "nullable": True, "editable": True,
+                "domain": None, "defaultValue": None, "sqlType": "sqlTypeOther",
+            }
+            for c in range(cls.COLUMNS)
+        ]
+        attributes = {
+            "name": f"SVI2020 tract layer {n}",
+            "description": f"<p>CDC/ATSDR <b>Social Vulnerability Index</b> 2020, census tracts ({n}).</p>",
+            "owner": f"publisher_{n}",
+            "orgName": f"Organization {n}",
+            "modified": 1700000000000 + n,
+            "fields": columns,
+            "layer": {"id": 2, "name": "SVI2020_US_tract", "geometryType": "esriGeometryPolygon",
+                      "fields": columns},
+            "layers": [{"id": 2, "name": "SVI2020_US_tract", "fields": columns}],
+            "statistics": {
+                column["name"]: {"min": 0.0, "max": 100.0, "mean": 28.4, "count": 84122, "nulls": 0}
+                for column in columns
+            },
+            "metadata": {"dataIdInfo": {"idAbs": "How vulnerable each census tract is. " * 300}},
+        }
+        if n % 5 == 0:
+            # A row whose publisher is its organization: it names no owner.
+            del attributes["owner"]
+        return {"id": f"{n:032x}_2", "type": "dataset", "attributes": attributes}
+
+    def body_for(self, url: str) -> bytes:
+        query = parse_qs(urlsplit(url).query)
+        size = int(query["page[size]"][0])
+        first = (int(query["page[number]"][0]) - 1) * size + 1
+        asked = query.get("fields[datasets]")
+        data = []
+        for n in range(first, first + size):
+            entry = self.row(n)
+            if asked:
+                kept = set(asked[0].split(","))
+                entry["attributes"] = {k: v for k, v in entry["attributes"].items() if k in kept}
+            data.append(entry)
+        return json.dumps({"data": data, "meta": {"stats": {"totalCount": self.TOTAL}}}).encode()
+
+    def __call__(self, method, url, **_kwargs):
+        self.asked.append(url)
+        return _Answer(self.body_for(url))
+
+
+@pytest.fixture()
+def arcgis_portal(monkeypatch):
+    """The stand-in, behind the real transport: no request leaves the process."""
+    import requests
+
+    from utk_curio.backend.app.common import egress_policy
+
+    portal = _ArcgisSearchPortal()
+    monkeypatch.setattr(egress_policy, "_default_resolver", lambda host: ["93.184.216.34"])
+    monkeypatch.setattr(requests, "request", portal)
+    return portal
+
+
+class TestASearchWhoseFullAnswerPassesTheMetadataCap:
+    """#967: the ArcGIS Hub Open Data source answers a search even when
+    hub.arcgis.com's full answer is over the transport's ``MAX_METADATA_BYTES``.
+
+    On 2026-10-17 "SVI 2020 tract", "Social Vulnerability Index 2020", "NHD
+    flowline" and "National Hydrography Dataset" failed at the UI's 20 rows:
+    the search across sources said "ArcGIS Hub Open Data did not answer", and
+    the source's own page said "hub.arcgis.com returned more than 1048576
+    bytes of metadata". These drive the real transport, its cap included.
+    """
+
+    QUERY = "SVI 2020 tract"
+
+    def _browse(self):
+        from utk_curio.backend.app.discovery.application.browse import DiscoveryBrowse
+        from utk_curio.backend.app.discovery.infrastructure.transport import HttpDiscoveryTransport
+
+        manifest = load_source_manifest(SHIPPED_ROOT / "source.esri.hub-opendata@1")
+        browse = DiscoveryBrowse(user_key="u-arcgis", transport_for=lambda _m: HttpDiscoveryTransport())
+        return browse, manifest
+
+    def _full_answer_is_over_the_cap(self, portal, manifest, limit):
+        from utk_curio.backend.app.discovery.infrastructure.transport import MAX_METADATA_BYTES
+
+        full = portal.body_for(
+            f"{manifest.provider.base_url}/api/v3/datasets"
+            f"?page[size]={limit}&page[number]=1&q=SVI%202020%20tract"
+        )
+        assert len(full) > MAX_METADATA_BYTES, "the stand-in answers less than hub.arcgis.com did"
+
+    def test_a_search_across_sources_gets_every_row_with_what_its_card_shows(self, arcgis_portal):
+        from utk_curio.backend.app.discovery.service import DEFAULT_SEARCH_LIMIT
+
+        browse, manifest = self._browse()
+        self._full_answer_is_over_the_cap(arcgis_portal, manifest, DEFAULT_SEARCH_LIMIT)
+
+        rows, legs = browse.search_all(
+            [manifest], SearchQuery(text=self.QUERY, limit=DEFAULT_SEARCH_LIMIT)
+        )
+
+        assert legs == [{"sourceId": manifest.id, "status": "ok", "count": DEFAULT_SEARCH_LIMIT}]
+        expected = [_ArcgisSearchPortal.row(n) for n in range(1, DEFAULT_SEARCH_LIMIT + 1)]
+        assert [r.resource_id for r in rows] == [e["id"] for e in expected]
+        for row, entry in zip(rows, expected):
+            attributes = entry["attributes"]
+            assert row.name == attributes["name"]
+            assert row.publisher == attributes.get("owner", attributes["orgName"])
+            assert row.updated_at == str(attributes["modified"])
+            assert row.description.startswith("CDC/ATSDR Social Vulnerability Index 2020, census tracts")
+
+    def test_the_sources_own_page_keeps_the_count_and_shows_more(self, arcgis_portal):
+        from utk_curio.backend.app.discovery.service import DEFAULT_SEARCH_LIMIT
+
+        browse, manifest = self._browse()
+        self._full_answer_is_over_the_cap(arcgis_portal, manifest, DEFAULT_SEARCH_LIMIT)
+
+        page = browse.search(manifest, SearchQuery(text=self.QUERY, limit=DEFAULT_SEARCH_LIMIT))
+
+        assert len(page.resources) == DEFAULT_SEARCH_LIMIT
+        assert page.total_hint == _ArcgisSearchPortal.TOTAL
+        assert page.next_cursor == "2"
+        more = browse.search(
+            manifest,
+            SearchQuery(text=self.QUERY, limit=DEFAULT_SEARCH_LIMIT, cursor=page.next_cursor),
+        )
+        assert [r.resource_id for r in more.resources] == [
+            _ArcgisSearchPortal.row(n)["id"]
+            for n in range(DEFAULT_SEARCH_LIMIT + 1, 2 * DEFAULT_SEARCH_LIMIT + 1)
+        ]
 
 
 class TestWfs:

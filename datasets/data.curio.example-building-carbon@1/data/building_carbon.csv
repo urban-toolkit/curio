@@ -1,0 +1,11 @@
+case,stage,stage_order,kg_co2e_per_m2
+Concrete frame,Materials,1,317
+Concrete frame,Transport,2,26
+Concrete frame,Construction,3,40
+Concrete frame,Use,4,373
+Concrete frame,End of life,5,34
+Timber frame,Materials,1,167
+Timber frame,Transport,2,30
+Timber frame,Construction,3,33
+Timber frame,Use,4,356
+Timber frame,End of life,5,22

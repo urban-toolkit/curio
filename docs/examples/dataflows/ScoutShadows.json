@@ -122,15 +122,41 @@
       },
       {
         "id": "acfa08e6-b472-5174-9ff0-8e469d04c901",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/edit-features",
         "x": 645,
         "y": 900,
-        "content": "# The 15 buildings SCOUT's high-rise shadow case removes: SCOUT's\n# B_buildings is this layer without them.\nREMOVED = [8, 10, 12, 13, 14, 18, 19, 31, 34, 51, 66, 77, 82, 106, 122]\nreturn input_0[~input_0[\"building_id\"].isin(REMOVED)].reset_index(drop=True)",
+        "content": "# Edit Features writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"remove\", \"ids\": [8, 10, 12, 13, 14, 18, 19, 31, 34, 51, 66, 77, 82, 106, 122], \"label\": \"SCOUT's 15 removed buildings\"},\n], key=\"building_id\")\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Remove the 15 buildings SCOUT's high-rise case removes.",
+        "goal": "Remove the 15 buildings SCOUT's high-rise case removes, by their building_id. Further buildings, picked on the map or by a condition, can be removed, raised or lowered here before Update results.",
         "metadata": {
-          "keywords": []
+          "keywords": [],
+          "editFeatures": {
+            "key": "building_id",
+            "edits": [
+              {
+                "op": "remove",
+                "ids": [
+                  8,
+                  10,
+                  12,
+                  13,
+                  14,
+                  18,
+                  19,
+                  31,
+                  34,
+                  51,
+                  66,
+                  77,
+                  82,
+                  106,
+                  122
+                ],
+                "label": "SCOUT's 15 removed buildings"
+              }
+            ]
+          }
         },
         "title": "Remove towers"
       },
@@ -280,7 +306,7 @@
         "type": "curio.builtin/autk-grammar",
         "x": 1935,
         "y": 450,
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"title\": \"Accumulated shadow (minutes)\"\n      }\n    ]\n  }\n}",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"colorMapRange\": [\n          0,\n          720\n        ],\n        \"title\": \"Accumulated shadow (minutes)\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Draw the existing buildings' accumulated shadow on a map.",
@@ -294,7 +320,7 @@
         "type": "curio.builtin/autk-grammar",
         "x": 2580,
         "y": 1350,
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"title\": \"Accumulated shadow (minutes)\"\n      }\n    ]\n  }\n}",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"colorMapRange\": [\n          0,\n          720\n        ],\n        \"title\": \"Accumulated shadow (minutes)\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Draw the remaining buildings' accumulated shadow on a map.",

@@ -1,0 +1,732 @@
+"""``lower-manhattan-park-shade.json``: SCOUT's shadow model on the parks of
+Lower Manhattan, with the towers around them removed or capped (step 18 of the
+#914 plan: komar41's ShadowsAnywhere, re-made on Curio's nodes).
+
+The shipped test dataflow reads ``lower_mnt.osm.pbf`` with one Autark data
+node: OpenStreetMap's parks of a box, the Financial District to City Hall, and
+the buildings of a box about 300 m larger on every side, up to the extract's
+edge, so the towers that shade the parks at its edge are there too. Its
+context:
+
+- Building heights gives every building part a height in metres;
+- Open-air parks keeps the named parks large enough to measure, in the open;
+- Buildings around parks marks the parts the what-ifs change, by one rule for
+  every park: at least the Tall building height tall (a Parameter, 60 m) and
+  within the Distance from a park (a Parameter, 75 m) of any park;
+- the Season Parameter, which every Accumulated Shadow reads.
+
+Three scenarios: Existing; Towers removed, whose Interaction node removes the
+marked parts; and Height cap, whose Interaction node cuts them down to the
+Tall building height. Each rasterizes its buildings
+(``scout.raster-conversion@1``), runs Deep Umbra on them
+(``model.scout.deep-umbra@1``), measures the shade in each park, and draws its
+buildings in 3D and its shadow on Autark maps. Compare Scenarios nodes chart
+each park's mean minutes of shadow in the three scenarios and take, for each
+what-if, the change in shadow cell by cell and each park's change in shade,
+each drawn by an Autark map after it.
+
+The first tests read the file. The others run it as written, once for the
+module, on the extract and with no socket: the data node compiled and run as
+a run on the server runs it (``test_autk_server_data_load.py``), every code
+node in the sandbox with its package's modules and the model's weights, and
+Compare Scenarios' raster differences completed in Node. What does not depend
+on the model is pinned exactly: the layers, the parks, the rule, the levers
+and the rasters' grid. Deep Umbra's minutes are pinned within 1 minute a park:
+onnxruntime's output moves with its thread count past 16
+(``test_scout_shadow.py``), and at 32 and 64 threads a park's mean moved by at
+most 0.39 minutes from a run on 8.
+
+The dataflow and the packages' code are read inside each test, so a checkout
+without them fails each test on its own.
+"""
+from __future__ import annotations
+
+import json
+import math
+import textwrap
+from pathlib import Path
+
+import pytest
+
+REPO = Path(__file__).resolve().parents[4]
+DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "lower-manhattan-park-shade.json"
+NAME = "Lower Manhattan park shade with towers removed or capped"
+EXTRACT = "docs/examples/data/lower_mnt.osm.pbf"
+RASTER_PACKAGE = REPO / "packages" / "scout.raster-conversion@1"
+MODEL_PACKAGE = REPO / "packages" / "model.scout.deep-umbra@1"
+MODEL_ID = "model.scout.deep-umbra"
+
+AUTARK = "curio.builtin/autk-grammar"
+PYTHON = "curio.builtin/computation-analysis"
+PARAMETER = "curio.builtin/parameter"
+INTERACTION = "curio.builtin/edit-features"
+COMPARE = "curio.builtin/compare-scenarios"
+RASTERIZE = "scout.raster-conversion/rasterize-buildings"
+SHADOW = "model.scout.deep-umbra/accumulated-shadow"
+
+#: The scenarios, in the order every Compare Scenarios node reads them, and the
+#: key of each scenario's nodes.
+SCENARIOS = [
+    ("existing", "Existing", "#2a9d8f", "existing"),
+    ("towers-removed", "Towers removed", "#e76f51", "removed"),
+    ("height-cap", "Height cap", "#6a4c93", "capped"),
+]
+#: [west, south, east, north]: the parks' box, the Financial District to City
+#: Hall, and the buildings' box around it, about 300 m larger on every side up
+#: to the box the extract is cut at, which ends over the water to the west and
+#: south.
+PARKS_BOX = [-74.018, 40.7, -74.004, 40.713]
+BUILDINGS_BOX = [-74.0194416, 40.698762, -74.0005, 40.7157]
+#: How much larger the buildings' box is, where the extract allows.
+MARGIN_M = 300
+#: The rule's defaults, the two Parameter nodes'.
+PARK_DISTANCE_M = 75
+TALL_HEIGHT_M = 60
+
+#: What the data node hands on: autk-db 4.1.1's parks of the parks' box, and
+#: the buildings of the buildings' box, a row for each building and each part
+#: of one, in 423 clusters of buildings that overlap (``building_id``).
+PARK_FEATURES = 215
+BUILDING_ROWS = 2688
+BUILDING_IDS = 423
+#: OpenStreetMap's height for One World Trade Center, its spire included.
+TALLEST_M = 541.0
+#: The parts at least 60 m tall within 75 m of a park, in 97 of the clusters.
+MARKED_ROWS = 527
+MARKED_IDS = 97
+
+#: The parks Open-air parks keeps: named, at least 500 m², not mostly under
+#: building footprints, each once. Imagination Playground is two outlines in
+#: OpenStreetMap, a playground and a park, under one name.
+PARKS = [
+    "Battery Park", "Battery Playscape", "Bowling Green", "City Hall Park", "Coenties Slip",
+    "DeLury Square", "Drumgoole Plaza", "East River Waterfront Esplanade", "Elizabeth H. Berger Plaza",
+    "Imagination Playground", "Liberty Park", "Little West Dog Run", "Living Memorial Grove",
+    "Louise Nevelson Plaza", "Mannahatta Park", "Old Slip Park", "Parks Dog Run", "Pearl Street Playground",
+    "Rector Park", "Robert F. Wagner Jr. Park", "South Cove Park", "The Battery Oval", "The Battery Woodland",
+    "The Esplanade", "The Queen Elizabeth II September 11th Garden", "Trinity Churchyard",
+    "Vietnam Veterans Plaza", "West Thames Park", "Zuccotti Park",
+]
+
+#: The rasters every scenario's nodes make, on one grid: 4 by 5 zoom-16 tiles
+#: in EPSG:3395, starting at tile 19293, 24639.
+GRID = (1024, 1280)
+TILE = {"zoom": "16", "tile_x": "19293", "tile_y": "24639"}
+
+#: Each park's mean minutes of shadow in summer, per scenario, from a run on 8
+#: threads; a run on another machine is within MINUTES of each.
+MINUTES = 1.0
+MEANS = {
+    "existing": {
+        "Battery Park": 77.78, "Battery Playscape": 105.11, "Bowling Green": 369.75, "City Hall Park": 160.02,
+        "Coenties Slip": 486.00, "DeLury Square": 472.17, "Drumgoole Plaza": 229.16,
+        "East River Waterfront Esplanade": 95.83, "Elizabeth H. Berger Plaza": 371.09,
+        "Imagination Playground": 261.89, "Liberty Park": 213.36, "Little West Dog Run": 313.45,
+        "Living Memorial Grove": 101.86, "Louise Nevelson Plaza": 569.35, "Mannahatta Park": 458.83,
+        "Old Slip Park": 504.19, "Parks Dog Run": 105.60, "Pearl Street Playground": 358.58,
+        "Rector Park": 144.58, "Robert F. Wagner Jr. Park": 45.67, "South Cove Park": 236.46,
+        "The Battery Oval": 47.45, "The Battery Woodland": 47.13, "The Esplanade": 184.48,
+        "The Queen Elizabeth II September 11th Garden": 498.29, "Trinity Churchyard": 403.59,
+        "Vietnam Veterans Plaza": 378.02, "West Thames Park": 295.10, "Zuccotti Park": 354.78,
+    },
+    "towers-removed": {
+        "Battery Park": 41.26, "Battery Playscape": 63.28, "Bowling Green": 173.25, "City Hall Park": 115.40,
+        "Coenties Slip": 374.35, "DeLury Square": 204.90, "Drumgoole Plaza": 180.55,
+        "East River Waterfront Esplanade": 31.14, "Elizabeth H. Berger Plaza": 187.69,
+        "Imagination Playground": 191.24, "Liberty Park": 134.23, "Little West Dog Run": 48.33,
+        "Living Memorial Grove": 71.16, "Louise Nevelson Plaza": 350.21, "Mannahatta Park": 257.11,
+        "Old Slip Park": 355.70, "Parks Dog Run": 39.64, "Pearl Street Playground": 231.65,
+        "Rector Park": 44.49, "Robert F. Wagner Jr. Park": 28.51, "South Cove Park": 192.51,
+        "The Battery Oval": 26.46, "The Battery Woodland": 3.43, "The Esplanade": 120.95,
+        "The Queen Elizabeth II September 11th Garden": 196.43, "Trinity Churchyard": 166.84,
+        "Vietnam Veterans Plaza": 96.32, "West Thames Park": 123.39, "Zuccotti Park": 99.29,
+    },
+    "height-cap": {
+        "Battery Park": 55.70, "Battery Playscape": 79.01, "Bowling Green": 304.88, "City Hall Park": 134.17,
+        "Coenties Slip": 392.74, "DeLury Square": 422.19, "Drumgoole Plaza": 203.16,
+        "East River Waterfront Esplanade": 65.40, "Elizabeth H. Berger Plaza": 255.07,
+        "Imagination Playground": 207.74, "Liberty Park": 159.93, "Little West Dog Run": 248.95,
+        "Living Memorial Grove": 87.30, "Louise Nevelson Plaza": 472.49, "Mannahatta Park": 406.78,
+        "Old Slip Park": 456.21, "Parks Dog Run": 78.92, "Pearl Street Playground": 282.67,
+        "Rector Park": 108.53, "Robert F. Wagner Jr. Park": 36.57, "South Cove Park": 195.65,
+        "The Battery Oval": 32.83, "The Battery Woodland": 23.29, "The Esplanade": 148.71,
+        "The Queen Elizabeth II September 11th Garden": 437.02, "Trinity Churchyard": 306.58,
+        "Vietnam Veterans Plaza": 296.94, "West Thames Park": 229.16, "Zuccotti Park": 223.35,
+    },
+}
+
+#: The code each Interaction node writes from its edit log (editFeaturesCode).
+EDIT_NOTE = (
+    "# Edit Features writes this code from its edit list: each edit, in the\n"
+    "# order it was made, on the features whose key is one of its ids. It is\n"
+    "# written again when the list changes.\n"
+)
+LEVERS = {
+    "towers-removed": (
+        {"key": "building_id", "edits": [
+            {"op": "remove", "where": "around_park", "label": "Tall parts around a park"},
+        ]},
+        EDIT_NOTE + "return curio_edit_features(input_0, [\n"
+        '    {"op": "remove", "where": "around_park", "label": "Tall parts around a park"},\n'
+        '], key="building_id")\n',
+    ),
+    "height-cap": (
+        {"key": "building_id", "edits": [
+            {"op": "expr", "where": "around_park", "column": "height", "value": "min(height, height_cap_m)",
+             "label": "Tall parts around a park cut to the cap"},
+        ]},
+        EDIT_NOTE + "return curio_edit_features(input_0, [\n"
+        '    {"op": "expr", "where": "around_park", "column": "height", "value": "min(height, height_cap_m)", '
+        '"label": "Tall parts around a park cut to the cap"},\n'
+        '], key="building_id")\n',
+    ),
+}
+
+#: The code a Compare Scenarios node writes for its inputs (compareCode).
+STACK_NOTE = (
+    "# Compare Scenarios writes this code from its inputs: each input, under the\n"
+    "# id and the name of its scenario. It is written again when they change.\n"
+)
+DIFFERENCE_NOTE = (
+    "# Compare Scenarios writes this code from its inputs: input_1 minus input_0,\n"
+    "# each under the id and the name of its scenario. It is written again when\n"
+    "# they change.\n"
+)
+CHART_CODE = STACK_NOTE + (
+    "return curio_stack_scenarios([\n"
+    '    ("existing", "Existing", [!! input_0 !!]),\n'
+    '    ("towers-removed", "Towers removed", [!! input_1 !!]),\n'
+    '    ("height-cap", "Height cap", [!! input_2 !!]),\n'
+    "])\n"
+)
+
+
+def _difference_code(scenario: str, name: str, key: str = "") -> str:
+    return DIFFERENCE_NOTE + (
+        "return curio_difference_scenarios([\n"
+        '    ("existing", "Existing", [!! input_0 !!]),\n'
+        f'    ("{scenario}", "{name}", [!! input_1 !!]),\n'
+        f"]{f', key={json.dumps(key)}' if key else ''})\n"
+    )
+
+
+#: Color ranges the maps shown side by side share, so a color is the same value
+#: on each: heights to the rasterizers' Maximum height, the top gray level Deep
+#: Umbra reads; shadow to a whole summer day, the most minutes Deep Umbra's
+#: output stands for in any season; a change in shadow, either way, as much.
+HEIGHT_RANGE = [0, 550]
+SHADOW_RANGE = [0, 720]
+CHANGE_RANGE = [-720, 720]
+
+
+def _map(get_fnv, interpolator, color_range, title, *, quantitative=False, center=None) -> dict:
+    layer = {"dataRef": "[!! input_0 !!]", "getFnv": get_fnv}
+    if quantitative:
+        layer["getFnvType"] = "quantitative"
+    layer["colorMapInterpolator"] = interpolator
+    layer["colorMapRange"] = color_range
+    if center is not None:
+        layer["colorMapCenter"] = center
+    layer["title"] = title
+    return {"map": {"layerRefs": [layer]}}
+
+
+def _dataflow() -> dict:
+    return json.loads(DATAFLOW.read_text(encoding="utf-8"))["dataflow"]
+
+
+def _nodes(spec: dict) -> dict:
+    return {node["id"]: node for node in spec["nodes"]}
+
+
+def _into(spec: dict) -> dict:
+    return {(edge["target"], edge["targetHandle"]): edge["source"] for edge in spec["edges"]}
+
+
+def _template(package: Path) -> tuple[dict, str]:
+    (template,) = json.loads((package / "manifest.json").read_text(encoding="utf-8"))["templates"]
+    return template, (package / template["source"]).read_text(encoding="utf-8")
+
+
+def _node_id(key: str, what: str) -> str:
+    return f"park-shade-{key}-{what}"
+
+
+# ---------------------------------------------------------------------------
+# The file
+# ---------------------------------------------------------------------------
+
+def test_it_is_three_scenarios_over_one_context_from_the_extract():
+    """One Autark data node, three Parameter nodes and three code nodes are the
+    context; each scenario holds its lever (none in Existing), its package
+    nodes, its shade per park and its two maps; the Compare Scenarios nodes
+    and the maps after them are in no scenario. No dataset: the data comes
+    from the extract. The lockfile names both packages."""
+    spec = _dataflow()
+    assert spec["name"] == NAME
+    assert spec["packages"] == ["model.scout.deep-umbra@1", "scout.raster-conversion@1"]
+    assert not spec.get("datasets"), spec.get("datasets")
+    assert spec["categories"] == {"city": ["New York"], "topic": ["Heat and climate", "Greenery"],
+                                  "complexity": ["Beginner"]}
+    nodes = _nodes(spec)
+    scenarios = {scenario["id"]: scenario for scenario in spec["scenarios"]}
+    assert [(s["id"], s["name"], s["color"]) for s in spec["scenarios"]] == [s[:3] for s in SCENARIOS]
+    members = {node_id for scenario in spec["scenarios"] for node_id in scenario["nodes"]}
+    # Below the scenarios: every node a scenario's node feeds, and so on down.
+    below: set = set()
+    frontier = list(members)
+    while frontier:
+        source = frontier.pop()
+        for edge in spec["edges"]:
+            if edge["source"] == source and edge["target"] not in members | below:
+                below.add(edge["target"])
+                frontier.append(edge["target"])
+    context = sorted(nodes[n]["type"] for n in nodes if n not in members | below)
+    assert context == sorted([AUTARK, PARAMETER, PARAMETER, PARAMETER, PYTHON, PYTHON, PYTHON]), context
+    for scenario, _name, _color, key in SCENARIOS:
+        types = sorted(nodes[n]["type"] for n in scenarios[scenario]["nodes"])
+        lever = [] if scenario == "existing" else [INTERACTION]
+        assert types == sorted([*lever, RASTERIZE, SHADOW, PYTHON, AUTARK, AUTARK]), (scenario, types)
+    assert sorted(nodes[n]["type"] for n in below) == sorted([COMPARE] * 5 + [AUTARK] * 4), below
+    after = sorted(nodes[e["target"]]["type"] for e in spec["edges"] if nodes[e["source"]]["type"] == COMPARE)
+    assert after == [AUTARK] * 4, after
+
+
+def test_the_loader_reads_the_parks_box_and_the_buildings_box_around_it():
+    """The data node loads the extract twice into one table name: its parks in
+    the parks' box, as Autark cuts them at it, and its buildings in a box
+    about 300 m larger on every side, up to the box the extract is cut at.
+    Nothing else: no surface, roads or water. Both boxes are inside the
+    extract's, so it holds every feature either load keeps."""
+    spec = _dataflow()
+    loader = _nodes(spec)["park-shade-layers"]
+    assert loader["type"] == AUTARK
+    document = json.loads(loader["content"])
+    assert set(document) == {"data"}, "the loader draws nothing, so a run on the server runs it"
+    assert document["data"] == [
+        {"type": "osm", "pbfFileUrl": EXTRACT, "queryArea": {"bbox": PARKS_BOX},
+         "outputTableName": "table_osm", "autoLoadLayers": {"layers": ["parks"]}},
+        {"type": "osm", "pbfFileUrl": EXTRACT, "queryArea": {"bbox": BUILDINGS_BOX},
+         "outputTableName": "table_osm", "autoLoadLayers": {"layers": ["buildings"]}},
+    ]
+    import importlib.util
+
+    script = importlib.util.spec_from_file_location("build_example_pbfs", REPO / "scripts" / "build_example_pbfs.py")
+    pbfs = importlib.util.module_from_spec(script)
+    script.loader.exec_module(pbfs)
+    cut_south, cut_west, cut_north, cut_east = pbfs.AREAS["lower_mnt"].box
+    west, south, east, north = PARKS_BOX
+    assert cut_west <= west < east <= cut_east and cut_south <= south < north <= cut_north
+    # The parks' box grown by MARGIN_M on every side, then cut at the extract's box.
+    metres_per_degree = 111_320
+    lon = MARGIN_M / (metres_per_degree * math.cos(math.radians((south + north) / 2)))
+    lat = MARGIN_M / metres_per_degree
+    grown = [max(west - lon, cut_west), max(south - lat, cut_south), min(east + lon, cut_east),
+             min(north + lat, cut_north)]
+    assert BUILDINGS_BOX == pytest.approx(grown, abs=10 / metres_per_degree), (BUILDINGS_BOX, grown)
+    assert (BUILDINGS_BOX[0], BUILDINGS_BOX[1]) == (cut_west, cut_south), "the extract ends west and south"
+
+
+def test_the_package_nodes_are_as_the_palette_drops_them():
+    """Each scenario's Rasterize Buildings holds the template's source and
+    widgets, and its Accumulated Shadow the template's cell reading the season
+    from the Season Parameter, whose widget is the template's."""
+    spec = _dataflow()
+    nodes = _nodes(spec)
+    raster_template, raster_source = _template(RASTER_PACKAGE)
+    umbra_template, umbra_source = _template(MODEL_PACKAGE)
+    for _scenario, _name, _color, key in SCENARIOS:
+        rasterizer, shadow = nodes[_node_id(key, "rasterize")], nodes[_node_id(key, "shadow")]
+        assert rasterizer["type"] == RASTERIZE and rasterizer["content"] == raster_source
+        assert rasterizer["metadata"]["widgets"] == raster_template["widgets"]
+        assert shadow["type"] == SHADOW
+        assert shadow["content"] == umbra_source.replace("[!! season !!]", "[!! @season !!]")
+        assert not shadow["metadata"].get("widgets")
+    parameters = {n["title"]: n["metadata"]["widgets"] for n in spec["nodes"] if n["type"] == PARAMETER}
+    assert parameters["Season"] == umbra_template["widgets"]
+    assert [(w["name"], w["default"], w["options"]["units"]) for w in parameters["Distance from a park"]] == [
+        ("park_distance", PARK_DISTANCE_M, "m"),
+    ]
+    assert [(w["name"], w["default"], w["options"]["units"]) for w in parameters["Tall building height"]] == [
+        ("tall_height", TALL_HEIGHT_M, "m"),
+    ]
+
+
+def test_the_wiring_reads_each_input_where_its_code_does():
+    """Building heights and Open-air parks read the loader's layers by name;
+    each scenario's chain starts at Building heights (Existing) or at its
+    lever, which reads Buildings around parks; each Shade per park reads its
+    shadow on input_0 and the parks on input_1."""
+    spec = _dataflow()
+    nodes = _nodes(spec)
+    into = _into(spec)
+    assert into[("park-shade-heights", "in")] == "park-shade-layers"
+    assert "[!! input_0:table_osm_buildings !!]" in nodes["park-shade-heights"]["content"]
+    assert (into[("park-shade-parks", "in")], into[("park-shade-parks", "in_1")]) == (
+        "park-shade-layers", "park-shade-heights",
+    )
+    assert "[!! input_0:table_osm_parks !!]" in nodes["park-shade-parks"]["content"]
+    assert (into[("park-shade-around", "in")], into[("park-shade-around", "in_1")]) == (
+        "park-shade-heights", "park-shade-parks",
+    )
+    for code, name in (("[!! @tall_height !!]", "Tall building height"), ("[!! @park_distance !!]", "Distance")):
+        assert code in nodes["park-shade-around"]["content"], name
+    for scenario, _name, _color, key in SCENARIOS:
+        start = "park-shade-heights" if scenario == "existing" else _node_id(key, "lever")
+        if scenario != "existing":
+            assert into[(start, "in")] == "park-shade-around", scenario
+        assert into[(_node_id(key, "rasterize"), "in")] == start
+        assert into[(_node_id(key, "buildings-map"), "in")] == start
+        assert into[(_node_id(key, "shadow"), "in")] == _node_id(key, "rasterize")
+        assert into[(_node_id(key, "shadow-map"), "in")] == _node_id(key, "shadow")
+        assert (into[(_node_id(key, "shade"), "in")], into[(_node_id(key, "shade"), "in_1")]) == (
+            _node_id(key, "shadow"), "park-shade-parks",
+        )
+
+
+def test_the_levers_are_interaction_nodes_whose_code_is_their_log():
+    """Towers removed and Height cap are Interaction nodes keyed on
+    building_id, each with one labelled edit picked by the condition
+    around_park, so a user can add more and press Update results; each node's
+    code is the code it writes from its log."""
+    nodes = _nodes(_dataflow())
+    for scenario, name, _color, key in SCENARIOS[1:]:
+        lever = nodes[_node_id(key, "lever")]
+        settings, code = LEVERS[scenario]
+        assert (lever["type"], lever["title"]) == (INTERACTION, name)
+        assert lever["metadata"]["editFeatures"] == settings
+        assert lever["content"] == code
+
+
+def test_the_compare_nodes_hold_the_code_they_write():
+    """One chart of each park's mean minutes in the three scenarios, as
+    grouped bars; for each what-if, a Difference of the shadow rasters and a
+    Difference of the parks' shade matched by the park's name."""
+    nodes = _nodes(_dataflow())
+    labels = [{"scenario": s, "name": n, "color": c} for s, n, c, _key in SCENARIOS]
+    chart = nodes["park-shade-chart"]
+    assert chart["content"] == CHART_CODE
+    assert chart["metadata"]["compareScenarios"] == {
+        "inputs": labels, "mode": "chart",
+        "chart": {"preset": "grouped-bar", "x": "park", "y": "mean_min", "aggregate": "none"},
+    }
+    for scenario, name, _color, key in SCENARIOS[1:]:
+        pair = [labels[0], next(label for label in labels if label["scenario"] == scenario)]
+        change, park_change = nodes[f"park-shade-{key}-change"], nodes[f"park-shade-{key}-park-change"]
+        assert change["content"] == _difference_code(scenario, name)
+        assert change["metadata"]["compareScenarios"] == {"inputs": pair, "mode": "difference"}
+        assert park_change["content"] == _difference_code(scenario, name, key="park")
+        assert park_change["metadata"]["compareScenarios"] == {
+            "inputs": pair, "mode": "difference", "difference": {"key": "park"},
+        }
+
+
+def test_every_map_is_valid_and_the_maps_side_by_side_share_one_range(tmp_path):
+    """Each scenario's buildings in 3D over the rasterizers' height range and
+    its shadow over a summer day's minutes; each what-if's change in shadow on
+    a scale centered on no change, and each park's change on a scale whose
+    middle stays visible, both over the same minutes either way. Every
+    document is valid for the grammar."""
+    from utk_curio.backend.app.agents.domain import document_validation
+
+    spec = _dataflow()
+    nodes = _nodes(spec)
+    expected = {}
+    for _scenario, _name, _color, key in SCENARIOS:
+        expected[_node_id(key, "buildings-map")] = _map(
+            "height", "interpolateViridis", HEIGHT_RANGE, "Building height (m)", quantitative=True)
+        expected[_node_id(key, "shadow-map")] = _map(
+            "band_1", "interpolateReds", SHADOW_RANGE, "Accumulated shadow (minutes)")
+    for _scenario, name, _color, key in SCENARIOS[1:]:
+        expected[f"park-shade-{key}-change-map"] = _map(
+            "band_1", "interpolateRdBu", CHANGE_RANGE, f"Shadow change, {name} (minutes)", center=0)
+        expected[f"park-shade-{key}-park-change-map"] = _map(
+            "mean_min", "interpolateRdYlBu", CHANGE_RANGE, f"Change in mean shadow, {name} (minutes)",
+            quantitative=True)
+    maps = {n: node for n, node in nodes.items() if node["type"] == AUTARK and n != "park-shade-layers"}
+    assert sorted(maps) == sorted(expected)
+    for node_id, document in expected.items():
+        assert json.loads(maps[node_id]["content"]) == document, node_id
+        named = maps[node_id]["content"].replace("[!! input_0 !!]", "input_0")
+        assert document_validation.validate(AUTARK, named) == {"status": document_validation.STATUS_VALID}
+    raster_template, _source = _template(RASTER_PACKAGE)
+    (max_height,) = [w["default"] for w in raster_template["widgets"] if w["name"] == "max_height"]
+    assert HEIGHT_RANGE == [0, max_height]
+    from utk_curio.sandbox.util.package_modules import importable
+    from utk_curio.sandbox.util.staging import stage_package_modules
+
+    run = tmp_path / "run"
+    run.mkdir()
+    staged = stage_package_modules({"root": str(MODEL_PACKAGE / "sources"), "names": ["deep_umbra"]}, str(run))
+    import importlib
+
+    with importable(str(run / staged["root"]), staged["names"]):
+        deep_umbra = importlib.import_module("deep_umbra.deep_umbra")
+        outputs = importlib.import_module("deep_umbra.node_outputs")
+        longest = max(deep_umbra.season_factor(season) for season in outputs.SEASONS)
+    assert SHADOW_RANGE == [0, longest] and CHANGE_RANGE == [-longest, longest]
+
+
+# ---------------------------------------------------------------------------
+# The dataflow, run as written
+# ---------------------------------------------------------------------------
+
+#: Put before the compiled data node: serves the extract from disk, as the
+#: backend's ``/file/`` route would, and refuses any other request
+#: (``test_autk_server_data_load.py``).
+_FETCH_FROM_DISK = """{
+  const __fs = require('fs');
+  const __path = require('path');
+  const __prefix = '__CURIO_BACKEND_URL__/file/';
+  globalThis.fetch = async (url) => {
+    const href = typeof url === 'string' ? url : (url && url.url) || String(url);
+    const rel = href.startsWith(__prefix) ? decodeURIComponent(href.slice(__prefix.length)) : null;
+    if (rel !== EXTRACT) throw new Error('no socket in this test: ' + href);
+    return new Response(__fs.readFileSync(__path.join(ROOT, rel)), { status: 200 });
+  };
+}
+"""
+
+#: Each package node's modules, as a run stages them.
+_PACKAGE_MODULES = {
+    RASTERIZE: {"root": str(RASTER_PACKAGE / "sources"), "names": ["scout_raster_conversion"]},
+    SHADOW: {"root": str(MODEL_PACKAGE / "sources"), "names": ["deep_umbra"]},
+}
+
+
+def _load_layers(content: str) -> list:
+    """The data node's layers, as a run on the server hands them on."""
+    from utk_curio.common.autk_data_compiler import compile_data_spec
+    from utk_curio.sandbox.app.worker import execute_js_code
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    code = compile_data_spec(content)
+    serve = _FETCH_FROM_DISK.replace("EXTRACT", json.dumps(EXTRACT)).replace("ROOT", json.dumps(str(REPO)))
+    result = execute_js_code(serve + code, "", "AUTK_GRAMMAR", "", launch_dir=str(REPO), session_id=None)
+    assert result["output"]["path"], result["stderr"]
+    return load_from_duckdb(result["output"]["path"], session_id=None)
+
+
+def _run_code(node: dict, inputs: list, shared: list, media: Path):
+    """*node*'s code, its references resolved as a run resolves them, run in
+    the sandbox on *inputs* (one value per circle, each saved as its own
+    upstream output): ``(the value it hands on, what it printed)``. A Compare
+    Scenarios node's raster difference is completed as the sandbox completes
+    it."""
+    from utk_curio.backend.app.execution.code_references import resolve_references
+    from utk_curio.sandbox.app.worker import execute_code
+    from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
+    from utk_curio.sandbox.util.scenario_difference import complete_raster_difference
+
+    widgets = (node.get("metadata") or {}).get("widgets") or []
+    code, problems = resolve_references(
+        node["content"], widgets, "python", inputs=[{"slot": slot} for slot in range(len(inputs))], shared=shared,
+    )
+    assert problems == [], (node["id"], problems)
+    if len(inputs) == 1:
+        file_path, data_type = save_to_duckdb(inputs[0], node_id=f"{node['id']}-in"), ""
+    else:
+        file_path = repr([{"path": save_to_duckdb(value, node_id=f"{node['id']}-in-{slot}")}
+                          for slot, value in enumerate(inputs)])
+        data_type = "outputs"
+    result = execute_code(
+        textwrap.indent(code, "    "), file_path, node["type"], data_type,
+        save_dataset=False, media_dir=str(media), package_modules=_PACKAGE_MODULES.get(node["type"]),
+        models={MODEL_ID: str(MODEL_PACKAGE)}, input_slots=list(range(len(inputs))),
+    )
+    if node["type"] == COMPARE:
+        result = complete_raster_difference(result, node_type=node["type"], launch_dir=str(REPO))
+    assert result["stderr"] == "", f"{node['id']}: {result['stderr']}"
+    return load_from_duckdb(result["output"]["path"]), result["stdout"]
+
+
+@pytest.fixture(scope="module")
+def ran(tmp_path_factory):
+    """Every node of the dataflow run as written, once for the module:
+    ``{node id: (value, printed)}``, the data node's value its layers."""
+    from utk_curio.cli import dependencies
+    from utk_curio.sandbox.app.worker import _worker_init
+    from utk_curio.sandbox.util.db import init_db, release_connection
+
+    spec = _dataflow()
+    nodes = _nodes(spec)
+    into = _into(spec)
+    shared = [w for node in spec["nodes"] if node["type"] == PARAMETER for w in node["metadata"]["widgets"]]
+    root = tmp_path_factory.mktemp("park-shade")
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("CURIO_LAUNCH_CWD", str(root))
+        patch.setenv("CURIO_SHARED_DATA", str(root / "data"))
+        patch.setenv("HOME", str(root))
+        patch.setattr(Path, "home", lambda: root)
+        # An address nothing answers at: the fetch above is the only way in.
+        patch.setenv("FLASK_BACKEND_HOST", "curio-backend.invalid")
+        patch.setenv("FLASK_BACKEND_PORT", "1")
+        release_connection()
+        init_db()
+        dependencies.seed_duckdb_extensions()
+        _worker_init()
+        values = {"park-shade-layers": (_load_layers(nodes["park-shade-layers"]["content"]), [])}
+
+        def inputs_of(node_id):
+            handles = sorted((h for (target, h) in into if target == node_id),
+                             key=lambda h: 0 if h == "in" else int(h.split("_")[1]))
+            return [values[into[(node_id, h)]][0] for h in handles]
+
+        order = ["park-shade-heights", "park-shade-parks", "park-shade-around",
+                 "park-shade-removed-lever", "park-shade-capped-lever"]
+        for _scenario, _name, _color, key in SCENARIOS:
+            order += [_node_id(key, "rasterize"), _node_id(key, "shadow"), _node_id(key, "shade")]
+        order += ["park-shade-chart"]
+        for _scenario, _name, _color, key in SCENARIOS[1:]:
+            order += [f"park-shade-{key}-change", f"park-shade-{key}-park-change"]
+        for node_id in order:
+            values[node_id] = _run_code(nodes[node_id], inputs_of(node_id), shared, root / "media")
+        yield values
+        release_connection()
+
+
+def _value(ran, node_id):
+    return ran[node_id][0]
+
+
+def test_the_loader_hands_on_the_parks_and_every_building_part(ran):
+    layers = _value(ran, "park-shade-layers")
+    assert [(layer["name"], layer["type"], len(layer["geojson"]["features"])) for layer in layers] == [
+        ("table_osm_parks", "parks", PARK_FEATURES),
+        ("table_osm_buildings", "buildings", BUILDING_ROWS),
+    ]
+
+
+def test_building_heights_gives_every_part_a_height_in_metres(ran):
+    """Every row a height above the ground: the height mapped for it, else its
+    levels times the floor height, else the default height; the building_id,
+    name and footprint kept, the frame marked as buildings."""
+    buildings = _value(ran, "park-shade-heights")
+    assert list(buildings.columns) == ["building_id", "name", "geometry", "height"]
+    assert len(buildings) == BUILDING_ROWS and buildings["building_id"].nunique() == BUILDING_IDS
+    assert buildings["height"].notna().all() and (buildings["height"] > 0).all()
+    assert float(buildings["height"].max()) == TALLEST_M
+    assert getattr(buildings, "metadata", None) == {"layerType": "buildings"}
+
+
+def test_open_air_parks_are_the_named_parks_large_enough_and_in_the_open(ran):
+    parks = _value(ran, "park-shade-parks")
+    assert list(parks.columns) == ["park", "area_m2", "geometry"]
+    assert list(parks["park"]) == PARKS
+    assert (parks["area_m2"] >= 500).all(), parks[parks["area_m2"] < 500]
+    assert parks.crs.to_epsg() == 4326
+
+
+def test_buildings_around_parks_marks_the_parts_by_one_rule_for_every_park(ran):
+    """The node's marks are the rule's, recomputed here: a part is marked
+    exactly when it is at least the Tall building height tall and within the
+    Distance from a park of any park. Height cap's cap is on every row."""
+    marked = _value(ran, "park-shade-around")
+    parks = _value(ran, "park-shade-parks")
+    assert len(marked) == BUILDING_ROWS
+    assert getattr(marked, "metadata", None) == {"layerType": "buildings"}
+    utm = parks.estimate_utm_crs()
+    outlines = parks.to_crs(utm).geometry.union_all()
+    near = marked.to_crs(utm).geometry.distance(outlines) <= PARK_DISTANCE_M
+    rule = (marked["height"] >= TALL_HEIGHT_M) & near
+    assert (marked["around_park"] == rule).all()
+    assert int(marked["around_park"].sum()) == MARKED_ROWS
+    assert marked.loc[marked["around_park"], "building_id"].nunique() == MARKED_IDS
+    assert (marked["height_cap_m"] == TALL_HEIGHT_M).all()
+    assert set(marked["nearest_park"]) <= set(PARKS)
+
+
+def test_towers_removed_hands_on_every_part_but_the_marked_ones(ran):
+    marked = _value(ran, "park-shade-around")
+    removed, printed = ran["park-shade-removed-lever"]
+    assert len(removed) == BUILDING_ROWS - MARKED_ROWS
+    assert not removed["around_park"].any()
+    kept = marked[~marked["around_park"]]
+    assert removed["height"].tolist() == kept["height"].tolist()
+    assert printed == [f"Interaction: the input, features matched on building_id: {MARKED_ROWS} removed."]
+
+
+def test_height_cap_cuts_the_marked_parts_to_the_tall_building_height(ran):
+    marked = _value(ran, "park-shade-around")
+    capped, printed = ran["park-shade-capped-lever"]
+    assert len(capped) == BUILDING_ROWS
+    assert (capped.loc[marked["around_park"].to_numpy(), "height"] == TALL_HEIGHT_M).all()
+    assert (capped.loc[~marked["around_park"].to_numpy(), "height"].to_numpy()
+            == marked.loc[~marked["around_park"], "height"].to_numpy()).all()
+    assert printed == [f"Interaction: the input, features matched on building_id: {MARKED_ROWS} changed."]
+
+
+def test_the_three_scenarios_rasters_share_one_grid(ran):
+    """The heights and the shadows of the three scenarios are on one grid, the
+    tiles around the buildings' box, and each shadow says its season's minutes."""
+    grids = set()
+    for _scenario, _name, _color, key in SCENARIOS:
+        heights, shadow = _value(ran, _node_id(key, "rasterize")), _value(ran, _node_id(key, "shadow"))
+        for raster in (heights, shadow):
+            assert (raster.width, raster.height) == GRID and raster.crs.to_epsg() == 3395
+            grids.add(tuple(raster.transform)[:6])
+            assert {k: raster.tags()[k] for k in TILE} == TILE
+        assert (shadow.tags()["season"], shadow.tags()["minutes"]) == ("summer", "720")
+    assert len(grids) == 1, grids
+
+
+def test_each_park_has_its_minutes_of_shadow_and_the_levers_take_shadow_away(ran):
+    """One row per park in each scenario, its mean minutes within MINUTES of
+    the pinned run's; in every park removing the towers takes away more shadow
+    than capping them, and capping them takes some away."""
+    means = {}
+    for scenario, _name, _color, key in SCENARIOS:
+        shade = _value(ran, _node_id(key, "shade"))
+        assert list(shade["park"]) == PARKS, scenario
+        assert {"cells", "mean_min", "median_min", "p90_min", "pct_daylight",
+                "share_sun", "share_partial", "share_deep"} <= set(shade.columns)
+        shares = shade["share_sun"] + shade["share_partial"] + shade["share_deep"]
+        assert all(abs(total - 1) < 1e-9 for total in shares), scenario
+        means[scenario] = dict(zip(shade["park"], shade["mean_min"]))
+        off = {park: (round(means[scenario][park], 2), pinned)
+               for park, pinned in MEANS[scenario].items() if abs(means[scenario][park] - pinned) > MINUTES}
+        assert not off, f"{scenario}: (ours, pinned) {off}"
+    for park in PARKS:
+        assert means["towers-removed"][park] < means["height-cap"][park] < means["existing"][park], park
+
+
+def test_the_chart_stacks_the_three_scenarios_parks(ran):
+    stacked = _value(ran, "park-shade-chart")
+    assert list(stacked.columns[:2]) == ["scenario", "scenario_name"]
+    assert len(stacked) == 3 * len(PARKS)
+    for scenario, name, _color, _key in SCENARIOS:
+        rows = stacked[stacked["scenario"] == scenario]
+        assert set(rows["scenario_name"]) == {name} and list(rows["park"]) == PARKS
+
+
+def test_each_parks_change_in_shade_is_the_what_if_minus_existing(ran):
+    existing = _value(ran, _node_id("existing", "shade")).set_index("park")
+    for scenario, _name, _color, key in SCENARIOS[1:]:
+        change = _value(ran, f"park-shade-{key}-park-change")
+        what_if = _value(ran, _node_id(key, "shade")).set_index("park")
+        assert list(change["park"]) == PARKS and set(change["change"]) == {"changed"}, scenario
+        for row in change.itertuples():
+            expected = what_if.loc[row.park, "mean_min"] - existing.loc[row.park, "mean_min"]
+            assert abs(row.mean_min - expected) < 1e-9, (scenario, row.park)
+            assert row.mean_min < 0, (scenario, row.park)
+
+
+def test_each_what_ifs_change_in_shadow_is_a_raster_on_the_shadows_grid(ran):
+    """Compare Scenarios subtracts the shadows cell by cell on their own grid:
+    each what-if takes shadow away on the whole, by at most a day's minutes."""
+    import base64
+    import struct
+
+    shadow = _value(ran, _node_id("existing", "shadow"))
+    a, _b, c, _d, e, f = tuple(shadow.transform)[:6]
+    for scenario, _name, _color, key in SCENARIOS[1:]:
+        envelope = _value(ran, f"park-shade-{key}-change")
+        assert envelope["dataType"] == "raster", (scenario, envelope.get("dataType"))
+        grid = envelope["data"]["grid"]
+        assert (grid["crs"], grid["width"], grid["height"]) == ("EPSG:3395", *GRID)
+        assert (grid["originX"], grid["originY"], grid["resX"], grid["resY"]) == (c, f, a, e)
+        raw = base64.b64decode(envelope["data"]["features"][0]["properties"]["band_1"]["float32le"])
+        cells = [v for v in struct.unpack(f"<{len(raw) // 4}f", raw) if not math.isnan(v)]
+        mean = sum(cells) / len(cells)
+        assert min(cells) < -100 and mean < 0, (scenario, min(cells), mean)
+        assert -720 <= min(cells) and max(cells) <= 720, (scenario, min(cells), max(cells))

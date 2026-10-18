@@ -3,9 +3,12 @@
 ``shipped_categories.json`` is the placement the owner approved for the 44
 shipped dataflows (2026-09-30), and the Scenarios, FloodScenarios,
 ScoutShadows, WeatherRouting and NetCDF test dataflows and
-example 24 placed by the same rules (#662, 2026-10-05), example 25 (#576) and
-example 26 (#819), with the computed ``SCOUT`` tag on the five SCOUT dataflows
-(2026-10-17). The automatic
+example 24 placed by the same rules (#662, 2026-10-05), example 25 (#576),
+example 26 (#819), the lower-manhattan-park-shade test dataflow (the plan for
+#914, 2026-10-17) and the scenario comparison charts test dataflow (from
+komar41's #914), with the computed ``SCOUT`` tag on the six SCOUT dataflows
+(2026-10-17), and ``Pandas`` and ``Tables`` on FloodScenarios once it builds a
+table of the riverside tracts' depth by period (2026-10-18). The automatic
 sections must reproduce it from
 the files alone, and the hand-set ones live in the files themselves.
 """
@@ -54,7 +57,7 @@ def _spec(key: str) -> dict:
 
 def test_the_golden_file_covers_every_shipped_dataflow():
     assert set(GOLDEN) == set(SHIPPED)
-    assert len(SHIPPED) == 52
+    assert len(SHIPPED) == 54
 
 
 @pytest.mark.parametrize("key", sorted(SHIPPED))
@@ -81,7 +84,7 @@ def test_sources():
         by_source.setdefault(entry.source, []).append(entry.key)
     assert sorted(by_source[SOURCE_USE_CASE]) == sorted(USE_CASES)
     assert len(by_source[SOURCE_EXAMPLE]) == 25
-    assert len(by_source[SOURCE_TEST]) == 26
+    assert len(by_source[SOURCE_TEST]) == 28
 
 
 def test_no_spec_stores_a_source():
@@ -160,6 +163,22 @@ def test_a_scout_dataset_alone_tags_the_dataflow_scout(content, datasets):
     """FloodScenarios and NetCDF have no SCOUT node, only SCOUT's datasets."""
     node = {"id": "a", "type": "curio.builtin/data-loading@1", "content": content}
     assert _tags([node], datasets) == ["SCOUT"]
+
+
+def test_the_park_shade_dataflow_is_tagged_scout_by_its_package_nodes_alone():
+    """``lower-manhattan-park-shade`` reads no SCOUT dataset: it loads
+    OpenStreetMap's buildings and parks from an extract. SCOUT's rasterizer and
+    Deep Umbra's nodes tag it, as computed tags are, with nothing hand-set."""
+    key = "dataflows/lower-manhattan-park-shade"
+    spec = _spec(key)
+    assert not spec["dataflow"].get("datasets")
+    assert "SCOUT" in derive(spec, DatasetKinds(None))["tags"]
+    assert "tags" not in hand_categories(spec)
+    nodes = spec["dataflow"]["nodes"]
+    without = {"dataflow": {**spec["dataflow"], "nodes": [
+        n for n in nodes if not n["type"].startswith(("scout.", "model.scout."))
+    ]}}
+    assert "SCOUT" not in derive(without, DatasetKinds(None))["tags"]
 
 
 def test_a_dataflow_that_only_mentions_scout_is_not_tagged_scout():

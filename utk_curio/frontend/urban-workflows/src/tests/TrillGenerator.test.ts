@@ -273,17 +273,15 @@ describe("TrillGenerator node header (#412)", () => {
   });
 });
 
-describe("TrillGenerator node comments (#237)", () => {
+describe("TrillGenerator writes no node comments", () => {
   beforeEach(() => {
     TrillGenerator.reset();
   });
 
-  test("persists per-node comments at metadata.comments", () => {
-    // The reported bug: a newly dragged module saved fine, comments did not.
-    // They were held in NodeContainer's local useState and read by nothing, so
-    // the serializer never saw them. Both halves are covered here - the node
-    // carrying comments emits them, and the one without stays byte-identical
-    // to the pre-fix shape (no `metadata` key at all).
+  test("a node whose data still carries comments saves without them", () => {
+    // Comments as the canvas once kept them on a node. A note on a dataflow is
+    // a Note node: the serializer writes no comment thread, and the rest of
+    // the node's metadata is written as before.
     const comments = [
       {
         id: "c-1",
@@ -308,31 +306,11 @@ describe("TrillGenerator node comments (#237)", () => {
         {
           type: "CURIO_UNIVERSAL_NODE",
           position: { x: 5, y: 5 },
-          data: { nodeId: "plain-1", nodeType: "curio.builtin/computation-analysis" },
-        },
-      ],
-      [],
-      "Imported Workflow"
-    );
-
-    const byId = Object.fromEntries(spec.dataflow.nodes.map((n: any) => [n.id, n]));
-    expect(byId["discussed-1"].metadata.comments).toEqual(comments);
-    expect(byId["plain-1"].metadata).toBeUndefined();
-  });
-
-  test("emits nothing for an empty comment list", () => {
-    // Deleting the last comment must not leave `metadata: { comments: [] }`
-    // behind - that would dirty every example in the committed corpus the
-    // first time someone opened and saved one.
-    const spec = TrillGenerator.generateTrill(
-      [
-        {
-          type: "CURIO_UNIVERSAL_NODE",
-          position: { x: 0, y: 0 },
           data: {
-            nodeId: "emptied-1",
+            nodeId: "renamed-1",
             nodeType: "curio.builtin/computation-analysis",
-            comments: [],
+            packageTemplateLabel: "Clean the parcels",
+            comments,
           },
         },
       ],
@@ -340,7 +318,9 @@ describe("TrillGenerator node comments (#237)", () => {
       "Imported Workflow"
     );
 
-    expect(spec.dataflow.nodes[0].metadata).toBeUndefined();
+    const byId = Object.fromEntries(spec.dataflow.nodes.map((n: any) => [n.id, n]));
+    expect(byId["discussed-1"].metadata).toBeUndefined();
+    expect(byId["renamed-1"].metadata).toEqual({ packageTemplateLabel: "Clean the parcels" });
   });
 });
 

@@ -451,7 +451,6 @@ def _clear_canvas(run: StressRun) -> int:
 #: the handle the feature tour already relies on for the dashboard pin.
 HEADER_ICONS = {
     "Minimize": ("fa-minus",),
-    "Comments": ("fa-comments",),
     "Delete node": ("fa-xmark",),
     "Save template": ("fa-floppy-disk",),
     "Pin to dashboard": ("fa-circle",),
@@ -912,18 +911,6 @@ def chapter_canvas(run: StressRun) -> None:
         page.mouse.move(box["x"] + 220, box["y"] + 140, steps=18)
         page.mouse.up()
         page.wait_for_timeout(900)
-
-    with run.step("Comment on a node, then resolve and delete the comment"):
-        center_on(page, transform, zoom=0.9)
-        activate_header_icon(_header_icon(page, transform, "Comments"))
-        page.wait_for_timeout(900)
-        box = page.get_by_placeholder("Write a comment...")
-        box.first.fill("Stress run was here.")
-        page.keyboard.press("Enter")
-        page.wait_for_timeout(1200)
-        run.snap("node-comments")
-        activate_header_icon(_header_icon(page, transform, "Comments"))
-        page.wait_for_timeout(500)
 
     with run.step("Pin a node to the dashboard, then unpin it"):
         center_on(page, transform, zoom=0.9)
