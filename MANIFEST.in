@@ -12,7 +12,6 @@ include package-lock.json
 recursive-include packages *
 recursive-include datasets *
 recursive-include discovery *
-recursive-include tests *
 
 # DuckDB's extensions, which the launcher seeds and the backend serves
 # (DUCKDB_EXTENSIONS in utk_curio/sandbox/util/node_runtime.py).
