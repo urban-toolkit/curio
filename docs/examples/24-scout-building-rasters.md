@@ -9,8 +9,8 @@ rasterizer ported to Curio. It draws the tiles joined into one map. Then the
 **Accumulated Shadow** node of Deep Umbra's model package,
 `model.scout.deep-umbra@1`, runs Deep Umbra on those heights: a map shows how
 many minutes of a summer day each spot is in shadow, and a **Raster
-Statistics** node gives the mean and median over the ground, SCOUT's own two
-numbers.
+Calculator** takes their statistics, the mean and median over the ground among
+them, SCOUT's own two numbers.
 
 ## Pipeline overview
 
@@ -20,7 +20,7 @@ flowchart LR
   L --> R[`Rasterize Buildings`<br/>SCOUT's rasterizer]
   R --> M[`Autark`<br/>map of the mosaic]
   R --> D[`Accumulated Shadow`<br/>Deep Umbra]
-  D --> S[`Raster Statistics`<br/>shadow over the ground]
+  D --> S[`Raster Calculator`<br/>shadow over the ground]
   R -- mask --> S
   D --> A[`Autark`<br/>map of the shadows]
 ```
@@ -174,13 +174,13 @@ is in shadow.
 
 ## Sum it up over the ground
 
-Raster Statistics reads the shadow on its input_0 and Rasterize Buildings'
-heights on its input_1, as the mask: SCOUT's metrics count the ground, the
-cells Deep Umbra reads as gray level 0, a height under 1.08 m. No data, in
-either raster, is not counted.
+A Raster Calculator takes the statistics of the shadow on its input_0, with
+Rasterize Buildings' heights on its input_1 as the mask: SCOUT's metrics count
+the ground, the cells Deep Umbra reads as gray level 0, a height under 1.08 m.
+No data, in either raster, is not counted.
 
 ```python
-# Raster Statistics: the mean, median, minimum, maximum and count of a
+# Statistics: the mean, median, minimum, maximum and count of a
 # raster's cells, nodata left out, as a table of one row.
 # input_0 is the accumulated shadow in minutes, input_1 the heights it was
 # predicted from, as the mask: SCOUT's metrics count the ground, the cells

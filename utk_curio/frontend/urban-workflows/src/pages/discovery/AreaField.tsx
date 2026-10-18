@@ -163,6 +163,15 @@ function PlaceBox({ label, onPick }: { label: string; onPick: (box: Box, label: 
   );
 }
 
+/** A coordinate as typed or pasted. One copied from a document or a web page
+ *  often carries the minus sign U+2212, or a hyphen or dash (U+2010 to U+2015,
+ *  U+FE63, U+FF0D), where "-" belongs, and `Number()` reads those as nothing:
+ *  each reads as "-". */
+function coordinateOf(text: string): number {
+  const plain = text.trim().replace(/[\u2010-\u2015\u2212\uFE63\uFF0D]/g, "-");
+  return plain === "" ? Number.NaN : Number(plain);
+}
+
 /** Four numbers, west, south, east and north. */
 function CoordinateBox({ box, onChange }: { box: Box | null; onChange: (box: Box | null) => void }) {
   const [text, setText] = React.useState<string[]>(() => (box ? box.map(String) : ["", "", "", ""]));
@@ -170,7 +179,7 @@ function CoordinateBox({ box, onChange }: { box: Box | null; onChange: (box: Box
   const update = (index: number, next: string) => {
     const all = text.map((v, i) => (i === index ? next : v));
     setText(all);
-    const numbers = all.map((v) => (v.trim() === "" ? Number.NaN : Number(v)));
+    const numbers = all.map(coordinateOf);
     onChange(numbers.every(Number.isFinite) ? (numbers as Box) : null);
   };
   return (

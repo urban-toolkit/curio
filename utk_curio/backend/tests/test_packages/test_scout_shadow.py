@@ -8,9 +8,9 @@ block holds the weights' license, SCOUT's permission.
 The node reads a height raster, the one raster of Rasterize Buildings
 (``scout.raster-conversion@1``), runs Deep Umbra on every zoom-16 tile of it
 that holds heights and returns the accumulated shadow as a raster on the same
-grid. SCOUT's metrics, the mean and median over the ground, are a Raster
-Statistics node's (``curio.builtin@1``) with the heights as its mask, as the
-shipped dataflow ``ScoutShadows.json`` wires it.
+grid. SCOUT's metrics, the mean and median over the ground, are the
+statistics of a Raster Calculator (``curio.builtin@1``) with the heights as
+its mask, as the shipped dataflow ``ScoutShadows.json`` wires it.
 
 The proof starts from SCOUT's own files, copied unchanged into
 ``fixtures/scout/`` (see its ``ATTRIBUTION.md``): SCOUT's committed height tiles
@@ -23,8 +23,8 @@ written by Rasterize Buildings' own ``write_mosaic``. Then:
 - with the ONNX export of SCOUT's generator that Curio ships (the weights of
   the model package), loaded as ``curio_load_model`` loads it, in summer, the
   shadow of each tile, in SCOUT's 8 bits, is SCOUT's committed shadow tile;
-- the dataflow's Raster Statistics node, run as it is written on the node's
-  shadow raster and the mosaic, gives SCOUT's committed mean and median;
+- the dataflow's Raster Calculator of statistics, run as it is written on the
+  node's shadow raster and the mosaic, gives SCOUT's committed mean and median;
 - on a tile set with a gap, as ``convert_raster`` leaves one where no building
   is near a tile, the mosaic has no data there, the node predicts only the
   tiles written, and the statistics count the ground of those tiles only, as
@@ -75,7 +75,9 @@ PACKAGE = REPO / "packages" / f"{MODEL_ID}@1"
 SOURCES = PACKAGE / "sources"
 MODULE = "deep_umbra"
 NODE_TYPE = "model.scout.deep-umbra/accumulated-shadow"
-STATISTICS_TYPE = "curio.builtin/raster-statistics"
+CALCULATOR_TYPE = "curio.builtin/raster-calculator"
+#: The line a Raster Calculator's code takes statistics with.
+STATISTICS_CALL = re.compile(r"^return curio_raster_statistics\(", re.M)
 MODEL = PACKAGE / "models" / "deep_umbra.onnx"
 #: The node's cell, as a drop writes it: the module's call, the model by its id,
 #: and the call on the input with the Season widget.
@@ -389,19 +391,25 @@ def _dataflow() -> dict:
     return json.loads(DATAFLOW.read_text(encoding="utf-8"))["dataflow"]
 
 
+def _takes_statistics(node: dict) -> bool:
+    """Whether *node* is a Raster Calculator whose code returns statistics."""
+    return node["type"] == CALCULATOR_TYPE and bool(STATISTICS_CALL.search(node["content"]))
+
+
 def _statistics_code() -> str:
-    """The code of the dataflow's Raster Statistics nodes (both scenarios' are one)."""
-    codes = {node["content"] for node in _dataflow()["nodes"] if node["type"] == STATISTICS_TYPE}
+    """The code of the dataflow's Raster Calculators of statistics (both
+    scenarios' are one)."""
+    codes = {node["content"] for node in _dataflow()["nodes"] if _takes_statistics(node)}
     assert len(codes) == 1, codes
     return codes.pop()
 
 
 def statistics_table(shadow, heights, workspace):
-    """The dataflow's Raster Statistics node, its code as written, on *shadow*
-    (input_0) and *heights* (input_1, the mask): its one-row table."""
+    """The dataflow's Raster Calculator of statistics, its code as written, on
+    *shadow* (input_0) and *heights* (input_1, the mask): its one-row table."""
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
-    result = _execute(_statistics_code(), (shadow, heights), STATISTICS_TYPE, workspace, data_type="outputs")
+    result = _execute(_statistics_code(), (shadow, heights), CALCULATOR_TYPE, workspace, data_type="outputs")
     assert result["stderr"] == "", result["stderr"]
     assert result["output"]["dataType"] == "dataframe", result["output"]
     table = load_from_duckdb(result["output"]["path"])
@@ -410,7 +418,7 @@ def statistics_table(shadow, heights, workspace):
 
 
 def run_statistics(shadow, heights, workspace) -> tuple[float, float]:
-    """The dataflow's Raster Statistics node on *shadow* and *heights*: ``(mean, median)``."""
+    """The dataflow's Raster Calculator of statistics on *shadow* and *heights*: ``(mean, median)``."""
     table = statistics_table(shadow, heights, workspace)
     return float(table["mean"].iloc[0]), float(table["median"].iloc[0])
 
@@ -451,7 +459,8 @@ def test_the_mosaic_gives_back_scouts_tiles_and_inputs(tmp_path, scenario):
 def test_every_height_level_comes_back_exactly(tmp_path):
     """Each of the 256 levels Rasterize Buildings writes as metres (level times
     550 over 255, in float32) reads back as that level; level 0, the ground, is
-    every height under 1.08 m, the condition the Raster Statistics node keeps."""
+    every height under 1.08 m, the condition the Raster Calculator of
+    statistics keeps."""
     import numpy as np
     import rasterio
     from rasterio.transform import from_origin
@@ -472,8 +481,8 @@ def test_every_height_level_comes_back_exactly(tmp_path):
 def test_scouts_rasters_become_scouts_committed_shadows(workspace, tmp_path, scenario, record_property):
     """SCOUT's call, in summer, on the mosaic of SCOUT's committed height tiles:
     each tile's shadow, in the 8 bits SCOUT writes, is SCOUT's committed shadow
-    tile; and the dataflow's Raster Statistics node, on the node's shadow raster
-    with the mosaic as its mask, gives SCOUT's mean and median, within the
+    tile; and the dataflow's Raster Calculator of statistics, on the node's
+    shadow raster with the mosaic as its mask, gives SCOUT's mean and median, within the
     tolerance. The measured numbers are recorded in the run's JUnit report
     either way, with what the session ran on."""
     import onnxruntime as ort
@@ -515,13 +524,14 @@ def test_on_a_tile_set_with_a_gap_only_the_written_tiles_count_as_in_scouts_func
     gap, as ``convert_raster`` leaves one where no building is near a tile.
     Rasterize Buildings' writer gives the gap no data; the node predicts only
     the three tiles written and gives the gap no shadow; and the dataflow's
-    Raster Statistics node counts the ground of the written tiles only.
+    Raster Calculator of statistics counts the ground of the written tiles
+    only.
 
     Against SCOUT's ``run_shadow_model`` on the same three files: each written
     tile's shadow is SCOUT's, cell for cell (both read the gap as ground
     around its neighbours); the ground count is SCOUT's exactly; and the mean
-    and median are SCOUT's, but for SCOUT summing in float32 where Raster
-    Statistics sums in float64. Filled as ground, the gap's 65,536 cells
+    and median are SCOUT's, but for SCOUT summing in float32 where the
+    statistics sum in float64. Filled as ground, the gap's 65,536 cells
     would count too."""
     import shutil
 
@@ -901,8 +911,8 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     """``ScoutShadows.json`` is how its CI run reaches this package: its nodes
     hold the templates' own sources and widgets, the shadow nodes reading the
     season from the one Parameter node both scenarios share; each scenario's
-    Raster Statistics node reads its shadow on input_0 and its heights, the
-    mask, on input_1, straight from Rasterize Buildings, which feeds the
+    Raster Calculator of statistics reads its shadow on input_0 and its
+    heights, the mask, on input_1, straight from Rasterize Buildings, which feeds the
     shadow node too; each scenario maps its own shadow, with example 24's map;
     the chart reads the statistics, the difference the shadows.
     The model is no dataset of the dataflow: the shadow nodes' code names it by
@@ -939,8 +949,8 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     assert dataset_ids_in_code(loader["content"]) == ["data.scout.loop-buildings"]
 
     into = {(edge["target"], edge["targetHandle"]): edge["source"] for edge in spec["edges"]}
-    statistics = by_type[STATISTICS_TYPE]
-    assert len(statistics) == 2
+    statistics = by_type[CALCULATOR_TYPE]
+    assert len(statistics) == 2 and all(_takes_statistics(node) for node in statistics)
     for node in statistics:
         shadow, heights = nodes[into[(node["id"], "in")]], nodes[into[(node["id"], "in_1")]]
         assert shadow["type"] == NODE_TYPE
@@ -967,7 +977,8 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
                                key=lambda n: n["metadata"]["compareScenarios"]["mode"])
     assert chart["metadata"]["compareScenarios"]["mode"] == "chart"
     assert chart["metadata"]["compareScenarios"]["chart"]["y"] == "mean"
-    assert {nodes[into[(chart["id"], h)]]["type"] for h in ("in", "in_1")} == {STATISTICS_TYPE}
+    assert {nodes[into[(chart["id"], h)]]["type"] for h in ("in", "in_1")} == {CALCULATOR_TYPE}
+    assert all(_takes_statistics(nodes[into[(chart["id"], h)]]) for h in ("in", "in_1"))
     assert {nodes[into[(difference["id"], h)]]["type"] for h in ("in", "in_1")} == {NODE_TYPE}
 
 
@@ -995,9 +1006,9 @@ def test_example_24_holds_the_node_as_the_palette_drops_it_and_its_code_runs(wor
 
 def test_example_24_feeds_the_rasterizers_one_raster_to_the_node_and_the_mask():
     """Example 24's Rasterize Buildings feeds its one raster straight to the
-    height map, to Accumulated Shadow and to Raster Statistics' mask (input_1),
-    with no node in between; the statistics read the shadow on input_0, and a
-    map draws the shadow."""
+    height map, to Accumulated Shadow and to the mask (input_1) of the Raster
+    Calculator of statistics, with no node in between; the statistics read the
+    shadow on input_0, and a map draws the shadow."""
     spec = json.loads(EXAMPLE.read_text(encoding="utf-8"))["dataflow"]
     nodes = {node["id"]: node for node in spec["nodes"]}
     into = {(edge["target"], edge["targetHandle"]): edge["source"] for edge in spec["edges"]}
@@ -1006,11 +1017,12 @@ def test_example_24_feeds_the_rasterizers_one_raster_to_the_node_and_the_mask():
         out_of.setdefault(edge["source"], []).append(nodes[edge["target"]]["type"])
     (rasterizer,) = [n for n, node in nodes.items() if node["type"] == "scout.raster-conversion/rasterize-buildings"]
     (shadow,) = [n for n, node in nodes.items() if node["type"] == NODE_TYPE]
-    (statistics,) = [n for n, node in nodes.items() if node["type"] == STATISTICS_TYPE]
-    assert sorted(out_of[rasterizer]) == sorted(["curio.builtin/autk-grammar", NODE_TYPE, STATISTICS_TYPE])
+    (statistics,) = [n for n, node in nodes.items() if node["type"] == CALCULATOR_TYPE]
+    assert _takes_statistics(nodes[statistics])
+    assert sorted(out_of[rasterizer]) == sorted(["curio.builtin/autk-grammar", NODE_TYPE, CALCULATOR_TYPE])
     assert into[(shadow, "in")] == rasterizer
     assert (into[(statistics, "in")], into[(statistics, "in_1")]) == (shadow, rasterizer)
-    assert sorted(out_of[shadow]) == sorted([STATISTICS_TYPE, "curio.builtin/autk-grammar"])
+    assert sorted(out_of[shadow]) == sorted([CALCULATOR_TYPE, "curio.builtin/autk-grammar"])
     assert "curio.builtin/computation-analysis" not in {node["type"] for node in nodes.values()}
 
 
