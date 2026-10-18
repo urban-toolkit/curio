@@ -72,7 +72,6 @@ PROMOTION_CONTRACT_VERSION = "1"
 # Journal statuses. ``awaiting-activation`` = installed (+ lockfile) but the
 # frontend has not yet confirmed registry refresh + node insertion.
 _ACTIVE_STATUSES = ("awaiting-activation",)
-_TERMINAL_STATUSES = ("completed", "rolled-back", "rollback-failed", "failed")
 
 
 class PromotionError(ValueError):

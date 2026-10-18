@@ -32,7 +32,6 @@ from utk_curio import shipped
 from utk_curio.backend.app.common.safe_paths import (
     PathTraversalError,
     is_within,
-    validate_component,
 )
 
 
@@ -108,23 +107,6 @@ def dataset_dir(user_key: str, dataset_dir_name: str) -> Path:
     if not is_within(target, base):
         raise PathTraversalError(
             f"Path traversal blocked: dataset path {target!s} escapes base {base!s}"
-        )
-    return target
-
-
-def dataset_asset_path(
-    user_key: str,
-    dataset_dir_name: str,
-    *subpath: str,
-    field: str = "dataset asset",
-) -> Path:
-    ddir = dataset_dir(user_key, dataset_dir_name).resolve()
-    for seg in subpath:
-        validate_component(seg, field=field)
-    target = ddir.joinpath(*subpath).resolve()
-    if not is_within(target, ddir):
-        raise PathTraversalError(
-            f"Path traversal blocked: {field} {target!s} escapes dataset {ddir!s}"
         )
     return target
 

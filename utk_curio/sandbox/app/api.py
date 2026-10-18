@@ -79,8 +79,6 @@ ARROW_RESPONSE_HEADERS = (
 # Pre-load heavy libraries once at sandbox startup so every /exec call is fast.
 _worker_init()
 
-DATA_DIR = "./data"
-
 # No CORS headers here on purpose. The sandbox is reached only by the backend
 # over server-to-server HTTP; no browser ever calls it directly (see
 # docs/ARCHITECTURE.md). The previous `Access-Control-Allow-Origin: *` granted

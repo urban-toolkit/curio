@@ -159,9 +159,6 @@ class BuiltinAgentSpec:
     def target_kinds(self) -> tuple[str, ...]:
         return self.targets or (_TARGET_BY_CATEGORY[self.category],)
 
-    def delegate_ids(self) -> tuple[str, ...]:
-        return tuple(d if isinstance(d, str) else d[0] for d in self.delegates_to)
-
     def prompt_files(self) -> dict[str, str]:
         """Every prompt key this agent declares and the file behind it."""
         files = {"system": PREAMBLE_FILE, "instruction": self.prompt_file}

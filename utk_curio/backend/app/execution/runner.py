@@ -41,7 +41,6 @@ SANDBOX_GET_TIMEOUT_S = int(os.environ.get("CURIO_E2E_SANDBOX_GET_TIMEOUT", "300
 # itself would have enforced. Env-overridable; the interactive route's 600 s
 # stays the upper reference.
 DEFAULT_EXEC_TIMEOUT_S = 300
-SANDBOX_EXEC_TIMEOUT_S = DEFAULT_EXEC_TIMEOUT_S  # kept name; read via exec_timeout_s()
 
 
 def exec_timeout_s() -> int:

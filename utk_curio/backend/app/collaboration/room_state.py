@@ -185,12 +185,6 @@ def add_proposal(room: str, proposal: dict) -> dict:
         return dict(record)
 
 
-def get_proposal(room: str, proposal_id: str) -> Optional[dict]:
-    with _lock:
-        prop = (_room_proposals.get(room) or {}).get(proposal_id)
-        return dict(prop) if prop else None
-
-
 def vote_proposal(
     room: str, proposal_id: str, sid: str, approve: bool,
 ) -> Optional[dict]:
