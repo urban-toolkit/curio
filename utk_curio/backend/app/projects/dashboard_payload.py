@@ -67,9 +67,12 @@ _PASS_THROUGH_KINDS = frozenset(
 _AUTK_GRAMMAR_KIND = "autk-grammar"
 
 # Node kinds whose tile draws the node's own output rather than what reaches
-# it: a Compare Scenarios node (#662) charts the table its own run stacked. A
-# pinned one is its own source, so its tile draws without a run, and its inputs
-# are not walked. Mirrors ``SELF_DRAWN_NODE_TYPES`` in ``dashboardLayout.ts``.
+# it: a Compare Scenarios node (#662) charts the table its own run stacked, or
+# shows its difference. A pinned one is its own source, so its tile draws
+# without a run, and its inputs are not walked. Its tile draws no map, so it
+# asks ``/raster`` for nothing: an Autark map pinned after it reads the
+# difference's raster. Mirrors ``SELF_DRAWN_NODE_TYPES`` in
+# ``dashboardLayout.ts``.
 _SELF_DRAWN_KINDS = frozenset({"compare-scenarios"})
 
 #: How much embedded data a single dashboard may carry, measured as the UTF-8
@@ -279,14 +282,29 @@ def dashboard_source_node_ids(spec: dict) -> Set[str]:
     with a visited set, so a cycle or a diamond terminates. A pinned node that
     draws its own output (``_SELF_DRAWN_KINDS``) is its own source instead.
     """
+    return _self_drawn_node_ids(spec) | _walked_source_node_ids(spec)
+
+
+def _self_drawn_node_ids(spec: dict) -> Set[str]:
+    """The pinned nodes whose tile draws their own output (``_SELF_DRAWN_KINDS``)."""
+    dataflow = (spec or {}).get("dataflow") or {}
+    return {
+        node["id"] for node in dataflow.get("nodes") or []
+        if node.get("id") and _is_pinned(node) and _node_kind(node) in _SELF_DRAWN_KINDS
+    }
+
+
+def _walked_source_node_ids(spec: dict) -> Set[str]:
+    """The nodes whose output a pinned tile reads as its input: walking up from
+    every other pinned node, the first node on each path that produces rows."""
     dataflow = (spec or {}).get("dataflow") or {}
     nodes = dataflow.get("nodes") or []
     edges = dataflow.get("edges") or []
 
     by_id = {node.get("id"): node for node in nodes if node.get("id")}
-    pinned_nodes = [node for node in nodes if node.get("id") and _is_pinned(node)]
-    sources: Set[str] = {node["id"] for node in pinned_nodes if _node_kind(node) in _SELF_DRAWN_KINDS}
-    pinned = [node["id"] for node in pinned_nodes if node["id"] not in sources]
+    drawn = _self_drawn_node_ids(spec)
+    pinned = [node["id"] for node in nodes if node.get("id") and _is_pinned(node) and node["id"] not in drawn]
+    sources: Set[str] = set()
     if not pinned:
         return sources
 
@@ -463,8 +481,9 @@ def build_dashboard_payload(
     whether it reads over HTTP or off the disk.
 
     *fetch_raster* is handed a filename and a ``part`` (``None`` for the whole
-    output) for each raster an Autark map asks ``/raster`` for in an output
-    (:func:`raster_places`), and returns what ``/raster`` answered:
+    output) for each raster an Autark map asks ``/raster`` for in an output a
+    tile reads as its input (:func:`raster_places`), and returns what
+    ``/raster`` answered:
     ``{"status": 200, "meta", "geotiff": bytes}``, or ``{"status", "meta",
     "message"}`` for a refusal. Its GeoTIFF counts toward *limit_bytes* with
     the output's rows.
@@ -480,6 +499,9 @@ def build_dashboard_payload(
     _refuse_tiles_that_fetch_their_own_data(spec, name=name)
 
     needed = dashboard_source_node_ids(spec)
+    # The outputs a tile reads as its input, which a map on the page may ask
+    # /raster for; a tile that draws its own output draws no map.
+    read_as_input = _walked_source_node_ids(spec)
     unreadable: List[str] = []
 
     def cannot_read(node_id: str, filename: str, reason: str) -> None:
@@ -520,7 +542,7 @@ def build_dashboard_payload(
             continue
         outputs[filename] = envelope
         size = _json_bytes(envelope)
-        for part in raster_places(envelope, data_type) if fetch_raster else []:
+        for part in raster_places(envelope, data_type) if fetch_raster and node_id in read_as_input else []:
             try:
                 answer = fetch_raster(filename, part)
             except Exception as exc:
