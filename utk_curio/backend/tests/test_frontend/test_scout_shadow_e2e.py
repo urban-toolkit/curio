@@ -293,8 +293,8 @@ def test_an_edit_in_the_towers_lever_reaches_the_shadow_with_update_results(
     record_property,
 ):
     """Towers removed's Interaction node is the scenario's lever: its log holds
-    SCOUT's 15 towers, one removal by building_id under a label. An edit made
-    there, then Update results, runs the scenario again with it:
+    SCOUT's 15 removed buildings, one removal by building_id under a label. An
+    edit made there, then Update results, runs the scenario again with it:
 
     1. Run All gives SCOUT's two means, as the test above checks.
     2. The lever draws the buildings on its map, matched on building_id, and

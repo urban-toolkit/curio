@@ -125,7 +125,7 @@
         "type": "curio.builtin/edit-features",
         "x": 645,
         "y": 900,
-        "content": "# Edit Features writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"remove\", \"ids\": [8, 10, 12, 13, 14, 18, 19, 31, 34, 51, 66, 77, 82, 106, 122], \"label\": \"SCOUT's 15 towers\"},\n], key=\"building_id\")\n",
+        "content": "# Edit Features writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"remove\", \"ids\": [8, 10, 12, 13, 14, 18, 19, 31, 34, 51, 66, 77, 82, 106, 122], \"label\": \"SCOUT's 15 removed buildings\"},\n], key=\"building_id\")\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Remove the 15 buildings SCOUT's high-rise case removes, by their building_id. Further buildings, picked on the map or by a condition, can be removed, raised or lowered here before Update results.",
@@ -153,7 +153,7 @@
                   106,
                   122
                 ],
-                "label": "SCOUT's 15 towers"
+                "label": "SCOUT's 15 removed buildings"
               }
             ]
           }

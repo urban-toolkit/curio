@@ -133,7 +133,7 @@ INTERACTION_TYPE = "curio.builtin/edit-features"
 #: buildings, matched on building_id, under a label.
 TOWERS_LOG = {
     "key": "building_id",
-    "edits": [{"op": "remove", "ids": REMOVED_IDS, "label": "SCOUT's 15 towers"}],
+    "edits": [{"op": "remove", "ids": REMOVED_IDS, "label": "SCOUT's 15 removed buildings"}],
 }
 #: The code the node writes from that log (``editFeaturesCode`` in
 #: ``utils/editFeatures/editFeatures.ts``): one call of ``curio_edit_features``.
@@ -142,7 +142,7 @@ TOWERS_CODE = (
     "# order it was made, on the features whose key is one of its ids. It is\n"
     "# written again when the list changes.\n"
     "return curio_edit_features(input_0, [\n"
-    '    {"op": "remove", "ids": [' + ", ".join(str(i) for i in REMOVED_IDS) + '], "label": "SCOUT\'s 15 towers"},\n'
+    '    {"op": "remove", "ids": [' + ", ".join(str(i) for i in REMOVED_IDS) + '], "label": "SCOUT\'s 15 removed buildings"},\n'
     '], key="building_id")\n'
 )
 
