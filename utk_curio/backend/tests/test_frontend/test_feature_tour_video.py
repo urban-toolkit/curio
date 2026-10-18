@@ -2359,7 +2359,7 @@ def scene_shadows(ctx: Ctx) -> None:
     tour.hush()
     _play_all(
         ctx, timeout_ms=600000,
-        settle=[(m, "autk-grammar") for m in SHADOW_MAPS.values()] + [(SHADOW_STATS, "raster-statistics")],
+        settle=[(m, "autk-grammar") for m in SHADOW_MAPS.values()] + [(SHADOW_STATS, "raster-calculator")],
     )
     page.set_viewport_size(STILL_SIZE)
     page.wait_for_timeout(1500)

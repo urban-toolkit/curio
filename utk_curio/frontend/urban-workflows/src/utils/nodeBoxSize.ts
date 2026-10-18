@@ -18,7 +18,7 @@ export interface NodeBox {
 
 export interface MeasurableNode {
     type?: string | null;
-    data?: { nodeType?: string | null; nodeWidth?: unknown; nodeHeight?: unknown } | null;
+    data?: { nodeType?: string | null; nodeWidth?: unknown; nodeHeight?: unknown; minimized?: unknown } | null;
 }
 
 /** `typeof v === "number"` with NaN/Infinity excluded, mirroring the renderer. */
@@ -33,13 +33,15 @@ function finiteNumber(value: unknown): number | undefined {
  * layout pass that guesses wrong is worse than none: under-estimate and the
  * overlap it was meant to remove comes back the moment the node inflates.
  *
- * Two rules here are easy to get wrong and both matter:
+ * Three rules here are easy to get wrong and all matter:
  *
  * 1. A `noContent` template mounts minimized and bails out of BOTH resize
  *    effects, so its manifest size is its literal footprint -- a 50x180 one is
  *    sub-minimum and stays that way.
  * 2. The mount clamp snaps a sub-minimum size to the DEFAULT, not to the
  *    minimum. A node asking for `nodeWidth: 120` renders at 525, not 200.
+ * 3. A node saved minimized (`data.minimized`) mounts as its chip, whatever
+ *    size it opens back to, so chips laid out close together stay put.
  *
  * When no descriptor is registered the answer is 525x350, deliberately. An
  * anonymous shared view registers no packages at all, and a spec can name an
@@ -57,6 +59,10 @@ export function resolveNodeBoxSize(node: MeasurableNode): NodeBox {
             width: finiteNumber(container.nodeWidth) ?? MINIMIZED_NODE_WIDTH,
             height: finiteNumber(container.nodeHeight) ?? MINIMIZED_NODE_HEIGHT,
         };
+    }
+
+    if (data?.minimized === true) {
+        return { width: MINIMIZED_NODE_WIDTH, height: MINIMIZED_NODE_HEIGHT };
     }
 
     return clampNodeBox(

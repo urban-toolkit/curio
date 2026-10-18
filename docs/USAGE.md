@@ -384,9 +384,9 @@ output dataset** toggle, settings, about, pin, comments, **Minimize** and delete
 Code and specs sit in a gray box, and a code node's output is below its code.
 
 Drag a node's bottom-right corner to resize it. For viewers of a shared dataflow,
-nodes keep their size and have no delete. A minimized node is a small chip; click it
-to open the node again. Double-click a node where you would drag it, such as its
-header, to zoom the view onto it.
+nodes keep their size and have no delete. A minimized node is a small chip, and a
+save keeps it one; click it to open the node again. Double-click a node where you
+would drag it, such as its header, to zoom the view onto it.
 
 ## Running a dataflow
 
@@ -615,7 +615,7 @@ circle:
 A circle's variable keeps its name when another edge is connected, so code that
 reads `input_0.crs` keeps working beside a second input. A circle with no edge
 is `None` (`undefined` in JavaScript), which lets a node take an optional
-input, such as the mask on a Raster Statistics node's circle 1. Code that reads
+input, such as the mask on circle 1 of a Raster Calculator's statistics. Code that reads
 its inputs when none has arrived stops with a message naming the circle.
 
 A tuple a Python node returns leaves by its one output circle, so it is one
@@ -1157,13 +1157,14 @@ dashboard the node shows the output saved with the dataflow and never joins.
 
 ## Rasters
 
-Two nodes in the palette's computation group work on rasters: a `rasterio`
-dataset from a Python node or the Data Catalog, or a raster an Autark node hands
-on. Each is a Python node whose code is written for it when it is dropped; edit
-the call to change what it does.
+The **Raster Calculator**, in the palette's computation group, works on rasters:
+a `rasterio` dataset from a Python node or the Data Catalog, or a raster an
+Autark node hands on. It is a Python node whose code is written for it when it
+is dropped: input_0 minus input_1, with its other operations listed above it,
+statistics among them. Return another call to change what it does. Connect the
+rasters to its input circles, in order.
 
-**Raster Calculator** computes one operation over rasters on one grid, cell by
-cell. Connect the rasters to its input circles, in order:
+**Cell by cell**, an operation over rasters on one grid gives a raster:
 
 | operation | result |
 |---|---|
@@ -1182,10 +1183,10 @@ cell. Connect the rasters to its input circles, in order:
 - The result keeps the inputs' number type, at least float32, so a float64
   raster keeps every digit. Its cells with no value are NaN.
 
-**Raster Statistics** gives a raster's `mean`, `median`, `min`, `max` and
-`count` over its cells with a value, as a table of one row, for example for
-**Compare Scenarios** to chart. `curio_raster_statistics(input_0, band=2)` reads
-another band. A condition keeps only some cells:
+**Statistics** give a raster's `mean`, `median`, `min`, `max` and `count` over
+its cells with a value, as a table of one row, for example for **Compare
+Scenarios** to chart. `curio_raster_statistics(input_0, band=2)` reads another
+band. A condition keeps only some cells:
 
 | call | counts |
 |---|---|

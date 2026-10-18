@@ -237,6 +237,11 @@ export class TrillGenerator {
             if(typeof node.data.nodeHeight === "number")
                 trill_node.height = node.data.nodeHeight;
 
+            // Folded to its chip (the header's Minimize); `width` and `height`
+            // stay the size it opens back to.
+            if(node.data.minimized === true)
+                trill_node.minimized = true;
+
             if(node.data.dashboardPinned)
                 trill_node.dashboardPinned = true;
 
