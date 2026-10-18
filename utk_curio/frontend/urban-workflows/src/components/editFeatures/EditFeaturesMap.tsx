@@ -1,5 +1,5 @@
 /**
- * The Edit Features node's map (#662): the node's input drawn by the Autark
+ * The Interaction node's map (#662): the node's input drawn by the Autark
  * node's own map code (`useAutkGrammarBehavior`) into the node's
  * `autk-grammar-map-<nodeId>` canvas, from a document whose layer to edit is
  * pickable, as an Autark node draws its input. A pick reaches the body as the

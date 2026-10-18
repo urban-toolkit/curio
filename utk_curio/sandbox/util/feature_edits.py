@@ -1,20 +1,31 @@
-"""The Edit Features node's step (#662).
+"""The Interaction node's step (#662; its type is still
+``curio.builtin/edit-features``).
 
-The node keeps a list of edits, each made on features picked on its map, and
-writes its code from that list: one call of ``curio_edit_features`` with the
-node's input, the edits in the order they were made, the column that
-identifies a feature (``key``) and, for an input that carries several layers,
-the layer they apply to. The output is a new artifact; the input is never
-changed.
+The node keeps a log of edits, each made on features picked on its map or by
+a condition, and writes its code from that log: one call of
+``curio_edit_features`` with the node's input, the edits in the order they
+were made, the column that identifies a feature (``key``) and, for an input
+that carries several layers, the layer they apply to. The output is a new
+artifact; the input is never changed.
 
-An edit is a dict:
+An edit is a dict with an ``op``, the features it applies to and, for the ops
+that write, a ``column`` and a ``value``:
 
-- ``{"op": "remove", "ids": [...]}`` drops the features whose ``key`` is one
-  of ``ids``;
-- ``{"op": "set", "ids": [...], "column": c, "value": v}`` writes ``v`` into
-  column ``c`` of those features;
-- ``{"op": "restore", "ids": [...]}`` puts those features back as the input
-  has them, undoing the edits before it.
+- ``remove`` drops the features;
+- ``restore`` puts them back as the input has them, undoing the edits before
+  it;
+- ``set`` writes ``value`` into ``column``;
+- ``scale`` multiplies the number in ``column`` by ``value``, and ``offset``
+  adds ``value`` to it; a feature whose ``column`` holds no number is left as
+  it is;
+- ``expr`` writes into ``column`` what the expression ``value`` makes of the
+  feature, such as ``levels * 3.2`` (``edit_expr``).
+
+The features are those whose ``key`` is one of ``ids`` or, in place of
+``ids``, those the expression ``where`` holds for, read as the edits before
+have left them (``height > 100 and levels >= 30``); a restore reads them as
+the input has them. An edit with ``"enabled": False`` stays in the log and is
+skipped; ``label`` names an edit for people and changes nothing.
 
 Features are matched by the value of ``key``, never by their position. Every
 feature that holds an id is edited: Autark's buildings repeat ``building_id``
@@ -38,17 +49,25 @@ from __future__ import annotations
 
 import math
 
+from utk_curio.sandbox.util import edit_expr
+
 REMOVE = "remove"
 SET = "set"
 RESTORE = "restore"
-OPS = (REMOVE, SET, RESTORE)
+SCALE = "scale"
+OFFSET = "offset"
+EXPR = "expr"
+#: In the order of the op enum in ``docs/schemas/trill.v1.json``.
+OPS = (REMOVE, SET, RESTORE, SCALE, OFFSET, EXPR)
+#: The ops that write a column.
+WRITES = (SET, SCALE, OFFSET, EXPR)
 
 #: Columns a view adds to its own rows, which identify nothing upstream. A row's
 #: position is not an id either: it changes when rows are removed upstream.
 #: Kept in sync with ``VIEW_COLUMNS`` in ``utils/references/selectionTags.ts``.
 _VIEW_COLUMNS = frozenset({"__row_index__", "__input__", "_vgsid_", "interacted", "linked"})
 
-_NAME = "Edit Features"
+_NAME = "Interaction"
 
 
 class _Layer:
@@ -204,16 +223,61 @@ def _checked_edits(edits, key):
     for position, edit in enumerate(edits or []):
         if not isinstance(edit, dict) or edit.get("op") not in OPS:
             raise ValueError(
-                f"{_NAME}: edit {position} is not a remove, set or restore. "
-                "The node writes its code from its edit list; edit the list in the node."
+                f"{_NAME}: edit {position} is not a remove, set, restore, scale, offset or expr. "
+                "The node writes its code from its edit log; edit the log in the node."
             )
-        ids = edit.get("ids")
-        if not isinstance(ids, list) or not ids:
-            raise ValueError(f"{_NAME}: edit {position} names no features.")
-        if edit["op"] == SET and (not isinstance(edit.get("column"), str) or not edit["column"]):
-            raise ValueError(f"{_NAME}: edit {position} sets a value but names no column.")
-        checked.append(edit)
+        if edit.get("enabled") is False:
+            continue
+        op = edit["op"]
+        ids, where = edit.get("ids"), edit.get("where")
+        by_ids = isinstance(ids, list) and len(ids) > 0
+        by_where = isinstance(where, str) and where.strip() != ""
+        if by_ids and by_where:
+            raise ValueError(f"{_NAME}: edit {position} names its features both by ids and by a condition; it takes one.")
+        if not (by_ids or by_where):
+            raise ValueError(f"{_NAME}: edit {position} names no features: it needs their ids or a where condition.")
+        if op in WRITES and (not isinstance(edit.get("column"), str) or not edit["column"]):
+            raise ValueError(f"{_NAME}: edit {position} writes a value but names no column.")
+        if op in (SCALE, OFFSET) and edit_expr.number(edit.get("value")) is None:
+            verb = "scales" if op == SCALE else "offsets"
+            raise ValueError(
+                f"{_NAME}: edit {position} {verb} {edit['column']} by {edit.get('value')!r}, which is not a number."
+            )
+        if op == EXPR and not isinstance(edit.get("value"), str):
+            raise ValueError(
+                f"{_NAME}: edit {position} computes {edit['column']} from {edit.get('value')!r}, which is not an expression."
+            )
+        parsed = dict(edit)
+        try:
+            if by_where:
+                parsed["_where"] = edit_expr.parse(where)
+            if op == EXPR:
+                parsed["_expr"] = edit_expr.parse(edit["value"])
+        except edit_expr.ExprError as exc:
+            what = f"the condition {where!r}" if by_where and "_where" not in parsed else f"the expression {edit['value']!r}"
+            raise ValueError(f"{_NAME}: edit {position}: {what} is not one: {exc}.") from None
+        checked.append(parsed)
     return checked
+
+
+def _written(edit, properties):
+    """``(True, value)``: what a writing *edit* puts into its column of a
+    feature whose properties are *properties*, or ``(False, None)`` when it
+    leaves the feature alone (a number edit on a column with no number)."""
+    op = edit["op"]
+    if op == SET:
+        return True, edit.get("value")
+    if op == EXPR:
+        return True, edit_expr.evaluate(edit["_expr"], properties)
+    current = edit_expr.number(properties.get(edit["column"]))
+    if current is None:
+        return False, None
+    by = edit_expr.number(edit["value"])
+    return True, edit_expr.result(current * by if op == SCALE else current + by)
+
+
+def _where_holds(edit, properties) -> bool:
+    return edit_expr.truthy(edit_expr.evaluate(edit["_where"], properties))
 
 
 def _report_unknown(label, key, op, ids, known):
@@ -223,6 +287,10 @@ def _report_unknown(label, key, op, ids, known):
         print(f"{_NAME}: {label} has no feature with {key} {_shown(unknown)}; the {op} skips {'it' if len(unknown) == 1 else 'them'}.")
         return len(unknown), noun
     return 0, None
+
+
+def _properties(feature) -> dict:
+    return (feature.get("properties") or {}) if isinstance(feature, dict) else {}
 
 
 def _edit_fc(layer: _Layer, edits, key):
@@ -235,31 +303,61 @@ def _edit_fc(layer: _Layer, edits, key):
     state = list(features)
     counts = {REMOVE: set(), SET: set(), RESTORE: set()}
     for edit in edits:
-        wanted = {_id_key(i) for i in edit["ids"]}
-        _report_unknown(layer.label, key, edit["op"], edit["ids"], known)
-        for index, feature_id in enumerate(ids):
-            if feature_id not in wanted:
-                continue
-            if edit["op"] == REMOVE:
+        op = edit["op"]
+        if "_where" in edit:
+            # A condition reads the features as the edits before left them; a
+            # restore reads them as the input has them, removed ones included.
+            source = features if op == RESTORE else state
+            targets = [i for i, feature in enumerate(source) if feature is not None and _where_holds(edit, _properties(feature))]
+        else:
+            wanted = {_id_key(i) for i in edit["ids"]}
+            _report_unknown(layer.label, key, op, edit["ids"], known)
+            targets = [i for i, feature_id in enumerate(ids) if feature_id in wanted]
+        for index in targets:
+            if op == REMOVE:
                 if state[index] is not None:
                     state[index] = None
                     counts[REMOVE].add(index)
-            elif edit["op"] == SET:
-                current = state[index]
-                if current is None:
-                    continue
-                properties = dict(current.get("properties") or {})
-                properties[edit["column"]] = edit.get("value")
-                state[index] = {**current, "properties": properties}
-                counts[SET].add(index)
-            else:
+            elif op == RESTORE:
                 if state[index] is not features[index]:
                     state[index] = features[index]
                     counts[RESTORE].add(index)
                     counts[REMOVE].discard(index)
                     counts[SET].discard(index)
+            else:
+                current = state[index]
+                if current is None:
+                    continue
+                writes, value = _written(edit, _properties(current))
+                if not writes:
+                    continue
+                properties = dict(current.get("properties") or {})
+                properties[edit["column"]] = value
+                state[index] = {**current, "properties": properties}
+                counts[SET].add(index)
     fc = {**layer.fc, "features": [feature for feature in state if feature is not None]}
     return fc, {op: len(rows) for op, rows in counts.items()}
+
+
+def _records(table, geometry):
+    """One dict per row of *table*, every column but its geometry, for a
+    condition or an expression to read."""
+    columns = [column for column in table.columns if column != geometry]
+    return table[columns].to_dict("records")
+
+
+def _write_column(out, column, positions, values):
+    """*values* written into *column* of *out* at the row *positions*; the
+    column is made when *out* lacks it. A column of floats stays one."""
+    import pandas as pd
+
+    present = column in out.columns
+    if present and pd.api.types.is_float_dtype(out[column]):
+        values = [float(v) if isinstance(v, int) and not isinstance(v, bool) else v for v in values]
+    current = out[column].tolist() if present else [None] * len(out)
+    for position, value in zip(positions, values):
+        current[position] = value
+    out[column] = pd.Series(current, index=out.index)
 
 
 def _edit_frame(layer: _Layer, edits, key):
@@ -281,21 +379,44 @@ def _edit_frame(layer: _Layer, edits, key):
     removed = pd.Series(False, index=frame.index)
     restored = pd.Series(False, index=frame.index)
     for edit in edits:
-        wanted = {_id_key(i) for i in edit["ids"]}
-        _report_unknown(layer.label, key, edit["op"], edit["ids"], known)
-        mask = ids.isin(wanted)
-        if edit["op"] == REMOVE:
+        op = edit["op"]
+        if "_where" in edit:
+            # Read as the edits before left the rows; a restore reads the input's.
+            rows = _records(frame if op == RESTORE else out, geometry)
+            holds = [_where_holds(edit, row) for row in rows]
+            mask = pd.Series(holds, index=frame.index, dtype=bool)
+            if op != RESTORE:
+                mask &= kept
+        else:
+            wanted = {_id_key(i) for i in edit["ids"]}
+            _report_unknown(layer.label, key, op, edit["ids"], known)
+            mask = ids.isin(wanted)
+        if op in WRITES and edit["column"] == geometry:
+            raise ValueError(f"{_NAME}: {geometry} is the geometry of {layer.label}; a value cannot be set on it.")
+        if op == REMOVE:
             removed |= mask & kept
             kept &= ~mask
-        elif edit["op"] == SET:
+        elif op == SET:
             column = edit["column"]
-            if column == geometry:
-                raise ValueError(f"{_NAME}: {column} is the geometry of {layer.label}; a value cannot be set on it.")
             target = mask & kept
             if column not in out.columns:
                 out[column] = pd.Series([None] * len(out), index=out.index, dtype=object)
             out[column] = out[column].where(~target, edit.get("value"))
             changed |= target
+        elif op in (SCALE, OFFSET, EXPR):
+            target = (mask & kept).to_numpy()
+            rows = _records(out, geometry)
+            positions, values = [], []
+            for position in target.nonzero()[0]:
+                writes, value = _written(edit, rows[position])
+                if writes:
+                    positions.append(int(position))
+                    values.append(value)
+            if positions:
+                _write_column(out, edit["column"], positions, values)
+                wrote = pd.Series(False, index=frame.index)
+                wrote.iloc[positions] = True
+                changed |= wrote
         else:
             back = mask & (~kept | changed)
             for column in out.columns:
@@ -354,8 +475,8 @@ def _envelope(layer: _Layer, edited: bool):
 
 
 def edit_features(value, edits, key=None, layer=None):
-    """The input with *edits* applied to the features of *layer* whose *key*
-    is one of each edit's ids. See the module's docstring."""
+    """The input with *edits* applied to the features of *layer* each edit
+    names, by *key* or by a condition. See the module's docstring."""
     if value is None:
         raise ValueError(
             f"{_NAME} has no input. Run the node that feeds it, and check that its code returns its result."
@@ -364,6 +485,9 @@ def edit_features(value, edits, key=None, layer=None):
         print(f"{_NAME}: no edits yet; the input is handed on as it came.")
         return value
     edits = _checked_edits(edits, key)
+    if not edits:
+        print(f"{_NAME}: every edit is switched off; the input is handed on as it came.")
+        return value
     layers, single_table = _layers_of(value)
     target = _pick_layer(layers, layer)
     if target.fc is not None:
