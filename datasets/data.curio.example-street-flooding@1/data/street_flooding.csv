@@ -1,0 +1,13 @@
+case,depth_class,share_mean,share_sd
+10-year storm,Under 10 cm,0.596,0.092
+10-year storm,10 to 30 cm,0.275,0.08
+10-year storm,30 to 60 cm,0.109,0.037
+10-year storm,Over 60 cm,0.02,0.008
+50-year storm,Under 10 cm,0.423,0.081
+50-year storm,10 to 30 cm,0.318,0.063
+50-year storm,30 to 60 cm,0.175,0.047
+50-year storm,Over 60 cm,0.084,0.025
+100-year storm,Under 10 cm,0.281,0.055
+100-year storm,10 to 30 cm,0.301,0.06
+100-year storm,30 to 60 cm,0.261,0.063
+100-year storm,Over 60 cm,0.157,0.042

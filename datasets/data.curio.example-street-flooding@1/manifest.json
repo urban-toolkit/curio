@@ -1,0 +1,24 @@
+{
+  "id": "data.curio.example-street-flooding",
+  "name": "Example table: flooded streets by depth",
+  "version": "1.0.0",
+  "format": "csv",
+  "description": "The share of flooded street length in each depth class in a 10-, 50- and 100-year storm: the mean over 50 simulated storms and its standard deviation. One of nine example tables that illustrate ways to chart a comparison of scenarios, each row's scenario in its case column. The Nine ways to chart scenario comparisons test dataflow draws it as grouped bars with error bars. Curio's seeded script scripts/build_example_scenario_charts.py writes it.",
+  "publisher": "Curio",
+  "license": "MIT",
+  "tags": [
+    "example",
+    "scenarios",
+    "csv"
+  ],
+  "dataFile": "data/street_flooding.csv",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "Curio example tables",
+  "rowCount": 12,
+  "featureCount": null,
+  "schema": null,
+  "createdAt": "2026-10-17T00:00:00Z",
+  "updatedAt": "2026-10-17T00:00:00Z"
+}

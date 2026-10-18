@@ -1,0 +1,17 @@
+case,mode,daily_trips
+Today,Bike,8000
+Today,Bus,26000
+Today,Car,61000
+Today,Walk,22000
+Bus lanes,Bike,8100
+Bus lanes,Bus,35600
+Bus lanes,Car,54600
+Bus lanes,Walk,23000
+Bike network,Bike,17900
+Bike network,Bus,25900
+Bike network,Car,53300
+Bike network,Walk,22800
+Car-free center,Bike,11500
+Car-free center,Bus,31000
+Car-free center,Car,38700
+Car-free center,Walk,27900

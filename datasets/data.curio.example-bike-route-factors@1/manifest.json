@@ -1,0 +1,24 @@
+{
+  "id": "data.curio.example-bike-route-factors",
+  "name": "Example table: bike route factors",
+  "version": "1.0.0",
+  "format": "csv",
+  "description": "How much each factor counts for or against three bike routes, from -1 to 1. One of nine example tables that illustrate ways to chart a comparison of scenarios, each row's scenario in its case column. The Nine ways to chart scenario comparisons test dataflow draws it as a matrix of circles sized by weight. Curio's seeded script scripts/build_example_scenario_charts.py writes it.",
+  "publisher": "Curio",
+  "license": "MIT",
+  "tags": [
+    "example",
+    "scenarios",
+    "csv"
+  ],
+  "dataFile": "data/bike_route_factors.csv",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "Curio example tables",
+  "rowCount": 18,
+  "featureCount": null,
+  "schema": null,
+  "createdAt": "2026-10-17T00:00:00Z",
+  "updatedAt": "2026-10-17T00:00:00Z"
+}

@@ -1,0 +1,24 @@
+{
+  "id": "data.curio.example-flood-damage-curves",
+  "name": "Example table: flood damage curves",
+  "version": "1.0.0",
+  "format": "csv",
+  "description": "The chance that a house reaches each flood damage state as the water rises, as built and floodproofed. One of nine example tables that illustrate ways to chart a comparison of scenarios, each row's scenario in its case column. The Nine ways to chart scenario comparisons test dataflow draws it as one curve per damage state and scenario. Curio's seeded script scripts/build_example_scenario_charts.py writes it.",
+  "publisher": "Curio",
+  "license": "MIT",
+  "tags": [
+    "example",
+    "scenarios",
+    "csv"
+  ],
+  "dataFile": "data/flood_damage_curves.csv",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "Curio example tables",
+  "rowCount": 248,
+  "featureCount": null,
+  "schema": null,
+  "createdAt": "2026-10-17T00:00:00Z",
+  "updatedAt": "2026-10-17T00:00:00Z"
+}

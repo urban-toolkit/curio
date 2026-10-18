@@ -59,3 +59,4 @@ This file indexes the dataflows Curio ships, for the built-in agents. A run of a
 - [SimpleView](../../docs/examples/dataflows/SimpleView.json): checks the table view on a three-row hand-typed frame.
 - [Vega](../../docs/examples/dataflows/Vega.json): checks the chart renderer on a hand-typed bar chart.
 - [Widget](../../docs/examples/dataflows/Widget.json): checks the widget input syntax in node code.
+- [Nine ways to chart scenario comparisons](../../docs/examples/dataflows/scenario-comparison-charts.json): checks nine ways to chart a comparison of scenarios, on nine example tables from the Data Catalog: each scenario's rows kept by a Data Transformation node's Case widget and stacked by a Compare Scenarios node, then charted by that node's own grouped bars and table, or by a Vega-Lite node after it as lines with a band, curves by state, bars with error bars, a strip of ticks per scenario, stacked bars with totals, donuts and a matrix of weights.

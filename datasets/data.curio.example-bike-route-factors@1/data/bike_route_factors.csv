@@ -1,0 +1,19 @@
+case,factor,factor_order,effect
+Route A,Travel time,1,0.65
+Route A,Traffic stress,2,-0.55
+Route A,Hills,3,0.0
+Route A,Shade,4,-0.35
+Route A,Crossings,5,-0.4
+Route A,Scenery,6,0.0
+Route B,Travel time,1,-0.35
+Route B,Traffic stress,2,0.55
+Route B,Hills,3,-0.45
+Route B,Shade,4,0.45
+Route B,Crossings,5,0.2
+Route B,Scenery,6,0.4
+Route C,Travel time,1,0.2
+Route C,Traffic stress,2,0.1
+Route C,Hills,3,0.35
+Route C,Shade,4,0.0
+Route C,Crossings,5,-0.15
+Route C,Scenery,6,-0.35
