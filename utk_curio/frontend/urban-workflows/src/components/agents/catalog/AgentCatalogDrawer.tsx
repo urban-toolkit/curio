@@ -294,7 +294,6 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
               <AgentRow
                 key={card.dirName}
                 card={card}
-                scope={c.scope}
                 state={c}
                 hasProject={!!projectId}
                 onRequestInstall={requestInstall}
@@ -369,14 +368,13 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
 
 const AgentRow: React.FC<{
   card: AgentCard;
-  scope: AgentScope;
   state: ReturnType<typeof useAgentCatalogDrawer>;
   hasProject: boolean;
   onRequestInstall: (card: AgentCard) => void;
   onRequestUninstall: (card: AgentCard) => void;
   onOpenDetails: (card: AgentCard) => void;
 }> = ({
-  card, scope, state, hasProject,
+  card, state, hasProject,
   onRequestInstall, onRequestUninstall, onOpenDetails,
 }) => {
   const busy = state.busyCoord === card.dirName;

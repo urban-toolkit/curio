@@ -25,7 +25,7 @@ const useTableData = ({ data }: { data: INodeData }) => {
       /*let typesInput: string[] = [];
 
 
-            if (data.input != "") typesInput = data.input.dataType;//getType([data.input]);
+            if (data.input != "") typesInput = data.input.dataType;
 
             let typesOuput: string[] = [...typesInput];
             */

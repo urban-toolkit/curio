@@ -12,7 +12,6 @@
  */
 
 import { apiFetch } from "../../utils/authApi";
-import { backendUrl } from "../../utils/backendUrl";
 
 import { postSseStream } from "../../utils/sseStream";
 import type {
@@ -33,8 +32,6 @@ import type {
   AgentUsage,
   CatalogSettingsResponse,
 } from "./types";
-
-const BACKEND_URL = backendUrl();
 
 function coordParam(coord: string): string {
   return encodeURIComponent(coord);

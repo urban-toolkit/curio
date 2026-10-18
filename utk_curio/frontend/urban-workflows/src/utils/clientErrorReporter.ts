@@ -68,10 +68,3 @@ export function installClientErrorReporter(): void {
     }
   );
 }
-
-/** For tests only. */
-export function resetClientErrorReporter(): void {
-  installed = false;
-  sent = 0;
-  reporting = false;
-}

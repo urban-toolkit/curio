@@ -81,7 +81,6 @@ export {
 export {
   registerBehavior,
   getBehavior,
-  getAllBehaviorNames,
 } from './behaviorRegistry';
 
 export type {

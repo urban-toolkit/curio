@@ -21,7 +21,3 @@ export function registerBehavior(name: string, hook: NodeBehaviorHook): void {
 export function getBehavior(name: string): NodeBehaviorHook | undefined {
   return behaviorRegistry.get(name);
 }
-
-export function getAllBehaviorNames(): string[] {
-  return Array.from(behaviorRegistry.keys());
-}

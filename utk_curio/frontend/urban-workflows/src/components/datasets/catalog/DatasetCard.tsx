@@ -4,7 +4,6 @@ import {
   DatasetCatalogItem,
   datasetDisplayTitle,
   datasetSubtitle,
-  datasetListSourceCaption,
 } from "../../../services/datasetCatalog";
 import {
   CatalogKindIcon,
@@ -100,7 +99,6 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
   const version = datasetVersion(dataset.dirName);
   const metaParts = [count, time].filter(Boolean).join(" · ");
 
-  const sourceCaption = datasetListSourceCaption(dataset);
   const title = datasetDisplayTitle(dataset);
   const detailsLabel = `View ${title} (${DATASET_FORMAT_LABEL[dataset.format]}) details`;
 

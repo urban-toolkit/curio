@@ -180,9 +180,3 @@ export function groupScenariosByProject(items: readonly ScenarioRow[]): Scenario
   }
   return Array.from(byProject.values());
 }
-
-/** The address of a scenario's details over the Scenario Catalog page. */
-export function scenarioCatalogPath(row?: Pick<ScenarioRow, "project" | "id"> | null): string {
-  if (!row) return "/catalog/scenarios";
-  return `/catalog/scenarios/${encodeURIComponent(row.project.id)}/${encodeURIComponent(row.id)}`;
-}

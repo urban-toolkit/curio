@@ -329,7 +329,7 @@ describe("NodeTemplateConfigModal - port editor", () => {
         ],
       } as never,
     });
-    const inputs = portSection("Input ports");
+    portSection("Input ports");
     expect(typeSelect("Input ports", 1, 1)).toHaveValue("DATAFRAME");
     expect(typeSelect("Input ports", 1, 2)).toHaveValue("GEODATAFRAME");
   });

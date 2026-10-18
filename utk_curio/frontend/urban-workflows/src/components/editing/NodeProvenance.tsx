@@ -15,13 +15,11 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { NodeType } from "../../constants";
-import { NodeTemplateId } from "../../registry/types";
 import { useProvenanceContext, NodeExecRecord } from "../../providers/ProvenanceProvider";
 import { getLayoutedElements } from "../../utils/provenanceLayout";
 
 type NodeProvenanceProps = {
     data: any;
-    nodeType: NodeTemplateId;
     setCode: any;
     active?: boolean;
 };
@@ -86,7 +84,7 @@ function ExecNodeCard({ data }: NodeProps) {
 const nodeTypes = { execNode: ExecNodeCard };
 const edgeTypes = { provenanceEdge: ProvenanceEdge };
 
-function NodeProvenanceInner({ data, nodeType, setCode, active = false }: NodeProvenanceProps) {
+function NodeProvenanceInner({ data, setCode, active = false }: NodeProvenanceProps) {
     const { provenanceGraphNodes, setSelectedExec, selectedParentExecRef } = useProvenanceContext();
     const [selectedId, setSelectedId] = useState<number | null>(
         () => selectedParentExecRef.current[data.nodeId] ?? null

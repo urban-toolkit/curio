@@ -67,20 +67,6 @@ export function relativeTimeOrEmpty(iso?: string | null): string {
   return `${Math.round(hours / 24)}d ago`;
 }
 
-export function datasetIconVariant(dataset: DatasetCatalogItem): "mint" | "sky" | "lilac" {
-  let hash = 0;
-  for (let i = 0; i < dataset.id.length; i++) {
-    hash = (hash + dataset.id.charCodeAt(i)) % 3;
-  }
-  return hash === 0 ? "mint" : hash === 1 ? "sky" : "lilac";
-}
-
-export function datasetInitials(title: string): string {
-  const words = title.trim().split(/\s+/).filter(Boolean);
-  const seed = words.length > 1 ? `${words[0][0]}${words[1][0]}` : title.slice(0, 2);
-  return seed.toUpperCase();
-}
-
 export function formatClass(format: DatasetFormat, styles: Record<string, string>): string {
   return `${styles.formatChip} ${styles[`format_${format}`] || ""}`;
 }

@@ -48,13 +48,6 @@ export function topOverlayBottom(): number | null {
     return Math.max(...overlays.map((el) => el.getBoundingClientRect().bottom));
 }
 
-/** The right edge of the palette rail (`#tools-palette-dock`) without any
- *  open panel: the notebook view keeps its column clear of it. */
-export function paletteRailRight(): number | null {
-    const dock = document.getElementById("tools-palette-dock");
-    return dock ? dock.getBoundingClientRect().right : null;
-}
-
 const FALLBACK_MIN_ZOOM = 0.05;
 const FALLBACK_MAX_ZOOM = 2;
 const DEFAULT_PADDING = 0.1;

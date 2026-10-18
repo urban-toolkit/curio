@@ -63,7 +63,6 @@ type NodeEditorProps = {
     output: { code: string; content: string } | ICodeData;
     nodeType: NodeTemplateId;
     applyGrammar?: any;
-    schema?: any;
     readOnly: boolean;
     defaultValue: any;
     floatCode?: any;
@@ -84,7 +83,6 @@ function NodeEditor({
     output,
     nodeType,
     applyGrammar,
-    schema,
     readOnly,
     defaultValue,
     floatCode,
@@ -323,12 +321,6 @@ function NodeEditor({
         fullscreen != "" && fullscreen != undefined
             ? tabContentFullscreen
             : tabContentStyle;
-
-    const iconStyle: CSS.Properties = {
-        cursor: "pointer",
-        fontSize: "14px",
-        color: "#888787",
-    };
 
     const navItemStyle: CSS.Properties = {
         maxWidth: "100%",
@@ -573,7 +565,6 @@ function NodeEditor({
                                             sendCodeToWidgets={primeWidgets}
                                             nodeId={data.nodeId}
                                             applyGrammar={applyGrammar}
-                                            schema={schema}
                                             setOutputCallback={setOutputCallback}
                                             references={scope}
                                             stripInputs={inputs}
@@ -591,7 +582,6 @@ function NodeEditor({
                                     >
                                         <NodeProvenance
                                             data={data}
-                                            nodeType={nodeType}
                                             setCode={navigateProv}
                                             active={activeTab === "provenance"}
                                         />

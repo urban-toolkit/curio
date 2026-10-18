@@ -45,7 +45,7 @@ jest.mock("../../components/styles", () => ({
 }));
 jest.mock("../../components/editing/NodeEditor", () => ({
   __esModule: true,
-  default: (props: any) => (
+  default: () => (
     <div data-testid="editor" />
   ),
 }));

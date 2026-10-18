@@ -1,4 +1,3 @@
-import { Node } from "reactflow";
 import { AccessLevelType } from "../constants";
 import { IInteraction, IPropagation } from "../providers/FlowProvider";
 import { PythonInterpreter } from "../PythonInterpreter";
@@ -83,17 +82,5 @@ export interface INodeData {
   skipExec?: number;
   /** What the node shows for that run in place of an outcome. */
   skipReason?: string;
-}
-
-/**
- * Represents a workflow node with extended properties
- */
-export interface INode extends Node {
-  id: string;
-  type: string;
-  // position: object;
-  // width: string;
-  // height: string;
-  data: INodeData;
 }
 

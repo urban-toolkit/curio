@@ -86,7 +86,6 @@ jest.mock('../../../utils/parsing', () => ({
 
 jest.mock('../../../utils/formatters', () => ({
   formatDate: () => '2026-01-01',
-  getType: () => ['dataframe'],
   mapTypes: (t: any) => t,
 }));
 

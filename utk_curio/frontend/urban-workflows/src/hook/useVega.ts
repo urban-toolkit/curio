@@ -403,7 +403,7 @@ export const useVega = ({
     if (recordsProvenance) {
       let typesInput: string[] = [];
 
-      if (data.input != "") typesInput = data.input.dataType; // getType([data.input]);
+      if (data.input != "") typesInput = data.input.dataType;
 
       let typesOuput: string[] = [...typesInput];
 
