@@ -15,8 +15,6 @@ than about agents specifically:
 
 from __future__ import annotations
 
-import pytest
-
 from utk_curio.backend.app.agents.routes import common as agents_routes
 from utk_curio.backend.app.agents.application import catalog as agents_services
 from utk_curio.backend.app.agents.domain.manifest import AGENT_CATEGORIES

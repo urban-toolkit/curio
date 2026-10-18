@@ -559,8 +559,8 @@ def install_to_store(user_key: str, dir_name: str) -> InstallOutcome:
 
 
 def install_from_catalog(user_key: str, dir_name: str, *, replace: bool) -> InstallResult:
-    """Install a catalog package by its on-disk directory name — the drawer's
-    "Reload from catalog". Copies ``<repo_root>/packages/<dir_name>/`` into the
+    """Install a catalog package by its on-disk directory name (the Node
+    Catalog's Update, with ``replace``). Copies ``<repo_root>/packages/<dir_name>/`` into the
     user's store through the same validator, size caps and integrity writer the
     sideload uses; ``InstallerError`` propagates. A missing catalog entry is a
     :class:`PackageServiceError` 404."""

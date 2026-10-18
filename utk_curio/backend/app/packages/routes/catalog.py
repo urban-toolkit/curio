@@ -39,8 +39,8 @@ def list_catalog_packages():
 @require_auth
 @_map_package_errors
 def install_from_catalog():
-    """Install a catalog package by ``dirName`` — the drawer's "Reload from catalog";
-    its declared python deps are installed and probed as well."""
+    """Install a catalog package by ``dirName`` (with ``replace``, the Node
+    Catalog's Update); its declared python deps are installed and probed as well."""
     key = user_key()
     body = request.get_json(silent=True) or {}
     result = packages_store_install.install_from_catalog(

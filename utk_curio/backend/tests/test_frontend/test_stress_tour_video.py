@@ -75,7 +75,6 @@ from .stress import (
     menu,
     node_client_point,
     node_ids_by_type,
-    node_statuses,
     open_agent_drawer,
     open_data_drawer,
     open_node_drawer,

@@ -17,7 +17,6 @@ from .agent_catalog import open_agent_drawer
 # ---------------------------------------------------------------------------
 
 DATA_DRAWER_ROOT = '[data-curio-dataset-catalog-drawer="true"]'
-NODE_DRAWER_ROOT = '[data-curio-node-catalog-drawer="true"]'
 
 #: The toast region ToastProvider portals into. Clipping to it keeps a 0.02
 #: budget spent on the toast rather than on the whole canvas behind it.

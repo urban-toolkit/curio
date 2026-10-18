@@ -4,7 +4,6 @@ except through ``resolve``; the routes never return them at all."""
 from __future__ import annotations
 
 import json
-import os
 import stat
 from types import SimpleNamespace
 

@@ -10,8 +10,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from utk_curio.backend.app.agents.application.proposals.cards import (
     _DRAFT_CARD_MAX_DEP_ROWS,
     _DRAFT_CARD_MAX_FILES,

@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import io
 
-import pytest
 from utk_curio.backend.app.common.user_storage import users_base
 
 

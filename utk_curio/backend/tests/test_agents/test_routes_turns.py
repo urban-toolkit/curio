@@ -255,9 +255,6 @@ class TestExecutionRecords:
         ``usage_out`` sink for conversation runs. Title calls answer out of
         band and report a token cost of their own."""
         from utk_curio.backend.app.agents.application import catalog
-        from utk_curio.backend.app.agents.application.solve import session as packages_session
-        from utk_curio.backend.app.agents.application.solve import simulation
-        from utk_curio.backend.app.agents.application import spec_reads
         from utk_curio.backend.app.agents.application.turns import delegates
         from utk_curio.backend.app.agents.application.turns import policy
         from utk_curio.backend.app.agents.application.turns import titles
@@ -286,9 +283,6 @@ class TestExecutionRecords:
 
     def test_run_persists_execution_record_with_pins_and_usage(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         from utk_curio.backend.app.agents.application import catalog
-        from utk_curio.backend.app.agents.application.solve import session as packages_session
-        from utk_curio.backend.app.agents.application.solve import simulation
-        from utk_curio.backend.app.agents.application import spec_reads
         from utk_curio.backend.app.agents.application.turns import delegates
         from utk_curio.backend.app.agents.application.turns import policy
         from utk_curio.backend.app.agents.application.turns import titles
@@ -699,9 +693,6 @@ class TestRunContext:
 
     def _mock_run(self, monkeypatch):
         from utk_curio.backend.app.agents.application import catalog
-        from utk_curio.backend.app.agents.application.solve import session as packages_session
-        from utk_curio.backend.app.agents.application.solve import simulation
-        from utk_curio.backend.app.agents.application import spec_reads
         from utk_curio.backend.app.agents.application.turns import delegates
         from utk_curio.backend.app.agents.application.turns import policy
         from utk_curio.backend.app.agents.application.turns import titles
@@ -764,9 +755,6 @@ class TestRunContext:
 
     def test_context_is_bounded_with_a_visible_marker(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         from utk_curio.backend.app.agents.application import catalog
-        from utk_curio.backend.app.agents.application.solve import session as packages_session
-        from utk_curio.backend.app.agents.application.solve import simulation
-        from utk_curio.backend.app.agents.application import spec_reads
         from utk_curio.backend.app.agents.application.turns import delegates
         from utk_curio.backend.app.agents.application.turns import policy
         from utk_curio.backend.app.agents.application.turns import titles
@@ -1048,9 +1036,6 @@ class TestToolLoop:
 
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application import catalog
-            from utk_curio.backend.app.agents.application.solve import session as packages_session
-            from utk_curio.backend.app.agents.application.solve import simulation
-            from utk_curio.backend.app.agents.application import spec_reads
             from utk_curio.backend.app.agents.application.turns import delegates
             from utk_curio.backend.app.agents.application.turns import policy
             from utk_curio.backend.app.agents.application.turns import titles
@@ -1091,9 +1076,6 @@ class TestToolLoop:
 
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application import catalog
-            from utk_curio.backend.app.agents.application.solve import session as packages_session
-            from utk_curio.backend.app.agents.application.solve import simulation
-            from utk_curio.backend.app.agents.application import spec_reads
             from utk_curio.backend.app.agents.application.turns import delegates
             from utk_curio.backend.app.agents.application.turns import policy
             from utk_curio.backend.app.agents.application.turns import titles
@@ -1138,9 +1120,6 @@ class TestToolLoop:
 
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application import catalog
-            from utk_curio.backend.app.agents.application.solve import session as packages_session
-            from utk_curio.backend.app.agents.application.solve import simulation
-            from utk_curio.backend.app.agents.application import spec_reads
             from utk_curio.backend.app.agents.application.turns import delegates
             from utk_curio.backend.app.agents.application.turns import policy
             from utk_curio.backend.app.agents.application.turns import titles
@@ -1176,9 +1155,6 @@ class TestToolLoop:
         from utk_curio.backend.app.agents.domain import builtin
         from utk_curio.backend.app.agents.domain import content as content_mod
         from utk_curio.backend.app.agents.application import catalog
-        from utk_curio.backend.app.agents.application.solve import session as packages_session
-        from utk_curio.backend.app.agents.application.solve import simulation
-        from utk_curio.backend.app.agents.application import spec_reads
         from utk_curio.backend.app.agents.application.turns import delegates
         from utk_curio.backend.app.agents.application.turns import policy
         from utk_curio.backend.app.agents.application.turns import titles
@@ -1239,9 +1215,6 @@ class TestStructuredContent:
 
     def _mock_run(self, monkeypatch, replies):
         from utk_curio.backend.app.agents.application import catalog
-        from utk_curio.backend.app.agents.application.solve import session as packages_session
-        from utk_curio.backend.app.agents.application.solve import simulation
-        from utk_curio.backend.app.agents.application import spec_reads
         from utk_curio.backend.app.agents.application.turns import delegates
         from utk_curio.backend.app.agents.application.turns import policy
         from utk_curio.backend.app.agents.application.turns import titles
@@ -1432,9 +1405,6 @@ class TestRunsAreRecordedNotRationed:
 
     def _mock_run(self, monkeypatch, reply="ok"):
         from utk_curio.backend.app.agents.application import catalog
-        from utk_curio.backend.app.agents.application.solve import session as packages_session
-        from utk_curio.backend.app.agents.application.solve import simulation
-        from utk_curio.backend.app.agents.application import spec_reads
         from utk_curio.backend.app.agents.application.turns import delegates
         from utk_curio.backend.app.agents.application.turns import policy
         from utk_curio.backend.app.agents.application.turns import titles
@@ -1549,9 +1519,6 @@ class TestOutputCapReachesTheProvider:
             json={"message": "q"}, headers=_auth(token),
         )
         from utk_curio.backend.app.agents.application import catalog
-        from utk_curio.backend.app.agents.application.solve import session as packages_session
-        from utk_curio.backend.app.agents.application.solve import simulation
-        from utk_curio.backend.app.agents.application import spec_reads
         from utk_curio.backend.app.agents.application.turns import delegates
         from utk_curio.backend.app.agents.application.turns import policy
         from utk_curio.backend.app.agents.application.turns import titles
@@ -2244,9 +2211,6 @@ class TestDatasetFinderTools:
 
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application import catalog
-            from utk_curio.backend.app.agents.application.solve import session as packages_session
-            from utk_curio.backend.app.agents.application.solve import simulation
-            from utk_curio.backend.app.agents.application import spec_reads
             from utk_curio.backend.app.agents.application.turns import delegates
             from utk_curio.backend.app.agents.application.turns import policy
             from utk_curio.backend.app.agents.application.turns import titles
@@ -2331,7 +2295,6 @@ class TestDatasetFinderTools:
         from utk_curio.backend.app.datasets.application.catalog_service import (
             DatasetCatalogService,
         )
-        from utk_curio.backend.app.users.models import User
 
         with client.application.app_context():
             svc = DatasetCatalogService(db_user(client, user))
@@ -3255,9 +3218,6 @@ class TestVerifiedDiscovery:
 
     def test_research_verify_delegates_get_runtime_evidence(self, tmp_curio, monkeypatch):
         from utk_curio.backend.app.agents.application import catalog
-        from utk_curio.backend.app.agents.application.solve import session as packages_session
-        from utk_curio.backend.app.agents.application.solve import simulation
-        from utk_curio.backend.app.agents.application import spec_reads
         from utk_curio.backend.app.agents.application.turns import delegates
         from utk_curio.backend.app.agents.application.turns import policy
         from utk_curio.backend.app.agents.application.turns import titles
@@ -3343,9 +3303,6 @@ class TestPackageRecommendationTools:
 
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application import catalog
-            from utk_curio.backend.app.agents.application.solve import session as packages_session
-            from utk_curio.backend.app.agents.application.solve import simulation
-            from utk_curio.backend.app.agents.application import spec_reads
             from utk_curio.backend.app.agents.application.turns import delegates
             from utk_curio.backend.app.agents.application.turns import policy
             from utk_curio.backend.app.agents.application.turns import titles

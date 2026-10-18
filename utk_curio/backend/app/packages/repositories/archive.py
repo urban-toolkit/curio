@@ -210,9 +210,9 @@ def is_non_content_filename(name: str) -> bool:
     ``.curio-publisher.json.tmp`` and swallows an ``os.replace`` failure as a
     warning, so a full disk or a Windows sharing violation can leave the .tmp
     beside the package. The exact-name rule did not cover it, and every route
-    that re-zips a catalog directory - catalog install, the drawer install,
-    "Reload from catalog", the workflow-deps auto-install, export - would then
-    refuse the package until someone republished it.
+    that re-zips a catalog directory (catalog install, the drawer install, the
+    workflow-deps auto-install, export) would then refuse the package until
+    someone republished it.
     """
     return name in non_content_filenames() or name.startswith(".")
 

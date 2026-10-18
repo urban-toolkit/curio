@@ -403,19 +403,6 @@ describe("usePackageCatalog — publish, unpublish, reload, export", () => {
     expect(h.showToast).toHaveBeenCalledWith("Unpublished ai.test.alpha.", "success");
   });
 
-  it("reloadFromCatalog re-copies and reloads the window; a failure clears the spinner", async () => {
-    const reloadWindow = jest.fn();
-    const h = projectHook({ reloadWindow });
-    await waitFor(() => expect(h.result.current.installed).toHaveLength(1));
-    await act(() => h.result.current.reloadFromCatalog(CATALOG[0]));
-    expect(api.installFromCatalog).toHaveBeenCalledWith("ai.test.alpha@1", { replace: true });
-    expect(reloadWindow).toHaveBeenCalled();
-    api.installFromCatalog.mockRejectedValueOnce(new Error("off"));
-    await act(() => h.result.current.reloadFromCatalog(CATALOG[0]));
-    expect(h.result.current.actionError).toBe("Couldn't reload ai.test.alpha: off");
-    expect(h.result.current.reloadingPackageKey).toBeNull();
-  });
-
   it("exportArchive downloads; a failure is a banner", async () => {
     api.download.mockRejectedValueOnce(new Error("gone"));
     const h = projectHook();

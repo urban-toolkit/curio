@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import pytest
 
-from utk_curio.backend.app.packages.builder import promotion as build_promotion
 from utk_curio.backend.app.packages.repositories import staging as build_staging
 from utk_curio.backend.app.packages.builder.extension import installed_package_digest
 from utk_curio.backend.app.packages.builder.models import parse_build_request
@@ -21,7 +20,6 @@ from utk_curio.backend.app.packages.builder.promotion import (
     promote,
     rollback,
 )
-from utk_curio.backend.app.packages.application.store_install import install_package_from_archive
 from utk_curio.backend.app.packages.repositories.store import package_dir
 
 _DEPS = {"python": {}, "js": {}, "packages": {}}
@@ -112,7 +110,6 @@ class TestPromotedLibrariesActuallyImport:
         """
         from utk_curio.backend.app.packages.infrastructure import backend_runtime
         from utk_curio.backend.app.packages.infrastructure import pip_runner
-        from utk_curio.backend.app.packages import service as svc
         from utk_curio.backend.app.packages.application import provisioning
 
         asked: list = []

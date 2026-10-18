@@ -78,9 +78,6 @@ class SilentNarrator:
             locator.click(force=force)
         self.beat(hold)
 
-    def focus_hold(self, ms: float) -> None:
-        self.beat(ms)
-
     def type_into(self, locator, text: str, *, delay: float = 55) -> None:
         locator.click()
         locator.fill(text)

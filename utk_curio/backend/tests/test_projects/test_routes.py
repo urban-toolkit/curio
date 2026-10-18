@@ -1,6 +1,5 @@
 """Integration tests for /api/projects routes."""
 import json
-import pytest
 
 from utk_curio.backend.app.projects import storage
 

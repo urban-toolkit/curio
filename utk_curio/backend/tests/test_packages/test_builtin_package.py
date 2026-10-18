@@ -13,7 +13,6 @@ from pathlib import Path
 import pytest
 
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
-from utk_curio.backend.app.packages.repositories.catalog_dir import catalog_root
 from utk_curio.backend.app.packages.schemas.responses import package_payload
 
 # The COMMITTED catalog, named directly rather than through

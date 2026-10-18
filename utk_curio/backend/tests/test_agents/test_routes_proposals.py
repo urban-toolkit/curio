@@ -50,11 +50,7 @@ class TestReviewProposals:
 
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application import catalog
-            from utk_curio.backend.app.agents.application.solve import session as packages_session
-            from utk_curio.backend.app.agents.application.solve import simulation
             from utk_curio.backend.app.agents.application import spec_reads
-            from utk_curio.backend.app.agents.application.turns import delegates
-            from utk_curio.backend.app.agents.application.turns import policy
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
@@ -397,11 +393,7 @@ class TestNodeCreate:
 
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application import catalog
-            from utk_curio.backend.app.agents.application.solve import session as packages_session
-            from utk_curio.backend.app.agents.application.solve import simulation
             from utk_curio.backend.app.agents.application import spec_reads
-            from utk_curio.backend.app.agents.application.turns import delegates
-            from utk_curio.backend.app.agents.application.turns import policy
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
@@ -739,11 +731,7 @@ class TestDataflowPlanMint:
 
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application import catalog
-            from utk_curio.backend.app.agents.application.solve import session as packages_session
-            from utk_curio.backend.app.agents.application.solve import simulation
             from utk_curio.backend.app.agents.application import spec_reads
-            from utk_curio.backend.app.agents.application.turns import delegates
-            from utk_curio.backend.app.agents.application.turns import policy
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
@@ -1388,11 +1376,7 @@ class TestDestructiveReplan:
 
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application import catalog
-            from utk_curio.backend.app.agents.application.solve import session as packages_session
-            from utk_curio.backend.app.agents.application.solve import simulation
             from utk_curio.backend.app.agents.application import spec_reads
-            from utk_curio.backend.app.agents.application.turns import delegates
-            from utk_curio.backend.app.agents.application.turns import policy
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
@@ -2213,11 +2197,7 @@ class TestPackageBuilderTools:
 
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application import catalog
-            from utk_curio.backend.app.agents.application.solve import session as packages_session
-            from utk_curio.backend.app.agents.application.solve import simulation
             from utk_curio.backend.app.agents.application import spec_reads
-            from utk_curio.backend.app.agents.application.turns import delegates
-            from utk_curio.backend.app.agents.application.turns import policy
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
 
@@ -2983,11 +2963,7 @@ class TestPlanTopologyMint:
 
         def _fake_run(config, messages, **kwargs):
             from utk_curio.backend.app.agents.application import catalog
-            from utk_curio.backend.app.agents.application.solve import session as packages_session
-            from utk_curio.backend.app.agents.application.solve import simulation
             from utk_curio.backend.app.agents.application import spec_reads
-            from utk_curio.backend.app.agents.application.turns import delegates
-            from utk_curio.backend.app.agents.application.turns import policy
             from utk_curio.backend.app.agents.application.turns import titles
             from utk_curio.backend.app.agents.infrastructure import providers
             if messages and messages[0].get("content") == titles.TITLE_PROMPT:
@@ -3131,11 +3107,7 @@ class TestPlanTopologyApply:
         """The user draws an edge AND the digest is re-pinned (as the per-node
         applies do), so the topology re-check — not the digest — must catch it."""
         from utk_curio.backend.app.agents.application import catalog
-        from utk_curio.backend.app.agents.application.solve import session as packages_session
-        from utk_curio.backend.app.agents.application.solve import simulation
         from utk_curio.backend.app.agents.application import spec_reads
-        from utk_curio.backend.app.agents.application.turns import delegates
-        from utk_curio.backend.app.agents.application.turns import policy
         from utk_curio.backend.app.agents.application.turns import titles
         from utk_curio.backend.app.agents.infrastructure import providers
         spec = self._spec(user, project_id)

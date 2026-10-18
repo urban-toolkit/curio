@@ -1458,13 +1458,12 @@ def test_resolve_conflict_returns_409(
 
 
 # ---------------------------------------------------------------------------
-# POST /api/packages/catalog/install with replace -- the "Reload from catalog"
-# action in the drawer's Installed tab.
+# POST /api/packages/catalog/install with replace, the install behind the Node
+# Catalog's Update.
 #
-# Authoring a package under packages/ means editing it in place. Plain install
-# is a no-op once a copy exists in the user store, so the drawer's Reload
-# button re-installs with replace=true; without that, on-disk edits (including
-# a rebuilt scripts/behaviors.js) never reach the running app.
+# A plain install is a no-op once a copy exists in the user store, so Update
+# installs with replace=true; without that, the catalog's files (including a
+# rebuilt scripts/behaviors.js) never reach the running app.
 # ---------------------------------------------------------------------------
 
 def _write_catalog_package(root, manifest: dict, sources: dict[str, str]) -> str:
@@ -1495,7 +1494,7 @@ def fake_catalog(tmp_path, monkeypatch):
 def test_catalog_install_replace_picks_up_edited_sources(
     client, user_and_token, tmp_curio, fake_catalog, manifest_dict,
 ):
-    """Reload overwrites the installed copy with the catalog's current bits."""
+    """An install with replace overwrites the installed copy with the catalog's current bits."""
     _, token = user_and_token
     manifest = manifest_dict(package_id="ai.test.reload", major=1)
     manifest["templates"] = [
@@ -1535,11 +1534,11 @@ def test_catalog_install_replace_picks_up_edited_sources(
     )
 
     # ...and a plain install does nothing, because a copy already exists.
-    # This is the trap the Reload button exists to avoid.
+    # This is why Update installs with replace.
     stale = client.get(file_url, headers=_auth(token)).get_data(as_text=True)
     assert "first" in stale
 
-    # Reload == install with replace.
+    # An install with replace takes the edited files.
     resp = client.post(
         "/api/packages/catalog/install",
         data=json.dumps({"dirName": dir_name, "replace": True}),
@@ -1580,10 +1579,10 @@ def test_catalog_install_without_replace_rejects_existing(
 def test_catalog_install_replace_refreshes_behavior_bundle(
     client, user_and_token, tmp_curio, fake_catalog, manifest_dict,
 ):
-    """A rebuilt scripts/behaviors.js reaches the user store on reload.
+    """A rebuilt scripts/behaviors.js reaches the user store on an install with replace.
 
     This is the custom-UI case: the frontend fetches the bundle from the
-    *installed* copy, so a reload is what makes a rebuilt bundle live.
+    *installed* copy, so the replace is what makes a rebuilt bundle live.
     """
     _, token = user_and_token
     manifest = manifest_dict(package_id="ai.test.uinode", major=1)

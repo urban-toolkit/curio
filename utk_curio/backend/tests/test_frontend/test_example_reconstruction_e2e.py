@@ -391,7 +391,7 @@ class TestSolveProgressAndReconnection:
         page = session["page"]
         project_id = _new_project(session, "Reconstruction solve")
         _provision(session, project_id)
-        attachment_id = _attach_builder(session, project_id)
+        _attach_builder(session, project_id)
         _script_the_oracle(session)
 
         page.goto(f"{session['frontend']}/dataflow/{project_id}")

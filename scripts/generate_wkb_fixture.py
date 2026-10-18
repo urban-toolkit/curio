@@ -18,7 +18,7 @@ from pathlib import Path
 from shapely import wkb as shapely_wkb
 from shapely.geometry import (
     GeometryCollection, LineString, MultiLineString, MultiPoint, MultiPolygon,
-    Point, Polygon, shape,
+    Point, Polygon,
 )
 
 CASES = {

@@ -1,6 +1,4 @@
-import React from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { renderHook, act } from "@testing-library/react";
+import { renderHook, act, waitFor } from "@testing-library/react";
 
 /**
  * Closing the /catalog/agents detail drawer has to keep it closed.

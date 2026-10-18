@@ -37,7 +37,6 @@ from playwright.sync_api import expect
 from .utils import (
     accept_confirm_dialog,
     api_json,
-    connect_nodes,
     drag_to_canvas,
     require_owner_view,
     require_project_page,
@@ -315,8 +314,8 @@ def test_publishing_is_not_a_canvas_drawer_action(
     publishing onto the Data Catalog PAGE's detail drawer, on the reasoning that
     publishing is an account-level decision about an item rather than a decision
     about whichever dataflow you happen to have open. ``DatasetCard`` and
-    ``DatasetDetailPanel`` both say so in comments, and ``InstalledDatasetsList``
-    - which carried the pill - is now dead code.
+    ``DatasetDetailPanel`` both say so in comments, and ``InstalledDatasetsList``,
+    which carried the pill, has been deleted.
 
     So the claim splits in two. This half pins the absence, which is the part
     that changed; the test below pins the presence, on the surface that owns it.

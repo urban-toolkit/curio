@@ -191,14 +191,6 @@ def _edges(page) -> list[dict]:
     )
 
 
-def _node_input(page, node_id: str):
-    return page.evaluate(
-        "id => { const n = (window.__curio_reactFlow.getNodes() || [])"
-        ".find((x) => x.id === id); return n ? n.data.input : null; }",
-        node_id,
-    )
-
-
 def _wait_gone(page, node_id: str) -> None:
     page.wait_for_function(
         "id => !document.querySelector(`.react-flow__node[data-id='${id}']`)",

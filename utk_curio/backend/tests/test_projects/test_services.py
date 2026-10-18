@@ -130,7 +130,7 @@ def test_ownership_404(app, db, user_and_token, tmp_curio):
     user, _ = user_and_token
     detail = services.save_project(user, ProjectCreate(name="Private", spec=_make_spec()))
 
-    from utk_curio.backend.app.users.models import User, UserSession
+    from utk_curio.backend.app.users.models import User
     other = User(username="bob", name="Bob")
     db.session.add(other)
     db.session.flush()

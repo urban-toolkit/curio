@@ -12,7 +12,6 @@ is the duplicate the palette's forced-off Save toggle used to prevent. Both
 installers therefore skip a node whose output is a dataset the account already
 holds, and keep the ref.
 """
-import pytest
 
 from utk_curio.backend.app.datasets.application.auto_install import (
     auto_install_node_output,
@@ -120,7 +119,7 @@ def test_the_skipped_loaders_ref_is_still_restorable(tmp_curio):
 
 def test_the_run_installer_reports_the_skip(app):
     # ``app`` for the dataset index's DB session, which the installer touches.
-    spec = _install_a_dataset_the_loader_reads()
+    _install_a_dataset_the_loader_reads()
 
     class _User:
         id = 1

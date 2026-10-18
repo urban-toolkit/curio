@@ -14,8 +14,6 @@ for.
 import base64
 import json
 
-import pytest
-
 from utk_curio.backend.app.projects import services
 
 

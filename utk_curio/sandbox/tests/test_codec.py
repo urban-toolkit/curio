@@ -15,7 +15,6 @@ import json
 import re
 
 import duckdb
-import math
 import sys
 import unittest
 

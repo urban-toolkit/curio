@@ -38,7 +38,6 @@ from .vega_svg import (  # noqa: F401
     PLAYWRIGHT_EXPECTED_DIR,
     dot_data_to_vega_values,
     save_expected_svg,
-    load_expected_svg,
     compare_svg_structure,
 )
 from .capture_waits import (  # noqa: F401
@@ -252,5 +251,4 @@ from .scripted_llm import (  # noqa: F401
     captured_agent_calls,
     captured_agent_offers,
     captured_system_prompt,
-    reset_agent_script,
 )

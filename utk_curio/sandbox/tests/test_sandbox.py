@@ -6,7 +6,7 @@ import os
 import sys
 import json
 from utk_curio.sandbox.app import app
-from flask import Flask, jsonify
+from flask import Flask
 
 # Modify sys.path to include the sandbox folder
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'sandbox')))

@@ -10,8 +10,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from utk_curio.backend.app.agents.application import tools as agent_tools
 from utk_curio.backend.app.common.user_storage import users_base
 from utk_curio.backend.app.agents.application.turns.delegates import (

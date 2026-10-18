@@ -46,7 +46,6 @@ RUNS_ON = {
     "utk": ["self-hosted", "gpu", "curio"],
 }
 CPU_POOLS = ("arcade", "hosted")
-GPU_POOLS = ("arcade-gpu", "utk")
 
 #: Runners in the arcade CPU pool (arcade-cpu-01..40).
 CPU_RUNNERS = 40

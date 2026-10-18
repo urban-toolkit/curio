@@ -13,7 +13,6 @@ of the source ``@<major>``.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from utk_curio.backend.app.datasets.application import migrations
 from utk_curio.backend.app.datasets.domain.manifest import (

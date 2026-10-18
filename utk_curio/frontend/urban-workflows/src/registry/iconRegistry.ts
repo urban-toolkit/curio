@@ -13,14 +13,10 @@ import {
   faCalculator,
   faCity,
   faCube,
-  faChartColumn,
   faChartLine,
   faCodeCompare,
-  faCodeMerge,
-  faCubes,
   faDatabase,
   faDownload,
-  faEraser,
   faFilm,
   faHandPointer,
   faMap,
@@ -30,7 +26,6 @@ import {
   faRectangleList,
   faServer,
   faSliders,
-  faStreetView,
   faSun,
   faTable,
   faUpload,
@@ -69,23 +64,18 @@ registerIcon('fa-solid:database', faDatabase);
 registerIcon('fa-solid:server', faServer);
 registerIcon('fa-solid:rectangle-list', faRectangleList);
 registerIcon('fa-solid:chart-line', faChartLine);
-registerIcon('fa-solid:chart-column', faChartColumn);
 registerIcon('fa-solid:table', faTable);
 registerIcon('fa-solid:city', faCity);
-registerIcon('fa-solid:cubes', faCubes);
 registerIcon('fa-solid:cube', faCube);
 registerIcon('fa-solid:map', faMap);
 registerIcon('fa-solid:map-location-dot', faMapLocationDot);
-registerIcon('fa-solid:code-merge', faCodeMerge);
 // curio.builtin@1 + model package additions.
 registerIcon('fa-solid:object-group', faObjectGroup);
 registerIcon('fa-solid:sliders', faSliders);
 registerIcon('fa-solid:code-compare', faCodeCompare);
 registerIcon('fa-solid:calculator', faCalculator);
-registerIcon('fa-solid:eraser', faEraser);
 registerIcon('fa-solid:hand-pointer', faHandPointer);
 registerIcon('fa-solid:note-sticky', faNoteSticky);
-registerIcon('fa-solid:street-view', faStreetView);
 registerIcon('fa-solid:wand-magic-sparkles', faWandMagicSparkles);
 // curio.media@1.
 registerIcon('fa-solid:film', faFilm);

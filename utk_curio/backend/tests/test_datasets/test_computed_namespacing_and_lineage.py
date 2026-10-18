@@ -14,8 +14,6 @@ Covers:
 from __future__ import annotations
 
 import json
-import os
-from pathlib import Path
 
 from utk_curio.backend.app.datasets.application.export import (
     _producer_node_id_for,
@@ -31,11 +29,9 @@ from utk_curio.backend.app.datasets.install.installer import (
     dataflow_segment_from_computed_id,
     install_computed_file_for_node,
     node_segment_from_computed_id,
-    sanitize_node_id_segment,
 )
 from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
-    auth_headers,
     create_project,
     write_legacy_computed_dir,
 )
