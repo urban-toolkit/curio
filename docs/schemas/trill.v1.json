@@ -198,7 +198,7 @@
         },
         "content": {
           "type": "string",
-          "description": "The node's payload: Python or JavaScript source, or a grammar document (Vega-Lite, Autark), depending on the template's 'engine' and 'editor'. Absent on presentation-only templates - across the committed examples, 'editor: none' in the manifest and an absent-or-empty content correspond exactly."
+          "description": "The node's payload: Python or JavaScript source, or a grammar document (Vega-Lite, Autark), depending on the template's 'engine' and 'editor'. A curio.builtin/note node holds its text here, in simple markdown. Absent on the other presentation-only templates - across the committed examples, 'editor: none' in the manifest and an absent-or-empty content correspond exactly."
         },
         "in": { "$ref": "#/$defs/portType" },
         "out": { "$ref": "#/$defs/portType" },
@@ -208,7 +208,7 @@
         },
         "title": {
           "type": "string",
-          "description": "Optional display title, used as the header on post-it style nodes and set by agents when they create a node. Emitted only when non-empty."
+          "description": "Optional display title, set by agents when they create a node. A curio.builtin/note node shows it above its text, and its author sets it there. Emitted only when non-empty."
         },
         "width": {
           "type": "number",
@@ -519,7 +519,7 @@
         },
         "appearance": {
           "type": "object",
-          "description": "Per-node visual appearance, so a recolored node keeps its color across a save.",
+          "description": "Per-node visual appearance, so a recolored node keeps its color across a save. A curio.builtin/note node is drawn on this color.",
           "additionalProperties": true,
           "properties": {
             "backgroundColor": {

@@ -1,0 +1,204 @@
+/* The Note node: a title and simple markdown on a color of its own. The note's
+   color, ink and link color are set on the element (utils/noteColors); fonts,
+   radii and the form's controls use the tokens in styles/curioTokens.css. */
+
+.note {
+  position: relative;
+  box-sizing: border-box;
+  height: 100%;
+  padding: 10px 12px;
+  overflow-y: auto;
+  border-radius: var(--curio-radius-sm);
+  font-family: var(--curio-font-family);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  user-select: text;
+  cursor: text;
+}
+
+.title {
+  margin: 0 0 6px;
+  padding-right: 44px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.body > :first-child {
+  margin-top: 0;
+}
+
+.body p,
+.body ul,
+.body ol,
+.body pre,
+.body blockquote {
+  margin: 4px 0;
+}
+
+.body ul,
+.body ol {
+  padding-left: 18px;
+}
+
+.body h1,
+.body h2,
+.body h3,
+.body h4,
+.body h5,
+.body h6 {
+  margin: 8px 0 2px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.body h1 {
+  font-size: 15px;
+}
+
+.body h2 {
+  font-size: 14px;
+}
+
+.body a {
+  color: var(--note-link);
+  text-decoration: underline;
+}
+
+.body code {
+  font-family: var(--curio-font-mono);
+  font-size: 12px;
+}
+
+.body pre {
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+
+.body blockquote {
+  padding-left: 8px;
+  border-left: 2px solid currentColor;
+}
+
+.empty {
+  margin: 0;
+  opacity: 0.75;
+}
+
+.edit {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid currentColor;
+  border-radius: var(--curio-radius-sm);
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: var(--curio-font-size-xs);
+  font-weight: 500;
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+.edit:hover,
+.edit:focus-visible {
+  opacity: 1;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-sizing: border-box;
+  height: 100%;
+  padding: 8px 10px;
+  overflow-y: auto;
+  font-family: var(--curio-font-family);
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-primary);
+  background: var(--curio-card-bg);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  color: var(--curio-text-secondary);
+}
+
+.field input,
+.field textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-sm);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  font-family: inherit;
+  font-size: var(--curio-font-size-xs);
+}
+
+.field textarea {
+  flex: 1;
+  min-height: 72px;
+  resize: vertical;
+  font-family: var(--curio-font-mono);
+}
+
+.field input:focus,
+.field textarea:focus {
+  outline: 2px solid var(--curio-role-update-fg);
+  outline-offset: -1px;
+}
+
+.colors {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.colorsLabel {
+  margin-right: 2px;
+  color: var(--curio-text-secondary);
+}
+
+.swatch {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.swatch[aria-checked="true"] {
+  outline: 2px solid var(--curio-role-update-fg);
+  outline-offset: 1px;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.button {
+  height: 22px;
+  padding: 0 10px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-sm);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  font-family: inherit;
+  font-size: var(--curio-font-size-xs);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.button:hover {
+  border-color: var(--curio-text-secondary);
+}

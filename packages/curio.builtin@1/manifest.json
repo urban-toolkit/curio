@@ -533,6 +533,26 @@
         }
       ],
       "paletteOrder": 16
+    },
+    {
+      "category": "flow",
+      "containerStyle": {
+        "nodeHeight": 240,
+        "nodeWidth": 320
+      },
+      "description": "A note on the canvas: a title and a short text in simple markdown (headings, lists, bold and https links) on a color of its own. It connects to nothing and runs nothing. The Researcher writes its findings in notes.",
+      "editor": "none",
+      "engine": "python",
+      "hasCode": false,
+      "hasGrammar": false,
+      "hasWidgets": false,
+      "iconRef": "fa-solid:note-sticky",
+      "id": "note",
+      "inputPorts": [],
+      "label": "Note",
+      "behavior": "note",
+      "outputPorts": [],
+      "paletteOrder": 17
     }
   ],
   "version": "1.0.2"

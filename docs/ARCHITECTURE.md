@@ -401,6 +401,29 @@ whose code is written from its edit log (`metadata.editFeatures`: `key`, `layer`
   `layerType` in their `metadata` (`worker._keep_layer_identity`); the isolated
   child gets the envelope itself. `edit_features` reads both.
 
+### Notes
+
+The Note node (`curio.builtin/note`) has no port and no code, so a run forwards it
+(`_FORWARD_KINDS` in `execution/run_plan.py`) and Run All counts it done at once
+(`disablePlay`). It holds what an agent's note holds: the title in `data.title`, the
+text in `data.code` (the spec's `content`) and the color in
+`data.appearance.backgroundColor`.
+
+- `adapters/node/noteBehavior.tsx` hands `components/notes/NoteBody.tsx` the node.
+  The body draws the note, and its form writes all three through `updateDataNode`;
+  neither shows on the dashboard or on a read-only canvas (`useSharedView`).
+- `components/notes/NoteMarkdown.tsx` draws the text with react-markdown: no raw
+  HTML (`skipHtml`), an element allowlist, URLs kept only when https (`httpsOnly`),
+  links in a new tab with the arrow, and an image as its alt text.
+- `utils/noteColors.ts` derives the background, ink and link color the way
+  `packages/domain/node_appearance.py` does, from the palette and inks
+  `src/generated/noteColors.ts` copies from it.
+- A note template is a template with a behavior whose content kind is `note`
+  (`is_note_template` in `packages/application/templates.py`): no editor, no
+  input, no widgets. `presentation_templates`, the roster's `presentation` flag and
+  an enlisted package's notes read it, so the Researcher's notes find the Note
+  rather than a Data Pool or a Parameter node.
+
 ---
 
 ## Nodes: Types and Structure
@@ -1232,6 +1255,7 @@ Some contracts are read on both sides of the stack: by Python and TypeScript, or
   | `utk_curio/frontend/urban-workflows/src/generated/agentCategories.ts` | The agent manifest's category vocabulary and the `AgentCategory` type, from `manifest.AGENT_CATEGORIES` |
   | `utk_curio/frontend/urban-workflows/src/generated/solveStopReasons.ts` | Why a node's repair loop stopped (`stoppedBy`), the `StopReason` type and the phrase each reason reads as, from `SOLVE_STOP_REASONS`; the server's failure sentences read the same table (see [The Solve loop](#the-solve-loop)) |
   | `utk_curio/frontend/urban-workflows/src/generated/visDefaults.ts` | What a visualization node does with its input by itself, from the tables in `contracts.py`: the column roles and the pandas dtype each role comes from; the Vega-Lite and Autark starter ladders, each rule's id, condition, mark or family and description in ladder order; the Vega-Lite `$schema` URL; and the column names, URL extensions and share of image values behind Simple View's image columns. `starterSpec.ts`, `vegaDefaultSpec.ts`, `autkDefaultSpec.ts` and `imageColumns.ts` read it and keep each rule's builder, keyed by its id, and the matching logic |
+  | `utk_curio/frontend/urban-workflows/src/generated/noteColors.ts` | A note's palette, its default color, the two inks and two link colors, and the contrast an ink must reach, from `packages/domain/node_appearance.py`; `utils/noteColors.ts` derives a Note's colors from them (see [Notes](#notes)) |
   | `utk_curio/llm-prompts/default_preamble.md` | The shared agent preamble: the Trill block, projected from [`docs/schemas/trill.v1.json`](schemas/trill.v1.json) to the fields `contracts.TRILL_PROMPT_FIELDS` names; every list of built-in templates (description, control, port types, the connections an input accepts, output cardinality, interaction support), read from the built-in manifest and the packages layer's `input_capacity`, and naming each template by its label; the handles of a node's input circles and the input chips; the label of each template its prose names; the section on Autark documents, rendered from the vendored schema (see [The Autark Schema](#the-autark-schema)); and the starter ladders, the dtype roles, the Vega-Lite `$schema` URL and the image column names, extensions and share, from the same tables as `visDefaults.ts` |
   | `utk_curio/llm-prompts/package_contract.md` | The package backend contract: the handler name pattern, the timeout classes, the two permissions and the variable that names a handler's data directory, from `packages/domain/backend_contract.py`. `package_build_instruction.md` (the Node Builder's package-writing mode) includes it whole, and a delegated call of that mode receives the file as its build-request contract's `backendContract` |
   | `utk_curio/llm-prompts/research_verify_rules.md` | The Researcher's rules for checking a fact: verify before asserting, a failure to verify is a finding, the VERIFIED, REPORTED and UNVERIFIED labels with what was checked, and the web-call budget. `researcher_instruction.md` (its chat) and `research_instruction.md` (its `research.verify` mode) include it whole |

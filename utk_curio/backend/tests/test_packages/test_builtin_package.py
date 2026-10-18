@@ -39,13 +39,14 @@ EXPECTED_TEMPLATE_IDS: frozenset[str] = frozenset({
     "compare-scenarios",
     "raster-calculator",
     "edit-features",
+    "note",
 })
 
 EXPECTED_BEHAVIORS: frozenset[str] = frozenset({
     "code", "data-export", "data-pool", "data-summary", "vega",
     "simple-vis", "autk-grammar", "spatial-join", "parameter",
     "compare-scenarios", "raster-calculator",
-    "edit-features",
+    "edit-features", "note",
 })
 
 
@@ -89,6 +90,28 @@ def test_the_edit_features_template_is_the_interaction_node(builtin_package_dir:
     assert template.icon_ref == "fa-solid:hand-pointer"
     assert template.behavior == "edit-features"
     assert not any(t.label == "Edit Features" for t in manifest.templates)
+
+
+def test_the_note_holds_text_and_runs_nothing(builtin_package_dir: Path):
+    """The Note: a title and simple markdown on a color. It has no port, so no
+    edge reaches it, and no code, so a run has nothing to execute; its text is
+    the content a note template carries (``note``), which the Researcher writes."""
+    from utk_curio.backend.app.packages.application.templates import (
+        CONTENT_KIND_NOTE,
+        template_content_kind,
+        template_is_executable,
+    )
+
+    manifest = load_package_manifest(builtin_package_dir)
+    note = next(t for t in manifest.templates if t.template_id == "note")
+    assert note.label == "Note"
+    assert note.behavior == "note"
+    assert note.editor == "none"
+    assert note.input_ports == [] and note.output_ports == []
+    assert not note.has_code and not note.has_grammar and not note.has_widgets
+    assert template_is_executable(note) is False
+    assert template_content_kind(note) == CONTENT_KIND_NOTE
+    assert note.icon_ref == "fa-solid:note-sticky"
 
 
 def test_the_raster_calculator_gives_a_raster_or_a_table_of_statistics(builtin_package_dir: Path):

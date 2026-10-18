@@ -214,6 +214,7 @@ A node's "type" is the id of the template it was made from. A run that can place
 - Compare Scenarios: Compares scenarios. Connect each scenario's outcome to its own input circle: each input is labelled by the scenario its node belongs to, and the node stacks the inputs into one table, with the scenario's id and name on every row. That table is its output. Its Chart tab draws the table in the scenarios' colors, as bars, grouped bars, lines, points, a pie, lollipops or a table. In Difference it takes two inputs and subtracts input_0 from input_1: two rasters cell by cell, two layers or two tables row by row, matched on a stable id (osm_id or building_id, or a key you pick), with rows only one side has marked removed or added. The difference is its output: a table's is shown as a table, and an Autark node after it draws a raster's or a layer's on a map. It shows Difference for two rasters or two layers and a Chart otherwise, and you can switch. Its What differs tab lists what changed between the scenarios: widget values and code lines. It warns when the scenarios read different context.
 - Raster Calculator: One operation over rasters on one grid. Connect the rasters to its input circles, in order; its code names the operation. Cell by cell: add, subtract, multiply or divide input_0 and input_1, or choose, which takes input_1 where input_0's class is one of the codes it names and input_2 elsewhere; a cell that is nodata in an input the operation reads there is nodata in the result, and rasters on different grids are refused. Statistics: the mean, median, minimum, maximum and count of a raster's cells, nodata left out; its code can keep only the cells that meet a condition, such as a value under 1.08, on the raster itself or on a second raster on input_1, on the same grid, used as a mask: a test of the mask's values or a set of them. The output is the result: a raster an Autark map draws, or the statistics as a table of one row, which Compare Scenarios charts.
 - Interaction: Removes features, or changes them, by hand or by a condition. Connect a layer, or the layers an Autark node hands on, and pick the layer to edit and the column that identifies a feature: osm_id or building_id, or another column whose values differ in every feature. A layer with no such column is refused. Double-click features on its map to pick them, then Remove them (Delete), raise or lower a number such as height (the up and down arrows), scale it, Set a column to a value, type a new value into the picked features' table, or Restore them as the input has them. Or pick features by a condition such as height > 100, and do any of these to all of them, including writing a column computed by an expression such as levels * 3.2. Its edits are a log, applied in order by that column, never by a feature's place; each can be switched off, undone or deleted. Its output is the edited layer, with the other layers as they came, and Update results runs the nodes below it again. A building's parts share its building_id, so an edit by building_id applies to the whole building. Compare Scenarios lists the edits in its What differs tab.
+- Note: A note on the canvas: a title and a short text in simple markdown (headings, lists, bold and https links) on a color of its own. It connects to nothing and runs nothing. The Researcher writes its findings in notes.
 
 A node that accepts more than one connection takes each one on its own input circle, numbered from 0 in the order they were connected. An edge names the circle it connects to in "targetHandle": "in", "in_1", "in_2", ..., circle 0 first.
 
@@ -240,6 +241,7 @@ Nodes are uncontrollable, controllable through code (python or JavaScript) or co
 - Compare Scenarios: controllable through python code.
 - Raster Calculator: controllable through python code.
 - Interaction: controllable through python code.
+- Note: uncontrollable.
 
 An output connection of a node can be connected to the input connection of different nodes.
 
@@ -348,6 +350,7 @@ Input supported:
 - Compare Scenarios: DATAFRAME, GEODATAFRAME, RASTER, VALUE, LIST, JSON
 - Raster Calculator: RASTER
 - Interaction: GEODATAFRAME, DATAFRAME, LIST, JSON
+- Note: no input supported
 
 Output supported:
 
@@ -366,6 +369,7 @@ Output supported:
 - Compare Scenarios: DATAFRAME, GEODATAFRAME, RASTER
 - Raster Calculator: RASTER, DATAFRAME
 - Interaction: GEODATAFRAME, DATAFRAME, JSON
+- Note: no output supported
 
 Make sure to pay attention to the compatibility between output and input of the nodes.
 
