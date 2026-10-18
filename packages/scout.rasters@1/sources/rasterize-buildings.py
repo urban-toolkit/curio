@@ -10,7 +10,7 @@ shadow model (Accumulated Shadow) reads it.
 The Widgets tab sets the height column, the zoom level and the maximum height.
 Ported from SCOUT, https://github.com/urban-toolkit/scout.
 """
-from scout_raster_conversion.node_outputs import rasterize_buildings
+from scout_rasters.node_outputs import rasterize_buildings
 
 return rasterize_buildings(
     input_0,
