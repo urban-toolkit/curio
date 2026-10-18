@@ -1,6 +1,6 @@
 """SCOUT's flood example on SCOUT's whole grid, in two scenarios from Curio's own nodes, each on an Autark map, compared on an absolute difference and a chart, and weighed against CDC's Social Vulnerability Index on the riverside tracts (#662, step 18; #819; #914).
 
-The shipped test dataflow ``FloodScenarios.json``: Parameter nodes for the
+The shipped test dataflow ``quad-cities-flood-vulnerability.json``: Parameter nodes for the
 period and the region's corners, at SCOUT's flood example's, which take every
 cell of SCOUT's 2592 by 2064 cell grid; three Data Loading nodes reading the
 region's window of SCOUT's rasters, which the Data Catalog holds whole; and two
@@ -87,7 +87,7 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "FloodScenarios.json"
+DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "quad-cities-flood-vulnerability.json"
 TEST_NAME = "test_two_flood_scenarios_are_mapped_and_charted"
 CALCULATOR_TYPE = "curio.builtin/raster-calculator"
 MAP_TYPE = "curio.builtin/autk-grammar"

@@ -123,9 +123,9 @@ class TestTheBlock:
             assert NINE not in _keys(examples.select(MILAN, exclude={name})), name
         # A test dataflow by its shipped key or its stem.
         query = "lane histogram of roads"
-        assert "dataflows/Regression" in _keys(examples.select(query))
-        for name in ("dataflows/Regression", "Regression"):
-            assert "dataflows/Regression" not in _keys(examples.select(query, exclude={name})), name
+        assert "dataflows/regression" in _keys(examples.select(query))
+        for name in ("dataflows/regression", "regression"):
+            assert "dataflows/regression" not in _keys(examples.select(query, exclude={name})), name
 
 
 class TestAnEvaluationNeverSeesItsExample:

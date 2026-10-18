@@ -212,7 +212,7 @@ class TestLiveRunnerRefusals:
         opted_in = replace(run, include_external=True)
         # Hardware is not an opt-in: example 06's GPU skip stays either way.
         gpu = next(
-            f for f in FIXTURES if f.fixture_id == "06-autark-what-if-shadow-study"
+            f for f in FIXTURES if f.fixture_id == "06-back-bay-road-sunlight"
         )
         skips = run.skip_reasons(gpu)
         assert skips, "example 06's GPU skip must be visible"

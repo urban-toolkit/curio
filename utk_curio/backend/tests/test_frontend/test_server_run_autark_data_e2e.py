@@ -30,7 +30,7 @@ from .utils import (
     wait_for_node_done,
 )
 
-EXAMPLE = Path(REPO_ROOT) / "docs" / "examples" / "06-autark-what-if-shadow-study.json"
+EXAMPLE = Path(REPO_ROOT) / "docs" / "examples" / "06-back-bay-road-sunlight.json"
 DATA = "whatif-data"
 POOL = "whatif-pool"
 LAYERS = ["table_osm_surface", "table_osm_parks", "table_osm_water", "table_osm_roads", "table_osm_buildings"]

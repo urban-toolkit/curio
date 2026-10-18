@@ -1,0 +1,44 @@
+{
+  "dataflow": {
+    "categories": {"complexity": ["Beginner"]},
+    "nodes": [
+      {
+        "id": "8d428948-f5e4-485b-9812-51a4212678a7",
+        "type": "curio.builtin/data-loading",
+        "x": 657,
+        "y": 443,
+        "content": "import geopandas as gpd\nfrom shapely.geometry import Polygon\n\n# Three city-block-sized squares (300 m) laid out around the Chicago Loop\n# in EPSG:3395 (World Mercator, metres). Realistic Mercator coords are\n# required so that AutkMap's auto-fit camera lands on something visible.\ncx, cy = -9752000, 5137000\nsize = 300\ngap = 600\nsquares = [\n    Polygon([(cx, cy), (cx + size, cy), (cx + size, cy + size), (cx, cy + size)]),\n    Polygon([(cx + gap, cy), (cx + gap + size, cy), (cx + gap + size, cy + size), (cx + gap, cy + size)]),\n    Polygon([(cx, cy + gap), (cx + size, cy + gap), (cx + size, cy + gap + size), (cx, cy + gap + size)]),\n]\ngdf = gpd.GeoDataFrame(\n    {'value': [10, 20, 30], 'geometry': squares},\n    crs='EPSG:3395',\n)\ngdf.metadata = {'name': 'demo'}\n\nreturn gdf",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "4d414f97-fad3-4ac7-9e1d-53725eb61f70",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1495,
+        "y": 441,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"value\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 0,\n        \"title\": \"Value\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Render upstream GeoDataFrame polygons coloured by the 'value' property.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-8d428948-f5e4-485b-9812-51a4212678a7out-4d414f97-fad3-4ac7-9e1d-53725eb61f70in",
+        "source": "8d428948-f5e4-485b-9812-51a4212678a7",
+        "target": "4d414f97-fad3-4ac7-9e1d-53725eb61f70"
+      }
+    ],
+    "name": "autk-map",
+    "task": "",
+    "timestamp": 1777164480406,
+    "provenance_id": "autk-map"
+  }
+}

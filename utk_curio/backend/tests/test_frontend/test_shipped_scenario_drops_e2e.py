@@ -2,7 +2,7 @@
 ran, and runs where it lands.
 
 The shipped dataflows with scenarios are example 06 and the test dataflows
-``Scenarios``, ``ScoutShadows``, ``FloodScenarios``, ``WeatherRouting``,
+``scenarios``, ``chicago-loop-shadow-towers``, ``quad-cities-flood-vulnerability``, ``chicago-rain-wind-routing``,
 ``lower-manhattan-park-shade`` and ``scenario-comparison-charts``; there is one
 test per scenario. Each signs in a fresh account, whose first listing seeds its
 own copies of the shipped dataflows. Those have never run, so the scenario's
@@ -78,11 +78,11 @@ if TYPE_CHECKING:
 
 #: The shipped dataflows that hold scenarios.
 SHIPPED = (
-    "docs/examples/06-autark-what-if-shadow-study.json",
-    "docs/examples/dataflows/Scenarios.json",
-    "docs/examples/dataflows/ScoutShadows.json",
-    "docs/examples/dataflows/FloodScenarios.json",
-    "docs/examples/dataflows/WeatherRouting.json",
+    "docs/examples/06-back-bay-road-sunlight.json",
+    "docs/examples/dataflows/scenarios.json",
+    "docs/examples/dataflows/chicago-loop-shadow-towers.json",
+    "docs/examples/dataflows/quad-cities-flood-vulnerability.json",
+    "docs/examples/dataflows/chicago-rain-wind-routing.json",
     "docs/examples/dataflows/lower-manhattan-park-shade.json",
     "docs/examples/dataflows/scenario-comparison-charts.json",
 )

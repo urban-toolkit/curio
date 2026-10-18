@@ -69,15 +69,15 @@ class Area(NamedTuple):
 AREAS = {
     # Example 06.
     "back_bay": Area(place="Back Bay, Boston, Massachusetts, USA", boundaries=("Back Bay",)),
-    # Example 07 and Interaction_Autark.
+    # Example 07 and interaction-autark.
     "chicago_loop": Area(place="Loop, Chicago, Illinois, USA", boundaries=("Loop",)),
-    # Example 08 and Regression.
+    # Example 08 and regression.
     "niteroi": Area(place="Niterói, Rio de Janeiro, Brazil", boundaries=("Niterói",)),
     # Example 11: the area of the extract it shipped with, reaching 18 m further
     # west so that it holds Battery Park City whole.
     "lower_mnt": Area(box=(40.698762, -74.0194416, 40.756338, -73.962192),
                       boundaries=("Battery Park City", "Financial District")),
-    # WeatherRouting: SCOUT's weather routing box, which its loader loads as a box
+    # chicago-rain-wind-routing: SCOUT's weather routing box, which its loader loads as a box
     # (queryArea.bbox), so no spec clips to the Chicago city boundary. The area
     # keeps it so that the script builds the committed extract, which carries it whole.
     "chicago_downtown": Area(box=(41.859, -87.662, 41.898, -87.613), boundaries=("Chicago",)),

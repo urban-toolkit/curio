@@ -94,7 +94,7 @@ def _loader_content(example: str, node_id: str) -> str:
 
 
 @pytest.mark.parametrize("example, node_id, extract, layers", [
-    ("06-autark-what-if-shadow-study.json", "whatif-data", "docs/examples/data/back_bay.osm.pbf", BACK_BAY),
+    ("06-back-bay-road-sunlight.json", "whatif-data", "docs/examples/data/back_bay.osm.pbf", BACK_BAY),
     ("07-autark-gpu-shader.json", "sh-data", "docs/examples/data/chicago_loop.osm.pbf", CHICAGO_LOOP),
     ("08-autark-spatial-join-regression.json", "niteroi-osm", "docs/examples/data/niteroi.osm.pbf", NITEROI),
     ("11-autark-pbf-loading.json", "pbf-load", "docs/examples/data/lower_mnt.osm.pbf", LOWER_MANHATTAN),

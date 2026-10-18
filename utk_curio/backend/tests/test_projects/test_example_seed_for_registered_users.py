@@ -405,7 +405,7 @@ def test_the_tests_are_seeded_beside_the_examples(app, db, user_and_token):
 
     summaries = services.list_projects(user)
     by_name = {s.name: s for s in summaries}
-    fixture = by_name["Interaction_Vega_Autark"]
+    fixture = by_name["interaction-vega-autark"]
     assert fixture.is_example is True
     assert fixture.categories["source"] == "test"
     assert by_name["Heterogeneous data + linked views"].categories["source"] == "use_case"

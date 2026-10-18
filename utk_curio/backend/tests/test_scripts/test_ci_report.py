@@ -32,16 +32,16 @@ def _load(name: str):
 ci_report = _load("ci_report")
 
 FAILED_ID = ("tests/test_frontend/test_workflows.py::TestWorkflowCanvas::"
-             "test_node_execution[Vega.json-chromium]@wf-Vega.json")
+             "test_node_execution[vega.json-chromium]@wf-vega.json")
 
 JUNIT = """<?xml version="1.0" encoding="utf-8"?>
 <testsuites><testsuite name="pytest" errors="2" failures="1" skipped="2" tests="6" time="12.5">
 <testcase classname="tests.test_frontend.test_workflows.TestWorkflowCanvas"
-  name="test_node_execution[Vega.json-chromium]@wf-Vega.json" time="3.25">
+  name="test_node_execution[vega.json-chromium]@wf-vega.json" time="3.25">
   <failure message="AssertionError: &lt;script&gt;alert(1)&lt;/script&gt; #x1B[31mred#x1B[0m">trace line</failure>
 </testcase>
 <testcase classname="tests.test_frontend.test_workflows.TestWorkflowCanvas"
-  name="test_node_execution[Vega.json-chromium]@wf-Vega.json" time="0.5">
+  name="test_node_execution[vega.json-chromium]@wf-vega.json" time="0.5">
   <error message="failed on teardown with &quot;boom&quot;">teardown trace</error>
 </testcase>
 <testcase classname="tests.test_frontend.test_a" name="test_passes" time="1.0"/>
@@ -405,7 +405,7 @@ def test_close_ups_get_a_badge_and_a_filter_across_the_groups(tmp_path):
 
 
 def _interaction(step, phase, role):
-    return {"workflow": "Interaction_Vega_Autark.json", "step": step, "gesture": "hover",
+    return {"workflow": "interaction-vega-autark.json", "step": step, "gesture": "hover",
             "phase": phase, "role": role, "node": f"{role}-node",
             "source": "source-node", "target": "target-node"}
 
@@ -430,14 +430,14 @@ def test_interaction_frames_pair_up_before_and_after_with_what_changed(tmp_path)
 
     assert '<a href="#interactions">Interaction pairs (2)</a>' in page
     section = page[page.index('<section id="interactions">'):page.index('<section id="comparisons">')]
-    hover = section[section.index("Interaction_Vega_Autark.json: bar-hover"):
-                    section.index("Interaction_Vega_Autark.json: map-pick")]
+    hover = section[section.index("interaction-vega-autark.json: bar-hover"):
+                    section.index("interaction-vega-autark.json: map-pick")]
     source = hover[hover.index("Source <code>source-node</code>"):hover.index("Target <code>target-node</code>")]
     target = hover[hover.index("Target <code>target-node</code>"):]
     assert "What changed: 0 pixels (0.00%)" in source
     assert "What changed: 12 pixels (25.00%)" in target
     assert target.count('src="data:image/') == 3
-    pick = section[section.index("Interaction_Vega_Autark.json: map-pick"):]
+    pick = section[section.index("interaction-vega-autark.json: map-pick"):]
     assert pick.count('src="data:image/') == 1 and "not captured" in pick and "needs both frames" in pick
     assert "before unchanged" in pick
 
@@ -493,7 +493,7 @@ def test_an_unreadable_input_is_shown_not_fatal(tmp_path):
 def test_a_failure_folder_is_found_from_its_junit_name():
     classname, name = ci_report.junit_key(FAILED_ID)
     assert (classname, name) == ("tests.test_frontend.test_workflows.TestWorkflowCanvas",
-                                 "test_node_execution[Vega.json-chromium]@wf-Vega.json")
+                                 "test_node_execution[vega.json-chromium]@wf-vega.json")
     folders = [ci_report.failure_folder(n) for n in ci_report.candidate_nodeids(classname, name)]
     # diagnostics.failure_dir names the folder from the real node id.
     assert ci_report.failure_folder(FAILED_ID) in folders

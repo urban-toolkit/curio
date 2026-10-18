@@ -677,7 +677,7 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
             continue
         # dev/125: the duplicate key includes the KIND. dev/112 §6 decided a
         # (from,to) pair was a duplicate whatever its kind; the shipped corpus
-        # disproves it — `docs/examples/dataflows/Interaction_Vega.json` (and
+        # disproves it, because `docs/examples/dataflows/interaction-vega.json` (and
         # the three other linked-view examples) carry BOTH a data edge and an
         # Interaction edge between the same data-pool and visualization, which
         # is what a linked view IS: the pool feeds the chart, the chart feeds

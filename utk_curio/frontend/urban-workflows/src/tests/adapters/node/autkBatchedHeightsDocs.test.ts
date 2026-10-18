@@ -29,7 +29,7 @@ const WORKED_EXAMPLES_INDEX = path.join(REPO_ROOT, "utk_curio", "llm-prompts", "
 
 /** The examples with shadow steps, and how many each has. */
 const SHADOW_EXAMPLES: [string, string, number][] = [
-    ["example 06", "06-autark-what-if-shadow-study", 3],
+    ["example 06", "06-back-bay-road-sunlight", 3],
     ["example 07", "07-autark-gpu-shader", 1],
 ];
 

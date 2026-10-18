@@ -6,7 +6,7 @@ from .framework import Ctx, walkthrough
 from .steps import first_node_of_type
 
 
-IMAGE_URLS_EXAMPLE = "dataflows/ImageUrls.json"
+IMAGE_URLS_EXAMPLE = "dataflows/image-urls.json"
 
 
 @walkthrough(

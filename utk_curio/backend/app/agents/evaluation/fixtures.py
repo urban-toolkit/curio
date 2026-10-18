@@ -210,7 +210,7 @@ def example_paths(root: Path | None = None) -> list:
 
 
 def fixture_id_for_example(path: Path) -> str:
-    """``01-vega-lite-chained-transforms`` / ``Interaction_Vega`` -- the stem."""
+    """``01-vega-lite-chained-transforms`` / ``interaction-vega`` -- the stem."""
     return Path(path).stem
 
 

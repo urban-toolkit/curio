@@ -242,7 +242,7 @@ class TestRunThroughNode:
 
         from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
 
-        path = Path(__file__).resolve().parents[4] / "docs" / "examples" / "dataflows" / "MultiInput.json"
+        path = Path(__file__).resolve().parents[4] / "docs" / "examples" / "dataflows" / "multi-input.json"
         spec = json.loads(path.read_text(encoding="utf-8"))
         assert [n["type"] for n in spec["dataflow"]["nodes"]] == (
             ["curio.builtin/data-loading"] * 2 + ["curio.builtin/computation-analysis"] * 2

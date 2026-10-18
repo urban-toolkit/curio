@@ -45,9 +45,9 @@ def test_options_map_and_compose():
         "--headed",
     ]
     assert flags("-e") == ["--use-existing"]
-    assert flags("--workflows", "Vega.json,Regression.json") == [
+    assert flags("--workflows", "vega.json,regression.json") == [
         "--workflows",
-        "Vega.json,Regression.json",
+        "vega.json,regression.json",
     ]
     assert flags("e2e", "--allure-dir", "out") == [
         "--e2e-only",

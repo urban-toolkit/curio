@@ -1,6 +1,6 @@
 {
   "sha256": {
-    "README.md": "8d9f239b31fa011a72468e16f51bf42b504cc49a649667e4df4a0f576ab6e735",
+    "README.md": "de5efaadafb822c3f27825753a2846e2d1ab289be4025bcf8c64315b7ad7d760",
     "manifest.json": "33989f527cf8d3156c8bac8dfa92486228693eb71a20b61af13494e6a4dace91",
     "models/deep_umbra.onnx": "67afb9d2d56bd0a12164e6e651214d56860ff689728c5b6f29486f21c3cb188e",
     "sources/accumulated-shadow.py": "8d7f91c0d46298757a08a92b1adf3520d98dc8c245f5168ab5905b61ab6c08d0",

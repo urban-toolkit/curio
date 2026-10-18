@@ -1,6 +1,6 @@
 """SCOUT's high-rise shadow case on the canvas, compared as two scenarios (#662, step 19).
 
-The shipped test dataflow ``ScoutShadows.json``: SCOUT's Chicago Loop buildings
+The shipped test dataflow ``chicago-loop-shadow-towers.json``: SCOUT's Chicago Loop buildings
 (the Data Catalog dataset ``data.scout.loop-buildings``) and a season Parameter
 node are the fixed context. In "Existing", Rasterize Buildings
 (``scout.raster-conversion@1``) draws them into one zoom-16 height raster,
@@ -89,7 +89,7 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "ScoutShadows.json"
+DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "chicago-loop-shadow-towers.json"
 TEST_NAME = "test_two_building_sets_are_shadowed_charted_and_mapped"
 SHADOW_TYPE = "model.scout.deep-umbra/accumulated-shadow"
 CALCULATOR_TYPE = "curio.builtin/raster-calculator"

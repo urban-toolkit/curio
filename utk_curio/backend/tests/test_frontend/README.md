@@ -443,7 +443,7 @@ beside its default one: `<name>.utk-gpu.png` or `<name>.arcade-gpu.png`.
 Run only specific workflows by setting `CURIO_E2E_WORKFLOWS` (comma-separated basenames):
 
 ```bash
-CURIO_E2E_WORKFLOWS=Vega.json,AutkMap.json pytest utk_curio/backend/tests/test_frontend/test_workflows.py
+CURIO_E2E_WORKFLOWS=vega.json,autk-map.json pytest utk_curio/backend/tests/test_frontend/test_workflows.py
 ```
 
 When unset, all workflows listed in `conftest.py::WORKFLOW_FILES` are tested.
@@ -460,10 +460,10 @@ pytest --collect-only utk_curio/backend/tests/test_frontend/test_workflows.py
 
 ```bash
 # one workflow, one test method
-pytest utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_and_edge_count[Vega.json]
+pytest utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_and_edge_count[vega.json]
 
 # all checks for one workflow
-pytest utk_curio/backend/tests/test_frontend/test_workflows.py -k "Vega.json"
+pytest utk_curio/backend/tests/test_frontend/test_workflows.py -k "vega.json"
 ```
 
 ## Test Matrix

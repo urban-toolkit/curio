@@ -553,7 +553,7 @@ def test_scouts_rasterizer_runs_as_the_exec_user():
 
 #: The weather GNN's model package in the image: its module, which the node
 #: imports, and its weights; and the Data Catalog files its node reads.
-#: ``WeatherRouting.json`` declares the package, so the stack's
+#: ``chicago-rain-wind-routing.json`` declares the package, so the stack's
 #: ``--with-examples`` boot installs its libraries.
 WEATHER_GNN = "model.scout.weather-gnn"
 WEATHER_GNN_PACKAGE = LAUNCH_DIR + "/packages/" + WEATHER_GNN + "@1"
@@ -606,7 +606,7 @@ def test_scouts_weather_routing_runs_as_the_exec_user():
 
 
 #: Deep Umbra's model package in the image: its module and its weights; a
-#: shipped test dataflow (``ScoutShadows.json``) declares the package.
+#: shipped test dataflow (``chicago-loop-shadow-towers.json``) declares the package.
 DEEP_UMBRA = "model.scout.deep-umbra"
 SHADOW_SOURCES = LAUNCH_DIR + "/packages/" + DEEP_UMBRA + "@1/sources"
 #: SCOUT's committed height tiles of its high-rise example's first scenario.

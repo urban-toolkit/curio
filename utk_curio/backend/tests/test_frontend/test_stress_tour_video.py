@@ -2443,7 +2443,7 @@ EXAMPLE_RUNS: tuple[tuple[str, int, bool], ...] = (
     ("04-vega-lite-multi-flow-dashboard.json", 21, False),
     ("05-vega-lite-multi-view-drilldown.json", 27, False),
     ("09-heterogeneous-data-linked-views.json", 11, False),
-    ("06-autark-what-if-shadow-study.json", 11, True),
+    ("06-back-bay-road-sunlight.json", 11, True),
     ("07-autark-gpu-shader.json", 5, True),
     ("08-autark-spatial-join-regression.json", 7, True),
     ("11-autark-pbf-loading.json", 3, True),
@@ -2485,7 +2485,7 @@ def chapter_views(run: StressRun) -> None:
 
     with run.step("Linked views: brush one chart, watch the other follow",
                   may_fail=True):
-        load_example(run, os.path.join(DATAFLOWS, "Interaction_Vega_Simple.json"),
+        load_example(run, os.path.join(DATAFLOWS, "interaction-vega-simple.json"),
                      expected_nodes=3)
         play_all(run, timeout_ms=300000)
         canvas = page.locator("canvas").first
@@ -2502,7 +2502,7 @@ def chapter_views(run: StressRun) -> None:
                 run.snap("linked-brush")
 
     with run.step("The Data Pool node scrolls its own rows", may_fail=True):
-        load_example(run, os.path.join(DATAFLOWS, "DataPool_Dataframe.json"),
+        load_example(run, os.path.join(DATAFLOWS, "data-pool-dataframe.json"),
                      expected_nodes=2)
         play_all(run, timeout_ms=300000)
         pool = node_ids_by_type(page, "data-pool")
@@ -2518,19 +2518,19 @@ def chapter_views(run: StressRun) -> None:
                 run.snap("data-pool-scrolled")
 
     with run.step("A node with several inputs", may_fail=True):
-        load_example(run, os.path.join(DATAFLOWS, "MultiInput.json"), expected_nodes=4)
+        load_example(run, os.path.join(DATAFLOWS, "multi-input.json"), expected_nodes=4)
         play_all(run, timeout_ms=300000)
         report_errored_nodes(run, "A node with several inputs")
 
     with run.step("A JavaScript computation node", may_fail=True):
-        load_example(run, os.path.join(DATAFLOWS, "JSComputation.json"),
+        load_example(run, os.path.join(DATAFLOWS, "js-computation.json"),
                      expected_nodes=2)
         play_all(run, timeout_ms=300000)
         report_errored_nodes(run, "A JavaScript computation node")
         run.snap("js-computation")
 
     with run.step("Widgets drive a node", may_fail=True):
-        load_example(run, os.path.join(DATAFLOWS, "Widget.json"), expected_nodes=4)
+        load_example(run, os.path.join(DATAFLOWS, "widget.json"), expected_nodes=4)
         play_all(run, timeout_ms=300000)
         run.snap("widgets")
 

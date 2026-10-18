@@ -612,7 +612,7 @@ class TestExamplesRead:
             entry = used[row["key"]].entry
             assert row == {"key": row["key"], "title": entry.title, "line": entry.text}
         # A "Not used" dataflow is no worked example.
-        assert "dataflows/Widget" not in used
+        assert "dataflows/widget" not in used
         assert self._read({"key": "  "}) == (status, text)
 
     def test_a_key_returns_that_examples_line_and_trill(self, tmp_curio):
@@ -627,10 +627,10 @@ class TestExamplesRead:
         assert len(trill["edges"]) == len(nine.spec["dataflow"]["edges"])
         # Its file name names it too, as in the block's exclusion.
         assert self._read({"key": f"{self.NINE}.json"}) == (status, text)
-        assert self._read({"key": "dataflows/Regression"})[0] == "ok"
+        assert self._read({"key": "dataflows/regression"})[0] == "ok"
 
     def test_an_unknown_key_says_how_to_list_the_keys(self, tmp_curio):
-        for key in ("no-such-example", "dataflows/Widget"):
+        for key in ("no-such-example", "dataflows/widget"):
             status, text = self._read({"key": key})
             assert status == "error", key
             assert repr(key) in text and "call examples.read with no key to list the keys" in text

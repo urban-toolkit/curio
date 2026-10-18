@@ -10,7 +10,7 @@ The node reads a height raster, the one raster of Rasterize Buildings
 that holds heights and returns the accumulated shadow as a raster on the same
 grid. SCOUT's metrics, the mean and median over the ground, are the
 statistics of a Raster Calculator (``curio.builtin@1``) with the heights as
-its mask, as the shipped dataflow ``ScoutShadows.json`` wires it.
+its mask, as the shipped dataflow ``chicago-loop-shadow-towers.json`` wires it.
 
 The proof starts from SCOUT's own files, copied unchanged into
 ``fixtures/scout/`` (see its ``ATTRIBUTION.md``): SCOUT's committed height tiles
@@ -94,7 +94,7 @@ SCOUT = "https://github.com/urban-toolkit/scout"
 #: docstring pins.
 MODEL_SHA256 = "67afb9d2d56bd0a12164e6e651214d56860ff689728c5b6f29486f21c3cb188e"
 BUILDINGS = REPO / "datasets" / "data.scout.loop-buildings@1" / "data" / "loop-buildings.geojson"
-DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "ScoutShadows.json"
+DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "chicago-loop-shadow-towers.json"
 #: The Autark map after the Compare Scenarios node in Difference: towers
 #: removed minus existing, on a diverging scale centered on no change.
 DIFFERENCE_MAP_DOCUMENT = {"map": {"layerRefs": [{
@@ -108,7 +108,7 @@ DIFFERENCE_MAP_DOCUMENT = {"map": {"layerRefs": [{
 #: whole summer day of shadow, the most Deep Umbra's output stands for in any
 #: season.
 SHADOW_RANGE = [0, 720]
-EXAMPLE = REPO / "docs" / "examples" / "24-scout-building-rasters.json"
+EXAMPLE = REPO / "docs" / "examples" / "24-scout-shadow-model-chicago-loop.json"
 RASTER_PACKAGE = REPO / "packages" / "scout.raster-conversion@1"
 RASTER_MODULE = "scout_raster_conversion"
 
@@ -955,7 +955,7 @@ def test_another_failure_to_load_the_model_keeps_its_own_sentence(workspace, tmp
 # ---------------------------------------------------------------------------
 
 def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
-    """``ScoutShadows.json`` is how its CI run reaches this package: its nodes
+    """``chicago-loop-shadow-towers.json`` is how its CI run reaches this package: its nodes
     hold the templates' own sources and widgets, the shadow nodes reading the
     season from the one Parameter node both scenarios share; each scenario's
     Raster Calculator of statistics reads its shadow on input_0 and its

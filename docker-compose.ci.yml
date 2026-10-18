@@ -47,7 +47,7 @@ services:
     # so bound the container rather than trusting the code under test.
     #
     # Deliberately NO mem_limit. Setting one (12g) coincided with
-    # test_node_execution[06-autark-what-if-shadow-study] timing out at
+    # test_node_execution[06-back-bay-road-sunlight] timing out at
     # 120s waiting for its data pool to render, a test that passes on
     # main. That example parses city-scale PBFs and drives WebGPU, and a
     # mem_limit without memswap_limit lets the container swap instead of

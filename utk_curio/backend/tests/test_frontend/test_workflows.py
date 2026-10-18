@@ -291,7 +291,7 @@ def _assert_edit_map_drew(page, node_id: str) -> None:
 #: shows while the other is captured. See ``test_node_interaction``.
 INTERACTIONS = {
     # A bar chart and an Autark map, linked through a Data Pool.
-    "Interaction_Vega_Autark.json": (
+    "interaction-vega-autark.json": (
         Interaction("bar-hover", source=VEGA_AUTARK_BARS, target=VEGA_AUTARK_MAP, gesture="hover"),
         Interaction("map-pick", source=VEGA_AUTARK_MAP, target=VEGA_AUTARK_BARS, gesture="pick"),
     ),
@@ -321,7 +321,7 @@ INTERACTIONS = {
     # No pick the other way: at the pair's 86% zoom a building is a few
     # pixels, so a pick that lands changes 1 to 9 of the map's pixels, and two
     # of six probes landed on none (CI run 36796749223).
-    "Interaction_Autark.json": (
+    "interaction-autark.json": (
         Interaction("plot-brush", source="ia-plot", target="ia-map", gesture="brush"),
     ),
     # An Autark scatter's 2D brush and an Autark map, through a pool. The
@@ -337,7 +337,7 @@ INTERACTIONS = {
     # Autark to Autark, joined directly with no Data Pool: a building height
     # histogram and the map of those buildings, each in its own node. The brush
     # covers the three lowest bars, where most buildings are, so most of the map
-    # lights up. No pick the other way, for Interaction_Autark's
+    # lights up. No pick the other way, for interaction-autark's
     # reason: a pick that lands on one building changes a few of the map's pixels.
     "11-autark-pbf-loading.json": (
         Interaction("plot-brush", source=EXAMPLE_11_HISTOGRAM, target=EXAMPLE_11_MAP,
@@ -1579,7 +1579,7 @@ class TestWorkflowCanvas:
                f"the wait gave up {hold_end['elapsed']} ms into the {MAP_DRAWING_HELD_MS} ms hold, "
                f"before the map drew again ({hold_end['refused']} of its frames refused)"))
 
-    @pytest.mark.only_workflows("Interaction_Autark.json")
+    @pytest.mark.only_workflows("interaction-autark.json")
     def test_plot_brush_started_between_bars(self, loaded_workflow):
         """A second brush on the histogram, pressed in the gap between two bars,
         keeps its rectangle and lights the bars under it.

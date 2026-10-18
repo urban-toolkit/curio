@@ -565,7 +565,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
     });
 
     test('shows a list as its values, not the envelope around each one (#516)', async () => {
-      // JSComputation's `[1, 2, 3].map(x => x * 2)`, as the sandbox returns it.
+      // js-computation's `[1, 2, 3].map(x => x * 2)`, as the sandbox returns it.
       const result = await callBehavior(useSimpleVisBehavior, {
         input: {
           dataType: 'list',
@@ -1615,7 +1615,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       });
     });
 
-    // Regression: the flaky 06-autark-what-if-shadow-study failure. The backend
+    // Regression: the flaky 06-back-bay-road-sunlight failure. The backend
     // data load occasionally returns no artifact; the node then fell back to an
     // in-browser AutkDb load whose PBF fetch 404'd, and autk-db crashed with
     // "Cannot read properties of null (reading 'length')" — surfaced to the user
@@ -1985,7 +1985,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
     });
 
     // #319. A join rewrites a table another source created, so the missing-table
-    // check can never see it fail: Regression.json's join died with a DuckDB
+    // check can never see it fail: regression.json's join died with a DuckDB
     // Binder Error on every run while its node reported Done.
     const JOIN_SPEC = {
       data: [

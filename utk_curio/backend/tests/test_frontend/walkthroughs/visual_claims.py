@@ -120,7 +120,7 @@ def node_settings_reads_plainly(ctx: Ctx) -> None:
     # the baseline - here a node-header clip, 3.9% on CI - so the pin
     # leaves room for that without waving through a real change.
     max_diff_ratio=0.08,
-    example="dataflows/DefaultWorkflow.json",
+    example="dataflows/default-workflow.json",
 )
 def package_pill_only_on_package_nodes(ctx: Ctx) -> None:
     node = _canvas_node(ctx)
@@ -161,7 +161,7 @@ def package_pill_only_on_package_nodes(ctx: Ctx) -> None:
     # The baseline harness waits for ``.react-flow__node`` before handing over
     # (test_walkthrough_baselines), so a scene cannot open on an empty canvas
     # even when it brings its own node.
-    example="dataflows/DefaultWorkflow.json",
+    example="dataflows/default-workflow.json",
 )
 def empty_nodes_say_why(ctx: Ctx) -> None:
     ctx.say("A Simple View with nothing wired in", "This used to be a blank box.")
@@ -246,7 +246,7 @@ def spatial_join_explains_itself(ctx: Ctx) -> None:
     # The baseline harness waits for ``.react-flow__node`` before handing over
     # (test_walkthrough_baselines), so a scene cannot open on an empty canvas
     # even when it brings its own node.
-    example="dataflows/DefaultWorkflow.json",
+    example="dataflows/default-workflow.json",
 )
 def data_export_is_one_button(ctx: Ctx) -> None:
     ctx.say("Data Export", "One button, and nothing else on the node.")

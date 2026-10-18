@@ -94,7 +94,7 @@ def _code_node(node_id: str, x: int) -> dict:
 
 def _save_a_scenario(page, backend: str) -> None:
     """A project with one scenario of the account's own, beside any the seeded
-    examples bring (#662: the Scenarios example brings two)."""
+    examples bring (#662: the scenarios example brings two)."""
     token = next(
         c["value"] for c in page.context.cookies() if c["name"].startswith("session_token")
     )

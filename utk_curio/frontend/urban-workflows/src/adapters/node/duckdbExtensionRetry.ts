@@ -4,7 +4,7 @@
  * autk-db's `init()` runs `INSTALL spatial; LOAD spatial;`, so every fresh
  * in-browser DuckDB fetches the extension from extensions.duckdb.org over the
  * network. Nothing in Curio asks for that and nothing can redirect it, but a
- * node pays for it: one flaky fetch failed `Interaction_AutkMap`'s map-only
+ * node pays for it: one flaky fetch failed `interaction-autk-map`'s map-only
  * node in CI with
  *
  *     Failed to execute 'send' on 'XMLHttpRequest': Failed to load

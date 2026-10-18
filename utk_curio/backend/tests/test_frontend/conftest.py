@@ -70,38 +70,38 @@ def browser(
 #: Master list of workflow JSON filenames to test.
 #: Comment out / add entries here to control the full test matrix.
 WORKFLOW_FILES = [
-    "docs/examples/dataflows/DefaultWorkflow.json",
+    "docs/examples/dataflows/default-workflow.json",
 
-    "docs/examples/dataflows/DataPool_Dataframe.json",
-    "docs/examples/dataflows/DataPool_Geodataframe.json",
+    "docs/examples/dataflows/data-pool-dataframe.json",
+    "docs/examples/dataflows/data-pool-geodataframe.json",
 
-    "docs/examples/dataflows/DataPool_Vega.json",
-    "docs/examples/dataflows/DataPool_Vega_2.json",
-    "docs/examples/dataflows/DataPool_AutkMap.json",
+    "docs/examples/dataflows/data-pool-vega.json",
+    "docs/examples/dataflows/data-pool-vega-2.json",
+    "docs/examples/dataflows/data-pool-autk-map.json",
 
-    "docs/examples/dataflows/Image.json",
-    "docs/examples/dataflows/SimpleView.json",
-    "docs/examples/dataflows/MultiInput.json",
-    "docs/examples/dataflows/MultiInputDataPool.json",
+    "docs/examples/dataflows/image.json",
+    "docs/examples/dataflows/simple-view.json",
+    "docs/examples/dataflows/multi-input.json",
+    "docs/examples/dataflows/multi-input-data-pool.json",
 
-    "docs/examples/dataflows/JSComputation.json",
+    "docs/examples/dataflows/js-computation.json",
 
-    "docs/examples/dataflows/Interaction_Vega.json",
-    "docs/examples/dataflows/Interaction_Vega_Simple.json",
-    "docs/examples/dataflows/Interaction_AutkMap.json",
-    "docs/examples/dataflows/Interaction_Autark.json",
-    "docs/examples/dataflows/Interaction_Vega_Autark.json",
+    "docs/examples/dataflows/interaction-vega.json",
+    "docs/examples/dataflows/interaction-vega-simple.json",
+    "docs/examples/dataflows/interaction-autk-map.json",
+    "docs/examples/dataflows/interaction-autark.json",
+    "docs/examples/dataflows/interaction-vega-autark.json",
 
-    "docs/examples/dataflows/Widget.json",
+    "docs/examples/dataflows/widget.json",
 
-    "docs/examples/dataflows/Vega.json",
-    "docs/examples/dataflows/AutkMap.json",
+    "docs/examples/dataflows/vega.json",
+    "docs/examples/dataflows/autk-map.json",
 
-    "docs/examples/dataflows/Regression.json",
+    "docs/examples/dataflows/regression.json",
 
     # A NetCDF group from the Data Catalog, read whole by one loader; the
     # isolated stack runs it too (ISOLATED_WORKFLOWS in docker-compose.yml).
-    "docs/examples/dataflows/NetCDF.json",
+    "docs/examples/dataflows/netcdf-hourly-rain.json",
 
     # Curated examples shown in docs/README.md. These are the showcase
     # workflows — including the modular autk-grammar GPU/compute chains — so
@@ -113,7 +113,7 @@ WORKFLOW_FILES = [
     "docs/examples/03-vega-lite-linked-temporal-charts.json",
     "docs/examples/04-vega-lite-multi-flow-dashboard.json",
     "docs/examples/05-vega-lite-multi-view-drilldown.json",
-    "docs/examples/06-autark-what-if-shadow-study.json",
+    "docs/examples/06-back-bay-road-sunlight.json",
     "docs/examples/07-autark-gpu-shader.json",
     "docs/examples/08-autark-spatial-join-regression.json",
     "docs/examples/09-heterogeneous-data-linked-views.json",
@@ -136,7 +136,7 @@ WORKFLOW_FILES = [
     # Package nodes: the stack installs scout.raster-conversion@1 and the
     # model package model.scout.deep-umbra@1 because the dataflow declares
     # them (--with-examples).
-    "docs/examples/24-scout-building-rasters.json",
+    "docs/examples/24-scout-shadow-model-chicago-loop.json",
     # One Spatial Join per operation (#576).
     "docs/examples/25-spatial-join-operations.json",
     # One node fed by several others, in every kind of node that takes several
@@ -150,7 +150,7 @@ def load_workflow_files_from_folder():
 
     Respects the ``CURIO_E2E_WORKFLOWS`` environment variable: when set
     to a comma-separated list of basenames (e.g.
-    ``CURIO_E2E_WORKFLOWS=Vega.json,AutkMap.json``) only those workflows
+    ``CURIO_E2E_WORKFLOWS=vega.json,autk-map.json``) only those workflows
     are included.  Basenames are resolved against ``WORKFLOW_FILES`` so
     callers don't need to know the ``docs/examples/dataflows/`` prefix.
     This makes it easy to run a quick subset during development or in CI

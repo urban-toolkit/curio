@@ -49,7 +49,7 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-EXAMPLE = Path(REPO_ROOT) / "docs" / "examples" / "24-scout-building-rasters.json"
+EXAMPLE = Path(REPO_ROOT) / "docs" / "examples" / "24-scout-shadow-model-chicago-loop.json"
 PACKAGE_DIR = "scout.raster-conversion@1"
 LOADER_TYPE = "curio.builtin/data-loading"
 RASTER_TYPE = "scout.raster-conversion/rasterize-buildings"

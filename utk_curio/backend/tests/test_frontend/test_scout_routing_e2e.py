@@ -1,6 +1,6 @@
 """SCOUT's weather routing example, mapped through Autark and charted in its scenarios' colors (#662; step 8 of #819's port).
 
-The shipped test dataflow ``WeatherRouting.json`` is SCOUT's weather routing
+The shipped test dataflow ``chicago-rain-wind-routing.json`` is SCOUT's weather routing
 example: an Autark node that loads the roads of SCOUT's box, in downtown
 Chicago, from the committed OpenStreetMap extract, and the Weather Routing node
 of the model package ``model.scout.weather-gnn@1``, set as SCOUT's example sets
@@ -83,7 +83,7 @@ from .utils.node_drawings import _AUTK_MAP_PIXELS_IN_FRAME_JS
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "WeatherRouting.json"
+DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "chicago-rain-wind-routing.json"
 PACKAGE_DIR = "model.scout.weather-gnn@1"
 ROUTING_TYPE = "model.scout.weather-gnn/weather-routing"
 AUTARK_TYPE = "curio.builtin/autk-grammar"
@@ -314,7 +314,7 @@ def test_two_routing_scenarios_are_mapped_and_charted(
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
     require_webgpu(page)
     routings = [n["id"] for n in nodes if n["type"] == ROUTING_TYPE]
-    assert len(routings) == 1, f"WeatherRouting.json has {len(routings)} Weather Routing nodes, not one"
+    assert len(routings) == 1, f"chicago-rain-wind-routing.json has {len(routings)} Weather Routing nodes, not one"
     (routing,) = routings
     (loader_id,) = [n["id"] for n in nodes if n["type"] == AUTARK_TYPE and "data" in json.loads(n["content"])]
     # The routing node reads the loader's roads layer through its layer chip.

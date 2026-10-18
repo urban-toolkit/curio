@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 #: Needs the shipped dataflows, which ``--with-examples`` seeds.
 pytestmark = pytest.mark.examples
 
-FIXTURE = "Interaction_Vega_Autark"
+FIXTURE = "interaction-vega-autark"
 
 
 def _rail(page):
@@ -61,8 +61,8 @@ def test_the_rail_lists_the_tests(app_frontend: "FrontendPage", frontend_server:
     """The deploy question that started this: the fixtures were never seeded."""
     _sign_up(page, frontend_server)
 
-    # 28 test dataflows: #662 added Scenarios, FloodScenarios, ScoutShadows,
-    # WeatherRouting and NetCDF, the plan for #914 lower-manhattan-park-shade,
+    # 28 test dataflows: #662 added scenarios, quad-cities-flood-vulnerability, chicago-loop-shadow-towers,
+    # chicago-rain-wind-routing and netcdf-hourly-rain, the plan for #914 lower-manhattan-park-shade,
     # and komar41's #914 the scenario comparison charts.
     _rail_entry(page, "Tests", 28).click()
 

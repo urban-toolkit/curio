@@ -9,7 +9,7 @@ and DuckDB's state is not fork-safe (duckdb/duckdb-python#292). The zygote now
 closes that connection before serving (``zygote._release_import_time_duckdb``).
 This script measures whether that removes the crash.
 
-Each iteration starts a fresh zygote, runs the ``DataPool_Dataframe`` node the
+Each iteration starts a fresh zygote, runs the ``data-pool-dataframe`` node the
 moment it is ready, runs it again, and stops the zygote. Two variants,
 interleaved so both see the same load on the host:
 
@@ -94,7 +94,7 @@ def node_code(shape):
         body = _INT_NODE
     else:
         path = os.path.join(REPO_ROOT, "docs", "examples", "dataflows",
-                            "DataPool_Dataframe.json")
+                            "data-pool-dataframe.json")
         with open(path, encoding="utf-8") as handle:
             flow = json.load(handle)
         flow = flow.get("dataflow", flow)

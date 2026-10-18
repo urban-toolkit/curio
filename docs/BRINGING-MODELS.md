@@ -431,7 +431,7 @@ a new run.
 `[!! @name !!]` reads a **Parameter** node's value instead: one value that
 several nodes share
 ([USAGE.md, Shared values](USAGE.md#shared-values-the-parameter-node)). In the
-[ScoutShadows](examples/dataflows/ScoutShadows.json) dataflow, both scenarios'
+[Chicago Loop shadow with towers removed or edited](examples/dataflows/chicago-loop-shadow-towers.json) dataflow, both scenarios'
 Accumulated Shadow nodes read one season this way.
 
 **Save as package node…** writes a node's widgets into the template it makes,
@@ -665,7 +665,7 @@ a linear head, from `rain_model.pth`. In Curio it is the model package
 | Checks | onnxruntime against torch on graphs of other sizes than the traced one: repeated edges, nodes without edges, a graph with no edges; and against the inputs and prediction recorded from SCOUT's own run. |
 | Node code | The cell reads the SCOUT WRF forecast with `curio_data_path("<id>")`, loads the model with `curio_load_model("model.scout.weather-gnn")` and calls the module `weather_routing`. [`weight_calculation.py`](../packages/model.scout.weather-gnn@1/sources/weather_routing/weight_calculation.py) is SCOUT's, with `model.run({"x": x, "edge_index": edge_index})` for the torch call; [`road_graph.py`](../packages/model.scout.weather-gnn@1/sources/weather_routing/road_graph.py) builds the road graph from the roads an Autark node loads. The SCOUT bugs the port fixes are listed in [`weather_routing.py`](../packages/model.scout.weather-gnn@1/sources/weather_routing/weather_routing.py). |
 | Widgets | **Origin**, **Destination**, **Mode**, **Routes per factor (K)**, **Start time (Chicago)**, **Rain weight** and **Wind weight**. |
-| Result | For each of SCOUT's 8 recorded runs, the network's input bit for bit, the routes node for node, and the metrics within 0.001 of SCOUT's ([`test_scout_routing.py`](../utk_curio/backend/tests/test_packages/test_scout_routing.py)). The [WeatherRouting](examples/dataflows/WeatherRouting.json) dataflow runs it. |
+| Result | For each of SCOUT's 8 recorded runs, the network's input bit for bit, the routes node for node, and the metrics within 0.001 of SCOUT's ([`test_scout_routing.py`](../utk_curio/backend/tests/test_packages/test_scout_routing.py)). The [Routing around rain and wind in downtown Chicago](examples/dataflows/chicago-rain-wind-routing.json) dataflow runs it. |
 
 ---
 

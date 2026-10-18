@@ -17,7 +17,7 @@
 #   --no-examples       Skip the tests that need the example dataflows seeded
 #                       (on by default; the stack this script boots already
 #                        starts with --with-examples)
-#   --workflows A,B     Run only the named workflow files (e.g. Vega.json,Regression.json)
+#   --workflows A,B     Run only the named workflow files (e.g. vega.json,regression.json)
 #   --backend-only      Run only backend unit tests
 #   --sandbox-only      Run only sandbox unit tests
 #   --jest-only         Run only Jest frontend unit tests

@@ -85,9 +85,9 @@ A pip install downloads the weights from GitHub the first time the node runs.
                             └──── mask ──► [ Raster Calculator ] ◄──┘
 ```
 
-[Example 24](../../docs/examples/24-scout-building-rasters.md) maps the shadow
+[Example 24](../../docs/examples/24-scout-shadow-model-chicago-loop.md) maps the shadow
 of SCOUT's Chicago Loop buildings. The test dataflow
-[ScoutShadows](../../docs/examples/dataflows/ScoutShadows.json) compares SCOUT's
+[Chicago Loop shadow with towers removed or edited](../../docs/examples/dataflows/chicago-loop-shadow-towers.json) compares SCOUT's
 two building sets of the Chicago Loop as two scenarios, each with a map of its
 shadow: the buildings as they are, and with 15 of them removed.
 

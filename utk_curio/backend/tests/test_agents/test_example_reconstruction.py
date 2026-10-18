@@ -161,8 +161,8 @@ class TestReachability:
             if any((n.get("metadata") or {}).get("widgets") for n in _example(f)["dataflow"]["nodes"])
         ]
         assert {f.fixture_id for f in with_widgets} == {
-            "Widget", "Scenarios", "FloodScenarios", "06-autark-what-if-shadow-study",
-            "ScoutShadows", "24-scout-building-rasters", "WeatherRouting", "lower-manhattan-park-shade",
+            "widget", "scenarios", "quad-cities-flood-vulnerability", "06-back-bay-road-sunlight",
+            "chicago-loop-shadow-towers", "24-scout-shadow-model-chicago-loop", "chicago-rain-wind-routing", "lower-manhattan-park-shade",
             "scenario-comparison-charts",
         }
         for fixture in with_widgets:
@@ -187,7 +187,7 @@ class TestTheModelSeesOnlyThePrompt:
     # dataflow — the three shapes the planning turn is built differently for.
     @pytest.mark.parametrize(
         "fixture",
-        [ONE, _by_id("02-vega-lite-spatial-density"), _by_id("AutkMap")],
+        [ONE, _by_id("02-vega-lite-spatial-density"), _by_id("autk-map")],
         ids=lambda f: f.fixture_id,
     )
     def test_the_planning_turn_carries_no_part_of_the_answer(

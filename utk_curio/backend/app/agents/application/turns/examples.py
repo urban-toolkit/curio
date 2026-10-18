@@ -135,7 +135,7 @@ class IndexEntry:
 class Example:
     """A "Used" dataflow, read and ready to score."""
 
-    #: Its shipped key: ``09-heterogeneous-data-linked-views``, ``dataflows/Regression``.
+    #: Its shipped key: ``09-heterogeneous-data-linked-views``, ``dataflows/regression``.
     key: str
     entry: IndexEntry
     spec: dict

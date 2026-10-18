@@ -52,7 +52,7 @@ SIDEWALK = "datasets/data.projectsidewalk.chicago-labels@1/data/chicago-labels.p
 SIDEWALK_FOLDER = "datasets/data.projectsidewalk.chicago-labels@1"
 MRT = "datasets/data.utk.milan-mrt@1/data/milan-mrt.tif"
 RED_LIGHT = "datasets/data.cityofchicago.red-light-violations@1/data/red-light-violations.parquet"
-#: SCOUT's seven flood rasters, whole, which the FloodScenarios test dataflow reads.
+#: SCOUT's seven flood rasters, whole, which the quad-cities-flood-vulnerability test dataflow reads.
 FLOOD = [
     "datasets/data.scout.flood-nbs-classes@1/data/flood-nbs-classes.tif",
     *(
@@ -61,7 +61,7 @@ FLOOD = [
         for kind in ("nbs", "no-nbs")
     ),
 ]
-FLOOD_DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "FloodScenarios.json"
+FLOOD_DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "quad-cities-flood-vulnerability.json"
 #: What a test's GitHub serves for SIDEWALK: small, so the fetch tests are quick.
 PAYLOAD = b"PAR1" + bytes(range(256)) * 64 + b"PAR1"
 CLONE = "https://github.com/urban-toolkit/curio"
@@ -580,7 +580,7 @@ def test_scouts_flood_rasters_are_downloaded_the_first_time_the_flood_dataflows_
 ):
     """SCOUT's seven flood rasters are in the repository and out of the pip
     package. On a pip install's catalog, the first run of each of the
-    FloodScenarios dataflow's Data Loading nodes downloads the rasters its code
+    quad-cities-flood-vulnerability dataflow's Data Loading nodes downloads the rasters its code
     names, each once, and hands the sandbox the files where they were placed;
     a second run downloads nothing. The census tracts and the waterways it
     also reads ship in the package: their loaders get the package's own files,

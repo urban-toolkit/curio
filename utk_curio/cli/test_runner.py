@@ -25,7 +25,7 @@ def _parse_test_args(argv, command_prefix="curio"):
         {command_prefix} test unit                  # backend + sandbox + jest, no E2E
         {command_prefix} test backend               # one suite on its own
         {command_prefix} test e2e --use-existing    # E2E against servers already running
-        {command_prefix} test e2e --headed --workflows Vega.json,Regression.json
+        {command_prefix} test e2e --headed --workflows vega.json,regression.json
         {command_prefix} test e2e --parallel 4     # 4 xdist workers, one backend+sandbox pair each
     """,
     )

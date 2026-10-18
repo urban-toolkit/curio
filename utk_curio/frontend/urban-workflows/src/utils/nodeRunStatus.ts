@@ -35,7 +35,7 @@ export function nodeRunStatus(output?: ICodeData): NodeRunStatus {
  * ``[data-curio-node-output]`` is the only one, and the grammar editor has
  * none — so a failed Autark node carried its reason nowhere a test or a
  * support request could read it. The message went to a transient toast and the
- * browser console, which is why an Interaction_AutkMap failure in CI took a
+ * browser console, which is why an interaction-autk-map failure in CI took a
  * month and an Allure attachment to explain (#318).
  *
  * Trimmed to keep the DOM attribute bounded; the console keeps the full text.

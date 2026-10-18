@@ -21,8 +21,8 @@ spec.loader.exec_module(durations)
 def test_a_worker_run_names_the_group_after_the_at_sign():
     assert durations.group_of(
         "tests.test_frontend.test_workflows.TestWorkflowCanvas",
-        "test_node_positions[Interaction_Autark.json-chromium]@wf-Interaction_Autark.json",
-    ) == "wf-Interaction_Autark.json"
+        "test_node_positions[interaction-autark.json-chromium]@wf-interaction-autark.json",
+    ) == "wf-interaction-autark.json"
     assert durations.group_of(
         "tests.test_frontend.test_examples", "test_each_example_has_markdown_walkthrough@test_examples",
     ) == "test_examples"

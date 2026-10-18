@@ -403,23 +403,23 @@ class TestTheShippedCorpus:
             "09-heterogeneous-data-linked-views",
             "11-autark-pbf-loading",
             "17-autark-geodataframe-maps",
-            "Interaction_Autark",
-            "Interaction_Vega",
-            "Interaction_Vega_Autark",
-            "Interaction_Vega_Simple",
-            "Regression",
+            "interaction-autark",
+            "interaction-vega",
+            "interaction-vega-autark",
+            "interaction-vega-simple",
+            "regression",
         }
 
     def test_these_are_the_examples_whose_templates_need_a_package(self):
         """Example 09 declares ``curio.weather@1`` for its python LIBRARIES
         while using only builtin templates -- a different resolution route
-        from examples 10, 18, 21, 22 and 24 and the ScoutShadows,
-        WeatherRouting and lower-manhattan-park-shade test dataflows, whose
+        from examples 10, 18, 21, 22 and 24 and the chicago-loop-shadow-towers,
+        chicago-rain-wind-routing and lower-manhattan-park-shade test dataflows, whose
         templates themselves live in a package (``curio.media@1``,
         ``scout.raster-conversion@1``, and the model packages
         ``model.curio.ddrnet23-slim@1``, ``model.scout.deep-umbra@1`` and
         ``model.scout.weather-gnn@1``). The
-        FloodScenarios test dataflow is made of built-in nodes only."""
+        quad-cities-flood-vulnerability test dataflow is made of built-in nodes only."""
         needs_package_templates = {}
         for path in example_paths():
             spec = json.loads(path.read_text(encoding="utf-8"))
@@ -434,15 +434,15 @@ class TestTheShippedCorpus:
             "18-storage-orthorectified-imagery",
             "21-storage-photos-and-videos",
             "22-storage-audio-recordings",
-            "24-scout-building-rasters",
-            "ScoutShadows",
-            "WeatherRouting",
+            "24-scout-shadow-model-chicago-loop",
+            "chicago-loop-shadow-towers",
+            "chicago-rain-wind-routing",
             "lower-manhattan-park-shade",
         ]
         # SCOUT's two models are packages with nodes of their own.
-        for stem in ("24-scout-building-rasters", "ScoutShadows", "lower-manhattan-park-shade"):
+        for stem in ("24-scout-shadow-model-chicago-loop", "chicago-loop-shadow-towers", "lower-manhattan-park-shade"):
             assert "model.scout.deep-umbra/accumulated-shadow" in needs_package_templates[stem], stem
-        assert needs_package_templates["WeatherRouting"] == ["model.scout.weather-gnn/weather-routing"]
+        assert needs_package_templates["chicago-rain-wind-routing"] == ["model.scout.weather-gnn/weather-routing"]
         assert declared_dependencies(
             json.loads(
                 (REPO_ROOT / "docs/examples/09-heterogeneous-data-linked-views.json").read_text()

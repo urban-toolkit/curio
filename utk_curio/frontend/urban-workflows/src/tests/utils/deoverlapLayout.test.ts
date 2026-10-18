@@ -223,7 +223,7 @@ describe("deoverlapNodes", () => {
 
     test("the gutter constants are the measured ones", () => {
         // 0/1/8 each flag exactly the specs that are genuinely broken; 12 starts
-        // flagging 03's deliberate 10px gap and 16 Interaction_Vega_Simple's 14px
+        // flagging 03's deliberate 10px gap and 16 interaction-vega-simple's 14px
         // horizontal ones. Raising these relayouts arrangements someone chose.
         expect(NODE_GUTTER_X).toBe(8);
         expect(NODE_GUTTER_Y).toBe(8);

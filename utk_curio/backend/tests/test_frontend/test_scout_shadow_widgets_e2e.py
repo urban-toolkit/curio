@@ -59,7 +59,7 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-EXAMPLE = Path(REPO_ROOT) / "docs" / "examples" / "24-scout-building-rasters.json"
+EXAMPLE = Path(REPO_ROOT) / "docs" / "examples" / "24-scout-shadow-model-chicago-loop.json"
 PACKAGE = Path(REPO_ROOT) / "packages" / "model.scout.deep-umbra@1"
 SHADOW_TYPE = "model.scout.deep-umbra/accumulated-shadow"
 #: The node that takes the shadow's statistics: example 24's one Raster Calculator.
