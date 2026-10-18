@@ -106,8 +106,17 @@ _VIDEO_FRAMES = "curio.media/video-frames"
 _SPLIT_AUDIO = "curio.media/split-audio"
 _MOSAIC_RASTERS = "curio.media/mosaic-rasters"
 
+#: SCOUT's node and model packages (``scout.raster-conversion``,
+#: ``model.scout.deep-umbra``) and datasets (``data.scout.wrf-rain``). A
+#: dataflow with a node or model from one of those packages, or that names one
+#: of those datasets, is tagged ``SCOUT``.
+_SCOUT_PACKAGES = ("scout.", "model.scout.")
+_SCOUT_DATASETS = "data.scout."
+
 #: Display order within each automatic section.
-TAG_ORDER = ("Autark", "Vega-Lite", "GeoPandas", "Pandas", "GPU compute", "Computer vision")
+TAG_ORDER = (
+    "Autark", "Vega-Lite", "GeoPandas", "Pandas", "GPU compute", "Computer vision", "SCOUT",
+)
 DATA_TYPE_ORDER = (
     "Tables", "Geometries", "Imagery", "OpenStreetMap", "Rasters", "Video", "Audio",
 )
@@ -130,10 +139,11 @@ def derive(spec: object, dataset_kind: Optional[DatasetKind] = None) -> dict[str
     """``{"tags": [...], "data_type": [...]}`` for *spec*, in display order.
 
     Reads what is in the dataflow and nothing else: node types, the import
-    lines in its code, and the format of each dataset it names. *dataset_kind*
-    resolves a dataset id to its format and collection kind; without it only
-    the nodes and the code count.
+    lines and model loads in its code, and the datasets it names.
+    *dataset_kind* resolves a dataset id to its format and collection kind;
+    without it the formats are unknown, and the rest still counts.
     """
+    from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
     from utk_curio.backend.app.packages.domain.spec_packages import unversioned_node_type
 
     dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
@@ -146,11 +156,13 @@ def derive(spec: object, dataset_kind: Optional[DatasetKind] = None) -> dict[str
         str(n.get("content") or "") for n in nodes
         if unversioned_node_type(n.get("type")) == _AUTARK
     ]
+    dataset_ids = _dataset_ids(dataflow, code)
+    model_ids = {m for n in nodes for m in model_ids_in_code(n.get("content"))}
 
     formats: set[str] = set()
     kinds: set[str] = set()
     if dataset_kind is not None:
-        for dataset_id in _dataset_ids(dataflow, code):
+        for dataset_id in dataset_ids:
             fmt, kind = dataset_kind(dataset_id)
             if fmt:
                 formats.add(fmt)
@@ -173,6 +185,10 @@ def derive(spec: object, dataset_kind: Optional[DatasetKind] = None) -> dict[str
         tags.add("GPU compute")
     if _CV_INFERENCE in types:
         tags.add("Computer vision")
+    if (any(isinstance(t, str) and t.startswith(_SCOUT_PACKAGES) for t in types)
+            or any(m.startswith(_SCOUT_PACKAGES) for m in model_ids)
+            or any(d.startswith(_SCOUT_DATASETS) for d in dataset_ids)):
+        tags.add("SCOUT")
 
     data: set[str] = set()
     if has_pandas or formats & {"csv", "parquet"}:
