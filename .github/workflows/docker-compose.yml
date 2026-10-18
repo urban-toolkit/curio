@@ -135,6 +135,15 @@ on:
         description: 'With remint: comma-separated parts of baseline names to re-mint however little they changed'
         type: string
         default: ''
+      # A frame the two GPU models draw differently (example 07's plot
+      # close-up) keeps a baseline per GPU kind, <name>.<kind>.png, beside its
+      # default one. This names the frames to write as baselines of one kind;
+      # the run writes no other frame, and its test-gpu job must run on that
+      # kind (gpu_pool). See the test_frontend README.
+      remint_gpu_kind:
+        description: 'With remint: <utk-gpu or arcade-gpu>:<comma-separated parts of baseline names> to write as baselines of that GPU kind (test-gpu must run there: gpu_pool)'
+        type: string
+        default: ''
       # Where the CPU jobs and test-gpu run (scripts/ci_pick_runners.py).
       # `auto` defers to the repository variables CURIO_CI_POOL and
       # CURIO_CI_GPU_POOL, and picks when those are unset.
@@ -377,6 +386,9 @@ jobs:
       CURIO_REMINT: ${{ inputs.remint && '1' || '' }}
       CURIO_REMINT_FILTER: ${{ inputs.remint_filter }}
       CURIO_REMINT_FORCE: ${{ inputs.remint_force }}
+      # Only this job draws on a GPU, so only it writes remint_gpu_kind's
+      # frames; e2e-desktop then only compares.
+      CURIO_REMINT_GPU_KIND: ${{ inputs.remint_gpu_kind }}
       # Isolation from prod on the same host: distinct compose project
       # (-p curio-ci below) + its own host ports (CURIO_E2E_*_PORT below, which
       # docker-compose.ci.yml publishes) so the CI stack never collides with
@@ -663,9 +675,15 @@ jobs:
           # JUnit for the CI report page. Absolute, since test.sh changes
           # directory before it runs pytest. ci_repeat.sh fills in {run}.
           PYTEST_ADDOPTS: --junitxml=${{ github.workspace }}/ci-report/e2e{run}.xml
+          # This runner's GPU model, for the frames that keep a baseline per
+          # GPU kind (GPU_KINDS in utils/screenshots.py): the arcade runners
+          # share an H100, utk-gpu has an RTX PRO 6000. Any other runner gets
+          # none, so its frames compare with their default baselines.
+          CURIO_E2E_GPU_KIND: ${{ startsWith(runner.name, 'arcade-gpu-') && 'arcade-gpu' || (runner.name == 'utk-gpu' && 'utk-gpu' || '') }}
         shell: bash
         run: |
           set -euo pipefail
+          echo "GPU kind: ${CURIO_E2E_GPU_KIND:-none} (runner ${RUNNER_NAME:-unknown})"
           # pytest splits PYTEST_ADDOPTS the way a shell would, so the filter
           # goes in quoted.
           extra=()
@@ -680,6 +698,11 @@ jobs:
             if [ -n "${CURIO_REMINT_FORCE:-}" ]; then
               printf -v quoted '%q' "$CURIO_REMINT_FORCE"
               PYTEST_ADDOPTS="$PYTEST_ADDOPTS --remint-force $quoted"
+            fi
+            # Refused unless this job's GPU kind is the one it names.
+            if [ -n "${CURIO_REMINT_GPU_KIND:-}" ]; then
+              printf -v quoted '%q' "$CURIO_REMINT_GPU_KIND"
+              PYTEST_ADDOPTS="$PYTEST_ADDOPTS --remint-gpu-kind $quoted"
             fi
             export PYTEST_ADDOPTS
             echo "Re-minting with PYTEST_ADDOPTS=$PYTEST_ADDOPTS"
@@ -921,6 +944,7 @@ jobs:
       CURIO_REMINT: ${{ inputs.remint && '1' || '' }}
       CURIO_REMINT_FILTER: ${{ inputs.remint_filter }}
       CURIO_REMINT_FORCE: ${{ inputs.remint_force }}
+      CURIO_REMINT_GPU_KIND: ${{ inputs.remint_gpu_kind }}
       CURIO_E2E_BACKEND_URL: "http://localhost:5022"
       CURIO_E2E_HOST: localhost
       CURIO_E2E_BACKEND_PORT: "5022"
@@ -972,14 +996,18 @@ jobs:
           set -euo pipefail
           extra=()
           if [ "${CURIO_REMINT:-}" = 1 ]; then
-            PYTEST_ADDOPTS="$PYTEST_ADDOPTS --remint-baselines"
+            # A remint_gpu_kind run writes only the frames it names, which
+            # test-gpu draws, so these parts then compare without writing.
+            if [ -z "${CURIO_REMINT_GPU_KIND:-}" ]; then
+              PYTEST_ADDOPTS="$PYTEST_ADDOPTS --remint-baselines"
+            fi
             if [ -n "${CURIO_REMINT_FILTER:-}" ]; then
               printf -v quoted '%q' "$CURIO_REMINT_FILTER"
               PYTEST_ADDOPTS="$PYTEST_ADDOPTS -k $quoted"
               # A filter may name only tests the utk runner owns.
               extra+=(--allow-empty)
             fi
-            if [ -n "${CURIO_REMINT_FORCE:-}" ]; then
+            if [ -n "${CURIO_REMINT_FORCE:-}" ] && [ -z "${CURIO_REMINT_GPU_KIND:-}" ]; then
               printf -v quoted '%q' "$CURIO_REMINT_FORCE"
               PYTEST_ADDOPTS="$PYTEST_ADDOPTS --remint-force $quoted"
             fi
