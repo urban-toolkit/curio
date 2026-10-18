@@ -1,14 +1,14 @@
 """ArcGIS Hub Open Data: the public feature layers cities, counties and
 agencies publish through ArcGIS.
 
-Hub's v3 API is JSON:API shaped - ``data[]`` of ``{id, type, attributes}`` -
-which is why the parsing here looks different from Socrata's and CKAN's even
-though the job is the same.
+ArcGIS Hub's v3 API is JSON:API shaped - ``data[]`` of
+``{id, type, attributes}`` - which is why the parsing here looks different
+from Socrata's and CKAN's even though the job is the same.
 
-Downloads go through Hub's own export endpoint rather than the underlying
-FeatureServer, because that endpoint is what produces a single complete file;
-querying a FeatureServer directly means paging and stitching, which is a
-different feature.
+Downloads go through ArcGIS Hub's own export endpoint rather than the
+underlying FeatureServer, because that endpoint is what produces a single
+complete file; querying a FeatureServer directly means paging and stitching,
+which is a different feature.
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ from utk_curio.backend.app.discovery.domain.resource import (
 )
 from utk_curio.backend.app.discovery.providers.base import BaseProvider
 
-#: An ArcGIS item id is 32 hex characters; a Hub dataset id may append a layer
-#: index (``<itemId>_<n>``) when one item publishes several layers.
+#: An ArcGIS item id is 32 hex characters; an ArcGIS Hub dataset id may append
+#: a layer index (``<itemId>_<n>``) when one item publishes several layers.
 RESOURCE_ID_RE = re.compile(r"^[0-9a-f]{32}(?:_\d{1,4})?$")
 
 _URL_RE = re.compile(r"(?:hub\.arcgis\.com|/api/v3/datasets|arcgis\.com/home/item)", re.I)
