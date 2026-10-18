@@ -101,7 +101,13 @@ def test_ckan_package_search_still_nests_results_under_result():
 
 
 def test_arcgis_hub_still_answers_json_api():
-    payload = probe_json("https://hub.arcgis.com/api/v3/datasets?page[size]=1&q=bike")
+    from utk_curio.backend.app.discovery.providers.arcgis import SEARCH_FIELDS
+
+    # Asked as ArcgisProvider.search asks: for the attributes it reads.
+    payload = probe_json(
+        "https://hub.arcgis.com/api/v3/datasets?page[size]=1&q=bike"
+        f"&fields[datasets]={','.join(SEARCH_FIELDS)}"
+    )
     data = payload.get("data") if isinstance(payload, dict) else None
     if not isinstance(data, list) or not data:
         pytest.skip("Hub returned no datasets for this query today")
@@ -109,6 +115,10 @@ def test_arcgis_hub_still_answers_json_api():
     assert "id" in entry, "data[].id is gone - ArcgisProvider._row reads it"
     assert isinstance(entry.get("attributes"), dict), "data[].attributes is gone"
     assert "name" in entry["attributes"], "data[].attributes.name is gone"
+    # An answer that carries every attribute again puts a search of layers
+    # with many columns past MAX_METADATA_BYTES (#967).
+    unasked = {"fields", "layer", "layers", "statistics", "metadata"} & set(entry["attributes"])
+    assert not unasked, f"fields[datasets] is no longer honoured: the answer carries {sorted(unasked)}"
 
 
 def test_geosampa_wfs_still_publishes_feature_types():
