@@ -6,9 +6,8 @@ import path from "path";
  * lives in THE catalog hook (`usePackageCatalog.reloadFromCatalog`), which the
  * Node Catalog page and drawer both render.
  *
- * `MyPackagesList.test.tsx` covers when the button is offered. What pressing it
- * *does* has two details that are easy to lose, and losing either makes the
- * authoring loop silently stop working:
+ * What pressing the button *does* has two details that are easy to lose, and
+ * losing either makes the authoring loop silently stop working:
  *
  *  - the install must pass `replace: true`. A plain install is a no-op once a
  *    copy exists in the user store, so the author's edits never arrive;
