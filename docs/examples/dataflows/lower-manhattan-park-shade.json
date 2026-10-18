@@ -1,0 +1,1092 @@
+{
+  "dataflow": {
+    "categories": {
+      "city": [
+        "New York"
+      ],
+      "topic": [
+        "Heat and climate",
+        "Greenery"
+      ],
+      "complexity": [
+        "Beginner"
+      ]
+    },
+    "nodes": [
+      {
+        "id": "park-shade-layers",
+        "type": "curio.builtin/autk-grammar",
+        "x": 0,
+        "y": 1434,
+        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/lower_mnt.osm.pbf\",\n      \"queryArea\": {\n        \"bbox\": [\n          -74.018,\n          40.7,\n          -74.004,\n          40.713\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"parks\"\n        ]\n      }\n    },\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/lower_mnt.osm.pbf\",\n      \"queryArea\": {\n        \"bbox\": [\n          -74.0194416,\n          40.698762,\n          -74.0005,\n          40.7157\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"buildings\"\n        ]\n      }\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load OpenStreetMap's parks of Lower Manhattan, the Financial District to City Hall, and its buildings in a box about 300 m larger on every side, up to the extract's edge, so the towers that shade the parks at its edge are there too, from a local PBF.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Lower Manhattan layers"
+      },
+      {
+        "id": "park-shade-season",
+        "type": "curio.builtin/parameter",
+        "x": 82,
+        "y": 1864,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "The season all three scenarios' shadow runs in.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "season",
+              "type": "choice",
+              "label": "Season",
+              "default": "summer",
+              "options": {
+                "choices": [
+                  "spring",
+                  "summer",
+                  "winter"
+                ],
+                "display": "radio"
+              }
+            }
+          ]
+        },
+        "title": "Season"
+      },
+      {
+        "id": "park-shade-distance",
+        "type": "curio.builtin/parameter",
+        "x": 82,
+        "y": 2174,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "How close to a park a building part at least the Tall building height tall must be for the what-ifs to change it.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "park_distance",
+              "type": "number",
+              "label": "Distance from a park",
+              "default": 75,
+              "options": {
+                "min": 0,
+                "step": 5,
+                "units": "m"
+              }
+            }
+          ]
+        },
+        "title": "Distance from a park"
+      },
+      {
+        "id": "park-shade-tall",
+        "type": "curio.builtin/parameter",
+        "x": 82,
+        "y": 2484,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "The height from which the what-ifs change a building part near a park, and Height cap's cap.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "tall_height",
+              "type": "number",
+              "label": "Tall building height",
+              "default": 60,
+              "options": {
+                "min": 0,
+                "step": 5,
+                "units": "m"
+              }
+            }
+          ]
+        },
+        "title": "Tall building height"
+      },
+      {
+        "id": "park-shade-heights",
+        "type": "curio.builtin/computation-analysis",
+        "x": 645,
+        "y": 1624,
+        "content": "import pandas as pd\n\n# OpenStreetMap's buildings in the loader's buildings box, a row for each\n# building and each part of one, as Autark hands them on. Rasterize Buildings\n# reads a \"height\" column in metres with a value in every row: the height\n# mapped for the row, else its number of levels times the floor height, else\n# the default height.\nbuildings = [!! input_0:table_osm_buildings !!]\nheight = pd.to_numeric(buildings[\"height\"], errors=\"coerce\")\nlevels = pd.to_numeric(buildings[\"building:levels\"], errors=\"coerce\")\nheight = height.fillna(levels * float([!! floor_height !!])).fillna(float([!! default_height !!]))\n# What the nodes below read: building_id, which Autark gives every row of a\n# cluster of buildings that overlap, the name, the height and the footprint.\nbuildings = buildings[[\"building_id\", \"name\", \"geometry\"]].assign(height=height)\n# Mark the frame as buildings, so an Autark map extrudes each footprint to its height.\nbuildings.metadata = {\"layerType\": \"buildings\"}\nreturn buildings\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Give every building part of the loader's buildings layer a height in metres for Rasterize Buildings: the height mapped for it, else its number of levels times the floor height, else the default height; keep building_id, name, height and the footprint, marked as buildings.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "floor_height",
+              "type": "number",
+              "label": "Floor height",
+              "default": 3.4,
+              "options": {
+                "min": 0,
+                "step": 0.1,
+                "units": "m"
+              }
+            },
+            {
+              "name": "default_height",
+              "type": "number",
+              "label": "Default height",
+              "default": 10,
+              "options": {
+                "min": 0,
+                "step": 1,
+                "units": "m"
+              }
+            }
+          ]
+        },
+        "title": "Building heights"
+      },
+      {
+        "id": "park-shade-parks",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1290,
+        "y": 1245,
+        "content": "# OpenStreetMap's parks, playgrounds and green spaces in the loader's parks\n# box, as Autark cuts them at it. The named parks large enough to measure, in\n# the open: a \"park\" mostly under the building footprints (input_1), such as\n# a public atrium, is left out. Areas in metres, in the parks' UTM zone, so\n# this works for any city.\nparks = [!! input_0:table_osm_parks !!]\nparks = parks[parks[\"name\"].notna() & parks.geometry.type.isin([\"Polygon\", \"MultiPolygon\"])]\n# A park mapped in pieces under one name is one park, its name its key in the\n# comparisons.\nparks = parks[[\"name\", \"geometry\"]].dissolve(by=\"name\", as_index=False)\nutm = parks.estimate_utm_crs()\nparks = parks.to_crs(utm)\narea = parks.area\nroofed = parks.intersection(input_1.to_crs(utm).union_all()).area / area\nparks = parks[(area >= float([!! min_area !!])) & (roofed < 0.5)].assign(area_m2=area)\n# One park mapped twice (two outlines that almost coincide, under two names)\n# counts once: the larger outline is kept.\nkept = []\nfor i in parks.sort_values(\"area_m2\", ascending=False).index:\n    if not any(parks.geometry[i].intersection(parks.geometry[k]).area >= 0.8 * parks.area_m2[i]\n               and parks.area_m2[k] <= 1.25 * parks.area_m2[i] for k in kept):\n        kept.append(i)\nparks = parks.loc[sorted(kept)].rename(columns={\"name\": \"park\"})[[\"park\", \"area_m2\", \"geometry\"]]\nreturn parks.to_crs(4326).sort_values(\"park\").reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the named parks of the loader's parks layer (input_0) of at least the minimum area that are not mostly under the building footprints (input_1), a park mapped in pieces under one name as one park and a park mapped twice once; one row per park with its name as park, area_m2 and outline, in EPSG:4326.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "min_area",
+              "type": "number",
+              "label": "Minimum area",
+              "default": 500,
+              "options": {
+                "min": 0,
+                "step": 50,
+                "units": "m²"
+              }
+            }
+          ]
+        },
+        "title": "Open-air parks"
+      },
+      {
+        "id": "park-shade-around",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1935,
+        "y": 1469,
+        "content": "import pandas as pd\n\n# The building parts the what-ifs change, by one rule for every park, so the\n# parks compare fairly: at least the Tall building height tall, and within the\n# Distance from a park of any park. input_0 is the buildings, a row per part;\n# input_1 the parks. Distances in metres, in the parks' UTM zone.\nbuildings, parks = input_0, input_1\ntall = float([!! @tall_height !!])\nutm = parks.estimate_utm_crs()\nfootprints = buildings.to_crs(utm).geometry\ndistance = pd.DataFrame({park: footprints.distance(outline)\n                         for park, outline in zip(parks[\"park\"], parks.to_crs(utm).geometry)})\nmarked = buildings.assign(nearest_park=distance.idxmin(axis=1), park_distance_m=distance.min(axis=1))\nmarked[\"around_park\"] = (marked[\"height\"] >= tall) & (marked[\"park_distance_m\"] <= float([!! @park_distance !!]))\n# What Height cap cuts a marked part down to: the Tall building height.\nmarked[\"height_cap_m\"] = tall\n# assign drops the frame's metadata: mark it as buildings again.\nmarked.metadata = {\"layerType\": \"buildings\"}\nreturn marked\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Mark the building parts (input_0) the what-ifs change, by one rule for every park (input_1): around_park when at least the Tall building height tall and within the Distance from a park of any park, in metres in the parks' UTM zone; with each part's nearest_park and park_distance_m, and the Tall building height as height_cap_m, what Height cap cuts a marked part down to.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Buildings around parks"
+      },
+      {
+        "id": "park-shade-existing-rasterize",
+        "type": "scout.raster-conversion/rasterize-buildings",
+        "x": 1290,
+        "y": 1675,
+        "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: one raster in EPSG:3395, each cell a height in metres: the 256 by 256\nmap tiles SCOUT draws, 8-bit gray where 255 is the maximum height, side by\nside. A tile SCOUT writes no file for, because no building is near it, is no\ndata. An Autark map draws it as input_0, band band_1, and SCOUT's Deep Umbra\nshadow model (Accumulated Shadow) reads it.\nThe Widgets tab sets the height column, the zoom level and the maximum height.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_raster_conversion.node_outputs import rasterize_buildings\n\nreturn rasterize_buildings(\n    input_0,\n    attribute=[!! attribute !!],\n    zoom=int([!! zoom !!]),\n    max_height=float([!! max_height !!]),\n    output_file=curio_output_file,\n)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Rasterize the existing buildings into one zoom-16 height raster.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "attribute",
+              "type": "text",
+              "label": "Height column",
+              "default": "height"
+            },
+            {
+              "name": "zoom",
+              "type": "number",
+              "label": "Zoom level",
+              "default": 16,
+              "options": {
+                "min": 1,
+                "max": 20,
+                "step": 1
+              }
+            },
+            {
+              "name": "max_height",
+              "type": "number",
+              "label": "Maximum height",
+              "default": 550,
+              "options": {
+                "min": 1,
+                "step": 1,
+                "units": "m"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "park-shade-existing-shadow",
+        "type": "model.scout.deep-umbra/accumulated-shadow",
+        "x": 1935,
+        "y": 1899,
+        "content": "from deep_umbra import accumulated_shadow\nmodel = curio_load_model(\"model.scout.deep-umbra\")\nreturn accumulated_shadow(input_0, season=[!! @season !!], model=model, output_file=curio_output_file)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Predict the existing buildings' accumulated shadow with Deep Umbra.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "park-shade-existing-shade",
+        "type": "curio.builtin/computation-analysis",
+        "x": 2598,
+        "y": 1432,
+        "content": "import numpy as np\nimport pandas as pd\nfrom rasterio.features import geometry_mask\n\n# input_0: the accumulated shadow in minutes, a raster; input_1: the parks.\nshadow, parks = input_0, input_1\n# The minutes of daylight the shadow's season stands for, which Accumulated\n# Shadow writes on its raster: SCOUT's 720 in summer, 540 in spring, 360 in\n# winter.\ndaylight = float(shadow.tags()[\"minutes\"])\nminutes = shadow.read(1, masked=True).filled(np.nan).astype(\"float64\")\nrows = []\nfor park in parks.to_crs(shadow.crs).itertuples():\n    inside = geometry_mask([park.geometry], out_shape=minutes.shape, transform=shadow.transform, invert=True)\n    values = minutes[inside]\n    values = values[~np.isnan(values)]\n    if values.size == 0:\n        continue\n    share = values / daylight\n    rows.append({\n        \"park\": park.park,\n        \"cells\": int(values.size),\n        \"mean_min\": float(values.mean()),\n        \"median_min\": float(np.median(values)),\n        \"p90_min\": float(np.percentile(values, 90)),\n        \"pct_daylight\": float(values.mean() / daylight),\n        # Shares of the park's cells: in sun (shaded under a quarter of the\n        # daylight), in partial shade, and in deep shade (over three quarters).\n        \"share_sun\": float((share < 0.25).mean()),\n        \"share_partial\": float(((share >= 0.25) & (share < 0.75)).mean()),\n        \"share_deep\": float((share >= 0.75).mean()),\n    })\nreturn parks.merge(pd.DataFrame(rows), on=\"park\")\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "For each park (input_1), the accumulated shadow raster's cells inside it (input_0, minutes, EPSG:3395): mean, median and 90th percentile minutes, the mean as a share of the daylight of the raster's season (its minutes tag: 720 in summer, 540 in spring, 360 in winter), and the shares of its cells in sun (under 25% of daylight), partial shade and deep shade (over 75%). One row per park, with its outline and area.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Shade per park"
+      },
+      {
+        "id": "park-shade-existing-buildings-map",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1290,
+        "y": 2105,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"colorMapRange\": [\n          0,\n          550\n        ],\n        \"title\": \"Building height (m)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the existing buildings in 3D, colored by height.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Buildings in 3D"
+      },
+      {
+        "id": "park-shade-existing-shadow-map",
+        "type": "curio.builtin/autk-grammar",
+        "x": 2598,
+        "y": 2402,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"colorMapRange\": [\n          0,\n          720\n        ],\n        \"title\": \"Accumulated shadow (minutes)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the existing buildings' accumulated shadow on a map.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Shadow map"
+      },
+      {
+        "id": "park-shade-removed-lever",
+        "type": "curio.builtin/edit-features",
+        "x": 2580,
+        "y": 892,
+        "content": "# Edit Features writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"remove\", \"where\": \"around_park\", \"label\": \"Tall parts around a park\"},\n], key=\"building_id\")\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Remove the building parts Buildings around parks marks, by the condition around_park. More parts, picked on the map or by another condition, can be removed, raised or lowered here before Update results.",
+        "metadata": {
+          "keywords": [],
+          "editFeatures": {
+            "key": "building_id",
+            "edits": [
+              {
+                "op": "remove",
+                "where": "around_park",
+                "label": "Tall parts around a park"
+              }
+            ]
+          }
+        },
+        "title": "Towers removed"
+      },
+      {
+        "id": "park-shade-removed-rasterize",
+        "type": "scout.raster-conversion/rasterize-buildings",
+        "x": 3260,
+        "y": 842,
+        "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: one raster in EPSG:3395, each cell a height in metres: the 256 by 256\nmap tiles SCOUT draws, 8-bit gray where 255 is the maximum height, side by\nside. A tile SCOUT writes no file for, because no building is near it, is no\ndata. An Autark map draws it as input_0, band band_1, and SCOUT's Deep Umbra\nshadow model (Accumulated Shadow) reads it.\nThe Widgets tab sets the height column, the zoom level and the maximum height.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_raster_conversion.node_outputs import rasterize_buildings\n\nreturn rasterize_buildings(\n    input_0,\n    attribute=[!! attribute !!],\n    zoom=int([!! zoom !!]),\n    max_height=float([!! max_height !!]),\n    output_file=curio_output_file,\n)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Rasterize the towers removed buildings into one zoom-16 height raster.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "attribute",
+              "type": "text",
+              "label": "Height column",
+              "default": "height"
+            },
+            {
+              "name": "zoom",
+              "type": "number",
+              "label": "Zoom level",
+              "default": 16,
+              "options": {
+                "min": 1,
+                "max": 20,
+                "step": 1
+              }
+            },
+            {
+              "name": "max_height",
+              "type": "number",
+              "label": "Maximum height",
+              "default": 550,
+              "options": {
+                "min": 1,
+                "step": 1,
+                "units": "m"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "park-shade-removed-shadow",
+        "type": "model.scout.deep-umbra/accumulated-shadow",
+        "x": 3905,
+        "y": 1058,
+        "content": "from deep_umbra import accumulated_shadow\nmodel = curio_load_model(\"model.scout.deep-umbra\")\nreturn accumulated_shadow(input_0, season=[!! @season !!], model=model, output_file=curio_output_file)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Predict the towers removed buildings' accumulated shadow with Deep Umbra.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "park-shade-removed-shade",
+        "type": "curio.builtin/computation-analysis",
+        "x": 4568,
+        "y": 162,
+        "content": "import numpy as np\nimport pandas as pd\nfrom rasterio.features import geometry_mask\n\n# input_0: the accumulated shadow in minutes, a raster; input_1: the parks.\nshadow, parks = input_0, input_1\n# The minutes of daylight the shadow's season stands for, which Accumulated\n# Shadow writes on its raster: SCOUT's 720 in summer, 540 in spring, 360 in\n# winter.\ndaylight = float(shadow.tags()[\"minutes\"])\nminutes = shadow.read(1, masked=True).filled(np.nan).astype(\"float64\")\nrows = []\nfor park in parks.to_crs(shadow.crs).itertuples():\n    inside = geometry_mask([park.geometry], out_shape=minutes.shape, transform=shadow.transform, invert=True)\n    values = minutes[inside]\n    values = values[~np.isnan(values)]\n    if values.size == 0:\n        continue\n    share = values / daylight\n    rows.append({\n        \"park\": park.park,\n        \"cells\": int(values.size),\n        \"mean_min\": float(values.mean()),\n        \"median_min\": float(np.median(values)),\n        \"p90_min\": float(np.percentile(values, 90)),\n        \"pct_daylight\": float(values.mean() / daylight),\n        # Shares of the park's cells: in sun (shaded under a quarter of the\n        # daylight), in partial shade, and in deep shade (over three quarters).\n        \"share_sun\": float((share < 0.25).mean()),\n        \"share_partial\": float(((share >= 0.25) & (share < 0.75)).mean()),\n        \"share_deep\": float((share >= 0.75).mean()),\n    })\nreturn parks.merge(pd.DataFrame(rows), on=\"park\")\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "For each park (input_1), the accumulated shadow raster's cells inside it (input_0, minutes, EPSG:3395): mean, median and 90th percentile minutes, the mean as a share of the daylight of the raster's season (its minutes tag: 720 in summer, 540 in spring, 360 in winter), and the shares of its cells in sun (under 25% of daylight), partial shade and deep shade (over 75%). One row per park, with its outline and area.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Shade per park"
+      },
+      {
+        "id": "park-shade-removed-buildings-map",
+        "type": "curio.builtin/autk-grammar",
+        "x": 3260,
+        "y": 1272,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"colorMapRange\": [\n          0,\n          550\n        ],\n        \"title\": \"Building height (m)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the towers removed buildings in 3D, colored by height.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Buildings in 3D"
+      },
+      {
+        "id": "park-shade-removed-shadow-map",
+        "type": "curio.builtin/autk-grammar",
+        "x": 4568,
+        "y": 592,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"colorMapRange\": [\n          0,\n          720\n        ],\n        \"title\": \"Accumulated shadow (minutes)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the towers removed buildings' accumulated shadow on a map.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Shadow map"
+      },
+      {
+        "id": "park-shade-capped-lever",
+        "type": "curio.builtin/edit-features",
+        "x": 2580,
+        "y": 1862,
+        "content": "# Edit Features writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(input_0, [\n    {\"op\": \"expr\", \"where\": \"around_park\", \"column\": \"height\", \"value\": \"min(height, height_cap_m)\", \"label\": \"Tall parts around a park cut to the cap\"},\n], key=\"building_id\")\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Cut the building parts Buildings around parks marks down to the Tall building height, its height_cap_m, by the condition around_park. More parts can be removed, raised or lowered here before Update results.",
+        "metadata": {
+          "keywords": [],
+          "editFeatures": {
+            "key": "building_id",
+            "edits": [
+              {
+                "op": "expr",
+                "where": "around_park",
+                "column": "height",
+                "value": "min(height, height_cap_m)",
+                "label": "Tall parts around a park cut to the cap"
+              }
+            ]
+          }
+        },
+        "title": "Height cap"
+      },
+      {
+        "id": "park-shade-capped-rasterize",
+        "type": "scout.raster-conversion/rasterize-buildings",
+        "x": 3260,
+        "y": 1702,
+        "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: one raster in EPSG:3395, each cell a height in metres: the 256 by 256\nmap tiles SCOUT draws, 8-bit gray where 255 is the maximum height, side by\nside. A tile SCOUT writes no file for, because no building is near it, is no\ndata. An Autark map draws it as input_0, band band_1, and SCOUT's Deep Umbra\nshadow model (Accumulated Shadow) reads it.\nThe Widgets tab sets the height column, the zoom level and the maximum height.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_raster_conversion.node_outputs import rasterize_buildings\n\nreturn rasterize_buildings(\n    input_0,\n    attribute=[!! attribute !!],\n    zoom=int([!! zoom !!]),\n    max_height=float([!! max_height !!]),\n    output_file=curio_output_file,\n)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Rasterize the height cap buildings into one zoom-16 height raster.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "attribute",
+              "type": "text",
+              "label": "Height column",
+              "default": "height"
+            },
+            {
+              "name": "zoom",
+              "type": "number",
+              "label": "Zoom level",
+              "default": 16,
+              "options": {
+                "min": 1,
+                "max": 20,
+                "step": 1
+              }
+            },
+            {
+              "name": "max_height",
+              "type": "number",
+              "label": "Maximum height",
+              "default": 550,
+              "options": {
+                "min": 1,
+                "step": 1,
+                "units": "m"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "park-shade-capped-shadow",
+        "type": "model.scout.deep-umbra/accumulated-shadow",
+        "x": 3905,
+        "y": 1488,
+        "content": "from deep_umbra import accumulated_shadow\nmodel = curio_load_model(\"model.scout.deep-umbra\")\nreturn accumulated_shadow(input_0, season=[!! @season !!], model=model, output_file=curio_output_file)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Predict the height cap buildings' accumulated shadow with Deep Umbra.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "park-shade-capped-shade",
+        "type": "curio.builtin/computation-analysis",
+        "x": 4568,
+        "y": 1022,
+        "content": "import numpy as np\nimport pandas as pd\nfrom rasterio.features import geometry_mask\n\n# input_0: the accumulated shadow in minutes, a raster; input_1: the parks.\nshadow, parks = input_0, input_1\n# The minutes of daylight the shadow's season stands for, which Accumulated\n# Shadow writes on its raster: SCOUT's 720 in summer, 540 in spring, 360 in\n# winter.\ndaylight = float(shadow.tags()[\"minutes\"])\nminutes = shadow.read(1, masked=True).filled(np.nan).astype(\"float64\")\nrows = []\nfor park in parks.to_crs(shadow.crs).itertuples():\n    inside = geometry_mask([park.geometry], out_shape=minutes.shape, transform=shadow.transform, invert=True)\n    values = minutes[inside]\n    values = values[~np.isnan(values)]\n    if values.size == 0:\n        continue\n    share = values / daylight\n    rows.append({\n        \"park\": park.park,\n        \"cells\": int(values.size),\n        \"mean_min\": float(values.mean()),\n        \"median_min\": float(np.median(values)),\n        \"p90_min\": float(np.percentile(values, 90)),\n        \"pct_daylight\": float(values.mean() / daylight),\n        # Shares of the park's cells: in sun (shaded under a quarter of the\n        # daylight), in partial shade, and in deep shade (over three quarters).\n        \"share_sun\": float((share < 0.25).mean()),\n        \"share_partial\": float(((share >= 0.25) & (share < 0.75)).mean()),\n        \"share_deep\": float((share >= 0.75).mean()),\n    })\nreturn parks.merge(pd.DataFrame(rows), on=\"park\")\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "For each park (input_1), the accumulated shadow raster's cells inside it (input_0, minutes, EPSG:3395): mean, median and 90th percentile minutes, the mean as a share of the daylight of the raster's season (its minutes tag: 720 in summer, 540 in spring, 360 in winter), and the shares of its cells in sun (under 25% of daylight), partial shade and deep shade (over 75%). One row per park, with its outline and area.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Shade per park"
+      },
+      {
+        "id": "park-shade-capped-buildings-map",
+        "type": "curio.builtin/autk-grammar",
+        "x": 3260,
+        "y": 2132,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"colorMapRange\": [\n          0,\n          550\n        ],\n        \"title\": \"Building height (m)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the height cap buildings in 3D, colored by height.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Buildings in 3D"
+      },
+      {
+        "id": "park-shade-capped-shadow-map",
+        "type": "curio.builtin/autk-grammar",
+        "x": 4568,
+        "y": 1952,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"colorMapRange\": [\n          0,\n          720\n        ],\n        \"title\": \"Accumulated shadow (minutes)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the height cap buildings' accumulated shadow on a map.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Shadow map"
+      },
+      {
+        "id": "park-shade-chart",
+        "type": "curio.builtin/compare-scenarios",
+        "x": 5230,
+        "y": 1000,
+        "width": 1000,
+        "height": 600,
+        "content": "# Compare Scenarios writes this code from its inputs: each input, under the\n# id and the name of its scenario. It is written again when they change.\nreturn curio_stack_scenarios([\n    (\"existing\", \"Existing\", [!! input_0 !!]),\n    (\"towers-removed\", \"Towers removed\", [!! input_1 !!]),\n    (\"height-cap\", \"Height cap\", [!! input_2 !!]),\n])\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Chart each park's mean minutes of shadow in the three scenarios, a bar per scenario.",
+        "metadata": {
+          "keywords": [],
+          "compareScenarios": {
+            "inputs": [
+              {
+                "scenario": "existing",
+                "name": "Existing",
+                "color": "#2a9d8f"
+              },
+              {
+                "scenario": "towers-removed",
+                "name": "Towers removed",
+                "color": "#e76f51"
+              },
+              {
+                "scenario": "height-cap",
+                "name": "Height cap",
+                "color": "#6a4c93"
+              }
+            ],
+            "chart": {
+              "preset": "grouped-bar",
+              "x": "park",
+              "y": "mean_min",
+              "aggregate": "none"
+            },
+            "mode": "chart"
+          }
+        },
+        "title": "Minutes of shadow per park"
+      },
+      {
+        "id": "park-shade-removed-change",
+        "type": "curio.builtin/compare-scenarios",
+        "x": 4550,
+        "y": 1452,
+        "content": "# Compare Scenarios writes this code from its inputs: input_1 minus input_0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"existing\", \"Existing\", [!! input_0 !!]),\n    (\"towers-removed\", \"Towers removed\", [!! input_1 !!]),\n])\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the change in the accumulated shadow from Existing to Towers removed, cell by cell.",
+        "metadata": {
+          "keywords": [],
+          "compareScenarios": {
+            "inputs": [
+              {
+                "scenario": "existing",
+                "name": "Existing",
+                "color": "#2a9d8f"
+              },
+              {
+                "scenario": "towers-removed",
+                "name": "Towers removed",
+                "color": "#e76f51"
+              }
+            ],
+            "mode": "difference"
+          }
+        },
+        "title": "Shadow change, Towers removed"
+      },
+      {
+        "id": "park-shade-removed-change-map",
+        "type": "curio.builtin/autk-grammar",
+        "x": 5468,
+        "y": 1680,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateRdBu\",\n        \"colorMapRange\": [\n          -720,\n          720\n        ],\n        \"colorMapCenter\": 0,\n        \"title\": \"Shadow change, Towers removed (minutes)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map where the accumulated shadow changes under Towers removed, on a scale centered on no change.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Shadow change map"
+      },
+      {
+        "id": "park-shade-removed-park-change",
+        "type": "curio.builtin/compare-scenarios",
+        "x": 5450,
+        "y": 0,
+        "content": "# Compare Scenarios writes this code from its inputs: input_1 minus input_0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"existing\", \"Existing\", [!! input_0 !!]),\n    (\"towers-removed\", \"Towers removed\", [!! input_1 !!]),\n], key=\"park\")\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take each park's change in shade from Existing to Towers removed, its mean minutes of shadow among them, matched by the park's name.",
+        "metadata": {
+          "keywords": [],
+          "compareScenarios": {
+            "inputs": [
+              {
+                "scenario": "existing",
+                "name": "Existing",
+                "color": "#2a9d8f"
+              },
+              {
+                "scenario": "towers-removed",
+                "name": "Towers removed",
+                "color": "#e76f51"
+              }
+            ],
+            "mode": "difference",
+            "difference": {
+              "key": "park"
+            }
+          }
+        },
+        "title": "Park shade change, Towers removed"
+      },
+      {
+        "id": "park-shade-removed-park-change-map",
+        "type": "curio.builtin/autk-grammar",
+        "x": 6350,
+        "y": 70,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"mean_min\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateRdYlBu\",\n        \"colorMapRange\": [\n          -720,\n          720\n        ],\n        \"title\": \"Change in mean shadow, Towers removed (minutes)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map each park by the change in its mean minutes of shadow under Towers removed.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Park shade change map"
+      },
+      {
+        "id": "park-shade-capped-change",
+        "type": "curio.builtin/compare-scenarios",
+        "x": 4550,
+        "y": 2382,
+        "content": "# Compare Scenarios writes this code from its inputs: input_1 minus input_0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"existing\", \"Existing\", [!! input_0 !!]),\n    (\"height-cap\", \"Height cap\", [!! input_1 !!]),\n])\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the change in the accumulated shadow from Existing to Height cap, cell by cell.",
+        "metadata": {
+          "keywords": [],
+          "compareScenarios": {
+            "inputs": [
+              {
+                "scenario": "existing",
+                "name": "Existing",
+                "color": "#2a9d8f"
+              },
+              {
+                "scenario": "height-cap",
+                "name": "Height cap",
+                "color": "#6a4c93"
+              }
+            ],
+            "mode": "difference"
+          }
+        },
+        "title": "Shadow change, Height cap"
+      },
+      {
+        "id": "park-shade-capped-change-map",
+        "type": "curio.builtin/autk-grammar",
+        "x": 5468,
+        "y": 2110,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateRdBu\",\n        \"colorMapRange\": [\n          -720,\n          720\n        ],\n        \"colorMapCenter\": 0,\n        \"title\": \"Shadow change, Height cap (minutes)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map where the accumulated shadow changes under Height cap, on a scale centered on no change.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Shadow change map"
+      },
+      {
+        "id": "park-shade-capped-park-change",
+        "type": "curio.builtin/compare-scenarios",
+        "x": 5450,
+        "y": 500,
+        "content": "# Compare Scenarios writes this code from its inputs: input_1 minus input_0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"existing\", \"Existing\", [!! input_0 !!]),\n    (\"height-cap\", \"Height cap\", [!! input_1 !!]),\n], key=\"park\")\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take each park's change in shade from Existing to Height cap, its mean minutes of shadow among them, matched by the park's name.",
+        "metadata": {
+          "keywords": [],
+          "compareScenarios": {
+            "inputs": [
+              {
+                "scenario": "existing",
+                "name": "Existing",
+                "color": "#2a9d8f"
+              },
+              {
+                "scenario": "height-cap",
+                "name": "Height cap",
+                "color": "#6a4c93"
+              }
+            ],
+            "mode": "difference",
+            "difference": {
+              "key": "park"
+            }
+          }
+        },
+        "title": "Park shade change, Height cap"
+      },
+      {
+        "id": "park-shade-capped-park-change-map",
+        "type": "curio.builtin/autk-grammar",
+        "x": 6350,
+        "y": 500,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"mean_min\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateRdYlBu\",\n        \"colorMapRange\": [\n          -720,\n          720\n        ],\n        \"title\": \"Change in mean shadow, Height cap (minutes)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map each park by the change in its mean minutes of shadow under Height cap.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Park shade change map"
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-park-shade-layersout-park-shade-heightsin",
+        "source": "park-shade-layers",
+        "target": "park-shade-heights",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-layersout-park-shade-parksin",
+        "source": "park-shade-layers",
+        "target": "park-shade-parks",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-heightsout-park-shade-parksin_1",
+        "source": "park-shade-heights",
+        "target": "park-shade-parks",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-park-shade-heightsout-park-shade-aroundin",
+        "source": "park-shade-heights",
+        "target": "park-shade-around",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-parksout-park-shade-aroundin_1",
+        "source": "park-shade-parks",
+        "target": "park-shade-around",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-park-shade-heightsout-park-shade-existing-rasterizein",
+        "source": "park-shade-heights",
+        "target": "park-shade-existing-rasterize",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-heightsout-park-shade-existing-buildings-mapin",
+        "source": "park-shade-heights",
+        "target": "park-shade-existing-buildings-map",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-existing-rasterizeout-park-shade-existing-shadowin",
+        "source": "park-shade-existing-rasterize",
+        "target": "park-shade-existing-shadow",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-existing-shadowout-park-shade-existing-shadow-mapin",
+        "source": "park-shade-existing-shadow",
+        "target": "park-shade-existing-shadow-map",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-existing-shadowout-park-shade-existing-shadein",
+        "source": "park-shade-existing-shadow",
+        "target": "park-shade-existing-shade",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-parksout-park-shade-existing-shadein_1",
+        "source": "park-shade-parks",
+        "target": "park-shade-existing-shade",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-park-shade-aroundout-park-shade-removed-leverin",
+        "source": "park-shade-around",
+        "target": "park-shade-removed-lever",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-removed-leverout-park-shade-removed-rasterizein",
+        "source": "park-shade-removed-lever",
+        "target": "park-shade-removed-rasterize",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-removed-leverout-park-shade-removed-buildings-mapin",
+        "source": "park-shade-removed-lever",
+        "target": "park-shade-removed-buildings-map",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-removed-rasterizeout-park-shade-removed-shadowin",
+        "source": "park-shade-removed-rasterize",
+        "target": "park-shade-removed-shadow",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-removed-shadowout-park-shade-removed-shadow-mapin",
+        "source": "park-shade-removed-shadow",
+        "target": "park-shade-removed-shadow-map",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-removed-shadowout-park-shade-removed-shadein",
+        "source": "park-shade-removed-shadow",
+        "target": "park-shade-removed-shade",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-parksout-park-shade-removed-shadein_1",
+        "source": "park-shade-parks",
+        "target": "park-shade-removed-shade",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-park-shade-aroundout-park-shade-capped-leverin",
+        "source": "park-shade-around",
+        "target": "park-shade-capped-lever",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-capped-leverout-park-shade-capped-rasterizein",
+        "source": "park-shade-capped-lever",
+        "target": "park-shade-capped-rasterize",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-capped-leverout-park-shade-capped-buildings-mapin",
+        "source": "park-shade-capped-lever",
+        "target": "park-shade-capped-buildings-map",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-capped-rasterizeout-park-shade-capped-shadowin",
+        "source": "park-shade-capped-rasterize",
+        "target": "park-shade-capped-shadow",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-capped-shadowout-park-shade-capped-shadow-mapin",
+        "source": "park-shade-capped-shadow",
+        "target": "park-shade-capped-shadow-map",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-capped-shadowout-park-shade-capped-shadein",
+        "source": "park-shade-capped-shadow",
+        "target": "park-shade-capped-shade",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-parksout-park-shade-capped-shadein_1",
+        "source": "park-shade-parks",
+        "target": "park-shade-capped-shade",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-park-shade-existing-shadeout-park-shade-chartin",
+        "source": "park-shade-existing-shade",
+        "target": "park-shade-chart",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-removed-shadeout-park-shade-chartin_1",
+        "source": "park-shade-removed-shade",
+        "target": "park-shade-chart",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-park-shade-capped-shadeout-park-shade-chartin_2",
+        "source": "park-shade-capped-shade",
+        "target": "park-shade-chart",
+        "sourceHandle": "out",
+        "targetHandle": "in_2"
+      },
+      {
+        "id": "reactflow__edge-park-shade-existing-shadowout-park-shade-removed-changein",
+        "source": "park-shade-existing-shadow",
+        "target": "park-shade-removed-change",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-removed-shadowout-park-shade-removed-changein_1",
+        "source": "park-shade-removed-shadow",
+        "target": "park-shade-removed-change",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-park-shade-removed-changeout-park-shade-removed-change-mapin",
+        "source": "park-shade-removed-change",
+        "target": "park-shade-removed-change-map",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-existing-shadeout-park-shade-removed-park-changein",
+        "source": "park-shade-existing-shade",
+        "target": "park-shade-removed-park-change",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-removed-shadeout-park-shade-removed-park-changein_1",
+        "source": "park-shade-removed-shade",
+        "target": "park-shade-removed-park-change",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-park-shade-removed-park-changeout-park-shade-removed-park-change-mapin",
+        "source": "park-shade-removed-park-change",
+        "target": "park-shade-removed-park-change-map",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-existing-shadowout-park-shade-capped-changein",
+        "source": "park-shade-existing-shadow",
+        "target": "park-shade-capped-change",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-capped-shadowout-park-shade-capped-changein_1",
+        "source": "park-shade-capped-shadow",
+        "target": "park-shade-capped-change",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-park-shade-capped-changeout-park-shade-capped-change-mapin",
+        "source": "park-shade-capped-change",
+        "target": "park-shade-capped-change-map",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-existing-shadeout-park-shade-capped-park-changein",
+        "source": "park-shade-existing-shade",
+        "target": "park-shade-capped-park-change",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-shade-capped-shadeout-park-shade-capped-park-changein_1",
+        "source": "park-shade-capped-shade",
+        "target": "park-shade-capped-park-change",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-park-shade-capped-park-changeout-park-shade-capped-park-change-mapin",
+        "source": "park-shade-capped-park-change",
+        "target": "park-shade-capped-park-change-map",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      }
+    ],
+    "scenarios": [
+      {
+        "id": "existing",
+        "name": "Existing",
+        "color": "#2a9d8f",
+        "description": "Every building and building part at the height mapped for it.",
+        "nodes": [
+          "park-shade-existing-rasterize",
+          "park-shade-existing-shadow",
+          "park-shade-existing-shade",
+          "park-shade-existing-buildings-map",
+          "park-shade-existing-shadow-map"
+        ]
+      },
+      {
+        "id": "towers-removed",
+        "name": "Towers removed",
+        "color": "#e76f51",
+        "description": "Without the building parts at least the Tall building height tall within the Distance from a park of any park.",
+        "nodes": [
+          "park-shade-removed-lever",
+          "park-shade-removed-rasterize",
+          "park-shade-removed-shadow",
+          "park-shade-removed-shade",
+          "park-shade-removed-buildings-map",
+          "park-shade-removed-shadow-map"
+        ]
+      },
+      {
+        "id": "height-cap",
+        "name": "Height cap",
+        "color": "#6a4c93",
+        "description": "Those building parts cut down to the Tall building height.",
+        "nodes": [
+          "park-shade-capped-lever",
+          "park-shade-capped-rasterize",
+          "park-shade-capped-shadow",
+          "park-shade-capped-shade",
+          "park-shade-capped-buildings-map",
+          "park-shade-capped-shadow-map"
+        ]
+      }
+    ],
+    "packages": [
+      "model.scout.deep-umbra@1",
+      "scout.raster-conversion@1"
+    ],
+    "name": "Lower Manhattan park shade with towers removed or capped",
+    "task": "",
+    "timestamp": 1792195200000,
+    "provenance_id": "lower-manhattan-park-shade"
+  }
+}
