@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Name every example file in lowercase words joined by dashes.
+"""Name every example dataflow and walkthrough in lowercase words joined by dashes.
 
 Step 16 of the plan for komar41's #914. The numbered gallery in
 ``docs/examples/`` was already named this way. The test dataflows in
 ``docs/examples/dataflows/`` were not, and examples 06 and 24 and the SCOUT
-test dataflows get descriptive names. ``RENAMES`` below is the map. For each
-entry the script:
+test dataflows get descriptive names. The notebook the tours import keeps its
+name, ``test_notebook.ipynb``. ``RENAMES`` below is the map. For each entry the
+script:
 
 - moves, with ``git mv``, the file, its prompt fixture, its walkthrough and
   every screenshot baseline named after it, so the frames CI minted keep their
@@ -16,7 +17,10 @@ entry the script:
   the map gives it a new one, and its ``provenance_id`` where that was its old
   file name;
 - rewrites every reference to an old name in the tracked text files, and
-  prints each line it changed;
+  prints each line it changed; a walkthrough heading the map names becomes the
+  new name too;
+- rewords the lines it changes that hold a dash we no longer write
+  (``REWORDED``);
 - updates the prompt fixtures' ``source.sha256`` and the ``integrity.json`` of
   every package whose files it changed.
 
@@ -75,11 +79,15 @@ class Rename:
     #: a file format, a class), so only a reference that names the example
     #: changes, never the bare word.
     word: bool = False
-    ext: str = ".json"
+    #: The walkthrough's old heading, when it was not the old name either. It
+    #: becomes the new name.
+    heading: Optional[str] = None
 
     @property
-    def dataflow(self) -> bool:
-        return self.ext == ".json"
+    def titles(self) -> List[str]:
+        """The old names shown for the example other than its file name: its
+        old ``dataflow.name`` and its walkthrough's old heading."""
+        return [t for t in (self.was, self.heading) if t]
 
     @property
     def old_name(self) -> str:
@@ -94,7 +102,8 @@ class Rename:
 
 RENAMES = [
     Rename("06-autark-what-if-shadow-study", "06-back-bay-road-sunlight", folder="",
-           name="Back Bay road sunlight when buildings change", was="Autark what-if shadow study"),
+           name="Back Bay road sunlight when buildings change", was="Autark what-if shadow study",
+           heading="What-if shadow study with Autark"),
     Rename("24-scout-building-rasters", "24-scout-shadow-model-chicago-loop", folder="",
            name="SCOUT shadow model on Chicago Loop buildings", was="SCOUT building rasters"),
     Rename("AutkMap", "autk-map", word=True),
@@ -126,8 +135,6 @@ RENAMES = [
     Rename("WeatherRouting", "chicago-rain-wind-routing",
            name="Routing around rain and wind in downtown Chicago"),
     Rename("Widget", "widget", word=True),
-    # Not a dataflow: the notebook the tours import. No fixture and no name.
-    Rename("test_notebook", "test-notebook", word=True, ext=".ipynb"),
 ]
 
 #: Longest old name first, so a name never matches inside a longer one.
@@ -163,6 +170,18 @@ NOT_EXAMPLES = [
      "the test's own dataflow, not the shipped one"),
 ]
 
+#: The em dash, which we no longer write.
+EM_DASH = chr(0x2014)
+
+#: Lines the rewrite changes that also hold an em dash, and how they read
+#: instead: (file, old text, new text). Only a file the rename changes is
+#: reworded, and its old text must be there once.
+REWORDED = [
+    ("utk_curio/backend/app/agents/domain/content.py",
+     "# disproves it " + EM_DASH + " `docs/examples/dataflows/",
+     "# disproves it, because `docs/examples/dataflows/"),
+]
+
 #: Tracked files the rewrite never reads: data, recordings, baselines, this script.
 SKIP = re.compile(
     r"^(?:docs/examples/dataflows/expected_outputs/|datasets/[^/]+/data/|packages/[^/]+/models/|vendor/"
@@ -184,20 +203,16 @@ def _folder(e: Rename) -> str:
 
 def entry_paths(e: Rename, stem: str) -> List[str]:
     """The files that carry *e* under the file name *stem*."""
-    paths = [f"{EXAMPLES}/{_folder(e)}{stem}{e.ext}"]
-    if e.dataflow:
-        paths.append(f"{PROMPTS}/{_folder(e)}{stem}.prompt.json")
-        if not e.folder:
-            paths.append(f"{EXAMPLES}/{stem}.md")
+    paths = [f"{EXAMPLES}/{_folder(e)}{stem}.json", f"{PROMPTS}/{_folder(e)}{stem}.prompt.json"]
+    if not e.folder:
+        paths.append(f"{EXAMPLES}/{stem}.md")
     return paths
 
 
 def _exts(e: Rename) -> List[str]:
-    exts = [re.escape(e.ext)]
-    if e.dataflow:
-        exts.append(r"\.prompt\.json")
-        if not e.folder:
-            exts.append(r"\.md")
+    exts = [r"\.json", r"\.prompt\.json"]
+    if not e.folder:
+        exts.append(r"\.md")
     return exts
 
 
@@ -247,17 +262,19 @@ def _phrase(words: str) -> str:
 
 
 def named_in(text: str) -> List[Rename]:
-    """The entries whose old file name, or the first word of whose old name, *text* holds."""
-    return [e for e in BY_LENGTH if e.old in text or (e.was and e.was.split()[0] in text)]
+    """The entries whose old file name, or the first word of one of whose old titles, *text* holds."""
+    return [e for e in BY_LENGTH if e.old in text or any(t.split()[0] in text for t in e.titles)]
 
 
 def rule_old_names(text: str, path: str) -> Tuple[str, int]:
-    """A dataflow's old name where it was not its file name (06 and 24)."""
+    """A dataflow's old name where it was not its file name (06 and 24), and
+    a walkthrough's old heading (06)."""
     total = 0
     for e in named_in(text):
-        if e.was and e.new_name != e.was:
-            text, n = _sub(rx(_phrase(e.was)), e.new_name, text)
-            total += n
+        for title in e.titles:
+            if title != e.new_name:
+                text, n = _sub(rx(_phrase(title)), e.new_name, text)
+                total += n
     return text, total
 
 
@@ -266,7 +283,7 @@ def rule_shown_names(text: str, path: str) -> Tuple[str, int]:
     becomes a new name: a project name constant, and the drop's notice."""
     total = 0
     for e in named_in(text):
-        if not e.dataflow or e.old_name != e.old or e.new_name == e.new:
+        if e.old_name != e.old or e.new_name == e.new:
             continue
         for q in ('"', "'"):
             pattern = rx(r"(?<=_NAME = " + q + r")" + re.escape(e.old) + r"(?=" + q + r")")
@@ -286,7 +303,7 @@ def rule_fixture_ids(text: str, path: str) -> Tuple[str, int]:
     """An old name that is a word, where code reads it as a fixture or file id."""
     total = 0
     for e in named_in(text):
-        if not e.word or not e.dataflow:
+        if not e.word:
             continue
         for q in ('"', "'"):
             for context in ID_CONTEXTS:
@@ -304,7 +321,7 @@ STEMS_OLD = {e.old for e in RENAMES}
 STEMS_NEW = {e.new for e in RENAMES}
 LOOSE_OLD = {e.old for e in RENAMES if not e.word}
 LOOSE_NEW = {e.new for e in RENAMES if not e.word}
-FILE_EXT = re.compile(r"\.(?:prompt\.json|json|md|ipynb)$")
+FILE_EXT = re.compile(r"\.(?:prompt\.json|json|md)$")
 
 
 WORD_AT = re.compile(r"(?<![A-Za-z0-9_./-])(?:" + "|".join(sorted(map(re.escape, WORD_OLD), key=len, reverse=True))
@@ -368,7 +385,7 @@ def rule_called_dataflow(text: str, path: str) -> Tuple[str, int]:
     """An old name that is a word, followed by "dataflow", "example" or "fixture"."""
     total = 0
     for e in named_in(text):
-        if e.word and e.dataflow:
+        if e.word:
             text, n = _sub(called_dataflow_rx(e), e.new, text)
             total += n
     return text, total
@@ -395,7 +412,7 @@ def rule_keys_and_frames(text: str, path: str) -> Tuple[str, int]:
     """``dataflows/<stem>`` keys, and baselines named in text."""
     total = 0
     for e in named_in(text):
-        patterns = frame_rxs(e) + ([key_rx(e)] if e.dataflow and e.folder == TESTS else [])
+        patterns = frame_rxs(e) + ([key_rx(e)] if e.folder == TESTS else [])
         for pattern in patterns:
             text, n = _sub(pattern, e.new, text)
             total += n
@@ -422,7 +439,7 @@ RULES: List[Callable[[str, str], Tuple[str, int]]] = [
 ]
 
 TRIGGER = re.compile("|".join(
-    [re.escape(e.old) for e in BY_LENGTH] + [_phrase(e.was) for e in RENAMES if e.was]))
+    [re.escape(e.old) for e in BY_LENGTH] + [_phrase(t) for e in RENAMES for t in e.titles]))
 
 
 def rewrite(text: str, path: str) -> Tuple[str, int]:
@@ -432,6 +449,20 @@ def rewrite(text: str, path: str) -> Tuple[str, int]:
     for rule in RULES:
         text, n = rule(text, path)
         total += n
+    return text, total
+
+
+def reword(text: str, path: str) -> Tuple[str, int]:
+    """The ``REWORDED`` lines of a file the rename changes."""
+    total = 0
+    for file, before, after in REWORDED:
+        if file != path:
+            continue
+        hits = text.count(before)
+        if hits != 1:
+            raise SystemExit(f"{path}: {before!r} is written {hits} times, not once")
+        text = text.replace(before, after)
+        total += 1
     return text, total
 
 
@@ -513,7 +544,7 @@ def plan(repo: Path) -> Plan:
                 problems.append(f"both {src} and {dst} are tracked")
             elif src in present:
                 moves.append((src, dst))
-                if e.dataflow and src == entry_paths(e, e.old)[0]:
+                if src == entry_paths(e, e.old)[0]:
                     dataflow_of[src] = e
             elif dst not in present:
                 problems.append(f"neither {src} nor {dst} is tracked")
@@ -542,6 +573,8 @@ def plan(repo: Path) -> Plan:
         new, n = rewrite(new, path)
         count += n
         if new != old:
+            new, n = reword(new, path)
+            count += n
             texts[target.get(path, path)] = (path, old, new, count)
 
     notes = digests(repo, files, target, texts) + integrity(repo, files, texts) + shown_name_notes(texts)
@@ -553,7 +586,7 @@ def shown_name_notes(texts) -> List[str]:
     The rewrite writes the file name; where code compares one with a project's
     name (a project lookup, a notice), it should be the shown name instead."""
     notes = []
-    renamed = [e for e in BY_LENGTH if e.dataflow and e.old_name == e.old and e.new_name != e.new]
+    renamed = [e for e in BY_LENGTH if e.old_name == e.old and e.new_name != e.new]
     for final in sorted(texts):
         src, old, new, _count = texts[final]
         lines = new.splitlines()
@@ -702,6 +735,8 @@ def run(repo: Path) -> None:
 # --------------------------------------------------------------------------
 
 NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\.[a-z0-9]+")
+#: The files NAME names: dataflows and walkthroughs.
+NAMED = (".json", ".md")
 OLD_IN_FRAME = re.compile(r"[_-](?:" + "|".join(re.escape(e.old) for e in BY_LENGTH) + r")[_.-]")
 
 
@@ -710,17 +745,16 @@ def leftovers(text: str) -> List[Tuple[int, str]]:
     found = []
     for e in named_in(text):
         patterns = [file_name_rx(e)] + frame_rxs(e)
-        if e.dataflow and e.folder == TESTS:
+        if e.folder == TESTS:
             patterns.append(key_rx(e))
         if not e.word:
             patterns.append(word_rx(e))
-        if e.word and e.dataflow:
+        if e.word:
             patterns.append(called_dataflow_rx(e))
             for q in ('"', "'"):
                 patterns += [rx(r"(?<=" + c.format(q=q) + r")" + re.escape(e.old) + r"(?=" + q + r")")
                              for c in ID_CONTEXTS]
-        if e.was and e.new_name != e.was:
-            patterns.append(rx(_phrase(e.was)))
+        patterns += [rx(_phrase(t)) for t in e.titles if t != e.new_name]
         for pattern in patterns:
             found += [(m.start(), m.group(0)) for m in pattern.finditer(text)]
     found += [(start, word + " (in a list of examples)") for start, _end, word in listed_words(text, after=True)]
@@ -744,7 +778,7 @@ def check(repo: Path) -> int:
                 problems.append(f"{src} is still there")
             if dst not in present:
                 problems.append(f"{dst} is missing")
-        if not e.dataflow or entry_paths(e, e.new)[0] not in present:
+        if entry_paths(e, e.new)[0] not in present:
             continue
         path, fixture = entry_paths(e, e.new)[:2]
         flow = json.loads((repo / path).read_text("utf-8"))["dataflow"]
@@ -770,8 +804,13 @@ def check(repo: Path) -> int:
     for folder in (EXAMPLES, f"{EXAMPLES}/{TESTS}"):
         for path in files:
             parent, _, name = path.rpartition("/")
-            if parent == folder and not name.startswith(".") and not NAME.fullmatch(name):
+            if (parent == folder and not name.startswith(".") and name.lower().endswith(NAMED)
+                    and not NAME.fullmatch(name)):
                 problems.append(f"{path} is not named in lowercase words joined by dashes")
+
+    for file, before, _after in REWORDED:
+        if file in present and before in (repo / file).read_text("utf-8"):
+            problems.append(f"{file} still reads {before!r}")
 
     keys = {p.rsplit("/", 1)[1][:-5] for p in files if re.fullmatch(EXAMPLES + r"/[^/]+\.json", p)}
     keys |= {"dataflows/" + p.rsplit("/", 1)[1][:-5] for p in files
