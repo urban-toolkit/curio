@@ -7,8 +7,9 @@ Buildings** is SCOUT's building rasterizer ("OSM vector to raster"), ported from
 it draws each building's height into map tiles and joins the tiles into one
 raster, which an Autark map draws and SCOUT's Deep Umbra shadow model reads.
 
-In the canvas palette, both nodes are in the **SCOUT Rasters** group of the
-Packages dropdown.
+Once the package is in a dataflow (**Add to project** in the Node Catalog
+drawer), both nodes are under **SCOUT Rasters** in the Tools panel's **Node
+Catalog** dropdown.
 
 ## Nodes
 
