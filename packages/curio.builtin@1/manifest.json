@@ -479,32 +479,6 @@
       "paletteOrder": 13
     },
     {
-      "category": "computation",
-      "description": "One operation over rasters on one grid. Connect the rasters to its input circles, in order; its code names the operation. Cell by cell: add, subtract, multiply or divide input_0 and input_1, or choose, which takes input_1 where input_0's class is one of the codes it names and input_2 elsewhere; a cell that is nodata in an input the operation reads there is nodata in the result, and rasters on different grids are refused. Statistics: the mean, median, minimum, maximum and count of a raster's cells, nodata left out; its code can keep only the cells that meet a condition, such as a value under 1.08, on the raster itself or on a second raster on input_1, on the same grid, used as a mask: a test of the mask's values or a set of them. The output is the result: a raster an Autark map draws, or the statistics as a table of one row, which Compare Scenarios charts.",
-      "editor": "code",
-      "engine": "python",
-      "hasCode": true,
-      "hasGrammar": false,
-      "hasWidgets": true,
-      "iconRef": "fa-solid:calculator",
-      "id": "raster-calculator",
-      "inputPorts": [
-        {
-          "cardinality": "[1,3]",
-          "types": ["RASTER"]
-        }
-      ],
-      "label": "Raster Calculator",
-      "behavior": "raster-calculator",
-      "outputPorts": [
-        {
-          "cardinality": "1",
-          "types": ["RASTER", "DATAFRAME"]
-        }
-      ],
-      "paletteOrder": 14
-    },
-    {
       "category": "data",
       "containerStyle": {
         "nodeHeight": 460,
