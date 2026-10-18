@@ -3,7 +3,7 @@
  *
  * No built-in template declares `containerStyle.noContent: true` any more
  * (`spatial-join` left the set in #262, when it gained a body, and Merge Flow
- * was removed); a package template still can. They start minimized (`useState(!!noContent)`),
+ * was removed); a package template still can. They are always minimized (`!!noContent || ...`),
  * both un-minimize paths are gated by `if (!noContent)` so they can never be
  * expanded, and the whole header band — pin, comments, delete — is gated on
  * `{!noContent && !dashboardOn ? …}`. The result was a node with no on-node

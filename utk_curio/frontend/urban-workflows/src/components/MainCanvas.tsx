@@ -614,6 +614,23 @@ export function MainCanvas() {
         setActivePackageKey(packageKey ?? null);
     }, [setActivePackageKey]);
 
+    // A Shift-drag on the empty canvas draws React Flow's selection box, and
+    // the browser would also select the text of every node and panel the
+    // pointer crosses. So text selection is refused from the press until the
+    // button comes up, wherever the pointer is by then, as a drag that pans
+    // the canvas refuses it (d3's dragDisable); the press itself goes on as
+    // before. Text selected before the box goes too: the box selects nodes.
+    const handleSelectionStart = useCallback(() => {
+        window.getSelection()?.removeAllRanges();
+        const refuseTextSelection = (event: Event) => event.preventDefault();
+        window.addEventListener("selectstart", refuseTextSelection, true);
+        window.addEventListener(
+            "mouseup",
+            () => window.removeEventListener("selectstart", refuseTextSelection, true),
+            { capture: true, once: true },
+        );
+    }, []);
+
     const loadingAnimation = () => {
         return <div id="plug-loader" role="status" aria-live="polite" aria-busy="true">
                 <style>{`
@@ -693,6 +710,7 @@ export function MainCanvas() {
                 selectionKeyCode={"Shift"}
                 panActivationKeyCode={null}
                 onSelectionChange={handleSelectionChange}
+                onSelectionStart={handleSelectionStart}
                 onNodeDoubleClick={handleNodeDoubleClick}
                 onConnect={graphEdits.connect ? handleConnect : undefined}
                 nodeTypes={nodeTypes}

@@ -384,9 +384,9 @@ output dataset** toggle, settings, about, pin, comments, **Minimize** and delete
 Code and specs sit in a gray box, and a code node's output is below its code.
 
 Drag a node's bottom-right corner to resize it. For viewers of a shared dataflow,
-nodes keep their size and have no delete. A minimized node is a small chip; click it
-to open the node again. Double-click a node where you would drag it, such as its
-header, to zoom the view onto it.
+nodes keep their size and have no delete. A minimized node is a small chip, and a
+save keeps it one; click it to open the node again. Double-click a node where you
+would drag it, such as its header, to zoom the view onto it.
 
 ## Running a dataflow
 
@@ -615,7 +615,7 @@ circle:
 A circle's variable keeps its name when another edge is connected, so code that
 reads `input_0.crs` keeps working beside a second input. A circle with no edge
 is `None` (`undefined` in JavaScript), which lets a node take an optional
-input, such as the mask on a Raster Statistics node's circle 1. Code that reads
+input, such as the mask on circle 1 of a Raster Calculator's statistics. Code that reads
 its inputs when none has arrived stops with a message naming the circle.
 
 A tuple a Python node returns leaves by its one output circle, so it is one
@@ -787,8 +787,27 @@ passes `absolute=True` to `curio_difference_scenarios`.
   for a removed row. A key that is empty or repeated on one side stops the run, as
   does a layer beside a table.
 
-A raster's difference is a raster, which an Autark map draws and a Python node reads
-as a `rasterio` dataset.
+A raster's difference is a raster, which a Python node reads as a `rasterio`
+dataset, and a layer's difference is a layer. To draw either on a map, connect the
+node's output to an [Autark node](#autark-node), whose spec picks what the map colors
+by, its scale and its legend's `title`. A signed difference of rasters reads best on a
+diverging scheme centered on 0, and an absolute one on a sequential scheme:
+
+```json
+{
+  "map": {
+    "layerRefs": [
+      {
+        "dataRef": "[!! input_0 !!]",
+        "getFnv": "band_1",
+        "colorMapInterpolator": "interpolateRdBu",
+        "colorMapCenter": 0,
+        "title": "Shadow change (minutes)"
+      }
+    ]
+  }
+}
+```
 
 The node has two tabs:
 
@@ -799,15 +818,11 @@ The node has two tabs:
   **None** plots each row's value as it is, with the Y column as the axis title; a
   scenario with several rows stacks them in one bar. A pie writes each slice's
   value on it.
-- **Difference**, in its place in Difference, maps a raster's or a layer's
-  difference, colored by a band or a number column, or by `change` (**Color by**).
-  **Change** picks **Signed**, input_1 minus input_0, or **Absolute**, its size.
-  The legend is titled with what it shows: `sunlight change` for the
-  column `sunlight`, `sunlight absolute change` for its size, or `change`. A raster's
-  or a layer's colors run from the lowest
-  difference, dark purple, to the highest, yellow; a raster cell that is nodata in
-  either raster is clear. A table's difference is shown as a table, each
-  row in the color of its change.
+- **Difference**, in its place in Difference, holds the difference's settings:
+  **Key**, for two layers or tables, and **Change**, which picks **Signed**, input_1
+  minus input_0, or **Absolute**, its size. A table's difference is shown as a table,
+  each row in the color of its change. For a raster's or a layer's, the tab says to
+  draw it with an Autark node after this one.
 - **What differs** lists the levers that differ between the scenarios: for each, the
   widget values and the code lines that changed, read against the first scenario's,
   or, for an Edit Features node, each scenario's edits. A node and the copies made
@@ -1157,13 +1172,14 @@ dashboard the node shows the output saved with the dataflow and never joins.
 
 ## Rasters
 
-Two nodes in the palette's computation group work on rasters: a `rasterio`
-dataset from a Python node or the Data Catalog, or a raster an Autark node hands
-on. Each is a Python node whose code is written for it when it is dropped; edit
-the call to change what it does.
+The **Raster Calculator**, in the palette's computation group, works on rasters:
+a `rasterio` dataset from a Python node or the Data Catalog, or a raster an
+Autark node hands on. It is a Python node whose code is written for it when it
+is dropped: input_0 minus input_1, with its other operations listed above it,
+statistics among them. Return another call to change what it does. Connect the
+rasters to its input circles, in order.
 
-**Raster Calculator** computes one operation over rasters on one grid, cell by
-cell. Connect the rasters to its input circles, in order:
+**Cell by cell**, an operation over rasters on one grid gives a raster:
 
 | operation | result |
 |---|---|
@@ -1182,10 +1198,10 @@ cell. Connect the rasters to its input circles, in order:
 - The result keeps the inputs' number type, at least float32, so a float64
   raster keeps every digit. Its cells with no value are NaN.
 
-**Raster Statistics** gives a raster's `mean`, `median`, `min`, `max` and
-`count` over its cells with a value, as a table of one row, for example for
-**Compare Scenarios** to chart. `curio_raster_statistics(input_0, band=2)` reads
-another band. A condition keeps only some cells:
+**Statistics** give a raster's `mean`, `median`, `min`, `max` and `count` over
+its cells with a value, as a table of one row, for example for **Compare
+Scenarios** to chart. `curio_raster_statistics(input_0, band=2)` reads another
+band. A condition keeps only some cells:
 
 | call | counts |
 |---|---|

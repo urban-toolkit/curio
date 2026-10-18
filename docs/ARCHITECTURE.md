@@ -347,18 +347,20 @@ node whose code it writes itself:
   `rasterLoad.ts` and `rasterWire.ts` have no imports at run time, so Node loads them
   from `src/` by type stripping. The envelope is stored as the node's output, a JSON
   artifact.
-- `components/compare/CompareDifference.tsx` shows the difference:
-  `CompareMap.tsx` draws a raster or a layer with `useAutkGrammarBehavior`, the
-  Autark node's own map code, on the node's `autk-grammar-map-<nodeId>` canvas, with
-  `marksNodeErrored` off and no output callback, from the document
-  `compareDifference.ts` writes; a table goes through `CompareChart`.
+- `components/compare/CompareDifference.tsx` shows the difference: a table goes
+  through `CompareChart` with the spec `compareDifference.ts` writes. The node draws
+  no map: a raster's or a layer's difference is drawn by an Autark node after it,
+  which reads the node's output as any Autark node reads its input.
 - `whatDiffers.ts` reads each compared scenario's parts through `scenarioParts`,
   pairs levers whose ids and `copiedFrom` lists meet, and compares their widget
   values and code lines, or, for Edit Features nodes, their edit lists;
   `contextWarnings` compares their fixed context.
 - A pinned Compare Scenarios node draws its own output, so it is its own dashboard
   source (`SELF_DRAWN_NODE_TYPES` in `dashboardLayout.ts`, `_SELF_DRAWN_KINDS` in
-  `projects/dashboard_payload.py`), and its inputs are not walked.
+  `projects/dashboard_payload.py`), and its inputs are not walked. Its tile draws no
+  map, so the page carries no `/raster` answer for it; an Autark map pinned after it
+  walks up to it like any producer, and the page carries the difference's raster for
+  that map.
 
 ### Editing features
 
@@ -722,10 +724,10 @@ Between nodes a raster travels as autk-db's `getRaster` collection in an envelop
 
 ### Raster algebra
 
-[`sandbox/util/raster_algebra.py`](../utk_curio/sandbox/util/raster_algebra.py) is the one implementation of operations over rasters: the Raster Calculator's `curio_raster_calculate`, Raster Statistics' `curio_raster_statistics` and Compare Scenarios' raster Difference all call it. It runs in Python, where a node's rasters are: autk-db reads every band as float32 and loads at most 4096 by 4096 cells, which is what a map draws, not what a computation needs. Rasters are combined only on one grid (`grid_differences`: size, origin, resolution, rotation, CRS, to a relative 1e-9), and a refusal names both grids in words (`describe_grid`, numbers written as JavaScript writes them). A cell is nodata where its raster holds its nodata value or a number that is not finite.
+[`sandbox/util/raster_algebra.py`](../utk_curio/sandbox/util/raster_algebra.py) is the one implementation of operations over rasters: the Raster Calculator's `curio_raster_calculate` and `curio_raster_statistics` and Compare Scenarios' raster Difference all call it. It runs in Python, where a node's rasters are: autk-db reads every band as float32 and loads at most 4096 by 4096 cells, which is what a map draws, not what a computation needs. Rasters are combined only on one grid (`grid_differences`: size, origin, resolution, rotation, CRS, to a relative 1e-9), and a refusal names both grids in words (`describe_grid`, numbers written as JavaScript writes them). A cell is nodata where its raster holds its nodata value or a number that is not finite.
 
 - On rasterio datasets (`calculate`, `statistics`) it computes at the inputs' own number type, at least float32, and writes a result as a GeoTIFF with NaN as nodata, named after its content, where `curio_output_file` writes (in process with no media folder, beside the artifacts). Statistics are numpy's `nanmean`, `nanmedian`, `nanmin` and `nanmax` on the band's own 2-D float64 array, nodata and masked-out cells as NaN.
-- On envelopes (`subtract_envelopes`) it subtracts float32 bands as autk-db exported them, or, with `absolute`, gives the size of each cell's difference: Compare Scenarios' Difference is stored as the envelope its map, a reopen and a dashboard tile read.
+- On envelopes (`subtract_envelopes`) it subtracts float32 bands as autk-db exported them, or, with `absolute`, gives the size of each cell's difference: Compare Scenarios' Difference is stored as the envelope the Autark map after it, a reopen and a dashboard tile read.
 
 `curio_load_data("<id>", bounds=(west, south, east, north))` reads a GeoTIFF's window (`rasters.read_window`): the whole cells whose centres lie inside the bounds, on the raster's own grid, every band at its own type and nodata, written as a GeoTIFF of its own. Bounds that reach past the raster, or hold no cell centre, are refused. The dataset scanners (`DATASET_PATH_CALL_RE` and `COLLECTION_CALL_RE` in `code_refs.py`, the agents' `_CATALOG_CALL_RE`, the frontend's `datasetIdsInCode`) take the id as the call's first argument, so options may follow it, and both loader generators name `bounds=None` on a GeoTIFF's line (`LOADER_OPTIONS`).
 

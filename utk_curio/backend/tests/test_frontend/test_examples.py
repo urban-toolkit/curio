@@ -34,8 +34,8 @@ EXAMPLE_INVARIANTS = [
      {"curio.builtin/computation-analysis": 3, "curio.builtin/vis-vega": 2}, False),
     ("05-vega-lite-multi-view-drilldown.json", 27, 22,
      {"curio.builtin/data-loading": 5, "curio.builtin/vis-vega": 2}, False),
-    ("06-autark-what-if-shadow-study.json", 11, 13,
-     {"curio.builtin/autk-grammar": 7, "curio.builtin/data-pool": 1,
+    ("06-autark-what-if-shadow-study.json", 12, 14,
+     {"curio.builtin/autk-grammar": 8, "curio.builtin/data-pool": 1,
       "curio.builtin/compare-scenarios": 2, "curio.builtin/edit-features": 1}, False),
     ("07-autark-gpu-shader.json", 5, 6,
      {"curio.builtin/autk-grammar": 4, "curio.builtin/data-pool": 1}, True),
@@ -93,7 +93,7 @@ EXAMPLE_INVARIANTS = [
     ("24-scout-building-rasters.json", 7, 7,
      {"curio.builtin/data-loading": 1, "scout.raster-conversion/rasterize-buildings": 1,
       "model.scout.deep-umbra/accumulated-shadow": 1,
-      "curio.builtin/raster-statistics": 1, "curio.builtin/autk-grammar": 3}, False),
+      "curio.builtin/raster-calculator": 1, "curio.builtin/autk-grammar": 3}, False),
     # #576: one Spatial Join per operation, plus two over a point on an edge.
     ("25-spatial-join-operations.json", 25, 28,
      {"curio.builtin/data-loading": 6, "curio.builtin/data-transformation": 1,
@@ -274,7 +274,8 @@ def test_example_06_is_three_scenarios_over_one_context():
     widget, 1 against 2, which its spec reads as a uniform. Two towers removed
     is an Edit Features node that removes two towers, 200 Clarendon and
     Raffles, by their ``building_id``, before copies of Baseline's two nodes
-    with factor 1."""
+    with factor 1. Outside them, an Autark map after the Difference draws the
+    sunlight change."""
     path = os.path.join(EXAMPLES_DIR, "06-autark-what-if-shadow-study.json")
     with open(path, "r", encoding="utf-8") as f:
         flow = json.load(f)["dataflow"]
@@ -285,7 +286,9 @@ def test_example_06_is_three_scenarios_over_one_context():
         "the shipped scenarios open expanded, so every node shows on the canvas"
     )
     outside = set(nodes) - set(baseline["nodes"]) - set(twice["nodes"]) - set(towers["nodes"])
-    assert outside == {"whatif-data", "whatif-pool", "whatif-compare-chart", "whatif-compare-difference"}
+    assert outside == {
+        "whatif-data", "whatif-pool", "whatif-compare-chart", "whatif-compare-difference", "whatif-difference-map",
+    }
     assert len(baseline["nodes"]) == len(twice["nodes"]) == 2
     for original, copy in zip(baseline["nodes"], twice["nodes"]):
         assert nodes[copy]["metadata"].get("copiedFrom") == [original], copy
@@ -342,6 +345,20 @@ def test_example_06_is_three_scenarios_over_one_context():
     third = [e for e in flow["edges"] if e["target"] == "whatif-compare-chart" and e["source"] == "whatif-towers-map"]
     assert [e.get("targetHandle") for e in third] == ["in_2"]
     assert "key" not in nodes["whatif-compare-difference"]["metadata"]["compareScenarios"].get("difference", {})
+    # The Difference draws no map of its own: an Autark map after it colors
+    # each road by its sunlight change, under the grammar's title.
+    into_map = [(e["source"], e.get("sourceHandle"), e.get("targetHandle"))
+                for e in flow["edges"] if e["target"] == "whatif-difference-map"]
+    assert into_map == [("whatif-compare-difference", "out", "in")]
+    difference_map = nodes["whatif-difference-map"]
+    assert difference_map["type"] == "curio.builtin/autk-grammar"
+    assert json.loads(difference_map["content"]) == {"map": {"layerRefs": [{
+        "dataRef": "[!! input_0 !!]",
+        "getFnv": "sunlight",
+        "getFnvType": "quantitative",
+        "colorMapInterpolator": "interpolateViridis",
+        "title": "Sunlight change (minutes)",
+    }]}}
     shader = nodes["whatif-baseline-compute"]["content"]
     assert '"height_factor": [!! height_factor !!]' in shader
     assert "let height = height_factor * bld_height[bi];" in shader

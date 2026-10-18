@@ -1,8 +1,8 @@
 """Raster algebra: operations over rasters on one grid, cell by cell, and a
 raster's statistics.
 
-The one implementation behind the Raster Calculator and Raster Statistics
-nodes (``curio_raster_calculate``, ``curio_raster_statistics``) and Compare
+The one implementation behind the Raster Calculator's operations
+(``curio_raster_calculate``, ``curio_raster_statistics``) and Compare
 Scenarios' Difference of two rasters (``scenario_difference.py``).
 
 Rasters are combined only on one grid: the same size, origin, cell size and
@@ -21,8 +21,8 @@ It works on two kinds of raster:
   returns;
 - an Autark raster envelope (``utils/raster/rasterWire.ts``): the float32
   bands autk-db's ``getRaster`` exports. Compare Scenarios subtracts two of
-  them, because its output is the envelope its map, a reopen and a dashboard
-  tile read.
+  them, because its output is the envelope the Autark map after it, a reopen
+  and a dashboard tile read.
 
 The numbers in a refusal are written as JavaScript writes them, so a sentence
 reads the same whichever side made it.
@@ -378,7 +378,7 @@ def statistics(raster, *, band=1, mask=None, mask_values=None, where=None):
         rasters, mask = rasters[:1], rasters[1]
     if len(rasters) != 1:
         raise RasterAlgebraError(
-            f"Raster Statistics reads one raster, and a mask on input_1, and it has {len(rasters)}."
+            f"statistics read one raster, and a mask on input_1, and the Raster Calculator has {len(rasters)}."
         )
     _check_rasters(rasters + ([mask] if mask is not None else []))
     dataset = rasters[0]

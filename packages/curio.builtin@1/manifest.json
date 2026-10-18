@@ -443,7 +443,7 @@
         "nodeHeight": 420,
         "nodeWidth": 560
       },
-      "description": "Compares scenarios. Connect each scenario's outcome to its own input circle: each input is labelled by the scenario its node belongs to, and the node stacks the inputs into one table, with the scenario's id and name on every row. That table is its output. Its Chart tab draws the table in the scenarios' colors, as bars, grouped bars, lines, points, a pie, lollipops or a table. In Difference it takes two inputs and subtracts input_0 from input_1: two rasters cell by cell, two layers or two tables row by row, matched on a stable id (osm_id or building_id, or a key you pick), with rows only one side has marked removed or added. The difference is its output, drawn on a map. It shows Difference for two rasters or two layers and a Chart otherwise, and you can switch. Its What differs tab lists what changed between the scenarios: widget values and code lines. It warns when the scenarios read different context.",
+      "description": "Compares scenarios. Connect each scenario's outcome to its own input circle: each input is labelled by the scenario its node belongs to, and the node stacks the inputs into one table, with the scenario's id and name on every row. That table is its output. Its Chart tab draws the table in the scenarios' colors, as bars, grouped bars, lines, points, a pie, lollipops or a table. In Difference it takes two inputs and subtracts input_0 from input_1: two rasters cell by cell, two layers or two tables row by row, matched on a stable id (osm_id or building_id, or a key you pick), with rows only one side has marked removed or added. The difference is its output: a table's is shown as a table, and an Autark node after it draws a raster's or a layer's on a map. It shows Difference for two rasters or two layers and a Chart otherwise, and you can switch. Its What differs tab lists what changed between the scenarios: widget values and code lines. It warns when the scenarios read different context.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
@@ -480,7 +480,7 @@
     },
     {
       "category": "computation",
-      "description": "One operation over rasters on one grid, cell by cell. Connect the rasters to its input circles, in order; its code names the operation: add, subtract, multiply or divide input_0 and input_1, or choose, which takes input_1 where input_0's class is one of the codes it names and input_2 elsewhere. A cell that is nodata in an input the operation reads there is nodata in the result, and rasters on different grids are refused. The output is the result, a raster an Autark map draws.",
+      "description": "One operation over rasters on one grid. Connect the rasters to its input circles, in order; its code names the operation. Cell by cell: add, subtract, multiply or divide input_0 and input_1, or choose, which takes input_1 where input_0's class is one of the codes it names and input_2 elsewhere; a cell that is nodata in an input the operation reads there is nodata in the result, and rasters on different grids are refused. Statistics: the mean, median, minimum, maximum and count of a raster's cells, nodata left out; its code can keep only the cells that meet a condition, such as a value under 1.08, on the raster itself or on a second raster on input_1, on the same grid, used as a mask: a test of the mask's values or a set of them. The output is the result: a raster an Autark map draws, or the statistics as a table of one row, which Compare Scenarios charts.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
@@ -499,36 +499,10 @@
       "outputPorts": [
         {
           "cardinality": "1",
-          "types": ["RASTER"]
+          "types": ["RASTER", "DATAFRAME"]
         }
       ],
       "paletteOrder": 14
-    },
-    {
-      "category": "computation",
-      "description": "The mean, median, minimum, maximum and count of a raster's cells, nodata left out, as a table of one row. Its code can keep only the cells that meet a condition, such as a value under 1.08, on the raster itself or on a second raster on input_1, on the same grid, used as a mask: a test of the mask's values or a set of them. Compare Scenarios charts the table.",
-      "editor": "code",
-      "engine": "python",
-      "hasCode": true,
-      "hasGrammar": false,
-      "hasWidgets": true,
-      "iconRef": "fa-solid:chart-simple",
-      "id": "raster-statistics",
-      "inputPorts": [
-        {
-          "cardinality": "[1,2]",
-          "types": ["RASTER"]
-        }
-      ],
-      "label": "Raster Statistics",
-      "behavior": "raster-statistics",
-      "outputPorts": [
-        {
-          "cardinality": "1",
-          "types": ["DATAFRAME"]
-        }
-      ],
-      "paletteOrder": 15
     },
     {
       "category": "data",

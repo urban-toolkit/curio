@@ -1,49 +1,34 @@
 /**
  * The Compare Scenarios node's Difference view (#662): what it joins rows on,
- * whether it gives each difference's size (Change), what its map colors by,
- * and the difference itself, the node's output
- * (`utk_curio/sandbox/util/scenario_difference.py`). A raster or a layer is
- * drawn on a map by the Autark node's map code (`CompareMap`), a table by the
- * Vega-Lite node's (`CompareChart`), as the Chart view draws its chart.
+ * whether it gives each difference's size (Change), and the difference itself,
+ * the node's output (`utk_curio/sandbox/util/scenario_difference.py`). A
+ * table's difference is shown as a table by the Vega-Lite node's code
+ * (`CompareChart`), as the Chart view draws its chart. A raster's or a layer's
+ * is drawn by an Autark node after this one, with the grammar's own options,
+ * and the view says so.
  */
-import React, { Suspense, useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import NodeEmptyState from "../nodes/NodeEmptyState";
 import { readGrammarInput, type GrammarInput } from "../../utils/grammarInput";
 import { toRows } from "../../utils/rowSource";
-import { classifyColumns, type ClassifiedColumn } from "../../utils/starterSpec";
-import {
-  differenceMapDoc,
-  differenceTableSpec,
-  differenceValues,
-  isDifference,
-  resolveValue,
-  type DifferenceKind,
-} from "../../utils/compare/compareDifference";
+import { differenceTableSpec, isDifference, type DifferenceKind } from "../../utils/compare/compareDifference";
 import type { CompareDifference as DifferenceSettings } from "../../utils/compare/compareSettings";
 import { CompareChart } from "./CompareChart";
 import styles from "./CompareScenarios.module.css";
 
 const LABEL = "Compare Scenarios";
 
-/** The map's code loads only when a difference is drawn on one. */
-const CompareMap = React.lazy(() => import("./CompareMap"));
+/** What the view says of a raster's or a layer's difference. */
+export const AUTARK_MAP_NOTE = "Draw this difference on a map with an Autark node after this one.";
 
 type Ref = { path: string; dataType?: string };
 
 type DifferenceRead = {
   kind: DifferenceKind | "other";
   ref: Ref;
-  /** A raster's bands. */
-  bands: string[];
-  /** A layer's or a table's columns, in its order, and their roles. */
+  /** A layer's or a table's columns, in its order. */
   names: string[];
-  columns: ClassifiedColumn[];
 };
-
-function bandsOf(payload: any): string[] {
-  const bands = payload?.envelope?.data?.features?.[0]?.properties?.bands;
-  return Array.isArray(bands) && bands.length > 0 ? bands.map((band: any) => String(band.id)) : ["band_1"];
-}
 
 function rowsOf(frame: GrammarInput["frames"][number]): any[] {
   return frame.dataType === "geodataframe"
@@ -62,15 +47,11 @@ function namesOf(frame: GrammarInput["frames"][number], rows: any[]): string[] {
 function readOf(read: GrammarInput | null, ref: Ref): DifferenceRead | null {
   const frame = read?.frames[0];
   if (!frame) return null;
-  if (frame.dataType === "raster") return { kind: "raster", ref, bands: bandsOf(frame.payload), names: [], columns: [] };
-  const rows = rowsOf(frame);
-  const names = namesOf(frame, rows);
+  if (frame.dataType === "raster") return { kind: "raster", ref, names: [] };
   return {
     kind: frame.dataType === "geodataframe" ? "layer" : frame.dataType === "dataframe" ? "table" : "other",
     ref: ref.dataType ? ref : { ...ref, dataType: frame.dataType },
-    bands: [],
-    names,
-    columns: classifyColumns(frame.schema, rows, frame.geometryName),
+    names: namesOf(frame, rowsOf(frame)),
   };
 }
 
@@ -91,7 +72,7 @@ function useDifferenceRead(ref: Ref | null): DifferenceRead | null {
     void attempt(true)
       .then((found) => found ?? attempt(false))
       .then((found) => {
-        if (current) setRead(found ?? { kind: "other", ref, bands: [], names: [], columns: [] });
+        if (current) setRead(found ?? { kind: "other", ref, names: [] });
       });
     return () => {
       current = false;
@@ -210,8 +191,6 @@ export function CompareDifference({
 
   const drawn = read && isDifference(read.kind, read.names) ? read : null;
   const kind = drawn?.kind ?? null;
-  const values = kind === "raster" || kind === "layer" ? differenceValues(kind, drawn!, settings?.key) : [];
-  const value = resolveValue(settings?.value, values);
 
   const set = (patch: Partial<DifferenceSettings>) => {
     const next: DifferenceSettings = { ...(settings ?? {}), ...patch };
@@ -244,11 +223,10 @@ export function CompareDifference({
   } else if (drawn.kind === "table") {
     stage = <CompareChart nodeData={nodeData} stacked={drawn.ref} specText={JSON.stringify(differenceTableSpec(drawn.names))} />;
   } else {
-    const docText = JSON.stringify(differenceMapDoc(value, settings?.absolute === true));
     stage = (
-      <Suspense fallback={<NodeEmptyState reason="not-run" hint="Loading the map." />}>
-        <CompareMap nodeId={nodeData.nodeId} difference={drawn.ref} docText={docText} />
-      </Suspense>
+      <p className={`nodrag nopan ${styles.note}`} data-compare-difference-map="autark">
+        {AUTARK_MAP_NOTE}
+      </p>
     );
   }
 
@@ -272,23 +250,9 @@ export function CompareDifference({
             options={CHANGE_OPTIONS}
             onChange={(next) => set({ absolute: next === ABSOLUTE })}
           />
-          {values.length > 0 ? (
-            <Select
-              label="Color by"
-              value={value?.value ?? ""}
-              disabled={!editable}
-              options={values.map((option) => ({ value: option.value, text: option.text }))}
-              onChange={(next) => set({ value: next })}
-            />
-          ) : null}
         </div>
       ) : null}
       <div className={styles.mapCanvas}>{stage}</div>
-      {drawn && drawn.kind !== "table" && value && !value.categorical ? (
-        <p className={styles.note} data-compare-difference-note="true">
-          Dark purple is the lowest difference and yellow the highest.
-        </p>
-      ) : null}
     </div>
   );
 }

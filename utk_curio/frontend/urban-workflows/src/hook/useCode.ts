@@ -47,6 +47,8 @@ type CreateCodeNodeOptions = {
     keywords?: number[];
     nodeWidth?: number;
     nodeHeight?: number;
+    // Folded to its chip on the canvas (spec `minimized`).
+    minimized?: boolean;
     dashboardPinned?: boolean;
     dashboardX?: number;
     dashboardY?: number;
@@ -289,6 +291,9 @@ export function useCode(): IUseCode {
             if(typeof parsedHeight === "number")
                 nodeMeta.nodeHeight = parsedHeight;
 
+            if(node.minimized === true)
+                nodeMeta.minimized = true;
+
             if(node.dashboardPinned)
                 nodeMeta.dashboardPinned = true;
 
@@ -423,6 +428,7 @@ export function useCode(): IUseCode {
             keywords = [],
             nodeWidth = undefined,
             nodeHeight = undefined,
+            minimized = undefined,
             dashboardPinned = undefined,
             dashboardX = undefined,
             dashboardY = undefined,
@@ -478,6 +484,7 @@ export function useCode(): IUseCode {
                 out,
                 nodeWidth,
                 nodeHeight,
+                minimized,
                 dashboardPinned,
                 dashboardX,
                 dashboardY,

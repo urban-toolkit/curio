@@ -194,10 +194,10 @@ EXAMPLE_11_MAP = "pbf-map"
 #: False for it. The canvas tests play it and check it by its type.
 COMPARE_SCENARIOS = "curio.builtin/compare-scenarios"
 
-#: Raster Calculator and Raster Statistics (#738) run their code behind their
-#: own play button too, with no legacy category: example 24's Raster
-#: Statistics node is played and must end Done like any other.
-RASTER_TOOLS = {"curio.builtin/raster-calculator", "curio.builtin/raster-statistics"}
+#: The Raster Calculator (#738) runs its code behind its own play button too,
+#: with no legacy category: example 24's Raster Calculator, which takes the
+#: shadow's statistics, is played and must end Done like any other.
+RASTER_TOOLS = {"curio.builtin/raster-calculator"}
 
 #: Edit Features (#662) runs the code its edit list writes behind its own play
 #: button too: example 06's is played and must end Done like any other.
@@ -212,46 +212,53 @@ def _plays(node: NodeSpec) -> bool:
     )
 
 
-#: A Compare Scenarios node's view and where its drawing stands: ``[mode,
-#: state, problem]``, from its chart, or its map in Difference.
+#: What a Compare Scenarios node shows (components/compare/): its view, the
+#: kind of difference it holds in Difference, where its chart or its table
+#: stands and why it could not draw, whether it says an Autark node after it
+#: draws the difference's map, and how many maps it holds itself.
 _COMPARE_VIEW_JS = """(id) => {
     const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
     const body = node && node.querySelector("[data-compare-mode]");
     if (!body) return null;
-    const mode = body.getAttribute("data-compare-mode");
-    const kind = mode === "difference" ? "map" : "chart";
-    const view = node.querySelector(`[data-compare-${kind}-state]`);
-    const problem = node.querySelector(`[data-compare-${kind}-problem]`);
-    return [
-        mode,
-        view ? view.getAttribute(`data-compare-${kind}-state`) : null,
-        problem ? problem.textContent : "",
-    ];
+    const difference = node.querySelector("[data-compare-difference]");
+    const chart = node.querySelector("[data-compare-chart-state]");
+    const problem = node.querySelector("[data-compare-chart-problem]");
+    return {
+        mode: body.getAttribute("data-compare-mode"),
+        kind: difference ? difference.getAttribute("data-compare-difference") : null,
+        chart: chart ? chart.getAttribute("data-compare-chart-state") : null,
+        problem: problem ? problem.textContent : "",
+        note: !!node.querySelector('[data-compare-difference-map="autark"]'),
+        maps: node.querySelectorAll('canvas[id^="autk-grammar-map-"], [data-compare-map-state]').length,
+    };
 }"""
 
 
 def _assert_compare_view_drew(page, node_id: str) -> None:
-    """A Compare Scenarios node that ran shows its view drawn: its chart
-    compiled with no problem and painted, or its difference map drawn."""
+    """A Compare Scenarios node that ran shows its view: its chart, or a
+    table's difference, compiled with no problem and painted; a raster's or a
+    layer's difference is left to an Autark node after it, which the node
+    says, and the node holds no map."""
     try:
         page.wait_for_function(
             "(id) => { const view = (" + _COMPARE_VIEW_JS + ")(id);"
-            " return !!view && !!view[1] && view[1] !== 'drawing'; }",
+            " if (!view) return false;"
+            " if (view.mode === 'difference' && (view.kind === 'raster' || view.kind === 'layer')) return view.note;"
+            " return !!view.chart && view.chart !== 'drawing'; }",
             arg=node_id,
             timeout=90000,
         )
     except PlaywrightTimeoutError:
         pass
     view = page.evaluate(_COMPARE_VIEW_JS, node_id)
-    assert view and view[1] == "drawn", (
-        f"Compare Scenarios node {node_id}: its view ended {view!r}"
-    )
-    if view[0] == "difference":
-        assert_autark_map_drawn(
-            page, node_id, timeout=60000, attach_as=f"{node_id}'s difference map"
-        )
-    else:
-        assert_vega_canvas_rendered(page, node_id)
+    assert view, f"Compare Scenarios node {node_id} shows no view"
+    if view["mode"] == "difference" and view["kind"] in ("raster", "layer"):
+        assert view["note"], f"Compare Scenarios node {node_id}: its difference ended {view!r}"
+        assert view["maps"] == 0, f"Compare Scenarios node {node_id} draws a map of its own: {view!r}"
+        return
+    assert view["chart"] == "drawn", f"Compare Scenarios node {node_id}: its view ended {view!r}"
+    assert view["maps"] == 0, f"Compare Scenarios node {node_id} draws a map of its own: {view!r}"
+    assert_vega_canvas_rendered(page, node_id)
 
 
 #: Where an Edit Features node's map stands: "drawing", "drawn" or "problem".
@@ -1329,15 +1336,15 @@ class TestWorkflowCanvas:
 
         # Each map opens framed on the layers it draws (#773): not a speck in
         # the middle of the map, nor a crop past its edges. That is every
-        # Autark map, and the maps Compare Scenarios and Edit Features draw
-        # with the Autark node's map code. Checked once every close-up is
-        # taken, and for every map before failing on one.
+        # Autark map, and the map Edit Features draws with the Autark node's
+        # map code. Checked once every close-up is taken, and for every map
+        # before failing on one.
         maps = [
             node.id for node in self._drawing_autark_nodes()
             if "map" in json.loads(self.spec.node_code(node, "json"))
         ] + [
             node.id for node in self.spec.nodes
-            if node.type in (COMPARE_SCENARIOS, EDIT_FEATURES)
+            if node.type == EDIT_FEATURES
             and self.page.locator(f"#autk-grammar-map-{node.id}").count()
         ]
         unframed = [
