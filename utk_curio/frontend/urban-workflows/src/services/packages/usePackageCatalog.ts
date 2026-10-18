@@ -10,7 +10,7 @@
  * lockfile on reload; `{ kind: "defaults" }` acts on the account's
  * always-installed set. Everything that touches the node-kind registry or the
  * DOM is injected by the surface (`refreshRegistry`, `onProjectLockfile`,
- * `onInstalledToProject`, `onEnsureProject`, `reloadWindow`, `showToast`), so
+ * `onInstalledToProject`, `onEnsureProject`, `showToast`), so
  * this layer stays registry-free (memo §3.4 rule 5) and the callers keep the
  * exact behavior they had: the same call order, the same toasts, the same
  * error banners.
@@ -58,8 +58,6 @@ export interface UsePackageCatalogOptions {
   onInstalledToProject?: (packages: string[]) => void;
   /** After a mutation that changed the installed set — the palette re-renders. */
   refreshRegistry?: () => Promise<void>;
-  /** After "Reload from catalog": a full page reload is the honest way to run the rebuilt bundle. */
-  reloadWindow?: () => void;
   /** A prefix for the console warning that accompanies every action error (the drawer logs; the page does not). */
   logLabel?: string;
 }
@@ -83,7 +81,6 @@ export interface PackageCatalogState {
   loaded: boolean;
   busy: boolean;
   publishingPackageKey: string | null;
-  reloadingPackageKey: string | null;
   cardActionDir: string | null;
   actionError: string | null;
   /** Project scope: the dev/92 restart-honesty line after an install changed shared libraries. */
@@ -119,7 +116,6 @@ export interface PackageCatalogState {
   removeFromAccount: (pkg: PackagePayload) => Promise<void>;
   publish: (dirName: string) => Promise<void>;
   unpublish: (target: PackagePayload | string) => Promise<void>;
-  reloadFromCatalog: (pkg: PackagePayload) => Promise<void>;
   exportArchive: (pkg: PackagePayload) => Promise<void>;
 }
 
@@ -156,7 +152,6 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
     onProjectLockfile,
     onInstalledToProject = noop,
     refreshRegistry = resolved,
-    reloadWindow = () => window.location.reload(),
     logLabel,
   } = options;
   const projectId = scope.kind === "project" ? scope.projectId : null;
@@ -169,7 +164,6 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
   const [catalogPublishAllowed, setCatalogPublishAllowed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [publishingPackageKey, setPublishingPackageKey] = useState<string | null>(null);
-  const [reloadingPackageKey, setReloadingPackageKey] = useState<string | null>(null);
   const [cardActionDir, setCardActionDir] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [restartNoticeText, setRestartNoticeText] = useState<string | null>(null);
@@ -539,27 +533,6 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
     }
   }, [catalogByDir, reload, reportActionError, showToast]);
 
-  /**
-   * Re-copy a package from the shared catalog over the user's installed copy —
-   * the authoring loop for a package you are editing under `packages/`. The page
-   * is reloaded afterwards rather than just refreshing the registry:
-   * `loadPackageBehaviorScripts` de-dupes injected bundles by package
-   * coordinate, so a custom-UI package's rebuilt bundle would be skipped for the
-   * rest of the session. A reload is the honest way to guarantee the new
-   * behavior code is the one running.
-   */
-  const reloadFromCatalog = useCallback(async (pkg: PackagePayload) => {
-    setReloadingPackageKey(pkg.dirName);
-    setActionError(null);
-    try {
-      await packagesApi.installFromCatalog(pkg.dirName, { replace: true });
-      reloadWindow();
-    } catch (err) {
-      reportActionError(`Couldn't reload ${pkg.name}`, err);
-      setReloadingPackageKey(null);
-    }
-  }, [reloadWindow, reportActionError]);
-
   /** Export an installed package as a .curio.zip; a download has no other visible failure state. */
   const exportArchive = useCallback(async (pkg: PackagePayload) => {
     try {
@@ -585,19 +558,19 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
   return useMemo(
     () => ({
       catalog, installed, kindOfDir, installedByDir, catalogByDir, catalogPublishedDirs, catalogPublishAllowed, defaults,
-      loaded, busy, publishingPackageKey, reloadingPackageKey, cardActionDir, actionError, restartNoticeText,
+      loaded, busy, publishingPackageKey, cardActionDir, actionError, restartNoticeText,
       lastInstallSummary, installCandidate, installMode, conflictReport, effectiveProjectId,
       ensureProjectId: ensureSavedProjectId,
       reload, reportActionError, dismissActionError, dismissInstallSummary, dismissRestartNotice,
       probeInstall, probeUpdate, confirmInstall, cancelInstall, uninstallFromProject, removeFromAccount, publish,
-      unpublish, reloadFromCatalog, exportArchive,
+      unpublish, exportArchive,
     }),
     [catalog, installed, kindOfDir, installedByDir, catalogByDir, catalogPublishedDirs, catalogPublishAllowed, defaults,
-     loaded, busy, publishingPackageKey, reloadingPackageKey, cardActionDir, actionError, restartNoticeText,
+     loaded, busy, publishingPackageKey, cardActionDir, actionError, restartNoticeText,
      lastInstallSummary, installCandidate, installMode, conflictReport, effectiveProjectId, ensureSavedProjectId,
      reload, reportActionError, dismissActionError, dismissInstallSummary, dismissRestartNotice,
      probeInstall, probeUpdate, confirmInstall, cancelInstall, uninstallFromProject, removeFromAccount, publish,
-     unpublish, reloadFromCatalog, exportArchive],
+     unpublish, exportArchive],
   );
 }
 
