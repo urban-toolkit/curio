@@ -118,6 +118,46 @@ def workers_finish_first(monkeypatch) -> None:
     monkeypatch.setattr(jobs, "run_in_background", _to_the_end)
 
 
+def _end_the_tests_downloads(monkeypatch):
+    """Record the download jobs a test creates and the workers it starts.
+
+    Returns what the ``app`` fixture calls before it drops the database: it
+    cancels the jobs still running and waits for every worker to end. A
+    worker that outlives its test keeps querying the database the teardown
+    drops, and the in-memory database hands every thread one connection, so
+    a query it has open when ``drop_all`` runs makes SQLite refuse the DROP
+    ("database table is locked", #971).
+    """
+    from utk_curio.backend.app.discovery.application import jobs
+
+    created: list = []
+    workers: list[threading.Thread] = []
+    create, start = jobs.jobs.create, jobs.run_in_background
+
+    def _create(*args, **kwargs):
+        job = create(*args, **kwargs)
+        created.append(job)
+        return job
+
+    def _start(target):
+        worker = start(target)
+        workers.append(worker)
+        return worker
+
+    monkeypatch.setattr(jobs.jobs, "create", _create)
+    monkeypatch.setattr(jobs, "run_in_background", _start)
+
+    def _end_them() -> None:
+        for job in created:
+            jobs.jobs.cancel(job.user_key, job.job_id)
+        for worker in workers:
+            worker.join(timeout=60)
+        alive = [worker.name for worker in workers if worker.is_alive()]
+        assert not alive, f"download job workers still running a minute after their test: {alive}"
+
+    return _end_them
+
+
 @pytest.fixture()
 def app(tmp_path, monkeypatch):
     from utk_curio.sandbox.util.db import release_connection
@@ -127,11 +167,13 @@ def app(tmp_path, monkeypatch):
     shared_data.mkdir(parents=True)
     monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
     monkeypatch.setenv("CURIO_SHARED_DATA", str(shared_data))
+    end_the_downloads = _end_the_tests_downloads(monkeypatch)
 
     application = create_app(TestConfig)
     with application.app_context():
         _db.create_all()
         yield application
+        end_the_downloads()
         _db.session.remove()
         _db.drop_all()
 
