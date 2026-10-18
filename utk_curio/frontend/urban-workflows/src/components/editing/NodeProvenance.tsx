@@ -14,7 +14,6 @@ import ReactFlow, {
     BaseEdge,
 } from "reactflow";
 import "reactflow/dist/style.css";
-import { NodeType } from "../../constants";
 import { useProvenanceContext, NodeExecRecord } from "../../providers/ProvenanceProvider";
 import { getLayoutedElements } from "../../utils/provenanceLayout";
 

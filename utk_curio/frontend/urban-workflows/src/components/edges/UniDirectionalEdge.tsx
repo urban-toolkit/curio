@@ -2,10 +2,6 @@ import React from 'react';
 import {
   BaseEdge,
   EdgeProps,
-  getBezierPath,
-  getStraightPath,
-  getSimpleBezierPath,
-  getSmoothStepPath 
 } from 'reactflow';
 import { useAgentDropHoverEdge } from '../../hook/useAgentDropHoverEdge';
 import { EDGE_DROP_HOVER_ATTR, edgeDropHighlightStyle } from './edgeDropHighlight';

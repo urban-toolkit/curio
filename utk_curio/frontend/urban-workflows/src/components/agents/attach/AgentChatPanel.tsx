@@ -6,11 +6,7 @@ import {
   attachmentDisplayName,
   sessionTokenTotals,
   type AgentAttachment,
-  type AgentDatasetPick,
-  type AgentDatasetSelection,
-  type AgentRemedy,
   type AgentSessionTurn,
-  type AgentSolveWave,
   type AgentRunStatus,
 } from "../../../services/agents";
 import { agentCategoryKey } from "../../menus/nodes/agentsPalette/agentCategoryStyle";

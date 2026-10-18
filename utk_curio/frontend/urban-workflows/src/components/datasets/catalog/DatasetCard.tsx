@@ -10,7 +10,6 @@ import {
 } from "../../catalog/CatalogKindVisuals";
 import {
   isSharedCatalogDataset,
-  isUserOwnedDataset,
 } from "../../../services/datasetCatalog";
 import {
   datasetCountCompact as datasetCount,

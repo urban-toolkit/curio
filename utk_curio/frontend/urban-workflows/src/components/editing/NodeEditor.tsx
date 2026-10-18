@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import Tab from "react-bootstrap/Tab";
-import Tabs from "react-bootstrap/Tabs";
 import "bootstrap/dist/css/bootstrap.min.css";
 import CodeEditor from "./CodeEditor";
 import GrammarEditor from "./GrammarEditor";
@@ -17,13 +16,8 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import "./NodeEditor.css";
 
 import {
-    faGear,
-    faCircleInfo,
-    faCirclePlay,
-    faExpand,
     faToolbox,
     faCode,
-    faList,
     faSpellCheck,
     faRotateLeft,
     faRightFromBracket,

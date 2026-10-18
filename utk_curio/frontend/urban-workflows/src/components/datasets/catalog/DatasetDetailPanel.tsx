@@ -9,7 +9,6 @@ import {
   isDatasetInstalledFromCatalog,
   isDatasetPublishedToCatalog,
   isLayerGroupId,
-  notifyDatasetCatalogRefresh,
 } from "../../../services/datasetCatalog";
 import { DatasetDataflowUsageSection, useDatasetDataflowUsage } from "./DatasetDataflowUsage";
 import {
@@ -43,7 +42,6 @@ import styles from "./DatasetDetailPanel.module.css";
 import { DatasetSchemaPanel } from "./DatasetSchemaPanel";
 import { DatasetTablePreview } from "./DatasetTablePreview";
 import { useDatasetResolvedSchema } from "./useDatasetResolvedSchema";
-import ConfirmDialog from "../../ConfirmDialog";
 
 const TABS = ["Overview", "Schema", "Table Preview", "Lineage"] as const;
 

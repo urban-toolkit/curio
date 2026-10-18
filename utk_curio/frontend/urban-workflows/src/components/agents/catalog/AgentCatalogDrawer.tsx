@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faFileImport, faGear, faRobot, faThumbtack } from "@fortawesome/free-solid-svg-icons";
+import { faFileImport, faGear } from "@fortawesome/free-solid-svg-icons";
 import {
   matchesAgentSearch,
   sortAgentCards,
