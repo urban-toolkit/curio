@@ -32,7 +32,7 @@ PACKAGE = REPO / "packages" / "scout.raster-conversion@1"
 SOURCES = PACKAGE / "sources"
 MODULE = "scout_raster_conversion"
 NODE_TYPE = "scout.raster-conversion/rasterize-buildings"
-DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "BuildingRasters.json"
+EXAMPLE = REPO / "docs" / "examples" / "24-scout-building-rasters.json"
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scout"
 BUILDINGS = FIXTURES / "A_buildings.geojson"
@@ -199,11 +199,12 @@ def test_its_one_output_is_a_raster():
 
 
 def test_the_shipped_dataflow_runs_the_template_as_the_palette_drops_it():
-    """``BuildingRasters.json`` is how its CI run reaches this package: its node
-    holds the template's own source and widgets, so the dataflow cannot drift
-    from what the package ships."""
-    spec = json.loads(DATAFLOW.read_text(encoding="utf-8"))["dataflow"]
-    assert spec["packages"] == ["scout.raster-conversion@1"]
+    """Example 24 is how its CI run reaches this package: its node holds the
+    template's own source and widgets, so the example cannot drift from what
+    the package ships. Its lockfile names the package beside the model package
+    of Deep Umbra, which reads the node's raster."""
+    spec = json.loads(EXAMPLE.read_text(encoding="utf-8"))["dataflow"]
+    assert spec["packages"] == ["model.scout.deep-umbra@1", "scout.raster-conversion@1"]
     (node,) = [n for n in spec["nodes"] if n["type"] == NODE_TYPE]
     template = _template()
     assert node["content"] == (PACKAGE / template["source"]).read_text(encoding="utf-8")
