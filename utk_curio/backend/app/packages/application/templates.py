@@ -218,7 +218,7 @@ def _template_entry(package_id: str, template) -> dict:
         # without code — the note profile. The roster tells a note-composing
         # agent when none of the available templates is one, so it never
         # reaches for a code template (or a canvas node's type) to hold a note.
-        "presentation": bool(template.behavior and template.editor == "none"),
+        "presentation": is_note_template(template),
         # dev/119 (DEC-076): the schema-required facts the runner's
         # executability is derived from — a hand-kept list of legacy names is
         # the drift DEC-062 exists to prevent. ``executable`` is THE derivation:
@@ -290,6 +290,15 @@ def template_content_kind(template) -> str:
             return CONTENT_KIND_NONE
         return CONTENT_KIND_NOTE
     return CONTENT_KIND_NONE
+
+
+def is_note_template(template) -> bool:
+    """Whether a node of this template is a note: a behavior of its own draws
+    what its author wrote, the ``note`` content kind. The built-in Note is one.
+    A template whose behavior draws its input (a pool, a view, a join, a
+    download) or holds a widget (a Parameter node) is not, and neither is a
+    template with no behavior, which no surface draws."""
+    return bool(template.behavior) and template_content_kind(template) == CONTENT_KIND_NOTE
 
 
 def template_is_executable(template) -> bool:
@@ -448,9 +457,9 @@ def _available_templates_report_unlocked(
 
 
 def presentation_templates(user_key: str, project_id: str) -> list[dict]:
-    """dev/95: the installed+enlisted PRESENTATION templates (a custom
-    ``behavior`` + editor ``"none"`` — the dev/90 A14 profile whose content
-    IS the note text its behavior renders).
+    """dev/95: the installed+enlisted PRESENTATION templates: the note
+    templates (:func:`is_note_template`), the dev/90 A14 profile whose content
+    IS the note text its behavior renders. The built-in Note is always one.
 
     These are the note-surface candidates the runtime offers a delegated
     Researcher (a DEC-046 child cannot browse the roster itself); the child
@@ -477,7 +486,7 @@ def _presentation_templates_unlocked(
         if isinstance(manifest, Exception):
             continue  # available_templates_report already logs this loudly
         for t in manifest.templates:
-            if not (t.behavior and t.editor == "none"):
+            if not is_note_template(t):
                 continue
             canonical = f"{manifest.package_id}/{t.template_id}"
             if canonical in seen:

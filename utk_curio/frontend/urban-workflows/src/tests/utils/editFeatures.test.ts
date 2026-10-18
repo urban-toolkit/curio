@@ -1,8 +1,9 @@
 /**
- * The Edit Features node's edit list (#662): what it keeps, the code it writes
- * from it, the ids a pick on its map names, and the layers it refuses.
+ * The Interaction node's edit log (#662; its type is still
+ * `curio.builtin/edit-features`): what it keeps, the code it writes from it,
+ * the ids a pick on its map names, and the layers it refuses.
  *
- * `editFeaturesCode.cases.json` holds the code for a few lists. This checks
+ * `editFeaturesCode.cases.json` holds the code for a few logs. This checks
  * the node writes exactly that; `utk_curio/sandbox/tests/test_feature_edits.py`
  * runs the same code in the sandbox.
  */
@@ -15,10 +16,13 @@ import {
   isEditFeaturesNode,
   keyColumns,
   keyRefusal,
+  normalizeEdit,
   normalizeEditFeatures,
   pickedIds,
   typedValue,
   withEdit,
+  withEditEnabled,
+  withNudge,
   withoutEdit,
   type EditFeaturesSettings,
 } from "../../utils/editFeatures/editFeatures";
@@ -150,6 +154,88 @@ describe("which column identifies a feature", () => {
     const refusal = keyRefusal(keyColumns(placesOnly), "parcels");
     expect(refusal).toMatch(/^parcels has no column that identifies its features/);
     expect(refusal).toMatch(/never by their place in the layer/);
+    expect(refusal).toMatch(/The Interaction node matches features by such a column/);
+  });
+});
+
+describe("the Interaction log", () => {
+  test("an entry names its features by ids or by a condition, never both", () => {
+    expect(normalizeEdit({ op: "remove", ids: [1], where: "a > 1" })).toBeNull();
+    expect(normalizeEdit({ op: "remove" })).toBeNull();
+    expect(normalizeEdit({ op: "remove", where: "   " })).toBeNull();
+    expect(normalizeEdit({ op: "remove", where: " a > 1 " })).toEqual({ op: "remove", where: "a > 1" });
+    expect(normalizeEdit({ op: "scale", where: "height > 100", column: "height", value: 0.5 })).toEqual({
+      op: "scale", where: "height > 100", column: "height", value: 0.5,
+    });
+  });
+
+  test("a scale or an offset takes a number, an expression a text, and each names its column", () => {
+    expect(normalizeEdit({ op: "scale", ids: [1], column: "h", value: "2" })).toBeNull();
+    expect(normalizeEdit({ op: "offset", ids: [1], column: "h" })).toBeNull();
+    expect(normalizeEdit({ op: "offset", ids: [1], value: 3 })).toBeNull();
+    expect(normalizeEdit({ op: "expr", ids: [1], column: "h", value: 2 })).toBeNull();
+    expect(normalizeEdit({ op: "expr", ids: [1], column: "h", value: "levels * 3" })).toEqual({
+      op: "expr", ids: [1], column: "h", value: "levels * 3",
+    });
+    expect(normalizeEdit({ op: "offset", ids: [1, 1], column: "h", value: -3 })).toEqual({ op: "offset", ids: [1], column: "h", value: -3 });
+  });
+
+  test("an entry keeps its label and its switch, and writes the switch only when off", () => {
+    expect(normalizeEdit({ op: "remove", ids: [1], label: " Tower ", enabled: false })).toEqual({
+      op: "remove", ids: [1], label: "Tower", enabled: false,
+    });
+    expect(normalizeEdit({ op: "remove", ids: [1], label: "", enabled: true })).toEqual({ op: "remove", ids: [1] });
+  });
+
+  test("an entry is switched off and on again by its place", () => {
+    const settings: EditFeaturesSettings = {
+      key: "id",
+      edits: [{ op: "remove", ids: [1] }, { op: "offset", ids: [2], column: "h", value: 1 }],
+    };
+    const off = withEditEnabled(settings, 0, false);
+    expect(off?.edits).toEqual([{ op: "remove", ids: [1], enabled: false }, { op: "offset", ids: [2], column: "h", value: 1 }]);
+    expect(withEditEnabled(off, 0, true)).toEqual(settings);
+  });
+
+  test("presses of an arrow on one pick fold into one entry, and a nudge back to nothing drops it", () => {
+    const up = { op: "offset" as const, ids: [7], column: "height", value: 3 };
+    let settings: EditFeaturesSettings | undefined = { key: "id" };
+    settings = withNudge(settings, up);
+    settings = withNudge(settings, up);
+    expect(settings.edits).toEqual([{ op: "offset", ids: [7], column: "height", value: 6 }]);
+    // Another pick is another entry.
+    settings = withNudge(settings, { ...up, ids: [8] });
+    expect(settings.edits).toHaveLength(2);
+    settings = withNudge(settings, { ...up, ids: [8], value: -3 });
+    expect(settings.edits).toEqual([{ op: "offset", ids: [7], column: "height", value: 6 }]);
+    // Sums keep 15 significant digits.
+    expect(withNudge(withNudge({ key: "id" }, { ...up, value: 0.1 }), { ...up, value: 0.2 }).edits).toEqual([
+      { op: "offset", ids: [7], column: "height", value: 0.3 },
+    ]);
+    // An entry switched off, or one with a label, is never folded into.
+    const off = withNudge({ key: "id", edits: [{ ...up, enabled: false }] }, up);
+    expect(off.edits).toEqual([{ ...up, enabled: false }, up]);
+    const labelled = withNudge({ key: "id", edits: [{ ...up, label: "Tower" }] }, up);
+    expect(labelled.edits).toEqual([{ ...up, label: "Tower" }, up]);
+  });
+
+  test("each entry reads as a sentence, the ones a pick makes as before", () => {
+    expect(describeEdit({ op: "remove", ids: [119, 136] }, "building_id")).toBe("Remove building_id 119, 136");
+    expect(describeEdit({ op: "set", ids: ["w7"], column: "height", value: 30 }, "osm_id")).toBe("Set height to 30 on osm_id w7");
+    expect(describeEdit({ op: "remove", where: "height > 100" }, "building_id")).toBe("Remove where height > 100");
+    expect(describeEdit({ op: "restore", where: "kind == 'tower'" }, "building_id")).toBe("Restore where kind == 'tower'");
+    expect(describeEdit({ op: "set", where: "kind == 'house'", column: "kind", value: "home" }, "osm_id")).toBe(
+      "Set kind to home where kind == 'house'",
+    );
+    expect(describeEdit({ op: "scale", where: "height > 100", column: "height", value: 0.5 }, "building_id")).toBe(
+      "Scale height by 0.5 where height > 100",
+    );
+    expect(describeEdit({ op: "offset", ids: [3], column: "height", value: 6 }, "building_id")).toBe("Raise height by 6 on building_id 3");
+    expect(describeEdit({ op: "offset", ids: [3], column: "height", value: -6 }, "building_id")).toBe("Lower height by 6 on building_id 3");
+    expect(describeEdit({ op: "expr", ids: [1], column: "height", value: "levels * 3.2" }, "osm_id")).toBe(
+      "Compute height as levels * 3.2 on osm_id 1",
+    );
+    expect(describeEdit({ op: "remove", ids: [1, 2], label: "Towers" }, "building_id")).toBe("Towers: Remove building_id 1, 2");
   });
 });
 

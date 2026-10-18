@@ -347,45 +347,82 @@ node whose code it writes itself:
   `rasterLoad.ts` and `rasterWire.ts` have no imports at run time, so Node loads them
   from `src/` by type stripping. The envelope is stored as the node's output, a JSON
   artifact.
-- `components/compare/CompareDifference.tsx` shows the difference:
-  `CompareMap.tsx` draws a raster or a layer with `useAutkGrammarBehavior`, the
-  Autark node's own map code, on the node's `autk-grammar-map-<nodeId>` canvas, with
-  `marksNodeErrored` off and no output callback, from the document
-  `compareDifference.ts` writes; a table goes through `CompareChart`.
+- `components/compare/CompareDifference.tsx` shows the difference: a table goes
+  through `CompareChart` with the spec `compareDifference.ts` writes. The node draws
+  no map: a raster's or a layer's difference is drawn by an Autark node after it,
+  which reads the node's output as any Autark node reads its input.
 - `whatDiffers.ts` reads each compared scenario's parts through `scenarioParts`,
   pairs levers whose ids and `copiedFrom` lists meet, and compares their widget
-  values and code lines, or, for Edit Features nodes, their edit lists;
-  `contextWarnings` compares their fixed context.
+  values and code lines, or, for Interaction nodes, their edit logs, an edit
+  switched off marked off; `contextWarnings` compares their fixed context.
 - A pinned Compare Scenarios node draws its own output, so it is its own dashboard
   source (`SELF_DRAWN_NODE_TYPES` in `dashboardLayout.ts`, `_SELF_DRAWN_KINDS` in
-  `projects/dashboard_payload.py`), and its inputs are not walked.
+  `projects/dashboard_payload.py`), and its inputs are not walked. Its tile draws no
+  map, so the page carries no `/raster` answer for it; an Autark map pinned after it
+  walks up to it like any producer, and the page carries the difference's raster for
+  that map.
 
 ### Editing features
 
-The Edit Features node (`curio.builtin/edit-features`) is a Python code node whose
-code is written from its edit list (`metadata.editFeatures`: `key`, `layer`, `edits`):
+The Interaction node (type `curio.builtin/edit-features`) is a Python code node
+whose code is written from its edit log (`metadata.editFeatures`: `key`, `layer`,
+`edits`):
 
-- `src/utils/editFeatures/editFeatures.ts` normalizes the list and writes the code,
+- `src/utils/editFeatures/editFeatures.ts` normalizes the log and writes the code,
   one call of `curio_edit_features` (`utk_curio/sandbox/util/feature_edits.py`),
   seeded in both namespaces as the Compare Scenarios steps are.
-  `adapters/node/editFeaturesBehavior.tsx` writes the list and the code together
-  when the body changes the list, and marks the node stale.
+  `adapters/node/editFeaturesBehavior.tsx` writes the log and the code together
+  when the body changes the log, and marks the node stale with every node below it
+  that ran, the nodes `autoRunTargets` (`providers/flow/useAutoRun.ts`) gives.
 - `components/editFeatures/EditFeaturesBody.tsx` reads the input as the Autark map
   reads it (`readAutkInput`, `autkSourcesFrom`), offers the id columns a selection
   tag offers (`idColumns` in `utils/references/selectionTags.ts`) and refuses a layer
   with none. `EditFeaturesMap.tsx` draws the input with `useAutkGrammarBehavior`, the
   layer to edit with `isPick`, and turns a pick's rows into ids with `selectedIds`.
+  The body takes its keys with the `nokey` class, so React Flow neither deletes nor
+  moves the node on them. Its Update results calls the flow's `runDownstream`, which
+  starts the run an automatic run starts (#845) for `autoRunTargets` of the node,
+  on the server or, where runs stay in the browser, there.
+- Conditions (`where`) and `expr` edits are one small expression language written
+  twice, `utk_curio/sandbox/util/edit_expr.py` for runs and
+  `src/utils/editFeatures/editExpr.ts` for the body, neither through `eval`.
+  `applyEdits.ts` applies the log in the browser, so the picked features' table and
+  a condition's count show what a run hands on. Both twins read
+  `src/utils/editFeatures/editExpr.cases.json`, in Jest and in pytest.
 - `feature_edits.edit_features` matches features by `key`, never by position, and
   edits GeoJSON as it is when the input is an Autark node's layers: the other
   features, properties and layers pass through untouched, and the result is the
-  envelope `persistLayersToBackend` stores for an Autark node. A table gives a table.
-  Unknown ids are printed, and the run goes on.
+  envelope `persistLayersToBackend` stores for an Autark node. A table gives a table,
+  its columns keeping their types. Unknown ids are printed, and the run goes on.
 - A Data Pool's layers read from one artifact, one or several, name it (`filename`),
   and a code node is sent that artifact (`executionInputRef`), as a run on the
   server passes the pool through. In-process, the layers of a stored
   Autark envelope reach Python as GeoDataFrames that keep `layerName` and
   `layerType` in their `metadata` (`worker._keep_layer_identity`); the isolated
   child gets the envelope itself. `edit_features` reads both.
+
+### Notes
+
+The Note node (`curio.builtin/note`) has no port and no code, so a run forwards it
+(`_FORWARD_KINDS` in `execution/run_plan.py`) and Run All counts it done at once
+(`disablePlay`). It holds what an agent's note holds: the title in `data.title`, the
+text in `data.code` (the spec's `content`) and the color in
+`data.appearance.backgroundColor`.
+
+- `adapters/node/noteBehavior.tsx` hands `components/notes/NoteBody.tsx` the node.
+  The body draws the note, and its form writes all three through `updateDataNode`;
+  neither shows on the dashboard or on a read-only canvas (`useSharedView`).
+- `components/notes/NoteMarkdown.tsx` draws the text with react-markdown: no raw
+  HTML (`skipHtml`), an element allowlist, URLs kept only when https (`httpsOnly`),
+  links in a new tab with the arrow, and an image as its alt text.
+- `utils/noteColors.ts` derives the background, ink and link color the way
+  `packages/domain/node_appearance.py` does, from the palette and inks
+  `src/generated/noteColors.ts` copies from it.
+- A note template is a template with a behavior whose content kind is `note`
+  (`is_note_template` in `packages/application/templates.py`): no editor, no
+  input, no widgets. `presentation_templates`, the roster's `presentation` flag and
+  an enlisted package's notes read it, so the Researcher's notes find the Note
+  rather than a Data Pool or a Parameter node.
 
 ---
 
@@ -722,10 +759,10 @@ Between nodes a raster travels as autk-db's `getRaster` collection in an envelop
 
 ### Raster algebra
 
-[`sandbox/util/raster_algebra.py`](../utk_curio/sandbox/util/raster_algebra.py) is the one implementation of operations over rasters: the Raster Calculator's `curio_raster_calculate`, Raster Statistics' `curio_raster_statistics` and Compare Scenarios' raster Difference all call it. It runs in Python, where a node's rasters are: autk-db reads every band as float32 and loads at most 4096 by 4096 cells, which is what a map draws, not what a computation needs. Rasters are combined only on one grid (`grid_differences`: size, origin, resolution, rotation, CRS, to a relative 1e-9), and a refusal names both grids in words (`describe_grid`, numbers written as JavaScript writes them). A cell is nodata where its raster holds its nodata value or a number that is not finite.
+[`sandbox/util/raster_algebra.py`](../utk_curio/sandbox/util/raster_algebra.py) is the one implementation of operations over rasters: the Raster Calculator's `curio_raster_calculate` and `curio_raster_statistics` and Compare Scenarios' raster Difference all call it. It runs in Python, where a node's rasters are: autk-db reads every band as float32 and loads at most 4096 by 4096 cells, which is what a map draws, not what a computation needs. Rasters are combined only on one grid (`grid_differences`: size, origin, resolution, rotation, CRS, to a relative 1e-9), and a refusal names both grids in words (`describe_grid`, numbers written as JavaScript writes them). A cell is nodata where its raster holds its nodata value or a number that is not finite.
 
 - On rasterio datasets (`calculate`, `statistics`) it computes at the inputs' own number type, at least float32, and writes a result as a GeoTIFF with NaN as nodata, named after its content, where `curio_output_file` writes (in process with no media folder, beside the artifacts). Statistics are numpy's `nanmean`, `nanmedian`, `nanmin` and `nanmax` on the band's own 2-D float64 array, nodata and masked-out cells as NaN.
-- On envelopes (`subtract_envelopes`) it subtracts float32 bands as autk-db exported them, or, with `absolute`, gives the size of each cell's difference: Compare Scenarios' Difference is stored as the envelope its map, a reopen and a dashboard tile read.
+- On envelopes (`subtract_envelopes`) it subtracts float32 bands as autk-db exported them, or, with `absolute`, gives the size of each cell's difference: Compare Scenarios' Difference is stored as the envelope the Autark map after it, a reopen and a dashboard tile read.
 
 `curio_load_data("<id>", bounds=(west, south, east, north))` reads a GeoTIFF's window (`rasters.read_window`): the whole cells whose centres lie inside the bounds, on the raster's own grid, every band at its own type and nodata, written as a GeoTIFF of its own. Bounds that reach past the raster, or hold no cell centre, are refused. The dataset scanners (`DATASET_PATH_CALL_RE` and `COLLECTION_CALL_RE` in `code_refs.py`, the agents' `_CATALOG_CALL_RE`, the frontend's `datasetIdsInCode`) take the id as the call's first argument, so options may follow it, and both loader generators name `bounds=None` on a GeoTIFF's line (`LOADER_OPTIONS`).
 
@@ -1218,6 +1255,7 @@ Some contracts are read on both sides of the stack: by Python and TypeScript, or
   | `utk_curio/frontend/urban-workflows/src/generated/agentCategories.ts` | The agent manifest's category vocabulary and the `AgentCategory` type, from `manifest.AGENT_CATEGORIES` |
   | `utk_curio/frontend/urban-workflows/src/generated/solveStopReasons.ts` | Why a node's repair loop stopped (`stoppedBy`), the `StopReason` type and the phrase each reason reads as, from `SOLVE_STOP_REASONS`; the server's failure sentences read the same table (see [The Solve loop](#the-solve-loop)) |
   | `utk_curio/frontend/urban-workflows/src/generated/visDefaults.ts` | What a visualization node does with its input by itself, from the tables in `contracts.py`: the column roles and the pandas dtype each role comes from; the Vega-Lite and Autark starter ladders, each rule's id, condition, mark or family and description in ladder order; the Vega-Lite `$schema` URL; and the column names, URL extensions and share of image values behind Simple View's image columns. `starterSpec.ts`, `vegaDefaultSpec.ts`, `autkDefaultSpec.ts` and `imageColumns.ts` read it and keep each rule's builder, keyed by its id, and the matching logic |
+  | `utk_curio/frontend/urban-workflows/src/generated/noteColors.ts` | A note's palette, its default color, the two inks and two link colors, and the contrast an ink must reach, from `packages/domain/node_appearance.py`; `utils/noteColors.ts` derives a Note's colors from them (see [Notes](#notes)) |
   | `utk_curio/llm-prompts/default_preamble.md` | The shared agent preamble: the Trill block, projected from [`docs/schemas/trill.v1.json`](schemas/trill.v1.json) to the fields `contracts.TRILL_PROMPT_FIELDS` names; every list of built-in templates (description, control, port types, the connections an input accepts, output cardinality, interaction support), read from the built-in manifest and the packages layer's `input_capacity`, and naming each template by its label; the handles of a node's input circles and the input chips; the label of each template its prose names; the section on Autark documents, rendered from the vendored schema (see [The Autark Schema](#the-autark-schema)); and the starter ladders, the dtype roles, the Vega-Lite `$schema` URL and the image column names, extensions and share, from the same tables as `visDefaults.ts` |
   | `utk_curio/llm-prompts/package_contract.md` | The package backend contract: the handler name pattern, the timeout classes, the two permissions and the variable that names a handler's data directory, from `packages/domain/backend_contract.py`. `package_build_instruction.md` (the Node Builder's package-writing mode) includes it whole, and a delegated call of that mode receives the file as its build-request contract's `backendContract` |
   | `utk_curio/llm-prompts/research_verify_rules.md` | The Researcher's rules for checking a fact: verify before asserting, a failure to verify is a finding, the VERIFIED, REPORTED and UNVERIFIED labels with what was checked, and the web-call budget. `researcher_instruction.md` (its chat) and `research_instruction.md` (its `research.verify` mode) include it whole |

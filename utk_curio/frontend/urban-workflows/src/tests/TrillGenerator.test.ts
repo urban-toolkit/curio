@@ -545,6 +545,30 @@ describe("TrillGenerator Edit Features edit list (#662)", () => {
     expect(byId["fresh"].metadata).toBeUndefined();
     expect(byId["junk"].metadata).toBeUndefined();
   });
+
+  test("persists an Interaction log: conditions, numbers, expressions, labels and entries switched off", () => {
+    const edits = [
+      { op: "scale", where: "height > 100", column: "height", value: 0.5, label: "Halve the towers" },
+      { op: "offset", ids: [136], column: "height", value: -6 },
+      { op: "expr", ids: ["w7"], column: "height", value: "levels * 3.2", enabled: false },
+      { op: "remove", where: "kind == 'shed'" },
+    ];
+    const spec = TrillGenerator.generateTrill(
+      [{
+        type: "CURIO_UNIVERSAL_NODE",
+        position: { x: 0, y: 0 },
+        data: {
+          nodeId: "interaction",
+          nodeType: "curio.builtin/edit-features@1",
+          editFeatures: { key: "building_id", edits: [...edits, { op: "remove", ids: [1], where: "kind == 'shed'" }] },
+        },
+      }],
+      [],
+      "Imported Workflow"
+    );
+    // An entry naming its features by ids and by a condition at once is not kept.
+    expect(spec.dataflow.nodes[0].metadata.editFeatures).toEqual({ key: "building_id", edits });
+  });
 });
 
 describe("TrillGenerator Data Pool conflict modes (#581)", () => {

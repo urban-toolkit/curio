@@ -4,9 +4,9 @@ This example runs the per-road sunlight shader from [Example 7](07-autark-gpu-sh
 scenarios over Boston's Back Bay: **Baseline**, with every building at its own height,
 **Twice as tall**, with every building's height doubled, and **Two towers removed**, with two
 towers taken out: 200 Clarendon, the tallest, and Raffles. The height factor is a widget on the
-shadow step, and the towers are removed by an Edit Features node. Two Compare Scenarios nodes compare them: a chart of each
-scenario's mean road sunlight on the June solstice, and a map of the sunlight each road loses when
-the buildings get twice as tall.
+shadow step, and the towers are removed by an Interaction node. Two Compare Scenarios nodes compare them: a chart of each
+scenario's mean road sunlight on the June solstice, and the sunlight each road loses when the
+buildings get twice as tall, which an Autark map after it draws.
 
 > [!NOTE]
 > **WebGPU required**
@@ -23,11 +23,12 @@ flowchart LR
   BM["Baseline · autk-grammar<br/>map · roads by sunlight"]
   MC["Twice as tall · autk-grammar<br/>shadow WGSL, height_factor 2"]
   MM["Twice as tall · autk-grammar<br/>map · roads by sunlight"]
-  TE["Two towers removed · Edit Features<br/>remove building_id 29623484, 29628154"]
+  TE["Two towers removed · Interaction<br/>remove building_id 29623484, 29628154"]
   TC["Two towers removed · autk-grammar<br/>shadow WGSL, height_factor 1"]
   TM["Two towers removed · autk-grammar<br/>map · roads by sunlight"]
   CC["Compare Scenarios<br/>Chart · mean sunlight"]
   CD["Compare Scenarios<br/>Difference · sunlight change"]
+  DM["autk-grammar<br/>map · roads by sunlight change"]
   D --> P
   P --> BC --> BM
   P --> MC --> MM
@@ -37,12 +38,13 @@ flowchart LR
   TM --> CC
   BM --> CD
   MM --> CD
+  CD --> DM
 ```
 
 A single `data` node loads the PBF once, and a `data-pool` hands its layers to every scenario.
 The loader and the pool are the scenarios' fixed context: they sit outside all three, and all three
 read them. Each scenario's nodes are its levers: the shadow step and its map, and in Two towers
-removed the Edit Features node before them. In Twice as tall and in Two towers removed the shadow
+removed the Interaction node before them. In Twice as tall and in Two towers removed the shadow
 step and the map are copies of their Baseline twins and name them, so the scenarios' levers are
 paired when they are compared.
 
@@ -74,7 +76,7 @@ expects. The downstream compute and map nodes reference these layers by name (`t
 | --- | --- | --- | --- |
 | Baseline | blue | Shadow study, Roads by sunlight | 1 |
 | Twice as tall | orange | copies of the two, each naming its twin | 2 |
-| Two towers removed | green | Edit Features, then copies of the two | 1 |
+| Two towers removed | green | Interaction, then copies of the two | 1 |
 
 The **Scenario** catalog's **In project** tab (**Scenario** in the top bar) lists the three, and each
 one's details list the data pool as the fixed context it reads. Collapse them there and press
@@ -83,7 +85,7 @@ shows its outcome once it is done. Double-click a box to expand it in place.
 
 ## Removing two towers
 
-In Two towers removed, an Edit Features node sits between the pool and the shadow step. It edits
+In Two towers removed, an Interaction node sits between the pool and the shadow step. It edits
 the `table_osm_buildings` layer, picked in its **Layer** menu, and hands on the other four layers as
 they came. Its edit list holds one edit, made by double-clicking the two towers on its map and
 pressing **Remove**: 200 Clarendon (240.8 m) and Raffles (136 m), matched on their `building_id`.
@@ -204,8 +206,19 @@ return curio_difference_scenarios([
 The roads carry no `osm_id` or `building_id`, so Difference matches them by their shapes: both
 scenarios read the same roads from the pool. Each road holds Twice as tall's sunlight minus
 Baseline's, in `sunlight` and in the `compute` values the shadow step writes, and `change` says
-whether it changed. The map colours the roads by that difference, from the largest loss (dark
-purple) to no change (yellow).
+whether it changed.
+
+**Roads by sunlight change**, an Autark node after it, draws that difference: it colours each road
+by its `sunlight`, from the largest loss (dark purple) to no change (yellow).
+
+```json
+"map": { "layerRefs": [
+  { "dataRef": "[!! input_0 !!]",
+    "getFnv": "sunlight", "getFnvType": "quantitative",
+    "colorMapInterpolator": "interpolateViridis",
+    "title": "Sunlight change (minutes)" }
+]}
+```
 
 ## Final result
 

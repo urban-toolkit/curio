@@ -38,15 +38,15 @@ EXPECTED_TEMPLATE_IDS: frozenset[str] = frozenset({
     "parameter",
     "compare-scenarios",
     "raster-calculator",
-    "raster-statistics",
     "edit-features",
+    "note",
 })
 
 EXPECTED_BEHAVIORS: frozenset[str] = frozenset({
     "code", "data-export", "data-pool", "data-summary", "vega",
     "simple-vis", "autk-grammar", "spatial-join", "parameter",
-    "compare-scenarios", "raster-calculator", "raster-statistics",
-    "edit-features",
+    "compare-scenarios", "raster-calculator",
+    "edit-features", "note",
 })
 
 
@@ -79,6 +79,52 @@ def test_builtin_package_every_template_has_behavior_and_icon(builtin_package_di
         assert template.palette_order is not None, (
             f"template {template.template_id} must declare paletteOrder"
         )
+
+
+def test_the_edit_features_template_is_the_interaction_node(builtin_package_dir: Path):
+    """The node is called Interaction, with a hand icon; its template id and
+    behavior stay ``edit-features``, so saved dataflows load as they are."""
+    manifest = load_package_manifest(builtin_package_dir)
+    (template,) = [t for t in manifest.templates if t.template_id == "edit-features"]
+    assert template.label == "Interaction"
+    assert template.icon_ref == "fa-solid:hand-pointer"
+    assert template.behavior == "edit-features"
+    assert not any(t.label == "Edit Features" for t in manifest.templates)
+
+
+def test_the_note_holds_text_and_runs_nothing(builtin_package_dir: Path):
+    """The Note: a title and simple markdown on a color. It has no port, so no
+    edge reaches it, and no code, so a run has nothing to execute; its text is
+    the content a note template carries (``note``), which the Researcher writes."""
+    from utk_curio.backend.app.packages.application.templates import (
+        CONTENT_KIND_NOTE,
+        template_content_kind,
+        template_is_executable,
+    )
+
+    manifest = load_package_manifest(builtin_package_dir)
+    note = next(t for t in manifest.templates if t.template_id == "note")
+    assert note.label == "Note"
+    assert note.behavior == "note"
+    assert note.editor == "none"
+    assert note.input_ports == [] and note.output_ports == []
+    assert not note.has_code and not note.has_grammar and not note.has_widgets
+    assert template_is_executable(note) is False
+    assert template_content_kind(note) == CONTENT_KIND_NOTE
+    assert note.icon_ref == "fa-solid:note-sticky"
+
+
+def test_the_raster_calculator_gives_a_raster_or_a_table_of_statistics(builtin_package_dir: Path):
+    """One Raster Calculator: its operations work cell by cell and give a
+    raster, or take a raster's statistics and give a table of one row."""
+    manifest = load_package_manifest(builtin_package_dir)
+    (calculator,) = [t for t in manifest.templates if t.template_id == "raster-calculator"]
+    assert calculator.label == "Raster Calculator"
+    assert [sorted(port.types) for port in calculator.output_ports] == [["DATAFRAME", "RASTER"]]
+    assert [(port.types, port.cardinality) for port in calculator.input_ports] == [(["RASTER"], "[1,3]")]
+    for words in ("add, subtract, multiply or divide", "choose", "Statistics: the mean, median, minimum, maximum and count",
+                  "a table of one row"):
+        assert words in calculator.description, calculator.description
 
 
 def test_builtin_package_ships_no_sources(builtin_package_dir: Path):

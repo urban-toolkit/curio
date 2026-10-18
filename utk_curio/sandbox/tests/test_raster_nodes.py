@@ -1,7 +1,7 @@
-"""The Raster Calculator and Raster Statistics nodes (``curio.builtin@1``) run
-the code they start with, as the canvas writes it
-(``utils/raster/rasterNodeCode.ts``), in process and in an isolated child: a
-raster on the inputs' grid, and a table of one row.
+"""The Raster Calculator node (``curio.builtin@1``) runs the code it starts
+with, as the canvas writes it (``utils/raster/rasterNodeCode.ts``), in process
+and in an isolated child: its cell operations give a raster on the inputs'
+grid, and the statistics its code shows give a table of one row.
 
 Every test imports the sandbox's modules itself, so a checkout without them
 fails test by test rather than at collection.
@@ -19,10 +19,13 @@ import pytest
 REPO = Path(__file__).resolve().parents[3]
 NODE_CODE_TS = REPO / "utk_curio" / "frontend" / "urban-workflows" / "src" / "utils" / "raster" / "rasterNodeCode.ts"
 CALCULATOR = "curio.builtin/raster-calculator"
-STATISTICS = "curio.builtin/raster-statistics"
+#: The call a dropped Raster Calculator's code returns.
+SUBTRACT = 'return curio_raster_calculate("subtract", [input_0, input_1])'
+#: The statistics call its code shows, commented, beside its cell operations.
+STATISTICS = "return curio_raster_statistics(input_0, mask=input_1)"
 
 
-def starter(name: str) -> str:
+def starter(name: str = "RASTER_CALCULATOR_CODE") -> str:
     """The code a node starts with: the template literal ``rasterNodeCode.ts``
     exports as *name*."""
     source = NODE_CODE_TS.read_text(encoding="utf-8")
@@ -30,6 +33,28 @@ def starter(name: str) -> str:
     assert match, f"{name} is not a plain template literal in {NODE_CODE_TS}"
     assert "${" not in match.group(1)
     return match.group(1)
+
+
+def returning(code: str, call: str) -> str:
+    """*code* with its one ``return`` line, the call it returns, replaced by
+    *call*: what a user does to pick another operation."""
+    lines = code.splitlines(keepends=True)
+    returns = [i for i, line in enumerate(lines) if line.startswith("return ")]
+    assert len(returns) == 1, code
+    lines[returns[0]] = f"{call}\n"
+    return "".join(lines)
+
+
+def starters_statistics() -> str:
+    """The starter returning the statistics it shows in place of its
+    subtraction: its commented statistics call, uncommented."""
+    code = starter()
+    shown = re.findall(r"^#\s+(return curio_raster_statistics\(.*\))$", code, re.M)
+    assert shown == [STATISTICS], f"the starter shows {shown}, not one statistics call to return"
+    assert code.count(SUBTRACT) == 1, code
+    swapped = returning(code, STATISTICS)
+    assert SUBTRACT not in swapped, swapped
+    return swapped
 
 
 def _raster(path, values, *, dtype="float64", nodata=-9999.0):
@@ -79,15 +104,25 @@ def run_in_process(code, inputs, node_type, workspace):
     return result["output"], load_from_duckdb(result["output"]["path"])
 
 
-def test_the_starters_call_curios_raster_algebra():
-    assert 'return curio_raster_calculate("subtract", [input_0, input_1])' in starter("RASTER_CALCULATOR_CODE")
-    assert "return curio_raster_statistics(input_0, mask=input_1)" in starter("RASTER_STATISTICS_CODE")
+def test_the_starter_returns_a_subtraction_and_lists_the_other_operations_statistics_among_them():
+    """A dropped Raster Calculator's code returns input_0 minus input_1, cell by
+    cell, and lists its other operations: the cell operations by name, choose
+    with an example, and the statistics call, with how a condition or a mask
+    raster keeps only some cells."""
+    code = starter()
+    assert code.endswith(f"\n{SUBTRACT}\n"), code
+    for operation in ('"add"', '"subtract"', '"multiply"', '"divide"', '"choose"'):
+        assert operation in code, operation
+    assert 'curio_raster_calculate("choose", [input_0, input_1, input_2], codes=[21, 31])' in code
+    assert f"\n#   {STATISTICS}\n" in code, code
+    for words in ("as a table of one row", "where=lambda value: value < 1.08", "mask_values=[0]"):
+        assert words in code, words
 
 
 def test_a_raster_calculator_runs_its_starter_on_two_inputs(workspace):
     a = _raster(workspace / "a.tif", [[5.0, 7.0], [-9999.0, 1.5]])
     b = _raster(workspace / "b.tif", [[1.0, 2.0], [3.0, 0.25]])
-    output, result = run_in_process(starter("RASTER_CALCULATOR_CODE"), (a, b), CALCULATOR, workspace)
+    output, result = run_in_process(starter(), (a, b), CALCULATOR, workspace)
     try:
         assert output["dataType"] == "raster"
         assert result.dtypes[0] == "float64"
@@ -103,7 +138,7 @@ def test_a_raster_calculator_chooses_by_class(workspace):
     classes = _raster(workspace / "classes.tif", [[21, 0, 43]], dtype="uint8", nodata=0)
     nbs = _raster(workspace / "nbs.tif", [[1.0, 2.0, 3.0]])
     no_nbs = _raster(workspace / "no_nbs.tif", [[10.0, 20.0, 30.0]])
-    code = starter("RASTER_CALCULATOR_CODE").replace(
+    code = starter().replace(
         'curio_raster_calculate("subtract", [input_0, input_1])',
         'curio_raster_calculate("choose", [input_0, input_1, input_2], codes=[21, 31])',
     )
@@ -114,11 +149,23 @@ def test_a_raster_calculator_chooses_by_class(workspace):
         result.close()
 
 
-def test_a_raster_statistics_node_runs_its_starter_into_one_row(workspace):
+def test_a_raster_calculator_runs_its_starters_statistics_into_one_row(workspace):
     a = _raster(workspace / "a.tif", [[1.0, 2.0, -9999.0], [3.0, 4.0, 5.0]])
-    output, table = run_in_process(starter("RASTER_STATISTICS_CODE"), a, STATISTICS, workspace)
+    output, table = run_in_process(starters_statistics(), a, CALCULATOR, workspace)
     assert output["dataType"] == "dataframe"
     assert table.to_dict("records") == [{"mean": 3.0, "median": 3.0, "min": 1.0, "max": 5.0, "count": 5}]
+
+
+def test_a_raster_calculators_statistics_keep_the_cells_its_mask_picks(workspace):
+    """The mask the starter explains: a raster on input_1, on input_0's grid,
+    and mask_values=[0] keep the cells whose mask value is 0."""
+    a = _raster(workspace / "a.tif", [[1.0, 2.0, -9999.0], [3.0, 4.0, 5.0]])
+    mask = _raster(workspace / "mask.tif", [[1, 0, 0], [0, 0, 1]], dtype="uint8", nodata=None)
+    code = returning(starters_statistics(), "return curio_raster_statistics(input_0, mask=input_1, mask_values=[0])")
+    output, table = run_in_process(code, (a, mask), CALCULATOR, workspace)
+    assert output["dataType"] == "dataframe"
+    # The cells under a mask value of 0 that hold a value: 2, 3 and 4.
+    assert table.to_dict("records") == [{"mean": 3.0, "median": 3.0, "min": 2.0, "max": 4.0, "count": 3}]
 
 
 def test_the_steps_run_in_an_isolated_child(tmp_path):
@@ -141,7 +188,7 @@ def test_the_steps_run_in_an_isolated_child(tmp_path):
         assert manifest["ok"], manifest["stderr"]
         return manifest
 
-    calculated = run(starter("RASTER_CALCULATOR_CODE"), CALCULATOR)
+    calculated = run(starter(), CALCULATOR)
     child.write_result(calculated, str(scratch))
     from utk_curio.sandbox.isolation import supervisor
 
@@ -152,9 +199,7 @@ def test_the_steps_run_in_an_isolated_child(tmp_path):
     with rasterio.open(scratch / descriptor["file"]) as written:
         assert written.read(1).tolist() == [[4.0, 5.0]]
 
-    stats_code = starter("RASTER_STATISTICS_CODE").replace(
-        "curio_raster_statistics(input_0, mask=input_1)", "curio_raster_statistics(input_0, where=lambda value: value > 6)"
-    )
-    counted = run(stats_code, STATISTICS)
+    stats_code = returning(starters_statistics(), "return curio_raster_statistics(input_0, where=lambda value: value > 6)")
+    counted = run(stats_code, CALCULATOR)
     child.write_result(counted, str(scratch))
     assert supervisor.read_child_manifest(str(scratch))["output"]["kind"] == "dataframe"

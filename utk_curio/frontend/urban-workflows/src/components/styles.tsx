@@ -174,20 +174,34 @@ export const NodeContainer = ({
     const [, setExpectedInputType] = useState(data.in);
     const [, setExpectedOutputType] = useState(data.out);
     const [showWarnings, setShowWarnings] = useState<boolean>(false);
+    // Folded to its chip: the header's Minimize, or View > Minimize Nodes. The
+    // fold is kept in the node's data, so a save writes it and a load brings it
+    // back. Only the canvas folds a node; a dashboard tile shows it whole.
+    // Icon-only nodes (manifest `containerStyle.noContent: true`) are always
+    // minimized: they have no body to expand and the 50×180 footprint is their
+    // default render. (Spatial Join left this set in #262, when it gained a body
+    // with the polygon-property control.)
+    const minimized = !!noContent || (data.minimized === true && !dashboardOn);
     // A node with content starts at the size the mount clamp below gives it, so
     // its first render is already its final size: the canvas measures that
-    // render for its load fit (#683). An icon-only node keeps its own footprint.
+    // render for its load fit (#683). An icon-only node keeps its own footprint,
+    // and a minimized node starts as its chip.
     const [currentNodeWidth, setCurrentNodeWidth] = useState<number | undefined>(
-        () => (noContent ? nodeWidth : clampNodeBox(nodeWidth, nodeHeight).width)
+        () => (noContent ? nodeWidth : minimized ? MINIMIZED_NODE_WIDTH : clampNodeBox(nodeWidth, nodeHeight).width)
     );
     const [currentNodeHeight, setCurrentNodeHeight] = useState<number | undefined>(
-        () => (noContent ? nodeHeight : clampNodeBox(nodeWidth, nodeHeight).height)
+        () => (noContent ? nodeHeight : minimized ? MINIMIZED_NODE_HEIGHT : clampNodeBox(nodeWidth, nodeHeight).height)
     );
-    // Icon-only nodes (manifest `containerStyle.noContent: true`)
-    // start minimized: they have no body to expand and the 50×180 footprint is
-    // their default render. (Spatial Join left this set in #262, when it gained
-    // a body with the polygon-property control.)
-    const [minimized, setMinimized] = useState(!!noContent);
+    /** Fold the node to its chip, or open it, in its data, where a save reads it. */
+    const setMinimized = (next: boolean) => {
+        if (noContent) return;
+        // The live data, not the captured `data`, as keepBoxSize reads it.
+        const liveData = getNodes().find((n) => n.id === nodeId)?.data ?? data;
+        if ((liveData.minimized === true) === next) return;
+        updateDataNode(nodeId, { ...liveData, minimized: next || undefined });
+        // A read-only canvas has nothing to save.
+        if (!sizeLocked) markDirty();
+    };
     // Hover state for the minimized chip's delete control (noContent nodes have
     // no header band to put it in).
     const [chipHovered, setChipHovered] = useState(false);
@@ -244,14 +258,14 @@ export const NodeContainer = ({
 
     }, [data.output, data.input])
 
+    // View > Minimize Nodes and Expand Nodes fold or open every node. Only a
+    // press does: a node that mounts, as on a load, keeps the fold it was saved
+    // with.
+    const allMinimizedSeen = useRef(allMinimized);
     useEffect(() => {
-        if (!noContent) {
-            if(allMinimized > 0){
-                setMinimized(true);
-            }else{
-                setMinimized(false);
-            }
-        }
+        if (allMinimizedSeen.current === allMinimized) return;
+        allMinimizedSeen.current = allMinimized;
+        setMinimized(allMinimized > 0);
     }, [allMinimized])
 
     useEffect(() => {
@@ -280,7 +294,8 @@ export const NodeContainer = ({
     }, [minimized]);
 
     useEffect(() => {
-        if (noContent) return;
+        // A minimized node keeps its chip; opening it sizes it.
+        if (noContent || minimized) return;
 
         if (nodeWidth == undefined || nodeWidth < MIN_NODE_WIDTH) {
             setCurrentNodeWidth(DEFAULT_NODE_WIDTH);

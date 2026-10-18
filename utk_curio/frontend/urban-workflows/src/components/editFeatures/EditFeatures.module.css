@@ -1,5 +1,6 @@
-/* The Edit Features node's body (#662): the layer and id menus, the map its
-   features are picked on, the actions on a pick, and the edit list. */
+/* The Interaction node's body (#662): the layer and id menus, the map its
+   features are picked on, the actions on a pick and by condition, the picked
+   features' table, and the edit log. */
 
 .body {
   height: 100%;
@@ -8,10 +9,16 @@
   gap: 6px;
   box-sizing: border-box;
   padding: 6px 8px;
+  overflow-y: auto;
   font-family: var(--curio-font-family);
   font-size: var(--curio-font-size-sm);
   color: var(--curio-text-primary);
   background: var(--curio-card-bg);
+}
+
+/* The body takes the keys while it has the focus, with no ring around it. */
+.body:focus {
+  outline: none;
 }
 
 .bar,
@@ -45,6 +52,15 @@
 
 .input {
   width: 72px;
+}
+
+.short {
+  width: 44px;
+}
+
+.where {
+  width: 140px;
+  font-family: ui-monospace, monospace;
 }
 
 .button {
@@ -132,4 +148,52 @@
   background: none;
   color: var(--curio-text-secondary);
   cursor: pointer;
+}
+
+/* The picked features, as the log leaves them; each cell takes a new value. */
+.table {
+  display: block;
+  max-height: 96px;
+  overflow: auto;
+  border-collapse: collapse;
+  font-size: var(--curio-font-size-xs);
+}
+
+.table th,
+.table td {
+  padding: 1px 4px;
+  border-bottom: 1px solid var(--curio-border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.cell {
+  width: 64px;
+  padding: 0 2px;
+  border: 1px solid transparent;
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-primary);
+}
+
+.cell:hover,
+.cell:focus {
+  border-color: var(--curio-border);
+}
+
+.matching {
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-secondary);
+}
+
+/* An entry switched off: kept in the log, skipped by the run. */
+.off {
+  color: var(--curio-text-secondary);
+  text-decoration: line-through;
+}
+
+/* Update results while results below the node are out of date. */
+.update {
+  font-weight: 600;
 }

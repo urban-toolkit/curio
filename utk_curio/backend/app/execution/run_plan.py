@@ -13,9 +13,9 @@
   loads data (``autk_spec_kind``); ``forward`` passes its input on, as a chart,
   a pool or a download does on the canvas, or has nothing to run, as a
   Parameter node, whose value reaches the nodes that name it through their
-  code; ``browser`` makes data only the browser can (an Autark compute node, an
-  Autark node with no data of its own to load, a Spatial Join), so nothing
-  below it can run until a tab does.
+  code, or a Note; ``browser`` makes data only the browser can (an Autark
+  compute node, an Autark node with no data of its own to load, a Spatial
+  Join), so nothing below it can run until a tab does.
 """
 from __future__ import annotations
 
@@ -24,9 +24,9 @@ from typing import Iterable
 INTERACTION_HANDLE = "in/out"
 
 #: Node kinds a run forwards besides the pass-through kinds of a dashboard walk:
-#: a Data Export only offers a download, and a Parameter node only holds a
-#: value; neither has anything to run.
-_FORWARD_KINDS = frozenset({"data-export", "parameter"})
+#: a Data Export only offers a download, a Parameter node only holds a value,
+#: and a Note only holds text; none has anything to run.
+_FORWARD_KINDS = frozenset({"data-export", "parameter", "note"})
 
 
 def is_interaction_edge(edge: dict) -> bool:

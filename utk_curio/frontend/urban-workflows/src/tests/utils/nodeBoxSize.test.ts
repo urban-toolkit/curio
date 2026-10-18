@@ -3,10 +3,11 @@
  *
  * It exists to feed `deoverlapLayout`, and a layout pass that measures wrong is
  * worse than none: under-estimate a node and the overlap it was meant to remove
- * comes straight back the moment the node inflates. So this pins the two rules
- * in `components/styles.tsx` that are easy to read past -- `noContent` templates
- * keeping a sub-minimum footprint, and the mount clamp snapping a too-small size
- * to the DEFAULT rather than to the minimum.
+ * comes straight back the moment the node inflates. So this pins the rules in
+ * `components/styles.tsx` that are easy to read past -- `noContent` templates
+ * keeping a sub-minimum footprint, the mount clamp snapping a too-small size
+ * to the DEFAULT rather than to the minimum, and a node saved minimized
+ * mounting as its chip.
  */
 import { faCircle } from "@fortawesome/free-solid-svg-icons";
 import { Position } from "reactflow";
@@ -107,6 +108,18 @@ describe("resolveNodeBoxSize", () => {
         });
     });
 
+    // A node saved minimized opens as its chip, so the load's layout pass
+    // measures the chip: chips laid out close together stay where they were.
+    test("a node saved minimized measures as its chip, whatever size it opens back to", () => {
+        registerNode(descriptor("curio.builtin/vis-vega@1", {}));
+
+        expect(
+            resolveNodeBoxSize(
+                node("curio.builtin/vis-vega@1", { nodeWidth: 640, nodeHeight: 480, minimized: true }),
+            ),
+        ).toEqual({ width: 70, height: 40 });
+    });
+
     test("the node's own size overrides the template's", () => {
         registerNode(descriptor("curio.builtin/spatial-join@1", {
             nodeWidth: 280,
@@ -187,7 +200,7 @@ describe("clampNodeBox", () => {
         );
         const widthAt = source.indexOf("const [currentNodeWidth, setCurrentNodeWidth]");
         const heightAt = source.indexOf("const [currentNodeHeight, setCurrentNodeHeight]");
-        const minimizedAt = source.indexOf("const [minimized, setMinimized]");
+        const minimizedAt = source.indexOf("const setMinimized = ");
         expect([widthAt, heightAt, minimizedAt].every((at) => at >= 0)).toBe(true);
         expect(source.slice(widthAt, heightAt)).toContain("clampNodeBox(nodeWidth, nodeHeight).width");
         expect(source.slice(heightAt, minimizedAt)).toContain("clampNodeBox(nodeWidth, nodeHeight).height");

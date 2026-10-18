@@ -164,8 +164,8 @@ export function notebookCellBox(
 }
 
 // How tall a cell's output is. A chart or a map has no height of its own, so
-// it gets a definite one to draw in; a table, a summary or a control takes its
-// own, up to a cap, and scrolls inside past it.
+// it gets a definite one to draw in; a table, a summary, a control or a note
+// takes its own, up to a cap, and scrolls inside past it.
 const CHART_HEIGHT = 320;
 const MAP_HEIGHT = 400;
 const OUTPUT_CAP = 360;
@@ -177,6 +177,7 @@ const NATURAL_HEIGHT_KINDS: ReadonlySet<string> = new Set([
   NodeType.DATA_EXPORT,
   "curio.builtin/parameter",
   "curio.builtin/spatial-join",
+  "curio.builtin/note",
 ]);
 const MAP_KINDS: ReadonlySet<string> = new Set([NodeType.AUTK_GRAMMAR, "curio.builtin/compare-scenarios"]);
 
@@ -188,9 +189,9 @@ export interface NotebookOutputBox {
 
 /**
  * The box a cell's output goes in, by the node's kind: a Vega-Lite chart's
- * mount is 320px, an Autark map or plot (and a Compare Scenarios chart or
- * difference map) 400px. Kinds whose body has a height of its own take it, up
- * to 360px. Anything else, a package's body made to fill a node, is 360px.
+ * mount is 320px, an Autark map or plot (and a Compare Scenarios chart) 400px.
+ * Kinds whose body has a height of its own take it, up to 360px. Anything
+ * else, a package's body made to fill a node, is 360px.
  */
 export function notebookOutputBox(nodeType: string): NotebookOutputBox {
   const kind = unversionedNodeType(nodeType);

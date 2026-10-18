@@ -39,9 +39,8 @@ class TestTemplateContentKind:
         assert kinds["data-transformation"] == "code"
         # Its code is written for it from its inputs, and runs (#662).
         assert kinds["compare-scenarios"] == "code"
-        # They start with a call to Curio's raster algebra, edited as code.
+        # It starts with a call to Curio's raster algebra, edited as code.
         assert kinds["raster-calculator"] == "code"
-        assert kinds["raster-statistics"] == "code"
         # Its code is written for it from its edit list, and runs (#662).
         assert kinds["edit-features"] == "code"
         # A document: authored, validated, never executed.
@@ -56,6 +55,9 @@ class TestTemplateContentKind:
         assert kinds["data-export"] == "none"
         # Set through the widget it holds (#662), not through written content.
         assert kinds["parameter"] == "none"
+        # Its title and text are what its author wrote: a person, or the
+        # Researcher placing its findings.
+        assert kinds["note"] == "note"
         # Every shipped template is routed above, and no other ships: the
         # Merge Flow left the manifest (#662), its fan-in now lands on the
         # input circles of the node it fed.
@@ -63,8 +65,8 @@ class TestTemplateContentKind:
             "data-loading", "data-export", "data-transformation", "data-pool",
             "computation-analysis", "data-summary", "js-computation",
             "vis-vega", "vis-simple", "autk-grammar", "spatial-join", "parameter",
-            "compare-scenarios", "raster-calculator", "raster-statistics",
-            "edit-features",
+            "compare-scenarios", "raster-calculator",
+            "edit-features", "note",
         }
 
     def test_no_content_makes_a_presentation_without_input_author_nothing(self):

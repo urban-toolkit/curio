@@ -40,10 +40,11 @@ spec
 `{id, type, content, goal, x, y}` and nothing more.
 
 `content` holds the node's payload: Python or JavaScript source, or a grammar
-document. It is absent on presentation-only templates. `title` and
-`metadata.appearance` support post-it style notes; `appearance.backgroundColor`
-accepts a palette name *or* a `#rrggbb` value, because agents are instructed to
-supply either.
+document. A Note (`curio.builtin/note`) holds its text there, in simple
+markdown; the other presentation-only templates have no `content`. A Note shows
+`title` above its text, on the color in `metadata.appearance`;
+`appearance.backgroundColor` accepts a palette name *or* a `#rrggbb` value,
+because agents are instructed to supply either.
 
 `metadata.packageTemplateLabel` is the node's header when the user has renamed
 it. It is written only when non-blank; without it the header shows the
@@ -112,22 +113,36 @@ subtracts input_0 from input_1. `chart` is `{preset?, x?, y?, aggregate?}`:
 `table`, `x` and `y` name columns of that table, and `aggregate` is one of `mean`,
 `sum`, `median`, `min`, `max` and `count`. `mode` is `chart` or `difference`, written
 only when the user chose one; without it the node shows Difference for two rasters
-or two layers and Chart otherwise. `difference` is `{key?, value?, absolute?}`:
-`key` is the column Difference matches the rows of two layers or tables on (without
-it, `osm_id` or `building_id`), passed to `curio_difference_scenarios` as `key=`,
-`value` the column or band its map colors the difference by, and `absolute`, when
-`true`, gives each difference's size instead of input_1 minus input_0, passed as
-`absolute=True`.
+or two layers and Chart otherwise. `difference` is `{key?, absolute?}`: `key` is the
+column Difference matches the rows of two layers or tables on (without it, `osm_id`
+or `building_id`), passed to `curio_difference_scenarios` as `key=`, and `absolute`,
+when `true`, gives each difference's size instead of input_1 minus input_0, passed as
+`absolute=True`. An Autark node after the node draws a raster's or a layer's
+difference on a map.
 
-`metadata.editFeatures` holds a `curio.builtin/edit-features` node's edit list,
-written only when it has one of its fields. `key` is the column that identifies a
-feature (`osm_id`, `building_id`, or another column whose values differ in every
-feature), and `layer` the layer the edits apply to when the input names its
-layers. `edits` lists the edits in the order they were made, each `{op, ids}`:
-`remove` drops the features whose `key` is one of `ids`, `set` also names a
-`column` and a `value` and writes the value there, and `restore` puts those
-features back as the node's input has them. The node's `content` is written from
-the list, one call of `curio_edit_features` with the edits, `key=` and `layer=`.
+`metadata.editFeatures` holds the edit log of an Interaction node (type
+`curio.builtin/edit-features`), written only when it has one of its fields.
+`key` is the column that identifies a feature (`osm_id`, `building_id`, or
+another column whose values differ in every feature), and `layer` the layer the
+edits apply to when the input names its layers. `edits` lists the edits in the
+order they were made. Each has an `op` and names its features by `ids`, the
+`key` values of the features, or by `where`, a condition over a feature's
+columns such as `height > 100`, never both:
+
+- `remove` drops the features, and `restore` puts them back as the node's input
+  has them.
+- `set` writes `value` into `column`.
+- `scale` multiplies the number in `column` by `value`, and `offset` adds
+  `value` to it; both take a number.
+- `expr` writes into `column` what the expression `value` makes of each
+  feature, such as `levels * 3.2`.
+
+`label` names an edit for people, and `enabled: false` keeps it in the log and
+skips it in a run. The node's `content` is written from the log, one call of
+`curio_edit_features` with the edits, `key=` and `layer=`. The expressions are
+the language `utk_curio/sandbox/util/edit_expr.py` describes: columns,
+numbers, texts, `true`, `false`, `null`, `+ - * / %`, comparisons, `and`,
+`or`, `not`, and `abs`, `round`, `min` and `max`.
 
 ### An edge
 
