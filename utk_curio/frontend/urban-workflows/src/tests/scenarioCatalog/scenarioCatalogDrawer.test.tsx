@@ -1,7 +1,8 @@
 /**
  * The canvas Scenario Catalog drawer: fetched only while open, read-only, its
  * cards dragged onto the canvas, and the way to a scenario's project asks
- * first when the dataflow behind it has unsaved changes.
+ * first when the dataflow behind it has unsaved changes. Browse all lists the
+ * cards under the dataflow each comes from (from komar41's #914).
  */
 import React from "react";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -61,6 +62,42 @@ function card(key: string): HTMLElement {
   const el = root().querySelector(`[data-scenario-key="${key}"]`);
   if (!el) throw new Error(`no card for ${key}`);
   return el as HTMLElement;
+}
+
+/** A second scenario of Heat study. Its name sorts before the example's
+ *  "Baseline", so sorted by name the two projects' cards alternate. */
+const treesScenario = () =>
+  heatScenario({
+    key: "p-heat/s-trees",
+    id: "s-trees",
+    name: "Add street trees",
+    description: "",
+    nodeCount: 1,
+  });
+
+/** Browse all's groups, in order: each one's project, its heading (the
+ *  project's name and how many scenarios it holds), and its cards' keys in
+ *  order. The heading comes before the group's cards, whose titles are
+ *  headings too. */
+function groups() {
+  return within(root())
+    .getAllByRole("region")
+    .map((group) => ({
+      project: group.getAttribute("data-scenario-group"),
+      heading: group.querySelector("h3")?.textContent,
+      cards: Array.from(group.querySelectorAll("[data-scenario-key]")).map((el) =>
+        el.getAttribute("data-scenario-key"),
+      ),
+    }));
+}
+
+const HEAT = { project: "p-heat", heading: "Heat study 2 scenarios" };
+const EXAMPLE = { project: "p-ex", heading: "Chicago example 1 scenario", cards: ["p-ex/s-cool"] };
+
+function sortBy(value: string) {
+  fireEvent.change(screen.getByRole("combobox", { name: "Sort scenarios" }), {
+    target: { value },
+  });
 }
 
 beforeEach(() => {
@@ -194,5 +231,39 @@ describe("the canvas Scenario Catalog drawer", () => {
     expect(onRequestClose).toHaveBeenCalled();
     expect(screen.queryByRole("dialog", { name: LEAVE_DATAFLOW.title })).toBeNull();
     expect(location).toBe("/dataflow/p-current");
+  });
+});
+
+describe("Browse all lists each dataflow's scenarios under its name", () => {
+  beforeEach(() => {
+    // Heat study's second scenario comes after the example's in the listing.
+    api.listCatalog.mockResolvedValue({ items: [heatScenario(), exampleScenario(), treesScenario()] });
+  });
+
+  test("each group is headed by its dataflow's name and count, the newest dataflow first", async () => {
+    renderDrawer();
+    await within(root()).findByText("Add street trees");
+    expect(groups()).toEqual([{ ...HEAT, cards: ["p-heat/s-cool", "p-heat/s-trees"] }, EXAMPLE]);
+    // A group is named by its dataflow alone.
+    expect(within(root()).getByRole("region", { name: "Heat study" })).toHaveAttribute(
+      "data-scenario-group",
+      "p-heat",
+    );
+  });
+
+  test("sorted by name, a dataflow's cards stay together, its group placed by its first card", async () => {
+    renderDrawer();
+    await within(root()).findByText("Add street trees");
+    sortBy("name");
+    // By name alone the cards would alternate: Add street trees (Heat
+    // study), Baseline (the example), then Cool roofs (Heat study).
+    expect(groups()).toEqual([{ ...HEAT, cards: ["p-heat/s-trees", "p-heat/s-cool"] }, EXAMPLE]);
+  });
+
+  test("sorted by project, the groups follow the dataflows' names", async () => {
+    renderDrawer();
+    await within(root()).findByText("Add street trees");
+    sortBy("project");
+    expect(groups()).toEqual([EXAMPLE, { ...HEAT, cards: ["p-heat/s-trees", "p-heat/s-cool"] }]);
   });
 });

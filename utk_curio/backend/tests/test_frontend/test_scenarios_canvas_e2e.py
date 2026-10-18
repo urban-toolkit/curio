@@ -52,8 +52,10 @@ from .utils import (
     scenario_card_button,
     scenario_part,
     stub_login_and_enter_workflow,
+    wait_for_node_run_to_end,
     wait_for_node_settled,
     wait_for_run_guard_released,
+    watch_node_run,
 )
 
 if TYPE_CHECKING:
@@ -330,10 +332,13 @@ def test_a_branch_duplicated_as_a_scenario_collapses_runs_and_expands(
     scenario_card_button(page, copy_id, "Collapse").click()
     _box(page, copy_id).wait_for(state="attached", timeout=10000)
     sent = SandboxRuns(page, session["token"], session["project"]["id"])
+    # The map still shows the result it drew above, so wait for its own run,
+    # which starts when the lever's new output reaches it (#892).
+    watch_node_run(page, map_copy)
     scenario_card_button(page, copy_id, "Run scenario").click()
     close_scenario_drawer(page)
     _box(page, copy_id).wait_for(state="visible", timeout=10000)
-    status = wait_for_node_settled(page, map_copy, node_type="autk-grammar", timeout_ms=180000)
+    status = wait_for_node_run_to_end(page, map_copy, node_type="autk-grammar", timeout_ms=180000)
     wait_for_run_guard_released(page, timeout_ms=60000)
     executed = sent.stop()
     detail = read_node_error_text(node_locator(page, map_copy)) if status == "error" else ""

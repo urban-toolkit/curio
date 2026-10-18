@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/24-scout-building-rasters.json",
-    "sha256": "4cbc8bcd4a0e577b0ba71db2cef9af54e853ca942d889acab43c785de005363b",
+    "sha256": "46ad082dc579ac097fbb481925f4c6fd791988b2144b4d6e1a0faf974374f10d",
     "walkthrough": "docs/examples/24-scout-building-rasters.md"
   },
   "prompt": "Load SCOUT's Chicago Loop buildings, with their heights in metres, from the Data Catalog, and mark them as buildings so a map can raise each footprint to its height. Draw them in 3D on an Autark map coloured by height. Then turn their heights into zoom 16 map tiles, side by side in one height raster, with SCOUT's building rasterizer, leaving its settings at their defaults, and draw the raster on a second Autark map. Run SCOUT's Deep Umbra shadow model on the height raster for a summer day, and draw the minutes of shadow on a third Autark map. Finally take the shadow's mean and median over the ground, where the height raster is under 1.08 m. The rasterizer and the shadow model are not part of the standard node set, so whatever provides them needs installing first.",
@@ -51,7 +51,7 @@
       },
       {
         "ref": "analysis1",
-        "type": "curio.builtin/raster-statistics",
+        "type": "curio.builtin/raster-calculator",
         "role": "analysis",
         "executable": true,
         "hasContent": true
@@ -194,5 +194,5 @@
       }
     ]
   },
-  "notes": "Two package nodes with widgets on SCOUT's buildings: SCOUT's rasterizer, whose one raster a map draws, then Accumulated Shadow running the Model Catalog's Deep Umbra on that raster, drawn by a third map beside the buildings in 3D, and Raster Statistics of the shadow over the ground, the heights as its mask."
+  "notes": "Two package nodes with widgets on SCOUT's buildings: SCOUT's rasterizer, whose one raster a map draws, then Accumulated Shadow running the Model Catalog's Deep Umbra on that raster, drawn by a third map beside the buildings in 3D, and a Raster Calculator taking the statistics of the shadow over the ground, the heights as its mask."
 }

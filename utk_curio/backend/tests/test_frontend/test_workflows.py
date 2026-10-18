@@ -194,10 +194,10 @@ EXAMPLE_11_MAP = "pbf-map"
 #: False for it. The canvas tests play it and check it by its type.
 COMPARE_SCENARIOS = "curio.builtin/compare-scenarios"
 
-#: Raster Calculator and Raster Statistics (#738) run their code behind their
-#: own play button too, with no legacy category: example 24's Raster
-#: Statistics node is played and must end Done like any other.
-RASTER_TOOLS = {"curio.builtin/raster-calculator", "curio.builtin/raster-statistics"}
+#: The Raster Calculator (#738) runs its code behind its own play button too,
+#: with no legacy category: example 24's Raster Calculator, which takes the
+#: shadow's statistics, is played and must end Done like any other.
+RASTER_TOOLS = {"curio.builtin/raster-calculator"}
 
 #: Edit Features (#662) runs the code its edit list writes behind its own play
 #: button too: example 06's is played and must end Done like any other.

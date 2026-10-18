@@ -261,6 +261,8 @@ REJECTED = {
     "dashboardY without dashboardX": lambda d: _node(d).update(dashboardY=5),
     "dashboardX without dashboardY": lambda d: _node(d).update(dashboardX=5),
     "dashboardWidth without height": lambda d: _node(d).update(dashboardWidth=5),
+    # A node folded to its chip is written as minimized: true.
+    "minimized as a string": lambda d: _node(d).update(minimized="true"),
     "agent coord pinned to a major": lambda d: d["dataflow"].update(agents=["agent.foo@1"]),
     "package coord in the agent slot": lambda d: d["dataflow"].update(agents=["curio.builtin@1"]),
     "agent id without the prefix": lambda d: d["dataflow"].update(agents=["foo@1.0.0"]),
@@ -806,6 +808,9 @@ WRITER_SHAPES = {
             }
         ]
     ),
+    # Written by TrillGenerator for a node folded to its chip: the size it
+    # opens back to, and minimized.
+    "a minimized node": _flow(nodes=[{**AGENT_NODE, "width": 640, "height": 400, "minimized": True}]),
     # Every alias useCode.loadTrill still tolerates, plus the legacy top-level
     # name that execution/workflow_spec.py still reads.
     "legacy reader aliases": {

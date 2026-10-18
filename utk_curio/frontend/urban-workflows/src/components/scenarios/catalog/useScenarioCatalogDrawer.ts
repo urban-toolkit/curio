@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react
 import {
   beginScenarioDrag,
   endScenarioDrag,
+  groupScenariosByProject,
   sortScenarios,
   useScenarioCatalog,
   writeScenarioDragData,
@@ -44,6 +45,8 @@ export function useScenarioCatalogDrawer(presented: boolean) {
   // listing is read off the account's projects, which change with every save.
   const catalog = useScenarioCatalog({ q: debouncedSearch, enabled: presented });
   const items = useMemo(() => sortScenarios(catalog.data.items, sort), [catalog.data.items, sort]);
+  // Browse all lists each project's scenarios under its name.
+  const groups = useMemo(() => groupScenariosByProject(items), [items]);
 
   return {
     search,
@@ -54,6 +57,7 @@ export function useScenarioCatalogDrawer(presented: boolean) {
     setPinned,
     catalog,
     items,
+    groups,
     handleScenarioDragStart,
     handleScenarioDragEnd,
     detailScenario,
