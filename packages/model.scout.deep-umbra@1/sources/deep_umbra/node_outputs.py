@@ -15,8 +15,8 @@
   nodata, as Curio's raster tools write theirs: a GeoTIFF that names no nodata
   is read by autk-db with 0 as its nodata, which would leave every cell in the
   sun out of an Autark map and a Compare Scenarios Difference. A tile not
-  predicted is NaN. Its statistics over the ground are a Raster Statistics
-  node's, with the heights as the mask, so they count the ground of the tiles
+  predicted is NaN. Its statistics over the ground are a Raster Calculator's,
+  with the heights as the mask, so they count the ground of the tiles
   predicted only.
 
 Deep Umbra reads 8-bit heights where 255 is 550 m: a height becomes
@@ -197,8 +197,8 @@ def accumulated_shadow(value, season, model, output_file):
     shadows = shadow_tiles(raster, season, model)
     unpredicted = np.full((TILE, TILE), np.nan, dtype=np.float32)
     # Every tile at its place on the heights' grid, a tile not predicted as no
-    # data, so the shadow and the heights share one grid, as a Raster
-    # Statistics mask needs.
+    # data, so the shadow and the heights share one grid, as the mask of a
+    # Raster Calculator's statistics needs.
     tiles = [
         {
             "transform": (a, 0.0, c + column * TILE * a, 0.0, e, f + row * TILE * e),

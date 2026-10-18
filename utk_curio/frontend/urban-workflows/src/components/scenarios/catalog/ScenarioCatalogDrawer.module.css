@@ -13,6 +13,32 @@
   --curio-drawer-z: var(--curio-z-dataset-drawer);
 }
 
+/* Browse all: the heading over one project's scenarios, its name and then
+   how many it holds. Each group's card list ends in the shell's margin,
+   which keeps the groups apart. */
+.groupHeading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: var(--curio-font-size-sm);
+  line-height: 1.3;
+}
+
+.groupName {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 700;
+  color: var(--curio-text-primary);
+}
+
+.groupCount {
+  font-weight: 600;
+  color: var(--curio-text-secondary);
+  white-space: nowrap;
+}
+
 /* The avatar square holds the project graph instead of a glyph. */
 .avatarThumb {
   overflow: hidden;

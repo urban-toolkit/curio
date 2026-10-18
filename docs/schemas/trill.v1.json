@@ -218,6 +218,10 @@
           "type": "number",
           "description": "Explicit canvas height in pixels. See 'width'."
         },
+        "minimized": {
+          "type": "boolean",
+          "description": "True when the node is folded to its chip on the canvas (the header's Minimize, or View > Minimize Nodes); 'width' and 'height' stay the size it opens back to. Only ever written as true - false is elided. A dashboard tile and a notebook cell show the node whole."
+        },
         "dashboardPinned": {
           "type": "boolean",
           "description": "True when this node is a tile on the dataflow's dashboard page. Only ever written as true - false is elided - and read as a truthy check. Pinning also decides which outputs are saved to the Data Catalog, so the tile can render without a run."

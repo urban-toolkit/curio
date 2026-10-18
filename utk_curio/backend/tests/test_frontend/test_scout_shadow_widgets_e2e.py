@@ -1,8 +1,8 @@
 """Playwright E2E: Accumulated Shadow's widgets, on the model package's node.
 
 Example 24's chain from SCOUT's buildings to their shadow statistics, without
-its maps: Data Loading, Rasterize Buildings, Accumulated Shadow and Raster
-Statistics. The shadow node is the node of the model package
+its maps: Data Loading, Rasterize Buildings, Accumulated Shadow and the Raster
+Calculator of statistics. The shadow node is the node of the model package
 ``model.scout.deep-umbra@1`` as the Node Catalog drops it: its three-line cell
 and its Season widget. This drives the widgets as a user does:
 
@@ -62,7 +62,8 @@ if TYPE_CHECKING:
 EXAMPLE = Path(REPO_ROOT) / "docs" / "examples" / "24-scout-building-rasters.json"
 PACKAGE = Path(REPO_ROOT) / "packages" / "model.scout.deep-umbra@1"
 SHADOW_TYPE = "model.scout.deep-umbra/accumulated-shadow"
-STATISTICS_TYPE = "curio.builtin/raster-statistics"
+#: The node that takes the shadow's statistics: example 24's one Raster Calculator.
+STATISTICS_TYPE = "curio.builtin/raster-calculator"
 #: The nodes of the example's chain, from the buildings to their statistics.
 CHAIN_TYPES = {
     "curio.builtin/data-loading",
@@ -162,7 +163,9 @@ def test_the_season_and_an_added_widget_reach_deep_umbra_and_survive_a_reopen(
     assert shadow_node["content"] == cell and len(cell.splitlines()) == 3, shadow_node["content"]
     assert shadow_node["metadata"]["widgets"] == template["widgets"]
     shadow = shadow_node["id"]
-    (statistics,) = [node["id"] for node in nodes if node["type"] == STATISTICS_TYPE]
+    (statistics_node,) = [node for node in nodes if node["type"] == STATISTICS_TYPE]
+    assert "\nreturn curio_raster_statistics(" in statistics_node["content"], statistics_node["content"]
+    statistics = statistics_node["id"]
 
     require_project_page()
     require_user_auth()
