@@ -758,6 +758,20 @@ WRITER_SHAPES = {
     "hex appearance": _flow(
         nodes=[{**AGENT_NODE, "metadata": {"appearance": {"backgroundColor": "#ffcc00"}}}]
     ),
+    # A Note keeps its title, its text in simple markdown and its color.
+    "a note with its title, text and color": _flow(
+        nodes=[
+            {
+                "id": "note-1",
+                "type": "curio.builtin/note",
+                "x": 0,
+                "y": 0,
+                "title": "Cool roofs in Chicago",
+                "content": "**Roof surface:** about 30°F cooler\n\n- [source](https://example.org/roofs)",
+                "metadata": {"appearance": {"backgroundColor": "#d5f0d1"}},
+            }
+        ]
+    ),
     "dataset refs and source on a node": _flow(
         nodes=[
             {

@@ -40,10 +40,11 @@ spec
 `{id, type, content, goal, x, y}` and nothing more.
 
 `content` holds the node's payload: Python or JavaScript source, or a grammar
-document. It is absent on presentation-only templates. `title` and
-`metadata.appearance` support post-it style notes; `appearance.backgroundColor`
-accepts a palette name *or* a `#rrggbb` value, because agents are instructed to
-supply either.
+document. A Note (`curio.builtin/note`) holds its text there, in simple
+markdown; the other presentation-only templates have no `content`. A Note shows
+`title` above its text, on the color in `metadata.appearance`;
+`appearance.backgroundColor` accepts a palette name *or* a `#rrggbb` value,
+because agents are instructed to supply either.
 
 `metadata.packageTemplateLabel` is the node's header when the user has renamed
 it. It is written only when non-blank; without it the header shows the

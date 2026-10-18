@@ -348,6 +348,11 @@ class TestFieldReplay:
 
         run = _run(client, token, pid, att_id)
         assert run.status_code == 200, run.get_data(as_text=True)
+        # The store holds no notes template, the built-in Note included, and
+        # the roster says so.
+        system = calls[0][0]["content"]
+        assert "None of these renders a note" in system
+        assert "- curio.builtin/note " not in system
         parts = run.get_json()["content"]
         proposal = next(p for p in parts if p["type"] == "proposal")
         assert proposal["tool"] == "package.draft.apply"

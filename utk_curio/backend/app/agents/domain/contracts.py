@@ -1573,6 +1573,35 @@ def render_vis_defaults_ts() -> str:
     )
 
 
+def render_note_colors_ts() -> str:
+    """``src/generated/noteColors.ts``: a note's palette and the colors its text
+    takes, from the node-appearance rule an agent's note is saved through."""
+    from utk_curio.backend.app.packages.domain import node_appearance as appearance
+
+    inks = {"dark": appearance.DARK_FOREGROUND, "light": appearance.LIGHT_FOREGROUND}
+    links = {"onLight": appearance.LINK_ON_LIGHT, "onDark": appearance.LINK_ON_DARK}
+    return (
+        _ts_header()
+        + "\n"
+        + "/** The colors a note's appearance can name, and the color each stands for. */\n"
+        + _ts_const("NOTE_COLORS", dict(appearance.NAMED_COLORS), " as const")
+        + "\n"
+        + "export type NoteColorName = keyof typeof NOTE_COLORS;\n"
+        + "\n"
+        + "/** The color of a note that names none, or names one that cannot be read. */\n"
+        + _ts_const("DEFAULT_NOTE_COLOR", appearance.DEFAULT_BACKGROUND)
+        + "\n"
+        + "/** A note's text takes the ink that reads better on its color. */\n"
+        + _ts_const("NOTE_INKS", inks, " as const")
+        + "\n"
+        + "/** A link's color under dark ink and under light ink, when it reads; else the ink. */\n"
+        + _ts_const("NOTE_LINKS", links, " as const")
+        + "\n"
+        + "/** The contrast an ink must reach on a note's color; no ink reaching it refuses the color. */\n"
+        + _ts_const("NOTE_MIN_CONTRAST", appearance.MIN_CONTRAST)
+    )
+
+
 #: Every committed output: repo-relative path -> the function that renders it.
 GENERATED_OUTPUTS: dict[str, Callable[[], str]] = {
     "utk_curio/frontend/urban-workflows/src/generated/renderCauses.ts": render_render_causes_ts,
@@ -1580,6 +1609,7 @@ GENERATED_OUTPUTS: dict[str, Callable[[], str]] = {
     "utk_curio/frontend/urban-workflows/src/generated/agentCategories.ts": render_agent_categories_ts,
     "utk_curio/frontend/urban-workflows/src/generated/solveStopReasons.ts": render_solve_stop_reasons_ts,
     "utk_curio/frontend/urban-workflows/src/generated/visDefaults.ts": render_vis_defaults_ts,
+    "utk_curio/frontend/urban-workflows/src/generated/noteColors.ts": render_note_colors_ts,
     **{f"{PROMPTS_DIR}/{stem}.md": partial(render_prompt, stem) for stem in PROMPT_TEMPLATES},
 }
 

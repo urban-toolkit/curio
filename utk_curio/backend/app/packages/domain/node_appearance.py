@@ -2,10 +2,11 @@
 
 One validation/normalization/derivation truth for the per-node
 ``appearance.backgroundColor`` used by: build-request parsing
-(``build_models``), proposal minting and Apply (``agents.services``), and —
-mirrored constant-for-constant — the frontend behavior's color logic. No
-caller re-implements color rules; forking this logic is the bug the memo
-forbids.
+(``build_models``), proposal minting and Apply (``agents.services``), and,
+mirrored constant for constant, the frontend's color logic: the built-in Note
+draws with ``src/generated/noteColors.ts``, which ``agents/domain/contracts.py``
+generates from the constants below. No caller re-implements color rules;
+forking this logic is the bug the memo forbids.
 
 Contract (dev/89 §3, the research notes' definition-of-done profile):
 
@@ -48,12 +49,12 @@ DEFAULT_BACKGROUND = NAMED_COLORS[DEFAULT_COLOR_NAME]
 MIN_CONTRAST = 4.5
 
 # Foreground candidates: the ink pair the behavior renders with.
-_DARK_FOREGROUND = "#1f2430"
-_LIGHT_FOREGROUND = "#ffffff"
+DARK_FOREGROUND = "#1f2430"
+LIGHT_FOREGROUND = "#ffffff"
 # Link candidates (light-bg blue / dark-bg blue), falling back to the
 # foreground when neither clears AA against the background.
-_LINK_ON_LIGHT = "#1d4ed8"
-_LINK_ON_DARK = "#93c5fd"
+LINK_ON_LIGHT = "#1d4ed8"
+LINK_ON_DARK = "#93c5fd"
 
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
@@ -87,9 +88,9 @@ def contrast_ratio(hex_a: str, hex_b: str) -> float:
 
 
 def _best_foreground(background: str) -> tuple[str, float]:
-    dark = contrast_ratio(background, _DARK_FOREGROUND)
-    light = contrast_ratio(background, _LIGHT_FOREGROUND)
-    return (_DARK_FOREGROUND, dark) if dark >= light else (_LIGHT_FOREGROUND, light)
+    dark = contrast_ratio(background, DARK_FOREGROUND)
+    light = contrast_ratio(background, LIGHT_FOREGROUND)
+    return (DARK_FOREGROUND, dark) if dark >= light else (LIGHT_FOREGROUND, light)
 
 
 def normalize_background(value: Any) -> str:
@@ -171,8 +172,8 @@ def derived_colors(background: Any) -> dict[str, str]:
     time, never persisted (dev/89 §4)."""
     bg = resolve_background(background)
     foreground, _ = _best_foreground(bg)
-    dark_ink = foreground == _DARK_FOREGROUND
-    link = _LINK_ON_LIGHT if dark_ink else _LINK_ON_DARK
+    dark_ink = foreground == DARK_FOREGROUND
+    link = LINK_ON_LIGHT if dark_ink else LINK_ON_DARK
     if contrast_ratio(bg, link) < MIN_CONTRAST:
         link = foreground
     # Muted text: pull the ink 25% toward the background; step back toward

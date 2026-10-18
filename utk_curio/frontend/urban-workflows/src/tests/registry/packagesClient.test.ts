@@ -17,6 +17,7 @@
 
 import {
   faChartLine,
+  faNoteSticky,
   faServer,
   faUpload,
 } from '@fortawesome/free-solid-svg-icons';
@@ -31,6 +32,7 @@ import '../../registry/builtinBehaviors'; // side-effect: registers the built-in
 import '../../registry/iconRegistry'; // side-effect: registers FA icons used by the fixture
 import { registerPackageTemplates } from '../../registry/packagesClient';
 import { clearPackageNodes } from '../../registry/nodeRegistry';
+import { getBehavior } from '../../registry/behaviorRegistry';
 
 const FIXTURE_PACK = {
   packageId: 'curio.builtin',
@@ -177,6 +179,34 @@ describe('a template with no port (#662, the Parameter node)', () => {
     expect(descriptor.adapter.inputIconType).toBeUndefined();
     expect(descriptor.adapter.outputIconType).toBeUndefined();
     expect(descriptor.adapter.editor).toBeNull();
+  });
+});
+
+describe('the built-in Note', () => {
+  beforeEach(() => clearPackageNodes());
+
+  test('takes no edge, has no editor, and draws with its own behavior and icon', () => {
+    const note = {
+      ...FIXTURE_PACK.templates[0],
+      id: 'curio.builtin/note@1',
+      templateId: 'note',
+      label: 'Note',
+      category: 'flow',
+      iconRef: 'fa-solid:note-sticky',
+      behavior: 'note',
+      paletteOrder: 17,
+      editor: 'none' as const,
+      hasCode: false,
+      hasWidgets: false,
+      inputPorts: [],
+      outputPorts: [],
+    };
+    const [descriptor] = registerPackageTemplates([{ ...FIXTURE_PACK, templates: [note] }]);
+    expect(getBehavior('note')).toBeDefined();
+    expect(descriptor.adapter.useNodeBehavior).toBe(getBehavior('note'));
+    expect(descriptor.adapter.handles).toEqual([]);
+    expect(descriptor.adapter.editor).toBeNull();
+    expect(descriptor.icon).toBe(faNoteSticky);
   });
 });
 
