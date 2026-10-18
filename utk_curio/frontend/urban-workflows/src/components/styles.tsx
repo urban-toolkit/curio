@@ -1,15 +1,12 @@
-import React, { ReactNode, useState, useEffect, useMemo, useRef } from "react";
+import React, { ReactNode, useState, useEffect, useRef } from "react";
 import CSS from "csstype";
 
 import { useFlowContext } from "../providers/FlowProvider";
 import { useNotebookViewContext } from "../providers/flow/notebookViewContext";
 import { NodeRemoveChange, useReactFlow, useStore } from "reactflow";
 
-import { CommentsList, IComment } from "./comments/CommentsList";
-
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
-    faComments,
     faCircle,
     faCircleDot,
 } from "@fortawesome/free-solid-svg-icons";
@@ -18,8 +15,6 @@ import {
     useDatasetDetails,
     viewDatasetDetailsToast,
 } from "./datasets/catalog/datasetDetailsContext";
-import { useUserContext } from "../providers/UserProvider";
-import { commentsFromMetadata, commentsToMetadata } from "../utils/nodeComments";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import { NODE_CATEGORY_KEY, categoryFg, colorForNodeType } from "../constants/nodeCategoryPalette";
 import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
@@ -173,44 +168,8 @@ export const NodeContainer = ({
     // the renders it had when it read them.
     useStarterContext();
     useCode();
-    const [showComments, setShowComments] = useState(false);
-    const { user: currentUser } = useUserContext();
     const [saveAsOpen, setSaveAsOpen] = useState(false);
     const [configOpen, setConfigOpen] = useState(false);
-    // Derived from node data rather than held in local state (#237). Comments
-    // used to live in a `useState` that nothing ever wrote back, so they were
-    // lost on save and on every remount - reopening the project was the path
-    // the reporter took.
-    // Reading through `data` makes the canvas node the single source of truth,
-    // so there is no second copy to fall out of step with the saved spec.
-    const viewer = useMemo(
-        () =>
-            currentUser
-                ? {
-                      username: currentUser.username,
-                      name: currentUser.name,
-                      photo: currentUser.profile_image,
-                  }
-                : null,
-        [currentUser],
-    );
-    const comments = useMemo<IComment[]>(
-        () => commentsFromMetadata(data.comments, viewer),
-        [data.comments, viewer],
-    );
-
-    /** Write the whole list back to the node and mark the project dirty.
-     *  Reads live node data first, for the same reason the resize handler
-     *  does: the captured `data` prop can be stale and would clobber fields
-     *  that changed under it. */
-    const commitComments = (next: IComment[]) => {
-        const liveData = getNodes().find((n) => n.id === nodeId)?.data ?? data;
-        updateDataNode(nodeId, {
-            ...liveData,
-            comments: commentsToMetadata(next),
-        });
-        markDirty();
-    };
     const [pinnedToDashboard, setPinnedToDashboard] = useState<boolean>(!!dashboardPins[nodeId]);
     const [, setExpectedInputType] = useState(data.in);
     const [, setExpectedOutputType] = useState(data.out);
@@ -380,20 +339,6 @@ export const NodeContainer = ({
         }
     };
 
-    const deleteComment = (commentId: string) => {
-        commitComments(comments.filter((comment) => comment.id !== commentId));
-    };
-
-    const toggleResolveComment = (commentId: string) => {
-        commitComments(
-            comments.map((comment) =>
-                comment.id === commentId
-                    ? { ...comment, resolved: !comment.resolved }
-                    : comment,
-            ),
-        );
-    };
-
     // const handleCloseMenu = () => {
     //     setShowMenu(false);
     //     document.removeEventListener("click", handleCloseMenu);
@@ -407,10 +352,6 @@ export const NodeContainer = ({
 
         // onNodesChange([change]);
         applyRemoveChanges([change]);
-    };
-
-    const addComment = (comment: IComment) => {
-        commitComments([...comments, comment]);
     };
 
     useEffect(() => {
@@ -621,12 +562,6 @@ export const NodeContainer = ({
             }}
             title={pinnedToDashboard ? "Unpin from dashboard" : "Pin to dashboard"}
             onActivate={() => updatePin(nodeId, pinnedToDashboard)}
-        />
-        <HeaderIconButton
-            icon={faComments}
-            style={{ ...headerIconStyle, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
-            title="Comments"
-            onActivate={() => setShowComments(!showComments)}
         />
         {updateTemplate != undefined && code != undefined && templateData.id != undefined && templateData.custom && code != templateData.code ? (
             <HeaderIconButton
@@ -898,15 +833,6 @@ export const NodeContainer = ({
                 </div>
 
             </div>
-
-            {showComments && (
-                <CommentsList
-                    comments={comments}
-                    addComment={addComment}
-                    deleteComment={deleteComment}
-                    toggleResolveComment={toggleResolveComment}
-                />
-            )}
 
             {shownMinimized ? (
                 <div

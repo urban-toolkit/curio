@@ -27,7 +27,7 @@ let mockUser: any = { user: { name: "Owner", is_guest: false }, enableUserAuth: 
 let mockReactFlowProps: any = null;
 const mockShowToast = jest.fn();
 const mockReactFlowInstance = {
-  getNode: (id: string) => ({ id, data: { nodeId: id, comments: [{ text: "kept" }] } }),
+  getNode: (id: string) => ({ id, data: { nodeId: id, packageTemplateLabel: "Renamed meanwhile" } }),
   getNodes: () => [],
   fitView: jest.fn(),
   setViewport: jest.fn(),
@@ -341,11 +341,11 @@ describe("the canvas", () => {
       mockReactFlowProps.onNodeDragStop({}, { id: "chart", position: { x: 40, y: 80 }, data: {} });
     });
 
-    // Read from the live node, so a comment or an input added meanwhile is not
-    // clobbered by a stale copy.
+    // Read from the live node, so a rename or an input that came meanwhile is
+    // not clobbered by a stale copy.
     expect(mockFlow.updateDataNode).toHaveBeenCalledWith("chart", {
       nodeId: "chart",
-      comments: [{ text: "kept" }],
+      packageTemplateLabel: "Renamed meanwhile",
       dashboardX: 40,
       dashboardY: 80,
     });

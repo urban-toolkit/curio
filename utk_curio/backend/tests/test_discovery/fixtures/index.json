@@ -251,7 +251,7 @@
     },
     "status": 200
   },
-  "https://hub.arcgis.com/api/v3/datasets?page[size]=20&page[number]=1&q=bike%20lanes": {
+  "https://hub.arcgis.com/api/v3/datasets?page[size]=20&page[number]=1&q=bike%20lanes&fields[datasets]=name,description,owner,orgName,modified": {
     "file": "arcgis/01.json",
     "headers": {
       "Content-Type": "application/json"

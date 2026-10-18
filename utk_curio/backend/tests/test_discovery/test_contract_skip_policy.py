@@ -102,6 +102,16 @@ class TestTheShapeAssertionsStillBite:
         with pytest.raises(AssertionError, match="attributes"):
             contracts.test_arcgis_hub_still_answers_json_api()
 
+    def test_arcgis_fails_when_a_search_carries_every_attribute_again(self, monkeypatch):
+        """The search asks for only the attributes it reads (#967). An answer
+        that ignores that is a contract change, not a portal being down."""
+        monkeypatch.setattr(
+            contracts.egress, "fetch",
+            _fixed(body='{"data": [{"id": "x", "attributes": {"name": "n", "fields": []}}]}'),
+        )
+        with pytest.raises(AssertionError, match=r"fields\[datasets\]"):
+            contracts.test_arcgis_hub_still_answers_json_api()
+
     def test_wfs_skips_when_the_document_is_truncated(self, monkeypatch):
         """A capabilities document outgrowing our metadata bound is a capacity
         question, not a portal changing its contract."""
