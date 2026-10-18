@@ -163,18 +163,6 @@ def _refine_with(provider_module):
     return _refine
 
 
-def verify_socrata(url: str, *, request_fn=None, resolver=None, budget=None,
-                   headers=None, params=None) -> dict:
-    """Kept as a name because tests and callers refer to it; the Socrata URL
-    knowledge itself now lives in ``discovery/providers/socrata.py``."""
-    from utk_curio.backend.app.discovery.providers import socrata
-
-    return _refine_with(socrata)(
-        url, request_fn=request_fn, resolver=resolver, budget=budget,
-        headers=headers, params=params
-    )
-
-
 def _validators() -> list[tuple]:
     """URL-shape recogniser → refinement, one entry per provider family.
 

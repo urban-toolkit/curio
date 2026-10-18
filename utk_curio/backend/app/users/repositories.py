@@ -22,10 +22,6 @@ def user_by_identifier(identifier: str) -> Optional[User]:
     ).first()
 
 
-def user_by_provider_uid(uid: str) -> Optional[User]:
-    return User.query.filter_by(provider_uid=uid).first()
-
-
 def user_by_username(username: str) -> Optional[User]:
     return User.query.filter_by(username=username).first()
 

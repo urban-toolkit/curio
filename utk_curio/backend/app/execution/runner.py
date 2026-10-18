@@ -26,7 +26,6 @@ import time
 from utk_curio.backend.app.execution import runtime_journal
 from utk_curio.backend.app.execution.sandbox_auth import sandbox_headers
 from utk_curio.backend.app.execution.workflow_spec import (
-    PY_CODE_TYPES,
     WorkflowSpec,
     parse_workflow_dict,
     seed_node_code,
@@ -41,7 +40,6 @@ SANDBOX_GET_TIMEOUT_S = int(os.environ.get("CURIO_E2E_SANDBOX_GET_TIMEOUT", "300
 # itself would have enforced. Env-overridable; the interactive route's 600 s
 # stays the upper reference.
 DEFAULT_EXEC_TIMEOUT_S = 300
-SANDBOX_EXEC_TIMEOUT_S = DEFAULT_EXEC_TIMEOUT_S  # kept name; read via exec_timeout_s()
 
 
 def exec_timeout_s() -> int:

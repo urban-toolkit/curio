@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { refreshPackageRegistry } from "../../registry/packageRegistryBootstrap";
-import { PackagePayload, packagesApi, dependencyFailureNotice, withRestartNotice } from "../../services/packages";
+import { PackagePayload, packagesApi, dependencyFailureNotice } from "../../services/packages";
 
 /**
  * The ONE package-sideload pathway, shared by the Node Catalog drawer's footer

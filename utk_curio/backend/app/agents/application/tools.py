@@ -38,10 +38,7 @@ from utk_curio.backend.app.agents.domain.tool_names import (
     tool_id_of,
     wire_name,
 )
-from utk_curio.backend.app.agents.domain.manifest import (
-    CAPABILITY_ID_RE,
-    ToolRequirement,
-)
+from utk_curio.backend.app.agents.domain.manifest import ToolRequirement
 from utk_curio.backend.app.execution.code_references import WIDGET_KINDS
 
 _EFFECTS = ("read", "mutate")

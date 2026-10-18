@@ -245,13 +245,13 @@ def run_delegate(
     try:
         turn = _ask_child(child, task, usage_sink)
     except Exception as exc:
-        settled = ledger.settle(user_key, child.reservation, usage=usage_sink or None, status="error")
+        ledger.settle(user_key, child.reservation, usage=usage_sink or None, status="error")
         return (
             "error",
             f"delegate {coord} failed: {provider_config.redact_error(exc, config)}",
             _record("error", usage_sink, pins),
         )
-    settled = ledger.settle(user_key, child.reservation, usage=usage_sink or None, status="ok")
+    ledger.settle(user_key, child.reservation, usage=usage_sink or None, status="ok")
     text = child.reply.decode(turn.text) if child.reply is not None else turn.text
     if len(text) > DELEGATE_RESULT_MAX_CHARS:
         text = text[:DELEGATE_RESULT_MAX_CHARS] + _TRUNCATION_MARKER

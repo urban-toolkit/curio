@@ -3,7 +3,6 @@ from pathlib import PurePosixPath
 from flask import request, abort, jsonify, g, Response, current_app
 
 import requests
-import json
 
 from utk_curio.backend.app.execution import node_exec
 from utk_curio.backend.app.execution.sandbox_client import (
@@ -513,47 +512,6 @@ def get_starters():
         except Exception:  # noqa: BLE001 - never fail /starters over a bad package
             current_app.logger.exception("Package-starter loader failed; returning empty list")
     return jsonify(starters)
-
-def get_loaded_files_metadata(folder_path):
-    # ``pandas`` + ``geopandas`` belong to the ``curio.builtin@1`` package's
-    # ``manifest.dependencies.python`` (installed via the launcher walker),
-    # not Curio's framework requirements. Importing them lazily here keeps
-    # the backend module load free of data-lib deps so a stripped framework
-    # install still boots.
-    import pandas as pd
-
-    metadata = ""
-
-    for file in os.listdir(folder_path):
-        file_path = os.path.join(folder_path, file)
-        if file.endswith(".csv"):
-            df = pd.read_csv(file_path)
-            columns = [f"{col} ({df[col].dtype})" for col in df.columns]
-            geometry_type = "None"
-        elif file.endswith(".json") or file.endswith(".geojson"):
-            try:
-                import geopandas as gpd
-                gdf = gpd.read_file(file_path, parse_dates=False)
-                columns = [f"{col} ({gdf[col].dtype})" for col in gdf.columns]
-                if "geometry" in gdf.columns:
-                    geometry_type = gdf.geom_type.unique().tolist()
-                else:
-                    geometry_type = "None"
-            except Exception:
-                try:
-                    with open(file_path, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                        columns = list(data[0].keys()) if isinstance(data, list) and data else []
-                        geometry_type = "None"
-                except Exception:
-                    columns = []
-                    geometry_type = "Unreadable JSON"
-        else:
-            continue
-
-        metadata += f"File name: {file}\nColumns: {', '.join(columns)}\nGeometry type: {geometry_type}\n\n"
-
-    return metadata
 
 @bp.route('/spatial_join', methods=['POST'])
 def spatial_join():

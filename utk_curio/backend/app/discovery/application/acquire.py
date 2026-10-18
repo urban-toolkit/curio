@@ -47,7 +47,6 @@ from utk_curio.backend.app.discovery.application import archives
 from utk_curio.backend.app.discovery.domain.errors import (
     CapabilityUnsupported,
     DiscoveryError,
-    DownloadTooLarge,
     ResourceNotFound,
     UnsupportedFormatError,
 )
@@ -68,7 +67,6 @@ from utk_curio.backend.app.discovery.domain.formats import (
 )
 from utk_curio.backend.app.discovery.domain import parameters as P
 from utk_curio.backend.app.discovery.domain.manifest import DiscoverySourceManifest
-from utk_curio.backend.app.discovery.infrastructure import ratelimit
 from utk_curio.backend.app.discovery.infrastructure.transport import (
     MAX_DISCOVERY_DOWNLOAD_BYTES,
 )
@@ -177,16 +175,13 @@ class DiscoveryAcquire:
         tmp_path = tmp_dir / f"{validate_component(_token())}.part"
         work: Path | None = None
         head = bytearray()
-        written = 0
 
         def sink_factory(handle):
             def sink(chunk: bytes) -> None:
-                nonlocal written
                 check()
                 if len(head) < SNIFF_BYTES:
                     head.extend(chunk[: SNIFF_BYTES - len(head)])
                 handle.write(chunk)
-                written += len(chunk)
 
             return sink
 

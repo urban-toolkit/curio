@@ -191,7 +191,6 @@ TABLE_EXTENSIONS = {
 DEFAULT_MAX_FILES = 200_000
 MAX_RESOURCES = 64
 
-DEFAULT_ICON_FILE = "icon.png"
 #: The server's download ceiling (``curio.py --discovery-max-download-mb``):
 #: a manifest's ``maxDownloadBytes`` when it names none, and the most it may name.
 DEFAULT_MAX_DOWNLOAD_BYTES = max_download_bytes()

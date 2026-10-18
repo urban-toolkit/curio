@@ -2,17 +2,14 @@ import geopandas as gpd
 import pandas as pd
 import json
 import math
-import mmap
 import zlib
 import os
 import sys
 import time
 import hashlib
 import ast
-import datetime
 import numpy as np
 
-from shapely import wkt
 from pathlib import Path
 
 #DuckDB imports:
@@ -74,82 +71,6 @@ from utk_curio.sandbox.util.codec import (
 def checkIOType(data, nodeType, input=True):
     """No-op kept for the #158 namespace contract — see the note above."""
     return None
-
-
-def save_memory_mapped_file(data):
-    """
-    Saves the input data as a memory-mapped JSON file with a unique name.
-
-    Args:
-        input_data (dict): The data to be saved.
-        shared_disk_path (str): Path to the directory for saving the file.
-
-    Returns:
-        str: The path of the saved memory-mapped file.
-    """
-    launch_dir = Path(os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())).resolve()
-    shared_disk_path = os.environ.get("CURIO_SHARED_DATA", "./.curio/data/")
-    save_dir = (launch_dir / shared_disk_path).resolve()
-    # Ensure the directory exists
-    os.makedirs(save_dir, exist_ok=True)
-
-    # Prepare hash before adding filepath
-    json_bytes_initial = json.dumps(data, ensure_ascii=False).encode('utf-8')
-    input_hash = hashlib.sha256(json_bytes_initial[:1024]).digest()[:4].hex()
-    timestamp = str(int(time.time()))
-    unique_filename = f"{timestamp}_{input_hash[:25]}.data"
-
-    # Inject the filename into the data
-    data['filename'] = unique_filename
-
-    # Now serialize the updated data
-    json_bytes = json.dumps(data, ensure_ascii=False).encode('utf-8')
-    compressed_data = zlib.compress(json_bytes)
-
-    full_path = save_dir / unique_filename
-    with open(full_path, "wb") as file:
-        file.write(compressed_data)
-        file.flush()
-
-    relative_path = full_path.relative_to(shared_disk_path)
-    return str(relative_path).replace("\\", "/")
-
-
-def load_memory_mapped_file(file_path):
-    """
-    Loads the JSON data from the specified memory-mapped JSON file.
-
-    Args:
-        file_path (str): The path of the memory-mapped JSON file to load.
-
-    Returns:
-        dict: The loaded JSON data.
-    """
-    launch_dir = Path(os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())).resolve()
-    shared_disk_path = os.environ.get("CURIO_SHARED_DATA", "./.curio/data/")
-    lod_dir = (launch_dir / shared_disk_path).resolve()
-
-    # Ensure file_path is relative, then join and resolve
-    requested_path = Path(file_path)
-    full_path = (lod_dir / requested_path).resolve()
-
-    # Security check to prevent directory traversal
-    if not str(full_path).startswith(str(lod_dir)):
-        raise PermissionError(f"Access to path '{full_path}' is not allowed.")
-
-    # Normalize the path
-    # file_path = Path(file_path).resolve()
-
-    if not full_path.exists():
-        raise FileNotFoundError(f"The file {full_path} does not exist.")
-
-    # Using mmap for efficient memory-mapped loading
-    with open(full_path, "rb") as file:
-        with mmap.mmap(file.fileno(), 0, access=mmap.ACCESS_READ) as mmapped_file:
-            # Decompress and decode directly from the memory-mapped file
-            decompressed_data = zlib.decompress(mmapped_file[:])
-            data = json.loads(decompressed_data.decode('utf-8'))
-    return data
 
 
 def parse_primitive(data_type, data_value):

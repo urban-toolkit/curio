@@ -1160,9 +1160,6 @@ def render_autk_grammar_ts() -> str:
 # wrote (an edited intent, a setting) comes before every runtime-owned slot, so
 # none of it can strip or pose as one.
 
-#: The slot kinds, in the order a system turn carries them.
-SYSTEM_SLOTS = ("preamble", "instruction", "configuration", "tool-protocol", "runtime")
-
 
 @dataclass(frozen=True)
 class SystemSlot:

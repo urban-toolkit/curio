@@ -68,12 +68,6 @@ def _imports_for(session_id):
         return list(existing)
 
 
-def reset_session_imports():
-    """Test hook."""
-    with _imports_lock:
-        _session_imports.clear()
-
-
 def _failure(stderr):
     """The standard response shape for a node that did not produce output."""
     return {"stdout": [], "stderr": stderr, "output": {"path": "", "dataType": "str"}}

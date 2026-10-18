@@ -55,7 +55,6 @@ ARCHIVE_SUFFIX_KINDS = (
     (".bz2", "bz2"),
     (".rar", "rar"),
 )
-ARCHIVE_SUFFIXES = tuple(suffix for suffix, _kind in ARCHIVE_SUFFIX_KINDS)
 
 #: The archives Curio unpacks (``application/archives.py``): a zip, and a gzip
 #: of one file. Every other kind is refused, before its body is read whenever

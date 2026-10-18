@@ -237,15 +237,15 @@ class TestCkan:
 
 
 class TestArcgis:
-    def test_it_reads_the_hub_dataset_list(self):
+    def test_it_reads_the_arcgis_hub_dataset_list(self):
         provider, _, _ = _provider("source.esri.hub-opendata@1")
         page = provider.search(SearchQuery(text="bike lanes"))
         assert any("Bike" in r.name for r in page.resources)
         assert page.total_hint and page.total_hint > 1000
 
     def test_html_is_stripped_from_descriptions(self):
-        """Hub descriptions are HTML; a card renders text, so markup would read
-        as tag soup."""
+        """ArcGIS Hub descriptions are HTML; a card renders text, so markup
+        would read as tag soup."""
         provider, _, _ = _provider("source.esri.hub-opendata@1")
         page = provider.search(SearchQuery(text="bike lanes"))
         for row in page.resources:

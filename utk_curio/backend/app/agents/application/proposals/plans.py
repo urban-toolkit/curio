@@ -281,7 +281,6 @@ def _mint_dataflow_plan(
         n.get("id"): n for n in dataflow.get("nodes") or [] if isinstance(n, dict)
     }
     existing_edges = [e for e in dataflow.get("edges") or [] if isinstance(e, dict)]
-    existing_edge_ids = {str(e.get("id")) for e in existing_edges}
     remove_nodes = plan.get("removeNodes", [])
     remove_edges = plan.get("removeEdges", [])
     revision_errors = _plan_revision_errors(plan, existing_nodes, existing_edges)

@@ -96,10 +96,6 @@ SLOT_FLAGS: dict[str, str] = {
 }
 
 
-def known_slot(secret_id: str | None) -> bool:
-    return bool(secret_id) and secret_id in SLOT_COLUMNS
-
-
 def own_token(user, secret_id: str | None) -> str | None:
     """Only what this account saved. Never the deployment's.
 

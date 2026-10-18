@@ -224,11 +224,6 @@ def _accepted_kwargs(request_fn, candidates: dict) -> dict:
     return {k: v for k, v in candidates.items() if k in params}
 
 
-def _accepts_trusted_host(request_fn) -> bool:
-    """Kept because it reads clearly at its one remaining call site."""
-    return "trusted_host" in _accepted_kwargs(request_fn, {"trusted_host": None})
-
-
 def _policy_hop(url: str, *, resolver, trusted_host, budget) -> None:
     """Clear one hop through the policy, or raise.
 

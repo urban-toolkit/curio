@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 USERNAME_RE = re.compile(r"^[a-zA-Z0-9_]{3,32}$")

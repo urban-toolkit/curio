@@ -1,4 +1,4 @@
-from flask import Flask, request, current_app, make_response, jsonify
+from flask import Flask, request, make_response, jsonify
 from werkzeug.exceptions import HTTPException
 import os
 import logging
@@ -58,10 +58,6 @@ def _apply_cors(response):
     for k, v in CORS_HEADERS.items():
         response.headers[k] = v
     return response
-
-
-def get_locale():
-    return request.accept_languages.best_match(current_app.config['LANGUAGES'])
 
 
 def create_app(config_class=config_class):

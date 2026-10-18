@@ -135,12 +135,6 @@ class PackageBuildRequest:
     timeout_class: str = "standard"
     contract_version: str = BUILD_CONTRACT_VERSION
 
-    def manifest_template_ids(self) -> list[str]:
-        return [
-            t.get("id") for t in (self.manifest.get("templates") or [])
-            if isinstance(t, dict) and isinstance(t.get("id"), str)
-        ]
-
 
 def _coordinate_grammar_error(value: Any) -> str:
     """A refusal the requester can FIX from (dev/90 A4): the grammar, not

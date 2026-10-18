@@ -48,9 +48,6 @@ from utk_curio.backend.app.agents.evaluation.scoring import (
 #: prompt by prompt.
 UNEXPRESSIBLE_EDGE_KINDS: tuple[str, ...] = ()
 
-#: Solve statuses that mean "we never found out".
-_UNMEASURED = ("pending", "not-attempted", "skipped")
-
 
 @dataclass(frozen=True)
 class AttemptScore:

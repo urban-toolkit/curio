@@ -59,28 +59,6 @@ class PackageId:
         package_id, major_str = dir_name.rsplit("@", 1)
         return cls(package_id=package_id, major=int(major_str))
 
-    @classmethod
-    def parse_canonical(cls, canonical: str) -> "PackageId":
-        """Parse ``<packageId>/<templateId>@<major>``."""
-        if not isinstance(canonical, str) or "/" not in canonical or "@" not in canonical:
-            raise PackageIdError(
-                f"invalid canonical package id: {canonical!r}; expected "
-                f"'<packageId>/<templateId>@<major>'"
-            )
-        head, major_str = canonical.rsplit("@", 1)
-        if "/" not in head:
-            raise PackageIdError(f"missing '/' in canonical id: {canonical!r}")
-        package_id, template_id = head.split("/", 1)
-        if not PACKAGE_DIR_RE.match(f"{package_id}@0"):
-            raise PackageIdError(f"invalid package id segment: {package_id!r}")
-        if not TEMPLATE_ID_RE.match(template_id):
-            raise PackageIdError(f"invalid template id segment: {template_id!r}")
-        try:
-            major = int(major_str)
-        except ValueError as exc:
-            raise PackageIdError(f"invalid major version: {major_str!r}") from exc
-        return cls(package_id=package_id, major=major, template_id=template_id)
-
     @property
     def dir_name(self) -> str:
         return f"{self.package_id}@{self.major}"

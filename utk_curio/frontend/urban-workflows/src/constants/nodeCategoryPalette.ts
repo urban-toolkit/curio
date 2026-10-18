@@ -41,14 +41,6 @@ export const NODE_CATEGORY_KEY: Record<NodeCategory, NodeCategoryKey> = {
 export const categoryFg = (key: NodeCategoryKey): string =>
   `var(--curio-category-${key}-fg)`;
 
-/** Tint background for a badge or an icon tile. */
-export const categoryBg = (key: NodeCategoryKey): string =>
-  `var(--curio-category-${key}-bg)`;
-
-/** Text on that tint. */
-export const categoryOnTint = (key: NodeCategoryKey): string =>
-  `var(--curio-category-${key}-on-tint)`;
-
 /** The neutral used when a node's type is not in any category bucket. */
 export const CATEGORY_FALLBACK_FG = categoryFg("package");
 

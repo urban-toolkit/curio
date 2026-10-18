@@ -39,7 +39,6 @@ from datetime import datetime, timezone
 from flask import Blueprint, current_app, jsonify, request
 
 from utk_curio.backend.app.common import record_clock
-from utk_curio.backend.app.common.safe_paths import is_within
 from utk_curio.backend import config
 from utk_curio.backend.config import _is_dev, _is_testing
 from utk_curio.backend.app.agents.infrastructure import testing_provider

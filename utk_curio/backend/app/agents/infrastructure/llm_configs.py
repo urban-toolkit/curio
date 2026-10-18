@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import secrets
 import time
 from pathlib import Path
@@ -65,7 +64,6 @@ _KEY_REQUIRED = {"anthropic": "an Anthropic", "gemini": "a Gemini"}
 #: Types whose endpoint is the SDK's own: they take no base URL.
 _NO_BASE_URL = ("anthropic", "gemini")
 
-CONFIG_ID_RE = re.compile(r"^llm-[0-9a-f]{12}$")
 _CREATE_FIELDS = frozenset({"label", "endpoint", "apiType", "baseUrl", "apiKey", "model"})
 _UPDATE_FIELDS = _CREATE_FIELDS | {"clearApiKey"}
 

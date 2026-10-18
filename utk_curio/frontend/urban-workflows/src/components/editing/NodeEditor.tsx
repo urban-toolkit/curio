@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import Tab from "react-bootstrap/Tab";
-import Tabs from "react-bootstrap/Tabs";
 import "bootstrap/dist/css/bootstrap.min.css";
 import CodeEditor from "./CodeEditor";
 import GrammarEditor from "./GrammarEditor";
@@ -17,13 +16,8 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import "./NodeEditor.css";
 
 import {
-    faGear,
-    faCircleInfo,
-    faCirclePlay,
-    faExpand,
     faToolbox,
     faCode,
-    faList,
     faSpellCheck,
     faRotateLeft,
     faRightFromBracket,
@@ -63,7 +57,6 @@ type NodeEditorProps = {
     output: { code: string; content: string } | ICodeData;
     nodeType: NodeTemplateId;
     applyGrammar?: any;
-    schema?: any;
     readOnly: boolean;
     defaultValue: any;
     floatCode?: any;
@@ -84,7 +77,6 @@ function NodeEditor({
     output,
     nodeType,
     applyGrammar,
-    schema,
     readOnly,
     defaultValue,
     floatCode,
@@ -323,12 +315,6 @@ function NodeEditor({
         fullscreen != "" && fullscreen != undefined
             ? tabContentFullscreen
             : tabContentStyle;
-
-    const iconStyle: CSS.Properties = {
-        cursor: "pointer",
-        fontSize: "14px",
-        color: "#888787",
-    };
 
     const navItemStyle: CSS.Properties = {
         maxWidth: "100%",
@@ -573,7 +559,6 @@ function NodeEditor({
                                             sendCodeToWidgets={primeWidgets}
                                             nodeId={data.nodeId}
                                             applyGrammar={applyGrammar}
-                                            schema={schema}
                                             setOutputCallback={setOutputCallback}
                                             references={scope}
                                             stripInputs={inputs}
@@ -591,7 +576,6 @@ function NodeEditor({
                                     >
                                         <NodeProvenance
                                             data={data}
-                                            nodeType={nodeType}
                                             setCode={navigateProv}
                                             active={activeTab === "provenance"}
                                         />

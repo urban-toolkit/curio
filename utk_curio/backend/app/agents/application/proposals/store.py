@@ -136,15 +136,6 @@ def _pending_plan_proposal(spec: dict, attachment_id: str, proposal_id: str) -> 
     return proposal
 
 
-def _pending_plan_proposal_or_none(spec: dict, attachment_id: str, proposal_id: str):
-    """The pending plan proposal (active or parked) or None — the driver's
-    loop guard (completion is an outcome, not an error)."""
-    try:
-        return _pending_plan_proposal(spec, attachment_id, proposal_id)
-    except AgentServiceError:
-        return None
-
-
 def _plan_proposal_any(spec: dict, attachment_id: str, proposal_id: str):
     """The plan proposal in ANY status (active or parked) — dev/71: the
     structure may complete (status applied) while content work continues;

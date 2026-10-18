@@ -94,7 +94,6 @@ export const ProjectLoader: React.FC<{
     loadSharedProject,
     setOutputs,
     hydrateRestoredOutputs,
-    loadParsedTrill,
     projectId,
     attachLatestRun,
     markDirty,
