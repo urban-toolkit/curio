@@ -90,11 +90,17 @@ INNER = (41.46216878262555, -90.4790717749789, 41.44595447694705, -90.4633641663
 AUTARK_MAX_CELLS = 4096 * 4096
 AUTARK_MAX_SIDE = 8192
 
-#: Each scenario's Autark map of its depth.
+#: The color range both scenarios' depth maps share, in metres: from 0 to the
+#: deepest flood of any period, with or without NbS, 10.67 m, rounded up to a
+#: whole metre.
+DEPTH_RANGE = [0, 11]
+
+#: Each scenario's Autark map of its depth, over the range both maps share.
 MAP_DOCUMENT = {"map": {"layerRefs": [{
     "dataRef": "[!! input_0 !!]",
     "getFnv": "band_1",
     "colorMapInterpolator": "interpolateBlues",
+    "colorMapRange": DEPTH_RANGE,
     "title": "Flood depth (m)",
 }]}}
 
@@ -486,7 +492,8 @@ def test_each_scenario_chooses_by_scouts_classes_takes_the_statistics_and_maps_t
 
 def test_each_scenarios_map_draws_its_depth_in_blues_with_its_legend_titled():
     """Each Autark map holds one document: the depth's band in autk-grammar's
-    blues, its legend titled by the grammar's ``title``, valid for the grammar."""
+    blues, over the range both maps share, its legend titled by the grammar's
+    ``title``, valid for the grammar."""
     from utk_curio.backend.app.agents.domain import document_validation
 
     members = {node_id for scenario in _dataflow()["scenarios"] for node_id in scenario["nodes"]}
@@ -496,6 +503,34 @@ def test_each_scenarios_map_draws_its_depth_in_blues_with_its_legend_titled():
         assert json.loads(depth_map["content"]) == MAP_DOCUMENT, depth_map["content"]
         named = depth_map["content"].replace("[!! input_0 !!]", "input_0")
         assert document_validation.validate(MAP, named) == {"status": document_validation.STATUS_VALID}
+
+
+def test_both_scenarios_maps_share_one_color_range_that_holds_every_depth():
+    """The two scenarios' depth maps color over one range, so a color is the
+    same depth on both: each holds the same ``colorMapRange``. It runs from 0
+    to the deepest flood of any period, with or without NbS, rounded up to a
+    whole metre, at the dataflow's corners, which take every cell of SCOUT's
+    grid; another region only narrows it."""
+    import numpy as np
+    import rasterio
+
+    spec = _dataflow()
+    nodes = {n["id"]: n for n in spec["nodes"]}
+    ranges = {}
+    for scenario in spec["scenarios"]:
+        (map_id,) = [node_id for node_id in scenario["nodes"] if nodes[node_id]["type"] == MAP]
+        (layer,) = json.loads(nodes[map_id]["content"])["map"]["layerRefs"]
+        ranges[scenario["id"]] = layer.get("colorMapRange")
+    assert ranges == {"no-nbs": DEPTH_RANGE, "nbs": DEPTH_RANGE}, ranges
+
+    deepest = 0.0
+    for period in PERIODS:
+        for nbs in (True, False):
+            with rasterio.open(_data_file(_depth_id(period, nbs))) as raster:
+                cells = np.ma.masked_invalid(raster.read(1, masked=True).astype("float64")).compressed()
+            assert cells.size > 0 and float(cells.min()) >= DEPTH_RANGE[0], (period, nbs)
+            deepest = max(deepest, float(cells.max()))
+    assert deepest <= DEPTH_RANGE[1] < deepest + 1, (deepest, DEPTH_RANGE)
 
 
 def test_an_autark_map_after_the_difference_draws_the_change_in_depth_on_a_sequential_scale():

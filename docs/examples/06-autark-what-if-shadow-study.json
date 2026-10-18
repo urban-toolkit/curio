@@ -287,7 +287,7 @@
         "width": 759,
         "height": 640,
         "title": "Roads by sunlight change",
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"sunlight\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"title\": \"Sunlight change (minutes)\"\n      }\n    ]\n  }\n}",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"sunlight\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateRdYlBu\",\n        \"colorMapRange\": [\n          -360,\n          360\n        ],\n        \"title\": \"Sunlight change (minutes)\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Render the roads coloured by the sunlight each one loses in Twice as tall.",

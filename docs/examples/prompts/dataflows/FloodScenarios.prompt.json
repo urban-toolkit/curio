@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/FloodScenarios.json",
-    "sha256": "085288edac637107c5f0bea5fe06b1623cdab2cdde509d8a07aa4776990881bf",
+    "sha256": "c85dbb5c78376a6489be3e8aeb809cf3aecbece68ae5f693324831249efbe0f4",
     "walkthrough": null
   },
-  "prompt": "Compare two scenarios of SCOUT's Quad Cities flood projection over SCOUT's whole area: one with no nature-based solutions, and a copy of it with all six solutions in place. Three shared settings hold the projection period, 2020 to 2040, and the area's top-left and bottom-right corners. Read that area of the solutions' class raster and of the period's flood depth with and without the solutions. In each scenario, take the depth with the solutions where a cell's class is one of the chosen solutions and the depth without them elsewhere, then the median and mean of that depth, and map the depth. Map how much the solutions change the depth, the size of the second scenario minus the first, and chart each scenario's median flood depth.",
+  "prompt": "Compare two scenarios of SCOUT's Quad Cities flood projection over SCOUT's whole area: one with no nature-based solutions, and a copy of it with all six solutions in place. Three shared settings hold the projection period, 2020 to 2040, and the area's top-left and bottom-right corners. Read that area of the solutions' class raster and of the period's flood depth with and without the solutions. In each scenario, take the depth with the solutions where a cell's class is one of the chosen solutions and the depth without them elsewhere, then the median and mean of that depth, and map the depth, both scenarios' maps on one color scale from 0 to 11 m. Map how much the solutions change the depth, the size of the second scenario minus the first, and chart each scenario's median flood depth.",
   "context": null,
   "required": {
     "datasets": [
@@ -284,7 +284,7 @@
   "split": "train",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "claude-opus-5-5 from the example JSON, 2026-10-05; its difference map on an Autark node after the Compare Scenarios node, 2026-10-17",
+    "draftedBy": "claude-opus-5-5 from the example JSON, 2026-10-05; its difference map on an Autark node after the Compare Scenarios node, 2026-10-17; one color range on both depth maps, 2026-10-17",
     "reviewedBy": null,
     "reviewedAt": null
   },
@@ -323,5 +323,5 @@
     ],
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
   },
-  "notes": "Built-in nodes only, in two scenarios over three shared Parameter nodes: windowed raster loads, and per scenario a Raster Calculator choosing by class, a Raster Calculator taking the depth's statistics and an Autark map of the depth, compared on a chart and an absolute difference, which an Autark map after it draws. It reproduces SCOUT's flood function on SCOUT's whole grid."
+  "notes": "Built-in nodes only, in two scenarios over three shared Parameter nodes: windowed raster loads, and per scenario a Raster Calculator choosing by class, a Raster Calculator taking the depth's statistics and an Autark map of the depth, the two maps on one color range, compared on a chart and an absolute difference, which an Autark map after it draws. It reproduces SCOUT's flood function on SCOUT's whole grid."
 }
