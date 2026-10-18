@@ -30,46 +30,7 @@ indent_size = 2
 [{src/providers/DialogProvider.tsx,src/providers/UserProvider.tsx}]
 indent_size = 2
 
-[src/components/DataCleaning.tsx]
-indent_size = 2
-
-[src/components/Box.css]
-indent_size = 2
-
-[src/components/CommentsBox.tsx]
-indent_size = 2
-
-[src/components/ComputationAnalysisBox.tsx]
-indent_size = 2
-
-[src/components/ConstantBox.tsx]
-indent_size = 2
-
-[src/components/DataExportBox.tsx]
-indent_size = 2
-
-[src/components/DataLoadingBox.tsx]
-indent_size = 2
-
-[src/components/DataTransformationBox.tsx]
-indent_size = 2
-
-[src/components/TextBox.tsx]
-indent_size = 2
-
-[src/components/TableBox.tsx]
-indent_size = 2
-
-[src/components/UtkBox.tsx]
-indent_size = 2
-
-[src/components/VegaBox.tsx]
-indent_size = 2
-
 [src/components/GenericDialog.tsx]
-indent_size = 2
-
-[src/components/FlowSwitch.tsx]
 indent_size = 2
 
 [*.{json,pdf.link}]
