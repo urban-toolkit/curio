@@ -50,6 +50,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
 from .test_compare_difference_e2e import (
@@ -81,10 +82,8 @@ from .utils import (
     save_dataflow,
     save_node_closeup,
     stub_login_and_enter_workflow,
-    wait_for_node_run_to_end,
     wait_for_node_settled,
     wait_for_run_guard_released,
-    watch_node_run,
 )
 
 if TYPE_CHECKING:
@@ -293,6 +292,40 @@ def _assert_lever_map_drawn(page, lever: str) -> None:
     assert state == "drawn", f"the towers lever's map ended {state!r}: {problem}"
 
 
+# A node's new outcome: "error", or "success" once its output is saved to
+# another file than *before*, the one it was saved to before the click.
+_NEW_OUTCOME_JS = """([id, before]) => {
+    const node = window.__curio_reactFlow.getNodes().find((n) => n.id === id);
+    const output = node && node.data && node.data.output;
+    if (!output) return false;
+    if (output.code === "error") return "error";
+    if (output.code !== "success") return false;
+    const match = String(output.content || "").match(/Saved to file: (\\S+)/);
+    return match && match[1] !== before ? "success" : false;
+}"""
+
+
+def _wait_for_new_outcome(page, node_id: str, before: str, *, node_type: str, timeout_ms: int) -> str:
+    """How *node_id*'s next run ended: ``"success"``, its output saved to a new
+    file, or ``"error"``.
+
+    A step of a run on the server can start and end between two renders (a
+    Compare Scenarios node's takes milliseconds), so the node need never show
+    itself running, and ``watch_node_run`` would wait for a run that came and
+    went. The new file its output is saved to tells that it ran again. Polls on
+    a timer, not on animation frames."""
+    try:
+        handle = page.wait_for_function(_NEW_OUTCOME_JS, arg=[node_id, before], timeout=timeout_ms, polling=500)
+    except PlaywrightTimeoutError:
+        box = node_locator(page, node_id)
+        status = box.locator("[data-curio-node-status]").first.get_attribute("data-curio-node-status")
+        raise AssertionError(
+            f"{node_type} {node_id} did not run again within {timeout_ms} ms: its output is still saved to "
+            f"{before}, status {status!r}: {read_node_error_text(box)}"
+        ) from None
+    return handle.json_value()
+
+
 def test_an_edit_in_the_towers_lever_reaches_the_shadow_with_update_results(
     app_frontend: "FrontendPage",
     current_server: str,
@@ -404,15 +437,18 @@ def test_an_edit_in_the_towers_lever_reaches_the_shadow_with_update_results(
     update = edit.get_by_test_id("interaction-update")
     expect(update).to_have_text(re.compile(r"^Update results \(\d+\)$"), timeout=10000)
 
-    # 4. Update results runs the lever and every node below it.
+    # 4. Update results runs the lever and every node below it: each one's
+    # output is saved to a new file.
     ran = [lever, statistics["towers-removed"], chart]
-    for node_id in ran:
-        watch_node_run(page, node_id)
+    saved_to = {node_id: page.evaluate(_OUTPUT_ARTIFACT_JS, node_id) for node_id in ran}
+    assert all(saved_to.values()), f"a node shows no saved output before Update results: {saved_to}"
     update.click()
     for node_id in ran:
-        status = wait_for_node_run_to_end(page, node_id, node_type=nodes[node_id]["type"], timeout_ms=UPDATE_MS)
-        assert status == "done", (
-            f"{nodes[node_id]['type']} {node_id} ran again and ended {status}: "
+        node_type = nodes[node_id]["type"]
+        outcome = _wait_for_new_outcome(page, node_id, saved_to[node_id], node_type=node_type, timeout_ms=UPDATE_MS)
+        status = wait_for_node_settled(page, node_id, node_type=node_type, timeout_ms=60000)
+        assert (outcome, status) == ("success", "done"), (
+            f"{node_type} {node_id} ran again and ended {outcome}, {status}: "
             f"{read_node_error_text(node_locator(page, node_id))}"
         )
     wait_for_run_guard_released(page, timeout_ms=UPDATE_MS)
