@@ -268,8 +268,9 @@ export function isPassThroughNode(node: { type?: string | null; data?: any }): b
 
 /**
  * Node kinds whose tile draws the node's own output rather than what reaches
- * it: a Compare Scenarios node (#662) charts the table its own run stacked.
- * Mirrors `_SELF_DRAWN_KINDS` in `projects/dashboard_payload.py`.
+ * it: a Compare Scenarios node (#662) charts the table its own run stacked, or
+ * shows its difference. Mirrors `_SELF_DRAWN_KINDS` in
+ * `projects/dashboard_payload.py`.
  */
 export const SELF_DRAWN_NODE_TYPES: ReadonlySet<string> = new Set(["curio.builtin/compare-scenarios"]);
 

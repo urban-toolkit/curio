@@ -787,8 +787,27 @@ passes `absolute=True` to `curio_difference_scenarios`.
   for a removed row. A key that is empty or repeated on one side stops the run, as
   does a layer beside a table.
 
-A raster's difference is a raster, which an Autark map draws and a Python node reads
-as a `rasterio` dataset.
+A raster's difference is a raster, which a Python node reads as a `rasterio`
+dataset, and a layer's difference is a layer. To draw either on a map, connect the
+node's output to an [Autark node](#autark-node), whose spec picks what the map colors
+by, its scale and its legend's `title`. A signed difference of rasters reads best on a
+diverging scheme centered on 0, and an absolute one on a sequential scheme:
+
+```json
+{
+  "map": {
+    "layerRefs": [
+      {
+        "dataRef": "[!! input_0 !!]",
+        "getFnv": "band_1",
+        "colorMapInterpolator": "interpolateRdBu",
+        "colorMapCenter": 0,
+        "title": "Shadow change (minutes)"
+      }
+    ]
+  }
+}
+```
 
 The node has two tabs:
 
@@ -799,15 +818,11 @@ The node has two tabs:
   **None** plots each row's value as it is, with the Y column as the axis title; a
   scenario with several rows stacks them in one bar. A pie writes each slice's
   value on it.
-- **Difference**, in its place in Difference, maps a raster's or a layer's
-  difference, colored by a band or a number column, or by `change` (**Color by**).
-  **Change** picks **Signed**, input_1 minus input_0, or **Absolute**, its size.
-  The legend is titled with what it shows: `sunlight change` for the
-  column `sunlight`, `sunlight absolute change` for its size, or `change`. A raster's
-  or a layer's colors run from the lowest
-  difference, dark purple, to the highest, yellow; a raster cell that is nodata in
-  either raster is clear. A table's difference is shown as a table, each
-  row in the color of its change.
+- **Difference**, in its place in Difference, holds the difference's settings:
+  **Key**, for two layers or tables, and **Change**, which picks **Signed**, input_1
+  minus input_0, or **Absolute**, its size. A table's difference is shown as a table,
+  each row in the color of its change. For a raster's or a layer's, the tab says to
+  draw it with an Autark node after this one.
 - **What differs** lists the levers that differ between the scenarios: for each, the
   widget values and the code lines that changed, read against the first scenario's,
   or, for an Edit Features node, each scenario's edits. A node and the copies made

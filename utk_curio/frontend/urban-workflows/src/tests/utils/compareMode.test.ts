@@ -139,15 +139,23 @@ describe("the code it writes in Difference", () => {
 });
 
 describe("the node's settings", () => {
-  test("keep a chosen view and what Difference joins on and maps, and nothing else", () => {
+  test("keep a chosen view and what Difference joins on, and nothing else", () => {
     expect(
       normalizeCompareSettings({
         inputs: [BASE, TALL],
         mode: "difference",
         difference: { key: "osm_id", value: "sunlight", band: 1 },
       }),
-    ).toEqual({ inputs: [BASE, TALL], mode: "difference", difference: { key: "osm_id", value: "sunlight" } });
+    ).toEqual({ inputs: [BASE, TALL], mode: "difference", difference: { key: "osm_id" } });
     expect(normalizeCompareSettings({ mode: "chart" })).toEqual({ mode: "chart" });
+  });
+
+  test("drop a map's colors, which an Autark node after the node chooses", () => {
+    expect(normalizeCompareSettings({ mode: "difference", difference: { key: "osm_id", value: "sunlight" } })).toEqual({
+      mode: "difference",
+      difference: { key: "osm_id" },
+    });
+    expect(normalizeCompareSettings({ difference: { value: "band_1" } })).toBeUndefined();
   });
 
   test("drop a view the node does not have and an empty key, so nothing is written", () => {
