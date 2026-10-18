@@ -6,10 +6,10 @@
  *   known by its own id and its `copiedFrom` list (`duplicateSelection`
  *   writes it); two levers are the same lever in two scenarios when these
  *   meet. A paired lever differs in its
- *   widget values and in its code lines, an Edit Features lever in its edit
- *   list (its code is written from it); one with no partner is listed as only
- *   in the scenarios that have it, with its edits when it is an Edit Features
- *   node.
+ *   widget values and in its code lines, an Interaction lever in its edit
+ *   log (its code is written from it), where an edit switched off reads as
+ *   off; one with no partner is listed as only in the scenarios that have it,
+ *   with its edits when it is an Interaction node.
  * - **Context:** a warning, naming the inputs, when the scenarios read
  *   different fixed context, so their outcomes may differ for reasons outside
  *   them.
@@ -151,7 +151,7 @@ export interface CodeChange {
 
 export interface EditsChange {
   scenarioId: string;
-  /** Its Edit Features node's edits, each in a line, in the order they apply. */
+  /** Its Interaction node's edits, each in a line, in the order they apply. */
   edits: string[];
 }
 
@@ -163,7 +163,7 @@ export interface LeverDifference {
   onlyIn?: string[];
   widgets: WidgetChange[];
   code: CodeChange[];
-  /** An Edit Features lever's edits, per scenario, when they differ or only some have it. */
+  /** An Interaction lever's edits, per scenario, when they differ or only some have it. */
   edits?: EditsChange[];
 }
 
@@ -173,11 +173,11 @@ export interface WhatDiffers {
   same: number;
 }
 
-/** An Edit Features node's edits, a line each (none for another node). */
+/** An Interaction node's edits, a line each, one switched off marked off (none for another node). */
 function editLines(node: FlowNodeLike | undefined): string[] {
   if (!node || !isEditFeaturesNode(node)) return [];
   const settings = normalizeEditFeatures(node.data?.editFeatures);
-  return (settings?.edits ?? []).map((edit) => describeEdit(edit, settings?.key));
+  return (settings?.edits ?? []).map((edit) => `${describeEdit(edit, settings?.key)}${edit.enabled === false ? " (off)" : ""}`);
 }
 
 function widgetValues(node: FlowNodeLike): Map<string, WidgetValue> {

@@ -88,6 +88,22 @@ test("copies with the same edits read as alike", () => {
   expect(found.same).toBe(2);
 });
 
+test("an entry switched off is listed as off, so copies that differ only by it differ", () => {
+  const found = differs(twoScenarios([{ op: "remove", ids: [119] }], [{ op: "remove", ids: [119], enabled: false }]));
+  expect(found.differences).toEqual([
+    {
+      key: "edit",
+      label: "Edit Features",
+      widgets: [],
+      code: [],
+      edits: [
+        { scenarioId: "s-all", edits: ["Remove building_id 119"] },
+        { scenarioId: "s-less", edits: ["Remove building_id 119 (off)"] },
+      ],
+    },
+  ]);
+});
+
 test("an Edit Features node only one scenario has is listed as only in it, with its edits", () => {
   const { nodes, edges, scenarios } = twoScenarios(undefined, undefined);
   // The second scenario reads the loader through an Edit Features node of its own.
