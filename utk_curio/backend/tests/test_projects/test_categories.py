@@ -5,7 +5,8 @@ shipped dataflows (2026-09-30), and the Scenarios, FloodScenarios,
 ScoutShadows, WeatherRouting and NetCDF test dataflows and
 example 24 placed by the same rules (#662, 2026-10-05), example 25 (#576) and
 example 26 (#819), with the computed ``SCOUT`` tag on the five SCOUT dataflows
-(2026-10-17). The automatic
+(2026-10-17), and ``Pandas`` and ``Tables`` on FloodScenarios once it builds
+a table of the riverside tracts' depth by period (2026-10-18). The automatic
 sections must reproduce it from
 the files alone, and the hand-set ones live in the files themselves.
 """
