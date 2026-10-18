@@ -29,7 +29,7 @@
       },
       {
         "id": "333949c8-983a-5cdb-845b-04abe06c2dc7",
-        "type": "scout.raster-conversion/rasterize-buildings",
+        "type": "scout.rasters/rasterize-buildings",
         "x": 645,
         "y": 430,
         "out": "DEFAULT",
@@ -68,7 +68,7 @@
             }
           ]
         },
-        "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: one raster in EPSG:3395, each cell a height in metres: the 256 by 256\nmap tiles SCOUT draws, 8-bit gray where 255 is the maximum height, side by\nside. A tile SCOUT writes no file for, because no building is near it, is no\ndata. An Autark map draws it as input_0, band band_1, and SCOUT's Deep Umbra\nshadow model (Accumulated Shadow) reads it.\nThe Widgets tab sets the height column, the zoom level and the maximum height.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_raster_conversion.node_outputs import rasterize_buildings\n\nreturn rasterize_buildings(\n    input_0,\n    attribute=[!! attribute !!],\n    zoom=int([!! zoom !!]),\n    max_height=float([!! max_height !!]),\n    output_file=curio_output_file,\n)\n"
+        "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: one raster in EPSG:3395, each cell a height in metres: the 256 by 256\nmap tiles SCOUT draws, 8-bit gray where 255 is the maximum height, side by\nside. A tile SCOUT writes no file for, because no building is near it, is no\ndata. An Autark map draws it as input_0, band band_1, and SCOUT's Deep Umbra\nshadow model (Accumulated Shadow) reads it.\nThe Widgets tab sets the height column, the zoom level and the maximum height.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_rasters.node_outputs import rasterize_buildings\n\nreturn rasterize_buildings(\n    input_0,\n    attribute=[!! attribute !!],\n    zoom=int([!! zoom !!]),\n    max_height=float([!! max_height !!]),\n    output_file=curio_output_file,\n)\n"
       },
       {
         "id": "ebac4811-abcc-50fe-a61a-cc9c9ac8c011",
@@ -114,7 +114,7 @@
       },
       {
         "id": "8a914e39-4cb1-535d-9a8b-19b45f6be288",
-        "type": "curio.builtin/raster-calculator",
+        "type": "scout.rasters/raster-calculator",
         "x": 1935,
         "y": 430,
         "out": "DEFAULT",
@@ -205,7 +205,7 @@
     },
     "packages": [
       "model.scout.deep-umbra@1",
-      "scout.raster-conversion@1"
+      "scout.rasters@1"
     ],
     "datasets": [
       {
