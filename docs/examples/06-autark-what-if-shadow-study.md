@@ -5,8 +5,8 @@ scenarios over Boston's Back Bay: **Baseline**, with every building at its own h
 **Twice as tall**, with every building's height doubled, and **Two towers removed**, with two
 towers taken out: 200 Clarendon, the tallest, and Raffles. The height factor is a widget on the
 shadow step, and the towers are removed by an Interaction node. Two Compare Scenarios nodes compare them: a chart of each
-scenario's mean road sunlight on the June solstice, and a map of the sunlight each road loses when
-the buildings get twice as tall.
+scenario's mean road sunlight on the June solstice, and the sunlight each road loses when the
+buildings get twice as tall, which an Autark map after it draws.
 
 > [!NOTE]
 > **WebGPU required**
@@ -28,6 +28,7 @@ flowchart LR
   TM["Two towers removed · autk-grammar<br/>map · roads by sunlight"]
   CC["Compare Scenarios<br/>Chart · mean sunlight"]
   CD["Compare Scenarios<br/>Difference · sunlight change"]
+  DM["autk-grammar<br/>map · roads by sunlight change"]
   D --> P
   P --> BC --> BM
   P --> MC --> MM
@@ -37,6 +38,7 @@ flowchart LR
   TM --> CC
   BM --> CD
   MM --> CD
+  CD --> DM
 ```
 
 A single `data` node loads the PBF once, and a `data-pool` hands its layers to every scenario.
@@ -204,8 +206,19 @@ return curio_difference_scenarios([
 The roads carry no `osm_id` or `building_id`, so Difference matches them by their shapes: both
 scenarios read the same roads from the pool. Each road holds Twice as tall's sunlight minus
 Baseline's, in `sunlight` and in the `compute` values the shadow step writes, and `change` says
-whether it changed. The map colours the roads by that difference, from the largest loss (dark
-purple) to no change (yellow).
+whether it changed.
+
+**Roads by sunlight change**, an Autark node after it, draws that difference: it colours each road
+by its `sunlight`, from the largest loss (dark purple) to no change (yellow).
+
+```json
+"map": { "layerRefs": [
+  { "dataRef": "[!! input_0 !!]",
+    "getFnv": "sunlight", "getFnvType": "quantitative",
+    "colorMapInterpolator": "interpolateViridis",
+    "title": "Sunlight change (minutes)" }
+]}
+```
 
 ## Final result
 

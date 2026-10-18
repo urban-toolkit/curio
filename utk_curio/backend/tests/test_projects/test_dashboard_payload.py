@@ -598,6 +598,85 @@ class TestARasterBehindAPinnedMap:
         assert RASTER_MAX_SIDE == int(side[1])
 
 
+#: A Compare Scenarios node's raster difference as ``/get`` answers it: the
+#: envelope its run stores, saved as a raster.
+DIFFERENCE_ENVELOPE = {"dataType": "raster", "data": {"type": "FeatureCollection", "features": [], "grid": {}}}
+
+
+def compare_spec(compare_pinned=False, map_pinned=False):
+    """Two scenarios' rasters, a Compare Scenarios node in Difference and an
+    Autark map after it, each pinned when asked."""
+    def pinned(on):
+        return {"dashboardPinned": True} if on else {}
+
+    return spec_of(
+        [
+            node("a", "curio.builtin/computation-analysis"),
+            node("b", "curio.builtin/computation-analysis"),
+            node("compare", "curio.builtin/compare-scenarios@1",
+                 code="return curio_difference_scenarios([])\n", **pinned(compare_pinned)),
+            node("map", "curio.builtin/autk-grammar", code=RENDER_SPEC, **pinned(map_pinned)),
+        ],
+        [edge("a", "compare"), edge("b", "compare"), edge("compare", "map")],
+    )
+
+
+def compare_refs():
+    return [
+        OutputRef(node_id="a", filename="a_output", data_type="raster"),
+        OutputRef(node_id="b", filename="b_output", data_type="raster"),
+        OutputRef(node_id="compare", filename="d_output", data_type="raster"),
+    ]
+
+
+class TestADifferenceAndTheMapAfterIt:
+    """A Compare Scenarios node in Difference draws no map: an Autark map after
+    it draws the difference (#662). A pinned Compare Scenarios node shows its
+    own output, its chart, its table or the sentence that sends its map to an
+    Autark node, so that output travels; only a map on the page asks
+    ``/raster`` for the difference's raster."""
+
+    @staticmethod
+    def _build(spec):
+        asked = []
+
+        def fetch_raster(filename, part):
+            asked.append((filename, part))
+            return served()
+
+        payload = build_dashboard_payload(
+            spec=spec,
+            output_refs=compare_refs(),
+            fetch_envelope=lambda name: DIFFERENCE_ENVELOPE,
+            fetch_raster=fetch_raster,
+        )
+        return payload.to_dict(), asked
+
+    def test_a_pinned_compare_node_carries_its_difference_but_no_raster(self):
+        body, asked = self._build(compare_spec(compare_pinned=True))
+
+        assert body["outputs"] == {"d_output": DIFFERENCE_ENVELOPE}
+        assert [ref["node_id"] for ref in body["outputRefs"]] == ["compare"]
+        assert asked == [], "the page carries a raster for a difference no map on it draws"
+        assert body["rasters"] == []
+
+    def test_a_map_pinned_after_a_compare_node_carries_the_difference_and_its_raster(self):
+        spec = compare_spec(map_pinned=True)
+        body, asked = self._build(spec)
+
+        assert dashboard_source_node_ids(spec) == {"compare"}
+        assert body["outputs"] == {"d_output": DIFFERENCE_ENVELOPE}
+        assert asked == [("d_output", None)]
+        assert [(r["filename"], r["part"], r["status"]) for r in body["rasters"]] == [("d_output", None, 200)]
+
+    def test_a_compare_node_pinned_beside_its_map_carries_one_raster_for_the_map(self):
+        body, asked = self._build(compare_spec(compare_pinned=True, map_pinned=True))
+
+        assert list(body["outputs"]) == ["d_output"]
+        assert asked == [("d_output", None)]
+        assert len(body["rasters"]) == 1
+
+
 class TestSizeLimit:
     def _spec(self):
         return spec_of(
