@@ -384,9 +384,9 @@ output dataset** toggle, settings, about, pin, comments, **Minimize** and delete
 Code and specs sit in a gray box, and a code node's output is below its code.
 
 Drag a node's bottom-right corner to resize it. For viewers of a shared dataflow,
-nodes keep their size and have no delete. A minimized node is a small chip; click it
-to open the node again. Double-click a node where you would drag it, such as its
-header, to zoom the view onto it.
+nodes keep their size and have no delete. A minimized node is a small chip, and a
+save keeps it one; click it to open the node again. Double-click a node where you
+would drag it, such as its header, to zoom the view onto it.
 
 ## Running a dataflow
 
