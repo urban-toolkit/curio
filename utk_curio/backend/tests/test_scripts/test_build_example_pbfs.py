@@ -449,19 +449,35 @@ def test_every_committed_extract_is_the_scripts(name):
     ), "cutting the extract again at its box changes it"
 
 
-def test_a_box_spec_loads_the_box_its_extract_is_cut_at():
+def test_a_box_spec_loads_the_box_its_extract_is_cut_at_or_one_inside_it():
     """A shipped spec whose area is a box (``queryArea.bbox``: west, south,
     east, north) loads the box its extract is cut at, the box the extract's
-    header records. WeatherRouting's loader is one: SCOUT's routing box."""
+    header records, or a box inside it, so the extract holds every feature
+    the load keeps. WeatherRouting's loader loads SCOUT's routing box, its
+    extract's own. The park shade test dataflow's loader loads two boxes of
+    Lower Manhattan's extract: its parks' box, and the box of the buildings
+    around them, which reaches the extract's edge."""
     boxes = [(dataflow, node_id, extract, area["bbox"])
              for dataflow, node_id, extract, area in PBF_LOADS if "bbox" in area]
 
     assert [(dataflow, extract) for dataflow, _node_id, extract, _bbox in boxes] == [
         ("dataflows/WeatherRouting.json", "docs/examples/data/chicago_downtown.osm.pbf"),
+        ("dataflows/lower-manhattan-park-shade.json", "docs/examples/data/lower_mnt.osm.pbf"),
+        ("dataflows/lower-manhattan-park-shade.json", "docs/examples/data/lower_mnt.osm.pbf"),
     ]
     for dataflow, node_id, extract, (west, south, east, north) in boxes:
-        assert read_pbf(REPO_ROOT / extract).box == pytest.approx((south, west, north, east), abs=1e-7), (
-            f"{dataflow} ({node_id}) loads the box {[west, south, east, north]}, not the box {extract} is cut at"
+        cut = read_pbf(REPO_ROOT / extract).box
+        if dataflow == "dataflows/WeatherRouting.json":
+            assert cut == pytest.approx((south, west, north, east), abs=1e-7), (
+                f"{dataflow} ({node_id}) loads the box {[west, south, east, north]}, not the box {extract} is cut at"
+            )
+            continue
+        cut_south, cut_west, cut_north, cut_east = cut
+        inside = (cut_west - 1e-7 <= west < east <= cut_east + 1e-7
+                  and cut_south - 1e-7 <= south < north <= cut_north + 1e-7)
+        assert inside, (
+            f"{dataflow} ({node_id}) loads the box {[west, south, east, north]}, "
+            f"outside the box {extract} is cut at, {cut}"
         )
 
 
