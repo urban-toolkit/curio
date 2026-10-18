@@ -498,8 +498,8 @@ def test_utci_computes_as_the_exec_user():
 
 
 #: ``scout.raster-conversion@1``'s modules, in the image. The stack's
-#: ``--with-examples`` boot installs its libraries: a shipped test dataflow
-#: (``BuildingRasters.json``) declares it.
+#: ``--with-examples`` boot installs its libraries: shipped dataflows (example
+#: 24 among them) declare it.
 RASTER_CONVERSION_SOURCES = LAUNCH_DIR + "/packages/scout.raster-conversion@1/sources"
 
 
