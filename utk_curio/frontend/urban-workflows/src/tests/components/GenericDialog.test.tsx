@@ -1,7 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { GenericDialog } from '../../components/GenericDialog';
-import { useDialogContext } from '../../providers/DialogProvider';
 
 // Mock the useDialogContext hook
 const mockUnsetDialog = jest.fn();
