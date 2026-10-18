@@ -1,7 +1,7 @@
 /**
  * The Compare Scenarios node's What differs tab (#662): each lever that
  * differs between the compared scenarios, with the widget values and the code
- * lines that changed, an Edit Features node's edits, and the levers only some
+ * lines that changed, an Interaction node's edits, and the levers only some
  * of them have.
  */
 import React from "react";

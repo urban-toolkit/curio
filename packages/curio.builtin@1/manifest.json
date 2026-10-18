@@ -510,13 +510,13 @@
         "nodeHeight": 460,
         "nodeWidth": 560
       },
-      "description": "Removes features, or changes them, by hand. Connect a layer, or the layers an Autark node hands on, and pick the layer to edit and the column that identifies a feature: osm_id or building_id, or another column whose values differ in every feature. A layer with no such column is refused. Double-click features on its map to pick them, then Remove them, Set a column to a value on them, or Restore them as the input has them. Its edits are a list, applied in order by that column, never by a feature's place, and its output is the edited layer, with the other layers as they came. A building's parts share its building_id, so an edit by building_id applies to the whole building. Compare Scenarios lists the edits in its What differs tab.",
+      "description": "Removes features, or changes them, by hand or by a condition. Connect a layer, or the layers an Autark node hands on, and pick the layer to edit and the column that identifies a feature: osm_id or building_id, or another column whose values differ in every feature. A layer with no such column is refused. Double-click features on its map to pick them, then Remove them (Delete), raise or lower a number such as height (the up and down arrows), scale it, Set a column to a value, type a new value into the picked features' table, or Restore them as the input has them. Or pick features by a condition such as height > 100, and do any of these to all of them, including writing a column computed by an expression such as levels * 3.2. Its edits are a log, applied in order by that column, never by a feature's place; each can be switched off, undone or deleted. Its output is the edited layer, with the other layers as they came, and Update results runs the nodes below it again. A building's parts share its building_id, so an edit by building_id applies to the whole building. Compare Scenarios lists the edits in its What differs tab.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
       "hasGrammar": false,
       "hasWidgets": false,
-      "iconRef": "fa-solid:eraser",
+      "iconRef": "fa-solid:hand-pointer",
       "id": "edit-features",
       "inputPorts": [
         {
@@ -524,7 +524,7 @@
           "types": ["GEODATAFRAME", "DATAFRAME", "LIST", "JSON"]
         }
       ],
-      "label": "Edit Features",
+      "label": "Interaction",
       "behavior": "edit-features",
       "outputPorts": [
         {

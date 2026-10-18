@@ -1,12 +1,13 @@
-"""The Edit Features node's step (#662), ``curio_edit_features``.
+"""The Interaction node's step (#662; its type is still
+``curio.builtin/edit-features``), ``curio_edit_features``.
 
-The node keeps a list of edits made on features picked on its map, and its
-code hands the list to this step with the node's input, the column that
-identifies a feature and the layer to edit. The step applies the edits by that
-column, never by a feature's place, reports ids no feature has, and hands on
-a new value: an Autark node's layers as the envelope ``persistLayersToBackend``
-stores, with every feature, property and layer it did not edit as it came, or
-a table as a table.
+The node keeps a log of edits made on features picked on its map or by a
+condition, and its code hands the log to this step with the node's input, the
+column that identifies a feature and the layer to edit. The step applies the
+edits by that column, never by a feature's place, reports ids no feature has,
+and hands on a new value: an Autark node's layers as the envelope
+``persistLayersToBackend`` stores, with every feature, property and layer it
+did not edit as it came, or a table as a table.
 
 Every test imports the module itself, so a checkout without it fails test by
 test rather than at collection.
@@ -27,6 +28,9 @@ from shapely.geometry import Point, box
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CASES = REPO_ROOT / "utk_curio/frontend/urban-workflows/src/utils/editFeatures/editFeaturesCode.cases.json"
+#: The expressions and edit logs this step shares with the node's table in the
+#: browser (``utils/editFeatures/editExpr.ts`` and ``applyEdits.ts``, in Jest).
+EXPR_CASES = REPO_ROOT / "utk_curio/frontend/urban-workflows/src/utils/editFeatures/editExpr.cases.json"
 CRS = {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::3395"}}
 
 
@@ -235,14 +239,43 @@ class TestRefusals:
         with pytest.raises(ValueError, match=r"names no column that identifies a feature"):
             _edit(_records(), REMOVE_1, layer="table_osm_buildings")
 
-    @pytest.mark.parametrize("edit", [{"op": "delete", "ids": [1]}, {"op": "remove", "ids": []}, {"op": "set", "ids": [1], "value": 2}, "remove 1"])
+    @pytest.mark.parametrize("edit", [
+        {"op": "delete", "ids": [1]},
+        {"op": "remove", "ids": []},
+        {"op": "set", "ids": [1], "value": 2},
+        "remove 1",
+        {"op": "remove", "ids": [1], "where": "height > 1"},
+        {"op": "remove", "where": "  "},
+        {"op": "offset", "ids": [1], "value": 3},
+        {"op": "expr", "ids": [1], "value": "height * 2"},
+    ])
     def test_an_edit_the_node_does_not_make_is_refused(self, edit):
-        with pytest.raises(ValueError, match=r"Edit Features: edit 0 "):
+        with pytest.raises(ValueError, match=r"Interaction: edit 0 "):
             _edit(_records(), [edit], **BUILDINGS)
 
     def test_no_input_says_so(self):
-        with pytest.raises(ValueError, match=r"Edit Features has no input"):
+        with pytest.raises(ValueError, match=r"Interaction has no input"):
             _edit(None, REMOVE_1, **BUILDINGS)
+
+    def test_a_condition_or_an_expression_that_is_not_one_is_refused_before_anything_runs(self):
+        with pytest.raises(ValueError, match=r"Interaction: edit 0: "):
+            _edit(_records(), [{"op": "remove", "where": "height >"}], **BUILDINGS)
+        with pytest.raises(ValueError, match=r"Interaction: edit 1: "):
+            _edit(_records(), [REMOVE_1[0], {"op": "expr", "ids": [1], "column": "h", "value": "open('x')"}], **BUILDINGS)
+
+    @pytest.mark.parametrize("value", ["x", None, True, float("nan")])
+    def test_a_scale_or_an_offset_by_what_is_not_a_number_is_refused(self, value):
+        for op in ("scale", "offset"):
+            with pytest.raises(ValueError, match=r"Interaction: edit 0 .*not a number"):
+                _edit(_records(), [{"op": op, "ids": [1], "column": "height", "value": value}], **BUILDINGS)
+
+    def test_an_entry_switched_off_is_never_checked_or_applied(self, capsys):
+        out = _edit(_records(), [
+            {"op": "remove", "where": "height >", "enabled": False},
+            {"op": "remove", "ids": [2], "label": "The tower"},
+        ], **BUILDINGS)
+        assert _ids(out["data"][1]["data"]) == [1, 1, 3]
+        assert "1 removed" in capsys.readouterr().out
 
 
 class TestNamedTables:
@@ -296,6 +329,115 @@ def test_the_code_the_node_writes_runs_its_edits(case):
     buildings = out if isinstance(out, list) else out["data"]
     fc = buildings[1]["geojson"] if isinstance(out, list) else buildings[1]["data"]
     assert _ids(fc) == case["kept"]
+
+
+def _expr_cases(part):
+    """One part of ``editExpr.cases.json``; read at collection, so a checkout
+    without it fails these tests rather than the whole module."""
+    try:
+        return json.loads(EXPR_CASES.read_text(encoding="utf-8"))[part]
+    except FileNotFoundError:
+        return [None]
+
+
+@pytest.mark.parametrize("case", _expr_cases("expressions"), ids=lambda c: c["expr"] if c else "missing")
+def test_an_expression_reads_a_feature_as_the_nodes_table_does(case):
+    from utk_curio.sandbox.util import edit_expr
+
+    assert case is not None, "editExpr.cases.json is missing"
+    value = edit_expr.evaluate(edit_expr.parse(case["expr"]), case["row"])
+    assert value == case["value"], (case["expr"], value)
+    # Booleans stay booleans, never 1 or 0, and nothing else is one.
+    assert isinstance(value, bool) == isinstance(case["value"], bool), (case["expr"], value)
+
+
+@pytest.mark.parametrize("text", _expr_cases("refusals"), ids=lambda t: repr(t)[:40])
+def test_what_is_not_an_expression_is_refused(text):
+    from utk_curio.sandbox.util import edit_expr
+
+    assert text is not None, "editExpr.cases.json is missing"
+    with pytest.raises(edit_expr.ExprError):
+        edit_expr.parse(text)
+
+
+def test_an_expression_is_read_by_its_own_parser_never_by_eval():
+    import ast
+
+    tree = ast.parse((REPO_ROOT / "utk_curio/sandbox/util/edit_expr.py").read_text(encoding="utf-8"))
+    called = {node.func.id for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)}
+    assert not called & {"eval", "exec", "compile", "__import__"}, called
+
+
+@pytest.mark.parametrize("case", _expr_cases("edits"), ids=lambda c: c["name"] if c else "missing")
+def test_an_edit_log_is_applied_as_the_nodes_table_applies_it(case, capsys):
+    assert case is not None, "editExpr.cases.json is missing"
+    fc = {"type": "FeatureCollection", "features": [
+        {"type": "Feature", "geometry": {"type": "Point", "coordinates": [i, 0]}, "properties": properties}
+        for i, properties in enumerate(case["features"])
+    ]}
+    out = _edit({"dataType": "geodataframe", "data": fc}, case["edits"], key=case["key"])
+    assert [feature["properties"] for feature in out["data"]["features"]] == case["expected"]
+    said = capsys.readouterr().out
+    words = {"remove": "removed", "set": "changed", "restore": "restored"}
+    for op, count in case["counts"].items():
+        if count:
+            assert f"{count} {words[op]}" in said, said
+        else:
+            assert f" {words[op]}" not in said, said
+
+
+class TestTablesTakeTheNewEdits:
+    """A table (a DataFrame or a GeoDataFrame) takes conditions, numbers and
+    expressions too, and keeps its columns' types."""
+
+    def _frame(self):
+        frame = gpd.GeoDataFrame(
+            {"osm_id": [10, 11, 12], "height": [100.0, 40.0, 70.0], "levels": [30, 12, 20], "kind": ["tower", "house", "tower"]},
+            geometry=[Point(0, 0), Point(1, 1), Point(2, 2)],
+            crs=3395,
+        )
+        frame.__dict__["metadata"] = {"name": "table_osm_buildings", "layerType": "buildings"}
+        return frame
+
+    def test_a_scale_where_a_condition_holds_keeps_a_column_of_floats(self, capsys):
+        table = _edit(self._frame(), [{"op": "scale", "where": "height > 50", "column": "height", "value": 0.5}], key="osm_id")
+        assert table["height"].tolist() == [50.0, 40.0, 35.0]
+        assert str(table["height"].dtype).startswith("float")
+        assert table.metadata == {"name": "table_osm_buildings", "layerType": "buildings"}
+        assert "2 changed" in capsys.readouterr().out
+
+    def test_an_offset_by_a_whole_number_keeps_a_column_of_integers(self):
+        table = _edit(self._frame(), [{"op": "offset", "ids": [11], "column": "levels", "value": 3}], key="osm_id")
+        assert table["levels"].tolist() == [30, 15, 20]
+        assert str(table["levels"].dtype).startswith("int")
+
+    def test_an_expression_writes_a_new_column_from_each_row(self):
+        table = _edit(self._frame(), [
+            {"op": "expr", "where": "kind == 'tower'", "column": "floor_height", "value": "round(height / levels, 2)"},
+        ], key="osm_id")
+        assert table["floor_height"].tolist()[0] == 3.33
+        assert table["floor_height"].tolist()[2] == 3.5
+        assert table["floor_height"].isna().tolist() == [False, True, False]
+
+    def test_a_condition_reads_the_rows_as_the_edits_before_left_them_and_a_restore_reads_the_input(self):
+        table = _edit(self._frame(), [
+            {"op": "remove", "where": "kind == 'tower'"},
+            {"op": "offset", "where": "height > 0", "column": "height", "value": 1},
+            {"op": "restore", "where": "levels >= 30"},
+        ], key="osm_id")
+        # 10 comes back as the input has it; 12 stays removed; 11 was raised.
+        assert table["osm_id"].tolist() == [10, 11]
+        assert table["height"].tolist() == [100.0, 41.0]
+
+    def test_an_entry_switched_off_is_skipped_on_a_table(self):
+        table = _edit(self._frame(), [{"op": "remove", "ids": [10], "enabled": False}], key="osm_id")
+        assert table["osm_id"].tolist() == [10, 11, 12]
+
+    def test_a_number_edit_skips_a_row_that_holds_no_number(self):
+        frame = gpd.GeoDataFrame({"osm_id": [10, 11], "height": [1.0, None]}, geometry=[Point(0, 0), Point(1, 1)], crs=3395)
+        table = _edit(frame, [{"op": "scale", "ids": [10, 11], "column": "height", "value": 2}], key="osm_id")
+        assert table["height"].tolist()[0] == 2.0
+        assert table["height"].isna().tolist() == [False, True]
 
 
 class ExecAppliesTheEditsTestCase(unittest.TestCase):

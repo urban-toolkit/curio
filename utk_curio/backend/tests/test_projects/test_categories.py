@@ -4,7 +4,8 @@
 shipped dataflows (2026-09-30), and the Scenarios, FloodScenarios,
 ScoutShadows, WeatherRouting and NetCDF test dataflows and
 example 24 placed by the same rules (#662, 2026-10-05), example 25 (#576) and
-example 26 (#819). The automatic
+example 26 (#819), with the computed ``SCOUT`` tag on the five SCOUT dataflows
+(2026-10-17). The automatic
 sections must reproduce it from
 the files alone, and the hand-set ones live in the files themselves.
 """
@@ -117,6 +118,67 @@ def test_derive_reads_node_types_imports_and_datasets():
 
 def test_an_empty_dataflow_has_no_automatic_categories():
     assert derive({"dataflow": {"nodes": [], "edges": []}}) == {"tags": [], "data_type": []}
+
+
+# ---------------------------------------------------------------------------
+# The SCOUT tag: a node or model from a SCOUT package, or a SCOUT dataset
+# ---------------------------------------------------------------------------
+
+def _tags(nodes: list[dict], datasets: list[dict] | None = None) -> list[str]:
+    """The automatic tags of a dataflow of *nodes*, without a dataset lookup."""
+    dataflow = {"nodes": nodes, "edges": []}
+    if datasets is not None:
+        dataflow["datasets"] = datasets
+    return derive({"dataflow": dataflow})["tags"]
+
+
+def test_a_node_from_a_scout_package_tags_the_dataflow_scout():
+    node = {"id": "a", "type": "scout.raster-conversion/rasterize-buildings@1", "content": ""}
+    assert _tags([node]) == ["SCOUT"]
+
+
+def test_a_node_from_a_scout_model_package_tags_the_dataflow_scout():
+    node = {"id": "a", "type": "model.scout.deep-umbra/accumulated-shadow@1", "content": ""}
+    assert _tags([node]) == ["SCOUT"]
+
+
+def test_a_scout_model_loaded_in_a_code_node_tags_the_dataflow_scout():
+    node = {
+        "id": "a",
+        "type": "curio.builtin/computation-analysis@1",
+        "content": 'model = curio_load_model("model.scout.weather-gnn")\nreturn model',
+    }
+    assert _tags([node]) == ["SCOUT"]
+
+
+@pytest.mark.parametrize("content, datasets", [
+    ('gdf = curio_load_data("data.scout.loop-buildings")\nreturn gdf', None),
+    ('path = curio_data_path("data.scout.wrf-rain")\nreturn path', None),
+    ("", [{"datasetId": "data.scout.flood-nbs-classes", "dirName": "data.scout.flood-nbs-classes@1"}]),
+], ids=["loaded-in-code", "path-in-code", "in-the-dataflow-datasets"])
+def test_a_scout_dataset_alone_tags_the_dataflow_scout(content, datasets):
+    """FloodScenarios and NetCDF have no SCOUT node, only SCOUT's datasets."""
+    node = {"id": "a", "type": "curio.builtin/data-loading@1", "content": content}
+    assert _tags([node], datasets) == ["SCOUT"]
+
+
+def test_a_dataflow_that_only_mentions_scout_is_not_tagged_scout():
+    """Comments, links and look-alike package, model and dataset ids."""
+    code = (
+        "# SCOUT's buildings, as in https://github.com/urban-toolkit/scout.\n"
+        'gdf = curio_load_data("data.utk.chicago-boundary")\n'
+        'rows = curio_load_data("data.scouting.counts")\n'
+        'model = curio_load_model("model.scouting.shade")\n'
+        "return gdf"
+    )
+    nodes = [
+        {"id": "a", "type": "curio.builtin/data-loading@1", "content": code},
+        {"id": "b", "type": "scouting.tools/count@1", "content": ""},
+        {"id": "c", "type": "model.scouting.shade/estimate@1", "content": ""},
+        {"id": "d", "type": "curio.scout/route@1", "content": ""},
+    ]
+    datasets = [{"dirName": "data.scouting.counts@1"}, {"datasetId": "data.utk.scout-towers"}]
+    assert _tags(nodes, datasets) == []
 
 
 # ---------------------------------------------------------------------------

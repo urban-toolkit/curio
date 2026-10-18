@@ -80,6 +80,17 @@ def test_builtin_package_every_template_has_behavior_and_icon(builtin_package_di
         )
 
 
+def test_the_edit_features_template_is_the_interaction_node(builtin_package_dir: Path):
+    """The node is called Interaction, with a hand icon; its template id and
+    behavior stay ``edit-features``, so saved dataflows load as they are."""
+    manifest = load_package_manifest(builtin_package_dir)
+    (template,) = [t for t in manifest.templates if t.template_id == "edit-features"]
+    assert template.label == "Interaction"
+    assert template.icon_ref == "fa-solid:hand-pointer"
+    assert template.behavior == "edit-features"
+    assert not any(t.label == "Edit Features" for t in manifest.templates)
+
+
 def test_the_raster_calculator_gives_a_raster_or_a_table_of_statistics(builtin_package_dir: Path):
     """One Raster Calculator: its operations work cell by cell and give a
     raster, or take a raster's statistics and give a table of one row."""
