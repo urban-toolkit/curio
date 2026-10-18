@@ -15,9 +15,10 @@ Two different listings are involved, and only one of them is forgiving:
   ``DatasetsPaletteDropdown.tsx``). ``registry.list_items()`` is skipped, so
   there is no hub row to merge with, and the only row is the placeholder
   ``InstalledDatasetRepository.list_items`` builds in its ``except`` branch.
-  That row still passes ``isUserInstalledDataset`` - the placeholder sets
-  ``installed=True`` - so it renders, but with ``title`` falling back to the raw
-  ``dirName``, ``format`` defaulting to ``csv``, and no counts.
+  That row still passes the palette's ``isInThisDataflow`` filter (the
+  placeholder sets ``installed=True``), so it renders, but with ``title``
+  falling back to the raw ``dirName``, ``format`` defaulting to ``csv``, and no
+  counts.
 
 So the failure this guards against is not an error anywhere. It is a palette
 full of rows reading ``data.utk.chicago-boundary@1 / csv / (nothing)``.

@@ -345,11 +345,10 @@ def test_export_from_the_drawer_in_dataflow_tab(
 ):
     """The drawer's own export control, distinct from the palette accordion's.
 
-    ``MyPackagesList`` has always rendered an export button when handed a
-    handler, but ``NodeCatalogDrawer`` never passed one - so the affordance was
-    dead code and the palette was the only route to an archive. Now that it is
-    wired, this is the test that keeps it wired: nothing else would notice the
-    prop being dropped again, because a missing button is not an error.
+    In the drawer, Export is the header action of the package's details modal
+    (``PackageDetailModal``), opened from the In project tab's card. This is
+    the test that keeps it wired: nothing else would notice the action being
+    dropped, because a missing button is not an error.
 
     Deliberately a second test rather than an extra leg on the round-trip above:
     it asserts the *same* archive is reachable from a *different* surface, so
