@@ -19,7 +19,6 @@ type GrammarEditorProps = {
     output: ICodeData;
     nodeId: string;
     applyGrammar?: any;
-    schema: any;
     replacedCode: string; // code with all marks resolved
     sendCodeToWidgets: any;
     replacedCodeDirty: boolean;
@@ -41,7 +40,6 @@ export default function GrammarEditor({
     output,
     nodeId,
     applyGrammar,
-    schema,
     replacedCode,
     sendCodeToWidgets,
     replacedCodeDirty,

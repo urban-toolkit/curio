@@ -24,7 +24,7 @@ function interactionPeers(edges: readonly any[], poolId: string): Set<string> {
   return peers;
 }
 
-export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
+export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
   // Which empty state to show turns on whether anything is wired in, which
   // only the graph knows (#224).
   const poolEdges = useEdges();

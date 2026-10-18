@@ -9,26 +9,6 @@ export const formatDate = (date: Date) => {
     return `${month} ${day} ${year} ${hours}:${minutes}:${seconds}`;
 };
 
-export const getType = (inputs: any[]): string[] => {
-    let typesInput: string[] = [];
-
-    for (const input of inputs) {
-      let parsedInput = input;
-
-      if (typeof input === "string") {
-        parsedInput = JSON.parse(parsedInput);
-      }
-
-      if (parsedInput.dataType === "outputs") {
-        typesInput = typesInput.concat(getType(parsedInput.data));
-      } else {
-        typesInput.push(parsedInput.dataType);
-      }
-    }
-
-    return typesInput;
-};
-
 export const mapTypes = (typesList: string[]) => {
     let mapTypes: any = {
         "DATAFRAME": 0,

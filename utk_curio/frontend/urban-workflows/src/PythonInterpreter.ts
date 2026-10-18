@@ -1,4 +1,3 @@
-import { NodeType } from "./constants";
 import { NodeTemplateId } from "./registry/types";
 import { recordExecProvenance } from "./utils/executionResult";
 import { executionInputRef } from "./utils/flowOutputRef";

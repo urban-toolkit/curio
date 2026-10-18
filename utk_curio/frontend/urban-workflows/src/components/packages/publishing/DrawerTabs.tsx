@@ -18,8 +18,8 @@ export interface DrawerTabsProps {
  * "Updates" was the worse of the two: it carried a real accent count, so it
  * invited a click that then did nothing at all.
  *
- * The per-card "update available" line is unaffected - `MyPackagesList` and
- * `PackageCard` compute that themselves from the catalog row.
+ * The per-card "update available" line is unaffected - `PackageCard` computes
+ * that itself from the catalog row.
  */
 export const DrawerTabs: React.FC<DrawerTabsProps> = ({
   tab,

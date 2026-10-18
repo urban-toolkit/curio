@@ -1419,7 +1419,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
 
     const loadProject = useCallback(async (id: string) => {
         const result = await projectsApi.get(id);
-        const { project, spec, outputs } = result;
+        const { project, outputs } = result;
 
         // Pin the ref here rather than letting the next render carry it over,
         // for the same reason the create branch of ``saveCurrentProject`` does:

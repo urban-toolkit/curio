@@ -737,11 +737,6 @@ export function sanitizePublisherLabel(raw: string | null | undefined): string {
   return t.replace(/\bdata\s*hub\b/gi, "Imported");
 }
 
-/** Subtitle under the title on dataset cards / browse rows — only Imported vs Computed. */
-export function datasetListSourceCaption(dataset: DatasetCatalogItem): string {
-  return datasetProvenanceLabel(dataset.origin, dataset.format);
-}
-
 export const DATASET_FORMAT_LABEL: Record<DatasetFormat, string> = {
   csv: "CSV",
   geojson: "GeoJSON",

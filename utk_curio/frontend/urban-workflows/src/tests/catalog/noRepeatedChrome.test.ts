@@ -54,17 +54,6 @@ describe("no catalog repeats its own tab label as a heading", () => {
     const css = read("components/packages/publishing/CatalogDrawerShell.module.css");
     expect(css).not.toMatch(/^\.sectionLabel \{/m);
   });
-
-  test("the per-list headings survive — they carry a count, not a repeat", () => {
-    // "Your datasets · N in project" is not a restatement of the tab; it adds
-    // the count. Removing the tab-label headings must not have taken it too.
-    expect(read("components/datasets/catalog/InstalledDatasetsList.tsx")).toContain(
-      "in project",
-    );
-    expect(read("components/packages/publishing/MyPackagesList.tsx")).toContain(
-      "in project",
-    );
-  });
 });
 
 describe("the unsaved-dataflow banner is gone from every catalog", () => {
@@ -154,9 +143,9 @@ describe("the Node catalog offers only tabs that do something", () => {
     const src = read("components/packages/publishing/NodeCatalogDrawer.tsx");
     expect(src).not.toContain('tab === "featured"');
     expect(src).not.toContain('tab === "updates"');
-    // The per-card "update available" line is computed separately and stays.
-    expect(read("components/packages/publishing/MyPackagesList.tsx")).toContain(
-      "update available",
+    // The per-card update chip is computed separately and stays.
+    expect(read("components/packages/publishing/PackageCard.tsx")).toContain(
+      "Update to",
     );
   });
 });
@@ -197,7 +186,6 @@ describe("the publish pill says what kind of thing it is publishing", () => {
   // describing it has to be true.
   const DATASET_SURFACES = [
     "components/datasets/catalog/DatasetCard.tsx",
-    "components/datasets/catalog/InstalledDatasetsList.tsx",
     "pages/dataCatalog/DataCatalogBrowseCard.tsx",
     "pages/dataCatalog/DataCatalogBrowseDrawer.tsx",
   ];

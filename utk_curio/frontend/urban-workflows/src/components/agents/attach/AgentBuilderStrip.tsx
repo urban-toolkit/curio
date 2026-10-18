@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from "react";
 import type { AgentAttachment, AgentRemedy, AgentSolveWave } from "../../../services/agents";
-import { AddKeyAction } from "../../connectionKeys/AddKeyAction";
 import { LlmConfigAction, remedyOf } from "../../llmConfigs/LlmConfigAction";
-import { OpenDatasetFinderAction } from "./OpenDatasetFinderAction";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import styles from "./AgentBuilderStrip.module.css";
 import { BatchActions } from "./builderStrip/BatchActions";

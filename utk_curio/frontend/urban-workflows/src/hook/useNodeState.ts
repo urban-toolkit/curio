@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { NodeType } from '../constants';
 import { NodeTemplateId } from '../registry/types';
 import { ICodeDataContent, MissingModuleNotice } from '../types';
 import { Starter, useStarterContext } from '../providers/StarterProvider';

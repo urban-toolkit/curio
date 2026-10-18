@@ -77,7 +77,7 @@ export const TabularPreviewTable: React.FC<TabularPreviewTableProps> = ({
           {columns.length > 0 ? (
             <TableHead>
               <TableRow>
-                {columns.map((column, index) => (
+                {columns.map((column) => (
                   <TableCell
                     key={`${rowKeyPrefix}_header_${column}`}
                     align="right"

@@ -30,7 +30,7 @@ import {
   LineageUsageType,
 } from "./datasetLineageTypes";
 
-/** Minimal shape of a canvas node the resolver needs (subset of ReactFlow INode). */
+/** Minimal shape of a canvas node the resolver needs (subset of a React Flow node). */
 import { datasetIdsInCode } from "../datasetCatalog/datasetLoaderSnippets";
 import { nodeDisplayLabel } from "../../utils/nodeDisplayLabel";
 

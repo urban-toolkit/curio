@@ -36,8 +36,6 @@ export const READ_ONLY_NOTICE =
 export const LOAD_FAILED_TITLE = "This dashboard could not be opened.";
 export const LOAD_FAILED_BODY =
   "It may have been deleted, or the link may not be shared with you.";
-export const STALE_TILES_HINT =
-  "Tiles render from the outputs saved to the Data Catalog. Run the dataflow and save it to refresh them.";
 
 /**
  * A dataflow's pinned nodes, as a page of their own.

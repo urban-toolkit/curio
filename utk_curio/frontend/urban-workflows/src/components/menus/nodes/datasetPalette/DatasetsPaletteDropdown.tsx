@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useEffect, useMemo, useRef } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faChevronLeft,
@@ -14,7 +14,6 @@ import {
   DATASET_CATALOG_REFRESH_EVENT,
   groupDatasetsForPalette,
   isInThisDataflow,
-  isUserInstalledDataset,
   useDatasetCatalog,
   prefetchDatasetCatalog,
 } from "../../../../services/datasetCatalog";

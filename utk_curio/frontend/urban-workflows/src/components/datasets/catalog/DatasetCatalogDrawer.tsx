@@ -1,11 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { DrawerFooter } from "../../packages/publishing/DrawerFooter";
 import { DrawerHeader } from "../../packages/publishing/DrawerHeader";
 import tabStyles from "../../packages/publishing/DrawerTabs.module.css";
 import {
   DATASET_IMPORT_ACCEPT,
-  DatasetSortMode,
   isInThisDataflow,
 } from "../../../services/datasetCatalog";
 import { drawerPendingInstalls } from "../../../services/datasetCatalog/pendingInstallView";

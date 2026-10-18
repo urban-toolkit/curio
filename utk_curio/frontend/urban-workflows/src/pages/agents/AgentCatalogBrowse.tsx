@@ -73,7 +73,6 @@ export const AgentCatalogBrowse: React.FC = () => {
     categories,
     allCount,
     importedCount,
-    selectedCoord,
     setSelectedCoord,
     selectedAgent,
     onImport,

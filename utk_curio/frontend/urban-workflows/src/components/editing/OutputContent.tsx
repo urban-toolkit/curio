@@ -12,9 +12,6 @@ function OutputContent({ output }: { output: any; }) {
     useEffect(() => {
         // If error, show error tab with friendly and traceback
         if (output?.code === "error") {
-        const match = output.content.match(/(\w+Error):/);
-        // let errorType = match ? match[1] : null;
-        // let friendlyMessage = errorType ? (COMMON_ERRORS[errorType] || "❗ An unknown error occurred.") : null;
         setTabData([
             {
             title: "Output",

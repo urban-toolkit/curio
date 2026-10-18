@@ -86,7 +86,7 @@ describe("useAgentAttachments", () => {
   });
 
   it("reloads on the dock-refresh event", async () => {
-    const { result } = renderHook(() => useAgentAttachments("p1"));
+    renderHook(() => useAgentAttachments("p1"));
     await waitFor(() => expect(api.listAttachments).toHaveBeenCalledTimes(1));
     api.listAttachments.mockClear();
     act(() => {
