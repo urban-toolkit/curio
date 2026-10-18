@@ -6,6 +6,7 @@ isolation one matters most: guessing another user's job id gets nothing.
 
 from __future__ import annotations
 
+import threading
 import time
 
 import pytest
@@ -178,3 +179,45 @@ class TestTheWorkerDoesNotShareTheRequestsSession:
             "the worker is using the request thread's User instance - two "
             "threads, one session, one connection"
         )
+
+
+class TestATestsDownloadsEndBeforeItsDatabase:
+    """The ``app`` fixture drops the database only once the test's download
+    workers have ended (#971).
+
+    The worker test above passed and then errored at teardown with "database
+    table is locked": its spy lets the real download go on, so the worker was
+    still querying when ``drop_all`` ran. The in-memory database hands every
+    thread one connection, and SQLite refuses a DROP while another statement
+    on that connection is unfinished.
+
+    Here a worker holds such a statement when its test ends, so what this pins
+    happens at teardown: the fixture must cancel the job and wait for the
+    worker before it drops the database, or the teardown errors as it did.
+    """
+
+    def test_a_worker_reading_when_its_test_ends_is_stopped_first(self, app, user_and_token):
+        from utk_curio.backend.extensions import db
+
+        user, _token = user_and_token
+        job = J.jobs.create(str(user.id), "source.a.b@1", "r1")
+        holding = threading.Event()
+
+        def _worker() -> None:
+            with app.app_context():
+                job.status = "running"
+                cursor = db.session.connection().connection.dbapi_connection.cursor()
+                try:
+                    # Three rows, one read: the statement stays unfinished.
+                    cursor.execute(
+                        "SELECT id FROM user, (SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3)"
+                    )
+                    cursor.fetchone()
+                    holding.set()
+                    job._cancel.wait(timeout=60)
+                finally:
+                    cursor.close()
+                    J.jobs.finish(job, "cancelled" if job.cancelled else "failed")
+
+        J.run_in_background(_worker)
+        assert holding.wait(timeout=30), "the worker never started reading"
