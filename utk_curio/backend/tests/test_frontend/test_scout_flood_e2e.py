@@ -208,9 +208,22 @@ def _map_after(spec: dict, node_id: str) -> str:
     return found[0]
 
 
-def _assert_chart_drew(page, node_id: str, preset: str = "bar") -> None:
+#: The opacity Vega-Lite draws points with when their values are not
+#: aggregated (``DEFAULT_REDUCED_OPACITY``, vega-lite's compile/mark/init.ts):
+#: the scatter's points are its scenario colors at 0.7 over the chart's white.
+POINT_OPACITY = 0.7
+
+
+def _over_white(color: str, opacity: float) -> str:
+    """*color* as a mark drawn at *opacity* shows it over Vega-Lite's default
+    white background."""
+    channels = (int(color[i:i + 2], 16) for i in (1, 3, 5))
+    return "#" + "".join(f"{round(opacity * channel + (1 - opacity) * 255):02x}" for channel in channels)
+
+
+def _assert_chart_drew(page, node_id: str, preset: str = "bar", opacity: float = 1.0) -> None:
     """The chart of *preset* compiled with no problem, and its canvas holds
-    both scenarios' colors."""
+    both scenarios' colors, as its marks draw them at *opacity*."""
     deadline = time.time() + 60
     state = None
     while time.time() < deadline:
@@ -221,7 +234,7 @@ def _assert_chart_drew(page, node_id: str, preset: str = "bar") -> None:
     problem = node_locator(page, node_id).locator("[data-compare-chart-problem]").all_inner_texts()
     assert state == "drawn", f"the {preset} chart's compile ended {state!r}: {problem}"
     assert_vega_canvas_rendered(page, node_id, timeout=30000)
-    colors = [COLORS["no-nbs"], COLORS["nbs"]]
+    colors = [_over_white(COLORS["no-nbs"], opacity), _over_white(COLORS["nbs"], opacity)]
     counts = None
     deadline = time.time() + 15
     while time.time() < deadline:
@@ -392,7 +405,7 @@ def test_two_flood_scenarios_are_mapped_and_charted(
     # 8. Each tract's SVI percentile against its mean depth, in both scenarios.
     scatter = compares[("tract depth", "chart")]
     frame_nodes(page, [scatter])
-    _assert_chart_drew(page, scatter, "scatter")
+    _assert_chart_drew(page, scatter, "scatter", opacity=POINT_OPACITY)
     stacked = load_artifact_as_dict(page.evaluate(_OUTPUT_ARTIFACT_JS, scatter))
     assert stacked["dataType"] == "geodataframe", stacked["dataType"]
     rows = [feature["properties"] for feature in stacked["data"]["features"]]
