@@ -144,12 +144,6 @@ the language `utk_curio/sandbox/util/edit_expr.py` describes: columns,
 numbers, texts, `true`, `false`, `null`, `+ - * / %`, comparisons, `and`,
 `or`, `not`, and `abs`, `round`, `min` and `max`.
 
-`metadata.comments` carries the node's discussion, written only when non-empty.
-Each entry is `{id, text, author, authorName, createdAt, resolved}`. The author's
-avatar is not stored, because `profile_image` may be a full data URL; `canDelete`
-is not stored either, because it is derived on read by comparing `author` to the
-current user.
-
 ### An edge
 
 `id`, `source` and `target` are required. `type` is present only on an interaction

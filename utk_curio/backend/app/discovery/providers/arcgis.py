@@ -36,6 +36,15 @@ _ITEM_RE = re.compile(r"\b([0-9a-f]{32})(?:_(\d{1,4}))?\b")
 
 _EXT = {"geojson": "geojson", "csv": "csv"}
 
+#: The attributes a search row is built from (``_row``), asked for by name.
+#: Unasked, hub.arcgis.com's v3 search sends every attribute of every row, and
+#: for a layer with many columns that is its whole field list, field
+#: statistics, layer definition and metadata: "SVI 2020 tract" at the UI's 20
+#: rows came to 2.7 MB, past the transport's 1 MiB ``MAX_METADATA_BYTES``, and
+#: the search failed (#967). Asked for these five (a JSON:API sparse
+#: fieldset), the same search is 46 KB. ``describe`` still asks for them all.
+SEARCH_FIELDS = ("name", "description", "owner", "orgName", "modified")
+
 
 #: The verify.py refinement contract: what this family is called, and
 #: whether its metadata is text rather than JSON.
@@ -90,6 +99,7 @@ class ArcgisProvider(BaseProvider):
         url = f"{self.api}?page[size]={limit}&page[number]={page}"
         if query.text.strip():
             url += f"&q={self.q(query.text.strip())}"
+        url += f"&fields[datasets]={','.join(SEARCH_FIELDS)}"
         payload = _json(self.transport.json_get(url))
         data = payload.get("data") if isinstance(payload, dict) else None
         if not isinstance(data, list):

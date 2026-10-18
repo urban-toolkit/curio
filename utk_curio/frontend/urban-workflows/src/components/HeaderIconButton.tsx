@@ -5,7 +5,7 @@ import type CSS from "csstype";
 import { useHeaderIconDragClick } from "../utils/headerIconDragClick";
 
 /**
- * A node-header control: minimize, pin, comments, delete, save-template.
+ * A node-header control: minimize, pin, delete, save-template.
  *
  * A real ``<button>`` rather than a ``role="button"`` SVG. The previous shape
  * put ``role``, ``tabIndex`` and a hand-rolled ``onKeyDown`` on the icon itself
