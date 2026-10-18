@@ -110,7 +110,7 @@ def test_arcgis_hub_still_answers_json_api():
     )
     data = payload.get("data") if isinstance(payload, dict) else None
     if not isinstance(data, list) or not data:
-        pytest.skip("Hub returned no datasets for this query today")
+        pytest.skip("ArcGIS Hub returned no datasets for this query today")
     entry = data[0]
     assert "id" in entry, "data[].id is gone - ArcgisProvider._row reads it"
     assert isinstance(entry.get("attributes"), dict), "data[].attributes is gone"

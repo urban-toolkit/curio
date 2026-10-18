@@ -32,10 +32,6 @@ network. Total — an unknown shape is never a failure.
 from __future__ import annotations
 
 from utk_curio.backend.app.agents.domain.contracts import (
-    CAUSE_EMPTY_SOURCE,
-    CAUSE_NO_INPUT_ROWS,
-    CAUSE_NO_LAYERS,
-    CAUSE_NOTHING_DRAWN,
     EMPTY_RENDER_CAUSES,
     EMPTY_RENDER_KIND,
     is_document_at_fault,

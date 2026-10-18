@@ -67,11 +67,6 @@ class ProtocolError(ValueError):
 
 INPUT_NONE = {"kind": "none"}
 
-INPUT_KINDS = frozenset({
-    "none", "null", "bool", "int", "float", "str",
-    "json", "dataframe", "geodataframe", "raster", "sequence", "mapping",
-})
-
 
 # The kinds a node output may carry. Mirrors codec.detect_kind's return values.
 # 'unknown' is deliberately absent: detect_kind returns it for objects Curio

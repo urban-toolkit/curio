@@ -56,9 +56,6 @@ DATA_SUFFIXES = {
     ".tiff": "geotiff",
 }
 
-#: A shapefile's spatial index files. The reader does not need them.
-_SHAPEFILE_INDEXES = (".sbn", ".sbx", ".qix", ".fix", ".atx", ".ain", ".aih", ".ixs", ".mxs")
-
 #: GTFS's core tables: a folder with ``stops.txt`` and one of these is a feed.
 GTFS_CORE_TABLES = ("agency.txt", "routes.txt", "trips.txt", "stop_times.txt")
 

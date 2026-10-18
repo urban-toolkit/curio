@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from utk_curio.backend.extensions import commit_with_retry, db
+from utk_curio.backend.extensions import commit_with_retry
 from utk_curio.backend.app.users.models import User
 from utk_curio.backend.app.users.schemas import (
     AuthOut,

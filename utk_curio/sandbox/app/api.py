@@ -5,13 +5,9 @@ import sys
 import geopandas as gpd
 import pandas as pd
 from utk_curio.sandbox import metrics, run_place
-from utk_curio.sandbox.app import app, cache
+from utk_curio.sandbox.app import app
 from utk_curio.sandbox.app.auth import require_sandbox_token
-from utk_curio.sandbox.app.utils.cache import make_key
 import os
-import mmap
-
-from shapely import wkt
 
 from utk_curio.sandbox.app.worker import _worker_init, execute_code, execute_js_code, chdir_locked
 from utk_curio.sandbox.util import package_modules as package_modules_util
@@ -78,8 +74,6 @@ ARROW_RESPONSE_HEADERS = (
 
 # Pre-load heavy libraries once at sandbox startup so every /exec call is fast.
 _worker_init()
-
-DATA_DIR = "./data"
 
 # No CORS headers here on purpose. The sandbox is reached only by the backend
 # over server-to-server HTTP; no browser ever calls it directly (see
@@ -638,7 +632,6 @@ def _json_body(result):
 
 @app.route('/exec', methods=['POST'])
 @require_sandbox_token
-# @cache.cached(make_cache_key=make_key)
 def exec():
     import sys
 

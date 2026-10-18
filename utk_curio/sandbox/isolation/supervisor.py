@@ -35,7 +35,6 @@ import uuid
 from utk_curio import shipped
 from utk_curio.sandbox.isolation import protocol
 from utk_curio.sandbox.isolation.child import RESULT_FILENAME
-from utk_curio.sandbox.isolation.protocol import ProtocolError
 
 # Scratch directories sit BESIDE the shared data dir, not inside it.
 #

@@ -210,11 +210,6 @@ def check_install_build(dir, force_rebuild=False):
     else:
         log_info("[Frontend] dist is current. Skipping npm run build.", COLOR_FRONTEND, 0)
 
-def force_rebuild_frontend():
-    log_info(f"[Frontend] Force rebuild requested.", COLOR_FRONTEND, 0)
-    check_install_build("frontend/urban-workflows/", force_rebuild=True)
-    log_info(f"[Frontend] Force rebuild complete.", COLOR_FRONTEND, 0)
-
 def _frontend_dir() -> str:
     return os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend", "urban-workflows"

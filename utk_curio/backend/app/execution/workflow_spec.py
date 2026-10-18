@@ -306,24 +306,6 @@ class WorkflowSpec:
         """
         return len(self.edges)
 
-    @property
-    def interaction_edges_count(self) -> int:
-        """Count Interaction-type edges.
-
-        Interaction edges (``type == 'Interaction'``) use ``in/out``
-        handles on both source and target nodes (visible in their edge
-        IDs, e.g. ``…in/out-…in/out``).  They represent a bidirectional
-        interaction channel – for instance, brushing a bar in a Vega
-        chart highlights the corresponding geometry on an Autark map, and
-        vice-versa.
-
-        The frontend does **not** render these as ``.react-flow__edge``
-        elements; instead they are managed by a dedicated interaction
-        layer.  Use this count when you need to verify interaction
-        wiring separately from the standard data-flow edge count.
-        """
-        return sum(1 for e in self.edges if e.get("type") == "Interaction")
-
     def _data_edges_to(self, node_id: str) -> list[dict]:
         """The data-flow edges into *node_id*, in circle order."""
         edges_to = [

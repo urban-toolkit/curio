@@ -40,7 +40,6 @@ import re
 import textwrap
 import time
 
-from utk_curio.backend.app.agents.domain.contracts import EMPTY_RENDER_KIND
 from utk_curio.backend.app.projects import storage as projects_storage
 
 _STDERR_TAIL_CHARS = 4000
@@ -97,7 +96,6 @@ def is_absent_output(output: object) -> bool:
 #: dev/136: an outcome's kind, when the reporter knows one (``empty-render``).
 #: Free-form and bounded: an unrecognized kind is a label, never a branch.
 _KIND_CHARS = 40
-KIND_EMPTY_RENDER = EMPTY_RENDER_KIND
 # Node ids come from specs (untrusted for path purposes): filename-safe only.
 _NODE_SEGMENT_RE = re.compile(r"[^A-Za-z0-9._-]")
 

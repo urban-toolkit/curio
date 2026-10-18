@@ -32,7 +32,6 @@ from utk_curio import shipped
 from utk_curio.backend.app.common.safe_paths import (
     PathTraversalError,
     is_within,
-    validate_component,
 )
 
 
@@ -72,8 +71,6 @@ class DatasetId:
 # ~10 import sites elsewhere are untouched. ``user_storage`` explains why the
 # root moves under ``.curio/test/`` for a test rig.
 from utk_curio.backend.app.common.user_storage import (
-    GUEST_KEY as _GUEST_KEY,
-    launch_dir as _launch_dir,
     user_key_segment as _user_key_segment,
     users_base as _users_base,
 )
@@ -108,23 +105,6 @@ def dataset_dir(user_key: str, dataset_dir_name: str) -> Path:
     if not is_within(target, base):
         raise PathTraversalError(
             f"Path traversal blocked: dataset path {target!s} escapes base {base!s}"
-        )
-    return target
-
-
-def dataset_asset_path(
-    user_key: str,
-    dataset_dir_name: str,
-    *subpath: str,
-    field: str = "dataset asset",
-) -> Path:
-    ddir = dataset_dir(user_key, dataset_dir_name).resolve()
-    for seg in subpath:
-        validate_component(seg, field=field)
-    target = ddir.joinpath(*subpath).resolve()
-    if not is_within(target, ddir):
-        raise PathTraversalError(
-            f"Path traversal blocked: {field} {target!s} escapes dataset {ddir!s}"
         )
     return target
 

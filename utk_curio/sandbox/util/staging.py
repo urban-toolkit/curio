@@ -34,7 +34,6 @@ from utk_curio.sandbox.util import codec
 from utk_curio.sandbox.util.parsers import (
     load_shared_output_file,
     save_to_duckdb,
-    _json_artifact_rel_path,
     _make_id,
     _read_json_artifact,
     _resolve_stored_artifact_path,

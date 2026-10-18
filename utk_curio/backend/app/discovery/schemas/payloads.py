@@ -107,10 +107,6 @@ def declared_resource_row(
     }
 
 
-def credential_status_row(secret_id: str, *, present: bool, sources: list[str]) -> dict[str, Any]:
-    return {"secretId": secret_id, "present": bool(present), "sources": list(sources)}
-
-
 def resource_row(
     resource: DiscoveryResource,
     *,
