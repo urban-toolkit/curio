@@ -122,25 +122,112 @@ REMINT_HOW = (
 REMINT_FORCE: tuple = ()
 
 
-def allow_baseline_writes(*, mint: bool, remint: bool, force=(), environ=os.environ) -> None:
+#: The GPU models CI's test-gpu job draws on: the arcade runners
+#: (arcade-gpu-01..04) share an H100, and utk-gpu has an RTX PRO 6000. A frame
+#: the two draw differently (example 07's plot close-up) keeps a baseline per
+#: GPU kind, ``<name>.<kind>.png``, beside its default one.
+GPU_KINDS = ("arcade-gpu", "utk-gpu")
+
+#: Names the run's GPU kind, one of GPU_KINDS. CI's test-gpu job sets it from
+#: its runner's name. A run without it (a local run, a CPU runner) compares
+#: every frame with its default baseline.
+GPU_KIND_ENV = "CURIO_E2E_GPU_KIND"
+
+#: The ``gpu_pool`` dispatch input that sends test-gpu to each GPU kind.
+_GPU_POOL = {"arcade-gpu": "arcade", "utk-gpu": "utk"}
+
+#: Frames a re-mint writes as baselines of the run's GPU kind, named by parts
+#: of their baseline names (``--remint-gpu-kind <kind>:<part>,...``). Such a
+#: run writes no other frame: it only compares them.
+REMINT_GPU_KIND_FRAMES: tuple = ()
+
+
+def run_gpu_kind(environ=os.environ) -> str:
+    """This run's GPU kind, or "" for a run that has none."""
+    kind = (environ.get(GPU_KIND_ENV) or "").strip()
+    if kind and kind not in GPU_KINDS:
+        raise ValueError(
+            f"{GPU_KIND_ENV}={kind!r} is not a GPU kind; the kinds are {', '.join(GPU_KINDS)}")
+    return kind
+
+
+def kind_baseline(path: str, kind: str) -> str:
+    """Where the baseline of GPU kind *kind* sits beside the default baseline *path*.
+
+    ``screenshot_x_y.png`` has ``screenshot_x_y.utk-gpu.png``. Built from the
+    default name and never parsed back out of a file name: baseline names hold
+    dots of their own.
+    """
+    stem, ext = os.path.splitext(path)
+    return f"{stem}.{kind}{ext}"
+
+
+def baseline_in_use(path: str, kind: str) -> str:
+    """The baseline a run of GPU kind *kind* compares a frame with.
+
+    The kind's own baseline when the frame has one, otherwise the default
+    baseline *path*, which is also what every run without a kind uses.
+    """
+    if kind:
+        own = kind_baseline(path, kind)
+        if os.path.isfile(own):
+            return own
+    return path
+
+
+def _kind_frames(value: str) -> tuple:
+    """``--remint-gpu-kind``'s ``<kind>:<name part>,...`` as (kind, parts)."""
+    value = (value or "").strip()
+    if not value:
+        return "", ()
+    kind, colon, parts = value.partition(":")
+    kind = kind.strip()
+    frames = tuple(part.strip() for part in parts.split(",") if part.strip())
+    if not colon or kind not in GPU_KINDS or not frames:
+        raise pytest.UsageError(
+            f"--remint-gpu-kind takes <kind>:<baseline name part>,... with a kind of "
+            f"{', '.join(GPU_KINDS)}, not {value!r}.")
+    return kind, frames
+
+
+def allow_baseline_writes(*, mint: bool, remint: bool, force=(), gpu_kind: str = "",
+                          environ=os.environ) -> None:
     """Turn on ``--mint-baselines`` / ``--remint-baselines``, on CI only.
 
     A baseline is what CI renders. A capture from any other machine differs in
     text antialiasing, fonts and scrollbars, and would then fail on CI or hide
     a change there.
+
+    *gpu_kind* is ``--remint-gpu-kind``'s ``<kind>:<name part>,...``: frames
+    to write as baselines of that GPU kind, which only a job on a GPU of that
+    kind draws.
     """
-    global MINT_BASELINES, REMINT_BASELINES, REMINT_FORCE
+    global MINT_BASELINES, REMINT_BASELINES, REMINT_FORCE, REMINT_GPU_KIND_FRAMES
     force = tuple(part for part in force if part)
     if force and not remint:
         raise pytest.UsageError("--remint-force only means something with --remint-baselines.")
+    kind, frames = _kind_frames(gpu_kind)
+    if frames and not remint:
+        raise pytest.UsageError("--remint-gpu-kind only means something with --remint-baselines.")
     if not (mint or remint):
         return
     if environ.get("GITHUB_ACTIONS") != "true":
         flag = "--remint-baselines" if remint else "--mint-baselines"
         raise pytest.UsageError(f"{flag} runs on CI only. {REMINT_HOW}")
+    if frames:
+        try:
+            run_kind = run_gpu_kind(environ)
+        except ValueError as exc:
+            raise pytest.UsageError(str(exc)) from exc
+        if run_kind != kind:
+            raise pytest.UsageError(
+                f"--remint-gpu-kind writes {kind} baselines, which only a job on {kind} "
+                f"draws, and this job runs on {run_kind or 'no GPU kind'}. Dispatch the "
+                f"re-mint with gpu_pool={_GPU_POOL[kind]}.")
     MINT_BASELINES = bool(mint)
     REMINT_BASELINES = bool(remint)
     REMINT_FORCE = force
+    REMINT_GPU_KIND_FRAMES = frames
 
 
 #: A re-mint leaves a baseline alone when at most this share of its pixels
@@ -275,24 +362,39 @@ MAX_DIFF_RATIO = 0.10
 
 
 def _remint(page, expected_path, capture, *, clip_selector, pixel_threshold,
-            max_diff_ratio, record_args) -> None:
+            max_diff_ratio, record_args, forced=False, target=None, kind="") -> str:
     """Write a fresh capture over its baseline when the screen changed.
 
     Changed means more than REMINT_MIN_RATIO of the pixels differ outside the
-    volatile text, or the baseline is one REMINT_FORCE names. Otherwise the
+    volatile text, or the frame is *forced* (REMINT_FORCE names it). Otherwise the
     baseline stays as committed and the record says ``unchanged``. A re-minted frame is recorded next to the baseline it
     replaced, for the CI report page, and captured a second time: when that
     capture differs from the first by more than the budget the screen had not
     settled, so the old baseline is put back and the test fails.
+
+    The capture goes to *target*: *expected_path*, the baseline it was compared
+    with, unless ``--remint-gpu-kind`` names the frame and it has no baseline of
+    the run's GPU kind *kind* yet. Then it becomes that kind's baseline, and
+    the record shows it against the default baseline. Returns the baseline as
+    this run leaves it.
 
     The old-versus-new difference never fails the test: showing what changed is
     what a re-mint is for.
     """
     from PIL import Image
 
-    name = os.path.basename(expected_path)
+    target = target or expected_path
+    name = os.path.basename(target)
     with open(expected_path, "rb") as handle:
         old_bytes = handle.read()
+
+    def put_back():
+        if target == expected_path:
+            with open(expected_path, "wb") as handle:
+                handle.write(old_bytes)
+        else:
+            os.remove(target)  # a new baseline of a GPU kind: there was none
+
     old_img = Image.open(BytesIO(old_bytes)).convert("RGB")
     boxes = _volatile_boxes(page, clip_selector)
     try:
@@ -308,7 +410,6 @@ def _remint(page, expected_path, capture, *, clip_selector, pixel_threshold,
     volatile = _box_mask(boxes, cmp.counted.shape) if new_img.size == old_img.size else None
     changed = cmp.counted & ~volatile if volatile is not None else cmp.counted
     remint_ratio = int(changed.sum()) / cmp.total if cmp.total else 0.0
-    forced = any(part in name for part in REMINT_FORCE)
     evidence = dict(
         expected=old_img, created=new_img, expected_cmp=cmp.expected_cmp,
         arr=cmp.arr, counted=cmp.counted, volatile=volatile,
@@ -318,19 +419,18 @@ def _remint(page, expected_path, capture, *, clip_selector, pixel_threshold,
     )
     if remint_ratio <= REMINT_MIN_RATIO and not forced:
         comparisons.record("unchanged", **evidence, **record_args)
-        return
+        return expected_path
 
     try:
-        _assert_mintable(new_img, expected_path, page)
+        _assert_mintable(new_img, target, page)
     except AssertionError as exc:
         comparisons.record("capture-error", error=str(exc), **evidence, **record_args)
         raise
-    new_img.save(expected_path)
+    new_img.save(target)
     try:
         again = capture()
     except Exception as exc:
-        with open(expected_path, "wb") as handle:
-            handle.write(old_bytes)
+        put_back()
         comparisons.record(
             "capture-error", expected=old_img, created=new_img,
             error=f"second capture failed, baseline left as committed: "
@@ -339,8 +439,7 @@ def _remint(page, expected_path, capture, *, clip_selector, pixel_threshold,
         raise
     settle = _compare_images(again, new_img, pixel_threshold)
     if settle.ratio > max_diff_ratio:
-        with open(expected_path, "wb") as handle:
-            handle.write(old_bytes)
+        put_back()
         comparisons.record(
             "failed", expected=new_img, created=again,
             expected_cmp=settle.expected_cmp, arr=settle.arr,
@@ -356,10 +455,15 @@ def _remint(page, expected_path, capture, *, clip_selector, pixel_threshold,
             "budget, so the screen had not settled. The baseline is left as "
             "committed."
         )
+    written = dict(record_args)
+    if target != expected_path:
+        written.update(baseline=target, gpu_kind=kind,
+                       compared_with=os.path.basename(expected_path))
     comparisons.record(
         "reminted", expected_bytes=old_bytes, recapture_ratio=settle.ratio,
-        **evidence, **record_args,
+        **evidence, **written,
     )
+    return target
 
 
 def save_workflow_test_screenshot(
@@ -432,6 +536,10 @@ def save_workflow_test_screenshot(
     *closeup* only labels the record, for the CI report's Close-ups filter, and
     *interaction* (see :func:`save_interaction_frame`) for its Interaction pairs.
 
+    On a run of a GPU kind (``CURIO_E2E_GPU_KIND``, see GPU_KINDS) a frame
+    with a baseline of that kind, ``<name>.<kind>.png``, is compared with it,
+    and a re-mint writes that file, never the default baseline.
+
     Returns the path to the expected screenshot file.
     """
     if not 0.0 <= max_diff_ratio <= MAX_DIFF_RATIO:
@@ -444,7 +552,14 @@ def save_workflow_test_screenshot(
     stem = os.path.splitext(os.path.basename(workflow_filepath))[0]
     os.makedirs(WORKFLOW_SCREENSHOT_EXPECTED_DIR, exist_ok=True)
     filename = f"screenshot_{stem}_{test_name}.png"
-    expected_path = os.path.join(WORKFLOW_SCREENSHOT_EXPECTED_DIR, filename)
+    default_path = os.path.join(WORKFLOW_SCREENSHOT_EXPECTED_DIR, filename)
+    kind = run_gpu_kind()
+    expected_path = baseline_in_use(default_path, kind)
+    # A remint_force or remint_gpu_kind part names a frame by either baseline.
+    names = (filename, os.path.basename(expected_path))
+    for_kind = bool(kind) and any(p in n for p in REMINT_GPU_KIND_FRAMES for n in names)
+    # A run that writes baselines of its GPU kind writes nothing else.
+    remint = REMINT_BASELINES and (for_kind or not REMINT_GPU_KIND_FRAMES)
 
     if not allow_running:
         _wait_for_no_node_running(page)
@@ -475,10 +590,12 @@ def save_workflow_test_screenshot(
         closeup=closeup,
         interaction=interaction,
     )
+    if expected_path != default_path:
+        record_args["gpu_kind"] = kind
 
     minted_now = False
     if not os.path.isfile(expected_path):
-        if not (MINT_BASELINES or REMINT_BASELINES):
+        if not (MINT_BASELINES or remint):
             message = (
                 f"no baseline at {expected_path}. {REMINT_HOW} A baseline is "
                 "the definition of correct for every later run, so it is not "
@@ -490,13 +607,15 @@ def save_workflow_test_screenshot(
         _assert_mintable(minted, expected_path, page)
         minted.save(expected_path)
         minted_now = True
-    elif REMINT_BASELINES:
-        _remint(
+    elif remint:
+        return _remint(
             page, expected_path, _capture, clip_selector=clip_selector,
             pixel_threshold=pixel_threshold, max_diff_ratio=max_diff_ratio,
             record_args=record_args,
+            forced=any(p in n for p in REMINT_FORCE for n in names),
+            target=kind_baseline(default_path, kind) if for_kind else expected_path,
+            kind=kind,
         )
-        return expected_path
 
     expected_img = Image.open(expected_path).convert("RGB")
     try:
@@ -546,7 +665,7 @@ def save_workflow_test_screenshot(
         )
 
         raise AssertionError(
-            f"Screenshot regression for {filename}: "
+            f"Screenshot regression for {os.path.basename(expected_path)}: "
             f"{mismatched}/{total} pixels differ ({ratio:.2%}), "
             f"allowed {max_diff_ratio:.2%}. "
             f"Expected {expected_img.size[0]}x{expected_img.size[1]}, "

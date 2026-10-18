@@ -1176,6 +1176,10 @@ def render_comparison(report, record):
     ratio = record.get("ratio")
 
     head = [badge(group, COMPARISON_LABEL.get(status, status)), f"<h3>{esc(baseline)}</h3>"]
+    # The baseline of the run's GPU kind, kept beside the default one.
+    gpu_kind = record.get("gpu_kind")
+    if gpu_kind:
+        head.append(badge("gpukind", f"{gpu_kind} baseline"))
     if record.get("closeup"):
         head.append(badge("closeup", "close-up"))
     meta = record.get("interaction")
@@ -1190,10 +1194,16 @@ def render_comparison(report, record):
     if status == "reminted":
         captions = (("expected", "Committed baseline"), ("created", "Re-minted"),
                     ("diff", "Difference"))
+        against = "the committed baseline"
+        # A new baseline of a GPU kind, shown against the default one.
+        if record.get("compared_with"):
+            captions = (("expected", "Default baseline"), ("created", f"New {gpu_kind} baseline"),
+                        ("diff", "Difference"))
+            against = f"the default baseline {record['compared_with']}"
         recapture = record.get("recapture_ratio")
         floor = record.get("remint_min_ratio") or 0
-        verdict = (f"<strong>{percent(ratio)}</strong> of pixels changed from the committed "
-                   f"baseline by more than {esc(threshold)} per channel, "
+        verdict = (f"<strong>{percent(ratio)}</strong> of pixels changed from {esc(against)} "
+                   f"by more than {esc(threshold)} per channel, "
                    f"<strong>{percent(record.get('remint_ratio'))}</strong> not counting "
                    "volatile text.")
         if recapture is not None:
@@ -1368,7 +1378,7 @@ border:1px solid currentColor;white-space:nowrap}
 .badge.failed,.badge.failure,.badge.error,.badge.over,.badge.unreadable{color:var(--fail)}
 .badge.missing,.badge.capture,.badge.cancelled,.badge.unclear,.badge.timed_out{color:var(--warn)}
 .badge.skipped,.badge.neutral,.badge.unknown,.badge.xfailed,.badge.unchanged{color:var(--skip)}
-.badge.reminted,.badge.minted,.badge.closeup,.badge.interaction{color:var(--accent)}
+.badge.reminted,.badge.minted,.badge.closeup,.badge.interaction,.badge.gpukind{color:var(--accent)}
 table{border-collapse:collapse;width:100%;background:var(--panel);border:1px solid var(--line);border-radius:8px}
 th,td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
 th{font-size:12px;color:var(--muted);font-weight:600}

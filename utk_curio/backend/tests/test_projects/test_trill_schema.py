@@ -415,6 +415,30 @@ REJECTED = {
     "feature edits with a field the format does not have": lambda d: _node(d)["metadata"].update(
         editFeatures={"key": "osm_id", "rows": [3]}
     ),
+    # An Interaction node's entries name their features by ids or by a
+    # condition, never both; a number edit takes a number and an expression a
+    # text, and each names its column.
+    "feature edit naming its features by ids and by a condition": lambda d: _node(d)["metadata"].update(
+        editFeatures={"key": "osm_id", "edits": [{"op": "remove", "ids": [1], "where": "height > 100"}]}
+    ),
+    "feature edit naming its features by an empty condition": lambda d: _node(d)["metadata"].update(
+        editFeatures={"key": "osm_id", "edits": [{"op": "remove", "where": ""}]}
+    ),
+    "feature scale by a text": lambda d: _node(d)["metadata"].update(
+        editFeatures={"key": "osm_id", "edits": [{"op": "scale", "ids": [1], "column": "height", "value": "2"}]}
+    ),
+    "feature offset without its column": lambda d: _node(d)["metadata"].update(
+        editFeatures={"key": "osm_id", "edits": [{"op": "offset", "ids": [1], "value": 3}]}
+    ),
+    "feature expression that is a number": lambda d: _node(d)["metadata"].update(
+        editFeatures={"key": "osm_id", "edits": [{"op": "expr", "ids": [1], "column": "height", "value": 3}]}
+    ),
+    "feature edit with an empty label": lambda d: _node(d)["metadata"].update(
+        editFeatures={"key": "osm_id", "edits": [{"op": "remove", "ids": [1], "label": ""}]}
+    ),
+    "feature edit switched off by a text": lambda d: _node(d)["metadata"].update(
+        editFeatures={"key": "osm_id", "edits": [{"op": "remove", "ids": [1], "enabled": "no"}]}
+    ),
 }
 
 # Cases that look like they should be rejected but must not be. Each one is a
@@ -476,6 +500,21 @@ ACCEPTED = {
                 {"op": "remove", "ids": [119, 443]},
                 {"op": "set", "ids": ["w12"], "column": "height", "value": None},
                 {"op": "restore", "ids": [443]},
+            ],
+        }
+    ),
+    # An Interaction node's log (#662): conditions, numbers, an expression, a
+    # label and an entry switched off.
+    "an Interaction log of every kind": lambda d: _node(d)["metadata"].update(
+        editFeatures={
+            "key": "building_id",
+            "edits": [
+                {"op": "scale", "where": "height > 100", "column": "height", "value": 0.5, "label": "Halve the towers"},
+                {"op": "offset", "ids": [136], "column": "height", "value": -6},
+                {"op": "expr", "ids": ["w12"], "column": "height", "value": "levels * 3.2", "enabled": False},
+                {"op": "set", "where": "kind == 'house'", "column": "kind", "value": "home"},
+                {"op": "remove", "where": "kind == 'shed'"},
+                {"op": "restore", "where": "height > 100", "enabled": True},
             ],
         }
     ),

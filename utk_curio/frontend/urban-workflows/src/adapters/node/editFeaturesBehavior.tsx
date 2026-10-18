@@ -1,18 +1,21 @@
 /**
- * The Edit Features node (#662): features of a layer picked on the node's map
- * and removed, given a value or restored, kept as a list of edits at
- * `metadata.editFeatures` (`utils/editFeatures/editFeatures`).
+ * The Interaction node (#662; its type id is still
+ * `curio.builtin/edit-features`): features of a layer picked on the node's
+ * map, or by a condition, removed, restored or given new values, kept as an
+ * edit log at `metadata.editFeatures` (`utils/editFeatures/editFeatures`).
  *
- * Its code is written for it from that list: one call of the sandbox's
+ * Its code is written for it from that log: one call of the sandbox's
  * `curio_edit_features`, which applies the edits by the column that
- * identifies a feature and hands on a new artifact. A change of the list
- * writes the list and the code together and makes the node stale; a run then
- * applies the new list, in the browser or on the server, as any Python node's
- * code runs.
+ * identifies a feature and hands on a new artifact. A change of the log
+ * writes the log and the code together and makes the node stale, with every
+ * node below it that ran (`autoRunTargets`, the nodes an automatic run
+ * takes); a run then applies the new log, in the browser or on the server,
+ * as any Python node's code runs, and Update results in the body starts one.
  */
 import React, { useMemo, useRef } from "react";
 import type { NodeBehaviorHook } from "../../registry/types";
 import { useFlowContext } from "../../providers/FlowProvider";
+import { autoRunTargets } from "../../providers/flow/useAutoRun";
 import { EditFeaturesBody } from "../../components/editFeatures/EditFeaturesBody";
 import { editFeaturesCode, normalizeEditFeatures, type EditFeaturesSettings } from "../../utils/editFeatures/editFeatures";
 import { failureLine } from "./compareScenariosBehavior";
@@ -35,6 +38,12 @@ export const useEditFeaturesBehavior: NodeBehaviorHook = (data, nodeState) => {
     nodeState.setCode(code);
     flow.updateDataNode?.(data.nodeId, { ...live, editFeatures: settings, defaultCode: code, code });
     if (nodeState.output?.code === "success") flow.markNodeStale?.(data.nodeId);
+    // What the node hands on changes, so every result below it that ran is
+    // out of date until Update results, or another run, makes it again.
+    const status: Record<string, string> = flow?.nodeExecStatus ?? {};
+    for (const id of autoRunTargets([data.nodeId], flow?.nodes ?? [], flow?.edges ?? [])) {
+      if (id !== data.nodeId && status[id] === "executed") flow.markNodeStale?.(id);
+    }
   };
 
   // NodeEditor opens the Output tab whenever the body's identity changes, so

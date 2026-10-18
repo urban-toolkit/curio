@@ -21,6 +21,11 @@ The status is ``passed``, ``failed``, ``minted``, ``missing`` or
 capture replaced the baseline; ``expected.png`` is the one it replaced) or
 ``unchanged`` (the baseline was kept).
 
+A comparison with a baseline of the run's GPU kind (``<name>.<kind>.png``)
+also records ``gpu_kind``. A re-mint that made such a baseline records the
+default baseline it was compared with as ``compared_with``; ``expected.png``
+is that default.
+
 ``scripts/ci_report.py`` turns a directory of these into one HTML page. Like
 diagnostics.py this is best effort: a record that cannot be written is
 reported and skipped, never allowed to change the test's outcome.
@@ -84,14 +89,16 @@ def record(status, *, baseline, pixel_threshold, max_diff_ratio, capture,
            counted=None, mismatched=None, total=None, ratio=None, error=None,
            volatile=None, remint_ratio=None, remint_min_ratio=None,
            recapture_ratio=None, expected_bytes=None, forced=False, closeup=False,
-           interaction=None, environ=os.environ):
+           interaction=None, gpu_kind=None, compared_with=None, environ=os.environ):
     """Write one comparison's folder. Returns its path, or None when off.
 
     *expected_bytes* is the baseline as it was before a re-mint replaced it;
     without it ``expected.png`` is copied from the file at *baseline*.
     *closeup* marks one node framed on its own (``utils.save_node_closeup``).
     *interaction* places a frame in its before/after pair
-    (``utils.save_interaction_frame``).
+    (``utils.save_interaction_frame``). *gpu_kind* says *baseline* is that GPU
+    kind's, and *compared_with* names the default baseline a new one of a GPU
+    kind was compared with.
     """
     if not enabled(environ):
         return None
@@ -104,7 +111,8 @@ def record(status, *, baseline, pixel_threshold, max_diff_ratio, capture,
             volatile=volatile, remint_ratio=remint_ratio,
             remint_min_ratio=remint_min_ratio, recapture_ratio=recapture_ratio,
             expected_bytes=expected_bytes, forced=forced, closeup=closeup,
-            interaction=interaction, environ=environ,
+            interaction=interaction, gpu_kind=gpu_kind, compared_with=compared_with,
+            environ=environ,
         )
     except Exception as exc:
         print(f"[e2e-compare] could not record {os.path.basename(baseline)}: {exc}")
@@ -112,7 +120,7 @@ def record(status, *, baseline, pixel_threshold, max_diff_ratio, capture,
 
 
 def record_missing(take, *, baseline, pixel_threshold, max_diff_ratio, capture,
-                   closeup=False, interaction=None, environ=os.environ):
+                   closeup=False, interaction=None, gpu_kind=None, environ=os.environ):
     """Record a comparison that had no baseline, with what would have been minted."""
     if not enabled(environ):
         return None
@@ -124,14 +132,16 @@ def record_missing(take, *, baseline, pixel_threshold, max_diff_ratio, capture,
     return record(
         "missing", baseline=baseline, pixel_threshold=pixel_threshold,
         max_diff_ratio=max_diff_ratio, capture=capture, created=created,
-        error=error, closeup=closeup, interaction=interaction, environ=environ,
+        error=error, closeup=closeup, interaction=interaction, gpu_kind=gpu_kind,
+        environ=environ,
     )
 
 
 def _write(status, *, baseline, pixel_threshold, max_diff_ratio, capture,
            expected, created, expected_cmp, arr, counted, mismatched, total,
            ratio, error, volatile, remint_ratio, remint_min_ratio,
-           recapture_ratio, expected_bytes, forced, closeup, interaction, environ):
+           recapture_ratio, expected_bytes, forced, closeup, interaction,
+           gpu_kind, compared_with, environ):
     test_id = nodeid(environ)
     name = os.path.basename(baseline)
     out_dir = _claim(environ[DIR_ENV], name, test_id)
@@ -183,6 +193,10 @@ def _write(status, *, baseline, pixel_threshold, max_diff_ratio, capture,
         data["closeup"] = True
     if interaction:
         data["interaction"] = dict(interaction)
+    if gpu_kind:
+        data["gpu_kind"] = gpu_kind
+    if compared_with:
+        data["compared_with"] = compared_with
     # Last, and atomically: the report skips a folder without record.json, so
     # a run killed mid-write leaves nothing half-read.
     tmp = os.path.join(out_dir, "record.json.tmp")

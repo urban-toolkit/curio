@@ -22,6 +22,8 @@ from utk_curio.backend.tests.test_frontend.utils import interactions
 from utk_curio.backend.tests.test_frontend.utils import screenshots as e2e_utils
 
 NODEID = "tests/test_frontend/test_scene.py::test_scene[a-chromium]@wf-scene"
+#: Names the GPU kind of a run (CI's test-gpu job sets it from its runner).
+GPU_KIND_ENV = "CURIO_E2E_GPU_KIND"
 
 
 class _StubPage:
@@ -50,6 +52,8 @@ def dirs(tmp_path, monkeypatch):
     monkeypatch.setattr(e2e_utils, "MINT_BASELINES", False)
     monkeypatch.setattr(e2e_utils, "REMINT_BASELINES", False)
     monkeypatch.setattr(e2e_utils, "REMINT_FORCE", ())
+    monkeypatch.setattr(e2e_utils, "REMINT_GPU_KIND_FRAMES", (), raising=False)
+    monkeypatch.delenv(GPU_KIND_ENV, raising=False)
     monkeypatch.setenv(comparisons.DIR_ENV, str(compare))
     monkeypatch.setattr(comparisons, "current_nodeid", NODEID)
     return expected, compare
@@ -241,7 +245,55 @@ def test_an_ordinary_comparison_records_no_remint_fields(dirs, monkeypatch):
     _save(monkeypatch, lambda page: _white(paint=1))
     [(_, record)] = _records(compare)
     assert not {"remint_ratio", "remint_min_ratio", "recapture_ratio", "volatile_pixels",
-                "closeup", "interaction"} & set(record)
+                "closeup", "interaction", "gpu_kind", "compared_with"} & set(record)
+
+
+def test_a_comparison_with_a_gpu_kinds_baseline_records_which_one(dirs, monkeypatch):
+    # The report shows which baseline each comparison used: the one of the
+    # run's GPU kind, when the frame has one.
+    expected, compare = dirs
+    _baseline(expected)
+    kind = expected / "screenshot_scene_step.utk-gpu.png"
+    _white(paint=40).save(kind)
+    monkeypatch.setenv(GPU_KIND_ENV, "utk-gpu")
+    _save(monkeypatch, lambda page: _white(paint=40))
+
+    [(folder, record)] = _records(compare)
+    assert record["status"] == "passed"
+    assert (record["baseline"], record["gpu_kind"]) == ("screenshot_scene_step.utk-gpu.png", "utk-gpu")
+    assert (folder / "expected.png").read_bytes() == kind.read_bytes()
+
+
+def test_a_run_of_a_kind_without_that_kinds_baseline_records_the_default(dirs, monkeypatch):
+    expected, compare = dirs
+    _baseline(expected)
+    monkeypatch.setenv(GPU_KIND_ENV, "utk-gpu")
+    _save(monkeypatch, lambda page: _white(paint=1))
+
+    [(_, record)] = _records(compare)
+    assert record["baseline"] == "screenshot_scene_step.png"
+    assert not {"gpu_kind", "compared_with"} & set(record)
+
+
+def test_a_new_gpu_kind_baseline_is_recorded_against_the_default_one(dirs, monkeypatch):
+    # The review's question is the default baseline against what this GPU
+    # draws, so that is the pair the record keeps.
+    expected, compare = dirs
+    default = _baseline(expected, _white(paint=1))
+    before = default.read_bytes()
+    monkeypatch.setenv(GPU_KIND_ENV, "utk-gpu")
+    monkeypatch.setattr(e2e_utils, "REMINT_GPU_KIND_FRAMES", ("scene_step.png",), raising=False)
+    new = _white(paint=30)
+    _save(monkeypatch, _remint_on(monkeypatch, new, new.copy()))
+
+    [(folder, record)] = _records(compare)
+    assert record["status"] == "reminted"
+    assert (record["baseline"], record["gpu_kind"], record["compared_with"]) == (
+        "screenshot_scene_step.utk-gpu.png", "utk-gpu", "screenshot_scene_step.png")
+    assert (record["mismatched"], record["ratio"]) == (29, 0.29)
+    assert (folder / "expected.png").read_bytes() == before
+    assert Image.open(folder / "created.png").convert("RGB").tobytes() == new.tobytes()
+    assert default.read_bytes() == before
 
 
 def test_a_close_up_says_so_in_its_record(dirs, monkeypatch):
