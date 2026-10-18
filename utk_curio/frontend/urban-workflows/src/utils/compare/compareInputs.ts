@@ -6,10 +6,14 @@
  * Duck-typed nodes and edges, so this module needs no `reactflow` import.
  */
 import { inputSlotOf, isDataEdge } from "../inputSlots";
+import { getUnversionedFlowNodeType } from "../flowNodeCanonicalType";
 import { liveScenarios } from "../scenarios/scenarioParts";
 import type { Scenario } from "../scenarios/scenarioModel";
 import { nodeLabel } from "../../components/scenarios/scenarioLabels";
-import { NO_SCENARIO_COLOR, sameLabels, type CompareInputLabel } from "./compareSettings";
+import { NO_SCENARIO_COLOR, normalizeCompareSettings, sameLabels, type CompareInputLabel } from "./compareSettings";
+
+/** The Compare Scenarios node's type, without its version. */
+export const COMPARE_SCENARIOS_TYPE = "curio.builtin/compare-scenarios";
 
 type FlowNodeLike = { id: string; type?: string | null; data?: any };
 type FlowEdgeLike = {
@@ -56,6 +60,49 @@ export function compareInputs(
         : { name: nodeLabel(byId.get(source), source), color: NO_SCENARIO_COLOR };
       return { slot, source, scenario, label };
     });
+}
+
+/**
+ * The labels a Compare Scenarios node's chart draws with: the *stored* ones
+ * (`metadata.compareScenarios.inputs`), else those of its *inputs* as the graph
+ * shows them.
+ */
+export function chartLabels(
+  stored: readonly CompareInputLabel[] | undefined,
+  inputs: readonly CompareInput[],
+): readonly CompareInputLabel[] {
+  return stored ?? inputs.map((input) => input.label);
+}
+
+/**
+ * The labels of the Compare Scenarios node that node *nodeId* reads on its
+ * first input circle, directly or through nodes of one input each: the labels
+ * the Compare node's chart draws with (`chartLabels`). Null when that walk
+ * reaches no Compare node, or one with no inputs.
+ */
+export function upstreamCompareLabels(
+  nodeId: string,
+  nodes: readonly FlowNodeLike[],
+  edges: readonly FlowEdgeLike[],
+  scenarios: readonly Scenario[],
+): readonly CompareInputLabel[] | null {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const into = (id: string) => edges.filter((edge) => edge.target === id && isDataEdge(edge));
+  const visited = new Set<string>([nodeId]);
+  let source = into(nodeId).find((edge) => inputSlotOf(edge.targetHandle) === 0)?.source;
+  while (source !== undefined && !visited.has(source)) {
+    visited.add(source);
+    const node = byId.get(source);
+    if (!node) return null;
+    if (getUnversionedFlowNodeType(node) === COMPARE_SCENARIOS_TYPE) {
+      const stored = normalizeCompareSettings(node.data?.compareScenarios)?.inputs;
+      const labels = chartLabels(stored, compareInputs(node.id, nodes, edges, scenarios));
+      return labels.length > 0 ? labels : null;
+    }
+    const feeding = into(source);
+    source = feeding.length === 1 ? feeding[0].source : undefined;
+  }
+  return null;
 }
 
 /**

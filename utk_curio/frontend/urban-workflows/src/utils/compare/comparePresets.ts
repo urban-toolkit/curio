@@ -161,7 +161,7 @@ function contrastOnWhite(channels: readonly number[]): number {
 }
 
 /** *color* as a table's text draws it: itself when it reads on white, else its lightest shade that does. */
-function tableTextColor(color: string): string {
+export function tableTextColor(color: string): string {
   if (!SCENARIO_COLOR_RE.test(color)) return color;
   const channels = [1, 3, 5].map((at) => parseInt(color.slice(at, at + 2), 16));
   for (let left = 100; left > 0; left -= TABLE_TEXT_SHADE_STEP) {

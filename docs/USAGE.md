@@ -888,6 +888,14 @@ inputs and the context only one of them reads, when an input comes from a node i
 scenario (its rows carry that node's name, and What differs leaves it out), and when
 two inputs come from one scenario.
 
+A Vega-Lite node after a Compare Scenarios node, reading its output on input_0
+directly or through nodes of one input each, draws the `scenario_name` column as the
+**Chart** tab does. A color, fill or stroke by that column is in the scenarios'
+colors (on a text mark, in the darker shade a table uses for a light color), and an
+axis, an offset or a facet by it follows the order of the Compare node's inputs.
+These replace any colors or order the spec writes for that column, and the chart is
+drawn again when a scenario is renamed or recolored.
+
 The **Scenario Catalog** lists the scenarios of all your projects, each with its
 fixed context, levers and outcomes and the results its project saved. Open it from
 the **Scenario Catalog** tab, or from the **Scenario** button in the canvas's top

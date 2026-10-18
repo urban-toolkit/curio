@@ -15,7 +15,7 @@ import { toRows } from "../../utils/rowSource";
 import { codeEditRevision, subscribeToCodeEdits } from "../../utils/references/codeEdits";
 import type { ClassifiedColumn } from "../../utils/starterSpec";
 import type { Scenario } from "../../utils/scenarios/scenarioModel";
-import { compareInputs, labelWarnings, layersToPick } from "../../utils/compare/compareInputs";
+import { chartLabels, compareInputs, labelWarnings, layersToPick } from "../../utils/compare/compareInputs";
 import {
   AGGREGATE_LABELS,
   PRESET_FIELDS,
@@ -211,7 +211,8 @@ export function CompareScenariosBody({
   const read = useStackedRead(mode === "chart" ? stacked : null);
   const columns = read?.columns ?? [];
   const chart = resolveChart(settings?.chart, columns);
-  const labels = settings?.inputs ?? inputs.map((input) => input.label);
+  // The labels a Vega-Lite chart after the node draws with too (utils/compare/scenarioScales).
+  const labels = chartLabels(settings?.inputs, inputs);
   const drawn = compareChartSpec(chart, labels, columns);
   const specText = "spec" in drawn ? JSON.stringify(drawn.spec) : "";
 
