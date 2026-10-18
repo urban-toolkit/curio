@@ -112,16 +112,20 @@
   color: var(--curio-text-primary);
 }
 
-/* WidgetsEditor.css gives every label a right margin. */
-.panel label {
+/* WidgetsEditor.css gives every label a right margin. Not a label Material UI
+   draws in a widget's own control (WidgetControl): a choice's label, whose
+   margins the widget theme sets, and the file button. */
+.panel label:not(:global(.MuiFormControlLabel-root)):not(:global(.MuiButton-root)) {
   margin: 0;
 }
 
-.panel input[type="text"],
-.panel input[type="number"],
-.panel input[type="search"],
-.panel input[type="datetime-local"],
-.panel select {
+/* Not a widget's own control (WidgetControl), which Material UI draws: its
+   field has its own border and height. */
+.panel input[type="text"]:not(:global(.MuiInputBase-input)),
+.panel input[type="number"]:not(:global(.MuiInputBase-input)),
+.panel input[type="search"]:not(:global(.MuiInputBase-input)),
+.panel input[type="datetime-local"]:not(:global(.MuiInputBase-input)),
+.panel select:not(:global(.MuiInputBase-input)) {
   box-sizing: border-box;
   height: var(--widget-h);
   min-width: 0;
@@ -135,8 +139,8 @@
   box-shadow: none;
 }
 
-.panel input:focus,
-.panel select:focus {
+.panel input:not(:global(.MuiInputBase-input)):focus,
+.panel select:not(:global(.MuiInputBase-input)):focus {
   outline: 2px solid var(--curio-role-update-fg);
   outline-offset: -1px;
   box-shadow: none;
@@ -428,7 +432,9 @@
   box-shadow: var(--curio-shadow-card);
 }
 
-.form label,
+/* A field's name above its input. Not a label Material UI draws in the
+   default's control, which keeps its own row. */
+.form label:not(:global(.MuiFormControlLabel-root)):not(:global(.MuiButton-root)),
 .field {
   display: flex;
   flex-direction: column;
