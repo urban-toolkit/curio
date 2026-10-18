@@ -1287,7 +1287,7 @@ combine, and **All dataflows** clears them.
 |---|---|
 | **Your dataflows** | the ones you created, imported or duplicated |
 | **By source** | Use cases, Examples and Tests that ship with Curio |
-| **Tags** | the tools a dataflow uses, such as Autark, Vega-Lite, GeoPandas, Pandas, GPU compute and Computer vision, plus tags you add |
+| **Tags** | the tools a dataflow uses, such as Autark, Vega-Lite, GeoPandas, Pandas, GPU compute and Computer vision; SCOUT when it uses a SCOUT node, model or dataset; plus tags you add |
 | **Data type** | Tables, Geometries, Imagery, OpenStreetMap, Rasters, Video, Audio |
 | **City**, **Topic**, **Complexity** | what you or Curio set for the dataflow |
 
@@ -1295,7 +1295,7 @@ A dataflow file opened with **File → Load dataflow** is a new dataflow: saving
 your dataflows under its own name, and the dataflow that was open stays as it was.
 
 Tags and data types come from the dataflow itself: its nodes, the libraries its code
-imports and the formats of its datasets. They change when you save, and cannot be
+imports, the models it loads and its datasets. They change when you save, and cannot be
 removed by hand. Add a tag, a city, a topic or a complexity with **+ Category** under
 the dataflow's title on the canvas, which saves with the dataflow, or with **Edit
 categories** on the Projects page.
