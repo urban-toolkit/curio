@@ -46,8 +46,8 @@ DEFAULT_MIX = [
     "02-vega-lite-spatial-density.json",      # Python: geopandas, two loaders
     "08-autark-spatial-join-regression.json", # Autark data + a JS node + Python
     "11-autark-pbf-loading.json",             # Autark: a PBF load, the heaviest
-    "dataflows/Regression.json",              # Autark data + compute
-    "dataflows/JSComputation.json",           # JS node on its own
+    "dataflows/regression.json",              # Autark data + compute
+    "dataflows/js-computation.json",           # JS node on its own
 ]
 
 # A single user's whole session. Generous: under load a node legitimately

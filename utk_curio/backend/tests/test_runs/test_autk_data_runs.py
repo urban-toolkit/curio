@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[4]
-EXAMPLE_06 = REPO / "docs" / "examples" / "06-autark-what-if-shadow-study.json"
+EXAMPLE_06 = REPO / "docs" / "examples" / "06-back-bay-road-sunlight.json"
 CODE = "curio.builtin/computation-analysis"
 AUTARK = "curio.builtin/autk-grammar"
 LAYERS = "art-layers"

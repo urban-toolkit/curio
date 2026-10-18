@@ -23,12 +23,12 @@ DATAFLOWS = EXAMPLES / "dataflows"
 
 class ClassificationTest(unittest.TestCase):
     def test_an_autark_dataflow_needs_webgpu(self):
-        self.assertTrue(runner_split.dataflow_needs_webgpu(str(DATAFLOWS / "AutkMap.json")))
+        self.assertTrue(runner_split.dataflow_needs_webgpu(str(DATAFLOWS / "autk-map.json")))
         self.assertTrue(runner_split.dataflow_needs_webgpu(
             str(EXAMPLES / "07-autark-gpu-shader.json")))
 
     def test_a_vega_dataflow_does_not(self):
-        self.assertFalse(runner_split.dataflow_needs_webgpu(str(DATAFLOWS / "Vega.json")))
+        self.assertFalse(runner_split.dataflow_needs_webgpu(str(DATAFLOWS / "vega.json")))
         self.assertFalse(runner_split.dataflow_needs_webgpu(
             str(EXAMPLES / "01-vega-lite-chained-transforms.json")))
 
@@ -59,12 +59,12 @@ class ClassificationTest(unittest.TestCase):
             )
 
         self.assertTrue(runner_split.item_needs_webgpu(
-            drop("docs/examples/06-autark-what-if-shadow-study.json")))
-        # Each FloodScenarios scenario maps its depth on an Autark map.
+            drop("docs/examples/06-back-bay-road-sunlight.json")))
+        # Each quad-cities-flood-vulnerability scenario maps its depth on an Autark map.
         self.assertTrue(runner_split.item_needs_webgpu(
-            drop("docs/examples/dataflows/FloodScenarios.json")))
+            drop("docs/examples/dataflows/quad-cities-flood-vulnerability.json")))
         self.assertFalse(runner_split.item_needs_webgpu(
-            drop("docs/examples/dataflows/Scenarios.json")))
+            drop("docs/examples/dataflows/scenarios.json")))
 
     def test_a_test_that_needs_the_parallel_stack_is_on_utk(self):
         marked = SimpleNamespace(

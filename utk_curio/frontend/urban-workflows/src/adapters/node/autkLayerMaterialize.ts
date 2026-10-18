@@ -31,7 +31,7 @@ function missingLayerMessage(missing: string[], errors: string[]): string {
 
 // Message for a `join` source that failed. A join rewrites a table another
 // source created, so a failed one never leaves a table missing and the check
-// above cannot see it: Regression.json's join died with a Binder Error on every
+// above cannot see it: regression.json's join died with a Binder Error on every
 // run while its node reported Done (#319). Shared by both loaders.
 function joinFailureMessage(errors: string[]): string {
     return `spatial join failed - ${errors.join('; ')}`;

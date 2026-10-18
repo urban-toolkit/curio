@@ -34,7 +34,7 @@ EXAMPLE_INVARIANTS = [
      {"curio.builtin/computation-analysis": 3, "curio.builtin/vis-vega": 2}, False),
     ("05-vega-lite-multi-view-drilldown.json", 27, 22,
      {"curio.builtin/data-loading": 5, "curio.builtin/vis-vega": 2}, False),
-    ("06-autark-what-if-shadow-study.json", 12, 14,
+    ("06-back-bay-road-sunlight.json", 12, 14,
      {"curio.builtin/autk-grammar": 8, "curio.builtin/data-pool": 1,
       "curio.builtin/compare-scenarios": 2, "curio.builtin/edit-features": 1}, False),
     ("07-autark-gpu-shader.json", 5, 6,
@@ -90,7 +90,7 @@ EXAMPLE_INVARIANTS = [
      {"curio.builtin/data-loading": 2, "curio.builtin/computation-analysis": 1,
       "curio.builtin/vis-vega": 1}, False),
     # Rasterize Buildings returns one raster, so no node picks it out (#819).
-    ("24-scout-building-rasters.json", 7, 7,
+    ("24-scout-shadow-model-chicago-loop.json", 7, 7,
      {"curio.builtin/data-loading": 1, "scout.raster-conversion/rasterize-buildings": 1,
       "model.scout.deep-umbra/accumulated-shadow": 1,
       "curio.builtin/raster-calculator": 1, "curio.builtin/autk-grammar": 3}, False),
@@ -115,7 +115,7 @@ EXAMPLE_INVARIANTS = [
 #: a repeat changes which input the node's ``[!! input_N !!]`` chips read.
 FAN_IN_NODES = {
     "04-vega-lite-multi-flow-dashboard.json": 3,
-    "06-autark-what-if-shadow-study.json": 2,
+    "06-back-bay-road-sunlight.json": 2,
     "08-autark-spatial-join-regression.json": 1,
     "09-heterogeneous-data-linked-views.json": 2,
     # #576: a Spatial Join takes input_0 on "in" and input_1 on "in_1".
@@ -123,7 +123,7 @@ FAN_IN_NODES = {
     "15-vega-lite-spec-forms-and-catalogs.json": 1,
     "20-storage-folder-of-csv-files.json": 1,
     "23-storage-folder-of-different-files.json": 1,
-    "24-scout-building-rasters.json": 1,
+    "24-scout-shadow-model-chicago-loop.json": 1,
     "25-spatial-join-operations.json": 9,
     # #819: Python (three inputs), Data Transformation, JS Computation,
     # Vega-Lite, Autark and Data Pool.
@@ -276,7 +276,7 @@ def test_example_06_is_three_scenarios_over_one_context():
     Raffles, by their ``building_id``, before copies of Baseline's two nodes
     with factor 1. Outside them, an Autark map after the Difference draws the
     sunlight change."""
-    path = os.path.join(EXAMPLES_DIR, "06-autark-what-if-shadow-study.json")
+    path = os.path.join(EXAMPLES_DIR, "06-back-bay-road-sunlight.json")
     with open(path, "r", encoding="utf-8") as f:
         flow = json.load(f)["dataflow"]
     nodes = {n["id"]: n for n in flow["nodes"]}
@@ -381,7 +381,7 @@ def test_example_06_maps_the_sunlight_change_on_a_diverging_scale_centered_on_no
     the symmetric range alone centers the scale. Valid for the grammar."""
     from utk_curio.backend.app.agents.domain import document_validation
 
-    path = os.path.join(EXAMPLES_DIR, "06-autark-what-if-shadow-study.json")
+    path = os.path.join(EXAMPLES_DIR, "06-back-bay-road-sunlight.json")
     with open(path, "r", encoding="utf-8") as f:
         nodes = {n["id"]: n for n in json.load(f)["dataflow"]["nodes"]}
     content = nodes["whatif-difference-map"]["content"]

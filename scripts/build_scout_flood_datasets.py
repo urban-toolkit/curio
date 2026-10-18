@@ -58,7 +58,7 @@ STAMP = "2026-10-05T00:00:00Z"
 PUBLISHER = "SCOUT (urban-toolkit/scout)"
 
 #: (top, left, bottom, right) in degrees: SCOUT's flood example's corners, the
-#: defaults of the FloodScenarios dataflow's Parameter nodes. They hold every
+#: defaults of the quad-cities-flood-vulnerability dataflow's Parameter nodes. They hold every
 #: cell of SCOUT's grid.
 SCOUT_REGION = (41.6242105, -90.6879323, 41.4150156, -90.4252158)
 #: On the edges of SCOUT's cells: columns 2016 to 2271 and rows 1552 to 1807,
@@ -113,7 +113,7 @@ def _describe(entry: dict, raster) -> str:
         f"{entry['what']} SCOUT's {entry['scout_file']} whole: {raster.width} by {raster.height} cells "
         f"on its grid (EPSG:4326, cells of 0.000101 degrees), longitude {bounds.left:.4f} to "
         f"{bounds.right:.4f} and latitude {bounds.bottom:.4f} to {bounds.top:.4f}, every cell as SCOUT "
-        "ships it, compressed losslessly. The FloodScenarios test dataflow reads it. From SCOUT, "
+        "ships it, compressed losslessly. The quad-cities-flood-vulnerability test dataflow reads it. From SCOUT, "
         "https://github.com/urban-toolkit/scout, backend/compute/quad_city_flooding_simulation/data_substitutes, "
         "used with the permission of SCOUT's authors."
     )

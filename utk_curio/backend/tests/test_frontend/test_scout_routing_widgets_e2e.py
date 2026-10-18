@@ -1,6 +1,6 @@
 """Playwright E2E: Weather Routing's origin, moved in the Widgets tab, moves the route, and stays moved.
 
-The shipped test dataflow ``WeatherRouting.json``, SCOUT's weather routing
+The shipped test dataflow ``chicago-rain-wind-routing.json``, SCOUT's weather routing
 example: the node that loads the roads of SCOUT's box from its OpenStreetMap
 extract, the Weather Routing node of the model package
 ``model.scout.weather-gnn@1``, set as SCOUT's example sets it, and the Fastest
@@ -54,7 +54,7 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "WeatherRouting.json"
+DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "chicago-rain-wind-routing.json"
 PACKAGE_DIR = "model.scout.weather-gnn@1"
 ROUTING_TYPE = "model.scout.weather-gnn/weather-routing"
 PYTHON_TYPE = "curio.builtin/computation-analysis"
@@ -106,7 +106,7 @@ def test_moving_weather_routings_origin_moves_the_route_and_survives_a_reopen(
     dataflow = spec["dataflow"]
     nodes = {node["id"]: node for node in dataflow["nodes"]}
     routings = [node for node in dataflow["nodes"] if node["type"] == ROUTING_TYPE]
-    assert len(routings) == 1, f"WeatherRouting.json has {len(routings)} Weather Routing nodes, not one"
+    assert len(routings) == 1, f"chicago-rain-wind-routing.json has {len(routings)} Weather Routing nodes, not one"
     (routing_node,) = routings
     routing = routing_node["id"]
     widgets = {w["name"]: w for w in routing_node["metadata"]["widgets"]}

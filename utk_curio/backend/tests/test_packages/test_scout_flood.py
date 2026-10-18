@@ -1,6 +1,6 @@
 """SCOUT's flood example in Curio, made of Curio's own nodes, on SCOUT's whole grid (#662, step 18; #819).
 
-The shipped test dataflow ``FloodScenarios.json`` does what SCOUT's
+The shipped test dataflow ``quad-cities-flood-vulnerability.json`` does what SCOUT's
 ``simulate_flood_projection`` does with no SCOUT code: three Data Loading nodes
 read the region's window of SCOUT's rasters, which the Data Catalog holds whole
 (``curio_load_data(..., bounds=...)``), a Raster Calculator per scenario takes
@@ -50,7 +50,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[4]
-DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "FloodScenarios.json"
+DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "quad-cities-flood-vulnerability.json"
 SCOUT_FUNCTION = Path(__file__).resolve().parent / "fixtures" / "scout_flood" / "flood_simulation.py"
 NODE_CODE_TS = REPO / "utk_curio" / "frontend" / "urban-workflows" / "src" / "utils" / "raster" / "rasterNodeCode.ts"
 COMPARE_CODE_TS = REPO / "utk_curio" / "frontend" / "urban-workflows" / "src" / "utils" / "compare" / "compareCode.ts"
@@ -322,7 +322,7 @@ def test_each_raster_is_scouts_whole_file(dataset_id):
     assert manifest["license"] == "", manifest["license"]
     assert "used with the permission of SCOUT's authors" in manifest["description"]
     assert f"SCOUT's {SCOUT_NAMES[dataset_id]} whole: 2592 by 2064 cells" in manifest["description"]
-    assert "The FloodScenarios test dataflow reads it." in manifest["description"]
+    assert "The quad-cities-flood-vulnerability test dataflow reads it." in manifest["description"]
     with rasterio.open(_data_file(dataset_id)) as raster:
         assert raster.crs.to_epsg() == 4326 and raster.count == 1
         assert (raster.height, raster.width) == SCOUT_SHAPE

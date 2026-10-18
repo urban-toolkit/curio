@@ -7,7 +7,7 @@ import { MeasurableNode, NodeBox, resolveNodeBoxSize } from "./nodeBoxSize";
  * shipped in the repo, a gutter of 0, 1 or 8 flags exactly the specs that are
  * genuinely broken and nothing else; at 12 it starts flagging
  * `03-vega-lite-linked-temporal-charts`, whose 10px vertical gap is deliberate,
- * and at 16 `dataflows/Interaction_Vega_Simple`, whose 14px horizontal gaps are
+ * and at 16 `dataflows/interaction-vega-simple`, whose 14px horizontal gaps are
  * too. 8 is the largest value that never relayouts a deliberate arrangement.
  *
  * This is a collision floor, NOT an authoring stride. `NotebookConvertor`'s

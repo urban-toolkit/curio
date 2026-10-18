@@ -1,7 +1,7 @@
 """What a failing e2e test leaves behind: screenshot, node states, browser log, trace.
 
 A test that timed out used to leave nothing but the timeout message. The
-Allure report for a #248 failure (06-autark-what-if-shadow-study, where a Data
+Allure report for a #248 failure (06-back-bay-road-sunlight, where a Data
 Pool never showed its table) had no screenshot, no console output and no
 record of which node was stuck. ``conftest.py`` now calls :func:`finish` after
 every test, and on failure this writes, per test, into

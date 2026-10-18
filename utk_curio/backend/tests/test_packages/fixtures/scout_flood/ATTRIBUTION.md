@@ -7,4 +7,4 @@ SCOUT's example dataflows import).
 
 `test_scout_flood.py` runs it, as SCOUT's flood example calls it, on the Data Catalog's copies of
 SCOUT's rasters, whole (`datasets/data.scout.flood-*`), and compares what it writes with what the
-FloodScenarios test dataflow's own Curio nodes give.
+quad-cities-flood-vulnerability test dataflow's own Curio nodes give.

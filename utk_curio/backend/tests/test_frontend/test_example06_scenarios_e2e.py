@@ -105,8 +105,8 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-EXAMPLE = Path(REPO_ROOT) / "docs" / "examples" / "06-autark-what-if-shadow-study.json"
-EXAMPLE_NAME = "Autark what-if shadow study"
+EXAMPLE = Path(REPO_ROOT) / "docs" / "examples" / "06-back-bay-road-sunlight.json"
+EXAMPLE_NAME = "Back Bay road sunlight when buildings change"
 AUTARK = "curio.builtin/autk-grammar"
 COMPARE = "curio.builtin/compare-scenarios"
 

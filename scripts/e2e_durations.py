@@ -30,7 +30,7 @@ def group_of(classname: str, name: str) -> str | None:
     """The xdist group of one JUnit test case.
 
     A run under ``--dist loadgroup`` (the GPU runner) appends it to the name
-    (``test_x[...]@wf-Vega.json``); a run without workers does not, so it is
+    (``test_x[...]@wf-vega.json``); a run without workers does not, so it is
     rebuilt from the module and the parameter id the way conftest assigns it.
     """
     if "@" in name:

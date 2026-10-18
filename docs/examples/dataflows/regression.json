@@ -1,0 +1,115 @@
+{
+  "dataflow": {
+    "categories": {"city": ["Niterói"], "topic": ["Mobility and streets"], "complexity": ["Beginner"]},
+    "nodes": [
+      {
+        "id": "reg-data",
+        "type": "curio.builtin/autk-grammar",
+        "x": -107.55986904696073,
+        "y": 400,
+        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/niteroi.osm.pbf\",\n      \"queryArea\": {\n        \"geocodeArea\": \"Rio de Janeiro\",\n        \"areas\": [\n          \"Niterói\"\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"surface\",\n          \"parks\",\n          \"water\",\n          \"roads\"\n        ]\n      }\n    },\n    {\n      \"type\": \"join\",\n      \"tableRootName\": \"table_osm_roads\",\n      \"tableJoinName\": \"table_osm_surface\",\n      \"near\": {\n        \"distance\": 50\n      },\n      \"groupBy\": [\n        {\n          \"column\": \"*\",\n          \"aggregateFn\": \"count\"\n        }\n      ]\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load Niteroi OSM road network (surface, parks, water, roads) from PBF and run a spatial join of roads against the surface layer.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "reg-compute",
+        "type": "curio.builtin/autk-grammar",
+        "x": 500,
+        "y": 400,
+        "content": "{\n  \"compute\": [\n    {\n      \"dataRef\": \"table_osm_roads\",\n      \"attributes\": {\n        \"x\": \"lanes\"\n      },\n      \"outputColumnName\": \"lanes_norm\",\n      \"wglsFunction\": \"if (x <= 0.0) { return 1.0; } if (x > 8.0) { return 8.0; } return x;\"\n    },\n    {\n      \"dataRef\": \"table_osm_roads\",\n      \"attributes\": {\n        \"n\": \"sjoin.count.table_osm_surface\"\n      },\n      \"outputColumnName\": \"surface_count\",\n      \"wglsFunction\": \"return n;\"\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Normalise lane count via GPU — clamp to the 1–8 range — and carry the spatial join's surface count along. Output lands on table_osm_roads as lanes_norm and surface_count; surface/parks/water flow through untouched.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "reg-pool",
+        "type": "curio.builtin/data-pool",
+        "x": 1155.45830036549,
+        "y": 400,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Fan augmented roads (plus context layers) out to map and plot; route brush selections on roads back from plot to map.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "reg-map",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1767.2728668661587,
+        "y": -184.39304699391676,
+        "width": 862,
+        "height": 692,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_surface\"\n      },\n      {\n        \"dataRef\": \"table_osm_parks\"\n      },\n      {\n        \"dataRef\": \"table_osm_water\"\n      },\n      {\n        \"dataRef\": \"table_osm_roads\",\n        \"isPick\": true,\n        \"isColorMap\": true,\n        \"getFnv\": \"lanes_norm\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 1,\n        \"title\": \"Lanes\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Render roads in 3D coloured by normalised lane count, with background surface, parks and water layers.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "reg-plot",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1798.941992901348,
+        "y": 653.9915359432108,
+        "width": 841,
+        "height": 568,
+        "content": "{\n  \"plot\": {\n    \"dataRef\": \"table_osm_roads\",\n    \"mark\": \"bar\",\n    \"axis\": [\n      \"lanes_norm\",\n      \"@transform\"\n    ],\n    \"title\": \"Niterói road lane distribution\",\n    \"transform\": {\n      \"preset\": \"binning-1d\",\n      \"options\": {\n        \"bins\": 8\n      }\n    },\n    \"events\": [\n      \"brushX\"\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Show a brushable lane distribution histogram; brushing routes through the pool to highlight roads on the 3D map.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-reg-dataout-reg-computein",
+        "source": "reg-data",
+        "target": "reg-compute"
+      },
+      {
+        "id": "reactflow__edge-reg-computeout-reg-poolin",
+        "source": "reg-compute",
+        "target": "reg-pool"
+      },
+      {
+        "id": "reactflow__edge-reg-poolout-reg-mapin",
+        "source": "reg-pool",
+        "target": "reg-map"
+      },
+      {
+        "id": "reactflow__edge-reg-poolout-reg-plotin",
+        "source": "reg-pool",
+        "target": "reg-plot"
+      },
+      {
+        "type": "Interaction",
+        "id": "reactflow__edge-reg-poolin/out-reg-plotin/out",
+        "source": "reg-pool",
+        "target": "reg-plot"
+      },
+      {
+        "type": "Interaction",
+        "id": "reactflow__edge-reg-poolin/out-reg-mapin/out",
+        "source": "reg-pool",
+        "target": "reg-map"
+      }
+    ],
+    "name": "regression",
+    "task": "",
+    "timestamp": 1780974029149,
+    "provenance_id": "regression",
+    "packages": []
+  }
+}

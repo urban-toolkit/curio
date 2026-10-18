@@ -141,7 +141,7 @@ describe.each([
 });
 
 test("examples 06 and 07 pack each part's outer ring, the path these rows answer", () => {
-  for (const file of ["06-autark-what-if-shadow-study.json", "07-autark-gpu-shader.json"]) {
+  for (const file of ["06-back-bay-road-sunlight.json", "07-autark-gpu-shader.json"]) {
     const text = fs.readFileSync(path.join(EXAMPLES_DIR, file), "utf8");
     expect(text).toContain('\\"path\\": \\"geometry.coordinates.0\\"');
   }

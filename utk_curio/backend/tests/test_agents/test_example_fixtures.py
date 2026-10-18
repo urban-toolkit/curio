@@ -56,8 +56,8 @@ class TestCompleteness:
         assert not examples - fixtures, f"examples with no fixture: {sorted(examples - fixtures)}"
         assert not fixtures - examples, f"fixtures with no example: {sorted(fixtures - examples)}"
         # The 26 numbered examples (24 from #662, 25 from #576, 26 from #819)
-        # and the 28 test dataflows (#662 added Scenarios, FloodScenarios,
-        # ScoutShadows, WeatherRouting and NetCDF, the plan for #914
+        # and the 28 test dataflows (#662 added scenarios, quad-cities-flood-vulnerability,
+        # chicago-loop-shadow-towers, chicago-rain-wind-routing and netcdf-hourly-rain, the plan for #914
         # lower-manhattan-park-shade, and komar41's #914 the scenario
         # comparison charts).
         assert len(fixtures) == 54

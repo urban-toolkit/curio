@@ -48,7 +48,7 @@
       "Tables"
     ]
   },
-  "06-autark-what-if-shadow-study": {
+  "06-back-bay-road-sunlight": {
     "tags": [
       "Autark",
       "GPU compute"
@@ -237,7 +237,7 @@
       "Geometries"
     ]
   },
-  "24-scout-building-rasters": {
+  "24-scout-shadow-model-chicago-loop": {
     "tags": [
       "Autark",
       "SCOUT"
@@ -269,7 +269,7 @@
       "Geometries"
     ]
   },
-  "dataflows/AutkMap": {
+  "dataflows/autk-map": {
     "tags": [
       "Autark",
       "GeoPandas"
@@ -278,7 +278,7 @@
       "Geometries"
     ]
   },
-  "dataflows/DataPool_AutkMap": {
+  "dataflows/data-pool-autk-map": {
     "tags": [
       "Autark",
       "GeoPandas"
@@ -287,7 +287,7 @@
       "Geometries"
     ]
   },
-  "dataflows/DataPool_Dataframe": {
+  "dataflows/data-pool-dataframe": {
     "tags": [
       "Pandas"
     ],
@@ -295,7 +295,7 @@
       "Tables"
     ]
   },
-  "dataflows/DataPool_Geodataframe": {
+  "dataflows/data-pool-geodataframe": {
     "tags": [
       "GeoPandas"
     ],
@@ -303,7 +303,7 @@
       "Geometries"
     ]
   },
-  "dataflows/DataPool_Vega": {
+  "dataflows/data-pool-vega": {
     "tags": [
       "Vega-Lite",
       "Pandas"
@@ -312,7 +312,7 @@
       "Tables"
     ]
   },
-  "dataflows/DataPool_Vega_2": {
+  "dataflows/data-pool-vega-2": {
     "tags": [
       "Vega-Lite",
       "GeoPandas",
@@ -323,11 +323,11 @@
       "Geometries"
     ]
   },
-  "dataflows/DefaultWorkflow": {
+  "dataflows/default-workflow": {
     "tags": [],
     "data_type": []
   },
-  "dataflows/FloodScenarios": {
+  "dataflows/quad-cities-flood-vulnerability": {
     "tags": [
       "Autark",
       "Pandas",
@@ -339,7 +339,7 @@
       "Rasters"
     ]
   },
-  "dataflows/Image": {
+  "dataflows/image": {
     "tags": [
       "Pandas"
     ],
@@ -348,7 +348,7 @@
       "Imagery"
     ]
   },
-  "dataflows/ImageUrls": {
+  "dataflows/image-urls": {
     "tags": [
       "GeoPandas"
     ],
@@ -357,7 +357,7 @@
       "Imagery"
     ]
   },
-  "dataflows/Interaction_Autark": {
+  "dataflows/interaction-autark": {
     "tags": [
       "Autark",
       "GPU compute"
@@ -367,7 +367,7 @@
       "OpenStreetMap"
     ]
   },
-  "dataflows/Interaction_AutkMap": {
+  "dataflows/interaction-autk-map": {
     "tags": [
       "Autark",
       "GeoPandas"
@@ -376,7 +376,7 @@
       "Geometries"
     ]
   },
-  "dataflows/Interaction_Vega": {
+  "dataflows/interaction-vega": {
     "tags": [
       "Vega-Lite",
       "GeoPandas"
@@ -385,7 +385,7 @@
       "Geometries"
     ]
   },
-  "dataflows/Interaction_Vega_Autark": {
+  "dataflows/interaction-vega-autark": {
     "tags": [
       "Autark",
       "Vega-Lite",
@@ -395,7 +395,7 @@
       "Geometries"
     ]
   },
-  "dataflows/Interaction_Vega_Simple": {
+  "dataflows/interaction-vega-simple": {
     "tags": [
       "Vega-Lite",
       "Pandas"
@@ -404,11 +404,11 @@
       "Tables"
     ]
   },
-  "dataflows/JSComputation": {
+  "dataflows/js-computation": {
     "tags": [],
     "data_type": []
   },
-  "dataflows/MultiInput": {
+  "dataflows/multi-input": {
     "tags": [
       "Pandas"
     ],
@@ -416,7 +416,7 @@
       "Tables"
     ]
   },
-  "dataflows/MultiInputDataPool": {
+  "dataflows/multi-input-data-pool": {
     "tags": [
       "Pandas"
     ],
@@ -424,7 +424,7 @@
       "Tables"
     ]
   },
-  "dataflows/NetCDF": {
+  "dataflows/netcdf-hourly-rain": {
     "tags": [
       "Vega-Lite",
       "Pandas",
@@ -434,7 +434,7 @@
       "Tables"
     ]
   },
-  "dataflows/Regression": {
+  "dataflows/regression": {
     "tags": [
       "Autark",
       "GPU compute"
@@ -444,7 +444,7 @@
       "OpenStreetMap"
     ]
   },
-  "dataflows/Scenarios": {
+  "dataflows/scenarios": {
     "tags": [
       "Vega-Lite",
       "Pandas"
@@ -453,7 +453,7 @@
       "Tables"
     ]
   },
-  "dataflows/ScoutShadows": {
+  "dataflows/chicago-loop-shadow-towers": {
     "tags": [
       "Autark",
       "SCOUT"
@@ -462,7 +462,7 @@
       "Geometries"
     ]
   },
-  "dataflows/SimpleView": {
+  "dataflows/simple-view": {
     "tags": [
       "Pandas"
     ],
@@ -470,7 +470,7 @@
       "Tables"
     ]
   },
-  "dataflows/Vega": {
+  "dataflows/vega": {
     "tags": [
       "Vega-Lite",
       "Pandas"
@@ -479,7 +479,7 @@
       "Tables"
     ]
   },
-  "dataflows/WeatherRouting": {
+  "dataflows/chicago-rain-wind-routing": {
     "tags": [
       "Autark",
       "SCOUT"
@@ -489,7 +489,7 @@
       "OpenStreetMap"
     ]
   },
-  "dataflows/Widget": {
+  "dataflows/widget": {
     "tags": [
       "Pandas"
     ],

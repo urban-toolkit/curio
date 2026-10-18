@@ -12,7 +12,7 @@ shapes, both documented on ``worker._expand_outputs_wrapper``:
 Python expression, so an artifact id like ``1787698132616_820e772c`` -- a
 decimal literal followed by a name -- raised ``SyntaxError: invalid decimal
 literal`` and the node failed before running. Found by the isolated CI job
-running Merge.json (now MultiInput.json), which no unit test covered.
+running Merge.json (now multi-input.json), which no unit test covered.
 
 Run:  pytest utk_curio/sandbox/tests/test_isolation_input_shapes.py -v
 """

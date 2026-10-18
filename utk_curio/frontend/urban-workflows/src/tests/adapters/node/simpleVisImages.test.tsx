@@ -104,7 +104,7 @@ describe('Simple View image modes', () => {
     expect(screen.getAllByRole('img')).toHaveLength(2);
   });
 
-  it('still renders the base64 image_content contract Image.json ships', async () => {
+  it('still renders the base64 image_content contract image.json ships', async () => {
     const input = {
       dataType: 'dataframe',
       data: { image_id: { 0: 0, 1: 1 }, image_content: { 0: longBase64, 1: longBase64 } },

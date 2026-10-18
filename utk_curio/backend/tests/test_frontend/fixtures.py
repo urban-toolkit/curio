@@ -716,7 +716,7 @@ def loaded_workflow(
 
     # Build a seeded copy of the workflow JSON for the browser upload.
     # Force UTF-8 — without it, Windows opens in cp1252 and mangles any
-    # non-ASCII string in the workflow (e.g. "Niterói" in Regression.json
+    # non-ASCII string in the workflow (e.g. "Niterói" in regression.json
     # becomes "NiterÃ³i", which Overpass then can't match).
     with open(workflow_file, "r", encoding="utf-8") as f:
         wf_data = json.load(f)

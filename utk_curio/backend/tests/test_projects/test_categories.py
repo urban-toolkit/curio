@@ -1,13 +1,13 @@
 """Dataflow categories: what the Projects rail filters by.
 
 ``shipped_categories.json`` is the placement the owner approved for the 44
-shipped dataflows (2026-09-30), and the Scenarios, FloodScenarios,
-ScoutShadows, WeatherRouting and NetCDF test dataflows and
+shipped dataflows (2026-09-30), and the scenarios, quad-cities-flood-vulnerability,
+chicago-loop-shadow-towers, chicago-rain-wind-routing and netcdf-hourly-rain test dataflows and
 example 24 placed by the same rules (#662, 2026-10-05), example 25 (#576),
 example 26 (#819), the lower-manhattan-park-shade test dataflow (the plan for
 #914, 2026-10-17) and the scenario comparison charts test dataflow (from
 komar41's #914), with the computed ``SCOUT`` tag on the six SCOUT dataflows
-(2026-10-17), and ``Pandas`` and ``Tables`` on FloodScenarios once it builds a
+(2026-10-17), and ``Pandas`` and ``Tables`` on quad-cities-flood-vulnerability once it builds a
 table of the riverside tracts' depth by period (2026-10-18). The automatic
 sections must reproduce it from
 the files alone, and the hand-set ones live in the files themselves.
@@ -160,7 +160,7 @@ def test_a_scout_model_loaded_in_a_code_node_tags_the_dataflow_scout():
     ("", [{"datasetId": "data.scout.flood-nbs-classes", "dirName": "data.scout.flood-nbs-classes@1"}]),
 ], ids=["loaded-in-code", "path-in-code", "in-the-dataflow-datasets"])
 def test_a_scout_dataset_alone_tags_the_dataflow_scout(content, datasets):
-    """FloodScenarios and NetCDF have no SCOUT node, only SCOUT's datasets."""
+    """quad-cities-flood-vulnerability and netcdf-hourly-rain have no SCOUT node, only SCOUT's datasets."""
     node = {"id": "a", "type": "curio.builtin/data-loading@1", "content": content}
     assert _tags([node], datasets) == ["SCOUT"]
 

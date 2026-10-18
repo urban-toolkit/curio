@@ -14,7 +14,7 @@ share nothing but the stack underneath them::
 
     # more users, a different dataflow
     CURIO_STRESS=1 CURIO_STRESS_BROWSER_USERS=3 \
-      CURIO_STRESS_BROWSER_WORKFLOW=docs/examples/dataflows/AutkMap.json \
+      CURIO_STRESS_BROWSER_WORKFLOW=docs/examples/dataflows/autk-map.json \
       pytest tests/test_frontend/test_stress_browser.py -s
 
 Playwright's sync API is single-threaded, so the users cannot literally click
@@ -51,9 +51,9 @@ REPO_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
 )
 
-# Interaction_Autark renders a map, a plot and a compute pass from one data
+# interaction-autark renders a map, a plot and a compute pass from one data
 # load, so a single user exercises every browser-side Autark path.
-DEFAULT_WORKFLOW = "docs/examples/dataflows/Interaction_Autark.json"
+DEFAULT_WORKFLOW = "docs/examples/dataflows/interaction-autark.json"
 DEFAULT_USERS = 5
 
 

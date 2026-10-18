@@ -233,8 +233,8 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
       // Single-layer wrapper: there's only one place the interactions can land,
       // so route every interaction to it regardless of whether the autk-grammar
       // emit used an "input_<k>" dataRef (Vega/Python flows) or the actual
-      // table name (single-layer autk compute). This keeps Interaction_Vega_Autark
-      // and Interaction_Autark working without per-example dataRef alignment.
+      // table name (single-layer autk compute). This keeps interaction-vega-autark
+      // and interaction-autark working without per-example dataRef alignment.
       //
       // Multi-layer wrapper: match interactions to layers by name. Interactions
       // whose layerRef doesn't match any layer in the wrapper are dropped (the

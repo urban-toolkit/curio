@@ -230,7 +230,7 @@ EXAMPLE_SAVELOAD = os.path.join(
 # the file.
 NOTEBOOK = os.path.join(REPO_ROOT, "docs", "examples", "dataflows", "test_notebook.ipynb")
 EXAMPLE_INTERACTION = os.path.join(
-    REPO_ROOT, "docs", "examples", "dataflows", "Interaction_Vega_Simple.json",
+    REPO_ROOT, "docs", "examples", "dataflows", "interaction-vega-simple.json",
 )
 EXAMPLE_AUTARK = os.path.join(
     REPO_ROOT, "docs", "examples", "11-autark-pbf-loading.json",
@@ -2025,7 +2025,7 @@ def scene_catalogs(ctx: Ctx) -> None:
 # the examples (pytest --with-examples), which also installs the SCOUT packages.
 
 # Example 06: three scenarios over one loader and its Data Pool.
-WHATIF_NAME = "Autark what-if shadow study"
+WHATIF_NAME = "Back Bay road sunlight when buildings change"
 WHATIF_DATA = "whatif-data"
 WHATIF_POOL = "whatif-pool"
 WHATIF_EDIT = "whatif-towers-edit"
@@ -2038,7 +2038,7 @@ DRAWER_SCENARIOS = '[data-curio-scenario-catalog-drawer="true"]'
 
 # Example 24: SCOUT's Chicago Loop buildings, their height mosaic and Deep
 # Umbra's summer shadow, each on an Autark map.
-SHADOW_NAME = "SCOUT building rasters"
+SHADOW_NAME = "SCOUT shadow model on Chicago Loop buildings"
 SHADOW_MAPS = {
     "buildings": "e1b607c4-51b5-5b82-bf4a-0227284def51",
     "mosaic": "ebac4811-abcc-50fe-a61a-cc9c9ac8c011",
@@ -2046,9 +2046,9 @@ SHADOW_MAPS = {
 }
 SHADOW_STATS = "8a914e39-4cb1-535d-9a8b-19b45f6be288"
 
-# FloodScenarios: three Parameter nodes, the period and the region's corners,
+# quad-cities-flood-vulnerability: three Parameter nodes, the period and the region's corners,
 # read by its Data Loading nodes.
-FLOOD_NAME = "FloodScenarios"
+FLOOD_NAME = "Quad Cities flood depth, nature-based solutions and vulnerability"
 FLOOD_PERIOD = "8f0c1e2a-5b3d-4c7e-9a61-2d4f6b8e0c13"
 FLOOD_TOPLEFT = "c1d2e3f4-0a1b-4c2d-8e3f-4a5b6c7d8e91"
 FLOOD_CLASSES = "e3f4a5b6-2c3d-4e4f-8a5b-6c7d8e9fa0b3"
@@ -2384,7 +2384,7 @@ def scene_shadows(ctx: Ctx) -> None:
 
 
 def scene_parameter(ctx: Ctx) -> None:
-    """FloodScenarios run, and its period and corner Parameter nodes beside
+    """quad-cities-flood-vulnerability run, and its period and corner Parameter nodes beside
     the Data Loading nodes whose code reads them."""
     page, tour = ctx.page, ctx.tour
     _open_project(ctx, _account_project(ctx, FLOOD_NAME), [FLOOD_PERIOD, FLOOD_DEPTH])

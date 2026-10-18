@@ -427,7 +427,7 @@ def parse_workflow(filepath: str) -> WorkflowSpec:
     """Read a workflow JSON file and return a ``WorkflowSpec``.
 
     Forces UTF-8 — Windows defaults to cp1252 here, which mangles
-    non-ASCII content (e.g. "Niterói" in Regression.json) and breaks
+    non-ASCII content (e.g. "Niterói" in regression.json) and breaks
     string-equality checks against the Monaco editor value.
     """
     with open(filepath, "r", encoding="utf-8") as f:

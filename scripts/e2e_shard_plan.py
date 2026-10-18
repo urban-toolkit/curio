@@ -35,7 +35,7 @@ _PARAM_RE = re.compile(r"\[(.+)\]$")
 
 
 def _module_and_param(classname: str, name: str) -> tuple[str, str | None]:
-    """('test_workflows', 'Vega.json') for a parametrized TestWorkflowCanvas case."""
+    """('test_workflows', 'vega.json') for a parametrized TestWorkflowCanvas case."""
     module = ""
     for part in classname.split("."):
         if part.startswith("test_"):

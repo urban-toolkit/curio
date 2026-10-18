@@ -109,7 +109,7 @@ an input that is one frame with no layer name is the layer the chip reads. Fed
 several layers without a `table_osm_roads` one, the node fails with a message
 naming the layers its input has.
 
-The test dataflow [WeatherRouting](../../docs/examples/dataflows/WeatherRouting.json)
+The test dataflow [Routing around rain and wind in downtown Chicago](../../docs/examples/dataflows/chicago-rain-wind-routing.json)
 is SCOUT's weather routing example as this dataflow: one Weather Routing node
 over the roads of SCOUT's box in downtown Chicago, and two scenarios, "Fastest
 route" and "Weather-aware route", that each keep one of its routes, drawn on

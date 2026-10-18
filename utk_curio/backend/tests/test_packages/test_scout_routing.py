@@ -29,7 +29,7 @@ roads layer its layer chip ``[!! input_0:table_osm_roads !!]`` reads. It returns
 lines and the tags routing reads, ``fixtures/scout_routing/loop_roads.parquet``,
 written by ``scripts/scout/loop_roads_fixture.py``).
 
-The shipped example, ``WeatherRouting.json``, is SCOUT's weather routing
+The shipped example, ``chicago-rain-wind-routing.json``, is SCOUT's weather routing
 example: one Weather Routing node set as SCOUT's example sets it, on the roads
 its Autark node loads from the OpenStreetMap extract of SCOUT's box,
 ``chicago_downtown.osm.pbf``. Those roads are made here as a run on the server
@@ -67,7 +67,7 @@ SCOUT = "https://github.com/urban-toolkit/scout"
 PYTHON_TYPE = "curio.builtin/computation-analysis"
 AUTARK_TYPE = "curio.builtin/autk-grammar"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
-DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "WeatherRouting.json"
+DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "chicago-rain-wind-routing.json"
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scout_routing"
 REFERENCE = FIXTURES / "routing_reference.json"
 LOOP_ROADS = FIXTURES / "loop_roads.parquet"
@@ -671,7 +671,7 @@ def _dataflow() -> dict:
 def _routing_node() -> dict:
     """The shipped dataflow's one Weather Routing node."""
     routings = [n for n in _dataflow()["nodes"] if n["type"] == NODE_TYPE]
-    assert len(routings) == 1, f"WeatherRouting.json has {len(routings)} Weather Routing nodes, not one"
+    assert len(routings) == 1, f"chicago-rain-wind-routing.json has {len(routings)} Weather Routing nodes, not one"
     return routings[0]
 
 
@@ -681,7 +681,7 @@ def _example_values() -> dict:
 
 
 def test_the_shipped_dataflow_runs_scouts_example():
-    """``WeatherRouting.json`` is SCOUT's weather routing example and how its CI
+    """``chicago-rain-wind-routing.json`` is SCOUT's weather routing example and how its CI
     run reaches this package. One Weather Routing node holds the template's
     source and widgets, set as SCOUT's example sets them (its start time is
     the next test's), and its code resolves with nothing left over. Two

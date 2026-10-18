@@ -65,7 +65,7 @@ describe('resolveImageColumns', () => {
     expect(resolveImageColumns(rows)).toEqual(['image_url']);
   });
 
-  it('keeps the Image.json contract working', () => {
+  it('keeps the image.json contract working', () => {
     const rows = [
       { image_id: 0, image_content: longBase64 },
       { image_id: 1, image_content: longBase64 },

@@ -232,7 +232,7 @@ python curio.py test unit --use-existing
 python curio.py test backend
 
 # watch the browser, specific workflows only
-python curio.py test e2e --use-existing --headed --workflows Vega.json,Regression.json
+python curio.py test e2e --use-existing --headed --workflows vega.json,regression.json
 
 # E2E on 4 xdist workers, one backend+sandbox pair each (see test_frontend/README.md, "Parallel")
 python curio.py test e2e --parallel 4
@@ -369,7 +369,7 @@ CURIO_E2E_USE_EXISTING=1 pytest utk_curio/backend/tests/test_frontend/
 Run only specific workflows by setting `CURIO_E2E_WORKFLOWS` (comma-separated basenames):
 
 ```bash
-CURIO_E2E_WORKFLOWS=Vega.json,Regression.json pytest utk_curio/backend/tests/test_frontend/test_workflows.py
+CURIO_E2E_WORKFLOWS=vega.json,regression.json pytest utk_curio/backend/tests/test_frontend/test_workflows.py
 ```
 
 Preview which tests will run without executing them:
@@ -382,10 +382,10 @@ Run a single workflow test:
 
 ```bash
 # one workflow, one test method
-pytest utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_and_edge_count[Vega.json]
+pytest utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_and_edge_count[vega.json]
 
 # all checks for one workflow
-pytest utk_curio/backend/tests/test_frontend/test_workflows.py -k "Vega.json"
+pytest utk_curio/backend/tests/test_frontend/test_workflows.py -k "vega.json"
 ```
 
 **Test matrix.** Each workflow runs four checks:

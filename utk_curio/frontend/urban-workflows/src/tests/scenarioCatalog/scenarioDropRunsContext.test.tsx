@@ -64,11 +64,11 @@ const runs = runsApi as unknown as { start: jest.Mock; follow: jest.Mock; get: j
 
 const PAYLOAD = { projectId: "src", scenarioId: "existing" } as any;
 
-/** What the server says a drop of "Existing" from ScoutShadows copies; *toRun* lists the context to run first. */
+/** What the server says a drop of "Existing" from chicago-loop-shadow-towers copies; *toRun* lists the context to run first. */
 function plan(toRun: { nodeId: string; label: string }[]): any {
   return {
     scenario: { id: "existing", name: "Existing", color: "#2a9d8f", description: "" },
-    project: { id: "src", name: "ScoutShadows" },
+    project: { id: "src", name: "Chicago Loop shadow with towers removed or edited" },
     levers: ["shadow"],
     context: [{ nodeId: "buildings", label: "Buildings", source: { nodeId: "buildings", copiedFrom: [] } }],
     outcomes: [{ nodeId: "shadow", label: "Accumulated Shadow", sources: [] }],
@@ -129,7 +129,8 @@ it("runs the context on the server in the scenario's project, plans again, then 
 
   expect(runs.start).toHaveBeenCalledTimes(1);
   expect(runs.start).toHaveBeenCalledWith("src", { targets: ["buildings"] });
-  expect(mockShowToast).toHaveBeenCalledWith("Running Buildings in ScoutShadows for Existing", "info");
+  expect(mockShowToast).toHaveBeenCalledWith(
+    "Running Buildings in Chicago Loop shadow with towers removed or edited for Existing", "info");
   expect(runs.follow.mock.calls.map(([runId]) => runId)).toEqual(["r1"]);
   expect(catalog.getCopyPlan).toHaveBeenCalledTimes(2);
   expect(catalog.getCopyPlan).toHaveBeenLastCalledWith("src", "existing", "target");
@@ -154,7 +155,8 @@ it("names every node it runs", async () => {
   await drop();
 
   expect(runs.start).toHaveBeenCalledWith("src", { targets: ["buildings", "trees"] });
-  expect(mockShowToast).toHaveBeenCalledWith("Running Buildings and Trees in ScoutShadows for Existing", "info");
+  expect(mockShowToast).toHaveBeenCalledWith(
+    "Running Buildings and Trees in Chicago Loop shadow with towers removed or edited for Existing", "info");
 });
 
 it("a run that fails says why and copies nothing", async () => {
@@ -171,7 +173,7 @@ it("a run that fails says why and copies nothing", async () => {
   expect(catalog.copyInto).not.toHaveBeenCalled();
   const [message] = errors();
   expect(message).toContain("Buildings");
-  expect(message).toContain("ScoutShadows");
+  expect(message).toContain("Chicago Loop shadow with towers removed or edited");
   expect(message).toContain("FileNotFoundError: buildings.geojson");
 });
 

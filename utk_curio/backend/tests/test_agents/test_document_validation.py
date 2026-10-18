@@ -55,7 +55,7 @@ OWNERS_AUTK = json.dumps({
 
 
 def _flood_depth_map(**options) -> dict:
-    """A map of one raster layer, written as FloodScenarios writes its "Flood
+    """A map of one raster layer, written as quad-cities-flood-vulnerability writes its "Flood
     depth (m)" maps, with *options* added to the layer."""
     return {"map": {"layerRefs": [{
         "dataRef": "input_0", "getFnv": "band_1",

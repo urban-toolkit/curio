@@ -1,0 +1,273 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "chicago-rain-wind-routing",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/dataflows/chicago-rain-wind-routing.json",
+    "sha256": "d1b0efe56d40bbea28464ef489aecde8e47e69cda3abbd0d38603466e49d1c33",
+    "walkthrough": null
+  },
+  "prompt": "Reproduce SCOUT's weather routing example in downtown Chicago, using SCOUT's routing model and its forecast. Load the roads of SCOUT's routing box from the OpenStreetMap extract the examples ship, and route between SCOUT's two points with its default weights, starting at the hour of the forecast SCOUT's own run read. Make two scenarios: one keeps the fastest route, the other the route the weather weights favor, and each takes its route and its metrics apart. Draw both routes over the roads on one map, each in its scenario's color, and chart the two routes' duration, distance, rain exposure and wind exposure in the same colors. The routing model is not part of the standard node set, so whatever provides it needs installing first.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.scout.wrf-rain",
+      "data.scout.wrf-rh2",
+      "data.scout.wrf-t2",
+      "data.scout.wrf-wdir10",
+      "data.scout.wrf-wspd10"
+    ],
+    "packages": [
+      "model.scout.weather-gnn@1"
+    ],
+    "paths": [
+      "docs/examples/data/chicago_downtown.osm.pbf"
+    ]
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/compare-scenarios",
+        "role": "visualization",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization4",
+        "type": "curio.builtin/compare-scenarios",
+        "role": "visualization",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization5",
+        "type": "curio.builtin/compare-scenarios",
+        "role": "visualization",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization6",
+        "type": "curio.builtin/compare-scenarios",
+        "role": "visualization",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis3",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis4",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis5",
+        "type": "model.scout.weather-gnn/weather-routing",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "visualization1",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "visualization1",
+        "to": "analysis5",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization2",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization2",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "analysis3",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis3",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "analysis3",
+        "to": "visualization5",
+        "kind": "data"
+      },
+      {
+        "from": "analysis3",
+        "to": "visualization6",
+        "kind": "data"
+      },
+      {
+        "from": "analysis4",
+        "to": "visualization3",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis4",
+        "to": "visualization4",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis4",
+        "to": "visualization5",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis4",
+        "to": "visualization6",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis5",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis5",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis5",
+        "to": "analysis3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis5",
+        "to": "analysis4",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.scout.wrf-rain",
+        "data.scout.wrf-rh2",
+        "data.scout.wrf-t2",
+        "data.scout.wrf-wdir10",
+        "data.scout.wrf-wspd10"
+      ],
+      "paths": [
+        "docs/examples/data/chicago_downtown.osm.pbf"
+      ],
+      "urls": []
+    }
+  },
+  "intents": [
+    {
+      "ref": "analysis5",
+      "mustMention": [
+        "route"
+      ]
+    }
+  ],
+  "execution": {
+    "mode": "browser",
+    "browserOnlyKinds": [
+      "curio.builtin/autk-grammar"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T1",
+    "needs": [
+      "browser-only-execution",
+      "package-enlist:templates"
+    ],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "the SCOUT routing example step (#819's port, step 8), from the example JSON, 2026-10-15",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "sourceLicences": [
+      {
+        "datasetId": "data.scout.wrf-rain",
+        "licence": ""
+      },
+      {
+        "datasetId": "data.scout.wrf-rh2",
+        "licence": ""
+      },
+      {
+        "datasetId": "data.scout.wrf-t2",
+        "licence": ""
+      },
+      {
+        "datasetId": "data.scout.wrf-wdir10",
+        "licence": ""
+      },
+      {
+        "datasetId": "data.scout.wrf-wspd10",
+        "licence": ""
+      }
+    ],
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids. The datasets, and the weather GNN the routing nodes name from the Model Catalog, are SCOUT's (urban-toolkit/scout), used with the permission of its authors; the datasets carry no licence string."
+  },
+  "notes": "A package node with widgets set as SCOUT's example sets them, over Autark's roads of SCOUT's box, read by two scenarios that each keep one of its routes: SCOUT's weather routing, mapped through Autark in the scenarios' colors and compared on four charts."
+}

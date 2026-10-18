@@ -96,7 +96,7 @@ describe("trillToNotebook", () => {
 
   it("keeps a multi-line return intact by preserving the function", () => {
     // A textual `return X` -> `var = X` rewrite mangles this; wrapping the body
-    // back into its function does not. SimpleView.json contains exactly this.
+    // back into its function does not. simple-view.json contains exactly this.
     const content = "import pandas as pd\n\nreturn pd.DataFrame({\n    'city': ['Chicago'],\n})\n";
     const nb = trillToNotebook(spec([{ id: "n", type: NodeType.DATA_LOADING, content }]));
     const source = codeCells(nb)[0].source;

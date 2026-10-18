@@ -32,7 +32,7 @@ PACKAGE = REPO / "packages" / "scout.raster-conversion@1"
 SOURCES = PACKAGE / "sources"
 MODULE = "scout_raster_conversion"
 NODE_TYPE = "scout.raster-conversion/rasterize-buildings"
-EXAMPLE = REPO / "docs" / "examples" / "24-scout-building-rasters.json"
+EXAMPLE = REPO / "docs" / "examples" / "24-scout-shadow-model-chicago-loop.json"
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scout"
 BUILDINGS = FIXTURES / "A_buildings.geojson"
