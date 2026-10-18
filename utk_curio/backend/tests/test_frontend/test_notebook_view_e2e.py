@@ -325,7 +325,7 @@ def _wait_for_column(page, ids: list[str], *, timeout_ms: int = 20000) -> list[d
     return _cells(page, ids)
 
 
-#: How visible a cell's tools (its tabs, Save output, info, pin, comments) are:
+#: How visible a cell's tools (its tabs, Save output, info, pin) are:
 #: the computed opacity of its header's group of tools.
 _TOOLS_OPACITY_JS = """(id) => {
     const tools = document.querySelector(`[id="${id}resizable"] > .curio-node-header > .curio-node-tools`);
