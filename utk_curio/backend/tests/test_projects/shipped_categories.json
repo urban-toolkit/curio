@@ -278,16 +278,6 @@
       "Geometries"
     ]
   },
-  "dataflows/BuildingRasters": {
-    "tags": [
-      "Autark",
-      "GeoPandas",
-      "SCOUT"
-    ],
-    "data_type": [
-      "Geometries"
-    ]
-  },
   "dataflows/DataPool_AutkMap": {
     "tags": [
       "Autark",

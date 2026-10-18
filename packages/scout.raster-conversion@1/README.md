@@ -47,8 +47,9 @@ nothing, and a building taller than the maximum height is drawn at the maximum.
 [ Data Loading: buildings ] ──► [ Rasterize Buildings ] ──► [ Autark: map of the heights ]
 ```
 
-The test dataflow [BuildingRasters](../../docs/examples/dataflows/BuildingRasters.json)
-is this dataflow, on twelve buildings built in code.
+[Example 24](../../docs/examples/24-scout-building-rasters.md) holds this
+dataflow, on SCOUT's Chicago Loop buildings from the Data Catalog, and runs
+Deep Umbra on the raster.
 
 ## Setup
 

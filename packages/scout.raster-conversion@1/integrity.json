@@ -1,6 +1,6 @@
 {
   "sha256": {
-    "README.md": "dcd25ccef5a342748dcc30084d43a3da061e32d489a59508e0528b17a3fc5a28",
+    "README.md": "45f8ab059eede096280d9cd0907c7d8873243e2ce6f944e819b4bd3a52986d2d",
     "manifest.json": "bee37faf1bfa2227ab94e82b7db8b1c7112825603f79209843cd82a248606e0e",
     "sources/rasterize-buildings.py": "394cd1d554e5f1166bcb077cb000becd5e0bdbec48476056fcac49392189d48d",
     "sources/scout_raster_conversion/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
