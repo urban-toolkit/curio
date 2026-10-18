@@ -330,9 +330,11 @@
   "dataflows/FloodScenarios": {
     "tags": [
       "Autark",
+      "Pandas",
       "SCOUT"
     ],
     "data_type": [
+      "Tables",
       "Geometries",
       "Rasters"
     ]
@@ -493,6 +495,19 @@
     ],
     "data_type": [
       "Tables"
+    ]
+  },
+  "dataflows/lower-manhattan-park-shade": {
+    "tags": [
+      "Autark",
+      "Pandas",
+      "SCOUT"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries",
+      "OpenStreetMap",
+      "Rasters"
     ]
   },
   "dataflows/scenario-comparison-charts": {

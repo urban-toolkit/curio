@@ -2,11 +2,11 @@
 ran, and runs where it lands.
 
 The shipped dataflows with scenarios are example 06 and the test dataflows
-``Scenarios``, ``ScoutShadows``, ``FloodScenarios``, ``WeatherRouting`` and
-``scenario-comparison-charts``; there is one test per scenario. Each signs in
-a fresh account, whose first listing seeds its own copies of the shipped
-dataflows. Those have never run, so the scenario's fixed context has no saved
-output. Then, in an empty dataflow:
+``Scenarios``, ``ScoutShadows``, ``FloodScenarios``, ``WeatherRouting``,
+``lower-manhattan-park-shade`` and ``scenario-comparison-charts``; there is one
+test per scenario. Each signs in a fresh account, whose first listing seeds its
+own copies of the shipped dataflows. Those have never run, so the scenario's
+fixed context has no saved output. Then, in an empty dataflow:
 
 1. The scenario is dragged in from the Scenario Catalog drawer. The drop runs
    its context on the server, in the seeded project: the plan lists those
@@ -83,6 +83,7 @@ SHIPPED = (
     "docs/examples/dataflows/ScoutShadows.json",
     "docs/examples/dataflows/FloodScenarios.json",
     "docs/examples/dataflows/WeatherRouting.json",
+    "docs/examples/dataflows/lower-manhattan-park-shade.json",
     "docs/examples/dataflows/scenario-comparison-charts.json",
 )
 

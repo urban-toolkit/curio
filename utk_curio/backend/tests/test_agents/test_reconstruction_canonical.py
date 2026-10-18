@@ -362,7 +362,7 @@ class TestTheShippedCorpus:
         curated = [p for p in paths if p.parent.name == "examples"]
         legacy = [p for p in paths if p.parent.name == "dataflows"]
         assert len(curated) == 26, [p.name for p in curated]
-        assert len(legacy) == 27, [p.name for p in legacy]
+        assert len(legacy) == 28, [p.name for p in legacy]
 
     @pytest.mark.parametrize("path", example_paths(), ids=lambda p: p.stem)
     def test_every_example_canonicalizes_with_known_templates(self, path):
@@ -413,9 +413,9 @@ class TestTheShippedCorpus:
     def test_these_are_the_examples_whose_templates_need_a_package(self):
         """Example 09 declares ``curio.weather@1`` for its python LIBRARIES
         while using only builtin templates -- a different resolution route
-        from examples 10, 18, 21, 22 and 24 and the ScoutShadows and
-        WeatherRouting test dataflows, whose templates
-        themselves live in a package (``curio.media@1``,
+        from examples 10, 18, 21, 22 and 24 and the ScoutShadows,
+        WeatherRouting and lower-manhattan-park-shade test dataflows, whose
+        templates themselves live in a package (``curio.media@1``,
         ``scout.raster-conversion@1``, and the model packages
         ``model.curio.ddrnet23-slim@1``, ``model.scout.deep-umbra@1`` and
         ``model.scout.weather-gnn@1``). The
@@ -437,9 +437,10 @@ class TestTheShippedCorpus:
             "24-scout-building-rasters",
             "ScoutShadows",
             "WeatherRouting",
+            "lower-manhattan-park-shade",
         ]
         # SCOUT's two models are packages with nodes of their own.
-        for stem in ("24-scout-building-rasters", "ScoutShadows"):
+        for stem in ("24-scout-building-rasters", "ScoutShadows", "lower-manhattan-park-shade"):
             assert "model.scout.deep-umbra/accumulated-shadow" in needs_package_templates[stem], stem
         assert needs_package_templates["WeatherRouting"] == ["model.scout.weather-gnn/weather-routing"]
         assert declared_dependencies(

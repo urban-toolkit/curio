@@ -5,9 +5,10 @@ with the browser's own compiler (``utk_curio/common/autk_data_compiler.py``,
 the frontend's ``dist/autk-data-compile.cjs``) and posts it to ``/execJs``, as
 the node's own run in the browser does. This runs that compiled JavaScript for
 the loaders of examples 06 (Back Bay), 07 (Chicago Loop), 08 (Niterói) and 11
-(Lower Manhattan) through ``execute_js_code`` and pins what it hands on with
-autk-db 4.1.1: each layer's name, type, feature count and CRS, and its first
-feature's keys.
+(Lower Manhattan), and of the test dataflow ``lower-manhattan-park-shade``
+(Lower Manhattan's parks and the buildings around them), through
+``execute_js_code`` and pins what it hands on with autk-db 4.1.1: each layer's
+name, type, feature count and CRS, and its first feature's keys.
 
 No socket: the extract is served from disk by a ``fetch`` placed before the
 compiled code, which refuses every other request, at the address the sandbox
@@ -59,6 +60,14 @@ LOWER_MANHATTAN = [
     ("table_osm_roads", "roads", 767, EPSG_3395, WITH_ID),
     ("table_osm_buildings", "buildings", 2326, EPSG_3395, WITHOUT_ID),
 ]
+#: Two loads of the same extract into one table name (the park shade test
+#: dataflow): the parks of a box, the Financial District to City Hall, and
+#: the building parts of a box about 300 m larger on every side, up to the
+#: extract's edge.
+LOWER_MANHATTAN_PARKS = [
+    ("table_osm_parks", "parks", 215, EPSG_3395, WITH_ID),
+    ("table_osm_buildings", "buildings", 2688, EPSG_3395, WITHOUT_ID),
+]
 
 #: Put before the compiled code: serves the one extract the document loads,
 #: from disk, as the backend's ``/file/`` route would, says so on stdout, and
@@ -89,7 +98,9 @@ def _loader_content(example: str, node_id: str) -> str:
     ("07-autark-gpu-shader.json", "sh-data", "docs/examples/data/chicago_loop.osm.pbf", CHICAGO_LOOP),
     ("08-autark-spatial-join-regression.json", "niteroi-osm", "docs/examples/data/niteroi.osm.pbf", NITEROI),
     ("11-autark-pbf-loading.json", "pbf-load", "docs/examples/data/lower_mnt.osm.pbf", LOWER_MANHATTAN),
-], ids=["back_bay", "chicago_loop", "niteroi", "lower_mnt"])
+    ("dataflows/lower-manhattan-park-shade.json", "park-shade-layers", "docs/examples/data/lower_mnt.osm.pbf",
+     LOWER_MANHATTAN_PARKS),
+], ids=["back_bay", "chicago_loop", "niteroi", "lower_mnt", "lower_mnt_parks"])
 def test_the_server_compiled_load_hands_on_the_layers(example, node_id, extract, layers, tmp_path, monkeypatch):
     from utk_curio.cli import dependencies
     from utk_curio.common.autk_data_compiler import compile_data_spec
