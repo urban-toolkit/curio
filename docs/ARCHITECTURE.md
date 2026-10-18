@@ -876,7 +876,6 @@ The sandbox runs as a separate Flask process. It:
   request is in flight (`sandbox/util/memory_release.py`): every request runs
   on a thread of its own, and glibc's malloc arenas and pyarrow's pool would
   otherwise keep the pages each run freed.
-- Caches repeated executions of identical code + input combinations (`sandbox/app/utils/cache.py`).
 
 > [!WARNING]
 > **By default this is a network boundary, not an execution boundary.** Unless
@@ -2261,7 +2260,6 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `sandbox/util/db.py` | DuckDB connection, path resolution, and `artifacts` table initialization |
 | `sandbox/util/parsers.py` | `save_to_duckdb`, `load_from_duckdb` and the artifact path helpers |
 | `sandbox/util/codec.py` | Value to bytes conversion, and `detect_kind` |
-| `sandbox/app/utils/cache.py` | Execution result caching |
 
 ### Launcher
 

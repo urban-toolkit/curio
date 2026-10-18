@@ -29,7 +29,6 @@ import json
 from dataclasses import dataclass
 import logging
 import os
-import sys
 import threading
 import time
 import uuid

@@ -15,7 +15,7 @@ this".
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Iterable, Mapping
 
 from utk_curio.backend.app.agents.evaluation.compare import Comparison

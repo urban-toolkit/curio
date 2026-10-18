@@ -20,7 +20,7 @@ from utk_curio.backend.app.common.safe_paths import is_within
 from utk_curio.backend.app.discovery.domain.errors import DiscoveryError, SourceNotFound
 from utk_curio.backend.app.discovery.domain.manifest import DiscoverySourceManifest
 from utk_curio.backend.app.discovery.infrastructure import storage
-from utk_curio.backend.app.discovery.service import DiscoveryService, JobNotFound
+from utk_curio.backend.app.discovery.service import DiscoveryService
 from utk_curio.backend.app.users.dependencies import require_auth
 
 discovery_bp = Blueprint("discovery_api", __name__, url_prefix="/api/discovery")

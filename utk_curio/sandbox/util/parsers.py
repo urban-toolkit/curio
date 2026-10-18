@@ -8,10 +8,8 @@ import sys
 import time
 import hashlib
 import ast
-import datetime
 import numpy as np
 
-from shapely import wkt
 from pathlib import Path
 
 #DuckDB imports:

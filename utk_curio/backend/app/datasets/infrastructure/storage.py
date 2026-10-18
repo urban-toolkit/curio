@@ -71,8 +71,6 @@ class DatasetId:
 # ~10 import sites elsewhere are untouched. ``user_storage`` explains why the
 # root moves under ``.curio/test/`` for a test rig.
 from utk_curio.backend.app.common.user_storage import (
-    GUEST_KEY as _GUEST_KEY,
-    launch_dir as _launch_dir,
     user_key_segment as _user_key_segment,
     users_base as _users_base,
 )

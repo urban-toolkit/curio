@@ -78,7 +78,6 @@ def _handle_plan_reply(
     never silently."""
     if "dataflow.plan.write" not in loop_ctx.get("granted", []):
         return "none", parts, None
-    visible_override: str | None = None
     fence_guidance = _PLAN_FENCE_GUIDANCE
     plan_part = next((p for p in parts if p.get("type") == "dataflowPlan"), None)
     if plan_part is not None:

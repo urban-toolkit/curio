@@ -26,7 +26,6 @@ import time
 from utk_curio.backend.app.execution import runtime_journal
 from utk_curio.backend.app.execution.sandbox_auth import sandbox_headers
 from utk_curio.backend.app.execution.workflow_spec import (
-    PY_CODE_TYPES,
     WorkflowSpec,
     parse_workflow_dict,
     seed_node_code,
