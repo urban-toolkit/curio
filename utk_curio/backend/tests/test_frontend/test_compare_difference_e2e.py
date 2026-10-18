@@ -225,6 +225,43 @@ def _assert_legend_title(page, node_id: str, title: str) -> None:
     assert shown == title, f"the map's legend reads {shown!r}, not {title!r}"
 
 
+#: The minus sign d3's number format writes, U+2212.
+MINUS_SIGN = chr(0x2212)
+
+# The labels under a node's map legend, which autk-map writes as the texts of
+# the legend's color bar, in order: a sequential scale's ends, and a diverging
+# scale's ends and middle.
+_LEGEND_LABELS_JS = """(id) => {
+    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+    const legend = node && node.querySelector("#autkMapLegend");
+    return legend ? Array.from(legend.querySelectorAll("svg text"), (label) => label.textContent) : null;
+}"""
+
+
+def _legend_numbers(labels) -> list | None:
+    """*labels* as numbers. autk-core formats them with d3, which writes a
+    minus as U+2212 and groups thousands with commas."""
+    try:
+        return [float(label.replace(MINUS_SIGN, "-").replace(",", "")) for label in labels]
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _assert_legend_reads(page, node_id: str, numbers) -> None:
+    """The node's map legend labels its color scale with *numbers*, in order:
+    the ends of the layer's ``colorMapRange``, and its middle on a diverging
+    scheme."""
+    expected = [float(number) for number in numbers]
+    deadline = time.time() + 15
+    shown = None
+    while time.time() < deadline:
+        shown = page.evaluate(_LEGEND_LABELS_JS, node_id)
+        if shown and _legend_numbers(shown) == expected:
+            return
+        page.wait_for_timeout(250)
+    raise AssertionError(f"the map's legend reads {shown!r}, not {list(numbers)!r}")
+
+
 def _assert_compare_draws_no_map(page, node_id: str) -> str:
     """The Compare Scenarios node is in Difference and holds a raster's or a
     layer's difference, and draws no map of it: its tab says that an Autark

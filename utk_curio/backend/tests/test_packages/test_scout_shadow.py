@@ -104,6 +104,10 @@ DIFFERENCE_MAP_DOCUMENT = {"map": {"layerRefs": [{
     "colorMapCenter": 0,
     "title": "Shadow change (minutes)",
 }]}}
+#: The color range both scenarios' shadow maps share, in minutes: from 0 to a
+#: whole summer day of shadow, the most Deep Umbra's output stands for in any
+#: season.
+SHADOW_RANGE = [0, 720]
 EXAMPLE = REPO / "docs" / "examples" / "24-scout-building-rasters.json"
 RASTER_PACKAGE = REPO / "packages" / "scout.raster-conversion@1"
 RASTER_MODULE = "scout_raster_conversion"
@@ -416,6 +420,22 @@ def run_node(value, workspace, *, data_type="raster", model=True, models=None, f
 
 def _dataflow() -> dict:
     return json.loads(DATAFLOW.read_text(encoding="utf-8"))["dataflow"]
+
+
+def _with_range(content: str, color_range: list) -> str:
+    """*content*, a map document of one layer, with *color_range* as the
+    layer's ``colorMapRange`` after its scheme, written as the Autark node
+    writes a document: JSON indented by two spaces."""
+    document = json.loads(content)
+    (layer,) = document["map"]["layerRefs"]
+    ranged = {}
+    for key, value in layer.items():
+        ranged[key] = value
+        if key == "colorMapInterpolator":
+            ranged["colorMapRange"] = color_range
+    assert "colorMapRange" in ranged, layer
+    document["map"]["layerRefs"] = [ranged]
+    return json.dumps(document, indent=2)
 
 
 def _takes_statistics(node: dict) -> bool:
@@ -986,8 +1006,9 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
         assert into[(shadow["id"], "in")] == heights["id"]
     assert "curio.builtin/computation-analysis" not in by_type, "a node still picks a part of the rasterizer's output"
 
-    # Each scenario's shadow on a map of its own: example 24's shadow map, fed
-    # by the scenario's Accumulated Shadow and inside the scenario.
+    # Each scenario's shadow on a map of its own: example 24's shadow map, over
+    # the range both scenarios' maps share, fed by the scenario's Accumulated
+    # Shadow and inside the scenario.
     example = json.loads(EXAMPLE.read_text(encoding="utf-8"))["dataflow"]
     example_into = {(edge["target"], edge["targetHandle"]): edge["source"] for edge in example["edges"]}
     example_types = {node["id"]: node["type"] for node in example["nodes"]}
@@ -1000,7 +1021,7 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
         maps = [n for n in members if nodes[n]["type"] == "curio.builtin/autk-grammar"]
         assert len(maps) == 1, (scenario["name"], maps)
         assert into[(maps[0], "in")] == shadow_id, scenario["name"]
-        assert nodes[maps[0]]["content"] == shadow_map["content"], scenario["name"]
+        assert nodes[maps[0]]["content"] == _with_range(shadow_map["content"], SHADOW_RANGE), scenario["name"]
     chart, difference = sorted(by_type["curio.builtin/compare-scenarios"],
                                key=lambda n: n["metadata"]["compareScenarios"]["mode"])
     assert chart["metadata"]["compareScenarios"]["mode"] == "chart"
@@ -1023,6 +1044,31 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     assert document_validation.validate(
         "curio.builtin/autk-grammar", named,
     ) == {"status": document_validation.STATUS_VALID}
+
+
+def test_both_scenarios_shadow_maps_share_one_color_range_up_to_the_longest_shadow(tmp_path):
+    """The two scenarios' shadow maps color over one range, so a color is the
+    same minutes of shadow on both: each holds the same ``colorMapRange``, from
+    0 to the most minutes Deep Umbra's output stands for in any season, a cell
+    in shadow all day in summer. Valid for the grammar."""
+    from utk_curio.backend.app.agents.domain import document_validation
+
+    spec = _dataflow()
+    nodes = {node["id"]: node for node in spec["nodes"]}
+    ranges = {}
+    for scenario in spec["scenarios"]:
+        (map_id,) = [n for n in scenario["nodes"] if nodes[n]["type"] == "curio.builtin/autk-grammar"]
+        content = nodes[map_id]["content"]
+        (layer,) = json.loads(content)["map"]["layerRefs"]
+        ranges[scenario["id"]] = layer.get("colorMapRange")
+        named = content.replace("[!! input_0 !!]", "input_0")
+        assert document_validation.validate(
+            "curio.builtin/autk-grammar", named,
+        ) == {"status": document_validation.STATUS_VALID}
+    assert ranges == {"existing": SHADOW_RANGE, "towers-removed": SHADOW_RANGE}, ranges
+    with shadow_modules(tmp_path) as (deep_umbra, node_outputs):
+        longest = max(deep_umbra.season_factor(season) for season in node_outputs.SEASONS)
+    assert SHADOW_RANGE == [0, longest]
 
 
 def test_example_24_holds_the_node_as_the_palette_drops_it_and_its_code_runs(workspace, tmp_path):

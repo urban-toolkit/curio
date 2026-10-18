@@ -1162,7 +1162,10 @@ line layer takes a `width` in meters, and a polygon layer a `stroke` color, or
 `"stroke": false` for no outline. A raster layer takes `colorMapReverse` to
 run its scheme from its highest value to its lowest, `colorMapCenter` to put a
 value at the middle of its scheme, and `transferFunction` for how opaque its
-cells are; every cell with a value is opaque unless it says otherwise.
+cells are; every cell with a value is opaque unless it says otherwise. A
+layer colored by a number takes `colorMapRange`, `[low, high]`, to color from
+`low` to `high` instead of from its own lowest value to its highest, so maps
+that set the same range color a value alike.
 
 A layer that names a scenario of the dataflow by its id, `"scenario":
 "weather-aware"`, is drawn in that scenario's color, the color of its box.

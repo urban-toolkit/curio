@@ -26,7 +26,8 @@ Run All in the browser runs the whole dataflow:
    on the whole. The node draws no map of it; the Autark map after it does,
    under the title "Shadow change (minutes)".
 3. Each scenario's map draws its shadow, under the title "Accumulated shadow
-   (minutes)". The close-ups of the three maps are the frames.
+   (minutes)", its legend labelled 0 to 720, the color range both maps share.
+   The close-ups of the three maps are the frames.
 
 A second test edits the lever, as a user does, and presses Update results:
 the scenario runs again with the edit, and its numbers move (see its
@@ -54,6 +55,7 @@ from playwright.sync_api import expect
 from .test_compare_difference_e2e import (
     _OUTPUT_ARTIFACT_JS,
     _assert_difference_mapped,
+    _assert_legend_reads,
     _assert_legend_title,
     _band,
 )
@@ -97,6 +99,9 @@ MAP_TYPE = "curio.builtin/autk-grammar"
 PACKAGES = ("model.scout.deep-umbra@1", "scout.raster-conversion@1")
 #: SCOUT's A_shadows_metric.csv and B_shadows_metric.csv.
 SCOUT_MEANS = {"existing": 128.63593, "towers-removed": 106.73111}
+#: The color range both scenarios' shadow maps share, in minutes
+#: (``colorMapRange``): both legends read its ends.
+SHADOW_RANGE = (0, 720)
 
 LEVER_TEST_NAME = "test_an_edit_in_the_towers_lever_reaches_the_shadow_with_update_results"
 #: The Interaction node (#958; its type is still the Edit Features node's).
@@ -260,11 +265,13 @@ def test_two_building_sets_are_shadowed_charted_and_mapped(
     )
     save_node_closeup(page, "scout-shadow-change-map", difference_map, test_name=TEST_NAME, sweep_toasts=True)
 
-    # 3. Each scenario's map draws its shadow, under the grammar's title.
+    # 3. Each scenario's map draws its shadow, under the grammar's title, on the
+    # color range both maps share, so a color is the same minutes on both.
     for scenario, map_id in maps.items():
         frame_nodes(page, [map_id])
         assert_autark_map_drawn(page, map_id, timeout=60000, attach_as=f"the {scenario} shadow map")
         _assert_legend_title(page, map_id, "Accumulated shadow (minutes)")
+        _assert_legend_reads(page, map_id, SHADOW_RANGE)
         save_node_closeup(page, f"scout-shadow-map-{scenario}", map_id, test_name=TEST_NAME, sweep_toasts=True)
 
 

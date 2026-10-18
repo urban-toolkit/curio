@@ -346,7 +346,8 @@ def test_example_06_is_three_scenarios_over_one_context():
     assert [e.get("targetHandle") for e in third] == ["in_2"]
     assert "key" not in nodes["whatif-compare-difference"]["metadata"]["compareScenarios"].get("difference", {})
     # The Difference draws no map of its own: an Autark map after it colors
-    # each road by its sunlight change, under the grammar's title.
+    # each road by its sunlight change, on a diverging scale centered on no
+    # change, under the grammar's title.
     into_map = [(e["source"], e.get("sourceHandle"), e.get("targetHandle"))
                 for e in flow["edges"] if e["target"] == "whatif-difference-map"]
     assert into_map == [("whatif-compare-difference", "out", "in")]
@@ -356,12 +357,44 @@ def test_example_06_is_three_scenarios_over_one_context():
         "dataRef": "[!! input_0 !!]",
         "getFnv": "sunlight",
         "getFnvType": "quantitative",
-        "colorMapInterpolator": "interpolateViridis",
+        "colorMapInterpolator": "interpolateRdYlBu",
+        "colorMapRange": [-360, 360],
         "title": "Sunlight change (minutes)",
     }]}}
     shader = nodes["whatif-baseline-compute"]["content"]
     assert '"height_factor": [!! height_factor !!]' in shader
     assert "let height = height_factor * bld_height[bi];" in shader
+
+
+#: Autark's diverging schemes whose middle is a color, pale yellow, rather than
+#: white or gray: a road that does not change stays visible on the map.
+DIVERGING_WITH_A_COLORED_MIDDLE = {"interpolateRdYlBu", "interpolateRdYlGn", "interpolateSpectral"}
+
+
+def test_example_06_maps_the_sunlight_change_on_a_diverging_scale_centered_on_no_change():
+    """Example 06's map after the Difference colors each road's sunlight change
+    on a diverging scheme whose middle color stays visible, over a range
+    symmetric about 0: a road that does not change takes the middle color, a
+    loss one side and a gain the other, each the same color for the same
+    minutes. The roads are a vector layer, which autk-grammar colors from the
+    range's low to its high and for which it reads no ``colorMapCenter``, so
+    the symmetric range alone centers the scale. Valid for the grammar."""
+    from utk_curio.backend.app.agents.domain import document_validation
+
+    path = os.path.join(EXAMPLES_DIR, "06-autark-what-if-shadow-study.json")
+    with open(path, "r", encoding="utf-8") as f:
+        nodes = {n["id"]: n for n in json.load(f)["dataflow"]["nodes"]}
+    content = nodes["whatif-difference-map"]["content"]
+    (layer,) = json.loads(content)["map"]["layerRefs"]
+    assert layer["getFnv"] == "sunlight" and layer["getFnvType"] == "quantitative", layer
+    assert layer.get("colorMapInterpolator") in DIVERGING_WITH_A_COLORED_MIDDLE, layer
+    low, high = layer.get("colorMapRange") or (None, None)
+    assert low is not None and low == -high < 0, layer
+    assert "colorMapCenter" not in layer, f"a roads layer ignores colorMapCenter: {layer}"
+    named = content.replace("[!! input_0 !!]", "input_0")
+    assert document_validation.validate(
+        "curio.builtin/autk-grammar", named,
+    ) == {"status": document_validation.STATUS_VALID}
 
 
 def test_example_07_drives_compute_gpgpu():

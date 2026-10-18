@@ -209,13 +209,16 @@ Baseline's, in `sunlight` and in the `compute` values the shadow step writes, an
 whether it changed.
 
 **Roads by sunlight change**, an Autark node after it, draws that difference: it colours each road
-by its `sunlight`, from the largest loss (dark purple) to no change (yellow).
+by its `sunlight` on a red, yellow and blue scale from -360 to 360 minutes. A road that loses
+sunlight is red, deepest at six hours lost; a road with no change is pale yellow; and a road that
+gains sunlight, which happens when Twice as tall's Height factor is set below 1, is blue.
 
 ```json
 "map": { "layerRefs": [
   { "dataRef": "[!! input_0 !!]",
     "getFnv": "sunlight", "getFnvType": "quantitative",
-    "colorMapInterpolator": "interpolateViridis",
+    "colorMapInterpolator": "interpolateRdYlBu",
+    "colorMapRange": [-360, 360],
     "title": "Sunlight change (minutes)" }
 ]}
 ```
