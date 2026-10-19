@@ -142,19 +142,23 @@ def _dataset_producer_in_spec(
 
 #: The name a dataflow saved before node packages gives the Data Loading node.
 _LEGACY_DATA_LOADING = "DATA_LOADING"
-#: The built-in Data Loading node, for a type no template declares a category for.
+#: The built-in Data Loading node, for a type no manifest holds a template for.
 _BUILTIN_DATA_LOADING = "curio.builtin/data-loading"
+#: The template flag of a node that loads a dataset (``packages.TEMPLATE_FLAGS``).
+_LOADS_DATASET = "loadsDataset"
 
 
 def loads_data(node_type: Any, packages: Any = None) -> bool:
-    """Whether a node of *node_type* brings data into its dataflow, as the
-    Data Loading node does: its template declares the ``data`` category and no
-    input port. Read through *packages* (a ``TemplateGrammars``, the account's;
+    """Whether a node of *node_type* brings the dataset it names into its
+    dataflow, as the Data Loading node does: its template declares
+    ``loadsDataset``, the flag the agents read (``source_grounding.loads_dataset``).
+    Read through *packages* (a ``TemplateGrammars``, the account's;
     ``TemplateGrammars.for_account()`` when None), so a template named like
-    Data Loading that takes an input is not one, and a package's own loader
-    is. A type whose template declares no category, or that no manifest holds,
-    loads data when it is the built-in Data Loading node, by its id or its
-    name before node packages. The canvas's twin is ``loadsData`` in
+    Data Loading is not one, a package's own loader that declares the flag is,
+    and a template that declares nothing is not, whatever its category and
+    ports. A type that no manifest holds a template for loads data when it is
+    the built-in Data Loading node, by its id or its name before node
+    packages. The canvas's twin is ``loadsData`` in
     ``registry/declaredNodes.ts``."""
     from utk_curio.backend.app.packages.service import unversioned_node_type
     from utk_curio.backend.app.projects.template_grammars import node_template
@@ -163,9 +167,9 @@ def loads_data(node_type: Any, packages: Any = None) -> bool:
         return True
     if not isinstance(node_type, str) or not node_type:
         return False
-    declared = node_template(node_type, packages)
-    if declared.category is not None:
-        return declared.category == "data" and (declared.input_ports or 0) == 0
+    flags = node_template(node_type, packages).flags
+    if flags is not None:
+        return _LOADS_DATASET in flags
     return unversioned_node_type(node_type) == _BUILTIN_DATA_LOADING
 
 

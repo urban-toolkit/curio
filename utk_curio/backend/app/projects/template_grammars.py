@@ -7,12 +7,13 @@ a dashboard walks through the nodes that show what reaches them
 comparison is its own dashboard source, a save keeps no output of its own for
 a chart (``services._is_sink_node_type``), and a run on the server hands on
 what a download, a Parameter node or a note receives (``execution/run_plan``).
-The Data Catalog counts a dataset's consumers after the node that loads it, a
-template in the ``data`` category with no input port
+The Data Catalog counts a dataset's consumers after the node that loads it, one
+whose template declares the ``loadsDataset`` flag, as the agents read it
 (``datasets/application/export``). A package template that declares a built-in
 behavior is that built-in node to every one of these rules, and one that is
-only named like a built-in is not. A type whose template declares none, or that
-no manifest holds, is a built-in node by its id, the fallback each rule names.
+only named like a built-in is not. A type whose template declares no behavior,
+or that no manifest holds, is a built-in node by its id, the fallback each rule
+names.
 The canvas reads the same declarations off its registered descriptors
 (``registry/declaredNodes.ts``), and ``registry/declaredNodes.cases.json``
 holds the cases both sides run.
@@ -106,10 +107,9 @@ class Declared:
     model_type: Optional[str] = None
     #: The behavior a node's template declares (``code``, ``vega``, ``data-pool``, ...).
     behavior: Optional[str] = None
-    #: The palette category a node's template declares (``data``, ``flow``, ...).
-    category: Optional[str] = None
-    #: How many input ports a node's template declares.
-    input_ports: Optional[int] = None
+    #: The flags a node's template declares (``TEMPLATE_FLAGS``, such as
+    #: ``loadsDataset``), or None when no manifest holds the template.
+    flags: Optional[frozenset[str]] = None
 
 
 #: What a node type, a model or a dataset no manifest holds tells.
@@ -147,16 +147,17 @@ class TemplateGrammars:
 
     Called with a node type, it gives the grammar the node's template draws
     with. :meth:`node` gives that too, with what the node's package and its
-    template declare in ``dataflowCategories``, the template's behavior,
-    category and input ports and, for a model package, its model's type.
-    :meth:`model` gives what the model package a ``curio_load_model`` call
-    names declares, and its model's type.
+    template declare in ``dataflowCategories``, the template's behavior and
+    flags and, for a model package, its model's type. :meth:`model` gives what
+    the model package a ``curio_load_model`` call names declares, and its
+    model's type.
 
     A package is read in the account's own store, then in the catalog, as
     ``categories.DatasetKinds`` reads datasets. The account's copy dates from
     when the package was added to the store, so what the two copies declare is
-    unioned, and a grammar, a behavior, a category, input ports or a model type
-    is the first copy's that names one. Without a major, a node type or a model
+    unioned, a flag either copy declares included, as the agents read flags
+    (``packages.template_flags``), and a grammar, a behavior or a model type is
+    the first copy's that names one. Without a major, a node type or a model
     id takes the highest major the places hold. A node type with no package in
     it, or of any other shape than ``<package id>/<template id>[@<major>]``,
     matches nothing. Each manifest is read once, so one instance serves one
@@ -221,6 +222,7 @@ class TemplateGrammars:
 
     def _read_node(self, node_type: str) -> Declared:
         from utk_curio.backend.app.packages.service import (
+            TEMPLATE_FLAGS,
             dir_name_from_node_type,
             unversioned_node_type,
         )
@@ -243,11 +245,9 @@ class TemplateGrammars:
             grammar=_first_string(template.get("grammarId") for template in templates),
             model_type=_model_type(manifests),
             behavior=_first_string(template.get("behavior") for template in templates),
-            category=_first_string(template.get("category") for template in templates),
-            input_ports=next(
-                (len(t["inputPorts"]) for t in templates if isinstance(t.get("inputPorts"), list)),
-                None,
-            ),
+            flags=frozenset(
+                key for key in TEMPLATE_FLAGS if any(template.get(key) is True for template in templates)
+            ) if templates else None,
         )
 
     def _read_model(self, model_id: str) -> Declared:

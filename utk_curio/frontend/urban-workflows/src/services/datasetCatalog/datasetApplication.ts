@@ -290,8 +290,9 @@ export function hasDatasetDrag(dataTransfer: DataTransfer): boolean {
 }
 
 /** Whether a dataset dropped on a node applies to it: a node whose template
- * loads data, as Data Loading does (``loadsData``, registry/declaredNodes),
- * or any node with code to write the dataset's read into. */
+ * declares ``loadsDataset``, as Data Loading does (``loadsData``,
+ * registry/declaredNodes), or any node with code to write the dataset's read
+ * into. */
 export function canApplyDatasetToNode(data: any): boolean {
   const nodeType = data?.nodeType;
   if (!nodeType) return false;

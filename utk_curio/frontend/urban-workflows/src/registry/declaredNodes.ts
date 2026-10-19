@@ -1,11 +1,11 @@
 /**
  * What a node is, read off its registered descriptor: the behavior its
- * template declares (its manifest's `behavior`), and its category and input
- * ports. A package template that declares a built-in's behavior is that
- * built-in node to every rule that asks here, and a template only named like
- * a built-in is not. A type no descriptor is registered for, or whose template
- * declares no behavior (no category, for `loadsData`), is a built-in node by
- * its id, the fallback each rule names.
+ * template declares (its manifest's `behavior`), and whether it declares
+ * `loadsDataset`. A package template that declares a built-in's behavior is
+ * that built-in node to every rule that asks here, and a template only named
+ * like a built-in is not. A type no descriptor is registered for, or whose
+ * template declares no behavior, is a built-in node by its id, the fallback
+ * each rule names; for `loadsData`, a registered template's flag decides.
  *
  * The backend reads the same declarations off the package manifests
  * (`declares_behavior` in `projects/template_grammars.py`, `loads_data` in
@@ -53,18 +53,17 @@ export function declaresBehavior(
 }
 
 /**
- * Whether a node of *nodeType* brings data into its dataflow, as the Data
- * Loading node does: its template declares the `data` category and no input
- * port. A type whose template declares no category, or that no descriptor is
- * registered for, loads data when it is the built-in Data Loading node, by
- * its id or its name before node packages.
+ * Whether a node of *nodeType* brings the dataset it names into its dataflow,
+ * as the Data Loading node does: its template declares `loadsDataset`, the
+ * flag the agents read too. A template named like Data Loading is not one,
+ * and a template that declares nothing is not, whatever its category and
+ * ports. A type no descriptor is registered for loads data when it is the
+ * built-in Data Loading node, by its id or its name before node packages.
  */
 export function loadsData(nodeType: string | null | undefined): boolean {
   if (!nodeType) return false;
   if (nodeType === LEGACY_DATA_LOADING) return true;
   const descriptor = tryGetNodeDescriptor(nodeType);
-  if (descriptor?.category) {
-    return descriptor.category === 'data' && (descriptor.inputPorts ?? []).length === 0;
-  }
+  if (descriptor) return descriptor.loadsDataset === true;
   return withoutMajor(nodeType) === NodeType.DATA_LOADING;
 }

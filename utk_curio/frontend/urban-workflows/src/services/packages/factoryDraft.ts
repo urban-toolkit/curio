@@ -60,6 +60,8 @@ export interface TemplateDraft {
   sourceCode: string;
   /** #662: the widgets the source references, written to the template's `widgets`. */
   widgets?: WidgetDef[];
+  /** The template's `loadsDataset`: a node of it loads the dataset it names. */
+  loadsDataset?: boolean;
 }
 
 export interface Draft {
@@ -197,6 +199,7 @@ export function toApiPayload(d: Draft): {
       if (typeof k.paletteOrder === "number") entry.paletteOrder = k.paletteOrder;
       if (k.sourceFilename) entry.source = `sources/${k.sourceFilename}`;
       if (k.widgets && k.widgets.length > 0) entry.widgets = k.widgets;
+      if (k.loadsDataset) entry.loadsDataset = true;
       return entry;
     }),
   };

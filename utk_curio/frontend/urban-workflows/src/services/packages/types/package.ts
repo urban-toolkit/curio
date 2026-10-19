@@ -53,6 +53,8 @@ export interface PackageTemplatePayload {
   /** dev/91: declared backend handler this template's Run invokes through
    * the package backend sandbox (null/absent = ordinary execution). */
   backendHandler?: string | null;
+  /** Whether a node of this template loads the dataset it names. */
+  loadsDataset?: boolean;
 }
 
 

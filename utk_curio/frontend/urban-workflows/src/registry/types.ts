@@ -231,6 +231,9 @@ export interface NodeDescriptor {
   /** The behavior key the template declares (its manifest's `behavior`):
    *  what the node is to every rule that asks `registry/declaredNodes`. */
   behavior?: string;
+  /** True when the template declares `loadsDataset`: a node of it loads the
+   *  dataset it names (`loadsData` in `registry/declaredNodes`). */
+  loadsDataset?: boolean;
   inPalette: boolean;
   paletteOrder?: number;
   /** Optional small label rendered as a badge over the icon in ToolsMenu (e.g. "AUTK", "Vega-Lite"). */

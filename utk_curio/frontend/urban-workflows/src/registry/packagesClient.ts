@@ -91,6 +91,8 @@ interface RawPackageTemplate {
   hasProvenance: boolean | null;
   /** dev/91: declared backend handler name (sandbox route dispatch). */
   backendHandler?: string | null;
+  /** Whether a node of this template loads the dataset it names. */
+  loadsDataset?: boolean;
 }
 
 interface RawPackage {
@@ -289,6 +291,7 @@ function buildDescriptor(pkg: RawPackage, template: RawPackageTemplate, order: n
     ...(normalizeWidgets(template.widgets).length > 0 ? { widgets: normalizeWidgets(template.widgets) } : {}),
     ...(template.grammarId ? { grammarId: template.grammarId } : {}),
     ...(template.behavior ? { behavior: template.behavior } : {}),
+    ...(template.loadsDataset === true ? { loadsDataset: true } : {}),
     ...(template.badge ? { badge: template.badge } : isBuiltin ? {} : { badge: 'PACKAGE' as const }),
     adapter: {
       handles,

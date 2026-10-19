@@ -156,10 +156,10 @@ export function downstreamFromDataflowUsage(
 }
 
 /** True for a node that loads data, as the Data Loading node a dataset
- * drag-drop creates does: its template declares the ``data`` category and no
- * input port (``loadsData``, registry/declaredNodes). It is the dataset's
- * *source* in the flow, not a downstream consumer of it. Mirrors
- * ``loads_data`` in ``datasets/application/export.py``. */
+ * drag-drop creates does: its template declares ``loadsDataset``
+ * (``loadsData``, registry/declaredNodes). It is the dataset's *source* in
+ * the flow, not a downstream consumer of it. Mirrors ``loads_data`` in
+ * ``datasets/application/export.py``. */
 function isDataLoadingNodeType(nodeType: string | undefined): boolean {
   return loadsData(nodeType);
 }
