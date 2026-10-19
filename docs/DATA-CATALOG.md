@@ -357,6 +357,7 @@ There is no JSON Schema for dataset manifests, so this table is the reference. T
 | `version` | Yes | Free-form version string (e.g. `"1.0.0"`), independent of `compatibility.major`. |
 | `format` | Yes | One of `csv`, `geojson`, `json`, `parquet`, `geotiff`, `shp`, `onnx`, `netcdf`, `bundle`, `collection`. (`osm` and `gpkg` are group cards, never written to a manifest.) |
 | `dataFile` | Yes | Path to the data within the dataset folder, e.g. `data/chicago.geojson`. |
+| `downloadOnFirstUse` | | For a dataset that ships with Curio, `["<dataFile>"]` leaves the data file out of the pip package, and a pip install downloads it from GitHub the first time Curio reads the dataset. It names no other file. |
 | `sourceEncoding` | | For text formats, the encoding the upload was decoded from before it was stored as UTF-8. `"utf-8"` when nothing had to change. |
 | `compatibility.major` | | Integer major version; defaults to `1`. Together with `id` it forms the folder name. |
 | `description` | | Defaults to `""`. |

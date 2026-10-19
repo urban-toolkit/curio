@@ -1,16 +1,19 @@
 """The files the pip package leaves out, and a pip install fetching them.
 
 PyPI takes no file over 100 MiB, and the wheel and the sdist were over it. The
-repository keeps every catalog file; the pip package leaves out the big ones
-named in one list (``datasets/infrastructure/left_out_files.json``), and a
-pip install downloads each from GitHub the first time Curio needs it: from
-the commit its package was built from, checked against the size and sha256
-the release build recorded, through the egress policy, into Curio's state
-directory.
+repository keeps every catalog file; the pip package leaves out the big ones,
+each named in ``downloadOnFirstUse`` by the manifest of its dataset or model
+package, and a pip install downloads each from GitHub the first time Curio
+needs it: from the commit its package was built from, checked against the
+size and sha256 the release build recorded, through the egress policy, into
+Curio's state directory.
 
-- The packaging: ``MANIFEST.in``, applied as setuptools applies it, leaves out
-  exactly the listed files and the frontend's source maps; the release
-  script records each listed file.
+- The packaging: the manifests name exactly the twelve files ``EXPECTED``
+  lists; ``MANIFEST.in`` and ``setup.py``, applied as setuptools applies
+  them, leave out exactly those and the frontend's source maps; the release
+  script records each. A new dataset's manifest is all it takes to leave its
+  file out, a folder a manifest names leaves out every file in it, and no
+  file of the release names a dataset or a package.
 - The fetch: a missing listed file is fetched, verified and placed, then read
   where it was placed; a wrong sha256, a refused address, a dropped
   connection or a checkout without a record places nothing; a file the
@@ -26,7 +29,10 @@ resolver. The module under test is imported inside each test.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
+import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -40,6 +46,7 @@ import pytest
 
 from utk_curio.backend.tests._support.left_out_files import (
     COMMIT,
+    EXPECTED,
     REPO,
     FakeGitHub,
     catalog_copy,
@@ -70,12 +77,72 @@ CLONE = "https://github.com/urban-toolkit/curio"
 DIST = "utk_curio/frontend/urban-workflows/dist"
 BUILT = [f"{DIST}/index.html", f"{DIST}/main.js", f"{DIST}/main.js.map", f"{DIST}/vendors.js", f"{DIST}/vendors.js.map"]
 INFRASTRUCTURE = "utk_curio/backend/app/datasets/infrastructure"
+#: What the release runs to leave the files out and record them
+#: (``publish-pip-to-pypi.yml``), and the module that downloads them.
+RELEASE_FILES = (
+    "setup.py",
+    "MANIFEST.in",
+    "utk_curio/shipped.py",
+    "scripts/record_left_out_files.py",
+    "scripts/check_dist_sizes.py",
+    f"{INFRASTRUCTURE}/left_out_files.py",
+)
 
 
 def _module():
     from utk_curio.backend.app.datasets.infrastructure import left_out_files
 
     return left_out_files
+
+
+def _by_path(name: str, path: Path):
+    """The module at *path*, loaded by its path rather than run."""
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _record_script():
+    return _by_path("_curio_record_left_out_files", REPO / "scripts" / "record_left_out_files.py")
+
+
+def _setup_py():
+    """``setup.py``, not as ``__main__``, so ``setup()`` does not run."""
+    return _by_path("_curio_setup", REPO / "setup.py")
+
+
+def _tree(root: Path, files: dict) -> Path:
+    """*files*, ``{repository path: bytes, or a manifest as a dict}``, written
+    under *root*: a repository's catalogs in small."""
+    for rel, content in files.items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(json.dumps(content).encode("utf-8") if isinstance(content, dict) else content)
+    return root
+
+
+def _dataset(dataset_id: str, data_file: str, **fields) -> dict:
+    return {
+        "id": dataset_id, "name": dataset_id, "version": "1.0.0", "format": "csv",
+        "dataFile": data_file, "compatibility": {"major": 1}, **fields,
+    }
+
+
+def _files_under(root: Path) -> set[str]:
+    return {path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()}
+
+
+def _kept_by_the_build(root: Path, files: set[str]) -> set[str]:
+    """Of *files*, paths under *root*, those the sdist and the wheel ship:
+    ``setup.py`` drops from setuptools' list of the files that ship what the
+    manifests under *root* name in ``downloadOnFirstUse``."""
+    from setuptools.command.egg_info import FileList
+
+    kept = FileList()
+    kept.files = sorted(files)
+    _setup_py().leave_out_first_use_files(kept, root)
+    return set(kept.files)
 
 
 def _auth(token):
@@ -112,16 +179,18 @@ def test_the_list_names_catalog_files_the_repository_holds():
     assert "packages/model.scout.deep-umbra@1/models/deep_umbra.onnx" in files
 
 
-def test_manifest_in_leaves_out_exactly_the_listed_files_and_the_frontends_source_maps(monkeypatch):
-    """``MANIFEST.in`` builds the sdist, and the release builds the wheel from
-    the sdist (``publish-pip-to-pypi.yml``). Its rules, applied as setuptools
-    applies them, every line in order, to every file under ``datasets/``,
-    ``models/`` and ``packages/``, the list and its record, the repository's
-    ``package.json`` and ``package-lock.json`` (``setup.py`` copies them into
-    the wheel), and a built frontend: the listed files and the frontend's
-    source maps stay out, and
-    nothing else does. A package's own source map ships: ``curio.example-ui@1``
-    names it in its ``integrity.json``."""
+def test_manifest_in_and_setup_py_leave_out_exactly_the_listed_files_and_the_frontends_source_maps(monkeypatch):
+    """``MANIFEST.in`` and ``setup.py`` build the sdist, and the release
+    builds the wheel from the sdist (``publish-pip-to-pypi.yml``).
+    ``MANIFEST.in``'s rules, applied as setuptools applies them, every line in
+    order, then what ``setup.py``'s ``egg_info`` drops from that list (the
+    files the manifests name in ``downloadOnFirstUse``), to every file under
+    ``datasets/``, ``models/`` and ``packages/``, the release's record, the
+    repository's ``package.json`` and ``package-lock.json`` (``setup.py``
+    copies them into the wheel), and a built frontend: the listed files and
+    the frontend's source maps stay out, and nothing else does. A package's
+    own source map ships: ``curio.example-ui@1`` names it in its
+    ``integrity.json``."""
     from setuptools._distutils.filelist import FileList
 
     monkeypatch.chdir(REPO)
@@ -131,7 +200,7 @@ def test_manifest_in_leaves_out_exactly_the_listed_files_and_the_frontends_sourc
         for path in (REPO / folder).rglob("*")
         if path.is_file()
     )
-    shipped_beside_the_code = [f"{INFRASTRUCTURE}/left_out_files.json", f"{INFRASTRUCTURE}/left_out_files.record.json"]
+    shipped_beside_the_code = [f"{INFRASTRUCTURE}/left_out_files.record.json"]
     node_packages = ["package.json", "package-lock.json"]
     everything = set(repository) | set(BUILT) | set(shipped_beside_the_code) | set(node_packages)
     files = FileList()
@@ -140,6 +209,7 @@ def test_manifest_in_leaves_out_exactly_the_listed_files_and_the_frontends_sourc
         line = line.strip()
         if line and not line.startswith("#"):
             files.process_template_line(line)
+    _setup_py().leave_out_first_use_files(files)
     shipped = set(files.files)
 
     left_out = set(listed())
@@ -188,6 +258,148 @@ def test_the_record_names_a_commit(tmp_path):
         assert run.returncode != 0, run.stdout
         assert "commit" in (run.stdout + run.stderr)
         assert not out.exists()
+
+
+def test_the_manifests_name_exactly_the_files_the_pip_package_leaves_out(monkeypatch):
+    """Each of the twelve files (``EXPECTED``) is named in
+    ``downloadOnFirstUse`` by the manifest of its dataset or model package, by
+    its path in that folder, and no manifest names another. A running Curio
+    reads the same twelve from the manifests."""
+    named = set()
+    for catalog in ("datasets", "packages"):
+        for manifest in sorted((REPO / catalog).glob("*/manifest.json")):
+            for rel in json.loads(manifest.read_text(encoding="utf-8")).get("downloadOnFirstUse", []):
+                named.add(f"{catalog}/{manifest.parent.name}/{rel}")
+    assert named == set(EXPECTED), (sorted(named - set(EXPECTED)), sorted(set(EXPECTED) - named))
+
+    module = _module()
+    monkeypatch.setattr(module, "SHIPPED_ROOT", REPO)
+    assert sorted(module.left_out_paths()) == sorted(EXPECTED)
+    assert all(module.is_left_out(repo_path) for repo_path in EXPECTED)
+
+
+def test_a_new_dataset_that_names_its_data_file_is_left_out_with_no_list_edit(tmp_path, monkeypatch):
+    """Its manifest is all it takes: the release records the file, the
+    sdist's file list leaves it out, and a running Curio counts it as a file
+    to download on first use. Another dataset's file ships."""
+    module = _module()
+    big = "datasets/data.test.big@1/data/big.csv"
+    small = "datasets/data.test.small@1/data/small.csv"
+    root = _tree(tmp_path / "repo", {
+        "datasets/data.test.big@1/manifest.json": _dataset(
+            "data.test.big", "data/big.csv", downloadOnFirstUse=["data/big.csv"],
+        ),
+        big: b"a,b\n1,2\n",
+        "datasets/data.test.small@1/manifest.json": _dataset("data.test.small", "data/small.csv"),
+        small: b"a\n1\n",
+    })
+
+    record = _record_script().build_record(root, COMMIT)
+    assert record == {
+        "commit": COMMIT,
+        "files": {big: {"size": 8, "sha256": hashlib.sha256(b"a,b\n1,2\n").hexdigest()}},
+    }
+    everything = _files_under(root)
+    assert _kept_by_the_build(root, everything) == everything - {big}
+
+    monkeypatch.setattr(module, "SHIPPED_ROOT", root)
+    assert module.left_out_paths() == (big,)
+    assert module.is_left_out(big) and not module.is_left_out(small)
+
+
+def test_a_folder_a_manifest_names_leaves_out_every_file_in_it(tmp_path, monkeypatch):
+    """A model package names its checkpoint's folder: each file in it is
+    recorded and left out of the sdist, and a running Curio counts each as a
+    file to download, as the folder holds them in a checkout and as the
+    release recorded them in a pip install. The package's other files ship."""
+    module = _module()
+    folder = "packages/ai.test.checkpoint@1"
+    inside = [f"{folder}/models/checkpoint/config.json", f"{folder}/models/checkpoint/weights.bin"]
+    code = f"{folder}/sources/run.py"
+    contents = {inside[0]: b"{}", inside[1]: bytes(range(64))}
+    root = _tree(tmp_path / "repo", {
+        f"{folder}/manifest.json": {
+            "id": "ai.test.checkpoint", "version": "1.0.0", "name": "Checkpoint", "publisher": "Test",
+            "compatibility": {"major": 1}, "kind": "model",
+            "templates": [{"id": "run", "label": "Run", "category": "computation", "engine": "python",
+                           "editor": "code", "inputPorts": [], "outputPorts": [{"types": ["JSON"]}]}],
+            "model": {"type": "semantic-segmentation", "runtime": "transformers", "entry": "models/checkpoint",
+                      "license": "MIT"},
+            "downloadOnFirstUse": ["models/checkpoint"],
+        },
+        code: b"return 1\n",
+        **contents,
+    })
+
+    assert sorted(_record_script().build_record(root, COMMIT)["files"]) == inside
+    everything = _files_under(root)
+    assert _kept_by_the_build(root, everything) == everything - set(inside)
+
+    monkeypatch.setattr(module, "SHIPPED_ROOT", root)
+    assert module.left_out_paths() == tuple(inside)
+    assert all(module.is_left_out(repo_path) for repo_path in inside)
+    assert not module.is_left_out(code) and not module.is_left_out(f"{folder}/manifest.json")
+
+    site = tmp_path / "site"
+    shutil.copytree(root / folder, site / folder, ignore=shutil.ignore_patterns("models"))
+    monkeypatch.setattr(module, "SHIPPED_ROOT", site)
+    monkeypatch.setattr(module, "RECORD_PATH", write_record(tmp_path / "record.json", inside, contents=contents))
+    assert not (site / folder / "models").exists()
+    assert module.left_out_paths() == tuple(inside)
+
+
+def test_a_manifest_that_names_a_path_outside_its_folder_stops_the_release(tmp_path, monkeypatch):
+    """The record and the sdist's file list refuse it, so the release leaves
+    out nothing but files of a catalog folder; a running Curio counts nothing
+    from that manifest."""
+    module = _module()
+    root = _tree(tmp_path / "repo", {
+        "datasets/data.test.escape@1/manifest.json": _dataset(
+            "data.test.escape", "data/x.csv", downloadOnFirstUse=["../../setup.py"],
+        ),
+        "datasets/data.test.escape@1/data/x.csv": b"a\n1\n",
+        "setup.py": b"",
+    })
+
+    with pytest.raises(ValueError, match="downloadOnFirstUse"):
+        _record_script().build_record(root, COMMIT)
+    with pytest.raises(ValueError, match="downloadOnFirstUse"):
+        _kept_by_the_build(root, _files_under(root))
+    monkeypatch.setattr(module, "SHIPPED_ROOT", root)
+    assert module.left_out_paths() == ()
+    assert not module.is_left_out("setup.py")
+
+
+def test_the_release_stops_at_a_named_file_the_checkout_lacks(tmp_path):
+    big = "datasets/data.test.big@1/data/big.csv"
+    root = _tree(tmp_path / "repo", {
+        "datasets/data.test.big@1/manifest.json": _dataset(
+            "data.test.big", "data/big.csv", downloadOnFirstUse=["data/big.csv"],
+        ),
+    })
+
+    with pytest.raises(FileNotFoundError, match=re.escape(big)):
+        _record_script().build_record(root, COMMIT)
+
+
+def test_no_release_file_names_a_dataset_or_a_package():
+    """The manifests decide what the pip package leaves out: no file of the
+    release, nor the module that downloads the files, names a shipped dataset
+    or package, by id or by folder, and no list of the files is kept beside
+    the module."""
+    names = set()
+    for catalog in ("datasets", "packages"):
+        for manifest in (REPO / catalog).glob("*/manifest.json"):
+            names |= {manifest.parent.name, json.loads(manifest.read_text(encoding="utf-8"))["id"]}
+    assert len(names) > 50, sorted(names)
+    found = sorted(
+        f"{rel} names {name}"
+        for rel in RELEASE_FILES
+        for name in names
+        if name in (REPO / rel).read_text(encoding="utf-8")
+    )
+    assert not found, found
+    assert not (REPO / INFRASTRUCTURE / "left_out_files.json").exists()
 
 
 # ---------------------------------------------------------------------------

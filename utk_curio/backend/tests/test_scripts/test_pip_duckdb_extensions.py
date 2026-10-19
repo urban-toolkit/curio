@@ -38,9 +38,12 @@ VENDORED = REPO / "vendor" / "duckdb-extensions"
 IN_THE_REPOSITORY = PurePosixPath("vendor", "duckdb-extensions")
 #: Where the wheel carries them, under the folder that holds ``utk_curio/``.
 IN_THE_WHEEL = PurePosixPath("utk_curio", "_shipped", "vendor", "duckdb-extensions")
-#: Curio's files the build reads. pyproject.toml also names README.md and
+#: Curio's files the build reads: setup.py reads utk_curio/shipped.py for the
+#: files the package leaves out. pyproject.toml also names README.md and
 #: LICENSE, which the CI image does not hold; the project gets stand-ins.
-BUILD_FILES = ("pyproject.toml", "setup.py", "MANIFEST.in", "package.json", "package-lock.json")
+BUILD_FILES = (
+    "pyproject.toml", "setup.py", "MANIFEST.in", "package.json", "package-lock.json", "utk_curio/shipped.py",
+)
 
 
 def _sha256(data: bytes) -> str:

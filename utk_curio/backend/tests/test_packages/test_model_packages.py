@@ -47,7 +47,7 @@ DIR = f"{MODEL_ID}@1"
 LOCAL_RELIEF = GUIDE / DIR
 WEIGHT = "models/local_relief.onnx"
 #: Where Local Relief's weight would be in the repository if it shipped in
-#: ``packages/``: the path a pip install's list of left-out files names.
+#: ``packages/``: the path a pip install that left it out downloads.
 WEIGHT_REPO_PATH = f"packages/{DIR}/{WEIGHT}"
 MIB = 1024 * 1024
 
@@ -179,14 +179,24 @@ def catalog(tmp_curio, monkeypatch):
 def pip_catalog(tmp_curio, monkeypatch):
     """The same catalog as a pip install would have it, had Local Relief
     shipped in ``packages/`` with its weight left out of the pip package: the
-    folder without the weight, the list naming it, and the release's record."""
+    folder without the weight, its manifest naming the weight in
+    ``downloadOnFirstUse`` (and its integrity.json that manifest's sha256),
+    and the release's record."""
+    import hashlib
+
     from utk_curio.backend.app.datasets.infrastructure import left_out_files
 
-    root = tmp_curio / "site-packages" / "packages"
+    site = tmp_curio / "site-packages"
+    root = site / "packages"
     shutil.copytree(LOCAL_RELIEF, root / DIR, ignore=shutil.ignore_patterns("local_relief.onnx"))
-    listing = tmp_curio / "left_out_files.json"
-    listing.write_text(json.dumps({"files": [WEIGHT_REPO_PATH]}), encoding="utf-8")
-    monkeypatch.setattr(left_out_files, "LIST_PATH", listing)
+    manifest_path = root / DIR / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest_path.write_text(json.dumps({**manifest, "downloadOnFirstUse": [WEIGHT]}, indent=2), encoding="utf-8")
+    integrity_path = root / DIR / "integrity.json"
+    integrity = json.loads(integrity_path.read_text(encoding="utf-8"))
+    integrity["sha256"]["manifest.json"] = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    integrity_path.write_text(json.dumps(integrity, indent=2, sort_keys=True), encoding="utf-8")
+    monkeypatch.setattr(left_out_files, "SHIPPED_ROOT", site)
     monkeypatch.setattr(left_out_files, "RECORD_PATH", write_record(
         tmp_curio / "record.json", [WEIGHT_REPO_PATH], contents={WEIGHT_REPO_PATH: _weight()},
     ))
@@ -293,6 +303,56 @@ class TestTheModelBlock:
     def test_a_package_without_a_kind_is_a_node_package(self, manifest_dict):
         manifest = _parse(manifest_dict(package_id="ai.test.demo"), dir_name="ai.test.demo@1")
         assert manifest.kind == "node" and manifest.model is None
+
+    def test_a_model_package_names_the_weights_a_pip_install_downloads_on_first_use(self):
+        """``downloadOnFirstUse``: its .onnx file and the external data beside
+        it, or a checkpoint's folder, by their paths under ``models/``. The
+        schema takes them too."""
+        onnx = _model_manifest(downloadOnFirstUse=["models/m.onnx", "models/m.onnx.data"])
+        checkpoint = _model_manifest(
+            model={"runtime": "transformers", "entry": "models/checkpoint", "labels": [], "input": None},
+            downloadOnFirstUse=["models/checkpoint"],
+        )
+        assert _parse(onnx).download_on_first_use == ("models/m.onnx", "models/m.onnx.data")
+        assert _parse(checkpoint).download_on_first_use == ("models/checkpoint",)
+        assert _parse(_model_manifest()).download_on_first_use == ()
+        for raw in (onnx, checkpoint):
+            assert not list(_validator().iter_errors(raw))
+
+    @pytest.mark.parametrize("value, message", [
+        ("models/m.onnx", "list"),
+        (["models"], "under models/"),
+        (["sources/run.py"], "under models/"),
+        (["models/../manifest.json"], "path inside"),
+        (["/models/m.onnx"], "path inside"),
+        (["models\\m.onnx"], "path inside"),
+        (["manifest.json"], "always ships"),
+        (["integrity.json"], "always ships"),
+        (["models/m.onnx", "models/m.onnx"], "twice"),
+    ])
+    def test_what_download_on_first_use_refuses(self, value, message):
+        """Anything a pip install would not download: what is not a path in
+        the package's folder, the manifest and ``integrity.json``, which a
+        pip install reads, and anything but the weights under ``models/``.
+        The schema refuses it too."""
+        from utk_curio.backend.app.packages.domain.manifest import ManifestError
+
+        raw = _model_manifest(downloadOnFirstUse=value)
+        with pytest.raises(ManifestError, match="downloadOnFirstUse") as raised:
+            _parse(raw)
+        assert message in str(raised.value), str(raised.value)
+        assert list(_validator().iter_errors(raw))
+
+    def test_only_a_model_package_names_files_to_download_on_first_use(self, manifest_dict):
+        """A node package ships every file it has, as the schema says too."""
+        from utk_curio.backend.app.packages.domain.manifest import ManifestError
+
+        plain = manifest_dict(package_id="ai.test.demo")
+        raw = {**plain, "downloadOnFirstUse": ["models/m.onnx"]}
+        with pytest.raises(ManifestError, match="only a model package"):
+            _parse(raw, dir_name="ai.test.demo@1")
+        assert not list(_validator().iter_errors(plain))
+        assert list(_validator().iter_errors(raw))
 
 
 # ---------------------------------------------------------------------------
@@ -491,7 +551,7 @@ def test_a_node_fetches_a_left_out_weight_once_and_loads_it(client, user_and_tok
     assert sent[1]["models"][MODEL_ID] == str(folder)
     assert folder == left_out_files.fetched_root(COMMIT) / "packages" / DIR
     assert (folder / WEIGHT).read_bytes() == _weight()
-    assert (folder / "manifest.json").read_bytes() == (LOCAL_RELIEF / "manifest.json").read_bytes()
+    assert (folder / "manifest.json").read_bytes() == (pip_catalog / DIR / "manifest.json").read_bytes()
     assert github.urls == [url_of(WEIGHT_REPO_PATH)]
 
 
