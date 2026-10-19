@@ -39,7 +39,6 @@ jest.mock(
   () => ({ AutkDb: class { async init() { throw new Error('no autk-db in this test'); } } }),
   { virtual: true },
 );
-jest.mock('../../utils/authApi', () => ({ getToken: () => 'test-token' }));
 jest.mock('../../services/runs/runsApi', () => {
   const actual = jest.requireActual('../../services/runs/runsApi');
   return {
