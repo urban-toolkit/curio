@@ -1,11 +1,11 @@
 """A run on the server reads the account's own store for what a node's
 template declares, then the catalog, then the packages Curio ships.
 
-"Save as package node" copies a Data Export node's template, its behavior
-included, into a package of the account's own. A run of a dataflow holding
-such a node forwards what reaches it, as it forwards a Data Export, for the
-account whose store holds the package; for any other account the node is one
-only the browser can make. The sandbox is a fake behind
+A package of the account's own can declare a Data Export's behavior for one
+of its templates. A run of a dataflow holding such a node forwards what
+reaches it, as it forwards a Data Export, for the account whose store holds
+the package; for any other account the node is one only the browser can
+make. The sandbox is a fake behind
 ``node_exec.sandbox_request``. ``runs`` is imported inside each test, so a
 checkout without it fails each test on its own.
 """
@@ -20,7 +20,7 @@ def _port() -> dict:
     return {"cardinality": "1", "types": ["DATAFRAME", "GEODATAFRAME"]}
 
 
-#: A package an account saved a Data Export node into, which only its store holds.
+#: A package of an account's own with a Data Export of its own, which only its store holds.
 STORE_PACKAGE = {
     "id": "acme.mine",
     "name": "My nodes",
