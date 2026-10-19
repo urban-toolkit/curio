@@ -13,7 +13,10 @@ import { isEmptySpecBuffer } from "../utils/starterSpec";
  * - only once per node per session;
  * - only after an input has actually arrived: an edge alone carries no schema;
  * - never over something written into the node from outside (`data.defaultCode`:
- *   an agent's write, a dataset drop), and it steps aside when one lands later.
+ *   an agent's write, a dataset drop), and it steps aside when one lands later;
+ * - never for a node that opens with a starter its package ships
+ *   (`enabled: false`, registry/packageStarter), which the input can reach
+ *   before the starter does.
  *
  * It never runs the node. `useMonacoExternalValue` no-ops when the value is
  * unchanged, so offering it again is safe for the cursor and undo stack.
@@ -24,19 +27,21 @@ export function useStarterSpec(opts: {
   buffer: string | null | undefined;
   /** What was written into the node from outside, if anything. */
   written: string | null | undefined;
+  /** False for a node that opens with its package's starter instead. */
+  enabled?: boolean;
   /** Read the input, from the preview where that is enough. */
   read: (input: unknown) => Promise<GrammarInput>;
   /** The node's ladder: the spec text for this input, or null. */
   choose: (read: GrammarInput) => string | null;
 }): string | undefined {
-  const { input, buffer, written, read, choose } = opts;
+  const { input, buffer, written, enabled = true, read, choose } = opts;
   const [generated, setGenerated] = useState<string | null>(null);
   const filledRef = useRef(false);
   const writtenElsewhere = !isEmptySpecBuffer(written);
   const bufferIsEmpty = isEmptySpecBuffer(buffer) && generated == null;
 
   useEffect(() => {
-    if (filledRef.current || !bufferIsEmpty || writtenElsewhere) return;
+    if (!enabled || filledRef.current || !bufferIsEmpty || writtenElsewhere) return;
     if (input == null || input === "") return;
     let cancelled = false;
     read(input)
@@ -56,7 +61,7 @@ export function useStarterSpec(opts: {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [input, bufferIsEmpty, writtenElsewhere]);
+  }, [input, bufferIsEmpty, writtenElsewhere, enabled]);
 
-  return writtenElsewhere ? undefined : generated ?? undefined;
+  return !enabled || writtenElsewhere ? undefined : generated ?? undefined;
 }

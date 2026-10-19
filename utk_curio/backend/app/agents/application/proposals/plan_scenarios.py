@@ -158,18 +158,35 @@ def copy_blocker(plan: dict, plan_node: dict, created_ids: dict) -> str | None:
     return f"create {title!r} first: a copy records the node it was copied from"
 
 
-def created_node_metadata(plan_node: dict, created_ids: dict, nodes: list) -> dict:
+def created_node_metadata(plan_node: dict, created_ids: dict, nodes: list, starter: dict | None = None) -> dict:
     """The ``metadata`` a planned node is created with: its widgets, and for a
     copy the ids it descends from, the original's own lineage then the
-    original (as Duplicate selection writes it). Empty when it has neither."""
+    original (as Duplicate selection writes it). Empty when it has neither.
+
+    A node that starts with its template's starter (*starter*, from the
+    packages' ``content_starters``) holds the template's widgets, which the
+    starter places, each one the plan declares set over the one of its name,
+    then the plan's others."""
     metadata: dict = {}
-    if plan_node.get("widgets"):
-        metadata["widgets"] = [dict(w) for w in plan_node["widgets"]]
+    planned = [dict(w) for w in plan_node.get("widgets") or []]
+    widgets = _set_over(starter["widgets"], planned) if starter else planned
+    if widgets:
+        metadata["widgets"] = widgets
     origin_id = created_ids.get(plan_node.get("copyOf") or "")
     if origin_id:
         original = next((n for n in nodes if isinstance(n, dict) and n.get("id") == origin_id), {})
         metadata["copiedFrom"] = [*lineage_of(original), origin_id]
     return metadata
+
+
+def _set_over(template_widgets: list, planned: list) -> list[dict]:
+    """*template_widgets* in their order, each with the keys of the *planned*
+    widget of its name set over its own, then the planned widgets of other
+    names."""
+    by_name = {w["name"]: w for w in planned}
+    names = {w["name"] for w in template_widgets}
+    merged = [{**w, **by_name.get(w["name"], {})} for w in template_widgets]
+    return normalize_widgets(merged + [w for w in planned if w["name"] not in names])
 
 
 def apply_scenarios(spec: dict, proposal: dict, ref_to_id: dict, *, final: bool) -> list[dict]:

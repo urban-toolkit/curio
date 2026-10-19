@@ -6,6 +6,7 @@ import { useToastContext } from '../../providers/ToastProvider';
 import { VisInteractionType, NodeType } from '../../constants';
 import { useGrammarInputState } from '../../hook/useGrammarInputState';
 import { useStarterSpec } from '../../hook/useStarterSpec';
+import { opensWithPackageStarter } from '../../registry/packageStarter';
 import { autkStarterText } from '../../utils/autkDefaultSpec';
 import { useFlowContext } from '../../providers/FlowProvider';
 import { resolveGrammarEmptyReason, type NodeEmptyReason } from '../../utils/nodeEmptyState';
@@ -1132,12 +1133,14 @@ export const useAutkGrammarBehavior = (
     // A starter document chosen from the arriving input, the way every grammar
     // node fills an empty editor (hook/useStarterSpec): once, only into an
     // empty editor, only after an input has arrived, never over a document
-    // written in from outside. A bundle is read the way the run reads it, so
-    // it downloads once; a single frame needs only its preview.
+    // written in from outside nor for a node that opens with its package's
+    // starter. A bundle is read the way the run reads it, so it downloads
+    // once; a single frame needs only its preview.
     const starterSpec = useStarterSpec({
         input: data.input,
         buffer: nodeState.code,
         written: data.defaultCode,
+        enabled: !opensWithPackageStarter(data.nodeType),
         read: (input) => {
             const type = (input as any)?.dataType;
             return type === 'list' || type === 'dict' || type === 'outputs'

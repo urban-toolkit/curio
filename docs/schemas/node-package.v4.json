@@ -351,8 +351,14 @@
           "type": "array",
           "items": { "$ref": "#/$defs/widget" },
           "description": "The widgets a freshly dropped node of this template starts with (#662). The template's source places each one as a `[!! name !!]` reference."
+        },
+        "starterIsContent": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, the `source` starter is a node's whole content, set through the template's widgets. A node an agent's plan creates from this template starts with the starter and the template's widgets, each widget the plan declares set over the one of its name, and Solve leaves its content as it is. Omit it for a starter that a node's content starts from, which Solve writes for a planned node."
         }
       },
+      "dependentRequired": { "starterIsContent": ["source"] },
       "additionalProperties": true
     }
   }
