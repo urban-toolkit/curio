@@ -1,0 +1,6 @@
+{
+  "description": "The numbered dataflows in this folder that the Projects page lists as use cases, by key: the file name without .json. Every other numbered dataflow is an example.",
+  "useCases": [
+    "09-heterogeneous-data-linked-views"
+  ]
+}

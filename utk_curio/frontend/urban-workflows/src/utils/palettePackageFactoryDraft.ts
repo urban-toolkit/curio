@@ -184,6 +184,8 @@ export function descriptorToTemplateDraft(
     outputPorts: outP,
     sourceFilename,
     sourceCode: code?.trim()?.length ? code : STARTER_CODE,
+    // A copy of a node that loads a dataset loads it too (`loadsData`).
+    ...(desc.loadsDataset ? { loadsDataset: true } : {}),
   };
 }
 
@@ -313,6 +315,7 @@ function packageTemplatePayloadToTemplateDraft(template: PackageTemplatePayload,
     sourceCode: seedCodeForPackageTemplatePayload(template, getStarters),
     // #662: a Save As keeps the widgets the existing template declares.
     ...(normalizeWidgets(template.widgets).length > 0 ? { widgets: normalizeWidgets(template.widgets) } : {}),
+    ...(template.loadsDataset ? { loadsDataset: true } : {}),
   };
 }
 

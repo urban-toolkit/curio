@@ -88,8 +88,9 @@ def _left_out():
 
 
 def _shipped_dataflows():
-    """The dataflows Curio seeds and lists (``projects/shipped.py``), and the
-    packages and datasets ``--with-examples`` provisions for them."""
+    """The dataflows Curio seeds and lists (``projects/shipped.py``) with the
+    source the Projects page files each under, and the packages and datasets
+    ``--with-examples`` provisions for them."""
     from utk_curio.backend.app.datasets.seed import example_dep_dataset_dirs
     from utk_curio.backend.app.packages.service import example_dep_package_ids
     from utk_curio.backend.app.projects import shipped
@@ -97,6 +98,7 @@ def _shipped_dataflows():
     return {
         "root": str(shipped.examples_dir()),
         "keys": [dataflow.key for dataflow in shipped.shipped_dataflows()],
+        "sources": [dataflow.source for dataflow in shipped.shipped_dataflows()],
         "packages": list(example_dep_package_ids()),
         "datasets": list(example_dep_dataset_dirs()),
     }

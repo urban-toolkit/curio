@@ -48,7 +48,7 @@ def resolve_deps():
 @require_auth
 @_map_package_errors
 def check_workflow_deps():
-    """Which of a dataflow's declared packages aren't ready: ``{"packages", "deferred", "broken"}``."""
+    """Which of a dataflow's declared packages aren't ready: ``{"packages", "broken"}``."""
     body = request.get_json(silent=True) or {}
     return jsonify(packages_workflow_deps.check_workflow_deps(user_key(), requests.declared_packages(body))), 200
 

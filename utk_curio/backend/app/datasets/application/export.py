@@ -140,12 +140,46 @@ def _dataset_producer_in_spec(
     return {"nodeId": producer_id, "nodeType": node_type}
 
 
+#: The name a dataflow saved before node packages gives the Data Loading node.
+_LEGACY_DATA_LOADING = "DATA_LOADING"
+#: The built-in Data Loading node, for a type no manifest holds a template for.
+_BUILTIN_DATA_LOADING = "curio.builtin/data-loading"
+#: The template flag of a node that loads a dataset (``packages.TEMPLATE_FLAGS``).
+_LOADS_DATASET = "loadsDataset"
+
+
+def loads_data(node_type: Any, packages: Any = None) -> bool:
+    """Whether a node of *node_type* brings the dataset it names into its
+    dataflow, as the Data Loading node does: its template declares
+    ``loadsDataset``, the flag the agents read (``source_grounding.loads_dataset``).
+    Read through *packages* (a ``TemplateGrammars``, the account's;
+    ``TemplateGrammars.for_account()`` when None), so a template named like
+    Data Loading is not one, a package's own loader that declares the flag is,
+    and a template that declares nothing is not, whatever its category and
+    ports. A type that no manifest holds a template for loads data when it is
+    the built-in Data Loading node, by its id or its name before node
+    packages. The canvas's twin is ``loadsData`` in
+    ``registry/declaredNodes.ts``."""
+    from utk_curio.backend.app.packages.service import unversioned_node_type
+    from utk_curio.backend.app.projects.template_grammars import node_template
+
+    if node_type == _LEGACY_DATA_LOADING:
+        return True
+    if not isinstance(node_type, str) or not node_type:
+        return False
+    flags = node_template(node_type, packages).flags
+    if flags is not None:
+        return _LOADS_DATASET in flags
+    return unversioned_node_type(node_type) == _BUILTIN_DATA_LOADING
+
+
 def _dataset_consumer_nodes_in_spec(
     spec: dict[str, Any],
     dataset_id: str,
     dataflow_id: str | None = None,
     code_ids_by_node: dict[str, set[str]] | None = None,
     include_code_refs: bool = True,
+    packages: Any = None,
 ) -> list[dict[str, Any]] | None:
     """Consumer node refs (``[{nodeId, nodeType}]``) if *spec*'s dataflow uses
     *dataset_id*, else ``None``. An empty list means the dataflow uses/owns the
@@ -156,11 +190,12 @@ def _dataset_consumer_nodes_in_spec(
     any dataflow so cross-dataflow consumption is reported.
 
     Mirrors the frontend lineage resolver: the dataset enters the flow through
-    *carrier* nodes — the computed producer and any Data Loading node that
-    (re)loads it — and is consumed by the nodes wired downstream of those
-    carriers. A carrier's own binding is NOT consumption, so a dropped-but-
-    unconnected loader registers no downstream usage. A non-loading node with
-    the dataset applied (a binding) is a genuine consumer.
+    *carrier* nodes, the computed producer and any node that loads it
+    (:func:`loads_data`, read through *packages*), and is consumed by the
+    nodes wired downstream of those carriers. A carrier's own binding is NOT
+    consumption, so a dropped-but-unconnected loader registers no downstream
+    usage. A non-loading node with the dataset applied (a binding) is a
+    genuine consumer.
     """
     if not isinstance(spec, dict):
         return None
@@ -171,17 +206,16 @@ def _dataset_consumer_nodes_in_spec(
     nodes = dataflow.get("nodes") or []
     edges = dataflow.get("edges") or []
     datasets = dataflow.get("datasets") or []
+    if packages is None:
+        from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
+
+        packages = TemplateGrammars.for_account()
 
     node_type_by_id = {
         node["id"]: node.get("type")
         for node in nodes
         if isinstance(node, dict) and node.get("id")
     }
-
-    def _is_data_loading(node_type: Any) -> bool:
-        return isinstance(node_type, str) and (
-            node_type == "DATA_LOADING" or "data-loading" in node_type
-        )
 
     uses = False
     consumer_ids: list[str] = []
@@ -225,7 +259,7 @@ def _dataset_consumer_nodes_in_spec(
         if dataset_id in refs or in_code:
             uses = True
             nid = node.get("id")
-            if _is_data_loading(node.get("type")):
+            if loads_data(node.get("type"), packages):
                 if nid:
                     carrier_ids.add(nid)  # loader = source/carrier, not a consumer
             else:

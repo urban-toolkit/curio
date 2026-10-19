@@ -397,7 +397,7 @@
         "loadsDataset": {
           "type": "boolean",
           "default": false,
-          "description": "When true, a node of this template loads a dataset into the dataflow. An agent whose node target requires `loadsDataset`, such as the Dataset Finder, attaches to it, and Solve finds the node a source before it writes its code."
+          "description": "When true, a node of this template loads a dataset into the dataflow. An agent whose node target requires `loadsDataset`, such as the Dataset Finder, attaches to it, and Solve finds the node a source before it writes its code. The Data Catalog counts the nodes after it as the consumers of the dataset it names."
         }
       },
       "dependentRequired": { "starterIsContent": ["source"] },

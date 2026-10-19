@@ -2,8 +2,11 @@
 
 The agents read this flag, not a template's name: an agent whose node target
 requires it attaches to such a node, and Solve finds the node a source before
-it writes its code (``test_agents/test_agents_by_capability.py``).
-curio.builtin's Data Loading declares it, and a package's own loader may.
+it writes its code (``test_agents/test_agents_by_capability.py``). The Data
+Catalog's lineage and the canvas read it too
+(``test_projects/test_declared_node_cases.py``), the canvas from the package
+listing. curio.builtin's Data Loading declares it, and a package's own loader
+may.
 """
 from __future__ import annotations
 
@@ -70,6 +73,16 @@ def test_only_the_builtin_data_loading_declares_it_in_the_shipped_catalog():
     assert declared == {"curio.builtin/data-loading"}
 
 
+def test_the_package_listing_carries_the_flag_the_canvas_reads():
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+    from utk_curio.backend.app.packages.schemas.responses import package_payload
+
+    payload = package_payload(load_package_manifest(REPO_ROOT / "packages" / "curio.builtin@1"))
+    flags = {template["templateId"]: template.get("loadsDataset") for template in payload["templates"]}
+    assert flags.pop("data-loading") is True
+    assert flags and set(flags.values()) == {False}, flags
+
+
 class TestTheRosterCarriesTheFlag:
     def test_a_template_that_declares_it_says_so_and_the_others_keep_their_shape(
         self, user_and_token, alice_project, tmp_curio
@@ -111,3 +124,36 @@ class TestTheRosterCarriesTheFlag:
         assert "loadsDataset" not in flags("ai.test.loaders/data-loading", snapshot)
         assert flags("curio.builtin/computation-analysis", snapshot) == frozenset()
         assert flags("", snapshot) == frozenset()
+
+
+class TestTheStoreListingCarriesTheFlag:
+    """The canvas reads ``loadsDataset`` off the account's package listing,
+    which takes a flag from the account's copy or the catalog's, as the
+    agents do. Read through ``installed_package_payloads`` itself: the
+    route's seeding pass could replace the older copy written here."""
+
+    def test_an_accounts_older_copy_lists_the_flag_the_catalogs_copy_declares(
+        self, user_and_token, tmp_curio
+    ):
+        from utk_curio.backend.app.packages.application.catalog import installed_package_payloads
+
+        user, _ = user_and_token
+        key = projects_services._user_dir_key(user)
+        # The account's curio.builtin, from before its Data Loading declared it.
+        _write_package(key, "curio.builtin", 1, [
+            _template("data-loading", "Data Loading"),
+            _template("computation-analysis", "Python Computation"),
+        ])
+        _write_package(key, "ai.test.loaders", 1, [
+            {**_template("fetch-weather", "Fetch weather"), "loadsDataset": True},
+            _template("data-loading", "Named like the built-in loader"),
+        ])
+        listed = {
+            template["id"]: template.get("loadsDataset")
+            for package in installed_package_payloads(key)
+            for template in package["templates"]
+        }
+        assert listed["curio.builtin/data-loading@1"] is True
+        assert listed["curio.builtin/computation-analysis@1"] is False
+        assert listed["ai.test.loaders/fetch-weather@1"] is True
+        assert listed["ai.test.loaders/data-loading@1"] is False

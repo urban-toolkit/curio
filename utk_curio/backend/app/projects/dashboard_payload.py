@@ -47,33 +47,38 @@ import json
 import logging
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Iterable, List, Optional, Sequence, Set
+from typing import TYPE_CHECKING, Callable, Dict, Iterable, List, Optional, Sequence, Set
+
+if TYPE_CHECKING:
+    from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
 logger = logging.getLogger(__name__)
 
-# Node kinds that re-derive their own content from whatever reaches them, so a
-# walk upward from a pinned tile passes through them looking for the node that
-# actually produced rows. Mirrors ``isPassThroughNode`` in
-# ``frontend/urban-workflows/src/utils/dashboardLayout.ts``; the parity is
-# pinned by ``test_dashboard_payload.py``.
-_PASS_THROUGH_KINDS = frozenset(
-    {
-        "vis-vega",
-        "vis-simple",
-        "data-pool",
-    }
-)
+# The behaviors (a template's ``behavior``, ``template_grammars``) of the nodes
+# that re-derive their own content from whatever reaches them: a Vega-Lite
+# chart, a Simple View and a Data Pool, and the built-in nodes of a type no
+# template declares a behavior for. A walk upward from a pinned tile passes
+# through them looking for the node that actually produced rows. The canvas's
+# twin is ``isPassThroughNode`` in
+# ``frontend/urban-workflows/src/utils/dashboardLayout.ts``.
+_PASS_THROUGH_BEHAVIORS = frozenset({"vega", "simple-vis", "data-pool"})
+_PASS_THROUGH_TYPES = frozenset({
+    "curio.builtin/vis-vega", "curio.builtin/vis-simple", "curio.builtin/data-pool",
+})
 
-_AUTK_GRAMMAR_KIND = "autk-grammar"
+#: The Autark node, a pass-through only when its spec draws.
+_AUTK_GRAMMAR_BEHAVIORS = frozenset({"autk-grammar"})
+_AUTK_GRAMMAR_TYPES = frozenset({"curio.builtin/autk-grammar"})
 
-# Node kinds whose tile draws the node's own output rather than what reaches
+# The nodes whose tile draws the node's own output rather than what reaches
 # it: a Compare Scenarios node (#662) charts the table its own run stacked, or
 # shows its difference. A pinned one is its own source, so its tile draws
 # without a run, and its inputs are not walked. Its tile draws no map, so it
 # asks ``/raster`` for nothing: an Autark map pinned after it reads the
-# difference's raster. Mirrors ``SELF_DRAWN_NODE_TYPES`` in
+# difference's raster. The canvas's twin is ``isSelfDrawnNode`` in
 # ``dashboardLayout.ts``.
-_SELF_DRAWN_KINDS = frozenset({"compare-scenarios"})
+_SELF_DRAWN_BEHAVIORS = frozenset({"compare-scenarios"})
+_SELF_DRAWN_TYPES = frozenset({"curio.builtin/compare-scenarios"})
 
 #: How much embedded data a single dashboard may carry, measured as the UTF-8
 #: length of the serialised envelopes. Chosen to stay well inside what a browser
@@ -143,21 +148,6 @@ def _mb(num_bytes: int) -> str:
     if num_bytes < 1024 * 1024:
         return f"{num_bytes / 1024:.0f} KB"
     return f"{num_bytes / (1024 * 1024):.1f} MB"
-
-
-def _unversioned(node_type: object) -> str:
-    """``curio.builtin/vis-vega@1`` -> ``vis-vega``.
-
-    Node types are written three ways in a saved spec depending on how the node
-    got there (palette drag, package install, a builtin), so the comparison has
-    to be made on the bare kind.
-    """
-    text = str(node_type or "")
-    if "@" in text:
-        text = text.split("@", 1)[0]
-    if "/" in text:
-        text = text.rsplit("/", 1)[1]
-    return text
 
 
 def _classify_autk_spec(spec_text: object) -> str:
@@ -233,11 +223,14 @@ class DashboardOutputUnreadableError(Exception):
         )
 
 
-def _node_kind(node: dict) -> str:
-    """A saved node's bare kind. ``TrillGenerator`` writes the template id as
-    the node's ``type``, its code as ``content``, and ``dashboardPinned`` on the
-    node itself; a saved node has no ``data`` block."""
-    return _unversioned(node.get("type"))
+def _is_autark_node(node: dict, packages: "TemplateGrammars") -> bool:
+    """Whether a saved node's template declares the Autark node's behavior.
+    ``TrillGenerator`` writes the template id as the node's ``type``, its code
+    as ``content``, and ``dashboardPinned`` on the node itself; a saved node
+    has no ``data`` block."""
+    from utk_curio.backend.app.projects.template_grammars import declares_behavior
+
+    return declares_behavior(node.get("type"), _AUTK_GRAMMAR_BEHAVIORS, _AUTK_GRAMMAR_TYPES, packages)
 
 
 def _is_pinned(node: dict) -> bool:
@@ -265,40 +258,65 @@ def _autark_spec_has_data_sources(node: dict) -> bool:
     return isinstance(sources, list) and len(sources) > 0
 
 
-def _is_pass_through(node: dict) -> bool:
-    """A package chart that draws with the Vega-Lite grammar is a Vega-Lite
-    chart (``template_grammars``), as ``isPassThroughNode`` reads it."""
-    from utk_curio.backend.app.projects.template_grammars import draws_with_vega_lite
+def passes_through(node: dict, packages: Optional["TemplateGrammars"] = None) -> bool:
+    """Whether a saved *node* shows what reaches it rather than making rows:
+    a node whose template declares a Vega-Lite chart's, a Simple View's or a
+    Data Pool's behavior, or draws with the Vega-Lite grammar
+    (``template_grammars``), or the Autark node when its spec draws, as
+    ``isPassThroughNode`` reads it. *packages* reads the manifests
+    (``TemplateGrammars.for_account()`` when None)."""
+    from utk_curio.backend.app.projects.template_grammars import (
+        TemplateGrammars,
+        declares_behavior,
+        draws_with_vega_lite,
+    )
 
-    kind = _node_kind(node)
-    if kind in _PASS_THROUGH_KINDS or draws_with_vega_lite(node.get("type")):
+    packages = packages or TemplateGrammars.for_account()
+    node_type = node.get("type")
+    if (declares_behavior(node_type, _PASS_THROUGH_BEHAVIORS, _PASS_THROUGH_TYPES, packages)
+            or draws_with_vega_lite(node_type, packages)):
         return True
-    if kind == _AUTK_GRAMMAR_KIND:
+    if _is_autark_node(node, packages):
         return _classify_autk_spec(node.get("content")) == "render"
     return False
 
 
-def dashboard_source_node_ids(spec: dict) -> Set[str]:
+def draws_its_own_output(node: dict, packages: Optional["TemplateGrammars"] = None) -> bool:
+    """Whether a saved *node*'s tile draws its own output, as a Compare
+    Scenarios node's does (``isSelfDrawnNode``). *packages* reads the
+    manifests (``TemplateGrammars.for_account()`` when None)."""
+    from utk_curio.backend.app.projects.template_grammars import declares_behavior
+
+    return declares_behavior(node.get("type"), _SELF_DRAWN_BEHAVIORS, _SELF_DRAWN_TYPES, packages)
+
+
+def dashboard_source_node_ids(spec: dict, packages: Optional["TemplateGrammars"] = None) -> Set[str]:
     """Node ids whose saved output a pinned tile needs in order to draw.
 
-    Walks upward from every pinned node through the pass-through kinds and stops
-    at the first node on each path that actually produces rows. Breadth-first
-    with a visited set, so a cycle or a diamond terminates. A pinned node that
-    draws its own output (``_SELF_DRAWN_KINDS``) is its own source instead.
+    Walks upward from every pinned node through the nodes that pass what
+    reaches them through (:func:`passes_through`) and stops at the first node
+    on each path that actually produces rows. Breadth-first with a visited
+    set, so a cycle or a diamond terminates. A pinned node that draws its own
+    output (:func:`draws_its_own_output`) is its own source instead.
+    *packages* reads the manifests (``TemplateGrammars.for_account()`` when
+    None).
     """
-    return _self_drawn_node_ids(spec) | _walked_source_node_ids(spec)
+    from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
+
+    packages = packages or TemplateGrammars.for_account()
+    return _self_drawn_node_ids(spec, packages) | _walked_source_node_ids(spec, packages)
 
 
-def _self_drawn_node_ids(spec: dict) -> Set[str]:
-    """The pinned nodes whose tile draws their own output (``_SELF_DRAWN_KINDS``)."""
+def _self_drawn_node_ids(spec: dict, packages: "TemplateGrammars") -> Set[str]:
+    """The pinned nodes whose tile draws their own output (:func:`draws_its_own_output`)."""
     dataflow = (spec or {}).get("dataflow") or {}
     return {
         node["id"] for node in dataflow.get("nodes") or []
-        if node.get("id") and _is_pinned(node) and _node_kind(node) in _SELF_DRAWN_KINDS
+        if node.get("id") and _is_pinned(node) and draws_its_own_output(node, packages)
     }
 
 
-def _walked_source_node_ids(spec: dict) -> Set[str]:
+def _walked_source_node_ids(spec: dict, packages: "TemplateGrammars") -> Set[str]:
     """The nodes whose output a pinned tile reads as its input: walking up from
     every other pinned node, the first node on each path that produces rows."""
     dataflow = (spec or {}).get("dataflow") or {}
@@ -306,7 +324,7 @@ def _walked_source_node_ids(spec: dict) -> Set[str]:
     edges = dataflow.get("edges") or []
 
     by_id = {node.get("id"): node for node in nodes if node.get("id")}
-    drawn = _self_drawn_node_ids(spec)
+    drawn = _self_drawn_node_ids(spec, packages)
     pinned = [node["id"] for node in nodes if node.get("id") and _is_pinned(node) and node["id"] not in drawn]
     sources: Set[str] = set()
     if not pinned:
@@ -331,21 +349,23 @@ def _walked_source_node_ids(spec: dict) -> Set[str]:
             node = by_id.get(source_id)
             if node is None:
                 continue
-            if _is_pass_through(node):
+            if passes_through(node, packages):
                 queue.append(source_id)
             else:
                 sources.add(source_id)
     return sources
 
 
-def _refuse_tiles_that_fetch_their_own_data(spec: dict, name: Optional[str] = None) -> None:
-    """Refuse a dashboard whose pinned tiles would still call out to draw."""
+def _refuse_tiles_that_fetch_their_own_data(
+    spec: dict, packages: "TemplateGrammars", name: Optional[str] = None,
+) -> None:
+    """Refuse a dashboard whose pinned Autark tiles would still call out to draw."""
     dataflow = (spec or {}).get("dataflow") or {}
     offenders: List[str] = []
     for node in dataflow.get("nodes") or []:
         if not _is_pinned(node):
             continue
-        if _node_kind(node) != _AUTK_GRAMMAR_KIND:
+        if not _is_autark_node(node, packages):
             continue
         if _autark_spec_has_data_sources(node):
             offenders.append(str(node.get("id") or "a tile"))
@@ -470,8 +490,13 @@ def build_dashboard_payload(
     meta: Optional[dict] = None,
     limit_bytes: int = DEFAULT_PAYLOAD_LIMIT_BYTES,
     missing_refs: Iterable = (),
+    packages: Optional["TemplateGrammars"] = None,
 ) -> DashboardPayload:
     """Assemble the standalone payload for one dashboard.
+
+    *packages* reads what the dataflow's node templates declare: the owner's
+    store, the catalog, then the packages Curio ships
+    (``TemplateGrammars.for_account()`` when None).
 
     *output_refs* are the project's saved outputs, each carrying ``node_id``,
     ``filename`` and ``data_type`` (the manifest shape; either objects with
@@ -499,13 +524,16 @@ def build_dashboard_payload(
     than drawing the tile without it. Every refusal carries *meta*'s ``name``,
     and every output or raster that cannot be read is logged.
     """
-    name = (meta or {}).get("name")
-    _refuse_tiles_that_fetch_their_own_data(spec, name=name)
+    from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
-    needed = dashboard_source_node_ids(spec)
+    name = (meta or {}).get("name")
+    packages = packages or TemplateGrammars.for_account()
+    _refuse_tiles_that_fetch_their_own_data(spec, packages, name=name)
+
+    needed = dashboard_source_node_ids(spec, packages)
     # The outputs a tile reads as its input, which a map on the page may ask
     # /raster for; a tile that draws its own output draws no map.
-    read_as_input = _walked_source_node_ids(spec)
+    read_as_input = _walked_source_node_ids(spec, packages)
     unreadable: List[str] = []
 
     def cannot_read(node_id: str, filename: str, reason: str) -> None:

@@ -37,7 +37,6 @@ from utk_curio.backend.app.projects.shipped import (
     SOURCE_EXAMPLE,
     SOURCE_TEST,
     SOURCE_USE_CASE,
-    USE_CASES,
     shipped_dataflows,
 )
 
@@ -88,7 +87,7 @@ def test_sources():
     by_source = {}
     for entry in SHIPPED.values():
         by_source.setdefault(entry.source, []).append(entry.key)
-    assert sorted(by_source[SOURCE_USE_CASE]) == sorted(USE_CASES)
+    assert sorted(by_source[SOURCE_USE_CASE]) == ["09-heterogeneous-data-linked-views"]
     assert len(by_source[SOURCE_EXAMPLE]) == 25
     assert len(by_source[SOURCE_TEST]) == 28
 

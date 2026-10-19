@@ -113,6 +113,14 @@ class ScenarioCatalogService:
         except projects.ProjectNotFound:
             raise ScenarioCatalogError(f"Project {project_id} not found", 404) from None
 
+    def _packages(self):
+        """What the account's projects' node templates declare: its store,
+        the catalog, then the packages Curio ships."""
+        from utk_curio.backend.app.projects.services import _user_dir_key
+        from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
+
+        return TemplateGrammars.for_account(_user_dir_key(self.user) if self.user is not None else None)
+
     def _scenario(self, project_id: str, scenario_id: str) -> tuple[Any, dict, bool, dict]:
         row, spec, is_example = self._project(project_id)
         scenario = next((s for s in scenario_summaries(spec) if s["id"] == scenario_id), None)
@@ -129,10 +137,11 @@ class ScenarioCatalogService:
         by_id = {n["id"]: n for n in nodes}
         parts = scenario_parts(scenario, nodes, edges)
         outputs = projects.saved_outputs(self.user, project_id)
+        packages = self._packages()
 
         def entry(node_id: str) -> dict[str, Any]:
             results = []
-            for source_id in saved_sources(node_id, nodes, edges):
+            for source_id in saved_sources(node_id, nodes, edges, packages):
                 item = outputs.get(projects.computed_dataset_id(source_id, project_id))
                 if item is not None:
                     results.append(_result_row(item, source_id))
@@ -165,7 +174,7 @@ class ScenarioCatalogService:
         target_row, target_spec, _ = self._project(target_id)
         nodes, edges = spec_nodes_and_edges(spec)
         by_id = {n["id"]: n for n in nodes}
-        plan = copy_plan(scenario, nodes, edges)
+        plan = copy_plan(scenario, nodes, edges, self._packages())
         # What the scenario's project saved, read at once under its spec lock,
         # before anything else, so a save of it is waited for (#941).
         saved = projects.saved_outputs_of(self.user, project_id, spec, [

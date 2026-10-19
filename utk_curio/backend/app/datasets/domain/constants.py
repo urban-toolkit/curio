@@ -118,6 +118,26 @@ def is_layer_group_id(dataset_id: object) -> bool:
     """True when *dataset_id* addresses a synthetic multi-layer group."""
     return layer_group_kind(dataset_id) is not None
 
+
+# The store folders of an account's own datasets, by the origin each gives: an
+# upload or a Discovery Catalog download is ``imported``, a node's output
+# ``computed``. Any other folder in a store holds the copy of a dataset the
+# shared catalog holds, which a dataflow installed under the dataset's own id.
+# KEEP IN SYNC with ``ACCOUNT_FOLDER_ORIGINS`` in
+# ``frontend/urban-workflows/src/services/datasetCatalog/datasetCatalogTypes.ts``.
+ACCOUNT_FOLDER_ORIGINS = {"imported.": "imported", "computed.": "computed"}
+
+
+def account_folder_origin(dir_name: object) -> str | None:
+    """The origin an account's own store folder *dir_name* gives, or None for
+    any other folder."""
+    if not isinstance(dir_name, str):
+        return None
+    for prefix, origin in ACCOUNT_FOLDER_ORIGINS.items():
+        if dir_name.startswith(prefix):
+            return origin
+    return None
+
 # Sidecar files written next to dataset files: the row/feature counts cache from
 # ``file_meta`` (``<file>.meta.json``) and the parquet object-column decode map
 # from ``parsers`` (``<file>.decode.json``). Both end in ``.json``, so a naive
