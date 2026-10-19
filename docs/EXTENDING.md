@@ -17,7 +17,7 @@ Each catalog lists folders, one per item, each with a `manifest.json` that decla
 | Model | [`packages/`](../packages/), packages of kind `model` | [`node-package.v4.json`](schemas/node-package.v4.json) | [MODEL-CATALOG §6](MODEL-CATALOG.md#6-the-manifest) |
 | Data | [`datasets/`](../datasets/) | The table in DATA-CATALOG §7 | [DATA-CATALOG §7](DATA-CATALOG.md#7-the-manifest) |
 | Discovery | [`discovery/`](../discovery/) | [`discovery-source.v1.json`](schemas/discovery-source.v1.json) | [DISCOVERY-CATALOG §8](DISCOVERY-CATALOG.md#8-the-manifest) |
-| Agent | Built into Curio; published agents in `.curio/agents-catalog/` | [`agent-package.v1.json`](schemas/agent-package.v1.json) | [AGENT-CATALOG §6](AGENT-CATALOG.md#6-the-manifest) |
+| Agent | [`agents/`](../agents/) | [`agent-package.v1.json`](schemas/agent-package.v1.json) | [AGENT-CATALOG §6](AGENT-CATALOG.md#6-the-manifest) |
 
 The Scenario Catalog has no manifests: it lists the scenarios saved in your projects.
 
