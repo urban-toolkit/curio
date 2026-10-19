@@ -39,9 +39,9 @@ jest.mock('../../providers/StarterProvider', () => ({
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { faCalculator } from '@fortawesome/free-solid-svg-icons';
+import { faCalculator } from '@fortawesome/free-solid-svg-icons/faCalculator';
 import '../../registry/builtinBehaviors'; // side-effect: registers 'code', 'vega', …
-import '../../registry/iconRegistry';
+import { loadIconRefs } from '../../registry/iconRegistry';
 import { BUILTIN_PACKAGE_ID, registerPackageTemplates } from '../../registry/packagesClient';
 import { clearPackageNodes } from '../../registry/nodeRegistry';
 import { getBehavior } from '../../registry/behaviorRegistry';
@@ -260,7 +260,7 @@ describe('SCOUT Rasters\' Raster Calculator, as the repository ships it', () => 
     expect(runBehavior(calculatorPack(), '').filter((code) => code !== undefined)).toEqual([]);
   });
 
-  test('is a package node with its icon and the PACKAGE pill, and core holds no node or behavior of its own', () => {
+  test('is a package node with its icon and the PACKAGE pill, and core holds no node or behavior of its own', async () => {
     const read = (dir: string) =>
       JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'packages', dir, 'manifest.json'), 'utf-8'));
     const templates = read('scout.rasters@1').templates;
@@ -272,6 +272,8 @@ describe('SCOUT Rasters\' Raster Calculator, as the repository ships it', () => 
     expect(getBehavior('raster-calculator')).toBeUndefined();
     expect(getBehavior('raster-statistics')).toBeUndefined();
 
+    // Its icon is loaded on demand, as the app loads it before building descriptors.
+    await loadIconRefs([template.iconRef]);
     const [descriptor] = registerPackageTemplates([calculatorPack()]);
     expect(descriptor.package?.packageId).toBe('scout.rasters');
     expect(descriptor.package?.name).toBe('SCOUT Rasters');
