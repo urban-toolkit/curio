@@ -115,7 +115,7 @@ describe("AgentDatasetCandidatesCard (dev/50 — the docs/06 two-lane surface)",
 
   it("toggling selection composes the lane-correct confirmation prompt", () => {
     const onComposePrompt = jest.fn();
-    render(<AgentDatasetCandidatesCard part={PART} onComposePrompt={onComposePrompt} />);
+    render(<AgentDatasetCandidatesCard part={PART} onComposePrompt={onComposePrompt} handoffName="Node Builder" />);
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Cities" }));
     expect(onComposePrompt).toHaveBeenLastCalledWith(
       "Confirm my selection — install from the Data Catalog: Cities (imported.abc@1).",
@@ -194,7 +194,7 @@ describe("AgentDatasetCandidatesCard — dev/114 the Node Builder chat variant",
   });
 
   it("the finder variant is the default and unchanged", () => {
-    expect(composeConfirmationPrompt([], [PART.lanes.external[0]])).toBe(
+    expect(composeConfirmationPrompt([], [PART.lanes.external[0]], undefined, "Node Builder")).toBe(
       "Confirm my selection — hand off to Node Builder: NOAA Climate Data API.",
     );
     expect(composeConfirmationPrompt([], [PART.lanes.external[0]], "builder")).toBe(

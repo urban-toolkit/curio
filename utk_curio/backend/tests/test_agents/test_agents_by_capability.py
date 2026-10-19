@@ -548,6 +548,35 @@ class TestNamesComeFromManifests:
         ).get_json()["attachments"]
         assert [c["capabilities"] for c in listed] == [["dataset.discover", "dataset.select"]]
 
+    def test_the_attachment_card_names_the_agent_it_hands_nodes_to_build(
+        self, client, user_and_token, tmp_curio, alice_project
+    ):
+        user, token = user_and_token
+        _write_copies(_user_dir_key(user))
+        # The copied builder requires the copied finder, so both are installed.
+        r = client.post(f"/api/agents/projects/{alice_project}/install",
+                        json={"coord": MY_BUILDER}, headers=_auth(token))
+        assert r.status_code == 201, r.get_data(as_text=True)
+        cards = {}
+        for coord in (MY_FINDER, MY_BUILDER):
+            r = client.post(
+                f"/api/agents/projects/{alice_project}/attachments",
+                json={"coord": coord, "target": {"kind": "canvas"}}, headers=_auth(token),
+            )
+            assert r.status_code == 201, r.get_data(as_text=True)
+            cards[coord] = r.get_json()
+        # The copied finder hands node.build to the copied builder, named as its
+        # manifest names it: the candidates card's hand-off reads this name.
+        assert cards[MY_FINDER]["nodeBuildDelegate"] == "My Builder"
+        # An agent that builds nodes itself hands that to no one.
+        assert cards[MY_BUILDER]["nodeBuildDelegate"] is None
+        listed = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token),
+        ).get_json()["attachments"]
+        assert {c["coord"]: c["nodeBuildDelegate"] for c in listed} == {
+            MY_FINDER: "My Builder", MY_BUILDER: None,
+        }
+
     @pytest.mark.parametrize("coord, hinted", [
         (MY_ORCHESTRATOR, True), (DFB, True), (RESEARCHER, False),
     ])

@@ -48,7 +48,7 @@ describe('composeConfirmationPrompt', () => {
   });
 
   test('a row without a coordinate still goes to Node Builder', () => {
-    const prompt = composeConfirmationPrompt([], [external({ url: 'https://a.example/x' })]);
+    const prompt = composeConfirmationPrompt([], [external({ url: 'https://a.example/x' })], undefined, 'Node Builder');
     expect(prompt).toContain('hand off to Node Builder');
     expect(prompt).not.toContain('download into my Data Catalog');
   });
@@ -57,7 +57,9 @@ describe('composeConfirmationPrompt', () => {
     // The model may name a source; only the runtime says it can be acted on.
     const prompt = composeConfirmationPrompt(
       [],
-      [external({ sourceId: 'source.made.up@1', resourceId: 'x' })]
+      [external({ sourceId: 'source.made.up@1', resourceId: 'x' })],
+      undefined,
+      'Node Builder'
     );
     expect(prompt).toContain('hand off to Node Builder');
   });
@@ -68,7 +70,9 @@ describe('composeConfirmationPrompt', () => {
       [
         external({ acquirable: true, sourceId: 'source.a.b@1', resourceId: 'r1' }),
         external({ name: 'Something Else', url: 'https://a.example/y' }),
-      ]
+      ],
+      undefined,
+      'Node Builder'
     );
     expect(prompt).toContain('install from the Data Catalog');
     expect(prompt).not.toContain('download');
