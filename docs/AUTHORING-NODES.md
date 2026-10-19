@@ -431,9 +431,11 @@ All of these are real, and none of them produce an obvious error message.
 - **Never bundle your own React.** React, ReactDOM and ReactFlow are
   externalised to `window`; a second copy breaks every hook with an error that
   does not mention React copies at all.
-- **An unregistered `iconRef` is not an error.** It silently falls back to a
-  cube with one console warning. The registered refs are in
-  [`iconRegistry.ts`](../utk_curio/frontend/urban-workflows/src/registry/iconRegistry.ts).
+- **`iconRef` takes any Font Awesome solid or brands icon**, as
+  `fa-solid:<name>` or `fa-brands:<name>`, with the name
+  [fontawesome.com](https://fontawesome.com/icons) gives it. A name Font
+  Awesome does not have is not an error: the node shows a cube, with one
+  console warning.
 - **`integrity.json` goes stale.** Regenerate it with
   `python scripts/regen_integrity.py packages/<id>@<major>`. Nothing verifies
   these hashes today, so a stale file will not break your node, but keep it

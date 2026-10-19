@@ -22,7 +22,7 @@ packages/<packageId>@<major>/
 
 A `template` inside `manifest.json` declares one node kind. It carries:
 
-- `id` + `label` + `description` + `iconRef`: palette presentation
+- `id` + `label` + `description` + `iconRef`: palette presentation. `iconRef` names any Font Awesome solid or brands icon, as `fa-solid:<name>` or `fa-brands:<name>` (`fa-solid:tree`, `fa-brands:github`)
 - `category` (`data` | `computation` | `vis_grammar` | `vis_simple` | `flow`): palette sectioning
 - `inputPorts` + `outputPorts`: port types and cardinalities (see [`docs/schemas/node-package.v4.json`](schemas/node-package.v4.json))
 - `editor` (`code` | `widgets` | `grammar` | `none`): what editor surface to mount
@@ -522,12 +522,7 @@ The smallest possible package adds one template plus its behavior hook. Use this
 
    **Packages built outside this repo** ship their own pre-built `scripts/behaviors.js` and need no row in this file, since Curio loads any `behaviorScript` it finds in an installed package regardless of who built it. There is no separate toolchain for that case: the practical route is to author inside a Curio checkout (where `registry/types` resolves and this build config exists), then distribute the resulting `.curio.zip`.
 
-7. **(If a custom icon)** register it in [`registry/iconRegistry.ts`](../utk_curio/frontend/urban-workflows/src/registry/iconRegistry.ts):
-   ```ts
-   import { faSomeIcon } from '@fortawesome/free-solid-svg-icons';
-   registerIcon('fa-solid:some-icon', faSomeIcon);
-   ```
-   Unregistered icons silently fall back to `faCube` with a one-time console warning.
+7. **Pick an icon.** A template's `iconRef` names any icon of Font Awesome's free solid or brands set, by the name [fontawesome.com](https://fontawesome.com/icons) gives it: `"iconRef": "fa-solid:tree"` or `"iconRef": "fa-brands:github"`. Curio loads it when it builds the palette; nothing in Curio needs editing. A name Font Awesome does not have shows a cube, with a one-time console warning.
 
 8. **Regenerate `integrity.json`**, the sha256 of every shipped file, keyed by
    its POSIX path *relative to the package root* (so `sources/foo.py` and
@@ -562,7 +557,7 @@ you. See [`docs/AUTHORING-NODES.md`](AUTHORING-NODES.md) for the walkthrough.
 
 **Every package**
 
-- [ ] `packages/<id>@<major>/manifest.json`: templates with behavior keys, port shapes, palette ordering.
+- [ ] `packages/<id>@<major>/manifest.json`: templates with behavior keys, port shapes, palette ordering, and an `iconRef` naming any Font Awesome solid or brands icon (§6 step 7).
 - [ ] `packages/<id>@<major>/README.md`: shown in the catalog. Cover setup, env vars, costs.
 - [ ] `packages/<id>@<major>/integrity.json`: regenerate after every edit with `python scripts/regen_integrity.py packages/<id>@<major>` (§6 step 8).
 

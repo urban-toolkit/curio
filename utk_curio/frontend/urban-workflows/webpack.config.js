@@ -60,6 +60,13 @@ module.exports = {
       "vega-lite": nm("vega-lite", "build", "index.js"),
       "vega-util": nm("vega-util", "build", "index.js"),
       "d3-format": nm("d3-format"),
+      // registry/iconRegistry.ts imports one icon module by name
+      // (`@fortawesome/free-solid-svg-icons/${name}`), and webpack lists the
+      // pack's folder to split each icon into a chunk. The packs' "exports"
+      // field refuses that listing; an alias to the folder is resolved as a
+      // path, so it is listed, and the index still comes from "module".
+      "@fortawesome/free-solid-svg-icons": nm("@fortawesome", "free-solid-svg-icons"),
+      "@fortawesome/free-brands-svg-icons": nm("@fortawesome", "free-brands-svg-icons"),
     },
   },
   devtool: "source-map",

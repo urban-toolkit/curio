@@ -293,8 +293,8 @@
         },
         "iconRef": {
           "type": "string",
-          "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$",
-          "description": "FontAwesome ref like 'fa-solid:upload' or 'fa-brands:python'. Resolved by the frontend iconRegistry."
+          "pattern": "^[a-z][a-z0-9-]*:[a-z0-9][a-z0-9-]*$",
+          "description": "Any Font Awesome solid or brands icon, as 'fa-solid:<name>' or 'fa-brands:<name>' (e.g. 'fa-solid:upload', 'fa-brands:python', 'fa-solid:tree'). The frontend loads the icon when it builds the palette; a name Font Awesome does not have shows a cube."
         },
         "paletteOrder": {
           "type": "integer",

@@ -1,6 +1,6 @@
 # Curio Architecture
 
-This document describes the internal architecture of Curio for contributors who need to understand how the system is structured and how data moves through it. For setup instructions see [USAGE.md](USAGE.md), for contributing guidelines see [CONTRIBUTING.md](CONTRIBUTING.md), for how node packages are installed and shared see [NODE-CATALOG.md](NODE-CATALOG.md) (to add a built-in behavior hook, icon or grammar adapter, see [Behavior Hooks](#behavior-hooks)), and for an end-to-end walkthrough of adding a new node package (manifest + behavior hook + optional Flask blueprint + optional dependency extras) see [EXTENDING.md](EXTENDING.md).
+This document describes the internal architecture of Curio for contributors who need to understand how the system is structured and how data moves through it. For setup instructions see [USAGE.md](USAGE.md), for contributing guidelines see [CONTRIBUTING.md](CONTRIBUTING.md), for how node packages are installed and shared see [NODE-CATALOG.md](NODE-CATALOG.md) (to add a built-in behavior hook or grammar adapter, see [Behavior Hooks](#behavior-hooks)), and for an end-to-end walkthrough of adding a new node package (manifest + behavior hook + optional Flask blueprint + optional dependency extras) see [EXTENDING.md](EXTENDING.md).
 
 ## Table of Contents
 
@@ -566,23 +566,17 @@ Behaviors register against a single global registry, [`behaviorRegistry.ts::regi
 
 The hook sits in `packages/curio.example-ui@1/sources/columnFilterBehavior.tsx` and `sources/index.tsx` registers it; webpack bundles them into `scripts/behaviors.js` (UMD + React/ReactFlow externalized to share Curio's instances at runtime), and the manifest's `behavior` field maps the template to it. The catalog install copies the package directory; boot loads the bundle; the user gets a custom-rendered node without rebuilding Curio. See [EXTENDING.md §4](EXTENDING.md) for the recipe.
 
-#### Adding a built-in behavior, icon, or grammar adapter
+**Icons.** A template's `iconRef` names any Font Awesome solid or brands icon, `"fa-solid:<name>"` or `"fa-brands:<name>"`, with no change to Curio. [`src/registry/iconRegistry.ts`](../utk_curio/frontend/urban-workflows/src/registry/iconRegistry.ts) bundles the icons `curio.builtin@1`'s templates name. `packagesClient.ts::loadInstalledPackages` loads any other one while it loads the behavior scripts, before it builds descriptors, so a palette tile never draws a placeholder first: a dynamic `import()` of `@fortawesome/free-solid-svg-icons/<faName>` (or the brands pack), which webpack splits into one chunk per icon (`webpack.config.js` aliases each pack to its folder, so webpack can list it). A ref Font Awesome does not have falls back to `faCube`, so a missing icon is visible but not fatal.
 
-A package ships its own behavior as a `behaviorScript` bundle (see [Authoring nodes](AUTHORING-NODES.md), Tier 2). The recipes below are for the other case: changing Curio itself, so every install has the behavior, icon, or adapter before any package loads.
+#### Adding a built-in behavior or grammar adapter
+
+A package ships its own behavior as a `behaviorScript` bundle (see [Authoring nodes](AUTHORING-NODES.md), Tier 2). The recipes below are for the other case: changing Curio itself, so every install has the behavior or adapter before any package loads.
 
 **A behavior hook.** The built-ins are registered in [`src/registry/builtinBehaviors.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinBehaviors.ts).
 
 1. Implement the hook under [`src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/), conforming to `NodeBehaviorHook` in [`src/registry/types.ts`](../utk_curio/frontend/urban-workflows/src/registry/types.ts). `useCodeNodeBehavior` and `useVegaBehavior` are the references.
 2. Register it in `builtinBehaviors.ts`: `registerBehavior("my-key", useMyHook);`
 3. Reference it from a manifest: `"behavior": "my-key"` on each kind that wants it.
-
-**An icon.** [`src/registry/iconRegistry.ts`](../utk_curio/frontend/urban-workflows/src/registry/iconRegistry.ts) maps `iconRef` strings (e.g. `"fa-solid:upload"`) to FontAwesome `IconDefinition` constants.
-
-1. Import the icon constant at the top of `iconRegistry.ts`.
-2. Add `registerIcon("fa-solid:my-icon", faMyIcon);`
-3. Reference it in a manifest: `"iconRef": "fa-solid:my-icon"`.
-
-An unknown ref falls back to `faCube`, so a missing icon is visible but not fatal.
 
 **A grammar adapter.** Same pattern, in [`src/registry/grammarAdapter.ts`](../utk_curio/frontend/urban-workflows/src/registry/grammarAdapter.ts). The Vega-Lite adapter, [`src/adapters/vegaLiteAdapter.ts`](../utk_curio/frontend/urban-workflows/src/adapters/vegaLiteAdapter.ts), is the canonical example.
 
