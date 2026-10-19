@@ -10,7 +10,7 @@
  * it a chart's height (`utils/notebookLayout`), a selection tag can read its
  * selection (`hook/useSelectionViews`), and a notebook export writes its spec
  * (`NotebookConvertor`). The backend asks the same of a template's manifest
- * (`template_grammar` in `projects/categories.py`).
+ * (`draws_with_vega_lite` in `projects/template_grammars.py`).
  *
  * Pure, with no React and no provider.
  */
