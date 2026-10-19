@@ -1,0 +1,44 @@
+{
+  "code": [
+    { "imports": ["pandas"], "tags": ["Pandas"], "dataTypes": ["Tables"] },
+    { "imports": ["geopandas"], "tags": ["GeoPandas"], "dataTypes": ["Geometries"] },
+    { "imports": ["shapely"], "dataTypes": ["Geometries"] },
+    { "imports": ["osmnx"], "dataTypes": ["OpenStreetMap"] },
+    { "imports": ["rasterio", "rioxarray", "xarray"], "dataTypes": ["Rasters"] },
+    { "imports": ["PIL"], "dataTypes": ["Imagery"] },
+    { "imports": ["wave"], "dataTypes": ["Audio"] },
+    { "fileExtensions": ["pbf"], "dataTypes": ["OpenStreetMap"] },
+    { "fileExtensions": ["tif", "tiff"], "dataTypes": ["Rasters"] },
+    { "fileExtensions": ["png", "jpg", "jpeg"], "dataUris": ["image/"], "dataTypes": ["Imagery"] }
+  ],
+  "grammars": {
+    "vega-lite": { "tags": ["Vega-Lite"] },
+    "autk-grammar": {
+      "tags": ["Autark"],
+      "dataTypes": ["Geometries"],
+      "specKeys": {
+        "compute": { "tags": ["GPU compute"] }
+      }
+    }
+  },
+  "modelTypes": {
+    "semantic-segmentation": { "tags": ["Computer vision"], "dataTypes": ["Imagery"] }
+  },
+  "datasetFormats": {
+    "csv": { "dataTypes": ["Tables"] },
+    "parquet": { "dataTypes": ["Tables"] },
+    "geojson": { "dataTypes": ["Geometries"] },
+    "geotiff": { "dataTypes": ["Rasters"] }
+  },
+  "collectionKinds": {
+    "rasters": { "dataTypes": ["Imagery", "Rasters"] },
+    "frames": { "dataTypes": ["Imagery", "Video"] },
+    "media": { "dataTypes": ["Imagery", "Video"] },
+    "images": { "dataTypes": ["Imagery"] },
+    "audio": { "dataTypes": ["Audio"] }
+  },
+  "displayOrder": {
+    "tags": ["Autark", "Vega-Lite", "GeoPandas", "Pandas", "GPU compute", "Computer vision"],
+    "dataTypes": ["Tables", "Geometries", "Imagery", "OpenStreetMap", "Rasters", "Video", "Audio"]
+  }
+}

@@ -5,6 +5,10 @@
     "major": 1
   },
   "createdAt": "2026-10-05T00:00:00Z",
+  "dataflowCategories": {
+    "dataTypes": ["Rasters"],
+    "tags": ["SCOUT"]
+  },
   "dependencies": {
     "js": {},
     "packages": {},
@@ -47,14 +51,15 @@
         }
       ],
       "label": "Raster Calculator",
-      "behavior": "raster-calculator",
+      "behavior": "code",
       "outputPorts": [
         {
           "cardinality": "1",
           "types": ["RASTER", "DATAFRAME"]
         }
       ],
-      "paletteOrder": 0
+      "paletteOrder": 0,
+      "source": "sources/raster-calculator.py"
     },
     {
       "category": "computation",

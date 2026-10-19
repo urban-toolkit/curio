@@ -31,6 +31,10 @@
     "name": { "type": "string", "minLength": 1, "description": "Human-readable package name shown in the catalog drawer." },
     "publisher": { "type": "string", "description": "Human-readable publisher name shown alongside the package." },
     "description": { "type": "string", "description": "Short description shown in catalog cards." },
+    "dataflowCategories": {
+      "$ref": "#/$defs/dataflowCategories",
+      "description": "The tags and data types a dataflow shows on the Projects page when it has a node of this package, or loads this package's model with curio_load_model."
+    },
     "license": { "type": ["string", "null"], "description": "SPDX-style license identifier (e.g. 'MIT'); null for unspecified. For a model package, the license of its code; 'model.license' is the weights'." },
     "kind": {
       "type": "string",
@@ -217,6 +221,25 @@
       },
       "additionalProperties": false
     },
+    "dataflowCategories": {
+      "type": "object",
+      "description": "Tags and data types for the Projects page's rail and the canvas's title chips, beside those Curio finds in the dataflow itself (the libraries its code imports, the files it names, its grammars, models and datasets). A name the rail already lists files the dataflow under it; a new name adds an entry. Curio keeps the first 40 characters of a name and the first 20 names of a list, and drops a name that repeats an earlier one in another case.",
+      "additionalProperties": false,
+      "properties": {
+        "tags": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "type": "string", "minLength": 1, "maxLength": 40 },
+          "description": "Tags, such as 'SCOUT'."
+        },
+        "dataTypes": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "type": "string", "minLength": 1, "maxLength": 40 },
+          "description": "Data types, such as 'Rasters' or 'Imagery'."
+        }
+      }
+    },
     "port": {
       "type": "object",
       "required": ["types"],
@@ -282,6 +305,10 @@
           "enum": ["data", "computation", "vis_grammar", "vis_simple", "flow"],
           "description": "Palette grouping."
         },
+        "dataflowCategories": {
+          "$ref": "#/$defs/dataflowCategories",
+          "description": "The tags and data types a dataflow shows on the Projects page when it has a node of this template, beside those its package declares."
+        },
         "engine": {
           "type": "string",
           "enum": ["python", "javascript"],
@@ -293,8 +320,8 @@
         },
         "iconRef": {
           "type": "string",
-          "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$",
-          "description": "FontAwesome ref like 'fa-solid:upload' or 'fa-brands:python'. Resolved by the frontend iconRegistry."
+          "pattern": "^[a-z][a-z0-9-]*:[a-z0-9][a-z0-9-]*$",
+          "description": "Any Font Awesome solid or brands icon, as 'fa-solid:<name>' or 'fa-brands:<name>' (e.g. 'fa-solid:upload', 'fa-brands:python', 'fa-solid:tree'). The frontend loads the icon when it builds the palette; a name Font Awesome does not have shows a cube."
         },
         "paletteOrder": {
           "type": "integer",

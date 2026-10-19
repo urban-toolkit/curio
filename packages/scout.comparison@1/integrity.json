@@ -1,7 +1,7 @@
 {
   "sha256": {
     "README.md": "e71b6c6a6d0caf136e3d0f37e7d8a4fca3b51d3ed33d75cd148f70ea016f2b30",
-    "manifest.json": "77ac51ac205c922b8db946d3cef0b81a8c2115f6b97aec1f252f2d0d7f393679",
+    "manifest.json": "a8bc7e44b45526d93df48c095ac19ffe1ffaad7315308bbf407133f6b9ec97d9",
     "sources/bars-with-error-bars.vl.json": "bdb49689c81249e7568435bce349cc81f9ba34ec58efecd248a8fd412093dce4",
     "sources/curves-by-group.vl.json": "485dcf405bfdd7e7dba23dfc0e11fc27ebae42a94e2a2e2161cc9aaec6d88eef",
     "sources/donuts.vl.json": "efee7abb62efcc8e5a8534a3dd4e2b90f9bcfe27197ea8c5dff688de289808f4",

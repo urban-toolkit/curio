@@ -135,13 +135,33 @@ AUTH_MODES = ("public", "optional-token", "required-token")
 #: stay safe to store verbatim.
 AUTH_SCHEMES = ("header", "query")
 
-#: The credential slots that exist, as a SERVER-owned allowlist. A manifest may
-#: name one; it may not invent one. Each maps to a column on the user's row -
-#: see ``discovery/infrastructure/credentials.py`` - so a manifest inventing a
-#: slot would be a manifest inventing somewhere for a secret to live. Declared
-#: here rather than imported from that module because a manifest must be
-#: readable without the ORM; ``test_credentials.py`` asserts the two agree.
-KNOWN_SECRET_SLOTS = ("socrata.app-token", "huggingface.token", "google.maps-key", "mapillary.token")
+#: How long a key's ``label`` and ``placeholder`` may be, and its ``note``: what
+#: API Settings shows for the key a manifest declares.
+MAX_KEY_LABEL_CHARS = 80
+MAX_KEY_NOTE_CHARS = 500
+
+#: Where the operator's default for a key is read: this prefix and the key's
+#: ``secretId`` (:func:`default_variable`). A manifest never names a variable.
+DEFAULT_VARIABLE_PREFIX = "CURIO_DEFAULT_"
+#: Curio's own settings under the same prefix, which no key's default is ever
+#: read from: whether nodes save their outputs, and the deployment's LLM
+#: configuration (every ``CURIO_DEFAULT_LLM_`` variable, its key among them).
+#: ``test_credentials.py`` checks that every such variable Curio's code names
+#: is one of these.
+OWN_DEFAULT_SETTINGS = frozenset({"CURIO_DEFAULT_SAVE_NODE_OUTPUT"})
+OWN_DEFAULT_SETTING_PREFIXES = ("CURIO_DEFAULT_LLM_",)
+
+
+def default_variable(secret_id: str) -> str:
+    """The variable an operator sets for *secret_id*'s default: the prefix and
+    the id in capitals, with every other character as ``_``."""
+    return DEFAULT_VARIABLE_PREFIX + re.sub(r"[^A-Z0-9]", "_", secret_id.upper())
+
+
+def is_own_setting(variable: str) -> bool:
+    """Whether *variable* is one of Curio's own settings rather than a key's
+    default."""
+    return variable in OWN_DEFAULT_SETTINGS or variable.startswith(OWN_DEFAULT_SETTING_PREFIXES)
 
 #: The formats this catalog can hand to the Data Catalog's importer: what a
 #: download lands as. A subset of the Data Catalog's own SUPPORTED_FORMATS: a
@@ -235,14 +255,28 @@ class ProviderSpec:
 @dataclass(frozen=True)
 class AuthSpec:
     mode: str = "public"
+    #: The key this source sends, by the id every source that sends it names.
+    #: An account saves its key under this id, and API Settings lists one row
+    #: per id.
     secret_id: str | None = None
     scheme: str = "header"
     header_name: str | None = None
+    #: Where a person gets a key, linked from the source and from API Settings.
     help_url: str | None = None
     #: Put before the token in the header's value, e.g. ``"Bearer "``.
     value_prefix: str | None = None
     #: The query parameter a ``query`` key is sent as, e.g. ``"key"``.
     param_name: str | None = None
+    #: What API Settings calls the key; the secret id when none is given.
+    label: str | None = None
+    #: What the empty key field shows, e.g. ``"MLY|..."``.
+    placeholder: str | None = None
+    #: A sentence API Settings shows under the key field.
+    note: str | None = None
+    #: Whether the operator may set one key every account inherits until it
+    #: saves its own, in the variable :func:`default_variable` derives from
+    #: ``secret_id``. A manifest never names a variable.
+    operator_default: bool = False
 
     @property
     def needs_token(self) -> bool:
@@ -501,13 +535,9 @@ def _parse_auth(raw: object) -> AuthSpec:
     if secret_id is not None:
         secret_id = _require_str(secret_id, "auth.secretId")
         if not _SECRET_ID_RE.match(secret_id):
-            raise ManifestError(f"manifest.auth.secretId is not a valid slot: {secret_id!r}")
-        if secret_id not in KNOWN_SECRET_SLOTS:
             raise ManifestError(
-                f"manifest.auth.secretId names an unknown credential slot "
-                f"{secret_id!r}; this deployment holds {sorted(KNOWN_SECRET_SLOTS)}. "
-                "Adding one is a column on the user row, a migration, and an "
-                "entry in discovery/infrastructure/credentials.py."
+                f"manifest.auth.secretId is not a valid secret id: {secret_id!r} "
+                "(one to three lowercase words joined by '.', such as 'example.api-key')"
             )
     if mode != "public" and not secret_id:
         raise ManifestError(f"manifest.auth.secretId is required when mode is {mode!r}")
@@ -536,6 +566,16 @@ def _parse_auth(raw: object) -> AuthSpec:
     help_url = raw.get("helpUrl")
     if help_url is not None:
         help_url = _require_str(help_url, "auth.helpUrl")
+    operator_default = _bool(raw.get("operatorDefault"), False, "auth.operatorDefault")
+    if operator_default:
+        if not secret_id:
+            raise ManifestError("manifest.auth.operatorDefault needs a secretId")
+        variable = default_variable(secret_id)
+        if is_own_setting(variable):
+            raise ManifestError(
+                f"manifest.auth.operatorDefault: the secretId {secret_id!r} would read {variable}, "
+                "one of Curio's own settings, so it cannot have an operator default"
+            )
     return AuthSpec(
         mode=mode,
         secret_id=secret_id,
@@ -544,7 +584,23 @@ def _parse_auth(raw: object) -> AuthSpec:
         help_url=help_url,
         value_prefix=value_prefix,
         param_name=param_name,
+        label=_key_text(raw.get("label"), "auth.label", MAX_KEY_LABEL_CHARS),
+        placeholder=_key_text(raw.get("placeholder"), "auth.placeholder", MAX_KEY_LABEL_CHARS),
+        note=_key_text(raw.get("note"), "auth.note", MAX_KEY_NOTE_CHARS),
+        operator_default=operator_default,
     )
+
+
+def _key_text(raw: object, field_name: str, limit: int) -> str | None:
+    """One line API Settings shows for a key, at most *limit* characters, or None."""
+    if raw is None:
+        return None
+    text = _require_str(raw, field_name)
+    if "\n" in text or "\r" in text:
+        raise ManifestError(f"manifest.{field_name} must be one line")
+    if len(text) > limit:
+        raise ManifestError(f"manifest.{field_name} must be at most {limit} characters")
+    return text
 
 
 def _parse_capabilities(raw: object) -> CapabilitySpec:
@@ -1055,6 +1111,10 @@ def build_manifest_dict(manifest: DiscoverySourceManifest) -> dict[str, Any]:
             "helpUrl": manifest.auth.help_url or None,
             "valuePrefix": manifest.auth.value_prefix or None,
             **({"paramName": manifest.auth.param_name} if manifest.auth.param_name else {}),
+            "label": manifest.auth.label or None,
+            "placeholder": manifest.auth.placeholder or None,
+            "note": manifest.auth.note or None,
+            "operatorDefault": manifest.auth.operator_default,
         },
         "resources": [_resource_dict(spec) for spec in manifest.resources],
         "capabilities": {

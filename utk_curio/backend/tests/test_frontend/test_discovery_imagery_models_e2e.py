@@ -103,10 +103,11 @@ def _enter(page, app_frontend, current_server, *, example: bool = False,
     return session
 
 
-def _save_key(current_server: str, token: str, field: str) -> None:
+def _save_key(current_server: str, token: str, secret_id: str) -> None:
     # A stand-in: the recorded answers ignore it, and it is never sent anywhere.
+    value = "MLY|e2e-stand-in" if "mapillary" in secret_id else "AIzaE2eStandIn"
     api_json(f"{current_server}/api/auth/me", token, method="PATCH",
-             payload={field: "MLY|e2e-stand-in" if "mapillary" in field else "AIzaE2eStandIn"})
+             payload={"source_keys": {secret_id: value}})
 
 
 def _set_box(dialog) -> None:
@@ -192,7 +193,7 @@ def test_mapillary_images_for_a_box_land_as_one_collection(
     app_frontend: "FrontendPage", current_server: str, page
 ):
     session = _enter(page, app_frontend, current_server)
-    _save_key(current_server, session["token"], "mapillary_access_token")
+    _save_key(current_server, session["token"], "mapillary.token")
     _goto_discovery(page, app_frontend)
     expect(
         page.locator(f'[data-discovery-source="{MAPILLARY}"]').get_by_text("Token set")
@@ -217,7 +218,7 @@ def test_street_view_images_for_a_box_land_as_one_collection(
     app_frontend: "FrontendPage", current_server: str, page
 ):
     session = _enter(page, app_frontend, current_server)
-    _save_key(current_server, session["token"], "google_maps_api_key")
+    _save_key(current_server, session["token"], "google.maps-key")
 
     _goto_discovery(page, app_frontend, f"/catalog/discovery/{STREET_VIEW}")
     row = page.locator('[data-discovery-resource="images"]')

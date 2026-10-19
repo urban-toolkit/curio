@@ -28,6 +28,9 @@
   "templates": [
     {
       "category": "computation",
+      "dataflowCategories": {
+        "dataTypes": ["Imagery", "Video"]
+      },
       "description": "Sample frames from every video in a collection, every EVERY_SECONDS seconds. Returns one row per frame with the columns of an image row (path, thumbnail, image_url, width, height), the video's fields and position, and t_s, the frame's offset.",
       "editor": "code",
       "engine": "python",
@@ -55,6 +58,9 @@
     },
     {
       "category": "computation",
+      "dataflowCategories": {
+        "dataTypes": ["Audio"]
+      },
       "description": "Split every recording in a collection into windows of WINDOW_SECONDS seconds. Returns one row per window with its level and peak in dBFS, a playable clip, the recording's fields, and t_s, the window's offset.",
       "editor": "code",
       "engine": "python",
@@ -82,6 +88,9 @@
     },
     {
       "category": "computation",
+      "dataflowCategories": {
+        "dataTypes": ["Rasters"]
+      },
       "description": "Combine a raster collection's tiles, or a filtered set of them, into one virtual mosaic that any RASTER node reads. The tiles must share CRS, resolution, bands and data type.",
       "editor": "code",
       "engine": "python",

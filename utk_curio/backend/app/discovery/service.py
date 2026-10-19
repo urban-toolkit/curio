@@ -33,7 +33,7 @@ from utk_curio.backend.app.discovery.domain.errors import (
 )
 from utk_curio.backend.app.discovery.domain import parameters as P
 from utk_curio.backend.app.discovery.domain import text_match
-from utk_curio.backend.app.discovery.domain.manifest import DiscoverySourceManifest
+from utk_curio.backend.app.discovery.domain.manifest import AuthSpec, DiscoverySourceManifest
 from utk_curio.backend.app.discovery.domain.resource import (
     DiscoveryField,
     DiscoveryResourceDetail,
@@ -65,6 +65,12 @@ FILES_PAGE = 100
 #: The prefix a source id had before the Data Lake Catalog became the
 #: Discovery Catalog (#555). Every ``lake.<x>@<major>`` became ``source.<x>@<major>``.
 _PRE_RENAME_PREFIX = "lake."
+
+
+def declared_keys() -> dict[str, str]:
+    """Every key a source on this Curio sends, by the secret id its manifests
+    name, with what API Settings calls it. An account saves keys only for these."""
+    return credentials.declared_keys(DiscoveryCatalog().manifests())
 
 
 def _renamed_source_dir(source_dir: str) -> str:
@@ -227,11 +233,12 @@ class DiscoveryService:
         return {"places": places.search_places(transport, q)}
 
     def key_rows(self) -> list[dict[str, Any]]:
-        """API Settings' Discovery Catalog section: every key slot, booleans only."""
+        """API Settings' Data source keys: one row per key a source declares,
+        booleans only."""
         return credentials.key_rows(self.user, self._catalog.manifests())
 
-    def _credential_present(self, secret_id: str | None) -> bool:
-        return credentials.has_token(self.user, secret_id)
+    def _credential_present(self, auth: AuthSpec) -> bool:
+        return credentials.has_key(self.user, auth)
 
     # ── roster (disk) ──────────────────────────────────────────────────────
 

@@ -113,7 +113,9 @@ from utk_curio.backend.app.packages.domain.package_id import (
     PackageId,
 )
 from utk_curio.backend.app.packages.domain.manifest import PackageManifest
+from utk_curio.backend.app.packages.domain.dataflow_categories import declared_dataflow_categories
 from utk_curio.backend.app.packages.domain.spec_packages import (
+    dir_name_from_model_ref,
     dir_name_from_node_type,
     preserve_project_packages,
     project_packages,
@@ -144,6 +146,8 @@ __all__ = [
     "PACKAGE_DIR_RE",
     "PackageId",
     "PackageManifest",
+    "declared_dataflow_categories",
+    "dir_name_from_model_ref",
     "dir_name_from_node_type",
     "preserve_project_packages",
     "project_packages",

@@ -60,6 +60,26 @@ def test_the_secret_id_pattern_matches(schema):
     assert schema["properties"]["auth"]["properties"]["secretId"]["pattern"] == M._SECRET_ID_RE.pattern
 
 
+def test_every_auth_key_the_validator_writes_is_declared(schema):
+    """A key's declaration included: what API Settings shows for it, and
+    whether the operator may set it for everyone."""
+    from utk_curio.backend.tests.test_discovery.conftest import a_manifest
+
+    raw = a_manifest(auth={
+        "mode": "optional-token", "secretId": "acme.tiles-key", "headerName": "X-Acme-Key",
+        "valuePrefix": "Bearer ", "helpUrl": "https://acme.example/keys", "label": "Acme tiles key",
+        "placeholder": "acme_...", "note": "Acme bills each request to you.", "operatorDefault": True,
+    })
+    written = set(M.build_manifest_dict(M._parse_manifest(raw, where="manifest.json"))["auth"])
+    declared = schema["properties"]["auth"]["properties"]
+    assert {"label", "placeholder", "note", "operatorDefault"} <= written
+    assert written <= set(declared)
+    assert declared["operatorDefault"]["type"] == "boolean"
+    assert declared["label"]["maxLength"] == M.MAX_KEY_LABEL_CHARS
+    assert declared["placeholder"]["maxLength"] == M.MAX_KEY_LABEL_CHARS
+    assert declared["note"]["maxLength"] == M.MAX_KEY_NOTE_CHARS
+
+
 def test_the_icon_pattern_matches(schema):
     assert schema["properties"]["icon"]["pattern"] == M._ICON_RE.pattern
 

@@ -12,6 +12,9 @@ table of the riverside tracts' depth by period (2026-10-18), and ``SCOUT`` on
 the charts dataflow once its charts are SCOUT Comparison's nodes
 (``scout.comparison@1``, 2026-10-18), which tag it ``Vega-Lite`` too: a
 template whose ``grammarId`` is ``vega-lite`` draws as the Vega-Lite node does.
+``Rasters`` is on example 24 and chicago-loop-shadow-towers since SCOUT's
+raster package declares it for the dataflows its nodes are in
+(``scout.rasters@1``'s ``dataflowCategories``, 2026-10-18).
 The automatic sections must reproduce it from the files alone, and the
 hand-set ones live in the files themselves.
 """
@@ -207,7 +210,8 @@ def test_the_flood_dataflow_is_tagged_scout_by_its_raster_calculators_alone():
 def test_the_charts_dataflow_is_tagged_scout_and_vega_lite_by_its_package_nodes_alone():
     """``scenario-comparison-charts`` reads no SCOUT dataset and has no
     ``curio.builtin/vis-vega`` node: SCOUT Comparison's seven charts give it
-    both tags, by the ``scout.`` prefix and by their template's grammar."""
+    both tags, by their package's ``dataflowCategories`` and by their
+    template's grammar."""
     spec = _spec("dataflows/scenario-comparison-charts")
     nodes = spec["dataflow"]["nodes"]
     charts = [n for n in nodes if n["type"].startswith("scout.comparison/")]

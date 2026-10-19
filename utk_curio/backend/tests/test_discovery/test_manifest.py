@@ -141,6 +141,49 @@ class TestAuth:
         auth = _parse(auth={"mode": "public"}).auth
         assert auth.secret_id is None and not auth.uses_token and not auth.needs_token
 
+    @pytest.mark.parametrize("secret_id", ["acme.tiles-key", "token", "a.b.c"])
+    def test_any_well_formed_secret_id_is_a_key(self, secret_id):
+        """Which keys exist is what the manifests declare: Curio's code holds no list."""
+        auth = _parse(auth={"mode": "optional-token", "secretId": secret_id, "headerName": "X-T"}).auth
+        assert auth.secret_id == secret_id
+
+    def test_a_key_declares_how_api_settings_shows_it(self):
+        m = _parse(auth={"mode": "optional-token", "secretId": "acme.tiles-key", "headerName": "X-Acme-Key",
+                         "label": " Acme tiles key ", "helpUrl": "https://acme.example/keys",
+                         "placeholder": "acme_...", "note": "Acme bills each request to you.",
+                         "operatorDefault": True})
+        auth = m.auth
+        assert (auth.label, auth.help_url, auth.placeholder, auth.note, auth.operator_default) == (
+            "Acme tiles key", "https://acme.example/keys", "acme_...", "Acme bills each request to you.", True,
+        )
+        written = M.build_manifest_dict(m)["auth"]
+        assert (written["label"], written["placeholder"], written["note"], written["operatorDefault"]) == (
+            "Acme tiles key", "acme_...", "Acme bills each request to you.", True,
+        )
+        assert M._parse_manifest(M.build_manifest_dict(m), where="manifest.json") == m
+
+    def test_only_the_secret_id_is_required(self):
+        auth = _parse(auth={"mode": "optional-token", "secretId": "acme.tiles-key", "headerName": "X-Acme-Key"}).auth
+        assert (auth.label, auth.placeholder, auth.note, auth.operator_default) == (None, None, None, False)
+
+    @pytest.mark.parametrize("field, value", [
+        ("label", ""),
+        ("label", "   "),
+        ("label", "two\nlines"),
+        ("label", "x" * 81),
+        ("label", 7),
+        ("placeholder", "two\nlines"),
+        ("placeholder", "x" * 81),
+        ("note", "two\nlines"),
+        ("note", "x" * 501),
+        ("operatorDefault", "yes"),
+        ("operatorDefault", 1),
+    ])
+    def test_a_declaration_is_one_short_line_and_the_default_a_boolean(self, field, value):
+        with pytest.raises(M.ManifestError, match=field):
+            _parse(auth={"mode": "optional-token", "secretId": "acme.tiles-key", "headerName": "X-Acme-Key",
+                         field: value})
+
 
 class TestCapabilities:
     def test_a_format_outside_the_acquirable_set_is_refused(self):

@@ -7,6 +7,20 @@ This guide walks through adding a new node package end-to-end. Its examples are 
 > [!TIP]
 > **Writing your first package?** Start with [`docs/AUTHORING-NODES.md`](AUTHORING-NODES.md), a task-ordered walkthrough from `git clone` to a working node, including the edit → rebuild → reload loop. Scaffold with `python scripts/new_package.py <id> [--with-ui]`, and read [`packages/curio.example-ui@1`](../packages/curio.example-ui@1/) for a minimal custom-UI node with no API keys or heavy dependencies. Come back here for the reference detail: backend blueprints, external services, dependency declaration, and the manifest's finer points.
 
+## Every catalog is a folder of manifests
+
+Each catalog lists folders, one per item, each with a `manifest.json` that declares what the item is and brings. The catalog's guide describes its manifest.
+
+| Catalog | Shipped folder | Schema | Its manifest |
+|---|---|---|---|
+| Node | [`packages/`](../packages/) | [`node-package.v4.json`](schemas/node-package.v4.json) | [NODE-CATALOG §6](NODE-CATALOG.md#6-the-manifest) |
+| Model | [`packages/`](../packages/), packages of kind `model` | [`node-package.v4.json`](schemas/node-package.v4.json) | [MODEL-CATALOG §6](MODEL-CATALOG.md#6-the-manifest) |
+| Data | [`datasets/`](../datasets/) | The table in DATA-CATALOG §7 | [DATA-CATALOG §7](DATA-CATALOG.md#7-the-manifest) |
+| Discovery | [`discovery/`](../discovery/) | [`discovery-source.v1.json`](schemas/discovery-source.v1.json) | [DISCOVERY-CATALOG §8](DISCOVERY-CATALOG.md#8-the-manifest) |
+| Agent | Built into Curio; published agents in `.curio/agents-catalog/` | [`agent-package.v1.json`](schemas/agent-package.v1.json) | [AGENT-CATALOG §6](AGENT-CATALOG.md#6-the-manifest) |
+
+The Scenario Catalog has no manifests: it lists the scenarios saved in your projects.
+
 ## 1. Anatomy of a package
 
 ```
@@ -22,7 +36,7 @@ packages/<packageId>@<major>/
 
 A `template` inside `manifest.json` declares one node kind. It carries:
 
-- `id` + `label` + `description` + `iconRef`: palette presentation
+- `id` + `label` + `description` + `iconRef`: palette presentation. `iconRef` names any Font Awesome solid or brands icon, as `fa-solid:<name>` or `fa-brands:<name>` (`fa-solid:tree`, `fa-brands:github`)
 - `category` (`data` | `computation` | `vis_grammar` | `vis_simple` | `flow`): palette sectioning
 - `inputPorts` + `outputPorts`: port types and cardinalities (see [`docs/schemas/node-package.v4.json`](schemas/node-package.v4.json))
 - `editor` (`code` | `widgets` | `grammar` | `none`): what editor surface to mount
@@ -30,6 +44,7 @@ A `template` inside `manifest.json` declares one node kind. It carries:
 - `engine` (`python` | `javascript`): if the node runs user code, which sandbox executes it. A template with `hasCode`, an `engine` and no `backendHandler` is one an agent's Solve runs in the sandbox to verify what it writes
 - `source` + `starterIsContent`: the starter a fresh node opens with, and whether it is the node's whole content, set through the template's `widgets`. With `starterIsContent`, a node an agent's plan creates starts with the starter too, and Solve leaves it as it is ([Authoring nodes](AUTHORING-NODES.md#widgets-in-a-template))
 - `loadsDataset`: a node of this template loads a dataset into the dataflow. The Dataset Finder attaches to it, and Solve finds it a source before writing its code ([Agent Catalog](AGENT-CATALOG.md#solve))
+- `dataflowCategories` (`{"tags": [...], "dataTypes": [...]}`): the tags and data types a dataflow with a node of this template is filed under on the **Projects** page. At the top level of the manifest it covers every template of the package. Curio finds the rest in the dataflow itself, such as Pandas for code that imports it, so declare only what a node's code does not show ([Authoring nodes](AUTHORING-NODES.md#tags-and-data-types))
 
 The frontend's package loader at [`registry/packagesClient.ts`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) reads every installed package, calls `buildDescriptor()` per template, and registers them in the canvas's node-type registry. Adding a node is therefore *adding a manifest entry plus a behavior hook*; there is no monolithic switch-case anywhere.
 
@@ -63,7 +78,12 @@ Every Discovery request leaves the backend through one transport, [`discovery/in
 
 Pick the pattern by who the key belongs to:
 
-- **Per-account keys** (a Mapillary access token, a Google Maps API key, a Hugging Face token) are **Data source** keys on the **API keys** tab of **API Settings**, never a node input, a line of node code or a field of the dataflow spec. Each is a `KeySlot` in `SLOTS` ([`discovery/infrastructure/credentials.py`](../utk_curio/backend/app/discovery/infrastructure/credentials.py)): the `User` column that holds it, a label, a help link, a placeholder, an optional note, and an optional deployment-wide fallback (`default_env`) that a user's own key overrides. A source names its slot in `auth.secretId`, and a manifest naming a slot Curio does not hold fails to load. Adding a slot is a `User` column, a migration, a field in `PATCH /api/auth/me` ([`users/routes.py`](../utk_curio/backend/app/users/routes.py)), an entry in `SLOTS` and its id in `KNOWN_SECRET_SLOTS` ([`discovery/domain/manifest.py`](../utk_curio/backend/app/discovery/domain/manifest.py)). API Settings offers every slot without a saved key in the **Kind** list of **Add configuration**, and lists a slot once a key is saved or a deployment-wide fallback supplies one.
+- **Per-account keys** (a Mapillary access token, a Google Maps API key, a Hugging Face token) are **Data source** keys on the **API keys** tab of **API Settings**, never a node input, a line of node code or a field of the dataflow spec. A new key needs only its source manifest's `auth` block (§3.4): no column, migration or list in Curio's code.
+  - `secretId` names the key, and the sources that send one key name the same id.
+  - `label` is what API Settings calls it (the `secretId` when absent), `helpUrl` where a person gets one, `placeholder` what the empty field shows, and `note` a sentence under the field. Sources that send one key declare these the same way.
+  - `"operatorDefault": true` lets whoever runs Curio set one key every account inherits until it saves its own, in the variable `CURIO_DEFAULT_` followed by the `secretId` in capitals, with every other character as `_` (`CURIO_DEFAULT_SOCRATA_APP_TOKEN` for `socrata.app-token`). A manifest never names a variable, and a manifest whose `secretId` would read one of Curio's own settings under that prefix (`CURIO_DEFAULT_LLM_*`, `CURIO_DEFAULT_SAVE_NODE_OUTPUT`) with `operatorDefault` fails to load.
+  - API Settings lists one row per `secretId` (`key_rows` in [`discovery/infrastructure/credentials.py`](../utk_curio/backend/app/discovery/infrastructure/credentials.py)): it offers each key without a saved one in the **Kind** list of **Add configuration**, and lists a key once one is saved or the operator supplies one.
+  - `PATCH /api/auth/me` saves an account's keys by `secretId` under `source_keys`, in an owner-only file beside its other per-user stores ([`users/source_keys.py`](../utk_curio/backend/app/users/source_keys.py)), and refuses a `secretId` no source declares.
 
 - **Several named secrets per account** (node code keys, LLM configurations) go in an owner-only per-user file written through [`common/owner_only_file.py`](../utk_curio/backend/app/common/owner_only_file.py), as [`users/connection_keys.py`](../utk_curio/backend/app/users/connection_keys.py) and [`agents/infrastructure/llm_configs.py`](../utk_curio/backend/app/agents/infrastructure/llm_configs.py) do.
 
@@ -75,7 +95,7 @@ Three rules the per-account pattern follows:
 [`discovery/service.py`](../utk_curio/backend/app/discovery/service.py) wraps
 the transport in `CredentialedTransport` with the source's `provider.baseUrl`;
 a request to any other scheme, host or port, such as a Mapillary photo on its
-CDN, goes without the key. `credential_header` turns the slot into a header
+CDN, goes without the key. `credential_header` turns the key into a header
 (`auth.headerName` plus `auth.valuePrefix`) or, for `auth.scheme: "query"`, a
 query parameter (`auth.paramName`). The transport is the only code that adds
 it: providers never see the value, and a query key is taken out of every URL
@@ -92,9 +112,9 @@ shared by every user when the source sends no key, and kept per account when it
 does (`_listing_scope`).
 
 Report presence, never the value. `GET /api/discovery/keys` (`key_rows`) lists
-every slot with booleans only: `present` (this account saved one) and
-`inherited` (the deployment supplies one). The user payload carries a
-`has_<column>` flag per slot (`SLOT_FLAGS`).
+every key with booleans only: `present` (this account saved one) and
+`inherited` (the deployment supplies one). The user payload's
+`has_source_keys` maps the `secretId` of each key the account saved to `true`.
 
 A package whose backend needs to know *who* is calling must send the bearer
 token: read `window.curio.getAuthToken()` (a getter, because a package bundle
@@ -125,7 +145,7 @@ Read a public API's usage policy before shipping a source that calls it in a loo
 
 ### 3.4 APIs with API keys
 
-A source declares its key in the manifest's `auth` block, naming an API Settings slot (§3.2). Mapillary sends its token as a header:
+A source declares its key in the manifest's `auth` block, which is also its row in API Settings (§3.2). Mapillary sends its token as a header:
 
 ```json
 "auth": {
@@ -133,7 +153,10 @@ A source declares its key in the manifest's `auth` block, naming an API Settings
   "secretId": "mapillary.token",
   "headerName": "Authorization",
   "valuePrefix": "OAuth ",
-  "helpUrl": "https://www.mapillary.com/dashboard/developers"
+  "label": "Mapillary access token",
+  "helpUrl": "https://www.mapillary.com/dashboard/developers",
+  "placeholder": "MLY|...",
+  "note": "Mapillary images are CC BY-SA 4.0: each one keeps its creator for attribution."
 }
 ```
 
@@ -145,11 +168,13 @@ Google Street View sends its key as a query parameter:
   "secretId": "google.maps-key",
   "scheme": "query",
   "paramName": "key",
-  "helpUrl": "https://developers.google.com/maps/documentation/streetview/get-api-key"
+  "label": "Google Maps API key",
+  "helpUrl": "https://developers.google.com/maps/documentation/streetview/get-api-key",
+  "placeholder": "AIza..."
 }
 ```
 
-An `optional-token` source (Hugging Face models) sends the key when the account has one and asks without it otherwise. A `required-token` source the account holds no key for is refused before any job exists: `start_acquire` raises `CredentialRequired` (a `428`) naming the slot and the help link, and a search leg reports `needs-token`. A missing key is a message naming what to do, never a stacktrace.
+An `optional-token` source (Hugging Face models) sends the key when the account has one and asks without it otherwise. A `required-token` source the account holds no key for is refused before any job exists: `start_acquire` raises `CredentialRequired` (a `428`) naming the key's `secretId` and the help link, and a search leg reports `needs-token`. A missing key is a message naming what to do, never a stacktrace.
 
 ### 3.5 Long-running calls and job-id polling
 
@@ -523,12 +548,7 @@ The smallest possible package adds one template plus its behavior hook. Use this
 
    **Packages built outside this repo** ship their own pre-built `scripts/behaviors.js` and need no row in this file, since Curio loads any `behaviorScript` it finds in an installed package regardless of who built it. There is no separate toolchain for that case: the practical route is to author inside a Curio checkout (where `registry/types` resolves and this build config exists), then distribute the resulting `.curio.zip`.
 
-7. **(If a custom icon)** register it in [`registry/iconRegistry.ts`](../utk_curio/frontend/urban-workflows/src/registry/iconRegistry.ts):
-   ```ts
-   import { faSomeIcon } from '@fortawesome/free-solid-svg-icons';
-   registerIcon('fa-solid:some-icon', faSomeIcon);
-   ```
-   Unregistered icons silently fall back to `faCube` with a one-time console warning.
+7. **Pick an icon.** A template's `iconRef` names any icon of Font Awesome's free solid or brands set, by the name [fontawesome.com](https://fontawesome.com/icons) gives it: `"iconRef": "fa-solid:tree"` or `"iconRef": "fa-brands:github"`. Curio loads it when it builds the palette; nothing in Curio needs editing. A name Font Awesome does not have shows a cube, with a one-time console warning.
 
 8. **Regenerate `integrity.json`**, the sha256 of every shipped file, keyed by
    its POSIX path *relative to the package root* (so `sources/foo.py` and
@@ -563,9 +583,10 @@ you. See [`docs/AUTHORING-NODES.md`](AUTHORING-NODES.md) for the walkthrough.
 
 **Every package**
 
-- [ ] `packages/<id>@<major>/manifest.json`: templates with behavior keys, port shapes, palette ordering.
+- [ ] `packages/<id>@<major>/manifest.json`: templates with behavior keys, port shapes, palette ordering, and an `iconRef` naming any Font Awesome solid or brands icon (§6 step 7).
 - [ ] `packages/<id>@<major>/README.md`: shown in the catalog. Cover setup, env vars, costs.
 - [ ] `packages/<id>@<major>/integrity.json`: regenerate after every edit with `python scripts/regen_integrity.py packages/<id>@<major>` (§6 step 8).
+- [ ] *(If a dataflow that uses it belongs under a tag or a data type its code does not show)* `dataflowCategories` in the manifest (§1).
 
 **Behavior hooks in the package** (the normal case: no Curio rebuild needed)
 
