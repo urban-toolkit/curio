@@ -4,7 +4,7 @@
  * (components/compare/CompareChart): through useVega, with no version recorded
  * in the chart's provenance and nothing handed downstream. A selection made in
  * the chart is kept: the new view gets it back on the same rows, and the flow
- * goes on holding it.
+ * goes on holding it, however fast the recolors come.
  *
  * The behavior and useVega are real here. vega and vega-lite are the mocks
  * below, which keep what each view is handed and the state vega keeps for it.
@@ -243,5 +243,33 @@ describe("a recolor draws the chart after a Compare node again, as its Chart tab
       await view.runAsync();
     });
     expect(lastSent(played.data)).toEqual(expect.objectContaining({ type: VisInteractionType.POINT, data: [2] }));
+  });
+
+  test("recolored again before its redraw is done, it ends in the last color with the selection kept", async () => {
+    const played = await playedChart();
+    // The second bar picked, row 1.
+    await act(async () => {
+      played.view.data.pick_store = [{ unit: "", _vgsid_: 2 }];
+      played.view.signals.pick = { _vgsid_: [2], vlPoint: { or: [{ _vgsid_: 2 }] } };
+      await played.view.runAsync();
+    });
+    const sentBefore = played.data.interactionsCallback.mock.calls.length;
+
+    // A color dragged through the picker is written at each step it passes:
+    // the second step lands while the redraw for the first is still drawing.
+    // Each render is its own act, so the two are not batched into one.
+    setFlow([{ ...TALL, color: "#9e9ac8" }, BASELINE]);
+    played.hook.rerender();
+    setFlow([{ ...TALL, color: NEW_COLOR }, BASELINE]);
+    played.hook.rerender();
+    // Drawn once by the Play and once for each step.
+    await waitFor(() => expect(played.nodeState.setOutput).toHaveBeenCalledTimes(3));
+
+    const last = views()[views().length - 1];
+    expect(last.spec.encoding.color.scale.range).toEqual([NEW_COLOR, BASELINE.color]);
+    expect(last.restored[last.restored.length - 1]?.data).toEqual({ pick_store: [{ unit: "", _vgsid_: 2 }] });
+    for (const [sent] of played.data.interactionsCallback.mock.calls.slice(sentBefore)) {
+      expect(sent.pick).toEqual(expect.objectContaining({ type: VisInteractionType.POINT, data: [1] }));
+    }
   });
 });
