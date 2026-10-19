@@ -2,6 +2,7 @@ const path = require("path");
 const webpack = require("webpack");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
 const Dotenv = require("dotenv-webpack");
+const IconChunksAsWritten = require("./webpack/iconChunks");
 
 // The `utk` file dependency bundles `require("vega-lite")`; without aliases, webpack can
 // resolve that package from `utk-ts/node_modules`, which may be incomplete. Pin the Vega/D3
@@ -162,5 +163,8 @@ module.exports = {
       path: ".env",
       systemvars: true,
     }),
+    // One chunk per Font Awesome icon, shipped unminified and without a source
+    // map; see webpack/iconChunks.js.
+    new IconChunksAsWritten(),
   ],
 };
