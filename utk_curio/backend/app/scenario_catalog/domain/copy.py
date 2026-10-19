@@ -34,15 +34,20 @@ def node_label(node: dict) -> str:
     return _humanize_node_type(_template(node)) or str(node.get("id"))
 
 
-def copy_plan(scenario: dict, nodes: list[dict], edges: list[dict]) -> dict[str, Any]:
+def copy_plan(scenario: dict, nodes: list[dict], edges: list[dict], packages=None) -> dict[str, Any]:
     """The nodes, edges and outputs a drop of *scenario* copies, as node ids
     of its own project. ``context`` lists each context node with the one node
     whose saved output stands for it (``source``), or ``sources`` when that is
-    not one node."""
+    not one node. *packages* (a ``TemplateGrammars``, the account's) reads what
+    each node's template declares, ``TemplateGrammars.for_account()`` when
+    None."""
+    from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
+
     by_id = {n["id"]: n for n in nodes}
     parts = scenario_parts(scenario, nodes, edges)
     levers = parts["levers"]
     inside = set(levers)
+    packages = packages or TemplateGrammars.for_account()
 
     context: list[dict[str, Any]] = []
     for node_id in parts["context"]:
@@ -51,7 +56,7 @@ def copy_plan(scenario: dict, nodes: list[dict], edges: list[dict]) -> dict[str,
         if is_parameter_node(node):
             entry["parameter"] = True
         else:
-            sources = saved_sources(node_id, nodes, edges)
+            sources = saved_sources(node_id, nodes, edges, packages)
             if len(sources) == 1:
                 source = by_id[sources[0]]
                 entry["source"] = {"nodeId": source["id"], "copiedFrom": lineage_of(source)}
@@ -63,7 +68,7 @@ def copy_plan(scenario: dict, nodes: list[dict], edges: list[dict]) -> dict[str,
         {
             "nodeId": node_id,
             "label": node_label(by_id[node_id]),
-            "sources": [s for s in saved_sources(node_id, nodes, edges) if s in inside],
+            "sources": [s for s in saved_sources(node_id, nodes, edges, packages) if s in inside],
         }
         for node_id in parts["outcomes"]
     ]

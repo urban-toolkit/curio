@@ -32,6 +32,7 @@ from typing import Any, Optional
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from utk_curio.backend.extensions import db
+from utk_curio.backend.app.datasets.domain.constants import account_folder_origin
 from utk_curio.backend.app.datasets.domain.manifest import (
     DatasetManifest,
     ManifestError,
@@ -45,19 +46,14 @@ from utk_curio.backend.app.datasets.infrastructure.storage import (
 
 logger = logging.getLogger(__name__)
 
-# Dir-name prefixes the index covers, mapped to the catalog ``origin`` the
-# listing assigns them. Mirrors UserDatasetRepository's classification: any other
-# prefix (a hub copy installed under its own id, say) is not an account-level
-# asset and is left to the scan.
-_ORIGIN_BY_PREFIX = {"imported.": "imported", "computed.": "computed"}
-
-
 def origin_for_dir(dir_name: str) -> Optional[str]:
-    """Catalog origin for a store dir name, or ``None`` if it isn't indexable."""
-    for prefix, origin in _ORIGIN_BY_PREFIX.items():
-        if dir_name.startswith(prefix):
-            return origin
-    return None
+    """Catalog origin for a store dir name, or ``None`` if it isn't indexable.
+
+    The index covers the account's own folders (``ACCOUNT_FOLDER_ORIGINS``),
+    as UserDatasetRepository classifies them: any other folder (a hub copy
+    installed under its own id) is not an account-level asset and is left to
+    the scan."""
+    return account_folder_origin(dir_name)
 
 
 def _manifest_stat(dataset_root: Path) -> tuple[Optional[int], Optional[int]]:

@@ -19,7 +19,8 @@ recursive-include discovery *
 recursive-include vendor/duckdb-extensions *.wasm
 
 # What Curio reads of docs/, which setup.py puts in the wheel at
-# utk_curio/_shipped/docs/: the dataflows it ships (projects/shipped.py), the
+# utk_curio/_shipped/docs/: the dataflows it ships and use-cases.json, the index
+# beside them that names the use cases (projects/shipped.py), the
 # agent evaluation's prompt fixtures and their schema, the Trill schema the
 # agents' prompt fields project, and the Example storage source's folder with
 # the credits of its Mapillary photos. No guide, image, walkthrough or

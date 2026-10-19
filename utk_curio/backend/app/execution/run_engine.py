@@ -114,6 +114,7 @@ def plan_run(
     reuse: Optional[dict] = None,
     templates: Optional[dict] = None,
     labels: Optional[dict] = None,
+    packages=None,
 ) -> Plan:
     """What a run of *spec_dict* executes.
 
@@ -122,6 +123,8 @@ def plan_run(
     *reuse* (``{nodeId: output}``): the outputs a canvas still holds for nodes
     it judged need no new run. A target always runs. *labels*
     (``node_names.template_labels``) name each step as its node's header does.
+    *packages* (a ``TemplateGrammars``, the account's when the run has one)
+    reads what each node's template declares (``run_plan.node_role``).
     """
     spec = parse_workflow_dict(spec_dict, templates=templates)
     saved = {
@@ -154,10 +157,14 @@ def plan_run(
     steps: dict = {}
     placed = [(index, node_id) for index, level in enumerate(levels) for node_id in level]
     placed += [(len(levels), node_id) for node_id in unplanned]
+    if packages is None:
+        from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
+
+        packages = TemplateGrammars.for_account()
     for level, node_id in placed:
         parsed = by_id[node_id]
         node = saved.get(node_id, {})
-        role = node_role(node, templates)
+        role = node_role(node, templates, packages)
         autk_data = role == "run" and is_autk_data_node(node)
         steps[node_id] = Step(
             node_id=node_id,

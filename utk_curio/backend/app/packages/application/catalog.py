@@ -14,6 +14,7 @@ from utk_curio.backend.app.packages.domain.catalog_family import (
     families_summary,
 )
 from utk_curio.backend.app.packages.application import prune as packages_prune
+from utk_curio.backend.app.packages.application import templates as packages_templates
 from utk_curio.backend.app.packages.application.model_packages import weights_on_first_use
 from utk_curio.backend.app.packages.domain.manifest import ManifestError, PackageManifest
 from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
@@ -41,11 +42,24 @@ def _listing_payload(manifest: PackageManifest, folder) -> dict:
     return payload
 
 
+def _with_catalog_flags(payload: dict) -> dict:
+    """*payload* with each template flag (``TEMPLATE_FLAGS``) the catalog's copy
+    of a template declares set on it, as ``templates.template_flags`` reads
+    flags: the account's copy of a package can be older than the catalog's,
+    so either declaring one is enough. The canvas reads them off this listing."""
+    for template in payload.get("templates") or []:
+        for key in packages_templates.template_flags(template.get("id")):
+            template[key] = True
+    return payload
+
+
 def installed_package_payloads(user_key: str, kind: str | None = None, *, usage: bool = False) -> list[dict]:
     """Every readable package in the user's store as a payload, newest ``createdAt`` first;
-    only the packages of *kind* (``node`` or ``model``) when it is given. With
-    *usage*, each payload says ``inUse``: whether one of the user's dataflows
-    uses it (``prune.packages_in_use``), which reads every project's spec."""
+    only the packages of *kind* (``node`` or ``model``) when it is given. A
+    template's flags include those the catalog's copy declares
+    (:func:`_with_catalog_flags`). With *usage*, each payload says ``inUse``:
+    whether one of the user's dataflows uses it (``prune.packages_in_use``),
+    which reads every project's spec."""
     out: list[dict] = []
     # Enumeration + manifests + mtimes under ONE seed-lock hold (memo dev/99):
     # the payloads are detached dicts, so nothing live leaves the lock.
@@ -58,7 +72,7 @@ def installed_package_payloads(user_key: str, kind: str | None = None, *, usage:
                 continue
             if kind is not None and manifest.kind != kind:
                 continue
-            out.append(_listing_payload(manifest, package_path))
+            out.append(_with_catalog_flags(_listing_payload(manifest, package_path)))
     # Newest ``manifest.createdAt`` first - canonical authoring time / ordering.
     out.sort(
         key=lambda p: (-int(p.get("createdAtMs") or 0), p.get("dirName") or ""),

@@ -24,13 +24,15 @@ def browser_node(user, project_id: str, nodes: list[dict], edges: list[dict], no
     from utk_curio.backend.app.execution.run_plan import ancestors, node_role
     from utk_curio.backend.app.packages.service import roster_templates
     from utk_curio.backend.app.projects.services import _user_dir_key
+    from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
     templates = roster_templates(_user_dir_key(user), project_id)
+    packages = TemplateGrammars.for_account(_user_dir_key(user))
     by_id = {node["id"]: node for node in nodes}
-    if node_id in by_id and node_role(by_id[node_id], templates) == "browser":
+    if node_id in by_id and node_role(by_id[node_id], templates, packages) == "browser":
         return by_id[node_id]
     upstream = ancestors(node_id, edges)
     for node in nodes:
-        if node["id"] in upstream and node_role(node, templates) == "browser":
+        if node["id"] in upstream and node_role(node, templates, packages) == "browser":
             return node
     return None

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from utk_curio.backend.app.packages.application import (
     prune as packages_prune,
-    seeding as packages_seeding,
     store_install as packages_store_install,
 )
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
@@ -26,10 +25,8 @@ def check_workflow_deps(user_key: str, packages: list) -> dict:
     python deps aren't actually installed (e.g. a lib was pip-uninstalled out
     from under it). A dep that is installed at a satisfying version and still
     does not import is reported apart from ``packages`` as ``broken``, because
-    reinstalling does not fix that. ``deferred`` is the subset of ``packages``
-    whose package id is in ``seeding.INSTALL_ON_DEMAND_PACKAGE_IDS`` — too
-    expensive to pull in as a side effect of opening a dataflow.
-    Returns ``{"packages": [...], "deferred": [...], "broken": [...]}``.
+    reinstalling does not fix that.
+    Returns ``{"packages": [...], "broken": [...]}``.
     """
     wanted = [
         dn for dn in packages if isinstance(dn, str) and PACKAGE_DIR_RE.match(dn)
@@ -58,7 +55,7 @@ def check_workflow_deps(user_key: str, packages: list) -> dict:
         probe += [(dir_name, dep) for dep in declared[dir_name] if dep not in missing]
 
     # ONE probe for the whole request: each dep otherwise pays its own
-    # interpreter start, which cost 4.7s for curio.weather's three libraries on
+    # interpreter start, which cost 4.7s for a package's three libraries on
     # the first load of a dataflow that declares it.
     failures = packages_pip_runner.import_failures({dep for _, dep in probe})
     broken = [
@@ -66,13 +63,8 @@ def check_workflow_deps(user_key: str, packages: list) -> dict:
         for pkg, dep in probe
         if dep in failures
     ]
-    deferred = {
-        dn for dn in need
-        if dn.rsplit("@", 1)[0] in packages_seeding.INSTALL_ON_DEMAND_PACKAGE_IDS
-    }
     return {
         "packages": sorted(need),
-        "deferred": sorted(deferred),
         "broken": broken,
     }
 

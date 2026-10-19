@@ -17,9 +17,9 @@ Two flavours, matching the two ways a node can be implemented:
   the sandbox. No frontend build, no JavaScript.
 * ``--with-ui`` — a node with its own React interface. Adds a behavior hook
   plus the bundle entry point and declares ``behaviorScript`` in the manifest.
-  This flavour needs one extra step: a row in
-  ``utk_curio/frontend/urban-workflows/webpack.packages.config.js`` and a
-  ``npm run build:packages``. The script prints the exact row to paste.
+  This flavour needs one extra step: ``npm run build:packages``, which bundles
+  every package that declares ``behaviorScript`` and holds
+  ``sources/index.tsx``.
 
 See ``docs/AUTHORING-NODES.md`` for the full walkthrough.
 
@@ -581,21 +581,6 @@ def main(argv: list[str] | None = None) -> int:
     print("Next steps:")
     step = 1
     if args.with_ui:
-        print(
-            f"  {step}. Add this entry to PACKAGE_ENTRIES in"
-            " utk_curio/frontend/urban-workflows/webpack.packages.config.js:\n"
-        )
-        print(f'       {{\n         id: "{dir_name}",')
-        print(
-            "         entry: path.resolve(__dirname,"
-            f' "../../../packages/{dir_name}/sources/index.tsx"),'
-        )
-        print(
-            "         outputDir: path.resolve(__dirname,"
-            f' "../../../packages/{dir_name}/scripts"),'
-        )
-        print("       },\n")
-        step += 1
         print(f"  {step}. Build the bundle:")
         print(
             "       cd utk_curio/frontend/urban-workflows"

@@ -87,7 +87,7 @@ def _corpora() -> list[tuple[str, list[Path]]]:
     """The three places trill files live, in the order worth reporting them."""
     examples = REPO_ROOT / "docs" / "examples"
     return [
-        ("docs/examples", sorted(examples.glob("*.json"))),
+        ("docs/examples", sorted(p for p in examples.glob("*.json") if p.name not in _NOT_TRILL)),
         ("docs/examples/dataflows", sorted((examples / "dataflows").glob("*.json"))),
         (
             ".curio user projects",
@@ -96,10 +96,12 @@ def _corpora() -> list[tuple[str, list[Path]]]:
     ]
 
 
-# Filenames under .curio/ and packages/ that are JSON but emphatically not
-# dataflows. Without this list, pointing the script at .curio/ reports every
-# package, agent, and dataset manifest as "missing 'dataflow'" — noise that
-# buries the real findings.
+# Filenames under .curio/, packages/ and docs/examples/ that are JSON but
+# emphatically not dataflows. Without this list, pointing the script at .curio/
+# reports every package, agent, and dataset manifest as "missing 'dataflow'",
+# noise that buries the real findings. ``use-cases.json`` is the index beside
+# the numbered examples that names the use cases among them
+# (``projects/shipped.py``).
 _NOT_TRILL = {
     "manifest.json",
     "integrity.json",
@@ -108,6 +110,7 @@ _NOT_TRILL = {
     "package.json",
     "package-lock.json",
     "tsconfig.json",
+    "use-cases.json",
 }
 
 

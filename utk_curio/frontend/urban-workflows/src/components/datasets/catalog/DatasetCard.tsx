@@ -75,11 +75,11 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
   // rows carry producerNodeId, so `isComputedAsset` alone would light up a
   // Delete button the backend (correctly) 403s.
   //
-  // `origin !== "hub"` used to be the guard and did not hold: INSTALLING a
-  // catalog dataset flips its origin from "hub" to "imported" while it keeps
-  // its `data.*` store folder, so a published-computed dataset the user merely
-  // installed slipped past and offered Delete. The store folder is the durable
-  // signal - the same one publish now uses.
+  // `origin !== "hub"` alone does not hold: INSTALLING a catalog dataset gives
+  // its copy the origin "imported", in a store folder named after the dataset,
+  // so a published-computed dataset the user merely installed would offer
+  // Delete. `isSharedCatalogDataset` reads that folder too: one outside the
+  // account's own (`imported.`, `computed.`) holds a catalog dataset.
   // A file the user uploaded is an account-level asset just as much as a node
   // output is, and the one they are most likely to want rid of on purpose. It
   // used to have no Delete at all: the only way to remove it was to remove it

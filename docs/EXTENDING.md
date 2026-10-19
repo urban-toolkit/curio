@@ -21,6 +21,8 @@ Each catalog lists folders, one per item, each with a `manifest.json` that decla
 
 The Scenario Catalog has no manifests: it lists the scenarios saved in your projects.
 
+Curio's code names no artifact these folders ship: it reads what each one brings off its manifest, so yours gets what Curio's own get. [`test_no_artifact_ids_in_core.py`](../utk_curio/backend/tests/test_no_artifact_ids_in_core.py) fails on a shipped id in Curio's code, outside its short list of exceptions.
+
 ## 1. Anatomy of a package
 
 ```
@@ -43,7 +45,7 @@ A `template` inside `manifest.json` declares one node kind. It carries:
 - `behavior`: string key resolved through [`registry/behaviorRegistry`](../utk_curio/frontend/urban-workflows/src/registry/behaviorRegistry.ts) to the React hook that implements the node's behaviour
 - `engine` (`python` | `javascript`): if the node runs user code, which sandbox executes it. A template with `hasCode`, an `engine` and no `backendHandler` is one an agent's Solve runs in the sandbox to verify what it writes
 - `source` + `starterIsContent`: the starter a fresh node opens with, and whether it is the node's whole content, set through the template's `widgets`. With `starterIsContent`, a node an agent's plan creates starts with the starter too, and Solve leaves it as it is ([Authoring nodes](AUTHORING-NODES.md#widgets-in-a-template))
-- `loadsDataset`: a node of this template loads a dataset into the dataflow. The Dataset Finder attaches to it, and Solve finds it a source before writing its code ([Agent Catalog](AGENT-CATALOG.md#solve))
+- `loadsDataset`: a node of this template loads a dataset into the dataflow. The Dataset Finder attaches to it, Solve finds it a source before writing its code ([Agent Catalog](AGENT-CATALOG.md#solve)), and the Data Catalog counts the nodes after it as the dataset's consumers ([Data Catalog](DATA-CATALOG.md#lineage))
 - `dataflowCategories` (`{"tags": [...], "dataTypes": [...]}`): the tags and data types a dataflow with a node of this template is filed under on the **Projects** page. At the top level of the manifest it covers every template of the package. Curio finds the rest in the dataflow itself, such as Pandas for code that imports it, so declare only what a node's code does not show ([Authoring nodes](AUTHORING-NODES.md#tags-and-data-types))
 
 The frontend's package loader at [`registry/packagesClient.ts`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) reads every installed package, calls `buildDescriptor()` per template, and registers them in the canvas's node-type registry. Adding a node is therefore *adding a manifest entry plus a behavior hook*; there is no monolithic switch-case anywhere.
@@ -534,19 +536,11 @@ The smallest possible package adds one template plus its behavior hook. Use this
    ```
    `behaviorScript` is a path relative to the package directory. The archive validator only accepts a small set of top-level dirs (see [`archive.py::_ALLOWED_TOP_DIRS`](../utk_curio/backend/app/packages/repositories/archive.py): `sources`, `starters`, `grammars`, `widgets`, `icons`, `scripts`, `backend`, and `models` in a model package); the bundle goes under `scripts/` so it survives the catalog round-trip. Curio's package registry bootstrap fetches the file with the user's Bearer token and injects the response body as an inline `<script>` BEFORE building descriptors, so the behavior keys are registered by the time `getBehavior('my-node')` looks them up.
 
-6. **Wire up the build.** Add an entry to [`utk_curio/frontend/urban-workflows/webpack.packages.config.js`](../utk_curio/frontend/urban-workflows/webpack.packages.config.js)'s `PACKAGE_ENTRIES` list. `scripts/new_package.py --with-ui` prints the row ready to paste:
-   ```js
-   {
-     id: "<publisher>.<name>@<major>",
-     entry: path.resolve(__dirname, "../../../packages/<publisher>.<name>@<major>/sources/index.tsx"),
-     outputDir: path.resolve(__dirname, "../../../packages/<publisher>.<name>@<major>/scripts"),
-   },
-   ```
-   Then `npm run build:packages` compiles `sources/index.tsx` into `<package-dir>/scripts/behaviors.js` as UMD output, externalizing React / ReactDOM / ReactFlow so the bundle shares Curio's instances at runtime (essential for rules-of-hooks). That target takes a couple of seconds and is all you need for a package-only change; `npm run build` chains it after the much slower full app build.
+6. **Build the bundle.** `npm run build:packages` compiles `sources/index.tsx` into the file `behaviorScript` names, `<package-dir>/scripts/behaviors.js`, as UMD output, externalizing React / ReactDOM / ReactFlow so the bundle shares Curio's instances at runtime (essential for rules-of-hooks). Its config, [`webpack.packages.config.js`](../utk_curio/frontend/urban-workflows/webpack.packages.config.js), bundles every package under `packages/` whose manifest declares `behaviorScript` and that holds `sources/index.tsx`. That target takes a couple of seconds and is all you need for a package-only change; `npm run build` chains it after the much slower full app build.
 
    Rebuilding the bundle is only half of it: the frontend loads `behaviorScript` from your **installed** copy in the user store, so after every rebuild reload the page: opening a dataflow replaces the installed copy with the rebuilt one, unless you edited the installed copy yourself. See [`docs/AUTHORING-NODES.md`](AUTHORING-NODES.md) for the whole loop.
 
-   **Packages built outside this repo** ship their own pre-built `scripts/behaviors.js` and need no row in this file, since Curio loads any `behaviorScript` it finds in an installed package regardless of who built it. There is no separate toolchain for that case: the practical route is to author inside a Curio checkout (where `registry/types` resolves and this build config exists), then distribute the resulting `.curio.zip`.
+   **Packages built outside this repo** ship their own pre-built `scripts/behaviors.js`, with no `sources/index.tsx`, since Curio loads any `behaviorScript` it finds in an installed package regardless of who built it. There is no separate toolchain for that case: the practical route is to author inside a Curio checkout (where `registry/types` resolves and this build config exists), then distribute the resulting `.curio.zip`.
 
 7. **Pick an icon.** A template's `iconRef` names any icon of Font Awesome's free solid or brands set, by the name [fontawesome.com](https://fontawesome.com/icons) gives it: `"iconRef": "fa-solid:tree"` or `"iconRef": "fa-brands:github"`. Curio loads it when it builds the palette; nothing in Curio needs editing. A name Font Awesome does not have shows a cube, with a one-time console warning.
 
@@ -593,7 +587,7 @@ you. See [`docs/AUTHORING-NODES.md`](AUTHORING-NODES.md) for the walkthrough.
 - [ ] Hook at `packages/<id>@<major>/sources/<name>Behavior.tsx` (§6 step 3).
 - [ ] Registration entry point at `packages/<id>@<major>/sources/index.tsx`, calling `window.curio.registerBehavior(...)` (§6 step 4).
 - [ ] `"behaviorScript": "scripts/behaviors.js"` at the top level of the manifest (§6 step 5).
-- [ ] A row in [`webpack.packages.config.js`](../utk_curio/frontend/urban-workflows/webpack.packages.config.js), then `npm run build:packages` (§6 step 6).
+- [ ] `npm run build:packages`, which writes the bundle `behaviorScript` names (§6 step 6).
 
 **Behavior hooks built into Curio** (core contributors only; for behaviors
 every install must have before any package registry exists)
