@@ -1,0 +1,29 @@
+/* The thin scrollbar of Curio's panels: the Data Catalog's columns and
+   previews, and every widget panel (a node's Widgets tab, a Parameter node).
+   Defined here once. A panel takes it as the first line of its rule:
+   `composes: thinScrollbar from "<path to src>/styles/scrollbars.module.css";` */
+.thinScrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(30, 31, 35, 0.18) transparent;
+}
+
+.thinScrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.thinScrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.thinScrollbar::-webkit-scrollbar-thumb {
+  background: rgba(30, 31, 35, 0.18);
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+.thinScrollbar:hover::-webkit-scrollbar-thumb {
+  background: rgba(30, 31, 35, 0.28);
+  background-clip: padding-box;
+}

@@ -252,7 +252,10 @@
   min-height: 0;
 }
 
+/* The scrollable columns (this one and .infoColumn) take the shared thin
+   scrollbar. */
 .centerColumn {
+  composes: thinScrollbar from "../../../styles/scrollbars.module.css";
   border-left: 1px solid #e5e5e5;
   border-right: 1px solid #e5e5e5;
   overflow-y: auto;
@@ -260,38 +263,6 @@
 
 .inspectorBodyTwoCol .centerColumn {
   border-left: 0;
-}
-
-/* Subtle, tiny scrollbars for the scrollable columns. */
-.centerColumn,
-.infoColumn {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(30, 31, 35, 0.18) transparent;
-}
-
-.centerColumn::-webkit-scrollbar,
-.infoColumn::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.centerColumn::-webkit-scrollbar-track,
-.infoColumn::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.centerColumn::-webkit-scrollbar-thumb,
-.infoColumn::-webkit-scrollbar-thumb {
-  background: rgba(30, 31, 35, 0.18);
-  border-radius: 999px;
-  border: 1px solid transparent;
-  background-clip: padding-box;
-}
-
-.centerColumn:hover::-webkit-scrollbar-thumb,
-.infoColumn:hover::-webkit-scrollbar-thumb {
-  background: rgba(30, 31, 35, 0.28);
-  background-clip: padding-box;
 }
 
 .previewSection {
@@ -476,6 +447,7 @@
 
 /* Right info column */
 .infoColumn {
+  composes: thinScrollbar from "../../../styles/scrollbars.module.css";
   overflow-y: auto;
 }
 
