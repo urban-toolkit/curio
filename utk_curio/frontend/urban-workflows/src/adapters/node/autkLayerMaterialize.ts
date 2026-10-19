@@ -62,7 +62,7 @@ function runDataInBackendOnce(
             NodeType.AUTK_GRAMMAR,
             nodeId,
             '',              // workflow_name (best-effort)
-            () => {},        // nodeExecProv — no provenance hook here
+            () => {},        // nodeExecProv: a part of the node's run, which applyGrammar lists once
         );
     });
 }
@@ -331,7 +331,7 @@ function persistLayersToBackend(
                 resolve(json.output);
             },
             NodeType.AUTK_GRAMMAR,
-            nodeId, '', () => {},
+            nodeId, '', () => {}, // nodeExecProv: a part of the node's run, which applyGrammar lists once
         );
     });
 }
