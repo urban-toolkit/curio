@@ -5,22 +5,25 @@ komar41's ScenarioCharts in #914).
 ``docs/examples/dataflows/scenario-comparison-charts.json`` loads nine example
 tables from the Data Catalog. In each row a Data Transformation node per
 scenario keeps that scenario's rows, a Compare Scenarios node stacks them, and
-the chart is the Compare node's own preset (grouped bars, a table) or a
-Vega-Lite node's after it. Every request that would leave the stack is
-refused, and Run All drives the whole dataflow:
+the chart is the Compare node's own preset (grouped bars, a table) or a node
+of the SCOUT Comparison package after it (``scout.comparison@1``), a Vega-Lite
+chart whose spec names no scenario and no color. The account's store holds
+that package, which the dataflow declares. Every request that would leave the
+stack is refused, and Run All drives the whole dataflow:
 
 1. Every node runs to Done.
 2. Each Compare node's output is its scenarios' rows, under their ids and
    names, in the order of its circles.
-3. Each chart draws. A Vega-Lite chart draws its marks in its scenarios'
-   colors, or in its own where its scenarios color only its axis labels (the
-   stacked bars by stage, the matrix of weights); a preset compiles with no
-   problem.
+3. Each chart draws. A SCOUT Comparison chart draws its marks in its
+   scenarios' colors, or in its own where its scenarios color only its axis
+   labels (the stacked bars by stage, the matrix of weights); a preset
+   compiles with no problem.
 4. What differs on the four street plans lists one lever, its Case widget,
    set to each plan, and no code line; nothing is warned.
-5. A Vega-Lite chart after a Compare node draws its scenarios in their boxes'
-   colors: one box recolored, the pedestrians chart draws the new color and
-   not the old one, with no run.
+5. A chart after a Compare node draws its scenarios in their boxes' colors:
+   one scenario of each of the seven recolored, each chart draws the new
+   color and not the old one, with no run, its axis labels included where
+   they are what its scenarios color.
 6. No request left the stack.
 
 Each chart's close-up is a frame, taken before the recolor.
@@ -43,6 +46,7 @@ from urllib.parse import urlsplit
 from .test_compare_scenarios_e2e import _CHART_STATE_JS, _COLOR_PIXELS_JS, _OUTPUT_ARTIFACT_JS
 from .utils import (
     REPO_ROOT,
+    api_json,
     assert_vega_canvas_rendered,
     close_scenario_details,
     close_scenario_drawer,
@@ -68,17 +72,24 @@ if TYPE_CHECKING:
 DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "scenario-comparison-charts.json"
 TEST_NAME = "test_the_nine_charts_draw_their_scenarios_with_no_network"
 COMPARE = "curio.builtin/compare-scenarios"
-VEGA = "curio.builtin/vis-vega"
 #: The two charts whose scenarios color only their axis labels.
 STAGES = "data.curio.example-building-carbon"
 WEIGHTS = "data.curio.example-bike-route-factors"
 #: The Compare node What differs is read on: four street plans, one lever.
 PLANS = "data.curio.example-trips-by-mode"
-#: The chart one of whose scenarios is recolored: its lines and bands are drawn
-#: in its scenarios' colors.
-RECOLORED = "data.curio.example-pedestrians-by-hour"
-#: The recolored box's new color, far from every color that chart draws.
-NEW_COLOR = "#7b3294"
+#: For each chart, by its table: the scenario recolored in step 5 and its new
+#: color. Each new color is far from every color its chart draws, and reads at
+#: 3:1 on white, so a text mark draws it as it is. The two storm charts share
+#: their scenarios: the 100-year storm is recolored once, and both follow.
+RECOLORS = {
+    "data.curio.example-pedestrians-by-hour": ("Weekend", "#7b3294"),
+    "data.curio.example-flood-damage-curves": ("Floodproofed", "#c51b7d"),
+    "data.curio.example-street-flooding": ("100-year storm", "#d95f02"),
+    "data.curio.example-peak-depths": ("100-year storm", "#d95f02"),
+    "data.curio.example-building-carbon": ("Timber frame", "#1b7837"),
+    "data.curio.example-park-shade": ("Tree canopy", "#e7298a"),
+    "data.curio.example-bike-route-factors": ("Route C", "#9e6bd6"),
+}
 
 
 def _refuse_the_network(page, *urls) -> list:
@@ -110,19 +121,29 @@ def _rows(flow: dict) -> list:
     return sorted(found, key=lambda row: row[1]["y"])
 
 
-def _cases(dataset_id: str) -> Counter:
-    """How many rows of each case the example table holds."""
+def _table(dataset_id: str) -> list:
+    """The example table's rows."""
     folder = Path(REPO_ROOT) / "datasets" / f"{dataset_id}@1"
     manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
     with open(folder / manifest["dataFile"], newline="", encoding="utf-8") as handle:
-        return Counter(row["case"] for row in csv.DictReader(handle))
+        return list(csv.DictReader(handle))
+
+
+def _cases(dataset_id: str) -> Counter:
+    """How many rows of each case the example table holds."""
+    return Counter(row["case"] for row in _table(dataset_id))
 
 
 def _mark_colors(dataset_id: str, spec: dict, labels: list) -> list:
-    """The colors the chart's marks are drawn in."""
+    """The colors the chart's marks are drawn in: its scenarios', but for the
+    two charts whose scenarios color only their axis labels."""
     if dataset_id == STAGES:
-        return spec["layer"][0]["encoding"]["color"]["scale"]["range"]
+        # The part palette's first colors, one per life-cycle stage the table
+        # holds: its parts.
+        stages = {row["stage"] for row in _table(dataset_id)}
+        return spec["layer"][0]["encoding"]["color"]["scale"]["range"][:len(stages)]
     if dataset_id == WEIGHTS:
+        # For and Against.
         return spec["encoding"]["stroke"]["scale"]["range"]
     return [label["color"] for label in labels]
 
@@ -176,7 +197,7 @@ def test_the_nine_charts_draw_their_scenarios_with_no_network(
     rows = _rows(flow)
     assert len(rows) == 9, [row[0] for row in rows]
     refused = _refuse_the_network(page, app_frontend.base_url, current_server, sandbox_base_url())
-    stub_login_and_enter_workflow(
+    session = stub_login_and_enter_workflow(
         page,
         frontend_url=app_frontend.base_url,
         backend_url=current_server,
@@ -186,6 +207,12 @@ def test_the_nine_charts_draw_their_scenarios_with_no_network(
         project_spec=spec,
     )
     require_owner_view(page)
+    # The account's store holds every package the dataflow declares: the one
+    # its charts are nodes of.
+    assert flow["packages"], "the dataflow declares no package for its charts"
+    store = [p.get("dirName") for p in api_json(f"{current_server}/api/packages", session["token"])["packages"]]
+    missing = [package for package in flow["packages"] if package not in store]
+    assert not missing, f"{missing} are not in the account's store {store}: start the stack --with-examples"
     for node in flow["nodes"]:
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
 
@@ -245,23 +272,37 @@ def test_the_nine_charts_draw_their_scenarios_with_no_network(
     assert compare.locator("[data-compare-warning]").count() == 0
     compare.get_by_role("tab", name="Chart", exact=True).click()
 
-    # 5. A box recolored: the chart after its Compare node draws the new color,
-    # whatever its spec writes, and draws it with no run.
-    [(_dataset, pedestrians, chart)] = [row for row in rows if row[0] == RECOLORED]
-    labels = pedestrians["metadata"]["compareScenarios"]["inputs"]
-    recolored = labels[-1]
+    # 5. One scenario of each chart recolored: each chart after its Compare
+    # node draws the new color, whatever its spec writes, and draws it with no
+    # run. The stacked bars and the matrix draw it in their axis labels, which
+    # read the scale their scenarios fill.
+    charted = [(dataset_id, compare, chart) for dataset_id, compare, chart in rows if chart is not None]
+    assert sorted(dataset_id for dataset_id, _compare, _chart in charted) == sorted(RECOLORS)
+    boxes = {}
+    for dataset_id, compare, _chart in charted:
+        name, color = RECOLORS[dataset_id]
+        [label] = [label for label in compare["metadata"]["compareScenarios"]["inputs"] if label["name"] == name]
+        assert boxes.setdefault(label["scenario"], (label, color)) == (label, color), name
     open_in_project_tab(page)
-    open_scenario_details(page, recolored["scenario"]).get_by_label(f"Color of {recolored['name']}").fill(NEW_COLOR)
-    page.wait_for_function(_BOX_COLOR_IS_JS, arg=[recolored["scenario"], NEW_COLOR], timeout=10000)
-    close_scenario_details(page)
+    for label, color in boxes.values():
+        open_scenario_details(page, label["scenario"]).get_by_label(f"Color of {label['name']}").fill(color)
+        page.wait_for_function(_BOX_COLOR_IS_JS, arg=[label["scenario"], color], timeout=10000)
+        close_scenario_details(page)
     close_scenario_drawer(page)
-    frame_nodes(page, [chart["id"]])
-    kept = [label["color"] for label in labels[:-1]]
-    _assert_colors_drawn(page, chart["id"], [*kept, NEW_COLOR], f"{chart['title']}, recolored")
-    old = page.evaluate(_COLOR_PIXELS_JS, [chart["id"], [recolored["color"]]])
-    assert old == [0], (
-        f"{chart['title']} still draws {recolored['name']} in its old color {recolored['color']}: pixels {old}"
-    )
+    for dataset_id, compare, chart in charted:
+        labels = compare["metadata"]["compareScenarios"]["inputs"]
+        name, color = RECOLORS[dataset_id]
+        [old] = [label["color"] for label in labels if label["name"] == name]
+        what = f"{chart['title']}, {name} recolored"
+        frame_nodes(page, [chart["id"]])
+        if dataset_id in (STAGES, WEIGHTS):
+            _assert_colors_drawn(page, chart["id"], [color], what)
+        else:
+            _assert_colors_drawn(
+                page, chart["id"], [color if label["name"] == name else label["color"] for label in labels], what,
+            )
+        stale = page.evaluate(_COLOR_PIXELS_JS, [chart["id"], [old]])
+        assert stale == [0], f"{what} still draws {name} in its old color {old}: pixels {stale}"
 
     # 6. Nothing left the stack.
     assert refused == [], f"the dataflow reached the network: {refused}"

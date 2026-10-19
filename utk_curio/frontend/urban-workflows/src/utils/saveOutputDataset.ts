@@ -1,4 +1,5 @@
 import { NodeType } from "../constants";
+import { isVegaLiteNodeType } from "../registry/vegaLiteNodes";
 import { defaultSaveOutputDatasetFromEnv } from "./curioEnvFlag";
 import { flowOutputRefFromRaw, FlowOutputRef } from "./flowOutputRef";
 import { getFlowNodeCanonicalType, unversionedNodeType } from "./flowNodeCanonicalType";
@@ -21,9 +22,13 @@ export const NON_PRODUCING_NODE_TYPES: ReadonlySet<string> = new Set([
   NodeType.VIS_SIMPLE,
 ]);
 
-/** Sink-set membership, tolerant of versioned canonical types (#169). */
+/**
+ * Sink-set membership, tolerant of versioned canonical types (#169). A package
+ * chart that draws with the Vega-Lite grammar is a Vega-Lite chart
+ * (registry/vegaLiteNodes), as the backend's ``_is_sink_node_type`` reads it.
+ */
 export function isNonProducingNodeType(nodeType: string): boolean {
-  return NON_PRODUCING_NODE_TYPES.has(unversionedNodeType(nodeType));
+  return NON_PRODUCING_NODE_TYPES.has(unversionedNodeType(nodeType)) || isVegaLiteNodeType(nodeType);
 }
 
 /**

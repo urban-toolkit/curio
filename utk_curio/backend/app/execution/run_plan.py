@@ -104,14 +104,20 @@ def ancestors(target_id: str, edges: Iterable[dict]) -> set[str]:
 
 
 def node_role(node: dict, templates: dict | None = None) -> str:
-    """``run``, ``forward`` or ``browser`` for a node as a saved dataflow holds it."""
+    """``run``, ``forward`` or ``browser`` for a node as a saved dataflow holds it.
+
+    A chart a package's template draws with the Vega-Lite grammar is forwarded
+    as a Vega-Lite chart is: the catalog's manifest says so of a shipped one,
+    and the project's roster, when the run has it, of an account's own too."""
     from utk_curio.backend.app.execution.autk_spec_kind import is_autk_data_node
-    from utk_curio.backend.app.execution.workflow_spec import is_executable_kind
+    from utk_curio.backend.app.execution.workflow_spec import grammar_id_of, is_executable_kind
     from utk_curio.backend.app.projects.dashboard_payload import _is_pass_through, _node_kind
+    from utk_curio.backend.app.projects.template_grammars import VEGA_LITE
 
     if is_executable_kind(node.get("type"), templates):
         return "run"
-    if _is_pass_through(node) or _node_kind(node) in _FORWARD_KINDS:
+    if (_is_pass_through(node) or _node_kind(node) in _FORWARD_KINDS
+            or grammar_id_of(str(node.get("type") or ""), templates) == VEGA_LITE):
         return "forward"
     if is_autk_data_node(node):
         return "run"

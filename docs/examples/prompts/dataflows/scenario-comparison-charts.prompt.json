@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/scenario-comparison-charts.json",
-    "sha256": "d2901ae18bf3fcf3021766cf783cbe44267fcedbd087246caffbfd509bd2a9fe",
+    "sha256": "dd9811e29a0a9170c94a885afd4c48d92282531ec9f2a526be63794937966a18",
     "walkthrough": null
   },
-  "prompt": "Make a gallery of nine ways to chart a comparison of scenarios, one row per example table from the Data Catalog: pedestrians per hour on four streets, flood damage curves, flooded streets by depth, peak depths of simulated storms, daily trips by mode, building carbon by life-cycle stage, park area in shade, bike route factors and green roof systems. Each table names its scenario in a case column. For every scenario keep its rows in a step of its own, with the case picked by a choice widget, and make that step the scenario; the 10-, 50- and 100-year storms are one scenario each across the two storm tables. Compare each table's scenarios in a Compare Scenarios step. Chart the pedestrians as lines with a band in a panel per street, the damage curves as one curve per damage state, the flooded streets as grouped bars with error bars, the peak depths as a strip of ticks per storm with its median, the building carbon as stacked bars with their totals, the park shade as a donut per design and the bike route factors as a matrix of circles sized by weight, each in a Vega-Lite chart after its comparison. The comparison itself draws the daily trips as grouped bars and the green roof systems as a table.",
+  "prompt": "Make a gallery of nine ways to chart a comparison of scenarios, one row per example table from the Data Catalog: pedestrians per hour on four streets, flood damage curves, flooded streets by depth, peak depths of simulated storms, daily trips by mode, building carbon by life-cycle stage, park area in shade, bike route factors and green roof systems. Each table names its scenario in a case column. For every scenario keep its rows in a step of its own, with the case picked by a choice widget, and make that step the scenario; the 10-, 50- and 100-year storms are one scenario each across the two storm tables. Compare each table's scenarios in a Compare Scenarios step. Chart the pedestrians as lines with a band in a panel per street, the damage curves as one curve per damage state, the flooded streets as grouped bars with error bars, the peak depths as a strip of ticks per storm with its median, the building carbon as stacked bars with their totals, the park shade as a donut per design and the bike route factors as a matrix of circles sized by weight, each in a Vega-Lite chart after its comparison. The comparison itself draws the daily trips as grouped bars and the green roof systems as a table. Those seven charts are not part of the standard node set, so whatever provides them needs installing first.",
   "context": null,
   "required": {
     "datasets": [
@@ -21,7 +21,9 @@
       "data.curio.example-street-flooding",
       "data.curio.example-trips-by-mode"
     ],
-    "packages": [],
+    "packages": [
+      "scout.comparison@1"
+    ],
     "paths": []
   },
   "expected": {
@@ -322,49 +324,49 @@
       },
       {
         "ref": "visualization10",
-        "type": "curio.builtin/vis-vega",
+        "type": "scout.comparison/bars-with-error-bars",
         "role": "visualization",
         "executable": false,
         "hasContent": true
       },
       {
         "ref": "visualization11",
-        "type": "curio.builtin/vis-vega",
+        "type": "scout.comparison/curves-by-group",
         "role": "visualization",
         "executable": false,
         "hasContent": true
       },
       {
         "ref": "visualization12",
-        "type": "curio.builtin/vis-vega",
+        "type": "scout.comparison/donuts",
         "role": "visualization",
         "executable": false,
         "hasContent": true
       },
       {
         "ref": "visualization13",
-        "type": "curio.builtin/vis-vega",
+        "type": "scout.comparison/ensemble-strips",
         "role": "visualization",
         "executable": false,
         "hasContent": true
       },
       {
         "ref": "visualization14",
-        "type": "curio.builtin/vis-vega",
+        "type": "scout.comparison/lines-with-band",
         "role": "visualization",
         "executable": false,
         "hasContent": true
       },
       {
         "ref": "visualization15",
-        "type": "curio.builtin/vis-vega",
+        "type": "scout.comparison/stacked-bars-with-totals",
         "role": "visualization",
         "executable": false,
         "hasContent": true
       },
       {
         "ref": "visualization16",
-        "type": "curio.builtin/vis-vega",
+        "type": "scout.comparison/weighted-matrix",
         "role": "visualization",
         "executable": false,
         "hasContent": true
@@ -373,32 +375,32 @@
     "edges": [
       {
         "from": "visualization1",
-        "to": "visualization10",
-        "kind": "data"
-      },
-      {
-        "from": "visualization2",
         "to": "visualization11",
         "kind": "data"
       },
       {
-        "from": "visualization3",
+        "from": "visualization2",
         "to": "visualization12",
         "kind": "data"
       },
       {
-        "from": "visualization4",
-        "to": "visualization13",
-        "kind": "data"
-      },
-      {
-        "from": "visualization6",
+        "from": "visualization3",
         "to": "visualization14",
         "kind": "data"
       },
       {
-        "from": "visualization7",
+        "from": "visualization4",
         "to": "visualization15",
+        "kind": "data"
+      },
+      {
+        "from": "visualization6",
+        "to": "visualization10",
+        "kind": "data"
+      },
+      {
+        "from": "visualization7",
+        "to": "visualization13",
         "kind": "data"
       },
       {
@@ -700,7 +702,13 @@
   "execution": {
     "mode": "sandbox",
     "browserOnlyKinds": [
-      "curio.builtin/vis-vega"
+      "scout.comparison/bars-with-error-bars",
+      "scout.comparison/curves-by-group",
+      "scout.comparison/donuts",
+      "scout.comparison/ensemble-strips",
+      "scout.comparison/lines-with-band",
+      "scout.comparison/stacked-bars-with-totals",
+      "scout.comparison/weighted-matrix"
     ],
     "notes": null
   },
@@ -718,7 +726,7 @@
   "split": "train",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "the scenario comparison charts step (#914's port, step 19), from the example JSON, 2026-10-17",
+    "draftedBy": "the scenario comparison charts step (#914's port, step 19), from the example JSON, 2026-10-17; its seven charts the SCOUT Comparison package's nodes (step 28.2), 2026-10-18",
     "reviewedBy": null,
     "reviewedAt": null
   },
@@ -765,5 +773,5 @@
     ],
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the export carries the datasets' identifiers only. The nine datasets are Curio's example tables, written by its seeded script and published under MIT."
   },
-  "notes": "Nine rows, one per example table: per scenario a Data Transformation node whose Case widget keeps that scenario's rows, a Compare Scenarios node stacking them, and the chart either the Compare node's own preset or a Vega-Lite node after it. Twenty-one scenarios; each storm's holds a node of each of the two storm tables."
+  "notes": "Nine rows, one per example table: per scenario a Data Transformation node whose Case widget keeps that scenario's rows, a Compare Scenarios node stacking them, and the chart either the Compare node's own preset or one of the SCOUT Comparison package's seven Vega-Lite charts after it, its columns set in its widgets. Twenty-one scenarios; each storm's holds a node of each of the two storm tables."
 }
