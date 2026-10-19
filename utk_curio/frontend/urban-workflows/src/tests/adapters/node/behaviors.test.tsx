@@ -1,6 +1,6 @@
 import React from 'react';
 import { renderHook, render, act, waitFor } from '@testing-library/react';
-import type { NodeBehaviorHook, NodeBehaviorData, UseNodeStateReturn, NodeBehaviorResult } from '../../../registry/types';
+import type { NodeBehaviorHook, NodeBehaviorData, UseNodeStateReturn, NodeBehaviorResult, NodeDescriptor } from '../../../registry/types';
 
 jest.setTimeout(15000);
 
@@ -143,6 +143,7 @@ import { attachMapInteractionZoomFix } from '../../../adapters/node/autkMapZoom'
 import { describeAutkRun } from '../../../adapters/node/autkRunDescriptions';
 import { __resetWebGpuSupportCache } from '../../../utils/webgpuSupport';
 import { markSelectionEcho } from '../../../utils/selectionEcho';
+import { clearPackageNodes, registerNode } from '../../../registry/nodeRegistry';
 
 function makeMockData(overrides: Partial<NodeBehaviorData> = {}): NodeBehaviorData {
   return {
@@ -808,6 +809,43 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       (stableData as any).defaultCode = '{"map":{}}';
       await act(async () => { rendered.rerender(); });
       expect(rendered.result.current.defaultValueOverride).toBeUndefined();
+    });
+
+    test('a package template that ships its own document is never filled from its input', async () => {
+      // Enough of a package descriptor for the registry: its type and its starter.
+      registerNode({
+        id: 'test.maps/map@1',
+        source: 'package',
+        package: {
+          packageId: 'test.maps', major: 1, version: '1.0.0', name: 'Test maps', publisher: 'Test',
+          source: 'sources/map.autk.json', createdAtMs: 0,
+        },
+      } as unknown as NodeDescriptor);
+      const input = {
+        dataType: 'geodataframe',
+        data: { type: 'FeatureCollection', features: [
+          { type: 'Feature', geometry: { type: 'Point', coordinates: [0, 0] }, properties: { pop: 1 } },
+        ] },
+      };
+      try {
+        // A built-in Autark node given the same input at the same moment: once
+        // it has a starter, the template's ladder has had the same chance.
+        let plain: any;
+        let template: any;
+        await act(async () => {
+          plain = renderHook(() => useAutkGrammarBehavior(
+            makeMockData({ nodeId: 'plain', input } as any), makeMockNodeState(),
+          )).result;
+          template = renderHook(() => useAutkGrammarBehavior(
+            makeMockData({ nodeId: 'template', nodeType: 'test.maps/map@1', input } as any), makeMockNodeState(),
+          )).result;
+        });
+        await waitFor(() => expect(plain.current.defaultValueOverride).toBeDefined());
+        await act(async () => {});
+        expect(template.current.defaultValueOverride).toBeUndefined();
+      } finally {
+        clearPackageNodes();
+      }
     });
 
     test('data-only node runs the data section in the backend and emits the DuckDB artifact ref', async () => {
