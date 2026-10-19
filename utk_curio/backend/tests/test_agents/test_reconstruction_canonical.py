@@ -414,14 +414,16 @@ class TestTheShippedCorpus:
         """Example 09 declares ``curio.weather@1`` for its python LIBRARIES
         while using only builtin templates -- a different resolution route
         from examples 10, 18, 21, 22 and 24 and the chicago-loop-shadow-towers,
-        chicago-rain-wind-routing, lower-manhattan-park-shade and
-        quad-cities-flood-vulnerability test dataflows, whose
-        templates themselves live in a package (``curio.media@1``,
-        ``scout.rasters@1``, and the model packages
-        ``model.curio.ddrnet23-slim@1``, ``model.scout.deep-umbra@1`` and
-        ``model.scout.weather-gnn@1``). quad-cities-flood-vulnerability's only
-        package nodes are its Raster Calculators, which left the built-in
-        nodes for ``scout.rasters@1`` (the owner's call, 2026-10-18)."""
+        chicago-rain-wind-routing, lower-manhattan-park-shade,
+        quad-cities-flood-vulnerability and scenario-comparison-charts test
+        dataflows, whose templates themselves live in a package
+        (``curio.media@1``, ``scout.rasters@1``, ``scout.comparison@1``, and
+        the model packages ``model.curio.ddrnet23-slim@1``,
+        ``model.scout.deep-umbra@1`` and ``model.scout.weather-gnn@1``).
+        quad-cities-flood-vulnerability's only package nodes are its Raster
+        Calculators, which left the built-in nodes for ``scout.rasters@1`` (the
+        owner's call, 2026-10-18), and scenario-comparison-charts' are its
+        seven SCOUT Comparison charts (the plan for #914, step 28.2)."""
         needs_package_templates = {}
         for path in example_paths():
             spec = json.loads(path.read_text(encoding="utf-8"))
@@ -441,6 +443,17 @@ class TestTheShippedCorpus:
             "chicago-rain-wind-routing",
             "lower-manhattan-park-shade",
             "quad-cities-flood-vulnerability",
+            "scenario-comparison-charts",
+        ]
+        # The charts no Compare preset draws are SCOUT Comparison's.
+        assert needs_package_templates["scenario-comparison-charts"] == [
+            "scout.comparison/bars-with-error-bars",
+            "scout.comparison/curves-by-group",
+            "scout.comparison/donuts",
+            "scout.comparison/ensemble-strips",
+            "scout.comparison/lines-with-band",
+            "scout.comparison/stacked-bars-with-totals",
+            "scout.comparison/weighted-matrix",
         ]
         # SCOUT's two models are packages with nodes of their own.
         for stem in ("24-scout-shadow-model-chicago-loop", "chicago-loop-shadow-towers", "lower-manhattan-park-shade"):

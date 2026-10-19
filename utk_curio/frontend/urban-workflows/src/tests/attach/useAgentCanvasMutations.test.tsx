@@ -49,6 +49,9 @@ const mockSetCurrentProjectPackages = jest.fn();
 jest.mock("../../registry/projectPackagesStore", () => ({
   getCurrentProjectPackages: () => mockGetCurrentProjectPackages(),
   setCurrentProjectPackages: (p: Iterable<string>) => mockSetCurrentProjectPackages(p),
+  // The node registry subscribes when it loads: the notebook view's layout
+  // asks it which nodes are Vega-Lite charts (registry/vegaLiteNodes).
+  subscribe: jest.fn(() => jest.fn()),
 }));
 
 import { useAgentCanvasMutations } from "../../components/agents/attach/useAgentCanvasMutations";

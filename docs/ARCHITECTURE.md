@@ -349,6 +349,22 @@ node whose code it writes itself:
   run, which draws the chart itself. `scenarioScales.cases.json`
   pins the fill for Jest and for the Vega-Lite check in
   `test_compare_scenarios_node.py`.
+- The SCOUT Comparison package (`packages/scout.comparison@1`) holds seven Vega-Lite
+  templates for comparisons no preset draws. Each names `behavior: vega` and
+  `grammarId: vega-lite`, and its `.vl.json` starter is the node's whole content
+  (`starterIsContent`). The starter writes no scale and no order for `scenario_name`,
+  which the fill above supplies, and reads the columns it plots from text widgets
+  through chips (`"field": "[!! y !!]"`).
+- A template that names `grammarId: vega-lite` is a Vega-Lite node for every rule
+  keyed on the node's kind. On the canvas, `isVegaLiteNodeType`
+  (`registry/vegaLiteNodes.ts`) decides drawing from a restored input
+  (`UniversalNode.tsx`), `isPassThroughNode`, `isNonProducingNodeType`,
+  `notebookOutputBox`, `selectionViewsOf` and the notebook export. In the backend,
+  `draws_with_vega_lite` (`projects/template_grammars.py`, which reads the package
+  catalog's manifests) decides `_is_pass_through`, `parts.is_pass_through`,
+  `node_role` (also from the run's roster) and `_is_sink_node_type`. The automatic
+  Vega-Lite and Autark tags read a template's grammar from the account's store too
+  (`TemplateGrammars`).
 - In Difference (`compareMode.ts`: `metadata.compareScenarios.mode`, else Difference
   for two rasters or two layers by the `dataType` of what the circles hold) the code
   calls `curio_difference_scenarios` (`utk_curio/sandbox/util/scenario_difference.py`)
@@ -1331,7 +1347,7 @@ Every system turn an agent receives is built by one function, `contracts.compose
 | instruction | Exactly one: the agent's `instruction` prompt, the invoked mode's, the definition's `autk-grammar` prompt for an Autark document under its reply schema, or the attachment's edited intent | the repository, or the user |
 | configuration | The catalog settings the run reads, framed as data | the user |
 | tool protocol | How to ask for a tool: the granted tools and the `toolRequest` syntax, or on native tools one line on calling them; with the `datasetCandidates` schema for a run that can search the catalog | the runtime |
-| runtime | The template roster, the enlistable templates, the worked examples and the delegation paragraph, each its own slot | the runtime |
+| runtime | The template roster and the enlistable templates (one line per template: its id, label, description cut at 140 characters, and the widgets a package template declares, `turns/roster.py`), the worked examples and the delegation paragraph, each its own slot | the runtime |
 
 A run selects its instruction and never appends to one. An edited intent replaces the instruction slot only, and everything a user wrote precedes every runtime-owned slot. A delegated run carries the first three slots, plus the worked examples when its mode takes them: it is tool-less and depth-1.
 

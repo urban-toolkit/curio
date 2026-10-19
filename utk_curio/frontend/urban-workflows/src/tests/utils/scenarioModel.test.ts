@@ -7,7 +7,7 @@
  * Then the writer: `generateTrill` writes them when it is handed them, a
  * version snapshot and an agent's view only when there are some.
  */
-jest.mock("../../registry/nodeRegistry", () => ({ getPaletteNodeTypes: () => [] }));
+jest.mock("../../registry/nodeRegistry", () => ({ getPaletteNodeTypes: () => [], tryGetNodeDescriptor: () => undefined }));
 
 import cases from "../../utils/scenarios/scenarios.cases.json";
 import { normalizeScenarios, type Scenario } from "../../utils/scenarios/scenarioModel";

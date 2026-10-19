@@ -56,10 +56,13 @@ _SINK_NODE_TYPES = frozenset({
 
 def _is_sink_node_type(node_type) -> bool:
     """Membership in ``_SINK_NODE_TYPES``, tolerant of the versioned canonical
-    form palette-dragged nodes carry (``curio.builtin/vis-vega@1``) (#169)."""
+    form palette-dragged nodes carry (``curio.builtin/vis-vega@1``) (#169). A
+    package chart that draws with the Vega-Lite grammar is a Vega-Lite chart
+    (``template_grammars``), as the canvas's ``isNonProducingNodeType`` reads it."""
     from utk_curio.backend.app.packages.service import unversioned_node_type
+    from utk_curio.backend.app.projects.template_grammars import draws_with_vega_lite
 
-    return unversioned_node_type(node_type) in _SINK_NODE_TYPES
+    return unversioned_node_type(node_type) in _SINK_NODE_TYPES or draws_with_vega_lite(node_type)
 
 
 def _ensure_dataflow_identity(spec: Optional[dict], name: Optional[str]) -> bool:
@@ -407,20 +410,24 @@ def _extract_graph_preview(spec: Optional[dict]) -> Optional[dict]:
     return {"nodes": nodes, "edges": edges}
 
 
-def _categories(user, project_id: str, spec, *, sources=None, dataset_kind=None) -> dict:
+def _categories(user, project_id: str, spec, *, sources=None, dataset_kind=None, template_grammar=None) -> dict:
     """``categories`` for one project: its source, and what its spec says.
 
-    *sources* and *dataset_kind* let a listing compute the shipped-id map and
-    read each dataset manifest once for every row.
+    *sources*, *dataset_kind* and *template_grammar* let a listing compute the
+    shipped-id map and read each dataset and package manifest once for every
+    row.
     """
-    from utk_curio.backend.app.projects.categories import DatasetKinds, categories_for
+    from utk_curio.backend.app.projects.categories import DatasetKinds, TemplateGrammars, categories_for
     from utk_curio.backend.app.projects.seed import shipped_sources
 
     if sources is None:
         sources = shipped_sources(user) if user is not None else {}
+    user_key = _user_dir_key(user) if user is not None else None
     if dataset_kind is None:
-        dataset_kind = DatasetKinds(_user_dir_key(user) if user is not None else None)
-    return categories_for(spec, sources.get(project_id), dataset_kind)
+        dataset_kind = DatasetKinds(user_key)
+    if template_grammar is None:
+        template_grammar = TemplateGrammars(user_key)
+    return categories_for(spec, sources.get(project_id), dataset_kind, template_grammar)
 
 
 def _normalize_spec_categories(spec) -> None:
@@ -1477,7 +1484,7 @@ def list_projects(user, sort: str = "last_opened") -> List[ProjectSummary]:
     # deleted on purpose is not resurrected on the next listing. Imported here
     # rather than at module scope: ``seed`` imports this module for
     # ``_is_shared_guest`` / ``_user_dir_key``.
-    from utk_curio.backend.app.projects.categories import DatasetKinds
+    from utk_curio.backend.app.projects.categories import DatasetKinds, TemplateGrammars
     from utk_curio.backend.app.projects.seed import (
         ensure_user_examples_seeded,
         shipped_sources,
@@ -1491,6 +1498,7 @@ def list_projects(user, sort: str = "last_opened") -> List[ProjectSummary]:
     sources = shipped_sources(user)
     ukey = _user_dir_key(user)
     dataset_kind = DatasetKinds(ukey)
+    template_grammar = TemplateGrammars(ukey)
     summaries = []
     dropped_stale_row = False
     for p in projects:
@@ -1507,6 +1515,7 @@ def list_projects(user, sort: str = "last_opened") -> List[ProjectSummary]:
             is_example=p.id in sources,
             categories=_categories(
                 user, p.id, spec, sources=sources, dataset_kind=dataset_kind,
+                template_grammar=template_grammar,
             ),
             scenario_list=scenarios.scenario_summaries(spec),
         ))
