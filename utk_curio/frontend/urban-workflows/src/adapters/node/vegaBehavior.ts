@@ -1,4 +1,5 @@
 
+import { useEffect, useRef } from 'react';
 import { NodeBehaviorHook } from '../../registry/types';
 import { useVega } from '../../hook/useVega';
 import { useGrammarInputState } from '../../hook/useGrammarInputState';
@@ -11,12 +12,32 @@ import { isEmptySpecBuffer } from '../../utils/starterSpec';
 import { toRows } from '../../utils/rowSource';
 import { resolveGeometryField } from '../../utils/geometryField';
 import { readGrammarInput, type GrammarInput } from '../../utils/grammarInput';
+import { upstreamCompareLabels } from '../../utils/compare/compareInputs';
+import type { CompareInputLabel } from '../../utils/compare/compareSettings';
+import { withScenarioScales } from '../../utils/compare/scenarioScales';
+import type { Scenario } from '../../utils/scenarios/scenarioModel';
 
 export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
   const { showToast } = useToastContext();
   const { connected, upstreamErrored } = useGrammarInputState(data.nodeId);
-  // A failed chart says so to the nodes it feeds, as a failed code node does.
-  const { markNodeErrored } = useFlowContext() as { markNodeErrored?: (nodeId: string) => void };
+  const flow = useFlowContext() as {
+    // A failed chart says so to the nodes it feeds, as a failed code node does.
+    markNodeErrored?: (nodeId: string) => void;
+    nodes?: any[];
+    edges?: any[];
+    scenarios?: Scenario[];
+    isRunActive?: boolean;
+    serverRunActive?: boolean;
+  };
+  const { markNodeErrored } = flow;
+
+  // A chart after a Compare Scenarios node draws its scenarios as that node's
+  // Chart tab does, in the colors of their boxes and the order of its inputs
+  // (utils/compare/scenarioScales), whatever the spec writes for them.
+  const labels = upstreamCompareLabels(data.nodeId, flow.nodes ?? [], flow.edges ?? [], flow.scenarios ?? []);
+  const labelsKey = JSON.stringify(labels);
+  const labelsRef = useRef(labels);
+  labelsRef.current = labels;
 
   // A starter spec chosen from the arriving input's column types, the way
   // every grammar node fills an empty editor (hook/useStarterSpec).
@@ -62,15 +83,29 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
     onRedraw: reportDrawn,
   });
 
+  // The spec last handed in, and the labels it was drawn with.
+  const appliedRef = useRef<{ spec: string; labelsKey: string } | null>(null);
   const applyGrammar = async (spec: string) => {
+    appliedRef.current = { spec, labelsKey: JSON.stringify(labelsRef.current) };
     try {
-      reportDrawn(await handleCompileGrammar(spec));
+      reportDrawn(await handleCompileGrammar(withCompareScales(spec, labelsRef.current)));
     } catch (error: any) {
       nodeState.setOutput({ code: 'error', content: error.message, outputType: '' });
       showToast(error.message, 'error');
       markNodeErrored?.(data.nodeId);
     }
   };
+
+  // A scenario renamed or recolored draws the chart again, as it draws the
+  // Compare node's Chart tab again. A run draws it itself, so not during one:
+  // once the run ends, the chart is drawn again only if the run did not.
+  const runInFlight = !!flow.isRunActive || !!flow.serverRunActive;
+  const executing = nodeState.output?.code === 'exec';
+  useEffect(() => {
+    const applied = appliedRef.current;
+    if (!applied || applied.labelsKey === labelsKey || runInFlight || executing) return;
+    void applyGrammar(applied.spec);
+  }, [labelsKey, runInFlight, executing]);
 
   // The DOM id useVega renders the compiled view into — pre-Phase-B this was
   // declared in `adapter.editor.outputId`, but the manifest can't carry a
@@ -83,6 +118,24 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
     defaultValueOverride: generatedSpec,
   };
 };
+
+/**
+ * *spec* with its channels on `scenario_name` drawn as *labels* say
+ * (utils/compare/scenarioScales); as written, character for character, with no
+ * labels, with nothing to fill, or when it is not JSON, which the compile then
+ * reports as it always does.
+ */
+function withCompareScales(spec: string, labels: readonly CompareInputLabel[] | null): string {
+  if (!labels) return spec;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(spec);
+  } catch {
+    return spec;
+  }
+  const filled = withScenarioScales(parsed, labels);
+  return filled === parsed ? spec : JSON.stringify(filled);
+}
 
 /** The input's 100-row preview: plenty for classifying columns, and cheaper than /get. */
 function readVegaPreview(input: unknown): Promise<GrammarInput> {
