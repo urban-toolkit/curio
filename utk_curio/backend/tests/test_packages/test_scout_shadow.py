@@ -61,6 +61,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import importlib
+import importlib.util
 import json
 import os
 import re
@@ -657,11 +658,13 @@ def test_the_model_is_the_export_of_scouts_generator():
 
 def test_the_weights_stay_out_of_the_pip_package(monkeypatch):
     """``MANIFEST.in`` ships ``packages/`` in the sdist, which the wheel is built
-    from (``publish-pip-to-pypi.yml``), and leaves Deep Umbra's weights out: they
-    stay in the repository, and a pip install downloads them the first time the
-    node runs. The rest of the package ships, so a pip install lists the model
-    and has its node. The rules are applied the way setuptools applies them,
-    every line in order, to the files under ``packages/``, ``models/`` and
+    from (``publish-pip-to-pypi.yml``), and ``setup.py``'s ``egg_info`` leaves
+    out Deep Umbra's weights, which its manifest names in
+    ``downloadOnFirstUse``: they stay in the repository, and a pip install
+    downloads them the first time the node runs. The rest of the package
+    ships, so a pip install lists the model and has its node. The rules are
+    applied the way setuptools applies them, every line in order, then
+    ``setup.py``'s step, to the files under ``packages/``, ``models/`` and
     ``datasets/``: of the packages' and models' files only Deep Umbra's weights
     stay out, and the weather GNN's weights, DDRNet23-Slim's graph and the
     buildings dataset still ship."""
@@ -678,6 +681,10 @@ def test_the_weights_stay_out_of_the_pip_package(monkeypatch):
         line = line.strip()
         if line and not line.startswith("#"):
             files.process_template_line(line)
+    spec = importlib.util.spec_from_file_location("_curio_setup", REPO / "setup.py")
+    setup_py = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(setup_py)
+    setup_py.leave_out_first_use_files(files)
     shipped = set(files.files)
     weights = MODEL.relative_to(REPO).as_posix()
     assert weights in files.allfiles
