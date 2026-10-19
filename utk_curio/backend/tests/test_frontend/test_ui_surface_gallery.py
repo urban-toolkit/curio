@@ -55,9 +55,9 @@ USERNAME = "uigallery"
 USER_NAME = "UI Gallery User"
 
 # One node per category, so a single capture shows all three node colours and
-# the projects-list thumbnail has something to draw. The category is what
-# `nodeTypeBorderColor` / `NODE_COLORS` key off, so this spec is the fixture
-# behind "does a catalog package match its canvas node".
+# the projects-list thumbnail has something to draw. The category is what the
+# canvas border and the thumbnail's bars are coloured by, so this spec is the
+# fixture behind "does a catalog package match its canvas node".
 CATEGORY_NODES = [
     ("gallery-data", "curio.builtin/data-transformation", 240, 140),
     ("gallery-computation", "curio.builtin/computation-analysis", 240, 340),

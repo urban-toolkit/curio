@@ -10,10 +10,10 @@ The built-in prompts are outputs too. A prompt that states something the code
 owns is a template, and each such fact in it is a field that ``PROMPT_FIELDS``
 renders from the code that owns it (see Prompt templates below).
 
-``GENERATED_OUTPUTS`` is the one registry of committed outputs. The CLI writes
-each entry and ``test_generated_contracts`` re-renders each entry and fails on
-any difference, so a hand edit to an output, or a change here that was never
-regenerated, turns the suite red.
+``GENERATED_OUTPUTS`` is the one registry of committed outputs, built when it
+is read. The CLI writes each entry and ``test_generated_contracts`` re-renders
+each entry and fails on any difference, so a hand edit to an output, or a
+change here that was never regenerated, turns the suite red.
 
 Importable from an installed wheel, and with no I/O at import time: the module
 imports only the standard library. A renderer reads the files it projects when
@@ -675,7 +675,9 @@ def builtin_lists(manifest: dict) -> dict[str, str]:
 # --- Prompt templates ---------------------------------------------------------
 #
 # A built-in prompt that states something the code owns is a template:
-# ``<stem>.template.md`` in ``PROMPTS_DIR``, rendered to ``<stem>.md`` beside it.
+# ``<stem>.template.md`` in ``PROMPTS_DIR``, rendered to ``<stem>.md`` in the
+# folder of the agent Curio ships whose manifest names it, else beside the
+# template (``prompt_outputs``).
 # The template holds the hand-written text, and each fact the code owns is a
 # marker, ``{{field}}`` or ``{{field:argument}}``, that ``render_prompt`` fills from
 # ``PROMPT_FIELDS``. Each field is one small function that reads its source
@@ -781,12 +783,13 @@ def _builtin_list(key: str) -> PromptField:
 
 
 def _agent_name(_src: _Sources, agent_id: str) -> str:
-    """A built-in agent's display name, by its id (``BUILTIN_AGENTS``)."""
-    from utk_curio.backend.app.agents.domain.builtin import BUILTIN_AGENTS
+    """The display name of an agent Curio ships, by its id, from its manifest
+    (``builtin.list_builtin_manifests``)."""
+    from utk_curio.backend.app.agents.domain import builtin
 
-    for spec in BUILTIN_AGENTS:
-        if spec.agent_id == agent_id:
-            return spec.name
+    for manifest in builtin.list_builtin_manifests():
+        if manifest.agent_id == agent_id:
+            return manifest.name
     raise PromptTemplateError(f"no built-in agent has the id {agent_id!r}")
 
 
@@ -1624,22 +1627,61 @@ def render_note_colors_ts() -> str:
     )
 
 
-#: Every committed output: repo-relative path -> the function that renders it.
-GENERATED_OUTPUTS: dict[str, Callable[[], str]] = {
+#: The committed TypeScript outputs: repo-relative path -> the function that renders it.
+_CODE_OUTPUTS: dict[str, Callable[[], str]] = {
     "utk_curio/frontend/urban-workflows/src/generated/renderCauses.ts": render_render_causes_ts,
     "utk_curio/frontend/urban-workflows/src/generated/autkGrammar.ts": render_autk_grammar_ts,
     "utk_curio/frontend/urban-workflows/src/generated/agentCategories.ts": render_agent_categories_ts,
     "utk_curio/frontend/urban-workflows/src/generated/solveStopReasons.ts": render_solve_stop_reasons_ts,
     "utk_curio/frontend/urban-workflows/src/generated/visDefaults.ts": render_vis_defaults_ts,
     "utk_curio/frontend/urban-workflows/src/generated/noteColors.ts": render_note_colors_ts,
-    **{f"{PROMPTS_DIR}/{stem}.md": partial(render_prompt, stem) for stem in PROMPT_TEMPLATES},
 }
+
+
+def prompt_outputs() -> dict[str, str]:
+    """Where each template's rendered prompt is written, by stem: into the
+    folder of the agent Curio ships whose manifest names ``prompts/<stem>.md``
+    (``agents/<id>@<version>/``), else beside its template in ``PROMPTS_DIR``:
+    the shared preamble and the fragments other prompts include. A prompt two
+    agents name is refused: each agent's prompt is a file of its own."""
+    from utk_curio.backend.app.agents.domain import builtin
+
+    owners: dict[str, set[str]] = {}
+    for manifest in builtin.list_builtin_manifests():
+        for asset in manifest.prompts.values():
+            if asset.shared is None:
+                where = f"{builtin.AGENTS_DIR}/{manifest.dir_name}/{asset.path}"
+                owners.setdefault(asset.path.rsplit("/", 1)[-1], set()).add(where)
+    outputs = {}
+    for stem in PROMPT_TEMPLATES:
+        named = sorted(owners.get(f"{stem}.md", ()))
+        if len(named) > 1:
+            raise PromptTemplateError(f"{stem}.md is a prompt of several agents ({named}); each is its own file")
+        outputs[stem] = named[0] if named else f"{PROMPTS_DIR}/{stem}.md"
+    return outputs
+
+
+def _generated_outputs() -> dict[str, Callable[[], str]]:
+    """Every committed output: repo-relative path -> the function that renders it."""
+    return {
+        **_CODE_OUTPUTS,
+        **{path: partial(render_prompt, stem) for stem, path in prompt_outputs().items()},
+    }
+
+
+def __getattr__(name: str):
+    # ``GENERATED_OUTPUTS``, every committed output, is built when it is read:
+    # where a rendered prompt goes is in the shipped agents' manifests, and
+    # importing this module reads no file.
+    if name == "GENERATED_OUTPUTS":
+        return _generated_outputs()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def stale_outputs(repo_root: Path) -> list[str]:
     """The registered outputs whose file on disk differs from a fresh render."""
     stale = []
-    for relative, render in GENERATED_OUTPUTS.items():
+    for relative, render in _generated_outputs().items():
         path = Path(repo_root) / relative
         current = path.read_text(encoding="utf-8") if path.is_file() else None
         if current != render():

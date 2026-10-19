@@ -117,8 +117,8 @@ class TestReservedFields:
 
 class TestModesAndScopedDelegates:
     """A capability can be a mode, and a delegatesTo entry can name the
-    capabilities it delegates. The schema has to accept every built-in
-    manifest the roster emits, since those use both."""
+    capabilities it delegates. The schema has to accept every manifest Curio
+    ships, since those use both."""
 
     def test_every_builtin_manifest_validates_against_the_schema(self):
         from jsonschema import Draft202012Validator
@@ -126,9 +126,11 @@ class TestModesAndScopedDelegates:
         from utk_curio.backend.app.agents.domain import builtin
 
         validator = Draft202012Validator(SCHEMA)
-        for spec in builtin.BUILTIN_AGENTS:
-            errors = [e.message for e in validator.iter_errors(builtin.build_builtin_manifest(spec))]
-            assert not errors, (spec.agent_id, errors[:3])
+        manifests = builtin.list_builtin_manifests()
+        assert len(manifests) == 7
+        for m in manifests:
+            errors = [e.message for e in validator.iter_errors(builtin.manifest_dict(m.dir_name))]
+            assert not errors, (m.agent_id, errors[:3])
 
     def test_the_mode_fields_are_declared(self):
         declared = PROPS["capabilities"]["items"]["properties"]

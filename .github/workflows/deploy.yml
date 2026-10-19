@@ -66,6 +66,7 @@ on:
       - 'package-lock.json'
       - 'curio.py'
       - 'scripts/**'
+      - 'agents/**'
       - 'packages/**'
       - 'datasets/**'
       - 'discovery/**'

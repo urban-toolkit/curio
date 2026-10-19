@@ -1,0 +1,222 @@
+{
+  "id": "agent.node-builder",
+  "name": "Node Builder",
+  "category": "node",
+  "version": "1.0.0",
+  "purpose": "Create a node, or rewrite a node's content, as a proposal you review. On a connection it suggests what could go there. It installs or writes the node packages your nodes need.",
+  "catalog": {
+    "listed": true,
+    "order": 4
+  },
+  "workedExamples": true,
+  "roles": [
+    "authoring"
+  ],
+  "capabilities": [
+    {
+      "id": "node.build",
+      "contractVersion": "1"
+    },
+    {
+      "id": "dataset.fetch.author",
+      "contractVersion": "1"
+    },
+    {
+      "id": "node.content.generate",
+      "contractVersion": "1",
+      "instruction": "node.content.generate",
+      "reads": [
+        "dataflowContext",
+        "nodeId",
+        "subtask",
+        "workflowGoal"
+      ],
+      "requiredConfig": [],
+      "label": "Write a node's content",
+      "workedExamples": true
+    },
+    {
+      "id": "package.recommend",
+      "contractVersion": "1",
+      "instruction": "package.recommend",
+      "reads": [
+        "mission",
+        "targetContext",
+        "existingPackages"
+      ],
+      "requiredConfig": [],
+      "label": "Recommend packages"
+    },
+    {
+      "id": "package.build",
+      "contractVersion": "1",
+      "instruction": "package.build",
+      "reads": [
+        "packageIntent",
+        "targetContext",
+        "existingPackages"
+      ],
+      "requiredConfig": [],
+      "label": "Write a package"
+    },
+    {
+      "id": "package.extend",
+      "contractVersion": "1",
+      "instruction": "package.extend",
+      "reads": [
+        "packageIntent",
+        "targetContext",
+        "existingPackages"
+      ],
+      "requiredConfig": [],
+      "label": "Write a package"
+    },
+    {
+      "id": "node.kind.author",
+      "contractVersion": "1",
+      "instruction": "node.kind.author",
+      "reads": [
+        "packageIntent",
+        "targetContext",
+        "existingPackages"
+      ],
+      "requiredConfig": [],
+      "label": "Write a package"
+    }
+  ],
+  "prompts": {
+    "system": {
+      "path": "curio:default_preamble.md",
+      "variables": []
+    },
+    "instruction": {
+      "path": "prompts/node_build_instruction.md",
+      "variables": []
+    },
+    "node.content.generate": {
+      "path": "prompts/new_content_prompt.md",
+      "variables": []
+    },
+    "package.recommend": {
+      "path": "prompts/package_recommendation_instruction.md",
+      "variables": []
+    },
+    "package.build": {
+      "path": "prompts/package_build_instruction.md",
+      "variables": []
+    },
+    "package.extend": {
+      "path": "prompts/package_build_instruction.md",
+      "variables": []
+    },
+    "node.kind.author": {
+      "path": "prompts/package_build_instruction.md",
+      "variables": []
+    },
+    "autk-grammar": {
+      "path": "prompts/new_content_autk_prompt.md",
+      "variables": [],
+      "runs": "Write a node's content, for an Autark node"
+    }
+  },
+  "compatibleTargets": [
+    {
+      "kind": "canvas",
+      "requires": []
+    },
+    {
+      "kind": "node",
+      "requires": []
+    },
+    {
+      "kind": "connection",
+      "requires": []
+    }
+  ],
+  "inputs": {
+    "reads": [
+      "nodeIntent",
+      "targetContext",
+      "externalSelection",
+      "connectionSide"
+    ],
+    "requiredConfig": []
+  },
+  "tools": [
+    {
+      "id": "dataflow.read"
+    },
+    {
+      "id": "node.read"
+    },
+    {
+      "id": "node.create"
+    },
+    {
+      "id": "node.runtime.read"
+    },
+    {
+      "id": "node.content.write"
+    },
+    {
+      "id": "catalog.search"
+    },
+    {
+      "id": "models.search"
+    },
+    {
+      "id": "packages.catalog"
+    },
+    {
+      "id": "packages.resolve"
+    },
+    {
+      "id": "package.install"
+    },
+    {
+      "id": "package.draft.apply"
+    }
+  ],
+  "runtime": {
+    "execution": "foreground",
+    "reviewPolicy": "review-before-apply"
+  },
+  "providerRequirements": {
+    "capabilities": [
+      "structured-output"
+    ]
+  },
+  "provenance": {
+    "publisher": "curio",
+    "license": "MIT",
+    "trust": "built-in"
+  },
+  "delegatesTo": [
+    {
+      "id": "agent.node-builder",
+      "capabilities": [
+        "node.content.generate",
+        "package.build",
+        "package.extend",
+        "node.kind.author"
+      ]
+    },
+    {
+      "id": "agent.dataflow-planner",
+      "capabilities": [
+        "execution.followup.plan"
+      ]
+    },
+    {
+      "id": "agent.researcher",
+      "capabilities": [
+        "research.verify"
+      ]
+    },
+    "agent.generated-content-evaluator",
+    "agent.dataset-finder"
+  ],
+  "requiresAgents": [
+    "agent.dataset-finder"
+  ]
+}

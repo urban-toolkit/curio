@@ -1,10 +1,10 @@
-"""Every roster agent's prompt files exist and are packaged.
+"""Every shipped agent's prompt files exist and are packaged.
 
-The built-in agents carry no prompt text of their own: ``builtin.py`` names a
-file under ``utk_curio/llm-prompts/`` and reads the bytes at materialization
-time. ``read_prompt_text`` returns ``None`` for a missing file, so a rename or a
-packaging gap costs an agent its entire system and task prompt with no error,
-no traceback, and no symptom except worse answers.
+The agents Curio ships read their prompts from files: each agent's own in its
+folder, ``agents/<id>@<version>/prompts/``, and the preamble they share from
+``utk_curio/llm-prompts/``. ``read_prompt_text`` returns ``None`` for a
+missing file, so a rename or a packaging gap costs an agent its entire system
+and task prompt with no symptom except worse answers and a logged error.
 
 That is not hypothetical: ``llm-prompts`` is not a Python package (the hyphen
 makes it unimportable, so ``packages.find`` cannot see it) and was absent from
@@ -15,28 +15,31 @@ while the repo checkout worked perfectly.
 from __future__ import annotations
 
 import re
+import shutil
 from pathlib import Path
 
 import pytest
 
 from utk_curio.backend.app.agents.domain import builtin
+from utk_curio.backend.tests._support.prompt_files import prompt_files, prompt_path
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 class TestPromptFilesResolve:
-    @pytest.mark.parametrize("spec", builtin.BUILTIN_AGENTS, ids=lambda s: s.agent_id)
-    def test_every_declared_prompt_file_exists(self, spec):
-        for filename in spec.prompt_files().values():
-            assert (builtin.PROMPT_SOURCE_DIR / filename).is_file(), (
-                f"{spec.agent_id} names {filename!r}, which is not in "
-                f"{builtin.PROMPT_SOURCE_DIR}"
+    @pytest.mark.parametrize("m", builtin.list_builtin_manifests(), ids=lambda m: m.agent_id)
+    def test_every_declared_prompt_file_exists(self, m):
+        for asset in m.prompts.values():
+            path = (
+                builtin.PROMPT_SOURCE_DIR / asset.shared if asset.shared
+                else builtin.agents_dir() / m.dir_name / asset.path
             )
+            assert path.is_file(), f"{m.agent_id} names {asset.path!r}, which is not at {path}"
 
-    @pytest.mark.parametrize("spec", builtin.BUILTIN_AGENTS, ids=lambda s: s.agent_id)
-    def test_every_agent_materializes_with_prompt_bytes(self, spec):
-        coord = f"{spec.agent_id}@{builtin.BUILTIN_VERSION}"
-        for name in spec.prompt_files():
+    @pytest.mark.parametrize("m", builtin.list_builtin_manifests(), ids=lambda m: m.agent_id)
+    def test_every_agent_materializes_with_prompt_bytes(self, m):
+        coord = m.dir_name
+        for name in m.prompts:
             text = builtin.read_prompt_text(coord, name)
             assert text, f"{coord} resolved no {name} prompt"
 
@@ -68,7 +71,7 @@ _KEY = "5151"
 
 
 def _file(filename: str) -> str:
-    return (builtin.PROMPT_SOURCE_DIR / filename).read_text(encoding="utf-8")
+    return prompt_path(filename).read_text(encoding="utf-8")
 
 
 class TestWhichPromptRuns:
@@ -78,9 +81,9 @@ class TestWhichPromptRuns:
     def test_a_chat_and_each_capability_read_the_prompt_the_table_names(self, agent_id, tmp_curio):
         from utk_curio.backend.app.agents.application.turns import prompts
 
-        coord = f"{agent_id}@{builtin.BUILTIN_VERSION}"
-        spec = builtin.get_builtin_spec(coord)
-        assert set(PROMPT_TABLE[agent_id]) - {None} == set(spec.capabilities)
+        coord = builtin.builtin_coord(agent_id)
+        m = builtin.get_builtin_manifest(coord)
+        assert set(PROMPT_TABLE[agent_id]) - {None} == set(m.capability_ids)
         for capability, filename in PROMPT_TABLE[agent_id].items():
             text = prompts._resolve_instruction_text(_KEY, coord, capability=capability)
             assert text == _file(filename), (agent_id, capability, filename)
@@ -90,12 +93,12 @@ class TestWhichPromptRuns:
         from utk_curio.backend.app.agents.application import reply_schemas
         from utk_curio.backend.app.agents.application.turns import prompts
 
-        coord = f"agent.node-builder@{builtin.BUILTIN_VERSION}"
+        coord = builtin.builtin_coord("agent.node-builder")
         text = prompts._resolve_prompt_text(_KEY, coord, reply_schemas.AUTK_PROMPT_KEY)
         assert text == _file("new_content_autk_prompt.md")
         # Only the Node Builder writes node content, so only it has one.
-        holders = {s.agent_id for s in builtin.BUILTIN_AGENTS
-                   if reply_schemas.AUTK_PROMPT_KEY in s.prompt_files()}
+        holders = {m.agent_id for m in builtin.list_builtin_manifests()
+                   if reply_schemas.AUTK_PROMPT_KEY in m.prompts}
         assert holders == {"agent.node-builder"}
 
 
@@ -119,7 +122,7 @@ class TestTheResearchersCheckingRules:
             assert text.count("{{research.verify_rules}}") == 1, template
         # Both rendered prompts carry them whole: the chat and the mode.
         rules = contracts.render_prompt(stem).rstrip("\n")
-        coord = f"agent.researcher@{builtin.BUILTIN_VERSION}"
+        coord = builtin.builtin_coord("agent.researcher")
         chat = builtin.read_prompt_text(coord, "instruction")
         mode = builtin.read_prompt_text(coord, "research.verify")
         assert chat and chat.count(rules) == 1
@@ -163,7 +166,7 @@ class TestTheResearchersNotesRules:
             assert text.count("{{research.notes_rules}}") == 1, template
         # Both rendered prompts carry them whole.
         rules = contracts.render_prompt(stem).rstrip("\n")
-        coord = f"agent.researcher@{builtin.BUILTIN_VERSION}"
+        coord = builtin.builtin_coord("agent.researcher")
         chat = builtin.read_prompt_text(coord, "instruction")
         mode = builtin.read_prompt_text(coord, "research.notes.compose")
         assert chat and chat.count(rules) == 1
@@ -184,7 +187,7 @@ class TestTheRecommendationMode:
 
         from utk_curio.backend.app.agents.application.tools import REGISTRY
 
-        text = builtin.read_prompt_text(f"agent.node-builder@{builtin.BUILTIN_VERSION}", "package.recommend")
+        text = builtin.read_prompt_text(builtin.builtin_coord("agent.node-builder"), "package.recommend")
         assert text, "the Node Builder has no package.recommend prompt"
         named = sorted(t for t in REGISTRY if re.search(rf"(?<![\w.]){re.escape(t)}(?![\w])", text))
         assert named == []
@@ -207,7 +210,7 @@ class TestTheJsonModes:
 
         from utk_curio.backend.app.agents.application.tools import REGISTRY
 
-        text = builtin.read_prompt_text(f"{agent_id}@{builtin.BUILTIN_VERSION}", capability)
+        text = builtin.read_prompt_text(builtin.builtin_coord(agent_id), capability)
         assert text, (agent_id, capability)
         named = sorted(t for t in REGISTRY if re.search(rf"(?<![\w.]){re.escape(t)}(?![\w])", text))
         assert named == [], (agent_id, capability)
@@ -225,7 +228,7 @@ class TestUserOwnedValuesStayOutOfPrompts:
         from utk_curio.backend.app.agents.domain import contracts
 
         lines = set(contracts.KEYWORD_TYPES.render(contracts.KEYWORD_TYPES.default).splitlines())
-        for path in sorted(builtin.PROMPT_SOURCE_DIR.glob("*.md")):
+        for path in prompt_files("*.md"):
             found = lines & set(path.read_text(encoding="utf-8").splitlines())
             assert not found, f"{path.name} carries keyword types: {sorted(found)[:2]}"
 
@@ -254,13 +257,25 @@ class TestPromptsArePackaged:
 
 
 class TestMissingPromptIsLoud:
-    def test_a_missing_file_is_logged_rather_than_silently_none(self, caplog, monkeypatch):
+    def test_a_missing_file_is_logged_rather_than_silently_none(self, caplog, monkeypatch, tmp_path):
+        coord = builtin.list_builtin_manifests()[0].dir_name
+        # The preamble every agent shares, from llm-prompts/.
         monkeypatch.setattr(builtin, "PROMPT_SOURCE_DIR", Path("/nonexistent-prompts"))
-        coord = f"{builtin.BUILTIN_AGENTS[0].agent_id}@{builtin.BUILTIN_VERSION}"
+
+        with caplog.at_level("ERROR"):
+            assert builtin.read_prompt_text(coord, "system") is None
+
+        assert any("llm-prompts" in r.getMessage() for r in caplog.records), (
+            "a missing prompt file must say so; silence is how this shipped"
+        )
+        # The agent's own instruction, from its folder in agents/.
+        caplog.clear()
+        shutil.copytree(builtin.agents_dir(), tmp_path / "agents", ignore=shutil.ignore_patterns("*.md"))
+        monkeypatch.setattr(builtin, "agents_dir", lambda: tmp_path / "agents")
 
         with caplog.at_level("ERROR"):
             assert builtin.read_prompt_text(coord, "instruction") is None
 
-        assert any("llm-prompts" in r.getMessage() for r in caplog.records), (
+        assert any("agents/" in r.getMessage() for r in caplog.records), (
             "a missing prompt file must say so; silence is how this shipped"
         )

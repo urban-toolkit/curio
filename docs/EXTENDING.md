@@ -17,7 +17,7 @@ Each catalog lists folders, one per item, each with a `manifest.json` that decla
 | Model | [`packages/`](../packages/), packages of kind `model` | [`node-package.v4.json`](schemas/node-package.v4.json) | [MODEL-CATALOG §6](MODEL-CATALOG.md#6-the-manifest) |
 | Data | [`datasets/`](../datasets/) | [`dataset.v1.json`](schemas/dataset.v1.json) | [DATA-CATALOG §7](DATA-CATALOG.md#7-the-manifest) |
 | Discovery | [`discovery/`](../discovery/) | [`discovery-source.v1.json`](schemas/discovery-source.v1.json) | [DISCOVERY-CATALOG §8](DISCOVERY-CATALOG.md#8-the-manifest) |
-| Agent | Built into Curio; published agents in `.curio/agents-catalog/` | [`agent-package.v1.json`](schemas/agent-package.v1.json) | [AGENT-CATALOG §6](AGENT-CATALOG.md#6-the-manifest) |
+| Agent | [`agents/`](../agents/) | [`agent-package.v1.json`](schemas/agent-package.v1.json) | [AGENT-CATALOG §6](AGENT-CATALOG.md#6-the-manifest) |
 
 The Scenario Catalog has no manifests: it lists the scenarios saved in your projects.
 
@@ -37,7 +37,7 @@ packages/<packageId>@<major>/
 A `template` inside `manifest.json` declares one node kind. It carries:
 
 - `id` + `label` + `description` + `iconRef`: palette presentation. `iconRef` names any Font Awesome solid or brands icon, as `fa-solid:<name>` or `fa-brands:<name>` (`fa-solid:tree`, `fa-brands:github`)
-- `category` (`data` | `computation` | `vis_grammar` | `vis_simple` | `flow`): palette sectioning
+- `category` (`data` | `computation` | `vis_grammar` | `vis_simple` | `flow`): palette sectioning, and the node's color: its border on the canvas, and its box in a dataflow's thumbnail on the **Projects** page, in the Scenario Catalog and in the provenance window
 - `inputPorts` + `outputPorts`: port types and cardinalities (see [`docs/schemas/node-package.v4.json`](schemas/node-package.v4.json))
 - `editor` (`code` | `widgets` | `grammar` | `none`): what editor surface to mount
 - `behavior`: string key resolved through [`registry/behaviorRegistry`](../utk_curio/frontend/urban-workflows/src/registry/behaviorRegistry.ts) to the React hook that implements the node's behaviour
@@ -345,7 +345,7 @@ A generic Spatial Join that pairs the rows of two inputs whose shapes meet, by a
 
 This one belongs in `curio.builtin@1`, not in a model package, because it's reusable for any spatial workflow. Generally: if a capability is reusable outside the package's narrow theme, factor it out into builtin.
 
-The agents' prompts describe every `curio.builtin@1` template from this manifest: the shared preamble gives its label, description, control, port types, how many connections its inputs accept, and interaction support, and other prompts name templates by label. After adding or changing a built-in template, run `python scripts/generate_contracts.py` and commit the regenerated prompts in `utk_curio/llm-prompts/` with the manifest; the backend suite fails until you do (see [CONTRIBUTING.md, Generated Files](CONTRIBUTING.md#generated-files)).
+The agents' prompts describe every `curio.builtin@1` template from this manifest: the shared preamble gives its label, description, control, port types, how many connections its inputs accept, and interaction support, and other prompts name templates by label. After adding or changing a built-in template, run `python scripts/generate_contracts.py` and commit the regenerated prompts with the manifest: the shared preamble in `utk_curio/llm-prompts/` and the instructions in the agents' folders in [`agents/`](../agents/). The backend suite fails until you do (see [CONTRIBUTING.md, Generated Files](CONTRIBUTING.md#generated-files)).
 
 ### 4.4 Behavior hooks
 

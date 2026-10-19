@@ -44,9 +44,16 @@ def test_the_check_and_the_registry_agree():
     assert contracts.stale_outputs(REPO_ROOT) == []
 
 
+def _prompt_outputs() -> list[str]:
+    """The generated prompts: beside their templates in ``PROMPTS_DIR``, or in
+    the folder of the shipped agent whose manifest names them (``agents/``)."""
+    return [r for r in contracts.GENERATED_OUTPUTS if r.endswith(".md")]
+
+
 def test_every_code_output_names_its_generator_and_source():
+    prompts = _prompt_outputs()
     for relative, render in contracts.GENERATED_OUTPUTS.items():
-        if relative.startswith(contracts.PROMPTS_DIR):
+        if relative in prompts:
             continue  # sent to the model verbatim, so it carries no header
         head = render()[:400]
         assert contracts.GENERATOR in head
@@ -54,20 +61,22 @@ def test_every_code_output_names_its_generator_and_source():
         assert "Do not edit by hand" in head
 
 
-def test_every_generated_prompt_has_its_template_beside_it():
-    prompts = [r for r in contracts.GENERATED_OUTPUTS if r.startswith(contracts.PROMPTS_DIR)]
+def test_every_generated_prompt_has_its_template_in_the_prompts_folder():
+    prompts = _prompt_outputs()
     assert prompts
+    assert all(r.startswith((f"{contracts.PROMPTS_DIR}/", "agents/")) for r in prompts), prompts
     for relative in prompts:
-        assert (REPO_ROOT / relative.replace(".md", ".template.md")).is_file()
+        name = relative.rsplit("/", 1)[-1]
+        assert (REPO_ROOT / contracts.PROMPTS_DIR / name.replace(".md", ".template.md")).is_file(), relative
 
 
 def test_every_prompt_template_is_registered():
     # A template no entry renders is a prompt nobody regenerates.
-    registered = {r for r in contracts.GENERATED_OUTPUTS if r.startswith(contracts.PROMPTS_DIR)}
+    registered = {r.rsplit("/", 1)[-1] for r in _prompt_outputs()}
     templates = sorted((REPO_ROOT / contracts.PROMPTS_DIR).glob("*.template.md"))
     assert len(templates) == len(contracts.PROMPT_TEMPLATES)
     for path in templates:
-        output = f"{contracts.PROMPTS_DIR}/{path.name.replace('.template.md', '.md')}"
+        output = path.name.replace(".template.md", ".md")
         assert output in registered, f"{path.name} has no entry in GENERATED_OUTPUTS"
 
 
@@ -129,22 +138,24 @@ class TestRenderPrompt:
         text = contracts.render_template('{"timeoutClass": {{backend.timeout_classes}}}]}')
         assert text == '{"timeoutClass": ' + "|".join(f'"{c}"' for c in TIMEOUT_CLASSES) + "}]}"
 
-    def test_an_agent_name_follows_BUILTIN_AGENTS(self):
+    def test_an_agent_name_follows_the_shipped_manifests(self):
         from utk_curio.backend.app.agents.domain import builtin
 
-        for spec in builtin.BUILTIN_AGENTS:
-            assert contracts.render_template("{{agent.name:" + spec.agent_id + "}}") == spec.name
+        manifests = builtin.list_builtin_manifests()
+        assert len(manifests) == 7
+        for m in manifests:
+            assert contracts.render_template("{{agent.name:" + m.agent_id + "}}") == m.name
 
     def test_a_renamed_agent_is_renamed_in_every_prompt_that_names_it(self, monkeypatch):
         import dataclasses
 
         from utk_curio.backend.app.agents.domain import builtin
 
-        renamed = tuple(
-            dataclasses.replace(s, name="Flow Architect") if s.agent_id == "agent.dataflow-builder" else s
-            for s in builtin.BUILTIN_AGENTS
-        )
-        monkeypatch.setattr(builtin, "BUILTIN_AGENTS", renamed)
+        renamed = [
+            dataclasses.replace(m, name="Flow Architect") if m.agent_id == "agent.dataflow-builder" else m
+            for m in builtin.list_builtin_manifests()
+        ]
+        monkeypatch.setattr(builtin, "list_builtin_manifests", lambda: renamed)
         assert contracts.render_prompt("orchestration_instruction").startswith(
             "# Flow Architect\n\nYou are the Flow Architect: "
         )
@@ -345,9 +356,10 @@ class TestThePromptFacts:
         for kind in (input_contract.KIND_SINGLE, input_contract.KIND_SEVERAL, input_contract.KIND_GATHERED):
             assert f'If its "kind" is "{kind}", ' in text, kind
         assert 'If its "kind" is "list"' not in text
-        prompts = Path(contracts.__file__).resolve().parents[4] / "llm-prompts"
+        from utk_curio.backend.tests._support.prompt_files import prompt_files
+
         texts = {stem: contracts.render_prompt(stem) for stem in contracts.PROMPT_TEMPLATES}
-        texts.update({path.name: path.read_text(encoding="utf-8") for path in sorted(prompts.glob("*.md"))})
+        texts.update({path.name: path.read_text(encoding="utf-8") for path in prompt_files("*.md")})
         assert len(texts) > len(contracts.PROMPT_TEMPLATES)
         for name, rendered in texts.items():
             assert not re.search(r"(?<![\w.$])arg(?![\w$])", rendered), name
@@ -610,9 +622,9 @@ class TestThePreambleVocabulary:
     def test_no_prompt_names_a_node_by_its_legacy_name(self):
         import re
 
-        from utk_curio.backend.app.agents.domain import builtin
+        from utk_curio.backend.tests._support.prompt_files import prompt_files
 
-        for path in sorted(builtin.PROMPT_SOURCE_DIR.glob("*.md")):
+        for path in prompt_files("*.md"):
             found = re.findall(r"\b(" + "|".join(_LEGACY_NAMES) + r")\b", path.read_text(encoding="utf-8"))
             assert not found, f"{path.name} names {sorted(set(found))}"
 

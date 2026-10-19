@@ -18,7 +18,8 @@ import type { NodeCategory } from "../registry/types";
  * palette". Everything here is a `var(--curio-category-*)` reference rather
  * than a literal, so the palette has exactly one definition —
  * `src/tests/styles/nodeCategoryPalette.test.ts` asserts no consumer
- * reintroduces a hex.
+ * reintroduces a hex. It maps categories to colours and names no node type:
+ * a node's category is the one its template declares.
  */
 
 /** The four colour buckets. `NodeCategory` has five members; both `vis_*` share one. */
@@ -41,38 +42,17 @@ export const NODE_CATEGORY_KEY: Record<NodeCategory, NodeCategoryKey> = {
 export const categoryFg = (key: NodeCategoryKey): string =>
   `var(--curio-category-${key}-fg)`;
 
-/** The neutral used when a node's type is not in any category bucket. */
+/** The neutral used for a node with no category, or one with no bucket. */
 export const CATEGORY_FALLBACK_FG = categoryFg("package");
 
 /**
- * Canonical unversioned node types per colour bucket.
- *
- * The projects-list thumbnail paints from a saved preview, which carries only
- * node types, and the canvas falls back here for a node with no resolved
- * descriptor. The values are the categories `curio.builtin@1`'s manifest gives
- * each kind, through NODE_CATEGORY_KEY, so the thumbnail, the canvas border
- * and the title-bar pill agree; nodeCategoryPalette.test.ts checks the two.
+ * The colour of a node in *category*: the canvas border reads its descriptor's,
+ * and a dataflow's thumbnail the one its preview carries, which is what the
+ * node's template declares, read as written. So only the palette's own
+ * categories count; anything else, or none, is the neutral.
  */
-export const NODE_TYPE_CATEGORY: Record<string, NodeCategoryKey> = {
-  "curio.builtin/data-loading": "data",
-  "curio.builtin/data-export": "data",
-  "curio.builtin/data-transformation": "data",
-  "curio.builtin/data-pool": "data",
-  "curio.builtin/spatial-join": "data",
-  "curio.builtin/edit-features": "data",
-  "curio.builtin/computation-analysis": "computation",
-  "curio.builtin/data-summary": "computation",
-  "curio.builtin/js-computation": "computation",
-  "curio.builtin/parameter": "package",
-  "curio.builtin/note": "package",
-  "curio.builtin/compare-scenarios": "vis",
-  "curio.builtin/vis-vega": "vis",
-  "curio.builtin/vis-simple": "vis",
-  "curio.builtin/autk-grammar": "vis",
-};
-
-/** Border/accent colour for a node type, falling back to the neutral. */
-export function colorForNodeType(unversioned: string): string {
-  const key = NODE_TYPE_CATEGORY[unversioned];
-  return key ? categoryFg(key) : CATEGORY_FALLBACK_FG;
+export function colorForCategory(category: string | null | undefined): string {
+  return category && Object.prototype.hasOwnProperty.call(NODE_CATEGORY_KEY, category)
+    ? categoryFg(NODE_CATEGORY_KEY[category as NodeCategory])
+    : CATEGORY_FALLBACK_FG;
 }

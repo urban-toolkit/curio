@@ -126,8 +126,8 @@ def resolve_among(
             return Resolution("ok", coord, m)
     if missing is None:
         # Nothing installed matches anywhere: the missing-specialist proposal
-        # targets a VISIBLE definition declaring the capability (dev/03:366 —
-        # "a definition already visible to that actor"), roster order.
+        # targets a VISIBLE definition declaring the capability (dev/03:366:
+        # "a definition already visible to that actor"), in the roster's order.
 
         for m in builtin.list_builtin_manifests():
             # An internal agent is reached only through a parent that
@@ -139,12 +139,12 @@ def resolve_among(
 
 
 def _internal_resolution(user_key: str, agent_id: str, capability: str) -> Resolution | None:
-    """The roster's own definition of an internal built-in, when it declares
+    """The shipped definition of an internal built-in, when it declares
     *capability*."""
 
     if not builtin.is_internal(agent_id):
         return None
-    coord = f"{agent_id}@{builtin.BUILTIN_VERSION}"
+    coord = builtin.builtin_coord(agent_id)
     m = catalog._resolve_definition(user_key, coord)
     if m is not None and capability in m.capability_ids:
         return Resolution("ok", coord, m)
@@ -154,13 +154,14 @@ def _internal_resolution(user_key: str, agent_id: str, capability: str) -> Resol
 def find_visible(user_key: str, agent_id: str) -> tuple[str | None, AgentManifest | None]:
     """A visible definition for one agent id, or ``(None, None)``.
 
-    The shipped coordinate first, ``<id>@BUILTIN_VERSION`` (an owned import of
-    that coordinate may shadow it, as everywhere else), so a shipped agent is
-    found as it always is. Then the account's own definitions of that id and
-    the published ones, at whatever version they have: the highest wins."""
+    The coordinate Curio ships the id at first (``builtin.builtin_coord``; an
+    owned import of that coordinate may shadow it, as everywhere else), so a
+    shipped agent is found as it always is. Then the account's own definitions
+    of that id and the published ones, at whatever version they have: the
+    highest wins."""
 
-    coord = f"{agent_id}@{builtin.BUILTIN_VERSION}"
-    m = catalog._resolve_definition(user_key, coord)
+    coord = builtin.builtin_coord(agent_id)
+    m = catalog._resolve_definition(user_key, coord) if coord is not None else None
     if m is not None:
         return coord, m
     candidates = [
