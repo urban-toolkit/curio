@@ -140,6 +140,12 @@ A new dataflow in `docs/examples/` or `docs/examples/dataflows/` ships, so list 
 datasets: they are read from the file. `test_prompt_references.py` fails until the
 dataflow is listed, and checks every "Used" dataflow the way it checks the prompts.
 
+The Projects page lists a numbered dataflow in `docs/examples/` under Examples. To
+list it under Use cases, add its key, the file name without `.json`, to `useCases` in
+`docs/examples/use-cases.json`, the index beside the dataflows, and update the list
+`test_use_cases.py` and `test_categories.py` pin. Write no source into the dataflow
+file: a dataflow's source comes from its id, so a copy of it stays the user's own.
+
 ### Documentation
 
 * Write developer setup instructions or onboarding checklists
