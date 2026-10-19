@@ -26,6 +26,8 @@ jest.mock("../../hook/useVega", () => ({
 }));
 
 import { getNodeContainerStyles } from "../../components/styles";
+import { tryGetNodeDescriptor } from "../../registry/nodeRegistry";
+import { registerShippedTemplates } from "../_support/categoryDescriptors";
 
 const STATES: Array<{ name: string; state: Parameters<typeof getNodeContainerStyles>[1] }> = [
   { name: "on the canvas", state: {} },
@@ -92,19 +94,26 @@ describe("getNodeContainerStyles", () => {
     expect(flow.borderLeftColor).toBe("var(--curio-category-package-fg)");
   });
 
-  test("falls back to the type map, then grey, with no resolved descriptor", () => {
+  test("is grey with no resolved descriptor, whatever the type", () => {
+    // The colour is the descriptor's category: no map of node types stands in
+    // for it. A node renders its container only once its descriptor resolves
+    // (UniversalNode draws a placeholder until then).
     expect(getNodeContainerStyles("curio.builtin/data-loading", {}).borderLeftColor)
-      .toBe("var(--curio-category-data-fg)");
+      .toBe("var(--curio-category-package-fg)");
     expect(getNodeContainerStyles("acme.tools/e2e-head@1", {}).borderLeftColor)
       .toBe("var(--curio-category-package-fg)");
   });
 
   test("resolves a versioned node type to the same accent as an unversioned one", () => {
     // Palette-dragged nodes persist `...@1`; an unnormalised lookup used to fall
-    // back to grey (#159).
-    const plain = getNodeContainerStyles("curio.builtin/data-loading", {});
-    const versioned = getNodeContainerStyles("curio.builtin/data-loading@1", {});
-    expect(versioned.borderLeftColor).toBe(plain.borderLeftColor);
+    // back to grey (#159). The container takes the category of the descriptor
+    // its node type resolves to, as NodeContainer looks it up.
+    registerShippedTemplates("curio.builtin@1");
+    const accent = (nodeType: string) =>
+      getNodeContainerStyles(nodeType, { category: tryGetNodeDescriptor(nodeType)?.category }).borderLeftColor;
+
+    expect(accent("curio.builtin/data-loading")).toBe("var(--curio-category-data-fg)");
+    expect(accent("curio.builtin/data-loading@1")).toBe(accent("curio.builtin/data-loading"));
   });
 
   test("draws a notebook cell with no outline or shadow, keeping only its kind's stripe", () => {

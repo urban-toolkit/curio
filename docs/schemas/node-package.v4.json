@@ -313,7 +313,7 @@
         "category": {
           "type": "string",
           "enum": ["data", "computation", "vis_grammar", "vis_simple", "flow"],
-          "description": "Palette grouping."
+          "description": "Palette grouping, and the node's color: its border on the canvas and its box in a dataflow's thumbnail."
         },
         "dataflowCategories": {
           "$ref": "#/$defs/dataflowCategories",

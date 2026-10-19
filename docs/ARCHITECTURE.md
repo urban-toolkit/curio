@@ -542,6 +542,13 @@ Curio knows what a node is by what its template declares, never by the name of i
 | A node loads the dataset it names: the nodes after it are the dataset's consumers, and a dataset dropped on it applies to it | `loads_data` in `datasets/application/export.py` | `loadsData`, read by `datasetLineageResolver.ts` and `canApplyDatasetToNode` | the `loadsDataset` flag, which the agents read too (`source_grounding.loads_dataset`); the legacy type `DATA_LOADING` too |
 | A run on the server forwards the node | `node_role` in `execution/run_plan.py` | | a pass-through, or the `data-export`, `parameter` or `note` behavior |
 
+### A dataflow's thumbnail
+
+The Projects page, the Scenario Catalog and the provenance window draw a dataflow as plain boxes ([`components/DataflowThumbnail.tsx`](../utk_curio/frontend/urban-workflows/src/components/DataflowThumbnail.tsx)), each with a bar in the color of its node's category (`colorForCategory` in `constants/nodeCategoryPalette.ts`), or grey for a node with none. The palette maps categories to colors and names no node type.
+
+- A project summary's `graph_preview` (`_extract_graph_preview` in `projects/services.py`) gives each node its id, type, position, size and the `category` its template declares, read through the request's `ManifestLookup` (`template_categories` in `projects/categories.py`), so a package in the account's store counts as one in the catalog does. A node type no manifest holds gets none. The Scenario Catalog's listing and a scenario's details draw the same preview.
+- A preview built in the browser gives each node its registered descriptor's category (`utils/graphPreviewCategories.ts`): the Scenario Catalog drawer's In project tab (`liveGraphPreview`) and each version of a dataflow (`TrillGenerator`). The provenance window draws a version with the category each node type's descriptor has then, else the one recorded with the version.
+
 ### NodeDescriptor: Static Metadata
 
 A `NodeDescriptor` (defined in `src/registry/types.ts`) is the static declaration for a node type. It is read once at render time by `UniversalNode` to configure the node's appearance and behavior:
