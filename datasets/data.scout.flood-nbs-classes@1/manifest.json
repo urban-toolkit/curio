@@ -14,6 +14,11 @@
     "quad-cities",
     "geotiff"
   ],
+  "dataflowCategories": {
+    "tags": [
+      "SCOUT"
+    ]
+  },
   "dataFile": "data/flood-nbs-classes.tif",
   "compatibility": {
     "major": 1

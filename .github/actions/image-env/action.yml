@@ -1,0 +1,45 @@
+name: Python from the CI image
+description: >-
+  Copy the Python packages out of a CI image, which build-image builds with
+  CURIO_CI_SETUP=1 so that it holds what `curio.py setup --with-examples`
+  installs, into a virtual environment of Python 3.12 on the runner, and put
+  its bin/ first on PATH. The pytest a job runs on the runner then uses what
+  the image installed, and `scripts/test.sh --skip-setup` installs nothing.
+  The browser stays the runner's own Chrome, which the e2e suite launches
+  (browser_type_launch_args in utk_curio/backend/tests/conftest.py). A virtual
+  environment rather than the runner's own Python: on a self-hosted runner
+  that Python keeps what earlier jobs installed, and it would be imported
+  first. Writes only under RUNNER_TEMP, never the workspace, so the stack's
+  container is still the first to create .curio/.
+
+inputs:
+  image:
+    description: The CI image, already on this runner (pulled, or built by the job)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v6
+      with:
+        python-version: "3.12"
+
+    - name: 📦 Copy the image's Python packages
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+      run: |
+        set -euo pipefail
+        started=$(date +%s)
+        venv="$RUNNER_TEMP/curio-image-python"
+        rm -rf "$venv"
+        python -m venv --without-pip "$venv"
+        site="$venv/lib/python3.12/site-packages"
+        # docker cp copies a folder into one that already exists, one level down.
+        rmdir "$site"
+        cid="$(docker create "$IMAGE")"
+        trap 'docker rm -f "$cid" > /dev/null 2>&1 || true' EXIT
+        docker cp "$cid:/usr/local/lib/python3.12/site-packages" "$site"
+        "$venv/bin/python" -c 'import playwright, pytest'
+        echo "$venv/bin" >> "$GITHUB_PATH"
+        echo "Copied $(du -sh "$site" | cut -f1) of packages in $(( $(date +%s) - started )) s"

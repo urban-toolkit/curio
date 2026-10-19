@@ -49,9 +49,9 @@ const SOURCE_PREFIX = "source:";
  * - Language model: the Deployment default (this Curio's own, read only) and
  *   each LLM configuration, an endpoint and a model.
  * - Data source: the key a Discovery Catalog source sends, listed once one is
- *   saved or this Curio supplies one. The kinds come from the server's slot
- *   registry (`GET /api/discovery/keys`), so a key a new source needs appears
- *   without a change here.
+ *   saved or this Curio supplies one. The kinds are the keys the sources'
+ *   manifests declare (`GET /api/discovery/keys`), so a key a new source needs
+ *   appears without a change here, and is saved by its secret id.
  * - Node code: a key node code reads as `curio_secret("<name>")`, sent only to
  *   its host.
  *
@@ -139,7 +139,7 @@ export const ApiKeysTab: React.FC<{
     setKeyBusy(`source:${row.slot}`);
     setKeyError(null);
     try {
-      await updateTokens({ [row.field]: "" });
+      await updateTokens({ source_keys: { [row.slot]: "" } });
       // A saved or removed key changes what its sources' cards and pages offer.
       notifyDiscoveryCatalogRefresh();
       setStatus(`Removed the saved ${row.label}.`);
@@ -170,7 +170,7 @@ export const ApiKeysTab: React.FC<{
   };
 
   const saveSource = (row: DiscoveryKeyRow) => async (value: string) => {
-    await updateTokens({ [row.field]: value });
+    await updateTokens({ source_keys: { [row.slot]: value } });
     notifyDiscoveryCatalogRefresh();
     await loadSources();
     edit(null);

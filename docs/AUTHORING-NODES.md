@@ -206,6 +206,30 @@ return convert_raster(input_0, zoom=[!! zoom !!])
 - Imports inside your modules are not detected: list the libraries they need in
   `manifest.dependencies.python`.
 
+### Tags and data types
+
+The **Projects** page files each dataflow under tags and data types
+([Finding a dataflow](USAGE.md#finding-a-dataflow)). Curio finds most of them in
+the dataflow itself: the libraries its code imports, the files it names, its
+Vega-Lite and Autark nodes, its models and its datasets. For what your nodes
+bring that their code does not show, declare `dataflowCategories` at the top of
+the manifest, for every node of the package, or in one template:
+
+```json
+{
+  "id": "me.flood",
+  "dataflowCategories": { "tags": ["Hydrology"] },
+  "templates": [
+    { "id": "flood-depth", "dataflowCategories": { "dataTypes": ["Rasters"] } }
+  ]
+}
+```
+
+A dataflow with a `flood-depth` node is then under Hydrology and Rasters. A name
+the page already lists, such as Rasters, files the dataflow there; a new name,
+such as Hydrology, adds an entry. A list holds up to 20 names, each up to 40
+characters.
+
 ---
 
 ## Tier 2: a node with its own interface

@@ -1,7 +1,7 @@
 {
   "sha256": {
     "README.md": "590b04728bf02f04b5b0da7780a857b80122a50df587043de278b377fea37267",
-    "manifest.json": "cc9424eeebc904441a0033756f67ec385f94dd4aa710ca08f4071be067d16025",
+    "manifest.json": "b2bfb87f2f8bf210dd8ed74e101b1af35331b6baad3bb41b775ed9c8dcc8b053",
     "models/weather_gnn.onnx": "602fe4a5df17b2557fa688927b7a7097b06003d23657b8bf583ee1e6ce8c57d7",
     "sources/weather-routing.py": "e9a6438c5117ea0bcf9b983f9b6f5eabf47d4c602eb42efae076ad685940364d",
     "sources/weather_routing/__init__.py": "cb2635fea19287f3757f8a7c4715cc868e0eb8f84d59131a506425d2cc688097",

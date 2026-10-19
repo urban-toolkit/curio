@@ -43,7 +43,7 @@ def live(app, shipped_root, fixture_corpus):
 @pytest.fixture()
 def keyed(client, auth, live):
     """An account that saved a Mapillary token in API Settings."""
-    res = client.patch("/api/auth/me", headers=auth, json={"mapillary_access_token": SECRET})
+    res = client.patch("/api/auth/me", headers=auth, json={"source_keys": {"mapillary.token": SECRET}})
     assert res.status_code == 200, res.get_data(as_text=True)
     return auth
 

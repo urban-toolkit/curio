@@ -80,6 +80,10 @@ class DatasetManifest:
     # index was written. The files are found through the source, so a folder
     # moved and re-declared in its manifest keeps its collections working.
     collection: dict[str, Any] | None = None
+    # ``dataflowCategories``: the tags and data types a dataflow that reads
+    # the dataset shows on the Projects rail, ``{"tags", "dataTypes"}`` with
+    # each list that holds a value. Not ``tags``, the catalog's keywords.
+    dataflow_categories: dict[str, list[str]] | None = None
 
     @property
     def dir_name(self) -> str:
@@ -115,6 +119,7 @@ def _parse_manifest(raw: dict[str, Any], *, where: str) -> DatasetManifest:
     if not isinstance(tags_raw, list):
         raise ManifestError(f"{where}.tags must be an array")
     tags = [str(tag) for tag in tags_raw]
+    dataflow_categories = _parse_dataflow_categories(raw.get("dataflowCategories"), where=where)
 
     schema = raw.get("schema")
     if schema is not None and not isinstance(schema, dict):
@@ -185,7 +190,25 @@ def _parse_manifest(raw: dict[str, Any], *, where: str) -> DatasetManifest:
         ),
         discovery_source=discovery_source,
         collection=collection,
+        dataflow_categories=dataflow_categories,
     )
+
+
+def _parse_dataflow_categories(raw: object, *, where: str) -> dict[str, list[str]] | None:
+    """The optional ``dataflowCategories``, cleaned by the package manifests'
+    reader so the two catalogs clean it alike; a wrong type is refused. The
+    reader is imported here, not with this module: ``packages`` imports this
+    module while it loads."""
+    from utk_curio.backend.app.packages.domain.dataflow_categories import (
+        FIELD,
+        DataflowCategoriesError,
+        clean_dataflow_categories,
+    )
+
+    try:
+        return clean_dataflow_categories(raw, where=f"{where}.{FIELD}")
+    except DataflowCategoriesError as exc:
+        raise ManifestError(str(exc)) from exc
 
 
 def _bounded(value: Any, *, depth: int) -> Any:
@@ -208,10 +231,11 @@ def _bounded(value: Any, *, depth: int) -> Any:
 def build_manifest_dict(manifest: DatasetManifest) -> dict[str, Any]:
     """Serialise a DatasetManifest to a complete JSON-ready dict.
 
-    Every known field is always present.  Optional fields that carry no value
-    are written as ``null`` (or ``""`` for string fields that are semantically
-    empty rather than absent).  This ensures that manifest.json files on disk
-    are self-describing and forward-compatible.
+    Every known field is always present but ``dataflowCategories``, which is
+    written after ``tags`` when the dataset declares some.  Optional fields
+    that carry no value are written as ``null`` (or ``""`` for string fields
+    that are semantically empty rather than absent).  This ensures that
+    manifest.json files on disk are self-describing and forward-compatible.
     """
     return {
         "id": manifest.id,
@@ -222,6 +246,11 @@ def build_manifest_dict(manifest: DatasetManifest) -> dict[str, Any]:
         "publisher": manifest.publisher or "",
         "license": manifest.license or "",
         "tags": list(manifest.tags),
+        **(
+            {"dataflowCategories": {key: list(values) for key, values in manifest.dataflow_categories.items()}}
+            if manifest.dataflow_categories
+            else {}
+        ),
         "dataFile": manifest.data_file,
         "compatibility": {"major": manifest.major},
         "sourceLabel": manifest.source_label or "",

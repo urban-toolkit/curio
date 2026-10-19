@@ -21,6 +21,11 @@ from datetime import (
 from pathlib import Path
 
 from utk_curio.backend.app.packages.domain import backend_contract
+from utk_curio.backend.app.packages.domain.dataflow_categories import (
+    FIELD as DATAFLOW_CATEGORIES,
+    DataflowCategoriesError,
+    clean_dataflow_categories,
+)
 from utk_curio.backend.app.packages.domain.model_block import (
     KINDS,
     ModelBlock,
@@ -133,6 +138,15 @@ def _parse_backend(raw: object, *, where: str, permissions: list[str]) -> Backen
             "review surfaces server-side code to the user before Apply (memo dev/91 §5)"
         )
     return BackendManifest(entry=entry, handlers=handlers)
+
+
+def _parse_dataflow_categories(raw: object, *, where: str) -> dict[str, list[str]] | None:
+    """The optional ``dataflowCategories`` of a package or a template, cleaned
+    (``domain/dataflow_categories.py``); a wrong type is refused."""
+    try:
+        return clean_dataflow_categories(raw, where=f"{where}.{DATAFLOW_CATEGORIES}")
+    except DataflowCategoriesError as exc:
+        raise ManifestError(str(exc)) from exc
 
 
 def _parse_created_at_from_manifest(raw: object, *, where: str) -> tuple[str | None, int]:
@@ -306,6 +320,10 @@ class TemplateManifest:
     has_provenance: bool | None  # explicit override for the provenance editor tab (defaults to true client-side)
     grammar_dir: str | None
     widget_dir: str | None
+    # ``dataflowCategories``: the tags and data types a dataflow with a node
+    # of this template shows on the Projects rail, ``{"tags", "dataTypes"}``
+    # with each list that holds a value (``domain/dataflow_categories.py``).
+    dataflow_categories: dict[str, list[str]] | None = None
     # memo dev/91: name of a declared backend handler this template's Run
     # invokes through the package backend sandbox (validated against the
     # package's ``backend.handlers`` in ``load_package_manifest``).
@@ -378,6 +396,7 @@ class TemplateManifest:
             raise ManifestError(f"{where}.starterIsContent must be a boolean when present")
         if "starterIsContent" in raw and not source_raw:
             raise ManifestError(f"{where}.starterIsContent needs a source: the starter it says is the content")
+        dataflow_categories = _parse_dataflow_categories(raw.get(DATAFLOW_CATEGORIES), where=where)
         return cls(
             template_id=template_id,
             label=str(raw.get("label", template_id)),
@@ -404,6 +423,7 @@ class TemplateManifest:
             has_provenance=has_provenance_raw,
             grammar_dir=raw.get("grammarDir") if isinstance(raw.get("grammarDir"), str) else None,
             widget_dir=raw.get("widgetDir") if isinstance(raw.get("widgetDir"), str) else None,
+            dataflow_categories=dataflow_categories,
             backend_handler=backend_handler_raw,
             widgets=widgets_raw,
             starter_is_content=starter_is_content_raw,
@@ -443,6 +463,10 @@ class PackageManifest:
     # and says how to run them in ``model`` (domain/model_block.py).
     kind: str = "node"
     model: ModelBlock | None = None
+    # ``dataflowCategories`` at the top of the manifest: what a dataflow with
+    # any node of this package, or that loads its model, shows on the
+    # Projects rail (``domain/dataflow_categories.py``).
+    dataflow_categories: dict[str, list[str]] | None = None
 
     @property
     def dir_name(self) -> str:
@@ -572,6 +596,7 @@ def package_manifest_from_dict(raw: object, *, manifest_path: Path, dir_name: st
             )
 
     kind, model = _parse_kind_and_model(raw, where=str(manifest_path))
+    dataflow_categories = _parse_dataflow_categories(raw.get(DATAFLOW_CATEGORIES), where=str(manifest_path))
 
     return PackageManifest(
         package_id=package_id,
@@ -595,6 +620,7 @@ def package_manifest_from_dict(raw: object, *, manifest_path: Path, dir_name: st
         backend=backend,
         kind=kind,
         model=model,
+        dataflow_categories=dataflow_categories,
     )
 
 

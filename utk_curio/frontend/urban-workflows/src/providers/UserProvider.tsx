@@ -245,7 +245,7 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
   );
 
   const updateTokens = useCallback(
-    async (fields: Record<string, string>) => {
+    async (fields: { source_keys: Record<string, string> }) => {
       const updated = await authApi.patchMe(fields);
       setUser(updated);
     },
