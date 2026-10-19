@@ -2,7 +2,7 @@
 three words (docs/AGENT-CATALOG.md, "The agents"): what you ask it in chat,
 the tools it uses there, and its modes, with who asks for each.
 
-Every catalog card carries them, computed from the roster:
+Every catalog card carries them, computed from the shipped manifests:
 
 - ``tools``: the agent's grants, each by its tool contract's plain-word label,
   what it reads before what it proposes;
@@ -222,10 +222,10 @@ class TestModes:
 
     def test_every_builtin_mode_has_a_label(self):
         unlabeled = [
-            (spec.agent_id, mode.capability)
-            for spec in builtin.BUILTIN_AGENTS
-            for mode in spec.modes
-            if not mode.label
+            (m.agent_id, capability.id)
+            for m in builtin.list_builtin_manifests()
+            for capability in m.capabilities
+            if capability.instruction and not capability.label
         ]
         assert unlabeled == []
 

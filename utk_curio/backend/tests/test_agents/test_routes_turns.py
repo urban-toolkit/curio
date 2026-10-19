@@ -2366,13 +2366,13 @@ class TestRosterGrantCoverage:
         from utk_curio.backend.app.agents.application.turns.roster import _ROSTER_GRANTS
 
         readers = [
-            spec for spec in builtin.BUILTIN_AGENTS
-            if "installedTemplates" in (spec.reads or ())
+            m for m in builtin.list_builtin_manifests()
+            if "installedTemplates" in (m.inputs_reads or ())
         ]
         assert readers, "the roster read must still exist on some built-in"
-        for spec in readers:
-            assert not _ROSTER_GRANTS.isdisjoint(spec.tools or ()), (
-                f"{spec.agent_id} declares installedTemplates but holds none of "
+        for m in readers:
+            assert not _ROSTER_GRANTS.isdisjoint({t.id for t in m.tools}), (
+                f"{m.agent_id} declares installedTemplates but holds none of "
                 f"{sorted(_ROSTER_GRANTS)} — retiring the client roster would "
                 "leave it with no template vocabulary at all"
             )

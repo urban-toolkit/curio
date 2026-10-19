@@ -28,6 +28,7 @@ from utk_curio.backend.app.common.user_storage import (
     users_base as _users_base,
 )
 
+from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain.manifest import (
     AGENT_ID_RE,
     VERSION_RE,
@@ -119,12 +120,15 @@ def read_definition_bundle(user_key: str, dir_name: str) -> dict | None:
     return read_definition_bundle_from_dir(agent_definition_dir(user_key, dir_name))
 
 
-def read_definition_bundle_from_dir(target: Path) -> dict | None:
+def read_definition_bundle_from_dir(target: Path, *, carry_shared: bool = True) -> dict | None:
     """The bundle for a definition directory wherever it lives.
 
     Factored out of :func:`read_definition_bundle` so the shared published
     catalog can be read the same way (#275); the user store is one location a
-    definition may be in, not the only one.
+    definition may be in, not the only one. A prompt the manifest names as
+    Curio's (``curio:<file>``) travels as a file of its own
+    (``builtin.carry_shared_prompts``), as every other prompt does, unless
+    *carry_shared* is false: a copy that stays in this Curio keeps the name.
     """
     manifest_path = target / "manifest.json"
     if not manifest_path.is_file():
@@ -145,7 +149,9 @@ def read_definition_bundle_from_dir(target: Path) -> dict | None:
             prompts[path.relative_to(target).as_posix()] = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-    return {"manifest": manifest, "prompts": prompts}
+    if not carry_shared or not isinstance(manifest, dict):
+        return {"manifest": manifest, "prompts": prompts}
+    return builtin.carry_shared_prompts(manifest, prompts)
 
 
 def load_installed_agent_definition(user_key: str, dir_name: str) -> AgentManifest | None:

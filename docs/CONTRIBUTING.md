@@ -68,7 +68,7 @@ curio/
 │   │   ├── app/packages/                   # The Node and Model Catalogs: node packages, and model packages with their weights
 │   │   ├── migrations/                     # Alembic migrations
 │   │   └── tests/                          # pytest files for backend (+ test_frontend/ for Playwright E2E)
-│   ├── llm-prompts/                        # Built-in agent prompts; each X.md with an X.template.md beside it is generated
+│   ├── llm-prompts/                        # The agents' shared prompts and every prompt template; an X.md rendered from X.template.md is generated
 │   ├── sandbox/                            # Executes user Python code in a secure environment
 │   │   └── tests/                          # unittest files for sandbox
 │   └── frontend/                           # All frontend logic
@@ -79,6 +79,7 @@ curio/
 │               └── tests/                  # Jest unit tests
 │
 ├── curio.py                        # CLI entry point for running and managing all services
+├── agents/                         # The agents Curio ships: one directory per agent, a manifest.json and its prompts/
 ├── packages/                       # The shared node catalog: one directory per node package
 ├── datasets/                       # The shared Data Catalog: datasets published on this install
 ├── discovery/                      # The Discovery Catalog: one manifest per portal or storage source this install can reach
@@ -423,20 +424,24 @@ FLASK_APP=server.py flask db upgrade
 ### Generated Files
 
 Some files are generated from a single source and committed: everything under
-`utk_curio/frontend/urban-workflows/src/generated/`, and every prompt in
-`utk_curio/llm-prompts/` that has a `.template.md` beside it (the shared
-preamble, most agent instructions, and `package_contract.md`), all rendered
-from `utk_curio/backend/app/agents/domain/contracts.py`. Each generated code
-file starts with a header naming its generator and source. A prompt has no
-header, because the model reads it verbatim; its hand-written text lives in
-`<name>.template.md` beside it, and the `{{...}}` markers in the template are
-the generated parts: agent names, template labels, the Trill block and other
-facts the code owns (the full list is in `contracts.PROMPT_FIELDS`). Those
-facts are read from `docs/schemas/trill.v1.json`,
-`packages/curio.builtin@1/manifest.json`, the built-in agent roster and the
-backend modules each field names, so a change to any of them needs a
-regeneration too. Do not edit an output by hand: edit the template or the
-source, then regenerate and commit both.
+`utk_curio/frontend/urban-workflows/src/generated/`, and every prompt rendered
+from a `<name>.template.md` in `utk_curio/llm-prompts/` (the shared preamble,
+most agent instructions, and `package_contract.md`), all rendered from
+`utk_curio/backend/app/agents/domain/contracts.py`. A rendered prompt is
+written into the folder of the agent in `agents/` whose manifest names
+`prompts/<name>.md`, and beside its template when no agent's manifest names it:
+the shared preamble, which manifests name `curio:default_preamble.md`, and the
+fragments other prompts include. Each generated code file starts with a header
+naming its generator and source. A prompt has no header, because the model
+reads it verbatim; its hand-written text lives in its template, and the
+`{{...}}` markers in the template are the generated parts: agent names,
+template labels, the Trill block and other facts the code owns (the full list
+is in `contracts.PROMPT_FIELDS`). Those facts are read from
+`docs/schemas/trill.v1.json`, `packages/curio.builtin@1/manifest.json`, the
+manifests in `agents/` and the backend modules each field names, so a change
+to any of them needs a regeneration too. Do not edit an output by hand: edit
+the template or the source, then regenerate and commit both. A prompt with no
+template is edited in its agent's folder.
 
 Some frontend behaviour is defined in `contracts.py` too, because the preamble
 describes it: the Vega-Lite and Autark starter ladders, the pandas dtype each

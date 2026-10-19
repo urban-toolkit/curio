@@ -1396,7 +1396,7 @@ class TestMergedAgentModes:
         def sha(text):
             return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
-        raw = builtin.build_builtin_manifest(builtin.get_builtin_spec(self.PLANNER))
+        raw = builtin.manifest_dict(self.PLANNER)
         for key, asset in raw["prompts"].items():
             asset["sha256"] = sha(key)
         m = parse_agent_manifest(raw)

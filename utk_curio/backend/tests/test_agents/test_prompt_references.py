@@ -1,6 +1,7 @@
 """Every built-in prompt names only things that exist.
 
-The prompts in ``utk_curio/llm-prompts/`` name tools, capabilities, node
+The prompts in ``utk_curio/llm-prompts/`` and in each shipped agent's folder
+(``agents/<id>@<version>/prompts/``) name tools, capabilities, node
 templates, package folders, sandbox helpers and Data Catalog datasets, and they
 carry Vega-Lite examples. Each of those is defined somewhere else: the tool
 registry, the built-in agents, the shipped manifests, the sandbox, the shipped
@@ -37,14 +38,18 @@ from utk_curio.backend.app.datasets.domain.code_refs import (
     MODEL_CALL_RE,
 )
 from utk_curio.backend.app.projects.shipped import shipped_dataflows
+from utk_curio.backend.tests._support.prompt_files import prompt_files, prompt_path
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
 #: Every prompt file a built-in agent receives, the shared preamble included.
-PROMPT_FILES = sorted({f for spec in builtin.BUILTIN_AGENTS for f in spec.prompt_files().values()})
-#: Every file in ``llm-prompts/``: each template, the prompt it renders, and
-#: each prompt with no template, the included ``package_contract`` too.
-ALL_PROMPTS = sorted(path.name for path in builtin.PROMPT_SOURCE_DIR.glob("*.md"))
+PROMPT_FILES = sorted({
+    asset.file.rsplit("/", 1)[-1] for m in builtin.list_builtin_manifests() for asset in m.prompts.values()
+})
+#: Every file in ``llm-prompts/`` and in the shipped agents' ``prompts/``:
+#: each template, the prompt it renders, and each prompt with no template,
+#: the included ``package_contract`` too.
+ALL_PROMPTS = sorted(path.name for path in prompt_files("*.md"))
 #: The prompts as they are sent: every rendered template and every prompt with
 #: no template. A template's fence can hold a ``{{field}}`` marker, not JSON.
 SENT_PROMPTS = [name for name in ALL_PROMPTS if not name.endswith(".template.md")]
@@ -81,7 +86,7 @@ _JSON_FENCE_RE = re.compile(r"^[ \t]*```json[ \t]*\n(.*?)^[ \t]*```[ \t]*$", re.
 
 
 def _text(name: str) -> str:
-    return (builtin.PROMPT_SOURCE_DIR / name).read_text(encoding="utf-8")
+    return prompt_path(name).read_text(encoding="utf-8")
 
 
 def _manifests(folder: str) -> list[tuple[str, dict]]:
@@ -92,7 +97,7 @@ def _manifests(folder: str) -> list[tuple[str, dict]]:
 
 
 def _known_ids() -> set[str]:
-    capabilities = {c for spec in builtin.BUILTIN_AGENTS for c in spec.capabilities}
+    capabilities = {c for m in builtin.list_builtin_manifests() for c in m.capability_ids}
     return set(REGISTRY) | capabilities
 
 
@@ -200,7 +205,7 @@ def test_no_prompt_holds_an_em_or_en_dash(name):
     # The rendered prompts are checked as well as the templates: their
     # generated regions read docs/schemas/trill.v1.json and the vendored
     # Autark schema, and neither puts a dash into a prompt.
-    found = _DASH_RE.findall((builtin.PROMPT_SOURCE_DIR / name).read_text(encoding="utf-8"))
+    found = _DASH_RE.findall(prompt_path(name).read_text(encoding="utf-8"))
     assert not found, f"{name} holds an en or em dash; write plain punctuation instead: {found}"
 
 

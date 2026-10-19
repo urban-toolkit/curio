@@ -63,6 +63,9 @@ COPY curio.py ./
 # the packaging assertions cannot run where they matter.
 COPY pyproject.toml MANIFEST.in setup.py ./
 COPY scripts/ scripts/
+# The agents Curio ships, one folder each: the Agent Catalog's roster and
+# every agent's own prompts.
+COPY agents/ agents/
 COPY packages/ packages/
 COPY datasets/ datasets/
 # The Discovery Catalog's source manifests. Needed for the same reason
