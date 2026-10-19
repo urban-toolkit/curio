@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
-"""Record how long each e2e group takes, for balancing the CI shards.
+"""Record how long each e2e test takes, for balancing the CI parts.
 
     python scripts/e2e_durations.py <e2e JUnit> [<e2e JUnit> ...]
 
-Reads the e2e JUnit of CI runs (``e2e.xml`` in the ``ci-inputs-test-gpu`` and
-``ci-inputs-e2e-desktop-*`` artifacts; pass every one) and writes
-``utk_curio/backend/tests/test_frontend/e2e_durations.json``: seconds per group,
-where a group is what ``runner_split.group_of`` puts together (one workflow of
-``test_workflows``, one walkthrough scene, otherwise one module). A group seen
-in several files keeps its longest time.
+Reads the e2e JUnit of a CI run (``e2e.xml`` in the ``ci-inputs-test-gpu`` and
+``ci-inputs-e2e-desktop-*`` artifacts; pass every one, and no other job's) and
+writes ``utk_curio/backend/tests/test_frontend/e2e_durations.json``: seconds
+per test, keyed by its JUnit classname and name without the GPU runner's
+``@<group>`` suffix (``parts.case_key``, which also names a collected item, so
+the split prices each test by the key written here). A part's group costs the
+sum of its tests (``runner_split.part_key``). A test seen in several files
+keeps its longest time. A repeated suite's later runs (``e2e.run2.xml``, ...)
+are left out.
 
-Rerun it when the shards drift out of balance. Nothing breaks when it is
-stale: a group missing from the file is priced at a default.
+Rerun it when the parts drift out of balance (the CI report's spread lines).
+Nothing breaks when it is stale: a test missing from the file is priced at
+the median recorded test.
 """
 
 from __future__ import annotations
@@ -22,28 +26,14 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-OUT = (Path(__file__).resolve().parents[1] / "utk_curio" / "backend" / "tests"
-       / "test_frontend" / "e2e_durations.json")
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
+from utk_curio.backend.tests.parts import case_key  # noqa: E402
 
+OUT = REPO / "utk_curio" / "backend" / "tests" / "test_frontend" / "e2e_durations.json"
 
-def group_of(classname: str, name: str) -> str | None:
-    """The xdist group of one JUnit test case.
-
-    A run under ``--dist loadgroup`` (the GPU runner) appends it to the name
-    (``test_x[...]@wf-vega.json``); a run without workers does not, so it is
-    rebuilt from the module and the parameter id the way conftest assigns it.
-    """
-    if "@" in name:
-        return name.rsplit("@", 1)[1]
-    module = [part for part in classname.split(".") if not part[:1].isupper()][-1:]
-    module = module[0] if module else ""
-    param = re.search(r"\[(.*)\]$", name)
-    param = param.group(1) if param else ""
-    if module == "test_workflows" and param:
-        return "wf-" + Path(re.sub(r"-chromium$", "", param)).name
-    if module == "test_walkthrough_baselines" and param:
-        return "walk-" + re.sub(r"^chromium-", "", param)
-    return module or None
+#: A later run of a repeated suite (scripts/ci_repeat.sh).
+REPEAT_RUN = re.compile(r"\.run\d+$")
 
 
 def main(argv) -> int:
@@ -52,16 +42,17 @@ def main(argv) -> int:
         return 2
     seconds: dict[str, float] = {}
     for junit in argv:
+        if REPEAT_RUN.search(Path(junit).stem):
+            continue
         per_file: dict[str, float] = {}
         for case in ET.parse(junit).iter("testcase"):
-            group = group_of(case.get("classname", ""), case.get("name", ""))
-            if group:
-                per_file[group] = per_file.get(group, 0.0) + float(case.get("time") or 0)
-        for group, value in per_file.items():
-            seconds[group] = max(seconds.get(group, 0.0), value)
+            key = case_key(case.get("classname", ""), case.get("name", ""))
+            per_file[key] = per_file.get(key, 0.0) + float(case.get("time") or 0)
+        for key, value in per_file.items():
+            seconds[key] = max(seconds.get(key, 0.0), value)
     OUT.write_text(json.dumps({k: round(v, 1) for k, v in sorted(seconds.items())},
                               indent=1) + "\n")
-    print(f"wrote {OUT} ({len(seconds)} groups, {sum(seconds.values()) / 60:.1f} min)")
+    print(f"wrote {OUT} ({len(seconds)} tests, {sum(seconds.values()) / 60:.1f} min)")
     return 0
 
 

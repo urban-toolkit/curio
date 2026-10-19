@@ -1,7 +1,16 @@
+# 1 in CI's builds only: build-image's, and the jobs that build their own image
+# through the CI compose overlays. The image then also holds what
+# `curio.py setup --with-examples` installs, so a CI stack boots without
+# installing anything and the jobs copy the packages out for the pytest they
+# run on the runner. Every other build, the deploy's among them, leaves it at
+# 0 and builds the image as before. Declared before the first FROM, so the
+# FROM lines below can name a stage with it.
+ARG CURIO_CI_SETUP=0
+
 # -----------------------------------------------------------------------------
 # Stage 1: Unified Python service (no Node required)
 # -----------------------------------------------------------------------------
-FROM python:3.12-slim AS runtime_base
+FROM python:3.12-slim AS python_base
 
 ENV PYTHONUNBUFFERED=1 LOG_TO_STDOUT=true
 WORKDIR /app
@@ -30,6 +39,20 @@ COPY requirements.txt ./
 RUN pip install --upgrade pip setuptools wheel && \
     pip install --prefer-binary --no-cache-dir -r requirements.txt
 
+FROM python_base AS ci_deps_0
+
+# CI only. The libraries setup installs from the package manifests, as setup's
+# own walk lists them (scripts/ci_requirements.py writes the file), installed
+# before the source is copied. COPY keys its cache on the file's content, so a
+# commit that changes no dependency reuses this layer. The pip command is the
+# launcher's (install_python_deps). No browser: the e2e suite drives each
+# runner's own Chrome (browser_type_launch_args in the tests' conftest).
+FROM python_base AS ci_deps_1
+COPY scripts/ci-requirements.txt /ci-requirements.txt
+RUN pip install --no-input --no-cache-dir -r /ci-requirements.txt
+
+FROM ci_deps_${CURIO_CI_SETUP} AS runtime_base
+
 COPY curio.py ./
 # pyproject.toml / MANIFEST.in are what carry utk_curio/llm-prompts (not an
 # importable package -- the hyphen makes packages.find blind to it) into an
@@ -54,11 +77,12 @@ COPY docs/schemas/ docs/schemas/
 # Local Relief, the example model package beside the guide that brings a model
 # to Curio, which the tests run; the wheel leaves it out.
 COPY docs/bring-your-own-model/ docs/bring-your-own-model/
-COPY utk_curio/ utk_curio/
 # DuckDB's spatial and json extensions, which the backend seeds into
 # ~/.duckdb for node runs and serves to the browser worker (#318). Without
-# them here every fresh database reaches extensions.duckdb.org.
+# them here every fresh database reaches extensions.duckdb.org. Before the
+# source, which changes on nearly every commit, so this layer is reused.
 COPY vendor/ vendor/
+COPY utk_curio/ utk_curio/
 
 # -----------------------------------------------------------------------------
 # Stage 2: Build frontends with Node (avoids NodeSource on slim in CI)
@@ -73,8 +97,19 @@ COPY utk_curio/frontend/urban-workflows/vendor/ vendor/
 RUN npm install
 
 COPY utk_curio/frontend/ /src/utk_curio/frontend/
-COPY packages/ /src/packages/
-RUN npm run build
+# Every step of package.json's build script except build:packages, with
+# node_modules/.bin on PATH as npm run sets it. build:packages writes
+# packages/*/scripts/behaviors.js, which the image never takes from this
+# stage: its packages/ are the committed files runtime_base copies. So this
+# stage needs no packages/, and a change there no longer rebuilds the bundle.
+# The steps are read from the script, so a step added there runs here too,
+# and the build stops if build:packages is no longer one of them.
+# webpack's filesystem cache (node_modules/.cache) is deleted in the same
+# step: no build reads it from this layer again, and it made up most of the
+# layer that CI exports to its layer cache.
+RUN steps=$(node -e "const all=require('./package.json').scripts.build.split('&&').map(s=>s.trim());const rest=all.filter(s=>s!=='npm run build:packages');if(rest.length!==all.length-1){console.error('no npm run build:packages step to leave out of: '+all.join(' && '));process.exit(1)}console.log(rest.join(' && '))") \
+    && PATH="$PWD/node_modules/.bin:$PATH" sh -c "$steps" \
+    && rm -rf node_modules/.cache
 
 # Record the webpack mode the bundle was built in, in the file curio.py's
 # launcher reads (utk_curio/cli/frontend_build.py::_build_stamp_reason). The launcher writes
@@ -85,10 +120,19 @@ RUN npm run build
 # drift.
 RUN node -e "const s=require('./package.json').scripts.build||'';const m=/--mode\s+(\S+)/.exec(s);require('fs').writeFileSync('dist/.curio-build',(m?m[1]:'unknown')+'\n')"
 
+# CI only, beside the frontend build: setup on the whole source. It finds the
+# libraries above installed and reports any that does not import. One a stale
+# scripts/ci-requirements.txt left out (a unit test reports that too) it
+# installs here. Its log folder is removed after it.
+FROM runtime_base AS checked_1
+RUN PYTHONDONTWRITEBYTECODE=1 python curio.py setup --with-examples && rm -rf .curio
+
+FROM runtime_base AS checked_0
+
 # -----------------------------------------------------------------------------
 # Stage 3: Final image: Python runtime + built frontend assets
 # -----------------------------------------------------------------------------
-FROM runtime_base AS runtime
+FROM checked_${CURIO_CI_SETUP} AS runtime
 
 # Production mode: serve built frontend with Python http.server on 8080
 ENV CURIO_DEV=0

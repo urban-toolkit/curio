@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 USERNAME_RE = re.compile(r"^[a-zA-Z0-9_]{3,32}$")
@@ -54,11 +54,9 @@ class UserOut:
     profile_image: Optional[str]
     type: Optional[str]
     is_guest: bool
-    # Reported as a boolean only; the token itself never leaves the server.
-    has_huggingface_token: bool = False
-    has_socrata_app_token: bool = False
-    has_google_maps_api_key: bool = False
-    has_mapillary_access_token: bool = False
+    # The Data source keys this account saved, by secret id, each as ``True``;
+    # a key itself never leaves the server.
+    has_source_keys: dict[str, bool] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -69,10 +67,7 @@ class UserOut:
             "profile_image": self.profile_image,
             "type": self.type,
             "is_guest": self.is_guest,
-            "has_huggingface_token": self.has_huggingface_token,
-            "has_socrata_app_token": self.has_socrata_app_token,
-            "has_google_maps_api_key": self.has_google_maps_api_key,
-            "has_mapillary_access_token": self.has_mapillary_access_token,
+            "has_source_keys": dict(self.has_source_keys),
         }
 
 
@@ -90,7 +85,6 @@ class UserPatchIn:
     name: Optional[str] = None
     email: Optional[str] = None
     type: Optional[str] = None
-    huggingface_token: Optional[str] = None
-    socrata_app_token: Optional[str] = None
-    google_maps_api_key: Optional[str] = None
-    mapillary_access_token: Optional[str] = None
+    # Data source keys by the secret id their sources declare; ``""`` removes
+    # one, and a key left out stays as it is.
+    source_keys: Optional[object] = None

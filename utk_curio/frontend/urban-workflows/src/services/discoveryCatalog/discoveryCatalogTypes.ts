@@ -114,20 +114,20 @@ export interface DiscoverySourceAuth {
   /** True only for `required-token`: this source cannot be used without one. */
   required: boolean;
   usesToken: boolean;
-  /** The credential SLOT this source wants, never a value. Null when public. */
+  /** The secret id of the key this source sends, never a value. Null when public. */
   secretId: string | null;
-  /** Whether this account has that slot filled. */
+  /** Whether a key will be sent: this account's, or the one this Curio supplies. */
   present: boolean;
   helpUrl: string | null;
 }
 
-/** One key slot, as API Settings lists it (`GET /api/discovery/keys`). */
+/** One key the sources' manifests declare, as API Settings lists it
+ *  (`GET /api/discovery/keys`). */
 export interface DiscoveryKeyRow {
-  /** The manifest's `auth.secretId`. */
+  /** The manifests' `auth.secretId`, which `PATCH /api/auth/me` saves the key
+   *  under (`source_keys`). */
   slot: string;
   label: string;
-  /** The field `PATCH /api/auth/me` takes the key under. */
-  field: string;
   helpUrl: string | null;
   placeholder: string | null;
   note: string | null;

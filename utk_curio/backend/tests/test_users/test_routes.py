@@ -1,9 +1,18 @@
 """Integration tests for /api/auth/* routes via Flask test client."""
 
 import json
+from pathlib import Path
+
+import pytest
 
 from utk_curio.backend.app.projects import tasks
 from utk_curio.backend.app.users import routes
+from utk_curio.backend.tests._unit_fixtures import tmp_curio  # noqa: F401 - a fixture
+
+#: The Discovery Catalog's shipped sources, which declare the keys an account saves.
+SHIPPED_SOURCES = Path(__file__).resolve().parents[4] / "discovery"
+#: The key both Hugging Face sources send.
+HF_KEY = "huggingface.token"
 
 def _post(client, path, data=None):
     return client.post(
@@ -88,6 +97,14 @@ class TestHuggingFaceToken:
     to; it is now edited in API Settings, and nothing else supplies one.
     """
 
+    @pytest.fixture(autouse=True)
+    def _own_key_files(self, tmp_curio, monkeypatch):
+        """Keys live in a file under ``.curio/users/<id>/``, and this suite's
+        in-memory database gives each test's first account id 1 again, so each
+        test gets its own ``.curio``. The shipped sources declare the key."""
+        monkeypatch.delenv("CURIO_STATE_DIR", raising=False)
+        monkeypatch.setenv("CURIO_DISCOVERY_ROOT", str(SHIPPED_SOURCES))
+
     def _patch(self, client, token, body):
         return client.patch(
             "/api/auth/me",
@@ -96,17 +113,18 @@ class TestHuggingFaceToken:
             headers={"Authorization": f"Bearer {token}"},
         )
 
+    def _save(self, client, token, value):
+        return self._patch(client, token, {"source_keys": {HF_KEY: value}})
+
     def test_absent_by_default(self, client):
         token = _signup(client).get_json()["token"]
-        assert _get(client, "/api/auth/me", token=token).get_json()[
-            "has_huggingface_token"
-        ] is False
+        assert _get(client, "/api/auth/me", token=token).get_json()["has_source_keys"] == {}
 
     def test_saved_and_reported_as_a_boolean_only(self, client):
         token = _signup(client).get_json()["token"]
-        r = self._patch(client, token, {"huggingface_token": "hf_secret"})
+        r = self._save(client, token, "hf_secret")
         assert r.status_code == 200
-        assert r.get_json()["has_huggingface_token"] is True
+        assert r.get_json()["has_source_keys"] == {HF_KEY: True}
         # The value itself never leaves the server, exactly as the LLM key does
         # not, which is also why neither has a launcher flag.
         raw = _get(client, "/api/auth/me", token=token).get_data(as_text=True)
@@ -114,18 +132,16 @@ class TestHuggingFaceToken:
 
     def test_empty_string_clears_it(self, client):
         token = _signup(client).get_json()["token"]
-        self._patch(client, token, {"huggingface_token": "hf_secret"})
-        r = self._patch(client, token, {"huggingface_token": ""})
-        assert r.get_json()["has_huggingface_token"] is False
+        self._save(client, token, "hf_secret")
+        r = self._save(client, token, "")
+        assert r.get_json()["has_source_keys"] == {}
 
     def test_a_hosted_guest_is_refused_out_loud(self, client):
         guest = _post(client, "/api/auth/signin/guest").get_json()["token"]
-        r = self._patch(client, guest, {"huggingface_token": "hf_secret"})
+        r = self._save(client, guest, "hf_secret")
         assert r.status_code == 403
-        assert "HuggingFace token" in r.get_json()["error"]
-        assert _get(client, "/api/auth/me", token=guest).get_json()[
-            "has_huggingface_token"
-        ] is False
+        assert "Hugging Face token" in r.get_json()["error"]
+        assert _get(client, "/api/auth/me", token=guest).get_json()["has_source_keys"] == {}
 
     def test_the_local_guest_saves_its_own(self, client, monkeypatch):
         # Without --deploy the shared guest is the one local user, so API
@@ -135,17 +151,17 @@ class TestHuggingFaceToken:
         monkeypatch.setattr(routes, "CURIO_NO_AUTH", True)
         monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
         guest = _post(client, "/api/auth/signin/auto-guest").get_json()["token"]
-        r = self._patch(client, guest, {"huggingface_token": "hf_secret"})
+        r = self._save(client, guest, "hf_secret")
         assert r.status_code == 200
-        assert r.get_json()["has_huggingface_token"] is True
+        assert r.get_json()["has_source_keys"] == {HF_KEY: True}
 
     def test_omitting_it_leaves_it_alone(self, client):
         # API Settings sends the field only when the user typed something, so a
         # save that changes another field must not wipe a stored token.
         token = _signup(client).get_json()["token"]
-        self._patch(client, token, {"huggingface_token": "hf_secret"})
+        self._save(client, token, "hf_secret")
         r = self._patch(client, token, {"name": "Renamed"})
-        assert r.get_json()["has_huggingface_token"] is True
+        assert r.get_json()["has_source_keys"] == {HF_KEY: True}
 
 
 class TestSignoutRoute:

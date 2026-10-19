@@ -1,6 +1,6 @@
 # Curio Architecture
 
-This document describes the internal architecture of Curio for contributors who need to understand how the system is structured and how data moves through it. For setup instructions see [USAGE.md](USAGE.md), for contributing guidelines see [CONTRIBUTING.md](CONTRIBUTING.md), for how node packages are installed and shared see [NODE-CATALOG.md](NODE-CATALOG.md) (to add a built-in behavior hook, icon or grammar adapter, see [Behavior Hooks](#behavior-hooks)), and for an end-to-end walkthrough of adding a new node package (manifest + behavior hook + optional Flask blueprint + optional dependency extras) see [EXTENDING.md](EXTENDING.md).
+This document describes the internal architecture of Curio for contributors who need to understand how the system is structured and how data moves through it. For setup instructions see [USAGE.md](USAGE.md), for contributing guidelines see [CONTRIBUTING.md](CONTRIBUTING.md), for how node packages are installed and shared see [NODE-CATALOG.md](NODE-CATALOG.md) (to add a built-in behavior hook or grammar adapter, see [Behavior Hooks](#behavior-hooks)), and for an end-to-end walkthrough of adding a new node package (manifest + behavior hook + optional Flask blueprint + optional dependency extras) see [EXTENDING.md](EXTENDING.md).
 
 ## Table of Contents
 
@@ -14,6 +14,7 @@ This document describes the internal architecture of Curio for contributors who 
   * [Drawing scenarios](#drawing-scenarios)
 * [Nodes: Types and Structure](#nodes-types-and-structure)
   * [Node Packages and Manifests](#node-packages-and-manifests)
+  * [A dataflow's tags and data types](#a-dataflows-tags-and-data-types)
   * [NodeDescriptor: Static Metadata](#nodedescriptor-static-metadata)
   * [NodeAdapter: Runtime Wiring](#nodeadapter-runtime-wiring)
   * [Behavior Hooks](#behavior-hooks)
@@ -172,10 +173,10 @@ in its URL, the drawer in its state. Its two tabs:
 - **API keys** (`ApiKeysTab`): one table of every key the account uses. Its
   **Language model** rows come from `GET /api/agents/llm` (the Deployment
   default and each LLM configuration), its **Data source** rows from
-  `GET /api/discovery/keys` (a slot is listed when a key is saved or inherited),
+  `GET /api/discovery/keys` (a key is listed when one is saved or inherited),
   and its **Node code** rows from `/api/users/me/connection-keys`.
   **Add configuration** opens one editor whose **Kind** select picks the form:
-  `LlmConfigEditor`, `SourceKeyForm` for a slot without a saved key, or
+  `LlmConfigEditor`, `SourceKeyForm` for a key without a saved one, or
   `NodeKeyForm`.
 - **Agent configuration** (`AgentConfigTab`): the default
   (`PUT /api/agents/llm/default`) and `AgentModelsSection`, the configuration
@@ -364,7 +365,7 @@ node whose code it writes itself:
   catalog's manifests) decides `_is_pass_through`, `parts.is_pass_through`,
   `node_role` (also from the run's roster) and `_is_sink_node_type`. The automatic
   Vega-Lite and Autark tags read a template's grammar from the account's store too
-  (`TemplateGrammars`).
+  ([A dataflow's tags and data types](#a-dataflows-tags-and-data-types)).
 - In Difference (`compareMode.ts`: `metadata.compareScenarios.mode`, else Difference
   for two rasters or two layers by the `dataType` of what the circles hold) the code
   calls `curio_difference_scenarios` (`utk_curio/sandbox/util/scenario_difference.py`)
@@ -513,6 +514,15 @@ Built-in templates (in `curio.builtin@1/manifest.json`) currently cover:
 
 Third-party packages (or first-party optional ones, like `curio.example-ui@1`) install via the **catalog drawer** in the canvas, which copies the package directory into the user's store at `.curio/users/<user>/packages/`.
 
+### A dataflow's tags and data types
+
+The Projects rail and the canvas's title chips file a dataflow under tags and data types that [`projects/categories.py`](../utk_curio/backend/app/projects/categories.py) `derive` computes on every read and never stores. It has two sources, and neither names a package, model or dataset:
+
+- [`projects/category_rules.json`](../utk_curio/backend/app/projects/category_rules.json) holds what a dataflow shows by itself, as data: the modules its code imports, the file extensions and data URIs it names, the `grammarId` each node's template draws with (and keys of a grammar node's document, such as Autark's `compute`), model types, dataset formats and collection kinds, and the display order.
+- A `ManifestLookup`, one per request, reads what the manifests declare in `dataflowCategories`, and the core fields the table reads: a node's package and template, and the model package a `curio_load_model` call names (`TemplateGrammars`, [`projects/template_grammars.py`](../utk_curio/backend/app/projects/template_grammars.py)), and a dataset (`DatasetKinds`). It reads each manifest's raw JSON once, in the account's store and in the catalog, and unions what the two copies declare, since a store copy dates from when the account added it; a grammar, a model type, a format and a collection kind are the first copy's that has one. A node type or model id without a major takes the major the dataflow's lockfile (`dataflow.packages`) names, else the highest. Paths go through `dir_name_from_node_type` and `dir_name_from_model_ref`, so a legacy type with no package matches nothing. Without a lookup, `derive` reads the committed `packages/` and `datasets/`.
+
+The table's names come first, in its `displayOrder`; any other declared name follows, sorted ignoring case, so a new name shows on the rail with no frontend change. Names merge ignoring case, keeping the table's spelling, and a declaration read off a manifest skips a value of the wrong type (`declared_dataflow_categories`, beside the parsers' `clean_dataflow_categories` in `packages/domain/dataflow_categories.py`).
+
 ### NodeDescriptor: Static Metadata
 
 A `NodeDescriptor` (defined in `src/registry/types.ts`) is the static declaration for a node type. It is read once at render time by `UniversalNode` to configure the node's appearance and behavior:
@@ -570,7 +580,7 @@ The hook can return:
 
 Behaviors register against a single global registry, [`behaviorRegistry.ts::registerBehavior(name, hook)`](../utk_curio/frontend/urban-workflows/src/registry/behaviorRegistry.ts), and the manifest's `behavior` key looks them up by name. Two distribution channels:
 
-**1. Built-in (ships with Curio's main bundle).** [`builtinBehaviors.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinBehaviors.ts) calls `registerBehavior(...)` at import time for the hooks every install needs: `useCodeNodeBehavior`, `useVegaBehavior`, `useAutkGrammarBehavior`, `useDataPoolBehavior`, `useSpatialJoinBehavior`, and so on. These power `curio.builtin@1`'s templates, and any package's template that names one of their keys: the Raster Calculator of `scout.rasters@1` names `raster-calculator` (`useRasterCalculatorBehavior`).
+**1. Built-in (ships with Curio's main bundle).** [`builtinBehaviors.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinBehaviors.ts) calls `registerBehavior(...)` at import time for the hooks every install needs: `useCodeNodeBehavior`, `useVegaBehavior`, `useAutkGrammarBehavior`, `useDataPoolBehavior`, `useSpatialJoinBehavior`, and so on. Its keys are the ones `curio.builtin@1`'s templates name, no more ([`builtinBehaviors.test.ts`](../utk_curio/frontend/urban-workflows/src/tests/registry/builtinBehaviors.test.ts) scans for it). A package's template may name any of them, most often `code` beside a `source` starter ([Starter Routes](#starter-routes)); a package whose node needs a hook of its own ships it, as below.
 
 **2. Per-package (dynamic, loaded at boot).** A package whose templates need custom UI can declare `"behaviorScript": "scripts/behaviors.js"` in its manifest and ship a pre-built JS bundle alongside the manifest. At boot, [`packagesClient.ts::loadPackageBehaviorScripts`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) fetches each installed package's bundle with the user's Bearer token and injects the response body as an inline `<script>` *before* descriptors are built. The bundle's top-level side-effect calls `window.curio.registerBehavior(...)` for each hook it ships.
 
@@ -582,23 +592,17 @@ Behaviors register against a single global registry, [`behaviorRegistry.ts::regi
 
 The hook sits in `packages/curio.example-ui@1/sources/columnFilterBehavior.tsx` and `sources/index.tsx` registers it; webpack bundles them into `scripts/behaviors.js` (UMD + React/ReactFlow externalized to share Curio's instances at runtime), and the manifest's `behavior` field maps the template to it. The catalog install copies the package directory; boot loads the bundle; the user gets a custom-rendered node without rebuilding Curio. See [EXTENDING.md §4](EXTENDING.md) for the recipe.
 
-#### Adding a built-in behavior, icon, or grammar adapter
+**Icons.** A template's `iconRef` names any Font Awesome solid or brands icon, `"fa-solid:<name>"` or `"fa-brands:<name>"`, with no change to Curio. [`src/registry/iconRegistry.ts`](../utk_curio/frontend/urban-workflows/src/registry/iconRegistry.ts) bundles the icons `curio.builtin@1`'s templates name. `packagesClient.ts::loadInstalledPackages` loads any other one while it loads the behavior scripts, before it builds descriptors, so a palette tile never draws a placeholder first: a dynamic `import()` of `@fortawesome/free-solid-svg-icons/<faName>` (or the brands pack), which webpack splits into one chunk per icon (`webpack.config.js` aliases each pack to its folder, so webpack can list it). The icon chunks ship as webpack writes them, without minifying or a source map ([`webpack/iconChunks.js`](../utk_curio/frontend/urban-workflows/webpack/iconChunks.js)). A ref Font Awesome does not have falls back to `faCube`, so a missing icon is visible but not fatal.
 
-A package ships its own behavior as a `behaviorScript` bundle (see [Authoring nodes](AUTHORING-NODES.md), Tier 2). The recipes below are for the other case: changing Curio itself, so every install has the behavior, icon, or adapter before any package loads.
+#### Adding a built-in behavior or grammar adapter
+
+A package ships its own behavior as a `behaviorScript` bundle (see [Authoring nodes](AUTHORING-NODES.md), Tier 2). The recipes below are for the other case: changing Curio itself, so every install has the behavior or adapter before any package loads.
 
 **A behavior hook.** The built-ins are registered in [`src/registry/builtinBehaviors.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinBehaviors.ts).
 
 1. Implement the hook under [`src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/), conforming to `NodeBehaviorHook` in [`src/registry/types.ts`](../utk_curio/frontend/urban-workflows/src/registry/types.ts). `useCodeNodeBehavior` and `useVegaBehavior` are the references.
 2. Register it in `builtinBehaviors.ts`: `registerBehavior("my-key", useMyHook);`
 3. Reference it from a manifest: `"behavior": "my-key"` on each kind that wants it.
-
-**An icon.** [`src/registry/iconRegistry.ts`](../utk_curio/frontend/urban-workflows/src/registry/iconRegistry.ts) maps `iconRef` strings (e.g. `"fa-solid:upload"`) to FontAwesome `IconDefinition` constants.
-
-1. Import the icon constant at the top of `iconRegistry.ts`.
-2. Add `registerIcon("fa-solid:my-icon", faMyIcon);`
-3. Reference it in a manifest: `"iconRef": "fa-solid:my-icon"`.
-
-An unknown ref falls back to `faCube`, so a missing icon is visible but not fatal.
 
 **A grammar adapter.** Same pattern, in [`src/registry/grammarAdapter.ts`](../utk_curio/frontend/urban-workflows/src/registry/grammarAdapter.ts). The Vega-Lite adapter, [`src/adapters/vegaLiteAdapter.ts`](../utk_curio/frontend/urban-workflows/src/adapters/vegaLiteAdapter.ts), is the canonical example.
 
@@ -1400,7 +1404,7 @@ about the choice goes into a project, attachment or manifest.
 Only the store's own reads (`LlmConfigStore.read` and `record`) carry a key:
 every response carries `hasApiKey` and `baseUrlHost` instead. The file is written through
 [`owner_only_file.py`](../utk_curio/backend/app/common/owner_only_file.py),
-which connection keys use too: a 0700 directory and a 0600 file, written to a
+which connection keys and Data source keys use too: a 0700 directory and a 0600 file, written to a
 temp file, fsynced and renamed under an exclusive lock.
 
 A configuration names its own endpoint (`endpoint: "own"`, with `apiType`,
@@ -1692,7 +1696,7 @@ A source describes one portal or one storage source in `discovery/<sourceId>@<ma
 - **Formats.** `capabilities.formats` is an upper bound, intersected at download time with `DISCOVERY_ACQUIRABLE_FORMATS` (`csv`, `geojson`, `json`, `parquet`, `geotiff`): what a download lands as. That set is narrower than the Data Catalog's: a bare `shp` needs sibling files a single download cannot bring, and a `bundle` is a node output. An archive is not a format a manifest names: a downloaded zip or gzip is unpacked and what it holds is checked against the same set, a zipped shapefile and a GTFS feed as `parquet`.
 - **Size.** `capabilities.maxDownloadBytes` may lower the server's ceiling, never raise it. The ceiling is [`domain/limits.py`](../utk_curio/backend/app/discovery/domain/limits.py) `max_download_bytes()`: `curio.py --discovery-max-download-mb`, passed as `CURIO_DISCOVERY_MAX_DOWNLOAD_MB`, 1 GiB by default. It is read when the backend starts, as `DEFAULT_MAX_DOWNLOAD_BYTES` (the manifest default and clamp) and `transport.MAX_DISCOVERY_DOWNLOAD_BYTES`. A download streams to a file under the account's `discovery/tmp/`, and a table added from a bucket streams to disk through `provider.stream` (`StorageAcquire._copy_remote`); neither is held in memory whole.
 - **`provider.options`** is provider wiring and is never sent to a client.
-- **`auth.secretId`** must name a slot in `SLOT_COLUMNS` (see [Credentials](#credentials)), or the manifest fails to load.
+- **`auth.secretId`** names the key a source sends, and `label`, `helpUrl`, `placeholder`, `note` and `operatorDefault` declare it (see [Credentials](#credentials)). Any well-formed id is a key: the sources that send one name the same id and declare it the same way.
 - **Icons** are PNG only and resolved inside the source's own folder. An SVG served from the app's own origin can carry script.
 
 Sources have no import route. A manifest names a host the server calls on a user's behalf, with a credential attached, or a folder it reads, so sources ship with the deployment or are written by the operator.
@@ -1769,7 +1773,7 @@ A service is told where and what, and answers with one download. Its rows are it
   - A Direct URL link: `DirectProvider.download_url` answers a `.parquet` link asked for an `area` with a `DownloadTarget` whose `area` is the box, and refuses an area for any other link. `DiscoveryAcquire._acquire_area` reads it with a `RemoteParquet` of unknown size, which asks for `bytes=0-0` first and takes the size from `Content-Range`; a server that answers the whole file trips the one-byte bound and is refused by name.
   - A bucket row: `scan.takes_area` gives the area to a `parquet` table row of a source that declares one (`s3` and `huggingface` may; `folder` may not), and `StorageAcquire._add_area` reads each file at the provider's `file_url` with the size its listing gave. One file lands as its part; several are staged as their parts, combined by `combine_tables.combine` as a whole row's files are, and written with the parts' shared `geo` metadata (`parquet_area.combined_geo`, which refuses parts in different coordinate systems). `check_addable(..., for_area=True)` skips the files' sizes, so a row over the download limit stays addable for an area.
   - Row-group boxes come from the `geo` metadata's `covering.bbox` columns, else Overture's `bbox.*`; with neither, every row group is read and each row's box is its WKB geometry's bounds (shapely). A file whose `crs` is not longitude and latitude is read with the area moved into it (`area_in`, pyproj `transform_bounds`). The bound is the download limit, on the bytes read. Both adds record `parameters` and `parametersHash`, so the same area is held. Their recorded answers are made up: `tests/test_discovery/remote_parquet_fixture.py` writes the files and each byte range the reader asks for.
-- **A service that needs a token** is refused with 428 before any job when none is set, naming the slot and its help link, as a portal search is.
+- **A service that needs a token** is refused with 428 before any job when none is set, naming the key's `secretId` and its help link, as a portal search is.
 
 ### Models from the Discovery Catalog
 
@@ -1807,10 +1811,11 @@ The model family (`huggingface-models`) is searched like a portal and added like
 
 ### Credentials
 
-[`infrastructure/credentials.py`](../utk_curio/backend/app/discovery/infrastructure/credentials.py) owns the registry of credential slots, `SLOTS`, one `KeySlot` per slot: the column on the `user` row, a label, a help link, a placeholder, an optional note, a deployment-wide fallback, and the other features that read the column. The slots are `socrata.app-token`, `huggingface.token` (the `huggingface_token` column, which the Hugging Face sources send), `google.maps-key` and `mapillary.token`. `SLOT_COLUMNS` and `SLOT_DEFAULTS` derive from it, and `GET /api/discovery/keys` lists every slot for API Settings, which lists a slot once a key is saved or inherited and offers the others in the **Kind** select of **Add configuration**. Adding a slot is a column, a migration, a field in `PATCH /api/auth/me`, one entry there, and its id in `KNOWN_SECRET_SLOTS` in `domain/manifest.py`.
+A source's manifest declares the key it sends in its `auth` block: `secretId` names it, and `label`, `helpUrl`, `placeholder` and `note` say how API Settings shows it. The sources that send one key name the same `secretId` (both Hugging Face sources send `huggingface.token`), and `test_shipped_sources.py` checks that the shipped ones declare it alike. [`infrastructure/credentials.py`](../utk_curio/backend/app/discovery/infrastructure/credentials.py) groups the loaded manifests by `secretId`, shipped sources first: the first source's declaration is the key's, and a source that declares it otherwise is logged once. `key_rows` gives `GET /api/discovery/keys` one row per key, in the order of their labels, which API Settings lists once a key is saved or inherited and offers in the **Kind** select of **Add configuration** otherwise. A key a new source needs is its manifest's `auth` block and nothing else.
 
-- A key is saved through `PATCH /api/auth/me` and read back only as a boolean. A guest on a `--deploy` instance is refused with a 403, and `own_token` answers nothing for a guest there, so a key the shared guest saved without `--deploy` is not sent.
-- `CURIO_DEFAULT_SOCRATA_APP_TOKEN` is inherited by every account that has not saved its own.
+- An account's keys live in an owner-only file, `.curio/users/<u>/source-keys.json`, keyed by `secretId` and kept by [`users/source_keys.py`](../utk_curio/backend/app/users/source_keys.py) through `owner_only_file.py`. It is a file of its own, beside `connection-keys.json`, so `curio_secret` in node code never reaches a source's key. `value_for` is the only read that returns a key.
+- `PATCH /api/auth/me` saves keys by `secretId` (`source_keys`; `""` removes one, and a key left out stays). It refuses a `secretId` no loaded source declares, and checks every value (one line of text, at most `MAX_VALUE_CHARS`) before it writes any. Responses report keys only as booleans (`has_source_keys` on the user payload). A guest on a `--deploy` instance is refused with a 403, and `storage_key_for` gives a guest there no file, so `own_key` answers nothing for it and a key the shared guest saved without `--deploy` is not sent.
+- A source whose manifest sets `auth.operatorDefault` sends the operator's key to every account that has not saved its own. `default_variable` names the variable: `CURIO_DEFAULT_` and the `secretId` in capitals, with every other character as `_`, so the City of Chicago portal reads `CURIO_DEFAULT_SOCRATA_APP_TOKEN`. A manifest never names a variable. Curio's own settings share the prefix (`CURIO_DEFAULT_LLM_*`, the deployment's LLM configuration, and `CURIO_DEFAULT_SAVE_NODE_OUTPUT`), and `is_own_setting` in `domain/manifest.py` keeps them out of reach: a manifest whose `secretId` would read one with `operatorDefault` fails to load, and `deployment_key` refuses one too. `test_credentials.py` checks that every such variable Curio's code names is covered.
 - `auth.scheme` is `header` or `query` (`AUTH_SCHEMES`); Google Street View sends its key as `?key=`. The transport adds a query key to the request it sends and nothing else, and takes it out of every URL and message it hands back (`_keyed`, `_redact`), so egress audit records, refusal messages and job records stay safe to store verbatim. The transport binds the credential when it is built, and `CredentialedTransport` sends it only to the source's own origin (the scheme, host and port of `provider.baseUrl`, a missing port being the scheme's default), so no provider ever handles a token.
 
 ### Providers
@@ -2074,7 +2079,7 @@ content digest, so one file is one dataset.
 | `/api/datasets/<id>/media/<file_id>/link` | POST | A signed URL for `<video>` and `<audio>`, valid 10 minutes |
 | `/api/media/<token>` | GET | The one file a signed link names, with Range. No bearer token |
 | `/api/discovery/places` | GET | Places for the area field (`q`), from Nominatim: name, label, box, and whether each is a boundary |
-| `/api/discovery/keys` | GET | Every key slot, for API Settings: label, field, help link, `present` and `inherited` as booleans, and the sources and features that use it |
+| `/api/discovery/keys` | GET | Every key the sources declare, for API Settings: its `secretId` (`slot`), label, help link, placeholder and note, `present` and `inherited` as booleans, and the sources that send it |
 | `/api/datasets/<id>/extent` | GET | The box around a geo dataset, in EPSG:4326, for the area field |
 | `/api/discovery/jobs/<id>` | GET | Job progress. Per account: another user's id is indistinguishable from an unknown one |
 | `/api/discovery/jobs/<id>` | DELETE | Ask a download to stop; checked between chunks |
@@ -2199,7 +2204,7 @@ created empty for Solve to write.
 | `/api/auth/signin` | POST | Username/password sign-in |
 | `/api/auth/signin/guest` | POST | Guest sign-in (when enabled) |
 | `/api/auth/signout` | POST | Invalidate the session token |
-| `/api/auth/me` | GET/PATCH | Current user profile |
+| `/api/auth/me` | GET/PATCH | Current user profile, and the account's Data source keys by `secretId` (`source_keys`; `has_source_keys` says which are saved) |
 
 ---
 
@@ -2292,7 +2297,7 @@ created empty for Solve to write.
 | `backend/app/agents/application/attachments.py` | Attachments in `spec.dataflow.agentAttachments`, plus their sessions |
 | `backend/app/agents/infrastructure/provider_config.py` | `resolve_llm`, the one LLM resolver, which reads the deployment's LLM settings (see [LLM Configurations and Resolution](#llm-configurations-and-resolution)) |
 | `backend/app/agents/infrastructure/llm_configs.py` | The account's LLM configurations (`llm-configs.json`): validation, the default, and the store reads that carry a key |
-| `backend/app/common/owner_only_file.py` | Owner-only JSON files: 0700 directory, 0600 file, atomic write under an exclusive lock. Used by connection keys and LLM configurations |
+| `backend/app/common/owner_only_file.py` | Owner-only JSON files: 0700 directory, 0600 file, atomic write under an exclusive lock. Used by connection keys, Data source keys and LLM configurations |
 | `backend/app/agents/infrastructure/providers.py` | Provider-neutral dispatch port; the only place an LLM SDK is imported. Typed turns and their text forms, streaming, the system slots per provider, native tools per provider and their refusal, cache usage, the native-tools trial, and the live model listing |
 | `backend/app/agents/application/tools.py` | The tool registry: each contract's effect, description and params schema, grant resolution, the read executors, and the native tools a run is offered |
 | `backend/app/agents/application/reply_schemas.py` | The Autark document's reply schema, projected from the vendored schema per provider flavor; decoding a reply; which runs send one |

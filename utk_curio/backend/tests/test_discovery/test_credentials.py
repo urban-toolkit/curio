@@ -1,19 +1,23 @@
-"""Per-user portal tokens: stored, resolved, and never leaked.
+"""Per-account source keys: declared by manifests, stored, resolved, never leaked.
 
-The same shape as every other Curio credential - a column on the user's row,
-written through ``PATCH /api/auth/me``, reported as a boolean. The tests that
-matter most here are the negative ones: a token must not appear in a response,
-in a log line, in an audit record, or in a URL.
+A source manifest declares the key it sends (``auth.secretId`` and how API
+Settings shows it); an account saves one through ``PATCH /api/auth/me``, keyed
+by that id, in its owner-only file, and every response reports it as a boolean.
+The tests that matter most here are the negative ones: a key must not appear in
+a response, in a log line, in an audit record, or in a URL, and must reach no
+origin but its source's.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 
 import pytest
 
+from utk_curio.backend.app.common.user_storage import users_base
 from utk_curio.backend.app.discovery.domain import manifest as M
 from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
 from utk_curio.backend.app.discovery.infrastructure import credentials, transport as T
@@ -25,6 +29,54 @@ from utk_curio.backend.tests.test_discovery.conftest import (
 
 SECRET = "s0cr4ta-t0ken-do-not-log"
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
+CHICAGO = "source.cityofchicago.data-portal@1"
+SOCRATA_DEFAULT = "CURIO_DEFAULT_SOCRATA_APP_TOKEN"
+
+
+def _shipped_secret_ids() -> list[str]:
+    """The secret ids the shipped manifests name, read as plain JSON so that
+    collecting this module never depends on the parser."""
+    ids = set()
+    for path in sorted(SHIPPED_ROOT.iterdir()):
+        manifest = path / "manifest.json"
+        if manifest.is_file():
+            secret_id = (json.loads(manifest.read_text(encoding="utf-8")).get("auth") or {}).get("secretId")
+            if secret_id:
+                ids.add(secret_id)
+    return sorted(ids)
+
+
+SHIPPED_SECRET_IDS = _shipped_secret_ids()
+
+#: The rows API Settings lists for the keys the shipped sources send: label,
+#: help link, placeholder and note, as their manifests declare them.
+SHIPPED_KEY_ROWS = {
+    "socrata.app-token": (
+        "Socrata app token",
+        "https://evergreen.data.socrata.com/signup",
+        "Your app token",
+        "Socrata portals answer without one; a token raises the rate limit.",
+    ),
+    "huggingface.token": (
+        "Hugging Face token",
+        "https://huggingface.co/settings/tokens",
+        "hf_...",
+        None,
+    ),
+    "google.maps-key": (
+        "Google Maps API key",
+        "https://developers.google.com/maps/documentation/streetview/get-api-key",
+        "AIza...",
+        "Needs the Street View Static API enabled, and Google bills its requests to you. Google's terms "
+        "allow storing only panorama IDs: images downloaded with your key are yours to keep within those terms.",
+    ),
+    "mapillary.token": (
+        "Mapillary access token",
+        "https://www.mapillary.com/dashboard/developers",
+        "MLY|...",
+        "Mapillary images are CC BY-SA 4.0: each one keeps its creator for attribution.",
+    ),
+}
 
 
 @pytest.fixture()
@@ -33,128 +85,189 @@ def auth(user_and_token):
     return {"Authorization": f"Bearer {token}"}
 
 
-class TestTheSlotRegistryIsServerOwned:
-    def test_the_manifest_validator_and_the_registry_agree(self):
-        """Declared in two modules - a manifest must be readable without the
-        ORM - so the agreement is asserted rather than assumed."""
-        assert set(M.KNOWN_SECRET_SLOTS) == set(credentials.SLOT_COLUMNS)
+def _save(user, secret_id, value=SECRET):
+    """What ``PATCH /api/auth/me`` saves, written straight to the account's file."""
+    from utk_curio.backend.app.users import source_keys
 
-    def test_a_manifest_may_name_a_known_slot(self, discovery_dir):
+    source_keys.save_for(user, {secret_id: value})
+
+
+def _patch_keys(client, auth, keys):
+    return client.patch("/api/auth/me", headers=auth, json={"source_keys": keys})
+
+
+def _shipped_keyed_manifests():
+    manifests = [load_source_manifest(p) for p in sorted(SHIPPED_ROOT.iterdir()) if (p / "manifest.json").is_file()]
+    keyed = [m for m in manifests if m.auth.secret_id]
+    assert keyed, f"no shipped source under {SHIPPED_ROOT} sends a key"
+    return keyed
+
+
+def _a_guest_with_a_session(db, username="guest1"):
+    from utk_curio.backend.app.users.models import User, UserSession
+
+    guest = User(username=username, name="Guest", email="g@test.com", is_guest=True)
+    db.session.add(guest)
+    db.session.flush()
+    db.session.add(UserSession(user_id=guest.id, token="guest-token"))
+    db.session.commit()
+    return guest
+
+
+def _no_key_file_anywhere():
+    return not list(users_base().glob("*/source-keys.json"))
+
+
+def test_the_shipped_sources_send_keys():
+    """Guards the parametrized classes below against passing vacuously."""
+    assert SHIPPED_SECRET_IDS, f"no shipped manifest under {SHIPPED_ROOT} names a secretId"
+
+
+class TestASourceDeclaresItsKey:
+    """The manifest is the whole declaration: which key, and how API Settings
+    shows it. Curio's code holds no list of keys."""
+
+    def test_a_manifest_names_its_key_and_says_how_it_is_shown(self):
         parsed = M._parse_manifest(
             a_manifest(auth={"mode": "optional-token", "secretId": "socrata.app-token",
-                             "headerName": "X-App-Token"}),
+                             "headerName": "X-App-Token", "label": "Socrata app token",
+                             "placeholder": "Your app token", "note": "Raises the rate limit.",
+                             "helpUrl": "https://help.example", "operatorDefault": True}),
             where="manifest.json",
         )
-        assert parsed.auth.secret_id == "socrata.app-token"
+        auth = parsed.auth
+        assert (auth.secret_id, auth.label, auth.placeholder, auth.note, auth.help_url, auth.operator_default) == (
+            "socrata.app-token", "Socrata app token", "Your app token", "Raises the rate limit.",
+            "https://help.example", True,
+        )
 
-    def test_a_manifest_may_not_invent_one(self):
-        """A manifest is operator-authored configuration. Letting it mint a
-        slot would let it mint somewhere for a secret to live."""
-        with pytest.raises(M.ManifestError, match="unknown credential slot"):
+    def test_a_manifest_may_declare_a_key_curio_has_never_seen(self):
+        parsed = M._parse_manifest(
+            a_manifest(auth={"mode": "required-token", "secretId": "acme.tiles-key",
+                             "headerName": "X-Acme-Key", "label": "Acme tiles key"}),
+            where="manifest.json",
+        )
+        assert parsed.auth.secret_id == "acme.tiles-key"
+
+    def test_a_malformed_secret_id_is_still_refused(self):
+        with pytest.raises(M.ManifestError, match="secretId"):
             M._parse_manifest(
-                a_manifest(auth={"mode": "optional-token", "secretId": "evil.exfiltrate",
-                                 "headerName": "X-Evil"}),
+                a_manifest(auth={"mode": "optional-token", "secretId": "Evil Slot/../x",
+                                 "headerName": "X-Evil", "label": "Evil"}),
                 where="manifest.json",
             )
-
-    def test_the_refusal_says_how_to_add_one_properly(self):
-        with pytest.raises(M.ManifestError, match="migration"):
-            M._parse_manifest(
-                a_manifest(auth={"mode": "required-token", "secretId": "new.thing",
-                                 "headerName": "X-New"}),
-                where="manifest.json",
-            )
-
-    def test_every_slot_maps_to_a_real_user_column(self):
-        from utk_curio.backend.app.users.models import User
-
-        for slot, column in credentials.SLOT_COLUMNS.items():
-            assert hasattr(User, column), f"{slot} points at a column that does not exist"
 
 
 class TestResolution:
     def _manifest(self):
-        return load_source_manifest(SHIPPED_ROOT / "source.cityofchicago.data-portal@1")
+        return load_source_manifest(SHIPPED_ROOT / CHICAGO)
 
     def test_no_user_means_no_token(self):
         assert credentials.credential_header(None, self._manifest()) is None
 
     def test_a_user_without_one_means_no_token(self, app, db, user_and_token):
         user, _ = user_and_token
-        assert credentials.has_token(user, "socrata.app-token") is False
+        assert credentials.has_key(user, self._manifest().auth) is False
         assert credentials.credential_header(user, self._manifest()) is None
 
     def test_a_stored_token_becomes_one_header(self, app, db, user_and_token):
         user, _ = user_and_token
-        user.socrata_app_token = SECRET
-        db.session.commit()
-        assert credentials.has_token(user, "socrata.app-token") is True
+        _save(user, "socrata.app-token")
+        assert credentials.has_key(user, self._manifest().auth) is True
         assert credentials.credential_header(user, self._manifest()) == f"X-App-Token:{SECRET}"
 
     def test_a_public_source_never_gets_one_even_if_a_token_is_stored(self, app, db, user_and_token):
         user, _ = user_and_token
-        user.socrata_app_token = SECRET
-        db.session.commit()
+        _save(user, "socrata.app-token")
         public = load_source_manifest(SHIPPED_ROOT / "source.saopaulo.geosampa@1")
         assert credentials.credential_header(user, public) is None
 
     def test_an_unknown_slot_resolves_to_nothing(self, app, db, user_and_token):
         user, _ = user_and_token
-        assert credentials.token_for_slot(user, "not.a.slot") is None
-        assert credentials.token_for_slot(user, None) is None
+        unknown = M.AuthSpec(mode="optional-token", secret_id="not.a.slot", header_name="X-Not")
+        assert credentials.own_key(user, "not.a.slot") is None
+        assert credentials.key_for(user, unknown) is None
+        assert credentials.own_key(user, None) is None
+        assert credentials.key_for(user, M.AuthSpec()) is None
 
 
 class TestTheAccountSetting:
-    """The same surface as every other credential: PATCH /api/auth/me."""
+    """``PATCH /api/auth/me`` saves a key by the secret id its sources name."""
 
-    def test_it_saves_and_reports_only_a_boolean(self, client, auth):
-        res = client.patch("/api/auth/me", headers=auth, json={"socrata_app_token": SECRET})
+    def test_it_saves_and_reports_only_a_boolean(self, client, auth, shipped_root):
+        res = _patch_keys(client, auth, {"socrata.app-token": SECRET})
         assert res.status_code == 200, res.get_data(as_text=True)
         body = res.get_json()
-        assert body["has_socrata_app_token"] is True
+        assert body["has_source_keys"] == {"socrata.app-token": True}
         assert SECRET not in json.dumps(body)
 
-    def test_blank_clears_it(self, client, auth):
-        client.patch("/api/auth/me", headers=auth, json={"socrata_app_token": SECRET})
-        res = client.patch("/api/auth/me", headers=auth, json={"socrata_app_token": ""})
-        assert res.get_json()["has_socrata_app_token"] is False
+    def test_blank_clears_it(self, client, auth, shipped_root):
+        _patch_keys(client, auth, {"socrata.app-token": SECRET})
+        res = _patch_keys(client, auth, {"socrata.app-token": ""})
+        assert res.get_json()["has_source_keys"] == {}
 
-    def test_omitting_it_keeps_it(self, client, auth):
+    def test_omitting_it_keeps_it(self, client, auth, shipped_root):
         """Blank means clear; absent means keep. Re-typing a token to change an
         unrelated setting would be hostile."""
-        client.patch("/api/auth/me", headers=auth, json={"socrata_app_token": SECRET})
+        _patch_keys(client, auth, {"socrata.app-token": SECRET})
         res = client.patch("/api/auth/me", headers=auth, json={"name": "Alice II"})
-        assert res.get_json()["has_socrata_app_token"] is True
+        assert res.get_json()["has_source_keys"] == {"socrata.app-token": True}
 
-    def test_it_is_reported_by_the_me_endpoint(self, client, auth):
-        client.patch("/api/auth/me", headers=auth, json={"socrata_app_token": SECRET})
+    def test_saving_one_keeps_the_others(self, client, auth, shipped_root):
+        _patch_keys(client, auth, {"socrata.app-token": SECRET})
+        res = _patch_keys(client, auth, {"huggingface.token": "hf_other"})
+        assert res.get_json()["has_source_keys"] == {"socrata.app-token": True, "huggingface.token": True}
+
+    def test_it_is_reported_by_the_me_endpoint(self, client, auth, shipped_root):
+        _patch_keys(client, auth, {"socrata.app-token": SECRET})
         body = client.get("/api/auth/me", headers=auth).get_json()
-        assert body["has_socrata_app_token"] is True
+        assert body["has_source_keys"] == {"socrata.app-token": True}
         assert SECRET not in json.dumps(body)
 
-    def test_a_guest_is_refused_out_loud(self, app, db, client):
-        """403, the way the LLM key refuses - not a silent discard.
+    def test_a_guest_is_refused_out_loud(self, app, db, client, shipped_root):
+        """403, the way an LLM configuration refuses - not a silent discard.
 
         A guest account is shared, so a personal token saved on it would be
         everyone's. Accepting the value and quietly dropping it would leave the
-        user believing they are authenticated when they are not, which is the
-        failure the LLM key's explicit refusal exists to avoid.
+        user believing they are authenticated when they are not. The refusal
+        names the key as API Settings does.
         """
-        from utk_curio.backend.app.users.models import User, UserSession
-
-        guest = User(username="guest1", name="Guest", email="g@test.com", is_guest=True)
-        db.session.add(guest)
-        db.session.flush()
-        db.session.add(UserSession(user_id=guest.id, token="guest-token"))
-        db.session.commit()
+        _a_guest_with_a_session(db)
         res = client.patch(
             "/api/auth/me",
             headers={"Authorization": "Bearer guest-token"},
-            json={"socrata_app_token": SECRET},
+            json={"source_keys": {"socrata.app-token": SECRET}},
         )
         assert res.status_code == 403
-        assert "portal token" in res.get_json()["error"]
-        assert db.session.get(User, guest.id).socrata_app_token is None
+        assert "Socrata app token" in res.get_json()["error"]
+        assert _no_key_file_anywhere()
+
+    def test_an_id_no_source_declares_is_refused(self, client, auth, shipped_root):
+        """A key is kept only for a key some source sends."""
+        res = _patch_keys(client, auth, {"acme.tiles-key": SECRET})
+        assert res.status_code == 400
+        assert "acme.tiles-key" in res.get_json()["error"]
+        assert SECRET not in res.get_data(as_text=True)
+        assert client.get("/api/auth/me", headers=auth).get_json()["has_source_keys"] == {}
+
+    @pytest.mark.parametrize("value", ["tok\r\nX-Evil: 1", "tok\nmore", "   ", 42, None, ["tok"]])
+    def test_a_value_is_one_line_of_text(self, client, auth, shipped_root, value):
+        """It is written into a request header or a query parameter."""
+        res = _patch_keys(client, auth, {"socrata.app-token": value})
+        assert res.status_code == 400, res.get_data(as_text=True)
+        assert client.get("/api/auth/me", headers=auth).get_json()["has_source_keys"] == {}
+
+    def test_source_keys_is_a_map_by_secret_id(self, client, auth, shipped_root):
+        res = client.patch("/api/auth/me", headers=auth, json={"source_keys": ["socrata.app-token", SECRET]})
+        assert res.status_code == 400
+        assert SECRET not in res.get_data(as_text=True)
+
+    def test_one_refused_key_saves_none_of_them(self, client, auth, shipped_root):
+        res = _patch_keys(client, auth, {"socrata.app-token": SECRET, "acme.tiles-key": SECRET})
+        assert res.status_code == 400
+        res = _patch_keys(client, auth, {"socrata.app-token": SECRET, "huggingface.token": "two\nlines"})
+        assert res.status_code == 400
+        assert client.get("/api/auth/me", headers=auth).get_json()["has_source_keys"] == {}
 
 
 class TestItReachesThePortalAndNowhereElse:
@@ -223,8 +336,7 @@ class TestItReachesThePortalAndNowhereElse:
 
         manifest = self._source(discovery_dir)
         user, _token = user_and_token
-        user.socrata_app_token = SECRET
-        db.session.commit()
+        _save(user, "socrata.app-token")
         bound = DiscoveryService("alice", user=user)._transport_for(manifest)
         assert bound._for("https://portal.example/api", None) == f"X-App-Token:{SECRET}"
         assert bound._for("https://elsewhere.example/api", None) is None
@@ -258,8 +370,7 @@ class TestItReachesThePortalAndNowhereElse:
             capabilities={"formats": ["csv"]}))
         manifest = load_source_manifest(discovery_dir / "source.a.origin@1")
         user, _token = user_and_token
-        user.socrata_app_token = SECRET
-        db.session.commit()
+        _save(user, "socrata.app-token")
         seen = []
 
         class Spy:
@@ -297,6 +408,20 @@ class TestItReachesThePortalAndNowhereElse:
         key = f"X-App-Token:{SECRET}"
         assert seen == [key, key, None, None, None]
 
+    def test_a_key_reaches_no_source_that_names_another(self, discovery_dir, app, db, user_and_token):
+        """A key is sent by the sources that name its secret id, and by no other."""
+        write_source(discovery_dir, "source.b.other@1", a_manifest(
+            id="source.b.other", name="Other Portal",
+            provider={"type": "socrata", "baseUrl": "https://portal.example"},
+            auth={"mode": "optional-token", "secretId": "other.portal-token",
+                  "headerName": "X-App-Token", "label": "Other portal token"},
+            capabilities={"formats": ["csv"]}))
+        user, _token = user_and_token
+        _save(user, "socrata.app-token")
+        assert credentials.credential_header(user, self._source(discovery_dir)) == f"X-App-Token:{SECRET}"
+        other = load_source_manifest(discovery_dir / "source.b.other@1")
+        assert credentials.credential_header(user, other) is None
+
     def test_a_required_token_source_refuses_rather_than_trying_empty(self, discovery_dir, app, db, user_and_token):
         from utk_curio.backend.app.discovery.application.browse import DiscoveryBrowse
         from utk_curio.backend.app.discovery.domain.errors import CredentialRequired
@@ -317,30 +442,41 @@ class TestItReachesThePortalAndNowhereElse:
 
 class TestNoResponseOrLogCarriesIt:
     def test_no_discovery_response_contains_a_secret_shaped_value(self, client, auth, shipped_root):
-        client.patch("/api/auth/me", headers=auth, json={"socrata_app_token": SECRET})
+        res = _patch_keys(client, auth, {"socrata.app-token": SECRET})
+        assert res.get_json()["has_source_keys"] == {"socrata.app-token": True}
         for path in (
             "/api/discovery/catalog",
-            "/api/discovery/sources/source.cityofchicago.data-portal@1",
+            f"/api/discovery/sources/{CHICAGO}",
+            "/api/discovery/keys",
         ):
             body = client.get(path, headers=auth).get_data(as_text=True)
             assert SECRET not in body, path
 
     def test_the_source_row_reports_presence_not_the_value(self, client, auth, shipped_root):
-        client.patch("/api/auth/me", headers=auth, json={"socrata_app_token": SECRET})
-        row = client.get(
-            "/api/discovery/sources/source.cityofchicago.data-portal@1", headers=auth
-        ).get_json()
+        _patch_keys(client, auth, {"socrata.app-token": SECRET})
+        row = client.get(f"/api/discovery/sources/{CHICAGO}", headers=auth).get_json()
         assert row["auth"]["present"] is True
         assert row["auth"]["secretId"] == "socrata.app-token"
         assert SECRET not in json.dumps(row)
 
     def test_a_search_logs_nothing_that_contains_it(self, client, auth, shipped_root, fixture_corpus, caplog):
-        client.patch("/api/auth/me", headers=auth, json={"socrata_app_token": SECRET})
+        res = _patch_keys(client, auth, {"socrata.app-token": SECRET})
+        assert res.get_json()["has_source_keys"] == {"socrata.app-token": True}
         with caplog.at_level(logging.DEBUG):
             client.get(
-                "/api/discovery/sources/source.cityofchicago.data-portal@1/search?q=crimes",
+                f"/api/discovery/sources/{CHICAGO}/search?q=crimes",
                 headers=auth,
             )
+        for record in caplog.records:
+            assert SECRET not in record.getMessage(), record.name
+
+    def test_saving_and_listing_one_logs_nothing_that_contains_it(self, client, auth, shipped_root, caplog):
+        with caplog.at_level(logging.DEBUG):
+            res = _patch_keys(client, auth, {"socrata.app-token": SECRET})
+            client.get("/api/discovery/keys", headers=auth)
+            client.get("/api/auth/me", headers=auth)
+            _patch_keys(client, auth, {"socrata.app-token": "two\nlines " + SECRET})
+        assert res.get_json()["has_source_keys"] == {"socrata.app-token": True}
         for record in caplog.records:
             assert SECRET not in record.getMessage(), record.name
 
@@ -360,49 +496,52 @@ class TestNoResponseOrLogCarriesIt:
 
 
 class TestTheDeploymentFallback:
-    """A user who sets nothing inherits what the operator configured.
+    """A user who sets nothing inherits what the operator configured, for a
+    source whose manifest allows it (``auth.operatorDefault``).
 
     An operator running Curio for a class raises the rate limit for everyone
     with one environment variable, and any user can still override it with
     their own.
     """
 
+    def _chicago(self):
+        return load_source_manifest(SHIPPED_ROOT / CHICAGO)
+
     def test_with_nothing_configured_there_is_no_token(self, app, db, user_and_token, monkeypatch):
-        monkeypatch.delenv("CURIO_DEFAULT_SOCRATA_APP_TOKEN", raising=False)
+        monkeypatch.delenv(SOCRATA_DEFAULT, raising=False)
         user, _ = user_and_token
-        assert credentials.token_for_slot(user, "socrata.app-token") is None
+        assert credentials.key_for(user, self._chicago().auth) is None
 
     def test_the_deployment_token_is_inherited(self, app, db, user_and_token, monkeypatch):
-        monkeypatch.setenv("CURIO_DEFAULT_SOCRATA_APP_TOKEN", "deployment-token")
+        monkeypatch.setenv(SOCRATA_DEFAULT, "deployment-token")
         user, _ = user_and_token
-        assert credentials.token_for_slot(user, "socrata.app-token") == "deployment-token"
-        assert credentials.has_token(user, "socrata.app-token") is True
+        assert credentials.key_for(user, self._chicago().auth) == "deployment-token"
+        assert credentials.has_key(user, self._chicago().auth) is True
 
     def test_a_users_own_token_wins(self, app, db, user_and_token, monkeypatch):
-        monkeypatch.setenv("CURIO_DEFAULT_SOCRATA_APP_TOKEN", "deployment-token")
+        monkeypatch.setenv(SOCRATA_DEFAULT, "deployment-token")
         user, _ = user_and_token
-        user.socrata_app_token = SECRET
-        db.session.commit()
-        assert credentials.token_for_slot(user, "socrata.app-token") == SECRET
+        _save(user, "socrata.app-token")
+        assert credentials.key_for(user, self._chicago().auth) == SECRET
 
     def test_own_token_never_reports_the_deployments(self, app, db, user_and_token, monkeypatch):
         """The settings screen asks a different question - did YOU save one -
         and must not answer it with the operator's value."""
-        monkeypatch.setenv("CURIO_DEFAULT_SOCRATA_APP_TOKEN", "deployment-token")
+        monkeypatch.setenv(SOCRATA_DEFAULT, "deployment-token")
         user, _ = user_and_token
-        assert credentials.own_token(user, "socrata.app-token") is None
+        assert credentials.own_key(user, "socrata.app-token") is None
 
     def test_the_me_payload_still_reports_only_your_own(self, client, auth, monkeypatch):
-        monkeypatch.setenv("CURIO_DEFAULT_SOCRATA_APP_TOKEN", "deployment-token")
+        monkeypatch.setenv(SOCRATA_DEFAULT, "deployment-token")
         body = client.get("/api/auth/me", headers=auth).get_json()
-        assert body["has_socrata_app_token"] is False
+        assert body["has_source_keys"] == {}
 
     def test_it_is_read_at_call_time_not_import(self, app, db, user_and_token, monkeypatch):
         user, _ = user_and_token
-        monkeypatch.delenv("CURIO_DEFAULT_SOCRATA_APP_TOKEN", raising=False)
-        assert credentials.token_for_slot(user, "socrata.app-token") is None
-        monkeypatch.setenv("CURIO_DEFAULT_SOCRATA_APP_TOKEN", "set-later")
-        assert credentials.token_for_slot(user, "socrata.app-token") == "set-later"
+        monkeypatch.delenv(SOCRATA_DEFAULT, raising=False)
+        assert credentials.key_for(user, self._chicago().auth) is None
+        monkeypatch.setenv(SOCRATA_DEFAULT, "set-later")
+        assert credentials.key_for(user, self._chicago().auth) == "set-later"
 
     def test_a_required_token_source_is_satisfied_by_the_deployments(
         self, app, db, user_and_token, discovery_dir, monkeypatch
@@ -412,13 +551,14 @@ class TestTheDeploymentFallback:
         from utk_curio.backend.app.discovery.application.browse import DiscoveryBrowse
         from utk_curio.backend.app.discovery.domain.resource import SearchQuery
 
-        monkeypatch.setenv("CURIO_DEFAULT_SOCRATA_APP_TOKEN", "deployment-token")
+        monkeypatch.setenv(SOCRATA_DEFAULT, "deployment-token")
         user, _ = user_and_token
         write_source(discovery_dir, "source.a.gated@1", a_manifest(
             id="source.a.gated", name="Gated Portal",
             provider={"type": "socrata", "baseUrl": "https://portal.example"},
             auth={"mode": "required-token", "secretId": "socrata.app-token",
-                  "headerName": "X-App-Token", "helpUrl": "https://help.example"},
+                  "headerName": "X-App-Token", "helpUrl": "https://help.example",
+                  "operatorDefault": True},
             capabilities={"formats": ["csv"]}))
         manifest = load_source_manifest(discovery_dir / "source.a.gated@1")
 
@@ -431,64 +571,148 @@ class TestTheDeploymentFallback:
         with pytest.raises(T.FixtureMissing):
             browse.search(manifest, SearchQuery(text="whatever"))
 
+    def test_only_a_source_that_allows_it_inherits_one(self, client, auth, shipped_root, user_and_token, monkeypatch):
+        """Each shipped key's variable set at once: only the Socrata portal's
+        manifest allows a default. A Hugging Face, Google Maps or Mapillary key
+        is each person's own."""
+        keyed = _shipped_keyed_manifests()
+        for manifest in keyed:
+            monkeypatch.setenv(credentials.default_variable(manifest.auth.secret_id), "deployment-token")
+        user, _ = user_and_token
+        assert {m.auth.secret_id for m in keyed if credentials.key_for(user, m.auth)} == {"socrata.app-token"}
+        rows = client.get("/api/discovery/keys", headers=auth).get_json()["keys"]
+        assert {row["slot"]: row["inherited"] for row in rows} == {
+            "socrata.app-token": True,
+            "huggingface.token": False,
+            "google.maps-key": False,
+            "mapillary.token": False,
+        }
 
-@pytest.mark.parametrize("slot", sorted(credentials.SLOTS))
-class TestEverySlotIsAnAccountSetting:
-    """Each slot API Settings lists is a field PATCH /api/auth/me takes, saved
-    on the account, reported as a boolean, and refused out loud for a guest."""
+    def test_a_manifest_that_does_not_allow_it_gets_none(self, discovery_dir, app, db, user_and_token, monkeypatch):
+        monkeypatch.setenv(SOCRATA_DEFAULT, "deployment-token")
+        user, _ = user_and_token
+        write_source(discovery_dir, "source.a.own@1", a_manifest(
+            id="source.a.own", name="Own Keys Only",
+            provider={"type": "socrata", "baseUrl": "https://portal.example"},
+            auth={"mode": "optional-token", "secretId": "socrata.app-token", "headerName": "X-App-Token"},
+            capabilities={"formats": ["csv"]}))
+        manifest = load_source_manifest(discovery_dir / "source.a.own@1")
+        assert credentials.key_for(user, manifest.auth) is None
+        assert credentials.credential_header(user, manifest) is None
 
-    def test_it_saves_and_reports_only_a_boolean(self, client, auth, slot):
-        column = credentials.SLOT_COLUMNS[slot]
-        res = client.patch("/api/auth/me", headers=auth, json={column: SECRET})
+    def test_the_variable_is_curio_default_and_the_secret_id(self):
+        """Derived from the id, so a manifest names no variable: only one
+        under the prefix, and never one of Curio's own settings (the tests below)."""
+        assert credentials.default_variable("socrata.app-token") == SOCRATA_DEFAULT
+        assert credentials.default_variable("a.b-c") == "CURIO_DEFAULT_A_B_C"
+        for secret_id in ("path", "home", "ld-preload", "aws.secret-access-key", "x.y.z"):
+            name = credentials.default_variable(secret_id)
+            assert name.startswith("CURIO_DEFAULT_") and re.fullmatch(r"[A-Z0-9_]+", name), name
+
+    @pytest.mark.parametrize("secret_id, variable", [
+        ("llm.api-key", "CURIO_DEFAULT_LLM_API_KEY"),
+        ("llm.base-url", "CURIO_DEFAULT_LLM_BASE_URL"),
+        ("llm.model", "CURIO_DEFAULT_LLM_MODEL"),
+        ("save.node-output", "CURIO_DEFAULT_SAVE_NODE_OUTPUT"),
+    ])
+    def test_no_key_is_read_from_one_of_curios_own_settings(
+        self, app, db, user_and_token, monkeypatch, secret_id, variable
+    ):
+        """The prefix is also Curio's own: the deployment's LLM key is
+        ``CURIO_DEFAULT_LLM_API_KEY``. A manifest whose id would read one of
+        those fails to load, and no key is taken from one even so."""
+        monkeypatch.setenv(variable, "curios-own-setting")
+        with pytest.raises(M.ManifestError, match=variable):
+            M._parse_manifest(
+                a_manifest(provider={"type": "ckan", "baseUrl": "https://elsewhere.example"},
+                           auth={"mode": "optional-token", "secretId": secret_id,
+                                 "headerName": "X-Key", "operatorDefault": True}),
+                where="manifest.json",
+            )
+        forged = M.AuthSpec(mode="optional-token", secret_id=secret_id, header_name="X-Key", operator_default=True)
+        user, _ = user_and_token
+        assert credentials.deployment_key(forged) is None
+        assert credentials.key_for(user, forged) is None
+
+    def test_a_default_needs_a_secret_id(self):
+        with pytest.raises(M.ManifestError, match="operatorDefault"):
+            M._parse_manifest(a_manifest(auth={"mode": "public", "operatorDefault": True}), where="manifest.json")
+
+    def test_every_own_setting_curios_code_names_is_refused(self):
+        """Each ``CURIO_DEFAULT_`` variable Curio's code reads for itself is one
+        no key's default can be read from, so a setting added later is guarded
+        the moment it lands. ``upgrade_notices.py`` names retired variables only
+        to warn that Curio no longer reads them."""
+        repo = SHIPPED_ROOT.parent
+        files = [repo / "curio.py"] + [
+            path for folder in ("utk_curio", "scripts") for path in sorted((repo / folder).rglob("*.py"))
+            if "tests" not in path.relative_to(repo).parts and path.name != "upgrade_notices.py"
+        ]
+        names = set()
+        for path in files:
+            names |= set(re.findall(r"CURIO_DEFAULT_[A-Z0-9_]+", path.read_text(encoding="utf-8")))
+        assert {"CURIO_DEFAULT_LLM_API_KEY", "CURIO_DEFAULT_SAVE_NODE_OUTPUT"} <= names, sorted(names)
+        # A name ending in "_" is a family, such as CURIO_DEFAULT_LLM_*.
+        unguarded = [name for name in sorted(names) if not M.is_own_setting(name + "X" if name.endswith("_") else name)]
+        assert not unguarded, f"Curio settings a key's default could read: {unguarded}"
+
+
+@pytest.mark.parametrize("secret_id", SHIPPED_SECRET_IDS)
+class TestEveryShippedKeyIsAnAccountSetting:
+    """Each key a shipped source sends is saved through PATCH /api/auth/me by
+    its secret id, reported as a boolean, and refused out loud for a guest."""
+
+    def test_it_saves_and_reports_only_a_boolean(self, client, auth, shipped_root, secret_id):
+        res = _patch_keys(client, auth, {secret_id: SECRET})
         assert res.status_code == 200, res.get_data(as_text=True)
         body = res.get_json()
-        assert body[f"has_{column}"] is True
+        assert body["has_source_keys"] == {secret_id: True}
         assert SECRET not in json.dumps(body)
-        res = client.patch("/api/auth/me", headers=auth, json={column: ""})
-        assert res.get_json()[f"has_{column}"] is False
+        res = _patch_keys(client, auth, {secret_id: ""})
+        assert res.get_json()["has_source_keys"] == {}
 
-    def test_a_guest_is_refused_out_loud(self, app, db, client, slot):
-        from utk_curio.backend.app.users.models import User, UserSession
-
-        column = credentials.SLOT_COLUMNS[slot]
-        guest = User(username="guest1", name="Guest", email="g@test.com", is_guest=True)
-        db.session.add(guest)
-        db.session.flush()
-        db.session.add(UserSession(user_id=guest.id, token="guest-token"))
-        db.session.commit()
+    def test_a_guest_is_refused_out_loud(self, app, db, client, shipped_root, secret_id):
+        _a_guest_with_a_session(db)
         res = client.patch(
             "/api/auth/me",
             headers={"Authorization": "Bearer guest-token"},
-            json={column: SECRET},
+            json={"source_keys": {secret_id: SECRET}},
         )
         assert res.status_code == 403
-        assert getattr(db.session.get(User, guest.id), column) is None
+        assert SHIPPED_KEY_ROWS[secret_id][0] in res.get_json()["error"]
+        assert _no_key_file_anywhere()
 
 
 class TestTheKeysApiSettingsLists:
-    """``GET /api/discovery/keys``: one row per slot, booleans only."""
+    """``GET /api/discovery/keys``: one row per key a source declares, booleans only."""
 
     def _rows(self, client, auth):
         res = client.get("/api/discovery/keys", headers=auth)
         assert res.status_code == 200, res.get_data(as_text=True)
         return {row["slot"]: row for row in res.get_json()["keys"]}
 
-    def test_every_slot_is_listed_and_its_field_is_the_column_patch_takes(self, client, auth, shipped_root):
+    def test_the_shipped_sources_declare_the_rows_it_lists(self, client, auth, shipped_root):
         rows = self._rows(client, auth)
-        assert set(rows) == set(credentials.SLOTS)
-        for slot, row in rows.items():
-            assert row["field"] == credentials.SLOT_COLUMNS[slot]
-            assert row["label"]
+        assert {
+            slot: (row["label"], row["helpUrl"], row["placeholder"], row["note"]) for slot, row in rows.items()
+        } == SHIPPED_KEY_ROWS
+        for row in rows.values():
+            assert set(row) == {"slot", "label", "helpUrl", "placeholder", "note", "present", "inherited", "sources"}
+
+    def test_rows_are_in_the_order_of_their_labels(self, client, auth, shipped_root):
+        res = client.get("/api/discovery/keys", headers=auth)
+        labels = [row["label"] for row in res.get_json()["keys"]]
+        assert labels == sorted(labels, key=str.lower)
 
     def test_presence_is_this_accounts_own_and_a_boolean(self, client, auth, shipped_root, monkeypatch):
-        monkeypatch.delenv("CURIO_DEFAULT_SOCRATA_APP_TOKEN", raising=False)
+        monkeypatch.delenv(SOCRATA_DEFAULT, raising=False)
         assert self._rows(client, auth)["socrata.app-token"]["present"] is False
-        client.patch("/api/auth/me", headers=auth, json={"socrata_app_token": SECRET})
+        _patch_keys(client, auth, {"socrata.app-token": SECRET})
         row = self._rows(client, auth)["socrata.app-token"]
         assert row["present"] is True and row["inherited"] is False
 
     def test_a_deployment_key_is_reported_as_inherited_not_as_present(self, client, auth, shipped_root, monkeypatch):
-        monkeypatch.setenv("CURIO_DEFAULT_SOCRATA_APP_TOKEN", "deployment-token")
+        monkeypatch.setenv(SOCRATA_DEFAULT, "deployment-token")
         row = self._rows(client, auth)["socrata.app-token"]
         assert row["inherited"] is True and row["present"] is False
 
@@ -502,7 +726,8 @@ class TestTheKeysApiSettingsLists:
         )
 
     def test_a_saved_value_never_appears(self, client, auth, shipped_root):
-        client.patch("/api/auth/me", headers=auth, json={"socrata_app_token": SECRET, "huggingface_token": SECRET})
+        res = _patch_keys(client, auth, {"socrata.app-token": SECRET, "huggingface.token": SECRET})
+        assert res.get_json()["has_source_keys"] == {"socrata.app-token": True, "huggingface.token": True}
         body = client.get("/api/discovery/keys", headers=auth).get_data(as_text=True)
         assert SECRET not in body
 
@@ -510,26 +735,96 @@ class TestTheKeysApiSettingsLists:
         assert client.get("/api/discovery/keys").status_code == 401
 
 
+ACME = "source.acme.tiles@1"
+
+
+class TestANewSourcesKeyNeedsNoCode:
+    """A key-gated source whose secret id Curio has never seen. Its manifest is
+    all it takes: API Settings lists the key, an account saves it, and the key
+    reaches that source's origin and no other."""
+
+    @pytest.fixture()
+    def acme(self, discovery_dir):
+        write_source(discovery_dir, ACME, a_manifest(
+            id="source.acme.tiles", name="Acme Tiles",
+            provider={"type": "ckan", "baseUrl": "https://tiles.acme.example"},
+            auth={"mode": "required-token", "secretId": "acme.tiles-key", "headerName": "X-Acme-Key",
+                  "label": "Acme tiles key", "helpUrl": "https://acme.example/keys",
+                  "placeholder": "acme_...", "note": "Acme bills each request to you."},
+            capabilities={"formats": ["csv"]}))
+        return discovery_dir / ACME
+
+    def test_api_settings_lists_it_as_its_manifest_declares(self, client, auth, acme):
+        res = client.get("/api/discovery/keys", headers=auth)
+        assert res.get_json()["keys"] == [{
+            "slot": "acme.tiles-key",
+            "label": "Acme tiles key",
+            "helpUrl": "https://acme.example/keys",
+            "placeholder": "acme_...",
+            "note": "Acme bills each request to you.",
+            "present": False,
+            "inherited": False,
+            "sources": [{"name": "Acme Tiles", "dirName": ACME}],
+        }]
+
+    def test_an_account_saves_it_by_its_secret_id(self, client, auth, acme):
+        res = _patch_keys(client, auth, {"acme.tiles-key": SECRET})
+        assert res.status_code == 200, res.get_data(as_text=True)
+        assert res.get_json()["has_source_keys"] == {"acme.tiles-key": True}
+        row = client.get("/api/discovery/keys", headers=auth).get_json()["keys"][0]
+        assert row["present"] is True
+        assert SECRET not in json.dumps(row)
+        source = client.get(f"/api/discovery/sources/{ACME}", headers=auth).get_json()
+        assert source["auth"]["present"] is True
+
+    def test_it_reaches_the_sources_origin_and_nowhere_else(self, client, auth, acme, user_and_token):
+        from utk_curio.backend.app.discovery.service import DiscoveryService
+
+        _patch_keys(client, auth, {"acme.tiles-key": SECRET})
+        user, _token = user_and_token
+        seen = []
+
+        class Spy:
+            def json_get(self, url, *, credential=None, headers=None):
+                seen.append((url, credential))
+                return "{}"
+
+            def download(self, url, sink, *, max_bytes, credential=None, **kwargs):
+                seen.append((url, credential))
+
+        manifest = load_source_manifest(acme)
+        bound = DiscoveryService(str(user.id), user=user, transport=Spy())._transport_for(manifest)
+        bound.json_get("https://tiles.acme.example/api/3/action/package_search?q=x")
+        bound.download("https://cdn.acme.example/tile.csv", lambda b: None, max_bytes=10)
+        bound.json_get("http://tiles.acme.example/api/3/action/package_search")
+        assert seen == [
+            ("https://tiles.acme.example/api/3/action/package_search?q=x", f"X-Acme-Key:{SECRET}"),
+            ("https://cdn.acme.example/tile.csv", None),
+            ("http://tiles.acme.example/api/3/action/package_search", None),
+        ]
+
+
 class TestTheSharedGuestsKeysUnderDeploy:
     """Without ``--deploy`` the shared guest is the one local user, and the
     keys it saves are its own. With ``--deploy`` it is every guest at once, so
-    keys it saved in local mode on the same database are never sent; the
+    keys it saved in local mode on the same ``.curio`` are never sent; the
     deployment's own key still is. Each test runs in both modes."""
 
     @pytest.fixture()
     def shared_guest(self, app, db):
         from utk_curio.backend import config
+        from utk_curio.backend.app.common.user_storage import GUEST_KEY
+        from utk_curio.backend.app.users import source_keys
         from utk_curio.backend.app.users.models import User, UserSession
 
         guest = User(username=config.CURIO_SHARED_GUEST_USERNAME, name="Guest",
                      email="guest@test.com", is_guest=True)
-        # Saved while the instance ran without --deploy.
-        for column in credentials.SLOT_COLUMNS.values():
-            setattr(guest, column, SECRET)
         db.session.add(guest)
         db.session.flush()
         db.session.add(UserSession(user_id=guest.id, token="shared-guest-token"))
         db.session.commit()
+        # Saved while the instance ran without --deploy.
+        source_keys.default_store().update(GUEST_KEY, {secret_id: SECRET for secret_id in SHIPPED_SECRET_IDS})
         return guest
 
     @staticmethod
@@ -537,16 +832,17 @@ class TestTheSharedGuestsKeysUnderDeploy:
         from utk_curio.backend import config
 
         monkeypatch.setattr(config, "CURIO_NO_AUTH", not deploy)
-        monkeypatch.delenv("CURIO_DEFAULT_SOCRATA_APP_TOKEN", raising=False)
+        monkeypatch.delenv(SOCRATA_DEFAULT, raising=False)
 
     @pytest.mark.parametrize("deploy", [False, True], ids=["local", "deploy"])
     def test_its_saved_keys_are_sent_only_without_deploy(self, shared_guest, monkeypatch, deploy):
         self._mode(monkeypatch, deploy)
-        for slot in credentials.SLOTS:
-            assert credentials.own_token(shared_guest, slot) == (None if deploy else SECRET), slot
-            assert credentials.token_for_slot(shared_guest, slot) == (None if deploy else SECRET), slot
-            assert credentials.has_token(shared_guest, slot) is (not deploy), slot
-        chicago = load_source_manifest(SHIPPED_ROOT / "source.cityofchicago.data-portal@1")
+        for manifest in _shipped_keyed_manifests():
+            secret_id = manifest.auth.secret_id
+            assert credentials.own_key(shared_guest, secret_id) == (None if deploy else SECRET), secret_id
+            assert credentials.key_for(shared_guest, manifest.auth) == (None if deploy else SECRET), secret_id
+            assert credentials.has_key(shared_guest, manifest.auth) is (not deploy), secret_id
+        chicago = load_source_manifest(SHIPPED_ROOT / CHICAGO)
         assert credentials.credential_header(shared_guest, chicago) == (
             None if deploy else f"X-App-Token:{SECRET}"
         )
@@ -585,7 +881,17 @@ class TestTheSharedGuestsKeysUnderDeploy:
             assert row["present"] is (not deploy), row["slot"]
         assert SECRET not in res.get_data(as_text=True)
 
+    @pytest.mark.parametrize("deploy", [False, True], ids=["local", "deploy"])
+    def test_the_me_payload_reports_them_only_without_deploy(self, client, shared_guest, monkeypatch, deploy):
+        self._mode(monkeypatch, deploy)
+        res = client.get("/api/auth/me", headers={"Authorization": "Bearer shared-guest-token"})
+        assert res.status_code == 200, res.get_data(as_text=True)
+        expected = {} if deploy else {secret_id: True for secret_id in SHIPPED_SECRET_IDS}
+        assert res.get_json()["has_source_keys"] == expected
+        assert SECRET not in res.get_data(as_text=True)
+
     def test_under_deploy_the_deployments_key_is_sent_instead(self, shared_guest, monkeypatch):
         self._mode(monkeypatch, True)
-        monkeypatch.setenv("CURIO_DEFAULT_SOCRATA_APP_TOKEN", "deployment-token")
-        assert credentials.token_for_slot(shared_guest, "socrata.app-token") == "deployment-token"
+        monkeypatch.setenv(SOCRATA_DEFAULT, "deployment-token")
+        chicago = load_source_manifest(SHIPPED_ROOT / CHICAGO)
+        assert credentials.key_for(shared_guest, chicago.auth) == "deployment-token"

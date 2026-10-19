@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -165,6 +166,59 @@ def test_the_shipped_set_exercises_the_glyph_fallback():
     """
     without = [p.name for p in SHIPPED if M.load_source_manifest(p).icon is None]
     assert without, "no shipped source exercises the no-icon path"
+
+
+def test_sources_that_send_one_key_declare_it_alike():
+    """API Settings shows one row per key, so every source naming a secret id
+    declares it the same way: label, help link, placeholder, note, and whether
+    the operator may set a default. Each declares a label."""
+    declarations: dict[str, dict[str, tuple]] = {}
+    for path in SHIPPED:
+        auth = M.load_source_manifest(path).auth
+        if auth.secret_id:
+            assert auth.label and auth.label.strip(), f"{path.name} names {auth.secret_id} without a label"
+            declarations.setdefault(auth.secret_id, {})[path.name] = (
+                auth.label, auth.help_url, auth.placeholder, auth.note, auth.operator_default,
+            )
+    assert declarations, "no shipped source sends a key"
+    assert any(len(by_source) > 1 for by_source in declarations.values()), (
+        "no two shipped sources share a key, so their agreement goes unchecked"
+    )
+    for secret_id, by_source in declarations.items():
+        assert len(set(by_source.values())) == 1, f"{secret_id} is declared differently: {by_source}"
+
+
+#: The backend code that names no shipped source and no key a shipped source
+#: sends: a catalog's sources and keys come from its manifests.
+CODE_WITHOUT_SHIPPED_IDS = ("utk_curio/backend/app/discovery", "utk_curio/backend/app/users")
+
+
+def test_discovery_and_users_code_name_no_shipped_source_or_key():
+    from utk_curio.backend.app.discovery.infrastructure import credentials
+
+    names = set()
+    for path in SHIPPED:
+        raw = json.loads((path / "manifest.json").read_text(encoding="utf-8"))
+        names.add(raw["id"])
+        secret_id = (raw.get("auth") or {}).get("secretId")
+        if secret_id:
+            names.add(secret_id)
+            names.add(credentials.default_variable(secret_id))
+    assert any(not name.startswith("source.") for name in names), "no shipped source sends a key"
+    repo = SHIPPED_ROOT.parent
+    files = sorted(f for folder in CODE_WITHOUT_SHIPPED_IDS for f in (repo / folder).rglob("*.py"))
+    assert files, f"no code found under {CODE_WITHOUT_SHIPPED_IDS}"
+    # A whole id: not part of a longer id, a dotted name or a word. A source's
+    # folder name, the id and its "@<major>", counts.
+    alternatives = "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True))
+    pattern = re.compile(rf"(?<![\w.-])({alternatives})(?![\w-]|\.\w)")
+    found = [
+        f"{f.relative_to(repo)}:{number}: {match.group(1)}"
+        for f in files
+        for number, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1)
+        for match in pattern.finditer(line)
+    ]
+    assert not found, "code names a shipped source or key: " + "; ".join(found)
 
 
 def test_every_provider_we_implement_has_a_shipped_example():

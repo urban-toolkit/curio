@@ -40,10 +40,10 @@ export interface UserProviderProps {
     email?: string;
     type?: string;
   }) => Promise<void>;
-  /** Save or clear account keys, by the field `PATCH /api/auth/me` takes each
-   * under (an API Settings row's `field`). An empty string clears one. LLM
-   * configurations are saved through `llmConfigsApi` instead. */
-  updateTokens: (fields: Record<string, string>) => Promise<void>;
+  /** Save or clear Data source keys: `source_keys` maps a key's secret id (an
+   * API Settings row's `slot`) to its value, and an empty string clears one.
+   * LLM configurations are saved through `llmConfigsApi` instead. */
+  updateTokens: (fields: { source_keys: Record<string, string> }) => Promise<void>;
   saveUserType: (newType: "programmer" | "expert") => Promise<void>;
   logout: () => void;
 }

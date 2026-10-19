@@ -5,6 +5,11 @@
     "major": 1
   },
   "createdAt": "2026-10-18T00:00:00Z",
+  "dataflowCategories": {
+    "tags": [
+      "SCOUT"
+    ]
+  },
   "dependencies": {
     "js": {},
     "packages": {},

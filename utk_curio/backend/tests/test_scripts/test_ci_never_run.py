@@ -1,11 +1,13 @@
 """``scripts/ci_never_run.py``: a test every job skipped fails the run.
 
 The ci-report job runs it over every job's JUnit results. These build those
-results by hand.
+results by hand. Its ``--compare`` mode lists what differs between two runs'
+results, test by test, and the tests at the end build two runs for it.
 """
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -30,10 +32,10 @@ def _case(classname, name, skipped=None):
             f'<skipped type="pytest.skip" message="{skipped}"/></testcase>')
 
 
-def _job(root, job, *cases):
+def _job(root, job, *cases, file="results.xml"):
     folder = root / f"ci-inputs-{job}"
-    folder.mkdir(parents=True)
-    (folder / "results.xml").write_text(
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / file).write_text(
         '<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest">'
         + "".join(cases) + "</testsuite></testsuites>",
         encoding="utf-8",
@@ -96,3 +98,123 @@ def test_nothing_is_checked_without_every_jobs_results(tmp_path, capsys):
     code, out = _check(tmp_path, capsys, "unit", "gpu")
     assert code == 0
     assert "not checked: no results from gpu" in out
+
+
+def test_an_at_sign_inside_the_parameters_stays_in_the_id(tmp_path, capsys):
+    """Only xdist's trailing ``@<group>`` goes: ``[curio.builtin@1]`` and
+    ``[curio.builtin@2]`` are two tests, and the second one ran nowhere."""
+    _job(tmp_path, "unit", _case("tests.test_a", "test_x[curio.builtin@1]"),
+         _case("tests.test_a", "test_x[curio.builtin@2]", skipped="needs a checkout"))
+    _job(tmp_path, "gpu", _case("tests.test_a", "test_x[curio.builtin@2]@test_a", skipped="needs a checkout"))
+    code, out = _check(tmp_path, capsys, "unit", "gpu")
+    assert code == 1
+    assert "::error::ran in no job: tests.test_a::test_x[curio.builtin@2] (needs a checkout)" in out
+    assert "curio.builtin@1" not in out
+
+
+def _jest(root, job, *assertions, file="jest.json"):
+    """Jest's --json output for one file, as a runner's checkout names it."""
+    folder = root / f"ci-inputs-{job}"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / file).write_text(json.dumps({"testResults": [{
+        "name": "/home/runner/work/curio/curio/utk_curio/frontend/urban-workflows/src/tests/a.test.ts",
+        "assertionResults": [{"ancestorTitles": ["the panel"], "title": title, "status": status}
+                             for title, status in assertions],
+    }]}), encoding="utf-8")
+
+
+def test_a_jest_test_every_run_skipped_fails_the_run(tmp_path, capsys):
+    _job(tmp_path, "unit", _case("tests.test_a", "test_x"))
+    _jest(tmp_path, "jest", ("opens", "passed"), ("closes", "pending"))
+    code, out = _check(tmp_path, capsys, "unit")
+    assert code == 1
+    assert "::error::ran in no job: src/tests/a.test.ts::the panel > closes (pending)" in out
+    assert "opens" not in out
+
+
+def _compare(capsys, before, after):
+    code = ci_never_run.main(["--compare", str(before), str(after)])
+    return code, capsys.readouterr().out
+
+
+def _section(out, number):
+    """The lines of one numbered list in the comparison."""
+    start = out.index(f"\n{number}. ")
+    end = out.find(f"\n{number + 1}. ", start + 1)
+    return out[start:end if end > 0 else len(out)]
+
+
+def test_the_same_tests_in_other_parts_compare_clean(tmp_path, capsys):
+    """Ten e2e parts against fourteen, and two backend parts against four, with
+    the same tests: no difference. A later run of a repeated suite is not read."""
+    before, after = tmp_path / "before", tmp_path / "after"
+    _job(before, "unit-backend-1", _case("tests.test_a", "test_x"), _case("tests.test_b", "test_y"))
+    _job(before, "unit-backend-2", _case("tests.test_c", "test_z", skipped="needs auth"))
+    _job(before, "e2e-desktop-10", _case("tests.test_frontend.test_e", "test_e[chromium]"))
+    _job(before, "test-gpu", _case("tests.test_frontend.test_g", "test_g[chromium]@test_g"))
+    _jest(before, "jest", ("opens", "passed"))
+    _job(after, "unit-backend-4", _case("tests.test_a", "test_x"))
+    _job(after, "unit-backend-3", _case("tests.test_b", "test_y"))
+    _job(after, "unit-backend-1", _case("tests.test_c", "test_z", skipped="needs auth"))
+    _job(after, "e2e-desktop-14", _case("tests.test_frontend.test_e", "test_e[chromium]"))
+    _job(after, "e2e-desktop-14", _case("tests.test_frontend.test_e", "test_e[chromium]",
+                                        skipped="a repeat's second run"), file="e2e.run2.xml")
+    _job(after, "test-gpu", _case("tests.test_frontend.test_g", "test_g[chromium]@test_g"))
+    _jest(after, "jest", ("opens", "passed"))
+    _jest(after, "jest", ("opens", "failed"), file="jest.run2.json")
+    code, out = _compare(capsys, before, after)
+    assert code == 0, out
+    assert "Same tests in both runs, with the same outcomes, skip reasons and runners." in out
+
+
+def test_a_comparison_lists_the_four_differences(tmp_path, capsys):
+    before, after = tmp_path / "before", tmp_path / "after"
+    _job(before, "unit-backend-1",
+         _case("tests.test_a", "test_gone"),
+         _case("tests.test_a", "test_now_skips"),
+         _case("tests.test_a", "test_reason", skipped="no checkout"),
+         _case("tests.test_a", "test_x[curio.builtin@1]"),
+         _case("tests.test_a", "test_x[curio.builtin@2]"))
+    _job(before, "test-gpu", _case("tests.test_frontend.test_m", "test_m[chromium]@test_m"))
+    _jest(before, "jest", ("opens", "passed"))
+    _job(after, "unit-backend-2",
+         _case("tests.test_a", "test_new"),
+         _case("tests.test_a", "test_now_skips", skipped="already importable"),
+         _case("tests.test_a", "test_reason", skipped="no auth"),
+         _case("tests.test_a", "test_x[curio.builtin@1]"),
+         _case("tests.test_a", "test_x[curio.builtin@2]", skipped="needs auth"))
+    _job(after, "e2e-desktop-3", _case("tests.test_frontend.test_m", "test_m[chromium]"))
+    _jest(after, "jest", ("opens", "pending"))
+    code, out = _compare(capsys, before, after)
+    assert code == 1
+    only = _section(out, 1)
+    assert "1. In one run only: 2" in only
+    assert "only before [unit-backend] tests.test_a::test_gone (passed)" in only
+    assert "only after  [unit-backend] tests.test_a::test_new (passed)" in only
+    changed = _section(out, 2)
+    assert "2. Outcome changed: 3" in changed
+    # A runtime reason excuses nothing here.
+    assert "[unit-backend] tests.test_a::test_now_skips: passed -> skipped (already importable)" in changed
+    assert "[unit-backend] tests.test_a::test_x[curio.builtin@2]: passed -> skipped (needs auth)" in changed
+    assert "[jest] src/tests/a.test.ts::the panel > opens: passed -> skipped (pending)" in changed
+    assert "curio.builtin@1" not in out
+    reasons = _section(out, 3)
+    assert "3. Skip reason changed: 1" in reasons
+    assert "[unit-backend] tests.test_a::test_reason\n      before: no checkout\n      after:  no auth" in reasons
+    moved = _section(out, 4)
+    assert "4. Moved between the GPU job and a CPU job: 1" in moved
+    assert "tests.test_frontend.test_m::test_m[chromium]: GPU -> CPU" in moved
+
+
+def test_a_comparison_names_a_job_with_no_results_and_a_test_run_twice(tmp_path, capsys):
+    before, after = tmp_path / "before", tmp_path / "after"
+    _job(before, "e2e-desktop-1", _case("tests.test_frontend.test_e", "test_e[chromium]"))
+    _job(before, "test-isolated", _case("tests.test_frontend.test_e", "test_e[chromium]"))
+    _job(after, "e2e-desktop-1", _case("tests.test_frontend.test_e", "test_e[chromium]"))
+    _job(after, "e2e-desktop-2", _case("tests.test_frontend.test_e", "test_e[chromium]"))
+    code, out = _compare(capsys, before, after)
+    assert code == 1
+    assert "::warning::no test-isolated results in the after run" in out
+    assert "only before [test-isolated] tests.test_frontend.test_e::test_e[chromium] (passed)" in out
+    assert ("after: [e2e] tests.test_frontend.test_e::test_e[chromium] in e2e-desktop-1, e2e-desktop-2"
+            in out)
