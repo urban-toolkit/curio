@@ -686,7 +686,11 @@ an Autark document that loads everything it draws passes `needsInput: false`.
 Both fill an empty editor through
 [`useStarterSpec.ts`](../utk_curio/frontend/urban-workflows/src/hook/useStarterSpec.ts),
 each with its own ladder (`vegaDefaultSpec.ts`, `autkDefaultSpec.ts`) over the
-column roles in `starterSpec.ts`. Each ladder's rules, in order, and the dtype
+column roles in `starterSpec.ts`. Neither ladder fills a node that opens with a
+starter its package ships (`opensWithPackageStarter`,
+[`registry/packageStarter.ts`](../utk_curio/frontend/urban-workflows/src/registry/packageStarter.ts)),
+so a package template whose input arrives before the starters feed still opens
+with its starter and widgets. Each ladder's rules, in order, and the dtype
 roles are generated into `src/generated/visDefaults.ts` (see
 [Generated Contracts](#generated-contracts)). Both mark themselves errored on a failed run,
 so a node they feed shows `upstream-errored`.

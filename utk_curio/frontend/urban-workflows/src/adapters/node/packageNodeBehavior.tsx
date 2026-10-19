@@ -38,27 +38,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStarterContext, type Starter } from '../../providers/StarterProvider';
 import { tryGetNodeDescriptor } from '../../registry/nodeRegistry';
+import { packageStarterName } from '../../registry/packageStarter';
 import type { NodeBehaviorHook, NodeDescriptor } from '../../registry/types';
-
-function sourceDisplayName(sourcePath: string | undefined): string | undefined {
-  if (!sourcePath) return undefined;
-  const basename = sourcePath.split('/').pop() ?? '';
-  if (!basename) return undefined;
-  // Strip the final extension only (matches `Path.stem` used by the
-  // backend walker in `utk_curio/backend/app/packages/templates.py`).
-  const stem = basename.replace(/\.[^.]+$/u, '');
-  return stem.replace(/_/g, ' ');
-}
-
-/**
- * The name of the starter a freshly dropped node of *descriptor* opens with:
- * its manifest's `source` file's, or, for a model package's template without
- * one, the default cell the backend writes for its model's type
- * (`application/starters.py`).
- */
-function starterName(descriptor: NodeDescriptor): string | undefined {
-  return sourceDisplayName(descriptor.package?.source) ?? descriptor.package?.defaultCellStarter;
-}
 
 /**
  * The code a freshly dropped node of *descriptor* opens with: its manifest's
@@ -70,7 +51,7 @@ export function packageStarterCode(
   getStarters: (type: string, custom: boolean) => Starter[],
 ): string | undefined {
   if (!descriptor || descriptor.source !== 'package') return undefined;
-  const wantedName = starterName(descriptor);
+  const wantedName = packageStarterName(descriptor);
   if (!wantedName) return undefined;
   const hit = getStarters(descriptor.id, false).find((t) => t.name === wantedName);
   return hit?.code || undefined;
@@ -103,7 +84,7 @@ export const usePackageNodeBehavior: NodeBehaviorHook = (data, nodeState) => {
       return;
     }
 
-    const wantedName = starterName(descriptor);
+    const wantedName = packageStarterName(descriptor);
     if (!wantedName) {
       hasInjectedRef.current = true;
       return;

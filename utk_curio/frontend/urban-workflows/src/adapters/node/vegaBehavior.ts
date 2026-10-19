@@ -3,6 +3,7 @@ import { NodeBehaviorHook } from '../../registry/types';
 import { useVega } from '../../hook/useVega';
 import { useGrammarInputState } from '../../hook/useGrammarInputState';
 import { useStarterSpec } from '../../hook/useStarterSpec';
+import { opensWithPackageStarter } from '../../registry/packageStarter';
 import { useFlowContext } from '../../providers/FlowProvider';
 import { useToastContext } from '../../providers/ToastProvider';
 import { emptyRenderKind, renderOutcome, type RenderCounts } from '../../utils/renderOutcome';
@@ -24,6 +25,7 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
     input: data.input,
     buffer: nodeState.code,
     written: data.defaultCode,
+    enabled: !opensWithPackageStarter(data.nodeType),
     read: readVegaPreview,
     choose: chooseVegaStarter,
   });
