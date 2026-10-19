@@ -15,6 +15,9 @@
     "geotiff"
   ],
   "dataFile": "data/flood-depth-2020-2040-no-nbs.tif",
+  "downloadOnFirstUse": [
+    "data/flood-depth-2020-2040-no-nbs.tif"
+  ],
   "compatibility": {
     "major": 1
   },

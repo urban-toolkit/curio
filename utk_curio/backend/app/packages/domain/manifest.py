@@ -23,9 +23,15 @@ from pathlib import Path
 from utk_curio.backend.app.packages.domain import backend_contract
 from utk_curio.backend.app.packages.domain.model_block import (
     KINDS,
+    MODELS_DIR,
     ModelBlock,
     ModelBlockError,
     parse_model_block,
+)
+from utk_curio.backend.app.packages.domain.download_on_first_use import (
+    FIELD as DOWNLOAD_ON_FIRST_USE,
+    DownloadOnFirstUseError,
+    clean_download_on_first_use,
 )
 from utk_curio.backend.app.packages.domain.package_channel import normalize_distribution_channel
 from utk_curio.backend.app.packages.domain.package_id import (
@@ -439,6 +445,11 @@ class PackageManifest:
     # backend/ plus declared handlers, executed ONLY by the package backend
     # sandbox (never imported into the host process).
     backend: BackendManifest | None = None
+    # ``downloadOnFirstUse``: a shipped model package's weights that the pip
+    # package leaves out, by their paths under models/; a pip install
+    # downloads them the first time a node loads the model
+    # (``domain/download_on_first_use.py``).
+    download_on_first_use: tuple[str, ...] = ()
     # ``node``, or ``model`` for a package that ships weights under models/
     # and says how to run them in ``model`` (domain/model_block.py).
     kind: str = "node"
@@ -593,6 +604,7 @@ def package_manifest_from_dict(raw: object, *, manifest_path: Path, dir_name: st
         created_at_ms=created_at_ms,
         behavior_script=behavior_script,
         backend=backend,
+        download_on_first_use=_parse_download_on_first_use(raw, kind, where=str(manifest_path)),
         kind=kind,
         model=model,
     )
@@ -620,4 +632,24 @@ def _parse_kind_and_model(raw: dict, *, where: str) -> tuple[str, ModelBlock | N
         return kind, parse_model_block(block)
     except ModelBlockError as exc:
         raise ManifestError(f"{where}.model: {exc}") from exc
+
+
+def _parse_download_on_first_use(raw: dict, kind: str, *, where: str) -> tuple[str, ...]:
+    """The optional ``downloadOnFirstUse`` (``domain/download_on_first_use.py``).
+    Only a model package names one, and only paths under ``models/``: the
+    weights a node's first ``curio_load_model`` downloads on a pip install."""
+    field = f"{where}.{DOWNLOAD_ON_FIRST_USE}"
+    try:
+        paths = clean_download_on_first_use(raw.get(DOWNLOAD_ON_FIRST_USE), where=field)
+    except DownloadOnFirstUseError as exc:
+        raise ManifestError(str(exc)) from exc
+    if paths and kind != "model":
+        raise ManifestError(
+            f"{field}: only a model package (kind 'model') names files to download on first use, "
+            f"its weights under {MODELS_DIR}/"
+        )
+    for path in paths:
+        if path.split("/")[0] != MODELS_DIR or "/" not in path:
+            raise ManifestError(f"{field} names {path!r}: a model package names only its weights, under {MODELS_DIR}/")
+    return paths
 

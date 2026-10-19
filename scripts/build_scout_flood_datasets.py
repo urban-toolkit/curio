@@ -13,9 +13,9 @@ manifest:
   SCOUT's file holds them;
 - compressed losslessly (DEFLATE, tiled).
 
-The repository holds these files; the pip package leaves them out
-(``utk_curio/backend/app/datasets/infrastructure/left_out_files.json``), and a
-pip install downloads each the first time Curio reads it.
+The repository holds these files. Each manifest names its raster in
+``downloadOnFirstUse``, so the pip package leaves it out, and a pip install
+downloads it the first time Curio reads it.
 
 ``--check`` reads every raster whole and stops at the first whose cells, grid,
 nodata or tags differ from SCOUT's file. ``--pins`` runs SCOUT's original
@@ -132,6 +132,7 @@ def _write_manifest(entry: dict, root: Path, description: str) -> None:
         tags=list(entry["tags"]),
         data_file=entry["data_file"],
         major=1,
+        download_on_first_use=(entry["data_file"],),
         created_at=STAMP,
         updated_at=STAMP,
         source_updated_at=None,

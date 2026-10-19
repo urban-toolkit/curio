@@ -15,6 +15,9 @@
     "geotiff"
   ],
   "dataFile": "data/flood-nbs-classes.tif",
+  "downloadOnFirstUse": [
+    "data/flood-nbs-classes.tif"
+  ],
   "compatibility": {
     "major": 1
   },

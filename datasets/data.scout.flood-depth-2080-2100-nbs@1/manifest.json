@@ -15,6 +15,9 @@
     "geotiff"
   ],
   "dataFile": "data/flood-depth-2080-2100-nbs.tif",
+  "downloadOnFirstUse": [
+    "data/flood-depth-2080-2100-nbs.tif"
+  ],
   "compatibility": {
     "major": 1
   },

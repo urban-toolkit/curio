@@ -33,6 +33,10 @@ class DatasetManifest:
     tags: list[str]
     data_file: str
     major: int
+    # ``downloadOnFirstUse``: the data file, when the dataset ships with Curio
+    # and the pip package leaves the file out; a pip install downloads it the
+    # first time Curio reads the dataset (``infrastructure/left_out_files.py``).
+    download_on_first_use: tuple[str, ...] = ()
     created_at: str | None = None
     updated_at: str | None = None
     # Last-modified date of the *original source file* (from the browser's
@@ -90,6 +94,33 @@ def _require_str(raw: object, field_name: str) -> str:
     if not isinstance(raw, str) or not raw.strip():
         raise ManifestError(f"manifest.{field_name} must be a non-empty string")
     return raw.strip()
+
+
+def _parse_download_on_first_use(raw: dict[str, Any], *, where: str) -> tuple[str, ...]:
+    """The optional ``downloadOnFirstUse``, checked as the package manifests'
+    reader checks it (``packages/domain/download_on_first_use.py``, imported
+    here, not with this module: ``packages`` imports this module while it
+    loads). A dataset names only its ``dataFile``, the one file a reader
+    downloads."""
+    from utk_curio.backend.app.packages.domain.download_on_first_use import (
+        FIELD,
+        DownloadOnFirstUseError,
+        clean_download_on_first_use,
+    )
+
+    field = f"{where}.{FIELD}"
+    try:
+        paths = clean_download_on_first_use(raw.get(FIELD), where=field)
+    except DownloadOnFirstUseError as exc:
+        raise ManifestError(str(exc)) from exc
+    data_file = str(raw.get("dataFile") or "").strip()
+    for path in paths:
+        if path != data_file:
+            raise ManifestError(
+                f"{field} names {path!r}: a dataset names only its dataFile ({data_file!r}), "
+                "the file a pip install downloads"
+            )
+    return paths
 
 
 def _parse_manifest(raw: dict[str, Any], *, where: str) -> DatasetManifest:
@@ -164,6 +195,7 @@ def _parse_manifest(raw: dict[str, Any], *, where: str) -> DatasetManifest:
         tags=tags,
         data_file=_require_str(raw.get("dataFile"), "dataFile"),
         major=major,
+        download_on_first_use=_parse_download_on_first_use(raw, where=where),
         created_at=str(raw.get("createdAt") or "") or None,
         updated_at=str(raw.get("updatedAt") or "") or None,
         source_updated_at=str(raw.get("sourceUpdatedAt") or "") or None,
@@ -223,6 +255,12 @@ def build_manifest_dict(manifest: DatasetManifest) -> dict[str, Any]:
         "license": manifest.license or "",
         "tags": list(manifest.tags),
         "dataFile": manifest.data_file,
+        # Only a dataset whose data file a pip install downloads has it.
+        **(
+            {"downloadOnFirstUse": list(manifest.download_on_first_use)}
+            if manifest.download_on_first_use
+            else {}
+        ),
         "compatibility": {"major": manifest.major},
         "sourceLabel": manifest.source_label or "",
         "rowCount": manifest.row_count,

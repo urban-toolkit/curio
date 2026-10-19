@@ -179,16 +179,18 @@ def test_the_list_names_catalog_files_the_repository_holds():
     assert "packages/model.scout.deep-umbra@1/models/deep_umbra.onnx" in files
 
 
-def test_manifest_in_leaves_out_exactly_the_listed_files_and_the_frontends_source_maps(monkeypatch):
-    """``MANIFEST.in`` builds the sdist, and the release builds the wheel from
-    the sdist (``publish-pip-to-pypi.yml``). Its rules, applied as setuptools
-    applies them, every line in order, to every file under ``datasets/``,
-    ``models/`` and ``packages/``, the list and its record, the repository's
-    ``package.json`` and ``package-lock.json`` (``setup.py`` copies them into
-    the wheel), and a built frontend: the listed files and the frontend's
-    source maps stay out, and
-    nothing else does. A package's own source map ships: ``curio.example-ui@1``
-    names it in its ``integrity.json``."""
+def test_manifest_in_and_setup_py_leave_out_exactly_the_listed_files_and_the_frontends_source_maps(monkeypatch):
+    """``MANIFEST.in`` and ``setup.py`` build the sdist, and the release
+    builds the wheel from the sdist (``publish-pip-to-pypi.yml``).
+    ``MANIFEST.in``'s rules, applied as setuptools applies them, every line in
+    order, then what ``setup.py``'s ``egg_info`` drops from that list (the
+    files the manifests name in ``downloadOnFirstUse``), to every file under
+    ``datasets/``, ``models/`` and ``packages/``, the release's record, the
+    repository's ``package.json`` and ``package-lock.json`` (``setup.py``
+    copies them into the wheel), and a built frontend: the listed files and
+    the frontend's source maps stay out, and nothing else does. A package's
+    own source map ships: ``curio.example-ui@1`` names it in its
+    ``integrity.json``."""
     from setuptools._distutils.filelist import FileList
 
     monkeypatch.chdir(REPO)
@@ -198,7 +200,7 @@ def test_manifest_in_leaves_out_exactly_the_listed_files_and_the_frontends_sourc
         for path in (REPO / folder).rglob("*")
         if path.is_file()
     )
-    shipped_beside_the_code = [f"{INFRASTRUCTURE}/left_out_files.json", f"{INFRASTRUCTURE}/left_out_files.record.json"]
+    shipped_beside_the_code = [f"{INFRASTRUCTURE}/left_out_files.record.json"]
     node_packages = ["package.json", "package-lock.json"]
     everything = set(repository) | set(BUILT) | set(shipped_beside_the_code) | set(node_packages)
     files = FileList()
@@ -207,6 +209,7 @@ def test_manifest_in_leaves_out_exactly_the_listed_files_and_the_frontends_sourc
         line = line.strip()
         if line and not line.startswith("#"):
             files.process_template_line(line)
+    _setup_py().leave_out_first_use_files(files)
     shipped = set(files.files)
 
     left_out = set(listed())
