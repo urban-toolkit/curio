@@ -8,9 +8,7 @@ the options CI runs it with: the parts add up to the suite, what shares a
 session stays on one part, and a part holds only tests that will run.
 """
 
-import os
 import re
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -20,9 +18,11 @@ from unittest import mock
 from types import SimpleNamespace
 
 from utk_curio.backend.tests import parts
+from utk_curio.backend.tests._support import collection
 from utk_curio.backend.tests.test_frontend import fixtures, runner_split
 
 REPO = Path(__file__).resolve().parents[3]
+BACKEND = REPO / "utk_curio" / "backend"
 EXAMPLES = REPO / "docs" / "examples"
 DATAFLOWS = EXAMPLES / "dataflows"
 E2E = Path(__file__).resolve().parent / "test_frontend"
@@ -216,25 +216,28 @@ class NoTestIsLostTest(unittest.TestCase):
     SHARDS = parts.E2E_DESKTOP_PARTS
 
     @staticmethod
-    def collect(*args, **env):
-        run = subprocess.run(
-            [sys.executable, "-m", "pytest", "tests/test_frontend", "--collect-only", "-q",
-             "-p", "no:cacheprovider", "--with-examples", *args],
-            cwd=REPO / "utk_curio" / "backend", capture_output=True, text=True,
-            env={**os.environ, "PYTHONPATH": str(REPO),
-                 "CURIO_E2E_RUNNER": "", "CURIO_E2E_PART": "", "CURIO_UNIT_PART": "", **env},
-        )
-        ids = [line for line in run.stdout.splitlines() if "::" in line]
-        if not ids:
-            raise AssertionError(f"collection found nothing:\n{run.stdout[-2000:]}\n{run.stderr[-2000:]}")
-        return ids
+    def command(*args, **env):
+        """The collection of the CI job whose environment adds *env*, as (argv, env)."""
+        return ([sys.executable, "-m", "pytest", "tests/test_frontend", "--collect-only", "-q",
+                 "-p", "no:cacheprovider", "--with-examples", *args],
+                {"PYTHONPATH": str(REPO),
+                 "CURIO_E2E_RUNNER": "", "CURIO_E2E_PART": "", "CURIO_UNIT_PART": "", **env})
+
+    @classmethod
+    def collect(cls, *args, **env):
+        argv, environ = cls.command(*args, **env)
+        return collection.collect(argv, BACKEND, environ)
 
     @classmethod
     def setUpClass(cls):
-        cls.everything = cls.collect()
-        cls.utk = cls.collect(CURIO_E2E_RUNNER="utk")
-        cls.shards = [cls.collect(CURIO_E2E_RUNNER="desktop", CURIO_E2E_PART=f"{k}/{cls.SHARDS}")
-                      for k in range(1, cls.SHARDS + 1)]
+        # The whole suite, utk's share and every desktop part, several at once
+        # (_support/collection.py).
+        everything, utk, *shards = collection.collect_each(
+            [cls.command(), cls.command(CURIO_E2E_RUNNER="utk")]
+            + [cls.command(CURIO_E2E_RUNNER="desktop", CURIO_E2E_PART=f"{k}/{cls.SHARDS}")
+               for k in range(1, cls.SHARDS + 1)],
+            BACKEND)
+        cls.everything, cls.utk, cls.shards = everything, utk, shards
 
     def test_every_test_runs_on_exactly_one_runner_and_shard(self):
         everything, utk, shards = self.everything, self.utk, self.shards
