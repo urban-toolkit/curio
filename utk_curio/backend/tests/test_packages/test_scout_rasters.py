@@ -3,8 +3,8 @@ SCOUT's building rasterizer (#662, step 17; the plan for #914, step 28.1).
 
 The package: two nodes, the Raster Calculator, which left the built-in nodes,
 and Rasterize Buildings, which came from ``scout.raster-conversion@1``, now
-gone. The Raster Calculator keeps its behavior, whose code a drop writes
-(``utils/raster/rasterNodeCode.ts``, run by the sandbox's
+gone. Each is a Python node that opens with the starter the package ships in
+``sources/`` (the calculator's is run by the sandbox's
 ``test_raster_nodes.py``), and every shipped dataflow with either node names
 the package in its lockfile.
 
@@ -196,8 +196,10 @@ def test_the_package_holds_the_raster_calculator_and_rasterize_buildings():
 def test_the_raster_calculator_gives_a_raster_or_a_table_of_statistics():
     """One Raster Calculator: its operations work cell by cell and give a
     raster, or take a raster's statistics and give a table of one row. It is
-    the node the built-in one was: Python code that its behavior writes on a
-    drop, its operations listed, so it ships no source of its own."""
+    the node the built-in one was: Python code that a drop opens with its
+    operations listed, the starter the package ships, as Rasterize Buildings
+    opens with its own. The starter is a starting point, not the node's whole
+    content, so an agent's plan creates the node empty for Solve to write."""
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
     manifest = load_package_manifest(PACKAGE)
@@ -208,9 +210,38 @@ def test_the_raster_calculator_gives_a_raster_or_a_table_of_statistics():
     for words in ("add, subtract, multiply or divide", "choose", "Statistics: the mean, median, minimum, maximum and count",
                   "a table of one row"):
         assert words in calculator.description, calculator.description
-    assert (calculator.behavior, calculator.editor, calculator.engine) == ("raster-calculator", "code", "python")
+    assert (calculator.behavior, calculator.editor, calculator.engine) == ("code", "code", "python")
     assert calculator.has_code and calculator.has_widgets and not calculator.has_grammar
-    assert calculator.source is None and not calculator.widgets
+    assert calculator.source == "sources/raster-calculator.py" and (PACKAGE / calculator.source).is_file()
+    assert calculator.starter_is_content is False and not calculator.widgets
+
+
+def test_a_dropped_node_of_either_template_opens_with_its_starter(tmp_curio):
+    """The starters the canvas fills a freshly dropped node from, once the
+    package is added: each template's source file, named for the file, the
+    Raster Calculator's as Rasterize Buildings'."""
+    from utk_curio.backend.app.packages.application.starters import generate_package_starters
+    from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+
+    install_package_from_directory("guest", PACKAGE)
+    starters = {starter["type"]: starter for starter in generate_package_starters("guest")}
+    for template_id in ("raster-calculator", "rasterize-buildings"):
+        starter = starters.get(f"{PACKAGE_ID}/{template_id}@1")
+        assert starter is not None, (template_id, sorted(starters))
+        source = (SOURCES / f"{template_id}.py").read_text(encoding="utf-8")
+        assert (starter["name"], starter["code"]) == (template_id, source)
+
+
+def test_both_nodes_run_and_are_checked_as_python_code_nodes():
+    """A template with the ``code`` behavior, Python and a code editor is a
+    Computation Analysis node to the runner's offline tables and to the e2e
+    suite (``workflow_spec``), which plays it, reads its editor and compares
+    its output with a run of its own: both of the package's nodes."""
+    from utk_curio.backend.app.execution.workflow_spec import classify_node, normalize_type
+
+    for node_type in (CALCULATOR_TYPE, NODE_TYPE):
+        assert normalize_type(f"{node_type}@1") == "COMPUTATION_ANALYSIS", node_type
+        assert classify_node(normalize_type(node_type)) == "code", node_type
 
 
 def test_raster_conversion_is_retired_and_no_shipped_dataflow_names_the_old_types():
