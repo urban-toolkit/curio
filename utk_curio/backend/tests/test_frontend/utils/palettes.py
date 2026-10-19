@@ -20,7 +20,15 @@ def open_tools_palette(page, kind: str):
     exclusive (``ToolsMenu`` keeps a single ``activePalette``) and opening one
     closes the other, so coming back to the first one is a normal thing to do.
 
-    ``force=True`` because the ReactFlow pane overlaps the rail.
+    No ``force`` (#994). The rail fills in after every load: its built-in tiles
+    come from ``GET /api/packages``, so for a moment the tile block is only its
+    header, and the triggers sit about 240 px higher than they end up. A forced
+    click skips Playwright's stable and hit-target checks, so a press aimed at
+    the trigger just before the tiles landed pressed the Data Pool tile instead,
+    and the palette never opened. Without ``force``, Playwright waits for the
+    trigger to hold still and retries a press that anything else would receive.
+    The dock sits above the canvas pane (``position: fixed``, ``z-index: 100``),
+    so nothing else covers a trigger. ``test_rail_fills_in_e2e`` holds this.
     """
     try:
         root_sel, trigger_title, panel_name = _TOOLS_PALETTES[kind]
@@ -36,7 +44,7 @@ def open_tools_palette(page, kind: str):
     trigger.wait_for(state="visible", timeout=30000)
     panel = page.locator(root_sel).get_by_role("region", name=panel_name)
     if panel.count() == 0 or not panel.first.is_visible():
-        trigger.click(force=True)
+        trigger.click()
     panel.wait_for(state="visible", timeout=10000)
     return panel
 
@@ -97,6 +105,6 @@ def close_tools_palette(page, kind: str) -> None:
     if panel.count() == 0 or not panel.first.is_visible():
         return
     close_title = trigger_title.replace("Open ", "Close ", 1)
-    # ``force=True`` because the ReactFlow pane overlaps the rail.
-    page.locator(f'{root_sel} button[title="{close_title}"]').click(force=True)
+    # No ``force``, for the reason ``open_tools_palette`` gives (#994).
+    page.locator(f'{root_sel} button[title="{close_title}"]').click()
     panel.first.wait_for(state="hidden", timeout=10000)
