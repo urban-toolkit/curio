@@ -109,10 +109,10 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
 
 `.github/workflows/docker-compose.yml` jobs:
 
-- `pick-runners`: picks the runner for each job (`scripts/ci_pick_runners.py`).
-- `build-image`: builds the CI image once per commit and pushes it to GHCR. Built with the Dockerfile's `CURIO_CI_SETUP=1`, it also holds what `curio.py setup --with-examples` installs, so CI stacks boot with `CURIO_SKIP_DEP_INSTALL=1` and the jobs run `scripts/test.sh --skip-setup`.
+- `pick-runners`: picks the runners of the jobs that start at once (`scripts/ci_pick_runners.py`).
+- `build-image`: builds the CI image once per commit, pushes it to GHCR, then picks the runners of the jobs that wait on it. Built with the Dockerfile's `CURIO_CI_SETUP=1`, it also holds what `curio.py setup --with-examples` installs, so CI stacks boot with `CURIO_SKIP_DEP_INSTALL=1` and the jobs run `scripts/test.sh --skip-setup`.
 - `test-gpu`: e2e tests that need WebGPU, on a GPU runner.
-- `unit`: backend pytest in two parts, plus the sandbox suite.
+- `unit`: backend pytest in four parts, plus the sandbox suite.
 - `jest`: Jest and `npm run typecheck`.
 - `e2e-desktop`: e2e tests without WebGPU, split over CPU runners.
 - `test-isolated`: Python-node workflows on the fork-isolated stack (`docker-compose.ci-isolated.yml`).

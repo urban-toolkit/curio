@@ -4,6 +4,8 @@ import os
 import pytest
 from playwright.sync_api import Browser, BrowserType
 
+from utk_curio.backend.tests import parts
+
 from . import comparisons, diagnostics, early_guards, runner_split
 from .utils import REPO_ROOT, start_catalog_calendar, stop_catalog_calendar
 from .fixtures import _clean_db
@@ -290,6 +292,11 @@ def pytest_configure(config):
     config.pluginmanager.register(_OnlyWorkflows(), "curio-only-workflows")
     # A sign-in test skips before its page opens on a stack without sign-in.
     config.pluginmanager.register(early_guards.EarlyGuards(), "curio-early-guards")
+    # This runner's share and part, chosen once every other plugin has
+    # deselected (-m, -k, _OnlyWorkflows), so a part's load counts only the
+    # tests that will run in it.
+    config.pluginmanager.register(
+        parts.after_deselection(runner_split.environment_part), "curio-e2e-part")
 
 
 class _OnlyWorkflows:
@@ -319,23 +326,17 @@ class _OnlyWorkflows:
 
 
 def pytest_collection_modifyitems(config, items):
-    """Mark the WebGPU tests, and keep only this runner's share of the suite.
+    """Mark the WebGPU tests.
 
-    Marking always happens, so ``-m webgpu`` / ``-m "not webgpu"`` work in any
-    run. Deselection only happens when CI asks for it through
-    ``CURIO_E2E_RUNNER`` / ``CURIO_E2E_PART`` (runner_split.py); a local run
-    with neither set runs everything, as before.
+    Before pytest's own ``-m`` deselection, so ``-m webgpu`` / ``-m "not
+    webgpu"`` work in any run. Keeping only this runner's share of the suite
+    comes after every deselection (the ``curio-e2e-part`` plugin above), and
+    only when CI asks for it through ``CURIO_E2E_RUNNER`` / ``CURIO_E2E_PART``
+    (runner_split.py); a local run with neither set runs everything.
     """
     for item in items:
         if runner_split.item_needs_webgpu(item):
             item.add_marker(pytest.mark.webgpu)
-    runner, shard = runner_split.from_environment()
-    if not runner and not shard:
-        return
-    kept, dropped = runner_split.select(items, runner, shard)
-    if dropped:
-        config.hook.pytest_deselected(items=dropped)
-        items[:] = kept
 
 
 # ------------------------------------------------------------------ #

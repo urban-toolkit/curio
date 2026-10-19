@@ -442,8 +442,10 @@ if [[ $RUN_E2E -eq 1 ]]; then
 
   PYTEST_ARGS="-v"
   [[ $HEADED -eq 1 ]]    && PYTEST_ARGS="$PYTEST_ARGS --headed"
-  # One xdist worker per backend+sandbox pair; loadgroup keeps each workflow's
-  # four class-scoped tests (and each other file) on one worker.
+  # One xdist worker per backend+sandbox pair; loadgroup keeps each xdist
+  # group on one worker: a workflow's class-scoped tests, a walkthrough scene,
+  # otherwise a file (test_frontend/conftest.py). CI's CPU parts split finer,
+  # mostly test by test (CURIO_E2E_PART, runner_split.part_key).
   (( PARALLEL > 1 ))     && PYTEST_ARGS="$PYTEST_ARGS -n $PARALLEL --dist loadgroup"
   [[ $VIDEOS -eq 1 ]]    && PYTEST_ARGS="$PYTEST_ARGS --videos"
   [[ $EXAMPLES -eq 1 ]]  && PYTEST_ARGS="$PYTEST_ARGS --with-examples"

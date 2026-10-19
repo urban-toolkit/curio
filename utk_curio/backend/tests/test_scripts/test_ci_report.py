@@ -561,3 +561,59 @@ def test_the_page_and_the_where_table_say_where_each_job_ran(tmp_path):
     # The job building the page is listed while it runs; a skipped job had no runner.
     assert "| ci-report | in progress | GitHub Actions 1000008545 | GitHub-hosted | 3.0s |  |" in lines
     assert not any(line.startswith("| test-gpu-stress") for line in lines)
+
+
+def _part_job(name, minutes, seconds=0):
+    """A finished job of the run that took minutes:seconds."""
+    return {"name": name, "status": "completed", "conclusion": "success",
+            "runner_name": "arcade-cpu-01", "runner_group_name": "cpu", "labels": ["self-hosted", "cpu"],
+            "created_at": "2026-10-18T12:00:00Z", "started_at": "2026-10-18T12:00:00Z",
+            "completed_at": f"2026-10-18T12:{minutes:02d}:{seconds:02d}Z", "steps": []}
+
+
+def test_each_split_suite_gets_its_slowest_and_fastest_part(tmp_path, capsys):
+    jobs = {"jobs": [
+        _part_job("e2e-desktop (1)", 7, 30), _part_job("e2e-desktop (2)", 8, 10),
+        _part_job("e2e-desktop (14)", 7, 0), _part_job("e2e-desktop (9)", 8, 50),
+        _part_job("unit (backend-1)", 6), _part_job("unit (backend-2)", 9, 30),
+        _part_job("unit (backend-3)", 6, 40), _part_job("unit (sandbox)", 4),
+        _part_job("test-isolated", 9),
+    ]}
+    (tmp_path / "jobs.json").write_text(json.dumps(jobs), encoding="utf-8")
+    out, summary = tmp_path / "report.html", tmp_path / "summary.md"
+    assert ci_report.main(["--jobs", str(tmp_path / "jobs.json"), "--all-jobs", "--out", str(out),
+                           "--summary", str(summary)]) == 0
+    e2e = ("Parts of e2e-desktop (4): slowest part 9 took 8m 50s, fastest part 14 took 7m 00s, "
+           "1m 50s apart.")
+    unit = ("Warning: Parts of unit backend (3): slowest part 2 took 9m 30s, fastest part 1 took 6m 00s, "
+            "3m 30s apart. That is more than 2 minutes; refresh its durations with "
+            "scripts/unit_durations.py from a recent run.")
+    lines = summary.read_text(encoding="utf-8").splitlines()
+    assert e2e in lines
+    assert "**" + unit.replace("Warning:", "Warning:**", 1) in lines
+    page = out.read_text(encoding="utf-8")
+    assert f'<p class="muted">{e2e}</p>' in page
+    assert f'<p class="note">{unit}</p>' in page
+    printed = capsys.readouterr().out.splitlines()
+    assert e2e in printed and f"::warning::{unit}" in printed
+
+
+def test_without_the_jobs_a_part_is_timed_by_its_tests_first_run(tmp_path):
+    """The JUnit's own time, and only the first run of a repeated suite."""
+    def junit(path, seconds):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f'<testsuites><testsuite name="pytest" time="{seconds}">'
+                        '<testcase classname="tests.test_a" name="test_x"/></testsuite></testsuites>',
+                        encoding="utf-8")
+        return path
+
+    argv = []
+    for part, (first, again) in {1: (300, 900), 2: (380, 100)}.items():
+        e2e = junit(tmp_path / f"desktop-{part}" / "e2e.xml", first)
+        junit(e2e.with_name("e2e.run2.xml"), again)
+        argv += ["--junit", f"End-to-end tests, desktop part {part}={e2e}"]
+    argv += ["--junit", f"Backend unit tests, part 1={junit(tmp_path / 'b1.xml', 200)}"]
+    report = ci_report.build(ci_report.parse_args([*argv, "--out", str(tmp_path / "r.html")]))
+    assert [ci_report.spread_line(s) for s in ci_report.part_spreads(report)] == [
+        "Parts of e2e-desktop (2): slowest part 2 had tests for 6m 20s, fastest part 1 had tests for "
+        "5m 00s, 1m 20s apart."]
