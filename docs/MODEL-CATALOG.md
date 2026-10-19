@@ -174,6 +174,7 @@ A model package's `manifest.json` is a node package's ([NODE-CATALOG.md](NODE-CA
 | `model.input` | For an `onnx` image model | A `node-regression` model reads a graph of any size and has none. How an image is prepared: `width` and `height` (8 to 8192 pixels), `dtype` (`uint8` or `float32`), `layout` (`NCHW`, or `NHWC` for an `image-to-image` model), `scale`, and an optional `mean` and `std` of three numbers each. |
 | `model.license`, `model.licenseFile` | `model.license` | The weights' license, and the file in the package that holds its text. |
 | `model.publisher`, `model.homepage`, `model.sizeBytes` | | Who published the weights, where they are described, and their size. Shown on the card and in the details. |
+| `dataflowCategories` | | The tags and data types a dataflow is filed under on the **Projects** page when it has a node of the package or loads the model with `curio_load_model`, as in a node package ([NODE-CATALOG.md](NODE-CATALOG.md#6-the-manifest)). A `semantic-segmentation` model puts the dataflow under Computer vision and Imagery without declaring them. |
 
 A template with no `source` opens with the cell Curio writes for the model's type.
 

@@ -18,7 +18,7 @@ Curio is a framework for urban visual analytics built on dataflows: a React canv
 - `docs/`: user and developer guides; `docs/examples/` (curated dataflows, their walkthroughs, test dataflows); `docs/schemas/` (`trill.v1.json`).
 - `scripts/`: developer and CI scripts (see Scripts).
 - `vendor/duckdb-extensions/`: DuckDB extensions bundled with Curio.
-- `.github/workflows/`: CI and release workflows (see CI); `.github/actions/`: `start-stack`, `stop-stack`.
+- `.github/workflows/`: CI and release workflows (see CI); `.github/actions/`: `start-stack`, `stop-stack` (its image cleanup on self-hosted runners is `scripts/ci_image_cleanup.sh`), `image-env` (the CI image's Python packages, copied to the runner).
 - `docker-compose.yml` plus overlays: `docker-compose.ci.yml`, `docker-compose.ci-shards.yml`, `docker-compose.ci-isolated.yml`, `docker-compose.ci-exec-user.yml`, `docker-compose.ci-stress.yml`, `docker-compose.deploy.yml`.
 
 ## Entry points
@@ -52,7 +52,7 @@ Under `utk_curio/backend/app/`:
 
 - `projects/`: dataflows: routes, services, storage, seeding, categories, dashboard payload.
 - `runs/`: dataflow runs on the server: tables and retention (`models.py`, `repositories.py`), starting, following and cancelling one (`service.py`, `routes.py`), live runs (`jobs.py`). The engine is `execution/run_engine.py` with `execution/run_plan.py`; which outputs a run saves is `execution/save_policy.py`.
-- `users/`: accounts, sessions, auth routes, capabilities, connection keys, rate limits.
+- `users/`: accounts, sessions, auth routes, capabilities, connection keys, Data source keys (`source_keys.py`), rate limits.
 - `execution/`: one node run as Play does it (`node_exec.py`, behind `/processPythonCode` and `/processJavaScriptCode`), the sandbox HTTP client (`sandbox_client.py`), headless dataflow runner (`runner.py`), per-node runtime journal, sandbox token.
 - `collaboration/`: real-time co-editing over Socket.IO (`events.py`, `room_state.py`).
 - `monitor/`: monitor page backend: counters, stats, hardware, storage, error log.
@@ -76,7 +76,7 @@ Under `utk_curio/backend/app/`:
 Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
 
 - Backend pytest: `utk_curio/backend/tests/`. `conftest.py` at its root and in `test_agents/`, `test_datasets/`, `test_discovery/`, `test_execution/`, `test_frontend/`, `test_model_catalog/`, `test_monitor/`, `test_packages/`, `test_projects/`, `test_runs/`, `test_scenario_catalog/`, `test_users/`. Shared helpers in `_support/`.
-- E2E (Playwright): `utk_curio/backend/tests/test_frontend/`. Helpers in the `utils/` package (below), scripted walkthroughs in the `walkthroughs/` package (below), runner assignment in `runner_split.py`, author guide in `README.md`.
+- E2E (Playwright): `utk_curio/backend/tests/test_frontend/`. Helpers in the `utils/` package (below), scripted walkthroughs in the `walkthroughs/` package (below), runner assignment in `runner_split.py`, sign-in skips before a test's fixtures in `early_guards.py`, author guide in `README.md`.
 - E2E helpers, `test_frontend/utils/`: `from .utils import X` works for every public name; X is defined in one module, and a patch goes on the module whose code calls X (`screenshots.py` for what `save_workflow_test_screenshot` and `frame_nodes` call):
   - `environment.py`: `REPO_ROOT`, `state_root`, stack flags and public config, `require_*` skips, `debug_log`.
   - `sandbox.py`: direct sandbox calls, `load_artifact_as_dict`, `execute_workflow_programmatically`.
@@ -109,10 +109,10 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
 
 `.github/workflows/docker-compose.yml` jobs:
 
-- `pick-runners`: picks the runner for each job (`scripts/ci_pick_runners.py`).
-- `build-image`: builds the CI image once per commit and pushes it to GHCR.
+- `pick-runners`: picks the runners of the jobs that start at once (`scripts/ci_pick_runners.py`).
+- `build-image`: builds the CI image once per commit, pushes it to GHCR, then picks the runners of the jobs that wait on it. Built with the Dockerfile's `CURIO_CI_SETUP=1`, it also holds what `curio.py setup --with-examples` installs, so CI stacks boot with `CURIO_SKIP_DEP_INSTALL=1` and the jobs run `scripts/test.sh --skip-setup`.
 - `test-gpu`: e2e tests that need WebGPU, on a GPU runner.
-- `unit`: backend pytest in two parts, plus the sandbox suite.
+- `unit`: backend pytest in four parts, plus the sandbox suite.
 - `jest`: Jest and `npm run typecheck`.
 - `e2e-desktop`: e2e tests without WebGPU, split over CPU runners.
 - `test-isolated`: Python-node workflows on the fork-isolated stack (`docker-compose.ci-isolated.yml`).
@@ -131,6 +131,7 @@ Other workflows: `autk-schema.yml` (weekly check of the vendored Autark schema),
 - `scripts/clean.sh`: removes build artifacts and runtime data. `scripts/kill-curio.sh`: kills leftover Curio server processes.
 - `scripts/new_package.py`: scaffolds a node package. `scripts/regen_integrity.py`: rewrites a package's `integrity.json`.
 - `scripts/generate_contracts.py`: writes `src/generated/` and every `utk_curio/llm-prompts/X.md` that has an `X.template.md`; `--check` lists stale outputs.
+- `scripts/ci_requirements.py`: writes `scripts/ci-requirements.txt`, the libraries `curio.py setup --with-examples` installs from the manifests, which CI's image installs before its source; rerun it after changing a manifest's Python dependencies or the packages an example declares (`test_ci_requirements.py` fails on a stale list).
 - `scripts/sync_autk_schema.py`: vendors the Autark grammar schema; `--check` compares it with the release.
 - `scripts/validate_trill.py`: validates dataflow JSON against `docs/schemas/trill.v1.json`.
 - Release (`publish-pip-to-pypi.yml`): the catalog files the pip package leaves out are those the dataset and model package manifests name in `downloadOnFirstUse`, read by `utk_curio/shipped.py` and fetched on first use by `utk_curio/backend/app/datasets/infrastructure/left_out_files.py`; `scripts/record_left_out_files.py` records them; `scripts/check_dist_sizes.py` fails a wheel or sdist over PyPI's 100 MiB limit; `setup.py` lists the wheel's packages, puts the shipped folders in it at `utk_curio/_shipped/` (`utk_curio/shipped.py`), copies the root `package.json` and `package-lock.json` into it (`utk_curio/sandbox/nodejs/`), and leaves the named files out of both archives (its `egg_info`).

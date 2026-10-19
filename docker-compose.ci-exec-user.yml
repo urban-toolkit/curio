@@ -43,6 +43,10 @@
 #    2040/5042/8120 and its own compose project (-p curio-ci-exec-user).
 services:
   curio:
+    # CI's image, which boots installing nothing: see 4 in docker-compose.ci.yml.
+    build:
+      args:
+        CURIO_CI_SETUP: "1"
     # Same reasoning as the other two CI overlays: the isolation paths can
     # provoke process exhaustion and this host also runs the live stacks.
     # RLIMIT_NPROC bounds each child, but the sandbox parent is root here.
@@ -53,6 +57,7 @@ services:
       - ./ci-planted.env:/app/.env
     environment:
       - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
+      - CURIO_SKIP_DEP_INSTALL=1
       # What this whole job exists to exercise. --deploy makes the instance
       # hosted, and the launcher discovers the curio-exec account the image
       # creates, so isolation and the execution user both come from that --

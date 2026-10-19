@@ -18,7 +18,10 @@
     "secretId": "mapillary.token",
     "headerName": "Authorization",
     "valuePrefix": "OAuth ",
-    "helpUrl": "https://www.mapillary.com/dashboard/developers"
+    "label": "Mapillary access token",
+    "helpUrl": "https://www.mapillary.com/dashboard/developers",
+    "placeholder": "MLY|...",
+    "note": "Mapillary images are CC BY-SA 4.0: each one keeps its creator for attribution."
   },
   "limits": { "requestsPerMinute": 10 },
   "resources": [

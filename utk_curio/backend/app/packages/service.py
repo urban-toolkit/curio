@@ -57,6 +57,7 @@ from utk_curio.backend.app.packages.application.templates import (
     available_templates,
     available_templates_report,
     canonical_template_id,
+    catalog_template_flags,
     CONTENT_KIND_CODE,
     CONTENT_KIND_GRAMMAR,
     CONTENT_KIND_NONE,
@@ -68,7 +69,9 @@ from utk_curio.backend.app.packages.application.templates import (
     resolve_template,
     resolve_templates,
     roster_templates,
+    TEMPLATE_FLAGS,
     template_content_kind,
+    template_flags,
     template_is_executable,
 )
 from utk_curio.backend.app.packages.builder.factory import FactoryError
@@ -110,7 +113,9 @@ from utk_curio.backend.app.packages.domain.package_id import (
     PackageId,
 )
 from utk_curio.backend.app.packages.domain.manifest import PackageManifest
+from utk_curio.backend.app.packages.domain.dataflow_categories import declared_dataflow_categories
 from utk_curio.backend.app.packages.domain.spec_packages import (
+    dir_name_from_model_ref,
     dir_name_from_node_type,
     preserve_project_packages,
     project_packages,
@@ -141,6 +146,8 @@ __all__ = [
     "PACKAGE_DIR_RE",
     "PackageId",
     "PackageManifest",
+    "declared_dataflow_categories",
+    "dir_name_from_model_ref",
     "dir_name_from_node_type",
     "preserve_project_packages",
     "project_packages",
@@ -190,13 +197,16 @@ __all__ = [
     "available_templates",
     "available_templates_report",
     "canonical_template_id",
+    "catalog_template_flags",
     "installed_templates_not_in_project",
     "is_note_template",
     "presentation_templates",
     "resolve_template",
     "resolve_templates",
     "roster_templates",
+    "TEMPLATE_FLAGS",
     "template_content_kind",
+    "template_flags",
     "template_is_executable",
     "FactoryError",
     "ManifestError",

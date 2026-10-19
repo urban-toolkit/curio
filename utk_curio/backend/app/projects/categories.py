@@ -6,9 +6,15 @@ A dataflow's categories come from three places, and each has exactly one:
   Curio ships, or ``None`` for the account's own. Decided by ``seed.py`` from
   the project id and never written into the spec, so a duplicate or an imported
   copy of an example is the user's, not a second example.
-* **automatic** - ``tags`` and ``data_type``, read off the saved spec's node
-  types, imports and datasets by :func:`derive`. Nothing stores them: they are
-  recomputed on every read, so they follow the nodes and a dataflow saved
+* **automatic** - ``tags`` and ``data_type``, read off the saved spec by
+  :func:`derive`: what the rules in ``category_rules.json`` find in it (the
+  modules its code imports and the files it names, the grammar its nodes'
+  templates draw with, the type of a model it uses, the format and collection
+  kind of a dataset it names), and what the manifests of its nodes' packages,
+  of the models its code loads and of its datasets declare in
+  ``dataflowCategories`` (:class:`ManifestLookup`). This module names no
+  package, model or dataset. Nothing stores them: they are recomputed on every
+  read, so they follow the nodes and the manifests, and a dataflow saved
   before this existed gets them without a back-fill.
 * **hand-set** - ``dataflow.categories`` in the spec: the user's own tags plus
   city, topic and complexity. Stored in the spec so they travel with export,
@@ -16,10 +22,19 @@ A dataflow's categories come from three places, and each has exactly one:
 """
 from __future__ import annotations
 
+import functools
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Optional
+
+from utk_curio.backend.app.projects.template_grammars import (
+    Declared,
+    TemplateGrammar,
+    TemplateGrammars,
+    union_of_declarations,
+)
 
 #: The sections a user can write. Everything else on the rail is derived.
 HAND_SECTIONS = ("tags", "city", "topic", "complexity")
@@ -78,194 +93,285 @@ def hand_categories(spec: object) -> dict[str, list[str]]:
 
 
 # ---------------------------------------------------------------------------
-# Automatic
+# Automatic: the rules
 # ---------------------------------------------------------------------------
 
-def _imports(module: str) -> re.Pattern:
-    return re.compile(rf"^\s*(?:import|from)\s+{module}\b", re.M)
+#: The signals a dataflow shows by itself, and the names each gives.
+RULES_FILE = Path(__file__).with_name("category_rules.json")
 
+#: The table's two lists, and the section of :func:`derive`'s answer each fills.
+_SECTIONS = {"tags": "tags", "dataTypes": "data_type"}
 
-_PANDAS = _imports("pandas")
-_GEOPANDAS = _imports("geopandas")
-_SHAPELY = _imports("shapely")
-_OSMNX = _imports("osmnx")
-_RASTER_LIBS = [_imports(m) for m in ("rasterio", "rioxarray", "xarray")]
-_PIL = _imports("PIL")
-_WAVE = _imports("wave")
-_PBF_PATH = re.compile(r"\.pbf\b")
-_TIFF_PATH = re.compile(r"\.tiff?\b")
-_IMAGE_PATH = re.compile(r"data:image/|\.(?:png|jpe?g)\b")
 _DATASET_CALL = re.compile(r"(?:curio_load_data|curio_data_path|curio_load_collection)\(\s*[\"']([^\"']+)")
-_COMPUTE_SECTION = re.compile(r"\"compute\"\s*:")
 
-_AUTARK = "curio.builtin/autk-grammar"
-_VEGA = "curio.builtin/vis-vega"
-_SPATIAL_JOIN = "curio.builtin/spatial-join"
-_CV_INFERENCE = "model.curio.ddrnet23-slim/image-segmentation"
-_VIDEO_FRAMES = "curio.media/video-frames"
-_SPLIT_AUDIO = "curio.media/split-audio"
-_MOSAIC_RASTERS = "curio.media/mosaic-rasters"
-
-#: SCOUT's node and model packages (``scout.rasters``,
-#: ``model.scout.deep-umbra``) and datasets (``data.scout.wrf-rain``). A
-#: dataflow with a node or model from one of those packages, or that names one
-#: of those datasets, is tagged ``SCOUT``.
-_SCOUT_PACKAGES = ("scout.", "model.scout.")
-_SCOUT_DATASETS = "data.scout."
-
-#: Display order within each automatic section.
-TAG_ORDER = (
-    "Autark", "Vega-Lite", "GeoPandas", "Pandas", "GPU compute", "Computer vision", "SCOUT",
-)
-DATA_TYPE_ORDER = (
-    "Tables", "Geometries", "Imagery", "OpenStreetMap", "Rasters", "Video", "Audio",
-)
+#: A compiled pattern, and the row of the table that gives its names.
+_Rule = tuple[re.Pattern, dict]
 
 
-def _dataset_ids(dataflow: dict, code: str) -> set[str]:
-    ids = set(_DATASET_CALL.findall(code))
+@dataclass(frozen=True)
+class _Rules:
+    """``category_rules.json``, its patterns compiled."""
+
+    code: tuple[_Rule, ...]
+    #: ``{grammarId: (row, its spec keys' rules)}``.
+    grammars: dict[str, tuple[dict, tuple[_Rule, ...]]]
+    model_types: dict[str, dict]
+    dataset_formats: dict[str, dict]
+    collection_kinds: dict[str, dict]
+    display_order: dict[str, list[str]]
+
+
+def _code_pattern(row: dict) -> Optional[re.Pattern]:
+    """What a ``code`` row looks for in a dataflow's code: an import of one of
+    its modules, a file name with one of its extensions, or a data URI of one
+    of its media types. None for a row that names none."""
+    parts = []
+    if row.get("imports"):
+        parts.append(r"^\s*(?:import|from)\s+(?:%s)\b" % "|".join(map(re.escape, row["imports"])))
+    if row.get("fileExtensions"):
+        parts.append(r"\.(?:%s)\b" % "|".join(map(re.escape, row["fileExtensions"])))
+    parts += [re.escape(f"data:{media}") for media in row.get("dataUris") or []]
+    if not parts:
+        return None
+    return re.compile("|".join(f"(?:{part})" for part in parts), re.M)
+
+
+def _spec_key_pattern(key: str) -> re.Pattern:
+    """A key of a grammar node's document: ``"<key>":``."""
+    return re.compile(rf"\"{re.escape(key)}\"\s*:")
+
+
+@functools.lru_cache(maxsize=1)
+def _rules() -> _Rules:
+    raw = json.loads(RULES_FILE.read_text(encoding="utf-8"))
+    code = [(_code_pattern(row), row) for row in raw["code"]]
+    return _Rules(
+        code=tuple((pattern, row) for pattern, row in code if pattern is not None),
+        grammars={
+            grammar: (row, tuple(
+                (_spec_key_pattern(key), gives) for key, gives in (row.get("specKeys") or {}).items()
+            ))
+            for grammar, row in raw["grammars"].items()
+        },
+        model_types=raw["modelTypes"],
+        dataset_formats=raw["datasetFormats"],
+        collection_kinds=raw["collectionKinds"],
+        display_order=raw["displayOrder"],
+    )
+
+
+class _Found:
+    """The tags and data types found for one dataflow, each name once ignoring
+    case, its first spelling kept."""
+
+    def __init__(self) -> None:
+        self._names: dict[str, dict[str, str]] = {section: {} for section in _SECTIONS}
+
+    def add(self, gives: Optional[dict]) -> None:
+        """The names a row of the table gives; None gives none."""
+        for section, names in self._names.items():
+            for name in (gives or {}).get(section) or []:
+                names.setdefault(name.casefold(), name)
+
+    def add_declared(self, declared: Declared) -> None:
+        self.add({"tags": declared.tags, "dataTypes": declared.data_types})
+
+    def in_order(self, display_order: dict[str, list[str]]) -> dict[str, list[str]]:
+        """The table's names first, in its order and its spelling, then any
+        other name alphabetically, ignoring case."""
+        out: dict[str, list[str]] = {}
+        for section, answer in _SECTIONS.items():
+            names = self._names[section]
+            listed = [name for name in display_order.get(section, []) if name.casefold() in names]
+            taken = {name.casefold() for name in listed}
+            others = [name for folded, name in names.items() if folded not in taken]
+            out[answer] = listed + sorted(others, key=lambda name: (name.casefold(), name))
+        return out
+
+
+# ---------------------------------------------------------------------------
+# Automatic: reading a dataflow
+# ---------------------------------------------------------------------------
+
+def _dataset_ids(dataflow: dict, code: str) -> list[str]:
+    """The datasets a dataflow names, in its code and its datasets, first
+    seen first."""
+    ids = dict.fromkeys(_DATASET_CALL.findall(code))
     for ref in dataflow.get("datasets") or []:
         if not isinstance(ref, dict):
             continue
         for key in ("dirName", "datasetId", "id"):
             value = ref.get(key)
             if isinstance(value, str) and value:
-                ids.add(value)
+                ids.setdefault(value)
                 break
-    return ids
+    return list(ids)
 
 
-def derive(spec: object, dataset_kind: Optional[DatasetKind] = None) -> dict[str, list[str]]:
+def _lockfile_majors(dataflow: dict) -> dict[str, str]:
+    """``{package id: major}`` of the packages the dataflow's lockfile names
+    (``dataflow.packages``); the highest, for a package named twice."""
+    from utk_curio.backend.app.packages.service import PACKAGE_DIR_RE
+
+    packages = dataflow.get("packages")
+    majors: dict[str, str] = {}
+    for dir_name in packages if isinstance(packages, list) else []:
+        if isinstance(dir_name, str) and PACKAGE_DIR_RE.match(dir_name):
+            package_id, _, major = dir_name.rpartition("@")
+            if package_id not in majors or int(major) > int(majors[package_id]):
+                majors[package_id] = major
+    return majors
+
+
+def _at_lockfile_major(ref: object, package_id: str, majors: dict[str, str]) -> object:
+    """*ref*, a node type or a model id of *package_id*, at the major the
+    lockfile names for the package when it names none itself."""
+    if not isinstance(ref, str) or "@" in ref or package_id not in majors:
+        return ref
+    return f"{ref}@{majors[package_id]}"
+
+
+def derive(
+    spec: object,
+    dataset_kind: Optional[DatasetKind] = None,
+    template_grammar: Optional[TemplateGrammar] = None,
+    lookup: Optional["ManifestLookup"] = None,
+) -> dict[str, list[str]]:
     """``{"tags": [...], "data_type": [...]}`` for *spec*, in display order.
 
-    Reads what is in the dataflow and nothing else: node types, the import
-    lines and model loads in its code, and the datasets it names.
-    *dataset_kind* resolves a dataset id to its format and collection kind;
-    without it the formats are unknown, and the rest still counts.
+    Reads what is in the dataflow and what the manifests of what it uses say.
+    The rules in ``category_rules.json`` read the import lines and file names
+    in its code, the grammar each node's template draws with (and the keys of
+    the node's document), the type of each model it uses (a node of a model
+    package, or a ``curio_load_model`` call), and the format and collection
+    kind of each dataset it names. A node's package and template, a loaded
+    model's package and a dataset add what they declare in
+    ``dataflowCategories``. The table's names come first, in its
+    ``displayOrder``; any other name follows, alphabetically ignoring case.
+
+    *lookup* reads the manifests (:class:`ManifestLookup`); without one, the
+    packages and datasets Curio ships, as committed. A node type without a
+    major is read at the major the dataflow's lockfile names for its package.
+    *dataset_kind* and *template_grammar* answer a dataset's format and
+    collection kind, and a node type's grammar, in the lookup's place.
     """
     from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
-    from utk_curio.backend.app.packages.domain.spec_packages import unversioned_node_type
 
     dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
     if not isinstance(dataflow, dict):
         return {"tags": [], "data_type": []}
+    lookup = lookup if lookup is not None else ManifestLookup.shipped()
+    grammar_of = template_grammar or lookup.packages
+    kind_of = dataset_kind or lookup.datasets
+    rules = _rules()
+    majors = _lockfile_majors(dataflow)
     nodes = [n for n in dataflow.get("nodes") or [] if isinstance(n, dict)]
-    types = {unversioned_node_type(n.get("type")) for n in nodes}
     code = "\n".join(str(n.get("content") or "") for n in nodes)
-    autark_documents = [
-        str(n.get("content") or "") for n in nodes
-        if unversioned_node_type(n.get("type")) == _AUTARK
-    ]
-    dataset_ids = _dataset_ids(dataflow, code)
-    model_ids = {m for n in nodes for m in model_ids_in_code(n.get("content"))}
+    found = _Found()
 
-    formats: set[str] = set()
-    kinds: set[str] = set()
-    if dataset_kind is not None:
-        for dataset_id in dataset_ids:
-            fmt, kind = dataset_kind(dataset_id)
-            if fmt:
-                formats.add(fmt)
-            if kind:
-                kinds.add(kind)
-
-    has_pandas = bool(_PANDAS.search(code))
-    has_geopandas = bool(_GEOPANDAS.search(code))
-
-    tags: set[str] = set()
-    if _AUTARK in types:
-        tags.add("Autark")
-    if _VEGA in types:
-        tags.add("Vega-Lite")
-    if has_geopandas:
-        tags.add("GeoPandas")
-    if has_pandas:
-        tags.add("Pandas")
-    if any(_COMPUTE_SECTION.search(doc) for doc in autark_documents):
-        tags.add("GPU compute")
-    if _CV_INFERENCE in types:
-        tags.add("Computer vision")
-    if (any(isinstance(t, str) and t.startswith(_SCOUT_PACKAGES) for t in types)
-            or any(m.startswith(_SCOUT_PACKAGES) for m in model_ids)
-            or any(d.startswith(_SCOUT_DATASETS) for d in dataset_ids)):
-        tags.add("SCOUT")
-
-    data: set[str] = set()
-    if has_pandas or formats & {"csv", "parquet"}:
-        data.add("Tables")
-    if (has_geopandas or _SHAPELY.search(code) or "geojson" in formats
-            or types & {_AUTARK, _SPATIAL_JOIN}):
-        data.add("Geometries")
-    if _PBF_PATH.search(code) or _OSMNX.search(code):
-        data.add("OpenStreetMap")
-    if (any(p.search(code) for p in _RASTER_LIBS) or _TIFF_PATH.search(code)
-            or "geotiff" in formats or "rasters" in kinds or _MOSAIC_RASTERS in types):
-        data.add("Rasters")
-    if (_PIL.search(code) or _IMAGE_PATH.search(code)
-            or types & {_CV_INFERENCE, _VIDEO_FRAMES}
-            or kinds & {"frames", "media", "rasters", "images"}):
-        data.add("Imagery")
-    if _VIDEO_FRAMES in types or kinds & {"frames", "media"}:
-        data.add("Video")
-    if _SPLIT_AUDIO in types or "audio" in kinds or _WAVE.search(code):
-        data.add("Audio")
-
-    return {
-        "tags": [t for t in TAG_ORDER if t in tags],
-        "data_type": [d for d in DATA_TYPE_ORDER if d in data],
-    }
+    for pattern, row in rules.code:
+        if pattern.search(code):
+            found.add(row)
+    for node in nodes:
+        node_type = node.get("type")
+        if not isinstance(node_type, str):
+            continue
+        node_type = _at_lockfile_major(node_type, node_type.rpartition("/")[0], majors)
+        declared = lookup.packages.node(node_type)
+        found.add_declared(declared)
+        found.add(rules.model_types.get(declared.model_type))
+        grammar = rules.grammars.get(grammar_of(node_type))
+        if grammar is not None:
+            row, spec_keys = grammar
+            found.add(row)
+            document = str(node.get("content") or "")
+            for pattern, gives in spec_keys:
+                if pattern.search(document):
+                    found.add(gives)
+    for model_id in dict.fromkeys(m for n in nodes for m in model_ids_in_code(n.get("content"))):
+        declared = lookup.packages.model(_at_lockfile_major(model_id, model_id, majors))
+        found.add_declared(declared)
+        found.add(rules.model_types.get(declared.model_type))
+    for dataset_id in _dataset_ids(dataflow, code):
+        fmt, kind = kind_of(dataset_id)
+        found.add(rules.dataset_formats.get(fmt))
+        found.add(rules.collection_kinds.get(kind))
+        found.add_declared(lookup.datasets.declared(dataset_id))
+    return found.in_order(rules.display_order)
 
 
 # ---------------------------------------------------------------------------
-# Dataset formats
+# Reading the manifests
 # ---------------------------------------------------------------------------
 
 class DatasetKinds:
-    """Resolve dataset ids to ``(format, collection kind)``, memoized.
+    """Resolve dataset ids to ``(format, collection kind)`` and to what they
+    declare, memoized.
 
     Looks in the account's store first and then in the committed catalog - the
-    two places ``curio_load_data`` finds a dataset. Accepts a bare id or a
-    ``<id>@<major>`` directory name; a bare id takes its highest major. One
-    instance per request, so a listing reads each manifest once.
+    two places ``curio_load_data`` finds a dataset. The format and the kind
+    are the first copy's; what the copies declare in ``dataflowCategories`` is
+    unioned (:meth:`declared`), as the account's copy dates from when it was
+    added. Accepts a bare id or a ``<id>@<major>`` directory name; a bare id
+    takes its highest major in each place. One instance per request, so a
+    listing reads each manifest once.
     """
 
-    def __init__(self, user_key: Optional[str]):
-        from utk_curio.backend.app.datasets.infrastructure.storage import (
-            catalog_root,
-            user_datasets_dir,
-        )
+    def __init__(self, user_key: Optional[str], *, roots: Optional[Iterable[Path]] = None):
+        if roots is None:
+            from utk_curio.backend.app.datasets.infrastructure.storage import (
+                catalog_root,
+                user_datasets_dir,
+            )
 
-        self._roots: list[Path] = []
-        if user_key:
-            self._roots.append(user_datasets_dir(user_key))
-        self._roots.append(catalog_root())
-        self._memo: dict[str, tuple[Optional[str], Optional[str]]] = {}
+            roots = ([user_datasets_dir(user_key)] if user_key else []) + [catalog_root()]
+        self._roots: list[Path] = list(roots)
+        self._memo: dict[str, list[dict]] = {}
+
+    @classmethod
+    def shipped(cls) -> "DatasetKinds":
+        """The datasets Curio ships, as they are committed (``utk_curio/shipped.py``)."""
+        from utk_curio import shipped
+
+        return cls(None, roots=[shipped.path("datasets")])
 
     def __call__(self, dataset_id: str) -> tuple[Optional[str], Optional[str]]:
+        for raw in self._copies(dataset_id):
+            collection = raw.get("collection")
+            kind = collection.get("kind") if isinstance(collection, dict) else None
+            fmt = raw.get("format")
+            return (
+                fmt.lower() if isinstance(fmt, str) else None,
+                kind if isinstance(kind, str) else None,
+            )
+        return (None, None)
+
+    def declared(self, dataset_id: str) -> Declared:
+        """What the copies of *dataset_id*'s manifest declare together."""
+        tags, data_types = union_of_declarations(self._copies(dataset_id))
+        return Declared(tags, data_types)
+
+    def _copies(self, dataset_id: str) -> list[dict]:
         if dataset_id not in self._memo:
-            self._memo[dataset_id] = self._lookup(dataset_id)
+            self._memo[dataset_id] = self._read(dataset_id)
         return self._memo[dataset_id]
 
-    def _lookup(self, dataset_id: str) -> tuple[Optional[str], Optional[str]]:
-        if "/" in dataset_id or "\\" in dataset_id or dataset_id.startswith("."):
-            return (None, None)
+    def _read(self, dataset_id: str) -> list[dict]:
+        """In each place, the first manifest of *dataset_id* that reads."""
+        if (not isinstance(dataset_id, str) or "/" in dataset_id or "\\" in dataset_id
+                or dataset_id.startswith(".")):
+            return []
+        copies = []
         for root in self._roots:
             for directory in self._candidates(root, dataset_id):
-                manifest = directory / "manifest.json"
                 try:
-                    raw = json.loads(manifest.read_text(encoding="utf-8"))
+                    raw = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
                 except (OSError, ValueError):
                     continue
-                if not isinstance(raw, dict):
-                    continue
-                collection = raw.get("collection")
-                kind = collection.get("kind") if isinstance(collection, dict) else None
-                fmt = raw.get("format")
-                return (
-                    fmt.lower() if isinstance(fmt, str) else None,
-                    kind if isinstance(kind, str) else None,
-                )
-        return (None, None)
+                if isinstance(raw, dict):
+                    copies.append(raw)
+                    break
+        return copies
 
     @staticmethod
     def _candidates(root: Path, dataset_id: str) -> Iterable[Path]:
@@ -281,6 +387,32 @@ class DatasetKinds:
         return [entry for _, entry in sorted(majors, reverse=True)]
 
 
+class ManifestLookup:
+    """What the manifests of a dataflow's packages, models and datasets say,
+    for one request. :class:`TemplateGrammars` reads the packages: a node
+    template's grammar, what a node's package and template declare, and a
+    model package's declaration and model type. :class:`DatasetKinds` reads
+    the datasets. Both read the account's copy of a manifest and the
+    catalog's, and with no account the catalog's alone. Each manifest is read
+    once, so a listing reads it once for every row.
+    """
+
+    def __init__(
+        self,
+        user_key: Optional[str] = None,
+        *,
+        packages: Optional[TemplateGrammars] = None,
+        datasets: Optional[DatasetKinds] = None,
+    ):
+        self.packages = packages if packages is not None else TemplateGrammars(user_key)
+        self.datasets = datasets if datasets is not None else DatasetKinds(user_key)
+
+    @classmethod
+    def shipped(cls) -> "ManifestLookup":
+        """The packages and datasets Curio ships, as they are committed."""
+        return cls(packages=TemplateGrammars.shipped(), datasets=DatasetKinds.shipped())
+
+
 # ---------------------------------------------------------------------------
 # What the API returns
 # ---------------------------------------------------------------------------
@@ -288,11 +420,11 @@ class DatasetKinds:
 def categories_for(
     spec: object,
     source: Optional[str],
-    dataset_kind: Optional[DatasetKind] = None,
+    lookup: Optional[ManifestLookup] = None,
 ) -> dict:
     """The ``categories`` field of a project summary or detail."""
     return {
         "source": source,
-        "auto": derive(spec, dataset_kind),
+        "auto": derive(spec, lookup=lookup),
         "hand": hand_categories(spec),
     }

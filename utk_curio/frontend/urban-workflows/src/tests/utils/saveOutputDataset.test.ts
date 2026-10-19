@@ -134,6 +134,31 @@ describe('isNonProducingNodeType', () => {
   });
 });
 
+describe('a package chart that draws with Vega-Lite saves nothing of its own', () => {
+  // SCOUT Comparison's charts draw with the Vega-Lite node's behavior, which
+  // hands the node's input on as its output: saving it would install a copy of
+  // the Compare node's table under the chart's id.
+  const { isNonProducingNodeType, showsSaveOutputToggle } = require('../../utils/saveOutputDataset');
+  const { VEGA_LITE_TEMPLATE, registerVegaLiteTemplate, clearVegaLiteTemplate } = require('../_support/vegaLiteTemplate');
+
+  beforeEach(() => registerVegaLiteTemplate());
+  afterEach(() => clearVegaLiteTemplate());
+
+  test('it is a sink, as the Vega-Lite node is, versioned or not', () => {
+    expect(isNonProducingNodeType(VEGA_LITE_TEMPLATE)).toBe(true);
+    expect(isNonProducingNodeType('scout.comparison/donuts')).toBe(true);
+  });
+
+  test('its footer has no save toggle', () => {
+    expect(showsSaveOutputToggle({ nodeType: VEGA_LITE_TEMPLATE }, false)).toBe(false);
+  });
+
+  test('a package node that draws with no grammar keeps its toggle', () => {
+    expect(isNonProducingNodeType('acme.tools/heatmap@1')).toBe(false);
+    expect(showsSaveOutputToggle({ nodeType: 'acme.tools/heatmap@1' }, false)).toBe(true);
+  });
+});
+
 describe('showsSaveOutputToggle (#445)', () => {
   const { showsSaveOutputToggle } = require('../../utils/saveOutputDataset');
 

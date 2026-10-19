@@ -12,6 +12,8 @@ import logging
 import re
 
 from utk_curio.backend.app.packages.domain.manifest import parse_cardinality
+from utk_curio.backend.app.packages.repositories.catalog_dir import catalog_root
+from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 from utk_curio.backend.app.packages.application import (
     project_packages as packages_project_packages,
     store_reads as packages_store_reads,
@@ -19,6 +21,17 @@ from utk_curio.backend.app.packages.application import (
 from utk_curio.backend.app.packages.application.seeding import BUILTIN_PACKAGE_ID
 
 log = logging.getLogger(__name__)
+
+#: The flags a template can declare about its nodes, by manifest key, with the
+#: ``TemplateManifest`` field each is read from. An agent's node target may
+#: require one (``compatibleTargets[].requires``): the Dataset Finder requires
+#: ``loadsDataset``.
+TEMPLATE_FLAGS = {"loadsDataset": "loads_dataset"}
+
+
+def declared_flags(template) -> frozenset[str]:
+    """The flags *template* (a ``TemplateManifest``) declares."""
+    return frozenset(key for key, field in TEMPLATE_FLAGS.items() if getattr(template, field, False))
 
 
 def input_capacity(port_count: int, cardinality: str | None = None) -> int | None:
@@ -238,6 +251,11 @@ def _template_entry(package_id: str, template) -> dict:
         "contentKind": template_content_kind(template),
         "inputs": inputs,
         "maxIncomingEdges": max_incoming,
+        # #662: the widgets a node of this template starts with, by name, which
+        # an agent's plan sets (the roster line names them).
+        **({"widgets": [w["name"] for w in template.widgets]} if template.widgets else {}),
+        # The flags it declares (``TEMPLATE_FLAGS``), each only when it does.
+        **{key: True for key in sorted(declared_flags(template))},
     }
 
 
@@ -324,11 +342,62 @@ def roster_templates(user_key: str, project_id: str) -> dict | None:
                 # dev/134: the write gate's routing rides the same snapshot.
                 "contentKind": t.get("contentKind") or "none",
                 **({"grammar": t["grammar"]} if t.get("grammar") else {}),
+                **{key: True for key in TEMPLATE_FLAGS if t.get(key)},
             }
             for t in available_templates(user_key, project_id)
         }
     except Exception:
         return None
+
+
+#: ``catalog_template_flags``'s last reading, keyed by the catalog folder and
+#: its modification time, so a package published into it is read again.
+_CATALOG_FLAGS: dict[tuple[str, int], dict[str, frozenset[str]]] = {}
+
+
+def catalog_template_flags() -> dict[str, frozenset[str]]:
+    """``{canonical template id: the flags it declares}`` for the templates of
+    the package catalog's own copies (``catalog_root``)."""
+    root = catalog_root()
+    try:
+        key = (str(root), root.stat().st_mtime_ns)
+    except OSError:
+        return {}
+    cached = _CATALOG_FLAGS.get(key)
+    if cached is not None:
+        return cached
+    flags: dict[str, frozenset[str]] = {}
+    for package_dir in sorted(root.iterdir()):
+        if not package_dir.is_dir():
+            continue
+        try:
+            manifest = load_package_manifest(package_dir)
+        except Exception:  # noqa: BLE001 - an unreadable catalog package declares nothing
+            continue
+        for template in manifest.templates:
+            declared = declared_flags(template)
+            if declared:
+                canonical = f"{manifest.package_id}/{template.template_id}"
+                flags[canonical] = flags.get(canonical, frozenset()) | declared
+    _CATALOG_FLAGS.clear()
+    _CATALOG_FLAGS[key] = flags
+    return flags
+
+
+def template_flags(node_type: object, templates: dict | None = None) -> frozenset[str]:
+    """The flags the template of a node of *node_type* declares (``TEMPLATE_FLAGS``).
+
+    Read from the project's roster snapshot (``roster_templates``) and from
+    the catalog's copy of the same template: a package's copy in an account
+    can be older than the catalog's, so either declaring a flag is enough.
+    Any spelling of the type (versioned, or a legacy enum name) is read as
+    its canonical id."""
+    canonical = canonical_template_id(node_type)
+    if not canonical:
+        return frozenset()
+    row = (templates or {}).get(canonical)
+    own = frozenset(key for key in TEMPLATE_FLAGS if isinstance(row, dict) and row.get(key))
+    return own | catalog_template_flags().get(canonical, frozenset())
 
 
 def installed_templates_not_in_project(user_key: str, project_id: str) -> list[dict]:

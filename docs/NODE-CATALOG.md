@@ -37,6 +37,7 @@ A package is a folder with a `manifest.json` (the contract), an optional `source
 | `ai.utk.uhvi@1`, `curio.weather@1` | Example packages you can install from the catalog drawer to see the package workflow end to end. Both are plain Python nodes. `curio.weather@1` is also installed for you when Curio starts with `--with-examples`; you can still uninstall it. |
 | `curio.example-ui@1` | A minimal node with its **own interface** rather than a code editor: no API keys and no Python dependencies. The one to read and fork for custom-UI nodes; see [AUTHORING-NODES.md](AUTHORING-NODES.md). |
 | `scout.rasters@1` | SCOUT Rasters, SCOUT's raster nodes: the **Raster Calculator**, one operation over rasters on one grid, cell by cell or a raster's statistics as a table of one row ([Rasters](USAGE.md#rasters)), and **Rasterize Buildings**, SCOUT's building rasterizer ported from [SCOUT](https://github.com/urban-toolkit/scout), which turns a buildings layer into the height tiles SCOUT's Deep Umbra shadow model reads, side by side in one raster an Autark map draws. Read-only, depends on `datashader`, `spatialpandas`, `dask`, `rasterio`, `geopandas`, `numpy`, `pandas`, `pillow`, `pyarrow`, `pyproj` and `shapely`, and installed when Curio starts with `--with-examples`. See its [README](../packages/scout.rasters@1/README.md). |
+| `scout.comparison@1` | SCOUT Comparison: seven Vega-Lite charts to connect after a **Compare Scenarios** node, for comparisons its Chart tab does not draw: **Lines with a band**, **Curves by group**, **Bars with error bars**, **Ensemble strips**, **Stacked bars with totals**, **Donuts** and **Weighted matrix**. Each draws its scenarios in their colors, and the columns it plots are text widgets ([Comparing scenarios](USAGE.md#comparing-scenarios)). Read-only, no Python libraries, and installed when Curio starts with `--with-examples`. See its [README](../packages/scout.comparison@1/README.md). |
 The Node Catalog's drawer and page list node packages only. Model packages (kind `model`), such as the `model.curio.ddrnet23-slim@1`, `model.scout.deep-umbra@1` and `model.scout.weather-gnn@1` that ship with Curio, are the [Model Catalog](MODEL-CATALOG.md)'s: you add, remove and publish them there, the same way. Their nodes are not in the Node Catalog dropdown either: a model's node comes from dropping its card from the Model Catalog drawer onto the canvas.
 
 You can install any number of other packages, your own or archives shared by others.
@@ -218,6 +219,16 @@ A manifest with `"readOnly": true` at the top level marks its package read-only.
 
 [`docs/schemas/node-package.v4.json`](schemas/node-package.v4.json) (JSON Schema Draft 2020-12) is the reference for what a package can declare. The catalog packages in `<repo_root>/packages/` are the canonical examples, starting with [`packages/curio.builtin@1/manifest.json`](../packages/curio.builtin@1/manifest.json). To write a package by hand, follow [Authoring nodes](AUTHORING-NODES.md).
 
+A template whose nodes load a dataset into the dataflow declares `"loadsDataset": true`, as Data Loading does. An agent whose node target requires `loadsDataset`, such as the Dataset Finder, attaches to its nodes, and Solve finds such a node a source before it writes its code ([Agent Catalog](AGENT-CATALOG.md#solve)).
+
+A package, or one of its templates, can name the tags and data types a dataflow that uses it is filed under on the **Projects** page, beside those Curio finds in the dataflow itself:
+
+```json
+"dataflowCategories": { "tags": ["SCOUT"], "dataTypes": ["Rasters"] }
+```
+
+At the top level of the manifest it covers every node of the package; in a template, that template's nodes. A list holds up to 20 names, each up to 40 characters.
+
 A package you save or import lands in your package store:
 
 ```
@@ -256,7 +267,7 @@ Since memo dev/143 the catalog is layered like the Data Catalog. The backend is 
 - [`docs/DATA-CATALOG.md`](DATA-CATALOG.md): datasets, installed and published with the same model.
 - [`docs/AGENT-CATALOG.md`](AGENT-CATALOG.md): the agents you attach to nodes.
 - [`docs/DISCOVERY-CATALOG.md`](DISCOVERY-CATALOG.md): the data portals you download datasets from.
-- [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#node-packages-and-manifests): how packages load, and how to add a built-in behavior, icon, or grammar adapter.
+- [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#node-packages-and-manifests): how packages load, and how to add a built-in behavior or grammar adapter.
 - [`docs/USAGE.md`](USAGE.md): installing and running Curio, including the [Vega-Lite node](USAGE.md#vega-lite-node).
 - [`docs/schemas/node-package.v4.json`](schemas/node-package.v4.json): the manifest JSON Schema.
 - [`docs/schemas/trill.v1.json`](schemas/trill.v1.json): the dataflow JSON Schema. A node's `type` points into a manifest's `templates[].id`.

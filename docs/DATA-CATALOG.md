@@ -362,6 +362,7 @@ There is no JSON Schema for dataset manifests, so this table is the reference. T
 | `publisher` | | Defaults to `"Data Catalog"`. It decides who may unpublish or delete (see [part 6](#publish-unpublish-delete)). |
 | `license` | | Free text, e.g. `"Open Data"`. |
 | `tags` | | Array of strings; feeds search and the Tags panel. |
+| `dataflowCategories` | | `{"tags": [...], "dataTypes": [...]}`: the tags and data types a dataflow that reads the dataset is filed under on the **Projects** page, such as `SCOUT` for SCOUT's datasets. Unlike `tags`, the catalog's search keywords, these are a dataflow's categories. Some formats give a data type by themselves, such as Rasters for `geotiff`. A list holds up to 20 names, each up to 40 characters. |
 | `sourceLabel` | | Short provenance label; falls back to `publisher`. |
 | `createdAt` / `updatedAt` | | ISO timestamps for the Curio *record*. |
 | `sourceUpdatedAt` | | Last-modified date of the *original file* at import time. |

@@ -21,7 +21,6 @@ from utk_curio.backend.app.agents.application import dataset_resolution as agent
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
 from utk_curio.backend.app.agents.application.proposals import mint as agents_mint
-from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
 from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
 from utk_curio.backend.app.agents.application.solve import node_solve as agents_node_solve
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
@@ -30,6 +29,9 @@ from utk_curio.backend.app.agents.infrastructure import agent_jobs as agents_age
 from utk_curio.backend.app.projects import storage as projects_storage
 
 log = logging.getLogger(__name__)
+
+#: What an agent a selection is recorded on declares.
+SELECT = "dataset.select"
 
 
 def record_dataset_selection(
@@ -49,14 +51,25 @@ def record_dataset_selection(
 
     spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
-    if record.get("coord", "").split("@", 1)[0] != agents_dataset_resolution.FINDER_AGENT_ID:
+    coord = str(record.get("coord") or "")
+    name = agents_spec_reads._agent_name(user_key, coord) or coord
+    if not agents_spec_reads._declares(user_key, coord, SELECT):
+        # The agent a selection belongs to, as its manifest names it: the
+        # dataflow's own, else the shipped one.
+        selector = agents_spec_reads._agent_name(
+            user_key, agents_spec_reads._installed_coord_declaring(spec, SELECT, user_key=user_key) or "",
+        ) or agents_spec_reads._shipped_name_declaring(SELECT) or "dataset selector"
         raise AgentServiceError(
-            "a dataset selection belongs to a Dataset Finder attachment", 400
+            f"a dataset selection belongs to a {selector} attachment, an agent that "
+            f"declares {SELECT}; {name} does not",
+            400,
         )
     target = record.get("target") or {}
     if target.get("kind") != "node":
         raise AgentServiceError(
-            "a dataset selection belongs to a Dataset Finder attached to a node", 400
+            f"a dataset selection belongs to a {name} attached to a node, not to the "
+            f"{target.get('kind') or 'dataflow'}",
+            400,
         )
     session_id = record.get("sessionId")
     turns = (
@@ -239,17 +252,17 @@ def _delegate_confirmed_fetch(
                 "status": "session-running",
                 "reason": "the running Solve session picks this node up on its next pass",
             }
-    builder = None
-    for agent_id in agents_plans._NODE_BUILD_AGENTS:
-        builder = agents_spec_reads._node_attachment_of(spec, agent_id, node_id)
-        if builder is not None:
-            break
+    # dev/132: the node's content agent writes its fetch code (`DEC-047`).
+    builder = agents_spec_reads._node_attachment_declaring(
+        spec, "node.content.generate", node_id, user_key=user_key,
+    )
     if builder is None:
+        writer = agents_spec_reads._shipped_name_declaring("node.content.generate")
         return {
             "status": "no-builder",
             "reason": (
-                "no builder is attached to this node — Solve the node, or attach "
-                "a Node Builder to it"
+                "no builder is attached to this node: Solve the node, or attach "
+                + (f"a {writer} to it" if writer else "an agent that writes node content to it")
             ),
         }
     builder_id = str(builder.get("attachmentId") or "")

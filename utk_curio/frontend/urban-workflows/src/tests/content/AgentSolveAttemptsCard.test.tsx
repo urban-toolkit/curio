@@ -124,7 +124,7 @@ describe("AgentSolveAttemptsCard (dev/127)", () => {
 
   it("opens the node's own agent, naming the node", () => {
     const onOpenChat = jest.fn();
-    render(<AgentSolveAttemptsCard part={part()} onOpenChat={onOpenChat} />);
+    render(<AgentSolveAttemptsCard part={part()} onOpenChat={onOpenChat} agentName="Node Builder" />);
     const button = screen.getByRole("button", {
       name: /Open the Node Builder for Calculate Density/,
     });

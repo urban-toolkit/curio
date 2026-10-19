@@ -44,6 +44,7 @@
       "id": "data-loading",
       "inputPorts": [],
       "label": "Data Loading",
+      "loadsDataset": true,
       "behavior": "code",
       "outputPorts": [
         {
@@ -388,6 +389,9 @@
       "containerStyle": {
         "nodeHeight": 300,
         "nodeWidth": 460
+      },
+      "dataflowCategories": {
+        "dataTypes": ["Geometries"]
       },
       "description": "Pairs the rows of two inputs whose shapes meet, such as points and the polygons they fall in. Connect them to the blue circle at the top and the green circle at the bottom, then pick how the shapes meet: intersects, within, contains, touches, overlaps, crosses or nearest. The output is one row per pair, with the bottom input's columns added, or the bottom input's rows with their count of pairs.",
       "editor": "none",

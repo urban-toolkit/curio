@@ -15,6 +15,7 @@ from utk_curio.backend.app.users.schemas import (
 )
 from utk_curio.backend.app.users import repositories as repo
 from utk_curio.backend.app.users import security
+from utk_curio.backend.app.users import source_keys
 from utk_curio.backend.app.users.capabilities import token_refusal
 from utk_curio.backend.config import (
     CURIO_SHARED_GUEST_NAME,
@@ -41,10 +42,7 @@ def _user_out(u: User) -> UserOut:
         profile_image=u.profile_image,
         type=u.type,
         is_guest=u.is_guest,
-        has_huggingface_token=bool(u.huggingface_token),
-        has_socrata_app_token=bool(u.socrata_app_token),
-        has_google_maps_api_key=bool(u.google_maps_api_key),
-        has_mapillary_access_token=bool(u.mapillary_access_token),
+        has_source_keys={secret_id: True for secret_id in source_keys.saved_for(u)},
     )
 
 
@@ -153,6 +151,9 @@ def get_me(user: User) -> UserOut:
 
 
 def patch_me(user: User, data: UserPatchIn) -> UserOut:
+    if data.source_keys is not None:
+        _save_source_keys(user, data.source_keys)
+
     # The assignments are inside the retried unit: a rollback reverts them
     # along with the transaction, so committing a second time without
     # re-applying them would silently save nothing.
@@ -163,6 +164,35 @@ def patch_me(user: User, data: UserPatchIn) -> UserOut:
     return _user_out(user)
 
 
+def _save_source_keys(user: User, changes: object) -> None:
+    """Save or remove the account's Data source keys, by the secret id a
+    Discovery Catalog source declares. All of them are checked before any is
+    written."""
+    from utk_curio.backend.app.discovery import service as discovery
+
+    try:
+        checked = source_keys.check_changes(changes)
+    except source_keys.SourceKeyError as exc:
+        raise AuthError(str(exc), exc.status)
+    if not checked:
+        return
+    # A key is kept only for a key some source sends.
+    declared = discovery.declared_keys()
+    unknown = sorted(secret_id for secret_id in checked if secret_id not in declared)
+    if unknown:
+        raise AuthError(f"No Discovery Catalog source on this Curio sends {', '.join(unknown)}.", 400)
+    # Refused out loud rather than quietly dropped: a UI that accepts the
+    # value and discards it leaves the user believing they are authenticated
+    # when they are not.
+    refusal = token_refusal(user, " and ".join(f"the {declared[secret_id]}" for secret_id in sorted(checked)))
+    if refusal:
+        raise AuthError(refusal, 403)
+    try:
+        source_keys.save_for(user, changes)
+    except source_keys.SourceKeyError as exc:
+        raise AuthError(str(exc), exc.status)
+
+
 def _apply_profile_patch(user: User, data: UserPatchIn) -> None:
     if data.name is not None:
         user.name = data.name
@@ -170,19 +200,3 @@ def _apply_profile_patch(user: User, data: UserPatchIn) -> None:
         user.email = data.email if data.email else None
     if data.type is not None:
         user.type = data.type
-    for field, noun in (
-        ("socrata_app_token", "a portal token"),
-        ("huggingface_token", "a HuggingFace token"),
-        ("google_maps_api_key", "a Google Maps key"),
-        ("mapillary_access_token", "a Mapillary token"),
-    ):
-        value = getattr(data, field)
-        if value is None:
-            continue
-        # Refused out loud rather than quietly dropped: a UI that accepts the
-        # value and discards it leaves the user believing they are
-        # authenticated when they are not.
-        refusal = token_refusal(user, noun)
-        if refusal:
-            raise AuthError(refusal, 403)
-        setattr(user, field, value or None)
