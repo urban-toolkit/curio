@@ -219,6 +219,14 @@ A manifest with `"readOnly": true` at the top level marks its package read-only.
 
 [`docs/schemas/node-package.v4.json`](schemas/node-package.v4.json) (JSON Schema Draft 2020-12) is the reference for what a package can declare. The catalog packages in `<repo_root>/packages/` are the canonical examples, starting with [`packages/curio.builtin@1/manifest.json`](../packages/curio.builtin@1/manifest.json). To write a package by hand, follow [Authoring nodes](AUTHORING-NODES.md).
 
+A package, or one of its templates, can name the tags and data types a dataflow that uses it is filed under on the **Projects** page, beside those Curio finds in the dataflow itself:
+
+```json
+"dataflowCategories": { "tags": ["SCOUT"], "dataTypes": ["Rasters"] }
+```
+
+At the top level of the manifest it covers every node of the package; in a template, that template's nodes. A list holds up to 20 names, each up to 40 characters.
+
 A package you save or import lands in your package store:
 
 ```
