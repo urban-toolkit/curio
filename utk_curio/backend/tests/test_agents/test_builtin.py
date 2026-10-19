@@ -811,10 +811,13 @@ class TestDataflowBuilderComposite:
         assert [t.kind for t in m.compatible_targets] == ["canvas"]
         # dev/95: node.create is the reviewed lane the delegated Researcher's
         # note proposals mint on (grant-gated at the parent).
+        # #917: package.draft.apply is the one a package the Node Builder's
+        # writing mode drafts for it mints on, grant-gated the same way.
         assert [t.id for t in m.tools] == [
             "dataflow.read", "dataflow.plan.write", "node.runtime.read",
             "node.create",
             "examples.read",  # any worked example, beside the ones a run is given
+            "package.draft.apply",
         ]
         assert m.provenance.trust == "built-in"
 
