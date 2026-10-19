@@ -1,15 +1,14 @@
 /**
- * Webpack config for building each first-party package's `behaviors.js`
- * bundle.
+ * Webpack config for building each first-party package's behavior bundle.
  *
  * Each entry compiles a package's `sources/index.tsx` into a self-contained
- * UMD bundle that lands back in the package directory at
- * `scripts/behaviors.js`. The bundle externalizes React, ReactFlow, and
- * Curio's `registerBehavior` — they live as globals on `window` and the
- * bundle calls into them at load time. The `scripts/` subdirectory is one
- * of the package archive's allowed top-level dirs (see
- * `utk_curio/backend/app/packages/installer.py::_ALLOWED_TOP_DIRS`), so
- * the bundle survives a catalog round-trip through the archive validator.
+ * UMD bundle that lands back in the package directory, at the path its
+ * manifest's `behaviorScript` names (`scripts/behaviors.js`). The bundle
+ * externalizes React, ReactFlow, and Curio's `registerBehavior`: they live as
+ * globals on `window` and the bundle calls into them at load time. The
+ * `scripts/` subdirectory is one of the package archive's allowed top-level
+ * dirs (see `utk_curio/backend/app/packages/repositories/archive.py::_ALLOWED_TOP_DIRS`),
+ * so the bundle survives a catalog round-trip through the archive validator.
  * See `docs/EXTENDING.md` for the conventions a package author follows to
  * plug into this build.
  *
@@ -18,19 +17,13 @@
  */
 
 const path = require("path");
+const { packageEntries } = require("./webpack/packageEntries");
 
-// One entry per first-party package with a `sources/index.tsx`. To add a new
-// one, drop a directory at `packages/<id>@<major>/sources/` and add a row
-// here. Authors of THIRD-party packages would pre-build their own
-// `scripts/behaviors.js` and ship it inside the package directory — no
-// entry here.
-const PACKAGE_ENTRIES = [
-  {
-    id: "curio.example-ui@1",
-    entry: path.resolve(__dirname, "../../../packages/curio.example-ui@1/sources/index.tsx"),
-    outputDir: path.resolve(__dirname, "../../../packages/curio.example-ui@1/scripts"),
-  },
-];
+// One entry per package under `packages/` whose manifest declares a
+// `behaviorScript` and that holds `sources/index.tsx`, read off the manifests
+// (webpack/packageEntries.js). A package built outside this repository ships
+// its bundle already built, with no `sources/index.tsx`.
+const PACKAGE_ENTRIES = packageEntries(path.resolve(__dirname, "../../../packages"));
 
 // React, ReactFlow, and Curio's behavior-registry function are shared with
 // the host page. Mapping them to `window.*` globals keeps each package
@@ -42,12 +35,12 @@ const SHARED_EXTERNALS = {
   reactflow: { commonjs: "reactflow", commonjs2: "reactflow", amd: "reactflow", root: "ReactFlow" },
 };
 
-module.exports = PACKAGE_ENTRIES.map(({ id, entry, outputDir }) => ({
+module.exports = PACKAGE_ENTRIES.map(({ id, entry, outputDir, filename }) => ({
   name: id,
   entry,
   output: {
     path: outputDir,
-    filename: "behaviors.js",
+    filename,
     library: {
       // UMD lets the same bundle run as a global side-effect script
       // (the loader path we use today) or be re-bundled by a future
