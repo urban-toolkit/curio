@@ -12,11 +12,15 @@ export const NodeRunPills: React.FC<{
   solveRunning: boolean;
   nodeSolving: string | null;
   onSolveNode?: (nodeId: string) => void;
-}> = ({ entries, userBlockedIds, solveWaiting, solveRunning, nodeSolving, onSolveNode }) => (
+  /** The name of the agent an attachment of this dataflow binds, from the live list. */
+  agentNameOf?: (attachmentId: string) => string | null;
+}> = ({ entries, userBlockedIds, solveWaiting, solveRunning, nodeSolving, onSolveNode, agentNameOf }) => (
   <ul className={styles.nodeRuns} aria-live="polite" aria-label="Plan node progress">
     {entries.map(([nodeId, status]) => {
       const needsUser = userBlockedIds.has(nodeId);
       const waiting = (solveWaiting ?? []).find((w) => w.nodeId === nodeId);
+      // The node's own agent that holds its candidates, by its manifest's name.
+      const finder = waiting?.attachmentId ? agentNameOf?.(waiting.attachmentId) ?? null : null;
       return (
         <li key={nodeId} className={`${styles.nodeRun}${needsUser ? ` ${styles.nodeNeedsUser}` : ""}`}>
           <span className={styles.nodeId}>{nodeId.slice(0, 8)}</span>
@@ -38,7 +42,7 @@ export const NodeRunPills: React.FC<{
               aria-label={`Solve node ${nodeId.slice(0, 8)} on its own`}
               title={
                 needsUser
-                  ? "This node is waiting for you to confirm a source: open its Dataset Finder first"
+                  ? `This node is waiting for you to confirm a source: open its ${finder ?? "candidates"} first`
                   : "Runs this node's own agent: generate, run in the sandbox, fix, and write only code that passed"
               }
               disabled={needsUser || solveRunning || nodeSolving === nodeId}

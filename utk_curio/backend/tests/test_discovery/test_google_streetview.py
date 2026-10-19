@@ -45,7 +45,7 @@ def live(app, shipped_root, fixture_corpus):
 
 @pytest.fixture()
 def keyed(client, auth, live):
-    res = client.patch("/api/auth/me", headers=auth, json={"google_maps_api_key": SECRET})
+    res = client.patch("/api/auth/me", headers=auth, json={"source_keys": {"google.maps-key": SECRET}})
     assert res.status_code == 200, res.get_data(as_text=True)
     return auth
 
@@ -197,9 +197,10 @@ class TestTheKeyOnTheWire:
     KEY = f"?key={SECRET}"
 
     def test_the_slot_becomes_a_query_credential(self, app, db, user_and_token):
+        from utk_curio.backend.app.users import source_keys
+
         user, _ = user_and_token
-        user.google_maps_api_key = SECRET
-        db.session.commit()
+        source_keys.save_for(user, {"google.maps-key": SECRET})
         assert credentials.credential_header(user, _manifest()) == f"?key={SECRET}"
 
     def test_the_request_sent_carries_it(self, wire):

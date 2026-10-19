@@ -336,6 +336,10 @@ class TemplateManifest:
     # and the plan's widgets, and Solve does not write it
     # (``application/starters.py`` ``content_starters``).
     starter_is_content: bool = False
+    # ``loadsDataset``: a node of this template loads a dataset into the
+    # dataflow. An agent whose node target requires the flag attaches to it,
+    # and Solve finds the node a source before it writes its code.
+    loads_dataset: bool = False
 
     @classmethod
     def from_json(cls, raw: object, *, where: str) -> "TemplateManifest":
@@ -396,6 +400,9 @@ class TemplateManifest:
             raise ManifestError(f"{where}.starterIsContent must be a boolean when present")
         if "starterIsContent" in raw and not source_raw:
             raise ManifestError(f"{where}.starterIsContent needs a source: the starter it says is the content")
+        loads_dataset_raw = raw.get("loadsDataset", False)
+        if not isinstance(loads_dataset_raw, bool):
+            raise ManifestError(f"{where}.loadsDataset must be a boolean when present")
         dataflow_categories = _parse_dataflow_categories(raw.get(DATAFLOW_CATEGORIES), where=where)
         return cls(
             template_id=template_id,
@@ -427,6 +434,7 @@ class TemplateManifest:
             backend_handler=backend_handler_raw,
             widgets=widgets_raw,
             starter_is_content=starter_is_content_raw,
+            loads_dataset=loads_dataset_raw,
         )
 
 

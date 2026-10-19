@@ -210,7 +210,7 @@
             "items": {
               "type": "string"
             },
-            "description": "For a node target, the node kinds the agent accepts (e.g. 'data-loading'). Empty means any node."
+            "description": "For a node target, what the node may be, any one of them enough: a flag its template declares (e.g. 'loadsDataset') or a template id it has (e.g. 'data-loading'). Empty means any node."
           }
         }
       }

@@ -135,7 +135,7 @@ def skip_project_page_env() -> bool:
 
 def require_user_auth() -> None:
     if not auth_enabled_env():
-        pytest.skip("This test requires CURIO_NO_AUTH=0")
+        pytest.skip(USER_AUTH_REQUIRED)
 
 
 def require_project_page() -> None:
@@ -159,6 +159,12 @@ def require_no_project_mode() -> None:
     """
     if not skip_project_page_env():
         pytest.skip("This test requires CURIO_NO_PROJECT=1")
+
+
+#: Why :func:`require_user_auth` skips. Defined below the guards so their
+#: ``pytest.skip`` lines stay where they are: a skip's JUnit text names the
+#: line it was raised on, and CI compares those texts between runs.
+USER_AUTH_REQUIRED = "This test requires CURIO_NO_AUTH=0"
 
 
 def debug_log(location: str, message: str, data: dict = None, hypothesis_id: str = ""):

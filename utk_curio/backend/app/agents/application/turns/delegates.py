@@ -59,19 +59,21 @@ def _extract_candidates_reply(child_text: str) -> dict | None:
 
 
 def _mint_candidates_from_delegate(
-    loop_ctx: dict, child_text: str, catalog_rows: list
+    loop_ctx: dict, child_text: str, catalog_rows: list, *, name: str | None = None
 ) -> tuple[dict | None, str, str]:
     """dev/114: a successful ``dataset.discover`` delegation becomes the
     two-lane ``datasetCandidates`` part on the PARENT's turn — runtime-minted:
     catalog rows not in the runtime's own catalog listing are dropped (tool-
     grounded, never model-claimed), external rows get the DEC-053 verdict, and
     the run is marked so a same-turn node.create is refused (the user reviews
-    first). Returns ``(part | None, text_for_model, outcome)``."""
+    first). *name* is the delegate's, as its manifest gives it. Returns
+    ``(part | None, text_for_model, outcome)``."""
+    who = name or "the agent asked for datasets"
     block = _extract_candidates_reply(child_text)
     if block is None:
         return None, (
-            "the Dataset Finder returned no recognizable datasetCandidates block — "
-            "report that honestly; do not invent candidates or a source"
+            f"{who} returned no recognizable datasetCandidates block; "
+            "report that honestly, and do not invent candidates or a source"
         ), "no-candidates"
     known = {str(r.get("id")) for r in catalog_rows if isinstance(r, dict) and r.get("id")}
     lanes = block.get("lanes") or {}
@@ -90,10 +92,10 @@ def _mint_candidates_from_delegate(
         "catalog": kept,
     }})
     if parsed is None:
-        note = f" ({dropped} catalog row(s) dropped — not in the Data Catalog)" if dropped else ""
+        note = f" ({dropped} catalog row(s) dropped: not in the Data Catalog)" if dropped else ""
         return None, (
-            "the Dataset Finder returned no usable candidates" + note +
-            " — report that honestly; ask the user for a path or URL instead of guessing"
+            f"{who} returned no usable candidates" + note +
+            "; report that honestly, and ask the user for a path or URL instead of guessing"
         ), "no-candidates"
     agents_grounding._verify_candidate_parts([parsed], loop_ctx)
     loop_ctx["_candidates_pending_review"] = True
@@ -133,15 +135,12 @@ def _dataset_discover_inputs(user_key: str, project_id: str, inputs: dict) -> di
 
 
 #: dev/126: capabilities whose node-scoped work homes at the DELEGATE's own
-#: node attachment rather than dev/72's Node Builder default — discovery
-#: belongs in the chat of the agent that owns it, which is also where the user
-#: selects a source. One declaration; every other capability keeps dev/72's
-#: behavior byte-for-byte, and so does this one when that agent cannot live on
-#: the node (its manifest's compatibleTargets decide).
-_HOME_AGENT_BY_CAPABILITY: dict[str, str] = {
-    "dataset.discover": "agent.dataset-finder",
-    "dataset.select": "agent.dataset-finder",
-}
+#: node attachment rather than dev/72's default, the node's content agent:
+#: discovery belongs in the chat of the agent that owns it, which is also where
+#: the user selects a source. Every other capability keeps dev/72's behavior,
+#: and so do these when that agent cannot live on the node (its manifest's
+#: compatibleTargets decide).
+_HOMED_AT_THE_DELEGATE = frozenset({"dataset.discover", "dataset.select"})
 
 
 def _delegation_home(
@@ -153,45 +152,51 @@ def _delegation_home(
     node_id: str | None = None,
     create: bool = True,
     user_key: str | None = None,
+    project_id: str | None = None,
 ) -> tuple[dict | None, bool]:
     """Where a delegated task LIVES (memo dev/72): node-scoped work → the
-    target node's Node Builder attachment (dev/71's; best-effort created);
-    everything else → an existing attachment of the DELEGATE's agent id
-    (canvas-scoped preferred), else a new canvas attachment of the resolved
-    coord. Returns ``(record | None, created)`` — best-effort throughout: a
-    missing home never fails a delegation. dev/126: a capability in
-    ``_HOME_AGENT_BY_CAPABILITY`` homes at its own agent's node attachment."""
+    target node's content agent, the attachment that declares
+    ``node.content.generate`` (dev/71's; best-effort created); everything else
+    → an existing attachment of the DELEGATE's agent id (canvas-scoped
+    preferred), else a new canvas attachment of the resolved coord. Returns
+    ``(record | None, created)``, best-effort throughout: a missing home never
+    fails a delegation. dev/126: a capability in ``_HOMED_AT_THE_DELEGATE``
+    homes at the delegate's own node attachment."""
     target_node = node_id or (inputs or {}).get("nodeId")
     if isinstance(target_node, str) and target_node:
-        home_agent = _HOME_AGENT_BY_CAPABILITY.get(capability)
-        if home_agent:
+        node_type = next(
+            (
+                n.get("type") for n in (spec.get("dataflow") or {}).get("nodes") or []
+                if isinstance(n, dict) and n.get("id") == target_node
+            ),
+            None,
+        )
+
+        def templates() -> dict | None:
+            # The project's roster, read only to attach an agent.
+            return agents_roster._roster_templates(user_key, project_id) if user_key and project_id else None
+
+        if capability in _HOMED_AT_THE_DELEGATE and coord:
+            home_agent = coord.split("@", 1)[0]
             existing = agents_spec_reads._node_attachment_of(spec, home_agent, target_node)
             if existing is not None:
                 return existing, False
             if create:
-                node_type = next(
-                    (
-                        n.get("type") for n in (spec.get("dataflow") or {}).get("nodes") or []
-                        if isinstance(n, dict) and n.get("id") == target_node
-                    ),
-                    None,
-                )
                 row = agents_plans._attach_node_agent(
-                    user_key, spec, home_agent, target_node, node_type
+                    user_key, spec, home_agent, target_node, node_type, templates=templates(),
                 )
                 if row.get("attachmentId"):
                     return attachments.get_attachment(spec, row["attachmentId"]), True
-            # That agent cannot live on this node — dev/72's default applies.
-        for rec in attachments.list_attachments(spec):
-            target = rec.get("target") or {}
-            if (
-                rec.get("coord", "").split("@", 1)[0] == "agent.node-builder"
-                and target.get("kind") == "node"
-                and target.get("targetId") == target_node
-            ):
-                return rec, False
+            # That agent cannot live on this node: dev/72's default applies.
+        home = agents_spec_reads._node_attachment_declaring(
+            spec, "node.content.generate", target_node, user_key=user_key,
+        )
+        if home is not None:
+            return home, False
         if create:
-            att_id = agents_plans._attach_node_builder(spec, target_node)
+            att_id = agents_plans._attach_node_builder(
+                spec, target_node, user_key=user_key, node_type=node_type, templates=templates(),
+            )
             if att_id:
                 return attachments.get_attachment(spec, att_id), True
         return None, False
@@ -272,7 +277,7 @@ def _run_delegate_traced(
         if spec is not None and not _is_own_mode_without_a_node(coord, parent_coord, inputs, node_id):
             home, created = _delegation_home(
                 spec, coord, capability, inputs, node_id=node_id, create=home_create,
-                user_key=user_key,
+                user_key=user_key, project_id=project_id,
             )
             if home is not None:
                 home_attachment_id = home.get("attachmentId")
@@ -376,6 +381,7 @@ def _mint_content_review_from_delegate(
     parent_loop_ctx: dict | None = None,
     validation: dict | None = None,
     grounding_base: dict | None = None,
+    delegate_coord: str | None = None,
 ) -> tuple[dict | None, str | None, str]:
     """dev/73: the ONE content→review sequence (the Solve drain's, extracted):
     a successful ``node.content.generate`` delegation becomes a reviewed
@@ -388,22 +394,25 @@ def _mint_content_review_from_delegate(
     could — else at the parent attachment. The review turn is written at a
     foreign home (the parent's composed turn carries the part locally);
     ``local_turn=True`` (the Solve drain, which composes no parent parts)
-    writes it unconditionally. Returns ``(proposal_part | None,
-    home_attachment_id, text_for_model)`` — on failure the text is the
-    honest refusal to feed back.
+    writes it unconditionally. *delegate_coord* is the agent that generated
+    the content. Returns ``(proposal_part | None, home_attachment_id,
+    text_for_model)``; on failure the text is the honest refusal to feed
+    back.
     """
     text_out = content.extract_node_content(generated_text)
     home_att, home_sess = parent_attachment_id, parent_session_id
+    home_name = None
     node_label = node_id
     try:
         fresh_spec = projects_storage.read_spec(user_key, project_id)
         home, _ = _delegation_home(
-            fresh_spec or {}, "agent.node-builder", "node.content.generate", {},
-            node_id=node_id, create=False,
+            fresh_spec or {}, delegate_coord or "", "node.content.generate", {},
+            node_id=node_id, create=False, user_key=user_key,
         )
         if home is not None:
             home_att = home.get("attachmentId")
             home_sess = home.get("sessionId")
+            home_name = agents_spec_reads._agent_name(user_key, str(home.get("coord") or ""))
         for node in ((fresh_spec or {}).get("dataflow") or {}).get("nodes") or []:
             if isinstance(node, dict) and node.get("id") == node_id:
                 node_label = (node.get("goal") or node_id)[:60]
@@ -454,7 +463,7 @@ def _mint_content_review_from_delegate(
     where = (
         "in this conversation"
         if home_att == parent_attachment_id
-        else "at the node's own Node Builder agent"
+        else f"at the node's own {home_name or 'content'} agent"
     )
     return part, home_att, (
         f"the generated content was minted as reviewed proposal "
@@ -1384,15 +1393,13 @@ def _enriched_delegate_inputs(
     # dev/114 — the SEVENTH application: a data-loading node's content child
     # is HANDED its grounded sources (catalog paths, the user's paths, the
     # URLs already verified) instead of guessing a filename.
-    from utk_curio.backend.app.packages import service as packages_services
-
     node_type = composed.get("nodeType")
-    if "sourceGrounding" not in enriched and source_grounding.is_data_loading_type(
-        packages_services.canonical_template_id(node_type)
+    if "sourceGrounding" not in enriched and source_grounding.loads_dataset(
+        node_type, agents_roster._roster_templates(user_key, project_id)
     ):
         enriched["sourceGrounding"] = agents_grounding._source_grounding_inputs(
             agents_grounding._grounding_context(user_key, project_id, loop_ctx, node_type=node_type,
-                               extra_texts=(str(inputs.get("intent") or ""),))
+                               extra_texts=(str(inputs.get("intent") or ""),), is_data_loading=True)
         )
     return enriched
 

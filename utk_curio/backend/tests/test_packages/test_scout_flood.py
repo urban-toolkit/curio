@@ -54,7 +54,8 @@ import pytest
 REPO = Path(__file__).resolve().parents[4]
 DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "quad-cities-flood-vulnerability.json"
 SCOUT_FUNCTION = Path(__file__).resolve().parent / "fixtures" / "scout_flood" / "flood_simulation.py"
-NODE_CODE_TS = REPO / "utk_curio" / "frontend" / "urban-workflows" / "src" / "utils" / "raster" / "rasterNodeCode.ts"
+#: The starter a Raster Calculator opens with, which its package ships.
+CALCULATOR_STARTER = REPO / "packages" / "scout.rasters@1" / "sources" / "raster-calculator.py"
 COMPARE_CODE_TS = REPO / "utk_curio" / "frontend" / "urban-workflows" / "src" / "utils" / "compare" / "compareCode.ts"
 LOADING = "curio.builtin/data-loading"
 CALCULATOR = "scout.rasters/raster-calculator"
@@ -392,18 +393,11 @@ def _parameters() -> dict:
     return {n["metadata"]["widgets"][0]["name"]: n["metadata"]["widgets"][0] for n in _nodes(PARAMETER)}
 
 
-def _starter(name: str) -> str:
-    source = NODE_CODE_TS.read_text(encoding="utf-8")
-    match = re.search(rf"export const {name} = `([^`]*)`;", source)
-    assert match, f"{name} is not in {NODE_CODE_TS}"
-    return match.group(1)
-
-
 def _starters_statistics() -> str:
     """The statistics a Raster Calculator's code starts by showing: its lines
     from ``# Statistics:`` to the statistics call, that call uncommented, as a
     node that takes them holds them."""
-    lines = _starter("RASTER_CALCULATOR_CODE").splitlines()
+    lines = CALCULATOR_STARTER.read_text(encoding="utf-8").splitlines()
     starts = [i for i, line in enumerate(lines) if line.startswith("# Statistics:")]
     calls = [i for i, line in enumerate(lines) if line.startswith("#   return curio_raster_statistics(")]
     assert len(starts) == len(calls) == 1 and starts[0] < calls[0], lines

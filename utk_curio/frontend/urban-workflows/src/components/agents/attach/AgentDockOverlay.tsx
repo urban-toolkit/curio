@@ -251,6 +251,11 @@ export const AgentDockOverlay: React.FC = () => {
               delegateExists={(id) =>
                 ctx.attachments.some((a) => a.attachmentId === id)
               }
+              // A label that opens another agent's chat names that agent as
+              // the live list does, by its manifest's name.
+              agentNameOf={(id) =>
+                ctx.attachments.find((a) => a.attachmentId === id)?.name ?? null
+              }
               onSaveIntent={(intent) => ctx.saveIntent(shown.attachmentId, intent)}
               onSaveTitle={(title) => ctx.saveTitle(shown.attachmentId, title)}
               onClearConversation={() => ctx.clearConversation(shown.attachmentId)}

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { NodeBehaviorData, NodeBehaviorResult, UseNodeStateReturn } from '../../registry/types';
 import type { NodeOutput } from '../../hook/useNodeState';
 import { detectWebGpuSupport, reprobeWebGpuSupport } from '../../utils/webgpuSupport';
@@ -83,7 +83,7 @@ export const useAutkGrammarBehavior = (
     nodeState: UseNodeStateReturn,
     { marksNodeErrored = true }: AutkBehaviorOptions = {},
 ): NodeBehaviorResult => {
-    const { showToast } = useToastContext();
+    const toasts = useToastContext();
     const wrapperRef = useRef<HTMLDivElement>(null);
     // Set when the browser cannot run Autark at all (#201). Renders an
     // in-node explanation instead of the map container, so the node says why
@@ -124,9 +124,33 @@ export const useAutkGrammarBehavior = (
         destroyMapsRef.current?.();
         destroyMapsRef.current = null;
     };
-    // Whether the node is on the page: maps a run makes after it has left are
-    // destroyed at once.
+    // Whether the node is on the page. It turns false in the commit that takes
+    // the node off the page (the layout effect below), the moment its canvas
+    // goes, so a run that goes on in that same moment already reads it.
+    //
+    // A node that leaves while its run is under way (File > New dataflow, a
+    // deleted node) drops the run. The run makes no grammar after that, and
+    // nothing it says reaches the page: no toast, no output, no rows handed
+    // on. autk-grammar's own run cannot be stopped, so one already under way
+    // goes on. Its map then finds no canvas, and that failure is dropped too,
+    // or it draws on the canvas that left, and that map is destroyed at once.
     const mountedRef = useRef(true);
+    const leftPage = () => !mountedRef.current;
+    // What a run tells the person, while its node is on the page.
+    const showToast: typeof toasts.showToast = (...args) => {
+        if (!leftPage()) toasts.showToast(...args);
+    };
+    // What a run hands to the nodes this one feeds, while it is on the page.
+    const handOn = (output: unknown) => {
+        if (!leftPage()) data.outputCallback?.(data.nodeId, output);
+    };
+    // The toast is transient and the node UI has no error tab, so a failure
+    // also goes to the console, the only durable place tooling (and the e2e
+    // browser-log dump) can read it from. A dropped run's is no node error.
+    const logFailure = (message: string) => {
+        if (leftPage()) console.info('[autk-grammar] dropped the run of a node that left the page:', message);
+        else console.error('[autk-grammar] node error:', message);
+    };
     // Always-current ref to data so grammar event callbacks never close over a
     // stale data object (grammar subscriptions outlive individual renders).
     const dataRef = useRef(data);
@@ -714,6 +738,9 @@ export const useAutkGrammarBehavior = (
                 spec = withOpaqueRasters(withScenarioColors(spec, scenariosRef.current));
 
                 const { AutkGrammar } = await import('@urban-toolkit/autk-grammar');
+                // A node that left the page while its data loaded has no
+                // canvas to draw on: its run ends here (see mountedRef).
+                if (leftPage()) return;
                 // A fresh grammar per attempt: it builds its own AutkDb, and a
                 // DuckDB worker that failed to fetch the spatial extension keeps
                 // that state, so only a new one can succeed (#318).
@@ -728,10 +755,14 @@ export const useAutkGrammarBehavior = (
                 // are destroyed with the next run or the node even if a step
                 // below fails.
                 destroyMapsRef.current = trackMaps(grammar);
+                // A node that left the page while they were made destroys them
+                // now, and its run ends there.
+                if (leftPage()) {
+                    destroyLastMaps();
+                    return;
+                }
                 bleedRasterEdges(grammar, spec);
                 frameMaps(grammar);
-                // A node that left the page while they were made destroys them now.
-                if (!mountedRef.current) destroyLastMaps();
                 // autk-plot's SVG is inline, so it sits on a line of text whose
                 // descender space overflows a pane the plot exactly fills, and
                 // brings the scrollbars back. As a block it fits.
@@ -797,9 +828,7 @@ export const useAutkGrammarBehavior = (
                     interactionOffRef.current = [off1, off2];
                 }
 
-                if (data.outputCallback) {
-                    data.outputCallback(data.nodeId, data.input ?? null);
-                }
+                handOn(data.input ?? null);
                 // A selection still active from before this draw lights up
                 // the new map too, as a Vega chart re-applies its own.
                 syncHighlightsNow();
@@ -824,7 +853,7 @@ export const useAutkGrammarBehavior = (
                         ?? (backendLayers
                             ? (await toPoolOutput(backendLayers, data.jsInterpreter, data.nodeId)) ?? backendLayers
                             : null);
-                    if (data.outputCallback) data.outputCallback(data.nodeId, out);
+                    handOn(out);
                     // The backend path hands back an artifact ref, not the
                     // tables, so name what the spec asked autk-db to create -
                     // a short load has already failed above, so these exist.
@@ -920,7 +949,7 @@ export const useAutkGrammarBehavior = (
                     // nothing under this node's error. The verdict below says why.
                     if (!renderOutcome(runCounts).empty) {
                         const out = await toPoolOutput(layers, data.jsInterpreter, data.nodeId);
-                        if (data.outputCallback) data.outputCallback(data.nodeId, out ?? layers);
+                        handOn(out ?? layers);
                     }
                 }
             }
@@ -947,10 +976,7 @@ export const useAutkGrammarBehavior = (
             emit({ code: 'success', content: summary ?? '' });
         } catch (err: any) {
             const msg = describeError(err);
-            // The toast is transient and the node UI has no error tab, so
-            // also log to console — it's the only durable place tooling
-            // (and the e2e browser-log dump) can read the failure from.
-            console.error('[autk-grammar] node error:', msg);
+            logFailure(msg);
             emit({ code: 'error', content: msg });
             showToast(msg, 'error');
         }
@@ -968,6 +994,9 @@ export const useAutkGrammarBehavior = (
      * guaranteed here, in a finally, rather than hoped for in the body.
      */
     const applyGrammar = async (specString: string): Promise<void> => {
+        // A node that has left the page starts no run: a draw asked for as
+        // it left, or a run queued behind the one under way (see mountedRef).
+        if (leftPage()) return;
         if (runningRef.current) {
             // A run is under way (a redraw on new input, or a Play): run once
             // more when it ends, with the latest document, rather than two runs
@@ -981,6 +1010,8 @@ export const useAutkGrammarBehavior = (
         inputProblemRef.current = null;
         let settled = false;
         const emit = (o: { code: string; content: string }) => {
+            // A dropped run says nothing (see mountedRef).
+            if (leftPage()) return;
             if (o.code === 'success' || o.code === 'error') settled = true;
             if (o.code === 'error' && marksNodeErrored) markNodeErrored?.(data.nodeId);
             nodeState.setOutput(o);
@@ -991,10 +1022,7 @@ export const useAutkGrammarBehavior = (
             await runAndAlwaysSettle(() => runGrammar(specString, emit), {
                 settled: () => settled,
                 onError: (msg) => {
-                    // The toast is transient and the node UI has no error tab, so
-                    // also log to console - the only durable place tooling (and the
-                    // e2e browser-log dump) can read the failure from.
-                    console.error('[autk-grammar] node error:', msg);
+                    logFailure(msg);
                     emit({ code: 'error', content: msg });
                     showToast(msg, 'error');
                 },
@@ -1250,13 +1278,19 @@ export const useAutkGrammarBehavior = (
         return () => { ro.disconnect(); if (timer) clearTimeout(timer); };
     }, []);
 
+    // On the page from the commit that mounts the node to the one that takes
+    // it off, which removes its canvas too (see mountedRef). A passive
+    // effect's cleanup runs later, and a run may go on in between.
+    useLayoutEffect(() => {
+        mountedRef.current = true;
+        return () => { mountedRef.current = false; };
+    }, []);
+
     // Unsubscribe grammar event listeners and remove the map canvas's window
     // pointer listeners when the node is removed from the canvas (a deleted
     // node, a closed dataflow), and destroy its maps.
     useEffect(() => {
-        mountedRef.current = true;
         return () => {
-            mountedRef.current = false;
             interactionOffRef.current.forEach(f => f());
             pickFixCleanupRef.current?.();
             destroyLastMaps();

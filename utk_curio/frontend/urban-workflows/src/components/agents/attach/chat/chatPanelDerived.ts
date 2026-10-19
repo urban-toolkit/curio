@@ -6,6 +6,9 @@
  * header's target label, and the newest turn's suggested prompts.
  */
 import {
+  declaresCapability,
+  NODE_BUILD_CAPABILITY,
+  ORCHESTRATE_CAPABILITY,
   turnStatusDisplay,
   type AgentAttachment,
   type AgentDelegationPart,
@@ -79,8 +82,9 @@ export function lastingToolFailures(turn: AgentSessionTurn): AgentToolCall[] {
   );
 }
 
-/** The agents whose work lands on the canvas (#243). */
-const CANVAS_AGENTS = ["agent.node-builder@", "agent.dataflow-builder@"];
+/** What an agent whose work lands on the canvas declares (#243): it builds
+ * nodes, or plans and solves a dataflow. */
+const CANVAS_CAPABILITIES = [NODE_BUILD_CAPABILITY, ORCHESTRATE_CAPABILITY];
 
 /**
  * #243: a canvas agent's reply that holds no proposal changed nothing on the
@@ -96,7 +100,7 @@ const CANVAS_AGENTS = ["agent.node-builder@", "agent.dataflow-builder@"];
  */
 export function canvasUnchangedFor(attachment: AgentAttachment, turns: AgentSessionTurn[], i: number): boolean {
   const t = turns[i];
-  if (!CANVAS_AGENTS.some((prefix) => attachment.coord.startsWith(prefix))) return false;
+  if (!CANVAS_CAPABILITIES.some((capability) => declaresCapability(attachment, capability))) return false;
   if (t.role !== "agent" || t.error || !t.execution || "parentExecutionId" in t.execution) return false;
   if (turns[i - 1]?.role !== "user") return false;
   return !(t.content ?? []).some(

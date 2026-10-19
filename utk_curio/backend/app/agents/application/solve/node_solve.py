@@ -75,12 +75,11 @@ def solve_node_stream(
         user_key, project_id, manifest, "node.content.generate"
     ) if manifest is not None else delegation.Resolution("unresolvable")
     if resolution.outcome != "ok":
-        raise AgentServiceError(
-            "no installed agent declares node.content.generate — install the "
-            "Node Builder first",
-            409,
-        )
-    agents_session._check_delegate_llms(user_key, project_id, manifest, config, agents_session._delegate_capabilities([node]))
+        raise AgentServiceError(agents_rounds._no_content_agent(resolution), 409)
+    templates = agents_roster._roster_templates(user_key, project_id)
+    agents_session._check_delegate_llms(
+        user_key, project_id, manifest, config, agents_session._delegate_capabilities([node], templates),
+    )
     try:
         agent_jobs.check_can_start(user_key, attachment_id)
     except agent_jobs.JobRefused as exc:
@@ -95,7 +94,7 @@ def solve_node_stream(
         record.get("coord", ""), record.get("sessionId"), execution_id, exec_fn,
         manifest=manifest, grounding_base=base, dataset_paths=dataset_paths,
         catalog_rows=agents_grounding._catalog_rows_for_discovery(user_key, project_id),
-        templates=agents_roster._roster_templates(user_key, project_id),
+        templates=templates,
         acting_user=agents_spec_reads._acting_user(),
     )
     job = agent_jobs.start_job(
@@ -177,6 +176,7 @@ def _solve_node_events(
             spec, node_id, str(node.get("goal") or node_id)[:120],
             {"attempts": attempts, "rounds": rounds, "verdict": verdict,
              "stoppedBy": outcome.get("stoppedBy")},
+            user_key=user_key,
         )
         if trail_part is not None:
             parts.append(trail_part)
@@ -375,14 +375,20 @@ def _conclude(user_key, project_id, attachment_id, session_id, spec, node, label
         card_kind = "result"
     elif verdict == "awaiting-source":
         # dev/126: the source is with the user. Nothing was generated or
-        # written; the node's own Dataset Finder holds the candidates.
+        # written; the node's own agent that finds datasets holds the candidates.
         evidence = outcome.get("evidence") or {}
         remedy_payload = evidence.get("remedy")
         if isinstance(remedy_payload, dict):
             done["remedy"] = remedy_payload
+        finder = (
+            agents_spec_reads._attachment_agent_name(
+                user_key, project_id, (remedy_payload or {}).get("attachmentId"),
+            )
+            or agents_spec_reads._shipped_name_declaring("dataset.discover")
+        )
         text = (
-            f"Awaiting a source for {label!r}: {evidence.get('detail') or 'a dataset must be selected'} "
-            "— open Dataset Finder on this node, select the source and confirm, then Solve "
+            f"Awaiting a source for {label!r}: {evidence.get('detail') or 'a dataset must be selected'}. "
+            f"Open {finder} on this node, select the source and confirm, then Solve "
             "again. Nothing was generated or written."
         )
         card_kind = "result"

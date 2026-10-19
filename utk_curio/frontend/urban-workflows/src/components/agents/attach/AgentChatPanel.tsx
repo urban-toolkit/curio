@@ -4,6 +4,8 @@ import { useFlowContext } from "../../../providers/FlowProvider";
 import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
 import {
   attachmentDisplayName,
+  declaresCapability,
+  ORCHESTRATE_CAPABILITY,
   sessionTokenTotals,
   type AgentAttachment,
   type AgentSessionTurn,
@@ -116,7 +118,7 @@ export const AgentChatPanel: React.FC<{
   onSimulate?: (mode: "step" | "auto") => Promise<unknown>;
   onCancelSimulate?: () => Promise<void>;
   simulationActivity?: string;
-  /** dev/52 Solve (Dataflow Builder attachments only); omitted → no strip. */
+  /** dev/52 Solve (an agent that declares dataflow.orchestrate); omitted → no strip. */
   onSolve?: (nodeIds?: string[]) => Promise<unknown>;
   /** dev/63: the live batch's per-node status overlay (nodeId → status). */
   solveProgress?: Record<string, string>;
@@ -146,7 +148,7 @@ export const AgentChatPanel: React.FC<{
    * plan-row chips' icon-links route through this. Omitted → entries inert. */
   onOpenAgentChat?: (attachmentId: string) => void;
   /** dev/126: record the confirmed dataset selection for this attachment's
-   * node (Dataset Finder on a node only). */
+   * node (an agent that declares dataset.select, on a node only). */
   onRecordDatasetSelection?: (
     picks: import("../../../services/agents").AgentDatasetPick[],
   ) => Promise<import("../../../services/agents").AgentDatasetSelection>;
@@ -158,6 +160,10 @@ export const AgentChatPanel: React.FC<{
   ) => Promise<string | null>;
   /** dev/72: live-existence check for a delegation home (stale → no link). */
   delegateExists?: (attachmentId: string) => boolean;
+  /** The name of the agent another attachment of this dataflow binds, from
+   * the live list: the labels that open its chat name it. Null when the list
+   * no longer holds it; omitted, those labels say what they open instead. */
+  agentNameOf?: (attachmentId: string) => string | null;
   onSaveIntent?: (intent: string | null) => Promise<void>;
   /** Persist a manual conversation title (memo dev/25). Omitted → the header
    * title is a plain, non-editable label. */
@@ -207,6 +213,7 @@ export const AgentChatPanel: React.FC<{
   onRecordDatasetSelection,
   onImportDataset,
   delegateExists,
+  agentNameOf,
   onSaveIntent,
   onSaveTitle,
   onClearConversation,
@@ -357,6 +364,7 @@ export const AgentChatPanel: React.FC<{
     onInternalLink: (to: string) => leave(() => navigate(to)),
     onOpenAgentChat,
     delegateExists,
+    agentNameOf,
     onRecordDatasetSelection,
     onImportDataset,
     onApplyProposal,
@@ -394,17 +402,18 @@ export const AgentChatPanel: React.FC<{
         titleError={title.error}
       />
 
-      {/* The dev/52 builder strip: Dataflow Builder attachments only — every
-          other agent's chat is pixel-identical. */}
+      {/* The dev/52 builder strip: an agent that declares dataflow.orchestrate,
+          one that plans a dataflow and solves it. */}
       {onSolveNode && attachment.target.kind === "node" ? (
         <NodeSolveRow
           onSolveNode={onSolveNode}
           onOpenChat={onOpenAgentChat}
+          agentNameOf={agentNameOf}
           activity={solveNodeActivity}
           live={attachment.liveJob?.status === "running" && attachment.liveJob.kind === "solve-node"}
         />
       ) : null}
-      {onSolve && attachment.coord.startsWith("agent.dataflow-builder@") ? (
+      {onSolve && declaresCapability(attachment, ORCHESTRATE_CAPABILITY) ? (
         <AgentBuilderStrip
           attachment={attachment}
           onSolve={onSolve}
@@ -412,6 +421,7 @@ export const AgentChatPanel: React.FC<{
           solveErrors={solveErrors}
           solveRemedies={solveRemedies}
           onOpenChat={onOpenAgentChat}
+          agentNameOf={agentNameOf}
           solveWaiting={solveWaiting}
           solveEndedBy={solveEndedBy}
           solvePass={solvePass}

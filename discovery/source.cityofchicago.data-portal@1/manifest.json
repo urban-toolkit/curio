@@ -19,7 +19,11 @@
     "secretId": "socrata.app-token",
     "scheme": "header",
     "headerName": "X-App-Token",
-    "helpUrl": "https://dev.socrata.com/docs/app-tokens.html"
+    "label": "Socrata app token",
+    "helpUrl": "https://evergreen.data.socrata.com/signup",
+    "placeholder": "Your app token",
+    "note": "Socrata portals answer without one; a token raises the rate limit.",
+    "operatorDefault": true
   },
   "capabilities": {
     "search": true,

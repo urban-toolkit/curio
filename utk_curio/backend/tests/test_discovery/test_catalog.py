@@ -165,7 +165,7 @@ class TestGetOne:
 class TestInjectedCollaborators:
     def test_credential_presence_comes_from_the_caller(self, discovery_dir):
         _seed(discovery_dir)
-        catalog = DiscoveryCatalog(credential_present=lambda slot: slot == "socrata.app-token")
+        catalog = DiscoveryCatalog(credential_present=lambda auth: auth.secret_id == "socrata.app-token")
         rows = {r["sourceId"]: r for r in catalog.list_catalog()["sources"]}
         assert rows["source.a.socrata-one"]["auth"]["present"] is True
         assert rows["source.b.ckan-one"]["auth"]["present"] is False

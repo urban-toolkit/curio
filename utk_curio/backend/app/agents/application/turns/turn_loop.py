@@ -429,6 +429,7 @@ class AttachmentTurn:
                 parent_attachment_id=loop_ctx.get("attachment_id"),
                 parent_session_id=loop_ctx.get("session_id"),
                 parent_loop_ctx=loop_ctx,
+                delegate_coord=resolution.coord,
             )
             delegate_summary = text
             if review_part is not None:
@@ -468,6 +469,7 @@ class AttachmentTurn:
                 loop_ctx, text,
                 (inputs.get("catalog") or {}).get("rows")
                 or agents_delegates._dataset_discover_inputs(self.user_key, self.project_id, {})["catalog"]["rows"],
+                name=getattr(resolution.manifest, "name", None),
             )
             delegate_summary = text
             if cand_part is not None:

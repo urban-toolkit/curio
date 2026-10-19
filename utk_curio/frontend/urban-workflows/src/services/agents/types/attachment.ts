@@ -15,6 +15,13 @@ export interface AgentAttachment {
   revision: number;
   name: string;
   category: string | null;
+  /** The capabilities its manifest declares: the chat offers each of its
+   * features to any agent that declares the capability behind it. */
+  capabilities?: string[];
+  /** The name of the agent it hands a node to build to (node.build, through
+   * its `delegatesTo`), for an agent that does not build nodes itself; null
+   * otherwise. The candidates card's hand-off names it. */
+  nodeBuildDelegate?: string | null;
   hooks: string[];
   /**
    * The attachment's initial intent: the user's edit when present, otherwise
