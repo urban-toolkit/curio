@@ -2,9 +2,9 @@
 
 The backend unit suite runs as ``CURIO_UNIT_PART`` parts on separate CPU
 runner jobs (the e2e suite's split is test_e2e_runner_split.py). The
-last tests here collect the real suite whole and in parts through pytest and
-check the parts add up to it exactly, and that a part holds only tests that
-will run.
+last tests here collect the real suite whole and in parts through pytest,
+several processes at once (_support/collection.py), and check the parts add
+up to it exactly, and that a part holds only tests that will run.
 """
 
 import itertools
@@ -15,8 +15,10 @@ import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from utk_curio.backend.tests import parts
+from utk_curio.backend.tests._support import collection
 
 REPO = Path(__file__).resolve().parents[3]
 
@@ -115,27 +117,65 @@ class PartsTest(unittest.TestCase):
         self.assertEqual(ids, ["test_mod.py::test_kept"], run.stdout[-2000:] + run.stderr[-2000:])
 
 
+class CollectionsAtOnceTest(unittest.TestCase):
+    def test_each_collection_has_a_state_folder_of_its_own(self):
+        """Collections that run at once never share the test database.
+
+        tests/conftest.py deletes the test database it owns at import and builds
+        it again, so each collection (_support/collection.py) gets its own
+        CURIO_STATE_DIR and none of the database paths this process holds.
+        """
+        keys = ("CURIO_UNIT_PART", "CURIO_STATE_DIR", *collection.STATE_PATHS, "LOG_TO_STDOUT")
+        with tempfile.TemporaryDirectory() as folder:
+            suite = Path(folder)
+            (suite / "conftest.py").write_text(textwrap.dedent(f'''
+                import os
+
+                print("env::" + "::".join(os.environ.get(key, "unset") for key in {keys!r}))
+            '''), encoding="utf-8")
+            (suite / "test_mod.py").write_text("def test_one():\n    pass\n", encoding="utf-8")
+            argv = [sys.executable, "-m", "pytest", ".", "--collect-only", "-q", "-s",
+                    "-p", "no:cacheprovider"]
+            held = {key: os.environ.get(key) or f"held-here-{key}" for key in collection.STATE_PATHS}
+            with mock.patch.dict(os.environ, held):
+                found = collection.collect_each(
+                    [(argv, {"CURIO_UNIT_PART": f"{k}/2", "PYTEST_ADDOPTS": ""}) for k in (1, 2)], suite)
+        self.assertTrue(all("test_mod.py::test_one" in ids for ids in found), found)
+        printed = [next((line for line in ids if line.startswith("env::")), "") for ids in found]
+        self.assertTrue(all(printed), f"a collection did not print its environment: {found}")
+        seen = [dict(zip(keys, line.split("::")[1:])) for line in printed]
+        self.assertEqual([env["CURIO_UNIT_PART"] for env in seen], ["1/2", "2/2"], "not in the order asked")
+        states = [env["CURIO_STATE_DIR"] for env in seen]
+        self.assertNotIn("unset", states)
+        self.assertNotEqual(states[0], states[1], "two collections shared a state folder")
+        for env in seen:
+            self.assertEqual({key: env[key] for key in collection.STATE_PATHS},
+                             dict.fromkeys(collection.STATE_PATHS, "unset"))
+            self.assertEqual(env["LOG_TO_STDOUT"], "1")
+
+
 class NoBackendTestIsLostTest(unittest.TestCase):
     PARTS = parts.BACKEND_UNIT_PARTS
 
     @staticmethod
-    def collect(part="", *args):
-        run = subprocess.run(
-            [sys.executable, "-m", "pytest", "utk_curio/backend/tests",
-             "--ignore=utk_curio/backend/tests/test_frontend",
-             "--collect-only", "-q", "-p", "no:cacheprovider", *args],
-            cwd=REPO, capture_output=True, text=True,
-            env={**os.environ, "PYTHONPATH": str(REPO), "CURIO_UNIT_PART": part},
-        )
-        ids = [line for line in run.stdout.splitlines() if "::" in line]
-        if not ids:
-            raise AssertionError(f"collection found nothing:\n{run.stdout[-2000:]}\n{run.stderr[-2000:]}")
-        return ids
+    def command(part="", *args):
+        """The collection of CI's backend part *part*, the whole suite when empty, as (argv, env)."""
+        return ([sys.executable, "-m", "pytest", "utk_curio/backend/tests",
+                 "--ignore=utk_curio/backend/tests/test_frontend",
+                 "--collect-only", "-q", "-p", "no:cacheprovider", *args],
+                {"PYTHONPATH": str(REPO), "CURIO_UNIT_PART": part})
+
+    @classmethod
+    def collect(cls, part="", *args):
+        argv, env = cls.command(part, *args)
+        return collection.collect(argv, REPO, env)
 
     @classmethod
     def setUpClass(cls):
-        cls.everything = cls.collect()
-        cls.pieces = [cls.collect(f"{k}/{cls.PARTS}") for k in range(1, cls.PARTS + 1)]
+        # The whole suite and every part, several at once (_support/collection.py).
+        everything, *pieces = collection.collect_each(
+            [cls.command()] + [cls.command(f"{k}/{cls.PARTS}") for k in range(1, cls.PARTS + 1)], REPO)
+        cls.everything, cls.pieces = everything, pieces
 
     def test_the_parts_add_up_to_the_suite(self):
         everything, pieces = self.everything, self.pieces
