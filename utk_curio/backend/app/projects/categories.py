@@ -7,7 +7,8 @@ A dataflow's categories come from three places, and each has exactly one:
   the project id and never written into the spec, so a duplicate or an imported
   copy of an example is the user's, not a second example.
 * **automatic** - ``tags`` and ``data_type``, read off the saved spec's node
-  types, imports and datasets by :func:`derive`. Nothing stores them: they are
+  types (and the grammar their templates draw with, ``template_grammars``),
+  imports and datasets by :func:`derive`. Nothing stores them: they are
   recomputed on every read, so they follow the nodes and a dataflow saved
   before this existed gets them without a back-fill.
 * **hand-set** - ``dataflow.categories`` in the spec: the user's own tags plus
@@ -20,6 +21,13 @@ import json
 import re
 from pathlib import Path
 from typing import Callable, Iterable, Optional
+
+from utk_curio.backend.app.projects.template_grammars import (
+    AUTK_GRAMMAR,
+    TemplateGrammar,
+    TemplateGrammars,
+    draws_with_vega_lite,
+)
 
 #: The sections a user can write. Everything else on the rail is derived.
 HAND_SECTIONS = ("tags", "city", "topic", "complexity")
@@ -99,14 +107,13 @@ _DATASET_CALL = re.compile(r"(?:curio_load_data|curio_data_path|curio_load_colle
 _COMPUTE_SECTION = re.compile(r"\"compute\"\s*:")
 
 _AUTARK = "curio.builtin/autk-grammar"
-_VEGA = "curio.builtin/vis-vega"
 _SPATIAL_JOIN = "curio.builtin/spatial-join"
 _CV_INFERENCE = "model.curio.ddrnet23-slim/image-segmentation"
 _VIDEO_FRAMES = "curio.media/video-frames"
 _SPLIT_AUDIO = "curio.media/split-audio"
 _MOSAIC_RASTERS = "curio.media/mosaic-rasters"
 
-#: SCOUT's node and model packages (``scout.rasters``,
+#: SCOUT's node and model packages (``scout.rasters``, ``scout.comparison``,
 #: ``model.scout.deep-umbra``) and datasets (``data.scout.wrf-rain``). A
 #: dataflow with a node or model from one of those packages, or that names one
 #: of those datasets, is tagged ``SCOUT``.
@@ -135,13 +142,22 @@ def _dataset_ids(dataflow: dict, code: str) -> set[str]:
     return ids
 
 
-def derive(spec: object, dataset_kind: Optional[DatasetKind] = None) -> dict[str, list[str]]:
+def derive(
+    spec: object,
+    dataset_kind: Optional[DatasetKind] = None,
+    template_grammar: Optional[TemplateGrammar] = None,
+) -> dict[str, list[str]]:
     """``{"tags": [...], "data_type": [...]}`` for *spec*, in display order.
 
     Reads what is in the dataflow and nothing else: node types, the import
     lines and model loads in its code, and the datasets it names.
     *dataset_kind* resolves a dataset id to its format and collection kind;
     without it the formats are unknown, and the rest still counts.
+    *template_grammar* resolves a node type to the grammar its template draws
+    with (``template_grammars.TemplateGrammars``, the catalog's when None): a
+    package template that draws with the Vega-Lite or the Autark grammar is a
+    Vega-Lite or an Autark node, as SCOUT Comparison's charts are Vega-Lite
+    charts.
     """
     from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
     from utk_curio.backend.app.packages.domain.spec_packages import unversioned_node_type
@@ -149,13 +165,16 @@ def derive(spec: object, dataset_kind: Optional[DatasetKind] = None) -> dict[str
     dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
     if not isinstance(dataflow, dict):
         return {"tags": [], "data_type": []}
+    grammar_of = template_grammar or TemplateGrammars(None)
     nodes = [n for n in dataflow.get("nodes") or [] if isinstance(n, dict)]
     types = {unversioned_node_type(n.get("type")) for n in nodes}
     code = "\n".join(str(n.get("content") or "") for n in nodes)
-    autark_documents = [
-        str(n.get("content") or "") for n in nodes
-        if unversioned_node_type(n.get("type")) == _AUTARK
+    autark_nodes = [
+        n for n in nodes
+        if unversioned_node_type(n.get("type")) == _AUTARK or grammar_of(n.get("type")) == AUTK_GRAMMAR
     ]
+    autark_documents = [str(n.get("content") or "") for n in autark_nodes]
+    has_vega_lite = any(draws_with_vega_lite(n.get("type"), grammar_of) for n in nodes)
     dataset_ids = _dataset_ids(dataflow, code)
     model_ids = {m for n in nodes for m in model_ids_in_code(n.get("content"))}
 
@@ -173,9 +192,9 @@ def derive(spec: object, dataset_kind: Optional[DatasetKind] = None) -> dict[str
     has_geopandas = bool(_GEOPANDAS.search(code))
 
     tags: set[str] = set()
-    if _AUTARK in types:
+    if autark_nodes:
         tags.add("Autark")
-    if _VEGA in types:
+    if has_vega_lite:
         tags.add("Vega-Lite")
     if has_geopandas:
         tags.add("GeoPandas")
@@ -194,7 +213,7 @@ def derive(spec: object, dataset_kind: Optional[DatasetKind] = None) -> dict[str
     if has_pandas or formats & {"csv", "parquet"}:
         data.add("Tables")
     if (has_geopandas or _SHAPELY.search(code) or "geojson" in formats
-            or types & {_AUTARK, _SPATIAL_JOIN}):
+            or autark_nodes or _SPATIAL_JOIN in types):
         data.add("Geometries")
     if _PBF_PATH.search(code) or _OSMNX.search(code):
         data.add("OpenStreetMap")
@@ -289,10 +308,11 @@ def categories_for(
     spec: object,
     source: Optional[str],
     dataset_kind: Optional[DatasetKind] = None,
+    template_grammar: Optional[TemplateGrammar] = None,
 ) -> dict:
     """The ``categories`` field of a project summary or detail."""
     return {
         "source": source,
-        "auto": derive(spec, dataset_kind),
+        "auto": derive(spec, dataset_kind, template_grammar),
         "hand": hand_categories(spec),
     }
