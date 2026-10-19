@@ -2618,8 +2618,8 @@ class TestTheOneTemplateToolIsRetired:
         from utk_curio.backend.app.agents.domain import builtin
 
         assert self.RETIRED not in tools.REGISTRY
-        for spec in builtin.BUILTIN_AGENTS:
-            assert self.RETIRED not in spec.tools, spec.agent_id
+        for m in builtin.list_builtin_manifests():
+            assert self.RETIRED not in [t.id for t in m.tools], m.agent_id
         granted = tools.resolve_grants(builtin.get_builtin_manifest(self.COORD).tools)
         offered = [t["name"] for t in tools.native_tools(granted)]
         assert tools.wire_name(self.RETIRED) not in offered

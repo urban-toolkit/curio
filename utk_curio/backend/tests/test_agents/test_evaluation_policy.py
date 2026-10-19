@@ -107,11 +107,11 @@ class TestTheDecisions:
         applying, everywhere."""
         from utk_curio.backend.app.agents.domain import builtin
 
-        spec = next(
-            s for s in builtin.BUILTIN_AGENTS
-            if s.agent_id == "agent.dataflow-builder"
+        manifest = next(
+            m for m in builtin.list_builtin_manifests()
+            if m.agent_id == "agent.dataflow-builder"
         )
-        assert spec.review_policy == "review-before-apply"
+        assert manifest.review_policy == "review-before-apply"
 
 
 class TestEveryCallerSharesIt:

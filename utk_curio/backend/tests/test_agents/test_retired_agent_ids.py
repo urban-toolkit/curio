@@ -1,7 +1,7 @@
 """No test names a retired built-in agent (#489).
 
 #417 folded the Node Explainer and the Debug Agent into Chat, and their ids
-left the roster in ``agents/domain/builtin.py``. Test fixtures went on using
+left the roster, the folders in ``agents/``. Test fixtures went on using
 both ids until #549 gave them plainly made-up ones (``agent.my-explainer``,
 ``agent.my-debugger``). A fixture with a retired id reads as a test of an
 agent Curio no longer has, so the scan covers the backend and frontend test
@@ -45,7 +45,7 @@ RETIRED = {
 
 
 def _live_ids() -> set[str]:
-    return {spec.agent_id for spec in builtin.BUILTIN_AGENTS}
+    return {m.agent_id for m in builtin.list_builtin_manifests()}
 
 
 def test_the_retired_ids_are_off_the_roster():

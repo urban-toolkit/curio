@@ -7,10 +7,11 @@ same capability is then picked where a shipped one would be. An id in app code
 is a place where it is not, so the scan covers the backend app and the
 frontend source, comments included.
 
-Two places name the shipped agents on purpose: the roster that defines them,
-``agents/domain/builtin.py``, and the offline evaluation library under
-``agents/evaluation/``, which reconstructs runs of one named agent. Tests may
-name them too.
+The roster that defines the shipped agents is their folders in ``agents/``,
+beside ``utk_curio/``, and the loader in ``agents/domain/builtin.py`` names
+none of them. One place names them on purpose: the offline evaluation library
+under ``agents/evaluation/``, which reconstructs runs of one named agent.
+Tests may name them too.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 SCANNED = (
     (
         "utk_curio/backend/app",
-        {"utk_curio/backend/app/agents/domain/builtin.py"},
+        set(),
         {"utk_curio/backend/app/agents/evaluation"},
     ),
     (
@@ -39,7 +40,7 @@ SKIP_DIRS = {"node_modules", "__pycache__", ".pytest_cache"}
 
 
 def _shipped_ids() -> set[str]:
-    return {spec.agent_id for spec in builtin.BUILTIN_AGENTS}
+    return {m.agent_id for m in builtin.list_builtin_manifests()}
 
 
 def _pattern(agent_id: str) -> re.Pattern:

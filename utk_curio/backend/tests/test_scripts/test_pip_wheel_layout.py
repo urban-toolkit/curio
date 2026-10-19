@@ -1,10 +1,11 @@
 """The pip package installs nothing in site-packages but ``utk_curio/`` and its
 dist-info, and a pip install still finds everything Curio ships beside its code.
 
-The repository keeps the Data Catalog's datasets, the Discovery Catalog's
-sources, the packages of the Node and Model Catalogs, the scripts and DuckDB's
-extensions in folders beside ``utk_curio/``: ``datasets/``, ``discovery/``,
-``packages/``, ``scripts/`` and ``vendor/``. A
+The repository keeps the Agent Catalog's agents, the Data Catalog's datasets,
+the Discovery Catalog's sources, the packages of the Node and Model Catalogs,
+the scripts and DuckDB's extensions in folders beside ``utk_curio/``:
+``agents/``, ``datasets/``, ``discovery/``, ``packages/``, ``scripts/`` and
+``vendor/``. A
 wheel that installs those folders as they are puts a ``datasets/`` of Curio's
 into site-packages, where Hugging Face's ``datasets`` package lives: the two
 mix in one folder, uninstalling either can break the other, and without
@@ -57,7 +58,7 @@ REPO = Path(__file__).resolve().parents[4]
 PROBE = REPO / "utk_curio" / "backend" / "tests" / "_support" / "pip_install_probe.py"
 #: The folders the repository keeps beside utk_curio/, and docs/, part of
 #: which the package ships.
-FOLDERS = ("datasets", "discovery", "docs", "packages", "scripts", "vendor")
+FOLDERS = ("agents", "datasets", "discovery", "docs", "packages", "scripts", "vendor")
 #: Where the wheel carries them, under the folder that holds utk_curio/.
 IN_THE_WHEEL = PurePosixPath("utk_curio", "_shipped")
 #: The credits of the Example storage's Mapillary photos, whose license
@@ -304,6 +305,7 @@ def test_a_pip_install_reads_every_shipped_folder_from_inside_utk_curio(pip_inst
     report = pip_install.report
     fixtures = _read(pip_install, "prompt_fixtures")
     where = {
+        "the Agent Catalog's agents (agents/)": _read(pip_install, "agents")["root"],
         "the Data Catalog (datasets/)": report["datasets"]["root"],
         "the Discovery Catalog (discovery/)": report["discovery"]["root"],
         "the Node and Model Catalogs (packages/)": report["packages"]["root"],
@@ -332,6 +334,7 @@ def test_a_pip_install_reads_each_file_the_sdist_ships_and_nothing_else(pip_inst
     folder the sdist carries, which the wheel is built from, and nothing else."""
     report = pip_install.report
     read_from = {
+        "agents": _read(pip_install, "agents")["root"],
         "datasets": report["datasets"]["root"],
         "discovery": report["discovery"]["root"],
         "packages": report["packages"]["root"],
@@ -439,6 +442,28 @@ def test_a_pip_installs_agents_are_shown_the_worked_examples_a_clone_shows(pip_i
     assert keys, "no worked example in this checkout"
     found = _read(pip_install, "worked_examples")
     assert found == keys, f"a pip install's runs are shown {len(found)} of the {len(keys)} worked examples"
+
+
+def test_a_pip_installs_agents_run_the_prompts_a_clone_runs(pip_install):
+    """Every agent Curio ships, in a pip install, reads every prompt its
+    manifest names, byte for byte as in a clone: its own from its folder in
+    agents/, and the preamble they share from utk_curio/llm-prompts/."""
+    import hashlib
+
+    from utk_curio.backend.app.agents.domain import builtin
+
+    clone = {
+        m.dir_name: {
+            key: hashlib.sha256(builtin.read_prompt_text(m.dir_name, key).encode("utf-8")).hexdigest()
+            for key in m.prompts
+        }
+        for m in builtin.list_builtin_manifests()
+    }
+    assert len(clone) == 7 and all(clone.values()), clone
+    found = _read(pip_install, "agents")["prompts"]
+    assert found == clone, (
+        f"a pip install's agents read {found}, where a clone's read {clone}"
+    )
 
 
 def test_a_pip_installs_prompt_fields_read_the_trill_schema(pip_install):

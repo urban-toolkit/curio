@@ -9,6 +9,7 @@ include package-lock.json
 # The folders Curio ships beside its code, at their repository paths here;
 # setup.py puts them, and the files of docs/ below, in the wheel at
 # utk_curio/_shipped/<folder>/.
+recursive-include agents *
 recursive-include packages *
 recursive-include datasets *
 recursive-include discovery *
@@ -52,10 +53,12 @@ recursive-include utk_curio/backend *
 recursive-include utk_curio/sandbox *
 recursive-include utk_curio/frontend *
 
-# The built-in agents' system and task prompts. Not a Python package (the
-# hyphen makes it unimportable, so packages.find cannot see it), so without
-# this line an sdist or wheel ships every one of the roster agents with no
-# prompt bytes at all, and builtin.read_prompt_text just returns None.
+# The prompts the agents share: the preamble, the fragments and templates the
+# generator reads, and the files read at run time. Each agent's own prompts are
+# in its folder in agents/, above. Not a Python package (the hyphen makes it
+# unimportable, so packages.find cannot see it), so without this line an sdist
+# or wheel ships every agent with no preamble, and
+# builtin.read_prompt_text just returns None.
 recursive-include utk_curio/llm-prompts *.md
 
 prune utk_curio/frontend/urban-workflows/node_modules

@@ -271,6 +271,26 @@ def _isolated_runs(nodes):
     return {"docs": os.path.realpath(os.path.join(work, "docs")), "runs": runs}
 
 
+def _shipped_agents():
+    """The agents Curio ships (``agents/domain/builtin.py``): the folder they
+    are read from, and by coordinate the sha256 of each prompt a run of each
+    reads, its own and the shared preamble, or None for one it cannot read."""
+    import hashlib
+
+    from utk_curio.backend.app.agents.domain import builtin
+
+    def digest(text):
+        return None if text is None else hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    return {
+        "root": str(builtin.agents_dir()),
+        "prompts": {
+            m.dir_name: {key: digest(builtin.read_prompt_text(m.dir_name, key)) for key in m.prompts}
+            for m in builtin.list_builtin_manifests()
+        },
+    }
+
+
 def _agent_eval_out():
     """Where ``agent_eval run`` writes its reports when no ``--out`` is given."""
     from utk_curio.tools import agent_eval
@@ -332,6 +352,7 @@ def main():
     report["worked_examples"] = _guarded(_worked_examples)
     report["trill_schema"] = _guarded(lambda: contracts._Sources().trill)
     report["default_preamble"] = _guarded(contracts.render_default_preamble)
+    report["agents"] = _guarded(_shipped_agents)
     report["prompt_fixtures"] = _guarded(_prompt_fixtures)
     report["folder_sources"] = _guarded(_folder_sources)
 

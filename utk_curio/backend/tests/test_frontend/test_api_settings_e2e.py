@@ -437,7 +437,7 @@ def test_the_default_chosen_here_answers_the_next_run(signed_in):
                  "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
                  "outputs": []},
     )["id"]
-    coord = f"agent.researcher@{builtin.BUILTIN_VERSION}"
+    coord = builtin.builtin_coord("agent.researcher")
     base = f"{session.backend}/api/agents/projects/{project}"
     api_json(f"{base}/install", session.token, method="POST", payload={"coord": coord})
     attachment = api_json(
@@ -513,7 +513,7 @@ def test_each_agent_runs_on_the_configuration_chosen_for_it(signed_in):
                  "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
                  "outputs": []},
     )["id"]
-    coord = f"agent.dataflow-builder@{builtin.BUILTIN_VERSION}"
+    coord = builtin.builtin_coord("agent.dataflow-builder")
     base = f"{session.backend}/api/agents/projects/{project}"
     api_json(f"{base}/install", session.token, method="POST", payload={"coord": coord})
     attachment = api_json(

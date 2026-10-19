@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/agent-package.v1.json",
   "title": "Curio Hookable Agent Manifest (v1)",
-  "description": "Schema for a Curio hookable-agent manifest.json. An agent ships in a directory named '<agentId>@<version>' containing this manifest and a prompts/ directory with the system preamble and instruction assets referenced by digest. Field names are camelCase. Agent package ids begin with 'agent.' to distinguish them from node packages ('curio.builtin' etc.). Capabilities are semantic behavior contracts, kept independent of the prompt files that implement them. This schema is the canonical spec; the backend validator in utk_curio/backend/app/agents/domain/manifest.py implements the supported subset. User-facing overview: docs/AGENT-CATALOG.md.",
+  "description": "Schema for a Curio hookable-agent manifest.json. An agent ships in a directory named '<agentId>@<version>' containing this manifest and a prompts/ directory with its prompt assets, referenced by path and digest; a prompt Curio shares, such as the preamble, is named 'curio:<file>' instead. The agents Curio ships are such directories in its agents/ folder, read by the same loader as an uploaded agent. Field names are camelCase. Agent package ids begin with 'agent.' to distinguish them from node packages ('curio.builtin' etc.). Capabilities are semantic behavior contracts, kept independent of the prompt files that implement them. This schema is the canonical spec; the backend validator in utk_curio/backend/app/agents/domain/manifest.py implements the supported subset. User-facing overview: docs/AGENT-CATALOG.md.",
   "type": "object",
   "required": [
     "id",
@@ -47,6 +47,31 @@
     "purpose": {
       "type": "string",
       "description": "One-line description shown in catalog cards."
+    },
+    "catalog": {
+      "type": "object",
+      "required": [
+        "listed",
+        "order"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "listed": {
+          "type": "boolean",
+          "description": "true for a catalog card; false for a helper, which runs only as other agents' delegate and is never listed, installed or attached."
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The agent's place in the roster: the agent details window names the agents that ask for a mode in this order. No two agents Curio ships share one."
+        }
+      },
+      "description": "Where an agent Curio ships stands in the Agent Catalog. Read only for the agents in Curio's agents/ folder, each of which must give it; an upload that sets it is refused."
+    },
+    "workedExamples": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether a run of the agent under its instruction, or a prompt run in its place, is given worked examples: the shipped dataflows closest to its task, in its runtime slot. A mode says so for itself (capabilities[].workedExamples). Read for the agents Curio ships."
     },
     "roles": {
       "type": "array",
@@ -95,6 +120,15 @@
               "type": "string"
             },
             "description": "Catalog settings a run of this capability receives, by key, for example 'keywordTypes'. Their values are the user's, edited in the Agent Catalog, and reach the run as data after its instruction. A key Curio does not define is skipped."
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What the capability does, in the plain words the agent details window lists it by, as a mode other agents, Solve or the agent itself ask for. Capabilities with one label are one mode. Read for the agents Curio ships, where a capability without a label is no mode; any other agent's capability is listed by its id."
+          },
+          "workedExamples": {
+            "type": "boolean",
+            "description": "Whether a run of this mode is given worked examples. Only a mode, a capability with an 'instruction', takes it; any other run follows the agent's workedExamples. Read for the agents Curio ships."
           }
         }
       }
@@ -156,8 +190,13 @@
         "properties": {
           "path": {
             "type": "string",
-            "pattern": "^[A-Za-z0-9_.][A-Za-z0-9_./-]*$",
-            "description": "Path to the prompt file inside the package, relative to its root. Must be contained inside the package: no leading '/', no '..' segment, and no leading '-'. The upload flow writes every prompt as 'prompts/<filename>.txt', so a manifest that names anything else cannot be imported through the UI even though the path itself is legal."
+            "pattern": "^(?:curio:default_preamble\\.md|[A-Za-z0-9_.][A-Za-z0-9_./-]*)$",
+            "description": "Path to the prompt file inside the package, relative to its root. Must be contained inside the package: no leading '/', no '..' segment, and no leading '-'. The upload flow writes every prompt as 'prompts/<filename>.txt', so a manifest that names anything else cannot be imported through the UI even though the path itself is legal. Or 'curio:default_preamble.md', the preamble Curio shares with every agent: it is read from Curio's own prompts, an upload carries no file for it, and an export carries it as 'prompts/default_preamble.md'."
+          },
+          "runs": {
+            "type": "string",
+            "minLength": 1,
+            "description": "When this prompt runs, in the words the agent details window shows, for a prompt that is neither 'system', 'instruction' nor a mode's instruction, such as the Node Builder's 'autk-grammar'. Read for the agents Curio ships."
           },
           "sha256": {
             "type": "string",
