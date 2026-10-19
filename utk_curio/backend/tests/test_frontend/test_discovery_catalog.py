@@ -476,6 +476,117 @@ def test_the_canvas_opens_the_discovery_catalog_and_downloads_from_it(
     expect(drawer.locator(f'[data-discovery-source="{CHICAGO}"]')).to_be_visible(timeout=15000)
 
 
+# ── A dialog over the canvas drawer (issue #921) ───────────────────────────
+
+#: The Chicago row the corpus holds, and the name its dialog is titled with.
+CRIMES = "ijzp-q8t2"
+CRIMES_NAME = "Crimes - 2001 to Present"
+
+#: How many controls inside an element Tab can stop on.
+_TAB_STOPS = """(root) => [...root.querySelectorAll(
+  'a[href], button, input, select, textarea, [tabindex]'
+)].filter((el) => el.tabIndex >= 0 && !el.disabled).length"""
+
+#: Where the keyboard is: in the dialog on top, in the Discovery Catalog drawer
+#: behind it, and whether it is back on the control it started from.
+_FOCUS = """() => {
+  const dialogs = document.querySelectorAll('[data-curio-modal-shell="true"]');
+  const dialog = dialogs[dialogs.length - 1];
+  const el = document.activeElement;
+  const label = el ? (el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 40) : '';
+  return {
+    inDialog: Boolean(dialog && el && dialog.contains(el)),
+    inDrawer: Boolean(el && el.closest('[data-curio-discovery-catalog-drawer="true"]')),
+    atStart: el === window.__curioFocusStart,
+    what: el ? `${el.tagName.toLowerCase()} "${label}"` : 'nothing',
+  };
+}"""
+
+
+def _open_narrow_from_the_canvas_drawer(page, app_frontend, current_server, *, username, project):
+    """The steps of issue #921: on the canvas, the Discovery Catalog drawer,
+    City of Chicago Data Portal, and a dataset's Narrow… dialog."""
+    require_project_page()
+    require_user_auth()
+    _enter(page, app_frontend, current_server, username=username, project=project)
+
+    page.get_by_role("button", name="Discovery Catalog", exact=True).click()
+    drawer = page.locator('[data-curio-discovery-catalog-drawer="true"][aria-hidden="false"]')
+    expect(drawer).to_be_visible(timeout=15000)
+    card = drawer.locator(f'[data-discovery-source="{CHICAGO}"]')
+    expect(card).to_be_visible(timeout=30000)
+    card.get_by_role("button", name="Browse datasets").click()
+    drawer.get_by_role("searchbox", name="Search City of Chicago Data Portal").fill(CHICAGO_QUERY)
+
+    row = drawer.locator(f'[data-discovery-resource="{CRIMES}"]')
+    expect(row).to_be_visible(timeout=30000)
+    row.get_by_role("button", name="Narrow…").click()
+    dialog = page.get_by_role("dialog", name=f"Download {CRIMES_NAME}", exact=True)
+    expect(dialog).to_be_visible(timeout=15000)
+    return drawer, row, dialog
+
+
+def _press_round_the_dialog(page, dialog, key: str) -> None:
+    """Press ``key`` until the focus is back on the control it started from,
+    and check that every stop on the way is inside the dialog."""
+    stops = dialog.evaluate(_TAB_STOPS)
+    page.evaluate("() => { window.__curioFocusStart = document.activeElement; }")
+    for press in range(1, 2 * stops + 2):
+        page.keyboard.press(key)
+        focus = page.evaluate(_FOCUS)
+        where = focus["what"] + (" in the Discovery Catalog drawer" if focus["inDrawer"] else "")
+        assert focus["inDialog"], f"{key} number {press} took the keyboard out of the dialog, to {where}"
+        if focus["atStart"]:
+            return
+    pytest.fail(f"{2 * stops + 1} presses of {key} never came back round to where they started")
+
+
+def test_a_dialog_from_the_canvas_drawer_keeps_tab_inside_it(
+    app_frontend: "FrontendPage", current_server: str, page
+):
+    """Tab and Shift+Tab go round the dialog's own controls (issue #921).
+
+    They used to walk out of it into the drawer behind, where another row's
+    Narrow… opened a second dialog over the first."""
+    _drawer, _row, dialog = _open_narrow_from_the_canvas_drawer(
+        page, app_frontend, current_server, username="discoverykeys", project="Discovery Keys",
+    )
+    dialog.get_by_label("Name in your Data Catalog").click()
+    # Backwards first: the step past the dialog's first control was the drawer.
+    _press_round_the_dialog(page, dialog, "Shift+Tab")
+    _press_round_the_dialog(page, dialog, "Tab")
+    expect(dialog).to_be_visible()
+
+
+def test_a_dialog_from_the_canvas_drawer_takes_typing_and_downloads(
+    app_frontend: "FrontendPage", current_server: str, page
+):
+    """A click in the dialog's field, and on its Download, stays in the dialog
+    (issue #921): the field takes typing, the download starts under the name
+    typed, and the drawer stays open. Both clicks used to land on the drawer's
+    scrim, which closed the dialog and the drawer and did nothing else."""
+    drawer, row, dialog = _open_narrow_from_the_canvas_drawer(
+        page, app_frontend, current_server, username="discoverytyping", project="Discovery Typing",
+    )
+    canvas_url = page.url
+
+    name = dialog.get_by_label("Name in your Data Catalog")
+    name.click()
+    page.keyboard.press("End")
+    page.keyboard.type(", from the canvas")
+    expect(name).to_have_value(f"{CRIMES_NAME}, from the canvas")
+    expect(drawer).to_be_visible()
+
+    dialog.get_by_role("button", name="Download", exact=True).click()
+    expect(dialog).to_have_count(0)
+    expect(row.get_by_role("button", name="View dataset")).to_be_visible(timeout=60000)
+    expect(
+        page.get_by_text(f"Downloaded {CRIMES_NAME}, from the canvas to your Data Catalog.")
+    ).to_be_visible(timeout=15000)
+    expect(drawer).to_be_visible()
+    assert page.url == canvas_url, "the download left the dataflow"
+
+
 # ── Storage sources ────────────────────────────────────────────────────────
 
 EXAMPLE_STORAGE = "source.curio.example-storage@1"

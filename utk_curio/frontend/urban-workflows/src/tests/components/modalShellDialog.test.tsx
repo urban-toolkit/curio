@@ -1,5 +1,6 @@
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import ModalShell, { modalStackDepth } from "../../components/ModalShell";
 
 /**
@@ -196,5 +197,80 @@ describe("ModalShell responds to Escape", () => {
     );
     press();
     expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Tab and Shift+Tab stay in an open dialog (issue #921).
+ *
+ * A dialog opened from the canvas's Discovery Catalog drawer has stacked above
+ * the drawer since #959, so a click no longer reaches the drawer. The keyboard
+ * still did: Tab walked out of the dialog into the page behind it, where the
+ * drawer's own buttons opened a second dialog over the first.
+ */
+describe("ModalShell keeps Tab and Shift+Tab inside", () => {
+  /** A page with two controls of its own, and the dialog one of them opened. */
+  function Page({ open }: { open: boolean }) {
+    return (
+      <>
+        <button type="button">Narrow…</button>
+        <button type="button">Behind</button>
+        {open ? (
+          <ModalShell onClose={jest.fn()} label="Download Crimes">
+            <input aria-label="Name" />
+            <button type="button">Download</button>
+          </ModalShell>
+        ) : null}
+      </>
+    );
+  }
+
+  const dialog = () => screen.getByRole("dialog", { name: "Download Crimes" });
+
+  it("sends Tab from its last control round to its first", async () => {
+    const user = userEvent.setup();
+    render(<Page open />);
+    within(dialog()).getByRole("button", { name: "Download" }).focus();
+    await user.tab();
+    expect(within(dialog()).getByRole("button", { name: "Close" })).toHaveFocus();
+  });
+
+  it("sends Shift+Tab from its first control round to its last", async () => {
+    const user = userEvent.setup();
+    render(<Page open />);
+    within(dialog()).getByRole("button", { name: "Close" }).focus();
+    await user.tab({ shift: true });
+    expect(within(dialog()).getByRole("button", { name: "Download" })).toHaveFocus();
+  });
+
+  it("takes the focus from the page when it opens, so the first Tab is inside it", async () => {
+    const user = userEvent.setup();
+    const view = render(<Page open={false} />);
+    screen.getByRole("button", { name: "Narrow…" }).focus();
+    view.rerender(<Page open />);
+    await user.tab();
+    expect(dialog()).toContainElement(document.activeElement as HTMLElement);
+  });
+
+  it("holds the keyboard in the dialog on top when two are open", async () => {
+    // The one under it stands down, as it does for Escape: two dialogs that
+    // both held the focus would pull it back and forth between them.
+    const user = userEvent.setup();
+    render(
+      <>
+        <ModalShell onClose={jest.fn()} label="Under">
+          <button type="button">Under</button>
+        </ModalShell>
+        <ModalShell onClose={jest.fn()} label="Over">
+          <button type="button">Over</button>
+        </ModalShell>
+      </>,
+    );
+    const over = screen.getByRole("dialog", { name: "Over" });
+    within(over).getByRole("button", { name: "Over" }).focus();
+    await user.tab();
+    expect(within(over).getByRole("button", { name: "Close" })).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(within(over).getByRole("button", { name: "Over" })).toHaveFocus();
   });
 });

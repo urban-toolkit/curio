@@ -22,6 +22,12 @@
   flex-direction: column;
 }
 
+/* The focus trap focuses the dialog itself when nothing in it has the focus.
+   The dialog is not a control, so it draws no ring; its controls keep theirs. */
+.modal:focus {
+  outline: none;
+}
+
 /* Wider than the default, still as tall as its content. */
 .wide {
   width: min(640px, 90vw);
