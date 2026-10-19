@@ -83,6 +83,37 @@ def _strip_type_version(node_type: str) -> str:
     return node_type.split("@", 1)[0] if isinstance(node_type, str) else node_type
 
 
+def _content_starters(user_key: str, project_id: str, plan_nodes: list) -> dict[str, dict]:
+    """What each planned node whose template's starter is a node's whole
+    content (``starterIsContent``) starts with, by plan ref: the template's
+    starter and widgets (the packages' ``content_starters``). A planned node
+    of any other template starts empty, for Solve to write."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    by_template = packages_services.content_starters(
+        user_key, project_id, [n["nodeType"] for n in plan_nodes]
+    )
+    canonical = packages_services.canonical_template_id
+    return {
+        n["ref"]: by_template[canonical(n["nodeType"])]
+        for n in plan_nodes
+        if canonical(n["nodeType"]) in by_template
+    }
+
+
+def _awaits_solve(node: dict) -> bool:
+    """Whether Solve writes a created node's content: a planned node starts
+    empty unless its template's starter is its whole content."""
+    return not (node.get("content") or "").strip()
+
+
+def _created_state(ref: str, starters: dict) -> str:
+    """A created ref's Simulation Mode state. One that starts with its
+    template's starter is approved: its content is the template's, which
+    nothing validates or writes again."""
+    return "approved" if ref in starters else "created"
+
+
 def _validate_plan_fanin(
     plan: dict,
     available: dict,
@@ -799,7 +830,8 @@ def apply_plan_node(
     if blocked:
         raise AgentServiceError(blocked, 409)
     dataflow = spec.setdefault("dataflow", {})
-    created = _created_plan_node(proposal, plan_node, ref, dataflow.setdefault("nodes", []))
+    starters = _content_starters(user_key, project_id, [plan_node])
+    created = _created_plan_node(proposal, plan_node, ref, dataflow.setdefault("nodes", []), starters.get(ref))
     node_id = created["id"]
     dataflow["nodes"].append(created)
     applied_refs.append(ref)
@@ -837,9 +869,11 @@ def apply_plan_node(
     session = record.setdefault("builderSession", {})
     session["phase"] = "simulating"
     session["appliedPlanId"] = proposal_id
-    session.setdefault("nodeStates", {})[ref] = "created"
+    session.setdefault("nodeStates", {})[ref] = _created_state(ref, starters)
     session.setdefault("nodeIds", {})[ref] = node_id
-    session.setdefault("nodeRuns", {})[node_id] = "pending"
+    runs = session.setdefault("nodeRuns", {})
+    if _awaits_solve(created):
+        runs[node_id] = "pending"
     session["edgeStates"] = dict(ctx["edge_states"])
     # The last apply may complete the STRUCTURE (all refs + edges applied) —
     # content keeps its own lifecycle (dev/71).
@@ -872,10 +906,12 @@ def apply_plan_node(
     }
 
 
-def _created_plan_node(proposal: dict, plan_node: dict, ref: str, nodes: list) -> dict:
+def _created_plan_node(proposal: dict, plan_node: dict, ref: str, nodes: list,
+                       starter: dict | None = None) -> dict:
     """The canvas node one plan ref becomes: the mint-time position and the (possibly edited) goal,
     and #662's widgets and lineage (``plan_scenarios.created_node_metadata``, as the whole-plan
-    apply writes them)."""
+    apply writes them). Empty, for Solve to write, unless its template's starter is its whole
+    content (*starter*), which it starts with."""
     pos = (proposal.get("positions") or {}).get(ref) or {}
     goal_text = (proposal.get("editedGoals") or {}).get(ref) or (
         f"{plan_node['title']} — {plan_node['intent']}"
@@ -883,12 +919,14 @@ def _created_plan_node(proposal: dict, plan_node: dict, ref: str, nodes: list) -
     created = {
         "id": str(uuid.uuid4()),
         "type": plan_node["nodeType"],
-        "content": "",
+        "content": starter["content"] if starter else "",
         "goal": goal_text,
         "x": float(pos.get("x", 80.0)),
         "y": float(pos.get("y", 80.0)),
     }
-    metadata = plan_scenarios.created_node_metadata(plan_node, proposal.get("appliedNodeIds") or {}, nodes)
+    metadata = plan_scenarios.created_node_metadata(
+        plan_node, proposal.get("appliedNodeIds") or {}, nodes, starter,
+    )
     if metadata:
         created["metadata"] = metadata
     return created
@@ -1298,14 +1336,17 @@ def _apply_dataflow_plan(
     edges = dataflow.setdefault("edges", [])
     remove_node_set = set(remove_nodes)
     removed_edge_ids = _remove_plan_victims(spec, nodes, edges, remove_node_set, plan.get("removeEdges", []))
-    created_nodes, attached_results, ref_to_id = _create_plan_nodes(user_key, spec, nodes, plan, proposal)
+    starters = _content_starters(user_key, project_id, plan.get("nodes", []))
+    created_nodes, attached_results, ref_to_id = _create_plan_nodes(user_key, spec, nodes, plan, proposal, starters)
     created_edges = _create_plan_edges(
         user_key, project_id, proposal_id, spec, proposal, session_id, plan, nodes, edges, ref_to_id, spec_nodes_by_id,
     )
     # #662: the plan's scenarios, checked again against the dataflow's own.
     created_scenarios = plan_scenarios.apply_scenarios(spec, proposal, ref_to_id, final=True)
     proposal["status"] = "applied"
-    record, node_runs = _plan_apply_session(spec, attachment_id, proposal_id, created_nodes, remove_node_set, ref_to_id)
+    record, node_runs = _plan_apply_session(
+        spec, attachment_id, proposal_id, created_nodes, remove_node_set, ref_to_id, starters,
+    )
     projects_storage.write_spec(user_key, project_id, spec)
     _log_plan_applied(user_key, project_id, session_id, attachment_id, proposal_id, spec,
                       created_nodes, created_edges, remove_node_set, removed_edge_ids, node_runs, attached_results,
@@ -1431,10 +1472,12 @@ def _remove_plan_victims(spec: dict, nodes: list, edges: list, remove_node_set: 
     return removed_edge_ids
 
 
-def _create_plan_nodes(user_key, spec: dict, nodes: list, plan: dict, proposal: dict) -> tuple[list, list, dict]:
+def _create_plan_nodes(user_key, spec: dict, nodes: list, plan: dict, proposal: dict,
+                       starters: dict) -> tuple[list, list, dict]:
     """The plan's new nodes at the mint-time layout (+ review-stage overlays); refs already applied
     per-node are REAL nodes — skipped, their ids seed the edge resolution. Each created node gets its
-    agents in THIS apply's single spec write (dev/126)."""
+    agents in THIS apply's single spec write (dev/126). A ref in *starters* starts with its
+    template's starter and widgets (``_content_starters``)."""
     right = _right_edge(nodes)
     ys = [n.get("y") for n in nodes if isinstance(n, dict) and isinstance(n.get("y"), (int, float))]
     base_x = (right + _NODE_H_GUTTER) if right is not None else 80.0
@@ -1459,10 +1502,11 @@ def _create_plan_nodes(user_key, spec: dict, nodes: list, plan: dict, proposal: 
         node_id = str(uuid.uuid4())
         ref_to_id[plan_node["ref"]] = node_id
         pos = positions.get(plan_node["ref"]) or {}
+        starter = starters.get(plan_node["ref"])
         created = {
             "id": node_id,
             "type": plan_node["nodeType"],
-            "content": plan_node.get("content", ""),
+            "content": starter["content"] if starter else plan_node.get("content", ""),
             "goal": edited_goals.get(plan_node["ref"])
             or f"{plan_node['title']} — {plan_node['intent']}",
             "x": float(pos.get("x", base_x + depth * _PLAN_COLUMN_OFFSET)),
@@ -1470,7 +1514,7 @@ def _create_plan_nodes(user_key, spec: dict, nodes: list, plan: dict, proposal: 
         }
         # #662: its widgets, and for a copy its lineage; a copy follows the
         # node it copies in the plan, so that node is already created.
-        metadata = plan_scenarios.created_node_metadata(plan_node, ref_to_id, nodes)
+        metadata = plan_scenarios.created_node_metadata(plan_node, ref_to_id, nodes, starter)
         if metadata:
             created["metadata"] = metadata
         nodes.append(created)
@@ -1546,9 +1590,10 @@ def _create_plan_edges(user_key, project_id, proposal_id, spec: dict, proposal: 
 
 
 def _plan_apply_session(spec: dict, attachment_id: str, proposal_id: str, created_nodes: list,
-                        remove_node_set: set, ref_to_id: dict) -> tuple[dict | None, dict]:
+                        remove_node_set: set, ref_to_id: dict, starters: dict) -> tuple[dict | None, dict]:
     """The builder session (DR-2, merged per dev/59): removed victims leave nodeRuns; surviving prior
-    entries persist; new pending nodes join; every ref's ledger row completes (dev/67-5)."""
+    entries persist; new pending nodes join; every ref's ledger row completes (dev/67-5), approved
+    for a ref in *starters*."""
     # The builder session (DR-2, merged per dev/59): removed victims leave
     # nodeRuns; surviving prior entries persist; new pending nodes join.
     record = attachments.get_attachment(spec, attachment_id)
@@ -1560,9 +1605,7 @@ def _plan_apply_session(spec: dict, attachment_id: str, proposal_id: str, create
         for node_id, status in prior_runs.items()
         if node_id not in remove_node_set
     }
-    node_runs.update(
-        {n["id"]: "pending" for n in created_nodes if not (n.get("content") or "").strip()}
-    )
+    node_runs.update({n["id"]: "pending" for n in created_nodes if _awaits_solve(n)})
     unresolved = any(s in ("pending", "failed") for s in node_runs.values())
     if record is not None:
         record["builderSession"] = {
@@ -1570,7 +1613,7 @@ def _plan_apply_session(spec: dict, attachment_id: str, proposal_id: str, create
             "appliedPlanId": proposal_id,
             "nodeRuns": node_runs,
             # dev/67-5: the whole-plan apply completes every ref's ledger row.
-            "nodeStates": {ref: "created" for ref in ref_to_id},
+            "nodeStates": {ref: _created_state(ref, starters) for ref in ref_to_id},
             "nodeIds": dict(ref_to_id),
         }
     return record, node_runs

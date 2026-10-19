@@ -704,7 +704,11 @@ an Autark document that loads everything it draws passes `needsInput: false`.
 Both fill an empty editor through
 [`useStarterSpec.ts`](../utk_curio/frontend/urban-workflows/src/hook/useStarterSpec.ts),
 each with its own ladder (`vegaDefaultSpec.ts`, `autkDefaultSpec.ts`) over the
-column roles in `starterSpec.ts`. Each ladder's rules, in order, and the dtype
+column roles in `starterSpec.ts`. Neither ladder fills a node that opens with a
+starter its package ships (`opensWithPackageStarter`,
+[`registry/packageStarter.ts`](../utk_curio/frontend/urban-workflows/src/registry/packageStarter.ts)),
+so a package template whose input arrives before the starters feed still opens
+with its starter and widgets. Each ladder's rules, in order, and the dtype
 roles are generated into `src/generated/visDefaults.ts` (see
 [Generated Contracts](#generated-contracts)). Both mark themselves errored on a failed run,
 so a node they feed shows `upstream-errored`.
@@ -2156,6 +2160,17 @@ yields an empty editor; third-party packages may ship a starter per template.
 When a template declares both `behavior: "code"` and a `source`, the frontend
 composes `withPackageStarter` over the behavior hook so the starter is injected
 on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
+
+A template that declares `starterIsContent` gives its starter to a node an
+agent's plan creates too. Both plan applies, the whole plan and one node
+(`agents/application/proposals/plans.py`), read it with `content_starters`
+(`packages/application/starters.py`, each template resolved as the project's
+available templates resolve it). The node's content is the starter, and its
+widgets are the template's with each one the plan declares set over the one of
+its name (`plan_scenarios.created_node_metadata`). It never joins `nodeRuns` as
+pending, so Solve does not write it, and its ref is `approved`, so the
+Simulation Mode driver does not validate it either. Every other planned node is
+created empty for Solve to write.
 
 ### Auth Routes
 
