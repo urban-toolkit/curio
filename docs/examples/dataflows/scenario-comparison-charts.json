@@ -143,13 +143,15 @@
               "name": "low",
               "type": "text",
               "label": "Low column",
-              "default": "low"
+              "default": "low",
+              "value": "low"
             },
             {
               "name": "high",
               "type": "text",
               "label": "High column",
-              "default": "high"
+              "default": "high",
+              "value": "high"
             },
             {
               "name": "facet",
@@ -1403,7 +1405,8 @@
               "name": "factor",
               "type": "text",
               "label": "Factor column",
-              "default": "factor"
+              "default": "factor",
+              "value": "factor"
             },
             {
               "name": "weight",

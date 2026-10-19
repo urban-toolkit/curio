@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/scenario-comparison-charts.json",
-    "sha256": "5196aaccb7d0cfaddf17c093756d3822ebe2e9a32bb7cd19e088aef9a9047435",
+    "sha256": "dd9811e29a0a9170c94a885afd4c48d92282531ec9f2a526be63794937966a18",
     "walkthrough": null
   },
   "prompt": "Make a gallery of nine ways to chart a comparison of scenarios, one row per example table from the Data Catalog: pedestrians per hour on four streets, flood damage curves, flooded streets by depth, peak depths of simulated storms, daily trips by mode, building carbon by life-cycle stage, park area in shade, bike route factors and green roof systems. Each table names its scenario in a case column. For every scenario keep its rows in a step of its own, with the case picked by a choice widget, and make that step the scenario; the 10-, 50- and 100-year storms are one scenario each across the two storm tables. Compare each table's scenarios in a Compare Scenarios step. Chart the pedestrians as lines with a band in a panel per street, the damage curves as one curve per damage state, the flooded streets as grouped bars with error bars, the peak depths as a strip of ticks per storm with its median, the building carbon as stacked bars with their totals, the park shade as a donut per design and the bike route factors as a matrix of circles sized by weight, each in a Vega-Lite chart after its comparison. The comparison itself draws the daily trips as grouped bars and the green roof systems as a table. Those seven charts are not part of the standard node set, so whatever provides them needs installing first.",
