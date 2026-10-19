@@ -169,6 +169,7 @@ A model package's `manifest.json` is a node package's ([NODE-CATALOG.md](NODE-CA
 | `model.type` | Yes | `semantic-segmentation`, `image-to-image` or `node-regression`. |
 | `model.runtime` | Yes | `onnx` or `transformers`. |
 | `model.entry` | Yes | For `onnx`, the graph file; for `transformers`, the folder of the checkpoint. A path under `models/`. |
+| `downloadOnFirstUse` | | For a model package that ships with Curio: the weights the pip package leaves out, by their paths under `models/`, such as the `.onnx` file and an external-data file beside it, or the checkpoint's folder, which covers every file in it. A pip install downloads them from GitHub the first time a node loads the model. A node package has none. |
 | `model.labels` | | The classes, in the order the model numbers them. An `image-to-image` or `node-regression` model has none. |
 | `model.input` | For an `onnx` image model | A `node-regression` model reads a graph of any size and has none. How an image is prepared: `width` and `height` (8 to 8192 pixels), `dtype` (`uint8` or `float32`), `layout` (`NCHW`, or `NHWC` for an `image-to-image` model), `scale`, and an optional `mean` and `std` of three numbers each. |
 | `model.license`, `model.licenseFile` | `model.license` | The weights' license, and the file in the package that holds its text. |
