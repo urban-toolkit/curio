@@ -1,10 +1,19 @@
 /* The thin scrollbar of Curio's panels: the Data Catalog's columns and
    previews, and every widget panel (a node's Widgets tab, a Parameter node).
    Defined here once. A panel takes it as the first line of its rule:
-   `composes: thinScrollbar from "<path to src>/styles/scrollbars.module.css";` */
-.thinScrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(30, 31, 35, 0.18) transparent;
+   `composes: thinScrollbar from "<path to src>/styles/scrollbars.module.css";`
+
+   Chrome, Edge and Safari draw it from the ::-webkit-scrollbar rules: a 6 px
+   bar that shows at rest, on a Mac too. A box that sets scrollbar-width or
+   scrollbar-color turns those rules off in Chrome and Edge, which then draw
+   their own bar (on a Mac, one that hides until you scroll), so the two
+   standard properties are only for the browsers without ::-webkit-scrollbar
+   (Firefox). */
+@supports not selector(::-webkit-scrollbar) {
+  .thinScrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(30, 31, 35, 0.18) transparent;
+  }
 }
 
 .thinScrollbar::-webkit-scrollbar {

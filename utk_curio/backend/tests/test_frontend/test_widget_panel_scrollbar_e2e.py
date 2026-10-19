@@ -7,6 +7,14 @@ Every widget panel (a Parameter node's value and its form, a node's Widgets
 tab) scrolls with the scrollbar of the Data Catalog's panels, one rule for all
 of them (``styles/scrollbars.module.css``).
 
+Chrome draws that rule's ``::-webkit-scrollbar`` bar: 6 px, a thumb of
+``rgba(30, 31, 35, 0.18)``, shown at rest on every system. On a Mac, Chrome's
+own bar would hide until you scroll, so the rule keeps ``scrollbar-width`` and
+``scrollbar-color``, which would turn the webkit bar off, for the browsers
+without ``::-webkit-scrollbar``. A bar that shows at rest takes room beside the
+content (``offsetWidth - clientWidth``); one that shows only while scrolling
+takes none.
+
 The dataflow holds the example's own nodes: its three Parameter nodes and the
 five whose code uses the corner. A new Parameter node beside them shows its
 form. The test opens a dataset's details in the Data Catalog, then the
@@ -15,12 +23,14 @@ dataflow, and checks:
 1. The corner node lists five nodes, and the fifth ends below its panel's
    bottom edge. That held before the fix as well: it is why the scrollbar
    matters.
-2. The corner node's panel, the new Parameter node's form and an "Average
-   depth by period" node's Widgets tab compute the ``scrollbar-width`` and
-   ``scrollbar-color`` of the Data Catalog's content column.
-3. The corner node's scrollbar takes as much room as the Data Catalog's, and
-   some: on CI's Linux browser a scrollbar sits beside the content.
-4. Scrolled down, the panel shows its fifth line.
+2. The Data Catalog's content column, the corner node's panel, the new
+   Parameter node's form and an "Average depth by period" node's Widgets tab
+   draw the rule's bar at rest: a box with their classes that holds more than
+   it shows gives its bar 6 px beside the content, with the rule's thumb.
+   Each one that holds more than it shows (the corner node does, by step 1)
+   gives its own bar those 6 px. The widget panels also compute the Data
+   Catalog's ``scrollbar-width`` and ``scrollbar-color``.
+3. Scrolled down, the corner node's panel shows its fifth line.
 
 Then a close-up of the corner node, scrolled to the top, is a baseline to review.
 
@@ -65,30 +75,40 @@ DATASET = "data.cdc.quad-cities-svi-tracts"
 CONTENT_COLUMN = 'section[aria-label="Dataset content"]'
 #: The close-up's baseline is ``screenshot_widget-panel-scrollbar_parameter_used_by.png``.
 CLOSEUP_STEM = "widget-panel-scrollbar"
+#: The shared rule's bar (``styles/scrollbars.module.css``): its width, and its thumb at rest.
+BAR_PX = 6
+THUMB = "rgba(30, 31, 35, 0.18)"
 
-#: A scroller's scrollbar: its computed style, and the room it takes beside the content.
+#: A scroller's scrollbar. ``own`` is the room its own bar takes beside the
+#: content, and ``scrolls`` whether it holds more than it shows. The rest is
+#: read on a box with its classes that holds more than it shows, so that a
+#: panel with too little in it still tells its bar; the box is hidden, so no
+#: pointer rests on it and its thumb keeps its colour at rest. A bar that shows
+#: only while scrolling takes no room.
 _SCROLLBAR_JS = """(el) => {
-    const cs = getComputedStyle(el);
-    const borders = parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
-    return { width: cs.scrollbarWidth, color: cs.scrollbarColor,
-             room: el.offsetWidth - el.clientWidth - borders };
-}"""
-
-#: The Data Catalog column's scrollbar, on a box with that column's classes that
-#: holds more than it shows: the column itself may hold too little to scroll.
-_CATALOG_SCROLLBAR_JS = """(column) => {
+    const room = (box) => {
+        const cs = getComputedStyle(box);
+        return box.offsetWidth - box.clientWidth
+            - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth);
+    };
     const probe = document.createElement("div");
-    probe.className = column.className;
+    probe.className = el.className;
     probe.style.cssText = "position: fixed; left: 0; top: 0; display: block; width: 200px; "
         + "height: 100px; overflow-y: auto; visibility: hidden;";
     const inner = document.createElement("div");
     inner.style.height = "400px";
     probe.appendChild(inner);
     document.body.appendChild(probe);
-    const cs = getComputedStyle(probe);
-    const borders = parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
-    const seen = { width: cs.scrollbarWidth, color: cs.scrollbarColor,
-                   room: probe.offsetWidth - probe.clientWidth - borders };
+    const cs = getComputedStyle(el);
+    const seen = {
+        width: cs.scrollbarWidth,
+        color: cs.scrollbarColor,
+        bar: room(probe),
+        webkit_width: getComputedStyle(probe, "::-webkit-scrollbar").width,
+        thumb: getComputedStyle(probe, "::-webkit-scrollbar-thumb").backgroundColor,
+        scrolls: el.scrollHeight > el.clientHeight,
+        own: room(el),
+    };
     probe.remove();
     return seen;
 }"""
@@ -159,14 +179,12 @@ def test_widget_panels_scroll_with_the_data_catalogs_scrollbar(
     )
     project_id = session["project"]["id"]
 
-    # The Data Catalog's scrollbar, from a dataset's details.
+    # The Data Catalog's scrollbar, from a dataset's details. It is checked
+    # with the widget panels' in step 2.
     page.goto(f"{app_frontend.base_url}/catalog/data/{quote(DATASET, safe='')}", timeout=120000)
     column = page.locator(CONTENT_COLUMN).first
     column.wait_for(state="visible", timeout=30000)
-    catalog = column.evaluate(_CATALOG_SCROLLBAR_JS)
-    assert catalog["width"] == "thin" and catalog["room"] > 0, (
-        f"the Data Catalog's content column does not scroll with its thin scrollbar: {catalog}"
-    )
+    catalog = column.evaluate(_SCROLLBAR_JS)
 
     page.goto(f"{app_frontend.base_url}/dataflow/{project_id}")
     page.wait_for_load_state("domcontentloaded")
@@ -188,7 +206,8 @@ def test_widget_panels_scroll_with_the_data_catalogs_scrollbar(
         f"which is what makes its scrollbar matter: {last}"
     )
 
-    # 2. Every widget panel computes the Data Catalog's scrollbar.
+    # 2. The Data Catalog's column and every widget panel draw the rule's bar
+    #    at rest, and the corner node's own bar takes its 6 px beside the list.
     form_panel = node_locator(page, NEW_PARAMETER).locator("[data-parameter-panel]").first
     form_panel.wait_for(state="visible", timeout=15000)
     _open_tab(page, widgets_node, "widgets")
@@ -199,22 +218,27 @@ def test_widget_panels_scroll_with_the_data_catalogs_scrollbar(
         "a new Parameter node's form": form_panel,
         f"{WIDGETS_LABEL}'s Widgets tab": widgets_panel,
     }
-    seen = {name: panel.evaluate(_SCROLLBAR_JS) for name, panel in panels.items()}
-    assert {name: (s["width"], s["color"]) for name, s in seen.items()} == {
-        name: (catalog["width"], catalog["color"]) for name in panels
-    }, (
-        "a widget panel does not scroll with the Data Catalog's scrollbar (scrollbar-width "
-        f"{catalog['width']!r}, scrollbar-color {catalog['color']!r}): {seen}"
+    seen = {"the Data Catalog's content column": catalog}
+    seen.update({name: panel.evaluate(_SCROLLBAR_JS) for name, panel in panels.items()})
+    wanted = {
+        name: {
+            **drawn,
+            "width": catalog["width"],
+            "color": catalog["color"],
+            "bar": BAR_PX,
+            "webkit_width": f"{BAR_PX}px",
+            "thumb": THUMB,
+            "own": BAR_PX if drawn["scrolls"] else 0,
+        }
+        for name, drawn in seen.items()
+    }
+    wanted["the Top-left corner node"].update(scrolls=True, own=BAR_PX)
+    assert seen == wanted, (
+        f"a panel does not draw the shared scrollbar at rest ({BAR_PX} px beside the content, "
+        f"thumb {THUMB}), as the Data Catalog's content column should: {seen}"
     )
 
-    # 3. The corner node's scrollbar takes the Data Catalog's room beside the list.
-    room = seen["the Top-left corner node"]["room"]
-    assert room > 0 and room == catalog["room"], (
-        f"the corner node's scrollbar takes {room} px beside its list, "
-        f"and the Data Catalog's takes {catalog['room']} px"
-    )
-
-    # 4. Scrolled down, the fifth line shows.
+    # 3. Scrolled down, the fifth line shows.
     corner_panel.evaluate("el => { el.scrollTop = el.scrollHeight; }")
     scrolled = corner_panel.evaluate(_LAST_USER_JS)
     assert scrolled["below"] <= 1, (
