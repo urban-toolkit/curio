@@ -48,7 +48,9 @@ runs:
         PROJECT: ${{ inputs.project }}
       run: |
         set -euo pipefail
+        started=$(date +%s)
         docker pull --quiet "$IMAGE"
+        echo "Pulled in $(( $(date +%s) - started )) s, $(docker image inspect --format '{{.Size}}' "$IMAGE") bytes on this daemon"
         docker tag "$IMAGE" "$PROJECT-curio"
 
     - name: 🌱 Seed the workspace
