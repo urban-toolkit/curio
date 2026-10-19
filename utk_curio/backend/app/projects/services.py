@@ -56,10 +56,13 @@ _SINK_NODE_TYPES = frozenset({
 
 def _is_sink_node_type(node_type) -> bool:
     """Membership in ``_SINK_NODE_TYPES``, tolerant of the versioned canonical
-    form palette-dragged nodes carry (``curio.builtin/vis-vega@1``) (#169)."""
+    form palette-dragged nodes carry (``curio.builtin/vis-vega@1``) (#169). A
+    package chart that draws with the Vega-Lite grammar is a Vega-Lite chart
+    (``template_grammars``), as the canvas's ``isNonProducingNodeType`` reads it."""
     from utk_curio.backend.app.packages.service import unversioned_node_type
+    from utk_curio.backend.app.projects.template_grammars import draws_with_vega_lite
 
-    return unversioned_node_type(node_type) in _SINK_NODE_TYPES
+    return unversioned_node_type(node_type) in _SINK_NODE_TYPES or draws_with_vega_lite(node_type)
 
 
 def _ensure_dataflow_identity(spec: Optional[dict], name: Optional[str]) -> bool:

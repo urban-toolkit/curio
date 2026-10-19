@@ -266,8 +266,12 @@ def _autark_spec_has_data_sources(node: dict) -> bool:
 
 
 def _is_pass_through(node: dict) -> bool:
+    """A package chart that draws with the Vega-Lite grammar is a Vega-Lite
+    chart (``template_grammars``), as ``isPassThroughNode`` reads it."""
+    from utk_curio.backend.app.projects.template_grammars import draws_with_vega_lite
+
     kind = _node_kind(node)
-    if kind in _PASS_THROUGH_KINDS:
+    if kind in _PASS_THROUGH_KINDS or draws_with_vega_lite(node.get("type")):
         return True
     if kind == _AUTK_GRAMMAR_KIND:
         return _classify_autk_spec(node.get("content")) == "render"
