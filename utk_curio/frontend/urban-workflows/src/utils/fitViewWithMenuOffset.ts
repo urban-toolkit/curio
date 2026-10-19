@@ -99,27 +99,36 @@ export function boundsInSight(rf: ReactFlowInstance, bounds: Rect): boolean {
         top + bounds.height * zoom <= sight.top + sight.height;
 }
 
-/** The part of React Flow's store that moves the viewport. */
-type ZoomStore = { getState: () => Pick<ReactFlowState, "d3Zoom" | "d3Selection"> };
+/** The part of React Flow's store that moves the viewport (d3's zoom) and
+ *  measures nodes (the canvas's element, and what its ResizeObserver calls). */
+type ZoomStore = {
+    getState: () => Pick<ReactFlowState, "d3Zoom" | "d3Selection" | "domNode" | "updateNodeDimensions">;
+};
+
+type NodeDimensionUpdate = Parameters<ReactFlowState["updateNodeDimensions"]>[0][number];
 
 /**
  * `fitViewWithMenuOffset` without a duration, set at once: the fit the e2e
  * helpers ask for through `window.__curio_fitViewWithMenuOffset`. Returns the
  * viewport the canvas then shows, which is the current one when none of the
- * nodes is on the canvas, or null while one of them is not measured yet.
+ * nodes is on the canvas, or null while one of them has no size to fit.
  *
  * React Flow 11's `setViewport` moves through a d3 transition even with no
  * duration, and a transition only advances on an animation frame, so the view
  * would change a frame or two later; a browser on a loaded GPU runner can go
  * tens of seconds without one. React Flow's own `fitView` sets a fit without a
  * duration through d3's zoom at once, and this does the same.
+ *
+ * A node React Flow has not measured yet is measured here, from its element
+ * (`measureNodesNow`), for the same reason.
  */
 export function fitViewWithMenuOffsetNow(
     rf: ReactFlowInstance,
     store: ZoomStore,
     options?: MenuOffsetFitOptions,
 ): Viewport | null {
-    const plan = planFit(rf, options);
+    let plan = planFit(rf, options);
+    if (plan === "unmeasured" && measureNodesNow(rf, store, options)) plan = planFit(rf, options);
     if (plan === "no nodes") return rf.getViewport();
     if (plan === "unmeasured") return null;
     if (plan === "no pane") return rf.fitView({ ...options, duration: 0 }) ? rf.getViewport() : null;
@@ -129,14 +138,24 @@ export function fitViewWithMenuOffsetNow(
     return plan;
 }
 
-function planFit(rf: ReactFlowInstance, options?: MenuOffsetFitOptions): FitPlan {
+/** The nodes a fit frames: those its options name, or every node. */
+function requestedNodes(rf: ReactFlowInstance, options?: MenuOffsetFitOptions): Node[] {
     const requestedIds = (options?.nodes ?? [])
         .map((n: any) => n?.id)
         .filter((id: unknown): id is string => typeof id === "string");
     const allNodes = rf.getNodes();
-    const requested = requestedIds.length
+    return requestedIds.length
         ? allNodes.filter((n) => requestedIds.includes(n.id))
         : allNodes;
+}
+
+/** Whether React Flow has measured *n*. */
+const isMeasured = (n: Node) =>
+    typeof n.width === "number" && n.width > 0 &&
+    typeof n.height === "number" && n.height > 0;
+
+function planFit(rf: ReactFlowInstance, options?: MenuOffsetFitOptions): FitPlan {
+    const requested = requestedNodes(rf, options);
     if (requested.length === 0) return "no nodes";
     // A node drawn hidden (a collapsed scenario's member, #662) is never
     // measured, so waiting for its size would never end. Fit the others; when
@@ -153,12 +172,40 @@ function planFit(rf: ReactFlowInstance, options?: MenuOffsetFitOptions): FitPlan
     // point and getViewportForBounds would over-zoom to maxZoom on it. Report
     // failure so the caller's retry loop waits for measurement instead of
     // halting on a degenerate fit.
-    const measured = (n: Node) =>
-        typeof n.width === "number" && n.width > 0 &&
-        typeof n.height === "number" && n.height > 0;
-    if (!targetNodes.every(measured)) return "unmeasured";
+    if (!targetNodes.every(isMeasured)) return "unmeasured";
 
     return planBoundsFit(getNodesBounds(targetNodes), options);
+}
+
+/**
+ * Measure the nodes a fit frames that React Flow has not measured yet, each
+ * from its element, through React Flow's own `updateNodeDimensions`, which
+ * reads the element's size at once. Returns whether it measured any.
+ *
+ * React Flow measures a node it has just drawn only in its ResizeObserver's
+ * callback, which the browser runs only when it draws a frame. A freshly
+ * launched Chrome on a GPU runner that several test jobs shared drew none for
+ * more than 10 s (#1012), so a fit waiting for that callback could not be set.
+ * A node drawn hidden has no size to read; the fit leaves it out.
+ */
+function measureNodesNow(rf: ReactFlowInstance, store: ZoomStore, options?: MenuOffsetFitOptions): boolean {
+    const { domNode, updateNodeDimensions } = store.getState();
+    if (!domNode || typeof updateNodeDimensions !== "function") return false;
+    const elements = new Map<string, HTMLDivElement>();
+    domNode.querySelectorAll<HTMLDivElement>(".react-flow__node").forEach((element) => {
+        const id = element.getAttribute("data-id");
+        if (id !== null) elements.set(id, element);
+    });
+    const updates: NodeDimensionUpdate[] = [];
+    requestedNodes(rf, options).forEach((node) => {
+        const nodeElement = elements.get(node.id);
+        if (nodeElement && !isDrawnHidden(node) && !isMeasured(node)) {
+            updates.push({ id: node.id, nodeElement, forceUpdate: true });
+        }
+    });
+    if (updates.length === 0) return false;
+    updateNodeDimensions(updates);
+    return true;
 }
 
 /** Where a fit of *nodeBounds* (canvas units) puts the viewport, or "no pane"
