@@ -65,7 +65,14 @@ describe("DataflowThumbnail without a highlight", () => {
       expect(names(g)).toEqual([]);
     }
 
-    // Each node: the white box, then its colour bar.
+    // Each node: the white box, then its colour bar, in its category's colour.
+    const barColours = [
+      "var(--curio-category-data-fg)",
+      "var(--curio-category-package-fg)",
+      "var(--curio-category-data-fg)",
+      "var(--curio-category-vis-fg)",
+    ];
+    expect(boxes).toHaveLength(2 * barColours.length);
     for (let i = 0; i < boxes.length; i += 2) {
       const [box, bar] = [boxes[i], boxes[i + 1]];
       expect(names(box)).toEqual(
@@ -78,6 +85,7 @@ describe("DataflowThumbnail without a highlight", () => {
       expect(names(bar)).toEqual(["fill", "height", "rx", "width", "x", "y"]);
       expect(bar).toHaveAttribute("width", "3");
       expect(bar).toHaveAttribute("rx", "1");
+      expect(bar).toHaveAttribute("fill", barColours[i / 2]);
     }
   });
 

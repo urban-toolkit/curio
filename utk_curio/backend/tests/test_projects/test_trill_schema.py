@@ -244,7 +244,32 @@ def _mutate(fn):
     return doc
 
 
+def _version_preview(**preview_node) -> dict:
+    """A ``dataflowProvenance`` of one version whose preview holds one node,
+    with *preview_node*'s fields."""
+    return {
+        "id": "Fixture",
+        "latest": "Fixture_1748990000000",
+        "graph": {
+            "id": "Fixture",
+            "nodes": [{
+                "id": "Fixture_1748990000000",
+                "label": "Fixture (1748990000000)",
+                "timestamp": 1748990000000,
+                "preview": {
+                    "nodes": [{"id": "n1", "type": "curio.builtin/data-loading", "x": 0, "y": 0, **preview_node}],
+                    "edges": [],
+                },
+            }],
+            "edges": [],
+        },
+        "versions": {},
+    }
+
+
 REJECTED = {
+    # A version's preview node names its category as a string, or null.
+    "provenance preview category as a number": lambda d: d.update(dataflowProvenance=_version_preview(category=3)),
     "legacy uppercase node type": lambda d: _node(d).update(type="DATA_LOADING"),
     "node type with a trailing @": lambda d: _node(d).update(type="curio.builtin/vis-vega@"),
     "node type package with one segment": lambda d: _node(d).update(type="nodots/thing"),
@@ -444,6 +469,10 @@ REJECTED = {
 # Cases that look like they should be rejected but must not be. Each one is a
 # real shape some writer emits, or a boundary the schema deliberately leaves open.
 ACCEPTED = {
+    # A version's preview node with no category: the provenance window colors
+    # it from the node type's registered descriptor.
+    "provenance preview without a category": lambda d: d.update(dataflowProvenance=_version_preview()),
+    "provenance preview category null": lambda d: d.update(dataflowProvenance=_version_preview(category=None)),
     "versioned node type": lambda d: _node(d).update(type="curio.builtin/vis-vega@1"),
     "major zero": lambda d: _node(d).update(type="curio.builtin/vis-vega@0"),
     "six-segment package id": lambda d: _node(d).update(type="a.b.c.d.e.f/thing"),
@@ -914,11 +943,22 @@ _PROVENANCE["dataflowProvenance"] = {
                         {
                             "id": "n1",
                             "type": "curio.builtin/data-loading",
+                            "category": "data",
                             "x": 0,
                             "y": 0,
                             "w": None,
                             "h": None,
-                        }
+                        },
+                        {
+                            # A type no installed package provides.
+                            "id": "n2",
+                            "type": "acme.gone/gauge@1",
+                            "category": None,
+                            "x": 300,
+                            "y": 0,
+                            "w": None,
+                            "h": None,
+                        },
                     ],
                     "edges": [{"source": "n1", "target": "n1"}],
                 },
