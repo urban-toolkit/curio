@@ -474,13 +474,15 @@ def test_a_node_output_of_several_parts(app, tmp_path):
 
 @pytest.mark.parametrize("resource_id", COLLECTED)
 def test_a_collection_added_from_a_storage_source(app, db, user_and_token, resource_id):
-    """The add a Discovery Catalog job runs, on the example storage source.
-    Its collection and discoverySource keys are all ones the schema declares."""
+    """The add a Discovery Catalog job runs, on the example storage source,
+    with the service the routes build. Its collection and discoverySource
+    keys are all ones the schema declares."""
     from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
     from utk_curio.backend.app.discovery.service import DiscoveryService
+    from utk_curio.backend.app.projects.services import _user_dir_key
 
     user, _ = user_and_token
-    added = DiscoveryService(user=user)._storage_acquire.acquire(
+    added = DiscoveryService(_user_dir_key(user), user=user)._storage_acquire.acquire(
         load_source_manifest(EXAMPLE_SOURCE), resource_id
     )
     raw = _written(Path(added["dataset"]["path"]).parents[1])
