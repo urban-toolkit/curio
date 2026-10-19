@@ -40,12 +40,29 @@ def test_sink_check_tolerates_versioned_types(node_type):
 @pytest.mark.parametrize("node_type", [
     "curio.builtin/data-transformation",
     "curio.builtin/data-transformation@1",
+    "scout.rasters/raster-calculator@1",
     None,
     "",
 ])
 def test_non_sink_types_pass(node_type):
     assert _is_sink_node_type(node_type) is False
     assert _is_sink_node(node_type) is False
+
+
+@pytest.mark.parametrize("node_type", [
+    "scout.comparison/donuts",
+    "scout.comparison/lines-with-band@1",
+    "scout.comparison/weighted-matrix@1",
+])
+def test_a_package_chart_that_draws_with_vega_lite_is_a_sink(node_type):
+    """SCOUT Comparison's charts draw with the Vega-Lite node's behavior
+    (``grammarId: vega-lite`` in the shipped manifest), which hands the
+    node's input on as its output: a computed dataset under one of them would
+    copy the Compare node's table, as one under a Vega-Lite node would. The
+    TS side asks the same question (``isNonProducingNodeType``); the sets
+    above stay the two built-in views."""
+    assert _is_sink_node_type(node_type) is True
+    assert _is_sink_node(node_type) is True
 
 
 # --------------------------------------------------------------------------- #

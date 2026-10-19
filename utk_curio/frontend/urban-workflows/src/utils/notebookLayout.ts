@@ -3,6 +3,7 @@
 // path it draws there, and how tall a cell's output is. Pure, so the view and
 // its tests share one set of numbers.
 import { NodeType } from "../constants";
+import { isVegaLiteNodeType } from "../registry/vegaLiteNodes";
 import { unversionedNodeType } from "./flowNodeCanonicalType";
 import { inputSlotOf } from "./inputSlots";
 
@@ -195,7 +196,8 @@ export interface NotebookOutputBox {
  */
 export function notebookOutputBox(nodeType: string): NotebookOutputBox {
   const kind = unversionedNodeType(nodeType);
-  if (kind === NodeType.VIS_VEGA) return { height: CHART_HEIGHT, overflow: "auto" };
+  // A package's chart too (registry/vegaLiteNodes).
+  if (isVegaLiteNodeType(kind)) return { height: CHART_HEIGHT, overflow: "auto" };
   if (MAP_KINDS.has(kind)) return { height: MAP_HEIGHT };
   if (NATURAL_HEIGHT_KINDS.has(kind)) return { maxHeight: OUTPUT_CAP, overflow: "auto" };
   return { height: OUTPUT_CAP, overflow: "auto" };

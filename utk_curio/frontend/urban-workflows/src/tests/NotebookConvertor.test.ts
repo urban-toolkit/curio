@@ -168,6 +168,28 @@ describe("trillToNotebook", () => {
     expect(source).not.toContain("json.loads");
   });
 
+  it("embeds a package chart that draws with Vega-Lite as the Vega-Lite node's spec is, its widgets read", () => {
+    // A SCOUT Comparison chart draws with the Vega-Lite node's behavior; its
+    // spec reads the columns its widgets name.
+    const { VEGA_LITE_TEMPLATE, registerVegaLiteTemplate, clearVegaLiteTemplate } = require("./_support/vegaLiteTemplate");
+    registerVegaLiteTemplate();
+    try {
+      const chart = {
+        id: "v",
+        type: VEGA_LITE_TEMPLATE,
+        content: '{"mark": "bar", "encoding": {"y": {"field": "[!! y !!]"}}}',
+        metadata: { widgets: [{ name: "y", type: "text", label: "Y column", default: "y", value: "pedestrians" }] },
+      };
+      const source = codeCells(trillToNotebook(spec([chart as NodeSpec])))[0].source;
+
+      expect(source).toContain('_spec = {');
+      expect(source).toContain('"field": "pedestrians"');
+      expect(source).not.toContain("[!!");
+    } finally {
+      clearVegaLiteTemplate();
+    }
+  });
+
   it("does not lose a node that sits in a cycle", () => {
     const nb = trillToNotebook(
       spec(

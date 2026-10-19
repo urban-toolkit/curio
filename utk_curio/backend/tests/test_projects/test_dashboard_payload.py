@@ -142,6 +142,34 @@ class TestWhichOutputsAreNeeded:
 
         assert dashboard_source_node_ids(spec) == {"py"}
 
+    def test_a_package_chart_that_draws_with_vega_lite_is_walked_through(self):
+        # SCOUT Comparison's charts draw with the Vega-Lite node's behavior
+        # (``grammarId: vega-lite``), which hands the chart's input on: a tile
+        # after one reads what is above it, as after a Vega-Lite node.
+        for chart_type in ("scout.comparison/donuts@1", "scout.comparison/donuts"):
+            spec = spec_of(
+                [
+                    node("compare", "curio.builtin/compare-scenarios@1"),
+                    node("donuts", chart_type),
+                    node("chart", "curio.builtin/vis-vega", dashboardPinned=True),
+                ],
+                [edge("compare", "donuts"), edge("donuts", "chart")],
+            )
+
+            assert dashboard_source_node_ids(spec) == {"compare"}, chart_type
+
+    def test_a_package_node_that_draws_with_no_grammar_is_a_producer(self):
+        spec = spec_of(
+            [
+                node("rasters", "curio.builtin/data-loading"),
+                node("calc", "scout.rasters/raster-calculator@1"),
+                node("chart", "curio.builtin/vis-vega", dashboardPinned=True),
+            ],
+            [edge("rasters", "calc"), edge("calc", "chart")],
+        )
+
+        assert dashboard_source_node_ids(spec) == {"calc"}
+
     def test_a_cycle_terminates(self):
         spec = spec_of(
             [
