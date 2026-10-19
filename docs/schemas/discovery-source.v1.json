@@ -338,7 +338,7 @@
         },
         "operatorDefault": {
           "type": "boolean",
-          "description": "Lets whoever runs Curio set one key every account inherits until it saves its own, in CURIO_DEFAULT_ and the secretId in capitals, with every other character as '_'. False when absent."
+          "description": "Lets whoever runs Curio set one key every account inherits until it saves its own, in CURIO_DEFAULT_ and the secretId in capitals, with every other character as '_'. Needs a secretId, and is refused when that variable is one of Curio's own settings (CURIO_DEFAULT_LLM_*, CURIO_DEFAULT_SAVE_NODE_OUTPUT). False when absent."
         },
         "scheme": {
           "enum": [

@@ -140,6 +140,29 @@ AUTH_SCHEMES = ("header", "query")
 MAX_KEY_LABEL_CHARS = 80
 MAX_KEY_NOTE_CHARS = 500
 
+#: Where the operator's default for a key is read: this prefix and the key's
+#: ``secretId`` (:func:`default_variable`). A manifest never names a variable.
+DEFAULT_VARIABLE_PREFIX = "CURIO_DEFAULT_"
+#: Curio's own settings under the same prefix, which no key's default is ever
+#: read from: whether nodes save their outputs, and the deployment's LLM
+#: configuration (every ``CURIO_DEFAULT_LLM_`` variable, its key among them).
+#: ``test_credentials.py`` checks that every such variable Curio's code names
+#: is one of these.
+OWN_DEFAULT_SETTINGS = frozenset({"CURIO_DEFAULT_SAVE_NODE_OUTPUT"})
+OWN_DEFAULT_SETTING_PREFIXES = ("CURIO_DEFAULT_LLM_",)
+
+
+def default_variable(secret_id: str) -> str:
+    """The variable an operator sets for *secret_id*'s default: the prefix and
+    the id in capitals, with every other character as ``_``."""
+    return DEFAULT_VARIABLE_PREFIX + re.sub(r"[^A-Z0-9]", "_", secret_id.upper())
+
+
+def is_own_setting(variable: str) -> bool:
+    """Whether *variable* is one of Curio's own settings rather than a key's
+    default."""
+    return variable in OWN_DEFAULT_SETTINGS or variable.startswith(OWN_DEFAULT_SETTING_PREFIXES)
+
 #: The formats this catalog can hand to the Data Catalog's importer: what a
 #: download lands as. A subset of the Data Catalog's own SUPPORTED_FORMATS: a
 #: bare .shp is meaningless without its sibling .dbf/.shx, and a bundle is a
@@ -251,8 +274,8 @@ class AuthSpec:
     #: A sentence API Settings shows under the key field.
     note: str | None = None
     #: Whether the operator may set one key every account inherits until it
-    #: saves its own, in the variable ``credentials.default_variable`` derives
-    #: from ``secret_id``. A manifest never names a variable.
+    #: saves its own, in the variable :func:`default_variable` derives from
+    #: ``secret_id``. A manifest never names a variable.
     operator_default: bool = False
 
     @property
@@ -543,6 +566,16 @@ def _parse_auth(raw: object) -> AuthSpec:
     help_url = raw.get("helpUrl")
     if help_url is not None:
         help_url = _require_str(help_url, "auth.helpUrl")
+    operator_default = _bool(raw.get("operatorDefault"), False, "auth.operatorDefault")
+    if operator_default:
+        if not secret_id:
+            raise ManifestError("manifest.auth.operatorDefault needs a secretId")
+        variable = default_variable(secret_id)
+        if is_own_setting(variable):
+            raise ManifestError(
+                f"manifest.auth.operatorDefault: the secretId {secret_id!r} would read {variable}, "
+                "one of Curio's own settings, so it cannot have an operator default"
+            )
     return AuthSpec(
         mode=mode,
         secret_id=secret_id,
@@ -554,7 +587,7 @@ def _parse_auth(raw: object) -> AuthSpec:
         label=_key_text(raw.get("label"), "auth.label", MAX_KEY_LABEL_CHARS),
         placeholder=_key_text(raw.get("placeholder"), "auth.placeholder", MAX_KEY_LABEL_CHARS),
         note=_key_text(raw.get("note"), "auth.note", MAX_KEY_NOTE_CHARS),
-        operator_default=_bool(raw.get("operatorDefault"), False, "auth.operatorDefault"),
+        operator_default=operator_default,
     )
 
 

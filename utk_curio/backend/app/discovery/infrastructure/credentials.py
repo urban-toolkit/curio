@@ -13,30 +13,32 @@ A key goes only to a source whose manifest names its id, and only to that
 source's own origin (``CredentialedTransport``). A source whose manifest sets
 ``auth.operatorDefault`` also takes the operator's key, from the variable
 :func:`default_variable` derives from the id, when the account saved none.
+That variable is never one of Curio's own settings
+(``manifest.is_own_setting``): a manifest whose id would read one fails to
+load, and :func:`deployment_key` refuses one again here.
 """
 
 from __future__ import annotations
 
 import logging
 import os
-import re
 import threading
 from typing import Any, Iterable
 
-from utk_curio.backend.app.discovery.domain.manifest import AuthSpec, DiscoverySourceManifest
+from utk_curio.backend.app.discovery.domain.manifest import (
+    AuthSpec,
+    DiscoverySourceManifest,
+    default_variable,
+    is_own_setting,
+)
 from utk_curio.backend.app.users import source_keys
 
 logger = logging.getLogger(__name__)
 
-#: The prefix of every operator default's variable. Derived, never named by a
-#: manifest, so no manifest can reach any other variable.
-DEFAULT_VARIABLE_PREFIX = "CURIO_DEFAULT_"
-
-
-def default_variable(secret_id: str) -> str:
-    """The variable an operator sets for *secret_id*'s default: the prefix and
-    the id in capitals, with every other character as ``_``."""
-    return DEFAULT_VARIABLE_PREFIX + re.sub(r"[^A-Z0-9]", "_", secret_id.upper())
+__all__ = [
+    "credential_header", "declared_keys", "default_variable", "deployment_key",
+    "has_key", "key_for", "key_rows", "own_key",
+]
 
 
 def own_key(user, secret_id: str | None) -> str | None:
@@ -53,14 +55,18 @@ def own_key(user, secret_id: str | None) -> str | None:
 
 
 def deployment_key(auth: AuthSpec) -> str | None:
-    """The operator's key for a source whose manifest allows one.
+    """The operator's key for a source whose manifest allows one. Never one of
+    Curio's own settings, which share the variables' prefix.
 
     Read at call time rather than import: a deployment may set it after the
     module loads, and tests certainly do.
     """
     if not auth.secret_id or not auth.operator_default:
         return None
-    return os.environ.get(default_variable(auth.secret_id)) or None
+    variable = default_variable(auth.secret_id)
+    if is_own_setting(variable):
+        return None
+    return os.environ.get(variable) or None
 
 
 def key_for(user, auth: AuthSpec) -> str | None:

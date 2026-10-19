@@ -460,7 +460,8 @@ class TestNoResponseOrLogCarriesIt:
         assert SECRET not in json.dumps(row)
 
     def test_a_search_logs_nothing_that_contains_it(self, client, auth, shipped_root, fixture_corpus, caplog):
-        _patch_keys(client, auth, {"socrata.app-token": SECRET})
+        res = _patch_keys(client, auth, {"socrata.app-token": SECRET})
+        assert res.get_json()["has_source_keys"] == {"socrata.app-token": True}
         with caplog.at_level(logging.DEBUG):
             client.get(
                 f"/api/discovery/sources/{CHICAGO}/search?q=crimes",
@@ -600,12 +601,60 @@ class TestTheDeploymentFallback:
         assert credentials.credential_header(user, manifest) is None
 
     def test_the_variable_is_curio_default_and_the_secret_id(self):
-        """Derived from the id, so a manifest can name no variable of its own."""
+        """Derived from the id, so a manifest names no variable: only one
+        under the prefix, and never one of Curio's own settings (the tests below)."""
         assert credentials.default_variable("socrata.app-token") == SOCRATA_DEFAULT
         assert credentials.default_variable("a.b-c") == "CURIO_DEFAULT_A_B_C"
         for secret_id in ("path", "home", "ld-preload", "aws.secret-access-key", "x.y.z"):
             name = credentials.default_variable(secret_id)
             assert name.startswith("CURIO_DEFAULT_") and re.fullmatch(r"[A-Z0-9_]+", name), name
+
+    @pytest.mark.parametrize("secret_id, variable", [
+        ("llm.api-key", "CURIO_DEFAULT_LLM_API_KEY"),
+        ("llm.base-url", "CURIO_DEFAULT_LLM_BASE_URL"),
+        ("llm.model", "CURIO_DEFAULT_LLM_MODEL"),
+        ("save.node-output", "CURIO_DEFAULT_SAVE_NODE_OUTPUT"),
+    ])
+    def test_no_key_is_read_from_one_of_curios_own_settings(
+        self, app, db, user_and_token, monkeypatch, secret_id, variable
+    ):
+        """The prefix is also Curio's own: the deployment's LLM key is
+        ``CURIO_DEFAULT_LLM_API_KEY``. A manifest whose id would read one of
+        those fails to load, and no key is taken from one even so."""
+        monkeypatch.setenv(variable, "curios-own-setting")
+        with pytest.raises(M.ManifestError, match=variable):
+            M._parse_manifest(
+                a_manifest(provider={"type": "ckan", "baseUrl": "https://elsewhere.example"},
+                           auth={"mode": "optional-token", "secretId": secret_id,
+                                 "headerName": "X-Key", "operatorDefault": True}),
+                where="manifest.json",
+            )
+        forged = M.AuthSpec(mode="optional-token", secret_id=secret_id, header_name="X-Key", operator_default=True)
+        user, _ = user_and_token
+        assert credentials.deployment_key(forged) is None
+        assert credentials.key_for(user, forged) is None
+
+    def test_a_default_needs_a_secret_id(self):
+        with pytest.raises(M.ManifestError, match="operatorDefault"):
+            M._parse_manifest(a_manifest(auth={"mode": "public", "operatorDefault": True}), where="manifest.json")
+
+    def test_every_own_setting_curios_code_names_is_refused(self):
+        """Each ``CURIO_DEFAULT_`` variable Curio's code reads for itself is one
+        no key's default can be read from, so a setting added later is guarded
+        the moment it lands. ``upgrade_notices.py`` names retired variables only
+        to warn that Curio no longer reads them."""
+        repo = SHIPPED_ROOT.parent
+        files = [repo / "curio.py"] + [
+            path for folder in ("utk_curio", "scripts") for path in sorted((repo / folder).rglob("*.py"))
+            if "tests" not in path.relative_to(repo).parts and path.name != "upgrade_notices.py"
+        ]
+        names = set()
+        for path in files:
+            names |= set(re.findall(r"CURIO_DEFAULT_[A-Z0-9_]+", path.read_text(encoding="utf-8")))
+        assert {"CURIO_DEFAULT_LLM_API_KEY", "CURIO_DEFAULT_SAVE_NODE_OUTPUT"} <= names, sorted(names)
+        # A name ending in "_" is a family, such as CURIO_DEFAULT_LLM_*.
+        unguarded = [name for name in sorted(names) if not M.is_own_setting(name + "X" if name.endswith("_") else name)]
+        assert not unguarded, f"Curio settings a key's default could read: {unguarded}"
 
 
 @pytest.mark.parametrize("secret_id", SHIPPED_SECRET_IDS)
