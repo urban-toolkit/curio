@@ -35,7 +35,7 @@
     "@types/dagre": "^0.7.54",
     "@urban-toolkit/autk-compute": "4.1.1",
     "@urban-toolkit/autk-db": "4.1.1",
-    "@urban-toolkit/autk-grammar": "4.4.0",
+    "@urban-toolkit/autk-grammar": "4.4.1",
     "@urban-toolkit/autk-map": "file:vendor/autark/urban-toolkit-autk-map-4.1.1-curio.1.tgz",
     "@urban-toolkit/autk-plot": "4.1.1",
     "apache-arrow": "^21.1.0",
