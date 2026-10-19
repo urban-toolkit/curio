@@ -7,8 +7,9 @@ tables from the Data Catalog. In each row a Data Transformation node per
 scenario keeps that scenario's rows, a Compare Scenarios node stacks them, and
 the chart is the Compare node's own preset (grouped bars, a table) or a node
 of the SCOUT Comparison package after it (``scout.comparison@1``), a Vega-Lite
-chart whose spec names no scenario and no color. Every request that would
-leave the stack is refused, and Run All drives the whole dataflow:
+chart whose spec names no scenario and no color. The account's store holds
+that package, which the dataflow declares. Every request that would leave the
+stack is refused, and Run All drives the whole dataflow:
 
 1. Every node runs to Done.
 2. Each Compare node's output is its scenarios' rows, under their ids and
@@ -45,6 +46,7 @@ from urllib.parse import urlsplit
 from .test_compare_scenarios_e2e import _CHART_STATE_JS, _COLOR_PIXELS_JS, _OUTPUT_ARTIFACT_JS
 from .utils import (
     REPO_ROOT,
+    api_json,
     assert_vega_canvas_rendered,
     close_scenario_details,
     close_scenario_drawer,
@@ -195,7 +197,7 @@ def test_the_nine_charts_draw_their_scenarios_with_no_network(
     rows = _rows(flow)
     assert len(rows) == 9, [row[0] for row in rows]
     refused = _refuse_the_network(page, app_frontend.base_url, current_server, sandbox_base_url())
-    stub_login_and_enter_workflow(
+    session = stub_login_and_enter_workflow(
         page,
         frontend_url=app_frontend.base_url,
         backend_url=current_server,
@@ -205,6 +207,12 @@ def test_the_nine_charts_draw_their_scenarios_with_no_network(
         project_spec=spec,
     )
     require_owner_view(page)
+    # The account's store holds every package the dataflow declares: the one
+    # its charts are nodes of.
+    assert flow["packages"], "the dataflow declares no package for its charts"
+    store = [p.get("dirName") for p in api_json(f"{current_server}/api/packages", session["token"])["packages"]]
+    missing = [package for package in flow["packages"] if package not in store]
+    assert not missing, f"{missing} are not in the account's store {store}: start the stack --with-examples"
     for node in flow["nodes"]:
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
 
