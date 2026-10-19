@@ -65,19 +65,7 @@ prune utk_curio/frontend/urban-workflows/node_modules
 # The built frontend's source maps.
 recursive-exclude utk_curio/frontend *.map
 
-# Files a pip install downloads from GitHub the first time Curio needs them,
-# so the sdist and the wheel stay under PyPI's 100 MiB limit for one file.
-# Exactly the files utk_curio/backend/app/datasets/infrastructure/left_out_files.json
-# lists (test_left_out_files.py checks it).
-exclude datasets/data.cityofchicago.red-light-violations@1/data/red-light-violations.parquet
-exclude datasets/data.cityofchicago.speed-camera-violations@1/data/speed-camera-violations.parquet
-exclude datasets/data.projectsidewalk.chicago-labels@1/data/chicago-labels.parquet
-exclude datasets/data.scout.flood-depth-2020-2040-nbs@1/data/flood-depth-2020-2040-nbs.tif
-exclude datasets/data.scout.flood-depth-2020-2040-no-nbs@1/data/flood-depth-2020-2040-no-nbs.tif
-exclude datasets/data.scout.flood-depth-2050-2080-nbs@1/data/flood-depth-2050-2080-nbs.tif
-exclude datasets/data.scout.flood-depth-2050-2080-no-nbs@1/data/flood-depth-2050-2080-no-nbs.tif
-exclude datasets/data.scout.flood-depth-2080-2100-nbs@1/data/flood-depth-2080-2100-nbs.tif
-exclude datasets/data.scout.flood-depth-2080-2100-no-nbs@1/data/flood-depth-2080-2100-no-nbs.tif
-exclude datasets/data.scout.flood-nbs-classes@1/data/flood-nbs-classes.tif
-exclude datasets/data.utk.milan-mrt@1/data/milan-mrt.tif
-exclude packages/model.scout.deep-umbra@1/models/deep_umbra.onnx
+# setup.py leaves out of both archives the files a pip install downloads from
+# GitHub the first time Curio needs them, so each stays under PyPI's 100 MiB
+# limit: those a dataset's or model package's manifest names in
+# downloadOnFirstUse.

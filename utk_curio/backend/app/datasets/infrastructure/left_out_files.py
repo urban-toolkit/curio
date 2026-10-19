@@ -3,17 +3,19 @@
 The repository holds every file of the Data Catalog (``datasets/``) and of the
 model packages (``packages/<dir>/models/``). PyPI takes no file over 100 MiB,
 so the pip package (the sdist, and the wheel built from it) leaves out the big
-ones, named in ``left_out_files.json`` beside this module. Each is the data
-file of a dataset or the weights a model package's ``model`` block names; the
-small files of its folder (the manifest, a parquet's decode sidecar, a
-license, a package's code) still ship. ``MANIFEST.in`` excludes exactly the listed files, which
-``test_left_out_files`` checks. A model package's weight must also match the
-sha256 its package's ``integrity.json`` names (``fetch``'s *expected_sha256*).
+ones: the data file of a dataset, or the weights of a model package, that its
+manifest names in ``downloadOnFirstUse``
+(``packages/domain/download_on_first_use.py``); ``setup.py`` leaves them out.
+The small files of its folder (the manifest, a parquet's decode sidecar, a
+license, a package's code) still ship, so a pip install reads the same
+manifests (:func:`declared_paths`, through ``utk_curio/shipped.py``). A model
+package's weight must also match the sha256 its package's ``integrity.json``
+names (``fetch``'s *expected_sha256*).
 
-The release build records each listed file's size and sha256, and the commit
+The release build records each left-out file's size and sha256, and the commit
 the package is built from: ``scripts/record_left_out_files.py`` writes
 ``left_out_files.record.json`` here before ``python -m build``, and the
-package ships it. On a pip install, a reader that finds a listed file missing
+package ships it. On a pip install, a reader that finds a left-out file missing
 calls :func:`fetch`, which downloads it from
 ``https://raw.githubusercontent.com/urban-toolkit/curio/<commit>/<path>``
 through the egress policy (``agents/infrastructure/egress.download``), checks
@@ -60,12 +62,15 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote
 
+from utk_curio import shipped as shipped_folders
 from utk_curio.backend.app.agents.infrastructure import egress
 from utk_curio.backend.app.common.file_locks import exclusive_lock
 from utk_curio.backend.app.common.user_storage import curio_root
 
-#: The one list of the files the pip package leaves out.
-LIST_PATH = Path(__file__).with_name("left_out_files.json")
+#: The folder that holds the ``datasets/`` and ``packages/`` whose manifests
+#: name the files the pip package leaves out; ``None`` is Curio's own
+#: (``root()`` in ``utk_curio/shipped.py``). Tests set it.
+SHIPPED_ROOT: Path | None = None
 #: What the release build recorded of them. A checkout has none.
 RECORD_PATH = Path(__file__).with_name("left_out_files.record.json")
 
@@ -106,18 +111,54 @@ class Record:
     files: dict[str, RecordedFile]
 
 
-def left_out_paths() -> tuple[str, ...]:
-    """The repository paths of the files the pip package leaves out."""
-    return _read_list(str(LIST_PATH))
+def _shipped_root() -> Path:
+    return Path(SHIPPED_ROOT) if SHIPPED_ROOT is not None else shipped_folders.root()
+
+
+def declared_paths() -> tuple[str, ...]:
+    """The repository paths the shipped manifests name in
+    ``downloadOnFirstUse``: files, and folders of files. A manifest that
+    cannot be read names none; the catalog's reader refuses it."""
+    return _declared(str(_shipped_root()))
 
 
 @functools.lru_cache(maxsize=4)
-def _read_list(path: str) -> tuple[str, ...]:
-    return tuple(json.loads(Path(path).read_text(encoding="utf-8"))["files"])
+def _declared(root: str) -> tuple[str, ...]:
+    return shipped_folders.downloaded_on_first_use(Path(root), strict=False)
+
+
+def left_out_paths() -> tuple[str, ...]:
+    """The repository paths of the files the pip package leaves out: each
+    file a shipped manifest names, and each file in a folder one names, as
+    the folder holds them in a checkout or as the release recorded them."""
+    root = _shipped_root()
+    recorded = _recorded_paths()
+    files: list[str] = []
+    for repo_path in declared_paths():
+        folder = root / repo_path
+        if folder.is_dir():
+            inside = [
+                f"{repo_path}/{path.relative_to(folder).as_posix()}"
+                for path in sorted(folder.rglob("*")) if path.is_file()
+            ]
+        else:
+            inside = [path for path in recorded if path.startswith(f"{repo_path}/")]
+        files += inside or [repo_path]
+    return tuple(dict.fromkeys(files))
+
+
+def _recorded_paths() -> list[str]:
+    try:
+        record = read_record()
+    except ValueError:
+        return []
+    return sorted(record.files) if record is not None else []
 
 
 def is_left_out(repo_path: str) -> bool:
-    return repo_path in left_out_paths()
+    """Whether the pip package leaves *repo_path* out: a file a shipped
+    manifest names, or a file in a folder one names."""
+    return shipped_folders.covers(declared_paths(), repo_path)
 
 
 def is_commit(value: object) -> bool:
@@ -338,13 +379,12 @@ def _copy_folder(repo_path: str, shipped: Path, root: Path, partial_dir: Path) -
         shipped_folder = shipped_folder.parent
     if not shipped_folder.is_dir():
         return
-    left_out = set(left_out_paths())
     for path in sorted(shipped_folder.rglob("*")):
         if path.is_symlink() or not path.is_file():
             continue
         rel = path.relative_to(shipped_folder).as_posix()
         destination = root / folder / rel
-        if f"{folder}/{rel}" in left_out or destination.is_file():
+        if is_left_out(f"{folder}/{rel}") or destination.is_file():
             continue
         handle, name = tempfile.mkstemp(dir=partial_dir, suffix=".part")
         os.close(handle)

@@ -75,6 +75,18 @@ def _guarded(read):
         return {"error": f"{type(exc).__name__}: {exc}"}
 
 
+def _left_out():
+    """The files the installed copy counts as left out of its package, which
+    it downloads on first use: the paths its shipped manifests name in
+    ``downloadOnFirstUse``, and the files they come to."""
+    from utk_curio.backend.app.datasets.infrastructure import left_out_files
+
+    return {
+        "named": sorted(left_out_files.declared_paths()),
+        "files": sorted(left_out_files.left_out_paths()),
+    }
+
+
 def _shipped_dataflows():
     """The dataflows Curio seeds and lists (``projects/shipped.py``), and the
     packages and datasets ``--with-examples`` provisions for them."""
@@ -325,6 +337,7 @@ def main():
         "commit": record.commit if record else None,
         "sizes": {path: entry.size for path, entry in record.files.items()} if record else None,
     }
+    report["left_out"] = _guarded(_left_out)
 
     from utk_curio.backend.app.agents.domain import contracts
     from utk_curio.backend.app.execution import workflow_spec

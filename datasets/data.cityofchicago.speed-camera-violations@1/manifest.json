@@ -14,6 +14,9 @@
     "parquet"
   ],
   "dataFile": "data/speed-camera-violations.parquet",
+  "downloadOnFirstUse": [
+    "data/speed-camera-violations.parquet"
+  ],
   "compatibility": {
     "major": 1
   },

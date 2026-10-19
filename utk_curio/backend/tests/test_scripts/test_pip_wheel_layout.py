@@ -366,6 +366,19 @@ def test_a_pip_install_gives_each_left_out_file_its_recorded_size(pip_install):
             assert items[folder]["sizeBytes"] == (REPO / repo_path).stat().st_size, items[folder]
 
 
+def test_a_pip_install_reads_what_it_downloads_from_the_manifests_it_ships(pip_install):
+    """The manifests ship without the files they name in
+    ``downloadOnFirstUse``, and the installed copy counts as left out exactly
+    the files the release left out."""
+    found = _read(pip_install, "left_out")
+    assert found["named"] == found["files"] == sorted(listed())
+    package = pip_install.site / IN_THE_WHEEL
+    for repo_path in listed():
+        kind, folder, *_rest = repo_path.split("/")
+        assert (package / kind / folder / "manifest.json").is_file(), repo_path
+        assert not (package / repo_path).exists(), repo_path
+
+
 def test_a_pip_installs_launcher_and_agents_read_the_shipped_packages(pip_install):
     """The launcher pip-installs the built-in package's Python dependencies,
     the dataflow runner knows the shipped packages' code nodes, and the

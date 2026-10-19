@@ -11,7 +11,7 @@
     "properties": { "kind": { "const": "model" } }
   },
   "then": { "required": ["model"] },
-  "else": { "not": { "required": ["model"] } },
+  "else": { "not": { "anyOf": [{ "required": ["model"] }, { "required": ["downloadOnFirstUse"] }] } },
   "properties": {
     "$schema": {
       "type": "string",
@@ -43,6 +43,16 @@
       "description": "'node' for a package of nodes, or 'model' for a package that also ships a model's weights under models/, described by 'model'. Model packages show in the Model Catalog."
     },
     "model": { "$ref": "#/$defs/model" },
+    "downloadOnFirstUse": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^models/[^/\\\\]+(/[^/\\\\]+)*$",
+        "not": { "pattern": "(^|/)\\.{1,2}(/|$)" }
+      },
+      "description": "For a model package that ships with Curio: its weights that the pip package leaves out, by their paths under models/, such as the .onnx file and an external-data file beside it, or a checkpoint's folder, which covers every file in it. A pip install downloads them from GitHub the first time a node loads the model. Only a package of kind 'model' has it."
+    },
     "readOnly": {
       "type": "boolean",
       "default": false,
