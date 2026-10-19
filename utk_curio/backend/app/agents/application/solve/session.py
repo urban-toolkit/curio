@@ -33,6 +33,7 @@ from utk_curio.backend.app.agents.application.proposals import acquire as agents
 from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
 from utk_curio.backend.app.agents.application.solve import batch as agents_batch
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
+from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.projects import storage as projects_storage
 
 log = logging.getLogger(__name__)
@@ -86,20 +87,24 @@ def _reconcile_solve_session(user_key: str, project_id: str, spec: dict, record:
 _SOLVE_CANCEL_EVENTS: dict[str, object] = {}
 
 
-def _is_data_loading_node(node: object) -> bool:
-    from utk_curio.backend.app.packages import service as _pkg_services
+def _is_data_loading_node(node: object, templates: dict | None = None) -> bool:
+    """Whether *node*'s template loads a dataset (``source_grounding.loads_dataset``,
+    read against the project's roster snapshot *templates* when given)."""
+    node_type = (node or {}).get("type") if isinstance(node, dict) else None
+    return source_grounding.loads_dataset(node_type, templates)
 
-    return source_grounding.is_data_loading_type(
-        _pkg_services.canonical_template_id((node or {}).get("type") if isinstance(node, dict) else None)
-    )
 
-
-def _delegate_capabilities(nodes) -> list[str]:
+def _delegate_capabilities(nodes, templates: dict | None = None) -> list[str]:
     """What a content run always delegates: the content, and discovery when a
-    data-loading node may need a source (``content.SOLVE_CAPABILITIES``)."""
+    data-loading node may need a source (``content.SOLVE_CAPABILITIES``).
+    *templates* is the project's roster snapshot, which a package's own
+    loader declares ``loadsDataset`` in."""
     generate, discover = content.SOLVE_CAPABILITIES
     capabilities = [generate]
-    if any(_is_data_loading_node(node) for node in nodes):
+    loads = _is_data_loading_node if templates is None else (
+        lambda node: _is_data_loading_node(node, templates)
+    )
+    if any(loads(node) for node in nodes):
         capabilities.append(discover)
     return capabilities
 
@@ -262,7 +267,10 @@ def solve_attachment_stream(
     manifest = agents_catalog._resolve_definition(user_key, record.get("coord", ""))
     _check_delegate_llms(
         user_key, project_id, manifest, config,
-        _delegate_capabilities(nodes_by_id.get(node_id) for node_id in targets),
+        _delegate_capabilities(
+            (nodes_by_id.get(node_id) for node_id in targets),
+            agents_roster._roster_templates(user_key, project_id),
+        ),
     )
     # The in-flight guard + cancellation identity persist before any provider
     # work; the cancel endpoint finds the run through ``solveExecutionId``.
@@ -495,7 +503,7 @@ def _wait_for_stop(stop, seconds: float) -> bool:
         return False
 
 
-def _blocker_signature(spec: dict | None, node_id: str) -> tuple:
+def _blocker_signature(spec: dict | None, node_id: str, *, user_key: str | None = None) -> tuple:
     """What would have to CHANGE for this node to be worth attempting again.
 
     dev/131: a session that keeps making passes must not re-burn provider calls
@@ -529,7 +537,7 @@ def _blocker_signature(spec: dict | None, node_id: str) -> tuple:
                 frontier.append(up)
     except Exception:  # noqa: BLE001
         upstreams = []
-    record = agents_dataset_resolution.source_record(spec, node_id) or {}
+    record = agents_dataset_resolution.source_record(spec, node_id, user_key=user_key) or {}
     return (
         len(nodes.get(node_id) or ""),
         tuple(sorted((up, len(nodes.get(up) or "")) for up in upstreams)),

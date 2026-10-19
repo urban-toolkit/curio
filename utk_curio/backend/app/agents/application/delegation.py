@@ -45,6 +45,8 @@ from utk_curio.backend.app.agents.repositories import project_agents
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.repositories import catalog_settings
 from utk_curio.backend.app.agents.repositories import ledger
+from utk_curio.backend.app.agents.repositories import publications
+from utk_curio.backend.app.agents.repositories import storage
 from utk_curio.backend.app.agents.domain import contracts
 from utk_curio.backend.app.agents.application import reply_schemas
 from utk_curio.backend.app.agents.infrastructure import provider_config
@@ -90,6 +92,14 @@ def resolve(user_key: str, project_id: str, parent: AgentManifest, capability: s
 
     spec = projects_storage.read_spec(user_key, project_id)
     installed = set(project_agents.project_agents(spec)) if spec else set()
+    return resolve_among(user_key, installed, parent, capability)
+
+
+def resolve_among(
+    user_key: str | None, installed: set[str], parent: AgentManifest, capability: str
+) -> Resolution:
+    """:func:`resolve` over the lockfile *installed* (its coords), for a caller
+    that holds the spec it is writing, such as a plan's apply."""
     missing: Resolution | None = None
     preferred_ids = list(parent.delegates_to)
     for agent_id in preferred_ids:
@@ -142,15 +152,33 @@ def _internal_resolution(user_key: str, agent_id: str, capability: str) -> Resol
 
 
 def find_visible(user_key: str, agent_id: str) -> tuple[str | None, AgentManifest | None]:
-    """A visible (catalog/store) definition for one delegate agent id, or
-    ``(None, None)``. Built-in coords are ``<id>@BUILTIN_VERSION``; owned
-    imports may shadow the same coordinate (services resolution order)."""
+    """A visible definition for one agent id, or ``(None, None)``.
+
+    The shipped coordinate first, ``<id>@BUILTIN_VERSION`` (an owned import of
+    that coordinate may shadow it, as everywhere else), so a shipped agent is
+    found as it always is. Then the account's own definitions of that id and
+    the published ones, at whatever version they have: the highest wins."""
 
     coord = f"{agent_id}@{builtin.BUILTIN_VERSION}"
     m = catalog._resolve_definition(user_key, coord)
     if m is not None:
         return coord, m
-    return None, None
+    candidates = [
+        *(d for d in storage.list_installed_agent_definitions(user_key) if d.agent_id == agent_id),
+        *(d for d in publications.list_published() if d.agent_id == agent_id),
+    ]
+    if not candidates:
+        return None, None
+    best = max(candidates, key=lambda d: _version_order(d.version)).dir_name
+    return best, catalog._resolve_definition(user_key, best)
+
+
+def _version_order(version: str) -> tuple:
+    """A semver string as a sort key: ``10.0.0`` after ``2.0.0``, and a
+    release after its pre-releases."""
+    core, _, pre_release = str(version).partition("-")
+    numbers = tuple(int(part) if part.isdigit() else 0 for part in core.split("+", 1)[0].split("."))
+    return numbers, not pre_release
 
 
 def visible_capability_entries(user_key: str, parent: AgentManifest) -> list[tuple[str, str]]:

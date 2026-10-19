@@ -356,6 +356,11 @@
           "type": "boolean",
           "default": false,
           "description": "When true, the `source` starter is a node's whole content, set through the template's widgets. A node an agent's plan creates from this template starts with the starter and the template's widgets, each widget the plan declares set over the one of its name, and Solve leaves its content as it is. Omit it for a starter that a node's content starts from, which Solve writes for a planned node."
+        },
+        "loadsDataset": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, a node of this template loads a dataset into the dataflow. An agent whose node target requires `loadsDataset`, such as the Dataset Finder, attaches to it, and Solve finds the node a source before it writes its code."
         }
       },
       "dependentRequired": { "starterIsContent": ["source"] },

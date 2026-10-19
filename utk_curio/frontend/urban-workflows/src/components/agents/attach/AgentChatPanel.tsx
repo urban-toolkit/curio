@@ -4,6 +4,8 @@ import { useFlowContext } from "../../../providers/FlowProvider";
 import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
 import {
   attachmentDisplayName,
+  declaresCapability,
+  ORCHESTRATE_CAPABILITY,
   sessionTokenTotals,
   type AgentAttachment,
   type AgentSessionTurn,
@@ -394,8 +396,8 @@ export const AgentChatPanel: React.FC<{
         titleError={title.error}
       />
 
-      {/* The dev/52 builder strip: Dataflow Builder attachments only — every
-          other agent's chat is pixel-identical. */}
+      {/* The dev/52 builder strip: an agent that declares dataflow.orchestrate,
+          one that plans a dataflow and solves it. */}
       {onSolveNode && attachment.target.kind === "node" ? (
         <NodeSolveRow
           onSolveNode={onSolveNode}
@@ -404,7 +406,7 @@ export const AgentChatPanel: React.FC<{
           live={attachment.liveJob?.status === "running" && attachment.liveJob.kind === "solve-node"}
         />
       ) : null}
-      {onSolve && attachment.coord.startsWith("agent.dataflow-builder@") ? (
+      {onSolve && declaresCapability(attachment, ORCHESTRATE_CAPABILITY) ? (
         <AgentBuilderStrip
           attachment={attachment}
           onSolve={onSolve}

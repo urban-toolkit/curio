@@ -262,7 +262,7 @@ export const AgentBuilderStrip: React.FC<{
     unresolved > 0 ? `${unresolved} node${unresolved === 1 ? "" : "s"} unsolved` : null;
 
   return (
-    <div className={styles.strip} role="group" aria-label="Dataflow Builder">
+    <div className={styles.strip} role="group" aria-label={attachment.name}>
       <PhaseChips
         phase={phase}
         activeBatchLabel={activeBatchLabel}

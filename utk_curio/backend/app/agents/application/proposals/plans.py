@@ -14,13 +14,14 @@ import re as _re
 import uuid
 
 from utk_curio.backend.app.agents.application import attachments
+from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import plan_topology
 from utk_curio.backend.app.agents.domain.counts import count_label
+from utk_curio.backend.app.agents.repositories import project_agents
 from utk_curio.backend.app.agents.repositories import sessions
-from utk_curio.backend.app.agents.application import catalog as agents_catalog
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.execution.workflow_spec import slot_handle_id
 from utk_curio.backend.app.agents.application.proposals import plan_scenarios
@@ -661,43 +662,35 @@ def set_plan_goal(
     }
 
 
-#: dev/126: the agents a plan-created node carries. WHICH of them attaches to
-#: a given node is the manifests' own compatibility declaration, read through
-#: ``attachments.node_target_matches`` — the Node Builder accepts any node, the
-#: Dataset Finder only a ``data-loading`` one (dev/50's ``requires``). No second
-#: predicate lives here, so this list can never drift from the manifests.
-_PLAN_NODE_AGENTS: tuple[str, ...] = ("agent.node-builder", "agent.dataset-finder")
-
-
-#: dev/132: which node-attached agent a confirmed source is handed to: the
-#: Node Builder owns fetch code (`DEC-047`) and node content.
-_NODE_BUILD_AGENTS: tuple[str, ...] = ("agent.node-builder",)
-
-
 def _attach_node_agent(
-    user_key: str | None, spec: dict, agent_id: str, node_id: str, node_type: object
+    user_key: str | None, spec: dict, agent_id: str, node_id: str, node_type: object,
+    *, templates: dict | None = None,
 ) -> dict:
     """Attach ONE agent to a node, idempotently, reporting what happened.
 
-    dev/126: the shared body of dev/71's plan-node attachment. Returns
-    ``{"agentId", "attachmentId" | None, "status": "attached" | "existing" |
-    "skipped", "reason"?}``. Never raises and never writes the spec — the
-    caller's own single write persists it, and a node is never blocked over
-    its agent."""
+    dev/126: the shared body of dev/71's plan-node attachment. Whether the
+    agent lives on that node is its manifest's node target
+    (``attachments.node_target_matches``, read against the project's roster
+    snapshot *templates*). Returns ``{"agentId", "name", "attachmentId" |
+    None, "status": "attached" | "existing" | "skipped", "reason"?}``. Never
+    raises and never writes the spec: the caller's own single write persists
+    it, and a node is never blocked over its agent."""
+    coord = agents_spec_reads._installed_project_coord(spec, agent_id)
+    manifest = agents_spec_reads._definition(user_key, coord) if coord else None
+    name = getattr(manifest, "name", None) or agent_id
     existing = agents_spec_reads._node_attachment_of(spec, agent_id, node_id)
     if existing is not None:
         return {
             "agentId": agent_id,
+            "name": name,
             "attachmentId": existing.get("attachmentId"),
             "status": "existing",
         }
-    coord = agents_spec_reads._installed_project_coord(spec, agent_id)
     if coord is None:
-        return {"agentId": agent_id, "attachmentId": None, "status": "skipped",
+        return {"agentId": agent_id, "name": name, "attachmentId": None, "status": "skipped",
                 "reason": "not installed in this dataflow"}
-    manifest = agents_catalog._resolve_definition(user_key, coord) if user_key else None
-    if manifest is not None and not attachments.node_target_matches(manifest, node_type):
-        return {"agentId": agent_id, "attachmentId": None, "status": "skipped",
+    if manifest is not None and not attachments.node_target_matches(manifest, node_type, templates):
+        return {"agentId": agent_id, "name": name, "attachmentId": None, "status": "skipped",
                 "reason": f"does not attach to {attachments.canonical_node_suffix(node_type)} nodes"}
     try:
         record = attachments.attach(
@@ -706,71 +699,142 @@ def _attach_node_agent(
         )
     except Exception as exc:  # noqa: BLE001
         log.warning("Could not attach %s to node %s: %s", agent_id, node_id, exc)
-        return {"agentId": agent_id, "attachmentId": None, "status": "skipped",
+        return {"agentId": agent_id, "name": name, "attachmentId": None, "status": "skipped",
                 "reason": str(exc)[:120]}
-    return {"agentId": agent_id, "attachmentId": record.get("attachmentId"),
+    return {"agentId": agent_id, "name": name, "attachmentId": record.get("attachmentId"),
             "status": "attached"}
 
 
-def _attach_plan_node_agents(
-    user_key: str | None, spec: dict, node_id: str, node_type: object
-) -> dict:
-    """dev/126: every plan-created node gets its agents — the Node Builder
-    always, the Dataset Finder when the node is a data-loading one — on BOTH
-    apply paths, idempotently, in the caller's own spec write.
+def _roster_templates(user_key: str, project_id: str) -> dict | None:
+    """The project's template roster snapshot, or None when it is unreadable
+    (``packages.roster_templates``): what a node target's template flags are
+    read against."""
+    from utk_curio.backend.app.packages import service as packages_services
 
-    Returns ``{"attached": [row], "skipped": [row], "byAgent": {agentId: id}}``
-    so the apply can SAY what it attached instead of silently dropping it."""
-    rows = [
-        _attach_node_agent(user_key, spec, agent_id, node_id, node_type)
-        for agent_id in _PLAN_NODE_AGENTS
-    ]
+    return packages_services.roster_templates(user_key, project_id)
+
+
+def _plan_node_agents(user_key: str | None, spec: dict, parent=None) -> list[dict]:
+    """dev/126: the agents a plan-created node carries, one per capability
+    Solve asks for (``content.SOLVE_CAPABILITIES``), in that order: the agent
+    that writes the node's content, then the one that finds its datasets.
+
+    Each is the agent *parent*, the agent whose plan it is, delegates that
+    capability to among the dataflow's installed agents
+    (``delegation.resolve_among``); with no parent, the first installed agent
+    that declares it. Which of them lives on a given node is its manifest's
+    node target, read when it is attached. Returns ``{"capability", "agentId",
+    "name", "installed"}`` per capability that some agent does; an agent that
+    is not installed is the visible one that would do it."""
+    installed = set(project_agents.project_agents(spec))
+    agents: list[dict] = []
+    for capability in content.SOLVE_CAPABILITIES:
+        coord, manifest, is_installed = None, None, False
+        if parent is not None and user_key:
+            found = delegation.resolve_among(user_key, installed, parent, capability)
+            coord, manifest, is_installed = found.coord, found.manifest, found.outcome == "ok"
+        else:
+            coord = agents_spec_reads._installed_coord_declaring(spec, capability, user_key=user_key)
+            if coord is not None:
+                manifest, is_installed = agents_spec_reads._definition(user_key, coord), True
+            else:
+                manifest = next((
+                    m for m in builtin.list_builtin_manifests()
+                    if capability in m.capability_ids and not builtin.is_internal(m.dir_name)
+                ), None)
+                coord = getattr(manifest, "dir_name", None)
+        # An internal agent runs only as a delegate: it is never attached.
+        if not coord or builtin.is_internal(coord):
+            continue
+        agents.append({
+            "capability": capability,
+            "agentId": coord.split("@", 1)[0],
+            "name": getattr(manifest, "name", None) or coord.split("@", 1)[0],
+            "installed": is_installed,
+        })
+    return agents
+
+
+def _attach_plan_node_agents(
+    user_key: str | None, spec: dict, node_id: str, node_type: object,
+    *, parent=None, templates: dict | None = None, agents: list[dict] | None = None,
+) -> dict:
+    """dev/126: every plan-created node gets its agents (``_plan_node_agents``,
+    or *agents* when the caller resolved them once for the whole apply): the
+    content agent always, the dataset agent when the node's template loads a
+    dataset. On BOTH apply paths, idempotently, in the caller's own spec write.
+
+    Returns ``{"attached": [row], "skipped": [row], "byAgent": {agentId: id},
+    "byCapability": {capability: id}}`` so the apply can SAY what it attached
+    instead of silently dropping it."""
+    rows: list[tuple[str, dict]] = []
+    seen: set[str] = set()
+    for agent in agents if agents is not None else _plan_node_agents(user_key, spec, parent):
+        if agent["agentId"] in seen:
+            continue  # one agent that does both is attached once
+        seen.add(agent["agentId"])
+        if agent["installed"]:
+            row = _attach_node_agent(
+                user_key, spec, agent["agentId"], node_id, node_type, templates=templates,
+            )
+        else:
+            row = {"agentId": agent["agentId"], "name": agent["name"], "attachmentId": None,
+                   "status": "skipped", "reason": "not installed in this dataflow"}
+        rows.append((agent["capability"], row))
     return {
         "attached": [
-            {"nodeId": node_id, **r} for r in rows if r["status"] in ("attached", "existing")
+            {"nodeId": node_id, **r} for _, r in rows if r["status"] in ("attached", "existing")
         ],
-        "skipped": [{"nodeId": node_id, **r} for r in rows if r["status"] == "skipped"],
+        "skipped": [{"nodeId": node_id, **r} for _, r in rows if r["status"] == "skipped"],
         "byAgent": {
-            r["agentId"]: r["attachmentId"] for r in rows if r.get("attachmentId")
+            r["agentId"]: r["attachmentId"] for _, r in rows if r.get("attachmentId")
+        },
+        "byCapability": {
+            capability: r["attachmentId"] for capability, r in rows if r.get("attachmentId")
         },
     }
 
 
 def _attached_agent_lines(*results: dict) -> list[str]:
     """The applied card's truthful account of the agents an apply attached
-    (dev/126): one line naming each agent and how many nodes carry it, plus a
-    line for anything that could not be attached, with its reason."""
+    (dev/126): one line naming each agent, as its manifest names it, and how
+    many nodes carry it, plus a line for anything that could not be
+    attached, with its reason."""
     counts: dict[str, int] = {}
+    names: dict[str, str] = {}
     skipped: dict[str, str] = {}
     for result in results:
         for row in result.get("attached") or []:
             counts[row["agentId"]] = counts.get(row["agentId"], 0) + 1
+            names.setdefault(row["agentId"], row.get("name") or row["agentId"])
         for row in result.get("skipped") or []:
             skipped.setdefault(row["agentId"], row.get("reason") or "skipped")
+            names.setdefault(row["agentId"], row.get("name") or row["agentId"])
     lines: list[str] = []
     if counts:
         lines.append("agents attached: " + " · ".join(
-            f"{_agent_label(a)} ×{n}" if n > 1 else _agent_label(a)
+            f"{names[a]} ×{n}" if n > 1 else names[a]
             for a, n in sorted(counts.items())
         ))
     for agent_id, reason in sorted(skipped.items()):
-        lines.append(f"no {_agent_label(agent_id)}: {reason}")
+        lines.append(f"no {names[agent_id]}: {reason}")
     return lines
 
 
-def _agent_label(agent_id: str) -> str:
-    """A built-in's display name for a card line, id as the last resort."""
-    manifest = builtin.get_builtin_manifest(f"{agent_id}@{builtin.BUILTIN_VERSION}")
-    return getattr(manifest, "name", None) or agent_id
-
-
 def _attach_node_builder(spec: dict, node_id: str, *, user_key: str | None = None,
-                         node_type: object = None) -> str | None:
-    """dev/71: best-effort Node Builder attachment for a plan-created node.
-    Skips (returning None) when the template is not installed or the node
-    already carries one — node creation NEVER fails over this. dev/126: one
-    call into the shared body above."""
-    row = _attach_node_agent(user_key, spec, "agent.node-builder", node_id, node_type)
+                         node_type: object = None, templates: dict | None = None) -> str | None:
+    """dev/71: best-effort attachment of the node's content agent, the
+    installed agent that declares ``node.content.generate``. Skips (returning
+    None) when none is installed or it cannot live on the node; node creation
+    NEVER fails over this. An attachment it already has is returned."""
+    coord = agents_spec_reads._installed_coord_declaring(
+        spec, "node.content.generate", user_key=user_key,
+    )
+    if coord is None:
+        return None
+    row = _attach_node_agent(
+        user_key, spec, coord.split("@", 1)[0], node_id, node_type, templates=templates,
+    )
     return row.get("attachmentId")
 
 
@@ -836,14 +900,18 @@ def apply_plan_node(
     dataflow["nodes"].append(created)
     applied_refs.append(ref)
     applied_ids[ref] = node_id
-    # dev/71: attach the Node Builder to the created node (best-effort,
-    # idempotent — creation never fails over it); it operates as the node's
+    # dev/71: attach the node's content agent to the created node (best-effort,
+    # idempotent: creation never fails over it); it operates as the node's
     # creation/content orchestration agent (67-6 modify-existing posture).
-    # dev/126: and the Dataset Finder when the node is a data-loading one —
-    # the same helper the whole-plan apply uses, so the two paths cannot
+    # dev/126: and the dataset agent when the node's template loads a dataset,
+    # through the helper the whole-plan apply uses, so the two paths cannot
     # produce different graphs from the same plan.
-    attached = _attach_plan_node_agents(user_key, spec, node_id, plan_node["nodeType"])
-    attached_agent_id = attached["byAgent"].get("agent.node-builder")
+    attached = _attach_plan_node_agents(
+        user_key, spec, node_id, plan_node["nodeType"],
+        parent=agents_spec_reads._definition(user_key, record.get("coord", "")),
+        templates=_roster_templates(user_key, project_id),
+    )
+    attached_agent_id = attached["byCapability"].get("node.content.generate")
     # dev/71: PROGRESSIVE CONNECTION — apply every plan edge whose other
     # endpoint already exists (created refs or existing canvas nodes), through
     # the 67-8 per-edge policy. The graph grows connected, not as islands;
@@ -1337,7 +1405,16 @@ def _apply_dataflow_plan(
     remove_node_set = set(remove_nodes)
     removed_edge_ids = _remove_plan_victims(spec, nodes, edges, remove_node_set, plan.get("removeEdges", []))
     starters = _content_starters(user_key, project_id, plan.get("nodes", []))
-    created_nodes, attached_results, ref_to_id = _create_plan_nodes(user_key, spec, nodes, plan, proposal, starters)
+    # The agents every created node may carry, resolved once against the
+    # planning agent's own delegations (dev/126).
+    planner = attachments.get_attachment(spec, attachment_id) or {}
+    plan_agents = _plan_node_agents(
+        user_key, spec, agents_spec_reads._definition(user_key, planner.get("coord", "")),
+    )
+    created_nodes, attached_results, ref_to_id = _create_plan_nodes(
+        user_key, spec, nodes, plan, proposal, starters,
+        agents=plan_agents, templates=_roster_templates(user_key, project_id),
+    )
     created_edges = _create_plan_edges(
         user_key, project_id, proposal_id, spec, proposal, session_id, plan, nodes, edges, ref_to_id, spec_nodes_by_id,
     )
@@ -1473,11 +1550,12 @@ def _remove_plan_victims(spec: dict, nodes: list, edges: list, remove_node_set: 
 
 
 def _create_plan_nodes(user_key, spec: dict, nodes: list, plan: dict, proposal: dict,
-                       starters: dict) -> tuple[list, list, dict]:
+                       starters: dict, *, agents: list[dict] | None = None,
+                       templates: dict | None = None) -> tuple[list, list, dict]:
     """The plan's new nodes at the mint-time layout (+ review-stage overlays); refs already applied
     per-node are REAL nodes — skipped, their ids seed the edge resolution. Each created node gets its
-    agents in THIS apply's single spec write (dev/126). A ref in *starters* starts with its
-    template's starter and widgets (``_content_starters``)."""
+    agents (*agents*, ``_plan_node_agents``) in THIS apply's single spec write (dev/126). A ref in
+    *starters* starts with its template's starter and widgets (``_content_starters``)."""
     right = _right_edge(nodes)
     ys = [n.get("y") for n in nodes if isinstance(n, dict) and isinstance(n.get("y"), (int, float))]
     base_x = (right + _NODE_H_GUTTER) if right is not None else 80.0
@@ -1523,7 +1601,9 @@ def _create_plan_nodes(user_key, spec: dict, nodes: list, plan: dict, proposal: 
         # in THIS apply's single spec write — the per-node path has done so
         # since dev/71 and the two must not disagree.
         attached_results.append(
-            _attach_plan_node_agents(user_key, spec, node_id, plan_node["nodeType"])
+            _attach_plan_node_agents(
+                user_key, spec, node_id, plan_node["nodeType"], agents=agents, templates=templates,
+            )
         )
     return created_nodes, attached_results, ref_to_id
 

@@ -176,7 +176,7 @@ REGISTRY: dict[str, ToolContract] = {
             },
         }),
     ),
-    # dev/67-4 (DEC-053), consumer: agent.researcher, in its chat. Policy-gated
+    # dev/67-4 (DEC-053), consumer: the Researcher, in its chat. Policy-gated
     # egress (SSRF guards, byte caps, per-run budget) — verification of
     # external dataset APIs, never crawling.
     "web.fetch": ToolContract(
@@ -249,7 +249,7 @@ REGISTRY: dict[str, ToolContract] = {
             "content",
         ),
     ),
-    # dev/50 — consumer: agent.dataset-finder. Grounds the "From your Data
+    # dev/50, consumer: the Dataset Finder. Grounds the "From your Data
     # Catalog" lane in the real catalog (the datasets domain owns the data;
     # this module owns none of its own).
     "catalog.search": ToolContract(
@@ -273,7 +273,7 @@ REGISTRY: dict[str, ToolContract] = {
             "origin": _text("A dataset origin."),
         }),
     ),
-    # Consumer: agent.node-builder, in its chat and its content mode. Grounds a
+    # Consumer: the Node Builder, in its chat and its content mode. Grounds a
     # node that runs a model in the model packages this account holds (the
     # packages domain owns the data and the loader line; this module owns
     # none of its own).
@@ -305,7 +305,7 @@ REGISTRY: dict[str, ToolContract] = {
             },
         }),
     ),
-    # Consumer: agent.dataflow-builder. Any worked example on request, beside
+    # Consumer: the Dataflow Builder. Any worked example on request, beside
     # the ones its runs are given (turns/examples owns the index and the view).
     "examples.read": ToolContract(
         id="examples.read",
@@ -327,7 +327,7 @@ REGISTRY: dict[str, ToolContract] = {
             "key": _text("An example's key, from the list this tool returns with no key. Omit it for the list."),
         }),
     ),
-    # Discovery Catalog - consumer: agent.dataset-finder. Three contracts, not
+    # Discovery Catalog, consumer: the Dataset Finder. Three contracts, not
     # two, and deliberately the same roster/detail/reviewed-mutate shape
     # packages.catalog + packages.resolve + package.install already has: it is
     # the shape that stops the model inventing a source id.
@@ -396,7 +396,7 @@ REGISTRY: dict[str, ToolContract] = {
             "sourceId", "resourceId",
         ),
     ),
-    # dev/84, consumer: agent.node-builder, in its chat. Grounds package
+    # dev/84, consumer: the Node Builder, in its chat. Grounds package
     # recommendations in the real Nodes Catalog + this project's lockfile
     # (the packages domain owns the data; this module owns none of its own).
     "packages.catalog": ToolContract(
@@ -414,7 +414,7 @@ REGISTRY: dict[str, ToolContract] = {
         ),
         parameters=_object({"q": _text("Text a package's name or description must contain.")}),
     ),
-    # dev/84, consumer: agent.node-builder, in its chat.
+    # dev/84, consumer: the Node Builder, in its chat.
     # deps/permissions/conflicts come from the real resolver, never invented.
     "packages.resolve": ToolContract(
         id="packages.resolve",
@@ -431,7 +431,7 @@ REGISTRY: dict[str, ToolContract] = {
         ),
         parameters=_object({"dirNames": _texts("dirNames from packages.catalog results.")}, "dirNames"),
     ),
-    # dev/52 — consumer: agent.dataflow-builder. The DR-1 graph-level
+    # dev/52, consumer: the Dataflow Builder. The DR-1 graph-level
     # mutation: the model emits a `dataflowPlan` tail block (not a
     # toolRequest) and the runtime mints the reviewed plan proposal from it;
     # the authenticated apply endpoint inserts the whole ADDITIVE graph.
@@ -493,7 +493,7 @@ REGISTRY: dict[str, ToolContract] = {
             "goal",
         ),
     ),
-    # dev/50 — consumer: agent.dataset-finder. The catalog lane's reviewed
+    # dev/50, consumer: the Dataset Finder. The catalog lane's reviewed
     # handoff: applying installs ONE dataset through the existing
     # dataset-only flow; never an agent.
     "dataset.install": ToolContract(
@@ -509,7 +509,7 @@ REGISTRY: dict[str, ToolContract] = {
         ),
         parameters=_object({"datasetId": _text("A dataset id from catalog.search results.")}, "datasetId"),
     ),
-    # dev/84, consumers: agent.node-builder and agent.researcher. The reviewed install
+    # dev/84, consumers: the Node Builder and the Researcher. The reviewed install
     # lane: applying routes through the existing package install flow
     # (permissions + dependencies + conflicts); never a silent install,
     # never a built-in.
@@ -552,7 +552,7 @@ REGISTRY: dict[str, ToolContract] = {
             "dirName",
         ),
     ),
-    # dev/48 — consumer: agent.node-builder. Reuse-first: nodeType must come
+    # dev/48, consumer: the Node Builder. Reuse-first: nodeType must come
     # from the run's "Available node templates" list (composed at run time
     # from the packages registry — this module owns no template knowledge).
     "node.create": ToolContract(
@@ -586,8 +586,8 @@ REGISTRY: dict[str, ToolContract] = {
             "nodeType", "content",
         ),
     ),
-    # dev/89, consumers: agent.node-builder (its package-writing mode's drafts)
-    # and agent.researcher (the drafts it asks for). The ONE package-authoring
+    # dev/89, consumers: the Node Builder (its package-writing mode's drafts)
+    # and the Researcher (the drafts it asks for). The ONE package-authoring
     # mutate contract, and the one way an agent makes a node type: requesting
     # it checks every template the draft adds (justification, label, grounded
     # code), runs the isolated build service (validate → resolve → compile →

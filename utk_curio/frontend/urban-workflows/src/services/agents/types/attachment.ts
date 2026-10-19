@@ -15,6 +15,9 @@ export interface AgentAttachment {
   revision: number;
   name: string;
   category: string | null;
+  /** The capabilities its manifest declares: the chat offers each of its
+   * features to any agent that declares the capability behind it. */
+  capabilities?: string[];
   hooks: string[];
   /**
    * The attachment's initial intent: the user's edit when present, otherwise

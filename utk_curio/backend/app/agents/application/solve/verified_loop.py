@@ -118,10 +118,9 @@ class VerifiedRounds:
         )
         self.node_id = node.get("id")
         self.node_type = node.get("type")
-        self.is_data_loading = source_grounding.is_data_loading_type(
-            packages_services.canonical_template_id(self.node_type)
-        )
         self.available, self.loop_templates = self._roster()
+        # Whether the node's template loads a dataset (``loadsDataset``).
+        self.is_data_loading = source_grounding.loads_dataset(self.node_type, self.available)
         self.grounding_loop_ctx = self._loop_grounding_ctx(grounding_loop_ctx)
         self.grounding_ctx = self._grounding_context(grounding_base)
         # ── loop state ──
