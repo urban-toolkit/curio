@@ -111,6 +111,7 @@ jest.mock("../../../utils/palettePackageFactoryDraft", () => ({
 }));
 
 import CodeEditor from "../../../components/editing/CodeEditor";
+import { SCROLLBAR_PX } from "../../../components/editing/nodeEditorScrolling";
 
 const { __editors, __setModelMarkers, __monacoStub } = jest.requireMock("@monaco-editor/react");
 const lastEditor = () => __editors[__editors.length - 1];
@@ -355,6 +356,38 @@ describe("CodeEditor's look", () => {
         expect(lastEditor().props.options.lineNumbers).toBeUndefined();
         expect(outputBox().style.backgroundColor).toBe("rgb(247, 247, 247)");
         expect(outputBox().style.borderTop).toContain("solid");
+    });
+});
+
+/**
+ * #1004: the code scrolls as a Jupyter cell's does. It is never wrapped and no
+ * line break is added, so a long line scrolls sideways, and each bar shows at
+ * rest whenever the code runs past its side: the thin scrollbar of Curio's
+ * panels, whose class the editor carries (thinScrollbar.test.ts reads its
+ * rules). Monaco shows a "visible" bar only when its side overflows
+ * (test_code_editor_scrollbar_e2e.py).
+ */
+describe("CodeEditor's scrolling", () => {
+    afterEach(() => { mockFlow.dashboardOn = false; });
+
+    test.each([
+        ["on the canvas", false],
+        ["on a dashboard tile", true],
+    ])("%s, never wraps the code and shows each bar at rest where it overflows, in the shared 6 px bar", (_where, dashboardOn) => {
+        mockFlow.dashboardOn = dashboardOn;
+        renderCodeEditor(SAVED_CODE);
+        expect(lastEditor().props.options).toMatchObject({
+            wordWrap: "off",
+            extraEditorClassName: "thinScrollbar",
+            scrollbar: {
+                vertical: "visible",
+                horizontal: "visible",
+                verticalScrollbarSize: SCROLLBAR_PX,
+                horizontalScrollbarSize: SCROLLBAR_PX,
+                // A wheel the editor cannot use still goes on to the page.
+                alwaysConsumeMouseWheel: false,
+            },
+        });
     });
 });
 

@@ -1,9 +1,12 @@
 import fs from "fs";
 import path from "path";
 
+import { NODE_EDITOR_SCROLLING, SCROLLBAR_PX } from "../../components/editing/nodeEditorScrolling";
+
 /**
- * One thin scrollbar for the Data Catalog's panels and every widget panel
- * (#1003), defined once in styles/scrollbars.module.css.
+ * One thin scrollbar for the Data Catalog's panels, every widget panel (#1003)
+ * and every node's code or spec editor (#1004), defined once in
+ * styles/scrollbars.module.css.
  *
  * A Parameter node's "Used by" list can run past the node's bottom edge, and
  * its panel scrolls. The widget panels take the Data Catalog's scrollbar
@@ -16,10 +19,16 @@ import path from "path";
  * which on a Mac hides until you scroll. So the two standard properties sit
  * only under `@supports not selector(::-webkit-scrollbar)`, for Firefox.
  *
+ * A code editor is Monaco, which draws its bars as elements of its own. The
+ * editor carries the shared class (Monaco's `extraEditorClassName`), whose
+ * rules hand Monaco's slider the bar's colours and the thumb's shape, and
+ * components/editing/nodeEditorScrolling.ts gives Monaco the bar's width as a
+ * number, kept equal to the rule's here.
+ *
  * Source-read, as in bundlePreviewScroll.test.ts: jest maps CSS modules to
  * identity-obj-proxy, so a rendered assertion cannot see which rules a class
- * carries. test_widget_panel_scrollbar_e2e.py checks the drawn scrollbar in a
- * browser.
+ * carries. test_widget_panel_scrollbar_e2e.py and
+ * test_code_editor_scrollbar_e2e.py check the drawn scrollbars in a browser.
  */
 const SRC = path.resolve(__dirname, "../..");
 const SHARED = path.join(SRC, "styles", "scrollbars.module.css");
@@ -28,6 +37,17 @@ const read = (file: string) => fs.readFileSync(path.join(SRC, file), "utf8");
 /** The browsers without ::-webkit-scrollbar (Firefox). */
 const NO_WEBKIT_SCROLLBAR = "@supports not selector(::-webkit-scrollbar)";
 const STANDARD_PROPERTIES = /scrollbar-(width|color)\s*:/;
+
+/** The thumb's two colours: at rest, and under the pointer. */
+const THUMB = "rgba(30, 31, 35, 0.18)";
+const THUMB_HOVER = "rgba(30, 31, 35, 0.28)";
+/** Either colour, however it is spaced. */
+const COLOURS = /rgba\(\s*30\s*,\s*31\s*,\s*35\s*,\s*0?\.(18|28)\s*\)/g;
+
+/** A code editor: Monaco's element, with the shared class. */
+const EDITOR = ".thinScrollbar:global(.monaco-editor)";
+/** The slider of the editor's own two bars. */
+const SLIDER = `${EDITOR} :global(.editor-scrollable > .scrollbar > .slider)`;
 
 /** A style rule: the at-rules it sits in ("" at the top level), its selector, its declarations. */
 type Rule = { at: string; selector: string; body: string };
@@ -61,12 +81,26 @@ function rulesFor(css: string, selector: string, at = ""): string[] {
     .map((rule) => rule.body);
 }
 
-/** Every stylesheet under src, relative to src. */
-function stylesheets(dir: string): string[] {
+/** A rule's declarations, by property. */
+function declarations(body: string): Record<string, string> {
+  return Object.fromEntries(
+    body
+      .split(";")
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((part) => {
+        const colon = part.indexOf(":");
+        return [part.slice(0, colon).trim(), part.slice(colon + 1).trim()];
+      }),
+  );
+}
+
+/** Every file under `dir` whose name ends with one of `endings`, relative to src. */
+function files(dir: string, endings: string[]): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) return stylesheets(full);
-    return entry.name.endsWith(".css") ? [path.relative(SRC, full)] : [];
+    if (entry.isDirectory()) return files(full, endings);
+    return endings.some((ending) => entry.name.endsWith(ending)) ? [path.relative(SRC, full)] : [];
   });
 }
 
@@ -80,25 +114,33 @@ const USERS: Array<[file: string, selector: string]> = [
   ["components/editing/widgets/WidgetTags.module.css", ".panel"],
 ];
 
-describe("the thin scrollbar of the Data Catalog's panels and the widget panels", () => {
+describe("the thin scrollbar of the Data Catalog's panels, the widget panels and the code editors", () => {
   it("is the Data Catalog's thin scrollbar", () => {
     const shared = fs.readFileSync(SHARED, "utf8");
+    // Its two colours, declared on the class, and nowhere else (see "is defined once").
+    expect(rulesFor(shared, ".thinScrollbar").map(declarations)).toEqual([
+      { "--thin-thumb": THUMB, "--thin-thumb-hover": THUMB_HOVER },
+    ]);
     // The 6 px bar of the ::-webkit-scrollbar rules, at the top level.
     expect(rulesFor(shared, ".thinScrollbar::-webkit-scrollbar")).toEqual([
       expect.stringContaining("width: 6px;"),
     ]);
+    // Its rounded thumb in the first colour, and in the second under the pointer.
     expect(rulesFor(shared, ".thinScrollbar::-webkit-scrollbar-thumb")).toEqual([
-      expect.stringContaining("background: rgba(30, 31, 35, 0.18);"),
+      expect.stringContaining("background: var(--thin-thumb);"),
     ]);
     expect(rulesFor(shared, ".thinScrollbar::-webkit-scrollbar-thumb")[0]).toContain(
       "border-radius: 999px;",
     );
+    expect(rulesFor(shared, ".thinScrollbar:hover::-webkit-scrollbar-thumb")).toEqual([
+      expect.stringContaining("background: var(--thin-thumb-hover);"),
+    ]);
     // Firefox's thin bar, in the same colour.
     expect(rulesFor(shared, ".thinScrollbar", NO_WEBKIT_SCROLLBAR)).toEqual([
       expect.stringContaining("scrollbar-width: thin;"),
     ]);
     expect(rulesFor(shared, ".thinScrollbar", NO_WEBKIT_SCROLLBAR)[0]).toContain(
-      "scrollbar-color: rgba(30, 31, 35, 0.18) transparent;",
+      "scrollbar-color: var(--thin-thumb) transparent;",
     );
   });
 
@@ -142,11 +184,59 @@ describe("the thin scrollbar of the Data Catalog's panels and the widget panels"
     ).toEqual([]);
   });
 
+  it("draws a code editor's bars: Monaco's slider in the bar's colours and the thumb's shape", () => {
+    const shared = fs.readFileSync(SHARED, "utf8");
+    // Monaco paints its slider from its theme's colours, which it declares on
+    // .monaco-editor. The editor's class points all three at the bar's
+    // colours, so none of Monaco's own shows, at rest, under the pointer or
+    // while dragged.
+    expect(rulesFor(shared, EDITOR).map(declarations)).toEqual([
+      {
+        "--vscode-scrollbarSlider-background": "var(--thin-thumb)",
+        "--vscode-scrollbarSlider-hoverBackground": "var(--thin-thumb-hover)",
+        "--vscode-scrollbarSlider-activeBackground": "var(--thin-thumb-hover)",
+      },
+    ]);
+    // Under the pointer the thumb darkens, as a panel's does.
+    expect(rulesFor(shared, `${EDITOR}:hover`).map(declarations)).toEqual([
+      { "--vscode-scrollbarSlider-background": "var(--thin-thumb-hover)" },
+    ]);
+    // The slider is shaped as the thumb is: rounded, 1 px inside its bar.
+    // Monaco sizes the slider inline, so its border goes inside that size.
+    const thumb = declarations(rulesFor(shared, ".thinScrollbar::-webkit-scrollbar-thumb")[0]);
+    expect(rulesFor(shared, SLIDER).map(declarations)).toEqual([
+      {
+        "border-radius": thumb["border-radius"],
+        border: thumb.border,
+        "background-clip": thumb["background-clip"],
+        "box-sizing": "border-box",
+      },
+    ]);
+  });
+
+  it("is as wide in a code editor: Monaco's bars and sliders take the rule's width", () => {
+    const bar = declarations(rulesFor(fs.readFileSync(SHARED, "utf8"), ".thinScrollbar::-webkit-scrollbar")[0]);
+    expect([bar.width, bar.height]).toEqual([`${SCROLLBAR_PX}px`, `${SCROLLBAR_PX}px`]);
+    expect(NODE_EDITOR_SCROLLING.scrollbar).toMatchObject({
+      verticalScrollbarSize: SCROLLBAR_PX,
+      horizontalScrollbarSize: SCROLLBAR_PX,
+      verticalSliderSize: SCROLLBAR_PX,
+      horizontalSliderSize: SCROLLBAR_PX,
+    });
+    // The editor carries the class whose rules draw its slider.
+    expect(NODE_EDITOR_SCROLLING.extraEditorClassName).toBe("thinScrollbar");
+  });
+
   it("is defined once", () => {
-    // Its colour is in no other stylesheet, so no panel keeps a copy that drifts.
-    const copies = stylesheets(SRC).filter(
-      (file) => path.join(SRC, file) !== SHARED && read(file).includes("rgba(30, 31, 35, 0.18)"),
+    // Its colours are in no other stylesheet, and in no source file outside
+    // the tests (a Monaco theme, say), so no copy drifts.
+    const sources = files(SRC, [".ts", ".tsx"]).filter((file) => !file.startsWith(`tests${path.sep}`));
+    const copies = [...files(SRC, [".css"]), ...sources].filter(
+      (file) => path.join(SRC, file) !== SHARED && new RegExp(COLOURS.source).test(read(file)),
     );
     expect(copies).toEqual([]);
+    // In the shared rule, each colour is written once: where the class declares it.
+    const shared = fs.readFileSync(SHARED, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(shared.match(COLOURS)).toEqual([THUMB, THUMB_HOVER]);
   });
 });

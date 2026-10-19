@@ -84,6 +84,7 @@ jest.mock("../../../providers/CollaborationProvider", () => ({
 }));
 
 import GrammarEditor from "../../../components/editing/GrammarEditor";
+import { SCROLLBAR_PX } from "../../../components/editing/nodeEditorScrolling";
 
 const { __editors, __setDiagnosticsOptions } = jest.requireMock("@monaco-editor/react");
 const lastEditor = () => __editors[__editors.length - 1];
@@ -132,6 +133,35 @@ describe("GrammarEditor's look", () => {
         renderGrammarEditor(DEFAULT_SPEC);
         expect(wrapper()).not.toHaveClass("curio-node-input");
         expect(lastEditor().props.options.lineNumbers).toBeUndefined();
+    });
+});
+
+/**
+ * #1004: a spec scrolls as a code cell does in CodeEditor, through the same
+ * options: never wrapped, and each bar at rest whenever the spec runs past its
+ * side, in the thin scrollbar of Curio's panels.
+ */
+describe("GrammarEditor's scrolling", () => {
+    afterEach(() => { mockFlow.dashboardOn = false; });
+
+    test.each([
+        ["on the canvas", false],
+        ["on a dashboard tile", true],
+    ])("%s, never wraps the spec and shows each bar at rest where it overflows, in the shared 6 px bar", (_where, dashboardOn) => {
+        mockFlow.dashboardOn = dashboardOn;
+        renderGrammarEditor(DEFAULT_SPEC);
+        expect(lastEditor().props.options).toMatchObject({
+            wordWrap: "off",
+            extraEditorClassName: "thinScrollbar",
+            scrollbar: {
+                vertical: "visible",
+                horizontal: "visible",
+                verticalScrollbarSize: SCROLLBAR_PX,
+                horizontalScrollbarSize: SCROLLBAR_PX,
+                // A wheel the editor cannot use still goes on to the page.
+                alwaysConsumeMouseWheel: false,
+            },
+        });
     });
 });
 
