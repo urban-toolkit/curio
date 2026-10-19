@@ -483,6 +483,7 @@ def pytest_configure(config):
         "contract: checks a third party's response SHAPE; runs in CI, skips when unreachable",
     )
     netguard.install()
+    config.pluginmanager.register(suite_parts.after_deselection(unit_part), "curio-unit-part")
     # Imported only when a flag is passed, so an ordinary run never pays for
     # (or is broken by) importing the e2e helper module. Refused off CI.
     mint = getattr(config.option, "mint_baselines", False)
@@ -516,24 +517,25 @@ UNIT_DURATIONS_FILE = Path(__file__).with_name("unit_durations.json")
 
 
 def unit_group_of(item) -> str:
-    """The test file an item is in, dotted from this folder (test_agents.test_routes_solve)."""
-    try:
-        rel = Path(str(item.path)).resolve().relative_to(Path(__file__).resolve().parent)
-    except ValueError:
-        return item.nodeid
-    return ".".join(rel.with_suffix("").parts)
+    """The test file an item is in, dotted from this folder (test_agents.test_routes_solve).
+
+    Read from the item's JUnit classname (parts.file_key), the way
+    scripts/unit_durations.py names the files it records.
+    """
+    return suite_parts.file_key(suite_parts.item_address(item)[0])
 
 
-def pytest_collection_modifyitems(config, items):
+def unit_part(items):
     """``CURIO_UNIT_PART=k/n`` keeps one balanced part of the backend suite.
 
     CI runs the backend unit suite as parts on separate CPU runner jobs, one
     test file never split across two of them (tests/parts.py). Unset, as in any
-    local run, everything runs.
+    local run, everything runs. pytest_configure registers it to select once
+    every other plugin has deselected (parts.after_deselection).
     """
     value = (os.environ.get("CURIO_UNIT_PART") or "").strip()
     if not value:
-        return
+        return items, []
     # The e2e suite under test_frontend/ is split its own way (CURIO_E2E_PART),
     # so its items are left alone even when both are collected in one session.
     e2e_dir = Path(__file__).resolve().parent / "test_frontend"
@@ -541,11 +543,9 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         (e2e if Path(str(item.path)).resolve().is_relative_to(e2e_dir) else unit).append(item)
     kept, dropped = suite_parts.keep_part(
-        unit, value, unit_group_of,
+        unit, value, unit_group_of, unit_group_of,
         suite_parts.load_durations(UNIT_DURATIONS_FILE), "CURIO_UNIT_PART")
-    if dropped:
-        config.hook.pytest_deselected(items=dropped)
-        items[:] = kept + e2e
+    return kept + e2e, dropped
 
 
 @pytest.fixture(scope="session")

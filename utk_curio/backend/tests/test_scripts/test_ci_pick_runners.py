@@ -1,6 +1,7 @@
 """Choosing the runner for each job of a CI run.
 
-``scripts/ci_pick_runners.py`` runs as the first job of the Full stack build and
+``scripts/ci_pick_runners.py`` runs as the first job of the Full stack build, and
+again as build-image's last step for the jobs that wait on the image. It
 writes the ``runs-on`` of the CPU jobs (GitHub-hosted first, then arcade) and
 the GPU job (the arcade GPU pool first, then utk). A wrong answer sends jobs to a pool
 that is full or down, and a crash would stop the whole run, so these feed it
@@ -185,3 +186,91 @@ def test_an_unknown_pool_value_falls_back_to_picking(tmp_path, monkeypatch, caps
     assert "not one of auto" in capsys.readouterr().err
     runners = json.loads((tmp_path / "out").read_text().strip().removeprefix("runners="))
     assert runners == {"test-gpu": ["self-hosted", "gpu", "h100"], "jest": "ubuntu-latest"}
+
+
+# build-image's pick, made when the jobs that wait on the image are about to start.
+LATE = ["e2e-desktop-1", "e2e-desktop-2", "unit-backend-1", "test-isolated", "test-exec-user"]
+THIS_RUN, OTHER_RUN = 101, 202
+
+
+def _in_run(run_id, name, job):
+    return {**job, "run_id": run_id, "name": name}
+
+
+def _serve(monkeypatch, runs):
+    """The GitHub API, answering with these in-progress runs and their jobs."""
+    def get(url, token):
+        if "/jobs?" in url:
+            return {"jobs": runs[int(url.split("/runs/")[1].split("/")[0])]}
+        return {"workflow_runs": [{"id": run_id} for run_id in runs] if "status=in_progress" in url else []}
+
+    monkeypatch.setattr(picker, "_get", get)
+
+
+def _both_runs():
+    return {
+        THIS_RUN: [_in_run(THIS_RUN, "pick-runners", _hosted("completed")),
+                   _in_run(THIS_RUN, "build-image", _hosted()),
+                   _in_run(THIS_RUN, "jest", _hosted()),
+                   _in_run(THIS_RUN, "test-gpu", _arcade_gpu())],
+        OTHER_RUN: [_in_run(OTHER_RUN, "build-image", _hosted()),
+                    _in_run(OTHER_RUN, "e2e-desktop (1)", _arcade())],
+    }
+
+
+def _listed(jobs):
+    return [(job["run_id"], job["name"]) for job in jobs]
+
+
+def test_by_default_a_pick_leaves_out_every_job_of_its_own_run(monkeypatch):
+    _serve(monkeypatch, _both_runs())
+    jobs = picker.active_jobs("https://api.github.com", "urban-toolkit/curio", "unused", str(THIS_RUN))
+    assert _listed(jobs) == [(OTHER_RUN, "build-image"), (OTHER_RUN, "e2e-desktop (1)")]
+
+
+def test_this_run_except_counts_this_run_s_jobs_but_the_named_one_and_only_in_this_run(monkeypatch):
+    _serve(monkeypatch, _both_runs())
+    jobs = picker.active_jobs("https://api.github.com", "urban-toolkit/curio", "unused", str(THIS_RUN),
+                              "build-image")
+    # This run's build-image ends with the pick. The other run's is still
+    # building and holds its runner, so it counts.
+    assert _listed(jobs) == [(THIS_RUN, "pick-runners"), (THIS_RUN, "jest"), (THIS_RUN, "test-gpu"),
+                             (OTHER_RUN, "build-image"), (OTHER_RUN, "e2e-desktop (1)")]
+
+
+def test_the_late_pick_leaves_the_hosted_room_this_run_s_running_jobs_hold(monkeypatch):
+    other = [_in_run(OTHER_RUN, f"e2e-desktop ({i})", _hosted()) for i in range(1, 16)]
+    mine = [_in_run(THIS_RUN, "build-image", _hosted()), _in_run(THIS_RUN, "jest", _hosted()),
+            _in_run(THIS_RUN, "test-gpu", _arcade_gpu())]
+    _serve(monkeypatch, {THIS_RUN: mine, OTHER_RUN: other})
+
+    def fetch():
+        return picker.active_jobs("https://api.github.com", "urban-toolkit/curio", "unused", str(THIS_RUN),
+                                  "build-image")
+
+    chosen, how = picker.pick(LATE, [], "auto", "auto", fetch, hosted_reserved=2)
+    # 20 slots: 15 held by the other run, 1 by this run's jest, 2 kept for
+    # unit (sandbox) and test-desktop-stress, which do not exist yet.
+    assert [chosen[k] for k in LATE] == ["hosted", "hosted", "arcade", "arcade", "arcade"]
+    assert any("2 of 20" in line for line in how)
+    # No GPU job in this pick, so nothing is said about the GPU pools.
+    assert not any(line.startswith("GPU") for line in how)
+
+
+def test_main_hands_this_run_except_to_the_jobs_count(tmp_path, monkeypatch, capsys):
+    seen = []
+    monkeypatch.setattr(picker, "active_jobs", lambda *a: seen.append(a) or [])
+    monkeypatch.delenv("CURIO_CI_POOL", raising=False)
+    monkeypatch.delenv("CURIO_CI_GPU_POOL", raising=False)
+    monkeypatch.setenv("GITHUB_REPOSITORY", "urban-toolkit/curio")
+    monkeypatch.setenv("GITHUB_TOKEN", "unused")
+    monkeypatch.setenv("GITHUB_RUN_ID", str(THIS_RUN))
+    monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "early"))
+    assert picker.main(["ci_pick_runners.py", "--hosted-reserved", "1", "--gpu", "test-gpu", "jest"]) == 0
+    monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "late"))
+    assert picker.main(["ci_pick_runners.py", "--this-run-except", "build-image", "--hosted-reserved", "2",
+                        *LATE]) == 0
+    assert [call[3:] for call in seen] == [(str(THIS_RUN), None), (str(THIS_RUN), "build-image")]
+    assert "except build-image" in capsys.readouterr().out
+    runners = json.loads((tmp_path / "late").read_text().strip().removeprefix("runners="))
+    assert runners == {key: "ubuntu-latest" for key in LATE}
