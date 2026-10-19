@@ -1,10 +1,10 @@
 # 1 in CI's builds only: build-image's, and the jobs that build their own image
 # through the CI compose overlays. The image then also holds what
-# `curio.py setup --with-examples` installs and Playwright's Chromium, so a CI
-# stack boots without installing anything and the jobs copy both out for the
-# pytest and browser they run on the runner. Every other build, the deploy's
-# among them, leaves it at 0 and builds the image as before. Declared before
-# the first FROM, so the FROM lines below can name a stage with it.
+# `curio.py setup --with-examples` installs, so a CI stack boots without
+# installing anything and the jobs copy the packages out for the pytest they
+# run on the runner. Every other build, the deploy's among them, leaves it at
+# 0 and builds the image as before. Declared before the first FROM, so the
+# FROM lines below can name a stage with it.
 ARG CURIO_CI_SETUP=0
 
 # -----------------------------------------------------------------------------
@@ -44,14 +44,12 @@ FROM python_base AS ci_deps_0
 # CI only. The libraries setup installs from the package manifests, as setup's
 # own walk lists them (scripts/ci_requirements.py writes the file), installed
 # before the source is copied. COPY keys its cache on the file's content, so a
-# commit that changes no dependency reuses these layers. The pip command is
-# the launcher's (install_python_deps). Then Chromium, in /opt/ms-playwright
-# rather than Playwright's default folder, so nothing in the image finds a
-# browser it did not have before.
+# commit that changes no dependency reuses this layer. The pip command is the
+# launcher's (install_python_deps). No browser: the e2e suite drives each
+# runner's own Chrome (browser_type_launch_args in the tests' conftest).
 FROM python_base AS ci_deps_1
 COPY scripts/ci-requirements.txt /ci-requirements.txt
 RUN pip install --no-input --no-cache-dir -r /ci-requirements.txt
-RUN PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright python -m playwright install chromium
 
 FROM ci_deps_${CURIO_CI_SETUP} AS runtime_base
 

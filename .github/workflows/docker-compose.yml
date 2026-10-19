@@ -364,9 +364,9 @@ jobs:
 
       # CURIO_CI_SETUP=1, the same on every event and branch, since the tree
       # tag above stands for one image: it also holds what `curio.py setup
-      # --with-examples` installs and Playwright's Chromium (see the
-      # Dockerfile), so the jobs' stacks boot installing nothing and the jobs
-      # that run pytest on the runner copy both out (.github/actions/image-env).
+      # --with-examples` installs (see the Dockerfile), so the jobs' stacks
+      # boot installing nothing and the jobs that run pytest on the runner copy
+      # the packages out (.github/actions/image-env).
       - name: 🔨 Build and push the image
         if: steps.reuse.outputs.reused != 'true'
         uses: docker/build-push-action@v7
@@ -562,8 +562,8 @@ jobs:
       - name: ▶️ Start containers
         run: docker compose -p curio-ci up -d
 
-      # The runner's pytest and browser use the packages and Chromium of the
-      # image just built, copied while its container boots.
+      # The runner's pytest uses the packages of the image just built, copied
+      # while its container boots.
       - uses: ./.github/actions/image-env
         with:
           image: curio-ci-curio
@@ -1020,8 +1020,8 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
-      # runner-env: the runner's pytest and browser use the image's packages
-      # and Chromium (.github/actions/image-env), so test.sh skips its setup.
+      # runner-env: the runner's pytest uses the image's packages
+      # (.github/actions/image-env), so test.sh skips its setup.
       - uses: ./.github/actions/start-stack
         with:
           image: ${{ needs.build-image.outputs.image }}

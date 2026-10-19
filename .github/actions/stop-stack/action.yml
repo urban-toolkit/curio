@@ -29,9 +29,14 @@ runs:
     # built by the job, and a self-hosted daemon keeps them all: an arcade
     # runner's daemon is its own, utk-gpu's is the host's, which the deployed
     # stacks share. So this removes what CI jobs leave there:
-    # - each CI stack's image name, `curio-ci*-curio` (start-stack tags it,
-    #   compose builds under it), which otherwise holds its last job's image
-    #   for good, one per project;
+    # - the image names of the other CI stacks, `curio-ci*-curio` (start-stack
+    #   tags them, compose builds under them), which otherwise hold their last
+    #   jobs' images for good, one per project. This job's own name stays, on
+    #   the image it just used: the next job of the project shares most of its
+    #   layers (the base, and the libraries curio.py setup installs, which do
+    #   not change from commit to commit), so it pulls or unpacks only what
+    #   changed, and when it moves the name the old image is left untagged
+    #   and goes below;
     # - the pulled images of other commits (this commit's stays for the
     #   runner's next job of the same commit);
     # - untagged images no container uses;
@@ -42,12 +47,15 @@ runs:
     - name: 🧹 Hand back root-owned files, remove old CI images (self-hosted)
       if: runner.environment == 'self-hosted'
       shell: bash
+      env:
+        PROJECT: ${{ inputs.project }}
       run: |
         docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
         echo "Docker disk use before the cleanup:"
         docker system df || true
         docker image ls --format '{{.Repository}}:{{.Tag}}' \
           | { grep -E '^curio-ci(-[a-z-]+)?-curio:' || true; } \
+          | { grep -v "^${PROJECT}-curio:" || true; } \
           | xargs -r docker image rm > /dev/null 2>&1 || true
         repo="ghcr.io/${GITHUB_REPOSITORY,,}-ci"
         docker image ls "$repo" --format '{{.Repository}}:{{.Tag}}' \

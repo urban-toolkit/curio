@@ -13,8 +13,8 @@
 #                        stack was started with, or the two e2e tests
 #                        calling the sandbox directly will get 401s)
 #   --skip-setup        Install nothing: no pip, curio.py setup, npm or Playwright
-#                       install (CI's image already ran them, and its jobs copy
-#                       what it installed to the runner)
+#                       browser install (CI's image ran setup, its jobs copy the
+#                       packages to the runner, and the runner's Chrome is used)
 #   --headed            Open a visible browser window during E2E tests
 #   --videos            Also record the per-issue fix screencasts (slow)
 #   --no-examples       Skip the tests that need the example dataflows seeded

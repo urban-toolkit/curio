@@ -2,15 +2,15 @@
  * CI's image holds what `curio.py setup --with-examples` installs; the
  * deploy's image does not change.
  *
- * The Dockerfile's CURIO_CI_SETUP build argument adds those libraries and
- * Playwright's Chromium. A CI stack boots with CURIO_SKIP_DEP_INSTALL=1 and
- * installs nothing, so a CI overlay that skips the install must also build the
- * CI image, and build-image must pass the argument. The deploy builds from
+ * The Dockerfile's CURIO_CI_SETUP build argument adds those libraries. A CI
+ * stack boots with CURIO_SKIP_DEP_INSTALL=1 and installs nothing, so a CI
+ * overlay that skips the install must also build the CI image, and
+ * build-image must pass the argument. The deploy builds from
  * docker-compose.yml and docker-compose.deploy.yml, which pass neither. A job
  * that runs `scripts/test.sh --skip-setup` on the runner, not in the
- * container, first copies the image's packages and Chromium there. The backend
- * suite runs in the image, which ships no compose file or workflow, so this
- * check lives here.
+ * container, first copies the image's packages there. The backend suite runs
+ * in the image, which ships no compose file or workflow, so this check lives
+ * here.
  */
 import { read } from "./_support/workflowPaths";
 

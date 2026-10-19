@@ -18,7 +18,7 @@ Curio is a framework for urban visual analytics built on dataflows: a React canv
 - `docs/`: user and developer guides; `docs/examples/` (curated dataflows, their walkthroughs, test dataflows); `docs/schemas/` (`trill.v1.json`).
 - `scripts/`: developer and CI scripts (see Scripts).
 - `vendor/duckdb-extensions/`: DuckDB extensions bundled with Curio.
-- `.github/workflows/`: CI and release workflows (see CI); `.github/actions/`: `start-stack`, `stop-stack`, `image-env` (the CI image's Python packages and Chromium, copied to the runner).
+- `.github/workflows/`: CI and release workflows (see CI); `.github/actions/`: `start-stack`, `stop-stack`, `image-env` (the CI image's Python packages, copied to the runner).
 - `docker-compose.yml` plus overlays: `docker-compose.ci.yml`, `docker-compose.ci-shards.yml`, `docker-compose.ci-isolated.yml`, `docker-compose.ci-exec-user.yml`, `docker-compose.ci-stress.yml`, `docker-compose.deploy.yml`.
 
 ## Entry points
@@ -110,7 +110,7 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
 `.github/workflows/docker-compose.yml` jobs:
 
 - `pick-runners`: picks the runner for each job (`scripts/ci_pick_runners.py`).
-- `build-image`: builds the CI image once per commit and pushes it to GHCR. Built with the Dockerfile's `CURIO_CI_SETUP=1`, it also holds what `curio.py setup --with-examples` installs and Playwright's Chromium, so CI stacks boot with `CURIO_SKIP_DEP_INSTALL=1` and the jobs run `scripts/test.sh --skip-setup`.
+- `build-image`: builds the CI image once per commit and pushes it to GHCR. Built with the Dockerfile's `CURIO_CI_SETUP=1`, it also holds what `curio.py setup --with-examples` installs, so CI stacks boot with `CURIO_SKIP_DEP_INSTALL=1` and the jobs run `scripts/test.sh --skip-setup`.
 - `test-gpu`: e2e tests that need WebGPU, on a GPU runner.
 - `unit`: backend pytest in two parts, plus the sandbox suite.
 - `jest`: Jest and `npm run typecheck`.

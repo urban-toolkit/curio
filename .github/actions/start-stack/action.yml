@@ -25,7 +25,7 @@ inputs:
     default: ""
   runner-env:
     description: >-
-      "true" to also give the runner the image's Python packages and Chromium
+      "true" to also give the runner the image's Python packages
       (./.github/actions/image-env), for a pytest run on the runner with
       scripts/test.sh --skip-setup. They are copied while the container boots.
     default: "false"
