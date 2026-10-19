@@ -18,6 +18,9 @@ jest.mock('vega', () => ({}), { virtual: true });
 jest.mock('vega-lite', () => ({}), { virtual: true });
 
 import cases from '../../registry/declaredNodes.cases.json';
+// First, as in packagesClient.test.ts: imported after packagesClient, the
+// built-in behaviors would be read while the node adapters still load.
+import '../../registry/builtinBehaviors';
 import { registerPackageTemplates } from '../../registry/packagesClient';
 import { clearPackageNodes, tryGetNodeDescriptor } from '../../registry/nodeRegistry';
 

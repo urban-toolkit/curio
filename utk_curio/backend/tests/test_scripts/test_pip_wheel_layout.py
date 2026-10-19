@@ -495,20 +495,22 @@ def test_a_pip_install_finds_the_folder_of_every_shipped_folder_source(pip_insta
 
 def test_the_wheel_carries_of_docs_only_what_curio_reads(release):
     """Of ``docs/``, the wheel carries the files Curio reads and nothing else:
-    the dataflows it ships and the example data their nodes read by its path
-    in ``docs/examples/data/``, the prompt fixtures and their schema, the
-    Trill schema, and each folder source's folder, with the credits of its
-    photos. No guide, image, walkthrough or screenshot baseline. A shipped
-    dataflow that reads a file the package does not carry fails here."""
+    the dataflows it ships, the use-case index beside them and the example
+    data their nodes read by its path in ``docs/examples/data/``, the prompt
+    fixtures and their schema, the Trill schema, and each folder source's
+    folder, with the credits of its photos. No guide, image, walkthrough or
+    screenshot baseline. A shipped dataflow that reads a file the package
+    does not carry fails here."""
     from utk_curio.backend.app.agents.domain import contracts
     from utk_curio.backend.app.agents.evaluation import fixtures
-    from utk_curio.backend.app.projects.shipped import shipped_dataflows
+    from utk_curio.backend.app.projects.shipped import USE_CASE_INDEX, examples_dir, shipped_dataflows
 
     spelled = _spelled_example_data()
     assert spelled, "no shipped dataflow reads example data in this checkout"
     missing = [repo_path for repo_path in spelled if not (REPO / repo_path).exists()]
     assert not missing, f"shipped dataflows read {missing}, which this checkout does not hold"
     read = {dataflow.path for dataflow in shipped_dataflows()}
+    read.add(examples_dir() / USE_CASE_INDEX)
     read |= {REPO / repo_path for repo_path in _example_data()}
     read |= {*fixtures.fixture_paths(), fixtures.FIXTURE_SCHEMA_PATH, REPO / contracts.TRILL_SCHEMA, REPO / PHOTO_CREDITS}
     for repo_path in _shipped_folder_sources().values():
