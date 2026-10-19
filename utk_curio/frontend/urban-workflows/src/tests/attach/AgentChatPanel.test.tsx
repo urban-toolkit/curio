@@ -642,12 +642,12 @@ function savedReply(
 
 describe("AgentChatPanel says when a canvas agent changed nothing (#243)", () => {
   const NO_CHANGE = "No changes were made to the canvas";
-  const nodeBuilder = {
+  const nodeBuilder: AgentAttachment = {
     ...attachment,
     coord: "agent.node-builder@1.0.0",
     name: "Node Builder",
     capabilities: NODE_BUILDER_CAPABILITIES,
-  } as AgentAttachment;
+  };
   const ask: AgentSessionTurn = { role: "user", text: "Add a node that loads the parks." };
   const proposal = {
     type: "proposal",
@@ -1315,7 +1315,7 @@ describe("AgentChatPanel — dev/114 candidates in the Node Builder chat", () =>
         coord: "agent.node-builder@1.0.0",
         name: "Node Builder",
         capabilities: NODE_BUILDER_CAPABILITIES,
-      } as AgentAttachment,
+      },
       turns: candidatesTurns,
     });
     fireEvent.click(screen.getByRole("checkbox", { name: "Select NOAA Climate Data API" }));
@@ -1331,7 +1331,7 @@ describe("AgentChatPanel — dev/114 candidates in the Node Builder chat", () =>
         coord: "agent.dataset-finder@1.0.0",
         name: "Dataset Finder",
         capabilities: DATASET_FINDER_CAPABILITIES,
-      } as AgentAttachment,
+      },
       turns: candidatesTurns,
     });
     fireEvent.click(screen.getByRole("checkbox", { name: "Select NOAA Climate Data API" }));
@@ -1466,7 +1466,7 @@ describe("AgentChatPanel — dev/116 the per-node Solve row's remedy", () => {
         name: "Dataset Finder",
         capabilities: DATASET_FINDER_CAPABILITIES,
         target: { kind: "node" as const, targetId: "n1" },
-      } as AgentAttachment,
+      },
       turns: [
         {
           role: "agent" as const,
@@ -1611,7 +1611,7 @@ describe("AgentChatPanel offers each feature by what the agent declares", () => 
         category: "canvas",
         capabilities: DATAFLOW_BUILDER_CAPABILITIES,
         builderSession: { phase: "idle" },
-      } as AgentAttachment,
+      },
       onSolve: jest.fn(),
     });
     expect(screen.getByRole("group", { name: "My Orchestrator" })).toBeInTheDocument();
@@ -1625,7 +1625,7 @@ describe("AgentChatPanel offers each feature by what the agent declares", () => 
         name: "My Builder",
         capabilities: NODE_BUILDER_CAPABILITIES,
         builderSession: { phase: "idle" },
-      } as AgentAttachment,
+      },
       onSolve: jest.fn(),
     });
     expect(screen.queryByRole("group", { name: "My Builder" })).toBeNull();
@@ -1638,7 +1638,7 @@ describe("AgentChatPanel offers each feature by what the agent declares", () => 
         coord: "agent.my-builder@2.0.0",
         name: "My Builder",
         capabilities: NODE_BUILDER_CAPABILITIES,
-      } as AgentAttachment,
+      },
       turns: [
         { role: "user", text: "Add a node that loads the parks." },
         savedReply("I have now added a new node to your dataflow.", {
@@ -1656,7 +1656,7 @@ describe("AgentChatPanel offers each feature by what the agent declares", () => 
         coord: "agent.my-builder@2.0.0",
         name: "My Builder",
         capabilities: NODE_BUILDER_CAPABILITIES,
-      } as AgentAttachment,
+      },
       turns: [candidates],
     });
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Chicago areas" }));
@@ -1677,7 +1677,7 @@ describe("AgentChatPanel offers each feature by what the agent declares", () => 
         name: "My Finder",
         capabilities: DATASET_FINDER_CAPABILITIES,
         target: { kind: "node" as const, targetId: "n1" },
-      } as AgentAttachment,
+      },
       turns: [candidates],
       onRecordDatasetSelection,
     });
@@ -1698,7 +1698,7 @@ describe("AgentChatPanel offers each feature by what the agent declares", () => 
         name: "My Scout",
         capabilities: ["dataset.discover"],
         target: { kind: "node" as const, targetId: "n1" },
-      } as AgentAttachment,
+      },
       turns: [candidates],
       onRecordDatasetSelection: jest.fn(),
     });
