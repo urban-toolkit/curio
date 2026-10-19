@@ -223,8 +223,8 @@ export function useNotebookView({
     // Flow's `setViewport`, which lands on a later animation frame: on a page
     // that drew no frame for a while, the canvas kept the notebook's origin
     // until one came (#996). MainCanvas's hold has stopped by the time effects
-    // run, and setting the view at once drops a put-back of the origin it
-    // asked for whose frame has not come, so it cannot undo the view.
+    // run, and setting the view at once drops any move still waiting for its
+    // frame, so nothing asked for in the notebook view lands over it.
     const firstRunRef = useRef(true);
     useEffect(() => {
         const ids = reactFlow.getNodes().map((n) => n.id);
@@ -257,7 +257,7 @@ export function useNotebookView({
             const slots = layoutFor(current, reactFlow.getEdges(), paneRef.current).positions;
             // Placed in the same update as the switch, so no frame shows the
             // canvas layout under the notebook's settings. React Flow's view
-            // follows a frame or two later (see MainCanvas).
+            // follows when effects run (see MainCanvas).
             setNodes((prev) => placeNotebookNodes(prev, slots, spots));
             const selected = current.find((n) => n.selected);
             if (selected) {
