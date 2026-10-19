@@ -43,7 +43,7 @@ import {
 } from '../standalone/dashboardPayload';
 
 import { getBehavior } from './behaviorRegistry';
-import { resolveIconRef } from './iconRegistry';
+import { loadIconRefs, resolveIconRef } from './iconRegistry';
 import {
   clearPackageNodes,
   registerNode,
@@ -300,6 +300,14 @@ function buildDescriptor(pkg: RawPackage, template: RawPackageTemplate, order: n
   };
 }
 
+/** Every `iconRef` the packages' templates name. */
+function templateIconRefs(packages: RawPackage[]): Array<string | null> {
+  return packages.flatMap((pkg) => {
+    const templates: RawPackageTemplate[] = Array.isArray(pkg.templates) ? pkg.templates : [];
+    return templates.map((template) => template.iconRef);
+  });
+}
+
 /** Internal helper exposed for unit tests. */
 export function registerPackageTemplates(packages: RawPackage[]): NodeDescriptor[] {
   const registered: NodeDescriptor[] = [];
@@ -501,12 +509,17 @@ export async function loadInstalledPackages(): Promise<NodeDescriptor[]> {
               p.packageId === BUILTIN_PACKAGE_ID ||
               scope.has(`${p.packageId}@${p.major}`),
           );
+    // Every template gets a descriptor, so every template's icon is loaded
+    // before descriptors are built: a palette tile never draws a cube first.
+    // Started here so the icons load while the behavior scripts do.
+    const icons = loadIconRefs(templateIconRefs(filtered));
     // Inject and await any `behaviorScript` bundles BEFORE descriptor
     // build so the behavior keys referenced in the templates are
     // actually registered against the global behavior registry. Without
     // this step, `getBehavior()` returns undefined and packages with
     // custom behaviors soft-fail to the package code editor.
     await loadPackageBehaviorScripts(scoped);
+    if (icons) await icons;
     // A call that started later has already put its answer in the registry, so
     // this one is out of date. Checked here, after the last await, because the
     // replace below is synchronous: nothing can slip in between the two.

@@ -212,6 +212,30 @@ return convert_raster(input_0, zoom=[!! zoom !!])
 - Imports inside your modules are not detected: list the libraries they need in
   `manifest.dependencies.python`.
 
+### Tags and data types
+
+The **Projects** page files each dataflow under tags and data types
+([Finding a dataflow](USAGE.md#finding-a-dataflow)). Curio finds most of them in
+the dataflow itself: the libraries its code imports, the files it names, its
+Vega-Lite and Autark nodes, its models and its datasets. For what your nodes
+bring that their code does not show, declare `dataflowCategories` at the top of
+the manifest, for every node of the package, or in one template:
+
+```json
+{
+  "id": "me.flood",
+  "dataflowCategories": { "tags": ["Hydrology"] },
+  "templates": [
+    { "id": "flood-depth", "dataflowCategories": { "dataTypes": ["Rasters"] } }
+  ]
+}
+```
+
+A dataflow with a `flood-depth` node is then under Hydrology and Rasters. A name
+the page already lists, such as Rasters, files the dataflow there; a new name,
+such as Hydrology, adds an entry. A list holds up to 20 names, each up to 40
+characters.
+
 ---
 
 ## Tier 2: a node with its own interface
@@ -437,9 +461,11 @@ All of these are real, and none of them produce an obvious error message.
 - **Never bundle your own React.** React, ReactDOM and ReactFlow are
   externalised to `window`; a second copy breaks every hook with an error that
   does not mention React copies at all.
-- **An unregistered `iconRef` is not an error.** It silently falls back to a
-  cube with one console warning. The registered refs are in
-  [`iconRegistry.ts`](../utk_curio/frontend/urban-workflows/src/registry/iconRegistry.ts).
+- **`iconRef` takes any Font Awesome solid or brands icon**, as
+  `fa-solid:<name>` or `fa-brands:<name>`, with the name
+  [fontawesome.com](https://fontawesome.com/icons) gives it. A name Font
+  Awesome does not have is not an error: the node shows a cube, with one
+  console warning.
 - **`integrity.json` goes stale.** Regenerate it with
   `python scripts/regen_integrity.py packages/<id>@<major>`. Nothing verifies
   these hashes today, so a stale file will not break your node, but keep it

@@ -46,8 +46,8 @@ def source_row(
         "auth": {
             "mode": auth.mode,
             # Booleans and a help link. Never the token, never the header
-            # value; the slot name is shown so the Settings panel can say
-            # which credential this source wants.
+            # value; the secret id is shown so API Settings can open on the
+            # key this source sends.
             "required": auth.needs_token,
             "usesToken": auth.uses_token,
             "secretId": auth.secret_id,

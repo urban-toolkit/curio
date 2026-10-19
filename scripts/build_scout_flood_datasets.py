@@ -56,6 +56,8 @@ SCOUT_FUNCTION = (
 )
 STAMP = "2026-10-05T00:00:00Z"
 PUBLISHER = "SCOUT (urban-toolkit/scout)"
+#: What a dataflow that reads one of them shows on the Projects rail.
+DATAFLOW_CATEGORIES = {"tags": ["SCOUT"]}
 
 #: (top, left, bottom, right) in degrees: SCOUT's flood example's corners, the
 #: defaults of the quad-cities-flood-vulnerability dataflow's Parameter nodes. They hold every
@@ -139,6 +141,7 @@ def _write_manifest(entry: dict, root: Path, description: str) -> None:
         row_count=None,
         schema=None,
         source_label="SCOUT",
+        dataflow_categories=DATAFLOW_CATEGORIES,
     )
     (root / "manifest.json").write_text(json.dumps(build_manifest_dict(manifest), indent=2) + "\n", encoding="utf-8")
 

@@ -12,6 +12,7 @@ import { OutputIcon } from './edges/OutputIcon';
 import { InputIcon } from './edges/InputIcon';
 import { getNodeDescriptor, tryGetNodeDescriptor, subscribeToRegistry } from '../registry/nodeRegistry';
 import { isRegistryReady, subscribeToRegistryReady } from '../registry/registryReadiness';
+import { isVegaLiteNodeType } from '../registry/vegaLiteNodes';
 import { UnresolvedNode } from './UnresolvedNode';
 import { NodeHandles } from './nodes/NodeHandles';
 import { behaviorDataView } from "../utils/behaviorDataView";
@@ -230,12 +231,14 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const runInFlightRef = useRef(runInFlight);
   runInFlightRef.current = runInFlight;
   // The grammar nodes that draw from their input on their own, by one rule: a
-  // Vega chart, and an Autark document that renders (a map or a plot). An
-  // Autark data or compute step stays on Play.
+  // Vega chart (a package's too, registry/vegaLiteNodes), and an Autark
+  // document that renders (a map or a plot). An Autark data or compute step
+  // stays on Play.
+  const vegaChart = isVegaLiteNodeType(kind);
   const autarkRender = kind === NodeType.AUTK_GRAMMAR && classifyAutkSpecString(nodeState.code) === "render";
-  const drawsFromInput = kind === NodeType.VIS_VEGA || autarkRender;
+  const drawsFromInput = vegaChart || autarkRender;
   useEffect(() => {
-    if (kind !== NodeType.VIS_VEGA && kind !== NodeType.AUTK_GRAMMAR) return;
+    if (!vegaChart && kind !== NodeType.AUTK_GRAMMAR) return;
     // An input that lands while the buffer is still empty belongs to a node
     // somebody is wiring up right now: `vegaBehavior` fetches a preview and
     // fills the buffer with a spec guessed from that input's columns a moment

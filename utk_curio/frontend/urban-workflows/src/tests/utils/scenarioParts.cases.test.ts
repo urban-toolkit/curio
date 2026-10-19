@@ -6,11 +6,17 @@
  * so the catalog lists a scenario the way its canvas shows it.
  *
  * The cases are written as a saved spec holds nodes; here each becomes the
- * canvas node a load makes of it.
+ * canvas node a load makes of it. A case's SCOUT Comparison chart is known to
+ * the canvas as its installed package registers it; the catalog reads its
+ * shipped manifest.
  */
 import cases from "../../utils/scenarios/scenarioParts.cases.json";
 import { savedSourcesOf, scenarioParts } from "../../utils/scenarios/scenarioParts";
 import type { Scenario } from "../../utils/scenarios/scenarioModel";
+import { clearVegaLiteTemplate, registerVegaLiteTemplate } from "../_support/vegaLiteTemplate";
+
+beforeAll(() => registerVegaLiteTemplate());
+afterAll(() => clearVegaLiteTemplate());
 
 type SpecNode = { id: string; type: string; content?: string; metadata?: { widgets?: unknown } };
 type SpecEdge = { source: string; target: string; sourceHandle?: string; targetHandle?: string; type?: string };

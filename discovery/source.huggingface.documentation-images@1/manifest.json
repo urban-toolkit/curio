@@ -18,7 +18,9 @@
     "secretId": "huggingface.token",
     "headerName": "Authorization",
     "valuePrefix": "Bearer ",
-    "helpUrl": "https://huggingface.co/settings/tokens"
+    "label": "Hugging Face token",
+    "helpUrl": "https://huggingface.co/settings/tokens",
+    "placeholder": "hf_..."
   },
   "resources": [
     {

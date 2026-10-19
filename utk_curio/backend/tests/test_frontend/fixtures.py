@@ -548,6 +548,20 @@ def _e2e_backend_base_url() -> str:
     return f"http://{host}:{port}"
 
 
+def skips_the_reset(cls, fixturenames) -> bool:
+    """Whether a test keeps the database the test before it left (see ``_clean_db``).
+
+    True for the classes that hold a class-scoped browser session
+    (``loaded_workflow`` / ``workflow_page``), so their tests share one
+    DB-backed session and canvas, and for the classes in
+    ``_SHARED_SESSION_CLASSES``. ``runner_split.part_key`` asks the same
+    question: a test that gets the reset can run in any CI part on its own.
+    """
+    if cls and cls.__name__ in _SHARED_SESSION_CLASSES:
+        return True
+    return "loaded_workflow" in fixturenames or "workflow_page" in fixturenames
+
+
 def _clean_db(request, test_db_paths) -> None:
     """Truncate mutable tables in the backend's DB.
 
@@ -566,12 +580,7 @@ def _clean_db(request, test_db_paths) -> None:
     versions/paths do not list indirect fixtures in ``request.fixturenames``
     early enough for autouse ordering.
     """
-    if getattr(request, "cls", None) and request.cls.__name__ in _SHARED_SESSION_CLASSES:
-        return
-    if (
-        "loaded_workflow" in request.fixturenames
-        or "workflow_page" in request.fixturenames
-    ):
+    if skips_the_reset(getattr(request, "cls", None), request.fixturenames):
         return
     if os.environ.get("CURIO_E2E_USE_EXISTING"):
         _reset_db_via_http(_e2e_backend_base_url())

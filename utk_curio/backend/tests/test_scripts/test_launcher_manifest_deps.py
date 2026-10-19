@@ -411,3 +411,48 @@ def test_an_overlay_routed_package_stays_out_of_the_user_tree_too(
     launcher.install_manifest_dependencies()
 
     assert installed_per_user == []
+
+
+# ── manifest_requirements: the same walk's list, for CI's image build ──
+
+
+@pytest.mark.parametrize("examples", ["0", "1"])
+def test_the_list_is_what_the_walk_hands_pip(
+    launch_cwd, installed, in_process, monkeypatch, examples,
+):
+    """CI's image installs ``manifest_requirements()`` in a layer of its own,
+    then runs setup, which must find nothing left to install. So the list is
+    what ``install_manifest_dependencies`` hands pip, one requirement per
+    library as pip reads it, from the same walk: the catalog's packages (with
+    CURIO_SEED_EXAMPLES=1 the examples' too) and a user's host-routed one."""
+    from utk_curio.backend.app.packages.infrastructure.pip_runner import pip_requirement
+
+    monkeypatch.setenv("CURIO_SEED_EXAMPLES", examples)
+    _write_package(
+        _user_store(launch_cwd), "acme.nodes@1",
+        deps={"inflection": "^0.5"}, backend=False, python_template=True,
+    )
+    launcher.install_manifest_dependencies()
+    merged = {k: v for call in installed for k, v in call.items()}
+
+    listed = launcher.manifest_requirements()
+
+    assert listed == sorted(pip_requirement(name, spec) for name, spec in merged.items())
+    assert [req for req in listed if req.startswith("inflection")], "the user's library is missing"
+    assert not [req for req in listed if "^" in req], "a caret pip cannot read is left in the list"
+    assert len(listed) > 1, "the catalog's own libraries are missing"
+
+
+def test_listing_installs_nothing(launch_cwd, installed, installed_per_user, isolated):
+    """The list walks a user's store too, and installs nothing, on the host or
+    in a user's tree. Under isolation a user's libraries belong in that user's
+    tree, not in this interpreter, so they are not in the list."""
+    _write_package(
+        _user_store(launch_cwd, "7"), "acme.nodes@1",
+        deps={"inflection": ">=0.5"}, backend=False, python_template=True,
+    )
+
+    listed = launcher.manifest_requirements()
+
+    assert installed == [] and installed_per_user == []
+    assert not [req for req in listed if req.startswith("inflection")]

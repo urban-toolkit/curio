@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { NodeType } from "../constants";
 import { useFlowContext } from "../providers/FlowProvider";
+import { isVegaLiteNodeType } from "../registry/vegaLiteNodes";
 import { getUnversionedFlowNodeType } from "../utils/flowNodeCanonicalType";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 
@@ -11,7 +12,10 @@ export interface SelectionView {
     label: string;
 }
 
-const VIEW_TYPES: readonly string[] = [NodeType.VIS_VEGA, NodeType.AUTK_GRAMMAR];
+/** A view: a Vega-Lite chart, a package's too (registry/vegaLiteNodes), or an Autark node. */
+function isView(kind: string): boolean {
+    return isVegaLiteNodeType(kind) || kind === NodeType.AUTK_GRAMMAR;
+}
 
 function labelOf(node: { id: string; data?: any }): string {
     try {
@@ -25,7 +29,7 @@ function labelOf(node: { id: string; data?: any }): string {
  * name are told apart by the start of their ids. */
 export function selectionViewsOf(nodes: readonly { id: string; type?: string | null; data?: any }[], nodeId: string): SelectionView[] {
     const views = nodes
-        .filter((node) => node.id !== nodeId && VIEW_TYPES.includes(getUnversionedFlowNodeType(node)))
+        .filter((node) => node.id !== nodeId && isView(getUnversionedFlowNodeType(node)))
         .map((node) => ({ id: node.id, label: labelOf(node) }));
     return views.map((view) =>
         views.filter((other) => other.label === view.label).length > 1

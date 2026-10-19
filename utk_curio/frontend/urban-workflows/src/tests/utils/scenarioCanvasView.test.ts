@@ -8,7 +8,7 @@
  * dataflow state: the last block checks that the save, Run All's levels and
  * an agent's view read the same graph collapsed, expanded or with no scenario.
  */
-jest.mock("../../registry/nodeRegistry", () => ({ getPaletteNodeTypes: () => [] }));
+jest.mock("../../registry/nodeRegistry", () => ({ getPaletteNodeTypes: () => [], tryGetNodeDescriptor: () => undefined }));
 
 import { NodeType } from "../../constants";
 import { TrillGenerator } from "../../TrillGenerator";

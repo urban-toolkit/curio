@@ -81,6 +81,22 @@ class TestTemplateContentKind:
         kinds = {t.template_id: pkg_services.template_content_kind(t) for t in manifest.templates}
         assert kinds == {"raster-calculator": "code", "rasterize-buildings": "code"}
 
+    def test_scouts_comparison_charts_are_vega_lite_documents(self):
+        """SCOUT Comparison's seven charts are Vega-Lite specs, as the Vega-Lite
+        node's is: validated as documents, never run in the sandbox."""
+        from pathlib import Path
+
+        from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+
+        root = Path(__file__).resolve().parents[4] / "packages" / "scout.comparison@1"
+        manifest = load_package_manifest(root)
+        templates = {t.template_id: t for t in manifest.templates}
+        assert len(templates) == 7
+        for template_id, template in templates.items():
+            assert pkg_services.template_content_kind(template) == "grammar", template_id
+            assert template.grammar_id == "vega-lite", template_id
+            assert pkg_services.template_is_executable(template) is False, template_id
+
     def test_no_content_makes_a_presentation_without_input_author_nothing(self):
         """``containerStyle.noContent`` (the route the Merge Flow took) decides
         even where the editor alone would make a note: a template with

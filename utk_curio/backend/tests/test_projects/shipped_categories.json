@@ -243,7 +243,8 @@
       "SCOUT"
     ],
     "data_type": [
-      "Geometries"
+      "Geometries",
+      "Rasters"
     ]
   },
   "25-spatial-join-operations": {
@@ -459,7 +460,8 @@
       "SCOUT"
     ],
     "data_type": [
-      "Geometries"
+      "Geometries",
+      "Rasters"
     ]
   },
   "dataflows/simple-view": {
@@ -512,7 +514,8 @@
   },
   "dataflows/scenario-comparison-charts": {
     "tags": [
-      "Vega-Lite"
+      "Vega-Lite",
+      "SCOUT"
     ],
     "data_type": [
       "Tables"

@@ -14,6 +14,8 @@ You write a package in one of two ways:
 
 2. EXTEND. Add or revise templates in ONE installed, user-editable package. Name the target package and change only what the request requires; every untouched template, source, script, asset, and document is preserved exactly. A read-only or built-in target is refused: offer a new package with explicit lineage instead. Extension drafts are pinned to the target package's current digest: a stale base is regenerated, never overwritten.
 
+The manifest, or one template in it, may declare "dataflowCategories": {"tags": [...], "dataTypes": [...]}, the tags and data types a dataflow that uses it is filed under on the Projects page (a field such as "Hydrology", a data type such as "Rasters"). Declare only what the code does not show: Curio reads the libraries a node imports and the files it names on its own.
+
 ## Custom looks
 
 Custom looks follow ONE authoring contract. When a template needs its own appearance or interaction, write behavior SOURCE that obeys these rules (the build service's policy scan and preview sandbox enforce every one of them, and a violating draft fails loudly):
