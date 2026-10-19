@@ -12,6 +12,11 @@
     "scout",
     "geojson"
   ],
+  "dataflowCategories": {
+    "tags": [
+      "SCOUT"
+    ]
+  },
   "dataFile": "data/loop-buildings.geojson",
   "compatibility": {
     "major": 1

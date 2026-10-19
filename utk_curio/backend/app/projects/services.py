@@ -410,24 +410,22 @@ def _extract_graph_preview(spec: Optional[dict]) -> Optional[dict]:
     return {"nodes": nodes, "edges": edges}
 
 
-def _categories(user, project_id: str, spec, *, sources=None, dataset_kind=None, template_grammar=None) -> dict:
+def _categories(user, project_id: str, spec, *, sources=None, lookup=None) -> dict:
     """``categories`` for one project: its source, and what its spec says.
 
-    *sources*, *dataset_kind* and *template_grammar* let a listing compute the
-    shipped-id map and read each dataset and package manifest once for every
-    row.
+    *sources* and *lookup* let a listing compute the shipped-id map and read
+    each package and dataset manifest once for every row. The lookup reads
+    the account's copies of the manifests and the catalog's; with no user,
+    the catalog's alone.
     """
-    from utk_curio.backend.app.projects.categories import DatasetKinds, TemplateGrammars, categories_for
+    from utk_curio.backend.app.projects.categories import ManifestLookup, categories_for
     from utk_curio.backend.app.projects.seed import shipped_sources
 
     if sources is None:
         sources = shipped_sources(user) if user is not None else {}
-    user_key = _user_dir_key(user) if user is not None else None
-    if dataset_kind is None:
-        dataset_kind = DatasetKinds(user_key)
-    if template_grammar is None:
-        template_grammar = TemplateGrammars(user_key)
-    return categories_for(spec, sources.get(project_id), dataset_kind, template_grammar)
+    if lookup is None:
+        lookup = ManifestLookup(_user_dir_key(user) if user is not None else None)
+    return categories_for(spec, sources.get(project_id), lookup)
 
 
 def _normalize_spec_categories(spec) -> None:
@@ -1484,7 +1482,7 @@ def list_projects(user, sort: str = "last_opened") -> List[ProjectSummary]:
     # deleted on purpose is not resurrected on the next listing. Imported here
     # rather than at module scope: ``seed`` imports this module for
     # ``_is_shared_guest`` / ``_user_dir_key``.
-    from utk_curio.backend.app.projects.categories import DatasetKinds, TemplateGrammars
+    from utk_curio.backend.app.projects.categories import ManifestLookup
     from utk_curio.backend.app.projects.seed import (
         ensure_user_examples_seeded,
         shipped_sources,
@@ -1497,8 +1495,7 @@ def list_projects(user, sort: str = "last_opened") -> List[ProjectSummary]:
     # not offer Delete and where each one came from.
     sources = shipped_sources(user)
     ukey = _user_dir_key(user)
-    dataset_kind = DatasetKinds(ukey)
-    template_grammar = TemplateGrammars(ukey)
+    lookup = ManifestLookup(ukey)
     summaries = []
     dropped_stale_row = False
     for p in projects:
@@ -1513,10 +1510,7 @@ def list_projects(user, sort: str = "last_opened") -> List[ProjectSummary]:
             p, graph_preview=_extract_graph_preview(spec),
             spec_revision=storage.spec_revision(ukey, p.id),
             is_example=p.id in sources,
-            categories=_categories(
-                user, p.id, spec, sources=sources, dataset_kind=dataset_kind,
-                template_grammar=template_grammar,
-            ),
+            categories=_categories(user, p.id, spec, sources=sources, lookup=lookup),
             scenario_list=scenarios.scenario_summaries(spec),
         ))
     if dropped_stale_row:

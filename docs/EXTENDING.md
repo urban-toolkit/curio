@@ -7,6 +7,20 @@ This guide walks through adding a new node package end-to-end. Its examples are 
 > [!TIP]
 > **Writing your first package?** Start with [`docs/AUTHORING-NODES.md`](AUTHORING-NODES.md), a task-ordered walkthrough from `git clone` to a working node, including the edit → rebuild → reload loop. Scaffold with `python scripts/new_package.py <id> [--with-ui]`, and read [`packages/curio.example-ui@1`](../packages/curio.example-ui@1/) for a minimal custom-UI node with no API keys or heavy dependencies. Come back here for the reference detail: backend blueprints, external services, dependency declaration, and the manifest's finer points.
 
+## Every catalog is a folder of manifests
+
+Each catalog lists folders, one per item, each with a `manifest.json` that declares what the item is and brings. The catalog's guide describes its manifest.
+
+| Catalog | Shipped folder | Schema | Its manifest |
+|---|---|---|---|
+| Node | [`packages/`](../packages/) | [`node-package.v4.json`](schemas/node-package.v4.json) | [NODE-CATALOG §6](NODE-CATALOG.md#6-the-manifest) |
+| Model | [`packages/`](../packages/), packages of kind `model` | [`node-package.v4.json`](schemas/node-package.v4.json) | [MODEL-CATALOG §6](MODEL-CATALOG.md#6-the-manifest) |
+| Data | [`datasets/`](../datasets/) | The table in DATA-CATALOG §7 | [DATA-CATALOG §7](DATA-CATALOG.md#7-the-manifest) |
+| Discovery | [`discovery/`](../discovery/) | [`discovery-source.v1.json`](schemas/discovery-source.v1.json) | [DISCOVERY-CATALOG §8](DISCOVERY-CATALOG.md#8-the-manifest) |
+| Agent | Built into Curio; published agents in `.curio/agents-catalog/` | [`agent-package.v1.json`](schemas/agent-package.v1.json) | [AGENT-CATALOG §6](AGENT-CATALOG.md#6-the-manifest) |
+
+The Scenario Catalog has no manifests: it lists the scenarios saved in your projects.
+
 ## 1. Anatomy of a package
 
 ```
@@ -29,6 +43,7 @@ A `template` inside `manifest.json` declares one node kind. It carries:
 - `behavior`: string key resolved through [`registry/behaviorRegistry`](../utk_curio/frontend/urban-workflows/src/registry/behaviorRegistry.ts) to the React hook that implements the node's behaviour
 - `engine` (`python` | `javascript`): if the node runs user code, which sandbox executes it. A template with `hasCode`, an `engine` and no `backendHandler` is one an agent's Solve runs in the sandbox to verify what it writes
 - `source` + `starterIsContent`: the starter a fresh node opens with, and whether it is the node's whole content, set through the template's `widgets`. With `starterIsContent`, a node an agent's plan creates starts with the starter too, and Solve leaves it as it is ([Authoring nodes](AUTHORING-NODES.md#widgets-in-a-template))
+- `dataflowCategories` (`{"tags": [...], "dataTypes": [...]}`): the tags and data types a dataflow with a node of this template is filed under on the **Projects** page. At the top level of the manifest it covers every template of the package. Curio finds the rest in the dataflow itself, such as Pandas for code that imports it, so declare only what a node's code does not show ([Authoring nodes](AUTHORING-NODES.md#tags-and-data-types))
 
 The frontend's package loader at [`registry/packagesClient.ts`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) reads every installed package, calls `buildDescriptor()` per template, and registers them in the canvas's node-type registry. Adding a node is therefore *adding a manifest entry plus a behavior hook*; there is no monolithic switch-case anywhere.
 
@@ -565,6 +580,7 @@ you. See [`docs/AUTHORING-NODES.md`](AUTHORING-NODES.md) for the walkthrough.
 - [ ] `packages/<id>@<major>/manifest.json`: templates with behavior keys, port shapes, palette ordering.
 - [ ] `packages/<id>@<major>/README.md`: shown in the catalog. Cover setup, env vars, costs.
 - [ ] `packages/<id>@<major>/integrity.json`: regenerate after every edit with `python scripts/regen_integrity.py packages/<id>@<major>` (§6 step 8).
+- [ ] *(If a dataflow that uses it belongs under a tag or a data type its code does not show)* `dataflowCategories` in the manifest (§1).
 
 **Behavior hooks in the package** (the normal case: no Curio rebuild needed)
 
