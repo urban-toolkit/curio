@@ -18,7 +18,10 @@
     "secretId": "google.maps-key",
     "scheme": "query",
     "paramName": "key",
-    "helpUrl": "https://developers.google.com/maps/documentation/streetview/get-api-key"
+    "label": "Google Maps API key",
+    "helpUrl": "https://developers.google.com/maps/documentation/streetview/get-api-key",
+    "placeholder": "AIza...",
+    "note": "Needs the Street View Static API enabled, and Google bills its requests to you. Google's terms allow storing only panorama IDs: images downloaded with your key are yours to keep within those terms."
   },
   "limits": { "requestsPerMinute": 10 },
   "resources": [

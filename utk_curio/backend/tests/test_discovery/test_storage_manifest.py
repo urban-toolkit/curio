@@ -130,25 +130,30 @@ class TestAResource:
         assert spec.time == "recorded"
 
 
-class TestTheHuggingFaceSlot:
-    def test_it_is_known_and_maps_to_the_existing_column(self):
-        from utk_curio.backend.app.discovery.infrastructure import credentials
-        from utk_curio.backend.app.users.models import User
+class TestTheHuggingFaceKey:
+    def test_both_hugging_face_sources_declare_it(self):
+        """One key, one API Settings row: both sources name it and show it alike."""
+        from utk_curio.backend.tests.test_discovery.conftest import SHIPPED_ROOT
 
-        assert "huggingface.token" in M.KNOWN_SECRET_SLOTS
-        assert credentials.SLOT_COLUMNS["huggingface.token"] == "huggingface_token"
-        assert hasattr(User, "huggingface_token")
+        for name in ("source.huggingface.models@1", "source.huggingface.documentation-images@1"):
+            auth = M.load_source_manifest(SHIPPED_ROOT / name).auth
+            assert (auth.secret_id, auth.label) == ("huggingface.token", "Hugging Face token"), name
 
-    def test_a_value_prefix_reaches_the_header(self):
+    def test_a_value_prefix_reaches_the_header(self, tmp_path, monkeypatch):
         from types import SimpleNamespace
 
         from utk_curio.backend.app.discovery.infrastructure import credentials
+        from utk_curio.backend.app.users import source_keys
 
+        # The account's own key file, in this test's own .curio.
+        monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+        monkeypatch.delenv("CURIO_STATE_DIR", raising=False)
         m = parse(a_manifest(auth={
             "mode": "optional-token", "secretId": "huggingface.token",
             "headerName": "Authorization", "valuePrefix": "Bearer ",
         }))
-        user = SimpleNamespace(huggingface_token="hf_abc")
+        user = SimpleNamespace(id=7, username="hf_reader", is_guest=False)
+        source_keys.save_for(user, {"huggingface.token": "hf_abc"})
         assert credentials.credential_header(user, m) == "Authorization:Bearer hf_abc"
 
     def test_a_value_prefix_is_a_word_and_a_space(self):

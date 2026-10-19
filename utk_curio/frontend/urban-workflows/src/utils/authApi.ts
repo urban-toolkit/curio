@@ -77,14 +77,9 @@ export interface UserData {
   profile_image: string | null;
   type: string | null;
   is_guest: boolean;
-  /** Whether a HuggingFace token is stored. The token itself never leaves the
-   * server; this is what API Settings shows instead. */
-  has_huggingface_token?: boolean;
-  /** Whether a Socrata app token is stored, for the Discovery Catalog. Same
-   * rule: a boolean, never the value. */
-  has_socrata_app_token?: boolean;
-  has_google_maps_api_key?: boolean;
-  has_mapillary_access_token?: boolean;
+  /** The Data source keys this account saved, by the secret id their sources
+   * declare, each as `true`. A key itself never leaves the server. */
+  has_source_keys?: Record<string, boolean>;
 }
 
 export interface PublicConfig {
@@ -138,13 +133,13 @@ export const authApi = {
     return apiFetch("/api/auth/me");
   },
 
-  /** Profile fields, and account keys by their column name (an API Settings
-   *  row's `field`). */
+  /** Profile fields, and Data source keys by secret id (an API Settings row's
+   *  `slot`): an empty string removes one, and a key left out stays. */
   patchMe(data: {
     name?: string;
     email?: string;
     type?: string;
-    [keyField: string]: string | undefined;
+    source_keys?: Record<string, string>;
   }): Promise<UserData> {
     return apiFetch("/api/auth/me", {
       method: "PATCH",

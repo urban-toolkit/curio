@@ -77,7 +77,12 @@ Every Discovery request leaves the backend through one transport, [`discovery/in
 
 Pick the pattern by who the key belongs to:
 
-- **Per-account keys** (a Mapillary access token, a Google Maps API key, a Hugging Face token) are **Data source** keys on the **API keys** tab of **API Settings**, never a node input, a line of node code or a field of the dataflow spec. Each is a `KeySlot` in `SLOTS` ([`discovery/infrastructure/credentials.py`](../utk_curio/backend/app/discovery/infrastructure/credentials.py)): the `User` column that holds it, a label, a help link, a placeholder, an optional note, and an optional deployment-wide fallback (`default_env`) that a user's own key overrides. A source names its slot in `auth.secretId`, and a manifest naming a slot Curio does not hold fails to load. Adding a slot is a `User` column, a migration, a field in `PATCH /api/auth/me` ([`users/routes.py`](../utk_curio/backend/app/users/routes.py)), an entry in `SLOTS` and its id in `KNOWN_SECRET_SLOTS` ([`discovery/domain/manifest.py`](../utk_curio/backend/app/discovery/domain/manifest.py)). API Settings offers every slot without a saved key in the **Kind** list of **Add configuration**, and lists a slot once a key is saved or a deployment-wide fallback supplies one.
+- **Per-account keys** (a Mapillary access token, a Google Maps API key, a Hugging Face token) are **Data source** keys on the **API keys** tab of **API Settings**, never a node input, a line of node code or a field of the dataflow spec. A new key needs only its source manifest's `auth` block (§3.4): no column, migration or list in Curio's code.
+  - `secretId` names the key, and the sources that send one key name the same id.
+  - `label` is what API Settings calls it (the `secretId` when absent), `helpUrl` where a person gets one, `placeholder` what the empty field shows, and `note` a sentence under the field. Sources that send one key declare these the same way.
+  - `"operatorDefault": true` lets whoever runs Curio set one key every account inherits until it saves its own, in the variable `CURIO_DEFAULT_` followed by the `secretId` in capitals, with every other character as `_` (`CURIO_DEFAULT_SOCRATA_APP_TOKEN` for `socrata.app-token`). A manifest never names a variable, and a manifest whose `secretId` would read one of Curio's own settings under that prefix (`CURIO_DEFAULT_LLM_*`, `CURIO_DEFAULT_SAVE_NODE_OUTPUT`) with `operatorDefault` fails to load.
+  - API Settings lists one row per `secretId` (`key_rows` in [`discovery/infrastructure/credentials.py`](../utk_curio/backend/app/discovery/infrastructure/credentials.py)): it offers each key without a saved one in the **Kind** list of **Add configuration**, and lists a key once one is saved or the operator supplies one.
+  - `PATCH /api/auth/me` saves an account's keys by `secretId` under `source_keys`, in an owner-only file beside its other per-user stores ([`users/source_keys.py`](../utk_curio/backend/app/users/source_keys.py)), and refuses a `secretId` no source declares.
 
 - **Several named secrets per account** (node code keys, LLM configurations) go in an owner-only per-user file written through [`common/owner_only_file.py`](../utk_curio/backend/app/common/owner_only_file.py), as [`users/connection_keys.py`](../utk_curio/backend/app/users/connection_keys.py) and [`agents/infrastructure/llm_configs.py`](../utk_curio/backend/app/agents/infrastructure/llm_configs.py) do.
 
@@ -89,7 +94,7 @@ Three rules the per-account pattern follows:
 [`discovery/service.py`](../utk_curio/backend/app/discovery/service.py) wraps
 the transport in `CredentialedTransport` with the source's `provider.baseUrl`;
 a request to any other scheme, host or port, such as a Mapillary photo on its
-CDN, goes without the key. `credential_header` turns the slot into a header
+CDN, goes without the key. `credential_header` turns the key into a header
 (`auth.headerName` plus `auth.valuePrefix`) or, for `auth.scheme: "query"`, a
 query parameter (`auth.paramName`). The transport is the only code that adds
 it: providers never see the value, and a query key is taken out of every URL
@@ -106,9 +111,9 @@ shared by every user when the source sends no key, and kept per account when it
 does (`_listing_scope`).
 
 Report presence, never the value. `GET /api/discovery/keys` (`key_rows`) lists
-every slot with booleans only: `present` (this account saved one) and
-`inherited` (the deployment supplies one). The user payload carries a
-`has_<column>` flag per slot (`SLOT_FLAGS`).
+every key with booleans only: `present` (this account saved one) and
+`inherited` (the deployment supplies one). The user payload's
+`has_source_keys` maps the `secretId` of each key the account saved to `true`.
 
 A package whose backend needs to know *who* is calling must send the bearer
 token: read `window.curio.getAuthToken()` (a getter, because a package bundle
@@ -139,7 +144,7 @@ Read a public API's usage policy before shipping a source that calls it in a loo
 
 ### 3.4 APIs with API keys
 
-A source declares its key in the manifest's `auth` block, naming an API Settings slot (§3.2). Mapillary sends its token as a header:
+A source declares its key in the manifest's `auth` block, which is also its row in API Settings (§3.2). Mapillary sends its token as a header:
 
 ```json
 "auth": {
@@ -147,7 +152,10 @@ A source declares its key in the manifest's `auth` block, naming an API Settings
   "secretId": "mapillary.token",
   "headerName": "Authorization",
   "valuePrefix": "OAuth ",
-  "helpUrl": "https://www.mapillary.com/dashboard/developers"
+  "label": "Mapillary access token",
+  "helpUrl": "https://www.mapillary.com/dashboard/developers",
+  "placeholder": "MLY|...",
+  "note": "Mapillary images are CC BY-SA 4.0: each one keeps its creator for attribution."
 }
 ```
 
@@ -159,11 +167,13 @@ Google Street View sends its key as a query parameter:
   "secretId": "google.maps-key",
   "scheme": "query",
   "paramName": "key",
-  "helpUrl": "https://developers.google.com/maps/documentation/streetview/get-api-key"
+  "label": "Google Maps API key",
+  "helpUrl": "https://developers.google.com/maps/documentation/streetview/get-api-key",
+  "placeholder": "AIza..."
 }
 ```
 
-An `optional-token` source (Hugging Face models) sends the key when the account has one and asks without it otherwise. A `required-token` source the account holds no key for is refused before any job exists: `start_acquire` raises `CredentialRequired` (a `428`) naming the slot and the help link, and a search leg reports `needs-token`. A missing key is a message naming what to do, never a stacktrace.
+An `optional-token` source (Hugging Face models) sends the key when the account has one and asks without it otherwise. A `required-token` source the account holds no key for is refused before any job exists: `start_acquire` raises `CredentialRequired` (a `428`) naming the key's `secretId` and the help link, and a search leg reports `needs-token`. A missing key is a message naming what to do, never a stacktrace.
 
 ### 3.5 Long-running calls and job-id polling
 
