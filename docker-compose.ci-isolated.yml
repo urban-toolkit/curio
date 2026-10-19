@@ -34,12 +34,17 @@
 #    project (-p curio-ci-iso).
 services:
   curio:
+    # CI's image, which boots installing nothing: see 4 in docker-compose.ci.yml.
+    build:
+      args:
+        CURIO_CI_SETUP: "1"
     # Same reasoning as docker-compose.ci.yml: the isolation tests can provoke
     # process exhaustion, root inside the container bypasses RLIMIT_NPROC, and
     # this host also runs the live stacks.
     pids_limit: 4096
     environment:
       - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
+      - CURIO_SKIP_DEP_INSTALL=1
       # The Discovery Catalog's recorded portal corpus. The host-side e2e specs
       # drive this container with --use-existing, so it is the CONTAINER that
       # needs this, not the pytest process: without it the discovery transport falls

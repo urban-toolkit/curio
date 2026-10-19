@@ -18,7 +18,7 @@ Curio is a framework for urban visual analytics built on dataflows: a React canv
 - `docs/`: user and developer guides; `docs/examples/` (curated dataflows, their walkthroughs, test dataflows); `docs/schemas/` (`trill.v1.json`).
 - `scripts/`: developer and CI scripts (see Scripts).
 - `vendor/duckdb-extensions/`: DuckDB extensions bundled with Curio.
-- `.github/workflows/`: CI and release workflows (see CI); `.github/actions/`: `start-stack`, `stop-stack`.
+- `.github/workflows/`: CI and release workflows (see CI); `.github/actions/`: `start-stack`, `stop-stack` (its image cleanup on self-hosted runners is `scripts/ci_image_cleanup.sh`), `image-env` (the CI image's Python packages, copied to the runner).
 - `docker-compose.yml` plus overlays: `docker-compose.ci.yml`, `docker-compose.ci-shards.yml`, `docker-compose.ci-isolated.yml`, `docker-compose.ci-exec-user.yml`, `docker-compose.ci-stress.yml`, `docker-compose.deploy.yml`.
 
 ## Entry points
@@ -110,7 +110,7 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
 `.github/workflows/docker-compose.yml` jobs:
 
 - `pick-runners`: picks the runners of the jobs that start at once (`scripts/ci_pick_runners.py`).
-- `build-image`: builds the CI image once per commit, pushes it to GHCR, then picks the runners of the jobs that wait on it.
+- `build-image`: builds the CI image once per commit, pushes it to GHCR, then picks the runners of the jobs that wait on it. Built with the Dockerfile's `CURIO_CI_SETUP=1`, it also holds what `curio.py setup --with-examples` installs, so CI stacks boot with `CURIO_SKIP_DEP_INSTALL=1` and the jobs run `scripts/test.sh --skip-setup`.
 - `test-gpu`: e2e tests that need WebGPU, on a GPU runner.
 - `unit`: backend pytest in four parts, plus the sandbox suite.
 - `jest`: Jest and `npm run typecheck`.
@@ -131,6 +131,7 @@ Other workflows: `autk-schema.yml` (weekly check of the vendored Autark schema),
 - `scripts/clean.sh`: removes build artifacts and runtime data. `scripts/kill-curio.sh`: kills leftover Curio server processes.
 - `scripts/new_package.py`: scaffolds a node package. `scripts/regen_integrity.py`: rewrites a package's `integrity.json`.
 - `scripts/generate_contracts.py`: writes `src/generated/` and every `utk_curio/llm-prompts/X.md` that has an `X.template.md`; `--check` lists stale outputs.
+- `scripts/ci_requirements.py`: writes `scripts/ci-requirements.txt`, the libraries `curio.py setup --with-examples` installs from the manifests, which CI's image installs before its source; rerun it after changing a manifest's Python dependencies or the packages an example declares (`test_ci_requirements.py` fails on a stale list).
 - `scripts/sync_autk_schema.py`: vendors the Autark grammar schema; `--check` compares it with the release.
 - `scripts/validate_trill.py`: validates dataflow JSON against `docs/schemas/trill.v1.json`.
 - Release (`publish-pip-to-pypi.yml`): `scripts/record_left_out_files.py` records the catalog files the pip package leaves out (`utk_curio/backend/app/datasets/infrastructure/left_out_files.json`, fetched on first use by `left_out_files.py`); `scripts/check_dist_sizes.py` fails a wheel or sdist over PyPI's 100 MiB limit; `setup.py` lists the wheel's packages, puts the shipped folders in it at `utk_curio/_shipped/` (`utk_curio/shipped.py`), and copies the root `package.json` and `package-lock.json` into it (`utk_curio/sandbox/nodejs/`).

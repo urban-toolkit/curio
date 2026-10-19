@@ -350,6 +350,7 @@ jobs:
           WRITES_CACHE: ${{ github.ref == 'refs/heads/main' }}
         run: |
           early_inputs="Dockerfile .dockerignore requirements.txt package.json package-lock.json
+            scripts/ci-requirements.txt
             utk_curio/frontend/urban-workflows/package.json utk_curio/frontend/urban-workflows/package-lock.json
             utk_curio/frontend/urban-workflows/vendor"
           if git diff --quiet HEAD^1 HEAD -- $early_inputs; then
@@ -369,11 +370,17 @@ jobs:
             echo "no image of this tree to reuse, so it is built"
           fi
 
+      # CURIO_CI_SETUP=1, the same on every event and branch, since the tree
+      # tag above stands for one image: it also holds what `curio.py setup
+      # --with-examples` installs (see the Dockerfile), so the jobs' stacks
+      # boot installing nothing and the jobs that run pytest on the runner copy
+      # the packages out (.github/actions/image-env).
       - name: 🔨 Build and push the image
         if: steps.reuse.outputs.reused != 'true'
         uses: docker/build-push-action@v7
         with:
           context: .
+          build-args: CURIO_CI_SETUP=1
           push: true
           tags: |
             ${{ steps.name.outputs.image }}
@@ -586,11 +593,21 @@ jobs:
           fi
           echo "OK: the image still carries the execution account isolation discovers."
 
+      # Built, the image is this job's own, which stop-stack's cleanup asks
+      # (scripts/ci_image_cleanup.sh).
       - name: 🔨 Build all service images in parallel
-        run: docker compose -p curio-ci build --parallel
+        run: |
+          docker compose -p curio-ci build --parallel
+          echo "CURIO_CI_OWN_IMAGE=1" >> "$GITHUB_ENV"
 
       - name: ▶️ Start containers
         run: docker compose -p curio-ci up -d
+
+      # The runner's pytest uses the packages of the image just built, copied
+      # while its container boots.
+      - uses: ./.github/actions/image-env
+        with:
+          image: curio-ci-curio
 
       - name: 🧪 Wait for services to become healthy
         id: stack_healthy
@@ -669,11 +686,6 @@ jobs:
           curl -fsS "http://localhost:${CURIO_E2E_FRONTEND_PORT}/" \
             | grep -qF "<meta name=\"curio-backend-url\" content=\"${CURIO_E2E_BACKEND_URL}\">"
           echo "OK: the page names ${CURIO_E2E_BACKEND_URL}."
-
-      - name: 🐍 Set up Python (for e2e)
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
 
       - name: 🔧 Give .curio/ permissions for host-side tests
         run: |
@@ -796,7 +808,7 @@ jobs:
             export PYTEST_ADDOPTS
             echo "Re-minting with PYTEST_ADDOPTS=$PYTEST_ADDOPTS"
           fi
-          bash scripts/ci_repeat.sh bash scripts/test.sh --e2e-only --use-existing "${extra[@]}" \
+          bash scripts/ci_repeat.sh bash scripts/test.sh --e2e-only --use-existing --skip-setup "${extra[@]}" \
             --parallel "$CURIO_E2E_PARALLEL"
 
       # What a re-mint wrote into this checkout: the baselines whose screen
@@ -920,6 +932,7 @@ jobs:
 
       # JUnit is written inside the container, onto the .curio bind mount: the
       # directory is the container's (root-owned), so the host cannot create it.
+      # --skip-setup: the image's build already ran curio.py setup.
       - name: 🧪 Run the ${{ matrix.name }} unit tests
         # About 6 minutes a backend part, a run (each part holds about 6 of
         # the suite's 24 minutes of test time). The limit is for a hang, so it
@@ -929,7 +942,7 @@ jobs:
           bash scripts/ci_repeat.sh docker compose -p curio-ci exec -T \
             -e CURIO_UNIT_PART="${{ matrix.part }}" \
             -e PYTEST_ADDOPTS=--junitxml=/app/.curio/ci-report/${{ matrix.name }}{run}.xml curio \
-            bash scripts/test.sh --${{ matrix.suite }}-only --use-existing
+            bash scripts/test.sh --${{ matrix.suite }}-only --use-existing --skip-setup
 
       - name: 📤 Upload the results for the CI report
         if: always()
@@ -1055,17 +1068,14 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
+      # runner-env: the runner's pytest uses the image's packages
+      # (.github/actions/image-env), so test.sh skips its setup.
       - uses: ./.github/actions/start-stack
         with:
           image: ${{ needs.build-image.outputs.image }}
           project: curio-ci
           token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 🐍 Set up Python (for e2e)
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-          cache: pip
+          runner-env: "true"
 
       - name: 🔧 Give .curio/ permissions for host-side tests
         run: |
@@ -1109,7 +1119,7 @@ jobs:
             fi
             export PYTEST_ADDOPTS
           fi
-          bash scripts/ci_repeat.sh bash scripts/test.sh --e2e-only --use-existing "${extra[@]}"
+          bash scripts/ci_repeat.sh bash scripts/test.sh --e2e-only --use-existing --skip-setup "${extra[@]}"
 
       - name: 📦 Collect the re-minted baselines
         if: always() && env.CURIO_REMINT == '1'
@@ -1183,11 +1193,13 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
+      # runner-env: as in e2e-desktop.
       - uses: ./.github/actions/start-stack
         with:
           image: ${{ needs.build-image.outputs.image }}
           project: curio-ci-iso
           token: ${{ secrets.GITHUB_TOKEN }}
+          runner-env: "true"
 
       # The whole point of the job: prove the stack is actually isolated before
       # reading anything into the test results. /version reports the mode the
@@ -1205,12 +1217,6 @@ jobs:
             exit 1
           fi
           echo "OK: the sandbox reports node execution isolation = fork"
-
-      - name: 🐍 Set up Python (for e2e)
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-          cache: pip
 
       - name: 🔧 Give .curio/ permissions for host-side tests
         run: |
@@ -1245,7 +1251,7 @@ jobs:
           # ci_repeat.sh fills in {run}.
           PYTEST_ADDOPTS: --junitxml=${{ github.workspace }}/ci-report/e2e{run}.xml
         run: |
-          bash scripts/ci_repeat.sh bash scripts/test.sh --e2e-only --use-existing \
+          bash scripts/ci_repeat.sh bash scripts/test.sh --e2e-only --use-existing --skip-setup \
             --workflows "$ISOLATED_WORKFLOWS"
 
       # `isolation` above is the mode the sandbox resolved at boot. A zygote
@@ -1529,27 +1535,26 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
-      - name: 🐍 Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-          cache: pip
-
       # The replay runs the sandbox from this checkout, the way a local launch
-      # does, so it needs what a launch installs: requirements.txt plus the
-      # data libraries the builtin package declares.
-      - name: 📦 Install the sandbox's dependencies
-        shell: bash
+      # does, so it needs what a launch installs: the image's packages, where
+      # its build ran curio.py setup. The image is pulled here, before the
+      # replay; start-stack below finds it already on the runner.
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📥 Pull the image
+        env:
+          IMAGE: ${{ needs.build-image.outputs.image }}
         run: |
-          set -euo pipefail
+          docker pull --quiet "$IMAGE"
           mkdir -p ci-report
-          python -m pip install --quiet -r requirements.txt
-          python - packages/curio.builtin@1/manifest.json > data-reqs.txt <<'PY'
-          import json, sys
-          deps = json.load(open(sys.argv[1]))["dependencies"]["python"]
-          print("\n".join(f"{name}{spec}" for name, spec in deps.items()))
-          PY
-          python -m pip install --quiet -r data-reqs.txt
+
+      - uses: ./.github/actions/image-env
+        with:
+          image: ${{ needs.build-image.outputs.image }}
 
       - name: 🧠 Replay #408 at the reporter's scale
         shell: bash
@@ -1688,7 +1693,9 @@ jobs:
         uses: actions/checkout@v6
 
       - name: 🔨 Build all service images in parallel
-        run: docker compose -p curio-ci-stress build --parallel
+        run: |
+          docker compose -p curio-ci-stress build --parallel
+          echo "CURIO_CI_OWN_IMAGE=1" >> "$GITHUB_ENV"
 
       - name: ▶️ Start containers
         run: docker compose -p curio-ci-stress up -d
