@@ -47,14 +47,15 @@
         }
       ],
       "label": "Raster Calculator",
-      "behavior": "raster-calculator",
+      "behavior": "code",
       "outputPorts": [
         {
           "cardinality": "1",
           "types": ["RASTER", "DATAFRAME"]
         }
       ],
-      "paletteOrder": 0
+      "paletteOrder": 0,
+      "source": "sources/raster-calculator.py"
     },
     {
       "category": "computation",

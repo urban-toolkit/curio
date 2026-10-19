@@ -1,13 +1,4 @@
-/**
- * The code a Raster Calculator node starts with: one call to Curio's raster
- * algebra in the sandbox, `curio_raster_calculate`, with its other operations
- * listed above it, statistics among them (`curio_raster_statistics`,
- * `utk_curio/sandbox/util/raster_algebra.py`). The user edits it as any
- * Python node's code. The sandbox's `test_raster_nodes.py` runs it as it is
- * written here, and with its statistics call returned in place of its own.
- */
-
-export const RASTER_CALCULATOR_CODE = `# Raster Calculator: one operation over rasters on one grid. Connect the
+# Raster Calculator: one operation over rasters on one grid. Connect the
 # rasters to the input circles, in order, and return one of its operations.
 #
 # Cell by cell, as a raster:
@@ -23,4 +14,3 @@ export const RASTER_CALCULATOR_CODE = `# Raster Calculator: one operation over r
 # values instead, and mask_values=[0] keeps the cells whose mask value is 0.
 #   return curio_raster_statistics(input_0, mask=input_1)
 return curio_raster_calculate("subtract", [input_0, input_1])
-`;

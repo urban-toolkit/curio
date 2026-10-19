@@ -144,6 +144,12 @@ starter and the template's widgets, each widget the plan declares set over the
 one of its name, and **Solve** leaves its content as it is. Without it, a planned
 node is created empty and Solve writes its content.
 
+A starter that each use edits leaves the flag out, as SCOUT Rasters' Raster
+Calculator does: its starter,
+[`sources/raster-calculator.py`](../packages/scout.rasters@1/sources/raster-calculator.py),
+returns one operation and lists the others, so a dropped calculator opens with
+it and Solve writes the operation each planned one needs.
+
 A node made from a template can also read a view's selection through a
 selection tag, `[!! selection name !!]` ([Selection tags](USAGE.md#selection-tags)).
 A template does not declare selection tags: each names a view of one dataflow,
