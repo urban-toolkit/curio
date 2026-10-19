@@ -586,14 +586,15 @@ REGISTRY: dict[str, ToolContract] = {
             "nodeType", "content",
         ),
     ),
-    # dev/89, consumers: the Node Builder (its package-writing mode's drafts)
-    # and the Researcher (the drafts it asks for). The ONE package-authoring
-    # mutate contract, and the one way an agent makes a node type: requesting
-    # it checks every template the draft adds (justification, label, grounded
-    # code), runs the isolated build service (validate → resolve → compile →
-    # preview → package, all staged and content-addressed) and mints the
-    # reviewed package-draft proposal; Apply promotes the exact reviewed
-    # artifact digest through the promotion coordinator, never a silent install.
+    # dev/89, consumers: the Node Builder (its package-writing mode's drafts),
+    # the Researcher and the Dataflow Builder (the drafts they ask for). The
+    # ONE package-authoring mutate contract, and the one way an agent makes a
+    # node type: requesting it checks every template the draft adds
+    # (justification, label, grounded code), runs the isolated build service
+    # (validate → resolve → compile → preview → package, all staged and
+    # content-addressed) and mints the reviewed package-draft proposal; Apply
+    # promotes the exact reviewed artifact digest through the promotion
+    # coordinator, never a silent install.
     "package.draft.apply": ToolContract(
         id="package.draft.apply",
         contract_version="1",

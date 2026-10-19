@@ -57,6 +57,9 @@
     },
     {
       "id": "examples.read"
+    },
+    {
+      "id": "package.draft.apply"
     }
   ],
   "runtime": {
