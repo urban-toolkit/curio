@@ -671,8 +671,9 @@ class TestDatasetFinderComposite:
         }
         by_kind = {t.kind: t for t in m.compatible_targets}
         assert set(by_kind) == {"node", "canvas"}
-        # The docs/06 Data-Load gate: requires rides the node target only.
-        assert by_kind["node"].requires == ["data-loading"]
+        # The docs/06 Data-Load gate: requires rides the node target only, and
+        # names the template flag a node that loads a dataset declares.
+        assert by_kind["node"].requires == ["loadsDataset"]
         assert by_kind["canvas"].requires == []
         assert [t.id for t in m.tools] == [
             "catalog.search",

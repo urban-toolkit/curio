@@ -28,6 +28,7 @@ const listingOf = (overrides: Record<string, unknown> = {}) => ({
   agents: [
     { id: "agent.researcher", name: "Researcher", category: "node", choice: null, answers: answering("Work", "gpt-4o-mini") },
     { id: "agent.dataflow-builder", name: "Dataflow Builder", category: "dataflow", choice: null,
+      capabilities: ["dataflow.orchestrate"], solveRuns: ["Node Builder", "Dataset Finder"],
       answers: answering("Work", "gpt-4o-mini") },
     { id: "agent.node-builder", name: "Node Builder", category: "node", choice: LOCAL.id,
       answers: answering("Local", "llama3", "assigned") },
@@ -154,6 +155,22 @@ describe("Agent configuration", () => {
     const section = await models();
     expect(section.getByText(/Its Solve also runs Node Builder and Dataset Finder/)).toBeInTheDocument();
     expect(section.getByText(/on its choice, else on its caller's/)).toBeInTheDocument();
+  });
+
+  it("says what Solve runs for any agent that declares dataflow.orchestrate, by the names it gets", async () => {
+    mockListing = listingOf({
+      agents: [
+        { id: "agent.my-orchestrator", name: "My Orchestrator", category: "canvas", choice: null,
+          capabilities: ["dataflow.orchestrate"], solveRuns: ["My Builder", "My Finder"],
+          answers: answering("Work", "gpt-4o-mini") },
+        { id: "agent.my-builder", name: "My Builder", category: "node", choice: null,
+          capabilities: ["node.build", "node.content.generate"], answers: answering("Work", "gpt-4o-mini") },
+      ],
+    });
+    render(<Panel />);
+    const section = await models();
+    expect(section.getByText(/Its Solve also runs My Builder and My Finder/)).toBeInTheDocument();
+    expect(section.getAllByText(/Its Solve also runs/)).toHaveLength(1);
   });
 
   it("shows why an agent has nothing to run on", async () => {

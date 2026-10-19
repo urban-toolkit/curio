@@ -36,21 +36,27 @@ CANDIDATES = json.dumps({"datasetCandidates": {"lanes": {
 
 
 class _Harness:
-    """A project with an applied plan whose loader has NO grounded source."""
+    """A project with an applied plan whose loader has NO grounded source.
+
+    ``parent`` is the agent that plans and solves, the Dataflow Builder unless
+    a test names another; ``prepare`` runs on the new project before it is
+    installed."""
 
     def __init__(self, client, user, token, monkeypatch, *, goal=None,
-                 discover_replies=None, dl_replies=None):
+                 discover_replies=None, dl_replies=None, parent=DFB, prepare=None):
         self.client, self.user, self.token = client, user, token
         self.ukey = _user_dir_key(user)
         routes_proposals.TestNodeCreate()._write_builtin_package(self.ukey, templates=TEMPLATES)
         body = {"name": "p", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
                 "outputs": []}
         self.pid = client.post("/api/projects", json=body, headers=_auth(token)).get_json()["id"]
-        client.post(f"/api/agents/projects/{self.pid}/install", json={"coord": DFB},
+        if prepare is not None:
+            prepare(self)
+        client.post(f"/api/agents/projects/{self.pid}/install", json={"coord": parent},
                     headers=_auth(token))
         self.att = client.post(
             f"/api/agents/projects/{self.pid}/attachments",
-            json={"coord": DFB, "target": {"kind": "canvas"}}, headers=_auth(token),
+            json={"coord": parent, "target": {"kind": "canvas"}}, headers=_auth(token),
         ).get_json()["attachmentId"]
         self.discover_calls: list = []
         self.dl_calls: list = []
