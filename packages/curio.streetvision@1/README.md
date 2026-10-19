@@ -7,3 +7,5 @@ Fetcher requires backend Street View routes. Opaque image-proxy links expire aft
 Panorama retains the latest pending request without a key. It issues a lookup when configured, rejects stale responses, and confirms only actual camera events. Manual coordinates require View location. Navigation does not request a new editing tile. Open camera tile explicitly adopts an already loaded camera context. Fixtures cover these contracts; fixture success does not establish live provider access.
 
 This focused package contains Fetcher and Panorama only. No model inference nodes or training support are included.
+
+Open [review follow-ups](../../docs/sidewalk/phase1-review-followups.md) include server-enforced Fetcher limits, bounds validation/authentication and provider failures currently reported as successful empty results. These remain unfixed in this draft and are distinct from Panorama camera-confirmation safeguards.

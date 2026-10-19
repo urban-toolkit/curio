@@ -1,6 +1,6 @@
 # Phase 1 PR verification — October 19, 2026
 
-These are fresh checks of `codex/sidewalk-inspection-pr` against Curio main **6a4721c0afb0f6bca23c9c1ff55ad851eab86341 (0.16.452)**, with the renamed package and final portable examples. They supersede earlier prototype counts for this draft. No new live-provider requests were made.
+These are recorded checks of implementation commit **34cb5532e2e7573743cb081893f371e61b1b6325**, now on `feat/sidewalk-inspection`, against Curio main **6a4721c0afb0f6bca23c9c1ff55ad851eab86341 (0.16.452)**, with the renamed package and portable examples. They supersede earlier prototype counts for this draft. No new live-provider requests were made. The subsequent branch/documentation follow-up did not rerun these builds or suites and does not establish integration with newer main.
 
 ## Automated checks
 
@@ -62,3 +62,7 @@ No full repository Jest/pytest, CI container suite, pixel baseline suite, real G
 The saved Before `{}` versus visible grammar discrepancy remains a **separate unverified persistence concern**. Serializer fixtures characterize a diverged `code/defaultCode` pair, but do not reproduce its browser trigger. The export documents which visible grammar was used, without changing the running installation. A successful first save of this isolated copy is not proof of reopen reliability.
 
 Dependencies, lockfiles, Autark libraries and the Curio Autark adapter remain equal to the base. Required shared follow-ups belong to their [documented owning repositories](../../packages/curio.sidewalk-stewards@1/IMPLEMENTATION.md#known-compatibility-failures-and-ownership). No training support or complete Stewards parity is claimed.
+
+## Submission follow-up checks
+
+The branch was renamed to `feat/sidewalk-inspection` locally and on the fork, preserving implementation commit `34cb5532e`. Tracking points to the corresponding fork branch. This follow-up adds only [review notes](phase1-review-followups.md), documentation links/clarifications and the two affected integrity entries. Runtime sources, bundles, manifests, examples' JSON/assets and tests remain byte-for-byte equal to that implementation commit. Local documentation links, diff whitespace, file scope and both complete integrity maps were checked. No build, full test suite, newer-main integration or additional browser/provider verification was repeated for these branch/documentation changes.

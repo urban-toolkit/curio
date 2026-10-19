@@ -80,6 +80,8 @@ For a saved Trill JSON, make a copy and replace the package lock entry with `cur
 
 ## Known compatibility failures and ownership
 
+Additional open [submission review follow-ups](../../docs/sidewalk/phase1-review-followups.md) cover Fetcher server limits/bounds/authentication, provider failures misreported as empty success, the missing reproducible first-tile activation procedure, and integration verification against newer main. They are recorded for later work; no fixes or additional compatibility claims are included in this follow-up.
+
 1. **Confirmed: automatic map → editor activation fails for keyed and positional upstream events.** The package requires prototype `selectionOrigin` and explicit active index. Upstream emits the post-toggle selection set. Different actual hits produce the same event; repeated hit versus miss can both emit `[]`. The two acceptance gates deliberately remain failing. No candidate-order, timing or set-difference heuristic is used.
 2. **urban-toolkit/autark (`autk-map`) prerequisite:** add explicit hit/miss information alongside the existing selection set. The hit is already known internally; tests demonstrate its loss. A request-time sequence/generation needs verification before claiming stale native-pick ordering protection.
 3. **urban-toolkit/curio adapter prerequisite:** preserve origin from its distinct map/plot listeners and translate the explicit native hit through its existing row/key machinery without changing selection sets. Coordinate active editing tile separately from PCP candidates and camera position. Prototype adapter code is excluded.
