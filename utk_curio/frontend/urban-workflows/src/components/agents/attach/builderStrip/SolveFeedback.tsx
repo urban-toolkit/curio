@@ -16,7 +16,9 @@ export const SolveFeedback: React.FC<{
   remedies: AgentRemedy[];
   selectionRemedies: Array<[string, AgentRemedy]>;
   onOpenChat?: (attachmentId: string) => void;
-}> = ({ reasons, notices, remedies, selectionRemedies, onOpenChat }) => {
+  /** The name of the agent an attachment of this dataflow binds, from the live list. */
+  agentNameOf?: (attachmentId: string) => string | null;
+}> = ({ reasons, notices, remedies, selectionRemedies, onOpenChat, agentNameOf }) => {
   const hostedGuest = useHostedGuest();
   return (
     <>
@@ -48,6 +50,7 @@ export const SolveFeedback: React.FC<{
               key={r.attachmentId}
               remedy={r}
               onOpenChat={onOpenChat}
+              agentName={r.attachmentId ? agentNameOf?.(r.attachmentId) ?? null : null}
               // One awaiting node needs no disambiguation; several do.
               nodeLabel={selectionRemedies.length > 1 ? nodeId.slice(0, 8) : undefined}
             />

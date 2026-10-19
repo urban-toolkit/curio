@@ -76,6 +76,9 @@ STRUCTURED_CAPABILITIES = frozenset({
 SOLVE_CAPABILITIES = ("node.content.generate", "dataset.discover")
 #: What an agent that plans a dataflow and runs Solve over its plan declares.
 ORCHESTRATE_CAPABILITY = "dataflow.orchestrate"
+#: What an agent that builds nodes on the canvas declares. An agent that does
+#: not hands a source to build a node from to the one its delegatesTo names.
+NODE_BUILD_CAPABILITY = "node.build"
 # Tool ids share the capability grammar (mirrors manifest.CAPABILITY_ID_RE —
 # duplicated here so the content contract stays import-light).
 _TOOL_ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+$")

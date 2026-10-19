@@ -16,12 +16,22 @@ from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.repositories import project_agents
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
+from utk_curio.backend.app.agents.application import delegation as agents_delegation
 from utk_curio.backend.app.agents.application import lifecycle as agents_lifecycle
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
 from utk_curio.backend.app.agents.application.solve import session as agents_session
 from utk_curio.backend.app.agents.application.turns import prompts as agents_prompts
+from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.projects import storage as projects_storage
+
+
+def _node_build_delegate(user_key: str, m) -> str | None:
+    """The name of the agent *m* hands ``node.build`` to, as its manifest names
+    it, or None when *m* builds nodes itself or hands that to no visible agent."""
+    if m is None or content.NODE_BUILD_CAPABILITY in m.capability_ids:
+        return None
+    return agents_delegation.delegate_name(user_key, m, content.NODE_BUILD_CAPABILITY)
 
 
 def _attachment_card(spec: dict, record: dict, user_key: str) -> dict:
@@ -45,6 +55,9 @@ def _attachment_card(spec: dict, record: dict, user_key: str) -> dict:
         # What the agent declares: the chat offers each of its features to any
         # agent that declares the capability behind it.
         "capabilities": list(m.capability_ids) if m else [],
+        # The agent it hands a node to build to, by name: the candidates
+        # card's hand-off names it.
+        "nodeBuildDelegate": _node_build_delegate(user_key, m),
         "hooks": [t.kind for t in m.compatible_targets] if m else [],
         # The manifest's declared inputs (dev/38) — drives the client-side
         # grounded-context composer (memo dev/44).

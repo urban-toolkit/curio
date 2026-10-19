@@ -21,8 +21,8 @@ import {
 } from "./builderStrip/builderStripDerived";
 
 /**
- * The dev/52 DR-5 phase-aware builder strip — rendered only for Dataflow
- * Builder attachments, inside the existing chat drawer (no new surface).
+ * The dev/52 DR-5 phase-aware builder strip, rendered only for an agent that
+ * declares dataflow.orchestrate, inside the existing chat drawer (no new surface).
  * Everything derives from the server-owned `builderSession` (DR-2): phase
  * chips, per-node solve progress, Solve/Retry, and Run workflow via the
  * existing `playAllNodes`. Disabled states explain themselves; templates
@@ -41,9 +41,12 @@ export const AgentBuilderStrip: React.FC<{
    * dev/126: a `dataset-selection` remedy is rendered per NODE instead (each
    * one opens a different chat). */
   solveRemedies?: Record<string, AgentRemedy>;
-  /** dev/126: open a node's Dataset Finder chat (the awaiting-selection
-   * remedy's action). Omitted → the reason line stands alone. */
+  /** dev/126: open the chat of a node's agent that finds its datasets (the
+   * awaiting-selection remedy's action). Omitted → the reason line stands alone. */
   onOpenChat?: (attachmentId: string) => void;
+  /** The name of the agent an attachment of this dataflow binds, from the
+   * live list: the buttons and pills for a node awaiting a source name it. */
+  agentNameOf?: (attachmentId: string) => string | null;
   /** dev/131: what the running session is blocked on, per node — the live
    * `solve_pass`/`solve_waiting` summary. A node whose `kind` is
    * "dataset-selection" is waiting for the USER. */
@@ -86,6 +89,7 @@ export const AgentBuilderStrip: React.FC<{
   solveErrors,
   solveRemedies,
   onOpenChat,
+  agentNameOf,
   solveWaiting,
   solveEndedBy,
   solvePass,
@@ -278,6 +282,7 @@ export const AgentBuilderStrip: React.FC<{
           solveRunning={solveRunning}
           nodeSolving={nodeSolving}
           onSolveNode={onSolveNode ? (nodeId) => void solveOne(nodeId) : undefined}
+          agentNameOf={agentNameOf}
         />
       ) : null}
       {solveRunning && (solvePass ?? 0) > 0 ? (
@@ -296,6 +301,7 @@ export const AgentBuilderStrip: React.FC<{
         remedies={remediesByHost(solveRemedies)}
         selectionRemedies={selectionRemediesOf(solveRemedies)}
         onOpenChat={onOpenChat}
+        agentNameOf={agentNameOf}
       />
       {installReview && (onApplyProposal || onDismissProposal) ? (
         <MissingSpecialistReview

@@ -199,6 +199,20 @@ def visible_capability_entries(user_key: str, parent: AgentManifest) -> list[tup
     return entries
 
 
+def delegate_name(user_key: str, parent: AgentManifest, capability: str) -> str | None:
+    """The name of the visible agent *parent*'s ``delegatesTo`` hands
+    *capability* to, the first in its preference order, or None: the entry
+    :func:`visible_capability_entries` gives that capability, reading only the
+    delegates that may take it."""
+    for agent_id in parent.delegates_to:
+        if not parent.delegates(agent_id, capability):
+            continue
+        _, m = (None, parent) if agent_id == parent.agent_id else find_visible(user_key, agent_id)
+        if m is not None and capability in m.capability_ids:
+            return m.name
+    return None
+
+
 def _frame_inputs(parent_coord: str, capability: str, inputs: dict) -> str:
     """The parent-supplied inputs as ONE bounded untrusted context message
     (the dev/44 framing pattern — data, never instructions)."""

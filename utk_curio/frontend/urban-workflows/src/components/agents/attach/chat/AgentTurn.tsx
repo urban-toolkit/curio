@@ -35,6 +35,8 @@ export interface AgentTurnActions {
   onInternalLink?: (to: string) => void;
   onOpenAgentChat?: (attachmentId: string) => void;
   delegateExists?: (attachmentId: string) => boolean;
+  /** The name of the agent another attachment binds, from the live list. */
+  agentNameOf?: (attachmentId: string) => string | null;
   onRecordDatasetSelection?: (picks: AgentDatasetPick[]) => Promise<AgentDatasetSelection>;
   onImportDataset?: (
     file: File,
@@ -98,6 +100,9 @@ export const AgentTurn: React.FC<{
                 // runtime minted these from a dataset.discover delegation, so
                 // the confirmation asks it to build.
                 variant={declaresCapability(attachment, NODE_BUILD_CAPABILITY) ? "builder" : "finder"}
+                // Any other agent hands a source to the agent it hands nodes
+                // to build to, named as that agent's manifest names it.
+                handoffName={attachment.nodeBuildDelegate}
                 // dev/126: an agent that records selections, attached to a
                 // NODE, records the confirmed source for it, which the node's
                 // next Solve reads.
@@ -118,6 +123,7 @@ export const AgentTurn: React.FC<{
                 part={part}
                 tintClassName={tint}
                 onOpenChat={actions.onOpenAgentChat}
+                agentName={part.attachmentId ? actions.agentNameOf?.(part.attachmentId) ?? null : null}
               />
             ))}
           {(t.content ?? [])
