@@ -107,17 +107,35 @@ type ZoomStore = {
 
 type NodeDimensionUpdate = Parameters<ReactFlowState["updateNodeDimensions"]>[0][number];
 
+/** The part of React Flow's store that sets the viewport: d3's zoom. */
+type ViewportStore = { getState: () => Pick<ReactFlowState, "d3Zoom" | "d3Selection"> };
+
 /**
- * `fitViewWithMenuOffset` without a duration, set at once: the fit the e2e
- * helpers ask for through `window.__curio_fitViewWithMenuOffset`. Returns the
- * viewport the canvas then shows, which is the current one when none of the
- * nodes is on the canvas, or null while one of them has no size to fit.
+ * Set the canvas to *viewport* at once, through d3's zoom, as React Flow's own
+ * `fitView` does without a duration. Returns false, setting nothing, while
+ * React Flow's zoom is not up yet.
  *
  * React Flow 11's `setViewport` moves through a d3 transition even with no
  * duration, and a transition only advances on an animation frame, so the view
- * would change a frame or two later; a browser on a loaded GPU runner can go
- * tens of seconds without one. React Flow's own `fitView` sets a fit without a
- * duration through d3's zoom at once, and this does the same.
+ * would change a frame or two later; a browser on a loaded runner can go
+ * seconds without one. Set at once, the view also stops every move still
+ * waiting for its frame on the canvas (d3 interrupts the pane's transitions),
+ * so none of them lands over it later.
+ */
+export function setViewportNow(store: ViewportStore, viewport: Viewport): boolean {
+    const { d3Zoom, d3Selection } = store.getState();
+    if (!d3Zoom || !d3Selection) return false;
+    d3Zoom.transform(d3Selection, zoomIdentity.translate(viewport.x, viewport.y).scale(viewport.zoom));
+    return true;
+}
+
+/**
+ * `fitViewWithMenuOffset` without a duration, set at once (`setViewportNow`):
+ * the fit the e2e helpers ask for through `window.__curio_fitViewWithMenuOffset`.
+ * Returns the viewport the canvas then shows, which is the current one when
+ * none of the nodes is on the canvas, or null while one of them has no size to
+ * fit. A browser on a loaded GPU runner can go tens of seconds without an
+ * animation frame, which React Flow's `setViewport` would wait for.
  *
  * A node React Flow has not measured yet is measured here, from its element
  * (`measureNodesNow`), for the same reason.
@@ -132,10 +150,7 @@ export function fitViewWithMenuOffsetNow(
     if (plan === "no nodes") return rf.getViewport();
     if (plan === "unmeasured") return null;
     if (plan === "no pane") return rf.fitView({ ...options, duration: 0 }) ? rf.getViewport() : null;
-    const { d3Zoom, d3Selection } = store.getState();
-    if (!d3Zoom || !d3Selection) return null;
-    d3Zoom.transform(d3Selection, zoomIdentity.translate(plan.x, plan.y).scale(plan.zoom));
-    return plan;
+    return setViewportNow(store, plan) ? plan : null;
 }
 
 /** The nodes a fit frames: those its options name, or every node. */

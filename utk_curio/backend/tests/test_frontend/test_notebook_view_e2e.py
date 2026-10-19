@@ -28,8 +28,16 @@ What each test pins:
   presses remove the connection and the node, and the two connect again;
 * the notebook view adds no node: a drop on its page adds nothing and
   Duplicate selection is off, while the canvas's rail adds one;
-* back on the canvas every node is where it was and the size it was, a save
-  writes the canvas layout, and a reload keeps the view the address names;
+* back on the canvas every node is where it was and the size it was, the
+  canvas shows the view it was left at, a save writes the canvas layout, a
+  reload keeps the view the address names, and a fit in the notebook view
+  leaves the page at the origin;
+* back on the canvas while the page draws no animation frame, the canvas
+  shows the view it was left at, not the notebook view's origin, and a
+  put-back of the origin still waiting for a frame does not undo it once
+  frames come (#996);
+* in the notebook view while the page draws no animation frame, a fit is put
+  back to the origin before the canvas is read (#996);
 * the first save of a new dataflow, which moves the page to the dataflow's
   own address, keeps the view in it, so a reload opens the notebook view;
 * a node whose package is not installed is a cell like the others: as wide,
@@ -259,7 +267,8 @@ def _settled_boxes(page, *, timeout_ms: int = 15000) -> dict:
 
 def _show(page, view: str, *, count: int = len(CANVAS)) -> None:
     """Pick a view on the bar's switch and wait until the *count* nodes are laid
-    out for it."""
+    out for it. The waits read every 100 ms, not once a frame, so they also
+    work while the page draws no animation frame."""
     radio = page.locator(BAR).get_by_role("radio", name=f"{view.capitalize()} view", exact=True)
     radio.click()
     expect(radio).to_have_attribute("aria-checked", "true")
@@ -271,11 +280,13 @@ def _show(page, view: str, *, count: int = len(CANVAS)) -> None:
                     && new Set(nodes.map((n) => n.position.x)).size === 1;
             }""",
             arg=count,
+            polling=100,
             timeout=20000,
         )
     else:
         page.wait_for_function(
             "() => window.__curio_reactFlow.getNodes().every((n) => !n.data || !n.data.workflowPosition)",
+            polling=100,
             timeout=20000,
         )
 
@@ -485,6 +496,105 @@ def _settled_viewport(page, *, timeout_ms: int = 15000) -> dict:
             return now
         last = now
     raise AssertionError(f"the canvas viewport kept moving: last read {last}")
+
+
+#: The view the notebook view holds React Flow at (MainCanvas).
+ORIGIN = {"x": 0, "y": 0, "zoom": 1}
+
+# Before the app's own scripts, so what takes requestAnimationFrame when the
+# app loads (d3's timers, which move React Flow's viewport) goes through it.
+# Switched on, it keeps every callback until it is switched off, as a page that
+# draws no frame does; switched off, it hands them to the next frame. The same
+# script as in test_frame_nodes_e2e.py and test_set_canvas_zoom_e2e.py.
+_HOLD_FRAMES_JS = """(() => {
+    const request = window.requestAnimationFrame.bind(window);
+    const cancel = window.cancelAnimationFrame.bind(window);
+    let held = null;
+    let nextId = -1;
+    window.requestAnimationFrame = (callback) => {
+        if (!held) return request(callback);
+        const id = nextId--;
+        held.set(id, callback);
+        return id;
+    };
+    window.cancelAnimationFrame = (id) => {
+        if (held && held.delete(id)) return;
+        cancel(id);
+    };
+    window.__curioTestHoldFrames = (on) => {
+        if (on) {
+            held = held || new Map();
+            return;
+        }
+        const deferred = held ? [...held.values()] : [];
+        held = null;
+        deferred.forEach((callback) => request(callback));
+    };
+})();"""
+
+# A frame asked for now: whether it ran tells whether frames are held.
+_ASK_FOR_A_FRAME_JS = """() => {
+    window.__curioTestFrameRan = false;
+    window.requestAnimationFrame(() => { window.__curioTestFrameRan = true; });
+}"""
+
+# What the canvas shows: React Flow's viewport, and the transform the page
+# draws for it.
+_VIEW_JS = """() => {
+    const flow = window.__curio_reactFlow;
+    const viewport = document.querySelector(".curio-canvas-drop-target .react-flow__viewport");
+    const drawn = viewport && new DOMMatrixReadOnly(getComputedStyle(viewport).transform);
+    return {
+        viewport: flow ? flow.getViewport() : null,
+        drawn: drawn ? { x: drawn.e, y: drawn.f, zoom: drawn.a } : null,
+    };
+}"""
+
+
+def _shows(read: dict, view: dict) -> bool:
+    """Whether React Flow's viewport and the transform the page draws, in a
+    ``_VIEW_JS`` *read*, are both *view*: within half a pixel and a thousandth
+    of zoom."""
+    return all(
+        shown is not None
+        and abs(shown["x"] - view["x"]) < 0.5
+        and abs(shown["y"] - view["y"]) < 0.5
+        and abs(shown["zoom"] - view["zoom"]) < 0.001
+        for shown in (read["viewport"], read["drawn"])
+    )
+
+
+def _wait_for_view(page, view: dict, *, reads: int = 4, timeout_ms: int = 15000) -> dict:
+    """Wait until the canvas shows *view* (``_shows``) for *reads* reads in a
+    row, read every 100 ms, not once a frame, and return the last read.
+
+    It waits for that view itself, not for any view that holds still: back
+    from the notebook view on two busy runners, the notebook view's origin held
+    still for the 300 ms such a wait allowed, the view the canvas was left at
+    landing only on a later animation frame (#996)."""
+    held = 0
+    waited = 0
+    while True:
+        last = page.evaluate(_VIEW_JS)
+        held = held + 1 if _shows(last, view) else 0
+        if held >= reads:
+            return last
+        if waited >= timeout_ms:
+            raise AssertionError(
+                f"the canvas did not show {view} for {reads} reads in a row within {timeout_ms} ms: "
+                f"last read {last}"
+            )
+        page.wait_for_timeout(100)
+        waited += 100
+
+
+def _assert_view_holds(page, view: dict, *, reads: int = 10, what: str = "the canvas moved") -> None:
+    """Read the canvas *reads* times, 100 ms apart, from now on: every read,
+    the first one too, shows *view*. Fails with *what*."""
+    for read in range(1, reads + 1):
+        now = page.evaluate(_VIEW_JS)
+        assert _shows(now, view), f"{what}: read {read} of {reads} showed {now}, not {view}"
+        page.wait_for_timeout(100)
 
 
 def _save(page) -> None:
@@ -896,7 +1006,8 @@ def test_back_on_the_canvas_every_node_is_where_it_was(
             f"{node_id} moved on the canvas: {before[node_id]} -> {after[node_id]}"
         )
         assert after[node_id]["canvas"] is None, f"{node_id} kept a notebook stamp"
-    restored = _settled_viewport(page)
+    # The view it was left at, in React Flow and as the page draws it.
+    restored = _wait_for_view(page, viewport)["viewport"]
     for key in ("x", "y", "zoom"):
         assert abs(restored[key] - viewport[key]) < 0.5, f"the canvas viewport moved: {viewport} -> {restored}"
 
@@ -938,10 +1049,111 @@ def test_back_on_the_canvas_every_node_is_where_it_was(
     )
 
     # A call that frames the canvas while the notebook view is on, like the
-    # load's own fit, leaves the page where it is.
+    # load's own fit, leaves the page where it is: from the first read on, in
+    # React Flow and as the page draws it, with no frame needed (#996).
     page.evaluate("() => window.__curio_fitViewWithMenuOffset({ padding: 0.2 })")
-    held = _settled_viewport(page)
+    _assert_view_holds(page, ORIGIN, reads=4, what="a fit moved the notebook view")
+    held = page.evaluate("() => window.__curio_reactFlow.getViewport()")
     assert (held["x"], held["y"], held["zoom"]) == (0, 0, 1), f"a fit moved the notebook view: {held}"
+
+
+def test_back_on_the_canvas_the_view_comes_back_while_the_page_draws_no_frame(
+    app_frontend: "FrontendPage", current_server, page,
+):
+    """#996: back from the notebook view, two busy CI runners read the canvas
+    at zoom 1 at the origin, the notebook view's own view, instead of the view
+    it was left at. React Flow 11's ``setViewport`` moves the view through a d3
+    transition, which lands only on a later animation frame, and the canvas
+    view came back that way. Here the page draws no animation frame from just
+    before the switch back until the canvas has been read."""
+    require_project_page()
+    require_user_auth()
+    page.context.add_init_script(_HOLD_FRAMES_JS)
+    _enter(page, app_frontend, current_server, prefix="nbv_no_frame")
+    assert page.evaluate("() => typeof window.__curioTestHoldFrames === 'function'"), (
+        "the init script that holds animation frames back is not in the page"
+    )
+    page.wait_for_function("() => window.__curio_reactFlow.getViewport().zoom < 1", timeout=20000)
+    left_at = _settled_viewport(page)
+
+    _show(page, "notebook")
+    # MainCanvas holds React Flow at the origin in the notebook view: the view
+    # the runners read. Frames still come here.
+    _wait_for_view(page, ORIGIN)
+
+    page.evaluate("() => window.__curioTestHoldFrames(true)")
+    try:
+        page.evaluate(_ASK_FOR_A_FRAME_JS)
+        page.wait_for_timeout(500)
+        assert not page.evaluate("() => window.__curioTestFrameRan"), (
+            "an animation frame ran while frames were held back, so this test proves nothing"
+        )
+        # A move still waiting for its frame: a put-back of the origin through
+        # React Flow's setViewport, as the hold made them before #996. Any
+        # move asked that way waits for a frame.
+        page.evaluate("(view) => { window.__curio_reactFlow.setViewport(view); }", ORIGIN)
+        _show(page, "canvas")
+        try:
+            _wait_for_view(page, left_at)
+        except AssertionError as error:
+            raise AssertionError(
+                f"back on the canvas while the page drew no animation frame, the canvas did not "
+                f"show the view it was left at: {error}"
+            ) from None
+        frame_ran = page.evaluate("() => window.__curioTestFrameRan")
+    finally:
+        page.evaluate("() => window.__curioTestHoldFrames(false)")
+    assert not frame_ran, "an animation frame ran before the canvas was read, so this test proves nothing"
+    # Frames come again once released: the hold was real.
+    page.wait_for_function("() => window.__curioTestFrameRan === true", polling=100, timeout=10000)
+    # And the put-back that was waiting for a frame does not undo the view.
+    _assert_view_holds(page, left_at, what="the view brought back moved once frames came")
+
+
+def test_a_fit_in_the_notebook_view_is_put_back_while_the_page_draws_no_frame(
+    app_frontend: "FrontendPage", current_server, page,
+):
+    """#996, the end of the test above: a fit while the notebook view is on,
+    like the load's own, moves React Flow's view, and MainCanvas puts the
+    origin back. The put-back went through React Flow's ``setViewport``, which
+    lands only on a later animation frame, so a read on a page that drew no
+    frame for a while found the fit's view. Here the page draws no animation
+    frame from just before the fit until the canvas has been read."""
+    require_project_page()
+    require_user_auth()
+    page.context.add_init_script(_HOLD_FRAMES_JS)
+    _enter(page, app_frontend, current_server, prefix="nbv_fit_no_frame")
+    assert page.evaluate("() => typeof window.__curioTestHoldFrames === 'function'"), (
+        "the init script that holds animation frames back is not in the page"
+    )
+    # The load's own fit lands first, so it moves nothing in the notebook view.
+    page.wait_for_function("() => window.__curio_reactFlow.getViewport().zoom < 1", timeout=20000)
+    _settled_viewport(page)
+    _show(page, "notebook")
+    _wait_for_view(page, ORIGIN)
+
+    page.evaluate("() => window.__curioTestHoldFrames(true)")
+    try:
+        page.evaluate(_ASK_FOR_A_FRAME_JS)
+        page.wait_for_timeout(500)
+        assert not page.evaluate("() => window.__curioTestFrameRan"), (
+            "an animation frame ran while frames were held back, so this test proves nothing"
+        )
+        # The fit hook sets its view at once (#1013) and returns it.
+        fit = page.evaluate("() => window.__curio_fitViewWithMenuOffset({ padding: 0.2 })")
+        assert fit is not None and (fit["x"], fit["y"], fit["zoom"]) != (0, 0, 1), (
+            f"the fit set {fit}, no view off the origin, so this test proves nothing"
+        )
+        _assert_view_holds(
+            page, ORIGIN, reads=4, what=f"a fit to {fit} moved the notebook view while the page drew no frame",
+        )
+        frame_ran = page.evaluate("() => window.__curioTestFrameRan")
+    finally:
+        page.evaluate("() => window.__curioTestHoldFrames(false)")
+    assert not frame_ran, "an animation frame ran before the canvas was read, so this test proves nothing"
+    # Frames come again once released: the hold was real.
+    page.wait_for_function("() => window.__curioTestFrameRan === true", polling=100, timeout=10000)
+    _assert_view_holds(page, ORIGIN, what="the notebook view moved once frames came")
 
 
 #: Whether the address names the notebook view.
