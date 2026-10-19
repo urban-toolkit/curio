@@ -26,6 +26,17 @@ the page busy for 11 s in the fit's first call and checks that ``frame_nodes``
 still frames the node; a guard moves the viewport every 50 ms and checks that
 the wait still fails, in well under a minute.
 
+A page can also open with no frame at all. CI's Chrome draws its first frame
+only once its GPU process is up, and a freshly launched one on a GPU that four
+test jobs shared took more than 10 s (#1012: main run 39272081028 and run
+39035184553). React Flow measures a node it has just drawn only in its
+ResizeObserver's callback, which the browser runs only when it draws a frame,
+so until then no node is measured and no fit can be set: the wait gave up with
+no fit set after 99 re-fits. The test above holds frames back only once the
+nodes are measured. One test holds animation frames and ResizeObserver
+callbacks back from the page's first script, and checks that the viewport wait
+frames every node before the first frame.
+
 Run::
 
     CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/test_frame_nodes_e2e.py -v
@@ -40,6 +51,7 @@ import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from .utils import (
+    _wait_for_reactflow_ready,
     frame_nodes,
     node_locator,
     require_owner_view,
@@ -98,6 +110,61 @@ _ASK_FOR_A_FRAME_JS = """() => {
     window.__curioTestFrameRan = false;
     window.requestAnimationFrame(() => { window.__curioTestFrameRan = true; });
 }"""
+
+# Before the app's own scripts, and on from the page's first script until the
+# test lets frames come: keeps what the browser runs only when it draws a
+# frame, animation frame callbacks and ResizeObserver callbacks, as on a page
+# whose first frame has not come yet. React Flow measures a node it has just
+# drawn only in its ResizeObserver's callback, and shows it once measured.
+_NO_FRAME_YET_JS = """(() => {
+    const request = window.requestAnimationFrame.bind(window);
+    const cancel = window.cancelAnimationFrame.bind(window);
+    const Observer = window.ResizeObserver;
+    let held = new Map();
+    let nextId = -1;
+    window.requestAnimationFrame = (callback) => {
+        if (!held) return request(callback);
+        const id = nextId--;
+        held.set(id, () => request(callback));
+        return id;
+    };
+    window.cancelAnimationFrame = (id) => {
+        if (held && held.delete(id)) return;
+        cancel(id);
+    };
+    window.ResizeObserver = class extends Observer {
+        constructor(callback) {
+            super((entries, observer) => {
+                if (!held) {
+                    callback(entries, observer);
+                    return;
+                }
+                held.set(nextId--, () => callback(entries, observer));
+            });
+        }
+    };
+    window.__curioTestLetFramesCome = () => {
+        const deferred = held ? [...held.values()] : [];
+        held = null;
+        deferred.forEach((run) => run());
+    };
+})();"""
+
+# Every node on the canvas with its package's body, not the placeholder drawn
+# until the package's descriptor arrives (#683), whose size a fit would frame.
+_NODES_DRAWN_JS = """(count) => {
+    const nodes = [...document.querySelectorAll('.react-flow__node')];
+    return nodes.length === count && nodes.every((node) =>
+        node.querySelector('[data-curio-node-status]') !== null
+        && node.querySelector('[data-testid="unresolved-node"]') === null);
+}"""
+
+# The nodes React Flow has measured, or null before the canvas is up.
+_MEASURED_JS = """() => window.__curio_reactFlow
+    ? window.__curio_reactFlow.getNodes()
+        .filter((node) => node.width > 0 && node.height > 0)
+        .map((node) => node.id)
+    : null"""
 
 _NODE_BOX_JS = """(id) => {
     const r = document.querySelector(`.react-flow__node[data-id="${id}"]`).getBoundingClientRect();
@@ -244,6 +311,62 @@ def test_frame_nodes_brings_a_node_into_view_while_the_page_draws_no_frame(
     finally:
         page.evaluate("() => window.__curioTestHoldFrames(false)")
     # Frames come again once released: the hold was real.
+    page.wait_for_function("() => window.__curioTestFrameRan === true", polling=100, timeout=10000)
+
+
+def test_the_viewport_wait_frames_the_nodes_before_the_page_draws_its_first_frame(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    require_project_page()
+    require_user_auth()
+    page.context.add_init_script(_NO_FRAME_YET_JS)
+    spec = _spec()
+    stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Frame Nodes",
+        username="frame_nodes_first_frame_e2e",
+        project_name="Frame nodes",
+        project_spec=spec,
+    )
+    require_owner_view(page)
+    assert page.evaluate("() => typeof window.__curioTestLetFramesCome === 'function'"), (
+        "the init script that holds frames back is not in the page"
+    )
+    node_ids = [node["id"] for node in spec["dataflow"]["nodes"]]
+    try:
+        # React Flow keeps a node it has not measured hidden, so wait for the
+        # nodes in the page, not for them to be visible.
+        page.wait_for_function(_NODES_DRAWN_JS, arg=len(node_ids), polling=100, timeout=45000)
+        page.evaluate(_ASK_FOR_A_FRAME_JS)
+        page.wait_for_timeout(500)
+        assert not page.evaluate("() => window.__curioTestFrameRan"), (
+            "an animation frame ran before frames were let come, so this test proves nothing"
+        )
+        measured = page.evaluate(_MEASURED_JS)
+        assert measured == [], (
+            f"React Flow had measured {measured} although the page had drawn no frame, so this "
+            "test proves nothing"
+        )
+
+        started = time.monotonic()
+        try:
+            _wait_for_reactflow_ready(page)
+        except AssertionError as error:
+            raise AssertionError(
+                f"the viewport wait gave up after {time.monotonic() - started:.1f} s on a page that "
+                f"had drawn no frame yet, so React Flow had measured none of its nodes: {error}"
+            ) from None
+        boxes = {node_id: _box(page, node_id) for node_id in node_ids}
+        outside = {node_id: box for node_id, box in boxes.items() if not _in_window(box)}
+        assert not outside, f"the viewport wait returned with {outside} outside the window"
+        assert not page.evaluate("() => window.__curioTestFrameRan"), (
+            "an animation frame ran during the wait, so it did not frame the nodes without one"
+        )
+    finally:
+        page.evaluate("() => window.__curioTestLetFramesCome()")
+    # Frames come once let: the hold was real.
     page.wait_for_function("() => window.__curioTestFrameRan === true", polling=100, timeout=10000)
 
 
