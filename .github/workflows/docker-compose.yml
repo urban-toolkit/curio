@@ -242,10 +242,12 @@ jobs:
           sparse-checkout-cone-mode: false
 
       # The jobs that start at once, and ci-report, so that a run whose image
-      # fails to build still gets its report. CPU keys in critical-path order:
-      # the first ones get the hosted room. One key per job, matching each
-      # runs-on. preview-runner always runs hosted and starts at once, so its
-      # slot is held back.
+      # fails to build still gets its report. The jobs that wait on the image
+      # get theirs from build-image's last step. CPU keys in critical-path
+      # order: the first ones get the hosted room, and build-image comes first,
+      # since most jobs wait for it. One key per job, matching each runs-on
+      # (ciParts.test.ts checks both picks). preview-runner always runs hosted
+      # and starts at once, so its slot is held back.
       - name: 🎯 Pick a runner for each job that starts at once
         id: pick
         env:
@@ -256,11 +258,17 @@ jobs:
           python3 scripts/ci_pick_runners.py --hosted-reserved 1 --gpu test-gpu build-image jest ci-report
 
   # The image every CPU job below runs, built once per commit and pushed to
-  # GHCR under the commit's SHA. The layer cache lives in the Actions cache, so
+  # GHCR under the commit's SHA, unless a run already built the same tree (see
+  # the reuse step). The layer cache lives in the Actions cache, so
   # a commit that changes only source rebuilds only the layers after the source
-  # copy (see the Dockerfile's order). The GPU jobs keep building their own
-  # image from their runner's warm local cache, so the GPU path never waits on
-  # this one. Its last step picks the runners of the jobs that wait on it.
+  # copy (see the Dockerfile's order). Only builds on main write it. Every run
+  # reads main's, but a PR's or a branch's layers can be read only by that
+  # PR's or branch's later runs, which almost never used them. Writing them
+  # added about 20 s to each build that ran webpack, and they filled the
+  # repository's 10 GB of Actions cache, evicting main's layers. The GPU jobs
+  # keep building their own image from their runner's warm local cache, so the
+  # GPU path never waits on this one. Its last step, after a build or a reuse
+  # alike, picks the runners of the jobs that wait on it.
   build-image:
     needs: pick-runners
     if: ${{ needs.pick-runners.result == 'success' }}
@@ -302,12 +310,19 @@ jobs:
           echo "handing root-owned files back to the runner user"
           docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
 
+      # Two commits deep, so the reuse step can compare this commit with its
+      # first parent (main, on a PR's merge ref).
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
 
       - name: 🏷️ Name the image
         id: name
-        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}-ci:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}-ci:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          tree=$(git rev-parse 'HEAD^{tree}')
+          echo "tree=ghcr.io/${GITHUB_REPOSITORY,,}-ci:tree-${tree}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v4
 
@@ -317,24 +332,68 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # The build takes nothing from the commit but its tree, so each image is
+      # also tagged with its tree, and a commit whose tree a run already built
+      # gets that image under its own name instead of a build. Most often that
+      # is a merge to main with nothing landed in between: its tree is the
+      # merge ref the PR's last run built and tested (13 of the 21 main merges
+      # up to #985). Only main's builds write the layer cache, so a main commit
+      # that changes what the slow early layers are made of (the apt, npm and
+      # pip installs) is built all the same: otherwise main's cache would never
+      # get those layers, and every PR would build them again. If the
+      # comparison, the lookup or the tagging fails, the build runs.
+      - name: ♻️ Reuse the image of the same tree
+        id: reuse
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+          TREE: ${{ steps.name.outputs.tree }}
+          WRITES_CACHE: ${{ github.ref == 'refs/heads/main' }}
+        run: |
+          early_inputs="Dockerfile .dockerignore requirements.txt package.json package-lock.json
+            utk_curio/frontend/urban-workflows/package.json utk_curio/frontend/urban-workflows/package-lock.json
+            utk_curio/frontend/urban-workflows/vendor"
+          if git diff --quiet HEAD^1 HEAD -- $early_inputs; then
+            early_changed=false
+            echo "the early layers' inputs are those of the first parent"
+          else
+            early_changed=true
+            echo "the early layers' inputs changed since the first parent, or there is no parent to compare with"
+          fi
+          if [ "$WRITES_CACHE" = true ] && [ "$early_changed" = true ]; then
+            echo "built so that main's layer cache gets the new early layers"
+          elif docker buildx imagetools inspect "$TREE" > /dev/null 2>&1 \
+            && docker buildx imagetools create --tag "$IMAGE" "$TREE"; then
+            echo "reused=true" >> "$GITHUB_OUTPUT"
+            echo "reused $TREE as $IMAGE"
+          else
+            echo "no image of this tree to reuse, so it is built"
+          fi
+
       - name: 🔨 Build and push the image
+        if: steps.reuse.outputs.reused != 'true'
         uses: docker/build-push-action@v7
         with:
           context: .
           push: true
-          tags: ${{ steps.name.outputs.image }}
+          tags: |
+            ${{ steps.name.outputs.image }}
+            ${{ steps.name.outputs.tree }}
           cache-from: type=gha,scope=curio-image
-          cache-to: type=gha,scope=curio-image,mode=max
+          cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,scope=curio-image,mode=max' || '' }}
 
       # The runners of the jobs that wait on the image, picked as they are
-      # about to start: a pick made when the run started is minutes old by
-      # now, and the hosted room it counted may be gone. The same script and
-      # pools as pick-runners. It also counts this run's own jobs that are
-      # running (jest, preview-runner), except this one, which ends with this
-      # step. unit (sandbox) and test-desktop-stress always run hosted and do
-      # not exist yet, so their two slots are held back. CPU keys in
-      # critical-path order, one per job and per matrix entry, matching each
-      # runs-on. python3 comes with both kinds of runner this job runs on.
+      # about to start, whether the image was built or reused: a pick made
+      # when the run started is minutes old by now, and the hosted room it
+      # counted may be gone. The same script and pools as pick-runners. It
+      # also counts this run's own jobs that are running (jest, preview-runner),
+      # except this one, which ends with this step. unit (sandbox) and
+      # test-desktop-stress always run hosted and do not exist yet, so their
+      # two slots are held back. CPU keys in critical-path order: the longest
+      # first (test-isolated, about 9 minutes), then the e2e and unit parts
+      # (about 8 and 7), and the short job last. One key per job and per matrix
+      # entry, matching each runs-on; the part keys follow the counts in
+      # utk_curio/backend/tests/parts.py (ciParts.test.ts checks them).
+      # python3 comes with both kinds of runner this job runs on.
       - name: 🎯 Pick a runner for each job that waits on the image
         id: pick
         timeout-minutes: 5
@@ -343,10 +402,12 @@ jobs:
           CURIO_CI_POOL: ${{ (inputs.pool && inputs.pool != 'auto') && inputs.pool || vars.CURIO_CI_POOL || 'auto' }}
           CURIO_CI_GPU_POOL: ${{ (inputs.gpu_pool && inputs.gpu_pool != 'auto') && inputs.gpu_pool || vars.CURIO_CI_GPU_POOL || 'auto' }}
         run: |
-          python3 scripts/ci_pick_runners.py --this-run-except build-image --hosted-reserved 2 \
+          python3 scripts/ci_pick_runners.py --this-run-except build-image --hosted-reserved 2 test-isolated \
             e2e-desktop-1 e2e-desktop-2 e2e-desktop-3 e2e-desktop-4 e2e-desktop-5 \
             e2e-desktop-6 e2e-desktop-7 e2e-desktop-8 e2e-desktop-9 e2e-desktop-10 \
-            unit-backend-1 unit-backend-2 test-isolated test-exec-user
+            e2e-desktop-11 e2e-desktop-12 e2e-desktop-13 e2e-desktop-14 \
+            unit-backend-1 unit-backend-2 unit-backend-3 unit-backend-4 \
+            test-exec-user
 
   test-gpu:
     # Runs on a GPU runner: an arcade one while one is free, utk-gpu otherwise
@@ -427,9 +488,10 @@ jobs:
       # CURIO_E2E_SANDBOX_PORT below. Each worker is a Chromium + backend +
       # sandbox (~3 GiB) inside the one container, on a host that also runs
       # the prod stacks, and no N beats the longest group: groups are atomic
-      # under --dist loadgroup. Since the split this job holds about 18 minutes
-      # of test time whose longest group (example 09) is 4.4 minutes, so 6
-      # workers already reach that floor.
+      # under --dist loadgroup. This job holds about 42 minutes of test time
+      # (main's run 39185249274, 10-19), about 7 minutes a worker, and its
+      # longest group (test_shipped_scenario_drops_e2e) takes 5.8 minutes, so
+      # more workers would save a minute at most, at 3 GiB each.
       CURIO_E2E_PARALLEL: "6"
       CURIO_E2E_BACKEND_URL: "http://localhost:5022"
       # Host-side Playwright targets the remapped ports (e2e_existing_servers
@@ -809,8 +871,10 @@ jobs:
 
   # The Python unit suites need the image but neither a GPU nor a browser, so
   # they run here, beside test-gpu, instead of adding nine minutes to it. The
-  # backend suite, the longest of them, runs as two balanced parts
-  # (CURIO_UNIT_PART; tests/parts.py and unit_durations.json).
+  # backend suite, the longest of them, runs as four balanced parts
+  # (CURIO_UNIT_PART; tests/parts.py and unit_durations.json). The count is
+  # BACKEND_UNIT_PARTS in parts.py, and ciParts.test.ts holds the entries
+  # below, pick-runners' keys and ci-report's job list to it.
   unit:
     name: unit (${{ matrix.name }})
     needs: [pick-runners, build-image]
@@ -826,8 +890,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: backend-1, suite: backend, part: "1/2" }
-          - { name: backend-2, suite: backend, part: "2/2" }
+          - { name: backend-1, suite: backend, part: "1/4" }
+          - { name: backend-2, suite: backend, part: "2/4" }
+          - { name: backend-3, suite: backend, part: "3/4" }
+          - { name: backend-4, suite: backend, part: "4/4" }
           - { name: sandbox, suite: sandbox, part: "" }
     env:
       CURIO_CI_FRESH_STACK: curio-ci
@@ -855,8 +921,9 @@ jobs:
       # JUnit is written inside the container, onto the .curio bind mount: the
       # directory is the container's (root-owned), so the host cannot create it.
       - name: 🧪 Run the ${{ matrix.name }} unit tests
-        # About 5 minutes a part, a run. The limit is for a hang, so it fails
-        # here rather than holding the job until its own timeout.
+        # About 6 minutes a backend part, a run (each part holds about 6 of
+        # the suite's 24 minutes of test time). The limit is for a hang, so it
+        # fails here rather than holding the job until its own timeout.
         timeout-minutes: ${{ inputs.repeat > 1 && 340 || 25 }}
         run: |
           bash scripts/ci_repeat.sh docker compose -p curio-ci exec -T \
@@ -939,7 +1006,9 @@ jobs:
   # Every e2e test whose browser does not run WebGPU, spread over a matrix of
   # CPU runners, each with its own stack. Which tests those are is
   # decided from the tests themselves (runner_split.py): CURIO_E2E_RUNNER picks
-  # the non-WebGPU half and CURIO_E2E_PART one balanced slice of it. test-gpu
+  # the non-WebGPU half and CURIO_E2E_PART one balanced slice of it, priced
+  # test by test (e2e_durations.json). The matrix holds E2E_DESKTOP_PARTS
+  # parts (tests/parts.py; ciParts.test.ts checks the two agree). test-gpu
   # runs the other half, and the CI report job checks that together they ran
   # everything.
   #
@@ -958,7 +1027,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        part: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
     env:
       CURIO_CI_FRESH_STACK: curio-ci
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
@@ -1831,14 +1900,17 @@ jobs:
         run: python3 scripts/ci_check_split.py inputs
 
       # Every job that sends JUnit results, so a test only one of them runs is
-      # not mistaken for one that ran nowhere. Keep the desktop parts in step
-      # with e2e-desktop's matrix.
+      # not mistaken for one that ran nowhere. The parts follow the counts in
+      # tests/parts.py, as e2e-desktop's and unit's matrices do
+      # (ciParts.test.ts): a part named here that no job runs would turn this
+      # check off ("not checked"), and a part left out would not be required
+      # to have sent its results.
       - name: 🚫 Fail on a test that no job ran
         if: ${{ !cancelled() }}
         shell: bash
         run: |
-          python3 scripts/ci_never_run.py inputs unit-backend-1 unit-backend-2 unit-sandbox \
-            test-gpu test-isolated test-exec-user preview-runner e2e-desktop-{1..10}
+          python3 scripts/ci_never_run.py inputs unit-backend-{1..4} unit-sandbox \
+            test-gpu test-isolated test-exec-user preview-runner e2e-desktop-{1..14}
 
       - name: 📤 Upload the re-minted baselines
         if: always() && inputs.remint

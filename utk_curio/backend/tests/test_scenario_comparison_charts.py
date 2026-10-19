@@ -6,8 +6,11 @@ ScenarioCharts in #914 on main's nodes).
 table from the Data Catalog, keeps each scenario's rows in a Data
 Transformation node whose Case widget picks them, and stacks them in a Compare
 Scenarios node. The chart is the Compare node's own preset where one draws it
-(grouped bars, a table), else a Vega-Lite node after it. The tables are
-``datasets/data.curio.example-*@1``, which the seeded script
+(grouped bars, a table), else a node of the SCOUT Comparison package
+(``scout.comparison@1``) after it: a Vega-Lite chart whose spec is its
+template's, unchanged, and whose widgets name the columns it plots. No chart
+names a scenario or a color: it draws them as its Compare node labels them.
+The tables are ``datasets/data.curio.example-*@1``, which the seeded script
 ``scripts/build_example_scenario_charts.py`` writes.
 
 Every file is read inside its test, so a checkout without them fails test by
@@ -33,30 +36,38 @@ DATAFLOW = REPO_ROOT / "docs" / "examples" / "dataflows" / "scenario-comparison-
 SCRIPT = REPO_ROOT / "scripts" / "build_example_scenario_charts.py"
 COMPARE_DIR = REPO_ROOT / "utk_curio" / "frontend" / "urban-workflows" / "src" / "utils" / "compare"
 BUILTIN_MANIFEST = REPO_ROOT / "packages" / "curio.builtin@1" / "manifest.json"
+#: The package whose templates draw the charts no preset draws.
+COMPARISON_DIR = "scout.comparison@1"
+COMPARISON = REPO_ROOT / "packages" / COMPARISON_DIR
 
 LOAD = "curio.builtin/data-loading"
 KEEP = "curio.builtin/data-transformation"
 COMPARE = "curio.builtin/compare-scenarios"
-VEGA = "curio.builtin/vis-vega"
 
 STORMS = ["10-year storm", "50-year storm", "100-year storm"]
 
 #: Each example table's chart: its scenarios in the Compare node's circle
-#: order, the Compare node's preset, and whether a Vega-Lite node after it
-#: draws the chart, for a form no preset draws.
+#: order, the Compare node's preset, and the SCOUT Comparison template whose
+#: node after it draws the chart, for a form no preset draws (None: the preset
+#: is the chart).
 CHARTS = {
-    "data.curio.example-pedestrians-by-hour": (["Weekday", "Weekend"], "table", True),
-    "data.curio.example-flood-damage-curves": (["As built", "Floodproofed"], "table", True),
-    "data.curio.example-street-flooding": (STORMS, "table", True),
-    "data.curio.example-peak-depths": (STORMS, "table", True),
-    "data.curio.example-trips-by-mode": (["Today", "Bus lanes", "Bike network", "Car-free center"], "grouped-bar", False),
-    "data.curio.example-building-carbon": (["Concrete frame", "Timber frame"], "table", True),
-    "data.curio.example-park-shade": (["Open lawn", "Tree canopy"], "table", True),
-    "data.curio.example-bike-route-factors": (["Route A", "Route B", "Route C"], "table", True),
-    "data.curio.example-green-roofs": (["Extensive roof", "Semi-intensive roof", "Intensive roof"], "table", False),
+    "data.curio.example-pedestrians-by-hour": (["Weekday", "Weekend"], "table", "lines-with-band"),
+    "data.curio.example-flood-damage-curves": (["As built", "Floodproofed"], "table", "curves-by-group"),
+    "data.curio.example-street-flooding": (STORMS, "table", "bars-with-error-bars"),
+    "data.curio.example-peak-depths": (STORMS, "table", "ensemble-strips"),
+    "data.curio.example-trips-by-mode": (["Today", "Bus lanes", "Bike network", "Car-free center"], "grouped-bar", None),
+    "data.curio.example-building-carbon": (["Concrete frame", "Timber frame"], "table", "stacked-bars-with-totals"),
+    "data.curio.example-park-shade": (["Open lawn", "Tree canopy"], "table", "donuts"),
+    "data.curio.example-bike-route-factors": (["Route A", "Route B", "Route C"], "table", "weighted-matrix"),
+    "data.curio.example-green-roofs": (["Extensive roof", "Semi-intensive roof", "Intensive roof"], "table", None),
 }
 DATASETS = list(CHARTS)
-CHARTED = [dataset_id for dataset_id, (_names, _preset, charted) in CHARTS.items() if charted]
+CHARTED = [dataset_id for dataset_id, (_names, _preset, template) in CHARTS.items() if template]
+#: The seven chart nodes' types, one per template.
+CHART_TYPES = {f"scout.comparison/{CHARTS[dataset_id][2]}" for dataset_id in CHARTED}
+
+#: What a reference chip looks like (``[!! y !!]``).
+CHIP = re.compile(r"\[!!\s*(.*?)\s*!!\]")
 
 #: The most the nine tables and their manifests may weigh together, the share
 #: of the ``datasets/`` size check this example has (owner, step 19 of the
@@ -187,15 +198,19 @@ def test_the_nine_tables_and_their_manifests_fit_their_budget():
 def test_each_table_has_a_row_that_loads_keeps_compares_and_charts_it():
     flow = _flow()
     assert flow["name"] == "Nine ways to chart scenario comparisons"
-    assert Counter(node["type"] for node in flow["nodes"]) == {LOAD: 9, KEEP: 24, COMPARE: 9, VEGA: 7}
+    # Each chart no preset draws is one of the seven SCOUT Comparison nodes.
+    assert len(CHART_TYPES) == 7
+    assert Counter(node["type"] for node in flow["nodes"]) == {
+        LOAD: 9, KEEP: 24, COMPARE: 9, **{chart_type: 1 for chart_type in CHART_TYPES},
+    }
     assert len(flow["edges"]) == 55
     assert sorted(_dataset_read_by(node) for node in _of_type(flow, LOAD)) == sorted(DATASETS)
     for dataset_id in DATASETS:
         row = _row(flow, dataset_id)
-        names, _preset, charted = CHARTS[dataset_id]
+        names, _preset, template = CHARTS[dataset_id]
         assert len(row["keeps"]) == len(names)
         assert [circle for circle, _source in _inputs(flow, row["compare"]["id"])] == list(range(len(names)))
-        assert (row["chart"] is not None) == charted, dataset_id
+        assert (row["chart"] is not None) == bool(template), dataset_id
 
 
 def test_the_dataflow_declares_the_datasets_it_reads_as_the_backend_writes_them():
@@ -210,7 +225,10 @@ def test_the_dataflow_declares_the_datasets_it_reads_as_the_backend_writes_them(
         assert (ref["origin"], ref["producerNodeId"], ref["consumerNodeIds"]) == ("imported", None, [])
         assert ref["installedAt"]
         assert (REPO_ROOT / "datasets" / ref["dirName"] / "manifest.json").is_file()
-    assert flow["packages"] == []
+    # The package of its seven charts, which the stack installs with the
+    # examples because the dataflow declares it.
+    assert flow["packages"] == [COMPARISON_DIR]
+    assert (COMPARISON / "manifest.json").is_file()
     assert not re.search(r"https?://(?!vega\.github\.io/schema/)", json.dumps(flow["nodes"])), (
         "a node reads from the network"
     )
@@ -288,7 +306,7 @@ def test_each_compare_node_is_labelled_and_coded_for_its_inputs():
     flow = _flow()
     scenario_of = {node_id: scenario for scenario in flow["scenarios"] for node_id in scenario["nodes"]}
     for dataset_id in DATASETS:
-        names, preset, charted = CHARTS[dataset_id]
+        names, preset, _template = CHARTS[dataset_id]
         compare = _row(flow, dataset_id)["compare"]
         labels = [
             {"scenario": scenario_of[source]["id"], "name": scenario_of[source]["name"],
@@ -307,70 +325,79 @@ def test_each_compare_node_is_labelled_and_coded_for_its_inputs():
 
 
 def test_every_chart_is_drawn_from_a_compare_node():
-    """Nine charts: seven Vega-Lite nodes, each fed by one Compare node and
-    nothing else, and two Compare nodes whose own preset is the chart."""
+    """Nine charts: seven SCOUT Comparison nodes, each fed by one Compare node
+    and nothing else, and two Compare nodes whose own preset is the chart."""
     flow = _flow()
     by_id = {node["id"]: node for node in flow["nodes"]}
-    for chart in _of_type(flow, VEGA):
+    charts = [node for node in flow["nodes"] if node["type"] in CHART_TYPES]
+    assert len(charts) == 7
+    for chart in charts:
         assert [by_id[source]["type"] for _circle, source in _inputs(flow, chart["id"])] == [COMPARE]
         assert _targets(flow, chart["id"]) == []
     drawn_by = {}
     for dataset_id in DATASETS:
         row = _row(flow, dataset_id)
-        _names, preset, charted = CHARTS[dataset_id]
-        if charted:
-            assert row["chart"]["type"] == VEGA, dataset_id
-            drawn_by[dataset_id] = "Vega-Lite"
+        _names, preset, template = CHARTS[dataset_id]
+        if template:
+            assert row["chart"]["type"] == f"scout.comparison/{template}", dataset_id
+            drawn_by[dataset_id] = "SCOUT Comparison"
         else:
             assert row["chart"] is None, dataset_id
             drawn_by[dataset_id] = preset
-    assert Counter(drawn_by.values()) == {"Vega-Lite": 7, "grouped-bar": 1, "table": 1}
+    assert Counter(drawn_by.values()) == {"SCOUT Comparison": 7, "grouped-bar": 1, "table": 1}
 
 
-def _lists(value):
-    if isinstance(value, list):
-        yield value
-        for item in value:
-            yield from _lists(item)
-    elif isinstance(value, dict):
-        for item in value.values():
-            yield from _lists(item)
+def _template(template_id: str) -> dict:
+    manifest = json.loads((COMPARISON / "manifest.json").read_text(encoding="utf-8"))
+    (template,) = [t for t in manifest["templates"] if t["id"] == template_id]
+    return template
 
 
-def _conditions(value):
-    """Every ``{"test", "value"}`` condition in a spec."""
-    if isinstance(value, dict):
-        if isinstance(value.get("test"), str) and "value" in value:
-            yield value
-        for item in value.values():
-            yield from _conditions(item)
-    elif isinstance(value, list):
-        for item in value:
-            yield from _conditions(item)
+def _stacked_columns(dataset_id: str) -> list:
+    """The columns of the table the table's Compare node stacks: the
+    scenario's id and name, then the table's own but its case."""
+    return ["scenario", "scenario_name", *[column for column in _table(dataset_id)[0] if column != "case"]]
 
 
 @pytest.mark.parametrize("dataset_id", CHARTED)
-def test_each_chart_orders_and_colors_its_scenarios_as_its_compare_labels_them(dataset_id):
-    """A Vega-Lite node gets no scenario colors of its own: its spec names
-    each scenario, in the Compare node's order and its color."""
+def test_each_chart_is_its_templates_spec_with_the_columns_in_its_widgets(dataset_id):
+    """The node's spec is its template's starter, byte for byte, so every
+    chart of a kind is one spec; what differs is in its widgets: the
+    template's own, in its order, each column one set to a column the Compare
+    node's table has, Donuts' highlight to a value of its part column, and a
+    title or a format set or left empty."""
     row = _row(_flow(), dataset_id)
-    labels = row["compare"]["metadata"]["compareScenarios"]["inputs"]
-    names = [label["name"] for label in labels]
-    colors = [label["color"].lower() for label in labels]
-    spec = json.loads(row["chart"]["content"])
-    text = json.dumps(spec).lower()
-    assert all(color in text for color in colors), colors
-    named = [found for found in _lists(spec) if any(name in found for name in names)]
-    assert named, "the chart names none of its scenarios"
-    for found in named:
-        assert found[:len(names)] == names, found
-    for found in _lists(spec):
-        if any(isinstance(item, str) and item.lower() in colors for item in found):
-            assert [str(item).lower() for item in found[:len(colors)]] == colors, found
-    for condition in _conditions(spec):
-        match = re.fullmatch(r"datum\.value === '([^']+)'", condition["test"])
-        if match and match.group(1) in names:
-            assert condition["value"].lower() == colors[names.index(match.group(1))], condition
+    template = _template(CHARTS[dataset_id][2])
+    chart = row["chart"]
+    assert chart["content"] == (COMPARISON / template["source"]).read_text(encoding="utf-8")
+    widgets = chart["metadata"]["widgets"]
+    assert [{key: w[key] for key in w if key != "value"} for w in widgets] == template["widgets"]
+    values = {w["name"]: w.get("value", w["default"]) for w in widgets}
+    columns = _stacked_columns(dataset_id)
+    for widget in widgets:
+        name = widget["name"]
+        if re.fullmatch(r".*_(title|format)", name):
+            assert isinstance(values[name], str), widget
+        elif name == "highlight":
+            assert values[name] in {r[values["part"]] for r in _table(dataset_id)}, widget
+        else:
+            assert "value" in widget, f"{chart['title']}: {name} is left at its default"
+            assert values[name] in columns, f"{chart['title']}: {name} = {values[name]!r}, not in {columns}"
+    assert set(CHIP.findall(chart["content"])) == {w["name"] for w in widgets}
+
+
+@pytest.mark.parametrize("dataset_id", CHARTED)
+def test_no_chart_names_a_scenario_or_a_scenario_color(dataset_id):
+    """The chart draws its scenarios as its Compare node labels them: the
+    spec and the widgets name no scenario and no scenario's color, so one
+    renamed or recolored is drawn as its box is (the e2e test recolors one of
+    each chart's)."""
+    flow = _flow()
+    chart = _row(flow, dataset_id)["chart"]
+    written = chart["content"] + json.dumps(chart["metadata"]["widgets"])
+    for scenario in flow["scenarios"]:
+        assert scenario["name"] not in written, f"{chart['title']} names {scenario['name']}"
+        assert scenario["color"].lower() not in written.lower(), f"{chart['title']} writes {scenario['color']}"
 
 
 def _python_output(target: str):
@@ -430,7 +457,15 @@ def test_the_rows_stack_under_their_scenarios_and_the_chart_reads_columns_they_h
         if key in chart:
             assert chart[key] in stacked.columns, chart
     if row["chart"] is not None:
-        result = validate_vega_lite(row["chart"]["content"], columns=list(stacked.columns))
+        # The spec as a run draws it: its chips given the widgets' values.
+        from utk_curio.backend.app.execution.code_references import resolve_references
+
+        spec, problems = resolve_references(
+            row["chart"]["content"], widgets=row["chart"]["metadata"]["widgets"], language="json",
+            inputs=[{"slot": 0}],
+        )
+        assert not problems and not CHIP.search(spec), problems
+        result = validate_vega_lite(spec, columns=list(stacked.columns))
         assert result.get("status") == STATUS_VALID, result
 
 

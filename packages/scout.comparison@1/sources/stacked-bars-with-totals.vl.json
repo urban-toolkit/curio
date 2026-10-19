@@ -1,0 +1,112 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "transform": [
+    {
+      "window": [
+        {
+          "op": "row_number",
+          "as": "curio_row"
+        }
+      ]
+    },
+    {
+      "joinaggregate": [
+        {
+          "op": "sum",
+          "field": "[!! y !!]",
+          "as": "curio_total"
+        }
+      ],
+      "groupby": [
+        "scenario_name"
+      ]
+    },
+    {
+      "calculate": "'[!! y_format !!]' === '' ? format(datum.curio_total, ',.0f') : format(datum.curio_total, '[!! y_format !!]')",
+      "as": "curio_total_label"
+    }
+  ],
+  "encoding": {
+    "x": {
+      "field": "scenario_name",
+      "type": "nominal",
+      "title": null,
+      "axis": {
+        "labelAngle": 0,
+        "labelFontWeight": "bold",
+        "labelColor": {
+          "expr": "scale('stroke', datum.value)"
+        }
+      }
+    }
+  },
+  "layer": [
+    {
+      "mark": {
+        "type": "bar",
+        "width": {
+          "band": 0.6
+        },
+        "tooltip": true
+      },
+      "encoding": {
+        "y": {
+          "field": "[!! y !!]",
+          "type": "quantitative",
+          "title": "[!! y_title !!]",
+          "axis": {
+            "labelExpr": "'[!! y_format !!]' === '' ? datum.label : format(datum.value, '[!! y_format !!]')"
+          }
+        },
+        "color": {
+          "field": "[!! part !!]",
+          "type": "nominal",
+          "title": "[!! part_title !!]",
+          "sort": null,
+          "scale": {
+            "range": [
+              "#7a5195",
+              "#bc5090",
+              "#ef5675",
+              "#ffa600",
+              "#8a8f98",
+              "#003f5c",
+              "#58508d",
+              "#ff6361"
+            ]
+          }
+        },
+        "order": {
+          "field": "curio_row",
+          "type": "quantitative"
+        }
+      }
+    },
+    {
+      "mark": {
+        "type": "text",
+        "dy": -6,
+        "baseline": "bottom",
+        "fontWeight": "bold",
+        "strokeOpacity": 0
+      },
+      "encoding": {
+        "y": {
+          "field": "curio_total",
+          "type": "quantitative",
+          "aggregate": "max",
+          "title": "[!! y_title !!]"
+        },
+        "text": {
+          "field": "curio_total_label",
+          "type": "nominal"
+        },
+        "stroke": {
+          "field": "scenario_name",
+          "type": "nominal",
+          "legend": null
+        }
+      }
+    }
+  ]
+}

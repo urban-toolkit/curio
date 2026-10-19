@@ -76,7 +76,7 @@ Under `utk_curio/backend/app/`:
 Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
 
 - Backend pytest: `utk_curio/backend/tests/`. `conftest.py` at its root and in `test_agents/`, `test_datasets/`, `test_discovery/`, `test_execution/`, `test_frontend/`, `test_model_catalog/`, `test_monitor/`, `test_packages/`, `test_projects/`, `test_runs/`, `test_scenario_catalog/`, `test_users/`. Shared helpers in `_support/`.
-- E2E (Playwright): `utk_curio/backend/tests/test_frontend/`. Helpers in the `utils/` package (below), scripted walkthroughs in the `walkthroughs/` package (below), runner assignment in `runner_split.py`, author guide in `README.md`.
+- E2E (Playwright): `utk_curio/backend/tests/test_frontend/`. Helpers in the `utils/` package (below), scripted walkthroughs in the `walkthroughs/` package (below), runner assignment in `runner_split.py`, sign-in skips before a test's fixtures in `early_guards.py`, author guide in `README.md`.
 - E2E helpers, `test_frontend/utils/`: `from .utils import X` works for every public name; X is defined in one module, and a patch goes on the module whose code calls X (`screenshots.py` for what `save_workflow_test_screenshot` and `frame_nodes` call):
   - `environment.py`: `REPO_ROOT`, `state_root`, stack flags and public config, `require_*` skips, `debug_log`.
   - `sandbox.py`: direct sandbox calls, `load_artifact_as_dict`, `execute_workflow_programmatically`.
@@ -112,7 +112,7 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
 - `pick-runners`: picks the runners of the jobs that start at once (`scripts/ci_pick_runners.py`).
 - `build-image`: builds the CI image once per commit, pushes it to GHCR, then picks the runners of the jobs that wait on it.
 - `test-gpu`: e2e tests that need WebGPU, on a GPU runner.
-- `unit`: backend pytest in two parts, plus the sandbox suite.
+- `unit`: backend pytest in four parts, plus the sandbox suite.
 - `jest`: Jest and `npm run typecheck`.
 - `e2e-desktop`: e2e tests without WebGPU, split over CPU runners.
 - `test-isolated`: Python-node workflows on the fork-isolated stack (`docker-compose.ci-isolated.yml`).

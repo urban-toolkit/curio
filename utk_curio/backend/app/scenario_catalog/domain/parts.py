@@ -42,9 +42,13 @@ def is_parameter_node(node: dict) -> bool:
 
 def is_pass_through(node: dict) -> bool:
     """Whether a saved spec's *node* shows data it is handed rather than
-    making its own: a chart, a Data Pool, or an Autark spec that draws."""
+    making its own: a chart (a package's that draws with the Vega-Lite grammar
+    too, ``projects/template_grammars``), a Data Pool, or an Autark spec that
+    draws."""
+    from utk_curio.backend.app.projects.template_grammars import draws_with_vega_lite
+
     kind = _unversioned(node.get("type"))
-    if kind in _PASS_THROUGH_KINDS:
+    if kind in _PASS_THROUGH_KINDS or draws_with_vega_lite(node.get("type")):
         return True
     if kind == _AUTK_GRAMMAR_KIND:
         return _classify_autk_spec(node_code(node)) == "render"

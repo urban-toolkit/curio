@@ -3,22 +3,29 @@
 Two things must hold for the split to be safe. The WebGPU tests land on utk,
 the only runner with hardware WebGPU. And no test is lost: every collected test
 runs on exactly one runner, and within the CPU runners on exactly one shard. The
-last class checks that on the real suite, through pytest's own collection.
+last class checks that on the real suite, through pytest's own collection, with
+the options CI runs it with: the parts add up to the suite, what shares a
+session stays on one part, and a part holds only tests that will run.
 """
 
 import os
+import re
 import subprocess
 import sys
+import tempfile
 import unittest
+from collections import defaultdict
 from pathlib import Path
 from unittest import mock
 from types import SimpleNamespace
 
-from utk_curio.backend.tests.test_frontend import runner_split
+from utk_curio.backend.tests import parts
+from utk_curio.backend.tests.test_frontend import fixtures, runner_split
 
 REPO = Path(__file__).resolve().parents[3]
 EXAMPLES = REPO / "docs" / "examples"
 DATAFLOWS = EXAMPLES / "dataflows"
+E2E = Path(__file__).resolve().parent / "test_frontend"
 
 
 class ClassificationTest(unittest.TestCase):
@@ -90,7 +97,8 @@ class SelectionTest(unittest.TestCase):
     def setUp(self):
         patches = [
             mock.patch.object(runner_split, "item_needs_webgpu", lambda i: i.gpu),
-            mock.patch.object(runner_split, "group_of", lambda i: i.group),
+            mock.patch.object(runner_split, "part_key", lambda i: i.group),
+            mock.patch.object(runner_split, "item_key", lambda i: i.nodeid),
         ]
         for patch in patches:
             patch.start()
@@ -114,6 +122,17 @@ class SelectionTest(unittest.TestCase):
         self.assertEqual(sorted(seen), sorted(i.group for i in items))
         self.assertLessEqual(max(loads) - min(loads), max(durations.values()))
 
+    def test_a_group_of_tests_costs_their_sum_on_one_part(self):
+        """Three short tests that share a group outweigh one longer test."""
+        items = [SimpleNamespace(nodeid=f"t{n}", group="shared", gpu=False) for n in range(3)]
+        items += [SimpleNamespace(nodeid="long", group="long", gpu=False),
+                  SimpleNamespace(nodeid="short", group="short", gpu=False)]
+        durations = {"t0": 5.0, "t1": 5.0, "t2": 5.0, "long": 12.0, "short": 2.0}
+        first, _ = runner_split.select(items, "desktop", "1/2", durations)
+        second, _ = runner_split.select(items, "desktop", "2/2", durations)
+        self.assertEqual([i.nodeid for i in first], ["t0", "t1", "t2"])
+        self.assertEqual([i.nodeid for i in second], ["long", "short"])
+
     def test_a_bad_setting_is_refused(self):
         with self.assertRaises(ValueError):
             runner_split.select([], "gpu", None)
@@ -123,16 +142,84 @@ class SelectionTest(unittest.TestCase):
             runner_split.parse_shard("two")
 
 
-class NoTestIsLostTest(unittest.TestCase):
-    """The real e2e suite: every test on exactly one runner and one shard."""
+def _item(module_file, name, cls=None, fixturenames=(), group=None):
+    """A collected e2e item as part_key reads it."""
+    module = Path(module_file).stem
+    marker = SimpleNamespace(kwargs={}, args=(group or module,))
+    nodeid = f"tests/test_frontend/{module}.py::" + (f"{cls.__name__}::" if cls else "") + name
+    return SimpleNamespace(
+        nodeid=nodeid, cls=cls, fixturenames=list(fixturenames),
+        module=SimpleNamespace(__name__=f"utk_curio.backend.tests.test_frontend.{module}",
+                               __file__=str(module_file)),
+        get_closest_marker=lambda marker_name: marker if marker_name == "xdist_group" else None)
 
-    SHARDS = 10
+
+class PartKeyTest(unittest.TestCase):
+    """What a CPU part keeps together: one test, unless it shares a session or a server."""
+
+    PLAIN = E2E / "test_monitor_page_e2e.py"
+
+    def test_a_test_that_gets_the_reset_is_a_group_of_its_own(self):
+        item = _item(self.PLAIN, "test_polls[chromium]")
+        self.assertEqual(runner_split.part_key(item),
+                         "tests.test_frontend.test_monitor_page_e2e::test_polls[chromium]")
+        self.assertEqual(runner_split.part_key(item), parts.item_key(item))
+
+    def test_a_shared_session_class_keeps_its_xdist_group(self):
+        for name in fixtures._SHARED_SESSION_CLASSES:
+            shared = type(name, (), {})
+            item = _item(self.PLAIN, "test_one[chromium]", cls=shared, group="its-group")
+            self.assertEqual(runner_split.part_key(item), "its-group", name)
+
+    def test_a_workflow_class_keeps_its_workflow_group(self):
+        plain = type("TestOther", (), {})
+        for fixture in ("loaded_workflow", "workflow_page"):
+            item = _item(self.PLAIN, "test_one[vega.json-chromium]", cls=plain,
+                         fixturenames=["page", fixture], group="wf-vega.json")
+            self.assertEqual(runner_split.part_key(item), "wf-vega.json", fixture)
+
+    def test_a_module_with_a_fixture_of_its_own_stays_whole(self):
+        for module in ("test_dashboard_standalone_e2e", "test_spa_deep_link_e2e"):
+            item = _item(E2E / f"{module}.py", "test_one[chromium]", group="anything")
+            self.assertEqual(runner_split.part_key(item), module)
+
+    def test_a_fixture_that_outlives_one_test_is_read_from_the_source(self):
+        self.assertTrue(runner_split.module_keeps_a_fixture(str(E2E / "test_dashboard_standalone_e2e.py")))
+        self.assertTrue(runner_split.module_keeps_a_fixture(str(E2E / "test_spa_deep_link_e2e.py")))
+        self.assertFalse(runner_split.module_keeps_a_fixture(str(self.PLAIN)))
+        with tempfile.TemporaryDirectory() as folder:
+            cases = {
+                "in_a_class": ("class TestX:\n    @pytest.fixture(scope='class')\n"
+                               "    def session(self):\n        return 1\n", True),
+                "session": "@fixture(scope='session')\ndef server():\n    return 1\n",
+                "function": ("@pytest.fixture(scope='function')\ndef page():\n    return 1\n"
+                             "@pytest.fixture\ndef other():\n    return 2\n", False),
+            }
+            for name, case in cases.items():
+                source, expected = case if isinstance(case, tuple) else (case, True)
+                path = Path(folder) / f"test_{name}.py"
+                path.write_text("import pytest\nfrom pytest import fixture\n" + source, encoding="utf-8")
+                self.assertIs(runner_split.module_keeps_a_fixture(str(path)), expected, name)
+
+
+#: A workflow test's parameter: the dataflow's file name, then the browser.
+WORKFLOW_ID = re.compile(r"\[(?P<workflow>[^\[\]]+\.json)-chromium\]$")
+
+
+class NoTestIsLostTest(unittest.TestCase):
+    """The real e2e suite: every test on exactly one runner and one shard.
+
+    Collected as CI runs it (scripts/test.sh passes --with-examples), in as
+    many desktop parts as CI's matrix has.
+    """
+
+    SHARDS = parts.E2E_DESKTOP_PARTS
 
     @staticmethod
-    def collect(**env):
+    def collect(*args, **env):
         run = subprocess.run(
             [sys.executable, "-m", "pytest", "tests/test_frontend", "--collect-only", "-q",
-             "-p", "no:cacheprovider"],
+             "-p", "no:cacheprovider", "--with-examples", *args],
             cwd=REPO / "utk_curio" / "backend", capture_output=True, text=True,
             env={**os.environ, "PYTHONPATH": str(REPO),
                  "CURIO_E2E_RUNNER": "", "CURIO_E2E_PART": "", "CURIO_UNIT_PART": "", **env},
@@ -142,17 +229,64 @@ class NoTestIsLostTest(unittest.TestCase):
             raise AssertionError(f"collection found nothing:\n{run.stdout[-2000:]}\n{run.stderr[-2000:]}")
         return ids
 
+    @classmethod
+    def setUpClass(cls):
+        cls.everything = cls.collect()
+        cls.utk = cls.collect(CURIO_E2E_RUNNER="utk")
+        cls.shards = [cls.collect(CURIO_E2E_RUNNER="desktop", CURIO_E2E_PART=f"{k}/{cls.SHARDS}")
+                      for k in range(1, cls.SHARDS + 1)]
+
     def test_every_test_runs_on_exactly_one_runner_and_shard(self):
-        everything = self.collect()
-        utk = self.collect(CURIO_E2E_RUNNER="utk")
-        shards = [self.collect(CURIO_E2E_RUNNER="desktop", CURIO_E2E_PART=f"{k}/{self.SHARDS}")
-                  for k in range(1, self.SHARDS + 1)]
+        everything, utk, shards = self.everything, self.utk, self.shards
         placed = utk + [nodeid for shard in shards for nodeid in shard]
         self.assertEqual(sorted(placed), sorted(everything),
                          "the runners and shards do not add up to the whole suite")
         self.assertEqual(len(placed), len(set(placed)), "a test would run twice")
         self.assertTrue(utk, "nothing selected for the GPU runner")
         self.assertTrue(all(shards), "an empty desktop shard")
+        # The modules --with-examples adds are in the check.
+        self.assertTrue(any("test_shipped_scenario_drops_e2e.py::" in nodeid for nodeid in placed))
+
+    def test_what_shares_a_session_stays_on_one_part(self):
+        """A shared-session class, a workflow's class-scoped page (wf-*) and a
+        module with a fixture of its own each run whole on one desktop part."""
+        where = defaultdict(set)
+        for k, shard in enumerate(self.shards, 1):
+            for nodeid in shard:
+                path, *names = nodeid.split("::")
+                module = Path(path).stem
+                workflow = WORKFLOW_ID.search(nodeid)
+                if len(names) > 1 and names[0] in fixtures._SHARED_SESSION_CLASSES:
+                    if workflow:
+                        where[("workflow", workflow["workflow"])].add(k)
+                    else:
+                        where[("class", module, names[0])].add(k)
+                if runner_split.module_keeps_a_fixture(str(E2E / f"{module}.py")):
+                    where[("module", module)].add(k)
+        spread = {unit: sorted(ks) for unit, ks in where.items() if len(ks) > 1}
+        self.assertEqual(spread, {}, "split across desktop parts")
+        kinds = {unit[0] for unit in where}
+        self.assertEqual(kinds, {"workflow", "class", "module"}, "a kind of group the check never saw")
+        self.assertIn(("module", "test_dashboard_standalone_e2e"), where)
+        self.assertIn(("module", "test_spa_deep_link_e2e"), where)
+
+    def test_a_part_holds_only_tests_that_will_run(self):
+        """The split comes after pytest's -k and -m deselection.
+
+        A test the whole-suite split puts in the last part, selected alone by
+        -k, is then the whole run, so the first part holds it. Split before
+        deselection, it would stay in the last part and the first would be empty.
+        """
+        last = self.shards[-1]
+        candidates = []
+        for nodeid in last:
+            name = nodeid.split("::")[-1].split("[")[0]
+            if re.fullmatch(r"test_\w+", name) and sum(name in other for other in self.everything) == 1:
+                candidates.append((nodeid, name))
+        self.assertTrue(candidates, "no test in the last part has a name of its own")
+        nodeid, name = candidates[0]
+        first = self.collect("-k", name, CURIO_E2E_RUNNER="desktop", CURIO_E2E_PART=f"1/{self.SHARDS}")
+        self.assertEqual(first, [nodeid])
 
 
 if __name__ == "__main__":

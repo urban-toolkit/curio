@@ -36,7 +36,7 @@ picks. They come from the dispatch form, or the repository variables of the
 same names when the form says ``auto``.
 
     python scripts/ci_pick_runners.py --hosted-reserved 1 --gpu test-gpu build-image jest ci-report
-    python scripts/ci_pick_runners.py --this-run-except build-image --hosted-reserved 2 e2e-desktop-1 ...
+    python scripts/ci_pick_runners.py --this-run-except build-image --hosted-reserved 2 test-isolated ...
 """
 
 from __future__ import annotations
