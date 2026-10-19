@@ -39,8 +39,6 @@ class TestTemplateContentKind:
         assert kinds["data-transformation"] == "code"
         # Its code is written for it from its inputs, and runs (#662).
         assert kinds["compare-scenarios"] == "code"
-        # It starts with a call to Curio's raster algebra, edited as code.
-        assert kinds["raster-calculator"] == "code"
         # Its code is written for it from its edit list, and runs (#662).
         assert kinds["edit-features"] == "code"
         # A document: authored, validated, never executed.
@@ -60,14 +58,28 @@ class TestTemplateContentKind:
         assert kinds["note"] == "note"
         # Every shipped template is routed above, and no other ships: the
         # Merge Flow left the manifest (#662), its fan-in now lands on the
-        # input circles of the node it fed.
+        # input circles of the node it fed, and the Raster Calculator is
+        # SCOUT's scout.rasters@1 node (below).
         assert set(kinds) == {
             "data-loading", "data-export", "data-transformation", "data-pool",
             "computation-analysis", "data-summary", "js-computation",
             "vis-vega", "vis-simple", "autk-grammar", "spatial-join", "parameter",
-            "compare-scenarios", "raster-calculator",
+            "compare-scenarios",
             "edit-features", "note",
         }
+
+    def test_scouts_raster_nodes_are_written_as_code(self):
+        """The Raster Calculator starts with a call to Curio's raster algebra,
+        edited as code, as Rasterize Buildings starts with its template's
+        source: both are code an agent writes."""
+        from pathlib import Path
+
+        from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+
+        root = Path(__file__).resolve().parents[4] / "packages" / "scout.rasters@1"
+        manifest = load_package_manifest(root)
+        kinds = {t.template_id: pkg_services.template_content_kind(t) for t in manifest.templates}
+        assert kinds == {"raster-calculator": "code", "rasterize-buildings": "code"}
 
     def test_no_content_makes_a_presentation_without_input_author_nothing(self):
         """``containerStyle.noContent`` (the route the Merge Flow took) decides

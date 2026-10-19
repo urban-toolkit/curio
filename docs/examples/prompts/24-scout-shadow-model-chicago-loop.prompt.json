@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/24-scout-shadow-model-chicago-loop.json",
-    "sha256": "19001ce33aa1129e9f5844d8a9e5280ec2405b48c0f0125e0e77d38ee9a2330e",
+    "sha256": "44c171cb56687b0e7289bac979b47998da0c0a6951a52953cd210b4277445204",
     "walkthrough": "docs/examples/24-scout-shadow-model-chicago-loop.md"
   },
-  "prompt": "Load SCOUT's Chicago Loop buildings, with their heights in metres, from the Data Catalog, and mark them as buildings so a map can raise each footprint to its height. Draw them in 3D on an Autark map coloured by height. Then turn their heights into zoom 16 map tiles, side by side in one height raster, with SCOUT's building rasterizer, leaving its settings at their defaults, and draw the raster on a second Autark map. Run SCOUT's Deep Umbra shadow model on the height raster for a summer day, and draw the minutes of shadow on a third Autark map. Finally take the shadow's mean and median over the ground, where the height raster is under 1.08 m. The rasterizer and the shadow model are not part of the standard node set, so whatever provides them needs installing first.",
+  "prompt": "Load SCOUT's Chicago Loop buildings, with their heights in metres, from the Data Catalog, and mark them as buildings so a map can raise each footprint to its height. Draw them in 3D on an Autark map coloured by height. Then turn their heights into zoom 16 map tiles, side by side in one height raster, with SCOUT's building rasterizer, leaving its settings at their defaults, and draw the raster on a second Autark map. Run SCOUT's Deep Umbra shadow model on the height raster for a summer day, and draw the minutes of shadow on a third Autark map. Finally take the shadow's mean and median over the ground, where the height raster is under 1.08 m. The rasterizer, the raster statistics and the shadow model are not part of the standard node set, so whatever provides them needs installing first.",
   "context": null,
   "required": {
     "datasets": [
@@ -15,7 +15,7 @@
     ],
     "packages": [
       "model.scout.deep-umbra@1",
-      "scout.raster-conversion@1"
+      "scout.rasters@1"
     ],
     "paths": []
   },
@@ -50,13 +50,6 @@
         "hasContent": true
       },
       {
-        "ref": "analysis1",
-        "type": "curio.builtin/raster-calculator",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
         "ref": "analysis2",
         "type": "model.scout.deep-umbra/accumulated-shadow",
         "role": "analysis",
@@ -64,8 +57,15 @@
         "hasContent": true
       },
       {
+        "ref": "analysis1",
+        "type": "scout.rasters/raster-calculator",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
         "ref": "analysis3",
-        "type": "scout.raster-conversion/rasterize-buildings",
+        "type": "scout.rasters/rasterize-buildings",
         "role": "analysis",
         "executable": true,
         "hasContent": true
@@ -99,14 +99,14 @@
       },
       {
         "from": "analysis3",
-        "to": "analysis1",
-        "kind": "data",
-        "slot": 1
+        "to": "analysis2",
+        "kind": "data"
       },
       {
         "from": "analysis3",
-        "to": "analysis2",
-        "kind": "data"
+        "to": "analysis1",
+        "kind": "data",
+        "slot": 1
       }
     ],
     "sources": {
@@ -179,7 +179,7 @@
   "split": "validation",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "adapted from #739's fixture (komar41) to the SCOUT shadow step's nodes (#662), 2026-10-05",
+    "draftedBy": "adapted from #739's fixture (komar41) to the SCOUT shadow step's nodes (#662), 2026-10-05; its rasterizer and Raster Calculator the nodes of the SCOUT Rasters package, 2026-10-18",
     "reviewedBy": null,
     "reviewedAt": null
   },

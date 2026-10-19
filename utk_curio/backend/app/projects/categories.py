@@ -106,7 +106,7 @@ _VIDEO_FRAMES = "curio.media/video-frames"
 _SPLIT_AUDIO = "curio.media/split-audio"
 _MOSAIC_RASTERS = "curio.media/mosaic-rasters"
 
-#: SCOUT's node and model packages (``scout.raster-conversion``,
+#: SCOUT's node and model packages (``scout.rasters``,
 #: ``model.scout.deep-umbra``) and datasets (``data.scout.wrf-rain``). A
 #: dataflow with a node or model from one of those packages, or that names one
 #: of those datasets, is tagged ``SCOUT``.

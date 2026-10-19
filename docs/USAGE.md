@@ -1236,9 +1236,12 @@ dashboard the node shows the output saved with the dataflow and never joins.
 
 ## Rasters
 
-The **Raster Calculator**, in the palette's computation group, works on rasters:
-a `rasterio` dataset from a Python node or the Data Catalog, or a raster an
-Autark node hands on. It is a Python node whose code is written for it when it
+The **Raster Calculator** works on rasters: a `rasterio` dataset from a Python
+node or the Data Catalog, or a raster an Autark node hands on. It is a node of
+SCOUT Rasters (`scout.rasters@1`), a package that ships with Curio: once the
+package is in the dataflow (**Add to project** in the Node Catalog drawer), the
+node is under **SCOUT Rasters** in the Tools panel's **Node Catalog** dropdown.
+It is a Python node whose code is written for it when it
 is dropped: input_0 minus input_1, with its other operations listed above it,
 statistics among them. Return another call to change what it does. Connect the
 rasters to its input circles, in order.

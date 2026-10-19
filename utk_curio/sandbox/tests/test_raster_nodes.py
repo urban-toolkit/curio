@@ -1,10 +1,12 @@
-"""The Raster Calculator node (``curio.builtin@1``) runs the code it starts
-with, as the canvas writes it (``utils/raster/rasterNodeCode.ts``), in process
-and in an isolated child: its cell operations give a raster on the inputs'
-grid, and the statistics its code shows give a table of one row.
+"""The Raster Calculator node (``scout.rasters@1``, SCOUT Rasters) runs the
+code it starts with, as the canvas writes it (``utils/raster/rasterNodeCode.ts``,
+through the template's ``raster-calculator`` behavior), in process and in an
+isolated child: its cell operations give a raster on the inputs' grid, and the
+statistics its code shows give a table of one row.
 
-Every test imports the sandbox's modules itself, so a checkout without them
-fails test by test rather than at collection.
+Every test imports the sandbox's modules itself, and reads the package's
+manifest itself, so a checkout without them fails test by test rather than at
+collection.
 """
 from __future__ import annotations
 
@@ -18,7 +20,9 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[3]
 NODE_CODE_TS = REPO / "utk_curio" / "frontend" / "urban-workflows" / "src" / "utils" / "raster" / "rasterNodeCode.ts"
-CALCULATOR = "curio.builtin/raster-calculator"
+CALCULATOR = "scout.rasters/raster-calculator"
+#: The package that ships the node.
+PACKAGE_MANIFEST = REPO / "packages" / "scout.rasters@1" / "manifest.json"
 #: The call a dropped Raster Calculator's code returns.
 SUBTRACT = 'return curio_raster_calculate("subtract", [input_0, input_1])'
 #: The statistics call its code shows, commented, beside its cell operations.
@@ -102,6 +106,20 @@ def run_in_process(code, inputs, node_type, workspace):
     )
     assert result["stderr"] == "", result["stderr"]
     return result["output"], load_from_duckdb(result["output"]["path"])
+
+
+def test_the_node_is_scout_rasters_and_its_behavior_writes_the_starter():
+    """The type these tests run is a template of SCOUT Rasters whose behavior,
+    ``raster-calculator``, writes the starter on a drop: it ships no source,
+    so the starter is the behavior's, ``rasterNodeCode.ts``."""
+    import json
+
+    manifest = json.loads(PACKAGE_MANIFEST.read_text(encoding="utf-8"))
+    package, template_id = CALCULATOR.split("/")
+    assert manifest["id"] == package
+    (template,) = [t for t in manifest["templates"] if t["id"] == template_id]
+    assert (template["behavior"], template["engine"], template["editor"]) == ("raster-calculator", "python", "code")
+    assert "source" not in template
 
 
 def test_the_starter_returns_a_subtraction_and_lists_the_other_operations_statistics_among_them():
