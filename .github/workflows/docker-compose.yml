@@ -254,7 +254,8 @@ jobs:
             unit-backend-1 unit-backend-2 test-isolated test-exec-user ci-report
 
   # The image every CPU job below runs, built once per commit and pushed to
-  # GHCR under the commit's SHA. The layer cache lives in the Actions cache, so
+  # GHCR under the commit's SHA, unless a run already built the same tree (see
+  # the reuse step). The layer cache lives in the Actions cache, so
   # a commit that changes only source rebuilds only the layers after the source
   # copy (see the Dockerfile's order). The GPU jobs keep building their own
   # image from their runner's warm local cache, so the GPU path never waits on
@@ -302,7 +303,10 @@ jobs:
 
       - name: 🏷️ Name the image
         id: name
-        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}-ci:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}-ci:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          tree=$(git rev-parse 'HEAD^{tree}')
+          echo "tree=ghcr.io/${GITHUB_REPOSITORY,,}-ci:tree-${tree}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v4
 
@@ -312,12 +316,35 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # The build takes nothing from the commit but its tree, so each image is
+      # also tagged with its tree, and a commit whose tree a run already built
+      # gets that image under its own name instead of a build. Most often that
+      # is a merge to main with nothing landed in between: its tree is the
+      # merge ref the PR's last run built and tested (12 of the 20 main merges
+      # up to #984). If the lookup or the tagging fails, the build runs.
+      - name: ♻️ Reuse the image of the same tree
+        id: reuse
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+          TREE: ${{ steps.name.outputs.tree }}
+        run: |
+          if docker buildx imagetools inspect "$TREE" > /dev/null 2>&1 \
+            && docker buildx imagetools create --tag "$IMAGE" "$TREE"; then
+            echo "reused=true" >> "$GITHUB_OUTPUT"
+            echo "reused $TREE as $IMAGE"
+          else
+            echo "no image of this tree yet, so it is built"
+          fi
+
       - name: 🔨 Build and push the image
+        if: steps.reuse.outputs.reused != 'true'
         uses: docker/build-push-action@v7
         with:
           context: .
           push: true
-          tags: ${{ steps.name.outputs.image }}
+          tags: |
+            ${{ steps.name.outputs.image }}
+            ${{ steps.name.outputs.tree }}
           cache-from: type=gha,scope=curio-image
           cache-to: type=gha,scope=curio-image,mode=max
 
