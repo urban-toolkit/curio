@@ -690,7 +690,14 @@ describe("AgentAttachmentsProvider lines that stay under a reply (#447, #243)", 
   const REFUSAL =
     "refused by the egress policy: host '127.0.0.1' resolves to a non-public address (127.0.0.1) - refused";
   const NO_CHANGE = "No changes were made to the canvas";
-  const nodeBuilder = { ...attachment, coord: "agent.node-builder@1.0.0", name: "Node Builder" };
+  // What the Node Builder's manifest declares: the panel says a reply changed
+  // nothing for an agent that declares node.build.
+  const nodeBuilder = {
+    ...attachment,
+    coord: "agent.node-builder@1.0.0",
+    name: "Node Builder",
+    capabilities: ["node.build", "dataset.fetch.author", "node.content.generate"],
+  };
 
   /** The live chat: the provider's transcript and tool lines in the real panel. */
   function renderChat(chat: typeof attachment, seen: string[][] = []) {
