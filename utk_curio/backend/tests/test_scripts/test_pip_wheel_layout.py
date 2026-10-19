@@ -395,8 +395,9 @@ def test_a_pip_install_seeds_the_sandbox_with_the_duckdb_extensions_it_ships(pip
 def test_a_pip_install_seeds_and_lists_every_dataflow_curio_ships(pip_install):
     """``--with-examples`` seeds a pip install's accounts with the dataflows a
     clone ships (``projects/shipped.py``): the use case, the examples and the
-    tests the projects page lists. The packages and datasets they declare,
-    which the launcher and the seeders provision, are a clone's too."""
+    tests the projects page lists, each under the source a clone files it
+    under. The packages and datasets they declare, which the launcher and the
+    seeders provision, are a clone's too."""
     from utk_curio.backend.app.datasets.seed import example_dep_dataset_dirs
     from utk_curio.backend.app.packages.service import example_dep_package_ids
     from utk_curio.backend.app.projects.shipped import shipped_dataflows
@@ -407,6 +408,9 @@ def test_a_pip_install_seeds_and_lists_every_dataflow_curio_ships(pip_install):
     assert found["keys"] == keys, (
         f"a pip install seeds {len(found['keys'])} of the {len(keys)} dataflows Curio ships, "
         f"reading them from {found['root']}"
+    )
+    assert found["sources"] == [dataflow.source for dataflow in shipped_dataflows()], (
+        "a pip install files its dataflows under other sources than a clone does"
     )
     assert found["packages"] == list(example_dep_package_ids())
     assert found["datasets"] == list(example_dep_dataset_dirs())

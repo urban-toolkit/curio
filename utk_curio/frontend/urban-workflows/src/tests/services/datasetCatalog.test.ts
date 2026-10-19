@@ -7,6 +7,7 @@ import {
   endDatasetDrag,
   readDatasetDragPayload,
   isUserInstalledDataset,
+  isSharedCatalogDataset,
   isDatasetPaletteNode,
   getDatasetSourceId,
   installedComputedByProducer,
@@ -844,5 +845,40 @@ describe("installedComputedByProducer (producer↔palette linkage)", () => {
       }),
     ];
     expect(installedComputedByProducer(items).get("node-a")?.id).toBe("computed.flow-1.node-a");
+  });
+});
+
+describe("isSharedCatalogDataset reads where a dataset came from, not its id", () => {
+  // The shared catalog holds ids of any namespace (a published workspace file
+  // takes `local.data.<name>`). A dataset is the catalog's when its origin is
+  // `hub`, or when it is the copy a dataflow installed: its origin reads
+  // `imported`, and its store folder is outside the account's own folders,
+  // `imported.` for uploads and downloads and `computed.` for node outputs.
+  test("a hub row is the catalog's, whatever its id", () => {
+    for (const id of ["data.utk.parks", "local.data.trees", "imported.xab12cd34ef56"]) {
+      expect(isSharedCatalogDataset(makeDataset({ id, origin: "hub", dirName: `${id}@1` }))).toBe(true);
+    }
+  });
+
+  test("the copy a dataflow installed is the catalog's, whatever its id", () => {
+    for (const id of ["data.utk.parks", "local.data.trees"]) {
+      expect(
+        isSharedCatalogDataset(makeDataset({ id, origin: "imported", installed: true, dirName: `${id}@1` })),
+      ).toBe(true);
+    }
+  });
+
+  test("the account's own folders are never the catalog's, whatever the id says", () => {
+    for (const dirName of ["imported.xdata12345678@1", "computed.flow-1.data@1"]) {
+      for (const origin of ["imported", "computed"] as const) {
+        expect(isSharedCatalogDataset(makeDataset({ id: "data.utk.parks", origin, dirName }))).toBe(false);
+      }
+    }
+  });
+
+  test("a dataset with no store folder is the catalog's only as a hub row", () => {
+    expect(isSharedCatalogDataset(makeDataset({ id: "data.utk.parks", origin: "computed", dirName: undefined }))).toBe(false);
+    expect(isSharedCatalogDataset(makeDataset({ id: "data.utk.parks", origin: "imported", dirName: undefined }))).toBe(false);
+    expect(isSharedCatalogDataset(makeDataset({ id: "data.utk.parks", origin: "hub", dirName: undefined }))).toBe(true);
   });
 });
