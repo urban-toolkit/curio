@@ -12,10 +12,29 @@ only costs balance, never a test.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 #: A group whose duration is unknown (new since the file was recorded).
 DEFAULT_GROUP_SECONDS = 30.0
+
+#: What xdist's ``--dist loadgroup`` appends to a node id: ``@<group>``, after
+#: the parameters. A parameter may hold an ``@`` of its own
+#: (``[curio.notes@1]``), so only a tail with no bracket in it is the group.
+XDIST_GROUP = re.compile(r"@[^\[\]@]*$")
+
+
+def case_key(classname: str, name: str) -> str:
+    """One test's name in every job's results: ``tests.test_x.TestY::test_z[p]``.
+
+    From the classname and name pytest's JUnit writer gives it. The GPU
+    runner's xdist appends ``@<group>`` to the name, and a run from the
+    repository root starts the classname at ``utk_curio.backend``; neither is
+    part of the test.
+    """
+    if classname.startswith("utk_curio.backend."):
+        classname = classname[len("utk_curio.backend."):]
+    return f"{classname}::{XDIST_GROUP.sub('', name)}"
 
 
 def parse_part(value: str, name: str = "part") -> tuple[int, int]:
