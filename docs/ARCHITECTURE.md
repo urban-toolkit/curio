@@ -337,9 +337,15 @@ node whose code it writes itself:
   `scenario_name` takes the presets' `scenarioScale` (on a text mark, the Table
   preset's `tableTextColor` shades), and every position, offset or facet on it takes
   the names as its order, over what the spec writes, as `withScenarioColors` does for
-  a map layer. When the labels change the behavior applies the spec again, except
-  during a run, which draws the chart itself. `scenarioScales.cases.json` pins the
-  fill for Jest and for the Vega-Lite check in `test_compare_scenarios_node.py`.
+  a map layer. When the scenarios' names or colors change (`scenarioScale`), the
+  behavior draws the chart again the way `CompareChart.tsx` draws:
+  `handleCompileGrammar` with `recordsProvenance` and `forwardsInput` off for that
+  draw, so no version and no hand-off. It also sets `keepsSelection`, and `useVega`
+  puts a selection made in the chart back in the new view (`carriedSelections` and
+  `withMovedIds` in `vegaSelects.ts`), leaving what the flow holds as it is. It does
+  not redraw during a run, which draws the chart itself. `scenarioScales.cases.json`
+  pins the fill for Jest and for the Vega-Lite check in
+  `test_compare_scenarios_node.py`.
 - In Difference (`compareMode.ts`: `metadata.compareScenarios.mode`, else Difference
   for two rasters or two layers by the `dataType` of what the circles hold) the code
   calls `curio_difference_scenarios` (`utk_curio/sandbox/util/scenario_difference.py`)

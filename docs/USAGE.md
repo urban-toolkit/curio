@@ -893,8 +893,9 @@ directly or through nodes of one input each, draws the `scenario_name` column as
 **Chart** tab does. A color, fill or stroke by that column is in the scenarios'
 colors (on a text mark, in the darker shade a table uses for a light color), and an
 axis, an offset or a facet by it follows the order of the Compare node's inputs.
-These replace any colors or order the spec writes for that column, and the chart is
-drawn again when a scenario is renamed or recolored.
+These replace any colors or order the spec writes for that column. When a scenario is
+renamed or recolored, the chart is drawn again with no run, and a selection made in
+it stays.
 
 The **Scenario Catalog** lists the scenarios of all your projects, each with its
 fixed context, levers and outcomes and the results its project saved. Open it from

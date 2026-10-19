@@ -5,13 +5,15 @@
  * order of its inputs and the colors of their boxes, over whatever the spec
  * writes for that column. It reads the Compare node on its first input,
  * directly or through nodes of one input each, and is drawn again when a
- * scenario is renamed or recolored. A chart with no Compare node there is
- * compiled as written.
+ * scenario is renamed or recolored, as the Chart tab draws its chart; a label
+ * that draws the same draws nothing again. A chart with no Compare node there
+ * is compiled as written.
  */
 import { act, renderHook } from '@testing-library/react';
 
-// What the behavior hands useVega's compile, which is what the chart draws.
-const mockCompile = jest.fn(async (_spec: string) => ({ rowsIn: 4, drawn: 4 }));
+// What the behavior hands useVega's compile, which is what the chart draws,
+// and how it asks for it drawn.
+const mockCompile = jest.fn(async (_spec: string, _how?: unknown) => ({ rowsIn: 4, drawn: 4 }));
 // The flow the node reads its upstream from; set per test, read on every render.
 let mockFlow: Record<string, unknown> = {};
 
@@ -187,6 +189,42 @@ describe("the chart follows its scenarios' boxes", () => {
       domain: ['Twice as tall', 'Baseline'],
       range: ['#7b3294', '#2a9d8f'],
     });
+    // Play compiles in full. The recolor draws as the Chart tab draws its chart,
+    // with no version recorded and nothing handed on, and keeps a selection.
+    expect(mockCompile.mock.calls[0][1]).toBeUndefined();
+    expect(mockCompile.mock.calls[1][1]).toEqual({ recordsProvenance: false, forwardsInput: false, keepsSelection: true });
+  });
+
+  test("a label whose scenario id alone changed draws nothing again", async () => {
+    setFlow({ nodes: [compare([TALL, BASELINE]), chart], edges: [edge('cmp', 'chart')] });
+    const { hook } = await drawn(BARS);
+
+    setFlow({ nodes: [compare([{ ...TALL, scenario: 's-tall-copy' }, BASELINE]), chart], edges: [edge('cmp', 'chart')] });
+    await act(async () => {
+      hook.rerender();
+    });
+    expect(compiled()).toHaveLength(1);
+  });
+
+  test('the same labels with their keys in another order draw nothing again', async () => {
+    // Read off the graph, a label is {scenario, name, color}; once the Compare
+    // node stores it, {name, color, scenario}.
+    const a = code('a');
+    const b = code('b');
+    const scenarios = [
+      { id: TALL.scenario, name: TALL.name, color: TALL.color, nodes: ['a'] },
+      { id: BASELINE.scenario, name: BASELINE.name, color: BASELINE.color, nodes: ['b'] },
+    ];
+    const edges = [edge('a', 'cmp', 'in'), edge('b', 'cmp', 'in_1'), edge('cmp', 'chart')];
+    setFlow({ nodes: [a, b, node('cmp', 'curio.builtin/compare-scenarios@1'), chart], edges, scenarios });
+    const { hook } = await drawn(BARS);
+    expect(lastCompiled().encoding.color.scale.range).toEqual([TALL.color, BASELINE.color]);
+
+    setFlow({ nodes: [a, b, compare([TALL, BASELINE]), chart], edges, scenarios });
+    await act(async () => {
+      hook.rerender();
+    });
+    expect(compiled()).toHaveLength(1);
   });
 
   test('a scenario renamed during a run is drawn by the run, then again once it ends if the run did not', async () => {
