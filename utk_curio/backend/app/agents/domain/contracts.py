@@ -515,6 +515,8 @@ IMAGE_MATCH_THRESHOLD = 0.6
 PROMPTS_DIR = "utk_curio/llm-prompts"
 #: The built-in node manifest the generated lists read.
 BUILTIN_MANIFEST = "packages/curio.builtin@1/manifest.json"
+#: Its package id, which a built-in template's namespaced id starts with.
+BUILTIN_PACKAGE = BUILTIN_MANIFEST.split("/")[1].split("@", 1)[0]
 #: The Trill schema the preamble's Trill block projects, by its repository
 #: path (``utk_curio/shipped.py`` finds it).
 TRILL_SCHEMA = "docs/schemas/trill.v1.json"
@@ -745,6 +747,24 @@ class _Sources:
     def lists(self) -> dict[str, str]:
         return builtin_lists(self.manifest)
 
+    def package(self, package_id: str) -> dict:
+        """The manifest of the package Curio ships as *package_id*
+        (``packages/<id>@<major>``, its highest major). KeyError when Curio
+        ships none."""
+        read = self.__dict__.setdefault("_packages", {})
+        if package_id not in read:
+            from utk_curio import shipped
+
+            folders = [
+                (int(folder.name.rsplit("@", 1)[1]), folder)
+                for folder in shipped.path("packages").glob(f"{package_id}@*")
+                if folder.name.rsplit("@", 1)[1].isdigit() and (folder / "manifest.json").is_file()
+            ]
+            if not folders:
+                raise KeyError(package_id)
+            read[package_id] = json.loads((max(folders)[1] / "manifest.json").read_text(encoding="utf-8"))
+        return read[package_id]
+
 
 @dataclass(frozen=True)
 class PromptField:
@@ -771,11 +791,16 @@ def _agent_name(_src: _Sources, agent_id: str) -> str:
 
 
 def _template_label(src: _Sources, coord: str) -> str:
-    """A built-in template's label, by ``<package id>/<template id>``."""
+    """A template's label, by ``<package id>/<template id>``: a built-in
+    one's, or one's of a package Curio ships, such as SCOUT Comparison's
+    charts (``packages/scout.comparison@1``)."""
+    package_id = coord.rpartition("/")[0]
+    where = BUILTIN_MANIFEST if package_id == BUILTIN_PACKAGE else f"packages/{package_id}"
     try:
-        return _builtin_template(src.manifest, coord)["label"]
+        manifest = src.manifest if package_id == BUILTIN_PACKAGE else src.package(package_id)
+        return _builtin_template(manifest, coord)["label"]
     except KeyError:
-        raise PromptTemplateError(f"{BUILTIN_MANIFEST} has no labelled template {coord!r}") from None
+        raise PromptTemplateError(f"{where} has no labelled template {coord!r}") from None
 
 
 def _input_handles(_src: _Sources) -> str:

@@ -23,6 +23,12 @@ inputs:
   seed:
     description: Shell run after the pull and before the stack starts
     default: ""
+  runner-env:
+    description: >-
+      "true" to also give the runner the image's Python packages
+      (./.github/actions/image-env), for a pytest run on the runner with
+      scripts/test.sh --skip-setup. They are copied while the container boots.
+    default: "false"
 
 runs:
   using: composite
@@ -34,7 +40,8 @@ runs:
         password: ${{ inputs.token }}
 
     # Tagged with the name compose gives the service's image, so `up` finds it
-    # and builds nothing.
+    # and builds nothing. From then on the job has an image of its own, which
+    # stop-stack's cleanup asks before it removes the ones earlier jobs left.
     - name: 📥 Pull the image
       shell: bash
       env:
@@ -42,8 +49,11 @@ runs:
         PROJECT: ${{ inputs.project }}
       run: |
         set -euo pipefail
+        started=$(date +%s)
         docker pull --quiet "$IMAGE"
+        echo "Pulled in $(( $(date +%s) - started )) s, $(docker image inspect --format '{{.Size}}' "$IMAGE") bytes on this daemon"
         docker tag "$IMAGE" "$PROJECT-curio"
+        echo "CURIO_CI_OWN_IMAGE=1" >> "$GITHUB_ENV"
 
     - name: 🌱 Seed the workspace
       if: inputs.seed != ''
@@ -53,6 +63,13 @@ runs:
     - name: ▶️ Start containers
       shell: bash
       run: docker compose -p "${{ inputs.project }}" up -d --no-build
+
+    # Here rather than after the wait: the copy takes about as long as the
+    # container's boot, so the two run side by side.
+    - if: inputs.runner-env == 'true'
+      uses: ./.github/actions/image-env
+      with:
+        image: ${{ inputs.image }}
 
     - name: 🧪 Wait for services to become healthy
       shell: bash

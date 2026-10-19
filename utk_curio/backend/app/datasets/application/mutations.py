@@ -636,6 +636,7 @@ class CatalogMutations:
             producer_dataflow_id=item.get("producerDataflowId"),
             producer_dataflow_name=item.get("producerDataflowName"),
             upstream_inputs=item.get("upstreamInputs"),
+            dataflow_categories=self._declared_dataflow_categories(item),
         )
         write_manifest(manifest_obj, dest)
 
@@ -712,6 +713,35 @@ class CatalogMutations:
                 pass
 
         return item
+
+    def _declared_dataflow_categories(self, item: dict[str, Any]) -> dict[str, list[str]] | None:
+        """What the dataset *item* lists declares for the dataflows that read
+        it (``dataflowCategories``), read off its own manifest: the account's
+        copy, else the catalog's. The listing item comes from the dataset
+        index, which does not hold the field."""
+        from utk_curio.backend.app.datasets.domain.manifest import ManifestError, load_dataset_manifest
+        from utk_curio.backend.app.datasets.infrastructure.storage import (
+            DATASET_DIR_RE,
+            catalog_root,
+            dataset_dir,
+        )
+
+        dir_name = item.get("dirName")
+        if not isinstance(dir_name, str) or not DATASET_DIR_RE.match(dir_name):
+            return None
+        folders = []
+        if self.user is not None:
+            try:
+                folders.append(dataset_dir(self._paths._user_key(), dir_name))
+            except (OSError, ValueError):
+                pass
+        folders.append(catalog_root() / dir_name)
+        for folder in folders:
+            try:
+                return load_dataset_manifest(folder).dataflow_categories
+            except (ManifestError, OSError, ValueError):
+                continue
+        return None
 
     def install_dataset(
         self,

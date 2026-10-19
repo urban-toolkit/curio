@@ -96,3 +96,17 @@ def test_the_roster_decides_what_a_package_node_runs():
     }
     assert node_role({"id": "n", "type": "pkg.example/code@1"}, templates) == "run"
     assert node_role({"id": "n", "type": "pkg.example/handler"}, templates) == "browser"
+
+
+@pytest.mark.parametrize("node_type", ["scout.comparison/donuts@1", "scout.comparison/lines-with-band"])
+def test_a_package_chart_that_draws_with_vega_lite_is_forwarded_as_the_vega_lite_node_is(node_type):
+    """SCOUT Comparison's charts draw with the Vega-Lite node's behavior: a run
+    hands their input on, as it does a Vega-Lite node's, and a tab draws them
+    afterwards. Read off the shipped manifest, or off the project's roster,
+    which also answers for a package of the account's own."""
+    from utk_curio.backend.app.execution.run_plan import node_role
+
+    assert node_role({"id": "n", "type": node_type, "content": "{}"}) == "forward"
+    roster = {"acme.charts/bars": {"executable": False, "engine": "python", "contentKind": "grammar",
+                                   "grammar": "vega-lite"}}
+    assert node_role({"id": "n", "type": "acme.charts/bars@1", "content": "{}"}, roster) == "forward"

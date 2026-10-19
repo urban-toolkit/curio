@@ -26,6 +26,7 @@ import {
   prepareDashboardNodes,
 } from "../../utils/dashboardLayout";
 import { NodeType } from "../../constants";
+import { VEGA_LITE_TEMPLATE, clearVegaLiteTemplate, registerVegaLiteTemplate } from "../_support/vegaLiteTemplate";
 
 function node(id: string, nodeType: string, extra: Record<string, unknown> = {}) {
   return {
@@ -372,5 +373,38 @@ describe("dashboardSourceNodeIds", () => {
     const nodes = [node("chart", NodeType.VIS_VEGA, { dashboardPinned: true })];
 
     expect(dashboardSourceNodeIds(nodes, [edge("ghost", "chart")]).size).toBe(0);
+  });
+
+  describe("a package chart that draws with Vega-Lite", () => {
+    // SCOUT Comparison's charts draw with the Vega-Lite node's behavior, which
+    // hands the chart's input on: a tile after one reads what is above it.
+    beforeEach(() => registerVegaLiteTemplate());
+    afterEach(() => clearVegaLiteTemplate());
+
+    test("is walked through as the Vega-Lite node is, versioned or not", () => {
+      for (const type of [VEGA_LITE_TEMPLATE, "scout.comparison/donuts"]) {
+        const nodes = [
+          node("compare", "curio.builtin/compare-scenarios@1"),
+          node("donuts", type),
+          node("chart", NodeType.VIS_VEGA, { dashboardPinned: true }),
+        ];
+
+        const sources = dashboardSourceNodeIds(nodes, [edge("compare", "donuts"), edge("donuts", "chart")]);
+
+        expect([...sources]).toEqual(["compare"]);
+      }
+    });
+
+    test("a package node that draws with no grammar is a producer", () => {
+      const nodes = [
+        node("compare", "curio.builtin/compare-scenarios@1"),
+        node("heatmap", "acme.tools/heatmap@1"),
+        node("chart", NodeType.VIS_VEGA, { dashboardPinned: true }),
+      ];
+
+      const sources = dashboardSourceNodeIds(nodes, [edge("compare", "heatmap"), edge("heatmap", "chart")]);
+
+      expect([...sources]).toEqual(["heatmap"]);
+    });
   });
 });

@@ -14,6 +14,7 @@ This document describes the internal architecture of Curio for contributors who 
   * [Drawing scenarios](#drawing-scenarios)
 * [Nodes: Types and Structure](#nodes-types-and-structure)
   * [Node Packages and Manifests](#node-packages-and-manifests)
+  * [A dataflow's tags and data types](#a-dataflows-tags-and-data-types)
   * [NodeDescriptor: Static Metadata](#nodedescriptor-static-metadata)
   * [NodeAdapter: Runtime Wiring](#nodeadapter-runtime-wiring)
   * [Behavior Hooks](#behavior-hooks)
@@ -349,6 +350,22 @@ node whose code it writes itself:
   run, which draws the chart itself. `scenarioScales.cases.json`
   pins the fill for Jest and for the Vega-Lite check in
   `test_compare_scenarios_node.py`.
+- The SCOUT Comparison package (`packages/scout.comparison@1`) holds seven Vega-Lite
+  templates for comparisons no preset draws. Each names `behavior: vega` and
+  `grammarId: vega-lite`, and its `.vl.json` starter is the node's whole content
+  (`starterIsContent`). The starter writes no scale and no order for `scenario_name`,
+  which the fill above supplies, and reads the columns it plots from text widgets
+  through chips (`"field": "[!! y !!]"`).
+- A template that names `grammarId: vega-lite` is a Vega-Lite node for every rule
+  keyed on the node's kind. On the canvas, `isVegaLiteNodeType`
+  (`registry/vegaLiteNodes.ts`) decides drawing from a restored input
+  (`UniversalNode.tsx`), `isPassThroughNode`, `isNonProducingNodeType`,
+  `notebookOutputBox`, `selectionViewsOf` and the notebook export. In the backend,
+  `draws_with_vega_lite` (`projects/template_grammars.py`, which reads the package
+  catalog's manifests) decides `_is_pass_through`, `parts.is_pass_through`,
+  `node_role` (also from the run's roster) and `_is_sink_node_type`. The automatic
+  Vega-Lite and Autark tags read a template's grammar from the account's store too
+  ([A dataflow's tags and data types](#a-dataflows-tags-and-data-types)).
 - In Difference (`compareMode.ts`: `metadata.compareScenarios.mode`, else Difference
   for two rasters or two layers by the `dataType` of what the circles hold) the code
   calls `curio_difference_scenarios` (`utk_curio/sandbox/util/scenario_difference.py`)
@@ -496,6 +513,15 @@ Built-in templates (in `curio.builtin@1/manifest.json`) currently cover:
 | Chart/table visualization | `vis-vega`, `vis-simple` (a table, or a card per row when the frame carries images) |
 
 Third-party packages (or first-party optional ones, like `curio.example-ui@1`) install via the **catalog drawer** in the canvas, which copies the package directory into the user's store at `.curio/users/<user>/packages/`.
+
+### A dataflow's tags and data types
+
+The Projects rail and the canvas's title chips file a dataflow under tags and data types that [`projects/categories.py`](../utk_curio/backend/app/projects/categories.py) `derive` computes on every read and never stores. It has two sources, and neither names a package, model or dataset:
+
+- [`projects/category_rules.json`](../utk_curio/backend/app/projects/category_rules.json) holds what a dataflow shows by itself, as data: the modules its code imports, the file extensions and data URIs it names, the `grammarId` each node's template draws with (and keys of a grammar node's document, such as Autark's `compute`), model types, dataset formats and collection kinds, and the display order.
+- A `ManifestLookup`, one per request, reads what the manifests declare in `dataflowCategories`, and the core fields the table reads: a node's package and template, and the model package a `curio_load_model` call names (`TemplateGrammars`, [`projects/template_grammars.py`](../utk_curio/backend/app/projects/template_grammars.py)), and a dataset (`DatasetKinds`). It reads each manifest's raw JSON once, in the account's store and in the catalog, and unions what the two copies declare, since a store copy dates from when the account added it; a grammar, a model type, a format and a collection kind are the first copy's that has one. A node type or model id without a major takes the major the dataflow's lockfile (`dataflow.packages`) names, else the highest. Paths go through `dir_name_from_node_type` and `dir_name_from_model_ref`, so a legacy type with no package matches nothing. Without a lookup, `derive` reads the committed `packages/` and `datasets/`.
+
+The table's names come first, in its `displayOrder`; any other declared name follows, sorted ignoring case, so a new name shows on the rail with no frontend change. Names merge ignoring case, keeping the table's spelling, and a declaration read off a manifest skips a value of the wrong type (`declared_dataflow_categories`, beside the parsers' `clean_dataflow_categories` in `packages/domain/dataflow_categories.py`).
 
 ### NodeDescriptor: Static Metadata
 
@@ -1337,7 +1363,7 @@ Every system turn an agent receives is built by one function, `contracts.compose
 | instruction | Exactly one: the agent's `instruction` prompt, the invoked mode's, the definition's `autk-grammar` prompt for an Autark document under its reply schema, or the attachment's edited intent | the repository, or the user |
 | configuration | The catalog settings the run reads, framed as data | the user |
 | tool protocol | How to ask for a tool: the granted tools and the `toolRequest` syntax, or on native tools one line on calling them; with the `datasetCandidates` schema for a run that can search the catalog | the runtime |
-| runtime | The template roster, the enlistable templates, the worked examples and the delegation paragraph, each its own slot | the runtime |
+| runtime | The template roster and the enlistable templates (one line per template: its id, label, description cut at 140 characters, and the widgets a package template declares, `turns/roster.py`), the worked examples and the delegation paragraph, each its own slot | the runtime |
 
 A run selects its instruction and never appends to one. An edited intent replaces the instruction slot only, and everything a user wrote precedes every runtime-owned slot. A delegated run carries the first three slots, plus the worked examples when its mode takes them: it is tool-less and depth-1.
 

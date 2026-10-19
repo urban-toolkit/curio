@@ -1,0 +1,96 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "title": {
+    "text": "Colored: [!! highlight !!]. Grey: the rest.",
+    "fontWeight": "normal",
+    "fontSize": 12
+  },
+  "facet": {
+    "field": "scenario_name",
+    "type": "nominal",
+    "title": null,
+    "header": {
+      "labelFontSize": 13,
+      "labelFontWeight": "bold"
+    }
+  },
+  "spec": {
+    "width": 160,
+    "height": 160,
+    "transform": [
+      {
+        "joinaggregate": [
+          {
+            "op": "sum",
+            "field": "[!! value !!]",
+            "as": "curio_total"
+          }
+        ],
+        "groupby": [
+          "scenario_name"
+        ]
+      },
+      {
+        "calculate": "datum['[!! value !!]'] / datum.curio_total",
+        "as": "curio_share"
+      },
+      {
+        "calculate": "datum['[!! part !!]'] === '[!! highlight !!]' ? 1 : 0",
+        "as": "curio_highlight"
+      }
+    ],
+    "encoding": {
+      "theta": {
+        "field": "[!! value !!]",
+        "type": "quantitative",
+        "stack": true
+      },
+      "order": {
+        "field": "curio_highlight",
+        "type": "quantitative",
+        "sort": "descending"
+      }
+    },
+    "layer": [
+      {
+        "mark": {
+          "type": "arc",
+          "innerRadius": 42,
+          "tooltip": true
+        },
+        "encoding": {
+          "color": {
+            "condition": {
+              "test": "datum.curio_highlight === 1",
+              "field": "scenario_name",
+              "type": "nominal",
+              "legend": null
+            },
+            "value": "#d9d9d9"
+          }
+        }
+      },
+      {
+        "mark": {
+          "type": "text",
+          "radius": 62,
+          "fontWeight": "bold"
+        },
+        "encoding": {
+          "text": {
+            "field": "curio_share",
+            "type": "quantitative",
+            "format": ".0%"
+          },
+          "color": {
+            "condition": {
+              "test": "datum.curio_highlight === 1",
+              "value": "#ffffff"
+            },
+            "value": "#333333"
+          }
+        }
+      }
+    ]
+  }
+}

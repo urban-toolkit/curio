@@ -897,6 +897,17 @@ These replace any colors or order the spec writes for that column. When a scenar
 renamed or recolored, the chart is drawn again with no run, and a selection made in
 it stays.
 
+For a comparison the **Chart** tab does not draw, the SCOUT Comparison package
+(`scout.comparison@1`) has seven charts to connect after a Compare Scenarios node:
+**Lines with a band**, **Curves by group**, **Bars with error bars**, **Ensemble
+strips**, **Stacked bars with totals**, **Donuts** and **Weighted matrix**. Each is a
+Vega-Lite node with a spec of its own, and draws its scenarios by the rule above. Set
+the columns it plots in its **Widgets** tab: a new node's widgets hold their own names
+(`y`, `part`), so the chart says which column the table lacks until you set them. The
+[package's README](../packages/scout.comparison@1/README.md) lists each chart's
+widgets. Add the package to a dataflow from the Node Catalog drawer; the charts are
+then under **SCOUT Comparison** in the Tools panel's **Node Catalog** dropdown.
+
 The **Scenario Catalog** lists the scenarios of all your projects, each with its
 fixed context, levers and outcomes and the results its project saved. Open it from
 the **Scenario Catalog** tab, or from the **Scenario** button in the canvas's top
@@ -1355,18 +1366,23 @@ combine, and **All dataflows** clears them.
 |---|---|
 | **Your dataflows** | the ones you created, imported or duplicated |
 | **By source** | Use cases, Examples and Tests that ship with Curio |
-| **Tags** | the tools a dataflow uses, such as Autark, Vega-Lite, GeoPandas, Pandas, GPU compute and Computer vision; SCOUT when it uses a SCOUT node, model or dataset; plus tags you add |
-| **Data type** | Tables, Geometries, Imagery, OpenStreetMap, Rasters, Video, Audio |
+| **Tags** | the tools a dataflow uses, such as Autark, Vega-Lite, GeoPandas, Pandas, GPU compute, Computer vision and SCOUT, plus tags you add |
+| **Data type** | the data it works on, such as Tables, Geometries, Imagery, OpenStreetMap, Rasters, Video and Audio |
 | **City**, **Topic**, **Complexity** | what you or Curio set for the dataflow |
 
 A dataflow file opened with **File → Load dataflow** is a new dataflow: saving it adds it to
 your dataflows under its own name, and the dataflow that was open stays as it was.
 
-Tags and data types come from the dataflow itself: its nodes, the libraries its code
-imports, the models it loads and its datasets. They change when you save, and cannot be
-removed by hand. Add a tag, a city, a topic or a complexity with **+ Category** under
-the dataflow's title on the canvas, which saves with the dataflow, or with **Edit
-categories** on the Projects page.
+Tags and data types come from the dataflow and from what it uses: the libraries its code
+imports and the files it names, the grammar each node draws with, the type of each model
+it runs (a segmentation model gives Computer vision and Imagery), the format of each
+dataset (a GeoTIFF gives Rasters), and the tags and data types its packages, models and
+datasets declare in their manifests' `dataflowCategories` (SCOUT's give SCOUT). A package
+or dataset of your own can declare them too ([Authoring nodes](AUTHORING-NODES.md#tags-and-data-types),
+[Data Catalog](DATA-CATALOG.md#7-the-manifest)), and a new name adds an entry to the
+rail. They change when you save, and cannot be removed by hand. Add a tag, a
+city, a topic or a complexity with **+ Category** under the dataflow's title on the
+canvas, which saves with the dataflow, or with **Edit categories** on the Projects page.
 
 ## Data Catalog
 
