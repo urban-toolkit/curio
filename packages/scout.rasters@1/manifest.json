@@ -5,6 +5,10 @@
     "major": 1
   },
   "createdAt": "2026-10-05T00:00:00Z",
+  "dataflowCategories": {
+    "dataTypes": ["Rasters"],
+    "tags": ["SCOUT"]
+  },
   "dependencies": {
     "js": {},
     "packages": {},

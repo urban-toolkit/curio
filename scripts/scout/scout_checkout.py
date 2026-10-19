@@ -73,6 +73,8 @@ ROAD_EDGES_FILE = "roads_edges.parquet"
 
 PUBLISHER = "SCOUT (urban-toolkit/scout)"
 SOURCE_LABEL = "SCOUT"
+#: What a dataflow that reads one of the datasets shows on the Projects rail.
+DATAFLOW_CATEGORIES = {"tags": ["SCOUT"]}
 STAMP = "2026-10-05T00:00:00Z"
 PERMISSION = "used with the permission of SCOUT's authors"
 #: A model package's model block names its weights' license; SCOUT's is this permission.
@@ -118,6 +120,7 @@ def write_manifest(catalog, dataset_id, *, name, fmt, description, tags,
     manifest = {
         "id": dataset_id, "name": name, "version": "1.0.0", "format": fmt,
         "description": description, "publisher": PUBLISHER, "license": "", "tags": list(tags),
+        "dataflowCategories": DATAFLOW_CATEGORIES,
         "dataFile": DATASETS[dataset_id], "compatibility": {"major": 1}, "sourceLabel": SOURCE_LABEL,
         "rowCount": row_count, "featureCount": None, "schema": None,
         "createdAt": STAMP, "updatedAt": STAMP, "sourceUpdatedAt": None, "sourceEncoding": None,

@@ -13,6 +13,11 @@
     "scout",
     "chicago"
   ],
+  "dataflowCategories": {
+    "tags": [
+      "SCOUT"
+    ]
+  },
   "dataFile": "data/RH2.nc",
   "compatibility": {
     "major": 1
