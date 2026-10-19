@@ -21,13 +21,14 @@ def _resolve_prompt_text(user_key: str, coord: str, name: str) -> str | None:
     """A definition's prompt asset text, by prompts key: ``"instruction"``,
     ``"system"``, or a mode's own.
 
-    **Built-in trust follows the ROSTER bytes** (dev/60) — the same rule
+    **Built-in trust follows the SHIPPED bytes** (dev/60), the same rule
     ``_resolve_definition`` applies to metadata, for the same reason: an
     updated built-in prompt must take effect for existing installs (the store
     copy is a materialization cache, not an authority). Owned/imported
-    definitions — including deliberate shadows of a built-in coordinate —
-    run from their own on-disk bytes, store copy first, then the published
-    catalog.
+    definitions, including deliberate shadows of a built-in coordinate, run
+    from their own on-disk bytes, store copy first, then the published
+    catalog; a prompt one names as Curio's (``curio:<file>``) is read from
+    Curio's own prompts.
     """
     m = storage.load_installed_agent_definition(user_key, coord)
     base = storage.agent_definition_dir(user_key, coord) if m is not None else None
@@ -35,11 +36,13 @@ def _resolve_prompt_text(user_key: str, coord: str, name: str) -> str | None:
         m = publications.get_published_manifest(coord)
         base = publications.published_agent_dir(coord) if m is not None else None
     if m is not None and m.provenance.trust == "built-in":
-        roster = builtin.read_prompt_text(coord, name)
-        if roster is not None:
-            return roster
+        shipped = builtin.read_prompt_text(coord, name)
+        if shipped is not None:
+            return shipped
     if m is not None and base is not None:
         asset = m.prompts.get(name)
+        if asset is not None and asset.shared is not None:
+            return builtin.read_prompt_file(asset.shared, wanted_by=f"agent {coord}, prompt {name!r},")
         if asset is not None:
             path = base / asset.path
             if path.is_file():

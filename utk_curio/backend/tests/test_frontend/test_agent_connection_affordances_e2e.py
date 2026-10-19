@@ -35,8 +35,9 @@ import pytest
 from playwright.sync_api import expect
 
 from utk_curio.backend.app.agents.domain import builtin
+from utk_curio.backend.app.agents.domain.manifest import AgentManifest
 
-from .test_agent_runs_e2e import CODE_NODE_ID, _project_spec
+from .test_agent_runs_e2e import CODE_NODE_ID, _kinds, _project_spec
 from .utils import (
     CANVAS_DROP_TARGET,
     _wait_for_reactflow_ready,
@@ -53,7 +54,7 @@ USERNAME = "agentconnaff"
 USER_NAME = "Connection Affordances User"
 
 # The one built-in that declares ``connection`` among its compatibleTargets
-# (builtin.py, targets=("canvas", "node", "connection")): the Node Builder,
+# (agents/agent.node-builder@1.0.0/manifest.json): the Node Builder,
 # which suggests the nodes that could go on a connection. The fixture asserts
 # that is still true, so a roster change fails loudly here instead of quietly
 # attaching to a node and testing nothing.
@@ -66,8 +67,8 @@ DROP_HOVER = "[data-curio-drop-hover='true']"
 EDGE_BADGES = "[data-curio-edge-badges]"
 
 
-def _spec() -> builtin.BuiltinAgentSpec:
-    for spec in builtin.BUILTIN_AGENTS:
+def _spec() -> AgentManifest:
+    for spec in builtin.list_builtin_manifests():
         if spec.agent_id == AGENT_ID:
             return spec
     raise AssertionError(f"{AGENT_ID} is no longer in the built-in roster")
@@ -181,10 +182,10 @@ def connection_agent_canvas(workflow_page, frontend_server, current_server):
     base = f"{current_server}/api/agents/projects/{project_id}"
 
     spec = _spec()
-    assert "connection" in spec.target_kinds(), (
-        f"{AGENT_ID} no longer accepts a connection target: {spec.target_kinds()}"
+    assert "connection" in _kinds(spec), (
+        f"{AGENT_ID} no longer accepts a connection target: {_kinds(spec)}"
     )
-    coord = f"{spec.agent_id}@{builtin.BUILTIN_VERSION}"
+    coord = spec.dir_name
     api_json(f"{base}/install", token, method="POST", payload={"coord": coord})
     attachment = api_json(
         f"{base}/attachments", token, method="POST",

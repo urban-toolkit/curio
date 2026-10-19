@@ -287,6 +287,7 @@ class TestMaterializationHeal:
     """Stale built-in store copies self-heal on install/import (memo dev/44)."""
 
     def test_pre_dev38_copy_gains_the_system_asset(self, client, user_and_token, tmp_curio, alice_project):
+        from utk_curio.backend.app.agents.application import catalog
         from utk_curio.backend.app.agents.domain import builtin
         from utk_curio.backend.app.agents.repositories import storage
         from utk_curio.backend.app.projects.services import _user_dir_key
@@ -297,8 +298,7 @@ class TestMaterializationHeal:
         # Fabricate the stale pre-dev/38 store copy: instruction only. A copy
         # that old has no modes either, so no capability names a prompt of its
         # own and no delegatesTo entry names the agent itself.
-        spec = builtin.get_builtin_spec(coord)
-        manifest = builtin.build_builtin_manifest(spec)
+        manifest = catalog.builtin_definition_bundle(coord)["manifest"]
         stale = dict(manifest)
         stale["prompts"] = {"instruction": manifest["prompts"]["instruction"]}
         stale["capabilities"] = [
@@ -316,8 +316,8 @@ class TestMaterializationHeal:
             json={"coord": coord}, headers=_auth(token),
         )
         healed = storage.load_installed_agent_definition(ukey, coord)
-        # Every prompt the roster declares, the preamble included.
-        assert set(healed.prompts) == set(spec.prompt_files()) >= {"system", "instruction"}
+        # Every prompt the shipped manifest declares, the preamble included.
+        assert set(healed.prompts) == set(builtin.get_builtin_manifest(coord).prompts) >= {"system", "instruction"}
         base = storage.agent_definition_dir(ukey, coord)
         for asset in healed.prompts.values():
             assert (base / asset.path).is_file()
@@ -390,10 +390,10 @@ class TestBuiltinPromptPropagation:
         # the superseded posture.
         key = _user_dir_key(user)
         base = storage.agent_definition_dir(key, self.COORD)
-        spec = builtin.get_builtin_spec(self.COORD)
+        instruction = base / builtin.get_builtin_manifest(self.COORD).prompts["instruction"].path
         stale = "Plans are ADDITIVE: removals are theirs to make on the canvas."
-        (base / "prompts" / spec.prompt_file).write_text(stale, encoding="utf-8")
-        return att_id, key, base, spec
+        instruction.write_text(stale, encoding="utf-8")
+        return att_id, key, base, instruction
 
     def test_run_composes_current_roster_bytes_over_a_stale_store_copy(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
@@ -423,14 +423,14 @@ class TestBuiltinPromptPropagation:
 
     def test_reinstall_heals_drifted_bytes_on_disk(self, client, user_and_token, tmp_curio, alice_project):
         user, token = user_and_token
-        _, key, base, spec = self._install_with_stale_instruction(client, user, token, alice_project)
+        _, key, base, instruction = self._install_with_stale_instruction(client, user, token, alice_project)
         # A fresh install (another project is enough) re-materializes.
         body = {"name": "p2", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}}, "outputs": []}
         p2 = client.post("/api/projects", json=body, headers=_auth(token)).get_json()["id"]
         client.post(f"/api/agents/projects/{p2}/install", json={"coord": self.COORD}, headers=_auth(token))
         from utk_curio.backend.app.agents.domain import builtin
 
-        on_disk = (base / "prompts" / spec.prompt_file).read_text(encoding="utf-8")
+        on_disk = instruction.read_text(encoding="utf-8")
         assert on_disk == builtin.read_prompt_text(self.COORD, "instruction")
 
     def test_owned_import_shadow_keeps_its_bytes(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):

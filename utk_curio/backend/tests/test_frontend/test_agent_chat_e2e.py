@@ -34,6 +34,7 @@ import pytest
 from playwright.sync_api import expect
 
 from utk_curio.backend.app.agents.domain import builtin
+from utk_curio.backend.app.agents.domain.manifest import AgentManifest, parse_agent_manifest
 
 from .test_agent_runs_e2e import (
     CODE_NODE_ID,
@@ -42,11 +43,14 @@ from .test_agent_runs_e2e import (
     PLAN_NODE_TITLES,
     PROPOSED_CONTENT,
     VISIBLE_PROSE,
+    _kinds,
     _mint_node_id,
     _native_replies,
+    _node_requires,
     _project_spec,
     _scripted_replies,
     _target_for,
+    _tool_ids,
 )
 from .utils import (
     NODE_ONLY_AGENT,
@@ -82,12 +86,12 @@ CHAT_PANEL_SELECTOR = '[role="dialog"][aria-label^="Chat with"]'
 USERNAME = "agentchat"
 USER_NAME = "Agent Chat User"
 
-def _spec_id(spec: builtin.BuiltinAgentSpec) -> str:
+def _spec_id(spec: AgentManifest) -> str:
     return spec.agent_id
 
 
-def _coord(spec: builtin.BuiltinAgentSpec) -> str:
-    return f"{spec.agent_id}@{builtin.BUILTIN_VERSION}"
+def _coord(spec: AgentManifest) -> str:
+    return spec.dir_name
 
 
 @pytest.fixture(scope="class")
@@ -192,7 +196,7 @@ def _open_dataflow_with_agent(
     return project_id, attachment["attachmentId"], base
 
 
-def _created_node_id(spec: builtin.BuiltinAgentSpec) -> str:
+def _created_node_id(spec: AgentManifest) -> str:
     """The id the node this agent's Apply creates is given, the same every run.
 
     The applied turn prints it ("Applied: node created (<id>)."), and that line
@@ -296,7 +300,7 @@ class TestAgentChatGallery:
     """One rendered chat turn, and one committed baseline, per catalog card."""
 
     @pytest.mark.parametrize(
-        "spec", [s for s in builtin.BUILTIN_AGENTS if s.in_catalog], ids=_spec_id,
+        "spec", [m for m in builtin.list_builtin_manifests() if m.catalog.listed], ids=_spec_id,
     )
     def test_agent_chat_panel_baseline(self, spec, agent_chat_session):
         require_project_page()
@@ -421,10 +425,10 @@ class TestAgentReviewCard:
         require_project_page()
         require_user_auth()
         spec = next(
-            s for s in builtin.BUILTIN_AGENTS
+            s for s in builtin.list_builtin_manifests()
             if s.agent_id == "agent.node-builder"
         )
-        assert "node.content.write" in spec.tools, (
+        assert "node.content.write" in _tool_ids(spec), (
             "this test needs an agent that can propose a content replacement; "
             f"{spec.agent_id} no longer declares node.content.write"
         )
@@ -441,7 +445,7 @@ class TestAgentReviewCard:
             "backend": current_server, "token": login["token"],
             "username": "agentreview",
         }
-        node_id = DATA_NODE_ID if spec.node_requires else CODE_NODE_ID
+        node_id = DATA_NODE_ID if _node_requires(spec) else CODE_NODE_ID
         replies = [
             VISIBLE_PROSE
             + "\n\n```curio.v1\n"
@@ -547,19 +551,25 @@ class TestNodeAttachedChatHeader:
     # Never a canvas agent (it attaches to nodes only), so the server cannot
     # answer a node attachment with a canvas one and leave this reading the
     # wrong header. Every card accepts the canvas, so a made-up agent, uploaded
-    # to the account, stands in; this spec only describes it to the helpers.
-    SPEC = builtin.BuiltinAgentSpec(
-        NODE_ONLY_AGENT.split("@", 1)[0], NODE_ONLY_AGENT_NAME, "node",
-        "Answer questions about the node it is attached to.",
-        "instruction.md", ("node.explain",), targets=("node",),
-    )
+    # to the account, stands in; this manifest only describes it to the helpers.
+    SPEC = parse_agent_manifest({
+        "id": NODE_ONLY_AGENT.split("@", 1)[0],
+        "name": NODE_ONLY_AGENT_NAME,
+        "category": "node",
+        "version": "1.0.0",
+        "purpose": "Answer questions about the node it is attached to.",
+        "capabilities": [{"id": "node.explain", "contractVersion": "1"}],
+        "compatibleTargets": [{"kind": "node", "requires": []}],
+        "prompts": {"instruction": {"path": "prompts/instruction.md"}},
+        "provenance": {"publisher": "e2e"},
+    })
 
     def test_the_header_names_the_node_and_keeps_the_ids_on_the_tooltip(
         self, agent_chat_session,
     ):
         require_project_page()
         require_user_auth()
-        assert "canvas" not in self.SPEC.target_kinds(), (
+        assert "canvas" not in _kinds(self.SPEC), (
             f"{self.SPEC.agent_id} attaches to the canvas; this test needs an "
             "agent that never does"
         )
@@ -617,7 +627,7 @@ class TestNativeToolCall:
 
         require_project_page()
         require_user_auth()
-        spec = next(s for s in builtin.BUILTIN_AGENTS if s.agent_id == "agent.node-builder")
+        spec = next(s for s in builtin.list_builtin_manifests() if s.agent_id == "agent.node-builder")
         leg, tool, replies = _native_replies(spec)
         assert (leg, tool) == ("mint", "node.create"), (
             f"this test needs an agent whose characteristic call is node.create; "

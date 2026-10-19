@@ -6,8 +6,8 @@ run. ``test_agents/test_routes_turns.py`` covers the run loop richly but in-proc
 and for a handful of coordinates; ``test_agent_catalog.py`` covers the drawer
 and the palette but never runs a turn. The gap was per-agent, end to end.
 
-**Parametrized over the roster itself**, not a hand-kept list: add a
-``BuiltinAgentSpec`` and it is covered on the next run, or it fails. That is the
+**Parametrized over the roster itself**, not a hand-kept list: add an agent
+folder to ``agents/`` and it is covered on the next run, or it fails. That is the
 property this module exists for, and ``test_the_roster_matches_the_served_catalog``
 guards the other direction - an agent that reaches the catalog by some path
 other than the roster cannot slip past.
@@ -35,6 +35,7 @@ import re
 import pytest
 
 from utk_curio.backend.app.agents.domain import builtin
+from utk_curio.backend.app.agents.domain.manifest import AgentManifest
 
 from .utils import (
     api_json,
@@ -103,8 +104,23 @@ BUILTIN_NODE_TYPE = "curio.builtin/computation-analysis"
 VISIBLE_PROSE = "Here is what I found."
 
 
-def _spec_id(spec: builtin.BuiltinAgentSpec) -> str:
+def _spec_id(spec: AgentManifest) -> str:
     return spec.agent_id
+
+
+def _tool_ids(spec: AgentManifest) -> list[str]:
+    """The tools the agent's manifest declares, by id, in its order."""
+    return [tool.id for tool in spec.tools]
+
+
+def _kinds(spec: AgentManifest) -> list[str]:
+    """The target kinds the agent attaches to (``compatibleTargets``)."""
+    return [target.kind for target in spec.compatible_targets]
+
+
+def _node_requires(spec: AgentManifest) -> list[str]:
+    """What a node the agent attaches to must be, from its node target."""
+    return next((target.requires for target in spec.compatible_targets if target.kind == "node"), [])
 
 
 def _username(agent_id: str) -> str:
@@ -162,25 +178,25 @@ def _tail(payload: dict) -> str:
     )
 
 
-def _target_for(spec: builtin.BuiltinAgentSpec) -> dict:
+def _target_for(spec: AgentManifest) -> dict:
     """The attachment target this agent actually accepts.
 
     Derived from the roster rather than hardcoded, so it stays correct when an
     agent's compatibleTargets change - the server enforces the same two rules
     (kind, then the node "requires" suffix) in ``services.attach_agent``.
     """
-    kinds = spec.target_kinds()
+    kinds = _kinds(spec)
     if "canvas" in kinds:
         return {"kind": "canvas"}
-    node_id = DATA_NODE_ID if spec.node_requires else CODE_NODE_ID
+    node_id = DATA_NODE_ID if _node_requires(spec) else CODE_NODE_ID
     return {"kind": "node", "targetId": node_id}
 
 
-def _mint_node_id(spec: builtin.BuiltinAgentSpec) -> str:
-    return DATA_NODE_ID if spec.node_requires else CODE_NODE_ID
+def _mint_node_id(spec: AgentManifest) -> str:
+    return DATA_NODE_ID if _node_requires(spec) else CODE_NODE_ID
 
 
-def _mint_params(tool: str, spec: builtin.BuiltinAgentSpec) -> dict:
+def _mint_params(tool: str, spec: AgentManifest) -> dict:
     if tool == "node.content.write":
         return {"nodeId": _mint_node_id(spec), "content": PROPOSED_CONTENT}
     if tool == "node.create":
@@ -201,20 +217,20 @@ def _mint_params(tool: str, spec: builtin.BuiltinAgentSpec) -> dict:
     raise AssertionError(f"no mint params defined for {tool!r}")
 
 
-def _read_params(tool: str, spec: builtin.BuiltinAgentSpec) -> dict:
+def _read_params(tool: str, spec: AgentManifest) -> dict:
     """A canvas attachment names no node, so a node read has to."""
     if tool in ("node.read", "node.runtime.read"):
         return {"nodeId": _mint_node_id(spec)}
     return {}
 
 
-def _characteristic(spec: builtin.BuiltinAgentSpec) -> tuple[str, str | None]:
+def _characteristic(spec: AgentManifest) -> tuple[str, str | None]:
     """What this agent is *for*, as ``(leg, tool)``.
 
     Chosen from the roster entry rather than a parallel table, so it cannot
     drift out of sync when an agent gains or loses a tool.
     """
-    declared = list(spec.tools)
+    declared = _tool_ids(spec)
     for tool in MINTABLE_TOOLS:
         if tool in declared:
             return "mint", tool
@@ -224,7 +240,7 @@ def _characteristic(spec: builtin.BuiltinAgentSpec) -> tuple[str, str | None]:
     return "prompts", None
 
 
-def _scripted_replies(spec: builtin.BuiltinAgentSpec) -> tuple[str, str | None, list[str]]:
+def _scripted_replies(spec: AgentManifest) -> tuple[str, str | None, list[str]]:
     leg, tool = _characteristic(spec)
     if leg == "mint":
         return leg, tool, [
@@ -248,7 +264,7 @@ def _scripted_replies(spec: builtin.BuiltinAgentSpec) -> tuple[str, str | None, 
 
 #: The catalog cards: the internal built-ins run only as delegates, so they
 #: are never installed or attached.
-_CARDS = [s for s in builtin.BUILTIN_AGENTS if s.in_catalog]
+_CARDS = [m for m in builtin.list_builtin_manifests() if m.catalog.listed]
 
 
 @pytest.mark.parametrize("spec", _CARDS, ids=_spec_id)
@@ -264,7 +280,7 @@ def test_agent_installs_attaches_and_runs(spec, current_server: str):
     require_project_page()
     require_user_auth()
 
-    coord = f"{spec.agent_id}@{builtin.BUILTIN_VERSION}"
+    coord = spec.dir_name
     session = stub_db_user(
         current_server,
         username=_username(spec.agent_id),
@@ -402,7 +418,7 @@ def test_the_roster_matches_the_served_catalog(current_server: str):
         )["items"]
         if row["provenance"]["trust"] == "built-in"
     }
-    covered = {f"{s.agent_id}@{builtin.BUILTIN_VERSION}" for s in _CARDS}
+    covered = {s.dir_name for s in _CARDS}
     assert served == covered, (
         f"served but not covered: {sorted(served - covered)}; "
         f"covered but not served: {sorted(covered - served)}"
@@ -412,7 +428,7 @@ def test_the_roster_matches_the_served_catalog(current_server: str):
 # ── native tool calls ────────────────────────────────────────────────────────
 
 
-def _native_replies(spec: builtin.BuiltinAgentSpec) -> tuple[str, str | None, list]:
+def _native_replies(spec: AgentManifest) -> tuple[str, str | None, list]:
     """The turn :func:`_scripted_replies` scripts, its request made as a native
     call. Natively a plan is the call's arguments, with no dataflowPlan key."""
     leg, tool = _characteristic(spec)
@@ -434,11 +450,11 @@ def _native_replies(spec: builtin.BuiltinAgentSpec) -> tuple[str, str | None, li
 
 
 def _attached(
-    spec: builtin.BuiltinAgentSpec, current_server: str, suffix: str, project_spec: dict | None = None,
+    spec: AgentManifest, current_server: str, suffix: str, project_spec: dict | None = None,
 ) -> tuple[str, str, str]:
     """A fresh account and project with *spec* installed and attached, on the
     scripted provider: ``(token, agents base url, attachment id)``."""
-    coord = f"{spec.agent_id}@{builtin.BUILTIN_VERSION}"
+    coord = spec.dir_name
     session = stub_db_user(
         current_server,
         username=_username(spec.agent_id)[:32] + "_" + suffix,
@@ -480,7 +496,7 @@ def test_agent_runs_on_native_tools(spec, current_server: str):
         "a run on native tools was still taught the fenced request syntax"
     )
     offers = captured_agent_offers(current_server)
-    names = {tools.wire_name(t) for t in spec.tools} | ({"delegate"} if spec.delegates_to else set())
+    names = {tools.wire_name(t) for t in _tool_ids(spec)} | ({"delegate"} if spec.delegates_to else set())
     assert set(offers[0]["tools"]) <= names and offers[0]["toolChoice"] == "auto", offers[0]
     if leg == "prompts":
         return
@@ -570,7 +586,7 @@ def test_an_autark_document_is_written_under_its_schema(current_server: str):
     assert "held to the Autark document's schema" in captured_system_prompt(current_server, call=1)
     (entry,) = [p for p in run["content"] if p.get("type") == "delegation"]
     assert entry["status"] == "ok", entry
-    assert entry["coord"] == f"agent.node-builder@{builtin.BUILTIN_VERSION}", entry
+    assert entry["coord"] == builtin.builtin_coord("agent.node-builder"), entry
     turns = api_json(f"{base}/attachments/{entry['attachmentId']}/session", token)["turns"]
     proposals = [part for turn in turns for part in (turn.get("content") or [])
                  if part.get("type") == "proposal"]

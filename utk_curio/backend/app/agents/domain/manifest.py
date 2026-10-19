@@ -14,8 +14,15 @@ Key invariants enforced here (the point of this module):
   capability id must be two-or-more dot-separated lowercase segments
   (``node.explain``, ``dataflow.orchestrate``, ``package.recommend``) and must
   not contain a prompt filename, path separator, underscore, ``.txt`` or ``.md``.
-* Prompt assets are referenced by *contained* package-relative path — no
-  absolute paths and no ``..`` escapes.
+* Prompt assets are referenced by a package-relative path contained in the
+  package (no absolute path, no ``..`` escape) or, for a prompt Curio shares
+  with every agent, by ``curio:<file>`` (``SHARED_PROMPTS``), read from
+  Curio's own prompts and never from the agent's folder.
+* ``catalog`` takes exactly ``listed`` and ``order``. It is parsed here for
+  every manifest but counts only for the agents Curio ships (``builtin``).
+
+The agents Curio ships are folders of this format in ``agents/``, read by
+:func:`load_agent_manifest` as a user's agent is (``builtin``).
 
 User-facing overview: ``docs/AGENT-CATALOG.md``.
 """
@@ -55,6 +62,18 @@ _TRUST_TIERS = ("built-in", "global", "imported")
 # Tokens a capability id must never contain (prompt-filename / path leakage).
 _FORBIDDEN_CAPABILITY_SUBSTRINGS = ("_prompt", ".txt", ".md", "/", "\\", "_")
 
+#: How a manifest names a prompt Curio shares with every agent: ``curio:`` and
+#: the file's name in Curio's prompts (``builtin.PROMPT_SOURCE_DIR``).
+SHARED_PROMPT_PREFIX = "curio:"
+#: The prompts Curio shares: the preamble every agent it ships runs, which a
+#: user's agent may name too.
+SHARED_PROMPTS = ("default_preamble.md",)
+#: Where a bundle (an export, an install's copy) carries a shared prompt as a
+#: file of the agent's own: ``prompts/<file>``.
+SHARED_PROMPT_FOLDER = "prompts"
+#: The keys of ``catalog``, all required, no other allowed.
+_CATALOG_KEYS = ("listed", "order")
+
 
 class AgentManifestError(ValueError):
     """Raised when an agent manifest is malformed or violates the supported schema."""
@@ -85,8 +104,21 @@ def _validate_capability_id(cap_id: str, *, where: str) -> str:
     return cap_id
 
 
+def _require_bool(raw: object, *, where: str) -> bool:
+    if not isinstance(raw, bool):
+        raise AgentManifestError(f"{where} must be true or false (got {raw!r})")
+    return raw
+
+
 def _validate_asset_path(raw: object, *, where: str) -> str:
     path = _require_str(raw, where=where)
+    if path.startswith(SHARED_PROMPT_PREFIX):
+        if path[len(SHARED_PROMPT_PREFIX):] not in SHARED_PROMPTS:
+            shared = ", ".join(SHARED_PROMPT_PREFIX + name for name in SHARED_PROMPTS)
+            raise AgentManifestError(
+                f"{where} {path!r} names no prompt Curio shares; a curio: path is one of: {shared}"
+            )
+        return path
     if path.startswith("/"):
         raise AgentManifestError(f"{where} must be a package-relative path, not absolute: {path!r}")
     parts = path.replace("\\", "/").split("/")
@@ -106,6 +138,10 @@ class CapabilityDeclaration:
     A capability may be a MODE: its own instruction (a ``prompts`` key), the
     context it reads and the catalog settings it needs. A delegated run of the
     capability runs that mode; without one it runs the agent's instruction.
+
+    ``label`` names it in the agent details window, and a mode's
+    ``worked_examples`` says whether its runs get worked examples; both count
+    for the agents Curio ships only.
     """
 
     id: str
@@ -113,6 +149,8 @@ class CapabilityDeclaration:
     instruction: str | None = None
     reads: tuple[str, ...] = ()
     required_config: tuple[str, ...] = ()
+    label: str | None = None
+    worked_examples: bool = False
 
     @classmethod
     def from_json(cls, raw: object, *, where: str) -> "CapabilityDeclaration":
@@ -129,18 +167,52 @@ class CapabilityDeclaration:
             if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
                 raise AgentManifestError(f"{where}.{key} must be a list of strings")
             lists[key] = tuple(value)
+        label = raw.get("label")
+        if label is not None:
+            label = _require_str(label, where=f"{where}.label")
+        worked = raw.get("workedExamples")
+        if worked is not None:
+            worked = _require_bool(worked, where=f"{where}.workedExamples")
+            if instruction is None:
+                raise AgentManifestError(
+                    f"{where}.workedExamples: only a mode, a capability with its own instruction, "
+                    "says whether its runs get worked examples; any other run follows the "
+                    "agent's workedExamples"
+                )
         return cls(id=cap_id, contract_version=contract_version, instruction=instruction,
-                   reads=lists["reads"], required_config=lists["requiredConfig"])
+                   reads=lists["reads"], required_config=lists["requiredConfig"],
+                   label=label, worked_examples=bool(worked))
 
 
 @dataclass(frozen=True)
 class PromptAsset:
-    """A prompt file referenced by contained package-relative path and digest."""
+    """A prompt file referenced by contained package-relative path and digest,
+    or a prompt Curio shares, by ``curio:<file>``.
+
+    ``runs`` says when a prompt that is neither the preamble, the instruction
+    nor a mode's runs, in the words the agent details window shows (the
+    Node Builder's Autark prompt); it counts for the agents Curio ships only.
+    """
 
     name: str
     path: str
     sha256: str | None
     variables: list[str]
+    runs: str | None = None
+
+    @property
+    def shared(self) -> str | None:
+        """The file name of the prompt Curio shares that *path* names, else None."""
+        if self.path.startswith(SHARED_PROMPT_PREFIX):
+            return self.path[len(SHARED_PROMPT_PREFIX):]
+        return None
+
+    @property
+    def file(self) -> str:
+        """Where a bundle holds the prompt: its path, or ``prompts/<file>`` for
+        a shared one, which an export and an install carry as a file."""
+        shared = self.shared
+        return self.path if shared is None else f"{SHARED_PROMPT_FOLDER}/{shared}"
 
     @classmethod
     def from_json(cls, name: str, raw: object, *, where: str) -> "PromptAsset":
@@ -153,7 +225,38 @@ class PromptAsset:
         vars_raw = raw.get("variables", [])
         if not isinstance(vars_raw, list) or not all(isinstance(v, str) for v in vars_raw):
             raise AgentManifestError(f"{where}.variables must be a list of strings")
-        return cls(name=name, path=path, sha256=sha_raw or None, variables=list(vars_raw))
+        runs = raw.get("runs")
+        if runs is not None:
+            runs = _require_str(runs, where=f"{where}.runs")
+        return cls(name=name, path=path, sha256=sha_raw or None, variables=list(vars_raw), runs=runs)
+
+
+@dataclass(frozen=True)
+class CatalogPlacement:
+    """Where an agent Curio ships stands in the Agent Catalog: a card
+    (``listed``) or a helper that runs only as other agents' delegate, and its
+    place in the roster (``order``), the order the details window names the
+    agents that ask for a mode in. Parsed for every manifest; read only for a
+    folder in Curio's ``agents/`` (``builtin``)."""
+
+    listed: bool
+    order: int
+
+    @classmethod
+    def from_json(cls, raw: object, *, where: str) -> "CatalogPlacement":
+        if not isinstance(raw, dict):
+            raise AgentManifestError(f"{where} must be an object with {list(_CATALOG_KEYS)}")
+        unknown = sorted(set(raw) - set(_CATALOG_KEYS))
+        if unknown:
+            raise AgentManifestError(f"{where} takes only {list(_CATALOG_KEYS)}, not {unknown}")
+        missing = [key for key in _CATALOG_KEYS if key not in raw]
+        if missing:
+            raise AgentManifestError(f"{where} must give {missing}")
+        listed = _require_bool(raw["listed"], where=f"{where}.listed")
+        order = raw["order"]
+        if isinstance(order, bool) or not isinstance(order, int) or order < 0:
+            raise AgentManifestError(f"{where}.order must be a whole number, 0 or more (got {order!r})")
+        return cls(listed=listed, order=order)
 
 
 @dataclass(frozen=True)
@@ -257,6 +360,13 @@ class AgentManifest:
     # A delegatesTo entry that names capabilities: agent id -> the only
     # capabilities of it this agent delegates. Absent means all of them.
     delegate_scopes: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    # Where an agent Curio ships stands in the catalog; None for most
+    # manifests. Read only for a folder in Curio's agents/ (builtin).
+    catalog: CatalogPlacement | None = None
+    # Whether a run under the instruction or a variant prompt gets worked
+    # examples (a mode's capability decides for itself). Read only for the
+    # agents Curio ships (builtin.gets_worked_examples).
+    worked_examples: bool = False
 
     @property
     def dir_name(self) -> str:
@@ -406,6 +516,20 @@ def parse_agent_manifest(raw: object, *, where: str = "manifest") -> AgentManife
             raise AgentManifestError(
                 f"{where}.capabilities[{i}].instruction {cap.instruction!r} names no prompts entry"
             )
+    # The preamble, the instruction and a mode's prompt run when the details
+    # window says; only another prompt says when it runs.
+    named = {"system", "instruction", *(cap.instruction for cap in capabilities if cap.instruction)}
+    for name, asset in prompts.items():
+        if asset.runs is not None and name in named:
+            raise AgentManifestError(
+                f"{where}.prompts.{name}.runs: the preamble, the instruction and a mode's prompt "
+                "say no runs; only another prompt says when it runs"
+            )
+
+    catalog_raw = raw.get("catalog")
+    catalog = None if catalog_raw is None else CatalogPlacement.from_json(catalog_raw, where=f"{where}.catalog")
+    worked_examples = raw.get("workedExamples", False)
+    _require_bool(worked_examples, where=f"{where}.workedExamples")
 
     targets_raw = raw.get("compatibleTargets", [])
     if not isinstance(targets_raw, list):
@@ -492,6 +616,8 @@ def parse_agent_manifest(raw: object, *, where: str = "manifest") -> AgentManife
         settings_profile_version=profile_version,
         provenance=provenance,
         delegate_scopes=delegate_scopes,
+        catalog=catalog,
+        worked_examples=worked_examples,
     )
 
 

@@ -224,13 +224,13 @@ class TestWithoutTheExamplesFolder:
 class TestWhoTakesThem:
     def test_the_builders_and_workflow_suggest_take_them_and_no_one_else(self):
         taking = set()
-        for spec in builtin.BUILTIN_AGENTS:
-            coord = f"{spec.agent_id}@{builtin.BUILTIN_VERSION}"
+        for m in builtin.list_builtin_manifests():
+            coord = m.dir_name
             if builtin.gets_worked_examples(coord):
-                taking.add((spec.agent_id, None))
-            for mode in spec.modes:
-                if builtin.gets_worked_examples(coord, mode.capability):
-                    taking.add((spec.agent_id, mode.capability))
+                taking.add((m.agent_id, None))
+            for mode in (c for c in m.capabilities if c.instruction):
+                if builtin.gets_worked_examples(coord, mode.id):
+                    taking.add((m.agent_id, mode.id))
         assert taking == {
             ("agent.dataflow-builder", None),
             ("agent.node-builder", None),
