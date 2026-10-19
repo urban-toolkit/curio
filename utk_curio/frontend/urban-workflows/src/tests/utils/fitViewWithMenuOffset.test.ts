@@ -331,12 +331,37 @@ describe('fitViewWithMenuOffsetNow', () => {
       ({ width: 1000, height: 600, left: 0, top: 0 }) as DOMRect;
   };
 
-  // React Flow's store as the canvas hands it over: d3's zoom, and the pane it moves.
-  const makeStore = () => {
+  // React Flow's store as the canvas hands it over: d3's zoom, and the pane it
+  // moves; *more* adds the rest of its state a test needs.
+  const makeStore = (more: Record<string, unknown> = {}) => {
     const d3Selection = { pane: true };
     const d3Zoom = { transform: jest.fn() };
-    return { store: { getState: () => ({ d3Zoom, d3Selection }) } as any, d3Zoom, d3Selection };
+    return { store: { getState: () => ({ d3Zoom, d3Selection, ...more }) } as any, d3Zoom, d3Selection };
   };
+
+  // The canvas's element with one drawn node per id, as React Flow draws them.
+  const canvasWith = (ids: string[]) => {
+    const domNode = document.createElement('div');
+    const elements = ids.map((id) => {
+      const element = document.createElement('div');
+      element.className = 'react-flow__node';
+      element.setAttribute('data-id', id);
+      domNode.appendChild(element);
+      return element;
+    });
+    return { domNode, elements };
+  };
+
+  // Stands in for React Flow's updateNodeDimensions: each node it is handed
+  // takes the size its element has.
+  const measuringInto = (nodes: FakeNode[]) =>
+    jest.fn((updates: { id: string }[]) => {
+      updates.forEach(({ id }) => {
+        const node = nodes.find((n) => n.id === id)!;
+        node.width = 120;
+        node.height = 80;
+      });
+    });
 
   test('sets the fit through d3 zoom at once and returns it', () => {
     pane();
@@ -363,6 +388,74 @@ describe('fitViewWithMenuOffsetNow', () => {
     expect(fitViewWithMenuOffsetNow(rf, store)).toBeNull();
     expect(d3Zoom.transform).not.toHaveBeenCalled();
     expect(rf.setViewport).not.toHaveBeenCalled();
+  });
+
+  // React Flow measures a node it has just drawn only in its ResizeObserver's
+  // callback, which the browser runs only when it draws a frame, and a freshly
+  // launched Chrome on a GPU runner that several test jobs shared drew none for
+  // more than 10 s (#1012). The fit reads such a node's size from its element,
+  // through React Flow's own updateNodeDimensions, as that callback does.
+  test('measures a node React Flow has not measured yet from its element, then fits', () => {
+    pane();
+    const nodes: FakeNode[] = [
+      { id: 'a', width: 120, height: 80 },
+      { id: 'b', width: null, height: null },
+    ];
+    const rf = makeRf(nodes);
+    const { domNode, elements } = canvasWith(['a', 'b']);
+    const updateNodeDimensions = measuringInto(nodes);
+    const { store, d3Zoom } = makeStore({ domNode, updateNodeDimensions });
+
+    expect(fitViewWithMenuOffsetNow(rf, store)).toEqual({ x: 5, y: 6, zoom: 1 });
+    expect(updateNodeDimensions).toHaveBeenCalledTimes(1);
+    expect(updateNodeDimensions).toHaveBeenCalledWith([{ id: 'b', nodeElement: elements[1], forceUpdate: true }]);
+    expect(d3Zoom.transform).toHaveBeenCalledTimes(1);
+  });
+
+  test('measures only the unmeasured nodes it frames, never one drawn hidden', () => {
+    pane();
+    const nodes: (FakeNode & { style?: { display: string } })[] = [
+      { id: 'a', width: 120, height: 80 },
+      { id: 'collapsed', width: null, height: null, style: { display: 'none' } },
+      { id: 'elsewhere', width: null, height: null },
+      { id: 'b', width: null, height: null },
+    ];
+    const rf = makeRf(nodes);
+    const { domNode, elements } = canvasWith(['a', 'collapsed', 'elsewhere', 'b']);
+    const updateNodeDimensions = measuringInto(nodes);
+    const { store, d3Zoom } = makeStore({ domNode, updateNodeDimensions });
+
+    const framed = { nodes: [{ id: 'a' }, { id: 'collapsed' }, { id: 'b' }] };
+    expect(fitViewWithMenuOffsetNow(rf, store, framed)).toEqual({ x: 5, y: 6, zoom: 1 });
+    expect(updateNodeDimensions).toHaveBeenCalledTimes(1);
+    expect(updateNodeDimensions).toHaveBeenCalledWith([{ id: 'b', nodeElement: elements[3], forceUpdate: true }]);
+    expect(d3Zoom.transform).toHaveBeenCalledTimes(1);
+  });
+
+  test('measures nothing when React Flow has measured every node it frames', () => {
+    pane();
+    const nodes: FakeNode[] = [{ id: 'a', width: 120, height: 80 }];
+    const rf = makeRf(nodes);
+    const { domNode } = canvasWith(['a']);
+    const updateNodeDimensions = measuringInto(nodes);
+    const { store, d3Zoom } = makeStore({ domNode, updateNodeDimensions });
+
+    expect(fitViewWithMenuOffsetNow(rf, store)).toEqual({ x: 5, y: 6, zoom: 1 });
+    expect(updateNodeDimensions).not.toHaveBeenCalled();
+    expect(d3Zoom.transform).toHaveBeenCalledTimes(1);
+  });
+
+  test('returns null while a node it frames has no element to measure, and moves nothing', () => {
+    pane();
+    const nodes: FakeNode[] = [{ id: 'a', width: null, height: null }];
+    const rf = makeRf(nodes);
+    const { domNode } = canvasWith([]);
+    const updateNodeDimensions = measuringInto(nodes);
+    const { store, d3Zoom } = makeStore({ domNode, updateNodeDimensions });
+
+    expect(fitViewWithMenuOffsetNow(rf, store)).toBeNull();
+    expect(updateNodeDimensions).not.toHaveBeenCalled();
+    expect(d3Zoom.transform).not.toHaveBeenCalled();
   });
 
   test('with none of the nodes on the canvas, returns the view as it is', () => {

@@ -27,8 +27,9 @@ VIEWPORT_MAX_READS = 100
 VIEWPORT_WALL_CAP_MS = 120_000
 
 # One read of the viewport wait. It fits the canvas through the hook
-# MainCanvas.tsx (and the dashboard) expose, which sets the viewport at once and
-# returns it, or null while a node it frames is not measured yet. It fits again
+# MainCanvas.tsx (and the dashboard) expose, which measures the nodes React Flow
+# has not measured yet, sets the viewport at once and returns it, or null while
+# a node it frames has no size. It fits again
 # whenever React Flow's viewport is no longer the one the fit set (the
 # canvas's own load fit lands later, say), and passes once that viewport, as
 # the page draws it, has held for *reads* reads in a row. It counts its reads,
@@ -79,6 +80,11 @@ _FIT_WAIT_STATE_JS = """() => {
         fitSet: wait.target || null,
         viewport: window.__curio_reactFlow ? window.__curio_reactFlow.getViewport() : null,
         drawn: [...document.querySelectorAll('.react-flow__viewport')].map((v) => v.style.transform),
+        unmeasured: window.__curio_reactFlow
+            ? window.__curio_reactFlow.getNodes()
+                .filter((n) => !(n.width > 0 && n.height > 0) && !(n.style && n.style.display === 'none'))
+                .map((n) => n.id)
+            : null,
         reads: wait.reads || 0,
         fits: wait.fits || 0,
         held: wait.held || 0,
@@ -129,7 +135,10 @@ def _wait_for_reactflow_ready(
     transition. The viewport is then read every ``VIEWPORT_READ_MS``, not once
     a frame, until React Flow's viewport is the one the fit set and the page
     has drawn the same transform for *stable_reads* reads in a row
-    (``test_frame_nodes_e2e.py`` holds the frames back).
+    (``test_frame_nodes_e2e.py`` holds the frames back). The hook also measures
+    the nodes React Flow has not measured yet: React Flow measures a node only
+    when the page draws a frame, and a freshly launched Chrome on a GPU runner
+    that four test jobs shared drew none for more than 10 s (#1012).
 
     It gives up after ``VIEWPORT_MAX_READS`` reads rather than after a time.
     The reads run on the page's main thread, and one long task there (decoding

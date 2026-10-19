@@ -276,10 +276,11 @@ export function MainCanvas() {
     // Test hook: expose the ReactFlow instance and a menu-aware fitView so
     // Playwright can force the same shifted viewport the in-app loader uses
     // (see useWorkflowOperations.ts) before taking screenshots. A fit without
-    // a duration is set at once and returns the viewport it set (null while a
-    // node is not measured yet), so a helper can wait for that viewport
-    // without an animation frame. Kept unconditional (read-only from the
-    // outside and cheap), so e2e tests don't need a separate build flag.
+    // a duration measures the nodes React Flow has not measured yet, is set at
+    // once and returns the viewport it set (null while a node has no size), so
+    // a helper can wait for that viewport without an animation frame (#1012).
+    // Kept unconditional (read-only from the outside and cheap), so e2e tests
+    // don't need a separate build flag.
     useEffect(() => {
         (window as any).__curio_reactFlow = reactFlow;
         (window as any).__curio_fitViewWithMenuOffset = (options?: FitViewOptions) =>
