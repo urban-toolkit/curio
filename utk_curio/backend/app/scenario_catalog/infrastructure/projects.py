@@ -64,11 +64,13 @@ def owned_project(user, project_id: str) -> tuple[Any, dict, bool]:
     return row, spec, is_example_project(user, project_id)
 
 
-def graph_preview(spec: dict) -> dict | None:
-    """The plain-box graph a project card draws."""
+def graph_preview(user, spec: dict) -> dict | None:
+    """The plain-box graph a project card draws, each node with the category
+    its template declares in the account's manifests or the catalog's."""
+    from utk_curio.backend.app.projects.categories import ManifestLookup
     from utk_curio.backend.app.projects.services import _extract_graph_preview
 
-    return _extract_graph_preview(spec)
+    return _extract_graph_preview(spec, ManifestLookup(user_key(user)))
 
 
 def saved_outputs(user, project_id: str) -> dict[str, dict]:

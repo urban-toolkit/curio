@@ -19,6 +19,10 @@ export interface OutputRef {
 export interface GraphPreviewNode {
   id: string;
   type: string;
+  /** The category the node's template declares (`data`, `computation`,
+   *  `vis_grammar`, `vis_simple` or `flow`), which colours its box; null or
+   *  absent for a node type no package provides. */
+  category?: string | null;
   x: number;
   y: number;
   w?: number | null;

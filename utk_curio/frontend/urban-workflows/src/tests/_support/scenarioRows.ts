@@ -2,13 +2,14 @@ import type { GraphPreview } from "../../api/projectsApi";
 import type { ScenarioDetails, ScenarioRow } from "../../services/scenarioCatalog";
 
 /** A four-node project: a loader and a Parameter feed a filter, which feeds a
- *  chart. The scenario's levers are the Parameter and the filter. */
+ *  chart. The scenario's levers are the Parameter and the filter. Each node
+ *  carries the category its template declares, as the server's preview does. */
 export const HEAT_PREVIEW: GraphPreview = {
   nodes: [
-    { id: "load", type: "curio.builtin/data-loading@1", x: 0, y: 0 },
-    { id: "year", type: "curio.builtin/parameter@1", x: 0, y: 200 },
-    { id: "filter", type: "curio.builtin/data-transformation@1", x: 300, y: 100 },
-    { id: "chart", type: "curio.builtin/vis-vega@1", x: 600, y: 100 },
+    { id: "load", type: "curio.builtin/data-loading@1", category: "data", x: 0, y: 0 },
+    { id: "year", type: "curio.builtin/parameter@1", category: "flow", x: 0, y: 200 },
+    { id: "filter", type: "curio.builtin/data-transformation@1", category: "data", x: 300, y: 100 },
+    { id: "chart", type: "curio.builtin/vis-vega@1", category: "vis_grammar", x: 600, y: 100 },
   ],
   edges: [
     { source: "load", target: "filter" },

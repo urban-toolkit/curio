@@ -16,6 +16,7 @@ import "reactflow/dist/style.css";
 import { TrillGenerator } from "../../../TrillGenerator";
 import { useCode } from "../../../hook/useCode";
 import DataflowThumbnail from "../../DataflowThumbnail";
+import { withRegisteredCategories } from "../../../utils/graphPreviewCategories";
 import { getLayoutedElements } from "../../../utils/provenanceLayout";
 import styles from "./TrillProvenanceWindow.module.css";
 import ModalShell from "../../ModalShell";
@@ -113,7 +114,9 @@ function TrillProvenanceGraph({ open }: { open: boolean }) {
             data: {
                 label: n.label || n.id,
                 isSelected: n.id === selectedId,
-                preview: n.preview ?? null,
+                // Each node in the category its type's descriptor has now, as
+                // a saved project's thumbnail is drawn.
+                preview: withRegisteredCategories(n.preview),
                 timestamp: n.timestamp,
             },
         }));

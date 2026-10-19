@@ -4,6 +4,7 @@ import type {
   ScenarioNodeEntry,
   ScenarioRow,
 } from "../../../services/scenarioCatalog";
+import { registeredCategory } from "../../../utils/graphPreviewCategories";
 import type { Scenario } from "../../../utils/scenarios/scenarioModel";
 import type { ScenarioParts } from "../../../utils/scenarios/scenarioParts";
 import { nodeLabel } from "../scenarioLabels";
@@ -34,17 +35,22 @@ export interface LiveProject {
   name: string;
 }
 
-/** The canvas's graph as a saved project's preview draws it. */
+/** The canvas's graph as a saved project's preview draws it, each node in
+ *  its registered descriptor's category. */
 export function liveGraphPreview(nodes: readonly LiveNode[], edges: readonly LiveEdge[]): GraphPreview {
   return {
-    nodes: nodes.map((node) => ({
-      id: node.id,
-      type: node.data?.nodeType ?? node.type ?? "",
-      x: node.position?.x ?? 0,
-      y: node.position?.y ?? 0,
-      w: node.width ?? null,
-      h: node.height ?? null,
-    })),
+    nodes: nodes.map((node) => {
+      const type = node.data?.nodeType ?? node.type ?? "";
+      return {
+        id: node.id,
+        type,
+        category: registeredCategory(type),
+        x: node.position?.x ?? 0,
+        y: node.position?.y ?? 0,
+        w: node.width ?? null,
+        h: node.height ?? null,
+      };
+    }),
     edges: edges.map((edge) => ({ source: edge.source, target: edge.target })),
   };
 }

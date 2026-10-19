@@ -19,6 +19,9 @@ A dataflow's categories come from three places, and each has exactly one:
 * **hand-set** - ``dataflow.categories`` in the spec: the user's own tags plus
   city, topic and complexity. Stored in the spec so they travel with export,
   duplicate and "Load dataflow".
+
+The same lookup gives each node the ``category`` its template declares, which
+colors the node's box in the dataflow's thumbnail (:func:`template_categories`).
 """
 from __future__ import annotations
 
@@ -27,7 +30,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, Optional
+from typing import Callable, Iterable, Iterator, Optional
 
 from utk_curio.backend.app.projects.template_grammars import (
     Declared,
@@ -231,6 +234,20 @@ def _at_lockfile_major(ref: object, package_id: str, majors: dict[str, str]) -> 
     return f"{ref}@{majors[package_id]}"
 
 
+def _declared_nodes(
+    nodes: list[dict], majors: dict[str, str], lookup: "ManifestLookup",
+) -> Iterator[tuple[dict, str, Declared]]:
+    """Each of *nodes* whose type is a string, with its type at the major the
+    lockfile names when it names none (*majors*, :func:`_lockfile_majors`),
+    and what its package and its template declare."""
+    for node in nodes:
+        node_type = node.get("type")
+        if not isinstance(node_type, str):
+            continue
+        node_type = _at_lockfile_major(node_type, node_type.rpartition("/")[0], majors)
+        yield node, node_type, lookup.packages.node(node_type)
+
+
 def derive(
     spec: object,
     dataset_kind: Optional[DatasetKind] = None,
@@ -272,12 +289,7 @@ def derive(
     for pattern, row in rules.code:
         if pattern.search(code):
             found.add(row)
-    for node in nodes:
-        node_type = node.get("type")
-        if not isinstance(node_type, str):
-            continue
-        node_type = _at_lockfile_major(node_type, node_type.rpartition("/")[0], majors)
-        declared = lookup.packages.node(node_type)
+    for node, node_type, declared in _declared_nodes(nodes, majors, lookup):
         found.add_declared(declared)
         found.add(rules.model_types.get(declared.model_type))
         grammar = rules.grammars.get(grammar_of(node_type))
@@ -298,6 +310,29 @@ def derive(
         found.add(rules.collection_kinds.get(kind))
         found.add_declared(lookup.datasets.declared(dataset_id))
     return found.in_order(rules.display_order)
+
+
+def template_categories(spec: object, lookup: Optional["ManifestLookup"] = None) -> dict[str, str]:
+    """``{node type: category}`` for the node types in *spec* whose template
+    names a ``category`` (``data``, ``computation``, ``vis_grammar``,
+    ``vis_simple`` or ``flow``): the color of the node's box in the dataflow's
+    thumbnail. Keyed by each type as the spec writes it.
+
+    Read as :func:`derive` reads a node's package and template: through
+    *lookup* (without one, the packages Curio ships, as committed), with a
+    type that names no major read at the major the dataflow's lockfile names.
+    A type no manifest holds is left out.
+    """
+    dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+    if not isinstance(dataflow, dict):
+        return {}
+    lookup = lookup if lookup is not None else ManifestLookup.shipped()
+    nodes = [n for n in dataflow.get("nodes") or [] if isinstance(n, dict)]
+    return {
+        node["type"]: declared.category
+        for node, _node_type, declared in _declared_nodes(nodes, _lockfile_majors(dataflow), lookup)
+        if declared.category is not None
+    }
 
 
 # ---------------------------------------------------------------------------
