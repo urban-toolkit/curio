@@ -52,7 +52,7 @@ Under `utk_curio/backend/app/`:
 
 - `projects/`: dataflows: routes, services, storage, seeding, categories, dashboard payload.
 - `runs/`: dataflow runs on the server: tables and retention (`models.py`, `repositories.py`), starting, following and cancelling one (`service.py`, `routes.py`), live runs (`jobs.py`). The engine is `execution/run_engine.py` with `execution/run_plan.py`; which outputs a run saves is `execution/save_policy.py`.
-- `users/`: accounts, sessions, auth routes, capabilities, connection keys, rate limits.
+- `users/`: accounts, sessions, auth routes, capabilities, connection keys, Data source keys (`source_keys.py`), rate limits.
 - `execution/`: one node run as Play does it (`node_exec.py`, behind `/processPythonCode` and `/processJavaScriptCode`), the sandbox HTTP client (`sandbox_client.py`), headless dataflow runner (`runner.py`), per-node runtime journal, sandbox token.
 - `collaboration/`: real-time co-editing over Socket.IO (`events.py`, `room_state.py`).
 - `monitor/`: monitor page backend: counters, stats, hardware, storage, error log.

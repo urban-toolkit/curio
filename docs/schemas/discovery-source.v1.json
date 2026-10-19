@@ -304,7 +304,41 @@
             "null"
           ],
           "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*){0,2}$",
-          "description": "Names a per-user credential SLOT, never a value. Shared across sources of a family, so one socrata.app-token serves every Socrata portal."
+          "description": "Names the key this source sends, never a value. Every source that sends the same key names the same id and declares it the same way; API Settings lists one row per id, and an account saves its key under it."
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[^\\r\\n]*$",
+          "description": "What API Settings calls the key, e.g. 'Mapillary access token'. The secretId when absent."
+        },
+        "placeholder": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[^\\r\\n]*$",
+          "description": "What the empty key field in API Settings shows, e.g. 'MLY|...'."
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 500,
+          "pattern": "^[^\\r\\n]*$",
+          "description": "A sentence API Settings shows under the key field."
+        },
+        "operatorDefault": {
+          "type": "boolean",
+          "description": "Lets whoever runs Curio set one key every account inherits until it saves its own, in CURIO_DEFAULT_ and the secretId in capitals, with every other character as '_'. False when absent."
         },
         "scheme": {
           "enum": [
@@ -328,7 +362,8 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "description": "Where a person gets the key, linked from the source's details and from its row in API Settings."
         },
         "valuePrefix": {
           "type": [

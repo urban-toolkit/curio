@@ -13,6 +13,7 @@ from typing import Any, Callable
 from utk_curio.backend.app.discovery.domain import text_match
 from utk_curio.backend.app.discovery.domain.errors import SourceNotFound
 from utk_curio.backend.app.discovery.domain.manifest import (
+    AuthSpec,
     DiscoverySourceManifest,
     ManifestError,
     load_source_manifest_from_dir,
@@ -27,13 +28,13 @@ class DiscoveryCatalog:
     def __init__(
         self,
         *,
-        credential_present: Callable[[str | None], bool] | None = None,
+        credential_present: Callable[[AuthSpec], bool] | None = None,
         icon_url_for: Callable[[DiscoverySourceManifest], str | None] | None = None,
     ) -> None:
         # Injected rather than imported so the roster has no dependency on the
         # credential store or on Flask's url_for, and so a test can list
         # sources without a database or a request context.
-        self._credential_present = credential_present or (lambda _slot: False)
+        self._credential_present = credential_present or (lambda _auth: False)
         self._icon_url_for = icon_url_for or (lambda _manifest: None)
 
     # ── reading ────────────────────────────────────────────────────────────
@@ -76,7 +77,7 @@ class DiscoveryCatalog:
     def row(self, manifest: DiscoverySourceManifest) -> dict[str, Any]:
         return source_row(
             manifest,
-            credential_present=self._credential_present(manifest.auth.secret_id),
+            credential_present=self._credential_present(manifest.auth),
             icon_url=self._icon_url_for(manifest),
         )
 

@@ -152,10 +152,7 @@ def me_patch_route():
         name=body.get("name"),
         email=body.get("email"),
         type=body.get("type"),
-        huggingface_token=body.get("huggingface_token"),
-        socrata_app_token=body.get("socrata_app_token"),
-        google_maps_api_key=body.get("google_maps_api_key"),
-        mapillary_access_token=body.get("mapillary_access_token"),
+        source_keys=body.get("source_keys"),
     )
     try:
         user_out = patch_me(g.user, data)

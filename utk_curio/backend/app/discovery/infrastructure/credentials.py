@@ -1,146 +1,88 @@
-"""Per-user portal tokens, stored the way every other Curio credential is.
+"""The keys the Discovery Catalog sends to its sources, and where they go.
 
-Same shape as ``User.huggingface_token``: a column on the user's own row,
-written through ``PATCH /api/auth/me``, edited in the account settings modal,
-and reported to any client as a boolean and never as a value. A portal token is
-a per-person entitlement - a Socrata app token is issued to an individual and
-raises *their* rate limit - so it belongs to the account, not the deployment.
+A source manifest declares the key it sends in its ``auth`` block: the secret
+id it names the key by, and how API Settings shows it (``label``, ``helpUrl``,
+``placeholder``, ``note``). Sources that send one key name the same id, and
+API Settings lists one row per id, so a key a new source needs is its
+manifest and nothing else. A key is a per-person entitlement - a Socrata app
+token is issued to an individual and raises *their* rate limit - so an
+account's keys live in its own owner-only file (``users/source_keys.py``),
+keyed by that id, and are reported to any client as booleans, never as values.
 
-**Slots are a server-owned allowlist, not free text.** A manifest names the
-credential it wants (``auth.secretId``), but which credentials can exist is
-decided here, by :data:`SLOT_COLUMNS`. That is the same posture
-``agents/tools.py::REGISTRY`` takes with tool contracts, and it matters for the
-same reason: a manifest is operator-authored configuration, and letting it
-invent a credential slot would let it invent somewhere for a secret to go.
-
-Adding a slot is a column plus a migration plus one line here - deliberately
-the same cost as adding any other account credential, because that is what it
-is.
+A key goes only to a source whose manifest names its id, and only to that
+source's own origin (``CredentialedTransport``). A source whose manifest sets
+``auth.operatorDefault`` also takes the operator's key, from the variable
+:func:`default_variable` derives from the id, when the account saved none.
 """
 
 from __future__ import annotations
 
+import logging
 import os
-from dataclasses import dataclass
+import re
+import threading
 from typing import Any, Iterable
 
-from utk_curio.backend.app.discovery.domain.manifest import DiscoverySourceManifest
+from utk_curio.backend.app.discovery.domain.manifest import AuthSpec, DiscoverySourceManifest
+from utk_curio.backend.app.users import source_keys
+
+logger = logging.getLogger(__name__)
+
+#: The prefix of every operator default's variable. Derived, never named by a
+#: manifest, so no manifest can reach any other variable.
+DEFAULT_VARIABLE_PREFIX = "CURIO_DEFAULT_"
 
 
-@dataclass(frozen=True)
-class KeySlot:
-    """One per-account key a source can send, and how API Settings shows it."""
-
-    #: The ``User`` column that holds it, which is also the field
-    #: ``PATCH /api/auth/me`` takes it under.
-    column: str
-    label: str
-    help_url: str | None = None
-    placeholder: str | None = None
-    #: A sentence API Settings shows under the field.
-    note: str | None = None
-    #: The deployment-wide fallback, read at call time so a test can set one.
-    #: A user's own key always wins; this is what everyone else inherits,
-    #: exactly as ``DEFAULT_LLM_API_KEY`` works.
-    default_env: str | None = None
+def default_variable(secret_id: str) -> str:
+    """The variable an operator sets for *secret_id*'s default: the prefix and
+    the id in capitals, with every other character as ``_``."""
+    return DEFAULT_VARIABLE_PREFIX + re.sub(r"[^A-Z0-9]", "_", secret_id.upper())
 
 
-#: manifest ``auth.secretId`` -> the slot. API Settings draws one row per
-#: entry, so a key a new source needs is a line here, a column and a migration.
-SLOTS: dict[str, KeySlot] = {
-    "socrata.app-token": KeySlot(
-        column="socrata_app_token",
-        label="Socrata app token",
-        help_url="https://evergreen.data.socrata.com/signup",
-        placeholder="Your app token",
-        note="Socrata portals answer without one; a token raises the rate limit.",
-        default_env="CURIO_DEFAULT_SOCRATA_APP_TOKEN",
-    ),
-    "huggingface.token": KeySlot(
-        column="huggingface_token",
-        label="Hugging Face token",
-        help_url="https://huggingface.co/settings/tokens",
-        placeholder="hf_...",
-    ),
-    "google.maps-key": KeySlot(
-        column="google_maps_api_key",
-        label="Google Maps API key",
-        help_url="https://developers.google.com/maps/documentation/streetview/get-api-key",
-        placeholder="AIza...",
-        note=(
-            "Needs the Street View Static API enabled, and Google bills its "
-            "requests to you. Google's terms allow storing only panorama IDs: "
-            "images downloaded with your key are yours to keep within those terms."
-        ),
-    ),
-    "mapillary.token": KeySlot(
-        column="mapillary_access_token",
-        label="Mapillary access token",
-        help_url="https://www.mapillary.com/dashboard/developers",
-        placeholder="MLY|...",
-        note="Mapillary images are CC BY-SA 4.0: each one keeps its creator for attribution.",
-    ),
-}
-
-#: manifest ``auth.secretId`` -> the ``User`` column that holds it.
-SLOT_COLUMNS: dict[str, str] = {slot: spec.column for slot, spec in SLOTS.items()}
-
-#: manifest ``auth.secretId`` -> the deployment-wide fallback's variable.
-SLOT_DEFAULTS: dict[str, str] = {
-    slot: spec.default_env for slot, spec in SLOTS.items() if spec.default_env
-}
-
-#: What a client is told about each slot, keyed the same way. Booleans only.
-SLOT_FLAGS: dict[str, str] = {
-    slot: f"has_{column}" for slot, column in SLOT_COLUMNS.items()
-}
-
-
-def own_token(user, secret_id: str | None) -> str | None:
+def own_key(user, secret_id: str | None) -> str | None:
     """Only what this account saved. Never the deployment's.
 
     Never a guest's under ``--deploy`` either: every visitor is that one
     account, and a key it holds was saved by the one local user before the
-    same database was started with ``--deploy`` (a hosted guest cannot save
-    one). It stays on the row and is used again without ``--deploy``.
+    same ``.curio`` was started with ``--deploy`` (a hosted guest cannot save
+    one). It stays in the file and is used again without ``--deploy``.
     """
-    from utk_curio.backend import config
-
-    column = SLOT_COLUMNS.get(secret_id or "")
-    if column is None or user is None:
+    if not secret_id or user is None:
         return None
-    if getattr(user, "is_guest", False) and not config.CURIO_NO_AUTH:
+    return source_keys.value_for(user, secret_id)
+
+
+def deployment_key(auth: AuthSpec) -> str | None:
+    """The operator's key for a source whose manifest allows one.
+
+    Read at call time rather than import: a deployment may set it after the
+    module loads, and tests certainly do.
+    """
+    if not auth.secret_id or not auth.operator_default:
         return None
-    return getattr(user, column, None) or None
+    return os.environ.get(default_variable(auth.secret_id)) or None
 
 
-def token_for_slot(user, secret_id: str | None) -> str | None:
-    """The token that will actually be sent: the user's own, else the
+def key_for(user, auth: AuthSpec) -> str | None:
+    """The key that will actually be sent: the account's own, else the
     deployment's.
 
-    Per-field inheritance: a user who sets nothing inherits what the operator configured, and setting their
-    own overrides it. An operator running Curio for a class can raise the rate
-    limit for everyone with one environment variable.
+    Per-field inheritance: a user who sets nothing inherits what the operator
+    configured, and setting their own overrides it. An operator running Curio
+    for a class can raise the rate limit for everyone with one environment
+    variable.
     """
-    if secret_id not in SLOT_COLUMNS:
-        return None
-    own = own_token(user, secret_id)
-    if own:
-        return own
-    env = SLOT_DEFAULTS.get(secret_id)
-    # Read at call time rather than import: a deployment may set it after the
-    # module loads, and tests certainly do.
-    return (os.environ.get(env) or None) if env else None
+    return own_key(user, auth.secret_id) or deployment_key(auth)
 
 
-def has_token(user, secret_id: str | None) -> bool:
-    """Whether a token will be SENT - which is what a card reporting "Token
+def has_key(user, auth: AuthSpec) -> bool:
+    """Whether a key will be SENT - which is what a card reporting "Token
     set" means, and what decides whether a required-token source is usable.
 
-    Distinct from ``has_socrata_app_token`` on the user payload, which answers
-    the different question the settings screen asks: did *you* save one.
+    Distinct from ``has_source_keys`` on the user payload, which answers the
+    different question the settings screen asks: did *you* save one.
     """
-    return token_for_slot(user, secret_id) is not None
+    return key_for(user, auth) is not None
 
 
 def credential_header(user, manifest: DiscoverySourceManifest) -> str | None:
@@ -149,7 +91,7 @@ def credential_header(user, manifest: DiscoverySourceManifest) -> str | None:
 
     The transport is the only caller, and the only code that turns this into a
     request header or a query parameter. Providers are handed the name and the
-    slot; they never see what is in it, so no URL a provider builds, and no
+    secret id; they never see the key, so no URL a provider builds, and no
     audit record, refusal or job record made from one, holds a key.
     """
     auth = manifest.auth
@@ -158,40 +100,85 @@ def credential_header(user, manifest: DiscoverySourceManifest) -> str | None:
     if auth.scheme == "query":
         if not auth.param_name:
             return None
-        token = token_for_slot(user, auth.secret_id)
+        token = key_for(user, auth)
         # ``?name=value``: the transport adds it to the URL it sends and to
         # nothing it returns or records.
         return f"?{auth.param_name}={token}" if token else None
     if not auth.header_name:
         return None
-    token = token_for_slot(user, auth.secret_id)
+    token = key_for(user, auth)
     if not token:
         return None
     return f"{auth.header_name}:{auth.value_prefix or ''}{token}"
 
 
+def _declaration(auth: AuthSpec) -> tuple:
+    return (auth.label, auth.help_url, auth.placeholder, auth.note, auth.operator_default)
+
+
+#: Disagreements already logged, by secret id and source folder, so a listing
+#: that runs on every request says so once.
+_reported: set[tuple[str, str]] = set()
+_reported_lock = threading.Lock()
+
+
+def _by_secret_id(manifests: Iterable[DiscoverySourceManifest]) -> dict[str, list[DiscoverySourceManifest]]:
+    """The sources that send each key, in listing order (shipped sources
+    first). The first one's declaration is the key's; a source that declares
+    it otherwise is logged once."""
+    groups: dict[str, list[DiscoverySourceManifest]] = {}
+    for manifest in manifests:
+        if manifest.auth.secret_id:
+            groups.setdefault(manifest.auth.secret_id, []).append(manifest)
+    for secret_id, group in groups.items():
+        first = group[0]
+        for other in group[1:]:
+            if _declaration(other.auth) == _declaration(first.auth):
+                continue
+            key = (secret_id, other.dir_name)
+            with _reported_lock:
+                if key in _reported:
+                    continue
+                _reported.add(key)
+            logger.warning(
+                "Discovery Catalog source %s declares the key %s otherwise than %s; "
+                "API Settings shows %s's declaration",
+                other.dir_name, secret_id, first.dir_name, first.dir_name,
+            )
+    return groups
+
+
+def declared_keys(manifests: Iterable[DiscoverySourceManifest]) -> dict[str, str]:
+    """Every key a source sends, by secret id, with what API Settings calls it."""
+    return {
+        secret_id: group[0].auth.label or secret_id
+        for secret_id, group in _by_secret_id(manifests).items()
+    }
+
+
 def key_rows(user, manifests: Iterable[DiscoverySourceManifest]) -> list[dict[str, Any]]:
-    """What API Settings lists: every slot, who sends it, and booleans only.
+    """What API Settings lists: one row per key a source declares, the
+    sources that send it, and booleans only, in the order of their labels.
 
     ``present`` says whether THIS account saved one; ``inherited`` whether the
     deployment supplies one everybody gets. Neither carries a value.
     """
-    manifests = list(manifests)
+    saved = set(source_keys.saved_for(user))
     rows = []
-    for slot, spec in SLOTS.items():
-        sources = sorted(
-            ({"name": m.name, "dirName": m.dir_name} for m in manifests if m.auth.secret_id == slot),
-            key=lambda row: row["name"].lower(),
-        )
+    for secret_id, group in _by_secret_id(manifests).items():
+        auth = group[0].auth
         rows.append({
-            "slot": slot,
-            "label": spec.label,
-            "field": spec.column,
-            "helpUrl": spec.help_url,
-            "placeholder": spec.placeholder,
-            "note": spec.note,
-            "present": own_token(user, slot) is not None,
-            "inherited": bool(spec.default_env and os.environ.get(spec.default_env)),
-            "sources": sources,
+            "slot": secret_id,
+            "label": auth.label or secret_id,
+            "helpUrl": auth.help_url,
+            "placeholder": auth.placeholder,
+            "note": auth.note,
+            "present": secret_id in saved,
+            "inherited": any(deployment_key(m.auth) for m in group),
+            "sources": sorted(
+                ({"name": m.name, "dirName": m.dir_name} for m in group),
+                key=lambda row: row["name"].lower(),
+            ),
         })
+    rows.sort(key=lambda row: (row["label"].lower(), row["slot"]))
     return rows

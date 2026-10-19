@@ -172,10 +172,10 @@ in its URL, the drawer in its state. Its two tabs:
 - **API keys** (`ApiKeysTab`): one table of every key the account uses. Its
   **Language model** rows come from `GET /api/agents/llm` (the Deployment
   default and each LLM configuration), its **Data source** rows from
-  `GET /api/discovery/keys` (a slot is listed when a key is saved or inherited),
+  `GET /api/discovery/keys` (a key is listed when one is saved or inherited),
   and its **Node code** rows from `/api/users/me/connection-keys`.
   **Add configuration** opens one editor whose **Kind** select picks the form:
-  `LlmConfigEditor`, `SourceKeyForm` for a slot without a saved key, or
+  `LlmConfigEditor`, `SourceKeyForm` for a key without a saved one, or
   `NodeKeyForm`.
 - **Agent configuration** (`AgentConfigTab`): the default
   (`PUT /api/agents/llm/default`) and `AgentModelsSection`, the configuration
@@ -1384,7 +1384,7 @@ about the choice goes into a project, attachment or manifest.
 Only the store's own reads (`LlmConfigStore.read` and `record`) carry a key:
 every response carries `hasApiKey` and `baseUrlHost` instead. The file is written through
 [`owner_only_file.py`](../utk_curio/backend/app/common/owner_only_file.py),
-which connection keys use too: a 0700 directory and a 0600 file, written to a
+which connection keys and Data source keys use too: a 0700 directory and a 0600 file, written to a
 temp file, fsynced and renamed under an exclusive lock.
 
 A configuration names its own endpoint (`endpoint: "own"`, with `apiType`,
@@ -1676,7 +1676,7 @@ A source describes one portal or one storage source in `discovery/<sourceId>@<ma
 - **Formats.** `capabilities.formats` is an upper bound, intersected at download time with `DISCOVERY_ACQUIRABLE_FORMATS` (`csv`, `geojson`, `json`, `parquet`, `geotiff`): what a download lands as. That set is narrower than the Data Catalog's: a bare `shp` needs sibling files a single download cannot bring, and a `bundle` is a node output. An archive is not a format a manifest names: a downloaded zip or gzip is unpacked and what it holds is checked against the same set, a zipped shapefile and a GTFS feed as `parquet`.
 - **Size.** `capabilities.maxDownloadBytes` may lower the server's ceiling, never raise it. The ceiling is [`domain/limits.py`](../utk_curio/backend/app/discovery/domain/limits.py) `max_download_bytes()`: `curio.py --discovery-max-download-mb`, passed as `CURIO_DISCOVERY_MAX_DOWNLOAD_MB`, 1 GiB by default. It is read when the backend starts, as `DEFAULT_MAX_DOWNLOAD_BYTES` (the manifest default and clamp) and `transport.MAX_DISCOVERY_DOWNLOAD_BYTES`. A download streams to a file under the account's `discovery/tmp/`, and a table added from a bucket streams to disk through `provider.stream` (`StorageAcquire._copy_remote`); neither is held in memory whole.
 - **`provider.options`** is provider wiring and is never sent to a client.
-- **`auth.secretId`** must name a slot in `SLOT_COLUMNS` (see [Credentials](#credentials)), or the manifest fails to load.
+- **`auth.secretId`** names the key a source sends, and `label`, `helpUrl`, `placeholder`, `note` and `operatorDefault` declare it (see [Credentials](#credentials)). Any well-formed id is a key: the sources that send one name the same id and declare it the same way.
 - **Icons** are PNG only and resolved inside the source's own folder. An SVG served from the app's own origin can carry script.
 
 Sources have no import route. A manifest names a host the server calls on a user's behalf, with a credential attached, or a folder it reads, so sources ship with the deployment or are written by the operator.
@@ -1753,7 +1753,7 @@ A service is told where and what, and answers with one download. Its rows are it
   - A Direct URL link: `DirectProvider.download_url` answers a `.parquet` link asked for an `area` with a `DownloadTarget` whose `area` is the box, and refuses an area for any other link. `DiscoveryAcquire._acquire_area` reads it with a `RemoteParquet` of unknown size, which asks for `bytes=0-0` first and takes the size from `Content-Range`; a server that answers the whole file trips the one-byte bound and is refused by name.
   - A bucket row: `scan.takes_area` gives the area to a `parquet` table row of a source that declares one (`s3` and `huggingface` may; `folder` may not), and `StorageAcquire._add_area` reads each file at the provider's `file_url` with the size its listing gave. One file lands as its part; several are staged as their parts, combined by `combine_tables.combine` as a whole row's files are, and written with the parts' shared `geo` metadata (`parquet_area.combined_geo`, which refuses parts in different coordinate systems). `check_addable(..., for_area=True)` skips the files' sizes, so a row over the download limit stays addable for an area.
   - Row-group boxes come from the `geo` metadata's `covering.bbox` columns, else Overture's `bbox.*`; with neither, every row group is read and each row's box is its WKB geometry's bounds (shapely). A file whose `crs` is not longitude and latitude is read with the area moved into it (`area_in`, pyproj `transform_bounds`). The bound is the download limit, on the bytes read. Both adds record `parameters` and `parametersHash`, so the same area is held. Their recorded answers are made up: `tests/test_discovery/remote_parquet_fixture.py` writes the files and each byte range the reader asks for.
-- **A service that needs a token** is refused with 428 before any job when none is set, naming the slot and its help link, as a portal search is.
+- **A service that needs a token** is refused with 428 before any job when none is set, naming the key's `secretId` and its help link, as a portal search is.
 
 ### Models from the Discovery Catalog
 
@@ -1791,10 +1791,11 @@ The model family (`huggingface-models`) is searched like a portal and added like
 
 ### Credentials
 
-[`infrastructure/credentials.py`](../utk_curio/backend/app/discovery/infrastructure/credentials.py) owns the registry of credential slots, `SLOTS`, one `KeySlot` per slot: the column on the `user` row, a label, a help link, a placeholder, an optional note, a deployment-wide fallback, and the other features that read the column. The slots are `socrata.app-token`, `huggingface.token` (the `huggingface_token` column, which the Hugging Face sources send), `google.maps-key` and `mapillary.token`. `SLOT_COLUMNS` and `SLOT_DEFAULTS` derive from it, and `GET /api/discovery/keys` lists every slot for API Settings, which lists a slot once a key is saved or inherited and offers the others in the **Kind** select of **Add configuration**. Adding a slot is a column, a migration, a field in `PATCH /api/auth/me`, one entry there, and its id in `KNOWN_SECRET_SLOTS` in `domain/manifest.py`.
+A source's manifest declares the key it sends in its `auth` block: `secretId` names it, and `label`, `helpUrl`, `placeholder` and `note` say how API Settings shows it. The sources that send one key name the same `secretId` (both Hugging Face sources send `huggingface.token`), and `test_shipped_sources.py` checks that the shipped ones declare it alike. [`infrastructure/credentials.py`](../utk_curio/backend/app/discovery/infrastructure/credentials.py) groups the loaded manifests by `secretId`, shipped sources first: the first source's declaration is the key's, and a source that declares it otherwise is logged once. `key_rows` gives `GET /api/discovery/keys` one row per key, in the order of their labels, which API Settings lists once a key is saved or inherited and offers in the **Kind** select of **Add configuration** otherwise. A key a new source needs is its manifest's `auth` block and nothing else.
 
-- A key is saved through `PATCH /api/auth/me` and read back only as a boolean. A guest on a `--deploy` instance is refused with a 403, and `own_token` answers nothing for a guest there, so a key the shared guest saved without `--deploy` is not sent.
-- `CURIO_DEFAULT_SOCRATA_APP_TOKEN` is inherited by every account that has not saved its own.
+- An account's keys live in an owner-only file, `.curio/users/<u>/source-keys.json`, keyed by `secretId` and kept by [`users/source_keys.py`](../utk_curio/backend/app/users/source_keys.py) through `owner_only_file.py`. It is a file of its own, beside `connection-keys.json`, so `curio_secret` in node code never reaches a source's key. `value_for` is the only read that returns a key.
+- `PATCH /api/auth/me` saves keys by `secretId` (`source_keys`; `""` removes one, and a key left out stays). It refuses a `secretId` no loaded source declares, and checks every value (one line of text, at most `MAX_VALUE_CHARS`) before it writes any. Responses report keys only as booleans (`has_source_keys` on the user payload). A guest on a `--deploy` instance is refused with a 403, and `storage_key_for` gives a guest there no file, so `own_key` answers nothing for it and a key the shared guest saved without `--deploy` is not sent.
+- A source whose manifest sets `auth.operatorDefault` sends the operator's key to every account that has not saved its own. `default_variable` names the variable: `CURIO_DEFAULT_` and the `secretId` in capitals, with every other character as `_`, so the City of Chicago portal reads `CURIO_DEFAULT_SOCRATA_APP_TOKEN`. A manifest never names a variable.
 - `auth.scheme` is `header` or `query` (`AUTH_SCHEMES`); Google Street View sends its key as `?key=`. The transport adds a query key to the request it sends and nothing else, and takes it out of every URL and message it hands back (`_keyed`, `_redact`), so egress audit records, refusal messages and job records stay safe to store verbatim. The transport binds the credential when it is built, and `CredentialedTransport` sends it only to the source's own origin (the scheme, host and port of `provider.baseUrl`, a missing port being the scheme's default), so no provider ever handles a token.
 
 ### Providers
@@ -2058,7 +2059,7 @@ content digest, so one file is one dataset.
 | `/api/datasets/<id>/media/<file_id>/link` | POST | A signed URL for `<video>` and `<audio>`, valid 10 minutes |
 | `/api/media/<token>` | GET | The one file a signed link names, with Range. No bearer token |
 | `/api/discovery/places` | GET | Places for the area field (`q`), from Nominatim: name, label, box, and whether each is a boundary |
-| `/api/discovery/keys` | GET | Every key slot, for API Settings: label, field, help link, `present` and `inherited` as booleans, and the sources and features that use it |
+| `/api/discovery/keys` | GET | Every key the sources declare, for API Settings: its `secretId` (`slot`), label, help link, placeholder and note, `present` and `inherited` as booleans, and the sources that send it |
 | `/api/datasets/<id>/extent` | GET | The box around a geo dataset, in EPSG:4326, for the area field |
 | `/api/discovery/jobs/<id>` | GET | Job progress. Per account: another user's id is indistinguishable from an unknown one |
 | `/api/discovery/jobs/<id>` | DELETE | Ask a download to stop; checked between chunks |
@@ -2183,7 +2184,7 @@ created empty for Solve to write.
 | `/api/auth/signin` | POST | Username/password sign-in |
 | `/api/auth/signin/guest` | POST | Guest sign-in (when enabled) |
 | `/api/auth/signout` | POST | Invalidate the session token |
-| `/api/auth/me` | GET/PATCH | Current user profile |
+| `/api/auth/me` | GET/PATCH | Current user profile, and the account's Data source keys by `secretId` (`source_keys`; `has_source_keys` says which are saved) |
 
 ---
 
@@ -2276,7 +2277,7 @@ created empty for Solve to write.
 | `backend/app/agents/application/attachments.py` | Attachments in `spec.dataflow.agentAttachments`, plus their sessions |
 | `backend/app/agents/infrastructure/provider_config.py` | `resolve_llm`, the one LLM resolver, which reads the deployment's LLM settings (see [LLM Configurations and Resolution](#llm-configurations-and-resolution)) |
 | `backend/app/agents/infrastructure/llm_configs.py` | The account's LLM configurations (`llm-configs.json`): validation, the default, and the store reads that carry a key |
-| `backend/app/common/owner_only_file.py` | Owner-only JSON files: 0700 directory, 0600 file, atomic write under an exclusive lock. Used by connection keys and LLM configurations |
+| `backend/app/common/owner_only_file.py` | Owner-only JSON files: 0700 directory, 0600 file, atomic write under an exclusive lock. Used by connection keys, Data source keys and LLM configurations |
 | `backend/app/agents/infrastructure/providers.py` | Provider-neutral dispatch port; the only place an LLM SDK is imported. Typed turns and their text forms, streaming, the system slots per provider, native tools per provider and their refusal, cache usage, the native-tools trial, and the live model listing |
 | `backend/app/agents/application/tools.py` | The tool registry: each contract's effect, description and params schema, grant resolution, the read executors, and the native tools a run is offered |
 | `backend/app/agents/application/reply_schemas.py` | The Autark document's reply schema, projected from the vendored schema per provider flavor; decoding a reply; which runs send one |

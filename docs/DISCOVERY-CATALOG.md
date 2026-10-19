@@ -293,13 +293,13 @@ Some sources take an API key. Mapillary and Google Street View need one. The Cit
    - **Socrata app token**: sign up at [evergreen.data.socrata.com](https://evergreen.data.socrata.com/signup) and create an app token.
 2. **Open API Settings** from the top bar. On `/projects` and the catalog pages it opens the settings page; on the canvas it opens on the right side. A source's **Add yours in API Settings** (**Change it in API Settings** once a key is saved), in its details, opens API Settings on that key's form.
 3. On the **API keys** tab, click **Add configuration**.
-4. In **Kind**, under **Data source**, choose the key's name: **Socrata app token**, **Hugging Face token**, **Google Maps API key** or **Mapillary access token**. The form says which sources use it.
+4. In **Kind**, under **Data source**, choose the key's name. It lists the key of every source on this Curio that takes one: with the sources Curio ships, **Socrata app token**, **Hugging Face token**, **Google Maps API key** and **Mapillary access token**. The form says which sources use it.
 5. **Paste the key** into the field and click **Save**. A line confirms it, for example *Saved the Mapillary access token.*
 6. **Check the list and the card.** The key's row shows **saved** in its **Key** column. In the Discovery Catalog, the source's card reads **Token set** as soon as you save, also on a page that was already open, and its rows download.
 
 ### Your key and your account
 
-A key belongs to your account, and is sent only to the source's own address. A saved key's row offers **Replace** and **Remove**. When whoever runs this Curio set one for everyone, the key is listed with **set by this Curio** in its **Key** column, and its **Override** saves your own key, which takes its place for your account.
+A key belongs to your account, and is sent only to the sources that use it, each at its own address. A saved key's row offers **Replace** and **Remove**. When whoever runs this Curio set one for everyone, the key is listed with **set by this Curio** in its **Key** column, and its **Override** saves your own key, which takes its place for your account.
 
 A guest on a Curio started with `--deploy` cannot save a token. Without `--deploy`, the shared guest saves one like any account, and everyone using that Curio shares it.
 
@@ -356,10 +356,15 @@ What you download is yours, like any imported dataset. To offer it to everyone o
 | `provider.root` | For `folder` | The folder, as an absolute path. A source shipped in `discovery/` may give one relative to the repository. |
 | `provider.options` | | Settings for that software: the API path, `landingBase` for a CKAN portal whose pages live on another host, `prefix` for a bucket, `repo` and `revision` for a Hugging Face dataset repository, `imageHosts` for `mapillary` (the hosts its images come from; a domain covers its subdomains), `dataHosts` for `overture` (the hosts its GeoParquet files are read from), and `pipelineTag` for `huggingface-models` (the Hub task searched, `image-segmentation` by default). |
 | `auth.mode` | | `public`, `optional-token`, or `required-token`. |
-| `auth.secretId`, `auth.scheme` | With a token | Which account credential to send, and how. Curio knows `socrata.app-token`, `huggingface.token`, `google.maps-key` and `mapillary.token`. `scheme` is `header` (the default) or `query`, for an API that documents no other way. |
+| `auth.secretId`, `auth.scheme` | With a token | Which key to send, and how. Sources that send the same key name the same `secretId` (both Hugging Face sources send `huggingface.token`), and API Settings shows one row for it, which a source with a new `secretId` adds. `scheme` is `header` (the default) or `query`, for an API that documents no other way. |
 | `auth.headerName`, `auth.valuePrefix` | With `header` | The header, and what comes before the credential in it (`Bearer ` for Hugging Face, `OAuth ` for Mapillary). |
 | `auth.paramName` | With `query` | The query parameter, `key` for Google. It is added when a request is sent, and no URL Curio records holds it. |
-| `auth.helpUrl` | | Where a user gets a token. Shown in the details. |
+| `auth.label` | | What API Settings calls the key, such as `Mapillary access token`. The `secretId` when absent. |
+| `auth.helpUrl` | | Where a user gets a key. Shown in the details and in the key's form in API Settings. |
+| `auth.placeholder`, `auth.note` | | What the key's empty field in API Settings shows, and a sentence under it. |
+| `auth.operatorDefault` | | `true` lets whoever runs this Curio set one key every account inherits until it saves its own (see the [operator notes](#operator-notes)). |
+
+Sources that send the same key declare its `label`, `helpUrl`, `placeholder`, `note` and `operatorDefault` the same way.
 | `capabilities.search`, `describe`, `download` | | What the portal supports. All default to true. |
 | `capabilities.formats` | | A portal only: the formats it may deliver, from the five Curio downloads. A storage or service source's formats follow from its resources, and a manifest of either that declares them is refused. |
 | `capabilities.maxDownloadBytes` | | A download limit for this source, below the server's (1 GiB unless `--discovery-max-download-mb` sets another). A larger value is read as the server's. |
@@ -471,7 +476,7 @@ Curio reads public S3 buckets, and Hugging Face dataset repositories, with your 
 |---|---|---|
 | `CURIO_DISCOVERY_ROOT` | `--discovery-root` | Reads the shipped sources from this directory instead of `<repo_root>/discovery`. |
 | `CURIO_DISCOVERY_MAX_DOWNLOAD_MB` | `--discovery-max-download-mb` | The largest file a download or a bucket add takes, in megabytes. Default 1024. A source's manifest may set a lower limit for itself. |
-| `CURIO_DEFAULT_SOCRATA_APP_TOKEN` | none | A Socrata app token every account inherits until it saves its own. |
+| `CURIO_DEFAULT_SOCRATA_APP_TOKEN` | none | A Socrata app token every account inherits until it saves its own, for the City of Chicago Data Portal. A source whose manifest sets `auth.operatorDefault` reads its key's default from `CURIO_DEFAULT_` and its `auth.secretId` in capitals, with every other character as `_`. |
 | `CURIO_MEDIA_CACHE_MAX_GB` | `--media-cache-max-gb` | How much each account may hold in cached bucket files and downloaded street-level images, in gigabytes. Default 20. |
 
 **Sources ship with the deployment.** To change or remove a shipped one, edit the sources directory and restart. The Docker image bakes `discovery/` in; see [DEPLOYMENT.md § Configure the stack](DEPLOYMENT.md#1-configure-the-stack).
