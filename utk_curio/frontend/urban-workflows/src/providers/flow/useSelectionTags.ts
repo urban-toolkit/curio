@@ -2,8 +2,10 @@
 // `[!! selection name !!]`, the ids of the rows it picks. The node holds the
 // ids (data.selections, saved at metadata.selections), so every run reads the
 // same ones. A new selection in the view writes new ids into every tag on it,
-// and the nodes holding them go stale: their run key covers the ids.
-import React, { useEffect, useRef } from "react";
+// and the nodes holding them go stale: their run key covers the ids. A view
+// drawn again without the selection its tags hold empties them (#884,
+// clearViewTags).
+import React, { useCallback, useEffect, useRef } from "react";
 import type { Node, ReactFlowInstance } from "reactflow";
 import type { IInteraction } from "./flowTypes";
 import {
@@ -15,6 +17,7 @@ import {
     type SelectionTag,
 } from "../../utils/references/selectionTags";
 import {
+    forgetViewSelection,
     recordViewSelection,
     selectionStateOf,
     type ViewDetails,
@@ -93,7 +96,9 @@ export function useSelectionTags({
             recordViewSelection(viewId, details);
             // Only a selection the user made, or cleared: a chart declaring its
             // selects as it compiles, or reporting them empty as it first
-            // draws, changes nothing, and a reload keeps the saved ids.
+            // draws, changes nothing here. A view drawn again puts its tags'
+            // selection back, which it reports as a click does, or empties
+            // them through clearViewTags (#884).
             if (!changesSelection(previous, details)) continue;
             const nodes = reactFlow.getNodes?.() ?? [];
             if (tagColumnsOn(nodes, viewId).length === 0) continue;
@@ -116,4 +121,36 @@ export function useSelectionTags({
             });
         }
     }, [interactions]);
+
+    /**
+     * Empty every tag on the view *viewId*: it was drawn again without the
+     * selection they hold (#884), as a Vega-Lite chart is when a brush, which
+     * cannot be drawn again from ids, made it, or an Autark node after a run.
+     * The nodes holding them go stale, as after a selection cleared in the
+     * view; a selection read before is not written over them, and a tag added
+     * now starts from none.
+     */
+    const clearViewTags = useCallback((viewId: string) => {
+        asked.current.set(viewId, (asked.current.get(viewId) ?? 0) + 1);
+        forgetViewSelection(viewId);
+        const nodes = reactFlow.getNodes?.() ?? [];
+        const empty = new Map<string, SelectionState>(
+            tagColumnsOn(nodes, viewId).map((column) => [column, { ids: [] }]),
+        );
+        if (empty.size === 0) return;
+        const changed = nodes
+            .filter((node) => withViewStates(node.data?.selections, viewId, empty) !== null)
+            .map((node) => node.id);
+        if (changed.length === 0) return;
+        setNodes((nds) =>
+            nds.map((node) => {
+                const next = withViewStates(node.data?.selections, viewId, empty);
+                return next === null ? node : { ...node, data: { ...node.data, selections: next } };
+            }),
+        );
+        changed.forEach((id) => markNodeStaleRef.current(id));
+        markDirtyRef.current();
+    }, [reactFlow, setNodes]);
+
+    return { clearViewTags };
 }

@@ -6,6 +6,7 @@ export { useSimpleVisBehavior } from './simpleVisBehavior';
 export { useDataPoolBehavior } from './dataPoolBehavior';
 export { useDataSummaryBehavior } from './dataSummaryBehavior';
 export { useAutkGrammarBehavior } from './autkGrammarBehavior';
+export { useAutkViewBehavior } from './autkViewBehavior';
 export { useSpatialJoinBehavior } from './spatialJoinBehavior';
 export { useParameterBehavior } from './parameterBehavior';
 export { useCompareScenariosBehavior } from './compareScenariosBehavior';

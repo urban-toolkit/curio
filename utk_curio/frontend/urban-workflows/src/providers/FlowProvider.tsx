@@ -354,8 +354,9 @@ const FlowProvider = ({
         interactions, setInteractions, nodes, edges, reactFlow, setNodes,
     });
 
-    // #662: a view's new selection reaches the selection tags that read it.
-    useSelectionTags({ interactions, reactFlow, setNodes, markNodeStaleRef, markDirtyRef });
+    // #662: a view's new selection reaches the selection tags that read it,
+    // and a view drawn again without it empties them (#884).
+    const { clearViewTags } = useSelectionTags({ interactions, reactFlow, setNodes, markNodeStaleRef, markDirtyRef });
 
     useCollaborationSync({
         collab, applyNewOutput, interactionsCallback, applyNewPropagation, setNodes, setEdges,
@@ -480,6 +481,7 @@ const FlowProvider = ({
                 setOutputs,
                 setInteractions,
                 interactionsCallback,
+                clearSelectionTagsOf: clearViewTags,
                 applyNewPropagation,
                 addNode,
                 onNodesChange,

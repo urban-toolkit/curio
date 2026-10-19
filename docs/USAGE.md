@@ -557,6 +557,21 @@ holds. A new selection in the view marks the node as needing a new run, and the
 ids are saved with the dataflow. A tag holds at most 10,000 ids: a larger
 selection stops the run with a message saying so.
 
+A view is drawn again when it runs again and when the dataflow is opened. The
+selection its tags hold then shows in it again, or the tags are emptied, so the
+view and its tags agree:
+
+- A Vega-Lite chart selects the rows that hold the tags' ids again with its
+  point selection, as clicks on them would.
+- A brush cannot be drawn again from ids. A chart whose selection is a brush,
+  or that has a brush beside a point selection, empties its tags, and so does
+  a chart none of whose rows holds the ids.
+- An Autark node empties its tags each time it draws.
+
+A node that reads an emptied tag needs a new run, which reads `[]`. A run that
+started before the view was drawn again reads the ids the tag held when it
+started.
+
 ## Several inputs
 
 Python Computation, Data Transformation, JS Computation, Data Pool, Vega-Lite and

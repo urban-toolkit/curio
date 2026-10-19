@@ -1,7 +1,8 @@
 /**
  * The selects of a Vega-Lite chart, as its node hears them (#846), the
  * values a point select over fields picked (#847), and what a view of the
- * chart built again takes to hold the selections made in it.
+ * chart built again takes to hold the selections made in it, or the one its
+ * selection tags hold (#884).
  *
  * vega lets the page listen to a view's top-level signals only. Each select
  * holds its selection in one of them, `<name>`, wherever the spec declares it.
@@ -109,6 +110,102 @@ export function carriedSelections(view: any, spec: unknown): ViewState | null {
     data: (data: string) => names.some((name) => data === `${name}_store`),
     recurse: true,
   });
+}
+
+/** A field a point select over fields or encodings holds in its tuples, as
+ * vega-lite writes it: `{type: "E", field}`, and the channel of an encoding. */
+export interface PointStoreField {
+  type: string;
+  field: string;
+  channel?: string;
+}
+
+/** How a point select's store holds what it picked: the unit its tuples name,
+ * and the fields whose values they hold, or none when they hold `_vgsid_`. */
+export interface PointStore {
+  unit: string;
+  fields?: PointStoreField[];
+}
+
+/** What vega-lite's tuple for a click starts with: `{unit: "concat_0", _vgsid_: ...`
+ * or `{unit: "", fields: ...`. A unit built per facet cell is no literal. */
+const TUPLE_START = /\{unit: ("(?:[^"\\]|\\.)*"), (_vgsid_|fields):/;
+
+/** Every signal of a compiled vega spec, its group marks' own included. */
+function vegaSignals(spec: any): any[] {
+  if (!spec || typeof spec !== "object") return [];
+  const own = Array.isArray(spec.signals) ? spec.signals : [];
+  const marks = Array.isArray(spec.marks) ? spec.marks : [];
+  return [...own, ...marks.flatMap((mark: any) => vegaSignals(mark))];
+}
+
+/**
+ * How the point select *name* of a compiled chart (*vegaSpec*, what
+ * `lite.compile` gives) holds what it picked, read off the tuple vega-lite
+ * builds for a click on it (`<name>_tuple`): the unit the tuple names, and,
+ * for a select over fields or encodings, the fields it holds
+ * (`<name>_tuple_fields`). A store set to tuples of that form selects what
+ * clicks on the same rows would have (#884). Null when the select's selection
+ * is not a top-level signal, its unit is built per facet cell, or a field is
+ * held as a range (a binned field).
+ */
+export function pointStoreOf(vegaSpec: unknown, name: string): PointStore | null {
+  const top = Array.isArray((vegaSpec as any)?.signals) ? (vegaSpec as any).signals : [];
+  if (!top.some((signal: any) => signal?.name === name)) return null;
+  const signals = vegaSignals(vegaSpec);
+  const tuple = signals.find((signal) => signal?.name === `${name}_tuple`);
+  const updates: unknown[] = (Array.isArray(tuple?.on) ? tuple.on : []).map((on: any) => on?.update);
+  const start = updates
+    .map((update) => (typeof update === "string" ? TUPLE_START.exec(update) : null))
+    .find((match) => match !== null);
+  if (!start) return null;
+  let unit: unknown;
+  try {
+    unit = JSON.parse(start[1]);
+  } catch {
+    return null;
+  }
+  if (typeof unit !== "string") return null;
+  if (start[2] === "_vgsid_") return { unit };
+  const fields = signals.find((signal) => signal?.name === `${name}_tuple_fields`)?.value;
+  if (!Array.isArray(fields) || fields.length === 0) return null;
+  if (!fields.every((field: any) => field?.type === "E" && typeof field.field === "string")) return null;
+  return { unit, fields: fields.map((field: PointStoreField) => ({ ...field })) };
+}
+
+/**
+ * The tuples of a store *store* describes that pick the rows *picked*
+ * (positions among *rows*, the rows the view draws): each row's `_vgsid_` in
+ * the view (*idOfRow*), sorted as vega keeps them, or else its values of the
+ * select's fields, each set of values once. A row with no id, or with no value
+ * for a field, is left out.
+ */
+export function pointStoreTuples(
+  store: PointStore,
+  picked: readonly number[],
+  rows: readonly any[],
+  idOfRow: ReadonlyMap<number, number>,
+): Record<string, unknown>[] {
+  if (!store.fields) {
+    const ids = new Set<number>();
+    for (const row of picked) {
+      const id = idOfRow.get(row);
+      if (id !== undefined) ids.add(id);
+    }
+    return [...ids].sort((a, b) => a - b).map((id) => ({ unit: store.unit, _vgsid_: id }));
+  }
+  const fields = store.fields;
+  const seen = new Set<string>();
+  const tuples: Record<string, unknown>[] = [];
+  for (const row of picked) {
+    const values = fields.map((field) => rows[row]?.[field.field]);
+    if (values.some((value) => value === undefined)) continue;
+    const key = JSON.stringify(values);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    tuples.push({ unit: store.unit, fields: fields.map((field) => ({ ...field })), values });
+  }
+  return tuples;
 }
 
 /**

@@ -57,6 +57,12 @@ export function latestViewSelection(nodeId: string): ViewDetails | undefined {
   return latest.get(nodeId);
 }
 
+/** Forget the selection the view *nodeId* made last: it was drawn again
+ * without it (#884), so a tag added now starts from none. */
+export function forgetViewSelection(nodeId: string): void {
+  latest.delete(nodeId);
+}
+
 /**
  * What the selection *details* of the view *nodeId* hold for a tag on
  * *column*: its ids, or how many there were. Null when the view holds no rows
