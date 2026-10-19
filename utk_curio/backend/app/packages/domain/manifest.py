@@ -313,6 +313,11 @@ class TemplateManifest:
     # #662: the widgets a freshly dropped node of this template starts with,
     # in the node's ``metadata.widgets`` shape; its ``source`` references them.
     widgets: list | None = None
+    # ``starterIsContent``: the ``source`` starter is a node's whole content,
+    # set through its widgets. A node an agent's plan creates starts with it
+    # and the plan's widgets, and Solve does not write it
+    # (``application/starters.py`` ``content_starters``).
+    starter_is_content: bool = False
 
     @classmethod
     def from_json(cls, raw: object, *, where: str) -> "TemplateManifest":
@@ -367,6 +372,12 @@ class TemplateManifest:
             )
         ):
             raise ManifestError(f"{where}.widgets must be a list of objects, each with a name and a type")
+        source_raw = raw.get("source") if isinstance(raw.get("source"), str) else None
+        starter_is_content_raw = raw.get("starterIsContent", False)
+        if not isinstance(starter_is_content_raw, bool):
+            raise ManifestError(f"{where}.starterIsContent must be a boolean when present")
+        if "starterIsContent" in raw and not source_raw:
+            raise ManifestError(f"{where}.starterIsContent needs a source: the starter it says is the content")
         return cls(
             template_id=template_id,
             label=str(raw.get("label", template_id)),
@@ -387,7 +398,7 @@ class TemplateManifest:
             has_grammar=bool(raw.get("hasGrammar", editor == "grammar")),
             grammar_id=raw.get("grammarId") if isinstance(raw.get("grammarId"), str) else None,
             badge=raw.get("badge") if isinstance(raw.get("badge"), str) else None,
-            source=raw.get("source") if isinstance(raw.get("source"), str) else None,
+            source=source_raw,
             bidirectional=bool(raw.get("bidirectional", False)),
             container_style=container_style_raw,
             has_provenance=has_provenance_raw,
@@ -395,6 +406,7 @@ class TemplateManifest:
             widget_dir=raw.get("widgetDir") if isinstance(raw.get("widgetDir"), str) else None,
             backend_handler=backend_handler_raw,
             widgets=widgets_raw,
+            starter_is_content=starter_is_content_raw,
         )
 
 

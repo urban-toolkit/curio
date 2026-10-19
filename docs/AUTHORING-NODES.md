@@ -137,6 +137,13 @@ A node dropped from the palette starts with these widgets and their defaults.
 values it had as the defaults. The shape of each entry is the `widget`
 definition in [docs/schemas/node-package.v4.json](schemas/node-package.v4.json).
 
+When the starter is the node's whole content and only its widgets change from
+one use to the next, add `"starterIsContent": true` beside `source`. A node the
+**Dataflow Builder**'s plan creates from the template then starts with the
+starter and the template's widgets, each widget the plan declares set over the
+one of its name, and **Solve** leaves its content as it is. Without it, a planned
+node is created empty and Solve writes its content.
+
 A node made from a template can also read a view's selection through a
 selection tag, `[!! selection name !!]` ([Selection tags](USAGE.md#selection-tags)).
 A template does not declare selection tags: each names a view of one dataflow,
