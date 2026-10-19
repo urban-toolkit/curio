@@ -23,27 +23,12 @@ runs:
         docker ps -aq --filter "label=com.docker.compose.project=$PROJECT" | xargs -r docker rm -f
 
     # The containers run as root and write into the bind-mounted checkout,
-    # which the runner user cannot clean otherwise.
-    #
-    # Every commit brings an image of several GB, pulled by start-stack or
-    # built by the job, and a self-hosted daemon keeps them all: an arcade
-    # runner's daemon is its own, utk-gpu's is the host's, which the deployed
-    # stacks share. So this removes what CI jobs leave there:
-    # - the image names of the other CI stacks, `curio-ci*-curio` (start-stack
-    #   tags them, compose builds under them), which otherwise hold their last
-    #   jobs' images for good, one per project. This job's own name stays, on
-    #   the image it just used: the next job of the project shares most of its
-    #   layers (the base, and the libraries curio.py setup installs, which do
-    #   not change from commit to commit), so it pulls or unpacks only what
-    #   changed, and when it moves the name the old image is left untagged
-    #   and goes below;
-    # - the pulled images of other commits (this commit's stays for the
-    #   runner's next job of the same commit);
-    # - untagged images no container uses;
-    # - build cache no build has used for a day.
-    # The deployed stacks' images and every image a container uses stay:
-    # `docker image rm` without -f skips an image in use. The disk use before
-    # and after goes to the job's log.
+    # which the runner user cannot clean otherwise. Then the images and build
+    # cache CI jobs leave on a self-hosted daemon go, as
+    # scripts/ci_image_cleanup.sh describes: on an arcade runner the job's own
+    # image stays for the next job, and a job that has no image of its own
+    # removes none; utk-gpu, whose daemon the deployed stacks share, keeps no
+    # CI image.
     - name: 🧹 Hand back root-owned files, remove old CI images (self-hosted)
       if: runner.environment == 'self-hosted'
       shell: bash
@@ -51,17 +36,4 @@ runs:
         PROJECT: ${{ inputs.project }}
       run: |
         docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
-        echo "Docker disk use before the cleanup:"
-        docker system df || true
-        docker image ls --format '{{.Repository}}:{{.Tag}}' \
-          | { grep -E '^curio-ci(-[a-z-]+)?-curio:' || true; } \
-          | { grep -v "^${PROJECT}-curio:" || true; } \
-          | xargs -r docker image rm > /dev/null 2>&1 || true
-        repo="ghcr.io/${GITHUB_REPOSITORY,,}-ci"
-        docker image ls "$repo" --format '{{.Repository}}:{{.Tag}}' \
-          | { grep -v ":${GITHUB_SHA}\$" || true; } \
-          | xargs -r docker image rm > /dev/null 2>&1 || true
-        docker image prune -f > /dev/null 2>&1 || true
-        docker builder prune -af --filter until=24h > /dev/null 2>&1 || true
-        echo "Docker disk use after the cleanup:"
-        docker system df || true
+        bash "$GITHUB_WORKSPACE/scripts/ci_image_cleanup.sh" "$PROJECT"

@@ -11,6 +11,12 @@
  * container, first copies the image's packages there. The backend suite runs
  * in the image, which ships no compose file or workflow, so this check lives
  * here.
+ *
+ * stop-stack ends every job that starts a stack with
+ * scripts/ci_image_cleanup.sh (tested in the backend suite), which on an
+ * arcade runner removes images only once CURIO_CI_OWN_IMAGE says the job has
+ * one of its own. So every such job must say so: start-stack after its pull,
+ * or the job after it builds its image.
  */
 import { read } from "./_support/workflowPaths";
 
@@ -64,5 +70,41 @@ describe("CI's image and the deploy's", () => {
             .filter(([, job]) => !/runner-env: "true"|uses: \.\/\.github\/actions\/image-env/.test(job))
             .map(([name]) => name);
         expect(without).toEqual([]);
+    });
+});
+
+describe("Removing CI images on self-hosted runners", () => {
+    const MARK = 'echo "CURIO_CI_OWN_IMAGE=1" >> "$GITHUB_ENV"';
+
+    test("stop-stack runs the cleanup script", () => {
+        expect(read(".github/actions/stop-stack/action.yml")).toContain(
+            'bash "$GITHUB_WORKSPACE/scripts/ci_image_cleanup.sh" "$PROJECT"',
+        );
+    });
+
+    test("start-stack says the job has an image once it has pulled and named it", () => {
+        expect(read(".github/actions/start-stack/action.yml")).toContain(
+            `docker tag "$IMAGE" "$PROJECT-curio"\n        ${MARK}`,
+        );
+    });
+
+    test("every job that ends with stop-stack says when it has an image of its own", () => {
+        const stopping = Array.from(jobs()).filter(([, job]) => job.includes("uses: ./.github/actions/stop-stack"));
+        expect(stopping.map(([name]) => name).sort()).toEqual([
+            "e2e-desktop",
+            "test-exec-user",
+            "test-gpu",
+            "test-gpu-stress",
+            "test-isolated",
+            "unit",
+        ]);
+        const silent = stopping
+            .filter(
+                ([, job]) =>
+                    !job.includes("uses: ./.github/actions/start-stack") &&
+                    !/docker compose -p \S+ build --parallel\n\s+echo "CURIO_CI_OWN_IMAGE=1" >> "\$GITHUB_ENV"/.test(job),
+            )
+            .map(([name]) => name);
+        expect(silent).toEqual([]);
     });
 });

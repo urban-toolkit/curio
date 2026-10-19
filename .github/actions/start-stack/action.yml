@@ -40,7 +40,8 @@ runs:
         password: ${{ inputs.token }}
 
     # Tagged with the name compose gives the service's image, so `up` finds it
-    # and builds nothing.
+    # and builds nothing. From then on the job has an image of its own, which
+    # stop-stack's cleanup asks before it removes the ones earlier jobs left.
     - name: 📥 Pull the image
       shell: bash
       env:
@@ -52,6 +53,7 @@ runs:
         docker pull --quiet "$IMAGE"
         echo "Pulled in $(( $(date +%s) - started )) s, $(docker image inspect --format '{{.Size}}' "$IMAGE") bytes on this daemon"
         docker tag "$IMAGE" "$PROJECT-curio"
+        echo "CURIO_CI_OWN_IMAGE=1" >> "$GITHUB_ENV"
 
     - name: 🌱 Seed the workspace
       if: inputs.seed != ''
