@@ -523,6 +523,13 @@ The Projects rail and the canvas's title chips file a dataflow under tags and da
 
 The table's names come first, in its `displayOrder`; any other declared name follows, sorted ignoring case, so a new name shows on the rail with no frontend change. Names merge ignoring case, keeping the table's spelling, and a declaration read off a manifest skips a value of the wrong type (`declared_dataflow_categories`, beside the parsers' `clean_dataflow_categories` in `packages/domain/dataflow_categories.py`).
 
+### A dataflow's thumbnail
+
+The Projects page, the Scenario Catalog and the provenance window draw a dataflow as plain boxes ([`components/DataflowThumbnail.tsx`](../utk_curio/frontend/urban-workflows/src/components/DataflowThumbnail.tsx)), each with a bar in the color of its node's category (`colorForCategory` in `constants/nodeCategoryPalette.ts`), or grey for a node with none. The palette maps categories to colors and names no node type.
+
+- A project summary's `graph_preview` (`_extract_graph_preview` in `projects/services.py`) gives each node its id, type, position, size and the `category` its template declares, read through the request's `ManifestLookup` (`template_categories` in `projects/categories.py`), so a package in the account's store counts as one in the catalog does. A node type no manifest holds gets none. The Scenario Catalog's listing and a scenario's details draw the same preview.
+- A preview built in the browser gives each node its registered descriptor's category (`utils/graphPreviewCategories.ts`): the Scenario Catalog drawer's In project tab (`liveGraphPreview`) and each version of a dataflow (`TrillGenerator`). The provenance window draws a version with the category each node type's descriptor has then, else the one recorded with the version.
+
 ### NodeDescriptor: Static Metadata
 
 A `NodeDescriptor` (defined in `src/registry/types.ts`) is the static declaration for a node type. It is read once at render time by `UniversalNode` to configure the node's appearance and behavior:

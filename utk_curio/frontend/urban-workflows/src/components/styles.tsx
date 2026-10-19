@@ -16,10 +16,9 @@ import {
     viewDatasetDetailsToast,
 } from "./datasets/catalog/datasetDetailsContext";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
-import { NODE_CATEGORY_KEY, categoryFg, colorForNodeType } from "../constants/nodeCategoryPalette";
+import { colorForCategory } from "../constants/nodeCategoryPalette";
 import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { readCanvasTemplateConfig } from "../utils/canvasTemplateConfig";
-import { unversionedNodeType } from "../utils/flowNodeCanonicalType";
 import { HeaderIconButton } from "./HeaderIconButton";
 import {
     EditableNodeHeaderLabel,
@@ -981,7 +980,7 @@ const NODE_CARD_SHADOW = "var(--curio-shadow-browse-card-raised)";
  * instead of reordering it.
  */
 export const getNodeContainerStyles = (
-    nodeType: string,
+    _nodeType: string,
     state: {
         dashboardOn?: boolean;
         suggested?: boolean;
@@ -995,14 +994,9 @@ export const getNodeContainerStyles = (
     } = {},
 ): CSS.Properties => {
     // Node border colour = node category, the same one the pill in the node's
-    // own title bar shows. Keyed off the type alone, every package node was
-    // grey beside a coloured pill (#524). The type map is for a node with no
-    // resolved descriptor. `nodeType` arrives versioned for palette-dragged
-    // nodes (`curio.builtin/data-pool@1`) but the map is keyed unversioned, so
-    // an unnormalized lookup silently falls back to grey (#159).
-    const accent = state.category
-        ? categoryFg(NODE_CATEGORY_KEY[state.category] ?? "package")
-        : colorForNodeType(unversionedNodeType(nodeType));
+    // own title bar shows: the resolved descriptor's. Keyed off the type alone,
+    // every package node was grey beside a coloured pill (#524).
+    const accent = colorForCategory(state.category);
     const base: CSS.Properties = {
         position: "relative",
         backgroundColor: "#ffffff",

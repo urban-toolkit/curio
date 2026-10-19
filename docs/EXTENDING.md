@@ -37,7 +37,7 @@ packages/<packageId>@<major>/
 A `template` inside `manifest.json` declares one node kind. It carries:
 
 - `id` + `label` + `description` + `iconRef`: palette presentation. `iconRef` names any Font Awesome solid or brands icon, as `fa-solid:<name>` or `fa-brands:<name>` (`fa-solid:tree`, `fa-brands:github`)
-- `category` (`data` | `computation` | `vis_grammar` | `vis_simple` | `flow`): palette sectioning
+- `category` (`data` | `computation` | `vis_grammar` | `vis_simple` | `flow`): palette sectioning, and the node's color: its border on the canvas, and its box in a dataflow's thumbnail on the **Projects** page, in the Scenario Catalog and in the provenance window
 - `inputPorts` + `outputPorts`: port types and cardinalities (see [`docs/schemas/node-package.v4.json`](schemas/node-package.v4.json))
 - `editor` (`code` | `widgets` | `grammar` | `none`): what editor surface to mount
 - `behavior`: string key resolved through [`registry/behaviorRegistry`](../utk_curio/frontend/urban-workflows/src/registry/behaviorRegistry.ts) to the React hook that implements the node's behaviour

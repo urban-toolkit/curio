@@ -216,10 +216,7 @@
   --curio-format-netcdf-on-tint: #34449A;
 
   /* ── Node category palette ─────────────────────────────────────────────
-     One colour per node category. Promoted from the canvas, which is where
-     this colour already meant something: `nodeTypeBorderColor` in
-     components/styles.tsx paints each node's left border, and NODE_COLORS in
-     components/DataflowThumbnail.tsx was a hand-kept copy of the same map.
+     One colour per node category, the category a node's template declares.
 
      Every surface that shows a node's category reads these: the canvas border,
      the dataflow thumbnail, the node header tag, the Node Catalog card strip,

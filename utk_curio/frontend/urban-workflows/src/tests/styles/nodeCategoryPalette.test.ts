@@ -4,10 +4,10 @@ import path from "path";
 import {
   CATEGORY_FALLBACK_FG,
   NODE_CATEGORY_KEY,
-  NODE_TYPE_CATEGORY,
   categoryFg,
-  colorForNodeType,
+  colorForCategory,
 } from "../../constants/nodeCategoryPalette";
+import type { NodeCategory } from "../../registry/types";
 
 /**
  * Node colour means node category, and it has to mean that everywhere.
@@ -102,40 +102,70 @@ describe("node category palette", () => {
 
   it("paints the canvas node border from the palette, not from its own hexes", () => {
     const tsx = read("components/styles.tsx");
-    // The descriptor's category first, the shared type map for a node with
-    // none (#524). styles.tsx used to keep a third copy of that map.
-    expect(tsx).toContain("categoryFg(NODE_CATEGORY_KEY[");
-    expect(tsx).toContain("colorForNodeType(");
+    // The descriptor's category, through the palette's one helper (#524).
+    // styles.tsx used to keep a third copy of a type map, and later fell back
+    // to the palette's; the palette holds none now.
+    expect(tsx).toContain("colorForCategory(");
+    expect(tsx).not.toContain("colorForNodeType");
     expect(tsx).not.toMatch(/const nodeTypeBorderColor/);
   });
 
-  it("gives each built-in kind the category its manifest declares", () => {
-    // The map had drifted from curio.builtin@1: Data Pool painted as
-    // computation beside a DATA pill, Data Summary the other way round, and
-    // Spatial Join was missing, so it fell back to grey (#524).
+  it("gives each built-in kind the colour of the category its manifest declares", () => {
+    // A map of built-in kinds had drifted from curio.builtin@1: Data Pool
+    // painted as computation beside a DATA pill, Data Summary the other way
+    // round, and Spatial Join was missing, so it fell back to grey (#524).
+    // Colour now comes from the category the manifest declares itself.
     const manifest = JSON.parse(
       fs.readFileSync(
         path.resolve(__dirname, "../../../../../../packages/curio.builtin@1/manifest.json"),
         "utf8",
       ),
     );
-    const fromManifest: Record<string, string> = {};
+    expect(manifest.templates.length).toBeGreaterThan(0);
     for (const template of manifest.templates) {
-      fromManifest[`curio.builtin/${template.id}`] =
-        NODE_CATEGORY_KEY[template.category as keyof typeof NODE_CATEGORY_KEY];
+      const key = NODE_CATEGORY_KEY[template.category as NodeCategory];
+      expect([template.id, key]).toEqual([template.id, expect.stringMatching(/^(data|computation|vis|package)$/)]);
+      expect([template.id, colorForCategory(template.category)]).toEqual([template.id, categoryFg(key)]);
     }
-    expect(NODE_TYPE_CATEGORY).toEqual(fromManifest);
   });
 
-  it("paints the projects-list thumbnail from the same map as the canvas", () => {
+  it("paints the projects-list thumbnail from the same helper as the canvas", () => {
     const tsx = read("components/DataflowThumbnail.tsx");
-    // The file's own comment used to call its copy "a static mirror" of the
-    // canvas map. A mirror is a copy, and this one is what drifted.
-    expect(tsx).toContain("NODE_TYPE_CATEGORY");
-    expect(tsx).toContain("colorForNodeType");
-    const map = tsx.match(/const NODE_COLORS[^;]*;/s);
-    expect(map).not.toBeNull();
-    expect(map![0]).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+    // The thumbnail kept "a static mirror" of the canvas map, then the
+    // palette's shared type map. A mirror is a copy, and this one is what
+    // drifted: the bar now reads the node's own category.
+    expect(tsx).toContain("colorForCategory(");
+    expect(read("components/styles.tsx")).toContain("colorForCategory(");
+    expect(tsx).not.toContain("NODE_TYPE_CATEGORY");
+    expect(tsx).not.toContain("colorForNodeType");
+    const bar = tsx.match(/const color = [^;]*;/s);
+    expect(bar).not.toBeNull();
+    expect(bar![0]).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+  });
+
+  it.each([
+    "components/DataflowThumbnail.tsx",
+    "constants/nodeCategoryPalette.ts",
+    "utils/graphPreviewCategories.ts",
+    "components/scenarios/catalog/inProjectRows.ts",
+    "components/menus/provenance/TrillProvenanceWindow.tsx",
+  ])("%s names no package, node type or template id", (file) => {
+    // A node's colour comes from the category its template declares, so no
+    // thumbnail or palette file keeps a list of node types of its own.
+    const text = read(file);
+    const packages = path.resolve(__dirname, "../../../../../../packages");
+    const named: string[] = [];
+    for (const dir of fs.readdirSync(packages).sort()) {
+      const manifestFile = path.join(packages, dir, "manifest.json");
+      if (!fs.existsSync(manifestFile)) continue;
+      const manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8"));
+      if (text.includes(manifest.id)) named.push(manifest.id);
+      for (const template of manifest.templates) {
+        if (text.includes(`${manifest.id}/${template.id}`)) named.push(`${manifest.id}/${template.id}`);
+        if (new RegExp(`["'\`]${template.id}["'\`]`).test(text)) named.push(template.id);
+      }
+    }
+    expect(named).toEqual([]);
   });
 
   it("has no hash-of-the-directory-name left in either catalog card", () => {
@@ -166,9 +196,15 @@ describe("node category palette", () => {
   it("returns token references, not literals, from the helpers", () => {
     expect(categoryFg("data")).toBe("var(--curio-category-data-fg)");
     expect(CATEGORY_FALLBACK_FG).toBe("var(--curio-category-package-fg)");
-    for (const type of Object.keys(NODE_TYPE_CATEGORY)) {
-      expect(colorForNodeType(type)).toMatch(/^var\(--curio-category-[a-z]+-fg\)$/);
+    for (const category of Object.keys(NODE_CATEGORY_KEY) as NodeCategory[]) {
+      expect(colorForCategory(category)).toMatch(/^var\(--curio-category-[a-z]+-fg\)$/);
+      expect(colorForCategory(category)).toBe(categoryFg(NODE_CATEGORY_KEY[category]));
     }
-    expect(colorForNodeType("someone.else/unknown-node")).toBe(CATEGORY_FALLBACK_FG);
+    // A category the palette has no bucket for, or none: the neutral. A
+    // manifest in an account's store is read as written, so an
+    // Object.prototype key must not reach the lookup.
+    for (const other of ["someone.else/unknown-node", "weird", "vis", "", "constructor", "__proto__", null, undefined]) {
+      expect(colorForCategory(other)).toBe(CATEGORY_FALLBACK_FG);
+    }
   });
 });

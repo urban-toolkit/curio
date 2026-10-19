@@ -382,7 +382,16 @@ def _auto_install_computed_outputs(
     return spec
 
 
-def _extract_graph_preview(spec: Optional[dict]) -> Optional[dict]:
+def _extract_graph_preview(spec: Optional[dict], lookup) -> Optional[dict]:
+    """The plain-box graph a project's thumbnail draws: each node's id, type,
+    the ``category`` its template declares (None for a type no manifest
+    holds), position and size, and each edge's ends.
+
+    *lookup* (``categories.ManifestLookup``) reads the manifests: the
+    account's copies and the catalog's, as the project's tags are read.
+    """
+    from utk_curio.backend.app.projects.categories import template_categories
+
     if not spec:
         return None
     dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
@@ -390,10 +399,12 @@ def _extract_graph_preview(spec: Optional[dict]) -> Optional[dict]:
         return None
     raw_nodes = dataflow.get("nodes") or []
     raw_edges = dataflow.get("edges") or []
+    categories = template_categories(spec, lookup)
     nodes = [
         {
             "id": n.get("id", ""),
             "type": n.get("type", ""),
+            "category": categories.get(n["type"]) if isinstance(n.get("type"), str) else None,
             "x": n.get("x", 0),
             "y": n.get("y", 0),
             "w": n.get("width"),
@@ -1507,7 +1518,7 @@ def list_projects(user, sort: str = "last_opened") -> List[ProjectSummary]:
             dropped_stale_row = True
             continue
         summaries.append(_to_summary(
-            p, graph_preview=_extract_graph_preview(spec),
+            p, graph_preview=_extract_graph_preview(spec, lookup),
             spec_revision=storage.spec_revision(ukey, p.id),
             is_example=p.id in sources,
             categories=_categories(user, p.id, spec, sources=sources, lookup=lookup),
