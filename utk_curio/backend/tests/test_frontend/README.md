@@ -482,6 +482,7 @@ pytest utk_curio/backend/tests/test_frontend/test_workflows.py -k "vega.json"
 ```
 test_frontend/
   conftest.py                 # workflow list, env filtering, pytest_generate_tests hook
+  early_guards.py             # a sign-in test skips before its fixtures on a stack without sign-in
   fixtures.py                 # server startup, browser/page fixtures, loaded_workflow (DB-stub login)
   utils/                      # helpers, one module per area; `from .utils import X` finds any of them
     environment.py            # REPO_ROOT, state_root, stack flags, require_* skips, debug_log
@@ -588,6 +589,10 @@ CURIO_NO_PROJECT=1 pytest \
 ```
 
 `fixtures.py::curio_servers` reads `CURIO_NO_PROJECT` from the pytest env and forwards `--no-project` to `curio.py start`, so no extra wiring is needed.
+
+## Tests that need sign-in
+
+A test that needs a signed-in user starts its body with `require_user_auth()`, after `require_project_page()` when it needs the projects page too. On a stack without sign-in, such as CI's test-isolated job, it skips. When the body starts with these calls, [`early_guards.py`](early_guards.py) calls them before the test's fixtures, so the skip comes before its page opens and its database reset, with the same reason. That happens only with `CURIO_E2E_USE_EXISTING=1`, which `scripts/test.sh` sets. A test that calls `require_user_auth()` later, inside an `if`, or through a helper or fixture still skips, but only once its fixtures are up.
 
 ## Catalog surfaces
 
