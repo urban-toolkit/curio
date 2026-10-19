@@ -9,15 +9,18 @@ chart (``dashboard_payload``, ``scenario_catalog/domain/parts``), a run on the
 server forwards it (``execution/run_plan``), and a save keeps no output of its
 own for it (``services._is_sink_node_type``), as the canvas does through
 ``registry/vegaLiteNodes.ts``. A dataflow's automatic Vega-Lite and Autark
-tags read the same grammars (``categories``).
+tags read the same grammars (``categories``), through :class:`TemplateGrammars`,
+which also reads what the package manifests declare for the Projects rail.
 
 A node type is ``<package id>/<template id>``, with or without ``@<major>``:
-the major picks the package folder, and without one the highest wins. A
-manifest is read once, and again only when its file changes.
+the major picks the package folder, and without one the highest wins.
+:func:`template_grammar` reads a catalog manifest once, and again only when
+its file changes; a :class:`TemplateGrammars` reads each manifest once.
 """
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Optional
 
@@ -118,24 +121,173 @@ def draws_with_vega_lite(node_type: object, grammar_of: Optional[TemplateGrammar
     return (grammar_of or template_grammar)(node_type) == VEGA_LITE
 
 
+@dataclass(frozen=True)
+class Declared:
+    """What the manifests of one node type, model or dataset tell a dataflow's
+    categories: the names they declare in ``dataflowCategories``, and the core
+    fields the rules in ``category_rules.json`` read."""
+
+    tags: tuple[str, ...] = ()
+    data_types: tuple[str, ...] = ()
+    #: The grammar a node's template draws with.
+    grammar: Optional[str] = None
+    #: The type of a model package's model.
+    model_type: Optional[str] = None
+
+
+#: What a node type, a model or a dataset no manifest holds tells.
+NOTHING = Declared()
+
+
+def union_of_declarations(manifests: Iterable[object]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """The tags and the data types *manifests* (manifest objects, or templates
+    of one) declare together, each name once ignoring case, its first spelling
+    kept. A value of the wrong type is skipped."""
+    from utk_curio.backend.app.packages.service import declared_dataflow_categories
+
+    found: dict[str, dict[str, str]] = {"tags": {}, "dataTypes": {}}
+    for manifest in manifests:
+        for section, values in declared_dataflow_categories(manifest).items():
+            for value in values:
+                found[section].setdefault(value.casefold(), value)
+    return tuple(found["tags"].values()), tuple(found["dataTypes"].values())
+
+
+def _first_string(values: Iterable[object]) -> Optional[str]:
+    return next((value for value in values if isinstance(value, str)), None)
+
+
+def _model_type(manifests: Iterable[dict]) -> Optional[str]:
+    """The first of *manifests* that names its model's type names it."""
+    return _first_string(
+        manifest["model"].get("type") for manifest in manifests if isinstance(manifest.get("model"), dict)
+    )
+
+
 class TemplateGrammars:
-    """:func:`template_grammar` for one account, memoized: the account's own
-    package store first, then the catalog, as ``categories.DatasetKinds``
-    reads datasets. One instance per request, so a listing reads each
-    manifest once."""
+    """What the package manifests say about a dataflow's node types and the
+    models its code loads, for one account and one request.
 
-    def __init__(self, user_key: Optional[str]):
-        from utk_curio.backend.app.packages.service import catalog_root, user_packages_dir
+    Called with a node type, it gives the grammar the node's template draws
+    with, as :func:`template_grammar` does. :meth:`node` gives that too, with
+    what the node's package and its template declare in ``dataflowCategories``
+    and, for a model package, its model's type. :meth:`model` gives what the
+    model package a ``curio_load_model`` call names declares, and its model's
+    type.
 
-        self._roots: list[Path] = []
-        if user_key:
-            self._roots.append(user_packages_dir(user_key))
-        self._roots.append(catalog_root())
-        self._memo: dict[str, Optional[str]] = {}
+    A package is read in the account's own store, then in the catalog, as
+    ``categories.DatasetKinds`` reads datasets. The account's copy dates from
+    when the package was added to the store, so what the two copies declare is
+    unioned, and a grammar or a model type is the first copy's that names one.
+    Without a major, a node type or a model id takes the highest major the two
+    places hold. A node type with no package in it matches nothing. Each
+    manifest is read once, so one instance serves one request.
+    """
+
+    def __init__(self, user_key: Optional[str], *, roots: Optional[Iterable[Path]] = None):
+        if roots is None:
+            from utk_curio.backend.app.packages.service import catalog_root, user_packages_dir
+
+            roots = ([user_packages_dir(user_key)] if user_key else []) + [catalog_root()]
+        self._roots: list[Path] = list(roots)
+        self._manifests: dict[str, list[dict]] = {}
+        self._majors: Optional[dict[str, list[int]]] = None
+        self._nodes: dict[str, Declared] = {}
+        self._models: dict[str, Declared] = {}
+
+    @classmethod
+    def shipped(cls) -> "TemplateGrammars":
+        """The packages Curio ships, as they are committed (``utk_curio/shipped.py``)."""
+        from utk_curio import shipped
+
+        return cls(None, roots=[shipped.path("packages")])
 
     def __call__(self, node_type: object) -> Optional[str]:
+        return self.node(node_type).grammar
+
+    def node(self, node_type: object) -> Declared:
+        """What a node of *node_type* gets from its package and its template.
+        What the package declares counts even when its manifest no longer
+        holds the template."""
         if not isinstance(node_type, str):
-            return None
-        if node_type not in self._memo:
-            self._memo[node_type] = _grammar_in(self._roots, node_type)
-        return self._memo[node_type]
+            return NOTHING
+        if node_type not in self._nodes:
+            self._nodes[node_type] = self._read_node(node_type)
+        return self._nodes[node_type]
+
+    def model(self, model_id: object) -> Declared:
+        """What a ``curio_load_model`` call naming *model_id* gets from its
+        model package: what the package declares, and its model's type."""
+        if not isinstance(model_id, str):
+            return NOTHING
+        if model_id not in self._models:
+            self._models[model_id] = self._read_model(model_id)
+        return self._models[model_id]
+
+    def _read_node(self, node_type: str) -> Declared:
+        from utk_curio.backend.app.packages.service import (
+            dir_name_from_node_type,
+            unversioned_node_type,
+        )
+
+        dir_name = dir_name_from_node_type(node_type, self._installed_majors())
+        if dir_name is None:
+            return NOTHING
+        template_id = unversioned_node_type(node_type).rpartition("/")[2]
+        manifests = self._copies(dir_name)
+        templates = [
+            template
+            for manifest in manifests
+            for template in manifest.get("templates") or []
+            if isinstance(template, dict) and template.get("id") == template_id
+        ]
+        tags, data_types = union_of_declarations([*manifests, *templates])
+        return Declared(
+            tags,
+            data_types,
+            grammar=_first_string(template.get("grammarId") for template in templates),
+            model_type=_model_type(manifests),
+        )
+
+    def _read_model(self, model_id: str) -> Declared:
+        from utk_curio.backend.app.packages.service import dir_name_from_model_ref
+
+        dir_name = dir_name_from_model_ref(model_id, self._installed_majors())
+        if dir_name is None:
+            return NOTHING
+        manifests = self._copies(dir_name)
+        tags, data_types = union_of_declarations(manifests)
+        return Declared(tags, data_types, model_type=_model_type(manifests))
+
+    def _copies(self, dir_name: str) -> list[dict]:
+        """The manifests of the package folder *dir_name* that read, the
+        account's first."""
+        if dir_name not in self._manifests:
+            manifests = []
+            for root in self._roots:
+                try:
+                    raw = json.loads((root / dir_name / "manifest.json").read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    continue
+                if isinstance(raw, dict):
+                    manifests.append(raw)
+            self._manifests[dir_name] = manifests
+        return self._manifests[dir_name]
+
+    def _installed_majors(self) -> dict[str, list[int]]:
+        """``{package id: majors}`` of the package folders the two places hold."""
+        if self._majors is None:
+            from utk_curio.backend.app.packages.service import PACKAGE_DIR_RE
+
+            majors: dict[str, list[int]] = {}
+            for root in self._roots:
+                try:
+                    names = [entry.name for entry in root.iterdir() if entry.is_dir()]
+                except OSError:
+                    continue
+                for name in names:
+                    if PACKAGE_DIR_RE.match(name):
+                        package_id, _, major = name.rpartition("@")
+                        majors.setdefault(package_id, []).append(int(major))
+            self._majors = majors
+        return self._majors
