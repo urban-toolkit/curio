@@ -538,11 +538,24 @@ class TestNodeBuilderComposite:
         for capability in ("package.recommend", "package.build", "package.extend", "node.kind.author"):
             assert not builtin.gets_worked_examples(self.COORD, capability), capability
 
-    def test_review_policy_and_byte_parity(self):
+    def test_review_policy_and_the_shipped_file_is_what_runs(self):
         # The composite declares review-before-apply; every agent that is not
-        # a composite keeps its manifest dict byte-identical (no delegatesTo
-        # key, report-only runtime): the dev/48 regression requirement.
-        nb = builtin.build_builtin_manifest(builtin.get_builtin_spec(self.COORD))
+        # a composite declares no delegatesTo and a report-only runtime. Each
+        # agent runs exactly its shipped file: the manifest the roster serves
+        # is that file parsed, and every prompt a run reads is the file its
+        # folder holds, or the preamble Curio shares (``curio:``).
+        import json
+        from pathlib import Path
+
+        from utk_curio.backend.app.agents.domain.manifest import parse_agent_manifest
+
+        agents = Path(__file__).resolve().parents[4] / "agents"
+        shared = Path(__file__).resolve().parents[3] / "llm-prompts"
+
+        def shipped(coord: str) -> dict:
+            return json.loads((agents / coord / "manifest.json").read_text(encoding="utf-8"))
+
+        nb = shipped(self.COORD)
         assert nb["runtime"] == {"execution": "foreground", "reviewPolicy": "review-before-apply"}
         assert nb["delegatesTo"] == [
             {"id": "agent.node-builder", "capabilities": [
@@ -555,14 +568,25 @@ class TestNodeBuilderComposite:
         ]
         composites = {"agent.node-builder", "agent.dataset-finder", "agent.dataflow-builder",
                       "agent.researcher"}  # dev/90: asserted in its class
-        for spec in builtin.BUILTIN_AGENTS:
-            if spec.agent_id in composites:
+        manifests = builtin.list_builtin_manifests()
+        assert len(manifests) == 7
+        for m in manifests:
+            raw = shipped(m.dir_name)
+            assert m == parse_agent_manifest(raw), m.agent_id
+            for key, asset in m.prompts.items():
+                file = (
+                    shared / asset.path.removeprefix("curio:") if asset.path.startswith("curio:")
+                    else agents / m.dir_name / asset.path
+                )
+                assert builtin.read_prompt_text(m.dir_name, key) == file.read_text(encoding="utf-8"), (
+                    m.agent_id, key,
+                )
+            if m.agent_id in composites:
                 continue
-            raw = builtin.build_builtin_manifest(spec)
-            assert "delegatesTo" not in raw, spec.agent_id
+            assert "delegatesTo" not in raw, m.agent_id
             assert raw["runtime"] == {"execution": "foreground", "reviewPolicy": "report-only"}
             # requires stays empty for every migrated agent (dev/50 parity).
-            assert all(t["requires"] == [] for t in raw["compatibleTargets"]), spec.agent_id
+            assert all(t["requires"] == [] for t in raw["compatibleTargets"]), m.agent_id
 
     def test_net_new_instruction_resolves(self):
         # Net-new asset (dev/15 §3.3: no migrated source) — reads through the

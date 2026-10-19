@@ -243,9 +243,31 @@ class TestWhoTakesThem:
         assert builtin.gets_worked_examples(nb, "node.content.generate")
         assert not builtin.gets_worked_examples("agent.someone-else@1.0.0")
 
-    def test_the_manifests_do_not_change(self):
-        for spec in builtin.BUILTIN_AGENTS:
-            assert "worked" not in json.dumps(builtin.build_builtin_manifest(spec)), spec.agent_id
+    def test_a_manifest_holds_only_the_worked_examples_flag(self):
+        """Whether a run takes worked examples is a flag in the agent's
+        shipped manifest, the agent's and a mode's, never example text; and
+        the flags are the takers above."""
+        from pathlib import Path
+
+        agents = Path(__file__).resolve().parents[4] / "agents"
+        folders = sorted(path.parent for path in agents.glob("*/manifest.json"))
+        assert len(folders) == 7, folders
+        flagged = set()
+        for folder in folders:
+            raw = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+            flags = {None: raw.pop("workedExamples", None)}
+            for capability in raw["capabilities"]:
+                flags[capability["id"]] = capability.pop("workedExamples", None)
+            for capability, flag in flags.items():
+                assert flag is None or isinstance(flag, bool), (folder.name, capability, flag)
+            flagged |= {(raw["id"], capability) for capability, flag in flags.items() if flag}
+            assert "worked" not in json.dumps(raw).lower(), folder.name
+        assert flagged == {
+            ("agent.dataflow-builder", None),
+            ("agent.node-builder", None),
+            ("agent.node-builder", "node.content.generate"),
+            ("agent.dataflow-reader", "workflow.suggest"),
+        }
 
 
 class TestTheBuilderReadsAnyExample:
