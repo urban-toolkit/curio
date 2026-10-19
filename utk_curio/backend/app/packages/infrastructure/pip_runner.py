@@ -628,6 +628,13 @@ def is_satisfied(name: str, spec: str) -> bool:
     return _is_satisfied(name, spec)
 
 
+def pip_requirement(name: str, spec: str) -> str:
+    """Public wrapper over :func:`_spec_argv`: the ``pip install`` argument
+    :func:`install_python_deps` passes for one manifest ``{name: spec}`` pair
+    (the launcher's ``manifest_requirements``)."""
+    return _spec_argv(name, spec)
+
+
 def install_python_deps(
     deps: Mapping[str, str],
     *,

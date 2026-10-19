@@ -299,14 +299,81 @@ def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
     - ``pip_runner.install_python_deps`` to do the pip work
       (PEP 440 + ``^X.Y`` caret rewrite + already-satisfied skip + batched
       pip + stderr-tail surfacing on failure).
+
+    The walk itself is :func:`_walk_manifests`, which
+    :func:`manifest_requirements` shares to list the same libraries without
+    installing them.
     """
-    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
-    from utk_curio.backend.app.packages.service import ManifestError
-    from utk_curio.backend.app.packages.service import merge_python_deps
     from utk_curio.backend.app.packages.service import (
         PipInstallError,
         install_python_deps,
     )
+
+    per_pkg, per_user = _walk_manifests()
+
+    for user_key, entries in sorted(per_user.items()):
+        _install_user_node_deps_at_boot(user_key, entries)
+
+    if not per_pkg:
+        return
+    merged = _merge_host_deps(per_pkg)
+    if not merged:
+        return
+    log_info(
+        f"[Setup] Installing manifest python deps for: {', '.join(sorted(merged))}",
+        COLOR_BACKEND, 0,
+    )
+    try:
+        install_python_deps(
+            merged,
+            on_line=lambda line: log_info(f"[pip] {line}", COLOR_BACKEND, 2),
+        )
+    except PipInstallError as exc:
+        log_error(f"[Setup] Manifest dep install failed: {exc}")
+        sys.exit(1)
+
+    _report_unimportable_deps(merged, block=block_on_verify)
+
+
+def manifest_requirements() -> list[str]:
+    """The libraries :func:`install_manifest_dependencies` installs into this
+    interpreter, one ``pip install`` requirement each and sorted, without
+    installing anything.
+
+    The same walk and merge, so the two cannot drift. CI's image build installs
+    this list in a layer of its own, before the source is copied, which stays
+    cached while the list does not change (the Dockerfile's ``CURIO_CI_SETUP``).
+    Per-user installs under fork isolation go to each user's own tree, not this
+    interpreter, so they are not in it.
+    """
+    from utk_curio.backend.app.packages.infrastructure.pip_runner import pip_requirement
+
+    per_pkg, _per_user = _walk_manifests()
+    if not per_pkg:
+        return []
+    merged = _merge_host_deps(per_pkg)
+    return sorted(pip_requirement(name, spec) for name, spec in merged.items())
+
+
+def _merge_host_deps(per_pkg: list[tuple[str, dict[str, str]]]) -> dict[str, str]:
+    """One conflict-aware union of *per_pkg*, warning about each conflict."""
+    from utk_curio.backend.app.packages.service import merge_python_deps
+
+    merged, conflicts = merge_python_deps(per_pkg)
+    for c in conflicts:
+        log_warning(
+            f"Dependency range conflict for {c.package}: "
+            + ", ".join(f"{dn}={rng}" for dn, rng in c.ranges)
+        )
+    return merged
+
+
+def _walk_manifests() -> tuple[list[tuple[str, dict[str, str]]], dict[str, list[tuple[str, dict]]]]:
+    """Every manifest :func:`install_manifest_dependencies` reads, as
+    ``(per_pkg, per_user)``: the ``(dir_name, python deps)`` pairs bound for
+    this interpreter, and, under fork isolation, each user's own pairs."""
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+    from utk_curio.backend.app.packages.service import ManifestError
     from utk_curio.backend.app.packages.service import example_dep_package_ids
     from utk_curio.backend.app.packages.infrastructure import backend_runtime
     from utk_curio.backend.app.packages.service import dep_destinations
@@ -401,33 +468,7 @@ def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
             else:
                 per_pkg.append((m.dir_name, dict(m.python_deps)))
 
-    for user_key, entries in sorted(per_user.items()):
-        _install_user_node_deps_at_boot(user_key, entries)
-
-    if not per_pkg:
-        return
-    merged, conflicts = merge_python_deps(per_pkg)
-    for c in conflicts:
-        log_warning(
-            f"Dependency range conflict for {c.package}: "
-            + ", ".join(f"{dn}={rng}" for dn, rng in c.ranges)
-        )
-    if not merged:
-        return
-    log_info(
-        f"[Setup] Installing manifest python deps for: {', '.join(sorted(merged))}",
-        COLOR_BACKEND, 0,
-    )
-    try:
-        install_python_deps(
-            merged,
-            on_line=lambda line: log_info(f"[pip] {line}", COLOR_BACKEND, 2),
-        )
-    except PipInstallError as exc:
-        log_error(f"[Setup] Manifest dep install failed: {exc}")
-        sys.exit(1)
-
-    _report_unimportable_deps(merged, block=block_on_verify)
+    return per_pkg, per_user
 
 
 def _report_unimportable_deps(merged, *, block: bool) -> None:
@@ -475,3 +516,16 @@ def _report_unimportable_deps(merged, *, block: bool) -> None:
         _probe()
     else:
         threading.Thread(target=_probe, name="dep-import-probe", daemon=True).start()
+
+
+if __name__ == "__main__":
+    # ``python -m utk_curio.cli.dependencies`` prints manifest_requirements(),
+    # one per line, for CI's image build (the Dockerfile's CURIO_CI_SETUP).
+    # CURIO_SEED_EXAMPLES=1 adds the examples' packages, as --with-examples
+    # does for setup and start. Anything the walk prints goes to stderr, so
+    # stdout holds the list alone.
+    import contextlib
+
+    with contextlib.redirect_stdout(sys.stderr):
+        requirements = manifest_requirements()
+    print("\n".join(requirements))

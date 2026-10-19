@@ -12,6 +12,9 @@
 #                       (export CURIO_SANDBOX_TOKEN to the value that
 #                        stack was started with, or the two e2e tests
 #                        calling the sandbox directly will get 401s)
+#   --skip-setup        Install nothing: no pip, curio.py setup, npm or Playwright
+#                       install (CI's image already ran them, and its jobs copy
+#                       what it installed to the runner)
 #   --headed            Open a visible browser window during E2E tests
 #   --videos            Also record the per-issue fix screencasts (slow)
 #   --no-examples       Skip the tests that need the example dataflows seeded
@@ -38,6 +41,7 @@
 set -uo pipefail
 
 USE_EXISTING=0
+SKIP_SETUP=0
 HEADED=0
 VIDEOS=0
 # On by default: the stack below boots with --with-examples either way, and
@@ -53,6 +57,7 @@ SUITE="all"   # all | backend | sandbox | jest | e2e | unit
 while [[ $# -gt 0 ]]; do
   case $1 in
     --use-existing)  USE_EXISTING=1;       shift ;;
+    --skip-setup)    SKIP_SETUP=1;         shift ;;
     --headed)        HEADED=1;             shift ;;
     --videos)        VIDEOS=1;             shift ;;
     --no-examples)   EXAMPLES=0;           shift ;;
@@ -66,7 +71,7 @@ while [[ $# -gt 0 ]]; do
     --allow-empty)   ALLOW_EMPTY=1;        shift ;;
     --parallel)      PARALLEL="$2";        shift 2 ;;
     --help|-h)
-      sed -n '2,36p' "$0"
+      sed -n '2,39p' "$0"
       exit 0 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
@@ -304,18 +309,22 @@ fi
 # ---------------------------------------------------------------------------
 # 2. Install dependencies (needed by both unit tests and E2E)
 # ---------------------------------------------------------------------------
-echo "==> Installing Python dependencies..."
-pip install -r "$REPO_ROOT/requirements.txt" -q
-die "pip install -r requirements.txt" $?
+if [[ $SKIP_SETUP -eq 1 ]]; then
+  echo "==> --skip-setup: installing nothing, using $(command -v python)"
+else
+  echo "==> Installing Python dependencies..."
+  pip install -r "$REPO_ROOT/requirements.txt" -q
+  die "pip install -r requirements.txt" $?
 
-echo "==> Installing manifest python deps via curio setup..."
-PYTHONPATH="$REPO_ROOT" python "$REPO_ROOT/curio.py" setup
-die "curio.py setup" $?
+  echo "==> Installing manifest python deps via curio setup..."
+  PYTHONPATH="$REPO_ROOT" python "$REPO_ROOT/curio.py" setup
+  die "curio.py setup" $?
 
-if [[ $USE_EXISTING -eq 0 ]]; then
-  echo "==> Installing frontend npm dependencies..."
-  (cd "$REPO_ROOT/utk_curio/frontend/urban-workflows" && npm install -q)
-  die "npm install" $?
+  if [[ $USE_EXISTING -eq 0 ]]; then
+    echo "==> Installing frontend npm dependencies..."
+    (cd "$REPO_ROOT/utk_curio/frontend/urban-workflows" && npm install -q)
+    die "npm install" $?
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -424,10 +433,12 @@ fi
 # 7. E2E tests (Playwright on host, pointing at the running services)
 # ---------------------------------------------------------------------------
 if [[ $RUN_E2E -eq 1 ]]; then
-  echo ""
-  echo "==> Installing Playwright browser..."
-  python -m playwright install chromium
-  die "playwright install chromium" $?
+  if [[ $SKIP_SETUP -eq 0 ]]; then
+    echo ""
+    echo "==> Installing Playwright browser..."
+    python -m playwright install chromium
+    die "playwright install chromium" $?
+  fi
 
   PYTEST_ARGS="-v"
   [[ $HEADED -eq 1 ]]    && PYTEST_ARGS="$PYTEST_ARGS --headed"

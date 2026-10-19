@@ -312,10 +312,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # CURIO_CI_SETUP=1: the image also holds what `curio.py setup
+      # --with-examples` installs and Playwright's Chromium (see the
+      # Dockerfile), so the jobs' stacks boot installing nothing and the jobs
+      # that run pytest on the runner copy both out (.github/actions/image-env).
       - name: 🔨 Build and push the image
         uses: docker/build-push-action@v7
         with:
           context: .
+          build-args: CURIO_CI_SETUP=1
           push: true
           tags: ${{ steps.name.outputs.image }}
           cache-from: type=gha,scope=curio-image
@@ -503,6 +508,12 @@ jobs:
       - name: ▶️ Start containers
         run: docker compose -p curio-ci up -d
 
+      # The runner's pytest and browser use the packages and Chromium of the
+      # image just built, copied while its container boots.
+      - uses: ./.github/actions/image-env
+        with:
+          image: curio-ci-curio
+
       - name: 🧪 Wait for services to become healthy
         id: stack_healthy
         shell: bash
@@ -580,11 +591,6 @@ jobs:
           curl -fsS "http://localhost:${CURIO_E2E_FRONTEND_PORT}/" \
             | grep -qF "<meta name=\"curio-backend-url\" content=\"${CURIO_E2E_BACKEND_URL}\">"
           echo "OK: the page names ${CURIO_E2E_BACKEND_URL}."
-
-      - name: 🐍 Set up Python (for e2e)
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
 
       - name: 🔧 Give .curio/ permissions for host-side tests
         run: |
@@ -707,7 +713,7 @@ jobs:
             export PYTEST_ADDOPTS
             echo "Re-minting with PYTEST_ADDOPTS=$PYTEST_ADDOPTS"
           fi
-          bash scripts/ci_repeat.sh bash scripts/test.sh --e2e-only --use-existing "${extra[@]}" \
+          bash scripts/ci_repeat.sh bash scripts/test.sh --e2e-only --use-existing --skip-setup "${extra[@]}" \
             --parallel "$CURIO_E2E_PARALLEL"
 
       # What a re-mint wrote into this checkout: the baselines whose screen
@@ -827,6 +833,7 @@ jobs:
 
       # JUnit is written inside the container, onto the .curio bind mount: the
       # directory is the container's (root-owned), so the host cannot create it.
+      # --skip-setup: the image's build already ran curio.py setup.
       - name: 🧪 Run the ${{ matrix.name }} unit tests
         # About 5 minutes a part, a run. The limit is for a hang, so it fails
         # here rather than holding the job until its own timeout.
@@ -835,7 +842,7 @@ jobs:
           bash scripts/ci_repeat.sh docker compose -p curio-ci exec -T \
             -e CURIO_UNIT_PART="${{ matrix.part }}" \
             -e PYTEST_ADDOPTS=--junitxml=/app/.curio/ci-report/${{ matrix.name }}{run}.xml curio \
-            bash scripts/test.sh --${{ matrix.suite }}-only --use-existing
+            bash scripts/test.sh --${{ matrix.suite }}-only --use-existing --skip-setup
 
       - name: 📤 Upload the results for the CI report
         if: always()
@@ -959,17 +966,14 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
+      # runner-env: the runner's pytest and browser use the image's packages
+      # and Chromium (.github/actions/image-env), so test.sh skips its setup.
       - uses: ./.github/actions/start-stack
         with:
           image: ${{ needs.build-image.outputs.image }}
           project: curio-ci
           token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 🐍 Set up Python (for e2e)
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-          cache: pip
+          runner-env: "true"
 
       - name: 🔧 Give .curio/ permissions for host-side tests
         run: |
@@ -1013,7 +1017,7 @@ jobs:
             fi
             export PYTEST_ADDOPTS
           fi
-          bash scripts/ci_repeat.sh bash scripts/test.sh --e2e-only --use-existing "${extra[@]}"
+          bash scripts/ci_repeat.sh bash scripts/test.sh --e2e-only --use-existing --skip-setup "${extra[@]}"
 
       - name: 📦 Collect the re-minted baselines
         if: always() && env.CURIO_REMINT == '1'
@@ -1087,11 +1091,13 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
+      # runner-env: as in e2e-desktop.
       - uses: ./.github/actions/start-stack
         with:
           image: ${{ needs.build-image.outputs.image }}
           project: curio-ci-iso
           token: ${{ secrets.GITHUB_TOKEN }}
+          runner-env: "true"
 
       # The whole point of the job: prove the stack is actually isolated before
       # reading anything into the test results. /version reports the mode the
@@ -1109,12 +1115,6 @@ jobs:
             exit 1
           fi
           echo "OK: the sandbox reports node execution isolation = fork"
-
-      - name: 🐍 Set up Python (for e2e)
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-          cache: pip
 
       - name: 🔧 Give .curio/ permissions for host-side tests
         run: |
@@ -1149,7 +1149,7 @@ jobs:
           # ci_repeat.sh fills in {run}.
           PYTEST_ADDOPTS: --junitxml=${{ github.workspace }}/ci-report/e2e{run}.xml
         run: |
-          bash scripts/ci_repeat.sh bash scripts/test.sh --e2e-only --use-existing \
+          bash scripts/ci_repeat.sh bash scripts/test.sh --e2e-only --use-existing --skip-setup \
             --workflows "$ISOLATED_WORKFLOWS"
 
       # `isolation` above is the mode the sandbox resolved at boot. A zygote
@@ -1433,27 +1433,26 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
-      - name: 🐍 Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-          cache: pip
-
       # The replay runs the sandbox from this checkout, the way a local launch
-      # does, so it needs what a launch installs: requirements.txt plus the
-      # data libraries the builtin package declares.
-      - name: 📦 Install the sandbox's dependencies
-        shell: bash
+      # does, so it needs what a launch installs: the image's packages, where
+      # its build ran curio.py setup. The image is pulled here, before the
+      # replay; start-stack below finds it already on the runner.
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📥 Pull the image
+        env:
+          IMAGE: ${{ needs.build-image.outputs.image }}
         run: |
-          set -euo pipefail
+          docker pull --quiet "$IMAGE"
           mkdir -p ci-report
-          python -m pip install --quiet -r requirements.txt
-          python - packages/curio.builtin@1/manifest.json > data-reqs.txt <<'PY'
-          import json, sys
-          deps = json.load(open(sys.argv[1]))["dependencies"]["python"]
-          print("\n".join(f"{name}{spec}" for name, spec in deps.items()))
-          PY
-          python -m pip install --quiet -r data-reqs.txt
+
+      - uses: ./.github/actions/image-env
+        with:
+          image: ${{ needs.build-image.outputs.image }}
 
       - name: 🧠 Replay #408 at the reporter's scale
         shell: bash

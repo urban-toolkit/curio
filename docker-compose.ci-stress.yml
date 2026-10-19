@@ -30,6 +30,10 @@
 # workflows.
 services:
   curio:
+    # CI's image, which boots installing nothing: see 4 in docker-compose.ci.yml.
+    build:
+      args:
+        CURIO_CI_SETUP: "1"
     # 100 users means up to 100 concurrent Node subprocesses for the Autark
     # data loads (/execJs has no cap), each of them a real process tree. This
     # limit is one of the things the run is measuring the distance to, so it
@@ -37,6 +41,7 @@ services:
     pids_limit: 4096
     environment:
       - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
+      - CURIO_SKIP_DEP_INSTALL=1
       # Pinned, not inferred: a runner that cannot confine must fail the job
       # rather than quietly run every user's node code in one process, which
       # would measure a stack nobody deploys.

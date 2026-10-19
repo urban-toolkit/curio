@@ -1,7 +1,16 @@
+# 1 in CI's builds only: build-image's, and the jobs that build their own image
+# through the CI compose overlays. The image then also holds what
+# `curio.py setup --with-examples` installs and Playwright's Chromium, so a CI
+# stack boots without installing anything and the jobs copy both out for the
+# pytest and browser they run on the runner. Every other build, the deploy's
+# among them, leaves it at 0 and builds the image as before. Declared before
+# the first FROM, so the FROM lines below can name a stage with it.
+ARG CURIO_CI_SETUP=0
+
 # -----------------------------------------------------------------------------
 # Stage 1: Unified Python service (no Node required)
 # -----------------------------------------------------------------------------
-FROM python:3.12-slim AS runtime_base
+FROM python:3.12-slim AS python_base
 
 ENV PYTHONUNBUFFERED=1 LOG_TO_STDOUT=true
 WORKDIR /app
@@ -29,6 +38,29 @@ RUN npm ci --no-audit --no-fund
 COPY requirements.txt ./
 RUN pip install --upgrade pip setuptools wheel && \
     pip install --prefer-binary --no-cache-dir -r requirements.txt
+
+# CI only. The libraries setup installs from the package manifests, as setup's
+# own walk lists them (utk_curio/cli/dependencies.py) from this commit's
+# manifests and examples.
+FROM python_base AS ci_requirements
+COPY utk_curio/ utk_curio/
+COPY packages/ packages/
+COPY docs/examples/ docs/examples/
+RUN CURIO_SEED_EXAMPLES=1 python -m utk_curio.cli.dependencies > /ci-requirements.txt
+
+FROM python_base AS ci_deps_0
+
+# CI only. That list installed before the source is copied: COPY keys its
+# cache on the file's content, so a commit that changes no dependency reuses
+# these layers. The pip command is the launcher's (install_python_deps).
+# Then Chromium, in /opt/ms-playwright rather than Playwright's default folder,
+# so nothing in the image finds a browser it did not have before.
+FROM python_base AS ci_deps_1
+COPY --from=ci_requirements /ci-requirements.txt /ci-requirements.txt
+RUN pip install --no-input --no-cache-dir -r /ci-requirements.txt
+RUN PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright python -m playwright install chromium
+
+FROM ci_deps_${CURIO_CI_SETUP} AS runtime_base
 
 COPY curio.py ./
 # pyproject.toml / MANIFEST.in are what carry utk_curio/llm-prompts (not an
@@ -82,10 +114,22 @@ RUN npm run build
 # drift.
 RUN node -e "const s=require('./package.json').scripts.build||'';const m=/--mode\s+(\S+)/.exec(s);require('fs').writeFileSync('dist/.curio-build',(m?m[1]:'unknown')+'\n')"
 
+# CI only, beside the frontend build: setup on the whole source. The list must
+# match what ci_requirements listed, or that stage is missing a file the walk
+# reads; then setup finds every library installed, installs nothing, and
+# reports any that does not import. Its log folder is removed after it.
+FROM runtime_base AS checked_1
+RUN export PYTHONDONTWRITEBYTECODE=1 \
+    && CURIO_SEED_EXAMPLES=1 python -m utk_curio.cli.dependencies | diff /ci-requirements.txt - \
+    && python curio.py setup --with-examples \
+    && rm -rf .curio
+
+FROM runtime_base AS checked_0
+
 # -----------------------------------------------------------------------------
 # Stage 3: Final image: Python runtime + built frontend assets
 # -----------------------------------------------------------------------------
-FROM runtime_base AS runtime
+FROM checked_${CURIO_CI_SETUP} AS runtime
 
 # Production mode: serve built frontend with Python http.server on 8080
 ENV CURIO_DEV=0

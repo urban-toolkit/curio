@@ -1,0 +1,52 @@
+name: Python and Chromium from the CI image
+description: >-
+  Copy the Python packages and Playwright's Chromium out of a CI image, which
+  build-image builds with CURIO_CI_SETUP=1 so that it holds what
+  `curio.py setup --with-examples` installs, into a virtual environment of
+  Python 3.12 on the runner. The environment's bin/ goes first on PATH and
+  PLAYWRIGHT_BROWSERS_PATH names the copied Chromium, so the pytest and the
+  browser a job runs on the runner use what the image installed, and
+  `scripts/test.sh --skip-setup` installs nothing. A virtual environment
+  rather than the runner's own Python: on a self-hosted runner that Python
+  keeps what earlier jobs installed, and it would be imported first. Writes
+  only under RUNNER_TEMP, never the workspace, so the stack's container is
+  still the first to create .curio/.
+
+inputs:
+  image:
+    description: The CI image, already on this runner (pulled, or built by the job)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v6
+      with:
+        python-version: "3.12"
+
+    - name: 📦 Copy the image's Python packages and Chromium
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+      run: |
+        set -euo pipefail
+        started=$(date +%s)
+        venv="$RUNNER_TEMP/curio-image-python"
+        browsers="$RUNNER_TEMP/curio-image-browsers"
+        rm -rf "$venv" "$browsers"
+        python -m venv --without-pip "$venv"
+        site="$venv/lib/python3.12/site-packages"
+        # docker cp copies a folder into one that already exists, one level down.
+        rmdir "$site"
+        cid="$(docker create "$IMAGE")"
+        trap 'docker rm -f "$cid" > /dev/null 2>&1 || true' EXIT
+        docker cp "$cid:/usr/local/lib/python3.12/site-packages" "$site" &
+        packages=$!
+        docker cp "$cid:/opt/ms-playwright" "$browsers" &
+        chromium=$!
+        wait "$packages"
+        wait "$chromium"
+        "$venv/bin/python" -c 'import playwright, pytest'
+        echo "$venv/bin" >> "$GITHUB_PATH"
+        echo "PLAYWRIGHT_BROWSERS_PATH=$browsers" >> "$GITHUB_ENV"
+        echo "Copied $(du -sh "$site" | cut -f1) of packages and $(du -sh "$browsers" | cut -f1) of Chromium in $(( $(date +%s) - started )) s"

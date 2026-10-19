@@ -23,6 +23,12 @@ inputs:
   seed:
     description: Shell run after the pull and before the stack starts
     default: ""
+  runner-env:
+    description: >-
+      "true" to also give the runner the image's Python packages and Chromium
+      (./.github/actions/image-env), for a pytest run on the runner with
+      scripts/test.sh --skip-setup. They are copied while the container boots.
+    default: "false"
 
 runs:
   using: composite
@@ -53,6 +59,13 @@ runs:
     - name: ▶️ Start containers
       shell: bash
       run: docker compose -p "${{ inputs.project }}" up -d --no-build
+
+    # Here rather than after the wait: the copy takes about as long as the
+    # container's boot, so the two run side by side.
+    - if: inputs.runner-env == 'true'
+      uses: ./.github/actions/image-env
+      with:
+        image: ${{ inputs.image }}
 
     - name: 🧪 Wait for services to become healthy
       shell: bash
