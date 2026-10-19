@@ -254,11 +254,16 @@ jobs:
             unit-backend-1 unit-backend-2 test-isolated test-exec-user ci-report
 
   # The image every CPU job below runs, built once per commit and pushed to
-  # GHCR under the commit's SHA. The layer cache lives in the Actions cache, so
+  # GHCR under the commit's SHA, unless a run already built the same tree (see
+  # the reuse step). The layer cache lives in the Actions cache, so
   # a commit that changes only source rebuilds only the layers after the source
-  # copy (see the Dockerfile's order). The GPU jobs keep building their own
-  # image from their runner's warm local cache, so the GPU path never waits on
-  # this one.
+  # copy (see the Dockerfile's order). Only builds on main write it. Every run
+  # reads main's, but a PR's or a branch's layers can be read only by that
+  # PR's or branch's later runs, which almost never used them. Writing them
+  # added about 20 s to each build that ran webpack, and they filled the
+  # repository's 10 GB of Actions cache, evicting main's layers. The GPU jobs
+  # keep building their own image from their runner's warm local cache, so the
+  # GPU path never waits on this one.
   build-image:
     needs: pick-runners
     if: ${{ needs.pick-runners.result == 'success' }}
@@ -297,12 +302,19 @@ jobs:
           echo "handing root-owned files back to the runner user"
           docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
 
+      # Two commits deep, so the reuse step can compare this commit with its
+      # first parent (main, on a PR's merge ref).
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
 
       - name: 🏷️ Name the image
         id: name
-        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}-ci:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}-ci:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          tree=$(git rev-parse 'HEAD^{tree}')
+          echo "tree=ghcr.io/${GITHUB_REPOSITORY,,}-ci:tree-${tree}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v4
 
@@ -312,14 +324,54 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # The build takes nothing from the commit but its tree, so each image is
+      # also tagged with its tree, and a commit whose tree a run already built
+      # gets that image under its own name instead of a build. Most often that
+      # is a merge to main with nothing landed in between: its tree is the
+      # merge ref the PR's last run built and tested (13 of the 21 main merges
+      # up to #985). Only main's builds write the layer cache, so a main commit
+      # that changes what the slow early layers are made of (the apt, npm and
+      # pip installs) is built all the same: otherwise main's cache would never
+      # get those layers, and every PR would build them again. If the
+      # comparison, the lookup or the tagging fails, the build runs.
+      - name: ♻️ Reuse the image of the same tree
+        id: reuse
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+          TREE: ${{ steps.name.outputs.tree }}
+          WRITES_CACHE: ${{ github.ref == 'refs/heads/main' }}
+        run: |
+          early_inputs="Dockerfile .dockerignore requirements.txt package.json package-lock.json
+            utk_curio/frontend/urban-workflows/package.json utk_curio/frontend/urban-workflows/package-lock.json
+            utk_curio/frontend/urban-workflows/vendor"
+          if git diff --quiet HEAD^1 HEAD -- $early_inputs; then
+            early_changed=false
+            echo "the early layers' inputs are those of the first parent"
+          else
+            early_changed=true
+            echo "the early layers' inputs changed since the first parent, or there is no parent to compare with"
+          fi
+          if [ "$WRITES_CACHE" = true ] && [ "$early_changed" = true ]; then
+            echo "built so that main's layer cache gets the new early layers"
+          elif docker buildx imagetools inspect "$TREE" > /dev/null 2>&1 \
+            && docker buildx imagetools create --tag "$IMAGE" "$TREE"; then
+            echo "reused=true" >> "$GITHUB_OUTPUT"
+            echo "reused $TREE as $IMAGE"
+          else
+            echo "no image of this tree to reuse, so it is built"
+          fi
+
       - name: 🔨 Build and push the image
+        if: steps.reuse.outputs.reused != 'true'
         uses: docker/build-push-action@v7
         with:
           context: .
           push: true
-          tags: ${{ steps.name.outputs.image }}
+          tags: |
+            ${{ steps.name.outputs.image }}
+            ${{ steps.name.outputs.tree }}
           cache-from: type=gha,scope=curio-image
-          cache-to: type=gha,scope=curio-image,mode=max
+          cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,scope=curio-image,mode=max' || '' }}
 
   test-gpu:
     # Runs on a GPU runner: an arcade one while one is free, utk-gpu otherwise
