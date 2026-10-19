@@ -213,11 +213,9 @@ class SolveBatch:
     def _batch_deadline_spent(self) -> bool:
         return agents_session._batch_deadline_spent(self.started, self.deadline_s)
 
-    @staticmethod
-    def is_data_loading(node_obj: dict) -> bool:
-        return source_grounding.is_data_loading_type(
-            _pkg_services.canonical_template_id((node_obj or {}).get("type"))
-        )
+    def is_data_loading(self, node_obj: dict) -> bool:
+        """Whether the node's template loads a dataset (``loadsDataset``)."""
+        return source_grounding.loads_dataset((node_obj or {}).get("type"), self.batch_templates)
 
     def is_executable(self, node_obj: dict) -> bool:  # dev/118 (DEC-075) → dev/119 (DEC-076)
         return agents_roster._node_is_executable(node_obj, self.batch_templates)
@@ -231,8 +229,26 @@ class SolveBatch:
         return (
             "ungrounded source: " + refusal.split("Allowed sources:")[0]
             .replace("source grounding refused — ", "").strip()
-        )[:220] + agents_grounding._ungrounded_remedy(
-            agents_rounds._dataset_finder_attachment_id(self.spec, node_id))
+        )[:220] + self._ungrounded_remedy(node_id)
+
+    def _ungrounded_remedy(self, node_id: str) -> str:
+        """The remedy an ungrounded source ends with (dev/126), naming the
+        agent that finds the node's datasets as its manifest names it: the
+        node's own, else the one this batch's planner asks for datasets."""
+        finder = agents_dataset_resolution.finder_attachment(self.spec, node_id, user_key=self.user_key)
+        if finder is not None:
+            return agents_grounding._ungrounded_remedy(
+                finder.get("attachmentId"),
+                name=agents_spec_reads._agent_name(self.user_key, str(finder.get("coord") or "")),
+            )
+        asked = next((
+            name for capability, name in (
+                delegation.visible_capability_entries(self.user_key, self.manifest)
+                if self.manifest is not None else []
+            )
+            if capability == "dataset.discover"
+        ), None)
+        return agents_grounding._ungrounded_remedy(None, name=asked)
 
     # ── the fold: one worker outcome into the batch state ───────────────────
 
@@ -483,7 +499,7 @@ class SolveBatch:
         rounds = outcome.get("rounds") or 0
         remedy_payload = evidence.get("remedy") if isinstance(evidence.get("remedy"), dict) else None
         remedy = (
-            agents_grounding._ungrounded_remedy(agents_rounds._dataset_finder_attachment_id(self.spec, node_id))
+            self._ungrounded_remedy(node_id)
             if kind == "ungrounded-source" else
             agents_grounding._source_missing_remedy(remedy_payload)
             if kind == "source-missing" else ""
@@ -509,7 +525,9 @@ class SolveBatch:
             base=self.solve_ground,
             request_texts=(str(node.get("goal") or ""),),
             requested_ids=source_grounding.confirmed_dataset_ids(
-                agents_dataset_resolution.confirmed_source(self.current["spec"], node_id)
+                agents_dataset_resolution.confirmed_source(
+                    self.current["spec"], node_id, user_key=self.user_key,
+                )
             ),
         )
         return refusal
@@ -693,7 +711,7 @@ class SolveBatch:
             node = self.nodes_by_id.get(nid) or {}
             part = agents_rounds._solve_attempts_part(
                 self.current.get("spec") or self.spec, nid,
-                str(node.get("goal") or nid)[:120], outcome,
+                str(node.get("goal") or nid)[:120], outcome, user_key=self.user_key,
             )
             if part is not None:
                 attempt_parts.append(part)
@@ -903,7 +921,9 @@ class SolveBatch:
                 not agents_rounds._awaits_user_action(self.results.get(nid))
                 and self.weak_passes.get(nid, 0) < agents_budgets._MAX_WEAK_PASSES
             )
-            or self.attempted_signature.get(nid) != agents_session._blocker_signature(pass_spec, nid)
+            or self.attempted_signature.get(nid) != agents_session._blocker_signature(
+                pass_spec, nid, user_key=self.user_key,
+            )
         ]
 
     def _run_pass(self, pass_spec: dict, pass_targets: list[str]):
@@ -982,7 +1002,9 @@ class SolveBatch:
         # pass that solved anything trigger another one.
         settled = self._fresh_spec(fallback=self.current.get("spec") or pass_spec)
         for nid in pass_targets:
-            self.attempted_signature[nid] = agents_session._blocker_signature(settled, nid)
+            self.attempted_signature[nid] = agents_session._blocker_signature(
+                settled, nid, user_key=self.user_key,
+            )
 
     def _drain_wave(self, wave: list[str]):
         remaining = len(wave)
@@ -1039,6 +1061,7 @@ class SolveBatch:
             local_turn=True,
             validation=validation_block,
             grounding_base=self.solve_ground,
+            delegate_coord=getattr(self.resolution, "coord", None),
         )
         if part is not None:
             self.results[node_id] = {
@@ -1093,6 +1116,7 @@ class SolveBatch:
             # #880: a job thread cannot list the Data Catalog, so the mint's
             # gate grounds against the batch's listing, as the verified path does.
             grounding_base=self.solve_ground,
+            delegate_coord=getattr(self.resolution, "coord", None),
         )
         if part is not None:
             self.results[node_id] = {
@@ -1103,17 +1127,21 @@ class SolveBatch:
             node = self.nodes_by_id.get(node_id) or {}
             node_label = (node.get('goal') or node_id)[:60]
             if home_att != self.attachment_id and isinstance(self.session_id, str):
+                # The agent that wrote it, as its manifest names it.
+                delegate = getattr(self.resolution, "manifest", None)
+                delegate_coord = getattr(self.resolution, "coord", None) or ""
+                delegate_name = getattr(delegate, "name", None) or delegate_coord
                 sessions.append_turns(
                     self.user_key, self.project_id, self.session_id, self.attachment_id,
                     [sessions.make_turn(
                         "agent",
-                        f"Proposed content for {node_label!r} — "
-                        "the review lives in the node's Node Builder.",
+                        f"Proposed content for {node_label!r}: "
+                        f"the review lives in the node's {delegate_name}.",
                         content=[content.make_delegation_part(
                             capability="node.content.generate",
-                            coord="agent.node-builder",
-                            name="Node Builder",
-                            category="node",
+                            coord=delegate_coord,
+                            name=delegate_name,
+                            category=getattr(delegate, "category", "") or "",
                             attachment_id=home_att,
                             status="ok",
                             summary=f"content proposed for {node_label!r}",
@@ -1209,14 +1237,12 @@ class SolveBatch:
             inputs["upstreamOutputs"] = upstream_outputs
         # dev/114: the seventh DEC-063 application — a data-
         # loading child is HANDED its grounded sources.
-        if source_grounding.is_data_loading_type(
-            _pkg_services.canonical_template_id(node.get("type"))
-        ):
+        if self.is_data_loading(node):
             inputs["sourceGrounding"] = agents_grounding._source_grounding_inputs(
                 agents_grounding._grounding_context(
                     self.user_key, self.project_id, self.solve_ctx,
                     node_type=node.get("type"), base=self.solve_ground,
-                    extra_texts=(str(node.get("goal") or ""),),
+                    extra_texts=(str(node.get("goal") or ""),), is_data_loading=True,
                 )
             )
         return inputs

@@ -50,6 +50,9 @@ export function composeConfirmationPrompt(
   catalogRows: AgentDatasetCandidateRow[],
   externalRows: AgentDatasetCandidateRow[],
   variant: CandidatesVariant = "finder",
+  /** The agent the rest go to, by its manifest's name: the one the host
+   * agent hands nodes to build to. */
+  handoffName?: string | null,
 ): string {
   const bits: string[] = [];
   if (variant === "builder") {
@@ -78,12 +81,12 @@ export function composeConfirmationPrompt(
     );
   }
   // A row Curio can download is downloaded by its own button on the card, not
-  // asked for in the chat. The rest go to Node Builder, which is the right
-  // answer for a source no provider covers.
+  // asked for in the chat. The rest go to the agent that builds nodes, which
+  // is the right answer for a source no provider covers.
   const handoff = externalRows.filter((r) => !r.acquirable);
   if (handoff.length) {
     bits.push(
-      `hand off to Node Builder: ${handoff.map((r) => r.name).join(", ")}`,
+      `hand off to ${(handoffName ?? "").trim() || "an agent that builds nodes"}: ${handoff.map((r) => r.name).join(", ")}`,
     );
   }
   return bits.length ? `Confirm my selection — ${bits.join("; ")}.` : "";
@@ -130,6 +133,9 @@ export const AgentDatasetCandidatesCard: React.FC<{
   onComposePrompt?: (prompt: string) => void;
   /** dev/114: the host agent's chat — decides the confirmation prompt's shape. */
   variant?: CandidatesVariant;
+  /** The agent the host hands a source to, by its manifest's name: the
+   * finder variant's hand-off names it. */
+  handoffName?: string | null;
   /** dev/126: record the confirmed selection for the node this Dataset Finder
    * is attached to. Present only there; without it the card keeps its
    * dev/114 behavior exactly (select → prompt). */
@@ -144,6 +150,7 @@ export const AgentDatasetCandidatesCard: React.FC<{
   tintClassName,
   onComposePrompt,
   variant = "finder",
+  handoffName,
   onRecordSelection,
   onImportDataset,
 }) => {
@@ -303,7 +310,7 @@ export const AgentDatasetCandidatesCard: React.FC<{
     setSelected(next);
     const pick = (l: "external" | "catalog") =>
       (part.lanes[l] ?? []).filter((_, i) => next.has(rowKey(l, i)));
-    onComposePrompt?.(composeConfirmationPrompt(pick("catalog"), pick("external"), variant));
+    onComposePrompt?.(composeConfirmationPrompt(pick("catalog"), pick("external"), variant, handoffName));
   };
 
   const renderRow = (lane: "external" | "catalog", row: AgentDatasetCandidateRow, i: number) => {

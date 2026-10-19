@@ -231,3 +231,19 @@ describe("AgentDockOverlay chat presentation", () => {
     expect(screen.queryByTestId("chat-probe")).toBeNull();
   });
 });
+
+// The chat's labels that open another agent's chat name it from the live list,
+// so a user's own copies of the shipped cards read under their own names.
+describe("AgentDockOverlay names the dataflow's agents for the chat", () => {
+  it("hands the panel each attachment's name as the live list has it", () => {
+    const myBuilder = attachment("att-my-builder", "My Builder");
+    const myFinder = attachment("att-my-finder", "My Finder");
+    mockCtx.mockReturnValue(ctx([myBuilder, myFinder], "att-my-builder"));
+    render(<AgentDockOverlay />);
+    const latest = panelProps[panelProps.length - 1];
+    expect(latest.agentNameOf("att-my-finder")).toBe("My Finder");
+    expect(latest.agentNameOf("att-my-builder")).toBe("My Builder");
+    // An attachment the dataflow no longer holds has no name to show.
+    expect(latest.agentNameOf("att-detached")).toBeNull();
+  });
+});

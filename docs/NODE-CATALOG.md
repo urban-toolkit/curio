@@ -219,6 +219,8 @@ A manifest with `"readOnly": true` at the top level marks its package read-only.
 
 [`docs/schemas/node-package.v4.json`](schemas/node-package.v4.json) (JSON Schema Draft 2020-12) is the reference for what a package can declare. The catalog packages in `<repo_root>/packages/` are the canonical examples, starting with [`packages/curio.builtin@1/manifest.json`](../packages/curio.builtin@1/manifest.json). To write a package by hand, follow [Authoring nodes](AUTHORING-NODES.md).
 
+A template whose nodes load a dataset into the dataflow declares `"loadsDataset": true`, as Data Loading does. An agent whose node target requires `loadsDataset`, such as the Dataset Finder, attaches to its nodes, and Solve finds such a node a source before it writes its code ([Agent Catalog](AGENT-CATALOG.md#solve)).
+
 A package, or one of its templates, can name the tags and data types a dataflow that uses it is filed under on the **Projects** page, beside those Curio finds in the dataflow itself:
 
 ```json

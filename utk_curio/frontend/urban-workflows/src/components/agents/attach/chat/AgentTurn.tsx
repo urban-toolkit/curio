@@ -2,17 +2,20 @@ import React from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faRobot } from "@fortawesome/free-solid-svg-icons";
 
-import type {
-  AgentAttachment,
-  AgentCardPart,
-  AgentDatasetCandidatesPart,
-  AgentDatasetPick,
-  AgentDatasetSelection,
-  AgentDelegationPart,
-  AgentProposalPart,
-  AgentSessionTurn,
-  AgentSolveAttemptsPart,
-  RunStatusDisplay,
+import {
+  DATASET_SELECT_CAPABILITY,
+  declaresCapability,
+  NODE_BUILD_CAPABILITY,
+  type AgentAttachment,
+  type AgentCardPart,
+  type AgentDatasetCandidatesPart,
+  type AgentDatasetPick,
+  type AgentDatasetSelection,
+  type AgentDelegationPart,
+  type AgentProposalPart,
+  type AgentSessionTurn,
+  type AgentSolveAttemptsPart,
+  type RunStatusDisplay,
 } from "../../../../services/agents";
 import { AgentChatCard } from "../../content/AgentChatCard";
 import { AgentDatasetCandidatesCard } from "../../content/AgentDatasetCandidatesCard";
@@ -32,6 +35,8 @@ export interface AgentTurnActions {
   onInternalLink?: (to: string) => void;
   onOpenAgentChat?: (attachmentId: string) => void;
   delegateExists?: (attachmentId: string) => boolean;
+  /** The name of the agent another attachment binds, from the live list. */
+  agentNameOf?: (attachmentId: string) => string | null;
   onRecordDatasetSelection?: (picks: AgentDatasetPick[]) => Promise<AgentDatasetSelection>;
   onImportDataset?: (
     file: File,
@@ -64,8 +69,9 @@ export const AgentTurn: React.FC<{
   /** A canvas agent's reply that changed nothing on the canvas (#243). */
   canvasUnchanged?: boolean;
 }> = ({ turn: t, attachment, tint, meta, actions, canvasUnchanged = false }) => {
+  // An agent on a node that records the dataset the node loads.
   const isFinderOnNode =
-    attachment.coord.startsWith("agent.dataset-finder@") && attachment.target.kind === "node";
+    declaresCapability(attachment, DATASET_SELECT_CAPABILITY) && attachment.target.kind === "node";
   // #447: the failed tool calls that keep their reason under the reply.
   const failedCalls = lastingToolFailures(t);
   return (
@@ -90,12 +96,16 @@ export const AgentTurn: React.FC<{
                 part={part}
                 tintClassName={tint}
                 onComposePrompt={actions.onComposePrompt}
-                // dev/114: in the Node Builder's chat the runtime minted these
-                // from a dataset.discover delegation — the confirmation asks
-                // the builder to build.
-                variant={attachment.coord.startsWith("agent.node-builder@") ? "builder" : "finder"}
-                // dev/126: a Dataset Finder attached to a NODE can record the
-                // confirmed source for it — what the node's next Solve reads.
+                // dev/114: in the chat of an agent that builds nodes, the
+                // runtime minted these from a dataset.discover delegation, so
+                // the confirmation asks it to build.
+                variant={declaresCapability(attachment, NODE_BUILD_CAPABILITY) ? "builder" : "finder"}
+                // Any other agent hands a source to the agent it hands nodes
+                // to build to, named as that agent's manifest names it.
+                handoffName={attachment.nodeBuildDelegate}
+                // dev/126: an agent that records selections, attached to a
+                // NODE, records the confirmed source for it, which the node's
+                // next Solve reads.
                 onRecordSelection={
                   actions.onRecordDatasetSelection && isFinderOnNode ? actions.onRecordDatasetSelection : undefined
                 }
@@ -113,6 +123,7 @@ export const AgentTurn: React.FC<{
                 part={part}
                 tintClassName={tint}
                 onOpenChat={actions.onOpenAgentChat}
+                agentName={part.attachmentId ? actions.agentNameOf?.(part.attachmentId) ?? null : null}
               />
             ))}
           {(t.content ?? [])
