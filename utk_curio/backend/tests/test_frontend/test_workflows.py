@@ -192,12 +192,6 @@ EXAMPLE_11_MAP = "pbf-map"
 #: False for it. The canvas tests play it and check it by its type.
 COMPARE_SCENARIOS = "curio.builtin/compare-scenarios"
 
-#: The Raster Calculator (#738), SCOUT Rasters' node (scout.rasters@1), runs
-#: its code behind its own play button too, with no legacy category: example
-#: 24's Raster Calculator, which takes the shadow's statistics, is played and
-#: must end Done like any other.
-RASTER_TOOLS = {"scout.rasters/raster-calculator"}
-
 #: Edit Features (#662) runs the code its edit list writes behind its own play
 #: button too: example 06's is played and must end Done like any other.
 EDIT_FEATURES = "curio.builtin/edit-features"
@@ -205,10 +199,7 @@ EDIT_FEATURES = "curio.builtin/edit-features"
 
 def _plays(node: NodeSpec) -> bool:
     """Whether the canvas gives *node* a play button that the run clicks."""
-    return (
-        node.has_play_button or node.type == COMPARE_SCENARIOS or node.type in RASTER_TOOLS
-        or node.type == EDIT_FEATURES
-    )
+    return node.has_play_button or node.type == COMPARE_SCENARIOS or node.type == EDIT_FEATURES
 
 
 #: What a Compare Scenarios node shows (components/compare/): its view, the
