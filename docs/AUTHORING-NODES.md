@@ -256,8 +256,6 @@ downstream.
 ```bash
 # once per package
 python scripts/new_package.py me.mynode --with-ui
-#   -> paste the PACKAGE_ENTRIES row it prints into
-#      utk_curio/frontend/urban-workflows/webpack.packages.config.js
 
 # after every edit to sources/
 cd utk_curio/frontend/urban-workflows

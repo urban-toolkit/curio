@@ -3,11 +3,16 @@
 import React, { useEffect, useRef } from "react";
 import type { ReactFlowInstance } from "reactflow";
 import { NodeType } from "../../constants";
+import { declaresBehavior } from "../../registry/declaredNodes";
 import { getUnversionedFlowNodeType } from "../../utils/flowNodeCanonicalType";
 import type { useWorkflowOperations } from "../../hook/useWorkflowOperations";
 import { isNonProducingNodeType, shouldSaveOutputOnRun } from "../../utils/saveOutputDataset";
 import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
 import { isDatasetPaletteNode } from "../../services/datasetCatalog/datasetApplication";
+
+/** The Data Pool's behavior, and the built-in Data Pool for a type whose template declares none. */
+const DATA_POOL_BEHAVIORS: ReadonlySet<string> = new Set(["data-pool"]);
+const DATA_POOL_NODE_TYPES: ReadonlySet<string> = new Set([NodeType.DATA_POOL]);
 
 export function useInstallSave({
     scheduleInstallSyncRef, dashboardOn, reactFlow, defaultSaveOutputDataset,
@@ -46,9 +51,13 @@ export function useInstallSave({
         const canonical = getUnversionedFlowNodeType(node);
         // Sinks / interaction surfaces pass their input through — never a NEW
         // dataset — so excluding them keeps e.g. a Data Pool's per-brush re-emit
-        // from triggering saves. DATA_POOL is a save-trigger-only extra on top
-        // of the shared sink set: the backend must NOT prune data-pool refs.
-        if (isNonProducingNodeType(canonical) || canonical === NodeType.DATA_POOL) {
+        // from triggering saves. A Data Pool, by the behavior its template
+        // declares, is a save-trigger-only extra on top of the shared sink set:
+        // the backend must NOT prune data-pool refs.
+        if (
+            isNonProducingNodeType(canonical)
+            || declaresBehavior(canonical, DATA_POOL_BEHAVIORS, DATA_POOL_NODE_TYPES)
+        ) {
             return;
         }
         if (isDatasetPaletteNode(node.data)) return;
