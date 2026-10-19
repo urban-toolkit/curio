@@ -594,7 +594,7 @@ CURIO_NO_PROJECT=1 pytest \
 **No seeding is needed.** All three catalogs are live scans of committed
 content: the Node Catalog reads `<repo_root>/packages/`, the Data Catalog reads
 `<repo_root>/datasets/` (surfacing as `origin: "hub"`), and the Agent Catalog
-reads the built-in roster in `app/agents/builtin.py`. A fresh test user already
+reads the shipped agents in `<repo_root>/agents/`. A fresh test user already
 sees five packages, three datasets and four agents.
 
 **Only `curio.example-ui@1` may be installed in a test.** It declares no python
@@ -685,8 +685,8 @@ Other things that surprise people here:
 
 `test_agent_catalog.py` covers the drawer and the palette but never runs a turn.
 These two modules run one, for **every** built-in agent, and both parametrize
-over `app/agents/builtin.py::BUILTIN_AGENTS` directly - add a roster entry and it
-is covered on the next run, or it fails. `test_agent_runs_e2e.py` also asserts
+over the shipped agents directly (`builtin.list_builtin_manifests()`, the folders
+in `agents/`): add an agent folder and it is covered on the next run, or it fails. `test_agent_runs_e2e.py` also asserts
 that the parametrized set equals what `GET /api/agents/catalog` serves, so an
 agent arriving by some other path cannot slip past.
 
