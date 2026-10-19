@@ -134,6 +134,20 @@ def _first_string(values: Iterable[object]) -> Optional[str]:
     return next((value for value in values if isinstance(value, str)), None)
 
 
+def _account_store(user_key: Optional[str]) -> list[Path]:
+    """The package store of the account *user_key* names, or none: without a
+    key, or with one that names no account's folder (``user_packages_dir``
+    refuses it), a lookup reads the catalog and the shipped packages."""
+    if not user_key:
+        return []
+    from utk_curio.backend.app.packages.service import user_packages_dir
+
+    try:
+        return [user_packages_dir(user_key)]
+    except ValueError:
+        return []
+
+
 def _model_type(manifests: Iterable[dict]) -> Optional[str]:
     """The first of *manifests* that names its model's type names it."""
     return _first_string(
@@ -166,9 +180,9 @@ class TemplateGrammars:
 
     def __init__(self, user_key: Optional[str], *, roots: Optional[Iterable[Path]] = None):
         if roots is None:
-            from utk_curio.backend.app.packages.service import catalog_root, user_packages_dir
+            from utk_curio.backend.app.packages.service import catalog_root
 
-            roots = ([user_packages_dir(user_key)] if user_key else []) + [catalog_root()]
+            roots = _account_store(user_key) + [catalog_root()]
         self._roots: list[Path] = list(roots)
         self._manifests: dict[str, list[dict]] = {}
         self._majors: Optional[dict[str, list[int]]] = None
@@ -190,9 +204,9 @@ class TemplateGrammars:
         the account's store holds (a "Save as package node" one) is read for
         that account alone."""
         from utk_curio import shipped
-        from utk_curio.backend.app.packages.service import catalog_root, user_packages_dir
+        from utk_curio.backend.app.packages.service import catalog_root
 
-        roots = ([user_packages_dir(user_key)] if user_key else []) + [catalog_root()]
+        roots = _account_store(user_key) + [catalog_root()]
         committed = shipped.path("packages")
         if all(committed.resolve() != root.resolve() for root in roots):
             roots.append(committed)
