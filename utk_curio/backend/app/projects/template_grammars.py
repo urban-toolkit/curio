@@ -133,6 +133,10 @@ class Declared:
     grammar: Optional[str] = None
     #: The type of a model package's model.
     model_type: Optional[str] = None
+    #: The category a node's template declares (``data``, ``computation``,
+    #: ``vis_grammar``, ``vis_simple`` or ``flow``), which colors the node's
+    #: box in a dataflow's thumbnail.
+    category: Optional[str] = None
 
 
 #: What a node type, a model or a dataset no manifest holds tells.
@@ -170,15 +174,16 @@ class TemplateGrammars:
 
     Called with a node type, it gives the grammar the node's template draws
     with, as :func:`template_grammar` does. :meth:`node` gives that too, with
-    what the node's package and its template declare in ``dataflowCategories``
-    and, for a model package, its model's type. :meth:`model` gives what the
-    model package a ``curio_load_model`` call names declares, and its model's
-    type.
+    what the node's package and its template declare in ``dataflowCategories``,
+    the template's ``category`` and, for a model package, its model's type.
+    :meth:`model` gives what the model package a ``curio_load_model`` call
+    names declares, and its model's type.
 
     A package is read in the account's own store, then in the catalog, as
     ``categories.DatasetKinds`` reads datasets. The account's copy dates from
     when the package was added to the store, so what the two copies declare is
-    unioned, and a grammar or a model type is the first copy's that names one.
+    unioned, and a grammar, a category or a model type is the first copy's
+    that names one.
     Without a major, a node type or a model id takes the highest major the two
     places hold. A node type with no package in it matches nothing. Each
     manifest is read once, so one instance serves one request.
@@ -247,6 +252,7 @@ class TemplateGrammars:
             data_types,
             grammar=_first_string(template.get("grammarId") for template in templates),
             model_type=_model_type(manifests),
+            category=_first_string(template.get("category") for template in templates),
         )
 
     def _read_model(self, model_id: str) -> Declared:

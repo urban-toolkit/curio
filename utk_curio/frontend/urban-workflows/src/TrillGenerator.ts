@@ -20,6 +20,7 @@ import { normalizeSelections } from "./utils/references/selectionTags";
 import { normalizeScenarios, type Scenario } from "./utils/scenarios/scenarioModel";
 import { normalizeCompareSettings } from "./utils/compare/compareSettings";
 import { normalizeEditFeatures } from "./utils/editFeatures/editFeatures";
+import { registeredCategory } from "./utils/graphPreviewCategories";
 
 export class TrillGenerator {
 
@@ -44,10 +45,13 @@ export class TrillGenerator {
         this.scenarios = [];
     }
 
+    /** The plain-box graph a version is drawn with, each node in its
+     *  registered descriptor's category. */
     static _extractGraphPreview(trill: any): { nodes: any[]; edges: any[] } {
         const nodes = (trill.dataflow?.nodes || []).map((n: any) => ({
             id: n.id,
             type: n.type,
+            category: registeredCategory(n.type),
             x: n.x ?? 0,
             y: n.y ?? 0,
             w: n.width ?? null,
