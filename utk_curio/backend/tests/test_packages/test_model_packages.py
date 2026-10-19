@@ -294,6 +294,56 @@ class TestTheModelBlock:
         manifest = _parse(manifest_dict(package_id="ai.test.demo"), dir_name="ai.test.demo@1")
         assert manifest.kind == "node" and manifest.model is None
 
+    def test_a_model_package_names_the_weights_a_pip_install_downloads_on_first_use(self):
+        """``downloadOnFirstUse``: its .onnx file and the external data beside
+        it, or a checkpoint's folder, by their paths under ``models/``. The
+        schema takes them too."""
+        onnx = _model_manifest(downloadOnFirstUse=["models/m.onnx", "models/m.onnx.data"])
+        checkpoint = _model_manifest(
+            model={"runtime": "transformers", "entry": "models/checkpoint", "labels": [], "input": None},
+            downloadOnFirstUse=["models/checkpoint"],
+        )
+        assert _parse(onnx).download_on_first_use == ("models/m.onnx", "models/m.onnx.data")
+        assert _parse(checkpoint).download_on_first_use == ("models/checkpoint",)
+        assert _parse(_model_manifest()).download_on_first_use == ()
+        for raw in (onnx, checkpoint):
+            assert not list(_validator().iter_errors(raw))
+
+    @pytest.mark.parametrize("value, message", [
+        ("models/m.onnx", "list"),
+        (["models"], "under models/"),
+        (["sources/run.py"], "under models/"),
+        (["models/../manifest.json"], "path inside"),
+        (["/models/m.onnx"], "path inside"),
+        (["models\\m.onnx"], "path inside"),
+        (["manifest.json"], "always ships"),
+        (["integrity.json"], "always ships"),
+        (["models/m.onnx", "models/m.onnx"], "twice"),
+    ])
+    def test_what_download_on_first_use_refuses(self, value, message):
+        """Anything a pip install would not download: what is not a path in
+        the package's folder, the manifest and ``integrity.json``, which a
+        pip install reads, and anything but the weights under ``models/``.
+        The schema refuses it too."""
+        from utk_curio.backend.app.packages.domain.manifest import ManifestError
+
+        raw = _model_manifest(downloadOnFirstUse=value)
+        with pytest.raises(ManifestError, match="downloadOnFirstUse") as raised:
+            _parse(raw)
+        assert message in str(raised.value), str(raised.value)
+        assert list(_validator().iter_errors(raw))
+
+    def test_only_a_model_package_names_files_to_download_on_first_use(self, manifest_dict):
+        """A node package ships every file it has, as the schema says too."""
+        from utk_curio.backend.app.packages.domain.manifest import ManifestError
+
+        plain = manifest_dict(package_id="ai.test.demo")
+        raw = {**plain, "downloadOnFirstUse": ["models/m.onnx"]}
+        with pytest.raises(ManifestError, match="only a model package"):
+            _parse(raw, dir_name="ai.test.demo@1")
+        assert not list(_validator().iter_errors(plain))
+        assert list(_validator().iter_errors(raw))
+
 
 # ---------------------------------------------------------------------------
 # The listings
