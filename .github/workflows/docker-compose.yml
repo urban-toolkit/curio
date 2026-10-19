@@ -238,8 +238,12 @@ jobs:
           sparse-checkout-cone-mode: false
 
       # CPU keys in critical-path order: the first ones get the hosted room.
-      # One key per job and per matrix entry, matching each runs-on. Three of
-      # this run's jobs always run hosted (unit sandbox, test-desktop-stress,
+      # build-image first, since every other CPU job waits for it, then the
+      # longest of those (test-isolated, about 9 minutes), the e2e and unit
+      # parts (about 8 and 7), and the short jobs last. One key per job and per
+      # matrix entry, matching each runs-on; the part keys follow the counts in
+      # utk_curio/backend/tests/parts.py (ciParts.test.ts checks them). Three
+      # of this run's jobs always run hosted (unit sandbox, test-desktop-stress,
       # preview-runner), so their slots are held back.
       - name: 🎯 Pick a runner for each job
         id: pick
@@ -248,10 +252,12 @@ jobs:
           CURIO_CI_POOL: ${{ (inputs.pool && inputs.pool != 'auto') && inputs.pool || vars.CURIO_CI_POOL || 'auto' }}
           CURIO_CI_GPU_POOL: ${{ (inputs.gpu_pool && inputs.gpu_pool != 'auto') && inputs.gpu_pool || vars.CURIO_CI_GPU_POOL || 'auto' }}
         run: |
-          python3 scripts/ci_pick_runners.py --hosted-reserved 3 --gpu test-gpu build-image jest \
+          python3 scripts/ci_pick_runners.py --hosted-reserved 3 --gpu test-gpu build-image test-isolated \
             e2e-desktop-1 e2e-desktop-2 e2e-desktop-3 e2e-desktop-4 e2e-desktop-5 \
             e2e-desktop-6 e2e-desktop-7 e2e-desktop-8 e2e-desktop-9 e2e-desktop-10 \
-            unit-backend-1 unit-backend-2 test-isolated test-exec-user ci-report
+            e2e-desktop-11 e2e-desktop-12 e2e-desktop-13 e2e-desktop-14 \
+            unit-backend-1 unit-backend-2 unit-backend-3 unit-backend-4 \
+            jest test-exec-user ci-report
 
   # The image every CPU job below runs, built once per commit and pushed to
   # GHCR under the commit's SHA. The layer cache lives in the Actions cache, so
@@ -400,9 +406,10 @@ jobs:
       # CURIO_E2E_SANDBOX_PORT below. Each worker is a Chromium + backend +
       # sandbox (~3 GiB) inside the one container, on a host that also runs
       # the prod stacks, and no N beats the longest group: groups are atomic
-      # under --dist loadgroup. Since the split this job holds about 18 minutes
-      # of test time whose longest group (example 09) is 4.4 minutes, so 6
-      # workers already reach that floor.
+      # under --dist loadgroup. This job holds about 42 minutes of test time
+      # (main's run 39185249274, 10-19), about 7 minutes a worker, and its
+      # longest group (test_shipped_scenario_drops_e2e) takes 5.8 minutes, so
+      # more workers would save a minute at most, at 3 GiB each.
       CURIO_E2E_PARALLEL: "6"
       CURIO_E2E_BACKEND_URL: "http://localhost:5022"
       # Host-side Playwright targets the remapped ports (e2e_existing_servers
@@ -782,8 +789,10 @@ jobs:
 
   # The Python unit suites need the image but neither a GPU nor a browser, so
   # they run here, beside test-gpu, instead of adding nine minutes to it. The
-  # backend suite, the longest of them, runs as two balanced parts
-  # (CURIO_UNIT_PART; tests/parts.py and unit_durations.json).
+  # backend suite, the longest of them, runs as four balanced parts
+  # (CURIO_UNIT_PART; tests/parts.py and unit_durations.json). The count is
+  # BACKEND_UNIT_PARTS in parts.py, and ciParts.test.ts holds the entries
+  # below, pick-runners' keys and ci-report's job list to it.
   unit:
     name: unit (${{ matrix.name }})
     needs: [pick-runners, build-image]
@@ -799,8 +808,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: backend-1, suite: backend, part: "1/2" }
-          - { name: backend-2, suite: backend, part: "2/2" }
+          - { name: backend-1, suite: backend, part: "1/4" }
+          - { name: backend-2, suite: backend, part: "2/4" }
+          - { name: backend-3, suite: backend, part: "3/4" }
+          - { name: backend-4, suite: backend, part: "4/4" }
           - { name: sandbox, suite: sandbox, part: "" }
     env:
       CURIO_CI_FRESH_STACK: curio-ci
@@ -828,8 +839,9 @@ jobs:
       # JUnit is written inside the container, onto the .curio bind mount: the
       # directory is the container's (root-owned), so the host cannot create it.
       - name: 🧪 Run the ${{ matrix.name }} unit tests
-        # About 5 minutes a part, a run. The limit is for a hang, so it fails
-        # here rather than holding the job until its own timeout.
+        # About 6 minutes a backend part, a run (each part holds about 6 of
+        # the suite's 24 minutes of test time). The limit is for a hang, so it
+        # fails here rather than holding the job until its own timeout.
         timeout-minutes: ${{ inputs.repeat > 1 && 340 || 25 }}
         run: |
           bash scripts/ci_repeat.sh docker compose -p curio-ci exec -T \
@@ -912,7 +924,9 @@ jobs:
   # Every e2e test whose browser does not run WebGPU, spread over a matrix of
   # CPU runners, each with its own stack. Which tests those are is
   # decided from the tests themselves (runner_split.py): CURIO_E2E_RUNNER picks
-  # the non-WebGPU half and CURIO_E2E_PART one balanced slice of it. test-gpu
+  # the non-WebGPU half and CURIO_E2E_PART one balanced slice of it, priced
+  # test by test (e2e_durations.json). The matrix holds E2E_DESKTOP_PARTS
+  # parts (tests/parts.py; ciParts.test.ts checks the two agree). test-gpu
   # runs the other half, and the CI report job checks that together they ran
   # everything.
   #
@@ -931,7 +945,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        part: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
     env:
       CURIO_CI_FRESH_STACK: curio-ci
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
@@ -1804,14 +1818,17 @@ jobs:
         run: python3 scripts/ci_check_split.py inputs
 
       # Every job that sends JUnit results, so a test only one of them runs is
-      # not mistaken for one that ran nowhere. Keep the desktop parts in step
-      # with e2e-desktop's matrix.
+      # not mistaken for one that ran nowhere. The parts follow the counts in
+      # tests/parts.py, as e2e-desktop's and unit's matrices do
+      # (ciParts.test.ts): a part named here that no job runs would turn this
+      # check off ("not checked"), and a part left out would not be required
+      # to have sent its results.
       - name: 🚫 Fail on a test that no job ran
         if: ${{ !cancelled() }}
         shell: bash
         run: |
-          python3 scripts/ci_never_run.py inputs unit-backend-1 unit-backend-2 unit-sandbox \
-            test-gpu test-isolated test-exec-user preview-runner e2e-desktop-{1..10}
+          python3 scripts/ci_never_run.py inputs unit-backend-{1..4} unit-sandbox \
+            test-gpu test-isolated test-exec-user preview-runner e2e-desktop-{1..14}
 
       - name: 📤 Upload the re-minted baselines
         if: always() && inputs.remint

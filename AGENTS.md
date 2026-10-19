@@ -112,7 +112,7 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
 - `pick-runners`: picks the runner for each job (`scripts/ci_pick_runners.py`).
 - `build-image`: builds the CI image once per commit and pushes it to GHCR.
 - `test-gpu`: e2e tests that need WebGPU, on a GPU runner.
-- `unit`: backend pytest in two parts, plus the sandbox suite.
+- `unit`: backend pytest in four parts, plus the sandbox suite.
 - `jest`: Jest and `npm run typecheck`.
 - `e2e-desktop`: e2e tests without WebGPU, split over CPU runners.
 - `test-isolated`: Python-node workflows on the fork-isolated stack (`docker-compose.ci-isolated.yml`).
