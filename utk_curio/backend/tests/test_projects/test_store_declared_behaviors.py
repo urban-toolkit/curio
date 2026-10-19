@@ -1,9 +1,9 @@
 """A package in an account's own store is what its templates declare, for
 that account.
 
-"Save as package node" copies a node's template, its behavior included, into a
-package of the account's own: a Data Pool, a Vega-Lite chart, a Data Export,
-a loader. The dashboard page and the Data Catalog's lineage read the owner's
+A package of the account's own declares what its templates are, as Curio's
+do: a Data Pool's behavior, a Data Export's, a loader's ``loadsDataset``. The
+dashboard page and the Data Catalog's lineage read the owner's
 store, then the catalog, then the packages Curio ships, so such a node is
 treated as the built-in it declares for the account whose store holds its
 package, and as an ordinary node for any other account. A run on the server
@@ -43,6 +43,12 @@ STORE_PACKAGE = {
         },
         {
             "id": "fetch-parcels", "label": "Fetch parcels", "description": "", "category": "data",
+            "engine": "python", "editor": "code", "behavior": "code",
+            "hasCode": True, "hasGrammar": False, "hasWidgets": False, "loadsDataset": True,
+            "inputPorts": [], "outputPorts": [_port()],
+        },
+        {
+            "id": "fetch-roads", "label": "Fetch roads", "description": "", "category": "data",
             "engine": "python", "editor": "code", "behavior": "code",
             "hasCode": True, "hasGrammar": False, "hasWidgets": False,
             "inputPorts": [], "outputPorts": [_port()],
@@ -162,3 +168,21 @@ def test_the_data_catalog_counts_the_nodes_after_a_loader_saved_in_the_accounts_
     assert consumers(alice_token) == ["after"]
     # To Bob it is a node that reads the dataset itself.
     assert consumers(bob_token) == ["loader"]
+
+
+def test_a_data_template_saved_in_the_store_that_declares_no_loader_reads_the_dataset_itself(
+    client, db, user_and_token,
+):
+    alice, alice_token = user_and_token
+    nodes = [
+        _node("loader", "acme.mine/fetch-roads@1", f'return curio_data_path("{DATASET}")'),
+        _node("after", "curio.builtin/computation-analysis@1", "return input_0"),
+    ]
+    _create(client, alice_token, nodes, [_edge("loader", "after")])
+    _hold_the_package(alice)
+
+    resp = client.get(f"/api/datasets/{DATASET}/usage", headers=_auth(alice_token))
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    (flow,) = resp.get_json()["dataflows"]
+    # The data category with no input port, but no loadsDataset: a consumer.
+    assert [node["nodeId"] for node in flow["nodes"]] == ["loader"]

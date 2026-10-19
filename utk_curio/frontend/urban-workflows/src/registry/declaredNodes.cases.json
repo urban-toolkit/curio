@@ -1,5 +1,5 @@
 {
-  "description": "What a node is, by what its template declares: whether a dashboard or a scenario walks through it (passThrough), whether a pinned one is its own dashboard source (selfDrawn), whether it makes no dataset of its own (nonProducing), and whether it loads the dataset it names (loadsData). The canvas (registry/declaredNodes.ts and the rules that read it) and the backend (projects/template_grammars.py and the rules that read it) run every case. The packages below are registered beside curio.builtin@1, read from packages/; a type no template answers for is a built-in node by its id.",
+  "description": "What a node is, by what its template declares: whether a dashboard or a scenario walks through it (passThrough), whether a pinned one is its own dashboard source (selfDrawn), whether it makes no dataset of its own (nonProducing), and whether it loads the dataset it names, which its template declares with loadsDataset (loadsData). The canvas (registry/declaredNodes.ts and the rules that read it) and the backend (projects/template_grammars.py and the rules that read it) run every case. The packages below are registered beside curio.builtin@1, read from packages/; a type no template answers for is a built-in node by its id.",
   "packages": [
     {
       "id": "acme.tools",
@@ -21,7 +21,9 @@
         {"id": "sketch", "label": "A chart that names no grammar", "category": "vis_grammar", "engine": "python", "editor": "grammar", "behavior": "vega", "hasGrammar": true, "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}], "outputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}]},
         {"id": "compare", "label": "A comparison of its own", "category": "vis_grammar", "engine": "python", "editor": "code", "behavior": "compare-scenarios", "hasCode": true, "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "[1,n]"}], "outputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}]},
         {"id": "map", "label": "A map of its own", "category": "vis_grammar", "engine": "python", "editor": "grammar", "behavior": "autk-grammar", "grammarId": "autk-grammar", "hasGrammar": true, "inputPorts": [{"types": ["DATAFRAME", "GEODATAFRAME"], "cardinality": "1"}], "outputPorts": [{"types": ["DATAFRAME", "GEODATAFRAME"], "cardinality": "1"}]},
-        {"id": "fetch-parcels", "label": "A loader of its own", "category": "data", "engine": "python", "editor": "code", "behavior": "code", "hasCode": true, "inputPorts": [], "outputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}]},
+        {"id": "fetch-parcels", "label": "A loader of its own", "category": "data", "engine": "python", "editor": "code", "behavior": "code", "hasCode": true, "loadsDataset": true, "inputPorts": [], "outputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}]},
+        {"id": "fetch-roads", "label": "A data template that declares no loader", "category": "data", "engine": "python", "editor": "code", "behavior": "code", "hasCode": true, "inputPorts": [], "outputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}]},
+        {"id": "geocode", "label": "A loader that takes an input", "category": "computation", "engine": "python", "editor": "code", "behavior": "code", "hasCode": true, "loadsDataset": true, "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}], "outputPorts": [{"types": ["GEODATAFRAME"], "cardinality": "1"}]},
         {"id": "bare", "label": "A template with no behavior", "category": "computation", "engine": "python", "editor": "code", "hasCode": true, "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}], "outputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}]}
       ]
     }
@@ -41,7 +43,9 @@
     {"name": "a package template that declares Compare Scenarios' behavior", "type": "acme.tools/compare@1", "passThrough": false, "selfDrawn": true, "nonProducing": false, "loadsData": false},
     {"name": "a package template that declares Autark's behavior, with a spec that draws", "type": "acme.tools/map@1", "content": "{\"map\": {\"layerRefs\": []}}", "passThrough": true, "selfDrawn": false, "nonProducing": false, "loadsData": false},
     {"name": "a package template that declares Autark's behavior, with a spec that loads data", "type": "acme.tools/map@1", "content": "{\"data\": [{\"type\": \"osm\"}]}", "passThrough": false, "selfDrawn": false, "nonProducing": false, "loadsData": false},
-    {"name": "a package template in the data category with no input port", "type": "acme.tools/fetch-parcels@1", "passThrough": false, "selfDrawn": false, "nonProducing": false, "loadsData": true},
+    {"name": "a package template that declares loadsDataset", "type": "acme.tools/fetch-parcels@1", "passThrough": false, "selfDrawn": false, "nonProducing": false, "loadsData": true},
+    {"name": "a package template that declares loadsDataset and takes an input", "type": "acme.tools/geocode@1", "passThrough": false, "selfDrawn": false, "nonProducing": false, "loadsData": true},
+    {"name": "a package template in the data category with no input port that declares no loadsDataset", "type": "acme.tools/fetch-roads@1", "passThrough": false, "selfDrawn": false, "nonProducing": false, "loadsData": false},
     {"name": "a package template that declares no behavior", "type": "acme.tools/bare@1", "passThrough": false, "selfDrawn": false, "nonProducing": false, "loadsData": false},
     {"name": "a template its package does not hold", "type": "acme.tools/missing@1", "passThrough": false, "selfDrawn": false, "nonProducing": false, "loadsData": false},
     {"name": "the built-in Vega-Lite node", "type": "curio.builtin/vis-vega@1", "content": "{}", "passThrough": true, "selfDrawn": false, "nonProducing": true, "loadsData": false},

@@ -2,8 +2,11 @@
 
 The agents read this flag, not a template's name: an agent whose node target
 requires it attaches to such a node, and Solve finds the node a source before
-it writes its code (``test_agents/test_agents_by_capability.py``).
-curio.builtin's Data Loading declares it, and a package's own loader may.
+it writes its code (``test_agents/test_agents_by_capability.py``). The Data
+Catalog's lineage and the canvas read it too
+(``test_projects/test_declared_node_cases.py``), the canvas from the package
+listing. curio.builtin's Data Loading declares it, and a package's own loader
+may.
 """
 from __future__ import annotations
 
@@ -68,6 +71,16 @@ def test_only_the_builtin_data_loading_declares_it_in_the_shipped_catalog():
     # The package loaders (curio.weather's, ai.utk.uhvi's) declare nothing, so
     # the nodes users already have keep the agents they get.
     assert declared == {"curio.builtin/data-loading"}
+
+
+def test_the_package_listing_carries_the_flag_the_canvas_reads():
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+    from utk_curio.backend.app.packages.schemas.responses import package_payload
+
+    payload = package_payload(load_package_manifest(REPO_ROOT / "packages" / "curio.builtin@1"))
+    flags = {template["templateId"]: template.get("loadsDataset") for template in payload["templates"]}
+    assert flags.pop("data-loading") is True
+    assert flags and set(flags.values()) == {False}, flags
 
 
 class TestTheRosterCarriesTheFlag:

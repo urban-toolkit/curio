@@ -34,6 +34,7 @@ type ManifestTemplate = {
   hasCode?: boolean;
   hasGrammar?: boolean;
   hasWidgets?: boolean;
+  loadsDataset?: boolean;
   inputPorts: Array<{ types: string[]; cardinality?: string }>;
   outputPorts: Array<{ types: string[]; cardinality?: string }>;
 };
@@ -77,6 +78,7 @@ function listed(manifest: Manifest) {
       hasGrammar: Boolean(t.hasGrammar),
       grammarId: t.grammarId ?? null,
       badge: null,
+      loadsDataset: Boolean(t.loadsDataset),
       inputPorts: t.inputPorts,
       outputPorts: t.outputPorts,
       source: null,
@@ -108,6 +110,11 @@ function behaviorOf(nodeType: string): string | undefined {
   return (tryGetNodeDescriptor(nodeType) as unknown as { behavior?: string } | undefined)?.behavior;
 }
 
+/** Whether the registered template of *nodeType* declares `loadsDataset`. */
+function loadsDatasetOf(nodeType: string): boolean | undefined {
+  return (tryGetNodeDescriptor(nodeType) as unknown as { loadsDataset?: boolean } | undefined)?.loadsDataset;
+}
+
 beforeAll(() => {
   clearPackageNodes();
   registerPackageTemplates([listed(BUILTIN), ...PACKAGES_OF_THE_CASES.map(listed)]);
@@ -122,13 +129,25 @@ test('a registered template keeps the behavior its manifest declares', () => {
   expect(behaviorOf('acme.tools/bare@1')).toBeUndefined();
 });
 
+test('a registered template keeps the loadsDataset flag its manifest declares', () => {
+  expect(loadsDatasetOf('curio.builtin/data-loading@1')).toBe(true);
+  expect(loadsDatasetOf('acme.tools/fetch-parcels@1')).toBe(true);
+  expect(loadsDatasetOf('acme.tools/geocode@1')).toBe(true);
+  expect(loadsDatasetOf('acme.tools/fetch-roads@1')).toBeUndefined();
+  expect(loadsDatasetOf('acme.tools/data-loading@1')).toBeUndefined();
+  expect(loadsDatasetOf('curio.builtin/computation-analysis@1')).toBeUndefined();
+});
+
 describe('the canvas rules that read what a template declares', () => {
   test('a dataset dropped on a node applies to it as to Data Loading when its template loads data', () => {
     const { canApplyDatasetToNode } = require('../../services/datasetCatalog/datasetApplication');
-    // A package's own loader: the data category with no input port.
+    // A package's own loader: its template declares loadsDataset.
     expect(canApplyDatasetToNode({ nodeType: 'acme.tools/fetch-parcels@1' })).toBe(true);
+    expect(canApplyDatasetToNode({ nodeType: 'acme.tools/geocode@1' })).toBe(true);
     // Named like Data Loading, but a node with an input, and no code to apply it to.
     expect(canApplyDatasetToNode({ nodeType: 'acme.tools/data-loading@1' })).toBe(false);
+    // The data category with no input port, but no loadsDataset, and no code to apply it to.
+    expect(canApplyDatasetToNode({ nodeType: 'acme.tools/fetch-roads@1' })).toBe(false);
     expect(canApplyDatasetToNode({ nodeType: 'curio.builtin/data-loading@1' })).toBe(true);
   });
 
@@ -145,7 +164,9 @@ describe('the canvas rules that read what a template declares', () => {
       }).consumingNodes.map((n: { nodeId: string }) => n.nodeId);
 
     expect(consumers('acme.tools/fetch-parcels@1')).toEqual(['after']);
+    expect(consumers('acme.tools/geocode@1')).toEqual(['after']);
     expect(consumers('acme.tools/data-loading@1')).toEqual(['loader']);
+    expect(consumers('acme.tools/fetch-roads@1')).toEqual(['loader']);
     expect(consumers('curio.builtin/data-loading@1')).toEqual(['after']);
   });
 
