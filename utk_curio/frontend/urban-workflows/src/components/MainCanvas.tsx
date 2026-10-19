@@ -216,7 +216,9 @@ export function MainCanvas() {
     // back. React Flow 11 lands `setViewport` a frame or two later, through a
     // d3 transition, so the check runs on every change of the view. It also
     // runs again when `setViewport` changes, which it does once React Flow's
-    // zoom is ready: before that, it does nothing.
+    // zoom is ready: before that, it does nothing. Leaving the view,
+    // useNotebookView sets the canvas view back at once, which drops a
+    // put-back still waiting for its frame (#996).
     const flowStore = useStoreApi();
     useEffect(() => {
         if (!notebookOn) return;
