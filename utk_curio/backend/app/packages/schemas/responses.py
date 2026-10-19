@@ -77,6 +77,10 @@ def package_payload(manifest: PackageManifest, *, package_mtime_path: Path | Non
                 "backendHandler": tpl.backend_handler,
                 # #662: the widgets a freshly dropped node starts with.
                 "widgets": tpl.widgets,
+                # Whether a node of this template loads the dataset it names:
+                # the canvas's lineage and dataset drop read it, as the
+                # backend's ``loads_data`` and the agents do.
+                "loadsDataset": tpl.loads_dataset,
             }
         )
     payload = {

@@ -16,7 +16,7 @@ Curio is a framework for urban visual analytics built on dataflows: a React canv
 - `packages/`: shipped Node and Model Catalogs, one directory per package (`manifest.json`, `sources/`, `integrity.json`); a model package (kind `model`) also holds its weights under `models/`.
 - `datasets/`: shipped Data Catalog, one directory per dataset (`manifest.json`, `data/`).
 - `discovery/`: Discovery Catalog sources, one `manifest.json` per source.
-- `docs/`: user and developer guides; `docs/examples/` (curated dataflows, their walkthroughs, test dataflows); `docs/schemas/` (`trill.v1.json`).
+- `docs/`: user and developer guides; `docs/examples/` (curated dataflows, their walkthroughs, test dataflows); `docs/schemas/` (JSON Schemas: `trill.v1.json` for dataflows; `node-package.v4.json`, `dataset.v1.json`, `discovery-source.v1.json` and `agent-package.v1.json` for the catalogs' manifests; `example-prompt-fixture.v1.json` for the agent validation prompts).
 - `scripts/`: developer and CI scripts (see Scripts).
 - `vendor/duckdb-extensions/`: DuckDB extensions bundled with Curio.
 - `.github/workflows/`: CI and release workflows (see CI); `.github/actions/`: `start-stack`, `stop-stack` (its image cleanup on self-hosted runners is `scripts/ci_image_cleanup.sh`), `image-env` (the CI image's Python packages, copied to the runner).

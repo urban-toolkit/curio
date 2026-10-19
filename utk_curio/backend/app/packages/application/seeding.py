@@ -97,26 +97,6 @@ _SEED_STAGING_PREFIX = ".seed-staging-"
 
 
 
-#: Packages we will not provision without being asked.
-#:
-#: A lockfile says what a dataflow NEEDS. This says what we are willing to
-#: install as a side effect of booting with ``--with-examples`` or of opening a
-#: dataflow that declares it. The two used to be the same list, which forced a
-#: choice between a torch download on every boot and an example whose lockfile
-#: lied about its own dependencies, and #233 is what the second one cost: the
-#: package of example 10's Image Segmentation went undeclared, so nothing could
-#: resolve the example's node types and its three nodes sat on "Loading node…"
-#: forever with nothing to say why.
-#:
-#: Membership is about install COST, not trust: a package whose libraries run
-#: to gigabytes (torch, say) is a decision a user should make deliberately, in
-#: the catalog, where the size is stated, and not something a project-open
-#: request does to them. Example 10's segmentation package was one until it
-#: needed only onnxruntime; a Transformers model's torch now comes with that
-#: model's package, when it is added from the Discovery Catalog.
-INSTALL_ON_DEMAND_PACKAGE_IDS: frozenset[str] = frozenset()
-
-
 def example_dep_package_ids() -> tuple[str, ...]:
     """Package IDs the seeded dataflows declare as dependencies.
 
@@ -127,13 +107,9 @@ def example_dep_package_ids() -> tuple[str, ...]:
     depend on, with no hardcoded allowlist to keep in sync.
 
     Minus ``curio.builtin``, which every store is seeded with anyway (a test
-    dataflow declares it), and minus :data:`INSTALL_ON_DEMAND_PACKAGE_IDS`.
-    An example may declare a heavy
-    package — it has to, or nothing downstream can tell what its nodes need —
-    without that declaration turning into a multi-gigabyte pip run on every
-    ``--with-examples`` / ``--deploy`` boot. Shared source of truth: the
-    launcher's catalog dep walk
-    (``utk_curio/cli/dependencies.py::install_manifest_dependencies``) calls this too.
+    dataflow declares it). Shared source of truth: the launcher's catalog dep
+    walk (``utk_curio/cli/dependencies.py::install_manifest_dependencies``)
+    calls this too.
     """
     from utk_curio.backend.app.projects.shipped import shipped_dataflows
 
@@ -149,7 +125,7 @@ def example_dep_package_ids() -> tuple[str, ...]:
             for dir_name in declared:
                 if isinstance(dir_name, str) and "@" in dir_name:
                     ids.add(dir_name.split("@", 1)[0])
-    return tuple(sorted(ids - INSTALL_ON_DEMAND_PACKAGE_IDS - {BUILTIN_PACKAGE_ID}))
+    return tuple(sorted(ids - {BUILTIN_PACKAGE_ID}))
 
 
 def _latest_package_dir(catalog_root: Path, package_id: str) -> Path | None:

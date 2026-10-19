@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/dataset.v1.json",
+  "title": "Curio Dataset Manifest (v1)",
+  "description": "Schema for a Curio dataset manifest.json. A dataset is a folder named '<datasetId>@<major>' that holds this manifest and the data file it names. The shared catalog keeps one such folder per dataset (datasets/ in a checkout, or $CURIO_CATALOG_ROOT), and each account's dataset store keeps its own. A shipped dataset's manifest is written by hand, or by the script that builds the dataset; Curio writes the manifest of each dataset it makes: an import, a Discovery Catalog download or collection, a node's saved output, a published dataset. Field names are camelCase, and Curio ignores a key it does not read. The backend reads a manifest in utk_curio/backend/app/datasets/domain/manifest.py, and utk_curio/backend/tests/test_datasets/test_dataset_manifest_schema.py keeps the two in step. User-facing overview: docs/DATA-CATALOG.md, part 7.",
+  "type": "object",
+  "required": ["id", "name", "version", "format", "dataFile"],
+  "additionalProperties": true,
+  "if": {
+    "required": ["format"],
+    "properties": { "format": { "const": "collection" } }
+  },
+  "then": {
+    "required": ["collection"],
+    "properties": { "collection": { "type": "object", "minProperties": 1 } }
+  },
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,62}(?:\\.[a-z][a-z0-9-]{0,62}){1,5}$",
+      "description": "The dataset's id: 2 to 6 dot-separated segments, each a lowercase letter followed by up to 62 lowercase letters, digits or dashes, such as 'data.utk.chicago-boundary'. With compatibility.major it names the dataset's folder, '<id>@<major>'. Curio mints the id of each dataset it makes, such as 'imported.x<12 hex digits>' for an import or 'computed.<dataflowId>.<nodeId>' for a node's output."
+    },
+    "name": { "type": "string", "pattern": "\\S", "description": "The title shown on the dataset's card and page." },
+    "version": { "type": "string", "pattern": "\\S", "description": "A version of your choosing, such as '1.0.0'. It is separate from compatibility.major." },
+    "format": {
+      "type": "string",
+      "enum": ["bundle", "collection", "csv", "geojson", "geotiff", "json", "netcdf", "onnx", "parquet", "shp"],
+      "description": "How Curio reads the data file. 'shp' names the .shp of a shapefile whose .dbf, .shx and .prj sit beside it. 'bundle' is a node's output of several parts, listed in data/bundle.json. 'collection' is an index of files that stay in their source, one row per file, described by 'collection'."
+    },
+    "description": { "type": "string", "description": "Text shown on the dataset's page; empty when absent." },
+    "publisher": { "type": "string", "description": "Who publishes the dataset; 'Data Catalog' when absent. Only the publisher may unpublish or delete a published dataset." },
+    "license": { "type": "string", "description": "The license, as free text, such as 'Open Data' or 'CC-BY-4.0'." },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Keywords for the Data Catalog's search and Tags panel, such as 'chicago' or 'flood'."
+    },
+    "dataflowCategories": {
+      "$ref": "#/$defs/dataflowCategories",
+      "description": "The tags and data types a dataflow that reads the dataset shows on the Projects page, such as {\"tags\": [\"SCOUT\"]}. Unlike 'tags', the catalog's search keywords, these are categories of a dataflow."
+    },
+    "dataFile": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "The data file's path in the dataset's folder, with '/' between its parts, such as 'data/chicago.geojson'. A bundle names data/bundle.json, and a collection its index, such as data/index.parquet."
+    },
+    "downloadOnFirstUse": {
+      "type": "array",
+      "maxItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[^/\\\\]+(/[^/\\\\]+)*$",
+        "not": {
+          "anyOf": [
+            { "pattern": "(^|/)\\.{1,2}(/|$)" },
+            { "enum": ["manifest.json", "integrity.json"] }
+          ]
+        }
+      },
+      "description": "For a dataset that ships with Curio and whose data file is too big for the pip package: [\"<dataFile>\"], the dataFile and no other path. The pip package leaves that file out, and a pip install downloads it from GitHub the first time Curio reads the dataset."
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "major": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9999,
+          "default": 1,
+          "description": "The dataset's major version, 0 to 9999; 1 when absent. With 'id' it names the dataset's folder, '<id>@<major>'."
+        }
+      }
+    },
+    "sourceLabel": { "type": "string", "description": "A short label for where the dataset comes from, shown on its card, such as 'Imported' or 'Computed'; the publisher when absent." },
+    "rowCount": { "type": ["integer", "null"], "minimum": 0, "description": "How many rows a table holds. Curio counts them when it adds the dataset." },
+    "featureCount": { "type": ["integer", "null"], "minimum": 0, "description": "How many features geographic data holds." },
+    "schema": {
+      "type": ["object", "null"],
+      "description": "The data's columns, and for geographic data its geometry type and coordinate system. Curio infers them from a preview when absent.",
+      "properties": {
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "type": { "type": "string" },
+              "nullable": { "type": "boolean" }
+            }
+          },
+          "description": "One entry per column: its 'name', its 'type' and whether it is 'nullable'."
+        },
+        "geometryType": { "type": ["string", "null"], "description": "The geometry type, such as 'Polygon'." },
+        "crs": { "type": ["string", "null"], "description": "The coordinate reference system, such as 'EPSG:4326'." }
+      }
+    },
+    "createdAt": { "type": ["string", "null"], "description": "When Curio created the dataset's record, as an ISO 8601 time." },
+    "updatedAt": { "type": ["string", "null"], "description": "When the record last changed, as an ISO 8601 time." },
+    "sourceUpdatedAt": { "type": ["string", "null"], "description": "When the imported file was last modified, as an ISO 8601 time." },
+    "sourceEncoding": { "type": ["string", "null"], "description": "For an imported text file, the encoding Curio decoded it from before storing it as UTF-8; 'utf-8' when nothing had to change." },
+    "groupId": { "type": ["string", "null"], "description": "Shared by the datasets of one multi-layer import, which the Data Catalog shows as one entry with a tab each. The NetCDF variables of one file, stored a file each, share one that starts with 'netcdf.'." },
+    "layerName": { "type": ["string", "null"], "description": "The layer, or the NetCDF variable, this dataset holds in its group." },
+    "producerNodeId": { "type": ["string", "null"], "description": "For a node's saved output: the node that computed it." },
+    "producerNodeType": { "type": ["string", "null"], "description": "That node's type, such as 'curio.builtin/data-transformation'." },
+    "producerDataflowId": { "type": ["string", "null"], "description": "The id of the dataflow the node is in." },
+    "producerDataflowName": { "type": ["string", "null"], "description": "That dataflow's name when the output was saved." },
+    "upstreamInputs": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "properties": {
+          "nodeId": { "type": "string" },
+          "nodeType": { "type": ["string", "null"] },
+          "datasetId": { "type": "string" }
+        }
+      },
+      "description": "What fed the producing node, one entry each: a node, by 'nodeId' and 'nodeType', or a dataset, by 'datasetId'."
+    },
+    "discoverySource": {
+      "type": ["object", "null"],
+      "description": "Where a dataset from the Discovery Catalog came from. Curio writes it when it adds the dataset.",
+      "properties": {
+        "sourceId": { "type": "string", "description": "The source's folder name, '<sourceId>@<major>'." },
+        "sourceName": { "type": "string", "description": "The source's name." },
+        "resourceId": { "type": "string", "description": "The resource added, as the source lists it, by which Curio knows the account holds it." },
+        "resourceUrl": { "type": "string", "description": "The link the file was asked for at." },
+        "finalUrl": { "type": "string", "description": "The link it came from, after redirects." },
+        "fetchedAt": { "type": "string", "description": "When it arrived, as an ISO 8601 time." },
+        "contentSha256": { "type": "string", "description": "The SHA-256 of its bytes." },
+        "parameters": { "type": "object", "description": "The answers the download was narrowed by, such as an area." },
+        "parametersHash": { "type": ["string", "null"], "description": "A hash of those answers, by which the same resource for the same answers is found held." },
+        "sourcePath": { "type": "string", "description": "From a storage source: the path of the one file added." },
+        "fileCount": { "type": "integer", "minimum": 0, "description": "From a storage source: how many files the row held." },
+        "fields": { "type": "string", "description": "From a storage source: the names its path pattern captures, joined by commas." },
+        "fingerprint": { "type": "string", "description": "From a storage source: what the files were when the dataset was added." },
+        "narrowed": { "type": "boolean", "description": "True when only some of a row's files were added." },
+        "manual": { "type": "boolean", "description": "True for a file downloaded by hand from a Dataset Finder row, recorded by its link." }
+      }
+    },
+    "collection": {
+      "type": ["object", "null"],
+      "description": "For a dataset of format 'collection', which requires it: the source row whose files the index lists. The files stay in their source, and Curio finds them through it.",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["audio", "frames", "images", "media", "rasters", "videos"],
+          "description": "The kind of files, that of the source row they belong to."
+        },
+        "sourceId": { "type": "string", "description": "The source's folder name, '<sourceId>@<major>'." },
+        "sourceName": { "type": "string", "description": "The source's name." },
+        "provider": { "type": "string", "description": "The source's provider, such as 'folder'." },
+        "resourceId": { "type": "string", "description": "The row added, as the source lists it." },
+        "resource": { "type": "string", "description": "The source's resource the row belongs to." },
+        "resourceName": { "type": "string", "description": "That resource's name." },
+        "path": { "type": "string", "description": "That resource's path pattern in the source; empty for a service." },
+        "fields": { "type": "array", "items": { "type": "string" }, "description": "The names the path pattern captures, each a column of the index." },
+        "fieldValues": { "type": "array", "items": { "type": "object" }, "description": "For each captured name: its values, or their range." },
+        "counts": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 },
+          "description": "How many files of each kind, such as {\"image\": 3, \"video\": 1}."
+        },
+        "fileCount": { "type": "integer", "minimum": 0, "description": "How many files the index lists." },
+        "totalBytes": { "type": "integer", "minimum": 0, "description": "Their total size, in bytes." },
+        "hasGps": { "type": "boolean", "description": "Whether the index places its files on a map." },
+        "probeErrors": { "type": "integer", "minimum": 0, "description": "How many files could not be read; each keeps its row." },
+        "indexedAt": { "type": "string", "description": "When the index was written, as an ISO 8601 time." },
+        "fingerprint": { "type": "string", "description": "What the files were when they were indexed, so a later add sees whether they changed." },
+        "split": { "type": "object", "description": "For a row split by a captured name: the value this collection holds." },
+        "narrowedBy": { "type": "object", "description": "What an add narrowed the row to: values or a range per captured name." },
+        "chosenFiles": { "type": "integer", "minimum": 0, "description": "How many files an add chose one by one." },
+        "fps": { "type": "number", "minimum": 0, "description": "For frames: how many per second." },
+        "sequences": { "type": "integer", "minimum": 0, "description": "For frames: how many sequences." },
+        "totalSeconds": { "type": "number", "minimum": 0, "description": "For recordings: their total length, in seconds." },
+        "crs": { "type": "array", "items": { "type": "string" }, "description": "For rasters: their coordinate reference systems." },
+        "bounds": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 4,
+          "maxItems": 4,
+          "description": "West, south, east and north of the files, in EPSG:4326."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "dataflowCategories": {
+      "type": "object",
+      "description": "Tags and data types for the Projects page's rail and the canvas's title chips, beside those Curio finds in the dataflow itself (the libraries its code imports, the files it names, its grammars, models and datasets). A name the rail already lists files the dataflow under it; a new name adds an entry. Curio keeps the first 40 characters of a name and the first 20 names of a list, and drops a name that repeats an earlier one in another case.",
+      "additionalProperties": false,
+      "properties": {
+        "tags": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "type": "string", "minLength": 1, "maxLength": 40 },
+          "description": "Tags, such as 'SCOUT'."
+        },
+        "dataTypes": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "type": "string", "minLength": 1, "maxLength": 40 },
+          "description": "Data types, such as 'Rasters' or 'Imagery'."
+        }
+      }
+    }
+  }
+}

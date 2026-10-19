@@ -243,6 +243,7 @@ def start_run(
     from utk_curio.backend.app.projects import repositories as projects_repo
     from utk_curio.backend.app.projects import storage
     from utk_curio.backend.app.projects.services import _user_dir_key
+    from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
     from utk_curio.backend.app.users.capabilities import run_refusal
 
     refusal = run_refusal(user)
@@ -267,6 +268,7 @@ def start_run(
             spec, target_node_id=target_node_id, target_node_ids=target_node_ids, reuse=reuse,
             templates=roster_templates(ukey, project_id),
             labels=template_labels(ukey, project_id),
+            packages=TemplateGrammars.for_account(ukey),
         )
     except PlanError as exc:
         raise RunError(str(exc), 422) from exc
@@ -294,7 +296,7 @@ def start_run(
     )
     run_id = run.id
     app = current_app._get_current_object()
-    events = _run_thread(app, run_id, user.id, token, project_id, plan, spec)
+    events = _run_thread(app, run_id, user.id, token, project_id, plan, spec, ukey)
     try:
         jobs.REGISTRY.start(
             user_key=user_key, project_id=project_id, key=project_id,
@@ -313,8 +315,10 @@ def start_run(
     return runs_repo.get_run(run_id)
 
 
-def _run_thread(app, run_id, user_id, token, project_id, plan, spec) -> Iterator[tuple[str, dict]]:
-    """The run's thread: drive the engine, record each event, pass it on."""
+def _run_thread(app, run_id, user_id, token, project_id, plan, spec, user_key=None) -> Iterator[tuple[str, dict]]:
+    """The run's thread: drive the engine, record each event, pass it on.
+    *user_key* is the account's store key, whose packages say what each
+    node's template declares."""
     from utk_curio.backend import config
     from utk_curio.backend.app.execution import node_exec, runtime_journal
     from utk_curio.backend.app.execution.run_engine import run_events
@@ -325,13 +329,15 @@ def _run_thread(app, run_id, user_id, token, project_id, plan, spec) -> Iterator
     )
     from utk_curio.backend.app.projects.schemas import OutputRef
     from utk_curio.backend.app.projects.services import record_node_outputs
+    from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
     from utk_curio.backend.app.users.models import User
     from utk_curio.common.autk_data_compiler import compile_data_spec
 
     default_save = bool(config.CURIO_DEFAULT_SAVE_NODE_OUTPUT)
     # What a pinned tile reads and what a scenario's context and outcomes
     # produce, saved whatever each node's own toggle says.
-    sources = saved_source_node_ids(spec)
+    packages = TemplateGrammars.for_account(user_key)
+    sources = saved_source_node_ids(spec, packages)
     cancelled = jobs.cancel_flag(run_id)
 
     def execute(step, code, input_ref):
@@ -391,7 +397,7 @@ def _run_thread(app, run_id, user_id, token, project_id, plan, spec) -> Iterator
                 output = payload.get("output") or {}
                 step = plan.steps[payload["nodeId"]]
                 if payload["status"] == "ok" and records_output_on_save(
-                    step.node, default_save, sources,
+                    step.node, default_save, sources, packages,
                 ):
                     warnings: list = []
                     try:

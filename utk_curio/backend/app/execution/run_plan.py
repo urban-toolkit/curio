@@ -15,18 +15,26 @@
   Parameter node, whose value reaches the nodes that name it through their
   code, or a Note; ``browser`` makes data only the browser can (an Autark
   compute node, an Autark node with no data of its own to load, a Spatial
-  Join), so nothing below it can run until a tab does.
+  Join), so nothing below it can run until a tab does. A node is what its
+  template's declared ``behavior`` says (``projects/template_grammars``), never
+  what its type is named.
 """
 from __future__ import annotations
 
-from typing import Iterable
+from typing import TYPE_CHECKING, Iterable, Optional
+
+if TYPE_CHECKING:
+    from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
 INTERACTION_HANDLE = "in/out"
 
-#: Node kinds a run forwards besides the pass-through kinds of a dashboard walk:
-#: a Data Export only offers a download, a Parameter node only holds a value,
-#: and a Note only holds text; none has anything to run.
-_FORWARD_KINDS = frozenset({"data-export", "parameter", "note"})
+#: The behaviors of the nodes a run forwards besides the ones a dashboard walk
+#: passes through: a Data Export only offers a download, a Parameter node only
+#: holds a value, and a Note only holds text; none has anything to run. The
+#: built-in nodes of a type no template declares a behavior for are forwarded
+#: by their ids.
+_FORWARD_BEHAVIORS = frozenset({"data-export", "parameter", "note"})
+_FORWARD_TYPES = frozenset({"curio.builtin/data-export", "curio.builtin/parameter", "curio.builtin/note"})
 
 
 def is_interaction_edge(edge: dict) -> bool:
@@ -103,20 +111,32 @@ def ancestors(target_id: str, edges: Iterable[dict]) -> set[str]:
     return wanted
 
 
-def node_role(node: dict, templates: dict | None = None) -> str:
+def node_role(
+    node: dict,
+    templates: dict | None = None,
+    packages: Optional["TemplateGrammars"] = None,
+) -> str:
     """``run``, ``forward`` or ``browser`` for a node as a saved dataflow holds it.
 
-    A chart a package's template draws with the Vega-Lite grammar is forwarded
-    as a Vega-Lite chart is: the catalog's manifest says so of a shipped one,
-    and the project's roster, when the run has it, of an account's own too."""
+    What a node forwards as is what its template declares, read through
+    *packages*: the account's store, the catalog, then the packages Curio
+    ships (``TemplateGrammars.for_account()`` when None). A chart a package's
+    template draws with the Vega-Lite grammar is forwarded as a Vega-Lite chart
+    is, and so is one the project's roster (*templates*) says draws with it."""
     from utk_curio.backend.app.execution.autk_spec_kind import is_autk_data_node
     from utk_curio.backend.app.execution.workflow_spec import grammar_id_of, is_executable_kind
-    from utk_curio.backend.app.projects.dashboard_payload import _is_pass_through, _node_kind
-    from utk_curio.backend.app.projects.template_grammars import VEGA_LITE
+    from utk_curio.backend.app.projects.dashboard_payload import passes_through
+    from utk_curio.backend.app.projects.template_grammars import (
+        VEGA_LITE,
+        TemplateGrammars,
+        declares_behavior,
+    )
 
     if is_executable_kind(node.get("type"), templates):
         return "run"
-    if (_is_pass_through(node) or _node_kind(node) in _FORWARD_KINDS
+    packages = packages or TemplateGrammars.for_account()
+    if (passes_through(node, packages)
+            or declares_behavior(node.get("type"), _FORWARD_BEHAVIORS, _FORWARD_TYPES, packages)
             or grammar_id_of(str(node.get("type") or ""), templates) == VEGA_LITE):
         return "forward"
     if is_autk_data_node(node):

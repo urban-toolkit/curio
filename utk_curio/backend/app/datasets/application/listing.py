@@ -836,11 +836,14 @@ class CatalogListing:
         if self.user is None:
             raise DatasetCatalogError("Authorization required", 401)
         # The scan the Model Catalog's usage read makes too (``projects.usage``).
+        from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
         from utk_curio.backend.app.projects.usage import dataflow_usage
+
+        packages = TemplateGrammars.for_account(self._paths._user_key())
 
         def uses(spec: dict, project_id: str) -> tuple[list[dict[str, Any]], bool] | None:
             consumers = _dataset_consumer_nodes_in_spec(
-                spec, dataset_id, project_id, include_code_refs=include_code_refs
+                spec, dataset_id, project_id, include_code_refs=include_code_refs, packages=packages
             )
             if consumers is None:
                 return None
@@ -854,7 +857,7 @@ class CatalogListing:
             if include_code_refs:
                 code_only = (
                     _dataset_consumer_nodes_in_spec(
-                        spec, dataset_id, project_id, include_code_refs=False
+                        spec, dataset_id, project_id, include_code_refs=False, packages=packages
                     )
                     is None
                 )
@@ -882,8 +885,10 @@ class CatalogListing:
             return {}
         from utk_curio.backend.app.projects import repositories as projects_repo
         from utk_curio.backend.app.projects import storage as project_storage
+        from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
         user_key = self._paths._user_key()
+        packages = TemplateGrammars.for_account(user_key)
         counts: dict[str, int] = {}
         for project in projects_repo.list_for_user(self.user.id):
             spec = project_storage.read_spec(user_key, project.id) or {}
@@ -899,7 +904,7 @@ class CatalogListing:
             }
             for dataset_id in dataset_ids:
                 consumers = _dataset_consumer_nodes_in_spec(
-                    spec, dataset_id, project.id, code_ids_by_node
+                    spec, dataset_id, project.id, code_ids_by_node, packages=packages
                 )
                 if consumers:
                     counts[dataset_id] = counts.get(dataset_id, 0) + len(consumers)

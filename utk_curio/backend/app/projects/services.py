@@ -44,25 +44,37 @@ def shipped_dataflow_paths() -> Dict[str, Path]:
     return {s.key: s.path for s in shipped_dataflows()}
 
 
-# Visualization "sink" node types: they consume a dataframe to render and pass
-# their INPUT straight through as their output, so they never produce a new
-# dataset. A computed dataset ref keyed on such a node is always a duplicate of
-# the upstream producer's output (same file, different node id) — pruned on save.
+# Visualization "sink" nodes: they consume a dataframe to render and pass their
+# INPUT straight through as their output, so they never produce a new dataset.
+# A computed dataset ref keyed on such a node is always a duplicate of the
+# upstream producer's output (same file, different node id), pruned on save.
+# A node is one when its template declares a chart's behavior, and a built-in
+# node of a type no template declares a behavior for is one by its id.
+_SINK_BEHAVIORS = frozenset({"vega", "simple-vis"})
 _SINK_NODE_TYPES = frozenset({
     "curio.builtin/vis-vega",
     "curio.builtin/vis-simple",
 })
 
 
-def _is_sink_node_type(node_type) -> bool:
-    """Membership in ``_SINK_NODE_TYPES``, tolerant of the versioned canonical
-    form palette-dragged nodes carry (``curio.builtin/vis-vega@1``) (#169). A
-    package chart that draws with the Vega-Lite grammar is a Vega-Lite chart
-    (``template_grammars``), as the canvas's ``isNonProducingNodeType`` reads it."""
-    from utk_curio.backend.app.packages.service import unversioned_node_type
-    from utk_curio.backend.app.projects.template_grammars import draws_with_vega_lite
+def _is_sink_node_type(node_type, packages=None) -> bool:
+    """Whether a node of *node_type* is a visualization sink, as the canvas's
+    ``isNonProducingNodeType`` reads it: its template declares a chart's
+    behavior (``_SINK_BEHAVIORS``) or draws with the Vega-Lite grammar
+    (``template_grammars``). A type whose template declares no behavior is a
+    sink when it is in ``_SINK_NODE_TYPES``, tolerant of the versioned form
+    palette-dragged nodes carry (``curio.builtin/vis-vega@1``) (#169).
+    *packages* (a ``TemplateGrammars``) reads the manifests,
+    ``TemplateGrammars.for_account()`` when None."""
+    from utk_curio.backend.app.projects.template_grammars import (
+        TemplateGrammars,
+        declares_behavior,
+        draws_with_vega_lite,
+    )
 
-    return unversioned_node_type(node_type) in _SINK_NODE_TYPES or draws_with_vega_lite(node_type)
+    packages = packages or TemplateGrammars.for_account()
+    return (declares_behavior(node_type, _SINK_BEHAVIORS, _SINK_NODE_TYPES, packages)
+            or draws_with_vega_lite(node_type, packages))
 
 
 def _ensure_dataflow_identity(spec: Optional[dict], name: Optional[str]) -> bool:
@@ -140,8 +152,9 @@ def _sync_dataflow_name(spec: Optional[dict], name: Optional[str]) -> bool:
     return True
 
 
-def _prune_sink_node_dataset_refs(spec: Optional[dict]) -> Optional[dict]:
-    """Drop ``dataflow.datasets`` refs whose producer is a visualization/sink node.
+def _prune_sink_node_dataset_refs(spec: Optional[dict], user_key: Optional[str] = None) -> Optional[dict]:
+    """Drop ``dataflow.datasets`` refs whose producer is a visualization/sink node,
+    as the account of *user_key* holds its packages.
 
     Returns *spec* unchanged when there's nothing to prune; otherwise a new spec
     dict with the offending refs removed. Only the REF is removed — the
@@ -161,16 +174,19 @@ def _prune_sink_node_dataset_refs(spec: Optional[dict]) -> Optional[dict]:
     if not isinstance(refs, list) or not refs:
         return spec
 
+    from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
+
     node_types: Dict[str, Optional[str]] = {}
     for node in dataflow.get("nodes") or []:
         if isinstance(node, dict) and node.get("id"):
             node_types[node["id"]] = node.get("type")
 
+    packages = TemplateGrammars.for_account(user_key)
     kept: List[dict] = []
     pruned: List[dict] = []
     for ref in refs:
         producer = ref.get("producerNodeId") if isinstance(ref, dict) else None
-        if producer and _is_sink_node_type(node_types.get(producer)):
+        if producer and _is_sink_node_type(node_types.get(producer), packages):
             pruned.append(ref)
         else:
             kept.append(ref)
@@ -314,6 +330,7 @@ def _auto_install_computed_outputs(
 
     from utk_curio.backend.app.datasets.install.bundle import install_node_output
     from utk_curio.backend.app.datasets.application.export import resolve_upstream_inputs
+    from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
     dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
     if not isinstance(dataflow, dict):
@@ -324,6 +341,7 @@ def _auto_install_computed_outputs(
         for node in dataflow.get("nodes") or []
         if isinstance(node, dict) and node.get("id")
     }
+    packages = TemplateGrammars.for_account(user_key)
 
     for ref in output_refs:
         filename = ref.filename
@@ -333,7 +351,7 @@ def _auto_install_computed_outputs(
         # Sink/visualization nodes pass their input through — persisting their
         # output would create a duplicate of the upstream producer's dataset
         # that the ref prune then has to clean up. Never create it (#174).
-        if _is_sink_node_type(node_types.get(node_id)):
+        if _is_sink_node_type(node_types.get(node_id), packages):
             continue
 
         # A node that LOADS an installed dataset (a Data Catalog palette node)
@@ -617,8 +635,11 @@ def _manifest_entries(manifest: Optional[dict]) -> Dict[str, dict]:
     }
 
 
-def _kept_when_unsent(before: Optional[dict], after: Optional[dict]) -> Callable[[str], bool]:
-    """Which recorded outputs a save keeps when it does not name them.
+def _kept_when_unsent(
+    before: Optional[dict], after: Optional[dict], user_key: Optional[str] = None,
+) -> Callable[[str], bool]:
+    """Which recorded outputs a save keeps when it does not name them, as the
+    account of *user_key* holds its packages.
 
     A save names the outputs its canvas holds, while a run on the server
     records each output as it makes it: the save that ends a run, or one from
@@ -635,6 +656,7 @@ def _kept_when_unsent(before: Optional[dict], after: Optional[dict]) -> Callable
         records_output_on_save,
         saved_source_node_ids,
     )
+    from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
     def nodes(spec: Optional[dict]) -> Dict[str, dict]:
         dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
@@ -645,13 +667,14 @@ def _kept_when_unsent(before: Optional[dict], after: Optional[dict]) -> Callable
         return normalized_code_sha256(str(node.get("content") or ""))
 
     now, then = nodes(after), nodes(before)
-    sources = saved_source_node_ids(after)
+    packages = TemplateGrammars.for_account(user_key)
+    sources = saved_source_node_ids(after, packages)
 
     def kept(node_id: str) -> bool:
         node, earlier = now.get(node_id), then.get(node_id)
         if node is None or earlier is None or code(node) != code(earlier):
             return False
-        return records_output_on_save(node, None, sources)
+        return records_output_on_save(node, None, sources, packages)
 
     return kept
 
@@ -804,7 +827,7 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
         labels=_labels_for_unnamed(ukey, project_id, output_refs),
     ) or data.spec
     # Drop dataset refs keyed on visualization/sink nodes (passthrough duplicates).
-    effective_spec = _prune_sink_node_dataset_refs(effective_spec)
+    effective_spec = _prune_sink_node_dataset_refs(effective_spec, ukey)
     if effective_spec is not data.spec:
         storage.write_spec(ukey, project_id, effective_spec)
     # The dataset twin of `seed_spec_with_defaults` above: ids the user put in
@@ -974,7 +997,7 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
             # turned its Save off.
             output_refs, refs_to_install, produced_at = _merge_outputs(
                 list(data.outputs), existing_manifest,
-                keep_unsent=_kept_when_unsent(existing_spec, effective_spec),
+                keep_unsent=_kept_when_unsent(existing_spec, effective_spec, ukey),
             )
             # Install into users/<user>/datasets/ and register lean refs in the spec.
             # Do not copy artifacts into project/data/ — that folder is legacy-only.
@@ -1006,7 +1029,7 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
         # passthrough of their input, so the ref just duplicates the upstream
         # producer's dataset. Runs AFTER preserve so carried-forward stale refs
         # are cleaned too; may dirty the spec even on an outputs-only update.
-        pruned_spec = _prune_sink_node_dataset_refs(effective_spec)
+        pruned_spec = _prune_sink_node_dataset_refs(effective_spec, ukey)
         if pruned_spec is not effective_spec:
             effective_spec = pruned_spec
             spec_dirty = True
@@ -1461,9 +1484,14 @@ def build_standalone_dashboard(
         DEFAULT_PAYLOAD_LIMIT_BYTES,
         build_dashboard_payload,
     )
+    from utk_curio.backend.app.projects.models import Project
+    from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
     loaded = load_shared_project(project_id)
     detail = loaded["project"]
+    # The dataflow's nodes are what the owner's packages declare.
+    project = db.session.get(Project, project_id)
+    owner_key = _owner_user_dir_key(project) if project is not None else None
     payload = build_dashboard_payload(
         spec=loaded["spec"],
         output_refs=loaded["outputs"],
@@ -1476,6 +1504,7 @@ def build_standalone_dashboard(
             "generatedAt": datetime.now(timezone.utc).isoformat(),
         },
         limit_bytes=limit_bytes if limit_bytes is not None else DEFAULT_PAYLOAD_LIMIT_BYTES,
+        packages=TemplateGrammars.for_account(owner_key),
     )
     body = payload.to_dict()
     body["registry"] = registry if registry is not None else _dashboard_registry(project_id)

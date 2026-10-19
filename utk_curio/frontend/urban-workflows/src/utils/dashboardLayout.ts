@@ -1,9 +1,10 @@
 import { Node, Edge } from 'reactflow';
 
 import { NodeType } from '../constants';
+import { declaresBehavior } from '../registry/declaredNodes';
 import { isVegaLiteNodeType } from '../registry/vegaLiteNodes';
 import { classifyAutkSpecString } from './autkSpecKind';
-import { getUnversionedFlowNodeType } from './flowNodeCanonicalType';
+import { getFlowNodeCanonicalType } from './flowNodeCanonicalType';
 import { hideNode } from './hiddenNodes';
 
 interface NodeWithPosition extends Node {
@@ -239,8 +240,25 @@ export function arrangedTilePositions(
   );
 }
 
+/** The behaviors of the nodes that pass data through rather than produce it. */
+const PASS_THROUGH_BEHAVIORS: ReadonlySet<string> = new Set(['vega', 'simple-vis', 'data-pool']);
+
+/** The built-in nodes that pass data through, for a type no template declares a behavior for. */
+export const PASS_THROUGH_NODE_TYPES: ReadonlySet<string> = new Set([
+  NodeType.VIS_VEGA,
+  NodeType.VIS_SIMPLE,
+  NodeType.DATA_POOL,
+]);
+
+/** The Autark node, a pass-through only when its spec draws. */
+const AUTK_GRAMMAR_BEHAVIORS: ReadonlySet<string> = new Set(['autk-grammar']);
+const AUTK_GRAMMAR_NODE_TYPES: ReadonlySet<string> = new Set([NodeType.AUTK_GRAMMAR]);
+
 /**
- * Node kinds that pass data through rather than produce it.
+ * Nodes that pass data through rather than produce it: a node whose template
+ * declares a Vega-Lite chart's, a Simple View's or a Data Pool's behavior
+ * (registry/declaredNodes), or draws with the Vega-Lite grammar
+ * (registry/vegaLiteNodes).
  *
  * Each of these re-derives what it shows from ``data.input`` whenever that
  * changes, which is what a project load does through ``hydrateRestoredOutputs``.
@@ -249,33 +267,42 @@ export function arrangedTilePositions(
  * be in the Data Catalog for a tile to render without a run.
  *
  * An Autark node is only a pass-through when its spec draws (``map``/``plot``);
- * its data and compute forms produce layers, so they are sources. A package
- * chart that draws with the Vega-Lite grammar is a Vega-Lite chart
- * (registry/vegaLiteNodes).
+ * its data and compute forms produce layers, so they are sources. Mirrors
+ * `passes_through` in `projects/dashboard_payload.py`.
  */
 export function isPassThroughNode(node: { type?: string | null; data?: any }): boolean {
-  const kind = getUnversionedFlowNodeType(node as any);
+  const nodeType = getFlowNodeCanonicalType(node as any);
   if (
-    isVegaLiteNodeType(kind) ||
-    kind === NodeType.VIS_SIMPLE ||
-    kind === NodeType.DATA_POOL
+    declaresBehavior(nodeType, PASS_THROUGH_BEHAVIORS, PASS_THROUGH_NODE_TYPES) ||
+    isVegaLiteNodeType(nodeType)
   ) {
     return true;
   }
-  if (kind === NodeType.AUTK_GRAMMAR) {
+  if (declaresBehavior(nodeType, AUTK_GRAMMAR_BEHAVIORS, AUTK_GRAMMAR_NODE_TYPES)) {
     const spec = node.data?.code ?? node.data?.defaultCode;
     return classifyAutkSpecString(spec) === 'render';
   }
   return false;
 }
 
+/** The behaviors of the nodes whose tile draws the node's own output. */
+const SELF_DRAWN_BEHAVIORS: ReadonlySet<string> = new Set(['compare-scenarios']);
+
 /**
- * Node kinds whose tile draws the node's own output rather than what reaches
- * it: a Compare Scenarios node (#662) charts the table its own run stacked, or
- * shows its difference. Mirrors `_SELF_DRAWN_KINDS` in
- * `projects/dashboard_payload.py`.
+ * The built-in nodes whose tile draws the node's own output, for a type no
+ * template declares a behavior for.
  */
 export const SELF_DRAWN_NODE_TYPES: ReadonlySet<string> = new Set(["curio.builtin/compare-scenarios"]);
+
+/**
+ * Whether a node's tile draws the node's own output rather than what reaches
+ * it: a node whose template declares Compare Scenarios' behavior (#662), which
+ * charts the table its own run stacked, or shows its difference. Mirrors
+ * `draws_its_own_output` in `projects/dashboard_payload.py`.
+ */
+export function isSelfDrawnNode(node: { type?: string | null; data?: any }): boolean {
+  return declaresBehavior(getFlowNodeCanonicalType(node as any), SELF_DRAWN_BEHAVIORS, SELF_DRAWN_NODE_TYPES);
+}
 
 /**
  * The nodes whose outputs a dashboard needs saved.
@@ -289,15 +316,15 @@ export const SELF_DRAWN_NODE_TYPES: ReadonlySet<string> = new Set(["curio.builti
  * its input; a node that renders its own run output instead (a code node's
  * stdout pane, a Data Summary's table) has nothing a saved dataset could
  * restore, so saving it would add a dataset that nothing reads. The exception
- * is a node whose tile draws its own output (`SELF_DRAWN_NODE_TYPES`): it is
- * its own source, and its inputs are not walked.
+ * is a node whose tile draws its own output (`isSelfDrawnNode`): it is its
+ * own source, and its inputs are not walked.
  */
 export function dashboardSourceNodeIds(
   nodes: readonly { id: string; type?: string | null; data?: any }[],
   edges: readonly { source?: unknown; target?: unknown }[],
 ): Set<string> {
   const pinned = nodes.filter((node) => node.data?.dashboardPinned);
-  const drawn = pinned.filter((node) => SELF_DRAWN_NODE_TYPES.has(getUnversionedFlowNodeType(node as any)));
+  const drawn = pinned.filter((node) => isSelfDrawnNode(node));
   const sources = producersFeeding(
     pinned.filter((node) => !drawn.includes(node)).map((node) => node.id),
     nodes,

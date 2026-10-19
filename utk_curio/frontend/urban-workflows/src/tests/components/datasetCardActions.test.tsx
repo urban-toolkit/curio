@@ -215,3 +215,41 @@ describe("DatasetCard - Delete is for the user's own assets only", () => {
     expect(button("Delete")).toBeNull();
   });
 });
+
+describe("DatasetCard - a catalog dataset is known by its origin, whatever its id", () => {
+  // The shared catalog holds ids of any namespace: a published workspace file
+  // takes `local.data.<name>`. Its hub row, and the copy a dataflow installed
+  // under its own store folder, are the catalog's.
+  it("hides Delete for a hub row whose id is not under data.", () => {
+    renderCard({
+      dataset: dataset({ origin: "hub", producerNodeId: "n1", id: "local.data.trees", dirName: "local.data.trees@1" }),
+      onDelete: jest.fn(),
+    });
+    expect(button("Delete")).toBeNull();
+  });
+
+  it("hides Delete for the installed copy of one whose id is not under data.", () => {
+    renderCard({
+      dataset: dataset({
+        origin: "imported",
+        installed: true,
+        producerNodeId: "n1",
+        id: "local.data.trees",
+        dirName: "local.data.trees@1",
+      }),
+      onDelete: jest.fn(),
+    });
+    expect(button("Delete")).toBeNull();
+  });
+
+  it("offers Delete on the account's own folder, whatever its id says", () => {
+    for (const own of [
+      { origin: "imported" as const, id: "data.utk.copy", dirName: "imported.xdata12345678@1" },
+      { origin: "computed" as const, id: "data.utk.copy", dirName: "computed.flow-1.data@1", producerNodeId: "n1" },
+    ]) {
+      const { unmount } = renderCard({ dataset: dataset(own), onDelete: jest.fn() });
+      expect(button("Delete")).toBeTruthy();
+      unmount();
+    }
+  });
+});

@@ -109,6 +109,33 @@ def test_a_shipped_group_says_what_its_layers_say_and_keeps_its_kind():
     assert (own["sourceLabel"], own["origin"]) == ("OSM Import", "imported")
 
 
+def test_a_shared_catalog_layer_is_known_by_its_origin_whatever_its_id():
+    """The shared catalog holds datasets under ids of any namespace, such as
+    the ``local.data.*`` one a published workspace file takes. A layer is the
+    shared catalog's by its origin: a hub row, or the copy a dataflow
+    installed, whose store folder is outside the account's own (``imported.``
+    for uploads and downloads, ``computed.`` for node outputs)."""
+    shared = [
+        {
+            **_member(layer, group_id="osm.x1a2b3c4", fmt="parquet", tags=["osm", "chicago"]),
+            "id": f"local.data.loop-{layer}",
+            "origin": "hub",
+            "sourceLabel": "Chicago",
+        }
+        for layer in ("points", "lines")
+    ]
+    installed = [{**shared[0], "origin": "imported", "dirName": "local.data.loop-points@1"}, shared[1]]
+    for members in (shared, installed):
+        group = build_layer_group_item("osm.x1a2b3c4", members)
+        assert (group["sourceLabel"], group["tags"], group["origin"]) == ("Chicago", ["osm", "chicago"], "hub")
+
+    # A layer in one of the account's own folders is the account's, whatever its id says.
+    for own_folder in ("imported.xdata12345678@1", "computed.flow-1.data@1"):
+        own_layer = {**shared[1], "id": "data.utk.loop-lines", "origin": "imported", "dirName": own_folder}
+        own = build_layer_group_item("osm.x1a2b3c4", [shared[0], own_layer])
+        assert (own["sourceLabel"], own["origin"]) == ("OSM Import", "imported"), own_folder
+
+
 @pytest.mark.parametrize("group_id", ["osm.x1a2b3c4", "gpkg.x1a2b3c4", "gtfs.x1a2b3c4"])
 def test_a_group_card_loads_each_of_its_layers(group_id, tmp_path):
     """The Data Catalog drawer lists a layer group as one card, and a card

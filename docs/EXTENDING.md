@@ -15,7 +15,7 @@ Each catalog lists folders, one per item, each with a `manifest.json` that decla
 |---|---|---|---|
 | Node | [`packages/`](../packages/) | [`node-package.v4.json`](schemas/node-package.v4.json) | [NODE-CATALOG §6](NODE-CATALOG.md#6-the-manifest) |
 | Model | [`packages/`](../packages/), packages of kind `model` | [`node-package.v4.json`](schemas/node-package.v4.json) | [MODEL-CATALOG §6](MODEL-CATALOG.md#6-the-manifest) |
-| Data | [`datasets/`](../datasets/) | The table in DATA-CATALOG §7 | [DATA-CATALOG §7](DATA-CATALOG.md#7-the-manifest) |
+| Data | [`datasets/`](../datasets/) | [`dataset.v1.json`](schemas/dataset.v1.json) | [DATA-CATALOG §7](DATA-CATALOG.md#7-the-manifest) |
 | Discovery | [`discovery/`](../discovery/) | [`discovery-source.v1.json`](schemas/discovery-source.v1.json) | [DISCOVERY-CATALOG §8](DISCOVERY-CATALOG.md#8-the-manifest) |
 | Agent | [`agents/`](../agents/) | [`agent-package.v1.json`](schemas/agent-package.v1.json) | [AGENT-CATALOG §6](AGENT-CATALOG.md#6-the-manifest) |
 
@@ -43,7 +43,7 @@ A `template` inside `manifest.json` declares one node kind. It carries:
 - `behavior`: string key resolved through [`registry/behaviorRegistry`](../utk_curio/frontend/urban-workflows/src/registry/behaviorRegistry.ts) to the React hook that implements the node's behaviour
 - `engine` (`python` | `javascript`): if the node runs user code, which sandbox executes it. A template with `hasCode`, an `engine` and no `backendHandler` is one an agent's Solve runs in the sandbox to verify what it writes
 - `source` + `starterIsContent`: the starter a fresh node opens with, and whether it is the node's whole content, set through the template's `widgets`. With `starterIsContent`, a node an agent's plan creates starts with the starter too, and Solve leaves it as it is ([Authoring nodes](AUTHORING-NODES.md#widgets-in-a-template))
-- `loadsDataset`: a node of this template loads a dataset into the dataflow. The Dataset Finder attaches to it, and Solve finds it a source before writing its code ([Agent Catalog](AGENT-CATALOG.md#solve))
+- `loadsDataset`: a node of this template loads a dataset into the dataflow. The Dataset Finder attaches to it, Solve finds it a source before writing its code ([Agent Catalog](AGENT-CATALOG.md#solve)), and the Data Catalog counts the nodes after it as the dataset's consumers ([Data Catalog](DATA-CATALOG.md#lineage))
 - `dataflowCategories` (`{"tags": [...], "dataTypes": [...]}`): the tags and data types a dataflow with a node of this template is filed under on the **Projects** page. At the top level of the manifest it covers every template of the package. Curio finds the rest in the dataflow itself, such as Pandas for code that imports it, so declare only what a node's code does not show ([Authoring nodes](AUTHORING-NODES.md#tags-and-data-types))
 
 The frontend's package loader at [`registry/packagesClient.ts`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) reads every installed package, calls `buildDescriptor()` per template, and registers them in the canvas's node-type registry. Adding a node is therefore *adding a manifest entry plus a behavior hook*; there is no monolithic switch-case anywhere.

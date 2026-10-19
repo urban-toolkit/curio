@@ -30,18 +30,30 @@ def _diagnostic(
     return diag
 
 
-def _is_sink_node(node_type: str | None) -> bool:
+def _user_key_of(user: Any) -> str | None:
+    """*user*'s store key, or None when it cannot be read."""
+    try:
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        return _user_dir_key(user)
+    except Exception:  # noqa: BLE001 - never let a diagnostic helper break install
+        return None
+
+
+def _is_sink_node(node_type: str | None, user_key: str | None = None) -> bool:
     """True for visualization / sink node types whose output is a passthrough,
-    not a dataset. The project-save installer prunes refs for these
+    not a dataset, as the account of *user_key* holds its packages. The
+    project-save installer prunes refs for these
     (``_prune_sink_node_dataset_refs``); skipping them here keeps the execution
     path from creating a transient dataset a later save would just remove."""
     if not node_type:
         return False
     try:
         from utk_curio.backend.app.projects.services import _is_sink_node_type
+        from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
     except Exception:  # noqa: BLE001 - never let a diagnostic helper break install
         return False
-    return _is_sink_node_type(node_type)
+    return _is_sink_node_type(node_type, TemplateGrammars.for_account(user_key))
 
 
 def auto_install_node_output(
@@ -78,7 +90,7 @@ def auto_install_node_output(
 
     # Visualization / sink nodes pass their input through; their result is not a
     # dataset and the save-time installer prunes such refs. Skip proactively.
-    if _is_sink_node(node_type):
+    if _is_sink_node(node_type, _user_key_of(user)):
         return _diagnostic(
             "skipped", node_id=node_id, data_type=data_type,
             reason=f"sink node ({node_type}) - output is not a dataset",
