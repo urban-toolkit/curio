@@ -54,15 +54,21 @@ def record_dataset_selection(
     coord = str(record.get("coord") or "")
     name = agents_spec_reads._agent_name(user_key, coord) or coord
     if not agents_spec_reads._declares(user_key, coord, SELECT):
+        # The agent a selection belongs to, as its manifest names it: the
+        # dataflow's own, else the shipped one.
+        selector = agents_spec_reads._agent_name(
+            user_key, agents_spec_reads._installed_coord_declaring(spec, SELECT, user_key=user_key) or "",
+        ) or agents_spec_reads._shipped_name_declaring(SELECT) or "dataset selector"
         raise AgentServiceError(
-            f"a dataset selection belongs to an agent that declares {SELECT}, and {name} does not",
+            f"a dataset selection belongs to a {selector} attachment, an agent that "
+            f"declares {SELECT}; {name} does not",
             400,
         )
     target = record.get("target") or {}
     if target.get("kind") != "node":
         raise AgentServiceError(
-            f"a dataset selection belongs to an agent attached to a node, and this {name} "
-            f"is attached to the {target.get('kind') or 'dataflow'}",
+            f"a dataset selection belongs to a {name} attached to a node, not to the "
+            f"{target.get('kind') or 'dataflow'}",
             400,
         )
     session_id = record.get("sessionId")
