@@ -181,23 +181,16 @@ def test_example_dep_package_ids_derived_from_lockfiles():
     assert "curio.builtin" not in ids  # always-installed, never an example dep
 
 
-def test_install_on_demand_packages_are_excluded_even_when_declared(monkeypatch):
-    """A heavy package stays out of the boot install *explicitly*.
+def test_example_10s_model_package_is_declared_and_reaches_the_boot_install():
+    """Example 10 declares the package its Image Segmentation needs (#233):
+    with nothing declaring the dependency, and the example's node types written
+    unversioned, the backend's backfill had no way to name the package the
+    dataflow needed, so its nodes rendered "Loading node…" forever.
 
-    It used to stay out by accident: nothing pip-installed the package of
-    example 10's Image Segmentation because no example declared it, and
-    example 10 was left with an empty lockfile to keep it that way. That
-    silence is what broke #233 - with nothing declaring the dependency, and
-    the example's node types written unversioned, the backend's backfill had no
-    way to name the package the dataflow needed, so its nodes rendered
-    "Loading node…" forever.
-
-    Example 10 declares it: DDRNet23-Slim's model package, whose node runs its
-    segmentation. It needs only onnxruntime, so it is not on the
-    install-on-demand list, the boot install brings it, and the examples'
-    seeding puts it in each store, where its model runs from. The exclusion
-    itself is still asserted, with a heavy package put on the list for the
-    test.
+    It is DDRNet23-Slim's model package, whose node runs the segmentation. It
+    needs only onnxruntime, the boot install brings it as it brings every
+    package a shipped dataflow declares, and the examples' seeding puts it in
+    each store, where its model runs from.
     """
     import json
     from pathlib import Path
@@ -217,13 +210,7 @@ def test_install_on_demand_packages_are_excluded_even_when_declared(monkeypatch)
     )
     assert ddrnet["kind"] == "model"
     assert set(ddrnet["dependencies"]["python"]) == {"onnxruntime"}
-    assert "model.curio.ddrnet23-slim" not in seeding.INSTALL_ON_DEMAND_PACKAGE_IDS
     assert "model.curio.ddrnet23-slim" in seeding.example_dep_package_ids()
-
-    monkeypatch.setattr(seeding, "INSTALL_ON_DEMAND_PACKAGE_IDS", frozenset({"model.curio.ddrnet23-slim"}))
-    assert "model.curio.ddrnet23-slim" not in seeding.example_dep_package_ids(), (
-        "a package on the install-on-demand list must not reach the boot install"
-    )
 
 
 def test_examples_flag_seeds_weather(tmp_curio, real_fixtures_root, seed_examples_flag):

@@ -125,14 +125,17 @@ class ScenarioCatalogService:
         outputs its project saved for it."""
         row, spec, is_example, scenario = self._scenario(project_id, scenario_id)
 
+        from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
+
         nodes, edges = spec_nodes_and_edges(spec)
         by_id = {n["id"]: n for n in nodes}
         parts = scenario_parts(scenario, nodes, edges)
         outputs = projects.saved_outputs(self.user, project_id)
+        packages = TemplateGrammars.catalog()
 
         def entry(node_id: str) -> dict[str, Any]:
             results = []
-            for source_id in saved_sources(node_id, nodes, edges):
+            for source_id in saved_sources(node_id, nodes, edges, packages):
                 item = outputs.get(projects.computed_dataset_id(source_id, project_id))
                 if item is not None:
                     results.append(_result_row(item, source_id))

@@ -101,6 +101,7 @@ _NOT_TRILL = {
     "package.json",
     "package-lock.json",
     "tsconfig.json",
+    "use-cases.json",
 }
 
 

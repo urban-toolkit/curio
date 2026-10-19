@@ -34,7 +34,11 @@ from utk_curio.backend.app.datasets.domain.catalog_item import (
     base_item,
     is_safe_dataset_id,
 )
-from utk_curio.backend.app.datasets.domain.constants import OSM_LAYER_ORDER, layer_group_kind
+from utk_curio.backend.app.datasets.domain.constants import (
+    OSM_LAYER_ORDER,
+    account_folder_origin,
+    layer_group_kind,
+)
 from utk_curio.backend.app.datasets.infrastructure.catalog_utils import iso_from_timestamp
 
 # Strips a trailing " (points)" / " (multipolygons)" layer suffix from a member
@@ -81,11 +85,15 @@ _GROUP_KINDS = {
 
 
 def _shared_catalog_member(member: dict[str, Any]) -> bool:
-    """A layer that ships in the catalog every account on this Curio shares:
-    its hub row, or the copy of it a project installed, whose folder is a
-    ``data.*`` one. Mirrors ``isSharedCatalogDataset`` in
+    """A layer of the catalog every account on this Curio shares, by its
+    origin: its hub row, or the copy of it a dataflow installed, whose origin
+    reads ``imported`` and whose store folder is none of the account's own
+    (``account_folder_origin``). Mirrors ``isSharedCatalogDataset`` in
     ``datasetCatalogTypes.ts``."""
-    return member.get("origin") == "hub" or str(member.get("dirName") or "").startswith("data.")
+    if member.get("origin") == "hub":
+        return True
+    folder = member.get("dirName")
+    return isinstance(folder, str) and bool(folder) and account_folder_origin(folder) is None
 
 
 def _members_loader_snippet(fmt: str, members: list[dict[str, Any]]) -> dict[str, Any]:

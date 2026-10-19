@@ -154,10 +154,13 @@ def plan_run(
     steps: dict = {}
     placed = [(index, node_id) for index, level in enumerate(levels) for node_id in level]
     placed += [(len(levels), node_id) for node_id in unplanned]
+    from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
+
+    packages = TemplateGrammars.catalog()
     for level, node_id in placed:
         parsed = by_id[node_id]
         node = saved.get(node_id, {})
-        role = node_role(node, templates)
+        role = node_role(node, templates, packages)
         autk_data = role == "run" and is_autk_data_node(node)
         steps[node_id] = Step(
             node_id=node_id,

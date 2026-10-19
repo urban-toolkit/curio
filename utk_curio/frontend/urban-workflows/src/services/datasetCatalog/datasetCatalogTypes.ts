@@ -275,7 +275,7 @@ export interface DatasetCatalogItem {
   format: DatasetFormat;
   uri: string;
   path?: string | null;
-  /** Folder name in the dataset store (e.g. ``data.utk.chicago-boundary@1``). Present for catalog (hub) datasets. */
+  /** Folder name in the dataset store (``<datasetId>@<major>``). Present for catalog (hub) datasets. */
   dirName?: string | null;
   sizeBytes?: number | null;
   rowCount?: number | null;
@@ -681,16 +681,16 @@ export function isDatasetInstalledFromCatalog(dataset: DatasetCatalogItem): bool
  * catalog is already there, and republishing it just writes a duplicate - the
  * backend has no guard against it, so the affordance has to.
  *
- * Told apart by the store folder, the same signal the backend's uninstall uses
- * (``_remove_orphaned_imported_store_dir`` keys on ``imported.``): catalog
- * datasets land under their publisher's id (``data.utk.…@1``), uploads
- * under ``imported.…`` and node outputs under ``computed.…``. ``origin`` cannot
- * answer this - installing a catalog dataset flips it from ``hub`` to
- * ``imported``, so an installed catalog row and an upload look identical there.
+ * Told apart by the store folder ({@link ACCOUNT_FOLDER_ORIGINS}), the same
+ * signal the backend's uninstall uses (``_remove_orphaned_imported_store_dir``
+ * keys on ``imported.``): uploads land under ``imported.…``, node outputs under
+ * ``computed.…``, and a catalog dataset under its own id. ``origin`` cannot
+ * answer this: installing a catalog dataset gives its copy the origin
+ * ``imported``, so an installed catalog row and an upload read alike there.
  */
 export function isUserOwnedDataset(dataset: DatasetCatalogItem): boolean {
   const dir = String(dataset.dirName ?? "");
-  if (dir.startsWith("imported.") || dir.startsWith("computed.")) return true;
+  if (accountFolderOrigin(dir) !== null) return true;
   // A live node output that has not been persisted yet has no folder at all,
   // and is still the user's own.
   if (!dir && (dataset.origin === "computed" || dataset.origin === "source_node")) {
@@ -700,18 +700,42 @@ export function isUserOwnedDataset(dataset: DatasetCatalogItem): boolean {
 }
 
 /**
+ * The store folders of an account's own datasets, by the origin each gives: an
+ * upload or a Discovery Catalog download is ``imported``, a node's output
+ * ``computed``. Any other folder in a store holds the copy of a dataset the
+ * shared catalog holds, which a dataflow installed under the dataset's own id.
+ * Mirrors ``ACCOUNT_FOLDER_ORIGINS`` in ``datasets/domain/constants.py``.
+ */
+export const ACCOUNT_FOLDER_ORIGINS: Readonly<Record<string, DatasetOrigin>> = {
+  "imported.": "imported",
+  "computed.": "computed",
+};
+
+/** The origin an account's own store folder gives, or ``null`` for any other folder. */
+export function accountFolderOrigin(dirName: string | null | undefined): DatasetOrigin | null {
+  const dir = String(dirName ?? "");
+  for (const [prefix, origin] of Object.entries(ACCOUNT_FOLDER_ORIGINS)) {
+    if (dir.startsWith(prefix)) return origin;
+  }
+  return null;
+}
+
+/**
  * Did this dataset come from the catalog everyone on this Curio shares?
  *
  * The positive counterpart to {@link isUserOwnedDataset}, and deliberately not
  * its negation. Publish must fail CLOSED - never offer to publish unless the
  * thing is provably the user's - while Delete must fail OPEN, because hiding it
  * on a row we simply cannot classify would take away a working action. So
- * Delete asks "do we KNOW this came from the catalog", which a `data.*` store
- * folder or a still-`hub` origin answers.
+ * Delete asks "do we KNOW this came from the catalog", which its origin
+ * answers, whatever its id: a `hub` row, or the copy a dataflow installed,
+ * whose origin reads `imported` and whose store folder is none of the
+ * account's own.
  */
 export function isSharedCatalogDataset(dataset: DatasetCatalogItem): boolean {
   if (dataset.origin === "hub") return true;
-  return String(dataset.dirName ?? "").startsWith("data.");
+  const dir = String(dataset.dirName ?? "");
+  return dir !== "" && accountFolderOrigin(dir) === null;
 }
 
 /** Live node output in the current session that is not yet in the user dataset store. */

@@ -19,16 +19,15 @@ TypeScript module.
 from __future__ import annotations
 
 from collections import deque
+from typing import TYPE_CHECKING, Optional
 
 from utk_curio.backend.app.datasets.domain.code_refs import node_code
 from utk_curio.backend.app.execution.code_references import normalize_shared, shared_names_in
 from utk_curio.backend.app.execution.workflow_spec import PARAMETER_TYPE
-from utk_curio.backend.app.projects.dashboard_payload import (
-    _AUTK_GRAMMAR_KIND,
-    _PASS_THROUGH_KINDS,
-    _classify_autk_spec,
-    _unversioned,
-)
+from utk_curio.backend.app.projects.dashboard_payload import passes_through
+
+if TYPE_CHECKING:
+    from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
 
 def _template(node: dict) -> str:
@@ -40,19 +39,19 @@ def is_parameter_node(node: dict) -> bool:
     return _template(node) == PARAMETER_TYPE
 
 
-def is_pass_through(node: dict) -> bool:
-    """Whether a saved spec's *node* shows data it is handed rather than
-    making its own: a chart (a package's that draws with the Vega-Lite grammar
-    too, ``projects/template_grammars``), a Data Pool, or an Autark spec that
-    draws."""
-    from utk_curio.backend.app.projects.template_grammars import draws_with_vega_lite
+def _catalog_templates(packages: Optional["TemplateGrammars"]) -> "TemplateGrammars":
+    from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
-    kind = _unversioned(node.get("type"))
-    if kind in _PASS_THROUGH_KINDS or draws_with_vega_lite(node.get("type")):
-        return True
-    if kind == _AUTK_GRAMMAR_KIND:
-        return _classify_autk_spec(node_code(node)) == "render"
-    return False
+    return packages or TemplateGrammars.catalog()
+
+
+def is_pass_through(node: dict, packages: Optional["TemplateGrammars"] = None) -> bool:
+    """Whether a saved spec's *node* shows data it is handed rather than
+    making its own: a node whose template declares a chart's or a Data Pool's
+    behavior (or draws with the Vega-Lite grammar), or an Autark spec that
+    draws. The dashboard walk's rule (``dashboard_payload.passes_through``).
+    *packages* reads the manifests (the catalog's when None)."""
+    return passes_through(node, packages)
 
 
 def _is_interaction(edge: dict) -> bool:
@@ -123,10 +122,15 @@ def scenario_parts(scenario: dict, nodes: list[dict], edges: list[dict]) -> dict
     }
 
 
-def producers_feeding(ids: list[str], nodes: list[dict], edges: list[dict]) -> set[str]:
+def producers_feeding(
+    ids: list[str], nodes: list[dict], edges: list[dict],
+    packages: Optional["TemplateGrammars"] = None,
+) -> set[str]:
     """The nodes that make the data reaching *ids*: walking up from each, the
     first node on every path that is not a pass-through. *ids* themselves are
-    not in the set. Breadth-first with a visited set, so a cycle ends."""
+    not in the set. Breadth-first with a visited set, so a cycle ends.
+    *packages* reads the manifests (the catalog's when None)."""
+    packages = _catalog_templates(packages)
     by_id = {n["id"]: n for n in nodes}
     incoming: dict[str, list[str]] = {}
     for edge in edges:
@@ -143,32 +147,39 @@ def producers_feeding(ids: list[str], nodes: list[dict], edges: list[dict]) -> s
             node = by_id.get(source_id)
             if node is None:
                 continue
-            if is_pass_through(node):
+            if is_pass_through(node, packages):
                 queue.append(source_id)
             else:
                 sources.add(source_id)
     return sources
 
 
-def saved_sources(node_id: str, nodes: list[dict], edges: list[dict]) -> list[str]:
+def saved_sources(
+    node_id: str, nodes: list[dict], edges: list[dict],
+    packages: Optional["TemplateGrammars"] = None,
+) -> list[str]:
     """The nodes whose saved output stands for *node_id*'s, in dataflow order:
     itself, or for a pass-through the nodes feeding it. A Parameter node's
-    value is in the spec, so it has none."""
+    value is in the spec, so it has none. *packages* reads the manifests (the
+    catalog's when None)."""
     by_id = {n["id"]: n for n in nodes}
     node = by_id.get(node_id)
     if node is None or is_parameter_node(node):
         return []
-    if not is_pass_through(node):
+    packages = _catalog_templates(packages)
+    if not is_pass_through(node, packages):
         return [node_id]
-    feeding = producers_feeding([node_id], nodes, edges)
+    feeding = producers_feeding([node_id], nodes, edges, packages)
     return [n["id"] for n in nodes if n["id"] in feeding]
 
 
-def scenario_source_node_ids(spec: object) -> set[str]:
+def scenario_source_node_ids(spec: object, packages: Optional["TemplateGrammars"] = None) -> set[str]:
     """The nodes whose outputs a saved spec's scenarios need saved: the saved
     sources of each scenario's context and outcomes, so another project can
     read them. The twin of ``scenarioSourceNodeIds``; a run on the server adds
-    them to the pinned tiles' sources, as ``savedSourceNodeIds`` does."""
+    them to the pinned tiles' sources, as ``savedSourceNodeIds`` does.
+    *packages* reads the manifests (the catalog's when None)."""
+    packages = _catalog_templates(packages)
     nodes, edges = spec_nodes_and_edges(spec)
     dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
     scenarios = (dataflow or {}).get("scenarios") if isinstance(dataflow, dict) else None
@@ -178,5 +189,5 @@ def scenario_source_node_ids(spec: object) -> set[str]:
             continue
         parts = scenario_parts(scenario, nodes, edges)
         for node_id in [*parts["context"], *parts["outcomes"]]:
-            sources.update(saved_sources(node_id, nodes, edges))
+            sources.update(saved_sources(node_id, nodes, edges, packages))
     return sources

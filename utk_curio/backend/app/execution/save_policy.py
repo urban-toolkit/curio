@@ -57,33 +57,39 @@ def should_save_output_on_run(
     return resolve_save_output_dataset(node, default_save) or bool(is_dashboard_source)
 
 
-def saved_source_node_ids(spec: object) -> set[str]:
+def saved_source_node_ids(spec: object, packages=None) -> set[str]:
     """Every node whose output a save or a run records whatever its own Save
     toggle says: what a pinned dashboard tile reads, and what a scenario's
-    context and outcomes produce. The twin of ``savedSourceNodeIds``."""
+    context and outcomes produce. The twin of ``savedSourceNodeIds``.
+    *packages* (a ``TemplateGrammars``) reads the manifests, the catalog's
+    when None."""
     from utk_curio.backend.app.projects.dashboard_payload import dashboard_source_node_ids
+    from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
     from utk_curio.backend.app.scenario_catalog.domain.parts import scenario_source_node_ids
 
     if not isinstance(spec, dict):
         return set()
-    return set(dashboard_source_node_ids(spec)) | scenario_source_node_ids(spec)
+    packages = packages or TemplateGrammars.catalog()
+    return set(dashboard_source_node_ids(spec, packages)) | scenario_source_node_ids(spec, packages)
 
 
 def records_output_on_save(
     node: dict,
     default_save: Optional[bool] = None,
     dashboard_sources: Collection[str] = (),
+    packages=None,
 ) -> bool:
     """Whether *node*'s output is recorded in the dataflow's outputs.
 
     Never for a visualization sink, which passes its input through. Always for
     a node feeding a pinned dashboard tile, a dataset-palette node included.
-    Otherwise the node's Save toggle or the default.
+    Otherwise the node's Save toggle or the default. *packages* (a
+    ``TemplateGrammars``) reads the manifests, the catalog's when None.
     """
     from utk_curio.backend.app.projects.services import _is_sink_node_type
 
     node = node or {}
-    if _is_sink_node_type(node.get("type")):
+    if _is_sink_node_type(node.get("type"), packages):
         return False
     if node.get("id") in dashboard_sources:
         return True

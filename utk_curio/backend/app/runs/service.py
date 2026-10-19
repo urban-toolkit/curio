@@ -325,13 +325,15 @@ def _run_thread(app, run_id, user_id, token, project_id, plan, spec) -> Iterator
     )
     from utk_curio.backend.app.projects.schemas import OutputRef
     from utk_curio.backend.app.projects.services import record_node_outputs
+    from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
     from utk_curio.backend.app.users.models import User
     from utk_curio.common.autk_data_compiler import compile_data_spec
 
     default_save = bool(config.CURIO_DEFAULT_SAVE_NODE_OUTPUT)
     # What a pinned tile reads and what a scenario's context and outcomes
     # produce, saved whatever each node's own toggle says.
-    sources = saved_source_node_ids(spec)
+    packages = TemplateGrammars.catalog()
+    sources = saved_source_node_ids(spec, packages)
     cancelled = jobs.cancel_flag(run_id)
 
     def execute(step, code, input_ref):
@@ -391,7 +393,7 @@ def _run_thread(app, run_id, user_id, token, project_id, plan, spec) -> Iterator
                 output = payload.get("output") or {}
                 step = plan.steps[payload["nodeId"]]
                 if payload["status"] == "ok" and records_output_on_save(
-                    step.node, default_save, sources,
+                    step.node, default_save, sources, packages,
                 ):
                     warnings: list = []
                     try:

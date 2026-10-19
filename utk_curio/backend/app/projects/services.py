@@ -54,15 +54,17 @@ _SINK_NODE_TYPES = frozenset({
 })
 
 
-def _is_sink_node_type(node_type) -> bool:
+def _is_sink_node_type(node_type, packages=None) -> bool:
     """Membership in ``_SINK_NODE_TYPES``, tolerant of the versioned canonical
     form palette-dragged nodes carry (``curio.builtin/vis-vega@1``) (#169). A
     package chart that draws with the Vega-Lite grammar is a Vega-Lite chart
-    (``template_grammars``), as the canvas's ``isNonProducingNodeType`` reads it."""
+    (``template_grammars``), as the canvas's ``isNonProducingNodeType`` reads it.
+    *packages* (a ``TemplateGrammars``) reads the manifests, the catalog's when
+    None."""
     from utk_curio.backend.app.packages.service import unversioned_node_type
     from utk_curio.backend.app.projects.template_grammars import draws_with_vega_lite
 
-    return unversioned_node_type(node_type) in _SINK_NODE_TYPES or draws_with_vega_lite(node_type)
+    return unversioned_node_type(node_type) in _SINK_NODE_TYPES or draws_with_vega_lite(node_type, packages)
 
 
 def _ensure_dataflow_identity(spec: Optional[dict], name: Optional[str]) -> bool:
@@ -161,16 +163,19 @@ def _prune_sink_node_dataset_refs(spec: Optional[dict]) -> Optional[dict]:
     if not isinstance(refs, list) or not refs:
         return spec
 
+    from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
+
     node_types: Dict[str, Optional[str]] = {}
     for node in dataflow.get("nodes") or []:
         if isinstance(node, dict) and node.get("id"):
             node_types[node["id"]] = node.get("type")
 
+    packages = TemplateGrammars.catalog()
     kept: List[dict] = []
     pruned: List[dict] = []
     for ref in refs:
         producer = ref.get("producerNodeId") if isinstance(ref, dict) else None
-        if producer and _is_sink_node_type(node_types.get(producer)):
+        if producer and _is_sink_node_type(node_types.get(producer), packages):
             pruned.append(ref)
         else:
             kept.append(ref)
@@ -314,6 +319,7 @@ def _auto_install_computed_outputs(
 
     from utk_curio.backend.app.datasets.install.bundle import install_node_output
     from utk_curio.backend.app.datasets.application.export import resolve_upstream_inputs
+    from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
     dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
     if not isinstance(dataflow, dict):
@@ -324,6 +330,7 @@ def _auto_install_computed_outputs(
         for node in dataflow.get("nodes") or []
         if isinstance(node, dict) and node.get("id")
     }
+    packages = TemplateGrammars.catalog()
 
     for ref in output_refs:
         filename = ref.filename
@@ -333,7 +340,7 @@ def _auto_install_computed_outputs(
         # Sink/visualization nodes pass their input through — persisting their
         # output would create a duplicate of the upstream producer's dataset
         # that the ref prune then has to clean up. Never create it (#174).
-        if _is_sink_node_type(node_types.get(node_id)):
+        if _is_sink_node_type(node_types.get(node_id), packages):
             continue
 
         # A node that LOADS an installed dataset (a Data Catalog palette node)
@@ -624,6 +631,7 @@ def _kept_when_unsent(before: Optional[dict], after: Optional[dict]) -> Callable
         records_output_on_save,
         saved_source_node_ids,
     )
+    from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
     def nodes(spec: Optional[dict]) -> Dict[str, dict]:
         dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
@@ -634,13 +642,14 @@ def _kept_when_unsent(before: Optional[dict], after: Optional[dict]) -> Callable
         return normalized_code_sha256(str(node.get("content") or ""))
 
     now, then = nodes(after), nodes(before)
-    sources = saved_source_node_ids(after)
+    packages = TemplateGrammars.catalog()
+    sources = saved_source_node_ids(after, packages)
 
     def kept(node_id: str) -> bool:
         node, earlier = now.get(node_id), then.get(node_id)
         if node is None or earlier is None or code(node) != code(earlier):
             return False
-        return records_output_on_save(node, None, sources)
+        return records_output_on_save(node, None, sources, packages)
 
     return kept
 
