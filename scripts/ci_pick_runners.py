@@ -6,12 +6,14 @@ hosted runners have room, and on the self-hosted arcade pool
 GPU pool (arcade-gpu-01..04, ``[self-hosted, gpu, h100]``) while it has a free
 runner, and on utk-gpu (``[self-hosted, gpu, curio]``) when it has none.
 GitHub cannot express "this runner, or that one if busy": ``runs-on`` has no
-"or", and it sends ``ubuntu-latest`` jobs only to its own runners. So the
-pick-runners job runs this first, and each job reads its runner from the JSON
-map this writes to
+"or", and it sends ``ubuntu-latest`` jobs only to its own runners. So a run
+picks twice: the pick-runners job, for the jobs that start at once, and
+build-image's last step, for the jobs that wait on the image, which start
+minutes later. Each job reads its runner from the JSON map this writes to
 ``runners`` in ``$GITHUB_OUTPUT``:
 
     runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['jest'] }}
+    runs-on: ${{ fromJSON(needs.build-image.outputs.runners)['test-isolated'] }}
 
 How busy each pool is comes from this repository's own queued and running
 jobs. The hosted limit (``HOSTED_SLOTS`` concurrent jobs) is shared with every
@@ -21,12 +23,20 @@ limit reached. The arcade CPU group serves this repository alone, so its count
 is exact. The GPU runners also take other repositories' jobs; a job sent to
 the arcade GPU pool while those hold it waits for a runner.
 
+A pick leaves its own run's jobs out, unless ``--this-run-except`` names the
+job that runs it: build-image's pick counts the jobs of its run that are
+already running, but not build-image, which ends with the pick. A job that
+waits on ``needs`` does not exist in the jobs API until those finish, so no
+pick sees it; ``--hosted-reserved`` holds back room for the ones that always
+run hosted.
+
 ``CURIO_CI_POOL`` = ``hosted`` or ``arcade`` sends every CPU job there, and
 ``CURIO_CI_GPU_POOL`` = ``arcade`` or ``utk`` the GPU job; ``auto`` (or unset)
 picks. They come from the dispatch form, or the repository variables of the
 same names when the form says ``auto``.
 
-    python scripts/ci_pick_runners.py --hosted-reserved 3 --gpu test-gpu build-image jest ...
+    python scripts/ci_pick_runners.py --hosted-reserved 1 --gpu test-gpu build-image jest ci-report
+    python scripts/ci_pick_runners.py --this-run-except build-image --hosted-reserved 2 e2e-desktop-1 ...
 """
 
 from __future__ import annotations
@@ -154,19 +164,25 @@ def _get(url: str, token: str) -> dict:
 RUN_STATES = ("queued", "in_progress", "pending", "waiting", "requested")
 
 
-def active_jobs(api: str, repo: str, token: str, skip_run: str) -> list[dict]:
-    """Every job of this repository's unfinished runs, this run's aside."""
+def active_jobs(api: str, repo: str, token: str, this_run: str,
+                this_run_except: str | None = None) -> list[dict]:
+    """Every job of this repository's unfinished runs, this run's aside.
+
+    With ``this_run_except``, this run's jobs count too, except the one of that
+    name: the job running the pick, which ends with it.
+    """
     jobs = []
     for status in RUN_STATES:
         runs = _get(f"{api}/repos/{repo}/actions/runs?status={status}&per_page=100", token)
         for run in runs.get("workflow_runs", []):
-            if str(run["id"]) == str(skip_run):
+            own = str(run["id"]) == str(this_run)
+            if own and this_run_except is None:
                 continue
             page = 1
             while True:
                 found = _get(f"{api}/repos/{repo}/actions/runs/{run['id']}/jobs"
                              f"?filter=latest&per_page=100&page={page}", token)["jobs"]
-                jobs.extend(found)
+                jobs.extend(job for job in found if not (own and job.get("name") == this_run_except))
                 if len(found) < 100:
                     break
                 page += 1
@@ -205,14 +221,15 @@ def pick(cpu_keys: list[str], gpu_keys: list[str], pool: str, gpu_pool: str, fet
         how.append(f"CPU jobs: GitHub-hosted first, {free} of {HOSTED_SLOTS} hosted slots free "
                    f"(this repository's jobs, {hosted_reserved} kept for this run's hosted-only jobs)")
 
-    if gpu_pool not in ("arcade", "utk") and counts["arcade_gpu_stuck"]:
-        gpu_pool = "utk"
-        how.append(f"GPU jobs on utk: an arcade GPU job has waited over {STUCK_AFTER_S} s")
     gpu_free = max(GPU_RUNNERS - counts["arcade-gpu"], 0)
-    if gpu_pool in ("arcade", "utk"):
-        how.append(f"GPU jobs on {gpu_pool}")
-    else:
-        how.append(f"GPU jobs: arcade first, {gpu_free} of {GPU_RUNNERS} arcade GPU runners free")
+    if gpu_keys:
+        if gpu_pool not in ("arcade", "utk") and counts["arcade_gpu_stuck"]:
+            gpu_pool = "utk"
+            how.append(f"GPU jobs on utk: an arcade GPU job has waited over {STUCK_AFTER_S} s")
+        if gpu_pool in ("arcade", "utk"):
+            how.append(f"GPU jobs on {gpu_pool}")
+        else:
+            how.append(f"GPU jobs: arcade first, {gpu_free} of {GPU_RUNNERS} arcade GPU runners free")
     return {**assign_cpu(cpu_keys, free, pool), **assign_gpu(gpu_keys, gpu_free, gpu_pool)}, how
 
 
@@ -229,6 +246,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--gpu", action="append", default=[], metavar="KEY", help="a GPU job's key")
     parser.add_argument("--hosted-reserved", type=int, default=0, metavar="N",
                         help="this run's jobs that always run hosted, held back from the hosted room")
+    parser.add_argument("--this-run-except", metavar="JOB",
+                        help="also count this run's own jobs, except JOB, the one running this pick")
     parser.add_argument("cpu", nargs="*", metavar="KEY", help="CPU job keys, in critical-path order")
     args = parser.parse_args(argv[1:])
     if not args.cpu and not args.gpu:
@@ -237,11 +256,14 @@ def main(argv: list[str]) -> int:
     gpu_pool = _setting("CURIO_CI_GPU_POOL", ("arcade", "utk"))
 
     def fetch():
+        if args.this_run_except:
+            print(f"Counting this run's own jobs too, except {args.this_run_except}")
         return active_jobs(
             os.environ.get("GITHUB_API_URL", "https://api.github.com"),
             os.environ["GITHUB_REPOSITORY"],
             os.environ["GITHUB_TOKEN"],
             os.environ.get("GITHUB_RUN_ID", ""),
+            args.this_run_except,
         )
 
     chosen, how = pick(args.cpu, args.gpu, pool, gpu_pool, fetch, args.hosted_reserved)

@@ -46,7 +46,7 @@ on CI -- see *Screenshot baselines*.
 
 CI splits the suite between a self-hosted GPU runner, the only kind with
 hardware WebGPU, and a matrix of CPU runners
-([`runner_split.py`](runner_split.py)). The run's `pick-runners` job chooses
+([`runner_split.py`](runner_split.py)). The run chooses
 each job's runner: GitHub-hosted `ubuntu-latest` while the organization's
 hosted runners have room and the self-hosted arcade runners (`[self-hosted,
 cpu]`) after that, and for the GPU
