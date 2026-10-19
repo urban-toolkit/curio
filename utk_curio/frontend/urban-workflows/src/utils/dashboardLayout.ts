@@ -1,6 +1,7 @@
 import { Node, Edge } from 'reactflow';
 
 import { NodeType } from '../constants';
+import { isVegaLiteNodeType } from '../registry/vegaLiteNodes';
 import { classifyAutkSpecString } from './autkSpecKind';
 import { getUnversionedFlowNodeType } from './flowNodeCanonicalType';
 import { hideNode } from './hiddenNodes';
@@ -248,12 +249,14 @@ export function arrangedTilePositions(
  * be in the Data Catalog for a tile to render without a run.
  *
  * An Autark node is only a pass-through when its spec draws (``map``/``plot``);
- * its data and compute forms produce layers, so they are sources.
+ * its data and compute forms produce layers, so they are sources. A package
+ * chart that draws with the Vega-Lite grammar is a Vega-Lite chart
+ * (registry/vegaLiteNodes).
  */
 export function isPassThroughNode(node: { type?: string | null; data?: any }): boolean {
   const kind = getUnversionedFlowNodeType(node as any);
   if (
-    kind === NodeType.VIS_VEGA ||
+    isVegaLiteNodeType(kind) ||
     kind === NodeType.VIS_SIMPLE ||
     kind === NodeType.DATA_POOL
   ) {

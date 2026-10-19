@@ -114,16 +114,73 @@
       },
       {
         "id": "0a41219e-76c1-5e6c-bf83-a3b1c6a5b62f",
-        "type": "curio.builtin/vis-vega",
+        "type": "scout.comparison/lines-with-band",
         "x": 3905,
         "y": 0,
         "title": "Lines with a band: pedestrians per hour on four streets",
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"facet\": {\n    \"field\": \"street\",\n    \"type\": \"nominal\",\n    \"title\": null,\n    \"header\": {\n      \"labelFontWeight\": \"bold\"\n    }\n  },\n  \"columns\": 2,\n  \"spec\": {\n    \"width\": 230,\n    \"height\": 110,\n    \"encoding\": {\n      \"x\": {\n        \"field\": \"hour\",\n        \"type\": \"quantitative\",\n        \"title\": \"Hour of the day\",\n        \"scale\": {\n          \"domain\": [\n            0,\n            23\n          ]\n        },\n        \"axis\": {\n          \"values\": [\n            0,\n            6,\n            12,\n            18,\n            23\n          ]\n        }\n      },\n      \"color\": {\n        \"field\": \"scenario_name\",\n        \"type\": \"nominal\",\n        \"title\": \"Scenario\",\n        \"scale\": {\n          \"domain\": [\n            \"Weekday\",\n            \"Weekend\"\n          ],\n          \"range\": [\n            \"#2f6db5\",\n            \"#e8833a\"\n          ]\n        }\n      }\n    },\n    \"layer\": [\n      {\n        \"mark\": {\n          \"type\": \"area\",\n          \"opacity\": 0.2\n        },\n        \"encoding\": {\n          \"y\": {\n            \"field\": \"low\",\n            \"type\": \"quantitative\",\n            \"title\": \"Pedestrians per hour\"\n          },\n          \"y2\": {\n            \"field\": \"high\"\n          }\n        }\n      },\n      {\n        \"mark\": {\n          \"type\": \"line\",\n          \"strokeWidth\": 2,\n          \"tooltip\": true\n        },\n        \"encoding\": {\n          \"y\": {\n            \"field\": \"pedestrians\",\n            \"type\": \"quantitative\"\n          }\n        }\n      }\n    ]\n  }\n}",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"transform\": [\n    {\n      \"calculate\": \"'[!! facet !!]' === '' ? '' : datum['[!! facet !!]']\",\n      \"as\": \"curio_panel\"\n    }\n  ],\n  \"facet\": {\n    \"field\": \"curio_panel\",\n    \"type\": \"nominal\",\n    \"title\": null,\n    \"sort\": null,\n    \"header\": {\n      \"labelFontWeight\": \"bold\"\n    }\n  },\n  \"columns\": 2,\n  \"spec\": {\n    \"width\": 230,\n    \"height\": 110,\n    \"encoding\": {\n      \"x\": {\n        \"field\": \"[!! x !!]\",\n        \"type\": \"quantitative\",\n        \"title\": \"[!! x_title !!]\",\n        \"scale\": {\n          \"nice\": false\n        }\n      },\n      \"color\": {\n        \"field\": \"scenario_name\",\n        \"type\": \"nominal\",\n        \"title\": \"Scenario\"\n      }\n    },\n    \"layer\": [\n      {\n        \"mark\": {\n          \"type\": \"area\",\n          \"opacity\": 0.2\n        },\n        \"encoding\": {\n          \"y\": {\n            \"field\": \"[!! low !!]\",\n            \"type\": \"quantitative\",\n            \"title\": \"[!! y_title !!]\",\n            \"axis\": {\n              \"labelExpr\": \"'[!! y_format !!]' === '' ? datum.label : format(datum.value, '[!! y_format !!]')\"\n            }\n          },\n          \"y2\": {\n            \"field\": \"[!! high !!]\"\n          }\n        }\n      },\n      {\n        \"mark\": {\n          \"type\": \"line\",\n          \"strokeWidth\": 2,\n          \"tooltip\": true\n        },\n        \"encoding\": {\n          \"y\": {\n            \"field\": \"[!! y !!]\",\n            \"type\": \"quantitative\",\n            \"title\": \"[!! y_title !!]\",\n            \"axis\": {\n              \"labelExpr\": \"'[!! y_format !!]' === '' ? datum.label : format(datum.value, '[!! y_format !!]')\"\n            }\n          }\n        }\n      }\n    ]\n  }\n}\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Draw pedestrians per hour on four streets as lines with a band, each scenario in its color.",
         "metadata": {
-          "keywords": []
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "x",
+              "type": "text",
+              "label": "X column",
+              "default": "x",
+              "value": "hour"
+            },
+            {
+              "name": "y",
+              "type": "text",
+              "label": "Y column",
+              "default": "y",
+              "value": "pedestrians"
+            },
+            {
+              "name": "low",
+              "type": "text",
+              "label": "Low column",
+              "default": "low",
+              "value": "low"
+            },
+            {
+              "name": "high",
+              "type": "text",
+              "label": "High column",
+              "default": "high",
+              "value": "high"
+            },
+            {
+              "name": "facet",
+              "type": "text",
+              "label": "Panel column",
+              "default": "",
+              "value": "street"
+            },
+            {
+              "name": "x_title",
+              "type": "text",
+              "label": "X axis title",
+              "default": "",
+              "value": "Hour of the day"
+            },
+            {
+              "name": "y_title",
+              "type": "text",
+              "label": "Y axis title",
+              "default": "",
+              "value": "Pedestrians per hour"
+            },
+            {
+              "name": "y_format",
+              "type": "text",
+              "label": "Y label format",
+              "default": ""
+            }
+          ]
         },
         "width": 760,
         "height": 520
@@ -236,16 +293,67 @@
       },
       {
         "id": "551a2c72-12f1-5d1f-9fa0-3d23d49c0e9d",
-        "type": "curio.builtin/vis-vega",
+        "type": "scout.comparison/curves-by-group",
         "x": 3905,
         "y": 680,
         "title": "Curves by state: the chance of flood damage by water depth",
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"mark\": {\n    \"type\": \"line\",\n    \"strokeWidth\": 2,\n    \"tooltip\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"depth_m\",\n      \"type\": \"quantitative\",\n      \"title\": \"Water depth (m)\"\n    },\n    \"y\": {\n      \"field\": \"probability\",\n      \"type\": \"quantitative\",\n      \"title\": \"Chance of the damage state\",\n      \"axis\": {\n        \"format\": \"%\"\n      }\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"scale\": {\n        \"domain\": [\n          \"As built\",\n          \"Floodproofed\"\n        ],\n        \"range\": [\n          \"#5b6770\",\n          \"#2a9d8f\"\n        ]\n      }\n    },\n    \"strokeDash\": {\n      \"field\": \"damage_state\",\n      \"type\": \"nominal\",\n      \"title\": \"Damage state\",\n      \"sort\": [\n        \"Slight\",\n        \"Moderate\",\n        \"Extensive\",\n        \"Complete\"\n      ]\n    }\n  }\n}",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"mark\": {\n    \"type\": \"line\",\n    \"strokeWidth\": 2,\n    \"tooltip\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"[!! x !!]\",\n      \"type\": \"quantitative\",\n      \"title\": \"[!! x_title !!]\"\n    },\n    \"y\": {\n      \"field\": \"[!! y !!]\",\n      \"type\": \"quantitative\",\n      \"title\": \"[!! y_title !!]\",\n      \"axis\": {\n        \"labelExpr\": \"'[!! y_format !!]' === '' ? datum.label : format(datum.value, '[!! y_format !!]')\"\n      }\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\"\n    },\n    \"strokeDash\": {\n      \"field\": \"[!! group !!]\",\n      \"type\": \"nominal\",\n      \"title\": \"[!! group_title !!]\",\n      \"sort\": null\n    }\n  }\n}\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Draw the chance of flood damage by water depth as curves by state, each scenario in its color.",
         "metadata": {
-          "keywords": []
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "x",
+              "type": "text",
+              "label": "X column",
+              "default": "x",
+              "value": "depth_m"
+            },
+            {
+              "name": "y",
+              "type": "text",
+              "label": "Y column",
+              "default": "y",
+              "value": "probability"
+            },
+            {
+              "name": "group",
+              "type": "text",
+              "label": "Group column",
+              "default": "group",
+              "value": "damage_state"
+            },
+            {
+              "name": "x_title",
+              "type": "text",
+              "label": "X axis title",
+              "default": "",
+              "value": "Water depth (m)"
+            },
+            {
+              "name": "y_title",
+              "type": "text",
+              "label": "Y axis title",
+              "default": "",
+              "value": "Chance of the damage state"
+            },
+            {
+              "name": "y_format",
+              "type": "text",
+              "label": "Y label format",
+              "default": "",
+              "value": ".0%"
+            },
+            {
+              "name": "group_title",
+              "type": "text",
+              "label": "Group legend title",
+              "default": "",
+              "value": "Damage state"
+            }
+          ]
         },
         "width": 680,
         "height": 440
@@ -398,16 +506,60 @@
       },
       {
         "id": "63edc3b0-fe44-5cc7-88d0-614a9949d706",
-        "type": "curio.builtin/vis-vega",
+        "type": "scout.comparison/bars-with-error-bars",
         "x": 3905,
         "y": 1280,
         "title": "Bars with error bars: flooded street length by depth",
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"transform\": [\n    {\n      \"calculate\": \"max(0, datum.share_mean - datum.share_sd)\",\n      \"as\": \"share_low\"\n    },\n    {\n      \"calculate\": \"datum.share_mean + datum.share_sd\",\n      \"as\": \"share_high\"\n    }\n  ],\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"depth_class\",\n      \"type\": \"nominal\",\n      \"title\": \"Flood depth\",\n      \"sort\": [\n        \"Under 10 cm\",\n        \"10 to 30 cm\",\n        \"30 to 60 cm\",\n        \"Over 60 cm\"\n      ],\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    },\n    \"xOffset\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"sort\": [\n        \"10-year storm\",\n        \"50-year storm\",\n        \"100-year storm\"\n      ]\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"bar\",\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"share_mean\",\n          \"type\": \"quantitative\",\n          \"title\": \"Share of flooded street length\",\n          \"axis\": {\n            \"format\": \"%\"\n          }\n        },\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"title\": \"Scenario\",\n          \"scale\": {\n            \"domain\": [\n              \"10-year storm\",\n              \"50-year storm\",\n              \"100-year storm\"\n            ],\n            \"range\": [\n              \"#74a9cf\",\n              \"#2b8cbe\",\n              \"#045a8d\"\n            ]\n          }\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"rule\",\n        \"color\": \"#333333\",\n        \"strokeWidth\": 1.5\n      },\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"share_low\",\n          \"type\": \"quantitative\"\n        },\n        \"y2\": {\n          \"field\": \"share_high\"\n        }\n      }\n    }\n  ]\n}",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"[!! x !!]\",\n      \"type\": \"nominal\",\n      \"title\": \"[!! x_title !!]\",\n      \"sort\": null,\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    },\n    \"xOffset\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\"\n    },\n    \"y\": {\n      \"field\": \"[!! y !!]\",\n      \"type\": \"quantitative\",\n      \"title\": \"[!! y_title !!]\",\n      \"axis\": {\n        \"labelExpr\": \"'[!! y_format !!]' === '' ? datum.label : format(datum.value, '[!! y_format !!]')\"\n      }\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"bar\",\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"title\": \"Scenario\"\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"errorbar\",\n        \"color\": \"#333333\",\n        \"thickness\": 1.5\n      },\n      \"encoding\": {\n        \"yError\": {\n          \"field\": \"[!! error !!]\"\n        }\n      }\n    }\n  ]\n}\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Draw flooded street length by depth as bars with error bars, each scenario in its color.",
         "metadata": {
-          "keywords": []
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "x",
+              "type": "text",
+              "label": "X column",
+              "default": "x",
+              "value": "depth_class"
+            },
+            {
+              "name": "y",
+              "type": "text",
+              "label": "Y column",
+              "default": "y",
+              "value": "share_mean"
+            },
+            {
+              "name": "error",
+              "type": "text",
+              "label": "Error column",
+              "default": "error",
+              "value": "share_sd"
+            },
+            {
+              "name": "x_title",
+              "type": "text",
+              "label": "X axis title",
+              "default": "",
+              "value": "Flood depth"
+            },
+            {
+              "name": "y_title",
+              "type": "text",
+              "label": "Y axis title",
+              "default": "",
+              "value": "Share of flooded street length"
+            },
+            {
+              "name": "y_format",
+              "type": "text",
+              "label": "Y label format",
+              "default": "",
+              "value": ".0%"
+            }
+          ]
         },
         "width": 680,
         "height": 440
@@ -560,16 +712,38 @@
       },
       {
         "id": "2fbccfb0-f2cd-5547-b32c-07aa0df4e1ea",
-        "type": "curio.builtin/vis-vega",
+        "type": "scout.comparison/ensemble-strips",
         "x": 3905,
         "y": 1880,
         "title": "Ensemble strips: the peak depth of 50 simulated storms",
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"sort\": [\n        \"10-year storm\",\n        \"50-year storm\",\n        \"100-year storm\"\n      ],\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"tick\",\n        \"thickness\": 2,\n        \"size\": 40,\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"peak_depth_m\",\n          \"type\": \"quantitative\",\n          \"title\": \"Peak depth at the river gauge (m)\"\n        },\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"title\": \"Scenario\",\n          \"scale\": {\n            \"domain\": [\n              \"10-year storm\",\n              \"50-year storm\",\n              \"100-year storm\"\n            ],\n            \"range\": [\n              \"#74a9cf\",\n              \"#2b8cbe\",\n              \"#045a8d\"\n            ]\n          },\n          \"legend\": null\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"tick\",\n        \"color\": \"#111111\",\n        \"thickness\": 4,\n        \"size\": 64\n      },\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"peak_depth_m\",\n          \"type\": \"quantitative\",\n          \"aggregate\": \"median\"\n        }\n      }\n    }\n  ]\n}",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    },\n    \"y\": {\n      \"field\": \"[!! y !!]\",\n      \"type\": \"quantitative\",\n      \"title\": \"[!! y_title !!]\",\n      \"axis\": {\n        \"labelExpr\": \"'[!! y_format !!]' === '' ? datum.label : format(datum.value, '[!! y_format !!]')\"\n      }\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"tick\",\n        \"thickness\": 2,\n        \"size\": 40,\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"title\": \"Scenario\",\n          \"legend\": null\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"tick\",\n        \"color\": \"#111111\",\n        \"thickness\": 4,\n        \"size\": 64\n      },\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"[!! y !!]\",\n          \"type\": \"quantitative\",\n          \"aggregate\": \"median\",\n          \"title\": \"[!! y_title !!]\"\n        }\n      }\n    }\n  ]\n}\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Draw the peak depth of 50 simulated storms as ensemble strips, each scenario in its color.",
         "metadata": {
-          "keywords": []
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "y",
+              "type": "text",
+              "label": "Y column",
+              "default": "y",
+              "value": "peak_depth_m"
+            },
+            {
+              "name": "y_title",
+              "type": "text",
+              "label": "Y axis title",
+              "default": "",
+              "value": "Peak depth at the river gauge (m)"
+            },
+            {
+              "name": "y_format",
+              "type": "text",
+              "label": "Y label format",
+              "default": ""
+            }
+          ]
         },
         "width": 680,
         "height": 440
@@ -873,16 +1047,52 @@
       },
       {
         "id": "e4752aac-78c0-59c5-b95f-2f350fdc06dc",
-        "type": "curio.builtin/vis-vega",
+        "type": "scout.comparison/stacked-bars-with-totals",
         "x": 3905,
         "y": 3060,
         "title": "Stacked bars with totals: a building's carbon by life-cycle stage",
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"sort\": [\n        \"Concrete frame\",\n        \"Timber frame\"\n      ],\n      \"axis\": {\n        \"labelAngle\": 0,\n        \"labelFontWeight\": \"bold\",\n        \"labelColor\": {\n          \"condition\": [\n            {\n              \"test\": \"datum.value === 'Concrete frame'\",\n              \"value\": \"#6b6b6b\"\n            },\n            {\n              \"test\": \"datum.value === 'Timber frame'\",\n              \"value\": \"#b5651d\"\n            }\n          ],\n          \"value\": \"#333333\"\n        }\n      }\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"bar\",\n        \"width\": {\n          \"band\": 0.6\n        },\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"kg_co2e_per_m2\",\n          \"type\": \"quantitative\",\n          \"title\": \"kg CO2e per m2 of floor\"\n        },\n        \"color\": {\n          \"field\": \"stage\",\n          \"type\": \"nominal\",\n          \"title\": \"Life-cycle stage\",\n          \"scale\": {\n            \"domain\": [\n              \"Materials\",\n              \"Transport\",\n              \"Construction\",\n              \"Use\",\n              \"End of life\"\n            ],\n            \"range\": [\n              \"#7a5195\",\n              \"#bc5090\",\n              \"#ef5675\",\n              \"#ffa600\",\n              \"#8a8f98\"\n            ]\n          }\n        },\n        \"order\": {\n          \"field\": \"stage_order\",\n          \"type\": \"quantitative\"\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"text\",\n        \"dy\": -6,\n        \"baseline\": \"bottom\",\n        \"fontWeight\": \"bold\"\n      },\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"kg_co2e_per_m2\",\n          \"type\": \"quantitative\",\n          \"aggregate\": \"sum\"\n        },\n        \"text\": {\n          \"field\": \"kg_co2e_per_m2\",\n          \"type\": \"quantitative\",\n          \"aggregate\": \"sum\",\n          \"format\": \",.0f\"\n        }\n      }\n    }\n  ]\n}",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"transform\": [\n    {\n      \"window\": [\n        {\n          \"op\": \"row_number\",\n          \"as\": \"curio_row\"\n        }\n      ]\n    },\n    {\n      \"joinaggregate\": [\n        {\n          \"op\": \"sum\",\n          \"field\": \"[!! y !!]\",\n          \"as\": \"curio_total\"\n        }\n      ],\n      \"groupby\": [\n        \"scenario_name\"\n      ]\n    },\n    {\n      \"calculate\": \"'[!! y_format !!]' === '' ? format(datum.curio_total, ',.0f') : format(datum.curio_total, '[!! y_format !!]')\",\n      \"as\": \"curio_total_label\"\n    }\n  ],\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"axis\": {\n        \"labelAngle\": 0,\n        \"labelFontWeight\": \"bold\",\n        \"labelColor\": {\n          \"expr\": \"scale('stroke', datum.value)\"\n        }\n      }\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"bar\",\n        \"width\": {\n          \"band\": 0.6\n        },\n        \"tooltip\": true\n      },\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"[!! y !!]\",\n          \"type\": \"quantitative\",\n          \"title\": \"[!! y_title !!]\",\n          \"axis\": {\n            \"labelExpr\": \"'[!! y_format !!]' === '' ? datum.label : format(datum.value, '[!! y_format !!]')\"\n          }\n        },\n        \"color\": {\n          \"field\": \"[!! part !!]\",\n          \"type\": \"nominal\",\n          \"title\": \"[!! part_title !!]\",\n          \"sort\": null,\n          \"scale\": {\n            \"range\": [\n              \"#7a5195\",\n              \"#bc5090\",\n              \"#ef5675\",\n              \"#ffa600\",\n              \"#8a8f98\",\n              \"#003f5c\",\n              \"#58508d\",\n              \"#ff6361\"\n            ]\n          }\n        },\n        \"order\": {\n          \"field\": \"curio_row\",\n          \"type\": \"quantitative\"\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"text\",\n        \"dy\": -6,\n        \"baseline\": \"bottom\",\n        \"fontWeight\": \"bold\",\n        \"strokeOpacity\": 0\n      },\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"curio_total\",\n          \"type\": \"quantitative\",\n          \"aggregate\": \"max\",\n          \"title\": \"[!! y_title !!]\"\n        },\n        \"text\": {\n          \"field\": \"curio_total_label\",\n          \"type\": \"nominal\"\n        },\n        \"stroke\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"legend\": null\n        }\n      }\n    }\n  ]\n}\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Draw a building's carbon by life-cycle stage as stacked bars with totals, each scenario in its color.",
         "metadata": {
-          "keywords": []
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "y",
+              "type": "text",
+              "label": "Y column",
+              "default": "y",
+              "value": "kg_co2e_per_m2"
+            },
+            {
+              "name": "part",
+              "type": "text",
+              "label": "Part column",
+              "default": "part",
+              "value": "stage"
+            },
+            {
+              "name": "y_title",
+              "type": "text",
+              "label": "Y axis title",
+              "default": "",
+              "value": "kg CO2e per m2 of floor"
+            },
+            {
+              "name": "y_format",
+              "type": "text",
+              "label": "Y label format",
+              "default": ""
+            },
+            {
+              "name": "part_title",
+              "type": "text",
+              "label": "Part legend title",
+              "default": "",
+              "value": "Life-cycle stage"
+            }
+          ]
         },
         "width": 680,
         "height": 440
@@ -995,16 +1205,39 @@
       },
       {
         "id": "dda36433-f7da-516a-86b0-f4ed6c3a224c",
-        "type": "curio.builtin/vis-vega",
+        "type": "scout.comparison/donuts",
         "x": 3905,
         "y": 3660,
         "title": "Donuts: park area in shade",
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"title\": {\n    \"text\": \"Park area in shade at noon\",\n    \"subtitle\": \"The colored slice is in shade, the grey one in sun.\"\n  },\n  \"facet\": {\n    \"field\": \"scenario_name\",\n    \"type\": \"nominal\",\n    \"title\": null,\n    \"sort\": [\n      \"Open lawn\",\n      \"Tree canopy\"\n    ],\n    \"header\": {\n      \"labelFontSize\": 13,\n      \"labelFontWeight\": \"bold\"\n    }\n  },\n  \"spec\": {\n    \"width\": 160,\n    \"height\": 160,\n    \"transform\": [\n      {\n        \"calculate\": \"datum.cover === 'Shade' ? datum.scenario_name : 'Sun'\",\n        \"as\": \"slice\"\n      },\n      {\n        \"calculate\": \"format(datum.share_pct, '.0f') + '%'\",\n        \"as\": \"share_label\"\n      }\n    ],\n    \"encoding\": {\n      \"theta\": {\n        \"field\": \"share_pct\",\n        \"type\": \"quantitative\",\n        \"stack\": true\n      },\n      \"order\": {\n        \"field\": \"cover\",\n        \"type\": \"nominal\",\n        \"sort\": \"ascending\"\n      }\n    },\n    \"layer\": [\n      {\n        \"mark\": {\n          \"type\": \"arc\",\n          \"innerRadius\": 42,\n          \"tooltip\": true\n        },\n        \"encoding\": {\n          \"color\": {\n            \"field\": \"slice\",\n            \"type\": \"nominal\",\n            \"legend\": null,\n            \"scale\": {\n              \"domain\": [\n                \"Open lawn\",\n                \"Tree canopy\",\n                \"Sun\"\n              ],\n              \"range\": [\n                \"#c9a227\",\n                \"#2e7d32\",\n                \"#d9d9d9\"\n              ]\n            }\n          }\n        }\n      },\n      {\n        \"mark\": {\n          \"type\": \"text\",\n          \"radius\": 62,\n          \"fontWeight\": \"bold\"\n        },\n        \"encoding\": {\n          \"text\": {\n            \"field\": \"share_label\",\n            \"type\": \"nominal\"\n          },\n          \"color\": {\n            \"condition\": {\n              \"test\": \"datum.cover === 'Shade'\",\n              \"value\": \"#ffffff\"\n            },\n            \"value\": \"#333333\"\n          }\n        }\n      }\n    ]\n  }\n}",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"title\": {\n    \"text\": \"Colored: [!! highlight !!]. Grey: the rest.\",\n    \"fontWeight\": \"normal\",\n    \"fontSize\": 12\n  },\n  \"facet\": {\n    \"field\": \"scenario_name\",\n    \"type\": \"nominal\",\n    \"title\": null,\n    \"header\": {\n      \"labelFontSize\": 13,\n      \"labelFontWeight\": \"bold\"\n    }\n  },\n  \"spec\": {\n    \"width\": 160,\n    \"height\": 160,\n    \"transform\": [\n      {\n        \"joinaggregate\": [\n          {\n            \"op\": \"sum\",\n            \"field\": \"[!! value !!]\",\n            \"as\": \"curio_total\"\n          }\n        ],\n        \"groupby\": [\n          \"scenario_name\"\n        ]\n      },\n      {\n        \"calculate\": \"datum['[!! value !!]'] / datum.curio_total\",\n        \"as\": \"curio_share\"\n      },\n      {\n        \"calculate\": \"datum['[!! part !!]'] === '[!! highlight !!]' ? 1 : 0\",\n        \"as\": \"curio_highlight\"\n      }\n    ],\n    \"encoding\": {\n      \"theta\": {\n        \"field\": \"[!! value !!]\",\n        \"type\": \"quantitative\",\n        \"stack\": true\n      },\n      \"order\": {\n        \"field\": \"curio_highlight\",\n        \"type\": \"quantitative\",\n        \"sort\": \"descending\"\n      }\n    },\n    \"layer\": [\n      {\n        \"mark\": {\n          \"type\": \"arc\",\n          \"innerRadius\": 42,\n          \"tooltip\": true\n        },\n        \"encoding\": {\n          \"color\": {\n            \"condition\": {\n              \"test\": \"datum.curio_highlight === 1\",\n              \"field\": \"scenario_name\",\n              \"type\": \"nominal\",\n              \"legend\": null\n            },\n            \"value\": \"#d9d9d9\"\n          }\n        }\n      },\n      {\n        \"mark\": {\n          \"type\": \"text\",\n          \"radius\": 62,\n          \"fontWeight\": \"bold\"\n        },\n        \"encoding\": {\n          \"text\": {\n            \"field\": \"curio_share\",\n            \"type\": \"quantitative\",\n            \"format\": \".0%\"\n          },\n          \"color\": {\n            \"condition\": {\n              \"test\": \"datum.curio_highlight === 1\",\n              \"value\": \"#ffffff\"\n            },\n            \"value\": \"#333333\"\n          }\n        }\n      }\n    ]\n  }\n}\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Draw park area in shade as donuts, each scenario in its color.",
         "metadata": {
-          "keywords": []
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "part",
+              "type": "text",
+              "label": "Part column",
+              "default": "part",
+              "value": "cover"
+            },
+            {
+              "name": "value",
+              "type": "text",
+              "label": "Value column",
+              "default": "value",
+              "value": "share_pct"
+            },
+            {
+              "name": "highlight",
+              "type": "text",
+              "label": "Highlighted part",
+              "default": "highlight",
+              "value": "Shade"
+            }
+          ]
         },
         "width": 680,
         "height": 440
@@ -1157,16 +1390,32 @@
       },
       {
         "id": "65eaf95d-46aa-50e8-af79-741d17e9d35c",
-        "type": "curio.builtin/vis-vega",
+        "type": "scout.comparison/weighted-matrix",
         "x": 3905,
         "y": 4260,
         "title": "Weighted matrix: what counts for or against three bike routes",
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"transform\": [\n    {\n      \"filter\": \"datum.effect != 0\"\n    },\n    {\n      \"calculate\": \"abs(datum.effect)\",\n      \"as\": \"weight\"\n    },\n    {\n      \"calculate\": \"datum.effect > 0 ? 'For' : 'Against'\",\n      \"as\": \"counts\"\n    }\n  ],\n  \"mark\": {\n    \"type\": \"point\",\n    \"filled\": false,\n    \"strokeWidth\": 3,\n    \"opacity\": 1,\n    \"tooltip\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"factor\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"scale\": {\n        \"domain\": [\n          \"Travel time\",\n          \"Traffic stress\",\n          \"Hills\",\n          \"Shade\",\n          \"Crossings\",\n          \"Scenery\"\n        ]\n      },\n      \"axis\": {\n        \"orient\": \"top\",\n        \"labelAngle\": 0,\n        \"labelLimit\": 0\n      }\n    },\n    \"y\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"scale\": {\n        \"domain\": [\n          \"Route A\",\n          \"Route B\",\n          \"Route C\"\n        ]\n      },\n      \"axis\": {\n        \"labelFontWeight\": \"bold\",\n        \"labelColor\": {\n          \"condition\": [\n            {\n              \"test\": \"datum.value === 'Route A'\",\n              \"value\": \"#3a5fcd\"\n            },\n            {\n              \"test\": \"datum.value === 'Route B'\",\n              \"value\": \"#d6589f\"\n            },\n            {\n              \"test\": \"datum.value === 'Route C'\",\n              \"value\": \"#8c564b\"\n            }\n          ],\n          \"value\": \"#333333\"\n        }\n      }\n    },\n    \"size\": {\n      \"field\": \"weight\",\n      \"type\": \"quantitative\",\n      \"title\": \"Weight\",\n      \"scale\": {\n        \"domain\": [\n          0,\n          1\n        ],\n        \"range\": [\n          0,\n          1400\n        ]\n      }\n    },\n    \"stroke\": {\n      \"field\": \"counts\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"scale\": {\n        \"domain\": [\n          \"For\",\n          \"Against\"\n        ],\n        \"range\": [\n          \"#2a7f62\",\n          \"#c0392b\"\n        ]\n      }\n    }\n  }\n}",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"transform\": [\n    {\n      \"window\": [\n        {\n          \"op\": \"row_number\",\n          \"as\": \"curio_row\"\n        }\n      ],\n      \"groupby\": [\n        \"scenario_name\"\n      ]\n    },\n    {\n      \"filter\": \"datum['[!! weight !!]'] != 0\"\n    },\n    {\n      \"calculate\": \"abs(datum['[!! weight !!]'])\",\n      \"as\": \"curio_size\"\n    },\n    {\n      \"calculate\": \"datum['[!! weight !!]'] > 0 ? 'For' : 'Against'\",\n      \"as\": \"curio_counts\"\n    }\n  ],\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"[!! factor !!]\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"sort\": {\n        \"field\": \"curio_row\",\n        \"op\": \"min\"\n      },\n      \"axis\": {\n        \"orient\": \"top\",\n        \"labelAngle\": 0,\n        \"labelLimit\": 0\n      }\n    },\n    \"y\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"axis\": {\n        \"labelFontWeight\": \"bold\",\n        \"labelColor\": {\n          \"expr\": \"scale('fill', datum.value)\"\n        }\n      }\n    },\n    \"size\": {\n      \"field\": \"curio_size\",\n      \"type\": \"quantitative\",\n      \"title\": \"Weight\",\n      \"scale\": {\n        \"domain\": [\n          0,\n          1\n        ],\n        \"range\": [\n          0,\n          1400\n        ]\n      },\n      \"legend\": {\n        \"symbolFillColor\": \"transparent\",\n        \"symbolStrokeColor\": \"#888888\"\n      }\n    },\n    \"stroke\": {\n      \"field\": \"curio_counts\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"scale\": {\n        \"domain\": [\n          \"For\",\n          \"Against\"\n        ],\n        \"range\": [\n          \"#2a7f62\",\n          \"#c0392b\"\n        ]\n      },\n      \"legend\": {\n        \"symbolFillColor\": \"transparent\"\n      }\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"point\",\n        \"filled\": true,\n        \"opacity\": 0\n      },\n      \"encoding\": {\n        \"fill\": {\n          \"field\": \"scenario_name\",\n          \"type\": \"nominal\",\n          \"legend\": null\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"point\",\n        \"filled\": false,\n        \"strokeWidth\": 3,\n        \"opacity\": 1,\n        \"tooltip\": true\n      }\n    }\n  ]\n}\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Draw what counts for or against three bike routes as weighted matrix, each scenario in its color.",
         "metadata": {
-          "keywords": []
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "factor",
+              "type": "text",
+              "label": "Factor column",
+              "default": "factor",
+              "value": "factor"
+            },
+            {
+              "name": "weight",
+              "type": "text",
+              "label": "Weight column",
+              "default": "weight",
+              "value": "effect"
+            }
+          ]
         },
         "width": 680,
         "height": 440
@@ -1899,7 +2148,9 @@
         ]
       }
     ],
-    "packages": [],
+    "packages": [
+      "scout.comparison@1"
+    ],
     "datasets": [
       {
         "datasetId": "data.curio.example-pedestrians-by-hour",

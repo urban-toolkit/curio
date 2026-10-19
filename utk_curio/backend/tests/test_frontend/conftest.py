@@ -4,7 +4,7 @@ import os
 import pytest
 from playwright.sync_api import Browser, BrowserType
 
-from . import comparisons, diagnostics, runner_split
+from . import comparisons, diagnostics, early_guards, runner_split
 from .utils import REPO_ROOT, start_catalog_calendar, stop_catalog_calendar
 from .fixtures import _clean_db
 
@@ -288,6 +288,8 @@ def pytest_configure(config):
         "were made, so it runs on one fixed date (utils/catalog_clock.py)",
     )
     config.pluginmanager.register(_OnlyWorkflows(), "curio-only-workflows")
+    # A sign-in test skips before its page opens on a stack without sign-in.
+    config.pluginmanager.register(early_guards.EarlyGuards(), "curio-early-guards")
 
 
 class _OnlyWorkflows:

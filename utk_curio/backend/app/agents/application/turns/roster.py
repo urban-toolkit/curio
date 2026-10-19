@@ -52,7 +52,12 @@ _ROSTER_GRANTS = frozenset({
 
 
 def _template_line(entry: dict, *, suffix: str = "") -> str:
+    """One template, its description cut to the roster's length, and the
+    widgets a package template declares (a plan sets their values by name)."""
     desc = (entry.get("description") or "")[:_TEMPLATES_BLOCK_DESC_CHARS]
+    widgets = entry.get("widgets") or []
+    if widgets:
+        suffix = f" (widgets: {', '.join(widgets)})" + suffix
     return f"- {entry['id']} — {entry['label']}" + (f": {desc}" if desc else "") + suffix
 
 

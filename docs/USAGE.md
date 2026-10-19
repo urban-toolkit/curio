@@ -897,6 +897,17 @@ These replace any colors or order the spec writes for that column. When a scenar
 renamed or recolored, the chart is drawn again with no run, and a selection made in
 it stays.
 
+For a comparison the **Chart** tab does not draw, the SCOUT Comparison package
+(`scout.comparison@1`) has seven charts to connect after a Compare Scenarios node:
+**Lines with a band**, **Curves by group**, **Bars with error bars**, **Ensemble
+strips**, **Stacked bars with totals**, **Donuts** and **Weighted matrix**. Each is a
+Vega-Lite node with a spec of its own, and draws its scenarios by the rule above. Set
+the columns it plots in its **Widgets** tab: a new node's widgets hold their own names
+(`y`, `part`), so the chart says which column the table lacks until you set them. The
+[package's README](../packages/scout.comparison@1/README.md) lists each chart's
+widgets. Add the package to a dataflow from the Node Catalog drawer; the charts are
+then under **SCOUT Comparison** in the Tools panel's **Node Catalog** dropdown.
+
 The **Scenario Catalog** lists the scenarios of all your projects, each with its
 fixed context, levers and outcomes and the results its project saved. Open it from
 the **Scenario Catalog** tab, or from the **Scenario** button in the canvas's top
