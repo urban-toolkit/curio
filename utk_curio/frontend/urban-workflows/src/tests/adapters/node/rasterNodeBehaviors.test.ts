@@ -12,14 +12,16 @@ jest.mock("vega-lite", () => ({}), { virtual: true });
 
 import * as fs from "fs";
 import * as path from "path";
-import { faCalculator } from "@fortawesome/free-solid-svg-icons";
+// The module the registry loads the icon from: curio.builtin@1 does not name it,
+// so Curio does not bundle it.
+import { faCalculator } from "@fortawesome/free-solid-svg-icons/faCalculator";
 import * as rasterNodeBehaviors from "../../../adapters/node/rasterNodeBehaviors";
 import * as rasterNodeCode from "../../../utils/raster/rasterNodeCode";
 import { useRasterCalculatorBehavior } from "../../../adapters/node/rasterNodeBehaviors";
 import { RASTER_CALCULATOR_CODE } from "../../../utils/raster/rasterNodeCode";
 import { getBehavior } from "../../../registry/behaviorRegistry";
 import "../../../registry/builtinBehaviors";
-import "../../../registry/iconRegistry";
+import { loadIconRefs } from "../../../registry/iconRegistry";
 import { BUILTIN_PACKAGE_ID, registerPackageTemplates } from "../../../registry/packagesClient";
 import { clearPackageNodes } from "../../../registry/nodeRegistry";
 
@@ -57,7 +59,7 @@ describe("raster node behaviors", () => {
 describe("SCOUT Rasters' Raster Calculator", () => {
   beforeEach(() => clearPackageNodes());
 
-  it("is a package node with this behavior, its icon and the PACKAGE pill, and no built-in one is left", () => {
+  it("is a package node with this behavior, its icon and the PACKAGE pill, and no built-in one is left", async () => {
     const read = (dir: string) =>
       JSON.parse(fs.readFileSync(path.join(REPO_ROOT, "packages", dir, "manifest.json"), "utf-8"));
     const manifest = read("scout.rasters@1");
@@ -66,6 +68,8 @@ describe("SCOUT Rasters' Raster Calculator", () => {
     expect(template.source).toBeUndefined();
     expect(read(`${BUILTIN_PACKAGE_ID}@1`).templates.map((t: { id: string }) => t.id)).not.toContain("raster-calculator");
 
+    // As the package loader does before it builds descriptors.
+    await loadIconRefs([template.iconRef]);
     const [descriptor] = registerPackageTemplates([{
       packageId: manifest.id,
       major: 1,

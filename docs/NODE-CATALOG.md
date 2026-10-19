@@ -265,7 +265,7 @@ Since memo dev/143 the catalog is layered like the Data Catalog. The backend is 
 - [`docs/DATA-CATALOG.md`](DATA-CATALOG.md): datasets, installed and published with the same model.
 - [`docs/AGENT-CATALOG.md`](AGENT-CATALOG.md): the agents you attach to nodes.
 - [`docs/DISCOVERY-CATALOG.md`](DISCOVERY-CATALOG.md): the data portals you download datasets from.
-- [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#node-packages-and-manifests): how packages load, and how to add a built-in behavior, icon, or grammar adapter.
+- [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#node-packages-and-manifests): how packages load, and how to add a built-in behavior or grammar adapter.
 - [`docs/USAGE.md`](USAGE.md): installing and running Curio, including the [Vega-Lite node](USAGE.md#vega-lite-node).
 - [`docs/schemas/node-package.v4.json`](schemas/node-package.v4.json): the manifest JSON Schema.
 - [`docs/schemas/trill.v1.json`](schemas/trill.v1.json): the dataflow JSON Schema. A node's `type` points into a manifest's `templates[].id`.
