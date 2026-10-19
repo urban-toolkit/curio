@@ -340,11 +340,11 @@ def manifest_requirements() -> list[str]:
     interpreter, one ``pip install`` requirement each and sorted, without
     installing anything.
 
-    The same walk and merge, so the two cannot drift. CI's image build installs
-    this list in a layer of its own, before the source is copied, which stays
-    cached while the list does not change (the Dockerfile's ``CURIO_CI_SETUP``).
-    Per-user installs under fork isolation go to each user's own tree, not this
-    interpreter, so they are not in it.
+    The same walk and merge, so the two cannot drift. scripts/ci_requirements.py
+    writes it to scripts/ci-requirements.txt, which CI's image installs in a
+    layer of its own before the source is copied (the Dockerfile's
+    ``CURIO_CI_SETUP``). Per-user installs under fork isolation go to each
+    user's own tree, not this interpreter, so they are not in it.
     """
     from utk_curio.backend.app.packages.infrastructure.pip_runner import pip_requirement
 
@@ -516,16 +516,3 @@ def _report_unimportable_deps(merged, *, block: bool) -> None:
         _probe()
     else:
         threading.Thread(target=_probe, name="dep-import-probe", daemon=True).start()
-
-
-if __name__ == "__main__":
-    # ``python -m utk_curio.cli.dependencies`` prints manifest_requirements(),
-    # one per line, for CI's image build (the Dockerfile's CURIO_CI_SETUP).
-    # CURIO_SEED_EXAMPLES=1 adds the examples' packages, as --with-examples
-    # does for setup and start. Anything the walk prints goes to stderr, so
-    # stdout holds the list alone.
-    import contextlib
-
-    with contextlib.redirect_stdout(sys.stderr):
-        requirements = manifest_requirements()
-    print("\n".join(requirements))

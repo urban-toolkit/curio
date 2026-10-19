@@ -39,24 +39,17 @@ COPY requirements.txt ./
 RUN pip install --upgrade pip setuptools wheel && \
     pip install --prefer-binary --no-cache-dir -r requirements.txt
 
-# CI only. The libraries setup installs from the package manifests, as setup's
-# own walk lists them (utk_curio/cli/dependencies.py) from this commit's
-# manifests and examples.
-FROM python_base AS ci_requirements
-COPY utk_curio/ utk_curio/
-COPY packages/ packages/
-COPY docs/examples/ docs/examples/
-RUN CURIO_SEED_EXAMPLES=1 python -m utk_curio.cli.dependencies > /ci-requirements.txt
-
 FROM python_base AS ci_deps_0
 
-# CI only. That list installed before the source is copied: COPY keys its
-# cache on the file's content, so a commit that changes no dependency reuses
-# these layers. The pip command is the launcher's (install_python_deps).
-# Then Chromium, in /opt/ms-playwright rather than Playwright's default folder,
-# so nothing in the image finds a browser it did not have before.
+# CI only. The libraries setup installs from the package manifests, as setup's
+# own walk lists them (scripts/ci_requirements.py writes the file), installed
+# before the source is copied. COPY keys its cache on the file's content, so a
+# commit that changes no dependency reuses these layers. The pip command is
+# the launcher's (install_python_deps). Then Chromium, in /opt/ms-playwright
+# rather than Playwright's default folder, so nothing in the image finds a
+# browser it did not have before.
 FROM python_base AS ci_deps_1
-COPY --from=ci_requirements /ci-requirements.txt /ci-requirements.txt
+COPY scripts/ci-requirements.txt /ci-requirements.txt
 RUN pip install --no-input --no-cache-dir -r /ci-requirements.txt
 RUN PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright python -m playwright install chromium
 
@@ -114,15 +107,12 @@ RUN npm run build
 # drift.
 RUN node -e "const s=require('./package.json').scripts.build||'';const m=/--mode\s+(\S+)/.exec(s);require('fs').writeFileSync('dist/.curio-build',(m?m[1]:'unknown')+'\n')"
 
-# CI only, beside the frontend build: setup on the whole source. The list must
-# match what ci_requirements listed, or that stage is missing a file the walk
-# reads; then setup finds every library installed, installs nothing, and
-# reports any that does not import. Its log folder is removed after it.
+# CI only, beside the frontend build: setup on the whole source. It finds the
+# libraries above installed and reports any that does not import. One a stale
+# scripts/ci-requirements.txt left out (a unit test reports that too) it
+# installs here. Its log folder is removed after it.
 FROM runtime_base AS checked_1
-RUN export PYTHONDONTWRITEBYTECODE=1 \
-    && CURIO_SEED_EXAMPLES=1 python -m utk_curio.cli.dependencies | diff /ci-requirements.txt - \
-    && python curio.py setup --with-examples \
-    && rm -rf .curio
+RUN PYTHONDONTWRITEBYTECODE=1 python curio.py setup --with-examples && rm -rf .curio
 
 FROM runtime_base AS checked_0
 

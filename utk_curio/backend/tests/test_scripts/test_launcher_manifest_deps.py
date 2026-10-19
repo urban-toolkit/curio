@@ -456,25 +456,3 @@ def test_listing_installs_nothing(launch_cwd, installed, installed_per_user, iso
 
     assert installed == [] and installed_per_user == []
     assert not [req for req in listed if req.startswith("inflection")]
-
-
-def test_the_module_prints_the_list_and_nothing_else(launch_cwd, in_process, monkeypatch):
-    """The Dockerfile runs ``python -m utk_curio.cli.dependencies`` and installs
-    its stdout, so stdout holds the list alone, one requirement per line."""
-    import subprocess
-    import sys
-
-    monkeypatch.setenv("CURIO_SEED_EXAMPLES", "1")
-    _write_package(
-        _user_store(launch_cwd), "acme.nodes@1",
-        deps={"inflection": ">=0.5"}, backend=False, python_template=True,
-    )
-    expected = launcher.manifest_requirements()
-
-    printed = subprocess.run(
-        [sys.executable, "-m", "utk_curio.cli.dependencies"],
-        capture_output=True, text=True, env=dict(os.environ), timeout=180, check=True,
-    ).stdout
-
-    assert printed.splitlines() == expected
-    assert [req for req in expected if req.startswith("inflection")], "the user's library is missing"
