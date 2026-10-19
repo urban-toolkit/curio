@@ -102,7 +102,10 @@
   width: 110px;
 }
 
+/* A node's Widgets tab and a Parameter node's body. A panel that holds more
+   than it shows scrolls with the Data Catalog's thin scrollbar. */
 .panel {
+  composes: thinScrollbar from "../../../styles/scrollbars.module.css";
   --widget-h: 22px;
   height: 100%;
   padding: 8px 10px;

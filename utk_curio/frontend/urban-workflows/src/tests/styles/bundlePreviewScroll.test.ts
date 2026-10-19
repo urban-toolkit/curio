@@ -33,6 +33,14 @@ const SIBLING = fs.readFileSync(
   "utf8",
 );
 
+/** The thin scrollbar both previews take, defined once. */
+const SCROLLBARS = fs.readFileSync(
+  path.resolve(__dirname, "../../styles/scrollbars.module.css"),
+  "utf8",
+);
+const TAKES_THE_SHARED_SCROLLBAR =
+  'composes: thinScrollbar from "../../../styles/scrollbars.module.css";';
+
 function ruleBody(css: string, selector: string): string | null {
   const at = css.indexOf("\n" + selector + " {");
   if (at === -1) return null;
@@ -57,10 +65,16 @@ describe("the bundle preview's table wrapper", () => {
   });
 
   it("styles its scrollbar the way the sibling preview does", () => {
-    // DatasetTablePreview is the same component getting this right; matching it
-    // keeps one thin scrollbar idiom across the two panels rather than two.
-    expect(ruleBody(CSS, ".tableWrap")).toContain("scrollbar-width: thin");
-    expect(ruleBody(CSS, ".tableWrap::-webkit-scrollbar")).not.toBeNull();
-    expect(ruleBody(SIBLING, ".tableWrap")).toContain("scrollbar-width: thin");
+    // DatasetTablePreview is the same component getting this right. Both take
+    // the one shared thin scrollbar, so the two panels cannot drift apart, and
+    // that scrollbar is thin with its ::-webkit-scrollbar rules: thin for the
+    // browsers without them (the @supports block, read up to its first closing
+    // brace, opens with the class), the 6 px webkit bar everywhere else.
+    expect(ruleBody(CSS, ".tableWrap")).toContain(TAKES_THE_SHARED_SCROLLBAR);
+    expect(ruleBody(SIBLING, ".tableWrap")).toContain(TAKES_THE_SHARED_SCROLLBAR);
+    const firefox = ruleBody(SCROLLBARS, "@supports not selector(::-webkit-scrollbar)");
+    expect(firefox).toContain(".thinScrollbar {");
+    expect(firefox).toContain("scrollbar-width: thin");
+    expect(ruleBody(SCROLLBARS, ".thinScrollbar::-webkit-scrollbar")).toContain("width: 6px");
   });
 });

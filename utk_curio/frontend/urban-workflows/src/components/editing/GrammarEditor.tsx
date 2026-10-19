@@ -11,6 +11,7 @@ import { insertReference, useCodeReferences } from "./widgets/monacoCodeReferenc
 import type { CodeLanguage, InputScope, ReferenceScope } from "../../utils/references/codeReferences";
 import { NOTEBOOK_SPEC_EDITOR_MAX, useNotebookEditorHeight } from "./useNotebookEditorHeight";
 import { nodeEditorLook } from "./nodeEditorLook";
+import { NODE_EDITOR_SCROLLING } from "./nodeEditorScrolling";
 
 const NO_REFERENCES: ReferenceScope = { widgets: [], inputs: [], shared: [] };
 const NO_INPUTS: InputScope[] = [];
@@ -291,10 +292,9 @@ export default function GrammarEditor({
                         scrollBeyondLastLine: false,
                         formatOnType: true,
                         autoClosingBrackets: "always",
-                        // As in CodeEditor: a wheel the editor cannot use goes
-                        // on to the page, and `nowheel` on the wrapper keeps the
-                        // canvas from zooming. Read only at creation.
-                        scrollbar: { alwaysConsumeMouseWheel: false },
+                        // As in CodeEditor: never wrapped, and each bar at rest
+                        // whenever the spec runs past its side.
+                        ...NODE_EDITOR_SCROLLING,
                         // A plain input box, but on a dashboard tile.
                         ...look.editorOptions,
                     }}

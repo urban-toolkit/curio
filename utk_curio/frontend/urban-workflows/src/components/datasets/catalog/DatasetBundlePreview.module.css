@@ -48,35 +48,14 @@
    keeps the border-radius clipping this rule was also doing, and the table
    inside is TabularPreviewTable, which already carries the other two thirds of
    the fix (`overflowX: visible` on its container, `minWidth: max-content` on
-   the table). Scrollbar styling mirrors DatasetTablePreview.module.css, which
-   is the same component getting this right. */
+   the table). Its scrollbar is the shared thin one, as on
+   DatasetTablePreview.module.css, which is the same component getting this
+   right. */
 .tableWrap {
+  composes: thinScrollbar from "../../../styles/scrollbars.module.css";
   border: 1px solid var(--border-subtle, #e2e4e8);
   border-radius: 8px;
   overflow: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(30, 31, 35, 0.18) transparent;
-}
-
-.tableWrap::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.tableWrap::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.tableWrap::-webkit-scrollbar-thumb {
-  background: rgba(30, 31, 35, 0.18);
-  border-radius: 999px;
-  border: 1px solid transparent;
-  background-clip: padding-box;
-}
-
-.tableWrap:hover::-webkit-scrollbar-thumb {
-  background: rgba(30, 31, 35, 0.28);
-  background-clip: padding-box;
 }
 
 .tableRefreshing {
