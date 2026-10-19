@@ -362,8 +362,8 @@ node whose code it writes itself:
   (`registry/vegaLiteNodes.ts`) decides drawing from a restored input
   (`UniversalNode.tsx`), `isPassThroughNode`, `isNonProducingNodeType`,
   `notebookOutputBox`, `selectionViewsOf` and the notebook export. In the backend,
-  `draws_with_vega_lite` (`projects/template_grammars.py`, which reads the package
-  catalog's manifests, then the shipped packages') decides `passes_through`
+  `draws_with_vega_lite` (`projects/template_grammars.py`, which reads the
+  account's store, the package catalog, then the shipped packages) decides `passes_through`
   (`projects/dashboard_payload.py`, which `parts.is_pass_through` calls),
   `node_role` (also from the run's roster) and `_is_sink_node_type`, beside the
   template's declared behavior
@@ -398,8 +398,8 @@ node whose code it writes itself:
   values and code lines, or, for Interaction nodes, their edit logs, an edit
   switched off marked off; `contextWarnings` compares their fixed context.
 - A pinned Compare Scenarios node draws its own output, so it is its own dashboard
-  source (`SELF_DRAWN_NODE_TYPES` in `dashboardLayout.ts`, the `compare-scenarios`
-  behavior in `_SELF_DRAWN_BEHAVIORS` in `projects/dashboard_payload.py`), and its
+  source (its `compare-scenarios` behavior: `isSelfDrawnNode` in `dashboardLayout.ts`,
+  `draws_its_own_output` in `projects/dashboard_payload.py`), and its
   inputs are not walked. Its tile draws no
   map, so the page carries no `/raster` answer for it; an Autark map pinned after it
   walks up to it like any producer, and the page carries the difference's raster for
@@ -532,14 +532,15 @@ A dataflow's source on the rail (Use cases, Examples, Tests) comes from its proj
 
 ### Built-in nodes by their declared behavior
 
-The backend knows what a node is by what its template declares, never by the name of its type: a package template named like a built-in one is not taken for it, and a template that declares a built-in's behavior is treated as that built-in is. `TemplateGrammars` ([`projects/template_grammars.py`](../utk_curio/backend/app/projects/template_grammars.py)) reads a node's template: its `behavior`, `category`, input ports and `grammarId`. A node type is read only through `dir_name_from_node_type`, so a type of any other shape than `<package id>/<template id>[@<major>]` reads nothing. A caller builds one `TemplateGrammars.catalog()` per request, which reads the package catalog, then the packages Curio ships, so the built-in nodes are known wherever `--packages-root` moves the catalog.
+Curio knows what a node is by what its template declares, never by the name of its type: a package template named like a built-in one is not taken for it, and a template that declares a built-in's behavior is treated as that built-in is, a node an account saved with "Save as package node" included. The backend reads a node's template with `TemplateGrammars` ([`projects/template_grammars.py`](../utk_curio/backend/app/projects/template_grammars.py)): its `behavior`, `category`, input ports and `grammarId`. A node type is read only through `dir_name_from_node_type`, so a type of any other shape than `<package id>/<template id>[@<major>]` reads nothing. A caller builds one `TemplateGrammars.for_account(user_key)` per request for the account whose dataflow it reads (the owner, for a dashboard): that account's store, the package catalog, then the packages Curio ships, so a package only the account's store holds counts for that account alone, and the built-in nodes are known wherever `--packages-root` moves the catalog. The canvas reads the same declarations off its registered descriptors ([`src/registry/declaredNodes.ts`](../utk_curio/frontend/urban-workflows/src/registry/declaredNodes.ts), whose descriptors keep their template's `behavior`). A type whose template declares no behavior (no category, for loading data), or that nothing registers, is a built-in node by its id. `registry/declaredNodes.cases.json` holds the cases both sides run (`declaredNodesCases.test.ts`, `test_declared_node_cases.py`).
 
-| Rule | Where | What the template declares |
-|---|---|---|
-| A dashboard or a scenario walks through the node | `passes_through` in `projects/dashboard_payload.py`, which `parts.is_pass_through` calls | the `vega`, `simple-vis` or `data-pool` behavior, a `grammarId` of `vega-lite`, or the `autk-grammar` behavior with a spec that draws |
-| A pinned node is its own dashboard source | `_SELF_DRAWN_BEHAVIORS` in `projects/dashboard_payload.py` | the `compare-scenarios` behavior |
-| A run on the server forwards the node | `node_role` in `execution/run_plan.py` | a pass-through, or the `data-export`, `parameter` or `note` behavior |
-| A node loads the dataset it names, so the Data Catalog counts the nodes after it as the dataset's consumers | `loads_data` in `datasets/application/export.py` | the `data` category and no input port; the legacy type `DATA_LOADING` too |
+| Rule | Backend | Canvas | What the template declares |
+|---|---|---|---|
+| A dashboard or a scenario walks through the node | `passes_through` in `projects/dashboard_payload.py`, which `parts.is_pass_through` calls | `isPassThroughNode` in `utils/dashboardLayout.ts` | the `vega`, `simple-vis` or `data-pool` behavior, a `grammarId` of `vega-lite`, or the `autk-grammar` behavior with a spec that draws |
+| A pinned node is its own dashboard source | `draws_its_own_output` in `projects/dashboard_payload.py` | `isSelfDrawnNode` in `utils/dashboardLayout.ts` | the `compare-scenarios` behavior |
+| A save keeps no output of the node's own | `_is_sink_node_type` in `projects/services.py` | `isNonProducingNodeType` in `utils/saveOutputDataset.ts` | the `vega` or `simple-vis` behavior, or a `grammarId` of `vega-lite` |
+| A node loads the dataset it names: the nodes after it are the dataset's consumers, and a dataset dropped on it applies to it | `loads_data` in `datasets/application/export.py` | `loadsData`, read by `datasetLineageResolver.ts` and `canApplyDatasetToNode` | the `data` category and no input port; the legacy type `DATA_LOADING` too |
+| A run on the server forwards the node | `node_role` in `execution/run_plan.py` | | a pass-through, or the `data-export`, `parameter` or `note` behavior |
 
 ### NodeDescriptor: Static Metadata
 
