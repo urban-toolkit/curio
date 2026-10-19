@@ -69,10 +69,8 @@ def _refuse_internal(coord: str) -> None:
     """An internal built-in runs only as a delegate of other agents: it is
     never imported, installed or attached."""
     if builtin.is_internal(coord):
-        spec = builtin.get_builtin_spec(coord) or builtin.get_builtin_spec(
-            f"{coord}@{builtin.BUILTIN_VERSION}"
-        )
-        name = spec.name if spec else coord
+        shipped = builtin.get_builtin_manifest(builtin.builtin_coord(coord.split("@", 1)[0]) or "")
+        name = shipped.name if shipped else coord
         raise AgentServiceError(
             f"{name} runs only as a delegate of other agents; it is not installed or attached",
             400,

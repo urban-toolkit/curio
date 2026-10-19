@@ -6,6 +6,21 @@ from __future__ import annotations
 
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain.manifest import AgentManifest
+from utk_curio.backend.tests._support.prompt_files import prompt_folders, prompt_path
+
+
+def _file(asset) -> str:
+    """The file name of a prompt asset, as the agent's bundle holds it."""
+    return asset.file.rsplit("/", 1)[-1]
+
+
+def _by_id() -> dict[str, AgentManifest]:
+    return {m.agent_id: m for m in builtin.list_builtin_manifests()}
+
+
+def _modes(m: AgentManifest) -> list:
+    """The capabilities of *m* that are modes: each with an instruction of its own."""
+    return [c for c in m.capabilities if c.instruction]
 
 
 #: Every built-in, in roster order (the catalog lists the cards in this
@@ -98,14 +113,15 @@ def _instructions():
     """Every instruction a built-in can run, as ``(agent id, prompt key, text)``:
     the agent's own and each mode's, one entry per file."""
     out = []
-    for spec in builtin.BUILTIN_AGENTS:
-        coord = f"{spec.agent_id}@1.0.0"
+    for m in builtin.list_builtin_manifests():
+        coord = f"{m.agent_id}@1.0.0"
         seen = set()
-        for key, filename in spec.prompt_files().items():
+        for key, asset in m.prompts.items():
+            filename = _file(asset)
             if key == "system" or filename in seen:
                 continue
             seen.add(filename)
-            out.append((spec.agent_id, key, builtin.read_prompt_text(coord, key)))
+            out.append((m.agent_id, key, builtin.read_prompt_text(coord, key)))
     return out
 
 
@@ -126,14 +142,13 @@ class TestRoster:
         # Researcher (dev/90). The chat agent, the node researcher and the
         # notes run in the Researcher; the content builder, the connection
         # builder and both package agents in the Node Builder.
-        assert len(builtin.BUILTIN_AGENTS) == 7
+        assert len(builtin.list_builtin_manifests()) == 7
 
     def test_the_four_cards_and_the_rest_internal(self):
-        cards = {s.agent_id for s in builtin.BUILTIN_AGENTS if s.in_catalog}
+        manifests = builtin.list_builtin_manifests()
+        cards = {m.agent_id for m in manifests if m.catalog.listed}
         assert cards == _CARDS
-        assert builtin.internal_agent_ids() == {
-            s.agent_id for s in builtin.BUILTIN_AGENTS
-        } - _CARDS
+        assert builtin.internal_agent_ids() == {m.agent_id for m in manifests} - _CARDS
 
     def test_every_card_meets_the_rule(self):
         from utk_curio.backend.app.agents.domain import content
@@ -141,17 +156,18 @@ class TestRoster:
 
         mutate = set(services.MUTATE_PROPOSAL_TOOLS)
         structured = set(content.STRUCTURED_CAPABILITIES)
-        for spec in builtin.BUILTIN_AGENTS:
-            if not spec.in_catalog:
+        manifests = builtin.list_builtin_manifests()
+        for m in manifests:
+            if not m.catalog.listed:
                 continue
-            acts = bool(mutate & set(spec.tools))
-            understood = bool(structured & set(spec.capabilities))
-            others = [s for s in builtin.BUILTIN_AGENTS if s is not spec]
+            acts = bool(mutate & {t.id for t in m.tools})
+            understood = bool(structured & set(m.capability_ids))
+            others = [o for o in manifests if o.agent_id != m.agent_id]
             owns_target = any(
-                kind not in {k for o in others for k in o.target_kinds()}
-                for kind in spec.target_kinds()
+                kind not in {t.kind for o in others for t in o.compatible_targets}
+                for kind in (t.kind for t in m.compatible_targets)
             )
-            assert acts or understood or owns_target, spec.agent_id
+            assert acts or understood or owns_target, m.agent_id
 
     def test_no_internal_agent_meets_the_rule(self):
         # Otherwise it would be a card.
@@ -160,11 +176,11 @@ class TestRoster:
 
         mutate = set(services.MUTATE_PROPOSAL_TOOLS)
         structured = set(content.STRUCTURED_CAPABILITIES)
-        for spec in builtin.BUILTIN_AGENTS:
-            if spec.in_catalog:
+        for m in builtin.list_builtin_manifests():
+            if m.catalog.listed:
                 continue
-            assert not mutate & set(spec.tools), spec.agent_id
-            assert not structured & set(spec.capabilities), spec.agent_id
+            assert not mutate & {t.id for t in m.tools}, m.agent_id
+            assert not structured & set(m.capability_ids), m.agent_id
 
     def test_internal_agents_are_known_by_coordinate(self):
         assert builtin.is_internal("agent.dataflow-planner")
@@ -177,26 +193,27 @@ class TestRoster:
         # OQ-007 resolved by dev/85 (DEC-055): the evaluator exists as a
         # net-new AUTHORED built-in — no longer excluded, never a fabricated
         # migration (its roster comment + docstring carry the decision).
-        ids = {s.agent_id for s in builtin.BUILTIN_AGENTS}
+        ids = set(_by_id())
         assert "agent.generated-content-evaluator" in ids
 
     def test_matches_the_roster(self):
+        manifests = builtin.list_builtin_manifests()
         got = {
-            s.agent_id: (s.prompt_file, list(s.capabilities))
-            for s in builtin.BUILTIN_AGENTS
+            m.agent_id: (_file(m.prompts["instruction"]), list(m.capability_ids))
+            for m in manifests
         }
         assert got == _ROSTER
         # In this order: the catalog lists the cards as the roster does, the
         # agent you talk to about anything first.
-        assert [s.agent_id for s in builtin.BUILTIN_AGENTS] == list(_ROSTER)
+        assert [m.agent_id for m in manifests] == list(_ROSTER)
         modes = {
-            s.agent_id: {m.capability: m.prompt_file for m in s.modes}
-            for s in builtin.BUILTIN_AGENTS
-            if s.modes
+            m.agent_id: {c.id: _file(m.prompts[c.instruction]) for c in _modes(m)}
+            for m in manifests
+            if _modes(m)
         }
         assert modes == {**_MODES, **_CARD_MODES}
         # The rest run one instruction for everything.
-        single = {s.agent_id for s in builtin.BUILTIN_AGENTS} - set(_MODES) - set(_CARD_MODES)
+        single = {m.agent_id for m in manifests} - set(_MODES) - set(_CARD_MODES)
         assert single == {"agent.dataset-finder", "agent.dataflow-builder",
                           "agent.generated-content-evaluator"}
 
@@ -211,17 +228,17 @@ class TestRoster:
         }
         assert set(chats) == set(_CARD_MODES)
         for agent_id, modes in _CARD_MODES.items():
-            spec = builtin.get_builtin_spec(f"{agent_id}@1.0.0")
-            assert spec.in_catalog, agent_id
-            assert spec.prompt_file == chats[agent_id], agent_id
-            assert spec.prompt_file not in modes.values(), agent_id
+            m = builtin.get_builtin_manifest(f"{agent_id}@1.0.0")
+            assert m.catalog.listed, agent_id
+            assert _file(m.prompts["instruction"]) == chats[agent_id], agent_id
+            assert _file(m.prompts["instruction"]) not in modes.values(), agent_id
             for capability in modes:
-                assert capability in spec.capabilities, (agent_id, capability)
-            mode_reads = {r for m in spec.modes for r in m.reads}
-            assert not mode_reads <= set(spec.reads), agent_id
+                assert capability in m.capability_ids, (agent_id, capability)
+            mode_reads = {r for c in _modes(m) for r in c.reads}
+            assert not mode_reads <= set(m.inputs_reads), agent_id
         # The package recommendation is listed before the writing
         # capabilities, so reuse stays ahead of writing.
-        caps = builtin.get_builtin_spec("agent.node-builder@1.0.0").capabilities
+        caps = builtin.get_builtin_manifest("agent.node-builder@1.0.0").capability_ids
         for writing in ("package.build", "package.extend", "node.kind.author"):
             assert caps.index("package.recommend") < caps.index(writing), writing
 
@@ -246,14 +263,14 @@ class TestRoster:
         """A chat runs with its tools and answers the user. The JSON-only
         reply a delegated call owes its caller lives in the mode that call
         runs, never in a card's chat instruction."""
-        for spec in builtin.BUILTIN_AGENTS:
-            if not spec.in_catalog:
+        for m in builtin.list_builtin_manifests():
+            if not m.catalog.listed:
                 continue
-            chat = builtin.read_prompt_text(f"{spec.agent_id}@1.0.0", "instruction")
+            chat = builtin.read_prompt_text(f"{m.agent_id}@1.0.0", "instruction")
             low = chat.lower()
-            assert "delegated task from" not in low, spec.agent_id
-            assert "exactly one json object" not in low, spec.agent_id
-            assert "as a delegate" not in low, spec.agent_id
+            assert "delegated task from" not in low, m.agent_id
+            assert "exactly one json object" not in low, m.agent_id
+            assert "as a delegate" not in low, m.agent_id
         # The modes that answer in JSON say so.
         for agent_id, capability in (("agent.researcher", "research.notes.compose"),
                                      ("agent.node-builder", "package.build")):
@@ -263,18 +280,22 @@ class TestRoster:
             assert "delegated task from" in mode.lower(), (agent_id, capability)
 
     def test_every_prompt_file_exists(self):
-        for spec in builtin.BUILTIN_AGENTS:
-            for filename in spec.prompt_files().values():
-                assert (builtin.PROMPT_SOURCE_DIR / filename).is_file(), filename
+        for m in builtin.list_builtin_manifests():
+            for asset in m.prompts.values():
+                path = (
+                    builtin.PROMPT_SOURCE_DIR / asset.shared if asset.shared
+                    else builtin.agents_dir() / m.dir_name / asset.path
+                )
+                assert path.is_file(), _file(asset)
 
     def test_a_merged_agent_is_internal_and_its_default_is_its_first_mode(self):
         for agent_id, modes in _MODES.items():
-            spec = builtin.get_builtin_spec(f"{agent_id}@1.0.0")
-            assert not spec.in_catalog, agent_id
-            assert spec.prompt_file == next(iter(modes.values()))
-            assert spec.capabilities == tuple(modes)
+            m = builtin.get_builtin_manifest(f"{agent_id}@1.0.0")
+            assert not m.catalog.listed, agent_id
+            assert _file(m.prompts["instruction"]) == next(iter(modes.values()))
+            assert tuple(m.capability_ids) == tuple(modes)
             # Its reads are every mode's.
-            assert set(spec.reads) == {r for m in spec.modes for r in m.reads}
+            assert set(m.inputs_reads) == {r for c in _modes(m) for r in c.reads}
 
     def test_the_keyword_modes_read_the_keyword_types(self):
         planner = builtin.get_builtin_manifest("agent.dataflow-planner@1.0.0")
@@ -285,18 +306,18 @@ class TestRoster:
         assert planner.capability("workflow.keywords.extract").reads == ("workflowGoal",)
 
     def test_each_parent_delegates_what_the_merges_left_it(self):
-        specs = {s.agent_id: s for s in builtin.BUILTIN_AGENTS}
+        by_id = _by_id()
         got = {}
-        for spec in builtin.BUILTIN_AGENTS:
-            m = builtin.get_builtin_manifest(f"{spec.agent_id}@1.0.0")
+        for agent_id_of_parent in by_id:
+            m = builtin.get_builtin_manifest(f"{agent_id_of_parent}@1.0.0")
             caps = {
                 cap
                 for agent_id in m.delegates_to
-                for cap in specs[agent_id].capabilities
+                for cap in by_id[agent_id].capability_ids
                 if m.delegates(agent_id, cap)
             }
             if caps:
-                got[spec.agent_id] = caps
+                got[agent_id_of_parent] = caps
         assert got == _DELEGABLE
 
 
@@ -359,20 +380,23 @@ class TestPreambleAndInputs:
 
         for m in builtin.list_builtin_manifests():
             assert "system" in m.prompts, m.agent_id
-            assert m.prompts["system"].path.startswith("prompts/"), m.agent_id
+            # A shared preamble is carried as prompts/<file> by an export and an install.
+            assert m.prompts["system"].file.startswith("prompts/"), m.agent_id
             assert m.inputs_reads, f"{m.agent_id} has no inputs.reads"
 
     def test_every_builtin_shares_the_one_preamble(self):
         from utk_curio.backend.app.agents.domain import builtin
 
         for m in builtin.list_builtin_manifests():
-            assert m.prompts["system"].path == "prompts/default_preamble.md", m.agent_id
-        assert not (builtin.PROMPT_SOURCE_DIR / "syntax_analysis_preamble.md").exists()
+            assert m.prompts["system"].path == "curio:default_preamble.md", m.agent_id
+            assert m.prompts["system"].file == "prompts/default_preamble.md", m.agent_id
+        for folder in prompt_folders():
+            assert not (folder / "syntax_analysis_preamble.md").exists(), folder
 
     def test_prompt_text_is_read_by_key(self):
         coord = "agent.dataflow-planner@1.0.0"
         bind = builtin.read_prompt_text(coord, "workflow.keyword.bind")
-        assert bind == (builtin.PROMPT_SOURCE_DIR / "keywords_binding_prompt.md").read_text(encoding="utf-8")
+        assert bind == prompt_path("keywords_binding_prompt.md").read_text(encoding="utf-8")
         # An undeclared key reads nothing, not the preamble.
         assert builtin.read_prompt_text(coord, "workflow.nope") is None
         assert builtin.read_prompt_text("agent.researcher@1.0.0", "dataflow.explain") is None
@@ -406,8 +430,8 @@ class TestPreambleAndInputs:
     def test_preamble_text_readable_for_all_builtins(self):
         from utk_curio.backend.app.agents.domain import builtin
 
-        for spec in builtin.BUILTIN_AGENTS:
-            coord = f"{spec.agent_id}@1.0.0"
+        for m in builtin.list_builtin_manifests():
+            coord = f"{m.agent_id}@1.0.0"
             assert builtin.read_prompt_text(coord, "system"), coord
             assert builtin.read_prompt_text(coord, "instruction"), coord
 
@@ -509,8 +533,8 @@ class TestNodeBuilderComposite:
         # node.content.generate run the content prompt (an Autark document
         # under the reply schema the Autark prompt), a recommendation its own
         # prompt, and the three package-writing capabilities one prompt.
-        spec = builtin.get_builtin_spec(self.COORD)
-        assert spec.prompt_files() == {
+        nb = builtin.get_builtin_manifest(self.COORD)
+        assert {key: _file(asset) for key, asset in nb.prompts.items()} == {
             "system": "default_preamble.md",
             "instruction": "node_build_instruction.md",
             "node.content.generate": "new_content_prompt.md",
@@ -538,11 +562,24 @@ class TestNodeBuilderComposite:
         for capability in ("package.recommend", "package.build", "package.extend", "node.kind.author"):
             assert not builtin.gets_worked_examples(self.COORD, capability), capability
 
-    def test_review_policy_and_byte_parity(self):
+    def test_review_policy_and_the_shipped_file_is_what_runs(self):
         # The composite declares review-before-apply; every agent that is not
-        # a composite keeps its manifest dict byte-identical (no delegatesTo
-        # key, report-only runtime): the dev/48 regression requirement.
-        nb = builtin.build_builtin_manifest(builtin.get_builtin_spec(self.COORD))
+        # a composite declares no delegatesTo and a report-only runtime. Each
+        # agent runs exactly its shipped file: the manifest the roster serves
+        # is that file parsed, and every prompt a run reads is the file its
+        # folder holds, or the preamble Curio shares (``curio:``).
+        import json
+        from pathlib import Path
+
+        from utk_curio.backend.app.agents.domain.manifest import parse_agent_manifest
+
+        agents = Path(__file__).resolve().parents[4] / "agents"
+        shared = Path(__file__).resolve().parents[3] / "llm-prompts"
+
+        def shipped(coord: str) -> dict:
+            return json.loads((agents / coord / "manifest.json").read_text(encoding="utf-8"))
+
+        nb = shipped(self.COORD)
         assert nb["runtime"] == {"execution": "foreground", "reviewPolicy": "review-before-apply"}
         assert nb["delegatesTo"] == [
             {"id": "agent.node-builder", "capabilities": [
@@ -555,18 +592,29 @@ class TestNodeBuilderComposite:
         ]
         composites = {"agent.node-builder", "agent.dataset-finder", "agent.dataflow-builder",
                       "agent.researcher"}  # dev/90: asserted in its class
-        for spec in builtin.BUILTIN_AGENTS:
-            if spec.agent_id in composites:
+        manifests = builtin.list_builtin_manifests()
+        assert len(manifests) == 7
+        for m in manifests:
+            raw = shipped(m.dir_name)
+            assert m == parse_agent_manifest(raw), m.agent_id
+            for key, asset in m.prompts.items():
+                file = (
+                    shared / asset.path.removeprefix("curio:") if asset.path.startswith("curio:")
+                    else agents / m.dir_name / asset.path
+                )
+                assert builtin.read_prompt_text(m.dir_name, key) == file.read_text(encoding="utf-8"), (
+                    m.agent_id, key,
+                )
+            if m.agent_id in composites:
                 continue
-            raw = builtin.build_builtin_manifest(spec)
-            assert "delegatesTo" not in raw, spec.agent_id
+            assert "delegatesTo" not in raw, m.agent_id
             assert raw["runtime"] == {"execution": "foreground", "reviewPolicy": "report-only"}
             # requires stays empty for every migrated agent (dev/50 parity).
-            assert all(t["requires"] == [] for t in raw["compatibleTargets"]), spec.agent_id
+            assert all(t["requires"] == [] for t in raw["compatibleTargets"]), m.agent_id
 
     def test_net_new_instruction_resolves(self):
-        # Net-new asset (dev/15 §3.3: no migrated source) — reads through the
-        # same PROMPT_SOURCE_DIR path as every migration.
+        # Net-new asset (dev/15 §3.3: no migrated source), read from the
+        # agent's folder as every other prompt of it is.
         text = builtin.read_prompt_text(self.COORD, "instruction")
         assert text and "Reuse first" in text
         assert builtin.read_prompt_text(self.COORD, "system")  # default preamble
@@ -619,7 +667,7 @@ class TestCatalogReadGrants:
 
     @staticmethod
     def _holders(tool_id: str) -> set[str]:
-        return {spec.agent_id for spec in builtin.BUILTIN_AGENTS if tool_id in spec.tools}
+        return {m.agent_id for m in builtin.list_builtin_manifests() if tool_id in [t.id for t in m.tools]}
 
     @staticmethod
     def _granted(agent_id: str) -> list[str]:
@@ -706,15 +754,14 @@ class TestBackgroundExecutionRoster:
     detached job; every other built-in stays foreground byte-identically."""
 
     def test_only_the_dataflow_builder_is_background(self):
-        background = [
-            spec.agent_id for spec in builtin.BUILTIN_AGENTS if spec.execution == "background"
-        ]
+        manifests = builtin.list_builtin_manifests()
+        background = [m.agent_id for m in manifests if m.execution == "background"]
         assert background == ["agent.dataflow-builder"]
-        dfb = builtin.build_builtin_manifest(builtin.get_builtin_spec("agent.dataflow-builder@1.0.0"))
+        dfb = builtin.manifest_dict("agent.dataflow-builder@1.0.0")
         assert dfb["runtime"] == {"execution": "background", "reviewPolicy": "review-before-apply"}
-        for spec in builtin.BUILTIN_AGENTS:
-            if spec.agent_id != "agent.dataflow-builder":
-                assert builtin.build_builtin_manifest(spec)["runtime"]["execution"] == "foreground"
+        for m in manifests:
+            if m.agent_id != "agent.dataflow-builder":
+                assert builtin.manifest_dict(m.dir_name)["runtime"]["execution"] == "foreground"
         # And the field parses through the manifest contract.
         assert builtin.get_builtin_manifest("agent.dataflow-builder@1.0.0") is not None
 
@@ -824,8 +871,8 @@ class TestNodeBuilderPackages:
         from utk_curio.backend.app.agents.domain.manifest import AGENT_CATEGORIES
 
         assert "package" in AGENT_CATEGORIES
-        assert [s.agent_id for s in builtin.BUILTIN_AGENTS if s.category == "package"] == []
-        raw = builtin.build_builtin_manifest(builtin.get_builtin_spec(self.COORD))
+        assert [m.agent_id for m in builtin.list_builtin_manifests() if m.category == "package"] == []
+        raw = builtin.manifest_dict(self.COORD)
         assert raw["category"] == "node"
 
     def test_the_mode_recommends_from_its_evidence_and_the_chat_proposes_installs(self):
@@ -986,7 +1033,7 @@ class TestGeneratedContentEvaluator:
         assert m.provenance.trust == "built-in"
 
     def test_report_only_runtime(self):
-        raw = builtin.build_builtin_manifest(builtin.get_builtin_spec(self.COORD))
+        raw = builtin.manifest_dict(self.COORD)
         assert raw["runtime"] == {"execution": "foreground", "reviewPolicy": "report-only"}
         assert "delegatesTo" not in raw
 
@@ -1066,7 +1113,7 @@ class TestResearcher:
         assert m.provenance.trust == "built-in"
 
     def test_review_policy(self):
-        raw = builtin.build_builtin_manifest(builtin.get_builtin_spec(self.COORD))
+        raw = builtin.manifest_dict(self.COORD)
         assert raw["runtime"] == {"execution": "foreground", "reviewPolicy": "review-before-apply"}
         assert raw["category"] == "node"
 
@@ -1085,13 +1132,12 @@ class TestResearcher:
         assert notes.reads == ("question", "searchResults", "notesTemplates")
         assert m.prompts["research.notes.compose"].path == "prompts/researcher_notes_instruction.md"
         for capability in ("research.verify", "research.notes.compose"):
-            holders = {s.agent_id for s in builtin.BUILTIN_AGENTS if capability in s.capabilities}
+            holders = {o.agent_id for o in builtin.list_builtin_manifests() if capability in o.capability_ids}
             assert holders == {"agent.researcher"}, capability
         # And the purpose line says what it does in chat.
-        spec = builtin.get_builtin_spec(self.COORD)
         for words in ("a node or the whole dataflow", "diagnoses errors",
                       "define what to build", "as notes on the canvas", "checks facts"):
-            assert words in spec.purpose, words
+            assert words in m.purpose, words
 
     def test_dataflow_builder_prompt_stays_pinned_and_delegation_is_wired(self):
         # dev/90 Follow-up D DELIVERED by dev/95: the delegatesTo growth this
@@ -1100,7 +1146,8 @@ class TestResearcher:
         # The prompt sha updates only with the dev/95 prompt edit itself.
         import hashlib
 
-        prompt = (builtin.PROMPT_SOURCE_DIR / "orchestration_instruction.md").read_bytes()
+        prompt = (builtin.agents_dir() / "agent.dataflow-builder@1.0.0" / "prompts"
+                  / "orchestration_instruction.md").read_bytes()
         assert hashlib.sha256(prompt).hexdigest() == self.DATAFLOW_BUILDER_PROMPT_SHA256
         dfb = builtin.get_builtin_manifest("agent.dataflow-builder@1.0.0")
         assert "agent.researcher" in dfb.delegates_to  # dev/95 Follow-up D

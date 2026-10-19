@@ -33,12 +33,14 @@ def upload_import(user_key: str, manifest_raw: object, prompt_files: object) -> 
 
     Fail-closed rules (memo dev/36): the manifest must pass the package
     contract; ``provenance.trust`` is forced to ``"imported"`` server-side;
+    ``catalog``, which only the agents Curio ships set, is refused;
     prompt digests are computed from the uploaded bytes (client digests are
     ignored); the provided files must correspond exactly to the manifest's
-    referenced prompt paths; size limits apply; an existing store coordinate is
-    a 409 (definitions are immutable — bump the version); the write is atomic.
-    Success registers the coordinate in My Imports (upload IS an explicit
-    account import) and returns the My Imports card — publishable at last.
+    referenced prompt paths, except a prompt Curio shares (``curio:<file>``),
+    which has no file and no digest; size limits apply; an existing store
+    coordinate is a 409 (definitions are immutable, bump the version); the
+    write is atomic. Success registers the coordinate in My Imports (upload IS
+    an explicit account import) and returns the My Imports card, publishable.
     """
 
     from utk_curio.backend.app.common.safe_paths import PathTraversalError
@@ -61,6 +63,12 @@ def upload_import(user_key: str, manifest_raw: object, prompt_files: object) -> 
         raise AgentServiceError("prompt files exceed 1 MB total", 413)
 
     manifest = dict(manifest_raw)
+    if "catalog" in manifest:
+        # Where an agent stands in the catalog (a card or a helper) is set by
+        # the agents Curio ships; a helper's LLM routes through its caller's.
+        raise AgentServiceError(
+            "manifest.catalog is set only by the agents Curio ships; remove it to upload", 400
+        )
     prov = manifest.get("provenance")
     if not isinstance(prov, dict):
         raise AgentServiceError("manifest.provenance must be an object", 400)
@@ -79,6 +87,10 @@ def upload_import(user_key: str, manifest_raw: object, prompt_files: object) -> 
         if not isinstance(asset, dict) or not isinstance(asset.get("path"), str):
             raise AgentServiceError(f"manifest.prompts.{name} must declare a path", 400)
         rel = asset["path"]
+        if rel.startswith(agents_manifest.SHARED_PROMPT_PREFIX):
+            # Curio's own prompt, read where Curio keeps it: no file, no digest.
+            stamped[name] = {key: value for key, value in asset.items() if key != "sha256"}
+            continue
         if rel not in prompt_files:
             raise AgentServiceError(f"prompt file {rel!r} referenced by the manifest is missing", 400)
         referenced.add(rel)

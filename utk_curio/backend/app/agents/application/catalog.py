@@ -67,13 +67,14 @@ EVERY_CALL = "every call"
 A_MESSAGE_YOU_TYPE = "a message you type"
 
 
-def _roster_spec(m: AgentManifest) -> builtin.BuiltinAgentSpec | None:
-    """The roster entry *m* is, or None for a definition someone else wrote,
-    even one at a built-in's coordinate: the roster's words describe the
+def _shipped(m: AgentManifest) -> AgentManifest | None:
+    """The manifest Curio ships that *m* is, or None for a definition someone
+    else wrote, even one at a built-in's coordinate: the shipped manifest's
+    words (its labels, its prompts' ``runs``, its ``catalog``) describe the
     built-in, not it."""
     if m.provenance.trust != "built-in":
         return None
-    return builtin.get_builtin_spec(m.dir_name)
+    return builtin.get_builtin_manifest(m.dir_name)
 
 
 def agent_tools(m: AgentManifest) -> list[dict]:
@@ -91,13 +92,13 @@ def agent_modes(m: AgentManifest) -> list[dict]:
     order. ``prompt`` is the file the mode runs: its own, else the
     instruction.
 
-    A built-in's modes are its labeled capabilities (``builtin``): one it
-    is never asked for by name has no label and is no mode. A definition
-    Curio does not ship has no labels, so each of its capabilities is a mode
-    named by its id.
+    A built-in's modes are its labeled capabilities (``label`` in its shipped
+    manifest): one it is never asked for by name has no label and is no mode.
+    The labels of a definition Curio does not ship are not read, so each of
+    its capabilities is a mode named by its id.
     """
-    spec = _roster_spec(m)
-    labels = spec.capability_label_map() if spec is not None else None
+    shipped = _shipped(m)
+    labels = {c.id: c.label for c in shipped.capabilities if c.label} if shipped is not None else None
     modes: dict[str, dict] = {}
     for capability in m.capabilities:
         label = capability.id if labels is None else labels.get(capability.id)
@@ -107,7 +108,7 @@ def agent_modes(m: AgentManifest) -> list[dict]:
         mode = modes.setdefault(label, {
             "label": label,
             "capabilities": [],
-            "prompt": asset.path if asset is not None else None,
+            "prompt": asset.file if asset is not None else None,
             "askedBy": [],
         })
         mode["capabilities"].append(capability.id)
@@ -120,8 +121,8 @@ def agent_modes(m: AgentManifest) -> list[dict]:
 def _asked_by(m: AgentManifest, capabilities: list[str], roster: list[AgentManifest]) -> list[str]:
     """Who asks *m* for any of *capabilities*: *m* itself, through a
     ``delegatesTo`` entry naming it; then every other built-in whose entry
-    covers one (an entry that names capabilities covers only those), in
-    roster order; then Solve."""
+    covers one (an entry that names capabilities covers only those), in the
+    roster's order (``catalog.order``); then Solve."""
     askers = [m, *(other for other in roster if other.agent_id != m.agent_id)]
     names = [
         asker.name for asker in askers
@@ -137,10 +138,11 @@ def prompt_runs(m: AgentManifest, modes: list[dict]) -> list[dict]:
     order: the preamble on every call, the instruction for a message you type
     (a helper has no chat), and each mode's prompt when the mode is asked for
     (*modes*, from :func:`agent_modes`). Any other prompt runs as its key says:
-    a built-in's in the roster's words, any other by the key itself."""
-    spec = _roster_spec(m)
-    variants = spec.variant_runs() if spec is not None else {}
-    chats = spec is None or spec.in_catalog
+    a built-in's in its shipped manifest's words (``runs``), any other by the
+    key itself. A shared prompt is listed by the file a bundle holds it as."""
+    shipped = _shipped(m)
+    variants = {key: a.runs for key, a in shipped.prompts.items() if a.runs} if shipped is not None else {}
+    chats = shipped is None or shipped.catalog.listed
     mode_keys = {c.instruction for c in m.capabilities if c.instruction}
     runs: dict[str, list[str]] = {}
 
@@ -151,11 +153,11 @@ def prompt_runs(m: AgentManifest, modes: list[dict]) -> list[dict]:
 
     for key, asset in m.prompts.items():
         if key == "system":
-            note(asset.path, EVERY_CALL)
+            note(asset.file, EVERY_CALL)
         elif key == "instruction":
-            note(asset.path, A_MESSAGE_YOU_TYPE if chats else None)
+            note(asset.file, A_MESSAGE_YOU_TYPE if chats else None)
         else:
-            note(asset.path, None if key in mode_keys else variants.get(key, key))
+            note(asset.file, None if key in mode_keys else variants.get(key, key))
     for mode in modes:
         if mode["prompt"] is not None:
             note(mode["prompt"], mode["label"])
@@ -224,12 +226,13 @@ def _resolve_definition(user_key: str, coord: str) -> AgentManifest | None:
     """Resolve a coordinate's canonical metadata.
 
     An **owned/imported** store definition (trust != ``built-in``) is the
-    authority for its coordinate — it may deliberately shadow a built-in id.
-    Otherwise the **built-in roster** wins, so evolving built-in metadata (e.g.
-    a widened ``compatibleTargets``) always takes effect even when a stale copy
-    was materialized into the store by an earlier install. Falls back to the
-    store copy, then the published catalog. (Runtime prompt bytes are resolved
-    separately by ``_resolve_instruction_text``, still store-first.)
+    authority for its coordinate: it may deliberately shadow a built-in id.
+    Otherwise the **shipped manifest** (``agents/``) wins, so evolving built-in
+    metadata (e.g. a widened ``compatibleTargets``) always takes effect even
+    when a stale copy was materialized into the store by an earlier install.
+    Falls back to the store copy, then the published catalog. (Runtime prompt
+    bytes are resolved separately by ``_resolve_instruction_text``, still
+    store-first.)
     """
     store_m = storage.load_installed_agent_definition(user_key, coord)
     if store_m is not None and store_m.provenance.trust != "built-in":
@@ -243,12 +246,14 @@ def _resolve_definition(user_key: str, coord: str) -> AgentManifest | None:
 
 
 def builtin_definition_bundle(coord: str) -> dict | None:
-    """A built-in's ``{manifest, prompts}`` straight from the roster and
-    ``llm-prompts/``, without materializing anything into a store."""
-    spec = builtin.get_builtin_spec(coord)
-    if spec is None:
+    """A built-in's ``{manifest, prompts}`` straight from its shipped folder,
+    without materializing anything into a store, as an export or an install's
+    copy carries it (``builtin.exported_manifest``): no field only Curio's
+    own agents use, and the shared preamble as a file of its own."""
+    raw = builtin.manifest_dict(coord)
+    if raw is None:
         return None
-    manifest = builtin.build_builtin_manifest(spec)
+    manifest = builtin.exported_manifest(raw)
     prompts: dict[str, str] = {}
     for key, asset in manifest["prompts"].items():
         text = builtin.read_prompt_text(coord, key)
@@ -265,7 +270,7 @@ def read_definition_bundle_anywhere(user_key: str, coord: str) -> dict | None:
     roster and the shared catalog - failed for any agent this account had not
     imported or installed, including every built-in. The precedence here is
     :func:`_resolve_definition`'s: an owned import shadows everything, then
-    the built-in roster (so a stale materialized copy does not win over the
+    the shipped folder (so a stale materialized copy does not win over the
     current prompts), then a built-in's store copy, then the published catalog.
     """
     try:
@@ -299,9 +304,13 @@ def _copy_published(user_key: str, coord: str) -> None:
     """Copy a published definition into the user store, stamped ``global``
     trust: it came from the Global Catalog, so it runs from the adder's own
     copy after its publisher unpublishes it (#438), the way a shared dataset
-    or node package does, and it is never this account's to publish."""
+    or node package does, and it is never this account's to publish. A prompt
+    it names as Curio's (``curio:<file>``) stays a name, read from Curio's own
+    prompts, as in the publisher's copy."""
     try:
-        bundle = storage.read_definition_bundle_from_dir(publications.published_agent_dir(coord))
+        bundle = storage.read_definition_bundle_from_dir(
+            publications.published_agent_dir(coord), carry_shared=False,
+        )
     except (AgentManifestError, PathTraversalError):
         return
     if bundle is None:
@@ -317,24 +326,25 @@ def _copy_published(user_key: str, coord: str) -> None:
 def _materialize_definition(user_key: str, coord: str) -> None:
     """Write an added agent's bytes (manifest + prompt assets) into the user
     store, so it is self-contained and runs from its own on-disk assets: a
-    built-in's from the roster rather than the legacy ``llm-prompts/`` dir, a
-    published one's from the Global Catalog (:func:`_copy_published`).
+    built-in's from its shipped folder, as an export carries it
+    (:func:`builtin_definition_bundle`), a published one's from the Global
+    Catalog (:func:`_copy_published`).
 
     Heals stale copies (memo dev/44): a built-in store copy that predates a
-    roster asset (e.g. the pre-dev/38 missing system preamble) is rewritten to
-    the current roster set on the next install/import — idempotent, and never
-    touches a non-built-in definition (an owned import deliberately shadowing
-    a built-in coord keeps its own bytes, as does an earlier copy of a
-    published one)."""
+    shipped asset (e.g. the pre-dev/38 missing system preamble) is rewritten to
+    the current shipped set on the next install/import, idempotently, and
+    never touches a non-built-in definition (an owned import deliberately
+    shadowing a built-in coord keeps its own bytes, as does an earlier copy of
+    a published one)."""
     existing = storage.load_installed_agent_definition(user_key, coord)
     if existing is not None and existing.provenance.trust != "built-in":
-        return  # owned/imported shadow — its bytes are authoritative
-    spec = builtin.get_builtin_spec(coord)
-    if spec is None:
+        return  # owned/imported shadow: its bytes are authoritative
+    bundle = builtin_definition_bundle(coord)
+    if bundle is None:
         if existing is None:
             _copy_published(user_key, coord)
         return
-    manifest = builtin.build_builtin_manifest(spec)
+    manifest, files = bundle["manifest"], bundle["prompts"]
     if existing is not None:
         base = storage.agent_definition_dir(user_key, coord)
         declared = manifest["prompts"]
@@ -342,25 +352,18 @@ def _materialize_definition(user_key: str, coord: str) -> None:
             (base / asset["path"]).is_file() for asset in declared.values()
         )
         if complete:
-            # Completeness isn't freshness (dev/60): a roster prompt UPDATE
-            # must reach the materialized copy too — rewrite on byte drift.
+            # Completeness isn't freshness (dev/60): a shipped prompt UPDATE
+            # must reach the materialized copy too, so rewrite on byte drift.
             fresh = all(
-                (base / asset["path"]).read_text(encoding="utf-8")
-                == (builtin.read_prompt_text(coord, key) or "")
-                for key, asset in declared.items()
+                (base / asset["path"]).read_text(encoding="utf-8") == files.get(asset["path"], "")
+                for asset in declared.values()
             )
             if fresh:
-                return  # matches the roster asset set AND bytes
-    instruction = builtin.read_prompt_text(coord, "instruction")
-    if instruction is None:
-        return  # prompt file missing — leave the built-in fallback to handle runtime
+                return  # matches the shipped asset set AND bytes
+    if builtin.read_prompt_text(coord, "instruction") is None:
+        return  # prompt file missing: leave the built-in fallback to handle runtime
     # Every prompt the manifest declares: the preamble, the instruction, and
     # each mode's own.
-    files = {}
-    for key, asset in manifest["prompts"].items():
-        text = builtin.read_prompt_text(coord, key)
-        if text is not None:
-            files[asset["path"]] = text
     storage.write_definition(user_key, coord, manifest, files)
 
 
@@ -373,7 +376,7 @@ def list_global_catalog(user_key: str, project_id: str | None = None) -> list[di
         spec = projects_storage.read_spec(user_key, project_id)
         if spec is not None:
             installed = set(project_agents.project_agents(spec))
-    # Global Catalog = built-in roster ∪ published definitions (published wins on dupes).
+    # Global Catalog = shipped cards ∪ published definitions (published wins on dupes).
     by_dir: dict[str, tuple[AgentManifest, bool]] = {}
     for m in builtin.list_builtin_manifests():
         if not builtin.is_internal(m.dir_name):

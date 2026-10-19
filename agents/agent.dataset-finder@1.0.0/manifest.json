@@ -1,0 +1,117 @@
+{
+  "id": "agent.dataset-finder",
+  "name": "Dataset Finder",
+  "category": "data",
+  "version": "1.0.0",
+  "purpose": "Discover and select datasets across connected data portals and the Data Catalog; download portal picks into the Data Catalog as a reviewed proposal. Never authors fetch code.",
+  "catalog": {
+    "listed": true,
+    "order": 5
+  },
+  "roles": [
+    "discovery",
+    "selection"
+  ],
+  "capabilities": [
+    {
+      "id": "dataset.discover",
+      "contractVersion": "1",
+      "label": "Find datasets"
+    },
+    {
+      "id": "dataset.select",
+      "contractVersion": "1"
+    }
+  ],
+  "prompts": {
+    "system": {
+      "path": "curio:default_preamble.md",
+      "variables": []
+    },
+    "instruction": {
+      "path": "prompts/discovery_instruction.md",
+      "variables": []
+    }
+  },
+  "compatibleTargets": [
+    {
+      "kind": "node",
+      "requires": [
+        "loadsDataset"
+      ]
+    },
+    {
+      "kind": "canvas",
+      "requires": []
+    }
+  ],
+  "inputs": {
+    "reads": [
+      "mission",
+      "nodeContext",
+      "catalog"
+    ],
+    "requiredConfig": []
+  },
+  "tools": [
+    {
+      "id": "catalog.search"
+    },
+    {
+      "id": "discovery.sources"
+    },
+    {
+      "id": "discovery.search"
+    },
+    {
+      "id": "discovery.acquire"
+    },
+    {
+      "id": "dataset.install"
+    },
+    {
+      "id": "dataflow.read"
+    }
+  ],
+  "runtime": {
+    "execution": "foreground",
+    "reviewPolicy": "review-before-apply"
+  },
+  "providerRequirements": {
+    "capabilities": [
+      "structured-output"
+    ]
+  },
+  "provenance": {
+    "publisher": "curio",
+    "license": "MIT",
+    "trust": "built-in"
+  },
+  "delegatesTo": [
+    {
+      "id": "agent.node-builder",
+      "capabilities": [
+        "node.build",
+        "dataset.fetch.author"
+      ]
+    },
+    {
+      "id": "agent.dataflow-reader",
+      "capabilities": [
+        "workflow.suggest"
+      ]
+    },
+    {
+      "id": "agent.dataflow-planner",
+      "capabilities": [
+        "workflow.keyword.bind"
+      ]
+    },
+    {
+      "id": "agent.researcher",
+      "capabilities": [
+        "research.verify"
+      ]
+    }
+  ]
+}

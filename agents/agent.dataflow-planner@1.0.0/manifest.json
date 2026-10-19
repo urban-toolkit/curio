@@ -1,0 +1,156 @@
+{
+  "id": "agent.dataflow-planner",
+  "name": "Dataflow Planner",
+  "category": "canvas",
+  "version": "1.0.0",
+  "purpose": "Plan, refresh and check a dataflow's tasks, and extract and bind the keywords that describe it.",
+  "catalog": {
+    "listed": false,
+    "order": 2
+  },
+  "roles": [
+    "planning",
+    "validation"
+  ],
+  "capabilities": [
+    {
+      "id": "workflow.plan.create",
+      "contractVersion": "1",
+      "instruction": "workflow.plan.create",
+      "reads": [
+        "currentTask",
+        "dataflowContext"
+      ],
+      "requiredConfig": [],
+      "label": "Plan a dataflow's tasks"
+    },
+    {
+      "id": "execution.followup.plan",
+      "contractVersion": "1",
+      "instruction": "execution.followup.plan",
+      "reads": [
+        "nodeContent",
+        "nodeType",
+        "currentTask"
+      ],
+      "requiredConfig": [],
+      "label": "Plan a follow-up from a node's run"
+    },
+    {
+      "id": "workflow.plan.refresh",
+      "contractVersion": "1",
+      "instruction": "workflow.plan.refresh",
+      "reads": [
+        "currentTask",
+        "keywords",
+        "dataflowContext"
+      ],
+      "requiredConfig": [
+        "keywordTypes"
+      ],
+      "label": "Refresh a dataflow's tasks"
+    },
+    {
+      "id": "workflow.coherence.validate",
+      "contractVersion": "1",
+      "instruction": "workflow.coherence.validate",
+      "reads": [
+        "workflowGoal",
+        "dataflowContext"
+      ],
+      "requiredConfig": [],
+      "label": "Check a plan's coherence"
+    },
+    {
+      "id": "workflow.keyword.bind",
+      "contractVersion": "1",
+      "instruction": "workflow.keyword.bind",
+      "reads": [
+        "keywords",
+        "dataflowContext"
+      ],
+      "requiredConfig": [
+        "keywordTypes"
+      ],
+      "label": "Bind the keywords of a description"
+    },
+    {
+      "id": "workflow.keywords.extract",
+      "contractVersion": "1",
+      "instruction": "workflow.keywords.extract",
+      "reads": [
+        "workflowGoal"
+      ],
+      "requiredConfig": [
+        "keywordTypes"
+      ],
+      "label": "Extract the keywords of a description"
+    }
+  ],
+  "prompts": {
+    "system": {
+      "path": "curio:default_preamble.md",
+      "variables": []
+    },
+    "instruction": {
+      "path": "prompts/new_subtasks_prompt.md",
+      "variables": []
+    },
+    "workflow.plan.create": {
+      "path": "prompts/new_subtasks_prompt.md",
+      "variables": []
+    },
+    "execution.followup.plan": {
+      "path": "prompts/new_subtask_from_exec_prompt.md",
+      "variables": []
+    },
+    "workflow.plan.refresh": {
+      "path": "prompts/task_refresh_prompt.md",
+      "variables": []
+    },
+    "workflow.coherence.validate": {
+      "path": "prompts/evaluate_coherence_subtasks_prompt.md",
+      "variables": []
+    },
+    "workflow.keyword.bind": {
+      "path": "prompts/keywords_binding_prompt.md",
+      "variables": []
+    },
+    "workflow.keywords.extract": {
+      "path": "prompts/syntax_analysis_prompt.md",
+      "variables": []
+    }
+  },
+  "compatibleTargets": [
+    {
+      "kind": "canvas",
+      "requires": []
+    }
+  ],
+  "inputs": {
+    "reads": [
+      "currentTask",
+      "dataflowContext",
+      "nodeContent",
+      "nodeType",
+      "keywords",
+      "workflowGoal"
+    ],
+    "requiredConfig": []
+  },
+  "tools": [],
+  "runtime": {
+    "execution": "foreground",
+    "reviewPolicy": "report-only"
+  },
+  "providerRequirements": {
+    "capabilities": [
+      "structured-output"
+    ]
+  },
+  "provenance": {
+    "publisher": "curio",
+    "license": "MIT",
+    "trust": "built-in"
+  }
+}

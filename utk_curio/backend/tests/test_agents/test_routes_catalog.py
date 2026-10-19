@@ -73,7 +73,7 @@ class TestGlobalCatalog:
         assert all(a["scope"] == "browse" and a["provenance"]["trust"] == "built-in" for a in agents)
         assert all(a["inCatalog"] is True for a in agents)
         ids = {a["id"] for a in agents}
-        assert ids == {s.agent_id for s in builtin.BUILTIN_AGENTS if s.in_catalog}
+        assert ids == {m.agent_id for m in builtin.list_builtin_manifests() if m.catalog.listed}
         assert "agent.dataflow-planner" not in ids
 
     def test_import_a_builtin(self, client, user_and_token, tmp_curio):
@@ -924,7 +924,7 @@ class TestReadDefinition:
         assert body["manifest"]["provenance"]["trust"] == "built-in"
         declared = {asset["path"] for asset in body["manifest"]["prompts"].values()}
         assert declared, "a built-in declares its prompt files"
-        # Every declared prompt travels with its text, from llm-prompts/.
+        # Every declared prompt travels with its text, the shared preamble too.
         assert declared <= set(body["prompts"]), (declared, set(body["prompts"]))
         assert all(body["prompts"][p].strip() for p in declared)
 
