@@ -2143,6 +2143,17 @@ When a template declares both `behavior: "code"` and a `source`, the frontend
 composes `withPackageStarter` over the behavior hook so the starter is injected
 on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 
+A template that declares `starterIsContent` gives its starter to a node an
+agent's plan creates too. Both plan applies, the whole plan and one node
+(`agents/application/proposals/plans.py`), read it with `content_starters`
+(`packages/application/starters.py`, each template resolved as the project's
+available templates resolve it). The node's content is the starter, and its
+widgets are the template's with each one the plan declares set over the one of
+its name (`plan_scenarios.created_node_metadata`). It never joins `nodeRuns` as
+pending, so Solve does not write it, and its ref is `approved`, so the
+Simulation Mode driver does not validate it either. Every other planned node is
+created empty for Solve to write.
+
 ### Auth Routes
 
 | Endpoint | Method | Purpose |

@@ -414,6 +414,18 @@ def available_templates_report(user_key: str, project_id: str) -> dict:
     return _available_templates_report_unlocked(wanted, packages_store_reads._locked_store_index(user_key))
 
 
+def _in_scope(wanted: set[str], store: dict[str, object]):
+    """The store's packages a project may use, as ``(dirName, manifest or the
+    exception that stopped it being read)``: the seeded ``curio.builtin`` and
+    every package in the project's lockfile *wanted*, highest major first, so a
+    template id is the first package's that holds it. No locks and no I/O."""
+    for dir_name in sorted(store, reverse=True):
+        pkg_id = dir_name.split("@", 1)[0]
+        if pkg_id != BUILTIN_PACKAGE_ID and dir_name not in wanted:
+            continue
+        yield dir_name, store[dir_name]
+
+
 def _available_templates_report_unlocked(
     wanted: set[str], store: dict[str, object],
 ) -> dict:
@@ -428,12 +440,7 @@ def _available_templates_report_unlocked(
     out: list[dict] = []
     seen: set[str] = set()
     skipped: list[str] = []
-    # Prefer the highest seeded builtin major when several exist.
-    for dir_name in sorted(store, reverse=True):
-        pkg_id = dir_name.split("@", 1)[0]
-        if pkg_id != BUILTIN_PACKAGE_ID and dir_name not in wanted:
-            continue
-        manifest = store[dir_name]
+    for dir_name, manifest in _in_scope(wanted, store):
         if isinstance(manifest, Exception):
             # Loud, because the consequence is invisible: every template this
             # package provides disappears from the roster (dev/93 D2).
@@ -478,11 +485,7 @@ def _presentation_templates_unlocked(
     (dev/99 R2). Takes no locks and performs no I/O."""
     out: list[dict] = []
     seen: set[str] = set()
-    for dir_name in sorted(store, reverse=True):
-        pkg_id = dir_name.split("@", 1)[0]
-        if pkg_id != BUILTIN_PACKAGE_ID and dir_name not in wanted:
-            continue
-        manifest = store[dir_name]
+    for _dir_name, manifest in _in_scope(wanted, store):
         if isinstance(manifest, Exception):
             continue  # available_templates_report already logs this loudly
         for t in manifest.templates:
