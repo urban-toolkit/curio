@@ -4,13 +4,15 @@ A fresh Autark node opens empty; wired to a loader it says the loader has not
 run, and when the loader runs it fills with a starter document chosen from the
 input (``utils/autkDefaultSpec.ts``). An input it cannot draw is refused with the
 reason, in the node body and in its error, instead of an empty map under a green
-Done. A DataFrame with a geometry column is drawn. A node with several inputs
-draws a layer from each (#662), and a layer chip on an input of one frame with
-no layer name draws that frame, whatever the chip names.
+Done. A layer autk-db refuses, here for a polygon that collapses on its 1 cm
+grid, gives autk-db's reason alone, with no CRS advice (#899). A DataFrame with
+a geometry column is drawn. A node with several inputs draws a layer from each
+(#662), and a layer chip on an input of one frame with no layer name draws that
+frame, whatever the chip names.
 
 The first test needs no WebGPU. The others run the Autark node, which does: they
 skip without an adapter unless ``CURIO_REQUIRE_HARDWARE_WEBGPU=1`` (CI's GPU job),
-except the several-inputs and layer chip tests, which fail without one.
+except the flat polygon, several-inputs and layer chip tests, which fail without one.
 
 Run::
 
@@ -114,6 +116,20 @@ GRID_LOADER = (
     "        cells.append(box(x, y, x + 0.005, y + 0.005))\n"
     "        pop.append(i * 10 + j)\n"
     'return gpd.GeoDataFrame({"pop": pop}, geometry=cells, crs="EPSG:4326")\n'
+)
+
+# A box and a polygon with no area: its three points lie on one line, so it
+# collapses on autk-db's 1 cm grid whatever the CRS (Renzo's repro in #899).
+FLAT_POLYGON_LOADER = (
+    "import geopandas as gpd\n"
+    "from shapely.geometry import Polygon, box\n"
+    "\n"
+    "return gpd.GeoDataFrame(\n"
+    '    {"pop": [1, 2]},\n'
+    "    geometry=[box(-87.70, 41.87, -87.69, 41.88),\n"
+    "              Polygon([(-87.68, 41.87), (-87.675, 41.87), (-87.67, 41.87)])],\n"
+    '    crs="EPSG:4326",\n'
+    ")\n"
 )
 
 _GRAMMAR_EDITOR_JS = """(nodeId) => {
@@ -241,6 +257,30 @@ def test_a_dataframe_without_geometry_is_refused_with_the_reason(
     assert "not at fault" in error, error
     _open_output(page, AUTK_ID)
     assert _empty_reason(page, AUTK_ID) == "geometry-unresolved"
+
+
+def test_a_polygon_that_collapses_on_the_grid_is_refused_with_autk_dbs_reason_alone(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """#899: autk-db refuses a layer when one of its polygons collapses on the
+    workspace's 1 cm grid. The node's error is autk-db's message under the
+    layer's name. It carries no CRS advice, since the coordinates are the
+    degrees the frame declares; autk-grammar 4.4.0 added that advice to every
+    load error."""
+    _open(page, app_frontend, current_server, username="autark_input_grid",
+          spec=_spec(FLAT_POLYGON_LOADER, MAP_ON_INPUT))
+    adapter = webgpu_adapter(page)
+    assert adapter, f"running an Autark node needs a WebGPU adapter, which CI's GPU job has: {adapter}"
+
+    run_node_and_wait(page, LOADER_ID, node_type="DATA_LOADING", timeout_ms=120000)
+    play_node(page, AUTK_ID)
+    status = wait_for_node_settled(page, AUTK_ID, node_type="autk-grammar", timeout_ms=120000)
+    assert status == "error", "a polygon that collapses on autk-db's grid must not end in Done"
+
+    error = read_node_error_text(node_locator(page, AUTK_ID)) or ""
+    assert 'Failed to load GeoJSON layer "input_0"' in error, error
+    assert "collapses or invalidates a geometry in input_0" in error, error
+    assert "coordinateFormat" not in error, error
 
 
 def test_a_dataframe_with_a_geometry_column_is_drawn(
