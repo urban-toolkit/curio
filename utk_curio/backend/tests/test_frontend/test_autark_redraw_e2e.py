@@ -126,21 +126,23 @@ _RUN_CARD = ".react-flow__node-execNode"
 _NO_RUNS = "No executions yet"
 _RUN_CARDS_JS = """([id, least]) => {
     const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
-    return !!node && node.querySelectorAll('.react-flow__node-execNode').length >= least;
+    const listed = node ? node.querySelectorAll('.react-flow__node-execNode').length : 0;
+    return listed >= least ? listed : false;
 }"""
 
 
 def _runs_listed(page, node_id: str, *, at_least: int) -> int:
-    """Open the node's Provenance tab, wait for it to list *at_least* runs, and count them.
+    """Open the node's Provenance tab, wait for it to list *at_least* runs, and return how many it lists.
 
     Opened once the run has ended, since a run that ends turns the node's editor
     to its Output tab. The cards are counted on the page, not as visible: the
-    tab's graph places them only once it has a frame to measure them in.
+    tab's graph places them only once it has a frame to measure them in. The
+    count is the one the check that passed saw.
     """
     node = node_locator(page, node_id)
     node.locator(_PROVENANCE_TAB).first.click()
     try:
-        page.wait_for_function(_RUN_CARDS_JS, arg=[node_id, at_least], timeout=30000, polling=100)
+        handle = page.wait_for_function(_RUN_CARDS_JS, arg=[node_id, at_least], timeout=30000, polling=100)
     except PlaywrightTimeoutError:
         listed = node.locator(_RUN_CARD).count()
         says_none = node.get_by_text(_NO_RUNS).count() > 0
@@ -148,7 +150,7 @@ def _runs_listed(page, node_id: str, *, at_least: int) -> int:
             f"the Provenance tab of {node_id} lists {listed} run(s), not at least {at_least}"
             + (f' and reads "{_NO_RUNS}"' if says_none else "")
         ) from None
-    return node.locator(_RUN_CARD).count()
+    return int(handle.json_value())
 
 
 def test_an_autark_map_redraws_when_the_node_feeding_it_runs_again(
