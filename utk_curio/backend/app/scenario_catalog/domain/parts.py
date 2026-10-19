@@ -42,7 +42,7 @@ def is_parameter_node(node: dict) -> bool:
 def _catalog_templates(packages: Optional["TemplateGrammars"]) -> "TemplateGrammars":
     from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
-    return packages or TemplateGrammars.catalog()
+    return packages or TemplateGrammars.for_account()
 
 
 def is_pass_through(node: dict, packages: Optional["TemplateGrammars"] = None) -> bool:
@@ -50,7 +50,7 @@ def is_pass_through(node: dict, packages: Optional["TemplateGrammars"] = None) -
     making its own: a node whose template declares a chart's or a Data Pool's
     behavior (or draws with the Vega-Lite grammar), or an Autark spec that
     draws. The dashboard walk's rule (``dashboard_payload.passes_through``).
-    *packages* reads the manifests (the catalog's when None)."""
+    *packages* reads the manifests (``TemplateGrammars.for_account()`` when None)."""
     return passes_through(node, packages)
 
 
@@ -129,7 +129,7 @@ def producers_feeding(
     """The nodes that make the data reaching *ids*: walking up from each, the
     first node on every path that is not a pass-through. *ids* themselves are
     not in the set. Breadth-first with a visited set, so a cycle ends.
-    *packages* reads the manifests (the catalog's when None)."""
+    *packages* reads the manifests (``TemplateGrammars.for_account()`` when None)."""
     packages = _catalog_templates(packages)
     by_id = {n["id"]: n for n in nodes}
     incoming: dict[str, list[str]] = {}
@@ -160,8 +160,8 @@ def saved_sources(
 ) -> list[str]:
     """The nodes whose saved output stands for *node_id*'s, in dataflow order:
     itself, or for a pass-through the nodes feeding it. A Parameter node's
-    value is in the spec, so it has none. *packages* reads the manifests (the
-    catalog's when None)."""
+    value is in the spec, so it has none. *packages* reads the manifests
+    (``TemplateGrammars.for_account()`` when None)."""
     by_id = {n["id"]: n for n in nodes}
     node = by_id.get(node_id)
     if node is None or is_parameter_node(node):
@@ -178,7 +178,7 @@ def scenario_source_node_ids(spec: object, packages: Optional["TemplateGrammars"
     sources of each scenario's context and outcomes, so another project can
     read them. The twin of ``scenarioSourceNodeIds``; a run on the server adds
     them to the pinned tiles' sources, as ``savedSourceNodeIds`` does.
-    *packages* reads the manifests (the catalog's when None)."""
+    *packages* reads the manifests (``TemplateGrammars.for_account()`` when None)."""
     packages = _catalog_templates(packages)
     nodes, edges = spec_nodes_and_edges(spec)
     dataflow = spec.get("dataflow") if isinstance(spec, dict) else None

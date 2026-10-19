@@ -228,6 +228,9 @@ export interface NodeDescriptor {
   outputPorts: PortDef[];
   editor: EditorType;
   grammarId?: string;
+  /** The behavior key the template declares (its manifest's `behavior`):
+   *  what the node is to every rule that asks `registry/declaredNodes`. */
+  behavior?: string;
   inPalette: boolean;
   paletteOrder?: number;
   /** Optional small label rendered as a badge over the icon in ToolsMenu (e.g. "AUTK", "Vega-Lite"). */

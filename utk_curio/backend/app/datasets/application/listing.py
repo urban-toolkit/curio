@@ -839,7 +839,7 @@ class CatalogListing:
         from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
         from utk_curio.backend.app.projects.usage import dataflow_usage
 
-        packages = TemplateGrammars.catalog()
+        packages = TemplateGrammars.for_account(self._paths._user_key())
 
         def uses(spec: dict, project_id: str) -> tuple[list[dict[str, Any]], bool] | None:
             consumers = _dataset_consumer_nodes_in_spec(
@@ -888,7 +888,7 @@ class CatalogListing:
         from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
         user_key = self._paths._user_key()
-        packages = TemplateGrammars.catalog()
+        packages = TemplateGrammars.for_account(user_key)
         counts: dict[str, int] = {}
         for project in projects_repo.list_for_user(self.user.id):
             spec = project_storage.read_spec(user_key, project.id) or {}

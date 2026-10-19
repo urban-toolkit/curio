@@ -56,23 +56,29 @@ logger = logging.getLogger(__name__)
 
 # The behaviors (a template's ``behavior``, ``template_grammars``) of the nodes
 # that re-derive their own content from whatever reaches them: a Vega-Lite
-# chart, a Simple View and a Data Pool. A walk upward from a pinned tile passes
+# chart, a Simple View and a Data Pool, and the built-in nodes of a type no
+# template declares a behavior for. A walk upward from a pinned tile passes
 # through them looking for the node that actually produced rows. The canvas's
 # twin is ``isPassThroughNode`` in
 # ``frontend/urban-workflows/src/utils/dashboardLayout.ts``.
 _PASS_THROUGH_BEHAVIORS = frozenset({"vega", "simple-vis", "data-pool"})
+_PASS_THROUGH_TYPES = frozenset({
+    "curio.builtin/vis-vega", "curio.builtin/vis-simple", "curio.builtin/data-pool",
+})
 
-#: The behavior of the Autark node, a pass-through only when its spec draws.
-_AUTK_GRAMMAR_BEHAVIOR = "autk-grammar"
+#: The Autark node, a pass-through only when its spec draws.
+_AUTK_GRAMMAR_BEHAVIORS = frozenset({"autk-grammar"})
+_AUTK_GRAMMAR_TYPES = frozenset({"curio.builtin/autk-grammar"})
 
-# The behaviors of the nodes whose tile draws the node's own output rather
-# than what reaches it: a Compare Scenarios node (#662) charts the table its
-# own run stacked, or shows its difference. A pinned one is its own source, so
-# its tile draws without a run, and its inputs are not walked. Its tile draws
-# no map, so it asks ``/raster`` for nothing: an Autark map pinned after it
-# reads the difference's raster. The canvas's twin is
-# ``SELF_DRAWN_NODE_TYPES`` in ``dashboardLayout.ts``.
+# The nodes whose tile draws the node's own output rather than what reaches
+# it: a Compare Scenarios node (#662) charts the table its own run stacked, or
+# shows its difference. A pinned one is its own source, so its tile draws
+# without a run, and its inputs are not walked. Its tile draws no map, so it
+# asks ``/raster`` for nothing: an Autark map pinned after it reads the
+# difference's raster. The canvas's twin is ``isSelfDrawnNode`` in
+# ``dashboardLayout.ts``.
 _SELF_DRAWN_BEHAVIORS = frozenset({"compare-scenarios"})
+_SELF_DRAWN_TYPES = frozenset({"curio.builtin/compare-scenarios"})
 
 #: How much embedded data a single dashboard may carry, measured as the UTF-8
 #: length of the serialised envelopes. Chosen to stay well inside what a browser
@@ -217,14 +223,14 @@ class DashboardOutputUnreadableError(Exception):
         )
 
 
-def node_behavior(node: dict, packages: Optional["TemplateGrammars"] = None) -> Optional[str]:
-    """The behavior a saved node's template declares, read through *packages*
-    (the catalog's manifests when None). ``TrillGenerator`` writes the template
-    id as the node's ``type``, its code as ``content``, and ``dashboardPinned``
-    on the node itself; a saved node has no ``data`` block."""
-    from utk_curio.backend.app.projects.template_grammars import node_template
+def _is_autark_node(node: dict, packages: "TemplateGrammars") -> bool:
+    """Whether a saved node's template declares the Autark node's behavior.
+    ``TrillGenerator`` writes the template id as the node's ``type``, its code
+    as ``content``, and ``dashboardPinned`` on the node itself; a saved node
+    has no ``data`` block."""
+    from utk_curio.backend.app.projects.template_grammars import declares_behavior
 
-    return node_template(node.get("type"), packages).behavior
+    return declares_behavior(node.get("type"), _AUTK_GRAMMAR_BEHAVIORS, _AUTK_GRAMMAR_TYPES, packages)
 
 
 def _is_pinned(node: dict) -> bool:
@@ -256,21 +262,32 @@ def passes_through(node: dict, packages: Optional["TemplateGrammars"] = None) ->
     """Whether a saved *node* shows what reaches it rather than making rows:
     a node whose template declares a Vega-Lite chart's, a Simple View's or a
     Data Pool's behavior, or draws with the Vega-Lite grammar
-    (``template_grammars``), as ``isPassThroughNode`` reads it, or the Autark
-    node when its spec draws. *packages* reads the manifests (the catalog's
-    when None)."""
+    (``template_grammars``), or the Autark node when its spec draws, as
+    ``isPassThroughNode`` reads it. *packages* reads the manifests
+    (``TemplateGrammars.for_account()`` when None)."""
     from utk_curio.backend.app.projects.template_grammars import (
         TemplateGrammars,
+        declares_behavior,
         draws_with_vega_lite,
     )
 
-    packages = packages or TemplateGrammars.catalog()
-    behavior = node_behavior(node, packages)
-    if behavior in _PASS_THROUGH_BEHAVIORS or draws_with_vega_lite(node.get("type"), packages):
+    packages = packages or TemplateGrammars.for_account()
+    node_type = node.get("type")
+    if (declares_behavior(node_type, _PASS_THROUGH_BEHAVIORS, _PASS_THROUGH_TYPES, packages)
+            or draws_with_vega_lite(node_type, packages)):
         return True
-    if behavior == _AUTK_GRAMMAR_BEHAVIOR:
+    if _is_autark_node(node, packages):
         return _classify_autk_spec(node.get("content")) == "render"
     return False
+
+
+def draws_its_own_output(node: dict, packages: Optional["TemplateGrammars"] = None) -> bool:
+    """Whether a saved *node*'s tile draws its own output, as a Compare
+    Scenarios node's does (``isSelfDrawnNode``). *packages* reads the
+    manifests (``TemplateGrammars.for_account()`` when None)."""
+    from utk_curio.backend.app.projects.template_grammars import declares_behavior
+
+    return declares_behavior(node.get("type"), _SELF_DRAWN_BEHAVIORS, _SELF_DRAWN_TYPES, packages)
 
 
 def dashboard_source_node_ids(spec: dict, packages: Optional["TemplateGrammars"] = None) -> Set[str]:
@@ -280,21 +297,22 @@ def dashboard_source_node_ids(spec: dict, packages: Optional["TemplateGrammars"]
     reaches them through (:func:`passes_through`) and stops at the first node
     on each path that actually produces rows. Breadth-first with a visited
     set, so a cycle or a diamond terminates. A pinned node that draws its own
-    output (``_SELF_DRAWN_BEHAVIORS``) is its own source instead. *packages*
-    reads the manifests (the catalog's when None).
+    output (:func:`draws_its_own_output`) is its own source instead.
+    *packages* reads the manifests (``TemplateGrammars.for_account()`` when
+    None).
     """
     from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
-    packages = packages or TemplateGrammars.catalog()
+    packages = packages or TemplateGrammars.for_account()
     return _self_drawn_node_ids(spec, packages) | _walked_source_node_ids(spec, packages)
 
 
 def _self_drawn_node_ids(spec: dict, packages: "TemplateGrammars") -> Set[str]:
-    """The pinned nodes whose tile draws their own output (``_SELF_DRAWN_BEHAVIORS``)."""
+    """The pinned nodes whose tile draws their own output (:func:`draws_its_own_output`)."""
     dataflow = (spec or {}).get("dataflow") or {}
     return {
         node["id"] for node in dataflow.get("nodes") or []
-        if node.get("id") and _is_pinned(node) and node_behavior(node, packages) in _SELF_DRAWN_BEHAVIORS
+        if node.get("id") and _is_pinned(node) and draws_its_own_output(node, packages)
     }
 
 
@@ -347,7 +365,7 @@ def _refuse_tiles_that_fetch_their_own_data(
     for node in dataflow.get("nodes") or []:
         if not _is_pinned(node):
             continue
-        if node_behavior(node, packages) != _AUTK_GRAMMAR_BEHAVIOR:
+        if not _is_autark_node(node, packages):
             continue
         if _autark_spec_has_data_sources(node):
             offenders.append(str(node.get("id") or "a tile"))
@@ -472,8 +490,13 @@ def build_dashboard_payload(
     meta: Optional[dict] = None,
     limit_bytes: int = DEFAULT_PAYLOAD_LIMIT_BYTES,
     missing_refs: Iterable = (),
+    packages: Optional["TemplateGrammars"] = None,
 ) -> DashboardPayload:
     """Assemble the standalone payload for one dashboard.
+
+    *packages* reads what the dataflow's node templates declare: the owner's
+    store, the catalog, then the packages Curio ships
+    (``TemplateGrammars.for_account()`` when None).
 
     *output_refs* are the project's saved outputs, each carrying ``node_id``,
     ``filename`` and ``data_type`` (the manifest shape; either objects with
@@ -504,7 +527,7 @@ def build_dashboard_payload(
     from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
     name = (meta or {}).get("name")
-    packages = TemplateGrammars.catalog()
+    packages = packages or TemplateGrammars.for_account()
     _refuse_tiles_that_fetch_their_own_data(spec, packages, name=name)
 
     needed = dashboard_source_node_ids(spec, packages)

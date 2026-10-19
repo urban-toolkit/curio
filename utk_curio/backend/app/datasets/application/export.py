@@ -142,20 +142,31 @@ def _dataset_producer_in_spec(
 
 #: The name a dataflow saved before node packages gives the Data Loading node.
 _LEGACY_DATA_LOADING = "DATA_LOADING"
+#: The built-in Data Loading node, for a type no template declares a category for.
+_BUILTIN_DATA_LOADING = "curio.builtin/data-loading"
 
 
 def loads_data(node_type: Any, packages: Any = None) -> bool:
     """Whether a node of *node_type* brings data into its dataflow, as the
     Data Loading node does: its template declares the ``data`` category and no
-    input port. Read through *packages* (a ``TemplateGrammars``, the catalog's
-    when None), so a template named like Data Loading that takes an input is
-    not one, and a package's own loader is."""
+    input port. Read through *packages* (a ``TemplateGrammars``, the account's;
+    ``TemplateGrammars.for_account()`` when None), so a template named like
+    Data Loading that takes an input is not one, and a package's own loader
+    is. A type whose template declares no category, or that no manifest holds,
+    loads data when it is the built-in Data Loading node, by its id or its
+    name before node packages. The canvas's twin is ``loadsData`` in
+    ``registry/declaredNodes.ts``."""
+    from utk_curio.backend.app.packages.service import unversioned_node_type
     from utk_curio.backend.app.projects.template_grammars import node_template
 
     if node_type == _LEGACY_DATA_LOADING:
         return True
+    if not isinstance(node_type, str) or not node_type:
+        return False
     declared = node_template(node_type, packages)
-    return declared.category == "data" and declared.input_ports == 0
+    if declared.category is not None:
+        return declared.category == "data" and (declared.input_ports or 0) == 0
+    return unversioned_node_type(node_type) == _BUILTIN_DATA_LOADING
 
 
 def _dataset_consumer_nodes_in_spec(
@@ -194,7 +205,7 @@ def _dataset_consumer_nodes_in_spec(
     if packages is None:
         from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
-        packages = TemplateGrammars.catalog()
+        packages = TemplateGrammars.for_account()
 
     node_type_by_id = {
         node["id"]: node.get("type")

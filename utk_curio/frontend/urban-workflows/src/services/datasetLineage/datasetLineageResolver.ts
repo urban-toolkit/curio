@@ -33,6 +33,7 @@ import {
 /** Minimal shape of a canvas node the resolver needs (subset of a React Flow node). */
 import { datasetIdsInCode } from "../datasetCatalog/datasetLoaderSnippets";
 import { nodeDisplayLabel } from "../../utils/nodeDisplayLabel";
+import { loadsData } from "../../registry/declaredNodes";
 
 export interface LineageCanvasNode {
   /** ReactFlow node id (used for edge matching); usually equal to data.nodeId. */
@@ -154,12 +155,13 @@ export function downstreamFromDataflowUsage(
   };
 }
 
-/** True for a Data Loading node (``curio.builtin/data-loading`` or the legacy
- * ``DATA_LOADING``) — the node a dataset drag-drop creates. It is the dataset's
- * *source* in the flow, not a downstream consumer of it. */
+/** True for a node that loads data, as the Data Loading node a dataset
+ * drag-drop creates does: its template declares the ``data`` category and no
+ * input port (``loadsData``, registry/declaredNodes). It is the dataset's
+ * *source* in the flow, not a downstream consumer of it. Mirrors
+ * ``loads_data`` in ``datasets/application/export.py``. */
 function isDataLoadingNodeType(nodeType: string | undefined): boolean {
-  if (!nodeType) return false;
-  return nodeType === "DATA_LOADING" || nodeType.includes("data-loading");
+  return loadsData(nodeType);
 }
 
 /** All dataset ids referenced by a node (datasetRefs ∪ appliedDatasets keys/values). */

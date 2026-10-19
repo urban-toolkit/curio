@@ -27,7 +27,7 @@ def browser_node(user, project_id: str, nodes: list[dict], edges: list[dict], no
     from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
     templates = roster_templates(_user_dir_key(user), project_id)
-    packages = TemplateGrammars.catalog()
+    packages = TemplateGrammars.for_account(_user_dir_key(user))
     by_id = {node["id"]: node for node in nodes}
     if node_id in by_id and node_role(by_id[node_id], templates, packages) == "browser":
         return by_id[node_id]

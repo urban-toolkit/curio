@@ -61,15 +61,15 @@ def saved_source_node_ids(spec: object, packages=None) -> set[str]:
     """Every node whose output a save or a run records whatever its own Save
     toggle says: what a pinned dashboard tile reads, and what a scenario's
     context and outcomes produce. The twin of ``savedSourceNodeIds``.
-    *packages* (a ``TemplateGrammars``) reads the manifests, the catalog's
-    when None."""
+    *packages* (a ``TemplateGrammars``) reads the manifests,
+    ``TemplateGrammars.for_account()`` when None."""
     from utk_curio.backend.app.projects.dashboard_payload import dashboard_source_node_ids
     from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
     from utk_curio.backend.app.scenario_catalog.domain.parts import scenario_source_node_ids
 
     if not isinstance(spec, dict):
         return set()
-    packages = packages or TemplateGrammars.catalog()
+    packages = packages or TemplateGrammars.for_account()
     return set(dashboard_source_node_ids(spec, packages)) | scenario_source_node_ids(spec, packages)
 
 
@@ -84,7 +84,8 @@ def records_output_on_save(
     Never for a visualization sink, which passes its input through. Always for
     a node feeding a pinned dashboard tile, a dataset-palette node included.
     Otherwise the node's Save toggle or the default. *packages* (a
-    ``TemplateGrammars``) reads the manifests, the catalog's when None.
+    ``TemplateGrammars``) reads the manifests, ``TemplateGrammars.for_account()``
+    when None.
     """
     from utk_curio.backend.app.projects.services import _is_sink_node_type
 

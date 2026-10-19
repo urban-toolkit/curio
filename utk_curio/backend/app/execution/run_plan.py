@@ -30,8 +30,11 @@ INTERACTION_HANDLE = "in/out"
 
 #: The behaviors of the nodes a run forwards besides the ones a dashboard walk
 #: passes through: a Data Export only offers a download, a Parameter node only
-#: holds a value, and a Note only holds text; none has anything to run.
+#: holds a value, and a Note only holds text; none has anything to run. The
+#: built-in nodes of a type no template declares a behavior for are forwarded
+#: by their ids.
 _FORWARD_BEHAVIORS = frozenset({"data-export", "parameter", "note"})
+_FORWARD_TYPES = frozenset({"curio.builtin/data-export", "curio.builtin/parameter", "curio.builtin/note"})
 
 
 def is_interaction_edge(edge: dict) -> bool:
@@ -116,19 +119,24 @@ def node_role(
     """``run``, ``forward`` or ``browser`` for a node as a saved dataflow holds it.
 
     What a node forwards as is what its template declares, read through
-    *packages* (the catalog's manifests when None). A chart a package's
+    *packages*: the account's store, the catalog, then the packages Curio
+    ships (``TemplateGrammars.for_account()`` when None). A chart a package's
     template draws with the Vega-Lite grammar is forwarded as a Vega-Lite chart
-    is: the catalog's manifest says so of a shipped one, and the project's
-    roster (*templates*), when the run has it, of an account's own too."""
+    is, and so is one the project's roster (*templates*) says draws with it."""
     from utk_curio.backend.app.execution.autk_spec_kind import is_autk_data_node
     from utk_curio.backend.app.execution.workflow_spec import grammar_id_of, is_executable_kind
-    from utk_curio.backend.app.projects.dashboard_payload import node_behavior, passes_through
-    from utk_curio.backend.app.projects.template_grammars import VEGA_LITE, TemplateGrammars
+    from utk_curio.backend.app.projects.dashboard_payload import passes_through
+    from utk_curio.backend.app.projects.template_grammars import (
+        VEGA_LITE,
+        TemplateGrammars,
+        declares_behavior,
+    )
 
     if is_executable_kind(node.get("type"), templates):
         return "run"
-    packages = packages or TemplateGrammars.catalog()
-    if (passes_through(node, packages) or node_behavior(node, packages) in _FORWARD_BEHAVIORS
+    packages = packages or TemplateGrammars.for_account()
+    if (passes_through(node, packages)
+            or declares_behavior(node.get("type"), _FORWARD_BEHAVIORS, _FORWARD_TYPES, packages)
             or grammar_id_of(str(node.get("type") or ""), templates) == VEGA_LITE):
         return "forward"
     if is_autk_data_node(node):

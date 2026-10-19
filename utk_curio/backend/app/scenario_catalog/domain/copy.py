@@ -34,18 +34,20 @@ def node_label(node: dict) -> str:
     return _humanize_node_type(_template(node)) or str(node.get("id"))
 
 
-def copy_plan(scenario: dict, nodes: list[dict], edges: list[dict]) -> dict[str, Any]:
+def copy_plan(scenario: dict, nodes: list[dict], edges: list[dict], packages=None) -> dict[str, Any]:
     """The nodes, edges and outputs a drop of *scenario* copies, as node ids
     of its own project. ``context`` lists each context node with the one node
     whose saved output stands for it (``source``), or ``sources`` when that is
-    not one node."""
+    not one node. *packages* (a ``TemplateGrammars``, the account's) reads what
+    each node's template declares, ``TemplateGrammars.for_account()`` when
+    None."""
     from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
     by_id = {n["id"]: n for n in nodes}
     parts = scenario_parts(scenario, nodes, edges)
     levers = parts["levers"]
     inside = set(levers)
-    packages = TemplateGrammars.catalog()
+    packages = packages or TemplateGrammars.for_account()
 
     context: list[dict[str, Any]] = []
     for node_id in parts["context"]:

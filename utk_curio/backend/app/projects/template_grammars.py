@@ -1,31 +1,38 @@
 """What a node's template declares, read off the package manifests.
 
 A node is what its template declares, never what its type is named. A
-template's ``behavior`` says how the node behaves: a dashboard walks through
-the nodes that show what reaches them (``dashboard_payload``,
-``scenario_catalog/domain/parts``), a run on the server hands on what a
-download, a Parameter node or a note receives (``execution/run_plan``), and
-the Data Catalog counts a dataset's consumers after the node that loads it, a
+template's ``behavior`` says how the node behaves (:func:`declares_behavior`):
+a dashboard walks through the nodes that show what reaches them
+(``dashboard_payload``, ``scenario_catalog/domain/parts``), a pinned
+comparison is its own dashboard source, a save keeps no output of its own for
+a chart (``services._is_sink_node_type``), and a run on the server hands on
+what a download, a Parameter node or a note receives (``execution/run_plan``).
+The Data Catalog counts a dataset's consumers after the node that loads it, a
 template in the ``data`` category with no input port
 (``datasets/application/export``). A package template that declares a built-in
 behavior is that built-in node to every one of these rules, and one that is
-only named like a built-in is not.
+only named like a built-in is not. A type whose template declares none, or that
+no manifest holds, is a built-in node by its id, the fallback each rule names.
+The canvas reads the same declarations off its registered descriptors
+(``registry/declaredNodes.ts``), and ``registry/declaredNodes.cases.json``
+holds the cases both sides run.
 
 A template's ``grammarId`` says what it draws with. A package template can
 draw with the Vega-Lite node's grammar and behavior, so every rule keyed on
-the Vega-Lite node asks :func:`draws_with_vega_lite`, and a save keeps no
-output of its own for such a chart (``services._is_sink_node_type``), as the
-canvas does through ``registry/vegaLiteNodes.ts``. A dataflow's automatic Vega-Lite and Autark
-tags read the same grammars (``categories``), through :class:`TemplateGrammars`,
-which also reads what the package manifests declare for the Projects rail.
+the Vega-Lite node asks :func:`draws_with_vega_lite`, as the canvas does
+through ``registry/vegaLiteNodes.ts``. A dataflow's automatic Vega-Lite and
+Autark tags read the same grammars (``categories``), through
+:class:`TemplateGrammars`, which also reads what the package manifests
+declare for the Projects rail.
 
 A node type is ``<package id>/<template id>``, with or without ``@<major>``:
 the major picks the package folder, and without one the highest wins. It is
 read only through the package id grammar (``dir_name_from_node_type``), so a
 type of any other shape names no folder and reads nothing. A
-:class:`TemplateGrammars` reads each manifest once, so one serves one request:
-the rules above take one from their caller, else read the catalog through
-:meth:`TemplateGrammars.catalog`.
+:class:`TemplateGrammars` reads each manifest once, so one serves one request.
+The rules above take one from their caller, which builds it with
+:meth:`TemplateGrammars.for_account` for the account whose dataflow it reads:
+that account's store, the catalog, then the packages Curio ships.
 """
 from __future__ import annotations
 
@@ -48,18 +55,40 @@ _BUILTIN_VEGA = "curio.builtin/vis-vega"
 def draws_with_vega_lite(node_type: object, grammar_of: Optional[TemplateGrammar] = None) -> bool:
     """Whether a node of *node_type* is a Vega-Lite chart: the built-in
     Vega-Lite node, or a node of a template whose grammar is ``vega-lite``, as
-    *grammar_of* reads it (:meth:`TemplateGrammars.catalog` when None)."""
+    *grammar_of* reads it (:meth:`TemplateGrammars.for_account` when None)."""
     from utk_curio.backend.app.packages.service import unversioned_node_type
 
     if unversioned_node_type(node_type) == _BUILTIN_VEGA:
         return True
-    return (grammar_of or TemplateGrammars.catalog())(node_type) == VEGA_LITE
+    return (grammar_of or TemplateGrammars.for_account())(node_type) == VEGA_LITE
 
 
 def node_template(node_type: object, packages: Optional["TemplateGrammars"] = None) -> "Declared":
     """What *node_type*'s template declares, read through *packages*
-    (:meth:`TemplateGrammars.catalog` when None)."""
-    return (packages or TemplateGrammars.catalog()).node(node_type)
+    (:meth:`TemplateGrammars.for_account` when None)."""
+    return (packages or TemplateGrammars.for_account()).node(node_type)
+
+
+def declares_behavior(
+    node_type: object,
+    behaviors: Iterable[str],
+    builtin_types: Iterable[str],
+    packages: Optional["TemplateGrammars"] = None,
+) -> bool:
+    """Whether a node of *node_type* behaves as one of *behaviors*: the
+    behavior its template declares, read through *packages*
+    (:meth:`TemplateGrammars.for_account` when None), decides. A type whose
+    template declares no behavior, or that no manifest holds, is one of the
+    built-in nodes *builtin_types* names (unversioned ids) or none. The
+    canvas's twin is ``declaresBehavior`` in ``registry/declaredNodes.ts``."""
+    from utk_curio.backend.app.packages.service import unversioned_node_type
+
+    if not isinstance(node_type, str) or not node_type:
+        return False
+    behavior = node_template(node_type, packages).behavior
+    if behavior is not None:
+        return behavior in behaviors
+    return unversioned_node_type(node_type) in builtin_types
 
 
 @dataclass(frozen=True)
@@ -153,17 +182,20 @@ class TemplateGrammars:
         return cls(None, roots=[shipped.path("packages")])
 
     @classmethod
-    def catalog(cls) -> "TemplateGrammars":
-        """The package catalog, then the packages Curio ships, which hold the
-        built-in nodes wherever the catalog is (``CURIO_PACKAGES_ROOT``)."""
+    def for_account(cls, user_key: Optional[str] = None) -> "TemplateGrammars":
+        """The account's own store when *user_key* names one, the package
+        catalog, then the packages Curio ships, which hold the built-in nodes
+        wherever the catalog is (``CURIO_PACKAGES_ROOT``). A package that only
+        the account's store holds (a "Save as package node" one) is read for
+        that account alone."""
         from utk_curio import shipped
-        from utk_curio.backend.app.packages.service import catalog_root
+        from utk_curio.backend.app.packages.service import catalog_root, user_packages_dir
 
-        roots = [catalog_root()]
+        roots = ([user_packages_dir(user_key)] if user_key else []) + [catalog_root()]
         committed = shipped.path("packages")
-        if committed.resolve() != roots[0].resolve():
+        if all(committed.resolve() != root.resolve() for root in roots):
             roots.append(committed)
-        return cls(None, roots=roots)
+        return cls(user_key, roots=roots)
 
     def __call__(self, node_type: object) -> Optional[str]:
         return self.node(node_type).grammar

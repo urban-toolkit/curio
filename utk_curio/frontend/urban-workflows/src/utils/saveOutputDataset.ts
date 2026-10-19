@@ -1,16 +1,24 @@
 import { NodeType } from "../constants";
+import { declaresBehavior } from "../registry/declaredNodes";
 import { isVegaLiteNodeType } from "../registry/vegaLiteNodes";
 import { defaultSaveOutputDatasetFromEnv } from "./curioEnvFlag";
 import { flowOutputRefFromRaw, FlowOutputRef } from "./flowOutputRef";
-import { getFlowNodeCanonicalType, unversionedNodeType } from "./flowNodeCanonicalType";
+import { getFlowNodeCanonicalType } from "./flowNodeCanonicalType";
 import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
 
 /**
- * Visualization "sink" node types. They consume a dataframe to render a chart
- * and pass their INPUT straight through as their output (outputCallback(nodeId,
- * data.input)) so they can sit mid-chain — they never produce a NEW dataset.
- * Saving their passthrough would auto-install a redundant computed dataset that
- * just duplicates the upstream node's output (same file, different node id).
+ * The behaviors of the visualization "sink" nodes. They consume a dataframe to
+ * render a chart and pass their INPUT straight through as their output
+ * (outputCallback(nodeId, data.input)) so they can sit mid-chain, and they never
+ * produce a NEW dataset. Saving their passthrough would auto-install a
+ * redundant computed dataset that just duplicates the upstream node's output
+ * (same file, different node id). Kept equal with the backend
+ * ``_SINK_BEHAVIORS`` (utk_curio/backend/app/projects/services.py).
+ */
+const NON_PRODUCING_BEHAVIORS: ReadonlySet<string> = new Set(["vega", "simple-vis"]);
+
+/**
+ * The built-in sink nodes, for a type no template declares a behavior for.
  *
  * Kept set-equal with the backend ``_SINK_NODE_TYPES``
  * (utk_curio/backend/app/projects/services.py) — a drift-guard test enforces
@@ -23,12 +31,16 @@ export const NON_PRODUCING_NODE_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Sink-set membership, tolerant of versioned canonical types (#169). A package
- * chart that draws with the Vega-Lite grammar is a Vega-Lite chart
- * (registry/vegaLiteNodes), as the backend's ``_is_sink_node_type`` reads it.
+ * Whether a node of *nodeType* makes no dataset of its own: its template
+ * declares a sink's behavior (registry/declaredNodes), or draws with the
+ * Vega-Lite grammar (registry/vegaLiteNodes), as the backend's
+ * ``_is_sink_node_type`` reads it.
  */
 export function isNonProducingNodeType(nodeType: string): boolean {
-  return NON_PRODUCING_NODE_TYPES.has(unversionedNodeType(nodeType)) || isVegaLiteNodeType(nodeType);
+  return (
+    declaresBehavior(nodeType, NON_PRODUCING_BEHAVIORS, NON_PRODUCING_NODE_TYPES) ||
+    isVegaLiteNodeType(nodeType)
+  );
 }
 
 /**

@@ -1,4 +1,4 @@
-import { NodeType } from "../../constants";
+import { loadsData } from "../../registry/declaredNodes";
 import { currentCode } from "../codeOnlyUsage";
 import {
   DatasetCatalogItem,
@@ -289,11 +289,13 @@ export function hasDatasetDrag(dataTransfer: DataTransfer): boolean {
   return types.includes(DATASET_DRAG_MIME);
 }
 
+/** Whether a dataset dropped on a node applies to it: a node whose template
+ * loads data, as Data Loading does (``loadsData``, registry/declaredNodes),
+ * or any node with code to write the dataset's read into. */
 export function canApplyDatasetToNode(data: any): boolean {
   const nodeType = data?.nodeType;
   if (!nodeType) return false;
-  if (nodeType === NodeType.DATA_LOADING) return true;
-  if (typeof nodeType === "string" && nodeType.includes("data-loading")) return true;
+  if (typeof nodeType === "string" && loadsData(nodeType)) return true;
   if (typeof data?.defaultCode === "string" || typeof data?.code === "string") return true;
   return false;
 }
