@@ -1,0 +1,72 @@
+{
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
+  "compatibility": {
+    "curioRuntime": ">=0.5.0",
+    "major": 1
+  },
+  "createdAt": "2026-05-25T00:00:00Z",
+  "dependencies": {
+    "js": {},
+    "packages": {},
+    "python": {}
+  },
+  "description": "Fetch Street View image points and inspect a live panorama with session-only Google Maps credentials.",
+  "id": "curio.streetvision",
+  "license": "MIT",
+  "behaviorScript": "scripts/behaviors.js",
+  "name": "Street Vision",
+  "permissions": [],
+  "publisher": "Curio",
+  "readOnly": true,
+  "templates": [
+    {
+      "category": "computation",
+      "description": "Open a live, navigable Google Street View panorama for a WGS84 [longitude, latitude] point from ordinary input, manual entry, or a versioned interaction. Emits live camera position and direction through an interaction edge. Requires a browser-restricted Maps JavaScript API key held only in memory.",
+      "editor": "none",
+      "engine": "python",
+      "hasCode": false,
+      "hasGrammar": false,
+      "hasWidgets": false,
+      "iconRef": "fa-solid:street-view",
+      "id": "street-view-panorama",
+      "inputPorts": [
+        {
+          "cardinality": "1",
+          "types": [
+            "GEODATAFRAME",
+            "JSON"
+          ]
+        }
+      ],
+      "label": "Street View Panorama",
+      "behavior": "street-view-panorama",
+      "bidirectional": true,
+      "outputPorts": [],
+      "paletteOrder": 1
+    },
+    {
+      "category": "computation",
+      "description": "Geocode a place name, sample Google Street View imagery inside its bounding box, and emit a GEODATAFRAME of image points (each feature carrying image_url + lat/lon). Reusable for anyone needing Street View panoramas without inference.",
+      "editor": "none",
+      "engine": "python",
+      "hasCode": false,
+      "hasGrammar": false,
+      "hasWidgets": false,
+      "iconRef": "fa-solid:street-view",
+      "id": "street-view-fetcher",
+      "inputPorts": [],
+      "label": "Street View Fetcher",
+      "behavior": "street-view-fetcher",
+      "outputPorts": [
+        {
+          "cardinality": "1",
+          "types": [
+            "GEODATAFRAME"
+          ]
+        }
+      ],
+      "paletteOrder": 0
+    }
+  ],
+  "version": "1.2.0"
+}

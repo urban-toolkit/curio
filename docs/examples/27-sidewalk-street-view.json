@@ -1,0 +1,232 @@
+{
+  "dataflow": {
+    "name": "Sidewalk editing and Street View inspection: synthetic fixture",
+    "description": "Small portable schematic input fixture. Automatic map-to-editor handoff is blocked on the upstream interaction prerequisite; see the walkthrough.",
+    "task": "Load both explicit sources and Prepare. See the documented upstream selection blocker before attempting automatic tile handoff.",
+    "timestamp": 0,
+    "provenance_id": "sidewalk-synthetic",
+    "packages": [
+      "curio.builtin@1",
+      "curio.streetvision@1",
+      "curio.sidewalk-stewards@1"
+    ],
+    "nodes": [
+      {
+        "id": "sidewalk21-image-load",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 0,
+        "title": "Synthetic imagery reference",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Declare the verified synthetic RGB GeoTIFF, grid, tile images and georeferencing.",
+        "metadata": {
+          "keywords": []
+        },
+        "content": "import hashlib\nimport json\nfrom pathlib import Path\n\nroot = Path(\"docs/examples/data/sidewalk-synthetic\")\nimage = root / \"synthetic.tif\"\ngrid = root / \"tile-grid.geojson\"\nsidecar = json.loads((root / \"mosaic-provenance.json\").read_text())\nactual = hashlib.sha256(image.read_bytes()).hexdigest()\nif actual != sidecar[\"mosaic\"][\"sha256\"]:\n    raise ValueError(\"Synthetic mosaic differs from its verified sidecar\")\ngrid_hash = hashlib.sha256(grid.read_bytes()).hexdigest()\nif grid_hash != sidecar[\"gridSha256\"]:\n    raise ValueError(\"Synthetic grid differs from its verified sidecar\")\nreturn {\n    \"kind\": \"sidewalk-image\",\n    \"datasetId\": \"synthetic-six-tiles\",\n    \"sha256\": actual,\n    \"source\": {\n        \"type\": \"geotiff\",\n        \"geotiffFileUrl\": \"docs/examples/data/sidewalk-synthetic/synthetic.tif\",\n        \"outputTableName\": \"synthetic_rgb\",\n        \"coordinateFormat\": sidecar[\"mosaic\"][\"crs\"],\n    },\n    \"gridUrl\": \"docs/examples/data/sidewalk-synthetic/tile-grid.geojson\",\n    \"boundariesUrl\": \"docs/examples/data/sidewalk-synthetic/tile-boundaries.geojson\",\n    \"imageUrlTemplate\": \"docs/examples/data/sidewalk-synthetic/tiles/{tile_id}.png\",\n    \"georeferencing\": {\n        \"crs\": sidecar[\"mosaic\"][\"crs\"],\n        \"bounds\": sidecar[\"mosaic\"][\"bounds\"],\n        \"gridSha256\": grid_hash,\n        \"mapping\": sidecar[\"mosaic\"][\"mapping\"],\n    },\n}"
+      },
+      {
+        "id": "sidewalk21-network-load",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 650,
+        "title": "Original sidewalk network",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Declare and load the unedited EPSG:4326 sidewalk network.",
+        "metadata": {
+          "keywords": []
+        },
+        "content": "import hashlib\nimport json\nfrom pathlib import Path\n\npath = Path(\"docs/examples/data/sidewalk-synthetic/overview-network.geojson\")\nraw = path.read_bytes()\nreturn {\n    \"kind\": \"sidewalk-network\",\n    \"datasetId\": \"synthetic-six-tiles\",\n    \"url\": \"docs/examples/data/sidewalk-synthetic/overview-network.geojson\",\n    \"sha256\": hashlib.sha256(raw).hexdigest(),\n    \"crs\": \"EPSG:4326\",\n    \"data\": json.loads(raw),\n}"
+      },
+      {
+        "id": "sidewalk21-prepare",
+        "type": "curio.sidewalk-stewards/sidewalk-prepare",
+        "x": 950,
+        "y": 320,
+        "title": "Sidewalk Prepare",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Validate both sources and publish the unchanged original context.",
+        "metadata": {
+          "keywords": []
+        },
+        "content": ""
+      },
+      {
+        "id": "sidewalk21-before",
+        "type": "curio.builtin/autk-grammar",
+        "x": 2107.6723407784725,
+        "y": 201.50792647576287,
+        "title": "Before: original network",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Display original synthetic imagery, sidewalk network and full selectable grid.",
+        "metadata": {
+          "keywords": []
+        },
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"sidewalk_network\",\n        \"opacity\": 0.9\n      },\n      {\n        \"dataRef\": \"upstream\",\n        \"opacity\": 0.14,\n        \"isPick\": true,\n        \"getFnv\": \"n_uncertain\",\n        \"getFnvType\": \"quantitative\"\n      }\n    ]\n  }\n}",
+        "nodeWidth": 900,
+        "nodeHeight": 620,
+        "width": 900,
+        "height": 620
+      },
+      {
+        "id": "sidewalk21-pcp",
+        "type": "curio.builtin/autk-grammar",
+        "x": 2092.1949508218695,
+        "y": 1025.1884908094703,
+        "title": "PCP: typology and uncertainty",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Brush candidate tiles without replacing the active editor tile.",
+        "metadata": {
+          "keywords": []
+        },
+        "content": "{\n  \"plot\": {\n    \"dataRef\": \"upstream\",\n    \"mark\": \"parallel-coordinates\",\n    \"axis\": [\n      \"Plaza\",\n      \"Walkway\",\n      \"Meander\",\n      \"Fragmented\",\n      \"Roadway\",\n      \"Vegetation\",\n      \"Road Mark\",\n      \"Uncertain\"\n    ],\n    \"title\": \"Sidewalk typology and uncertainty by tile\",\n    \"events\": [\n      \"brushY\"\n    ],\n    \"width\": 850,\n    \"height\": 480,\n    \"margins\": {\n      \"left\": 70,\n      \"right\": 35,\n      \"top\": 65,\n      \"bottom\": 35\n    }\n  }\n}",
+        "nodeWidth": 900,
+        "nodeHeight": 620,
+        "width": 900,
+        "height": 620
+      },
+      {
+        "id": "sidewalk21-editor",
+        "type": "curio.sidewalk-stewards/sidewalk-tile-edit",
+        "x": 2280.6892960191362,
+        "y": -632.8608315879428,
+        "title": "Sidewalk Tile Edit",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Edit one clicked tile, inspect a requested Street View point without changing drafts, and Save corrected geometry with provenance.",
+        "metadata": {
+          "keywords": []
+        },
+        "content": "{\n  \"schema\": \"curio.sidewalk-tile-edit/v1\",\n  \"mode\": \"input-overview\",\n  \"byTile\": {}\n}",
+        "nodeWidth": 540,
+        "nodeHeight": 620,
+        "width": 540,
+        "height": 620
+      },
+      {
+        "id": "sidewalk21-after",
+        "type": "curio.builtin/autk-grammar",
+        "x": 3218.9861309918497,
+        "y": 186.51798077274816,
+        "title": "After: saved corrections",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Render only committed edits, independently from the original Before map.",
+        "metadata": {
+          "keywords": []
+        },
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"sidewalk_network\",\n        \"opacity\": 0.9\n      },\n      {\n        \"dataRef\": \"upstream\",\n        \"opacity\": 0.14,\n        \"isPick\": true,\n        \"getFnv\": \"n_uncertain\",\n        \"getFnvType\": \"quantitative\"\n      }\n    ]\n  }\n}",
+        "nodeWidth": 900,
+        "nodeHeight": 620,
+        "width": 900,
+        "height": 620
+      },
+      {
+        "id": "sidewalk22-street-context",
+        "type": "curio.streetvision/street-view-panorama",
+        "x": 3100,
+        "y": -690,
+        "title": "Street View Panorama",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Find a live panorama near the editor's requested point, then report its actual camera position and direction as the user rotates or navigates.",
+        "metadata": {
+          "keywords": []
+        },
+        "content": "",
+        "nodeWidth": 500,
+        "nodeHeight": 430,
+        "width": 500,
+        "height": 430
+      }
+    ],
+    "edges": [
+      {
+        "id": "sidewalk21-image-prepare",
+        "source": "sidewalk21-image-load",
+        "target": "sidewalk21-prepare",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "sidewalk21-network-prepare",
+        "source": "sidewalk21-network-load",
+        "target": "sidewalk21-prepare",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "sidewalk21-prepare-before",
+        "source": "sidewalk21-prepare",
+        "target": "sidewalk21-before",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "sidewalk21-prepare-editor",
+        "source": "sidewalk21-prepare",
+        "target": "sidewalk21-editor",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "sidewalk21-editor-after",
+        "source": "sidewalk21-editor",
+        "target": "sidewalk21-after",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "type": "Interaction",
+        "id": "sidewalk21-before-pcp-interaction",
+        "source": "sidewalk21-before",
+        "target": "sidewalk21-pcp",
+        "sourceHandle": "in/out",
+        "targetHandle": "in/out"
+      },
+      {
+        "type": "Interaction",
+        "id": "sidewalk21-before-editor-interaction",
+        "source": "sidewalk21-before",
+        "target": "sidewalk21-editor",
+        "sourceHandle": "in/out",
+        "targetHandle": "in/out"
+      },
+      {
+        "id": "sidewalk21-prepare-pcp",
+        "source": "sidewalk21-prepare",
+        "target": "sidewalk21-pcp",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "type": "Interaction",
+        "id": "reactflow__edge-sidewalk21-pcpin/out-sidewalk21-afterin/out",
+        "source": "sidewalk21-pcp",
+        "target": "sidewalk21-after",
+        "sourceHandle": "in/out",
+        "targetHandle": "in/out"
+      },
+      {
+        "type": "Interaction",
+        "id": "reactflow__edge-sidewalk21-afterin/out-sidewalk21-beforein/out",
+        "source": "sidewalk21-after",
+        "target": "sidewalk21-before",
+        "sourceHandle": "in/out",
+        "targetHandle": "in/out"
+      },
+      {
+        "type": "Interaction",
+        "id": "reactflow__edge-sidewalk21-editorin/out-sidewalk22-street-contextin/out",
+        "source": "sidewalk21-editor",
+        "target": "sidewalk22-street-context",
+        "sourceHandle": "in/out",
+        "targetHandle": "in/out"
+      }
+    ]
+  }
+}

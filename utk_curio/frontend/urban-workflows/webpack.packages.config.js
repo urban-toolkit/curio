@@ -25,6 +25,8 @@ const path = require("path");
 // `scripts/behaviors.js` and ship it inside the package directory — no
 // entry here.
 const PACKAGE_ENTRIES = [
+  { id: "curio.streetvision@1", entry: path.resolve(__dirname, "../../../packages/curio.streetvision@1/sources/index.tsx"), outputDir: path.resolve(__dirname, "../../../packages/curio.streetvision@1/scripts") },
+  { id: "curio.sidewalk-stewards@1", entry: path.resolve(__dirname, "../../../packages/curio.sidewalk-stewards@1/sources/index.tsx"), outputDir: path.resolve(__dirname, "../../../packages/curio.sidewalk-stewards@1/scripts") },
   {
     id: "curio.example-ui@1",
     entry: path.resolve(__dirname, "../../../packages/curio.example-ui@1/sources/index.tsx"),

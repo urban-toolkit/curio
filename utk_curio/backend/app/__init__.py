@@ -226,4 +226,7 @@ def create_app(config_class=config_class):
             "Real-time collaboration ENABLED on namespace=%s", COLLAB_NAMESPACE,
         )
 
+    from .streetvision import bp as streetvision_bp
+    app.register_blueprint(streetvision_bp, url_prefix="/api/streetvision")
+
     return app

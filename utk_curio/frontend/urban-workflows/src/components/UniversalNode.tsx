@@ -10,7 +10,7 @@ import NodeEditor from './editing/NodeEditor';
 import DescriptionModal from './DescriptionModal';
 import { OutputIcon } from './edges/OutputIcon';
 import { InputIcon } from './edges/InputIcon';
-import { getNodeDescriptor, tryGetNodeDescriptor, subscribeToRegistry } from '../registry/nodeRegistry';
+import { tryGetNodeDescriptor, subscribeToRegistry } from '../registry/nodeRegistry';
 import { isRegistryReady, subscribeToRegistryReady } from '../registry/registryReadiness';
 import { isVegaLiteNodeType } from '../registry/vegaLiteNodes';
 import { UnresolvedNode } from './UnresolvedNode';
@@ -29,7 +29,7 @@ import {
   DASHBOARD_TILE_DEFAULT_WIDTH,
 } from '../utils/dashboardLayout';
 import { NodeType } from '../constants';
-import { TIconCardinality } from '../registry/types';
+import { NodeDescriptor, TIconCardinality } from '../registry/types';
 import { useFlowContext } from '../providers/FlowProvider';
 import { NodeAgentBadges } from './agents/attach/NodeAgentBadges';
 import { useCollab } from '../providers/CollaborationProvider';
@@ -38,12 +38,24 @@ import { NodeOutcomeStrip } from './nodes/NodeOutcomeStrip';
 import './Node.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
-// When the canvas node's `data.nodeType` changes (e.g. after Save-As rebinds
-// the node to a new package kind), the descriptor's `useNodeBehavior` hook function
-// can change. Calling a *different* hook at the same call site violates
-// React's rules of hooks and corrupts the state slots ("baseQueue is undefined").
-// Keying the inner body by `data.nodeType` forces an unmount/remount so the
-// new hook chain starts fresh.
+// A package may replace a fallback descriptor without changing the node type.
+// Each distinct behavior hook needs its own React component instance; data and
+// selection updates using the same hook keep the existing instance.
+const behaviorKeys = new WeakMap<Function, number>();
+let nextBehaviorKey = 0;
+function behaviorKey(hook: Function): number {
+  let key = behaviorKeys.get(hook);
+  if (key === undefined) {
+    key = ++nextBehaviorKey;
+    behaviorKeys.set(hook, key);
+  }
+  return key;
+}
+
+// When a node is imported before its package descriptor registers, the outer
+// wrapper waits for the registry and passes the resolved descriptor to the
+// body. A descriptor replacement must reach the body even when node data is
+// unchanged, so React.memo does not hide a new behavior implementation.
 //
 // The outer wrapper also gates on descriptor presence: a node imported from a
 // saved dataflow can mount before its package's descriptor has finished
@@ -80,11 +92,10 @@ const UniversalNode = React.memo(function UniversalNode({ data, isConnectable }:
       />
     );
   }
-  return <UniversalNodeBody key={data.nodeType} data={data} isConnectable={isConnectable} />;
+  return <UniversalNodeBody key={`${data.nodeType}:${behaviorKey(descriptor.adapter.useNodeBehavior)}`} descriptor={descriptor} data={data} isConnectable={isConnectable} />;
 });
 
-const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnectable }: { data: any; isConnectable: boolean }) {
-  const descriptor = getNodeDescriptor(data.nodeType);
+const UniversalNodeBody = React.memo(function UniversalNodeBody({ descriptor, data, isConnectable }: { descriptor: NodeDescriptor; data: any; isConnectable: boolean }) {
   const { adapter } = descriptor;
 
   const nodeState = useNodeState(data, descriptor.id);

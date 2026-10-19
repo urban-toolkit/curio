@@ -1,0 +1,45 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "edge-0",
+      "properties": {
+        "source": "original synthetic fixture"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -0.0029,
+            -0.0015
+          ],
+          [
+            -0.0001,
+            -0.0015
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "edge-1",
+      "properties": {
+        "source": "original synthetic fixture"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -0.0029,
+            -0.0005
+          ],
+          [
+            -0.0001,
+            -0.0005
+          ]
+        ]
+      }
+    }
+  ]
+}

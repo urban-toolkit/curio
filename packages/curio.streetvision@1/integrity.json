@@ -1,0 +1,15 @@
+{
+  "sha256": {
+    "README.md": "91c94a641ddfc5cec5f671f07461c82a0665f66772501b1d9abe15d8c619576a",
+    "manifest.json": "55f0aeffc2543160f15705d0c85eaed39ab8bea4af96dd5cf3371205b057f7d6",
+    "scripts/behaviors.js": "6f9c41dfeab800ecc734d2d6cef0086aed988c803d806cf00cd89755d8b331e7",
+    "scripts/behaviors.js.map": "7fe46b2cc069bf59811a140737c75344078b33ed78b42bb0573f9b86953cfd0b",
+    "sources/apiAuth.ts": "589b4a9be831e50c3163d4b1a1f8a16ec22f6a75c68f90c1e617c2f3a7a0e226",
+    "sources/googleStreetView.tsx": "c9f7fe4dff5e45ce4efa4436136b8bb63eb8f97579251c3d67ef79fb7667071c",
+    "sources/index.tsx": "51485bca5d833766f2d276f87f971753c5bb6547ce902056c60cd9410be1abdf",
+    "sources/nodeUiStyles.ts": "3c1ac611ce704f18bbe8633a730a97eb1812759cdd8d8f48150161fa9283bdf5",
+    "sources/panoramaContract.ts": "084f74a67cc1c2b1087bb63e679d08d0d0a134a1b768d814cb83acef61b47e92",
+    "sources/streetViewFetcherBehavior.tsx": "b4454475e59848e443dd4e5562fee92a56f34fe87fb0cb6095a512ff007254ac",
+    "sources/streetViewPanoramaBehavior.tsx": "a6e95340aac3fc7ae945bc2de3363b1c8315b0f5be72d5216212cb1beadc8870"
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "keyedMap": {
+    "nodeId": "before",
+    "priority": 1,
+    "details": {
+      "autk_selection": {
+        "type": "POINT",
+        "data": [
+          {
+            "tile_id": "second"
+          }
+        ],
+        "priority": 1,
+        "source": "curio.builtin/autk-grammar",
+        "layerRef": "input_0"
+      }
+    }
+  },
+  "positionalMap": {
+    "nodeId": "before",
+    "priority": 1,
+    "details": {
+      "autk_selection": {
+        "type": "POINT",
+        "data": [
+          1
+        ],
+        "priority": 1,
+        "source": "curio.builtin/autk-grammar",
+        "layerRef": "input_0"
+      }
+    }
+  },
+  "keyedPcp": {
+    "nodeId": "pcp",
+    "priority": 1,
+    "details": {
+      "autk_selection": {
+        "type": "POINT",
+        "data": [
+          {
+            "tile_id": "second"
+          }
+        ],
+        "priority": 1,
+        "source": "curio.builtin/autk-grammar",
+        "layerRef": "input_0"
+      }
+    }
+  },
+  "positionalPcp": {
+    "nodeId": "pcp",
+    "priority": 1,
+    "details": {
+      "autk_selection": {
+        "type": "POINT",
+        "data": [
+          1
+        ],
+        "priority": 1,
+        "source": "curio.builtin/autk-grammar",
+        "layerRef": "input_0"
+      }
+    }
+  },
+  "emptyMap": {
+    "nodeId": "before",
+    "priority": 1,
+    "details": {
+      "autk_selection": {
+        "type": "UNDETERMINED",
+        "data": [],
+        "priority": 1,
+        "source": "curio.builtin/autk-grammar",
+        "layerRef": "input_0"
+      }
+    }
+  }
+}

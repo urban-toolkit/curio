@@ -1,0 +1,238 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "sidewalk24-image-load",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 0,
+        "saveOutputDataset": false,
+        "content": "import hashlib\nimport json\nfrom pathlib import Path\n\nroot = Path(\"docs/examples/data/sidewalk-synthetic\")\nimage = root / \"synthetic.tif\"\ngrid = root / \"tile-grid.geojson\"\nsidecar = json.loads((root / \"mosaic-provenance.json\").read_text())\nactual = hashlib.sha256(image.read_bytes()).hexdigest()\nif actual != sidecar[\"mosaic\"][\"sha256\"]:\n    raise ValueError(\"Synthetic mosaic differs from its verified sidecar\")\ngrid_hash = hashlib.sha256(grid.read_bytes()).hexdigest()\nif grid_hash != sidecar[\"gridSha256\"]:\n    raise ValueError(\"Synthetic grid differs from its verified sidecar\")\nreturn {\n    \"kind\": \"sidewalk-image\",\n    \"datasetId\": \"synthetic-six-tiles\",\n    \"sha256\": actual,\n    \"source\": {\n        \"type\": \"geotiff\",\n        \"geotiffFileUrl\": \"docs/examples/data/sidewalk-synthetic/synthetic.tif\",\n        \"outputTableName\": \"synthetic_rgb\",\n        \"coordinateFormat\": sidecar[\"mosaic\"][\"crs\"],\n    },\n    \"gridUrl\": \"docs/examples/data/sidewalk-synthetic/tile-grid.geojson\",\n    \"boundariesUrl\": \"docs/examples/data/sidewalk-synthetic/tile-boundaries.geojson\",\n    \"imageUrlTemplate\": \"docs/examples/data/sidewalk-synthetic/tiles/{tile_id}.png\",\n    \"georeferencing\": {\n        \"crs\": sidecar[\"mosaic\"][\"crs\"],\n        \"bounds\": sidecar[\"mosaic\"][\"bounds\"],\n        \"gridSha256\": grid_hash,\n        \"mapping\": sidecar[\"mosaic\"][\"mapping\"],\n    },\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Declare a six-tile CC0 synthetic mosaic and complete grid; per-tile PNGs load only for active tiles.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Satellite imagery source"
+      },
+      {
+        "id": "sidewalk24-network-load",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 650,
+        "saveOutputDataset": false,
+        "content": "import hashlib\nimport json\nfrom pathlib import Path\n\npath = Path(\"docs/examples/data/sidewalk-synthetic/overview-network.geojson\")\nraw = path.read_bytes()\nreturn {\n    \"kind\": \"sidewalk-network\",\n    \"datasetId\": \"synthetic-six-tiles\",\n    \"url\": \"docs/examples/data/sidewalk-synthetic/overview-network.geojson\",\n    \"sha256\": hashlib.sha256(raw).hexdigest(),\n    \"crs\": \"EPSG:4326\",\n    \"data\": json.loads(raw),\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load two synthetic source lines with stable IDs and a verified source hash.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Original sidewalk network"
+      },
+      {
+        "id": "sidewalk24-prepare",
+        "type": "curio.sidewalk-stewards/sidewalk-prepare",
+        "x": 950,
+        "y": 320,
+        "saveOutputDataset": false,
+        "content": "{\n  \"measuredTileGridUrl\": \"docs/examples/data/sidewalk-synthetic/tile-measurements.geojson\",\n  \"measurementFields\": [\n    \"Plaza\",\n    \"Walkway\",\n    \"Meander\",\n    \"Fragmented\",\n    \"Roadway\",\n    \"Vegetation\",\n    \"Road Mark\",\n    \"Uncertain\"\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Validate both sources and publish the unchanged original context.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Sidewalk Prepare"
+      },
+      {
+        "id": "sidewalk24-before",
+        "type": "curio.builtin/autk-grammar",
+        "x": 2107.6723407784725,
+        "y": 201.50792647576287,
+        "width": 900,
+        "height": 620,
+        "saveOutputDataset": false,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"sidewalk_network\",\n        \"opacity\": 0.9\n      },\n      {\n        \"dataRef\": \"upstream\",\n        \"opacity\": 0.14,\n        \"isPick\": true,\n        \"getFnv\": \"Segments\",\n        \"getFnvType\": \"quantitative\",\n        \"selectFields\": [\n          \"tile_id\"\n        ]\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Show the original synthetic network and selectable complete six-tile grid.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Before: original network"
+      },
+      {
+        "id": "sidewalk24-pcp",
+        "type": "curio.builtin/autk-grammar",
+        "x": 2092.1949508218695,
+        "y": 1025.1884908094703,
+        "width": 900,
+        "height": 620,
+        "saveOutputDataset": false,
+        "content": "{\n  \"plot\": {\n    \"dataRef\": \"sidewalk_typology\",\n    \"mark\": \"parallel-coordinates\",\n    \"axis\": [\n      \"Plaza\",\n      \"Walkway\",\n      \"Meander\",\n      \"Fragmented\",\n      \"Roadway\",\n      \"Vegetation\",\n      \"Road Mark\",\n      \"Uncertain\"\n    ],\n    \"title\": \"Sidewalk typology and uncertainty by tile\",\n    \"events\": [\n      \"brushY\"\n    ],\n    \"width\": 850,\n    \"height\": 480,\n    \"margins\": {\n      \"left\": 70,\n      \"right\": 35,\n      \"top\": 65,\n      \"bottom\": 35\n    },\n    \"selectFields\": [\n      \"tile_id\"\n    ],\n    \"mapRef\": \"upstream\"\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Brush three measured synthetic tiles. Cross-layer tile-ID routing to the complete six-tile maps requires separate verification on upstream.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "PCP: typology and uncertainty"
+      },
+      {
+        "id": "sidewalk24-editor",
+        "type": "curio.sidewalk-stewards/sidewalk-tile-edit",
+        "x": 1363.319526395154,
+        "y": -1047.664320871389,
+        "width": 686,
+        "height": 1047,
+        "saveOutputDataset": false,
+        "content": "{\n  \"schema\": \"curio.sidewalk-tile-edit/v1\",\n  \"mode\": \"input-overview\",\n  \"imageUrlTemplate\": \"docs/examples/data/sidewalk-synthetic/tiles/{tile_id}.png\",\n  \"networkUrlTemplate\": \"docs/examples/data/sidewalk-synthetic/overview-network.geojson\",\n  \"byTile\": {}\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Edit one selected tile at a time, retaining per-tile drafts and cumulative saved corrections.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Sidewalk Tile Edit"
+      },
+      {
+        "id": "sidewalk24-after",
+        "type": "curio.builtin/autk-grammar",
+        "x": 3218.9861309918497,
+        "y": 186.51798077274816,
+        "width": 900,
+        "height": 620,
+        "saveOutputDataset": false,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"sidewalk_network\",\n        \"opacity\": 0.9\n      },\n      {\n        \"dataRef\": \"upstream\",\n        \"opacity\": 0.14,\n        \"isPick\": true,\n        \"getFnv\": \"Segments\",\n        \"getFnvType\": \"quantitative\",\n        \"selectFields\": [\n          \"tile_id\"\n        ]\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Show cumulative corrected network while retaining the full grid and untouched geometry.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "After: saved corrections"
+      },
+      {
+        "id": "sidewalk24-street-context",
+        "type": "curio.streetvision/street-view-panorama",
+        "x": 2225.669608818214,
+        "y": -888.872163172648,
+        "width": 533,
+        "height": 642,
+        "saveOutputDataset": false,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Find a live panorama near the editor's requested point, then report its actual camera position and direction as the user rotates or navigates.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Street View Panorama"
+      }
+    ],
+    "edges": [
+      {
+        "id": "sidewalk24-image-prepare",
+        "source": "sidewalk24-image-load",
+        "target": "sidewalk24-prepare",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "sidewalk24-network-prepare",
+        "source": "sidewalk24-network-load",
+        "target": "sidewalk24-prepare",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "sidewalk24-prepare-before",
+        "source": "sidewalk24-prepare",
+        "target": "sidewalk24-before",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "sidewalk24-prepare-editor",
+        "source": "sidewalk24-prepare",
+        "target": "sidewalk24-editor",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "sidewalk24-editor-after",
+        "source": "sidewalk24-editor",
+        "target": "sidewalk24-after",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "type": "Interaction",
+        "id": "sidewalk24-before-pcp-interaction",
+        "source": "sidewalk24-before",
+        "target": "sidewalk24-pcp",
+        "sourceHandle": "in/out",
+        "targetHandle": "in/out"
+      },
+      {
+        "type": "Interaction",
+        "id": "sidewalk24-before-editor-interaction",
+        "source": "sidewalk24-before",
+        "target": "sidewalk24-editor",
+        "sourceHandle": "in/out",
+        "targetHandle": "in/out"
+      },
+      {
+        "type": "Interaction",
+        "id": "reactflow__edge-sidewalk24-pcpin/out-sidewalk24-afterin/out",
+        "source": "sidewalk24-pcp",
+        "target": "sidewalk24-after",
+        "sourceHandle": "in/out",
+        "targetHandle": "in/out"
+      },
+      {
+        "type": "Interaction",
+        "id": "reactflow__edge-sidewalk24-afterin/out-sidewalk24-beforein/out",
+        "source": "sidewalk24-after",
+        "target": "sidewalk24-before",
+        "sourceHandle": "in/out",
+        "targetHandle": "in/out"
+      },
+      {
+        "type": "Interaction",
+        "id": "reactflow__edge-sidewalk24-editorin/out-sidewalk24-street-contextin/out",
+        "source": "sidewalk24-editor",
+        "target": "sidewalk24-street-context",
+        "sourceHandle": "in/out",
+        "targetHandle": "in/out"
+      },
+      {
+        "id": "sidewalk24-prepare-pcp",
+        "source": "sidewalk24-prepare",
+        "target": "sidewalk24-pcp",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-sidewalk24-editorout-sidewalk24-street-contextin",
+        "source": "sidewalk24-editor",
+        "target": "sidewalk24-street-context",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      }
+    ],
+    "name": "Sidewalk Stewards review workflow (portable synthetic inputs)",
+    "task": "Run both resource inputs, Sidewalk Prepare, Before/PCP, and Tile Edit. Follow the walkthrough for known selection prerequisites; no live key is needed for fixture checks.",
+    "timestamp": 0,
+    "provenance_id": "sidewalk-phase1-review-example",
+    "packages": [
+      "curio.builtin@1",
+      "curio.sidewalk-stewards@1",
+      "curio.streetvision@1"
+    ],
+    "description": "Current eight-node review layout and twelve connections, with recorded visible map/PCP settings and synthetic resources. Known upstream map-selection and sparse PCP routing limitations remain.",
+    "autoRun": false
+  }
+}

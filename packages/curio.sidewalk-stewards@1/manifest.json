@@ -1,0 +1,85 @@
+{
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
+  "id": "curio.sidewalk-stewards",
+  "name": "Sidewalk Stewards",
+  "publisher": "Curio",
+  "description": "Review and correct prepared Sidewalk Stewards tile networks in a persistent Curio node.",
+  "version": "1.0.0",
+  "compatibility": {
+    "major": 1
+  },
+  "createdAt": "2026-09-29T00:00:00Z",
+  "dependencies": {
+    "js": {},
+    "packages": {},
+    "python": {}
+  },
+  "permissions": [],
+  "behaviorScript": "scripts/behaviors.js",
+  "templates": [
+    {
+      "id": "sidewalk-tile-edit",
+      "label": "Sidewalk Tile Edit",
+      "description": "Review a selected prepared tile, edit its clipped sidewalk network, validate topology, and emit a versioned network edit with reproducible provenance.",
+      "category": "computation",
+      "engine": "python",
+      "editor": "none",
+      "behavior": "sidewalk-tile-edit",
+      "iconRef": "fa-solid:map-location-dot",
+      "hasCode": false,
+      "hasWidgets": false,
+      "hasGrammar": false,
+      "bidirectional": true,
+      "inputPorts": [
+        {
+          "cardinality": "1",
+          "types": [
+            "GEODATAFRAME",
+            "JSON"
+          ]
+        }
+      ],
+      "outputPorts": [
+        {
+          "cardinality": "1",
+          "types": [
+            "GEODATAFRAME",
+            "JSON"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sidewalk-prepare",
+      "label": "Sidewalk Prepare",
+      "description": "Prepare explicit satellite and network inputs; emit the independent Before context.",
+      "category": "computation",
+      "engine": "python",
+      "editor": "none",
+      "behavior": "sidewalk-prepare",
+      "iconRef": "fa-solid:map-location-dot",
+      "hasCode": false,
+      "hasWidgets": false,
+      "hasGrammar": false,
+      "bidirectional": true,
+      "inputPorts": [
+        {
+          "cardinality": "[2,2]",
+          "types": [
+            "GEODATAFRAME",
+            "JSON"
+          ]
+        }
+      ],
+      "outputPorts": [
+        {
+          "cardinality": "1",
+          "types": [
+            "GEODATAFRAME",
+            "JSON"
+          ]
+        }
+      ]
+    }
+  ]
+}

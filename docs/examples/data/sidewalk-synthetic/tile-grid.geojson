@@ -1,0 +1,275 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "0_0",
+      "properties": {
+        "tile_id": "0_0",
+        "image_available": true,
+        "n_uncertain": 0,
+        "Segments": 2,
+        "Plaza": 1,
+        "Walkway": 2,
+        "Meander": 3,
+        "Fragmented": 4,
+        "Roadway": 5,
+        "Vegetation": 6,
+        "Road Mark": 7,
+        "Uncertain": 8
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -0.003,
+              -0.002
+            ],
+            [
+              -0.002,
+              -0.002
+            ],
+            [
+              -0.002,
+              -0.001
+            ],
+            [
+              -0.003,
+              -0.001
+            ],
+            [
+              -0.003,
+              -0.002
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "1_0",
+      "properties": {
+        "tile_id": "1_0",
+        "image_available": true,
+        "n_uncertain": 1,
+        "Segments": 2,
+        "Plaza": 2,
+        "Walkway": 4,
+        "Meander": 6,
+        "Fragmented": 8,
+        "Roadway": 10,
+        "Vegetation": 12,
+        "Road Mark": 14,
+        "Uncertain": 16
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -0.002,
+              -0.002
+            ],
+            [
+              -0.001,
+              -0.002
+            ],
+            [
+              -0.001,
+              -0.001
+            ],
+            [
+              -0.002,
+              -0.001
+            ],
+            [
+              -0.002,
+              -0.002
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "2_0",
+      "properties": {
+        "tile_id": "2_0",
+        "image_available": true,
+        "n_uncertain": 2,
+        "Segments": 2,
+        "Plaza": 3,
+        "Walkway": 6,
+        "Meander": 9,
+        "Fragmented": 12,
+        "Roadway": 15,
+        "Vegetation": 18,
+        "Road Mark": 21,
+        "Uncertain": 24
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -0.001,
+              -0.002
+            ],
+            [
+              0.0,
+              -0.002
+            ],
+            [
+              0.0,
+              -0.001
+            ],
+            [
+              -0.001,
+              -0.001
+            ],
+            [
+              -0.001,
+              -0.002
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "0_1",
+      "properties": {
+        "tile_id": "0_1",
+        "image_available": true,
+        "n_uncertain": 1,
+        "Segments": 2,
+        "Plaza": 2,
+        "Walkway": 4,
+        "Meander": 6,
+        "Fragmented": 8,
+        "Roadway": 10,
+        "Vegetation": 12,
+        "Road Mark": 14,
+        "Uncertain": 16
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -0.003,
+              -0.001
+            ],
+            [
+              -0.002,
+              -0.001
+            ],
+            [
+              -0.002,
+              0.0
+            ],
+            [
+              -0.003,
+              0.0
+            ],
+            [
+              -0.003,
+              -0.001
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "1_1",
+      "properties": {
+        "tile_id": "1_1",
+        "image_available": true,
+        "n_uncertain": 2,
+        "Segments": 2,
+        "Plaza": 3,
+        "Walkway": 6,
+        "Meander": 9,
+        "Fragmented": 12,
+        "Roadway": 15,
+        "Vegetation": 18,
+        "Road Mark": 21,
+        "Uncertain": 24
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -0.002,
+              -0.001
+            ],
+            [
+              -0.001,
+              -0.001
+            ],
+            [
+              -0.001,
+              0.0
+            ],
+            [
+              -0.002,
+              0.0
+            ],
+            [
+              -0.002,
+              -0.001
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "2_1",
+      "properties": {
+        "tile_id": "2_1",
+        "image_available": true,
+        "n_uncertain": 3,
+        "Segments": 2,
+        "Plaza": 4,
+        "Walkway": 8,
+        "Meander": 12,
+        "Fragmented": 16,
+        "Roadway": 20,
+        "Vegetation": 24,
+        "Road Mark": 28,
+        "Uncertain": 32
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -0.001,
+              -0.001
+            ],
+            [
+              0.0,
+              -0.001
+            ],
+            [
+              0.0,
+              0.0
+            ],
+            [
+              -0.001,
+              0.0
+            ],
+            [
+              -0.001,
+              -0.001
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "sha256": {
+    "IMPLEMENTATION.md": "82c9f33df0ed9aee1cee5bb4996edd3ef16d1af74bae3644a64b7cc24318348b",
+    "README.md": "9c8323c331a63b242e36ed97399f9222ef9b003b95ad2c6d37d295fda2747ebf",
+    "manifest.json": "b75dcdf51e79befe9d5fe48748959a4788680cc076fb25de09782639fcf4abdd",
+    "scripts/behaviors.js": "355a79b9774e4cb5aee34092c719a9d1ca290cfeb0407bdd1c5b0683cca02983",
+    "scripts/behaviors.js.map": "55d379d085130dc577f940c462dd49b45bada1af47748a746a0ec76b9b0dd1f2",
+    "sources/SidewalkTileEditor.tsx": "6d1d3c351d1f7e9658da18a6fc1585a3d7a31862fbef7901ab4fea4bda0fd70f",
+    "sources/autkSelection.ts": "aa582e02bef85b5a5dc2d97d4d3ddd4fd1f11c4be41c2126d2244c06d4794430",
+    "sources/beforeAfterContext.ts": "b7a390caddab9dc7ac947db4d05fd93ffeddef823b8cc67e4b1be77ff6e5bd4e",
+    "sources/cameraBoundary.ts": "1a75124672ded0b53fb47e534f9504fce0134b73089f935f1d0da95712135225",
+    "sources/geojson.ts": "c315b9c413dc1894c1a58cec3a6c792e3cc2925cfdc389484554fae95c75e925",
+    "sources/googleStreetView.tsx": "5b5c29f61a60e59f3faae30a6da4d36521d31dcaea4ece4e3eac566c3706b4af",
+    "sources/index.tsx": "8756b4a0f862db18ec66cb4fe102a61a81a1232fcc396f83addddd9eec1895fd",
+    "sources/networkEditContract.ts": "20de7f768603a46c0bd66552b50141ca96f2189797f5ef7a6b19a3f8df880cb2",
+    "sources/overviewData.ts": "c04fd77c0390f45fe6ed854330fc39d5e7e3adfc15cb9c2b0f2f630c313ae968",
+    "sources/provenance.ts": "6d791edb7f7eddf26947eec240dcabaa6aaee49038058e0d7f18a1a39776c243",
+    "sources/resourceResolver.ts": "81a871947b039165bf50aec2ab7abc839c2494c01ad550d2bf3eeeca849b08f4",
+    "sources/runtimeTypes.ts": "1e92023d0302ff4c5ae5b01d24a3408eec4f3eac58a37dfc58dd9397f21aa2ac",
+    "sources/selectedResources.ts": "b735cdc9b5e6d89ee4d9fc27454ab57e3443c92d261ce626b3cf63a950820e45",
+    "sources/sidewalkEditOperations.ts": "4d1c3a6a6cf09170f14716c9c76ea9e7e7435f89d07ff8ba0bd3c43ffa4cc38d",
+    "sources/sidewalkNodeStyles.ts": "1958d84ecdd417f3134640f398ec4b0381beadb0368994451d56c0571183bf86",
+    "sources/sidewalkPreparation.tsx": "d783189225184ba1716ef108b11e7975f62846085c23adb0d40245532b730c1e",
+    "sources/sidewalkTileEditBehavior.tsx": "8bacc41c852b392a732daf7061647ff369e581e13ebacb14fcf3e643b6fb9bdf",
+    "sources/sidewalkTopology.ts": "38d2a387580c84321f632f222ae464ea6e695bbd68df6e97578e103db6f751cc",
+    "sources/streetViewContract.ts": "04cf8cce6a8b4a503cb806e85574d6989584ea158ea1f596661f55cf39c5f25c",
+    "sources/streetViewImages.ts": "34b325130f7570a23e11aca08692063d80bab2c70e557b61310b2697fd700327",
+    "sources/tileNeighbors.ts": "da2733c9e4303cfc0121584e79983d3a7f33699dda6e25f7487d56b95f361da6",
+    "sources/useSidewalkOverview.ts": "e6c34701e33d5c9e60c90cd583e2672875ba05ec7e6df033a33730dd267340b2"
+  }
+}

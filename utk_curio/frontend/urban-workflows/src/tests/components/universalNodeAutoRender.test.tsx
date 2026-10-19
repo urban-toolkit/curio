@@ -64,6 +64,7 @@ jest.mock("../../components/edges/InputIcon", () => ({ InputIcon: () => null }))
 jest.mock("../../components/UnresolvedNode", () => ({ UnresolvedNode: () => null }));
 jest.mock("../../components/agents/attach/NodeAgentBadges", () => ({ NodeAgentBadges: () => null }));
 jest.mock("../../registry/nodeRegistry", () => {
+  const listeners = new Set<() => void>();
   const descriptor = (id: string, grammar: boolean, grammarId?: string) => ({
     id,
     hasCode: !grammar,
@@ -88,7 +89,14 @@ jest.mock("../../registry/nodeRegistry", () => {
   return {
     getNodeDescriptor: (type: string) => byType[type],
     tryGetNodeDescriptor: (type: string) => byType[type],
-    subscribeToRegistry: () => () => {},
+    subscribeToRegistry: (listener: () => void) => {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    },
+    installDynamicBehaviorForTest: (type: string, behavior: () => object) => {
+      byType[type] = { ...descriptor(type, false), adapter: { ...descriptor(type, false).adapter, useNodeBehavior: behavior } };
+      listeners.forEach(listener => listener());
+    },
   };
 });
 jest.mock("../../registry/registryReadiness", () => ({
@@ -483,4 +491,43 @@ describe("a code node", () => {
 
     expect(mockSendCode).not.toHaveBeenCalled();
   });
+});
+
+test("a late package behavior remounts once, while ordinary node updates retain its state", async () => {
+  const { installDynamicBehaviorForTest } = require("../../registry/nodeRegistry");
+  const dynamicType = "test.dynamic/sidewalk-editor";
+  const mounts: string[] = [];
+  const unmounts: string[] = [];
+  const fallback = () => {
+    React.useState(0);
+    React.useEffect(() => {
+      mounts.push("fallback");
+      return () => { unmounts.push("fallback"); };
+    }, []);
+    return {};
+  };
+  const packageBehavior = () => {
+    React.useState(0);
+    React.useState(1);
+    React.useEffect(() => {
+      mounts.push("package");
+      return () => { unmounts.push("package"); };
+    }, []);
+    return {};
+  };
+
+  await act(async () => { installDynamicBehaviorForTest(dynamicType, fallback); });
+  const utils = await mount(data(dynamicType, { width: 500, height: 300 }));
+  expect(mounts).toEqual(["fallback"]);
+
+  await act(async () => { installDynamicBehaviorForTest(dynamicType, packageBehavior); });
+  expect(mounts).toEqual(["fallback", "package"]);
+  expect(unmounts).toEqual(["fallback"]);
+
+  await rerenderWith(utils, data(dynamicType, { width: 500, height: 300, input: INPUT_A }));
+  await rerenderWith(utils, data(dynamicType, { width: 600, height: 300, input: INPUT_B }));
+  expect(mounts).toEqual(["fallback", "package"]);
+  expect(unmounts).toEqual(["fallback"]);
+  utils.unmount();
+  expect(unmounts).toEqual(["fallback", "package"]);
 });

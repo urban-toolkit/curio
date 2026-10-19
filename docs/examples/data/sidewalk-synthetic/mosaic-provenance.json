@@ -1,0 +1,14 @@
+{
+  "mosaic": {
+    "sha256": "fd55c7e8b910336dbf2895bf1062073ceba5cefc820a9f5cc9bbe30943de6077",
+    "crs": "EPSG:4326",
+    "bounds": [
+      -0.003,
+      -0.002,
+      0,
+      0
+    ],
+    "mapping": "north-up, rectangular 3 by 2 grid"
+  },
+  "gridSha256": "41e65641d88956b6f1eebd68456b2e49e1809a176e0ccf20535bf8d8c870baed"
+}

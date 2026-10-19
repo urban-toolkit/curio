@@ -1,0 +1,9 @@
+# Sidewalk editing and Street View inspection
+
+This six-tile CC0 schematic fixture includes all declared image and network resources. It contains no provider imagery, private paths, or credentials. Import the adjacent JSON, run both Data Loading sources, then Sidewalk Prepare. Images are schematic; coordinates are synthetic near the equator. Two original lines cross tile boundaries.
+
+**Known draft limitation:** fresh upstream main does not expose the prototype’s active-map-pick metadata or explicit clicked feature. The package currently shows a legacy chooser instead of automatically opening the picked editor tile; keyed selections leave it empty. Two acceptance tests remain failing. Automatic map selection and independent sparse PCP compatibility are not claimed. Its existing map and PCP specifications have not been replaced to work around that failure. The [current review export](28-sidewalk-review-workflow.md) preserves the reviewed layout and settings; see the [implementation manifest](../../packages/curio.sidewalk-stewards@1/IMPLEMENTATION.md) for migration and ownership.
+
+Once the interaction prerequisite is resolved: draw or move nodes, switch tiles and return to check draft/history retention. Save network applies corrections to After; Before keeps original geometry. Workflow Save persists drafts/history, saved corrections and resource references. Reopening still requires those resources. Camera navigation does not choose an editor tile; Open camera tile explicitly does so.
+
+Street View Panorama requires a browser key through Settings; missing keys produce gray pending pointers. A red marker requires a confirmed camera position. Fetcher uses a separate Static API key. Both credentials remain session-only. Fetcher image-proxy links expire after two hours, cache eviction or backend restart and require rerunning Fetcher. Repeated tests use fixtures, not live provider calls.
