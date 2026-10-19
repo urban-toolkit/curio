@@ -2,8 +2,9 @@
 
 The pip package leaves a few big catalog files out, and a pip install
 downloads each from raw.githubusercontent.com the first time Curio needs it
-(``datasets/infrastructure/left_out_files.py``). No test may open a socket
-(``tests/netguard.py``), so ``FakeGitHub`` stands in for both seams
+(``datasets/infrastructure/left_out_files.py``). The manifest of each one's
+dataset or model package names it in ``downloadOnFirstUse``. No test may open
+a socket (``tests/netguard.py``), so ``FakeGitHub`` stands in for both seams
 ``egress.download`` takes: the transport and the DNS resolver. It answers with
 the repository's own bytes, which are the bytes a release would serve.
 
@@ -19,8 +20,23 @@ import shutil
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[4]
-#: The one list of the files the pip package leaves out.
-LIST = REPO / "utk_curio" / "backend" / "app" / "datasets" / "infrastructure" / "left_out_files.json"
+#: The files the pip package leaves out, the one place a test writes them:
+#: the data files of eleven datasets and Deep Umbra's weights.
+#: ``test_left_out_files.py`` checks that the manifests name exactly these.
+EXPECTED = (
+    "datasets/data.cityofchicago.red-light-violations@1/data/red-light-violations.parquet",
+    "datasets/data.cityofchicago.speed-camera-violations@1/data/speed-camera-violations.parquet",
+    "datasets/data.projectsidewalk.chicago-labels@1/data/chicago-labels.parquet",
+    "datasets/data.scout.flood-depth-2020-2040-nbs@1/data/flood-depth-2020-2040-nbs.tif",
+    "datasets/data.scout.flood-depth-2020-2040-no-nbs@1/data/flood-depth-2020-2040-no-nbs.tif",
+    "datasets/data.scout.flood-depth-2050-2080-nbs@1/data/flood-depth-2050-2080-nbs.tif",
+    "datasets/data.scout.flood-depth-2050-2080-no-nbs@1/data/flood-depth-2050-2080-no-nbs.tif",
+    "datasets/data.scout.flood-depth-2080-2100-nbs@1/data/flood-depth-2080-2100-nbs.tif",
+    "datasets/data.scout.flood-depth-2080-2100-no-nbs@1/data/flood-depth-2080-2100-no-nbs.tif",
+    "datasets/data.scout.flood-nbs-classes@1/data/flood-nbs-classes.tif",
+    "datasets/data.utk.milan-mrt@1/data/milan-mrt.tif",
+    "packages/model.scout.deep-umbra@1/models/deep_umbra.onnx",
+)
 #: The commit a test's release is built from.
 COMMIT = "0123456789abcdef0123456789abcdef01234567"
 #: An address raw.githubusercontent.com resolves to: public, so the egress
@@ -30,8 +46,8 @@ RAW = "https://raw.githubusercontent.com/urban-toolkit/curio"
 
 
 def listed() -> list[str]:
-    """The repository paths the list names."""
-    return json.loads(LIST.read_text(encoding="utf-8"))["files"]
+    """The repository paths of the files the pip package leaves out."""
+    return list(EXPECTED)
 
 
 def url_of(repo_path: str, commit: str = COMMIT) -> str:
@@ -52,8 +68,8 @@ def write_record(path: Path, repo_paths, *, commit: str = COMMIT, contents=None)
 
 def catalog_copy(folder: str, root: Path) -> Path:
     """The repository's catalog folder *folder* (``datasets/<dir>`` or
-    ``models/<dir>``) copied under *root* without the files the list names,
-    as a pip install has it. Returns the copy."""
+    ``packages/<dir>``) copied under *root* without the files the pip package
+    leaves out, as a pip install has it. Returns the copy."""
     left_out = set(listed())
     for path in sorted((REPO / folder).rglob("*")):
         rel = path.relative_to(REPO).as_posix()
