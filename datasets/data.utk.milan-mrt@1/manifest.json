@@ -13,6 +13,9 @@
     "geotiff"
   ],
   "dataFile": "data/milan-mrt.tif",
+  "downloadOnFirstUse": [
+    "data/milan-mrt.tif"
+  ],
   "compatibility": {
     "major": 1
   },

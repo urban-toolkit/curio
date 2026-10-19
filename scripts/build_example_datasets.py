@@ -103,6 +103,7 @@ class Dataset:
         mode: str,
         zip_member: str | None = None,
         source_sep: str | None = None,
+        download_on_first_use: tuple[str, ...] = (),
     ) -> None:
         self.slug = slug
         self.dataset_id = dataset_id
@@ -119,6 +120,9 @@ class Dataset:
         self.mode = mode
         self.zip_member = zip_member
         self.source_sep = source_sep
+        # The manifest's downloadOnFirstUse: a data file too big for the pip
+        # package, which a pip install downloads the first time Curio reads it.
+        self.download_on_first_use = download_on_first_use
 
     @property
     def dir_name(self) -> str:
@@ -153,6 +157,7 @@ DATASETS: list[Dataset] = [
         source_label="Project Sidewalk",
         license="Project Sidewalk API terms",
         tags=["sidewalk", "accessibility", "chicago", "points", "parquet"],
+        download_on_first_use=("data/chicago-labels.parquet",),
     ),
     Dataset(
         slug="green-roofs",
@@ -189,6 +194,7 @@ DATASETS: list[Dataset] = [
         source_label="Chicago Data Portal",
         license="Open Data",
         tags=["violations", "speed-camera", "chicago", "temporal", "parquet"],
+        download_on_first_use=("data/speed-camera-violations.parquet",),
     ),
     Dataset(
         slug="red-light-violations",
@@ -208,6 +214,7 @@ DATASETS: list[Dataset] = [
         source_label="Chicago Data Portal",
         license="Open Data",
         tags=["violations", "red-light", "chicago", "temporal", "parquet"],
+        download_on_first_use=("data/red-light-violations.parquet",),
     ),
     Dataset(
         slug="energy-usage-2010",
@@ -244,6 +251,7 @@ DATASETS: list[Dataset] = [
         source_label="Curio tutorial data",
         license="Research use",
         tags=["raster", "milan", "thermal", "mrt", "geotiff"],
+        download_on_first_use=("data/milan-mrt.tif",),
     ),
     Dataset(
         slug="milan-era5-weather",
@@ -296,6 +304,7 @@ def _write_manifest(dataset: Dataset, *, row_count, feature_count) -> None:
         tags=list(dataset.tags),
         data_file=dataset.data_file,
         major=1,
+        download_on_first_use=dataset.download_on_first_use,
         created_at=STAMP,
         updated_at=STAMP,
         source_updated_at=None,

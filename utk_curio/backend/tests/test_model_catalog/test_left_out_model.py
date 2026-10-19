@@ -1,8 +1,8 @@
 """Deep Umbra on a pip install: listed, then fetched the first time a node runs it.
 
 The pip package leaves out Deep Umbra's weights (``packages/model.scout.deep-umbra@1/
-models/deep_umbra.onnx``, one of the files ``datasets/infrastructure/
-left_out_files.json`` lists) and keeps the rest of its model package. So a pip
+models/deep_umbra.onnx``, which its manifest names in ``downloadOnFirstUse``)
+and keeps the rest of its model package. So a pip
 install's Model Catalog lists the model as one that downloads on first use,
 and a node that runs it, once its
 package is in the user's store (seeded for the examples, or added), gets a

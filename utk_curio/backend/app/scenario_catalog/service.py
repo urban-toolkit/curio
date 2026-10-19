@@ -145,7 +145,7 @@ class ScenarioCatalogService:
             "updatedAt": row.updated_at.isoformat() if row.updated_at else "",
         }
         return {
-            **scenario_row(scenario, project, projects.graph_preview(spec)),
+            **scenario_row(scenario, project, projects.graph_preview(self.user, spec)),
             "context": [entry(i) for i in parts["context"]],
             "levers": [entry(i) for i in parts["levers"]],
             "outcomes": [entry(i) for i in parts["outcomes"]],

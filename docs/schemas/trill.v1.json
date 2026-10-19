@@ -837,7 +837,8 @@
       "additionalProperties": true,
       "properties": {
         "id": { "type": "string" },
-        "type": { "type": "string", "description": "The node type, used to pick the thumbnail's category color. Not validated against the node.type grammar: a thumbnail should still draw for a spec this schema would reject." },
+        "type": { "type": "string", "description": "The node type. The provenance window draws the node's box in the category of the type's registered descriptor. Not validated against the node.type grammar: a thumbnail should still draw for a spec this schema would reject." },
+        "category": { "type": ["string", "null"], "description": "The category of the node's registered descriptor when the version was recorded ('data', 'computation', 'vis_grammar', 'vis_simple' or 'flow'), or null when none was registered. The provenance window draws the box in it when no registered package provides the node's type." },
         "x": { "type": "number" },
         "y": { "type": "number" },
         "w": { "type": ["number", "null"], "description": "Width, or null when the node has no explicit size." },

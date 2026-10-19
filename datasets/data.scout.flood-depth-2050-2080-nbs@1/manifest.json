@@ -20,6 +20,9 @@
     ]
   },
   "dataFile": "data/flood-depth-2050-2080-nbs.tif",
+  "downloadOnFirstUse": [
+    "data/flood-depth-2050-2080-nbs.tif"
+  ],
   "compatibility": {
     "major": 1
   },

@@ -1,31 +1,14 @@
 import React, { useMemo } from "react";
 import { GraphPreview } from "../api/projectsApi";
 import styles from "./DataflowThumbnail.module.css";
-import {
-  CATEGORY_FALLBACK_FG,
-  NODE_TYPE_CATEGORY,
-  colorForNodeType,
-} from "../constants/nodeCategoryPalette";
+import { colorForCategory } from "../constants/nodeCategoryPalette";
 
-// Keyed by the canonical unversioned node-type string written into trill
-// `graph_preview.nodes[].type` post-Phase-B. The thumbnail runs without the
-// node registry loaded (it renders on the projects list, before package
-// discovery), so it cannot ask a descriptor for its category — but the type ->
-// category map and the colours themselves now come from the shared palette
-// instead of being restated here. This file used to hold a hand-kept copy of
-// the canvas's map, which is exactly the kind of mirror that drifts.
-const NODE_COLORS: Record<string, string> = Object.fromEntries(
-  Object.keys(NODE_TYPE_CATEGORY).map((type) => [type, colorForNodeType(type)])
-);
-
-const FALLBACK_COLOR = CATEGORY_FALLBACK_FG;
-
-// Local, dependency-free mirror of `unversionedNodeType`. This component renders
-// on the projects list before package discovery runs, so it deliberately avoids
-// importing anything that would pull in the node registry.
-const VERSIONED_TYPE = /^(.+)\/([^/@]+)@(\d+)$/;
-const unversionedType = (nodeType: string): string =>
-  VERSIONED_TYPE.test(nodeType) ? nodeType.replace(/@\d+$/, "") : nodeType;
+// Each node's bar is in the colour of its category, which the preview carries:
+// the server reads it off the node's template in the manifests for a saved
+// project, and a preview built in the browser takes it from the node's
+// registered descriptor (`utils/graphPreviewCategories`). The thumbnail looks
+// nothing up itself, so it draws the same before and after the node registry
+// loads; a node with no category is the neutral grey.
 
 // Coordinate space for layout calculations — the SVG scales this to fill its container
 const VB_W = 260;
@@ -59,8 +42,8 @@ interface Props {
 
 /**
  * A dataflow has no category of its own, so the thumbnail carries no
- * per-dataflow accent: the only colour in it is the node bars, which are keyed
- * to node type. The caller used to pass an accentColor/bgColor pair derived
+ * per-dataflow accent: the only colour in it is the node bars, which show
+ * each node's category. The caller used to pass an accentColor/bgColor pair derived
  * from `project.thumbnail_accent`; `accentColor` was never read, and `bgColor`
  * only tinted the empty state.
  */
@@ -175,9 +158,7 @@ const DataflowThumbnail: React.FC<Props> = ({ preview, highlight }) => {
       })}
 
       {scaledNodes.map((n) => {
-        // Palette-dragged nodes persist a versioned type (`.../data-pool@1`);
-        // this map is keyed unversioned, so strip the suffix first (#159).
-        const color = NODE_COLORS[unversionedType(n.type)] ?? FALLBACK_COLOR;
+        const color = colorForCategory(n.category);
         const marks = nodeMarks(n.id);
         return (
           <g key={n.id} {...marks.group}>
@@ -189,11 +170,5 @@ const DataflowThumbnail: React.FC<Props> = ({ preview, highlight }) => {
     </svg>
   );
 };
-
-
-// Exposed for the #159 parity guard in src/tests/utils/versionedNodeTypeParity.test.ts:
-// the colour map is keyed unversioned, so a versioned id must resolve to the same
-// entry rather than silently taking FALLBACK_COLOR.
-export const __testables = { NODE_COLORS, FALLBACK_COLOR, unversionedType };
 
 export default DataflowThumbnail;

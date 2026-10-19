@@ -523,6 +523,13 @@ The Projects rail and the canvas's title chips file a dataflow under tags and da
 
 The table's names come first, in its `displayOrder`; any other declared name follows, sorted ignoring case, so a new name shows on the rail with no frontend change. Names merge ignoring case, keeping the table's spelling, and a declaration read off a manifest skips a value of the wrong type (`declared_dataflow_categories`, beside the parsers' `clean_dataflow_categories` in `packages/domain/dataflow_categories.py`).
 
+### A dataflow's thumbnail
+
+The Projects page, the Scenario Catalog and the provenance window draw a dataflow as plain boxes ([`components/DataflowThumbnail.tsx`](../utk_curio/frontend/urban-workflows/src/components/DataflowThumbnail.tsx)), each with a bar in the color of its node's category (`colorForCategory` in `constants/nodeCategoryPalette.ts`), or grey for a node with none. The palette maps categories to colors and names no node type.
+
+- A project summary's `graph_preview` (`_extract_graph_preview` in `projects/services.py`) gives each node its id, type, position, size and the `category` its template declares, read through the request's `ManifestLookup` (`template_categories` in `projects/categories.py`), so a package in the account's store counts as one in the catalog does. A node type no manifest holds gets none. The Scenario Catalog's listing and a scenario's details draw the same preview.
+- A preview built in the browser gives each node its registered descriptor's category (`utils/graphPreviewCategories.ts`): the Scenario Catalog drawer's In project tab (`liveGraphPreview`) and each version of a dataflow (`TrillGenerator`). The provenance window draws a version with the category each node type's descriptor has then, else the one recorded with the version.
+
 ### NodeDescriptor: Static Metadata
 
 A `NodeDescriptor` (defined in `src/registry/types.ts`) is the static declaration for a node type. It is read once at render time by `UniversalNode` to configure the node's appearance and behavior:
@@ -1179,24 +1186,33 @@ quoted path. See [DATA-CATALOG.md](DATA-CATALOG.md) for the authoring view.
 ### Files the pip package leaves out
 
 PyPI takes no file over 100 MiB, so the pip package (the sdist, and the wheel
-built from it) leaves out the biggest catalog files: the data files and model
-package weights that
-[`left_out_files.json`](../utk_curio/backend/app/datasets/infrastructure/left_out_files.json)
-lists, which `MANIFEST.in` excludes one line each (`test_left_out_files.py`
-holds the two together). The small files of their folders still ship.
+built from it) leaves out the biggest catalog files: each data file or model
+package weight that its dataset's or model package's manifest names in
+`downloadOnFirstUse` ([DATA-CATALOG.md](DATA-CATALOG.md#7-the-manifest),
+[MODEL-CATALOG.md](MODEL-CATALOG.md#6-the-manifest)). A path there names a
+file, or a folder whose files it covers. The small files of their folders,
+the manifests among them, still ship.
+[`utk_curio/shipped.py`](../utk_curio/shipped.py) `downloaded_on_first_use`
+reads the manifests, for the release and for a running Curio.
 
-1. The release workflow runs `scripts/record_left_out_files.py --commit
+1. `setup.py`'s `egg_info` drops the named files from `SOURCES.txt`, the list
+   of the files the sdist ships and the wheel takes its package data from.
+   `test_left_out_files.py` replays `MANIFEST.in` and that step, and
+   `test_pip_wheel_layout.py` builds both archives.
+2. The release workflow runs `scripts/record_left_out_files.py --commit
    $GITHUB_SHA` before `python -m build`. It writes
-   `left_out_files.record.json` beside the list: the commit, and each listed
-   file's size and sha256. The package ships it; a checkout has none.
-2. A reader that finds a listed file missing calls
+   `left_out_files.record.json` beside `left_out_files.py`: the commit, and
+   each left-out file's size and sha256. The package ships it; a checkout has
+   none.
+3. A reader that finds a left-out file missing calls
    [`left_out_files.fetch`](../utk_curio/backend/app/datasets/infrastructure/left_out_files.py):
    `PathResolver._resolve_item_path` (preview, download, extent and
    execution paths), `install_dataset_from_catalog` (install and seeding) and
    `packages/application/model_packages.weights_folder` (a node's
-   `curio_load_model`, and an export). The registry gives a listed file's
-   recorded size before it is fetched.
-3. `fetch` downloads
+   `curio_load_model`, and an export). `left_out_files.is_left_out` reads the
+   shipped manifests. The registry gives a left-out file's recorded size
+   before it is fetched.
+4. `fetch` downloads
    `https://raw.githubusercontent.com/urban-toolkit/curio/<commit>/<path>`
    through `agents/infrastructure/egress.download`, under one lock per file,
    into `<curio_root>/fetched/<commit>/.partial/`, checks size and sha256
@@ -1205,12 +1221,12 @@ holds the two together). The small files of their folders still ship.
    `<curio_root>/fetched/<commit>/<path>`. A reader resolves the file there
    from then on. A download first removes the folders of other commits under
    `fetched/` (never a symlink, never the current commit's).
-4. `<curio_root>/fetched` is created 0700 and is in the sandbox's
+5. `<curio_root>/fetched` is created 0700 and is in the sandbox's
    `SENSITIVE_PATHS` and `HARDLINK_SOURCES`, as `packages/*/models` is: an isolated
    child reads a fetched file only through the hardlink its run stages
    (`stage_dataset_paths`, `stage_model_dirs`), and cannot walk the folder or
    rename a file in it.
-5. A failed download raises `LeftOutFileUnavailable` with the URL and the path
+6. A failed download raises `LeftOutFileUnavailable` with the URL and the path
    to save the file to. The Data Catalog answers it as a 502;
    `node_exec._execute` collects it (`left_out_files.failures()`) and fails the
    run with it, without calling the sandbox.
