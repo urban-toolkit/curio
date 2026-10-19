@@ -13,7 +13,7 @@ import { inputTableName } from "../generated/autkGrammar";
 import { usableCounts } from "../utils/vegaUsableRows";
 import { matchSelections, objectRows, type PointValue } from "../utils/selectionMatch";
 import { columnsOfRows, provideViewRows } from "../utils/references/viewSelections";
-import { isPointSelection, pointValues, viewSelects } from "../utils/vegaSelects";
+import { carriedSelections, isPointSelection, pointValues, viewSelects, withMovedIds } from "../utils/vegaSelects";
 import { echoedCircle } from "../utils/selectionEcho";
 import type { NodeEmptyReason } from "../utils/nodeEmptyState";
 import { resolveGrammarEmptyReason } from "../utils/nodeEmptyState";
@@ -392,15 +392,30 @@ export const useVega = ({
 
   const { workflowNameRef, dashboardOn } = useFlowContext();
   const { nodeExecProv } = useProvenanceContext();
-  const handleCompileGrammar = async (spec: string): Promise<RenderCounts> => {
+  /**
+   * Compiles *spec* and draws it. Whether the compile is recorded in the
+   * node's provenance and hands the node's input on is the hook's to say,
+   * unless *how* says it for this draw. With `keepsSelection`, a selection made
+   * in the chart is put back in the new view and the flow goes on holding it.
+   * A chart after a Compare Scenarios node is drawn again that way when a
+   * scenario is recolored (adapters/node/vegaBehavior): as the Compare node's
+   * Chart tab draws its own, with no version and no hand-off.
+   */
+  const handleCompileGrammar = async (
+    spec: string,
+    how: { recordsProvenance?: boolean; forwardsInput?: boolean; keepsSelection?: boolean } = {},
+  ): Promise<RenderCounts> => {
     let startTime = formatDate(new Date());
 
-    const counts = await compileGrammar(JSON.parse(spec));
+    const counts = await compileGrammar(JSON.parse(spec), {
+      forwardsInput: how.forwardsInput ?? forwardsInput,
+      keepsSelection: how.keepsSelection ?? false,
+    });
 
     // END COMPILE GRAMMAR
     let endTime = formatDate(new Date());
 
-    if (recordsProvenance) {
+    if (how.recordsProvenance ?? recordsProvenance) {
       let typesInput: string[] = [];
 
       if (data.input != "") typesInput = data.input.dataType;
@@ -423,7 +438,10 @@ export const useVega = ({
     return counts;
   };
 
-  const compileGrammar = async (specObj: any) => {
+  const compileGrammar = async (
+    specObj: any,
+    how: { forwardsInput: boolean; keepsSelection: boolean } = { forwardsInput, keepsSelection: false },
+  ) => {
     // Prepare before the spec is handed to vega-lite: resolving geometry can
     // inject `encoding.shape` and `projection` into `specObj`, and coerces the
     // row values those encodings will read.
@@ -472,6 +490,12 @@ export const useVega = ({
     clearEmptyState(document.getElementById("vega" + data.nodeId));
     hasRunRef.current = true;
 
+    // A draw that keeps the chart's selections (keepsSelection) puts them back
+    // in the view it builds: their state in the view it replaces, and the rows
+    // that view's ids name.
+    const carried = how.keepsSelection ? carriedSelections(currentViewRef.current, specObj) : null;
+    const idsBefore = vgsidToIndexRef.current;
+
     let view = new vega.View(vega.parse(vegaspec), dashboardOn ? offlineViewOptionsOnce() : undefined)
       .logLevel(vega.Warn) // set view logging level
       .renderer("canvas")
@@ -491,10 +515,25 @@ export const useVega = ({
       vegaCanvas.style.margin = '0 auto';
     }
 
+    // The selections go back once the new view has numbered its rows, on its
+    // first run, which also builds the scopes of its views. Until they are
+    // back, what the view says of its selects is the empty selection it starts
+    // on, then the one put back, which the flow already holds: neither is
+    // passed on.
+    let restoring = carried !== null;
+    const firstRun: Promise<unknown> = carried
+      ? view
+          .runAsync()
+          .then(() => view.setState(withMovedIds(carried, idsBefore, buildVgsidMap(view))).runAsync())
+          .finally(() => {
+            restoring = false;
+          })
+      : view.runAsync();
+
     // dev/136: the same chain, with its result kept — the marks can only be
     // counted once the first render has finished, and the caller needs that
     // count to tell a drawn chart from an empty one.
-    const rendered: Promise<number | undefined> = view.runAsync().then(() => {
+    const rendered: Promise<number | undefined> = firstRun.then(() => {
       const container = document.getElementById("vega" + data.nodeId);
       const parentContainer = container?.parentElement;
       if (parentContainer) {
@@ -523,6 +562,7 @@ export const useVega = ({
     for (const [select, declared] of selects) {
       try {
         view.addSignalListener(select, (name: any, value: any) => {
+          if (restoring) return;
           // detecting the type of interaction (point/hover or interval (brush))
           let signalAttributes = Object.keys(value);
 
@@ -625,6 +665,8 @@ export const useVega = ({
         // signals, as a `<name>_modify` signal no select made can give.
         continue;
       }
+      // Put back in the view, a selection stays as the flow holds it.
+      if (carried) continue;
       setInteractions({
         ...interactionsRef.current,
         [select]: {
@@ -636,7 +678,7 @@ export const useVega = ({
     }
 
     // replicating input to the output
-    if (forwardsInput) data.outputCallback(data.nodeId, data.input);
+    if (how.forwardsInput) data.outputCallback(data.nodeId, data.input);
 
     // dev/136: what this render actually amounted to. Awaited last, so the
     // listeners above are attached exactly when they were before.

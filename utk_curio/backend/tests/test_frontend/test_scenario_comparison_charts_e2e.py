@@ -18,9 +18,12 @@ refused, and Run All drives the whole dataflow:
    problem.
 4. What differs on the four street plans lists one lever, its Case widget,
    set to each plan, and no code line; nothing is warned.
-5. No request left the stack.
+5. A Vega-Lite chart after a Compare node draws its scenarios in their boxes'
+   colors: one box recolored, the pedestrians chart draws the new color and
+   not the old one, with no run.
+6. No request left the stack.
 
-Each chart's close-up is a frame.
+Each chart's close-up is a frame, taken before the recolor.
 
 Run::
 
@@ -41,9 +44,13 @@ from .test_compare_scenarios_e2e import _CHART_STATE_JS, _COLOR_PIXELS_JS, _OUTP
 from .utils import (
     REPO_ROOT,
     assert_vega_canvas_rendered,
+    close_scenario_details,
+    close_scenario_drawer,
     frame_nodes,
     load_artifact_as_dict,
     node_locator,
+    open_in_project_tab,
+    open_scenario_details,
     read_node_error_text,
     require_owner_view,
     require_project_page,
@@ -67,6 +74,11 @@ STAGES = "data.curio.example-building-carbon"
 WEIGHTS = "data.curio.example-bike-route-factors"
 #: The Compare node What differs is read on: four street plans, one lever.
 PLANS = "data.curio.example-trips-by-mode"
+#: The chart one of whose scenarios is recolored: its lines and bands are drawn
+#: in its scenarios' colors.
+RECOLORED = "data.curio.example-pedestrians-by-hour"
+#: The recolored box's new color, far from every color that chart draws.
+NEW_COLOR = "#7b3294"
 
 
 def _refuse_the_network(page, *urls) -> list:
@@ -113,6 +125,16 @@ def _mark_colors(dataset_id: str, spec: dict, labels: list) -> list:
     if dataset_id == WEIGHTS:
         return spec["encoding"]["stroke"]["scale"]["range"]
     return [label["color"] for label in labels]
+
+
+# Whether the scenario's box on the canvas, the border of its frame, is drawn in
+# the color ``#rrggbb``.
+_BOX_COLOR_IS_JS = """([id, hex]) => {
+    const frame = document.querySelector(`[data-scenario-frame="${id}"]`);
+    if (!frame) return false;
+    const rgb = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    return getComputedStyle(frame).borderTopColor === `rgb(${rgb.join(", ")})`;
+}"""
 
 
 def _assert_colors_drawn(page, node_id: str, colors: list, what: str) -> None:
@@ -223,5 +245,23 @@ def test_the_nine_charts_draw_their_scenarios_with_no_network(
     assert compare.locator("[data-compare-warning]").count() == 0
     compare.get_by_role("tab", name="Chart", exact=True).click()
 
-    # 5. Nothing left the stack.
+    # 5. A box recolored: the chart after its Compare node draws the new color,
+    # whatever its spec writes, and draws it with no run.
+    [(_dataset, pedestrians, chart)] = [row for row in rows if row[0] == RECOLORED]
+    labels = pedestrians["metadata"]["compareScenarios"]["inputs"]
+    recolored = labels[-1]
+    open_in_project_tab(page)
+    open_scenario_details(page, recolored["scenario"]).get_by_label(f"Color of {recolored['name']}").fill(NEW_COLOR)
+    page.wait_for_function(_BOX_COLOR_IS_JS, arg=[recolored["scenario"], NEW_COLOR], timeout=10000)
+    close_scenario_details(page)
+    close_scenario_drawer(page)
+    frame_nodes(page, [chart["id"]])
+    kept = [label["color"] for label in labels[:-1]]
+    _assert_colors_drawn(page, chart["id"], [*kept, NEW_COLOR], f"{chart['title']}, recolored")
+    old = page.evaluate(_COLOR_PIXELS_JS, [chart["id"], [recolored["color"]]])
+    assert old == [0], (
+        f"{chart['title']} still draws {recolored['name']} in its old color {recolored['color']}: pixels {old}"
+    )
+
+    # 6. Nothing left the stack.
     assert refused == [], f"the dataflow reached the network: {refused}"
