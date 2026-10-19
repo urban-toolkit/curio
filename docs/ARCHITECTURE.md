@@ -342,8 +342,11 @@ node whose code it writes itself:
   `handleCompileGrammar` with `recordsProvenance` and `forwardsInput` off for that
   draw, so no version and no hand-off. It also sets `keepsSelection`, and `useVega`
   puts a selection made in the chart back in the new view (`carriedSelections` and
-  `withMovedIds` in `vegaSelects.ts`), leaving what the flow holds as it is. It does
-  not redraw during a run, which draws the chart itself. `scenarioScales.cases.json`
+  `withMovedIds` in `vegaSelects.ts`), leaving what the flow holds as it is. One
+  redraw runs at a time, then the last names and colors if they moved meanwhile: a
+  color dragged through the picker is written at every step, and each redraw takes
+  the selection from the view the one before it built. It does not redraw during a
+  run, which draws the chart itself. `scenarioScales.cases.json`
   pins the fill for Jest and for the Vega-Lite check in
   `test_compare_scenarios_node.py`.
 - In Difference (`compareMode.ts`: `metadata.compareScenarios.mode`, else Difference
