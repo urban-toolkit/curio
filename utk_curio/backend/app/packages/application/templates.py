@@ -238,6 +238,9 @@ def _template_entry(package_id: str, template) -> dict:
         "contentKind": template_content_kind(template),
         "inputs": inputs,
         "maxIncomingEdges": max_incoming,
+        # #662: the widgets a node of this template starts with, by name, which
+        # an agent's plan sets (the roster line names them).
+        **({"widgets": [w["name"] for w in template.widgets]} if template.widgets else {}),
     }
 
 

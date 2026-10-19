@@ -114,6 +114,17 @@
       "savedSources": {"pool": ["load"], "chart": ["calc"]}
     },
     {
+      "name": "a package chart that draws with Vega-Lite stands for the nodes feeding it, as a Vega-Lite chart does",
+      "nodes": [
+        {"id": "calc", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"},
+        {"id": "donuts", "type": "scout.comparison/donuts@1", "content": "{}"}
+      ],
+      "edges": [{"source": "calc", "target": "donuts"}],
+      "scenario": ["calc", "donuts"],
+      "expected": {"levers": ["calc", "donuts"], "context": [], "outcomes": ["donuts"]},
+      "savedSources": {"calc": ["calc"], "donuts": ["calc"]}
+    },
+    {
       "name": "an Autark node that draws stands for its input; one that makes layers saves its own",
       "nodes": [
         {"id": "layers", "type": "curio.builtin/autk-grammar@1", "content": "{\"data\": [{\"name\": \"roads\"}]}"},

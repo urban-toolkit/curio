@@ -9,8 +9,9 @@
  *
  * The rules are narrow on purpose, and each case below is one of them:
  *
- *  - A Vega chart and an Autark map (a document that draws a map or a plot)
- *    follow one rule, and the table below runs every case for both: draw
+ *  - A Vega chart, a package chart that draws with the Vega-Lite grammar (a
+ *    SCOUT Comparison node), and an Autark map (a document that draws a map
+ *    or a plot) follow one rule, and the table below runs every case for each: draw
  *    whenever an input and a document are there, on either route, once per
  *    input. A selection, coming back through a Data Pool or across a direct
  *    interaction edge, is not a new input: the node highlights the matched
@@ -63,11 +64,12 @@ jest.mock("../../components/edges/InputIcon", () => ({ InputIcon: () => null }))
 jest.mock("../../components/UnresolvedNode", () => ({ UnresolvedNode: () => null }));
 jest.mock("../../components/agents/attach/NodeAgentBadges", () => ({ NodeAgentBadges: () => null }));
 jest.mock("../../registry/nodeRegistry", () => {
-  const descriptor = (id: string, grammar: boolean) => ({
+  const descriptor = (id: string, grammar: boolean, grammarId?: string) => ({
     id,
     hasCode: !grammar,
     hasGrammar: grammar,
     hasWidgets: true,
+    ...(grammarId ? { grammarId, source: "package" } : {}),
     adapter: {
       handles: [],
       editor: {},
@@ -79,6 +81,9 @@ jest.mock("../../registry/nodeRegistry", () => {
     "curio.builtin/vis-vega": descriptor("curio.builtin/vis-vega", true),
     "curio.builtin/autk-grammar": descriptor("curio.builtin/autk-grammar", true),
     "curio.builtin/computation-analysis": descriptor("curio.builtin/computation-analysis", false),
+    // A package template that draws with the Vega-Lite grammar, as SCOUT
+    // Comparison's charts do.
+    "scout.comparison/lines-with-band": descriptor("scout.comparison/lines-with-band", true, "vega-lite"),
   };
   return {
     getNodeDescriptor: (type: string) => byType[type],
@@ -132,6 +137,8 @@ import { markSelectionEcho } from "../../utils/selectionEcho";
 const VEGA = "curio.builtin/vis-vega";
 const AUTARK = "curio.builtin/autk-grammar";
 const PYTHON = "curio.builtin/computation-analysis";
+/** A chart that draws with the Vega-Lite node's behavior from a package. */
+const VEGA_TEMPLATE = "scout.comparison/lines-with-band";
 const VEGA_SPEC = JSON.stringify({ mark: "bar" });
 const MAP_SPEC = JSON.stringify({ map: { layerRefs: [] } });
 const DATA_SPEC = JSON.stringify({ data: [{ type: "osm" }] });
@@ -166,10 +173,12 @@ beforeEach(() => {
   mockWebGpuAnswer = null;
 });
 
-// The redraw rule, one table: every case runs for a Vega chart and for an
-// Autark map. What only an Autark node does follows the table.
+// The redraw rule, one table: every case runs for a Vega chart, for a package
+// chart that draws with the Vega-Lite grammar (a SCOUT Comparison node), and
+// for an Autark map. What only an Autark node does follows the table.
 describe.each([
   ["a Vega chart", VEGA, VEGA_SPEC, "spec"],
+  ["a package chart that draws with Vega-Lite", VEGA_TEMPLATE, VEGA_SPEC, "spec"],
   ["an Autark map", AUTARK, MAP_SPEC, "document"],
 ])("%s", (_name, type, spec, docWord) => {
   const node = (extra: Record<string, unknown> = {}) => data(type, { code: spec, ...extra });

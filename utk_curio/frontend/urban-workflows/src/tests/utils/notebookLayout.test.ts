@@ -23,6 +23,7 @@ import {
   graphEditGates,
   type NotebookDotPlace,
 } from "../../utils/notebookLayout";
+import { VEGA_LITE_TEMPLATE, clearVegaLiteTemplate, registerVegaLiteTemplate } from "../_support/vegaLiteTemplate";
 
 const pane = { width: 1600, top: 110, left: 56 };
 
@@ -192,6 +193,16 @@ describe("the height of a cell's output", () => {
 
   test("anything else, made to fill a node, gets a definite 360px", () => {
     expect(notebookOutputBox("acme.tools/heatmap@1")).toEqual({ height: 360, overflow: "auto" });
+  });
+
+  describe("a package chart that draws with Vega-Lite", () => {
+    beforeEach(() => registerVegaLiteTemplate());
+    afterEach(() => clearVegaLiteTemplate());
+
+    test("draws in a chart's 320px, as the Vega-Lite node does", () => {
+      expect(notebookOutputBox(VEGA_LITE_TEMPLATE)).toEqual({ height: 320, overflow: "auto" });
+      expect(notebookOutputBox("scout.comparison/donuts")).toEqual({ height: 320, overflow: "auto" });
+    });
   });
 });
 

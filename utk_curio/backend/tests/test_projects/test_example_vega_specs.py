@@ -12,7 +12,9 @@ finds them:
 
 The specs are read from the example dataflows, their walkthroughs, the default
 preamble, and the worked examples the builder agents are shown
-(``llm-prompts/examples.md``), which include example 09's scatter.
+(``llm-prompts/examples.md``), which include example 09's scatter. A
+dataflow's chart is a Vega-Lite node, or a node of a shipped template that
+draws with the Vega-Lite grammar, as SCOUT Comparison's charts do.
 """
 from __future__ import annotations
 
@@ -28,6 +30,7 @@ from utk_curio.backend.app.agents.domain import contracts
 from utk_curio.backend.app.agents.evaluation.fixtures import EXAMPLES_ROOT, example_paths
 
 VEGA = "curio.builtin/vis-vega"
+REPO_ROOT = Path(__file__).resolve().parents[4]
 SEGMENTATION = "/image-segmentation"
 JSON_BLOCK = re.compile(r"```json[^\n]*\n(.*?)```", re.S)
 CLASSES = re.compile(r"^classes\s*=\s*(\[[^\]]*\])", re.M)
@@ -45,9 +48,25 @@ def _flow(path: Path) -> dict:
     return _flow_of(json.loads(path.read_text(encoding="utf-8")))
 
 
+def _vega_lite_types() -> set:
+    """The node types that draw a Vega-Lite spec: every shipped template whose
+    grammar is ``vega-lite``, the Vega-Lite node's and SCOUT Comparison's
+    charts, read off the manifests."""
+    types = {VEGA}
+    for path in sorted((REPO_ROOT / "packages").glob("*/manifest.json")):
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        for template in manifest.get("templates") or []:
+            if template.get("grammarId") == "vega-lite":
+                types.add(f"{manifest['id']}/{template['id']}")
+    return types
+
+
+VEGA_LITE_TYPES = _vega_lite_types()
+
+
 def _node_specs(flow: dict, where: str):
     for node in flow.get("nodes", []):
-        if node["type"] == VEGA:
+        if node["type"].split("@", 1)[0] in VEGA_LITE_TYPES:
             yield f"{where} node {node['id'][:8]}", json.loads(node["content"])
 
 

@@ -1,5 +1,6 @@
 import { v4 as uuid } from "uuid";
 import { NodeType } from "./constants";
+import { isVegaLiteNodeType } from "./registry/vegaLiteNodes";
 import { dataflowOrder } from "./utils/dataflowOrder";
 import { unversionedNodeType } from "./utils/flowNodeCanonicalType";
 import { inputSlotOf, slotHandleId } from "./utils/inputSlots";
@@ -388,7 +389,7 @@ function outputVarName(node: TrillNode): string {
   // Specs saved since the curio.builtin@1 pack carry versioned ids (dev/64).
   const nodeType = unversionedNodeType(node.type);
   if (nodeType === NodeType.DATA_LOADING) return `data_${safe}`;
-  if (nodeType === NodeType.VIS_VEGA) return `vega_${safe}`;
+  if (isVegaLiteNodeType(nodeType)) return `vega_${safe}`;
   return `result_${safe}`;
 }
 
@@ -465,9 +466,12 @@ function generateCells(
   // and third-party package ids never match a NodeType at all - so this
   // dispatch always ends in a default branch rather than an enumeration.
   const nodeType = unversionedNodeType(node.type);
+  // A package's chart that draws with the Vega-Lite grammar is a Vega-Lite
+  // chart here too (registry/vegaLiteNodes).
+  const vegaChart = isVegaLiteNodeType(nodeType);
   // The code the canvas runs: its widget, input, column, shared and selection
   // references resolved, as the browser does before posting it (#662).
-  const language = nodeType === NodeType.VIS_VEGA || nodeType === NodeType.AUTK_GRAMMAR
+  const language = vegaChart || nodeType === NodeType.AUTK_GRAMMAR
     ? "json"
     : nodeType === NodeType.JS_COMPUTATION ? "javascript" : "python";
   const content = resolveReferences(
@@ -509,7 +513,7 @@ function generateCells(
     return [heading, codeCell(source)];
   }
 
-  if (nodeType === NodeType.VIS_VEGA) {
+  if (vegaChart) {
     let spec: unknown = {};
     let parsed = true;
     try {

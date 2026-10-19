@@ -10,6 +10,7 @@ prevent, so it fails here.
 from __future__ import annotations
 
 import difflib
+import json
 import re
 from pathlib import Path
 
@@ -174,6 +175,31 @@ class TestRenderPrompt:
             assert contracts.render_template(marker) == template["label"]
         with pytest.raises(contracts.PromptTemplateError, match="no-such-node"):
             contracts.render_template("{{template.label:curio.builtin/no-such-node}}")
+
+    def test_a_shipped_packages_template_label_follows_its_manifest(self):
+        """A prompt names a template of a package Curio ships as its manifest
+        labels it, as it names a built-in one: SCOUT Comparison's charts."""
+        manifest = json.loads((REPO_ROOT / "packages" / "scout.comparison@1" / "manifest.json").read_text(
+            encoding="utf-8"))
+        for template in manifest["templates"]:
+            marker = "{{template.label:" + f"scout.comparison/{template['id']}" + "}}"
+            assert contracts.render_template(marker) == template["label"]
+        with pytest.raises(contracts.PromptTemplateError, match="no-such-chart"):
+            contracts.render_template("{{template.label:scout.comparison/no-such-chart}}")
+        with pytest.raises(contracts.PromptTemplateError, match="no.such.package"):
+            contracts.render_template("{{template.label:no.such.package/chart}}")
+
+    def test_the_preamble_names_the_charts_that_follow_a_compare_node(self):
+        """Its Scenarios section names SCOUT Comparison's seven charts, by the
+        labels their manifest gives them, and the package that holds them."""
+        template = (REPO_ROOT / contracts.PROMPTS_DIR / "default_preamble.template.md").read_text(encoding="utf-8")
+        section = template.split("## Scenarios", 1)[1]
+        manifest = json.loads((REPO_ROOT / "packages" / "scout.comparison@1" / "manifest.json").read_text(
+            encoding="utf-8"))
+        assert "{{template.label:curio.builtin/compare-scenarios}}" in section
+        for chart in manifest["templates"]:
+            assert "{{template.label:" + f"scout.comparison/{chart['id']}" + "}}" in section, chart["id"]
+        assert "scout.comparison@1" in section
 
 
 class TestThePromptFacts:
