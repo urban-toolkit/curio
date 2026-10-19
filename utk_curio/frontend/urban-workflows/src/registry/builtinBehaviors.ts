@@ -43,8 +43,9 @@ registerBehavior('parameter', useParameterBehavior);
 // curio.builtin@1 compare-scenarios node: stacks scenarios' outcomes, charts
 // them in the scenarios' colors and lists what differs (#662).
 registerBehavior('compare-scenarios', useCompareScenariosBehavior);
-// curio.builtin@1 raster-calculator node: a Python node that starts with a
-// call to Curio's raster algebra, its operations listed, statistics among them.
+// The Raster Calculator of SCOUT's scout.rasters@1, whose template names this
+// key: a Python node that starts with a call to Curio's raster algebra, its
+// operations listed, statistics among them.
 registerBehavior('raster-calculator', useRasterCalculatorBehavior);
 // curio.builtin@1 edit-features node: features picked on its map, removed,
 // given a value or restored, as a list its code applies by id (#662).

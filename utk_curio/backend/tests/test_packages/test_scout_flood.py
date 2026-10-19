@@ -1,9 +1,11 @@
-"""SCOUT's flood example in Curio, made of Curio's own nodes, on SCOUT's whole grid (#662, step 18; #819).
+"""SCOUT's flood example in Curio, made of Curio's own nodes and SCOUT Rasters'
+Raster Calculator, on SCOUT's whole grid (#662, step 18; #819).
 
 The shipped test dataflow ``quad-cities-flood-vulnerability.json`` does what SCOUT's
 ``simulate_flood_projection`` does with no SCOUT code: three Data Loading nodes
 read the region's window of SCOUT's rasters, which the Data Catalog holds whole
-(``curio_load_data(..., bounds=...)``), a Raster Calculator per scenario takes
+(``curio_load_data(..., bounds=...)``), a Raster Calculator (``scout.rasters@1``)
+per scenario takes
 the depth with nature-based solutions (NbS) where the class is a chosen one and
 the depth without elsewhere (``choose``), a second takes the depth's
 statistics, the median and the mean among them, and an Autark map draws the
@@ -55,7 +57,9 @@ SCOUT_FUNCTION = Path(__file__).resolve().parent / "fixtures" / "scout_flood" / 
 NODE_CODE_TS = REPO / "utk_curio" / "frontend" / "urban-workflows" / "src" / "utils" / "raster" / "rasterNodeCode.ts"
 COMPARE_CODE_TS = REPO / "utk_curio" / "frontend" / "urban-workflows" / "src" / "utils" / "compare" / "compareCode.ts"
 LOADING = "curio.builtin/data-loading"
-CALCULATOR = "curio.builtin/raster-calculator"
+CALCULATOR = "scout.rasters/raster-calculator"
+#: The Raster Calculator's package, which the dataflow's lockfile names.
+RASTERS_PACKAGE = "scout.rasters@1"
 #: What a Raster Calculator's code returns: an operation cell by cell, which
 #: gives a raster, or statistics, which give a table of one row.
 CALCULATE = "curio_raster_calculate"
@@ -520,8 +524,9 @@ def _map_after(spec: dict, node_id: str) -> dict:
     return found
 
 
-def test_the_dataflow_is_made_of_curios_own_nodes():
-    """No package: three Parameter nodes; five Data Loading nodes, three for
+def test_the_dataflow_is_made_of_curios_own_nodes_and_scouts_raster_calculator():
+    """One package, SCOUT Rasters, for the Raster Calculators, and Curio's own
+    nodes otherwise: three Parameter nodes; five Data Loading nodes, three for
     the seven rasters and one each for the tracts and the waterways; a Data
     Transformation keeping the riverside tracts; two Raster Calculators per
     scenario, one choosing the depth and one taking its statistics, an Autark
@@ -531,8 +536,8 @@ def test_the_dataflow_is_made_of_curios_own_nodes():
     Nothing is pinned to the dashboard: a difference of SCOUT's whole grid is
     over a dashboard page's 25 MB."""
     spec = _dataflow()
-    assert spec["packages"] == []
-    assert all(n["type"].startswith("curio.builtin/") for n in spec["nodes"])
+    assert spec["packages"] == [RASTERS_PACKAGE]
+    assert {n["type"] for n in spec["nodes"] if not n["type"].startswith("curio.builtin/")} == {CALCULATOR}
     assert [ref["datasetId"] for ref in spec["datasets"]] == DATASET_IDS
     counts = {}
     for n in spec["nodes"]:

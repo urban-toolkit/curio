@@ -1,4 +1,12 @@
-"""``scout.raster-conversion@1``: SCOUT's building rasterizer in Curio (#662, step 17).
+"""``scout.rasters@1``: SCOUT's raster nodes in Curio, the Raster Calculator and
+SCOUT's building rasterizer (#662, step 17; the plan for #914, step 28.1).
+
+The package: two nodes, the Raster Calculator, which left the built-in nodes,
+and Rasterize Buildings, which came from ``scout.raster-conversion@1``, now
+gone. The Raster Calculator keeps its behavior, whose code a drop writes
+(``utils/raster/rasterNodeCode.ts``, run by the sandbox's
+``test_raster_nodes.py``), and every shipped dataflow with either node names
+the package in its lockfile.
 
 The proof: the package's port of SCOUT's ``convert_raster``, called as SCOUT's
 high-rise shadow example calls it, turns the buildings SCOUT committed for that
@@ -28,11 +36,19 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[4]
-PACKAGE = REPO / "packages" / "scout.raster-conversion@1"
+PACKAGE_ID = "scout.rasters"
+PACKAGE = REPO / "packages" / f"{PACKAGE_ID}@1"
 SOURCES = PACKAGE / "sources"
-MODULE = "scout_raster_conversion"
-NODE_TYPE = "scout.raster-conversion/rasterize-buildings"
+MODULE = "scout_rasters"
+NODE_TYPE = f"{PACKAGE_ID}/rasterize-buildings"
+CALCULATOR_TYPE = f"{PACKAGE_ID}/raster-calculator"
+#: The package Rasterize Buildings came from, retired with no alias.
+RETIRED = "scout.raster-conversion"
 EXAMPLE = REPO / "docs" / "examples" / "24-scout-shadow-model-chicago-loop.json"
+#: The dataflows Curio ships: the numbered examples, the test dataflows and
+#: their prompt fixtures.
+SHIPPED_JSON = ("docs/examples/*.json", "docs/examples/dataflows/*.json",
+                "docs/examples/prompts/*.json", "docs/examples/prompts/dataflows/*.json")
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scout"
 BUILDINGS = FIXTURES / "A_buildings.geojson"
@@ -48,9 +64,12 @@ AUTARK_MAX_CELLS = 4096 * 4096
 AUTARK_MAX_SIDE = 8192
 
 
-def _template() -> dict:
-    manifest = json.loads((PACKAGE / "manifest.json").read_text(encoding="utf-8"))
-    (template,) = manifest["templates"]
+def _manifest() -> dict:
+    return json.loads((PACKAGE / "manifest.json").read_text(encoding="utf-8"))
+
+
+def _template(template_id: str = "rasterize-buildings") -> dict:
+    (template,) = [t for t in _manifest()["templates"] if t["id"] == template_id]
     return template
 
 
@@ -151,6 +170,87 @@ def run_node(buildings, workspace, *, fails=False, **values):
 
 
 # ---------------------------------------------------------------------------
+# The package
+# ---------------------------------------------------------------------------
+
+def test_the_package_holds_the_raster_calculator_and_rasterize_buildings():
+    """SCOUT Rasters: one read-only package of the two raster nodes, each a
+    computation node with its own icon and place in the package's palette
+    group, and the module Rasterize Buildings' code imports."""
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+
+    manifest = load_package_manifest(PACKAGE)
+    assert (manifest.package_id, manifest.major, manifest.name, manifest.publisher, manifest.license) == (
+        PACKAGE_ID, 1, "SCOUT Rasters", "Curio", "MIT",
+    )
+    assert manifest.read_only is True and manifest.kind == "node"
+    assert [(t.template_id, t.label, t.category, t.icon_ref) for t in manifest.templates] == [
+        ("raster-calculator", "Raster Calculator", "computation", "fa-solid:calculator"),
+        ("rasterize-buildings", "Rasterize Buildings", "computation", "fa-solid:city"),
+    ]
+    orders = [t.palette_order for t in manifest.templates]
+    assert all(isinstance(order, int) for order in orders) and orders == sorted(set(orders)), orders
+    assert sorted(p.name for p in SOURCES.iterdir() if p.is_dir()) == [MODULE]
+
+
+def test_the_raster_calculator_gives_a_raster_or_a_table_of_statistics():
+    """One Raster Calculator: its operations work cell by cell and give a
+    raster, or take a raster's statistics and give a table of one row. It is
+    the node the built-in one was: Python code that its behavior writes on a
+    drop, its operations listed, so it ships no source of its own."""
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+
+    manifest = load_package_manifest(PACKAGE)
+    (calculator,) = [t for t in manifest.templates if t.template_id == "raster-calculator"]
+    assert calculator.label == "Raster Calculator"
+    assert [sorted(port.types) for port in calculator.output_ports] == [["DATAFRAME", "RASTER"]]
+    assert [(port.types, port.cardinality) for port in calculator.input_ports] == [(["RASTER"], "[1,3]")]
+    for words in ("add, subtract, multiply or divide", "choose", "Statistics: the mean, median, minimum, maximum and count",
+                  "a table of one row"):
+        assert words in calculator.description, calculator.description
+    assert (calculator.behavior, calculator.editor, calculator.engine) == ("raster-calculator", "code", "python")
+    assert calculator.has_code and calculator.has_widgets and not calculator.has_grammar
+    assert calculator.source is None and not calculator.widgets
+
+
+def test_raster_conversion_is_retired_and_no_shipped_dataflow_names_the_old_types():
+    """``scout.raster-conversion@1`` is gone, with no alias: no package folder,
+    and no shipped dataflow or prompt fixture names it or the built-in
+    Raster Calculator's type."""
+    assert not (REPO / "packages" / f"{RETIRED}@1").exists()
+    named = []
+    for pattern in SHIPPED_JSON:
+        for path in sorted(REPO.glob(pattern)):
+            text = path.read_text(encoding="utf-8")
+            for old in (f"{RETIRED}/", f"{RETIRED}@1", "curio.builtin/raster-calculator"):
+                if old in text:
+                    named.append((path.relative_to(REPO).as_posix(), old))
+    assert not named, named
+
+
+def test_every_shipped_dataflow_with_a_raster_node_declares_the_package():
+    """A dataflow's lockfile is how opening it, a scenario dropped from it and
+    ``--with-examples`` add the package: each shipped dataflow with one of the
+    two nodes names ``scout.rasters@1``, and only those do."""
+    using, declaring = set(), set()
+    for pattern in SHIPPED_JSON[:2]:
+        for path in sorted(REPO.glob(pattern)):
+            dataflow = json.loads(path.read_text(encoding="utf-8")).get("dataflow") or {}
+            key = path.relative_to(REPO).as_posix()
+            if any(str(n.get("type", "")).split("@")[0] in (NODE_TYPE, CALCULATOR_TYPE)
+                   for n in dataflow.get("nodes") or []):
+                using.add(key)
+            if f"{PACKAGE_ID}@1" in (dataflow.get("packages") or []):
+                declaring.add(key)
+    assert using == declaring == {
+        "docs/examples/24-scout-shadow-model-chicago-loop.json",
+        "docs/examples/dataflows/chicago-loop-shadow-towers.json",
+        "docs/examples/dataflows/lower-manhattan-park-shade.json",
+        "docs/examples/dataflows/quad-cities-flood-vulnerability.json",
+    }, (using, declaring)
+
+
+# ---------------------------------------------------------------------------
 # The proof
 # ---------------------------------------------------------------------------
 
@@ -204,7 +304,7 @@ def test_the_shipped_dataflow_runs_the_template_as_the_palette_drops_it():
     the package ships. Its lockfile names the package beside the model package
     of Deep Umbra, which reads the node's raster."""
     spec = json.loads(EXAMPLE.read_text(encoding="utf-8"))["dataflow"]
-    assert spec["packages"] == ["model.scout.deep-umbra@1", "scout.raster-conversion@1"]
+    assert spec["packages"] == ["model.scout.deep-umbra@1", f"{PACKAGE_ID}@1"]
     (node,) = [n for n in spec["nodes"] if n["type"] == NODE_TYPE]
     template = _template()
     assert node["content"] == (PACKAGE / template["source"]).read_text(encoding="utf-8")

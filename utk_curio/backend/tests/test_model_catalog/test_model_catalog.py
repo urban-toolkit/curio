@@ -21,7 +21,7 @@ DDRNET = "model.curio.ddrnet23-slim"
 DEEP_UMBRA = "model.scout.deep-umbra"
 WEATHER_GNN = "model.scout.weather-gnn"
 #: A node package that ships a module of its own.
-RASTER_CONVERSION = "scout.raster-conversion"
+SCOUT_RASTERS = "scout.rasters"
 
 
 @pytest.fixture()
@@ -357,12 +357,12 @@ class TestModelPackagesInTheModelCatalog:
 
         user, _ = user_and_token
         catalog = _rows(client, auth, "/api/packages/catalog?kind=node")
-        assert catalog[f"{RASTER_CONVERSION}@1"]["modules"] == ["scout_raster_conversion"]
+        assert catalog[f"{SCOUT_RASTERS}@1"]["modules"] == ["scout_rasters"]
         assert catalog["curio.builtin@1"]["modules"] == []
-        install_package_from_directory(_user_key(user), PACKAGES / f"{RASTER_CONVERSION}@1")
+        install_package_from_directory(_user_key(user), PACKAGES / f"{SCOUT_RASTERS}@1")
         _add(user, DEEP_UMBRA)
-        assert _rows(client, auth, "/api/packages?kind=node")[f"{RASTER_CONVERSION}@1"]["modules"] == [
-            "scout_raster_conversion"]
+        assert _rows(client, auth, "/api/packages?kind=node")[f"{SCOUT_RASTERS}@1"]["modules"] == [
+            "scout_rasters"]
         assert _rows(client, auth, "/api/packages?kind=model")[f"{DEEP_UMBRA}@1"]["modules"] == ["deep_umbra"]
 
     def test_the_weights_license_text_is_read_where_the_package_is(self, client, auth, shipped, user_and_token):

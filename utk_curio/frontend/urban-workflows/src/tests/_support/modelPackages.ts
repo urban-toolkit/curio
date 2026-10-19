@@ -165,16 +165,16 @@ export function importedModelPackage(over: Record<string, unknown> = {}): Packag
 }
 
 /** A node package that ships a module of its own. */
-export function rasterConversionPackage(over: Record<string, unknown> = {}): PackagePayload {
+export function scoutRastersPackage(over: Record<string, unknown> = {}): PackagePayload {
   return row({
-    packageId: "scout.raster-conversion",
-    dirName: "scout.raster-conversion@1",
-    name: "SCOUT Raster Conversion",
+    packageId: "scout.rasters",
+    dirName: "scout.rasters@1",
+    name: "SCOUT Rasters",
     kind: "node",
-    modules: ["scout_raster_conversion"],
+    modules: ["scout_rasters"],
     templates: [
       template({
-        id: "scout.raster-conversion/rasterize-buildings@1",
+        id: "scout.rasters/rasterize-buildings@1",
         templateId: "rasterize-buildings",
         label: "Rasterize Buildings",
       }),

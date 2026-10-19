@@ -3,7 +3,7 @@
 
 - **input**: a raster of building heights in metres, in EPSG:3395 on the
   zoom-16 tile grid SCOUT's tiles use (256 cells a tile): the raster of
-  Rasterize Buildings (``scout.raster-conversion@1``). Every tile of the raster
+  Rasterize Buildings (``scout.rasters@1``). Every tile of the raster
   that holds a height is predicted, from the tile and its eight neighbours. A
   tile with no data, which Rasterize Buildings gives a tile SCOUT wrote no file
   for, is not predicted, as SCOUT predicts only the tiles it wrote; around the
@@ -55,7 +55,7 @@ GRID_SLACK = 0.01
 
 NOT_A_HEIGHT_RASTER = (
     "Accumulated Shadow reads a raster of building heights: connect the output of "
-    "Rasterize Buildings (scout.raster-conversion), or a raster of heights in metres "
+    "Rasterize Buildings (scout.rasters), or a raster of heights in metres "
     "in EPSG:3395 on the zoom-16 tile grid."
 )
 

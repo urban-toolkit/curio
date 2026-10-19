@@ -4,13 +4,13 @@ SCOUT's Deep Umbra shadow model does not read buildings: it reads map tiles in
 which each pixel's gray level is the height of the building under it. This
 example takes the buildings of SCOUT's own shadow example in the Chicago Loop,
 draws them in 3D, and turns them into those tiles with the **Rasterize
-Buildings** node of the `scout.raster-conversion@1` package, SCOUT's own
+Buildings** node of the `scout.rasters@1` package, SCOUT's own
 rasterizer ported to Curio. It draws the tiles joined into one map. Then the
 **Accumulated Shadow** node of Deep Umbra's model package,
 `model.scout.deep-umbra@1`, runs Deep Umbra on those heights: a map shows how
 many minutes of a summer day each spot is in shadow, and a **Raster
-Calculator** takes their statistics, the mean and median over the ground among
-them, SCOUT's own two numbers.
+Calculator**, the other node of `scout.rasters@1`, takes their statistics, the
+mean and median over the ground among them, SCOUT's own two numbers.
 
 ## Pipeline overview
 
@@ -91,7 +91,7 @@ shadow model (Accumulated Shadow) reads it.
 The Widgets tab sets the height column, the zoom level and the maximum height.
 Ported from SCOUT, https://github.com/urban-toolkit/scout.
 """
-from scout_raster_conversion.node_outputs import rasterize_buildings
+from scout_rasters.node_outputs import rasterize_buildings
 
 return rasterize_buildings(
     input_0,
