@@ -108,11 +108,30 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
   // run did not.
   const runInFlight = !!flow.isRunActive || !!flow.serverRunActive;
   const executing = nodeState.output?.code === 'exec';
+  const busyRef = useRef(false);
+  busyRef.current = runInFlight || executing;
+  // One redraw at a time. A color dragged through the picker is written at
+  // each step it passes, and a redraw takes the chart's selection from the
+  // view the one before it built, which holds it only once that one is done.
+  // Done, it draws again if the scales moved meanwhile.
+  const redrawingRef = useRef(false);
+  const redraw = async () => {
+    redrawingRef.current = true;
+    try {
+      for (let applied = appliedRef.current; applied && !busyRef.current; applied = appliedRef.current) {
+        const drawnKey = scalesKeyOf(labelsRef.current);
+        if (applied.scalesKey === drawnKey) break;
+        appliedRef.current = { ...applied, scalesKey: drawnKey };
+        await draw(applied.spec, AS_THE_CHART_TAB);
+      }
+    } finally {
+      redrawingRef.current = false;
+    }
+  };
   useEffect(() => {
     const applied = appliedRef.current;
-    if (!applied || applied.scalesKey === scalesKey || runInFlight || executing) return;
-    appliedRef.current = { ...applied, scalesKey };
-    void draw(applied.spec, AS_THE_CHART_TAB);
+    if (!applied || applied.scalesKey === scalesKey || runInFlight || executing || redrawingRef.current) return;
+    void redraw();
   }, [scalesKey, runInFlight, executing]);
 
   // The DOM id useVega renders the compiled view into — pre-Phase-B this was
