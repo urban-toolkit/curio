@@ -1,7 +1,7 @@
 # Compose override used only by the CI test workflow
 # (.github/workflows/docker-compose.yml).
 #
-# Two CI-specific adjustments to the image's default CMD:
+# CI-specific adjustments to the image and its default CMD:
 #
 # 1. --deploy. The default CMD carries no auth flag, which resolves to
 #    CURIO_NO_AUTH=1 (see utk_curio/cli/environment.py). The e2e suite then skips every
@@ -34,11 +34,22 @@
 #    pinned to a known value so the host-side pytest can authenticate; the
 #    workflow exports the same value into the pytest environment.
 #
+# 4. Nothing installs at boot. The image is CI's (CURIO_CI_SETUP below), which
+#    holds everything `curio.py setup --with-examples` installs, so the stack
+#    starts with CURIO_SKIP_DEP_INSTALL=1: the launcher runs no pip over
+#    requirements.txt and the package manifests, and no npm install of the
+#    sandbox's packages. test-gpu builds the image through this file; the
+#    other jobs pull the one build-image built with the same argument. Every
+#    CI overlay sets both.
+#
 # Deliberately NOT docker-compose.deploy.yml: that overlay also passes
 # --no-allow-publish, which would disable the two catalog mutators that the
 # publish-catalog tests exercise. CI wants auth on and publish still allowed.
 services:
   curio:
+    build:
+      args:
+        CURIO_CI_SETUP: "1"
     # Process-count cap for the isolation test suite.
     #
     # test_isolation_linux.py can provoke process exhaustion, and inside
@@ -85,6 +96,8 @@ services:
       # only alongside --testing on the command below, which is what sets
       # CURIO_TESTING (see discovery/infrastructure/transport.py).
       - CURIO_DISCOVERY_FIXTURES=/app/utk_curio/backend/tests/test_discovery/fixtures
+      # See 4 above.
+      - CURIO_SKIP_DEP_INSTALL=1
     # The job's own host ports, in place of the base file's 5002/8080, which
     # are the production stack's on the runner.
     ports: !override

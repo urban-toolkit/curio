@@ -764,8 +764,14 @@ def synthetic_requested(texts: list[str] | tuple[str, ...], params: dict | None 
     return asked
 
 
-def is_data_loading_type(canonical_id: object) -> bool:
-    return isinstance(canonical_id, str) and canonical_id.endswith("/data-loading")
+def loads_dataset(node_type: object, templates: dict | None = None) -> bool:
+    """Whether a node of *node_type* loads a dataset: its template declares
+    ``loadsDataset``, in the project's roster snapshot *templates* or in the
+    package catalog (``packages.template_flags``). Such a node is grounded on
+    a real source, and Solve finds it one before writing its code."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    return "loadsDataset" in packages_services.template_flags(node_type, templates)
 
 
 # --------------------------------------------------------------------------

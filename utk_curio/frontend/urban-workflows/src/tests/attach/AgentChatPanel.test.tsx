@@ -37,6 +37,20 @@ const attachment: AgentAttachment = {
 
 const noTurns: AgentSessionTurn[] = [];
 
+// What the shipped cards declare in their manifests: the panel offers each of
+// its features to any agent that declares the capability behind it.
+const NODE_BUILDER_CAPABILITIES = [
+  "node.build",
+  "dataset.fetch.author",
+  "node.content.generate",
+  "package.recommend",
+  "package.build",
+  "package.extend",
+  "node.kind.author",
+];
+const DATASET_FINDER_CAPABILITIES = ["dataset.discover", "dataset.select"];
+const DATAFLOW_BUILDER_CAPABILITIES = ["dataflow.orchestrate"];
+
 function renderPanel(overrides: Partial<React.ComponentProps<typeof AgentChatPanel>> = {}) {
   const props: React.ComponentProps<typeof AgentChatPanel> = {
     attachment,
@@ -628,7 +642,12 @@ function savedReply(
 
 describe("AgentChatPanel says when a canvas agent changed nothing (#243)", () => {
   const NO_CHANGE = "No changes were made to the canvas";
-  const nodeBuilder: AgentAttachment = { ...attachment, coord: "agent.node-builder@1.0.0", name: "Node Builder" };
+  const nodeBuilder: AgentAttachment = {
+    ...attachment,
+    coord: "agent.node-builder@1.0.0",
+    name: "Node Builder",
+    capabilities: NODE_BUILDER_CAPABILITIES,
+  };
   const ask: AgentSessionTurn = { role: "user", text: "Add a node that loads the parks." };
   const proposal = {
     type: "proposal",
@@ -1291,7 +1310,12 @@ describe("AgentChatPanel — dev/114 candidates in the Node Builder chat", () =>
 
   it("a selection prefills the BUILD request when the host is Node Builder", () => {
     renderPanel({
-      attachment: { ...attachment, coord: "agent.node-builder@1.0.0", name: "Node Builder" },
+      attachment: {
+        ...attachment,
+        coord: "agent.node-builder@1.0.0",
+        name: "Node Builder",
+        capabilities: NODE_BUILDER_CAPABILITIES,
+      },
       turns: candidatesTurns,
     });
     fireEvent.click(screen.getByRole("checkbox", { name: "Select NOAA Climate Data API" }));
@@ -1302,7 +1326,13 @@ describe("AgentChatPanel — dev/114 candidates in the Node Builder chat", () =>
 
   it("a selection prefills the hand-off confirmation in any other chat", () => {
     renderPanel({
-      attachment: { ...attachment, coord: "agent.dataset-finder@1.0.0", name: "Dataset Finder" },
+      attachment: {
+        ...attachment,
+        coord: "agent.dataset-finder@1.0.0",
+        name: "Dataset Finder",
+        capabilities: DATASET_FINDER_CAPABILITIES,
+        nodeBuildDelegate: "Node Builder",
+      },
       turns: candidatesTurns,
     });
     fireEvent.click(screen.getByRole("checkbox", { name: "Select NOAA Climate Data API" }));
@@ -1413,6 +1443,7 @@ describe("AgentChatPanel — dev/116 the per-node Solve row's remedy", () => {
       targetName: "Data Loading",
       onSolveNode,
       onOpenAgentChat,
+      agentNameOf: (id: string) => (id === "att-df" ? "Dataset Finder" : null),
     });
     const row = screen.getByRole("group", { name: "Solve this node" });
     fireEvent.click(within(row).getByRole("button", { name: "Solve this node" }));
@@ -1435,6 +1466,7 @@ describe("AgentChatPanel — dev/116 the per-node Solve row's remedy", () => {
         attachmentId: "att-df",
         coord: "agent.dataset-finder@1.0.0",
         name: "Dataset Finder",
+        capabilities: DATASET_FINDER_CAPABILITIES,
         target: { kind: "node" as const, targetId: "n1" },
       },
       turns: [
@@ -1510,6 +1542,7 @@ describe("AgentChatPanel — dev/116 the per-node Solve row's remedy", () => {
         },
       ],
       onOpenAgentChat,
+      agentNameOf: (id: string) => (id === "att-nb" ? "Node Builder" : null),
     });
     const card = screen.getByRole("group", { name: /Attempts to fix Calculate Density/ });
     expect(card).toHaveTextContent("KeyError: 'community_area'");
@@ -1550,5 +1583,252 @@ describe("AgentChatPanel — dev/116 the per-node Solve row's remedy", () => {
     expect(
       within(card).queryByRole("button", { name: /Confirm source for this node/ }),
     ).toBeNull();
+  });
+});
+
+// An agent is found by what its manifest declares, never by its id: a user's
+// own copy of a shipped card, under another id and name, gets what the card gets.
+describe("AgentChatPanel offers each feature by what the agent declares", () => {
+  const candidates: AgentSessionTurn = {
+    role: "agent" as const,
+    text: "1 candidate",
+    content: [
+      {
+        type: "datasetCandidates" as const,
+        lanes: {
+          external: [
+            { name: "Chicago areas", sourceType: "portal", url: "https://data.example.org/areas.geojson" },
+          ],
+          catalog: [],
+        },
+      },
+    ],
+  };
+
+  it("an agent that declares dataflow.orchestrate gets the Solve strip, under its own name", () => {
+    renderPanel({
+      attachment: {
+        ...attachment,
+        coord: "agent.my-orchestrator@1.0.0",
+        name: "My Orchestrator",
+        category: "canvas",
+        capabilities: DATAFLOW_BUILDER_CAPABILITIES,
+        builderSession: { phase: "idle" },
+      },
+      onSolve: jest.fn(),
+    });
+    expect(screen.getByRole("group", { name: "My Orchestrator" })).toBeInTheDocument();
+  });
+
+  it("an agent that does not declare it gets no Solve strip", () => {
+    renderPanel({
+      attachment: {
+        ...attachment,
+        coord: "agent.my-builder@2.0.0",
+        name: "My Builder",
+        capabilities: NODE_BUILDER_CAPABILITIES,
+        builderSession: { phase: "idle" },
+      },
+      onSolve: jest.fn(),
+    });
+    expect(screen.queryByRole("group", { name: "My Builder" })).toBeNull();
+  });
+
+  it("an agent that declares node.build says when its reply changed nothing", () => {
+    renderPanel({
+      attachment: {
+        ...attachment,
+        coord: "agent.my-builder@2.0.0",
+        name: "My Builder",
+        capabilities: NODE_BUILDER_CAPABILITIES,
+      },
+      turns: [
+        { role: "user", text: "Add a node that loads the parks." },
+        savedReply("I have now added a new node to your dataflow.", {
+          toolCalls: [{ tool: "dataflow.read", status: "ok", durationMs: 3 }],
+        }),
+      ],
+    });
+    expect(screen.getByText("No changes were made to the canvas")).toBeInTheDocument();
+  });
+
+  it("a selection in an agent that declares node.build prefills the build request", () => {
+    renderPanel({
+      attachment: {
+        ...attachment,
+        coord: "agent.my-builder@2.0.0",
+        name: "My Builder",
+        capabilities: NODE_BUILDER_CAPABILITIES,
+      },
+      turns: [candidates],
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Chicago areas" }));
+    expect(screen.getByPlaceholderText(/message this agent/i)).toHaveValue(
+      "Build the data-loading node — fetch from: Chicago areas (https://data.example.org/areas.geojson).",
+    );
+  });
+
+  it("an agent on a node that declares dataset.select records the confirmed source", async () => {
+    const onRecordDatasetSelection = jest
+      .fn()
+      .mockResolvedValue({ attachmentId: "att-mine", nodeId: "n1", status: "resolved", picks: [] });
+    renderPanel({
+      attachment: {
+        ...attachment,
+        attachmentId: "att-mine",
+        coord: "agent.my-finder@1.0.0",
+        name: "My Finder",
+        capabilities: DATASET_FINDER_CAPABILITIES,
+        target: { kind: "node" as const, targetId: "n1" },
+      },
+      turns: [candidates],
+      onRecordDatasetSelection,
+    });
+    const card = screen.getByRole("group", { name: "Dataset candidates" });
+    fireEvent.click(within(card).getByRole("checkbox", { name: "Select Chicago areas" }));
+    fireEvent.click(within(card).getByRole("button", { name: /Confirm source for this node/ }));
+    await screen.findByText(/Source recorded for this node/);
+    expect(onRecordDatasetSelection).toHaveBeenCalledWith([
+      { lane: "external", key: "https://data.example.org/areas.geojson" },
+    ]);
+  });
+
+  it("an agent on a node that only discovers datasets offers no confirm", () => {
+    renderPanel({
+      attachment: {
+        ...attachment,
+        coord: "agent.my-scout@1.0.0",
+        name: "My Scout",
+        capabilities: ["dataset.discover"],
+        target: { kind: "node" as const, targetId: "n1" },
+      },
+      turns: [candidates],
+      onRecordDatasetSelection: jest.fn(),
+    });
+    const card = screen.getByRole("group", { name: "Dataset candidates" });
+    expect(within(card).queryByRole("button", { name: /Confirm source for this node/ })).toBeNull();
+  });
+});
+
+// A label that opens another agent's chat, or hands it work, names that agent
+// as its manifest does. The dataflow's agents here are a user's own copies of
+// the shipped cards, "My Finder" and "My Builder", so a label that still names
+// a shipped card shows the wrong agent.
+describe("AgentChatPanel names the agent a label opens or hands work to", () => {
+  const MY_AGENTS: Record<string, string> = {
+    "att-my-finder": "My Finder",
+    "att-my-builder": "My Builder",
+  };
+  const agentNameOf = (id: string) => MY_AGENTS[id] ?? null;
+  const myBuilderOnTheNode: AgentAttachment = {
+    ...attachment,
+    attachmentId: "att-my-builder",
+    coord: "agent.my-builder@2.0.0",
+    name: "My Builder",
+    capabilities: NODE_BUILDER_CAPABILITIES,
+    target: { kind: "node" as const, targetId: "n1" },
+  };
+
+  it("the per-node Solve row's awaiting-source notice and button name the node's own finder", async () => {
+    const onOpenAgentChat = jest.fn();
+    renderPanel({
+      attachment: myBuilderOnTheNode,
+      targetName: "Data Loading",
+      onSolveNode: jest.fn().mockResolvedValue({
+        verdict: "awaiting-source",
+        rounds: 1,
+        remedy: { kind: "dataset-selection", attachmentId: "att-my-finder", nodeId: "n1" },
+      }),
+      onOpenAgentChat,
+      agentNameOf,
+    });
+    const row = screen.getByRole("group", { name: "Solve this node" });
+    fireEvent.click(within(row).getByRole("button", { name: "Solve this node" }));
+    const open = await within(row).findByRole("button", { name: "Open My Finder for this node" });
+    expect(open).toHaveTextContent(/^Open My Finder$/);
+    expect(open).toHaveAttribute(
+      "title",
+      "Opens this node's My Finder chat, where the candidates await your selection. Confirm one, then Solve again.",
+    );
+    expect(within(row).getByRole("status")).toHaveTextContent(
+      "Awaiting a source: this node's My Finder has candidates for you to confirm. Nothing was generated or written.",
+    );
+    expect(row).not.toHaveTextContent(/Dataset Finder/);
+    fireEvent.click(open);
+    expect(onOpenAgentChat).toHaveBeenCalledWith("att-my-finder");
+  });
+
+  it("the attempts card opens the node's own builder under its name", () => {
+    const onOpenAgentChat = jest.fn();
+    renderPanel({
+      turns: [
+        {
+          role: "agent" as const,
+          text: "Solved 0 of 1 plan nodes.",
+          content: [
+            {
+              type: "solveAttempts" as const,
+              nodeId: "n1",
+              label: "Load the parks",
+              attachmentId: "att-my-builder",
+              rounds: 1,
+              stoppedBy: "budget",
+              verdict: "fail",
+              attempts: [
+                {
+                  round: 1,
+                  verdict: "fail",
+                  kind: "execution-error",
+                  error: "KeyError: 'park_name'",
+                  code: "return parks['park_name']",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      onOpenAgentChat,
+      agentNameOf,
+    });
+    const card = screen.getByRole("group", { name: /Attempts to fix Load the parks/ });
+    const open = within(card).getByRole("button", { name: "Open the My Builder for Load the parks" });
+    expect(open).toHaveTextContent(/^Open My Builder$/);
+    expect(card).not.toHaveTextContent(/Node Builder/);
+    fireEvent.click(open);
+    expect(onOpenAgentChat).toHaveBeenCalledWith("att-my-builder");
+  });
+
+  it("a selection hands the source to the agent the finder hands nodes to build", () => {
+    renderPanel({
+      attachment: {
+        ...attachment,
+        attachmentId: "att-my-finder",
+        coord: "agent.my-finder@1.0.0",
+        name: "My Finder",
+        capabilities: DATASET_FINDER_CAPABILITIES,
+        nodeBuildDelegate: "My Builder",
+      },
+      turns: [
+        {
+          role: "agent" as const,
+          text: "1 candidate",
+          content: [
+            {
+              type: "datasetCandidates" as const,
+              lanes: {
+                external: [
+                  { name: "Chicago areas", sourceType: "portal", url: "https://data.example.org/areas.geojson" },
+                ],
+                catalog: [],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Chicago areas" }));
+    expect(screen.getByPlaceholderText(/message this agent/i)).toHaveValue(
+      "Confirm my selection \u2014 hand off to My Builder: Chicago areas.",
+    );
   });
 });

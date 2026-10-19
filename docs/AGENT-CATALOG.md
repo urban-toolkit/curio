@@ -69,6 +69,7 @@ The other three are helpers. They have modes only, never a chat: they are never 
 - A message you type goes to the agent's chat instruction, and the model follows its rules: in the same call that answers you, it decides what you asked for and which tools to use.
 - A mode runs only when another agent, Solve or the agent itself asks for it, as a separate call with no tools.
 - Curio picks the file from what the call is for; the model does not.
+- Curio finds the agent for a job by the capability its manifest declares, never by its name or id (see [Capabilities](#capabilities)). An agent of your own that declares what a shipped one does is picked where the shipped one would be.
 
 Each agent's prompts, by the key its manifest gives them:
 
@@ -260,7 +261,9 @@ A reply of Node Builder or Dataflow Builder that carries no review card says **N
 
 ### Required agents
 
-An agent may require others. The drawer says so before you click: the button reads **Add to project (+2 required)**, and its tooltip names what else will be added. Adding brings in all of them at once.
+An agent may require others: the agents a job of its own runs without asking the model, such as the Node Builder and the Dataset Finder that the Dataflow Builder's Solve runs. The drawer says so before you click: the button reads **Add to project (+2 required)**, and its tooltip names what else will be added. Adding brings in all of them at once. A required agent that ships with Curio is added at its shipped version; one of your own at the highest version in your imports or the catalog.
+
+The job itself goes to the agent in the dataflow that declares its capability: the one the requiring agent's `delegatesTo` names first, else any other that declares it. So an agent of your own that requires your own copies of the Node Builder and the Dataset Finder runs them.
 
 The reverse holds too. Removing an agent that another added agent requires is refused, with a message naming the agent that needs it, so a dataflow never holds a broken reference.
 
@@ -272,7 +275,7 @@ Solve runs what it writes. A node with code is generated, run in the sandbox, co
 
 When Solve cannot fix a node, nothing is written, and the chat shows every attempt as its own row: the exception, where it was raised, and the code that attempt ran. The message names what stopped the loop, normally the time budget: the Solve's 15 minutes, or the node's own 15 minutes when you use **Solve this node**. A Solve keeps working for up to 15 minutes, and runs on if you close the chat or reload the page. **Stop** ends it after the current node, and what was written stays. What it did not reach stays *pending* with the reason, and **Solve** continues from there; after a failure or a server restart, the same button reads **Retry**.
 
-Applying a plan gives every created node a **Node Builder**, and every data-loading node a **Dataset Finder** too. When a data-loading node's source is not settled, Solve asks that Dataset Finder for candidates: they appear in its chat, and the node stays pending, *awaiting your dataset selection*, with an **Open Dataset Finder** button. **Confirm source for this node** records your choice, and the next Solve builds the loader from that source.
+Applying a plan gives every created node the agent that writes its content, the one that declares `node.content.generate` (the **Node Builder**). Every node that loads a dataset, one whose template declares `loadsDataset` such as Data Loading, also gets the agent that finds datasets, the one that declares `dataset.discover` (the **Dataset Finder**). When such a node's source is not settled, Solve asks that agent for candidates: they appear in its chat, and the node stays pending, *awaiting your dataset selection*, with an **Open Dataset Finder** button. **Confirm source for this node**, in the chat of an agent that declares `dataset.select`, records your choice, and the next Solve builds the loader from that source.
 
 A node with several inputs reads each through its input chip, `[!! input_0 !!]`, `[!! input_1 !!]` and so on, in the order of its input circles (see [Several inputs](USAGE.md#several-inputs)), and the agent is told which dataset sits on each circle. Code that treats the inputs as one value is refused before it runs.
 
@@ -288,7 +291,7 @@ An agent that reads the dataflow sees each scenario with its fixed context, leve
 
 ### Finding data in portals
 
-The **Dataset Finder** can search the portals in the [Discovery Catalog](DISCOVERY-CATALOG.md) as well as your own datasets, and propose downloading one. Nothing is downloaded until you apply the proposal. See [DISCOVERY-CATALOG.md part 6](DISCOVERY-CATALOG.md#6-the-dataset-finder).
+The **Dataset Finder** can search the portals in the [Discovery Catalog](DISCOVERY-CATALOG.md) as well as your own datasets, and propose downloading one. Nothing is downloaded until you apply the proposal. See [DISCOVERY-CATALOG.md part 6](DISCOVERY-CATALOG.md#6-the-dataset-finder). Solve and the other agents ask whichever agent in the dataflow declares `dataset.discover`, so an agent of your own that declares it, with the same tools, searches in its place.
 
 ---
 
@@ -404,7 +407,7 @@ A minimal, complete manifest:
 | `delegatesTo` | | Other `agent.` ids this agent may call, in preference order. An entry `{ "id", "capabilities": [...] }` delegates only those capabilities of that agent. An entry may name the agent itself only in that form, with capabilities that are its own [modes](#modes). A preference only: it grants nothing and never adds or imports anything. |
 | `requiresAgents` | | A subset of `delegatesTo`: the agents this one cannot work without. See [Required agents](#required-agents). |
 | `prompts` | | Prompt files by package-relative `path`, `sha256`, and declared `variables`. Absolute paths and `..` are rejected. |
-| `compatibleTargets` | | Where the agent can attach: `{ kind: node\|canvas\|connection, requires: [...] }`. For `node`, `requires` lists the node kinds it accepts, such as `data-loading`; empty means any node. |
+| `compatibleTargets` | | Where the agent can attach: `{ kind: node\|canvas\|connection, requires: [...] }`. For `node`, `requires` lists what the node may be, any one of them enough: a flag its template declares, such as `loadsDataset` for a node that loads a dataset ([Node Catalog](NODE-CATALOG.md#6-the-manifest)), or a template id, such as `data-loading`. Empty means any node. |
 | `inputs`, `outputs` | | The context the agent reads (`inputs.reads`), the [catalog settings](#catalog-settings) every run of it receives (`inputs.requiredConfig`), and the named outputs it produces. |
 | `runtime` | | `execution` (`foreground` or `background`) and `reviewPolicy` (`report-only` or `review-before-apply`). |
 | `providerRequirements` | | Provider *capability* requirements such as `structured-output`, as a preference: an agent runs on the configuration chosen for it whatever these say. Credentials and configurations are never in a manifest. |
@@ -421,6 +424,18 @@ node.output.interpret   dataset.fetch.author       research.verify
 ```
 
 Capability ids drive catalog discovery, orchestration and substitution, and are **never** used for authorization. A capability id must not contain a prompt filename, a path separator, an underscore, `.txt` or `.md`: `node.explain` is valid, while `explain_node_prompt` and `prompts/explain.txt` are rejected. A prompt can then be edited or replaced without changing the contract.
+
+Curio finds the agent for each of its own jobs by the capability it declares:
+
+| Capability | Curio picks the agent that declares it to |
+|---|---|
+| `node.content.generate` | write a node's content in Solve; it is attached to every node a plan creates |
+| `dataset.discover` | find the datasets a node loads; it is attached to every node a plan creates that loads a dataset |
+| `dataset.select` | record the source you confirm for a node, from its chat on that node |
+| `dataflow.orchestrate` | plan a dataflow; its chat has the **Solve** strip, and API Settings lists the agents its Solve runs |
+| `node.build` | build nodes on the canvas; its chat says when a reply changed nothing on it |
+
+When several agents in the dataflow declare a capability, the one the asking agent's `delegatesTo` names first is picked.
 
 ### Modes
 

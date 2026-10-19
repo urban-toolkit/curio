@@ -20,9 +20,10 @@ Catalog** dropdown.
 
 ## Raster Calculator
 
-A Python node whose code is written for it when it is dropped: input_0 minus
-input_1, with its other operations listed above it, statistics among them.
-Return another call to change what it does:
+A Python node that opens with the package's starter,
+[`sources/raster-calculator.py`](sources/raster-calculator.py), when it is
+dropped: input_0 minus input_1, with its other operations listed above it,
+statistics among them. Return another call to change what it does:
 
 | Call | Result |
 |---|---|

@@ -219,6 +219,8 @@ A manifest with `"readOnly": true` at the top level marks its package read-only.
 
 [`docs/schemas/node-package.v4.json`](schemas/node-package.v4.json) (JSON Schema Draft 2020-12) is the reference for what a package can declare. The catalog packages in `<repo_root>/packages/` are the canonical examples, starting with [`packages/curio.builtin@1/manifest.json`](../packages/curio.builtin@1/manifest.json). To write a package by hand, follow [Authoring nodes](AUTHORING-NODES.md).
 
+A template whose nodes load a dataset into the dataflow declares `"loadsDataset": true`, as Data Loading does. An agent whose node target requires `loadsDataset`, such as the Dataset Finder, attaches to its nodes, and Solve finds such a node a source before it writes its code ([Agent Catalog](AGENT-CATALOG.md#solve)).
+
 A package, or one of its templates, can name the tags and data types a dataflow that uses it is filed under on the **Projects** page, beside those Curio finds in the dataflow itself:
 
 ```json
@@ -265,7 +267,7 @@ Since memo dev/143 the catalog is layered like the Data Catalog. The backend is 
 - [`docs/DATA-CATALOG.md`](DATA-CATALOG.md): datasets, installed and published with the same model.
 - [`docs/AGENT-CATALOG.md`](AGENT-CATALOG.md): the agents you attach to nodes.
 - [`docs/DISCOVERY-CATALOG.md`](DISCOVERY-CATALOG.md): the data portals you download datasets from.
-- [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#node-packages-and-manifests): how packages load, and how to add a built-in behavior, icon, or grammar adapter.
+- [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#node-packages-and-manifests): how packages load, and how to add a built-in behavior or grammar adapter.
 - [`docs/USAGE.md`](USAGE.md): installing and running Curio, including the [Vega-Lite node](USAGE.md#vega-lite-node).
 - [`docs/schemas/node-package.v4.json`](schemas/node-package.v4.json): the manifest JSON Schema.
 - [`docs/schemas/trill.v1.json`](schemas/trill.v1.json): the dataflow JSON Schema. A node's `type` points into a manifest's `templates[].id`.

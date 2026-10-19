@@ -2,9 +2,15 @@ import React, { useEffect, useRef } from "react";
 import modal from "../modal-content.module.css";
 import styles from "./LlmConfigs.module.css";
 import type { LlmAgentRow, LlmListing } from "../../api/llmConfigsApi";
+import { declaresCapability, ORCHESTRATE_CAPABILITY } from "../../services/agents/agentCapabilities";
 
-/** The agents a Solve of the Dataflow Builder always runs, by name. */
-const SOLVE_RUNS = "Node Builder and Dataset Finder";
+/** The agents an agent's Solve always runs, by name ("A", "A and B", "A, B and C"),
+ * or null when it is not an agent with Solve or runs none. */
+function solveRunsText(row: LlmAgentRow): string | null {
+  const names = row.solveRuns ?? [];
+  if (!declaresCapability(row, ORCHESTRATE_CAPABILITY) || names.length === 0) return null;
+  return names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
 
 /** What "Default" means for this account right now. */
 function defaultLabel(listing: LlmListing): string {
@@ -60,13 +66,14 @@ export const AgentModelsSection: React.FC<{
           {agents.map((row) => {
             const focused = row.id === focusAgentId;
             const selectId = `agent-model-${row.id}`;
+            const solveRuns = solveRunsText(row);
             return (
               <tr key={row.id} className={focused ? styles.focusedRow : undefined} data-agent-id={row.id}>
                 <td className={styles.name}>
                   <label htmlFor={selectId}>{row.name}</label>
-                  {row.id === "agent.dataflow-builder" ? (
+                  {solveRuns ? (
                     <span className={styles.host}>
-                      Its Solve also runs {SOLVE_RUNS}, each on its own choice, else this one.
+                      Its Solve also runs {solveRuns}, each on its own choice, else this one.
                     </span>
                   ) : null}
                 </td>

@@ -52,6 +52,10 @@ export interface LlmAgentRow {
   id: string;
   name: string;
   category: string;
+  /** The capabilities its manifest declares. */
+  capabilities?: string[];
+  /** For an agent with Solve, the agents its Solve runs, by name, in the order it asks them. */
+  solveRuns?: string[];
   /** The configuration chosen for it, `"deployment"`, or null: it follows the rules. */
   choice: string | null;
   /** What it answers with when attached, or why nothing does. */

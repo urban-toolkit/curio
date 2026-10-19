@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import logging
 
+from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application import source_grounding
+from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application import tools
 from utk_curio.backend.app.agents.application import verify
 from utk_curio.backend.app.agents.infrastructure import egress
@@ -151,23 +153,17 @@ def _exec_dataset_paths(project_id: str, *codes: str) -> dict:
         return {}
 
 
-#: dev/126: the ONE sentence an ``ungrounded-source`` failure ends with. It
-#: existed in three copies (the batch Solve's verified and legacy lanes and the
-#: per-node stream), which is exactly how the three drifted apart from what the
-#: product can now do: discovery is initiated at the node, so the sentence names
-#: that node's own Dataset Finder when it has one.
-_UNGROUNDED_REMEDY_GENERIC = (
-    " — resolve the source with Dataset Finder (attach it to this node) or give the path"
-)
+def _ungrounded_remedy(attachment_id: str | None = None, *, name: str | None = None) -> str:
+    """The ONE sentence an ``ungrounded-source`` failure ends with (dev/126).
 
-
-def _ungrounded_remedy(attachment_id: str | None = None) -> str:
-    """The remedy an ungrounded data source ends with (dev/126)."""
+    Discovery is initiated at the node, so the sentence names the agent that
+    finds the node's datasets: *name*, as its manifest gives it, or the shipped
+    card that declares ``dataset.discover``; and with *attachment_id*, the
+    node's own attachment of it."""
+    finder = name or agents_spec_reads._shipped_name_declaring("dataset.discover") or "an agent that finds datasets"
     if attachment_id:
-        return (
-            " — open Dataset Finder on this node to pick a source, or give the path"
-        )
-    return _UNGROUNDED_REMEDY_GENERIC
+        return f"; open {finder} on this node to pick a source, or give the path"
+    return f"; resolve the source with {finder} (attach it to this node) or give the path"
 
 
 def _source_missing_remedy(remedy: dict | None) -> str:
@@ -288,6 +284,7 @@ def _source_resolver(
         )
         state = agents_dataset_resolution.node_source_state(
             spec, node_id, grounded_literal=literal, project_literal=project_literal,
+            user_key=user_key,
         )
         if state["state"] == agents_dataset_resolution.STATE_RESOLVED:
             skip_literal = literal or project_literal
@@ -301,7 +298,9 @@ def _source_resolver(
             return {
                 "state": "resolved",
                 "detail": state["detail"] or (skip_literal or ""),
-                "confirmedSource": agents_dataset_resolution.confirmed_source(spec, node_id),
+                "confirmedSource": agents_dataset_resolution.confirmed_source(
+                    spec, node_id, user_key=user_key,
+                ),
             }
         if state["state"] != agents_dataset_resolution.STATE_UNRESOLVED:
             # Candidates (or a reviewed install) already await the user: say so
@@ -503,9 +502,10 @@ def _grounding_context(
     node)."""
     from utk_curio.backend.app.packages import service as packages_services
 
-    canonical = packages_services.canonical_template_id(node_type) if node_type else ""
     if is_data_loading is None:
-        is_data_loading = source_grounding.is_data_loading_type(canonical)
+        is_data_loading = bool(node_type) and source_grounding.loads_dataset(
+            node_type, packages_services.roster_templates(user_key, project_id),
+        )
     if base is not None:
         catalog_paths = base.get("catalog_paths") or {}
         catalog_ids = base.get("catalog_ids") or {}
@@ -549,8 +549,7 @@ def _grounding_context(
     hints: list[str] = []
     if "catalog.search" in (loop_ctx.get("granted") or []):
         hints.append("a `path` from a catalog.search row (granted — search first)")
-    manifest = loop_ctx.get("manifest")
-    if "agent.dataset-finder" in (getattr(manifest, "delegates_to", None) or []):
+    if _delegates_discovery(user_key, loop_ctx.get("manifest")):
         hints.append(
             "a URL the runtime verified — delegate the dataset.discover capability "
             "to find and verify candidates first, then build from the one the user confirms"
@@ -584,6 +583,22 @@ def _grounding_context(
             _requested_dataset_ids(loop_ctx, request_texts, catalog_ids) | set(requested_ids)
         ),
     )
+
+
+def _delegates_discovery(user_key: str, manifest) -> bool:
+    """Whether *manifest*'s agent asks another for datasets: an agent its
+    ``delegatesTo`` names, resolved to a visible definition, declares
+    ``dataset.discover`` and is delegated it
+    (``delegation.visible_capability_entries``)."""
+    if not getattr(manifest, "delegates_to", None):
+        return False
+    try:
+        return any(
+            capability == "dataset.discover"
+            for capability, _name in delegation.visible_capability_entries(user_key, manifest)
+        )
+    except Exception:  # noqa: BLE001 - an unreadable definition delegates nothing
+        return False
 
 
 def _requested_dataset_ids(loop_ctx: dict, request_texts: tuple, catalog_ids: dict) -> set[str]:

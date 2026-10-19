@@ -32,6 +32,11 @@ With Pillow importable every image is transcoded to lossless WebP, identical
 pixel for pixel at about half the size of the PNG; without it the recorded
 PNGs are embedded as they are.
 
+Each suite CI cuts into parts (e2e-desktop, the backend unit tests) gets one
+line on the page and in the summary: its slowest and its fastest part, and a
+warning (also printed as a GitHub annotation) when they are more than
+SPREAD_WARN_SECONDS apart, which means its durations file needs a refresh.
+
 Usage::
 
     python scripts/ci_report.py --junit "End-to-end tests=e2e.xml" \\
@@ -858,6 +863,70 @@ def ran_jobs(report):
             if job.get("runner_name") and job.get("conclusion") != "skipped"]
 
 
+#: Parts of one suite further apart than this mean its durations file has
+#: drifted from the tests (tests/parts.py prices the parts by it).
+SPREAD_WARN_SECONDS = 120
+
+#: The suites CI cuts into parts: a name, the jobs API's name of a part's job,
+#: the label of a part's results, and the script that refreshes its durations.
+SPLITS = (
+    ("e2e-desktop", re.compile(r"^e2e-desktop \((\d+)\)$"),
+     re.compile(r"^End-to-end tests, desktop part (\d+)$"), "scripts/e2e_durations.py"),
+    ("unit backend", re.compile(r"^unit \(backend-(\d+)\)$"),
+     re.compile(r"^Backend unit tests, part (\d+)$"), "scripts/unit_durations.py"),
+)
+
+
+def part_spreads(report):
+    """The slowest and the fastest part of each suite CI cuts into parts.
+
+    A part's time is its job's, start to end, as the run page shows it, when
+    the run's jobs were given; otherwise the time of its tests, from its
+    results. A repeated suite counts its first run's results.
+    """
+    spreads = []
+    for name, job_name, label, script in SPLITS:
+        jobs = {}
+        for job in ran_jobs(report):
+            match = job_name.match(job.get("name") or "")
+            start, end = _iso(job.get("started_at")), _iso(job.get("completed_at"))
+            if match and start and end:
+                jobs[int(match[1])] = (end - start).total_seconds()
+        tests = {}
+        for suite in report.suites:
+            run = RUN_LABEL.search(suite.label)
+            if run and run[1] != "1":
+                continue
+            match = label.match(suite.label[:run.start()] if run else suite.label)
+            if match and suite.found and suite.seconds is not None:
+                tests[int(match[1])] = suite.seconds
+        times = jobs or tests
+        if len(times) < 2:
+            continue
+        slowest = max(times, key=lambda k: (times[k], -k))
+        fastest = min(times, key=lambda k: (times[k], k))
+        spreads.append({
+            "name": name, "parts": len(times), "measure": "job" if jobs else "tests",
+            "slowest": (slowest, times[slowest]), "fastest": (fastest, times[fastest]),
+            "apart": times[slowest] - times[fastest], "script": script,
+            "warn": times[slowest] - times[fastest] > SPREAD_WARN_SECONDS,
+        })
+    return spreads
+
+
+def spread_line(spread):
+    """One sentence for a split suite: its slowest and fastest part, and a warning past the limit."""
+    (slow, slow_s), (fast, fast_s) = spread["slowest"], spread["fastest"]
+    took = "took" if spread["measure"] == "job" else "had tests for"
+    text = (f"Parts of {spread['name']} ({spread['parts']}): slowest part {slow} {took} "
+            f"{duration(slow_s)}, fastest part {fast} {took} {duration(fast_s)}, "
+            f"{duration(spread['apart'])} apart.")
+    if spread["warn"]:
+        text = (f"Warning: {text} That is more than {SPREAD_WARN_SECONDS // 60} minutes; refresh "
+                f"its durations with {spread['script']} from a recent run.")
+    return text
+
+
 def render_jobs(report):
     """Every job of the run, where it ran, and the failed steps of the ones that failed."""
     rows, failed, done = [], 0, 0
@@ -912,8 +981,12 @@ SUITE_WORD = {"passed": "passed", "failed": "failed", "missing": "did not run",
 
 
 def render_suites(report):
+    # From the jobs too, so the lines show when no suite's results were given.
+    spreads = "".join(f'<p class="{"note" if spread["warn"] else "muted"}">{esc(spread_line(spread))}</p>'
+                      for spread in part_spreads(report))
     if not report.suites:
-        return '<section id="suites"><h2>Test suites</h2><p class="muted">No suites were given.</p></section>'
+        return ('<section id="suites"><h2>Test suites</h2><p class="muted">No suites were given.</p>'
+                f'{spreads}</section>')
     rows, details = [], []
     for index, suite in enumerate(report.suites, 1):
         anchor = f"suite-{index}"
@@ -937,7 +1010,7 @@ def render_suites(report):
         figures = "".join(_screenshot(report, path, name) for name, path in report.stray_screenshots.items())
         stray = (f'<section class="suite"><h3>Failure screenshots without a matching test</h3>'
                  f"{figures}</section>")
-    return f'<section id="suites"><h2>Test suites</h2>{table}{"".join(details)}{stray}</section>'
+    return f'<section id="suites"><h2>Test suites</h2>{table}{spreads}{"".join(details)}{stray}</section>'
 
 
 def render_suite(report, suite, anchor):
@@ -1314,6 +1387,11 @@ def render_summary(report):
                          f"| {numbers['errors']} | {numbers['skipped']} |")
         else:
             lines.append(f"| {cell(suite.label)} | {word} | | | | |")
+    spreads = part_spreads(report)
+    if spreads:
+        lines.append("")
+        lines += [("**" + spread_line(spread).replace("Warning:", "Warning:**", 1)
+                   if spread["warn"] else spread_line(spread)) for spread in spreads]
     counts = Counter(COMPARISON_GROUP.get(r.get("status"), "within") for r in report.comparisons)
     remint = (f" Re-mint: {counts['reminted']} baselines replaced, {counts['unchanged']} kept."
               if counts["reminted"] or counts["unchanged"] else "")
@@ -1557,6 +1635,8 @@ def main(argv=None) -> int:
     kept = sum(1 for uri in report.images.values() if uri)
     print(f"wrote {args.out}: {len(page) / 1e6:.1f} MB, {len(report.suites)} suites, "
           f"{len(report.comparisons)} comparisons, {kept} images")
+    for spread in part_spreads(report):
+        print(f"::warning::{spread_line(spread)}" if spread["warn"] else spread_line(spread))
     return 0
 
 

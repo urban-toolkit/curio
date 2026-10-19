@@ -12,7 +12,10 @@ import hashlib
 import json as _json
 
 from utk_curio.backend.app.agents.application import attachments
+from utk_curio.backend.app.agents.application import catalog as agents_catalog
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
+from utk_curio.backend.app.agents.domain import builtin
+from utk_curio.backend.app.agents.domain.manifest import AgentManifest
 from utk_curio.backend.app.agents.repositories import project_agents as agents_project_agents
 from utk_curio.backend.app.projects import storage as projects_storage
 
@@ -83,6 +86,88 @@ def _node_attachment_of(spec: dict, agent_id: str, node_id: str) -> dict | None:
         ):
             return existing
     return None
+
+
+# ── agents by what they declare ──────────────────────────────────────────────
+# An agent is found by the capabilities its manifest declares, never by its
+# id, so a user's own agent that declares what a shipped one does is picked
+# where the shipped one would be.
+
+
+def _definition(user_key: str | None, coord: str) -> AgentManifest | None:
+    """The definition behind *coord*: the account's, resolved as everywhere
+    else (``catalog._resolve_definition``), or the shipped roster's when no
+    account is known."""
+    if not coord:
+        return None
+    if not user_key:
+        return builtin.get_builtin_manifest(coord)
+    try:
+        return agents_catalog._resolve_definition(user_key, coord)
+    except Exception:  # noqa: BLE001 - an unreadable definition declares nothing
+        return None
+
+
+def _declares(user_key: str | None, coord: str, capability: str) -> bool:
+    """Whether the agent at *coord* declares *capability*."""
+    manifest = _definition(user_key, coord)
+    return manifest is not None and capability in manifest.capability_ids
+
+
+def _node_attachment_declaring(
+    spec: dict | None, capability: str, node_id: str, *, user_key: str | None = None
+) -> dict | None:
+    """The attachment on node *node_id* whose agent declares *capability*,
+    the first in the spec's order, or None."""
+    for existing in attachments.list_attachments(spec):
+        target = existing.get("target") or {}
+        if (
+            target.get("kind") == "node"
+            and target.get("targetId") == node_id
+            and _declares(user_key, str(existing.get("coord") or ""), capability)
+        ):
+            return existing
+    return None
+
+
+def _installed_coord_declaring(
+    spec: dict | None, capability: str, *, user_key: str | None = None
+) -> str | None:
+    """The first coord of the project's lockfile, in sorted order, whose agent
+    declares *capability*, or None."""
+    return next(
+        (
+            coord for coord in sorted(agents_project_agents.project_agents(spec))
+            if _declares(user_key, coord, capability)
+        ),
+        None,
+    )
+
+
+def _agent_name(user_key: str | None, coord: str) -> str | None:
+    """The name the manifest at *coord* gives its agent, or None."""
+    return getattr(_definition(user_key, coord), "name", None)
+
+
+def _attachment_agent_name(user_key: str, project_id: str, attachment_id: str | None) -> str | None:
+    """The name of the agent attachment *attachment_id* binds, or None."""
+    if not attachment_id:
+        return None
+    spec = projects_storage.read_spec(user_key, project_id)
+    record = attachments.get_attachment(spec, attachment_id) if spec else None
+    return _agent_name(user_key, str((record or {}).get("coord") or ""))
+
+
+def _shipped_name_declaring(capability: str) -> str | None:
+    """The name of the shipped card that declares *capability*: what a message
+    calls the agent for a job when no agent of the dataflow's does it yet."""
+    return next(
+        (
+            m.name for m in builtin.list_builtin_manifests()
+            if capability in m.capability_ids and not builtin.is_internal(m.dir_name)
+        ),
+        None,
+    )
 
 
 def _acting_user():

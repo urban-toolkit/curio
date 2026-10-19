@@ -525,7 +525,7 @@ class TestAnAcquirableRowIsDownloaded:
 class TestSettlingAcquisitions:
     def _spec(self, picks, status=dr.STATE_AWAITING_INSTALL):
         return {"dataflow": {"agentAttachments": [{
-            "attachmentId": "f1", "coord": f"{dr.FINDER_AGENT_ID}@1.0.0",
+            "attachmentId": "f1", "coord": "agent.dataset-finder@1.0.0",
             "target": {"kind": "node", "targetId": "n1"},
             dr.RECORD_KEY: {"status": status, "picks": picks},
         }]}}

@@ -42,10 +42,14 @@ export const AgentSolveAttemptsCard: React.FC<{
   tintClassName?: string;
   /** Open the node's own agent chat, where the child's replies live. */
   onOpenChat?: (attachmentId: string) => void;
-}> = ({ part, tintClassName, onOpenChat }) => {
+  /** The name of that agent, as its manifest names it. Without one, the
+   * button says "the node's agent". */
+  agentName?: string | null;
+}> = ({ part, tintClassName, onOpenChat, agentName }) => {
   const attempts = part.attempts ?? [];
   const phrase = stoppedByPhrase(part.stoppedBy);
   const label = part.label || part.nodeId;
+  const name = (agentName ?? "").trim();
 
   return (
     <div
@@ -108,11 +112,11 @@ export const AgentSolveAttemptsCard: React.FC<{
           <button
             type="button"
             className={styles.open}
-            aria-label={`Open the Node Builder for ${label}`}
+            aria-label={`Open the ${name || "node's agent"} for ${label}`}
             title="Opens this node's own agent, where the generated replies live and where you can ask for a different approach."
             onClick={() => onOpenChat(part.attachmentId as string)}
           >
-            Open Node Builder
+            {name ? `Open ${name}` : "Open the node's agent"}
           </button>
         </div>
       ) : null}

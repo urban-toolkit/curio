@@ -144,6 +144,12 @@ starter and the template's widgets, each widget the plan declares set over the
 one of its name, and **Solve** leaves its content as it is. Without it, a planned
 node is created empty and Solve writes its content.
 
+A starter that each use edits leaves the flag out, as SCOUT Rasters' Raster
+Calculator does: its starter,
+[`sources/raster-calculator.py`](../packages/scout.rasters@1/sources/raster-calculator.py),
+returns one operation and lists the others, so a dropped calculator opens with
+it and Solve writes the operation each planned one needs.
+
 A node made from a template can also read a view's selection through a
 selection tag, `[!! selection name !!]` ([Selection tags](USAGE.md#selection-tags)).
 A template does not declare selection tags: each names a view of one dataflow,
@@ -455,9 +461,11 @@ All of these are real, and none of them produce an obvious error message.
 - **Never bundle your own React.** React, ReactDOM and ReactFlow are
   externalised to `window`; a second copy breaks every hook with an error that
   does not mention React copies at all.
-- **An unregistered `iconRef` is not an error.** It silently falls back to a
-  cube with one console warning. The registered refs are in
-  [`iconRegistry.ts`](../utk_curio/frontend/urban-workflows/src/registry/iconRegistry.ts).
+- **`iconRef` takes any Font Awesome solid or brands icon**, as
+  `fa-solid:<name>` or `fa-brands:<name>`, with the name
+  [fontawesome.com](https://fontawesome.com/icons) gives it. A name Font
+  Awesome does not have is not an error: the node shows a cube, with one
+  console warning.
 - **`integrity.json` goes stale.** Regenerate it with
   `python scripts/regen_integrity.py packages/<id>@<major>`. Nothing verifies
   these hashes today, so a stale file will not break your node, but keep it

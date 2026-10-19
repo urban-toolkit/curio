@@ -2,6 +2,7 @@ const path = require("path");
 const webpack = require("webpack");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
 const Dotenv = require("dotenv-webpack");
+const IconChunksAsWritten = require("./webpack/iconChunks");
 
 // The `utk` file dependency bundles `require("vega-lite")`; without aliases, webpack can
 // resolve that package from `utk-ts/node_modules`, which may be incomplete. Pin the Vega/D3
@@ -60,6 +61,13 @@ module.exports = {
       "vega-lite": nm("vega-lite", "build", "index.js"),
       "vega-util": nm("vega-util", "build", "index.js"),
       "d3-format": nm("d3-format"),
+      // registry/iconRegistry.ts imports one icon module by name
+      // (`@fortawesome/free-solid-svg-icons/${name}`), and webpack lists the
+      // pack's folder to split each icon into a chunk. The packs' "exports"
+      // field refuses that listing; an alias to the folder is resolved as a
+      // path, so it is listed, and the index still comes from "module".
+      "@fortawesome/free-solid-svg-icons": nm("@fortawesome", "free-solid-svg-icons"),
+      "@fortawesome/free-brands-svg-icons": nm("@fortawesome", "free-brands-svg-icons"),
     },
   },
   devtool: "source-map",
@@ -155,5 +163,8 @@ module.exports = {
       path: ".env",
       systemvars: true,
     }),
+    // One chunk per Font Awesome icon, shipped unminified and without a source
+    // map; see webpack/iconChunks.js.
+    new IconChunksAsWritten(),
   ],
 };
