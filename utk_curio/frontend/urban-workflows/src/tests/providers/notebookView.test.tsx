@@ -472,12 +472,13 @@ describe('the notebook view shows the nodes as cells', () => {
 /**
  * Leaving the notebook view brings back the canvas view it was entered from,
  * at once (#996). React Flow 11's `setViewport` moves the view through a d3
- * transition, which lands only on a later animation frame. MainCanvas holds the
- * notebook view's own view at the origin that way, and the canvas view came
- * back that way too, so on a page that drew no frame for a while React Flow
- * still read zoom 1 at the origin after the switch. React Flow and d3 are real
- * here: nothing yields between the switch and the read, so no frame can come
- * in between, and jsdom draws frames once a test waits for them.
+ * transition, which lands only on a later animation frame, and the canvas
+ * view came back that way, so on a page that drew no frame for a while React
+ * Flow still read the notebook view's origin, zoom 1, after the switch. A
+ * move asked that way and still waiting for its frame must not land over the
+ * view brought back either. React Flow and d3 are real here: nothing yields
+ * between the switch and the read, so no frame can come in between, and jsdom
+ * draws frames once a test waits for them.
  */
 describe('leaving the notebook view brings back the canvas view at once', () => {
   type View = { x: number; y: number; zoom: number };
@@ -497,7 +498,7 @@ describe('leaving the notebook view brings back the canvas view at once', () => 
     }
   }
 
-  /** Set the view through React Flow's setViewport, as MainCanvas's hold does, and let it land. */
+  /** Set the view through React Flow's setViewport, a d3 transition, and let a frame land it. */
   async function landView(view: View) {
     act(() => {
       rf.setViewport(view);
@@ -517,7 +518,7 @@ describe('leaving the notebook view brings back the canvas view at once', () => 
 
   test("the view it was left at is back before any frame, not the notebook view's origin", async () => {
     await enterFrom(LEFT_AT);
-    // MainCanvas, not drawn here, puts the origin back; frames came, so it landed.
+    // The notebook view's origin, where MainCanvas (not drawn here) holds React Flow.
     await landView(ORIGIN);
 
     act(() => {
@@ -531,8 +532,9 @@ describe('leaving the notebook view brings back the canvas view at once', () => 
 
   test('a put-back of the origin still waiting for a frame does not undo the view brought back', async () => {
     await enterFrom(LEFT_AT);
-    // A fit moved the view, and the hold asked React Flow to put the origin
-    // back, which waits for a frame that has not come.
+    // A fit moved the view, and a put-back of the origin was asked through
+    // React Flow's setViewport, as the hold made them before #996: it waits
+    // for a frame that has not come.
     await landView(MOVED);
     act(() => {
       rf.setViewport(ORIGIN);
