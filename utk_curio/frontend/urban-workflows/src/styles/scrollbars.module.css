@@ -1,6 +1,7 @@
-/* The thin scrollbar of Curio's panels: the Data Catalog's columns and
-   previews, and every widget panel (a node's Widgets tab, a Parameter node).
-   Defined here once. A panel takes it as the first line of its rule:
+/* The thin scrollbar of Curio's panels and code editors: the Data Catalog's
+   columns and previews, every widget panel (a node's Widgets tab, a Parameter
+   node), and every node's code or spec editor. Defined here once. A panel
+   takes it as the first line of its rule:
    `composes: thinScrollbar from "<path to src>/styles/scrollbars.module.css";`
 
    Chrome, Edge and Safari draw it from the ::-webkit-scrollbar rules: a 6 px
@@ -8,11 +9,26 @@
    scrollbar-color turns those rules off in Chrome and Edge, which then draw
    their own bar (on a Mac, one that hides until you scroll), so the two
    standard properties are only for the browsers without ::-webkit-scrollbar
-   (Firefox). */
+   (Firefox).
+
+   A code editor is Monaco, which draws its bars as elements of its own, not
+   the browser's. The editor carries this class too (Monaco's
+   extraEditorClassName): components/editing/nodeEditorScrolling.ts gives
+   Monaco the bar's 6 px and shows a bar at rest whenever the code runs past
+   its side, and the last three rules here give Monaco's slider the thumb's
+   colours and shape. */
+
+/* The thumb's two colours: at rest, and under the pointer. They belong to
+   this bar alone, so the class declares them rather than curioTokens.css. */
+.thinScrollbar {
+  --thin-thumb: rgba(30, 31, 35, 0.18);
+  --thin-thumb-hover: rgba(30, 31, 35, 0.28);
+}
+
 @supports not selector(::-webkit-scrollbar) {
   .thinScrollbar {
     scrollbar-width: thin;
-    scrollbar-color: rgba(30, 31, 35, 0.18) transparent;
+    scrollbar-color: var(--thin-thumb) transparent;
   }
 }
 
@@ -26,13 +42,37 @@
 }
 
 .thinScrollbar::-webkit-scrollbar-thumb {
-  background: rgba(30, 31, 35, 0.18);
+  background: var(--thin-thumb);
   border-radius: 999px;
   border: 1px solid transparent;
   background-clip: padding-box;
 }
 
 .thinScrollbar:hover::-webkit-scrollbar-thumb {
-  background: rgba(30, 31, 35, 0.28);
+  background: var(--thin-thumb-hover);
   background-clip: padding-box;
+}
+
+/* Monaco paints its slider from its theme's colours, which it declares on
+   .monaco-editor. Two classes outweigh its one, so the slider takes the
+   thumb's colour at rest, under the pointer and while dragged. */
+.thinScrollbar:global(.monaco-editor) {
+  --vscode-scrollbarSlider-background: var(--thin-thumb);
+  --vscode-scrollbarSlider-hoverBackground: var(--thin-thumb-hover);
+  --vscode-scrollbarSlider-activeBackground: var(--thin-thumb-hover);
+}
+
+/* With the pointer over the editor, its thumb darkens, as a panel's does. */
+.thinScrollbar:global(.monaco-editor):hover {
+  --vscode-scrollbarSlider-background: var(--thin-thumb-hover);
+}
+
+/* The slider of the editor's own two bars is shaped as the thumb is: rounded,
+   1 px inside its bar. Monaco sizes the slider inline, so its border goes
+   inside that size. */
+.thinScrollbar:global(.monaco-editor) :global(.editor-scrollable > .scrollbar > .slider) {
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  box-sizing: border-box;
 }

@@ -39,6 +39,7 @@ import { insertReference, useCodeReferences } from "./widgets/monacoCodeReferenc
 import type { CodeLanguage, InputScope, ReferenceScope } from "../../utils/references/codeReferences";
 import { NOTEBOOK_CODE_EDITOR_MAX, useNotebookEditorHeight } from "./useNotebookEditorHeight";
 import { nodeEditorLook } from "./nodeEditorLook";
+import { NODE_EDITOR_SCROLLING } from "./nodeEditorScrolling";
 
 /** In a notebook cell the output takes its own height up to this, then scrolls. */
 const NOTEBOOK_OUTPUT_MAX = 320;
@@ -595,12 +596,9 @@ function CodeEditor({
                         minimap: { enabled: false },
                         readOnly: readOnly,
                         scrollBeyondLastLine: false,
-                        // A wheel the editor cannot use goes on to the page, so
-                        // the notebook view scrolls past the editor's ends. On
-                        // the canvas the wrapper's `nowheel` keeps it from
-                        // zooming, as before. Monaco reads this option only when
-                        // the editor is created, so it is not tied to the view.
-                        scrollbar: { alwaysConsumeMouseWheel: false },
+                        // As a Jupyter cell scrolls: never wrapped, and each
+                        // bar at rest whenever the code runs past its side.
+                        ...NODE_EDITOR_SCROLLING,
                         // A plain input box, but on a dashboard tile.
                         ...look.editorOptions,
                     }}
