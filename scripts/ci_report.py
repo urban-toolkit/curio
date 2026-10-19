@@ -981,8 +981,12 @@ SUITE_WORD = {"passed": "passed", "failed": "failed", "missing": "did not run",
 
 
 def render_suites(report):
+    # From the jobs too, so the lines show when no suite's results were given.
+    spreads = "".join(f'<p class="{"note" if spread["warn"] else "muted"}">{esc(spread_line(spread))}</p>'
+                      for spread in part_spreads(report))
     if not report.suites:
-        return '<section id="suites"><h2>Test suites</h2><p class="muted">No suites were given.</p></section>'
+        return ('<section id="suites"><h2>Test suites</h2><p class="muted">No suites were given.</p>'
+                f'{spreads}</section>')
     rows, details = [], []
     for index, suite in enumerate(report.suites, 1):
         anchor = f"suite-{index}"
@@ -1001,8 +1005,6 @@ def render_suites(report):
              '<th class="num">Passed</th><th class="num">Failed</th><th class="num">Errors</th>'
              '<th class="num">Skipped</th><th class="num">Time</th></tr></thead>'
              f'<tbody>{"".join(rows)}</tbody></table></div>')
-    spreads = "".join(f'<p class="{"note" if spread["warn"] else "muted"}">{esc(spread_line(spread))}</p>'
-                      for spread in part_spreads(report))
     stray = ""
     if report.stray_screenshots:
         figures = "".join(_screenshot(report, path, name) for name, path in report.stray_screenshots.items())
