@@ -60,12 +60,13 @@ jest.mock("../../api/connectionKeysApi", () => ({
   },
 }));
 
-// The Discovery Catalog's key slots, as `GET /api/discovery/keys` lists them.
+// The keys the Discovery Catalog's sources declare, one row per secret id, as
+// `GET /api/discovery/keys` lists them. A key is saved by its secret id.
 // Spread requireActual rather than replacing the module: a partial mock that
 // enumerates exports breaks the moment someone adds one.
 type Row = Record<string, unknown>;
 const HF_ROW = (over: Row = {}): Row => ({
-  slot: "huggingface.token", label: "Hugging Face token", field: "huggingface_token",
+  slot: "huggingface.token", label: "Hugging Face token",
   helpUrl: "https://huggingface.co/settings/tokens", placeholder: "hf_...", note: null,
   present: false, inherited: false,
   sources: [
@@ -75,7 +76,7 @@ const HF_ROW = (over: Row = {}): Row => ({
   ...over,
 });
 const SOCRATA_ROW = (over: Row = {}): Row => ({
-  slot: "socrata.app-token", label: "Socrata app token", field: "socrata_app_token",
+  slot: "socrata.app-token", label: "Socrata app token",
   helpUrl: "https://evergreen.data.socrata.com/signup", placeholder: "Your app token",
   note: "Socrata portals answer without one; a token raises the rate limit.",
   present: false, inherited: false,
@@ -83,7 +84,7 @@ const SOCRATA_ROW = (over: Row = {}): Row => ({
   ...over,
 });
 const MAPILLARY_ROW = (over: Row = {}): Row => ({
-  slot: "mapillary.token", label: "Mapillary client token", field: "mapillary_access_token",
+  slot: "mapillary.token", label: "Mapillary client token",
   helpUrl: "https://www.mapillary.com/dashboard/developers", placeholder: "MLY|...", note: null,
   present: false, inherited: false, sources: [{ name: "Mapillary", dirName: "source.mapillary.imagery@1" }],
   ...over,
@@ -211,7 +212,7 @@ describe("a data source key: the Hugging Face token", () => {
     await addKind("source:huggingface.token");
     fireEvent.change(field(HF_ID)!, { target: { value: "hf_abc" } });
     fireEvent.click(within(screen.getByTestId("source-key-editor")).getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ huggingface_token: "hf_abc" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ source_keys: { "huggingface.token": "hf_abc" } }));
     expect(await screen.findByRole("status")).toHaveTextContent("Saved the Hugging Face token.");
     expect(screen.queryByTestId("source-key-editor")).toBeNull();
   });
@@ -223,7 +224,7 @@ describe("a data source key: the Hugging Face token", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove Hugging Face token" }));
     expect(screen.getByRole("alert")).toHaveTextContent("Remove the saved Hugging Face token?");
     fireEvent.click(screen.getByRole("button", { name: "Confirm removing Hugging Face token" }));
-    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ huggingface_token: "" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ source_keys: { "huggingface.token": "" } }));
   });
 
   it("is not offered to a guest on a Curio with sign-in", async () => {
@@ -249,7 +250,7 @@ describe("a data source key: the Hugging Face token", () => {
     await addKind("source:huggingface.token");
     fireEvent.change(field(HF_ID)!, { target: { value: "hf_local" } });
     fireEvent.click(within(screen.getByTestId("source-key-editor")).getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ huggingface_token: "hf_local" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ source_keys: { "huggingface.token": "hf_local" } }));
   });
 });
 
@@ -374,8 +375,8 @@ describe("a data source key: the Socrata app token", () => {
    * Socrata portals. It lives here because this is the account's one keys
    * surface.
    *
-   * It follows the same rules as the Hugging Face token: stored on the user's
-   * row, reported as a boolean, blank means keep, and there is an explicit way
+   * It follows the same rules as the Hugging Face token: saved by its secret
+   * id, reported as a boolean, blank means keep, and there is an explicit way
    * to remove it.
    */
   it("is offered, and marked optional when none is saved", async () => {
@@ -406,7 +407,7 @@ describe("a data source key: the Socrata app token", () => {
     await addKind("source:socrata.app-token");
     fireEvent.change(field(SOCRATA_ID)!, { target: { value: "tok-123" } });
     fireEvent.click(within(screen.getByTestId("source-key-editor")).getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ socrata_app_token: "tok-123" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ source_keys: { "socrata.app-token": "tok-123" } }));
   });
 
   it("leaves a saved token alone when another key is saved", async () => {
@@ -417,7 +418,7 @@ describe("a data source key: the Socrata app token", () => {
     fireEvent.change(field(HF_ID)!, { target: { value: "hf_abc" } });
     fireEvent.click(within(screen.getByTestId("source-key-editor")).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
-    expect(mockUpdate.mock.calls[0][0]).toEqual({ huggingface_token: "hf_abc" });
+    expect(mockUpdate.mock.calls[0][0]).toEqual({ source_keys: { "huggingface.token": "hf_abc" } });
   });
 
   it("offers a way to remove one, which is how blank-means-keep stays escapable", async () => {
@@ -426,7 +427,7 @@ describe("a data source key: the Socrata app token", () => {
     await rowOf("Socrata app token");
     fireEvent.click(screen.getByRole("button", { name: "Remove Socrata app token" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm removing Socrata app token" }));
-    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ socrata_app_token: "" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ source_keys: { "socrata.app-token": "" } }));
     // The Socrata token is the one cleared, not the Hugging Face one.
     expect(mockUpdate).toHaveBeenCalledTimes(1);
   });
@@ -497,7 +498,7 @@ describe("the Discovery Catalog's keys", () => {
     expect(screen.getByTestId("source-key-editor").querySelector('[data-key-slot="mapillary.token"]')).not.toBeNull();
     fireEvent.change(mapillary, { target: { value: "MLY|abc" } });
     fireEvent.click(within(screen.getByTestId("source-key-editor")).getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ mapillary_access_token: "MLY|abc" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ source_keys: { "mapillary.token": "MLY|abc" } }));
   });
 
   it("says which sources send each key, in the form and in the list", async () => {
@@ -531,7 +532,7 @@ describe("the Discovery Catalog's keys", () => {
     fireEvent.change(field(SOCRATA_ID)!, { target: { value: "tok-123" } });
     fireEvent.click(within(screen.getByTestId("source-key-editor")).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockNotifyRefresh).toHaveBeenCalledTimes(1));
-    expect(mockUpdate).toHaveBeenCalledWith({ socrata_app_token: "tok-123" });
+    expect(mockUpdate).toHaveBeenCalledWith({ source_keys: { "socrata.app-token": "tok-123" } });
     expect(mockUpdate.mock.invocationCallOrder[0]).toBeLessThan(mockNotifyRefresh.mock.invocationCallOrder[0]);
   });
 
@@ -542,7 +543,7 @@ describe("the Discovery Catalog's keys", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove Socrata app token" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm removing Socrata app token" }));
     await waitFor(() => expect(mockNotifyRefresh).toHaveBeenCalledTimes(1));
-    expect(mockUpdate).toHaveBeenCalledWith({ socrata_app_token: "" });
+    expect(mockUpdate).toHaveBeenCalledWith({ source_keys: { "socrata.app-token": "" } });
     expect(mockUpdate.mock.invocationCallOrder[0]).toBeLessThan(mockNotifyRefresh.mock.invocationCallOrder[0]);
   });
 

@@ -427,17 +427,37 @@ def list_my_imports(user_key: str, project_id: str | None = None) -> list[dict]:
     return out
 
 
+def solve_runs(user_key: str, m: AgentManifest) -> list[str]:
+    """The agents *m*'s Solve runs, by name, in the order Solve asks for them
+    (``content.SOLVE_CAPABILITIES``): the visible definitions its
+    ``delegatesTo`` hands those capabilities to."""
+    entries = delegation.visible_capability_entries(user_key, m)
+    names: list[str] = []
+    for capability in content.SOLVE_CAPABILITIES:
+        name = next((n for c, n in entries if c == capability), None)
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
 def choosable_agents(user_key: str) -> list[dict]:
     """The agents whose LLM configuration this account may choose: the catalog
     cards, the published definitions and the account's imports, one row
-    (``{id, name, category}``) per agent id, since a choice covers every
-    version. Never an internal built-in, which always runs on its caller's."""
+    (``{id, name, category, capabilities}``) per agent id, since a choice
+    covers every version. An agent with Solve also lists the agents its Solve
+    runs (``solveRuns``). Never an internal built-in, which always runs on
+    its caller's."""
     internal = builtin.internal_agent_ids()
     rows: dict[str, dict] = {}
 
     def _add(m: AgentManifest) -> None:
-        if m.agent_id not in internal:
-            rows.setdefault(m.agent_id, {"id": m.agent_id, "name": m.name, "category": m.category})
+        if m.agent_id in internal or m.agent_id in rows:
+            return
+        row = {"id": m.agent_id, "name": m.name, "category": m.category,
+               "capabilities": list(m.capability_ids)}
+        if content.ORCHESTRATE_CAPABILITY in m.capability_ids:
+            row["solveRuns"] = solve_runs(user_key, m)
+        rows[m.agent_id] = row
 
     for m in builtin.list_builtin_manifests():
         _add(m)

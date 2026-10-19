@@ -111,9 +111,9 @@ class BuiltinAgentSpec:
     # (DEC-017); grounded in the agent's declared reads / legacy behavior.
     # All optional: a missing grant degrades to the pre-tool blind behavior.
     tools: tuple[str, ...] = field(default_factory=tuple)
-    # compatibleTargets[].requires for the "node" kind (memo dev/50): template
-    # id suffixes the target node's canonical type must match (e.g.
-    # "data-loading"). Empty = any node — every prior agent byte-identical.
+    # compatibleTargets[].requires for the "node" kind (memo dev/50): what the
+    # target node must be, a template flag its template declares (e.g.
+    # "loadsDataset") or a template-id suffix. Empty = any node.
     node_requires: tuple[str, ...] = field(default_factory=tuple)
     # Preferred delegate agents, in preference order (memo dev/48 / dev/15
     # §3.2). Expresses composition only — grants nothing; resolution is
@@ -399,7 +399,8 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                                    ("agent.dataflow-planner", ("workflow.keyword.bind",)),
                                    ("agent.researcher", ("research.verify",))),
                      review_policy="review-before-apply",
-                     node_requires=("data-loading",),
+                     # A node whose template loads a dataset, whatever its name.
+                     node_requires=("loadsDataset",),
                      # Asked for by name, under its own instruction.
                      capability_labels=(("dataset.discover", "Find datasets"),)),
     # The third P5 composite (memo dev/52; spec dev/15 §3.4 + dev/49 DR-1…5).

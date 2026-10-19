@@ -19,5 +19,6 @@ export * from "./agentRunContext";
 export * from "./attachmentDisplayName";
 export * from "./builderTemplates";
 export * from "./agentListUtils";
+export * from "./agentCapabilities";
 export * from "./buildUploadPayload";
 export * from "./sanitizeAgentContent";

@@ -9,7 +9,6 @@ export { useAutkGrammarBehavior } from './autkGrammarBehavior';
 export { useSpatialJoinBehavior } from './spatialJoinBehavior';
 export { useParameterBehavior } from './parameterBehavior';
 export { useCompareScenariosBehavior } from './compareScenariosBehavior';
-export { useRasterCalculatorBehavior } from './rasterNodeBehaviors';
 export { useEditFeaturesBehavior } from './editFeaturesBehavior';
 export { useNoteBehavior } from './noteBehavior';
 // Note: a package's own behavior hooks live IN its package directory and

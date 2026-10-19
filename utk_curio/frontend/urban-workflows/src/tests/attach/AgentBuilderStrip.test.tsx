@@ -568,6 +568,8 @@ describe("AgentBuilderStrip — dev/126 nodes awaiting a dataset selection", () 
     attachmentId,
     nodeId: "n",
   });
+  // The live list's name for each node's own finder.
+  const finderNameOf = (id: string) => (["att-a", "att-b"].includes(id) ? "Dataset Finder" : null);
 
   it("offers one button per node, each opening that node's Dataset Finder", () => {
     const onOpenChat = jest.fn();
@@ -581,6 +583,7 @@ describe("AgentBuilderStrip — dev/126 nodes awaiting a dataset selection", () 
         }}
         solveRemedies={{ a: remedy("att-a"), b: remedy("att-b") }}
         onOpenChat={onOpenChat}
+        agentNameOf={finderNameOf}
       />,
     );
     // The reason is announced once, under the pills, as every reason is.
@@ -602,6 +605,7 @@ describe("AgentBuilderStrip — dev/126 nodes awaiting a dataset selection", () 
         onComposePrompt={jest.fn()}
         solveRemedies={{ a: remedy("att-a") }}
         onOpenChat={jest.fn()}
+        agentNameOf={finderNameOf}
       />,
     );
     expect(
@@ -763,5 +767,51 @@ describe("AgentBuilderStrip — dev/131 the session, and nodes that depend on yo
       />,
     );
     expect(screen.getByRole("status")).toHaveTextContent("Finished: nothing left to do.");
+  });
+});
+
+
+// The strip's buttons and pills for a node awaiting a source name the agent
+// that holds its candidates as its manifest does: here a user's own copy of the
+// Dataset Finder, "My Finder", run by their own copy of the Dataflow Builder.
+describe("AgentBuilderStrip names each node's own finder", () => {
+  const myOrchestrator = (session: AgentAttachment["builderSession"]): AgentAttachment => ({
+    ...attachment(session),
+    coord: "agent.my-orchestrator@1.0.0",
+    name: "My Orchestrator",
+    capabilities: ["dataflow.orchestrate"],
+  });
+  const agentNameOf = (id: string) => (id === "att-my-finder" ? "My Finder" : null);
+
+  it("the awaiting node's button and its pill name My Finder", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={myOrchestrator({ phase: "applied", nodeRuns: { a: "pending" } })}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        solveRemedies={{ a: { kind: "dataset-selection", attachmentId: "att-my-finder", nodeId: "a" } }}
+        solveWaiting={[{
+          nodeId: "a",
+          kind: "dataset-selection",
+          reason: "awaiting your dataset selection: 2 candidate(s)",
+          attachmentId: "att-my-finder",
+        }]}
+        onSolveNode={jest.fn()}
+        onOpenChat={jest.fn()}
+        agentNameOf={agentNameOf}
+      />,
+    );
+    const group = screen.getByRole("group", { name: "Nodes awaiting a dataset selection" });
+    const open = within(group).getByRole("button", { name: "Open My Finder for this node" });
+    expect(open).toHaveTextContent(/^Open My Finder$/);
+    expect(open).toHaveAttribute(
+      "title",
+      "Opens this node's My Finder chat, where the candidates await your selection. Confirm one, then Solve again.",
+    );
+    expect(screen.getByRole("button", { name: "Solve node a on its own" })).toHaveAttribute(
+      "title",
+      "This node is waiting for you to confirm a source: open its My Finder first",
+    );
+    expect(screen.getByRole("group", { name: "My Orchestrator" })).not.toHaveTextContent(/Dataset Finder/);
   });
 });

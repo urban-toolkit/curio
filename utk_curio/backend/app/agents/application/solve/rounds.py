@@ -155,7 +155,8 @@ def _carry_forward_error(result: dict | None) -> dict | None:
 
 
 def _solve_attempts_part(
-    spec: dict | None, node_id: str, label: str, result: dict | None
+    spec: dict | None, node_id: str, label: str, result: dict | None,
+    *, user_key: str | None = None,
 ) -> dict | None:
     """dev/127: ONE node's repair attempts as a transcript part, or None.
 
@@ -181,7 +182,10 @@ def _solve_attempts_part(
         })
     if not rows:
         return None
-    home = agents_spec_reads._node_attachment_of(spec or {}, "agent.node-builder", node_id) or {}
+    # The node's content agent, whose chat holds the child's replies.
+    home = agents_spec_reads._node_attachment_declaring(
+        spec or {}, "node.content.generate", node_id, user_key=user_key,
+    ) or {}
     return content.make_solve_attempts_part(
         node_id=node_id,
         label=label,
@@ -224,12 +228,26 @@ def _same_code(a: str, b: str) -> bool:
     return bool(a and b) and _norm(a) == _norm(b)
 
 
-def _dataset_finder_attachment_id(spec: dict | None, node_id: str) -> str | None:
-    """The node's own Dataset Finder attachment id, or None (dev/126)."""
+def _dataset_finder_attachment_id(
+    spec: dict | None, node_id: str, *, user_key: str | None = None
+) -> str | None:
+    """The id of the node's own attachment of the agent that finds its
+    datasets (it declares ``dataset.discover``), or None (dev/126)."""
     if not isinstance(spec, dict) or not isinstance(node_id, str) or not node_id:
         return None
-    record = agents_spec_reads._node_attachment_of(spec, "agent.dataset-finder", node_id)
+    record = agents_spec_reads._node_attachment_declaring(
+        spec, "dataset.discover", node_id, user_key=user_key,
+    )
     return (record or {}).get("attachmentId")
+
+
+def _no_content_agent(resolution) -> str:
+    """Why a Solve cannot start: no installed agent writes node content. It
+    names the visible agent that would, as its manifest names it."""
+    name = getattr(getattr(resolution, "manifest", None), "name", None)
+    return "no installed agent declares node.content.generate" + (
+        f"; install the {name} first" if name else ""
+    )
 
 
 _CODE_MARKERS = ("import ", "return ", " = ", "(", "def ", "{")

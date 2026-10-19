@@ -16,12 +16,22 @@ from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.repositories import project_agents
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
+from utk_curio.backend.app.agents.application import delegation as agents_delegation
 from utk_curio.backend.app.agents.application import lifecycle as agents_lifecycle
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
 from utk_curio.backend.app.agents.application.solve import session as agents_session
 from utk_curio.backend.app.agents.application.turns import prompts as agents_prompts
+from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.projects import storage as projects_storage
+
+
+def _node_build_delegate(user_key: str, m) -> str | None:
+    """The name of the agent *m* hands ``node.build`` to, as its manifest names
+    it, or None when *m* builds nodes itself or hands that to no visible agent."""
+    if m is None or content.NODE_BUILD_CAPABILITY in m.capability_ids:
+        return None
+    return agents_delegation.delegate_name(user_key, m, content.NODE_BUILD_CAPABILITY)
 
 
 def _attachment_card(spec: dict, record: dict, user_key: str) -> dict:
@@ -42,6 +52,12 @@ def _attachment_card(spec: dict, record: dict, user_key: str) -> dict:
         "revision": record.get("revision", 1),
         "name": m.name if m else coord,
         "category": m.category if m else None,
+        # What the agent declares: the chat offers each of its features to any
+        # agent that declares the capability behind it.
+        "capabilities": list(m.capability_ids) if m else [],
+        # The agent it hands a node to build to, by name: the candidates
+        # card's hand-off names it.
+        "nodeBuildDelegate": _node_build_delegate(user_key, m),
         "hooks": [t.kind for t in m.compatible_targets] if m else [],
         # The manifest's declared inputs (dev/38) — drives the client-side
         # grounded-context composer (memo dev/44).
@@ -100,27 +116,30 @@ def attach_agent(user_key: str, project_id: str, coord: str, target: object) -> 
         raise AgentServiceError(
             f"this agent attaches to {', '.join(sorted(allowed))}, not {kind}", 400
         )
-    # compatibleTargets[].requires (memo dev/50): a node target must match one
-    # of the declared template-id suffixes (e.g. "data-loading" accepts any
-    # <packageId>/data-loading node). Empty requires = any node — every
-    # pre-dev/50 agent behaves identically.
+    # compatibleTargets[].requires (memo dev/50): a node target must be one of
+    # what it declares, a template flag (``loadsDataset``) or a template-id
+    # suffix. Empty requires = any node.
     if kind == "node" and manifest is not None:
         node_target = next(
             (t for t in manifest.compatible_targets if t.kind == "node"), None
         )
         if node_target is not None and node_target.requires:
+            from utk_curio.backend.app.packages import service as packages_services
+
             target_id = target.get("targetId") if isinstance(target, dict) else None
             nodes = (spec.get("dataflow") or {}).get("nodes") or []
             node = next(
                 (n for n in nodes if isinstance(n, dict) and n.get("id") == target_id), None
             )
             node_type = str((node or {}).get("type") or "")
-            # dev/126: ONE reading of the rule — the same predicate the plan
+            templates = packages_services.roster_templates(user_key, project_id)
+            # dev/126: ONE reading of the rule, the same predicate the plan
             # apply's automatic attach uses (attachments.node_target_matches).
-            if not attachments.node_target_matches(manifest, node_type):
+            if not attachments.node_target_matches(manifest, node_type, templates):
                 raise AgentServiceError(
-                    f"this agent attaches to {', '.join(sorted(node_target.requires))} "
-                    f"nodes; that node is {node_type or 'untyped'}",
+                    "this agent attaches to "
+                    f"{attachments.describe_node_requirements(node_target.requires, templates)}; "
+                    f"that node is {node_type or 'untyped'}",
                     400,
                 )
     try:

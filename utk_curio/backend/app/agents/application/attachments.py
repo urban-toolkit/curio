@@ -80,22 +80,54 @@ def canonical_node_suffix(node_type: object) -> str:
     return str(node_type or "").rsplit("/", 1)[-1].split("@", 1)[0].lower().replace("_", "-")
 
 
-def node_target_matches(manifest: object, node_type: object) -> bool:
+def node_target_matches(manifest: object, node_type: object, templates: dict | None = None) -> bool:
     """Whether a node of *node_type* satisfies *manifest*'s node target.
 
-    ``compatibleTargets[].requires`` (memo dev/50) lists template-id suffixes
-    the target node must match; an empty ``requires`` accepts any node, and a
-    manifest with no node target accepts none. This is the ONE reading of that
-    rule (memo dev/126): the drawer's attach and the plan apply's automatic
-    attach cannot disagree about where an agent may live."""
+    ``compatibleTargets[].requires`` (memo dev/50) lists what the target node
+    may be, any one of them enough: a template flag its template declares
+    (``loadsDataset``, read from the project's roster snapshot *templates* and
+    the package catalog, ``packages.template_flags``), or a template-id suffix
+    it matches (``data-loading`` accepts any ``<packageId>/data-loading``
+    node). An empty ``requires`` accepts any node, and a manifest with no node
+    target accepts none. This is the ONE reading of that rule (memo dev/126):
+    the drawer's attach and the plan apply's automatic attach cannot disagree
+    about where an agent may live."""
     targets = getattr(manifest, "compatible_targets", None) or []
     node_target = next((t for t in targets if getattr(t, "kind", None) == "node"), None)
     if node_target is None:
         return False
-    requires = getattr(node_target, "requires", None) or []
+    requires = [str(r) for r in getattr(node_target, "requires", None) or []]
     if not requires:
         return True
-    return canonical_node_suffix(node_type) in {str(r).lower() for r in requires}
+    from utk_curio.backend.app.packages import service as packages_services
+
+    flags = [r for r in requires if r in packages_services.TEMPLATE_FLAGS]
+    if flags and set(flags) & packages_services.template_flags(node_type, templates):
+        return True
+    suffixes = {r.lower() for r in requires if r not in packages_services.TEMPLATE_FLAGS}
+    return canonical_node_suffix(node_type) in suffixes
+
+
+def describe_node_requirements(requires: list[str], templates: dict | None = None) -> str:
+    """The nodes a node target's *requires* accepts, in words, for a refusal:
+    a template flag with the templates that declare it, a template id as
+    itself (see :func:`node_target_matches`)."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    parts = []
+    for requirement in sorted(str(r) for r in requires):
+        if requirement not in packages_services.TEMPLATE_FLAGS:
+            parts.append(f"{requirement} nodes")
+            continue
+        declaring = sorted({
+            *(t for t in (templates or {}) if requirement in packages_services.template_flags(t, templates)),
+            *(t for t, flags in packages_services.catalog_template_flags().items() if requirement in flags),
+        })
+        parts.append(
+            f"nodes whose template declares {requirement}"
+            + (f" ({', '.join(declaring)})" if declaring else "")
+        )
+    return " or ".join(parts)
 
 
 def attach(spec: dict, coord: str, target: object, *, attachment_id: str, session_id: str) -> dict:

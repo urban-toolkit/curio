@@ -40,13 +40,16 @@ from utk_curio.backend.app.agents.application import attachments
 from utk_curio.backend.app.agents.application.proposals import plans
 from utk_curio.backend.app.agents.application.turns import delegates
 from utk_curio.backend.app.agents.application import delegation
+from utk_curio.backend.app.agents.application import spec_reads
 from utk_curio.backend.app.agents.application import tools
 from utk_curio.backend.app.agents.domain import node_context
 from utk_curio.backend.app.agents.repositories import sessions
 
 log = logging.getLogger(__name__)
 
-FINDER_AGENT_ID = "agent.dataset-finder"
+#: What the agent that finds a node its source declares: the node's own
+#: attachment of that agent holds the node's source state.
+DISCOVER = "dataset.discover"
 
 #: The record's home on the attachment (memo dev/126).
 RECORD_KEY = "datasetSource"
@@ -79,23 +82,16 @@ def _now() -> str:
 # ── the record ───────────────────────────────────────────────────────────────
 
 
-def finder_attachment(spec: dict | None, node_id: str) -> dict | None:
-    """The node's own Dataset Finder attachment record, or None."""
-
-    for record in attachments.list_attachments(spec):
-        target = record.get("target") or {}
-        if (
-            record.get("coord", "").split("@", 1)[0] == FINDER_AGENT_ID
-            and target.get("kind") == "node"
-            and target.get("targetId") == node_id
-        ):
-            return record
-    return None
+def finder_attachment(spec: dict | None, node_id: str, *, user_key: str | None = None) -> dict | None:
+    """The node's own attachment of the agent that finds its datasets (it
+    declares ``dataset.discover``), or None. *user_key* finds the account's
+    own agents; without it, only the shipped ones are read."""
+    return spec_reads._node_attachment_declaring(spec, DISCOVER, node_id, user_key=user_key)
 
 
-def source_record(spec: dict | None, node_id: str) -> dict | None:
+def source_record(spec: dict | None, node_id: str, *, user_key: str | None = None) -> dict | None:
     """The node's recorded source state, or None when discovery never ran."""
-    record = finder_attachment(spec, node_id) or {}
+    record = finder_attachment(spec, node_id, user_key=user_key) or {}
     value = record.get(RECORD_KEY)
     return value if isinstance(value, dict) else None
 
@@ -106,6 +102,7 @@ def node_source_state(
     *,
     grounded_literal: str | None = None,
     project_literal: str | None = None,
+    user_key: str | None = None,
 ) -> dict:
     """The node's source state — the ONE reading of it (memo dev/126).
 
@@ -124,7 +121,7 @@ def node_source_state(
 
     Returns ``{state, attachmentId, detail}``.
     """
-    attachment = finder_attachment(spec, node_id) or {}
+    attachment = finder_attachment(spec, node_id, user_key=user_key) or {}
     attachment_id = attachment.get("attachmentId")
     record = attachment.get(RECORD_KEY)
     record = record if isinstance(record, dict) else {}
@@ -415,12 +412,11 @@ def record_selection(spec: dict, attachment_id: str, rows: list[dict]) -> dict |
 
 def mark_dataset_installed(spec: dict, dataset_id: str) -> list[str]:
     """An applied ``dataset.install`` resolves every node awaiting exactly that
-    dataset. Returns the attachment ids whose state changed."""
+    dataset: every attachment whose source record waits for it. Returns the
+    attachment ids whose state changed."""
 
     changed: list[str] = []
     for record in attachments.list_attachments(spec):
-        if record.get("coord", "").split("@", 1)[0] != FINDER_AGENT_ID:
-            continue
         state = record.get(RECORD_KEY)
         if not isinstance(state, dict) or state.get("status") != STATE_AWAITING_INSTALL:
             continue
@@ -438,10 +434,10 @@ def mark_dataset_installed(spec: dict, dataset_id: str) -> list[str]:
     return changed
 
 
-def confirmed_source(spec: dict | None, node_id: str) -> dict | None:
+def confirmed_source(spec: dict | None, node_id: str, *, user_key: str | None = None) -> dict | None:
     """The confirmed source a content delegate is HANDED for this node, or
     None. Shape mirrors the candidate rows the user actually confirmed."""
-    record = source_record(spec, node_id)
+    record = source_record(spec, node_id, user_key=user_key)
     if not isinstance(record, dict) or record.get("status") != STATE_RESOLVED:
         return None
     picks = record.get("picks") or []
@@ -499,6 +495,7 @@ def initiate(
     "attachmentId", "candidates", "detail"}``. Never raises into the caller's
     action: an unavailable specialist is reported, not thrown.
     """
+    from utk_curio.backend.app.packages import service as packages_services
     from utk_curio.backend.app.projects import storage as projects_storage
 
     node_id = str(node.get("id") or "")
@@ -506,6 +503,23 @@ def initiate(
     if not node_id:
         return {"status": "unavailable", "attachmentId": None,
                 "detail": "the node has no id"}
+    # The agent the parent asks for datasets, among the dataflow's installed
+    # agents: the one this node's own attachment is of.
+    resolution = delegation.resolve(
+        user_key, project_id, parent_manifest, DISCOVER
+    ) if parent_manifest is not None else None
+    if resolution is None or resolution.outcome != "ok":
+        outcome = getattr(resolution, "outcome", "unresolvable")
+        name = getattr(getattr(resolution, "manifest", None), "name", None)
+        existing = finder_attachment(
+            projects_storage.read_spec(user_key, project_id), node_id, user_key=user_key,
+        )
+        return {"status": "unavailable", "attachmentId": (existing or {}).get("attachmentId"),
+                "detail": (f"the {name} could not be resolved ({outcome})" if name
+                           else f"no installed agent declares {DISCOVER} ({outcome})")}
+    finder_name = getattr(resolution.manifest, "name", None) or resolution.coord
+    # Read before the spec lock, which the package store's own lock must not nest in.
+    templates = packages_services.roster_templates(user_key, project_id)
     # The attachment is a read-modify-write of the spec, and a Solve batch
     # runs its nodes in a worker pool: under the project's own spec lock, so
     # two data-loading nodes resolving at once cannot lose each other's
@@ -516,23 +530,17 @@ def initiate(
             return {"status": "unavailable", "attachmentId": None,
                     "detail": "the project spec is unavailable"}
         attached = plans._attach_node_agent(
-            user_key, spec, FINDER_AGENT_ID, node_id, node_type
+            user_key, spec, resolution.coord.split("@", 1)[0], node_id, node_type,
+            templates=templates,
         )
         attachment_id = attached.get("attachmentId")
         if not attachment_id:
             return {"status": "unavailable", "attachmentId": None,
-                    "detail": f"no Dataset Finder on this node: {attached.get('reason')}"}
+                    "detail": f"no {finder_name} on this node: {attached.get('reason')}"}
         if attached.get("status") == "attached":
             # Persist BEFORE the delegate runs: the dev/72 home lookup reads
             # the saved spec, and the trace turns belong in this session.
             projects_storage.write_spec(user_key, project_id, spec)
-    resolution = delegation.resolve(
-        user_key, project_id, parent_manifest, "dataset.discover"
-    ) if parent_manifest is not None else None
-    if resolution is None or resolution.outcome != "ok":
-        outcome = getattr(resolution, "outcome", "unresolvable")
-        return {"status": "unavailable", "attachmentId": attachment_id,
-                "detail": f"the Dataset Finder could not be resolved ({outcome})"}
     loop_ctx: dict = {
         "attachment_id": parent_attachment_id,
         "manifest": parent_manifest,
@@ -560,10 +568,10 @@ def initiate(
     if composed is not None:
         inputs["nodeContext"] = composed
     inputs = delegates._enriched_delegate_inputs(
-        user_key, project_id, loop_ctx, "dataset.discover", inputs
+        user_key, project_id, loop_ctx, DISCOVER, inputs
     )
     status, text, _child, _home = delegates._run_delegate_traced(
-        user_key, project_id, resolution.coord, "dataset.discover", inputs, config,
+        user_key, project_id, resolution.coord, DISCOVER, inputs, config,
         parent_execution_id=parent_execution_id,
         parent_coord=parent_coord,
         attachment_id=parent_attachment_id,
@@ -571,7 +579,7 @@ def initiate(
     )
     if status != "ok":
         return {"status": "unavailable", "attachmentId": attachment_id,
-                "detail": f"the Dataset Finder run failed: {(text or '')[:200]}"}
+                "detail": f"the {finder_name} run failed: {(text or '')[:200]}"}
     if catalog_rows is None:
         try:
             catalog_rows = tools._catalog_search_rows(user_key, project_id, {})
@@ -580,7 +588,7 @@ def initiate(
                         node_id, exc_info=True)
             catalog_rows = []
     part, model_text, outcome = delegates._mint_candidates_from_delegate(
-        loop_ctx, text, catalog_rows
+        loop_ctx, text, catalog_rows, name=finder_name,
     )
     if part is None:
         return {"status": "no-candidates", "attachmentId": attachment_id,

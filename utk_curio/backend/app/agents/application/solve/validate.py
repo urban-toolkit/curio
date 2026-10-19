@@ -25,6 +25,7 @@ from utk_curio.backend.app.agents.application.solve import rounds as agents_roun
 from utk_curio.backend.app.agents.application.solve import session as agents_session
 from utk_curio.backend.app.agents.application.turns import delegates as agents_delegates
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
+from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.projects import storage as projects_storage
 
 
@@ -74,12 +75,11 @@ def validate_node_stream(
         user_key, project_id, manifest, "node.content.generate"
     ) if manifest is not None else delegation.Resolution("unresolvable")
     if resolution.outcome != "ok":
-        raise AgentServiceError(
-            "no installed agent declares node.content.generate — install the "
-            "Node Builder first",
-            409,
-        )
-    agents_session._check_delegate_llms(user_key, project_id, manifest, config, agents_session._delegate_capabilities([node]))
+        raise AgentServiceError(agents_rounds._no_content_agent(resolution), 409)
+    agents_session._check_delegate_llms(
+        user_key, project_id, manifest, config,
+        agents_session._delegate_capabilities([node], agents_roster._roster_templates(user_key, project_id)),
+    )
     session_id = record.get("sessionId")
     coord = record.get("coord", "")
     if ref is None:
@@ -87,12 +87,12 @@ def validate_node_stream(
             (r for r, nid in (session.get("nodeIds") or {}).items() if nid == node_id),
             None,
         )
-    # dev/72: the node's Node Builder attachment is the Solve trace's home —
-    # the content review and the consolidated trace live with the agent
-    # responsible for THIS node (best-effort created; fallback: parent-only).
+    # dev/72: the node's content agent is the Solve trace's home: the content
+    # review and the consolidated trace live with the agent responsible for
+    # THIS node (best-effort created; fallback: parent-only).
     home, _created = agents_delegates._delegation_home(
-        spec, "agent.node-builder", "node.content.generate", {},
-        node_id=node_id, create=True,
+        spec, resolution.coord, "node.content.generate", {},
+        node_id=node_id, create=True, user_key=user_key, project_id=project_id,
     )
     home_attachment_id = (home or {}).get("attachmentId")
     home_session_id = (home or {}).get("sessionId")
@@ -134,7 +134,10 @@ def _validate_events(
     node_id = node.get("id")
     execution_id = uuid.uuid4().hex
     label = (node.get("goal") or node_id)[:60]
-    _announce_delegated_solve(user_key, project_id, home_attachment_id, home_session_id, label)
+    _announce_delegated_solve(
+        user_key, project_id, home_attachment_id, home_session_id, label,
+        parent_name=agents_spec_reads._agent_name(user_key, coord) or coord,
+    )
     try:
         yield "validation_started", {"nodeId": node_id, "executionId": execution_id}
         outcome = yield from agents_rounds._verified_content_rounds(
@@ -169,7 +172,8 @@ def _validate_events(
         if done["verdict"] in ("pass", "fail", "not-executable") and candidate:
             _mint_validated_review(user_key, project_id, attachment_id, session_id,
                                    home_attachment_id, home_session_id,
-                                   node_id, label, candidate, done, rounds_used, rounds_trace)
+                                   node_id, label, candidate, done, rounds_used, rounds_trace,
+                                   resolution=resolution)
         done["builderSession"] = _settle_node_state(user_key, project_id, attachment_id, ref, done["verdict"])
         yield "done", done
     finally:
@@ -177,15 +181,16 @@ def _validate_events(
         _clear_validating_guard(user_key, project_id, attachment_id)
 
 
-def _announce_delegated_solve(user_key, project_id, home_attachment_id, home_session_id, label) -> None:
-    """The framing user turn at HOME: the Dataflow Builder delegated this Solve."""
+def _announce_delegated_solve(user_key, project_id, home_attachment_id, home_session_id, label,
+                              *, parent_name: str) -> None:
+    """The framing user turn at HOME: the agent named *parent_name* delegated this Solve."""
     if isinstance(home_session_id, str):
         try:
             sessions.append_turns(
                 user_key, project_id, home_session_id, home_attachment_id,
                 [sessions.make_turn(
                     "user",
-                    f"[Delegated by Dataflow Builder] Solve {label!r}: generate, "
+                    f"[Delegated by {parent_name}] Solve {label!r}: generate, "
                     "execute through the dataflow, validate, self-correct.",
                 )],
             )
@@ -194,7 +199,8 @@ def _announce_delegated_solve(user_key, project_id, home_attachment_id, home_ses
 
 
 def _mint_validated_review(user_key, project_id, attachment_id, session_id, home_attachment_id, home_session_id,
-                           node_id, label, candidate, done: dict, rounds_used: int, rounds_trace: list) -> None:
+                           node_id, label, candidate, done: dict, rounds_used: int, rounds_trace: list,
+                           *, resolution=None) -> None:
     """PASS or FAIL, the user decides — the proposal carries the validation block so the review is
     informed, never gatekept (dev/118: NOT-EXECUTABLE is proposed too, labeled; dev/72: the review
     lives with the NODE's agent when it exists). Writes the proposal ids, or the mint error, into *done*."""
@@ -249,20 +255,23 @@ def _mint_validated_review(user_key, project_id, attachment_id, session_id, home
             and home_attachment_id != attachment_id
             and isinstance(session_id, str)
         ):
-            # The parent references and LINKS; the story lives at home.
+            # The parent references and LINKS; the story lives at home. The
+            # agent that wrote it is named as its manifest names it.
+            delegate = getattr(resolution, "manifest", None)
+            delegate_coord = getattr(resolution, "coord", None) or ""
+            delegate_name = getattr(delegate, "name", None) or delegate_coord
             sessions.append_turns(
                 user_key, project_id, session_id, attachment_id,
                 [sessions.make_turn(
                     "agent",
                     f"Solved {label!r}: {done['verdict'].upper()} after "
-                    f"{rounds_used} round{'s' if rounds_used != 1 else ''} — "
-                    "the trace and content review live in the node's "
-                    "Node Builder.",
+                    f"{rounds_used} round{'s' if rounds_used != 1 else ''}: "
+                    f"the trace and content review live in the node's {delegate_name}.",
                     content=[content.make_delegation_part(
                         capability="node.content.generate",
-                        coord="agent.node-builder",
-                        name="Node Builder",
-                        category="node",
+                        coord=delegate_coord,
+                        name=delegate_name,
+                        category=getattr(delegate, "category", "") or "",
                         attachment_id=home_attachment_id,
                         status="ok" if done["verdict"] in ("pass", "not-executable") else "failed",
                         summary=f"Solve {label!r}: {done['verdict']} "
