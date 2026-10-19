@@ -6,8 +6,8 @@
  * so webpack splits each of the 2,582 modules into a chunk of its own (an
  * alias name's chunk also holds the module of the icon it names). A module is
  * an SVG path and a few exports, already compact, so minifying and mapping it
- * gains little, while TerserPlugin's work per asset, 2,582 times over, nearly
- * doubled the production build.
+ * gains little, while doing it 2,582 times added about a tenth to the
+ * production build (11 to 15 s of about 112 s, measured locally).
  *
  * Before the minimizer runs, this plugin finds the chunks that hold nothing but
  * those modules, marks their files minimized, which TerserPlugin passes over,
