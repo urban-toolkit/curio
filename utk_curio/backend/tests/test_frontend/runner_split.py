@@ -32,12 +32,20 @@ Selected with two environment variables, both unset for an ordinary local run
 * ``CURIO_E2E_RUNNER`` - ``utk`` keeps only the WebGPU tests, ``desktop``
   only the others;
 * ``CURIO_E2E_PART`` - ``k/n`` keeps the k-th of n parts (1-based) of what
-  is left, balanced by the recorded group durations in ``e2e_durations.json``
-  (see ``tests/parts.py``).
+  is left, balanced by the recorded seconds of each test in
+  ``e2e_durations.json`` (see ``tests/parts.py``).
+
+A part holds whole groups (``part_key``). Most groups are one test, since a
+test that gets the per-test database reset shares nothing with the tests
+around it. A class that shares a session keeps its xdist group (``group_of``),
+and a module that defines a fixture outliving one test stays whole. The xdist
+groups themselves are what the GPU runner's workers schedule by; the parts do
+not change them.
 """
 
 from __future__ import annotations
 
+import ast
 import functools
 import inspect
 import os
@@ -117,6 +125,64 @@ def group_of(item) -> str:
     return module.__name__.rsplit(".", 1)[-1] if module is not None else item.nodeid
 
 
+@functools.lru_cache(maxsize=None)
+def module_keeps_a_fixture(path: str) -> bool:
+    """Whether an e2e module defines a fixture that outlives one test.
+
+    A module-, class-, package- or session-scoped ``@pytest.fixture`` in the
+    module's own code (at its top or in a class): a server, a session or a
+    page its tests share. Read from the source, since every test also uses
+    conftest's class-scoped ``browser``, which a part restarts at no risk.
+    """
+    try:
+        tree = ast.parse(Path(path).read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, ValueError):
+        return True  # cannot tell: keep it whole
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for decorator in node.decorator_list:
+            if not isinstance(decorator, ast.Call):
+                continue
+            func = decorator.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+            if name != "fixture":
+                continue
+            for keyword in decorator.keywords:
+                scope = keyword.value
+                if keyword.arg == "scope" and not (
+                        isinstance(scope, ast.Constant) and scope.value == "function"):
+                    return True
+    return False
+
+
+def part_key(item) -> str:
+    """What one CPU part runs whole with the item: one test, or a group of them.
+
+    * A module that defines a fixture outliving one test stays whole, so its
+      server or session starts once (``module_keeps_a_fixture``).
+    * A test that skips the per-test database reset (``fixtures.skips_the_reset``:
+      a class sharing one session, a ``wf-*`` workflow class whose methods run
+      in order) keeps its xdist group.
+    * Any other test is a group of its own: it gets the reset, so it shares
+      nothing with the tests around it.
+    """
+    module = getattr(item, "module", None)
+    path = getattr(module, "__file__", None)
+    if module is not None and (not path or module_keeps_a_fixture(path)):
+        return module.__name__.rsplit(".", 1)[-1]
+    from .fixtures import skips_the_reset
+
+    if skips_the_reset(getattr(item, "cls", None), getattr(item, "fixturenames", ())):
+        return group_of(item)
+    return item_key(item)
+
+
+def item_key(item) -> str:
+    """The item's key in ``e2e_durations.json`` (``parts.item_key``)."""
+    return parts.item_key(item)
+
+
 def parse_shard(value: str) -> tuple[int, int]:
     """``"k/n"`` -> (k-1, n), 1-based on the outside, 0-based inside."""
     return parts.parse_part(value, "CURIO_E2E_PART")
@@ -135,11 +201,19 @@ def select(items, runner: str | None, shard: str | None, durations: dict | None 
             dropped.append(item)
     if shard:
         kept, rest = parts.keep_part(
-            kept, shard, group_of,
+            kept, shard, part_key, item_key,
             parts.load_durations(DURATIONS_FILE) if durations is None else durations,
             "CURIO_E2E_PART")
         dropped += rest
     return kept, dropped
+
+
+def environment_part(items):
+    """(kept, deselected) for the runner and part the environment names."""
+    runner, shard = from_environment()
+    if not runner and not shard:
+        return items, []
+    return select(items, runner, shard)
 
 
 def from_environment(environ=os.environ) -> tuple[str | None, str | None]:

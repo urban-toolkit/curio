@@ -37,10 +37,11 @@ runtime (`window.__CURIO_BACKEND_URL__`, injected per browser context by the
 `browser` fixture), so one webpack build serves all of them.
 
 Tests are scheduled with `--dist loadgroup`: one group per workflow in
-`test_workflows.py` (its four class-scoped methods share a browser and a login),
+`test_workflows.py` (its class-scoped methods share a browser and a login),
 one per scene in `test_walkthrough_baselines.py`, one group per file everywhere
-else. A missing screenshot baseline **fails** in every run; baselines are made
-on CI -- see *Screenshot baselines*.
+else. CI's CPU parts split finer than these groups (see *Where CI runs each
+test*). A missing screenshot baseline **fails** in every run; baselines are
+made on CI -- see *Screenshot baselines*.
 
 ### Where CI runs each test
 
@@ -62,14 +63,25 @@ everything:
 
 ```bash
 CURIO_E2E_RUNNER=utk pytest utk_curio/backend/tests/test_frontend/       # the webgpu share
-CURIO_E2E_RUNNER=desktop CURIO_E2E_PART=3/10 pytest ...                  # one of ten desktop parts
+CURIO_E2E_RUNNER=desktop CURIO_E2E_PART=3/14 pytest ...                  # one of fourteen desktop parts
 ```
 
-`CURIO_E2E_PART` balances the parts by the group durations in
-`e2e_durations.json`. Refresh it from a run's e2e JUnit, `e2e.xml` in the
-`ci-inputs-test-gpu` and `ci-inputs-e2e-desktop-*` artifacts, with
-`python scripts/e2e_durations.py <e2e.xml> ...`; a group missing from it is
-priced at a default.
+CI runs `E2E_DESKTOP_PARTS` desktop parts (`tests/parts.py`; a Jest test
+holds the workflow's matrix to it). A part holds whole groups
+(`runner_split.part_key`), and most groups are one test: a test that gets the
+per-test database reset shares nothing with its neighbours. A class in
+`fixtures._SHARED_SESSION_CLASSES`, and a test that uses `loaded_workflow` or
+`workflow_page`, keeps its `--dist loadgroup` group above. A module that
+defines a module- or class-scoped fixture of its own stays whole, so its
+server or session starts once. The split runs after pytest's `-m` and `-k`
+deselection, so a part's load counts only the tests that will run in it.
+
+`CURIO_E2E_PART` balances the parts by each test's seconds in
+`e2e_durations.json`: a group costs the sum of its tests. Refresh it from a
+run's e2e JUnit, `e2e.xml` in the `ci-inputs-test-gpu` and
+`ci-inputs-e2e-desktop-*` artifacts, with
+`python scripts/e2e_durations.py <e2e.xml> ...`, when the CI report's spread
+line warns; a test missing from it is priced at the median recorded test.
 
 With `--use-existing`, pairs 1..N-1 must already be running on the ports
 `python -m utk_curio.backend.tests.shards K` prints (that is what CI does,
