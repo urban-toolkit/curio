@@ -348,7 +348,7 @@ Only the dataset's publisher may unpublish or delete it.
 
 ## 7. The manifest
 
-There is no JSON Schema for dataset manifests, so this table is the reference. The shipped datasets in `<repo_root>/datasets/` are the canonical examples.
+[`docs/schemas/dataset.v1.json`](schemas/dataset.v1.json) is the full reference for a dataset's `manifest.json`, and this table sums it up. The shipped datasets in `<repo_root>/datasets/` are the canonical examples.
 
 | Field | Required | What it declares |
 |---|---|---|
@@ -369,7 +369,7 @@ There is no JSON Schema for dataset manifests, so this table is the reference. T
 | `createdAt` / `updatedAt` | | ISO timestamps for the Curio *record*. |
 | `sourceUpdatedAt` | | Last-modified date of the *original file* at import time. |
 | `discoverySource` | | Where a Discovery Catalog download came from: the source (`sourceId`, `sourceName`), `resourceId`, `resourceUrl`, `finalUrl`, `fetchedAt`, and the bytes' `contentSha256`. A download narrowed by its answers, such as an area, records them as `parameters`, with their `parametersHash`. From a storage source: `sourcePath` for one file, `fileCount` and `fields` for several, and `narrowed` when only some of a row's files were added. A file downloaded by hand from a Dataset Finder row records its link as `resourceUrl`, `fetchedAt`, `contentSha256` and `manual: true`. See [DISCOVERY-CATALOG.md](DISCOVERY-CATALOG.md). |
-| `collection` | For `collection` | The source and resource its files belong to (`sourceId`, `resource`, `resourceId`, `path`), its `kind`, the path `fields`, `counts` per kind, `fileCount`, `totalBytes`, `hasGps`, when it was indexed, and what an add narrowed it to. |
+| `collection` | For `collection` | The source and resource its files belong to (`sourceId`, `resource`, `resourceId`, `path`), its `kind` (`rasters`, `frames`, `images`, `videos`, `media` or `audio`), the path `fields`, `counts` per kind, `fileCount`, `totalBytes`, `hasGps`, when it was indexed, and what an add narrowed it to. |
 | `featureCount` / `rowCount` | | Counts for geo and tabular data. |
 | `schema` | | Object describing the fields; inferred from a preview when absent. |
 | `groupId` / `layerName` | | Multi-layer imports: every layer of one import shares a `groupId`. NetCDF variables stored a file each share one that starts with `netcdf.`, and each names its variable as `layerName`. |
@@ -399,6 +399,7 @@ There is no JSON Schema for dataset manifests, so this table is the reference. T
 - [`docs/NODE-CATALOG.md`](NODE-CATALOG.md): the node package catalog, whose storage and publish model this one mirrors.
 - [`docs/AGENT-CATALOG.md`](AGENT-CATALOG.md): the agents, including the Dataset Finder.
 - [`docs/DISCOVERY-CATALOG.md`](DISCOVERY-CATALOG.md): the data portals you download datasets from.
+- [`docs/schemas/dataset.v1.json`](schemas/dataset.v1.json): the manifest JSON Schema.
 - [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#dataset-routes): the dataset routes and backend layout.
 - [`docs/USAGE.md`](USAGE.md): installation, launcher flags, and the environment variables.
 - [`utk_curio/backend/app/datasets/`](../utk_curio/backend/app/datasets/): the implementation, where [`domain/manifest.py`](../utk_curio/backend/app/datasets/domain/manifest.py) is the manifest contract.
