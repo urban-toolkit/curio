@@ -195,17 +195,6 @@ def load_raster_cells(artifact_id: str):
     return grid, bands
 
 
-def _band(envelope: dict) -> list[float]:
-    """A raster envelope's one band, rows from south to north
-    (``utils/raster/rasterWire.ts``)."""
-    import base64
-    import struct
-
-    properties = envelope["data"]["features"][0]["properties"]
-    raw = base64.b64decode(properties["band_1"]["float32le"])
-    return list(struct.unpack(f"<{len(raw) // 4}f", raw))
-
-
 def _catalog_dataset_paths(code: str) -> dict[str, str]:
     """Map every ``curio_data_path("<id>")`` in *code* to its data file.
 

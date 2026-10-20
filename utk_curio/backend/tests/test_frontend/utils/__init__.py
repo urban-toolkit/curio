@@ -33,7 +33,6 @@ from .sandbox import (  # noqa: F401
     sandbox_base_url,
     load_artifact_as_dict,
     load_raster_cells,
-    _band,
     execute_workflow_programmatically,
 )
 from .vega_svg import (  # noqa: F401
