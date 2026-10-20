@@ -185,8 +185,13 @@ No data, in either raster, is not counted.
 # input_0 is the accumulated shadow in minutes, input_1 the heights it was
 # predicted from, as the mask: SCOUT's metrics count the ground, the cells
 # Deep Umbra reads as gray level 0, a height under 1.08 m.
-return curio_raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)
+from scout_rasters.raster_algebra import raster_statistics
+
+return raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)
 ```
+
+`raster_statistics` is Scout's, from the package's own module, which the
+Raster Calculator's code imports.
 
 In summer the ground of these blocks is in shadow 128.6 minutes on average,
 with a median of 3.3 minutes: SCOUT's own numbers for its example, within a

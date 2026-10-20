@@ -21,7 +21,7 @@ Catalog** dropdown.
 
 | Canonical id | Label | Input | Output |
 |---|---|---|---|
-| `curio.scout/raster-calculator` | Raster Calculator | One to three RASTERs on one grid, one per input circle | One RASTER, or a DATAFRAME of one row of statistics |
+| `curio.scout/raster-calculator` | Raster Calculator | One to three RASTERs on one grid, one per input circle; a GeoDataFrame on a circle is a layer its code reads as zones or a mask | One RASTER, or a DATAFRAME of one row of statistics |
 | `curio.scout/rasterize-buildings` | Rasterize Buildings | A buildings GeoDataFrame: polygons, a CRS and a column of heights in metres | One RASTER of heights in metres |
 
 ### Charts
@@ -49,19 +49,49 @@ Catalog** dropdown.
 A Python node that opens with the package's starter,
 [`sources/raster-calculator.py`](sources/raster-calculator.py), when it is
 dropped: input_0 minus input_1, with its other operations listed above it,
-statistics among them. Return another call to change what it does:
+statistics among them. Its code imports them from the package's module:
+
+```python
+from scout_rasters.raster_algebra import raster_calculate, raster_statistics
+
+return raster_calculate("subtract", [input_0, input_1], output_file=curio_output_file)
+```
+
+Return another call to change what it does:
 
 | Call | Result |
 |---|---|
-| `curio_raster_calculate("add", [input_0, input_1])` | input_0 plus input_1, cell by cell; also `"subtract"`, `"multiply"` and `"divide"` |
-| `curio_raster_calculate("choose", [input_0, input_1, input_2], codes=[21, 31])` | input_1 where input_0's class is one of the codes, input_2 elsewhere |
-| `curio_raster_statistics(input_0)` | the `mean`, `median`, `min`, `max` and `count` of the raster's cells with a value, as a table of one row |
-| `curio_raster_statistics(input_0, mask=input_1, mask_values=[0])` | the same over the cells where a second raster on input_1, on the same grid, is 0 |
+| `raster_calculate("add", [input_0, input_1], output_file=curio_output_file)` | input_0 plus input_1, cell by cell; also `"subtract"`, `"multiply"` and `"divide"` |
+| `raster_calculate("choose", [input_0, input_1, input_2], codes=[21, 31], output_file=curio_output_file)` | input_1 where input_0's class is one of the codes, input_2 elsewhere |
+| `raster_calculate("subtract", [input_1, input_0], absolute=True, output_file=curio_output_file)` | the size of input_1 minus input_0: how much each cell changed, 0 where it did not; `absolute=True` takes the size of any operation's result |
+| `raster_statistics(input_0)` | the `mean`, `median`, `min`, `max` and `count` of the raster's cells with a value, as a table of one row |
+| `raster_statistics(input_0, mask=input_1, mask_values=[0])` | the same over the cells where a second raster on input_1, on the same grid, is 0 |
 
-A cell with no value in an input an operation reads has no value in the result,
-and rasters on different grids are refused. The
+`raster_calculate` writes the raster it returns with `curio_output_file`, as
+Rasterize Buildings writes its own. A cell with no value in an input an
+operation reads has no value in the result, and rasters on different grids
+are refused. An input circle also takes a layer, which the node's code reads
+as zones or a mask, for example rasterized on a raster's grid with
+`rasterio.features.rasterize`. The
 [Rasters section of the usage guide](../../docs/USAGE.md#rasters) lists every
 option.
+
+### Raster math in another package
+
+The functions are the package's module, `scout_rasters`: `raster_algebra`
+holds the operations and the statistics, and `web_tiles` the web map tile
+helpers `tile_bounds` and `mosaic_web_tiles`. A node of another package
+imports them when its package names Scout in its manifest's
+`dependencies.packages`, as Deep Umbra
+([`model.scout.deep-umbra@1`](../model.scout.deep-umbra@1/README.md)) does for
+`tile_bounds`:
+
+```json
+"dependencies": {"packages": {"curio.scout@1": "*"}}
+```
+
+A Python node of no package has none of them, so a raster step is a Raster
+Calculator node.
 
 ## Rasterize Buildings
 
@@ -165,7 +195,9 @@ Raster Calculator takes the shadow's statistics over the ground, the heights as
 its mask. The test dataflow
 [Quad Cities flood depth, nature-based solutions and vulnerability](../../docs/examples/dataflows/quad-cities-flood-vulnerability.json)
 chooses SCOUT's flood depth by nature-based solution class with a Raster
-Calculator and takes its statistics with another.
+Calculator and takes its statistics with another. A third averages the depth
+over the riverside tracts' land in each period: it reads the tracts and the
+waterways, two layers, as zones and a mask.
 
 ```
 [ Scenario A's rows ] ──┐
