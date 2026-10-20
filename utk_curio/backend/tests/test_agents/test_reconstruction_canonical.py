@@ -429,8 +429,10 @@ class TestTheShippedCorpus:
         Bars, example 06 its scenarios' mean sunlight, and
         chicago-loop-shadow-towers its scenarios' mean shadow;
         lower-manhattan-park-shade charts its parks with Scout's Dots with a
-        range and takes its changes in shadow with Raster Calculators (that
-        plan, step 6.3)."""
+        range and takes its changes in shadow with Raster Calculators, and
+        quad-cities-flood-vulnerability charts with Scout's Bars, Points and
+        Grouped bars and takes its change in depth with a Raster Calculator
+        (that plan, step 6.3)."""
         needs_package_templates = {}
         for path in example_paths():
             spec = json.loads(path.read_text(encoding="utf-8"))
@@ -495,7 +497,12 @@ class TestTheShippedCorpus:
             "curio.scout/rasterize-buildings",
             "model.scout.deep-umbra/accumulated-shadow",
         ]
-        assert needs_package_templates["quad-cities-flood-vulnerability"] == ["curio.scout/raster-calculator"]
+        assert needs_package_templates["quad-cities-flood-vulnerability"] == [
+            "curio.scout/bars",
+            "curio.scout/grouped-bars",
+            "curio.scout/points",
+            "curio.scout/raster-calculator",
+        ]
         assert declared_dependencies(
             json.loads(
                 (REPO_ROOT / "docs/examples/09-heterogeneous-data-linked-views.json").read_text()

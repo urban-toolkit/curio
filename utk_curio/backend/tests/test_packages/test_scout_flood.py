@@ -32,12 +32,18 @@ Index (SVI), as komar41's FloodRisk example in #914 does: two more Data
 Loading nodes read CDC's census tracts and USGS's waterways, a Data
 Transformation keeps the 28 tracts that NHD's stream and river areas touch, an
 Autark map draws their SVI percentile, and in each scenario one Data
-Transformation averages the depth over each tract's land and a third Raster
-Calculator over the riverside land in each of SCOUT's three periods, the water
-left out and dry land counted as 0 m. Compare Scenarios takes the size of the change in each
-tract's mean depth, which an Autark map draws, and charts vulnerability
-against depth and the mean depth by period. The nodes, run in the sandbox,
-give what this file computes from the datasets on its own.
+Transformation averages the depth over each tract's land, which an Autark map
+in the scenario draws, and a third Raster Calculator over the riverside land
+in each of SCOUT's three periods, the water left out and dry land counted as
+0 m. A Raster Calculator takes the size of the change in depth and a Python
+node, joining the tracts on their FIPS code, the size of the change in each
+tract's mean depth, each drawn by an Autark map; Scout's Bars charts the
+median depth, its Points vulnerability against depth and its Grouped bars the
+mean depth by period. The nodes, run in the sandbox, give what this file
+computes from the datasets on its own. Until the plan answering komar41's
+review (step 6.3), Compare Scenarios nodes took the changes and drew the
+charts; they run here as the reference the new nodes are held to, until step
+6.4 of that plan removes them with the node.
 
 Sandbox modules are imported inside each test, so a checkout without them
 fails each test on its own.
@@ -79,6 +85,20 @@ PARAMETER = "curio.builtin/parameter"
 COMPARE = "curio.builtin/compare-scenarios"
 MAP = "curio.builtin/autk-grammar"
 TRANSFORMATION = "curio.builtin/data-transformation"
+PYTHON = "curio.builtin/computation-analysis"
+BARS = "curio.scout/bars"
+POINTS = "curio.scout/points"
+GROUPED_BARS = "curio.scout/grouped-bars"
+CHARTS = (BARS, POINTS, GROUPED_BARS)
+#: The Raster Calculator taking the size of the change in depth.
+DEPTH_CHANGE_CODE = (
+    "# The size of NbS's flood depth, on input_1, minus No NbS's, on input_0,\n"
+    "# cell by cell, in metres: how much the nature-based solutions change the\n"
+    "# depth, 0 where they do not.\n"
+    "from scout_rasters.raster_algebra import raster_calculate\n"
+    "\n"
+    'return raster_calculate("subtract", [input_1, input_0], absolute=True, output_file=curio_output_file)\n'
+)
 
 CLASSES = "data.scout.flood-nbs-classes"
 #: CDC/ATSDR's SVI census tracts and USGS's NHD waterways on SCOUT's grid.
@@ -159,8 +179,8 @@ MAP_DOCUMENT = {"map": {"layerRefs": [{
     "title": "Flood depth (m)",
 }]}}
 
-#: The Autark map after the Compare Scenarios node in Difference: the size of
-#: the change in depth, a difference with no sign, on a sequential scale.
+#: The Autark map after the Depth change: the size of the change in depth, a
+#: difference with no sign, on a sequential scale.
 DIFFERENCE_MAP_DOCUMENT = {"map": {"layerRefs": [{
     "dataRef": "[!! input_0 !!]",
     "getFnv": "band_1",
@@ -179,14 +199,28 @@ VULNERABILITY_MAP_DOCUMENT = {"map": {"layerRefs": [{
     "title": "Social vulnerability (SVI percentile)",
 }]}}
 
-#: The Autark map after the Compare Scenarios node that subtracts the tracts'
-#: mean depths: the size of each tract's change, on the depth change's scale.
+#: The Autark map after the Depth change per tract, which subtracts the
+#: tracts' mean depths: the size of each tract's change, on the depth change's
+#: scale.
 TRACT_CHANGE_MAP_DOCUMENT = {"map": {"layerRefs": [{
     "dataRef": "[!! input_0 !!]",
     "getFnv": "mean_depth_m",
     "getFnvType": "quantitative",
     "colorMapInterpolator": "interpolateOranges",
     "title": "Absolute change in mean flood depth (m)",
+}]}}
+
+#: Each scenario's map of its tracts' mean depth (issue 9 of the plan answering
+#: komar41's review): drawn as the change per tract is, over the depth maps'
+#: range, which a tract's mean depth stays inside, so a color is the same mean
+#: depth in both scenarios.
+TRACT_DEPTH_MAP_DOCUMENT = {"map": {"layerRefs": [{
+    "dataRef": "[!! input_0 !!]",
+    "getFnv": "mean_depth_m",
+    "getFnvType": "quantitative",
+    "colorMapInterpolator": "interpolateOranges",
+    "colorMapRange": DEPTH_RANGE,
+    "title": "Mean flood depth (m)",
 }]}}
 
 #: CDC's columns, which the riverside tracts keep.
@@ -481,8 +515,10 @@ def _returns(node: dict) -> str:
 
 
 def _calculators(call: str) -> list:
-    """The Raster Calculators whose code returns *call*, in the dataflow's order."""
-    return [n for n in _nodes(CALCULATOR) if _returns(n) == call]
+    """The scenarios' Raster Calculators whose code returns *call*, in the
+    dataflow's order; the Depth change, in no scenario, is none of them."""
+    members = _members(_dataflow())
+    return [n for n in _nodes(CALCULATOR) if _returns(n) == call and n["id"] in members]
 
 
 def _code_note(name: str) -> list[str]:
@@ -562,8 +598,9 @@ def _scenario_parts(spec: dict) -> dict:
     """Each scenario's nodes by their part, one node per part: its Raster
     Calculators, the one that chooses the depth (``choose``), the one of
     statistics and the one with the NbS widget averaging by period (``by
-    period``), its depth map, and its Data Transformation per tract (``tract
-    depth``)."""
+    period``), its Data Transformation per tract (``tract depth``), and its
+    two Autark maps, of the depth (``depth map``) and of the tracts' mean
+    depth (``tract map``), by the node they draw."""
     nodes = {n["id"]: n for n in spec["nodes"]}
     parts = {}
     for scenario in spec["scenarios"]:
@@ -572,7 +609,8 @@ def _scenario_parts(spec: dict) -> dict:
             if node["type"] == CALCULATOR:
                 part = {CALCULATE: "choose", STATISTICS: "statistics", BY_PERIOD: "by period"}[_returns(node)]
             elif node["type"] == MAP:
-                part = "depth map"
+                (drawn,) = _feeds(spec, node["id"]).values()
+                part = {CALCULATOR: "depth map", TRANSFORMATION: "tract map"}[nodes[drawn]["type"]]
             elif node["type"] == TRANSFORMATION:
                 assert not node["metadata"].get("widgets"), node["id"]
                 part = "tract depth"
@@ -584,17 +622,60 @@ def _scenario_parts(spec: dict) -> dict:
     return parts
 
 
-def _compares(spec: dict) -> dict:
-    """Each Compare Scenarios node, by the part of the scenarios both its
-    inputs are and its mode: ``("choose", "difference")`` subtracts the depths."""
+def _comparisons(spec: dict) -> dict:
+    """The nodes in no scenario that compare the scenarios, by the part of the
+    scenarios both their inputs are and what they do, as the Compare Scenarios
+    nodes they replaced were keyed by their mode: a chart (``"chart"``), or a
+    Raster Calculator or a Python node taking a change (``"difference"``).
+    ``("choose", "difference")`` takes the size of the change in depth."""
     part_of = {node["id"]: part for parts in _scenario_parts(spec).values() for part, node in parts.items()}
+    members = _members(spec)
     found = {}
-    for compare in [n for n in spec["nodes"] if n["type"] == COMPARE]:
-        (part,) = {part_of[source] for source in _feeds(spec, compare["id"]).values()}
-        key = (part, compare["metadata"]["compareScenarios"]["mode"])
+    for node in spec["nodes"]:
+        if node["id"] in members or node["type"] not in (CALCULATOR, PYTHON, *CHARTS):
+            continue
+        (part,) = {part_of[source] for source in _feeds(spec, node["id"]).values()}
+        key = (part, "chart" if node["type"] in CHARTS else "difference")
         assert key not in found, key
-        found[key] = compare
+        found[key] = node
     return found
+
+
+def _compare_references() -> dict:
+    """The Compare Scenarios nodes the dataflow held until step 6.3, by the
+    key :func:`_comparisons` gives the node each became: ``(settings, code)``,
+    the code each wrote for its two inputs, No NbS in circle 0 and NbS in
+    circle 1 (``utils/compare/compareCode.ts``). In Difference, the size of
+    NbS minus No NbS of the depths, and of the tracts' mean depths joined on
+    their FIPS code; as charts, the median depth in bars, each tract's SVI
+    percentile against its mean depth in points, and the mean depth of each
+    period in grouped bars, one bar per period and scenario, as it is."""
+    entries = ['    ("no-nbs", "No NbS", [!! input_0 !!]),', '    ("nbs", "NbS", [!! input_1 !!]),']
+    stack = "\n".join([*_code_note("STACK_CODE_NOTE"), "return curio_stack_scenarios([", *entries, "])", ""])
+    return {
+        ("choose", "difference"): (
+            {"difference": {"absolute": True}},
+            "\n".join([*_code_note("ABSOLUTE_CODE_NOTE"), "return curio_difference_scenarios([", *entries,
+                       "], absolute=True)", ""]),
+        ),
+        ("statistics", "chart"): ({"chart": {"preset": "bar", "y": "median"}}, stack),
+        ("tract depth", "difference"): (
+            {"difference": {"absolute": True, "key": "FIPS"}},
+            "\n".join([*_code_note("ABSOLUTE_CODE_NOTE"), "return curio_difference_scenarios([", *entries,
+                       '], absolute=True, key="FIPS")', ""]),
+        ),
+        ("tract depth", "chart"): ({"chart": {"preset": "scatter", "x": "RPL_THEMES", "y": "mean_depth_m"}}, stack),
+        ("by period", "chart"): (
+            {"chart": {"preset": "grouped-bar", "x": "period", "y": "mean_depth_m", "aggregate": "none"}}, stack,
+        ),
+    }
+
+
+def _reference(key: tuple) -> dict:
+    """The Compare Scenarios node the comparison *key* replaced, as a node a
+    run takes: its type and the code it wrote."""
+    _settings, code = _compare_references()[key]
+    return {"id": f"compare-{'-'.join(key).replace(' ', '-')}", "type": COMPARE, "content": code}
 
 
 def _map_after(spec: dict, node_id: str) -> dict:
@@ -609,26 +690,33 @@ def _map_after(spec: dict, node_id: str) -> dict:
 
 
 def test_the_dataflow_is_made_of_curios_own_nodes_and_scouts_raster_calculator():
-    """One package, Scout, for the Raster Calculators, and Curio's own
-    nodes otherwise: three Parameter nodes; five Data Loading nodes, three for
-    the seven rasters and one each for the tracts and the waterways; a Data
-    Transformation keeping the riverside tracts; three Raster Calculators per
-    scenario, one choosing the depth, one taking its statistics and one
-    averaging the depth by period, an Autark map of the depth and a Data
-    Transformation, the depth per tract; five Compare Scenarios nodes; Autark
-    maps of the vulnerability, of the change in depth and of the change per
-    tract; and the nine datasets. Nothing is pinned to the dashboard: a
-    difference of SCOUT's whole grid is over a dashboard page's 25 MB."""
+    """One package, Scout, for the Raster Calculators and the charts, and
+    Curio's own nodes otherwise: three Parameter nodes; five Data Loading
+    nodes, three for the seven rasters and one each for the tracts and the
+    waterways; a Data Transformation keeping the riverside tracts; three
+    Raster Calculators per scenario, one choosing the depth, one taking its
+    statistics and one averaging the depth by period, an Autark map of the
+    depth, a Data Transformation, the depth per tract, and an Autark map of
+    it; a Raster Calculator taking the change in depth and a Python node the
+    change per tract; Scout's Bars, Points and Grouped bars; Autark maps of
+    the vulnerability, of the change in depth and of the change per tract;
+    and the nine datasets. No Compare Scenarios node is left (the plan
+    answering komar41's review, step 6.3). Nothing is pinned to the
+    dashboard: a difference of SCOUT's whole grid is over a dashboard page's
+    25 MB."""
     spec = _dataflow()
     assert spec["packages"] == [RASTERS_PACKAGE]
-    assert {n["type"] for n in spec["nodes"] if not n["type"].startswith("curio.builtin/")} == {CALCULATOR}
+    assert {n["type"] for n in spec["nodes"] if not n["type"].startswith("curio.builtin/")} == {CALCULATOR, *CHARTS}
     assert [ref["datasetId"] for ref in spec["datasets"]] == DATASET_IDS
     counts = {}
     for n in spec["nodes"]:
         counts[n["type"]] = counts.get(n["type"], 0) + 1
-    assert counts == {PARAMETER: 3, LOADING: 5, CALCULATOR: 6, TRANSFORMATION: 3, MAP: 5, COMPARE: 5}
+    assert counts == {
+        PARAMETER: 3, LOADING: 5, CALCULATOR: 7, TRANSFORMATION: 3, MAP: 7, PYTHON: 1, BARS: 1, POINTS: 1,
+        GROUPED_BARS: 1,
+    }
     assert sorted(_returns(n) for n in _nodes(CALCULATOR)) == sorted(
-        [CALCULATE, CALCULATE, STATISTICS, STATISTICS, BY_PERIOD, BY_PERIOD])
+        [CALCULATE, CALCULATE, CALCULATE, STATISTICS, STATISTICS, BY_PERIOD, BY_PERIOD])
     assert [n["id"] for n in spec["nodes"] if n.get("dashboardPinned")] == []
 
 
@@ -760,10 +848,11 @@ def test_each_scenario_chooses_by_scouts_classes_takes_the_statistics_and_maps_t
     chosen, codes = {}, {}
     for scenario in scenarios.values():
         members = [nodes[i] for i in scenario["nodes"]]
-        assert sorted(n["type"] for n in members) == sorted([MAP, CALCULATOR, CALCULATOR, CALCULATOR, TRANSFORMATION])
+        assert sorted(n["type"] for n in members) == sorted(
+            [MAP, MAP, CALCULATOR, CALCULATOR, CALCULATOR, TRANSFORMATION])
         (calculator,) = [n for n in members if n["type"] == CALCULATOR and _returns(n) == CALCULATE]
         (statistics,) = [n for n in members if n["type"] == CALCULATOR and _returns(n) == STATISTICS]
-        (depth_map,) = [n for n in members if n["type"] == MAP]
+        (depth_map,) = [n for n in members if n["type"] == MAP and _feeds(spec, n["id"]) == {"in": calculator["id"]}]
         feeds = {e["targetHandle"]: e["source"] for e in spec["edges"] if e["target"] == calculator["id"]}
         assert feeds == {"in": loaders["classes"], "in_1": loaders["nbs"], "in_2": loaders["no-nbs"]}
         assert [e["source"] for e in spec["edges"] if e["target"] == statistics["id"]] == [calculator["id"]]
@@ -787,8 +876,7 @@ def test_each_scenarios_map_draws_its_depth_in_blues_with_its_legend_titled():
     ``title``, valid for the grammar."""
     from utk_curio.backend.app.agents.domain import document_validation
 
-    members = {node_id for scenario in _dataflow()["scenarios"] for node_id in scenario["nodes"]}
-    maps = [n for n in _nodes(MAP) if n["id"] in members]
+    maps = [parts["depth map"] for parts in _scenario_parts(_dataflow()).values()]
     assert len(maps) == 2
     for depth_map in maps:
         assert json.loads(depth_map["content"]) == MAP_DOCUMENT, depth_map["content"]
@@ -806,12 +894,10 @@ def test_both_scenarios_maps_share_one_color_range_that_holds_every_depth():
     import rasterio
 
     spec = _dataflow()
-    nodes = {n["id"]: n for n in spec["nodes"]}
     ranges = {}
-    for scenario in spec["scenarios"]:
-        (map_id,) = [node_id for node_id in scenario["nodes"] if nodes[node_id]["type"] == MAP]
-        (layer,) = json.loads(nodes[map_id]["content"])["map"]["layerRefs"]
-        ranges[scenario["id"]] = layer.get("colorMapRange")
+    for scenario, parts in _scenario_parts(spec).items():
+        (layer,) = json.loads(parts["depth map"]["content"])["map"]["layerRefs"]
+        ranges[scenario] = layer.get("colorMapRange")
     assert ranges == {"no-nbs": DEPTH_RANGE, "nbs": DEPTH_RANGE}, ranges
 
     deepest = 0.0
@@ -825,14 +911,15 @@ def test_both_scenarios_maps_share_one_color_range_that_holds_every_depth():
 
 
 def test_an_autark_map_after_the_difference_draws_the_change_in_depth_on_a_sequential_scale():
-    """The Compare Scenarios node in Difference draws no map of its own: an
-    Autark map after it, in no scenario, draws the size of NbS minus No NbS, a
-    difference with no sign, on a sequential scale, its legend titled by the
-    grammar's ``title``, valid for the grammar."""
+    """An Autark map after the Depth change, both in no scenario, draws the
+    size of NbS minus No NbS, a difference with no sign, on a sequential
+    scale, its legend titled by the grammar's ``title``, valid for the
+    grammar."""
     from utk_curio.backend.app.agents.domain import document_validation
 
     spec = _dataflow()
-    difference = _compares(spec)[("choose", "difference")]
+    difference = _comparisons(spec)[("choose", "difference")]
+    assert difference["id"] not in _members(spec)
     difference_map = _map_after(spec, difference["id"])
     assert difference_map["id"] not in _members(spec)
     assert json.loads(difference_map["content"]) == DIFFERENCE_MAP_DOCUMENT, difference_map["content"]
@@ -894,14 +981,15 @@ def test_each_scenario_averages_its_depth_over_each_tracts_land_and_in_each_peri
 
 
 def test_an_autark_map_after_the_tract_difference_draws_the_size_of_each_tracts_change():
-    """The Compare Scenarios node that subtracts the scenarios' tract depths
-    draws no map of its own: an Autark map after it, in no scenario, draws the
-    size of each tract's change in mean depth on the depth change's scale, its
-    legend titled by the grammar's ``title``, valid for the grammar."""
+    """An Autark map after the Depth change per tract, which subtracts the
+    scenarios' tract depths, both in no scenario, draws the size of each
+    tract's change in mean depth on the depth change's scale, its legend
+    titled by the grammar's ``title``, valid for the grammar."""
     from utk_curio.backend.app.agents.domain import document_validation
 
     spec = _dataflow()
-    change = _compares(spec)[("tract depth", "difference")]
+    change = _comparisons(spec)[("tract depth", "difference")]
+    assert change["id"] not in _members(spec)
     change_map = _map_after(spec, change["id"])
     assert change_map["id"] not in _members(spec)
     assert json.loads(change_map["content"]) == TRACT_CHANGE_MAP_DOCUMENT, change_map["content"]
@@ -909,59 +997,99 @@ def test_an_autark_map_after_the_tract_difference_draws_the_size_of_each_tracts_
     assert document_validation.validate(MAP, named) == {"status": document_validation.STATUS_VALID}
 
 
+def test_each_scenario_maps_its_tracts_mean_depth_over_the_depth_maps_range():
+    """Issue 9 of the plan answering komar41's review: inside each scenario,
+    an Autark map after its Tract depth draws each riverside tract's mean
+    depth, as the map of the change per tract draws its change, over the
+    range the depth maps share, which every tract's mean depth stays inside:
+    one document in both scenarios, the NbS map a copy of the No NbS one,
+    valid for the grammar."""
+    from utk_curio.backend.app.agents.domain import document_validation
+
+    spec = _dataflow()
+    parts = _scenario_parts(spec)
+    for scenario, part in parts.items():
+        tract_map = part["tract map"]
+        assert _map_after(spec, part["tract depth"]["id"]) == tract_map, scenario
+        assert json.loads(tract_map["content"]) == TRACT_DEPTH_MAP_DOCUMENT, tract_map["content"]
+        named = tract_map["content"].replace("[!! input_0 !!]", "input_0")
+        assert document_validation.validate(MAP, named) == {"status": document_validation.STATUS_VALID}
+    assert parts["nbs"]["tract map"]["content"] == parts["no-nbs"]["tract map"]["content"]
+    assert parts["nbs"]["tract map"]["metadata"]["copiedFrom"] == [parts["no-nbs"]["tract map"]["id"]]
+    (layer,) = TRACT_DEPTH_MAP_DOCUMENT["map"]["layerRefs"]
+    (change,) = TRACT_CHANGE_MAP_DOCUMENT["map"]["layerRefs"]
+    assert {k: v for k, v in layer.items() if k not in ("colorMapRange", "title")} == {
+        k: v for k, v in change.items() if k != "title"
+    }
+    assert layer["colorMapRange"] == DEPTH_RANGE
+
+
 def test_every_nodes_code_resolves_with_nothing_left_over():
     from utk_curio.backend.app.execution.code_references import resolve_references
 
     shared = list(_parameters().values())
     for n in _dataflow()["nodes"]:
-        if n["type"] in (LOADING, CALCULATOR, TRANSFORMATION):
+        if n["type"] in (LOADING, CALCULATOR, TRANSFORMATION, PYTHON):
             code, problems = resolve_references(n["content"], n["metadata"].get("widgets") or [], "python", shared=shared)
             assert problems == [], (n["id"], problems)
             assert "[!!" not in code
             compile(_function_body(code), n["id"], "exec")
 
 
-def test_the_shipped_dataflows_compare_nodes_hold_the_code_they_write():
-    """Each Compare Scenarios node holds the code it writes for its two inputs,
-    No NbS in circle 0 and NbS in circle 1 (``utils/compare/compareCode.ts``):
-    in Difference, the size of NbS minus No NbS of the depths, and of the
-    tracts' mean depths joined on their FIPS code; as charts, the median depth
-    in bars, each tract's SVI percentile against its mean depth in points, and
-    the mean depth of each period in grouped bars, one bar per period and
-    scenario, as it is."""
+def test_the_changes_and_the_charts_hold_what_they_compare():
+    """Each node comparing the scenarios reads No NbS in circle 0 and NbS in
+    circle 1, as the Compare Scenarios node it replaced did, and keeps its
+    label: the Depth change, a Raster Calculator of the size of NbS's depth
+    minus No NbS's; the Depth change per tract, a Python node of the size of
+    the change in the tracts' numbers, joined on their FIPS code; Scout's
+    Bars of the median depth, its Points of each tract's SVI percentile
+    against its mean depth and its Grouped bars of the mean depth of each
+    period, each its template's spec, its widgets set as the Compare node's
+    chart drew it: its columns, the rows combined by the mean, Compare's
+    default for a bar, and the axes titled as Compare titled them. The grouped
+    bars combine one row per period and scenario, so each bar is its row, as
+    Compare drew it."""
     spec = _dataflow()
-    entries = ['    ("no-nbs", "No NbS", [!! input_0 !!]),', '    ("nbs", "NbS", [!! input_1 !!]),']
-    compares = _compares(spec)
-    labels = [
-        {"scenario": "no-nbs", "name": "No NbS", "color": "#e76f51"},
-        {"scenario": "nbs", "name": "NbS", "color": "#2a9d8f"},
-    ]
-    stack = "\n".join([*_code_note("STACK_CODE_NOTE"), "return curio_stack_scenarios([", *entries, "])", ""])
-    expected = {
-        ("choose", "difference"): (
-            {"difference": {"absolute": True}},
-            "\n".join([*_code_note("ABSOLUTE_CODE_NOTE"), "return curio_difference_scenarios([", *entries,
-                       "], absolute=True)", ""]),
-        ),
-        ("statistics", "chart"): ({"chart": {"preset": "bar", "y": "median"}}, stack),
-        ("tract depth", "difference"): (
-            {"difference": {"absolute": True, "key": "FIPS"}},
-            "\n".join([*_code_note("ABSOLUTE_CODE_NOTE"), "return curio_difference_scenarios([", *entries,
-                       '], absolute=True, key="FIPS")', ""]),
-        ),
-        ("tract depth", "chart"): ({"chart": {"preset": "scatter", "x": "RPL_THEMES", "y": "mean_depth_m"}}, stack),
-        ("by period", "chart"): (
-            {"chart": {"preset": "grouped-bar", "x": "period", "y": "mean_depth_m", "aggregate": "none"}}, stack,
-        ),
-    }
-    assert set(compares) == set(expected)
+    found = _comparisons(spec)
+    assert set(found) == set(_compare_references())
+    assert COMPARE not in {n["type"] for n in spec["nodes"]}
     parts = _scenario_parts(spec)
-    for (part, mode), (settings, code) in expected.items():
-        node = compares[(part, mode)]
-        assert node["metadata"]["compareScenarios"] == {"inputs": labels, "mode": mode, **settings}, (part, mode)
-        assert node["content"] == code, (part, mode)
+    for (part, mode), node in found.items():
         assert _feeds(spec, node["id"]) == {"in": parts["no-nbs"][part]["id"], "in_1": parts["nbs"][part]["id"]}
         assert node["id"] not in _members(spec)
+    labels = {key: node["metadata"]["packageTemplateLabel"] for key, node in found.items()}
+    assert labels == {
+        ("choose", "difference"): "Depth change", ("statistics", "chart"): "Median flood depth",
+        ("tract depth", "difference"): "Depth change per tract", ("tract depth", "chart"): "Vulnerability against depth",
+        ("by period", "chart"): "Depth by period",
+    }
+    depth_change = found[("choose", "difference")]
+    assert (depth_change["type"], depth_change["content"]) == (CALCULATOR, DEPTH_CHANGE_CODE)
+    tract_change = found[("tract depth", "difference")]
+    assert tract_change["type"] == PYTHON
+    assert 'after = input_1.set_index("FIPS").loc[before["FIPS"]].reset_index()\n' in tract_change["content"]
+    assert "    after[column] = np.abs(now - was)\n" in tract_change["content"]
+    for node in (depth_change, tract_change):
+        assert set(node["metadata"]) == {"keywords", "packageTemplateLabel"}, node["metadata"]
+    manifest = json.loads((CALCULATOR_STARTER.parent.parent / "manifest.json").read_text(encoding="utf-8"))
+    templates = {f"{manifest['id']}/{t['id']}": t for t in manifest["templates"]}
+    widgets = {
+        ("statistics", "chart"): (BARS, {"y": "median", "combine": "mean", "y_title": "mean of median"}),
+        ("tract depth", "chart"): (POINTS, {
+            "x": "RPL_THEMES", "y": "mean_depth_m", "x_title": "RPL_THEMES", "y_title": "mean_depth_m",
+        }),
+        ("by period", "chart"): (GROUPED_BARS, {
+            "x": "period", "y": "mean_depth_m", "combine": "mean", "x_title": "period", "y_title": "mean_depth_m",
+        }),
+    }
+    for key, (node_type, values) in widgets.items():
+        chart = found[key]
+        template = templates[node_type]
+        assert chart["type"] == node_type, key
+        assert chart["content"] == (CALCULATOR_STARTER.parent.parent / template["source"]).read_text(encoding="utf-8")
+        assert set(chart["metadata"]) == {"keywords", "packageTemplateLabel", "widgets"}, chart["metadata"]
+        assert [{k: v for k, v in w.items() if k != "value"} for w in chart["metadata"]["widgets"]] == template["widgets"]
+        assert {w["name"]: w["value"] for w in chart["metadata"]["widgets"]} == values, key
 
 
 # ---------------------------------------------------------------------------
@@ -1123,7 +1251,11 @@ def run_dataflow(workspace, region=None, period=None, chosen=ALL_NBS, *, fails=F
     loaded, error = _run_loaders(run)
     if error:
         return error
-    depth, statistics, error = _run_scenario(run, loaded, _calculators(CALCULATE)[0], _calculators(STATISTICS)[0], chosen)
+    # No NbS's two calculators, the first of each in the dataflow's order; the
+    # widget's value is *chosen* whichever scenario's they are.
+    parts = _scenario_parts(_dataflow())["no-nbs"]
+    assert [parts["choose"], parts["statistics"]] == [_calculators(CALCULATE)[0], _calculators(STATISTICS)[0]]
+    depth, statistics, error = _run_scenario(run, loaded, parts["choose"], parts["statistics"], chosen)
     if error:
         return error
     return depth["path"], load_from_duckdb(depth["path"]), load_from_duckdb(statistics["path"])
@@ -1386,29 +1518,36 @@ def test_each_period_average_is_the_riverside_lands_mean_and_agrees_with_the_tra
         assert PERIOD_DEPTHS["NbS"][period] < PERIOD_DEPTHS["No NbS"][period], period
 
 
-def test_the_compare_nodes_give_the_columns_their_map_and_charts_read(workspace, monkeypatch):
-    """Run in the sandbox on the riverside part's outputs: the difference
-    joins the two scenarios' tracts on their FIPS code and gives each tract
-    the size of its change in mean depth, which its map reads (in 2020 -
-    2050, 23 tracts change, by up to 1.603 m, and 5 do not); the scatter's
-    stacked table holds every tract in both scenarios with the SVI percentile
-    and the mean depth its chart reads, and the grouped bars' one row per
-    period and scenario."""
+def test_the_changes_and_the_charts_give_the_columns_their_maps_and_charts_read(workspace, monkeypatch):
+    """Run in the sandbox on the riverside part's outputs: the Depth change
+    per tract joins the two scenarios' tracts on their FIPS code and gives
+    each tract the size of its change in mean depth, which its map reads (in
+    2020 - 2050, 23 tracts change, by up to 1.603 m, and 5 do not), what
+    Compare Scenarios' Difference wrote for them, column for column, also
+    with NbS's tracts in the opposite order; the scatter's rows, its
+    ``inputs`` as a chart stacks them (``stack_inputs``, the twin of the
+    browser's), hold every tract in both scenarios with the SVI percentile and
+    the mean depth it reads, and the grouped bars' one row per period and
+    scenario, so each bar is its row: what Compare's stacked tables held, the
+    outlines left out."""
     import numpy as np
-    from utk_curio.sandbox.util.parsers import load_from_duckdb
+    from geopandas.testing import assert_geodataframe_equal
+
+    from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
+    from utk_curio.sandbox.util.scenario_stack import stack_inputs
 
     monkeypatch.chdir(workspace)
     ran = _run_both_scenarios_riverside_part(workspace)
     run, paths = ran["run"], ran["paths"]
-    compares = _compares(_dataflow())
-    outputs = {}
-    for key, part in ((("tract depth", "difference"), "tract depth"), (("tract depth", "chart"), "tract depth"),
-                      (("by period", "chart"), "by period")):
-        output, _ = run(compares[key], repr([paths[("no-nbs", part)], paths[("nbs", part)]]), "outputs", circles=2)
-        outputs[key] = load_from_duckdb(output["path"])
+    found = _comparisons(_dataflow())
+
+    def run_on(node, part, nbs_path=None):
+        both = repr([paths[("no-nbs", part)], nbs_path or paths[("nbs", part)]])
+        output, _ = run(node, both, "outputs", circles=2)
+        return load_from_duckdb(output["path"])
 
     none, nbs = ran[("no-nbs", "tract depth")], ran[("nbs", "tract depth")]
-    change = outputs[("tract depth", "difference")]
+    change = run_on(found[("tract depth", "difference")], "tract depth")
     assert change.crs.to_epsg() == 4326
     assert list(change["FIPS"]) == list(none["FIPS"])
     assert change.geometry.geom_equals_exact(ran["riverside"].geometry, tolerance=1e-9).all()
@@ -1418,15 +1557,196 @@ def test_the_compare_nodes_give_the_columns_their_map_and_charts_read(workspace,
     assert (int((sizes > 0).sum()), int((sizes == 0).sum()), float(sizes.max())) == (23, 5, pytest.approx(1.603))
     for column in ("RPL_THEMES", "E_TOTPOP", "land_km2"):
         assert (change[column] == 0).all(), column
+    compared = run_on(_reference(("tract depth", "difference")), "tract depth")
+    assert list(change.columns)[:2] == ["FIPS", "change"], list(change.columns)
+    assert list(change.columns) == list(compared.columns)
+    assert change.dtypes.astype(str).tolist() == compared.dtypes.astype(str).tolist()
+    assert_geodataframe_equal(change, compared)
+    reversed_tracts = save_to_duckdb(nbs.iloc[::-1].reset_index(drop=True), node_id="nbs-tracts-reversed")
+    again = run_on(found[("tract depth", "difference")], "tract depth", reversed_tracts)
+    assert_geodataframe_equal(again, run_on(_reference(("tract depth", "difference")), "tract depth", reversed_tracts))
+    assert_geodataframe_equal(again, change)
 
-    points = outputs[("tract depth", "chart")]
-    assert len(points) == 2 * RIVERSIDE_TRACTS
+    def rows_of(key, part):
+        """The chart's rows, and Compare's stacked table, each without outlines."""
+        rows = stack_inputs([("no-nbs", "No NbS", ran[("no-nbs", part)]), ("nbs", "NbS", ran[("nbs", part)])])
+        stacked = run_on(_reference(key), part)
+        geometry = getattr(stacked, "_geometry_column_name", None)
+        table = stacked.drop(columns=[geometry] if geometry in stacked.columns else [])
+        assert [{k: v for k, v in row.items() if k != "__input__"} for row in rows] == table.to_dict("records"), key
+        return rows, stacked
+
+    rows, points = rows_of(("tract depth", "chart"), "tract depth")
+    assert len(points) == len(rows) == 2 * RIVERSIDE_TRACTS
     assert list(points["scenario_name"]) == ["No NbS"] * RIVERSIDE_TRACTS + ["NbS"] * RIVERSIDE_TRACTS
+    assert [row["__input__"] for row in rows] == [0] * RIVERSIDE_TRACTS + [1] * RIVERSIDE_TRACTS
     for column in ("RPL_THEMES", "mean_depth_m"):
         assert str(points[column].dtype) == "float64" and points[column].notna().all(), column
+        assert all(isinstance(row[column], float) for row in rows), column
 
-    bars = outputs[("by period", "chart")]
+    rows, bars = rows_of(("by period", "chart"), "by period")
     assert list(bars.columns) == ["scenario", "scenario_name", "period", "mean_depth_m", "land_km2"]
     assert [(row["scenario_name"], row["period"], row["mean_depth_m"]) for row in bars.to_dict("records")] == [
         (name, period, PERIOD_DEPTHS[name][period]) for name in ("No NbS", "NbS") for period in PERIODS
     ]
+    assert [(row["scenario_name"], row["period"], row["mean_depth_m"]) for row in rows] == [
+        (name, period, PERIOD_DEPTHS[name][period]) for name in ("No NbS", "NbS") for period in PERIODS
+    ]
+    # The grouped bars' mean combines one row per bar.
+    assert len({(row["scenario"], row["period"]) for row in rows}) == len(rows) == 2 * len(PERIODS)
+
+
+def test_the_median_chart_reads_each_scenarios_statistics_as_compare_stacked_them(workspace, monkeypatch):
+    """At the dataflow's own settings, the Bars chart's rows, its ``inputs``
+    as a chart stacks them, are each scenario's statistics, one row each:
+    SCOUT's median and mean flood depth for its whole grid, 7.164 m and
+    4.900 m the medians, what Compare Scenarios' stacked table held; the
+    mean the chart combines each bar's one row by is the row's median."""
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+    from utk_curio.sandbox.util.scenario_stack import stack_inputs
+
+    monkeypatch.chdir(workspace)
+    run = _runner(workspace, _shared())
+    loaded, error = _run_loaders(run)
+    assert error is None, error
+    statistics = {}
+    for scenario, parts in _scenario_parts(_dataflow()).items():
+        _depth, table, error = _run_scenario(run, loaded, parts["choose"], parts["statistics"])
+        assert error is None, error
+        statistics[scenario] = table["path"]
+    rows = stack_inputs([("no-nbs", "No NbS", load_from_duckdb(statistics["no-nbs"])),
+                         ("nbs", "NbS", load_from_duckdb(statistics["nbs"]))])
+    output, _ = run(_reference(("statistics", "chart")), repr([statistics["no-nbs"], statistics["nbs"]]), "outputs",
+                    circles=2)
+    stacked = load_from_duckdb(output["path"])
+    assert [{k: v for k, v in row.items() if k != "__input__"} for row in rows] == stacked.to_dict("records")
+    assert [(row["__input__"], row["scenario"], row["scenario_name"]) for row in rows] == [
+        (0, "no-nbs", "No NbS"), (1, "nbs", "NbS"),
+    ]
+    assert [(row["median"], row["mean"]) for row in rows] == [
+        SCOUT_DEPTHS["2020 - 2050"]["No NbS"], SCOUT_DEPTHS["2020 - 2050"]["NbS"],
+    ]
+
+
+def _depth_raster(path, depths):
+    """A float64 raster of *depths* in metres on SCOUT's grid's corner, in
+    EPSG:4326, NaN its nodata, as a Raster Calculator that chooses writes one."""
+    import numpy as np
+    import rasterio
+    from affine import Affine
+
+    values = np.asarray(depths, dtype="float64")
+    a, _b, c, _d, e, f = SCOUT_GRID
+    with rasterio.open(
+        path, "w", driver="GTiff", width=values.shape[1], height=values.shape[0], count=1, dtype="float64",
+        crs="EPSG:4326", transform=Affine(a, 0.0, c, 0.0, e, f), nodata=float("nan"),
+    ) as target:
+        target.write(values, 1)
+    return rasterio.open(path)
+
+
+def _as_autark_exports_it(dataset) -> dict:
+    """*dataset* as the envelope autk-db's ``getRaster`` exports for an Autark
+    map and Compare Scenarios' Difference (``utils/raster/rasterWire.ts``):
+    its first band as float32, rows from south to north, NaN for nodata."""
+    import base64
+
+    import numpy as np
+
+    t = dataset.transform
+    cells = dataset.read(1, masked=True).astype("float32").filled(np.nan)[::-1]
+    grid = {"crs": "EPSG:4326", "width": dataset.width, "height": dataset.height,
+            "originX": t.c, "originY": t.f, "resX": t.a, "resY": t.e}
+    west, south, east, north = dataset.bounds
+    return {"dataType": "raster", "data": {
+        "type": "FeatureCollection", "bbox": [west, south, east, north], "grid": grid,
+        "features": [{"type": "Feature", "geometry": None, "properties": {
+            "bands": [{"id": "band_1"}],
+            "band_1": {"float32le": base64.b64encode(cells.astype("<f4").tobytes()).decode("ascii")},
+        }}],
+    }}
+
+
+def test_the_depth_change_is_the_size_of_nbs_minus_no_nbs_as_compare_took_it(workspace, tmp_path):
+    """The Depth change is a Raster Calculator, run as the sandbox runs one,
+    with Scout's modules: the size of NbS's depth, on input_1, minus No
+    NbS's, on input_0, cell by cell, on the depths' grid: 0 where the
+    solutions change nothing, no value where either depth has none. It is
+    what Compare Scenarios' Difference in Absolute took from the same depths,
+    as autk-db exports them (``envelope_difference.subtract_envelopes``),
+    cell for cell."""
+    import base64
+
+    import numpy as np
+
+    from utk_curio.sandbox.util.envelope_difference import subtract_envelopes
+    from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
+
+    nan = float("nan")
+    none = _depth_raster(tmp_path / "no-nbs.tif", [[0.0, 2.5, 7.25, nan], [10.5, 0.0, 1.0, 3.0]])
+    nbs = _depth_raster(tmp_path / "nbs.tif", [[0.0, 1.0, 7.25, 2.0], [8.0, 0.5, nan, 4.75]])
+    node = _comparisons(_dataflow())[("choose", "difference")]
+    code, problems = _resolve(node["content"], circles=2)
+    assert problems == [], problems
+    inputs = repr([save_to_duckdb(none, node_id="no-nbs-depth"), save_to_duckdb(nbs, node_id="nbs-depth")])
+    result = _execute(code, inputs, CALCULATOR, "outputs", workspace, package_modules=PACKAGE_MODULES[CALCULATOR])
+    assert result["stderr"] == "", result["stderr"]
+    assert result["output"]["dataType"] == "raster", result["output"]
+    change = load_from_duckdb(result["output"]["path"])
+    try:
+        cells = change.read(1, masked=True).astype("float64").filled(np.nan)
+        assert (change.crs.to_epsg(), change.width, change.height) == (4326, 4, 2)
+        assert change.transform == none.transform
+    finally:
+        change.close()
+    expected = np.array([[0.0, 1.5, 0.0, nan], [2.5, 0.5, nan, 1.75]])
+    assert np.array_equal(cells, expected, equal_nan=True), cells
+    took = subtract_envelopes(("No NbS", _as_autark_exports_it(none)), ("NbS", _as_autark_exports_it(nbs)),
+                              absolute=True)
+    wire = took["data"]["features"][0]["properties"]["band_1"]["float32le"]
+    compared = np.frombuffer(base64.b64decode(wire), dtype="<f4").reshape(2, 4)[::-1]
+    assert np.array_equal(cells, compared.astype("float64"), equal_nan=True), (cells, compared)
+
+
+def _resolve(content: str, circles: int):
+    """*content* with its references resolved as a run resolves a node's with
+    *circles* input circles: ``(code, problems)``."""
+    from utk_curio.backend.app.execution.code_references import resolve_references
+
+    return resolve_references(content, [], "python", inputs=[{"slot": slot} for slot in range(circles)])
+
+
+def test_the_depth_change_at_the_dataflows_corners_is_scouts_change(workspace, monkeypatch):
+    """At the dataflow's own settings, on SCOUT's whole grid: the Depth change
+    of the two scenarios' depths is 0 m or more everywhere, larger than 0 m
+    on 267,494 cells, 0 m on 842,515 and of no value on 4,239,879, where a
+    depth has none, by up to 10.645 m (``test_scout_flood_e2e.py``), on the
+    depths' grid."""
+    import numpy as np
+
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    monkeypatch.chdir(workspace)
+    run = _runner(workspace, _shared())
+    loaded, error = _run_loaders(run)
+    assert error is None, error
+    depths = {}
+    for scenario, parts in _scenario_parts(_dataflow()).items():
+        depth, _statistics, error = _run_scenario(run, loaded, parts["choose"], parts["statistics"])
+        assert error is None, error
+        depths[scenario] = depth["path"]
+    node = _comparisons(_dataflow())[("choose", "difference")]
+    output, _ = run(node, repr([depths["no-nbs"], depths["nbs"]]), "outputs", circles=2)
+    assert output["dataType"] == "raster", output
+    change, none = load_from_duckdb(output["path"]), load_from_duckdb(depths["no-nbs"])
+    try:
+        assert (change.height, change.width) == SCOUT_SHAPE
+        assert tuple(change.transform)[:6] == tuple(none.transform)[:6] and change.crs == none.crs
+        cells = change.read(1, masked=True).astype("float64").filled(np.nan)
+    finally:
+        change.close()
+        none.close()
+    finite = cells[~np.isnan(cells)]
+    counts = (int((finite < 0).sum()), int((finite > 0).sum()), int((finite == 0).sum()), int(cells.size - finite.size))
+    assert counts == (0, 267494, 842515, 4239879), counts
+    assert float(finite.max()) == pytest.approx(10.645233154296875, abs=1e-5)

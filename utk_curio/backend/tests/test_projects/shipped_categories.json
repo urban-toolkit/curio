@@ -333,6 +333,7 @@
   "dataflows/quad-cities-flood-vulnerability": {
     "tags": [
       "Autark",
+      "Vega-Lite",
       "Pandas",
       "SCOUT"
     ],
