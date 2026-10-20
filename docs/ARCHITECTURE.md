@@ -903,7 +903,9 @@ expressions such as `datum['rain.mm']`, and the names a transform writes
   as they are nor as a JSON escape, so the spec's own text takes no
   reference's place. The values of `data`, `datasets` and `usermeta` are rows
   and notes, never fields. A spec that does not read as JSON, or nests more than
-  100 levels deep, writes every name as it is. The field positions are the
+  100 levels deep, its rows and notes counted, writes every name as it is: the
+  depth is measured without recursion, so the browser and the runner agree on
+  any spec. The field positions are the
   ones Vega-Lite's schema types as a field name, but `as`: `field` anywhere;
   in a transform, its `groupby`, `fold` and `flatten` lists, the field its own
   key names (`pivot`, `lookup`, `impute`, `stack`, `density`, `loess`,
@@ -921,8 +923,9 @@ expressions such as `datum['rain.mm']`, and the names a transform writes
   column's name: the agents' check reads it so (`_named_column` in
   `agents/domain/document_validation.py`), and so do the canvas's geometry
   coercion (`vegaGeoSpec.ts`) and its empty-render count (`vegaUsableRows.ts`),
-  through `vegaFieldColumn`. A path through a column, `zone.id` beside a column
-  `zone`, names none.
+  through `vegaFieldColumn`. The shape the canvas injects for a geoshape names
+  its geometry column escaped. A path through a column, `zone.id` beside a
+  column `zone`, names none.
 - **Tests.** `codeReferences.cases.json` holds the positions, read by Jest and
   pytest; `scoutDottedColumns.test.ts` draws each Scout chart over columns whose
   names hold a dot or a bracket with the vega-lite the app bundles, and expects
