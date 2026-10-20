@@ -281,8 +281,8 @@ def test_raster_conversion_is_retired_and_no_shipped_dataflow_names_the_old_type
 def test_every_shipped_dataflow_with_a_raster_node_declares_the_package():
     """A dataflow's lockfile is how opening it, a scenario dropped from it and
     ``--with-examples`` add the package: each shipped dataflow with one of the
-    two raster nodes names ``curio.scout@1``, and of the others only the one
-    with the package's charts does."""
+    two raster nodes names ``curio.scout@1``, and of the others only those
+    with the package's charts do."""
     with_a_raster_node, with_a_node, declaring = set(), set(), set()
     for pattern in SHIPPED_JSON[:2]:
         for path in sorted(REPO.glob(pattern)):
@@ -302,6 +302,7 @@ def test_every_shipped_dataflow_with_a_raster_node_declares_the_package():
         "docs/examples/dataflows/quad-cities-flood-vulnerability.json",
     }, with_a_raster_node
     assert with_a_node == declaring == with_a_raster_node | {
+        "docs/examples/dataflows/chicago-rain-wind-routing.json",
         "docs/examples/dataflows/scenario-comparison-charts.json",
     }, (with_a_node, declaring)
 

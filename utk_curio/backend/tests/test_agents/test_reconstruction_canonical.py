@@ -425,7 +425,8 @@ class TestTheShippedCorpus:
         owner's call, 2026-10-18), and scenario-comparison-charts' are its
         nine charts, all Scout's (the plan for #914, step 28.2, and the plan
         answering komar41's review, step 6.2), ``curio.scout@1`` (that plan,
-        step 10)."""
+        step 10). chicago-rain-wind-routing charts its routes with Scout's
+        Bars (that plan, step 6.3)."""
         needs_package_templates = {}
         for path in example_paths():
             spec = json.loads(path.read_text(encoding="utf-8"))
@@ -462,7 +463,10 @@ class TestTheShippedCorpus:
         # SCOUT's two models are packages with nodes of their own.
         for stem in ("24-scout-shadow-model-chicago-loop", "chicago-loop-shadow-towers", "lower-manhattan-park-shade"):
             assert "model.scout.deep-umbra/accumulated-shadow" in needs_package_templates[stem], stem
-        assert needs_package_templates["chicago-rain-wind-routing"] == ["model.scout.weather-gnn/weather-routing"]
+        assert needs_package_templates["chicago-rain-wind-routing"] == [
+            "curio.scout/bars",
+            "model.scout.weather-gnn/weather-routing",
+        ]
         # SCOUT's raster nodes are curio.scout@1's: the shadow dataflows
         # rasterize their buildings with it, and the two that take the
         # shadow's statistics and the flood dataflow use its Raster Calculator.

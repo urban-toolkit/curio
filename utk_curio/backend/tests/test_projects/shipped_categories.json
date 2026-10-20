@@ -484,6 +484,7 @@
   "dataflows/chicago-rain-wind-routing": {
     "tags": [
       "Autark",
+      "Vega-Lite",
       "SCOUT"
     ],
     "data_type": [
