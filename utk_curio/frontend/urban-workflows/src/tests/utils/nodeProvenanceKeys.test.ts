@@ -2,7 +2,7 @@
  * #448: dataflows saved before the fix carry each node's runs under the key
  * the provider used to cut out of `nodeType + "-" + nodeId`, everything after
  * the type's first dash: `loading@1-<uuid>` for a data-loading node. Opening
- * one moves those runs under the node id the Provenance tab reads.
+ * one moves those runs under the node id the provenance drawer reads.
  */
 import * as fs from "fs";
 import * as path from "path";

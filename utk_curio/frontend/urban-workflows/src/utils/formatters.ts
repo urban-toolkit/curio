@@ -11,7 +11,7 @@ export const formatDate = (date: Date) => {
     return `${month} ${day} ${year} ${hours}:${minutes}:${seconds}`;
 };
 
-/** What a run that failed returned, as its node's Provenance tab names it. */
+/** What a run that failed returned, as the provenance drawer names it. */
 const RUN_ERROR = "ERROR";
 
 /**
@@ -36,8 +36,8 @@ const KIND_OF_DATA_TYPE = new Map<string, string>([
 const KIND_ORDER: string[] = [...Object.values(SupportedType), RUN_ERROR];
 
 /**
- * The kinds of data a run read or returned, as each run's card in its node's
- * Provenance tab lists them ("In: DATAFRAME | Out: GEODATAFRAME"): each kind
+ * The kinds of data a run read or returned, as the provenance drawer lists
+ * them for each of a node's runs ("In: DATAFRAME | Out: GEODATAFRAME"): each kind
  * once, in the order of the port types. *dataTypes* is the `dataType` the data
  * carries, or a list of them.
  */

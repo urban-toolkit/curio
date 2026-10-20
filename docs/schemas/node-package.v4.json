@@ -377,7 +377,7 @@
         },
         "hasProvenance": {
           "type": "boolean",
-          "description": "Whether the node exposes a provenance tab in its editor. Defaults to true; set to false to suppress (e.g. on display-only kinds)."
+          "description": "Whether the node's header has a Provenance button, which opens its runs in the provenance drawer. Defaults to true; set to false to suppress (e.g. on display-only kinds)."
         },
         "backendHandler": {
           "type": "string",

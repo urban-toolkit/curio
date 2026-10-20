@@ -1,7 +1,7 @@
 /**
  * #1022: an Autark node's runs are filed with the kinds of data they read and
- * returned, as every node's are (provenanceRunKinds.test.tsx), so its cards in
- * the Provenance tab name them. A map hands on the layer it drew, and a run
+ * returned, as every node's are (provenanceRunKinds.test.tsx), so its runs in
+ * the provenance drawer name them. A map hands on the layer it drew, and a run
  * that fails returned an error (adapters/node/autkGrammarBehavior, `recordRun`).
  *
  * Each test runs the real node behavior into the real provider, as

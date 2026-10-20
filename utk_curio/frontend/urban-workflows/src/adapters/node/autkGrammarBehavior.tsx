@@ -80,7 +80,7 @@ export type AutkBehaviorOptions = {
      */
     marksNodeErrored?: boolean;
     /**
-     * Whether each run is listed in the node's Provenance tab, as every node
+     * Whether each run is listed among the node's runs in the provenance drawer, as every node
      * lists its own (#860). The Interaction node's map draws under that node's
      * id, and a draw of it is not a run of that node, as a chart drawn the way
      * the Compare node's Chart tab draws is not (useVega's `recordsProvenance`).
@@ -166,7 +166,7 @@ export const useAutkGrammarBehavior = (
     const dataRef = useRef(data);
     useEffect(() => { dataRef.current = data; });
     // The document as written, its chips unresolved: what a run's record
-    // holds, since the Provenance tab puts a run's code back in the editor.
+    // holds, since the provenance drawer puts a run's code back in the editor.
     // Read as a run starts, so a run queued behind another reads its own.
     const writtenRef = useRef('');
     writtenRef.current = String((isEmptySpecBuffer(nodeState.code) ? data.defaultCode : nodeState.code) ?? '');
@@ -1008,7 +1008,7 @@ export const useAutkGrammarBehavior = (
     };
 
     /**
-     * List a run in the node's Provenance tab, under its id, as every node
+     * List a run among the node's runs in the provenance drawer, under its id, as every node
      * lists its runs (#448, #860) and as the Vega-Lite node files its draws
      * (hook/useVega): its times and its document as written. A failed run is
      * listed too, as a code node's is, with "error" as what it made.
@@ -1055,7 +1055,7 @@ export const useAutkGrammarBehavior = (
         runningRef.current = true;
         inputProblemRef.current = null;
         let settled = false;
-        // The run as its Provenance tab lists it, once, as it ends (#860). A
+        // The run as the provenance drawer lists it, once, as it ends (#860). A
         // dropped run is not listed.
         const run = { startedAt: new Date(), code: writtenRef.current, listed: false };
         const emit = (o: { code: string; content: string }) => {
