@@ -55,10 +55,12 @@ export default function EditFeaturesMap({
     }) as unknown as UseNodeStateReturn,
     [outcome, docText],
   );
-  // A draw of the map is not a run of the node: the provenance drawer lists the node's own.
+  // A draw of the map is not a run of the node: the provenance drawer lists the
+  // node's own. The features it edits are drawn as its document writes them.
   const { applyGrammar, contentComponent } = useAutkGrammarBehavior(data, state, {
     marksNodeErrored: false,
     recordsProvenance: false,
+    colorsByScenario: false,
   });
 
   useEffect(() => {

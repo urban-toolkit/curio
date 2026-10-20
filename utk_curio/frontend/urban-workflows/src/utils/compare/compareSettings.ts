@@ -18,14 +18,12 @@
  * Written only when present, so a dataflow without one serializes as before.
  */
 import { SCENARIO_COLOR_RE } from "../scenarios/scenarioModel";
+import { NO_SCENARIO_COLOR, type ScenarioLabel } from "../scenarios/scenarioColors";
 
-export interface CompareInputLabel {
-  /** The scenario's id; absent for a node in no scenario. */
-  scenario?: string;
-  name: string;
-  /** A CSS hex color, `#rrggbb`. */
-  color: string;
-}
+/** An input's label (utils/scenarios/scenarioColors), as the node keeps it. */
+export type CompareInputLabel = ScenarioLabel;
+
+export { NO_SCENARIO_COLOR };
 
 export const COMPARE_PRESETS = ["bar", "grouped-bar", "line", "scatter", "pie", "lollipop", "table"] as const;
 export type ComparePreset = (typeof COMPARE_PRESETS)[number];
@@ -60,9 +58,6 @@ export interface CompareSettings {
   /** The layer it reads from inputs that are an Autark node's several layers, by name. */
   layer?: string;
 }
-
-/** The color of an input whose node is in no scenario. */
-export const NO_SCENARIO_COLOR = "#8a8f98";
 
 const nonEmpty = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0;
 

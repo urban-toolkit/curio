@@ -18,7 +18,7 @@ type, are choice widgets, and the Table's columns a list.
 
 No starter names a scenario, a scenario color or an order for the scenario
 column: a chart takes those from its inputs' boxes
-(``utils/compare/scenarioScales.ts``), so a scenario renamed or recolored is
+(``utils/scenarios/scenarioScales.ts``), so a scenario renamed or recolored is
 drawn as its box is.
 
 Every file is read inside its test, so a checkout without the package fails

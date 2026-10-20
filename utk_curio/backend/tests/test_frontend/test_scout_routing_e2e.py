@@ -8,9 +8,9 @@ it, which reads the roads layer through its layer chip
 ``[!! input_0:table_osm_roads !!]``. It finds SCOUT's two routes, the fastest
 (SCOUT's C) and the one its weather weights favor (D). Two scenarios, "Fastest
 route" and "Weather-aware route" (its copy), each keep one of them: a node with
-the route and one with its metrics. An Autark map draws both routes over the
-roads, each with a ``width``, in the color of its scenario's box, which Curio
-gives the layer that names the scenario; four Compare Scenarios nodes chart the
+the route and one with its metrics. An Autark map outside both boxes draws both
+routes over the roads, each with a ``width``, in the color of the box its input
+comes from; four Compare Scenarios nodes chart the
 two routes' duration, distance, rain exposure and wind exposure, one bar per
 scenario, in the same colors. Run All drives the whole path:
 

@@ -13,11 +13,13 @@ import { isEmptySpecBuffer } from '../../utils/starterSpec';
 import { toRows } from '../../utils/rowSource';
 import { resolveGeometryField } from '../../utils/geometryField';
 import { readGrammarInput, type GrammarInput } from '../../utils/grammarInput';
+// The chart after a Compare Scenarios node keeps its labels until Compare goes.
 import { upstreamCompareLabels } from '../../utils/compare/compareInputs';
-import type { CompareInputLabel } from '../../utils/compare/compareSettings';
-import { scenarioScale } from '../../utils/compare/comparePresets';
-import { withScenarioScales } from '../../utils/compare/scenarioScales';
+import { scenarioScale, type ScenarioLabel } from '../../utils/scenarios/scenarioColors';
+import { withScenarioScales } from '../../utils/scenarios/scenarioScales';
+import { inputScenarios, scaleLabelsOf } from '../../utils/scenarios/inputScenarios';
 import type { Scenario } from '../../utils/scenarios/scenarioModel';
+import { readsInputs } from '../../utils/vegaDatasets';
 
 export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
   const { showToast } = useToastContext();
@@ -33,13 +35,32 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
   };
   const { markNodeErrored } = flow;
 
-  // A chart after a Compare Scenarios node draws its scenarios as that node's
-  // Chart tab does, in the colors of their boxes and the order of its inputs
-  // (utils/compare/scenarioScales), whatever the spec writes for them.
-  const labels = upstreamCompareLabels(data.nodeId, flow.nodes ?? [], flow.edges ?? [], flow.scenarios ?? []);
-  const scalesKey = scalesKeyOf(labels);
-  const labelsRef = useRef(labels);
-  labelsRef.current = labels;
+  // A chart draws its scenarios in the colors of their boxes
+  // (utils/scenarios/scenarioScales), whatever the spec writes for them. A
+  // spec that reads `inputs` takes them from the boxes its own inputs come
+  // from, whose names its rows carry too, in the order the dataflow lists its
+  // boxes; any other, from the Compare Scenarios node it reads on its first
+  // input, in that node's order, as its Chart tab draws them.
+  const nodes = flow.nodes ?? [];
+  const edges = flow.edges ?? [];
+  const scenarios = flow.scenarios ?? [];
+  const inputs = inputScenarios(data.nodeId, nodes, edges, scenarios);
+  // Each circle's label, which its rows carry, and the scales' labels.
+  const inputLabels = inputs.map((input) => input.label);
+  const scaleLabels = scaleLabelsOf(inputs, scenarios);
+  const compareLabels = upstreamCompareLabels(data.nodeId, nodes, edges, scenarios);
+  const labelsRef = useRef({ inputs: inputLabels, scale: scaleLabels, compare: compareLabels });
+  labelsRef.current = { inputs: inputLabels, scale: scaleLabels, compare: compareLabels };
+  /** What a chart reading `inputs` (*stacked*) or not draws its scenarios with. */
+  const labelsOf = (stacked: boolean): readonly ScenarioLabel[] | null =>
+    stacked ? labelsRef.current.scale : labelsRef.current.compare;
+  /** What a redraw follows: for a chart reading `inputs`, every label's id,
+   * name and color, which its rows carry, and the scales' order; else what
+   * its scales draw. */
+  const keyOf = (stacked: boolean): string =>
+    stacked
+      ? stackedKeyOf(labelsRef.current.inputs, labelsRef.current.scale)
+      : scalesKeyOf(labelsRef.current.compare);
 
   // A starter spec chosen from the arriving input's column types, the way
   // every grammar node fills an empty editor (hook/useStarterSpec).
@@ -84,13 +105,16 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
     // A chart first drawn over zero rows said so; when its rows arrive and it
     // draws them, that has to be said too.
     onRedraw: reportDrawn,
+    // The names a spec reading `inputs` gives each input's rows.
+    inputLabels,
   });
 
-  // The spec last handed in, and the scales it was drawn with.
-  const appliedRef = useRef<{ spec: string; scalesKey: string } | null>(null);
-  const draw = async (spec: string, how?: typeof AS_THE_CHART_TAB) => {
+  // The spec last handed in, whether it reads `inputs`, and the labels it was
+  // drawn with.
+  const appliedRef = useRef<{ spec: string; stacked: boolean; key: string } | null>(null);
+  const draw = async (spec: string, stacked: boolean, how?: typeof AS_THE_CHART_TAB) => {
     try {
-      reportDrawn(await handleCompileGrammar(withCompareScales(spec, labelsRef.current), how));
+      reportDrawn(await handleCompileGrammar(withLabelScales(spec, labelsOf(stacked)), how));
     } catch (error: any) {
       nodeState.setOutput({ code: 'error', content: error.message, outputType: '' });
       showToast(error.message, 'error');
@@ -98,12 +122,15 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
     }
   };
   const applyGrammar = async (spec: string) => {
-    appliedRef.current = { spec, scalesKey: scalesKeyOf(labelsRef.current) };
-    await draw(spec);
+    const stacked = specReadsInputs(spec);
+    appliedRef.current = { spec, stacked, key: keyOf(stacked) };
+    await draw(spec, stacked);
   };
+  const labelsKey = appliedRef.current ? keyOf(appliedRef.current.stacked) : '';
 
   // A scenario renamed or recolored draws the chart again, as it draws the
-  // Compare node's Chart tab again, and the same way. A run draws it itself,
+  // Compare node's Chart tab again, and the same way; a chart that reads
+  // `inputs` stacks its rows again under the new names. A run draws it itself,
   // so not during one: once the run ends, the chart is drawn again only if the
   // run did not.
   const runInFlight = !!flow.isRunActive || !!flow.serverRunActive;
@@ -113,16 +140,16 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
   // One redraw at a time. A color dragged through the picker is written at
   // each step it passes, and a redraw takes the chart's selection from the
   // view the one before it built, which holds it only once that one is done.
-  // Done, it draws again if the scales moved meanwhile.
+  // Done, it draws again if the labels moved meanwhile.
   const redrawingRef = useRef(false);
   const redraw = async () => {
     redrawingRef.current = true;
     try {
       for (let applied = appliedRef.current; applied && !busyRef.current; applied = appliedRef.current) {
-        const drawnKey = scalesKeyOf(labelsRef.current);
-        if (applied.scalesKey === drawnKey) break;
-        appliedRef.current = { ...applied, scalesKey: drawnKey };
-        await draw(applied.spec, AS_THE_CHART_TAB);
+        const drawnKey = keyOf(applied.stacked);
+        if (applied.key === drawnKey) break;
+        appliedRef.current = { ...applied, key: drawnKey };
+        await draw(applied.spec, applied.stacked, AS_THE_CHART_TAB);
       }
     } finally {
       redrawingRef.current = false;
@@ -130,9 +157,9 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
   };
   useEffect(() => {
     const applied = appliedRef.current;
-    if (!applied || applied.scalesKey === scalesKey || runInFlight || executing || redrawingRef.current) return;
+    if (!applied || applied.key === labelsKey || runInFlight || executing || redrawingRef.current) return;
     void redraw();
-  }, [scalesKey, runInFlight, executing]);
+  }, [labelsKey, runInFlight, executing]);
 
   // The DOM id useVega renders the compiled view into — pre-Phase-B this was
   // declared in `adapter.editor.outputId`, but the manifest can't carry a
@@ -147,11 +174,11 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
 };
 
 /**
- * How a chart after a Compare Scenarios node is drawn again when a scenario
- * is recolored or renamed: as the Compare node's Chart tab draws its own
- * (components/compare/CompareChart), with no version recorded in its
- * provenance and nothing handed downstream. A selection made in the chart is
- * kept, which the Chart tab's presets never make.
+ * How a chart is drawn again when a scenario is recolored or renamed: as the
+ * Compare node's Chart tab draws its own (components/compare/CompareChart),
+ * with no version recorded in its provenance and nothing handed downstream. A
+ * selection made in the chart is kept, which the Chart tab's presets never
+ * make.
  */
 const AS_THE_CHART_TAB = { recordsProvenance: false, forwardsInput: false, keepsSelection: true };
 
@@ -160,17 +187,38 @@ const AS_THE_CHART_TAB = { recordsProvenance: false, forwardsInput: false, keeps
  * and colors in the order of its inputs (`scenarioScale`). A scenario id
  * alone, or the order a label's keys are written in, draws nothing different.
  */
-function scalesKeyOf(labels: readonly CompareInputLabel[] | null): string {
+function scalesKeyOf(labels: readonly ScenarioLabel[] | null): string {
   return labels ? JSON.stringify(scenarioScale(labels)) : '';
 }
 
 /**
- * *spec* with its channels on `scenario_name` drawn as *labels* say
- * (utils/compare/scenarioScales); as written, character for character, with no
- * labels, with nothing to fill, or when it is not JSON, which the compile then
- * reports as it always does.
+ * What a chart reading `inputs` draws of its labels: each input's scenario id,
+ * name and color, in circle order (*rows*), and the order its scales draw them
+ * in (*scale*). Its rows carry the id and the name, so a change to any of them
+ * draws it again; the order a label's keys are written in draws nothing
+ * different.
  */
-function withCompareScales(spec: string, labels: readonly CompareInputLabel[] | null): string {
+function stackedKeyOf(rows: readonly ScenarioLabel[], scale: readonly ScenarioLabel[]): string {
+  const of = (labels: readonly ScenarioLabel[]) => labels.map((label) => [label.scenario ?? null, label.name, label.color]);
+  return JSON.stringify([of(rows), of(scale)]);
+}
+
+/** Whether the spec *text* reads the stacked dataset `inputs`; not when it is not JSON. */
+function specReadsInputs(text: string): boolean {
+  try {
+    return readsInputs(JSON.parse(text));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * *spec* with its channels on `scenario_name` drawn as *labels* say
+ * (utils/scenarios/scenarioScales); as written, character for character, with
+ * no labels, with nothing to fill, or when it is not JSON, which the compile
+ * then reports as it always does.
+ */
+function withLabelScales(spec: string, labels: readonly ScenarioLabel[] | null): string {
   if (!labels) return spec;
   let parsed: unknown;
   try {

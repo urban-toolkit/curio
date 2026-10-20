@@ -1,16 +1,16 @@
 /**
  * A Compare Scenarios node's inputs (#662), read from the live graph: the node
  * feeding each input circle, and the scenario that node belongs to, which
- * labels the input. A node belongs to at most one scenario.
+ * labels the input (utils/scenarios/inputScenarios). A node belongs to at most
+ * one scenario.
  *
  * Duck-typed nodes and edges, so this module needs no `reactflow` import.
  */
 import { inputSlotOf, isDataEdge } from "../inputSlots";
 import { getUnversionedFlowNodeType } from "../flowNodeCanonicalType";
-import { liveScenarios } from "../scenarios/scenarioParts";
 import type { Scenario } from "../scenarios/scenarioModel";
-import { nodeLabel } from "../../components/scenarios/scenarioLabels";
-import { NO_SCENARIO_COLOR, normalizeCompareSettings, sameLabels, type CompareInputLabel } from "./compareSettings";
+import { inputScenarios, type InputScenario } from "../scenarios/inputScenarios";
+import { normalizeCompareSettings, sameLabels, type CompareInputLabel } from "./compareSettings";
 
 /** The Compare Scenarios node's type, without its version. */
 export const COMPARE_SCENARIOS_TYPE = "curio.builtin/compare-scenarios";
@@ -23,15 +23,9 @@ type FlowEdgeLike = {
   targetHandle?: string | null;
 };
 
-export interface CompareInput {
-  /** Its circle, counted from 0. */
-  slot: number;
-  /** The node feeding it. */
-  source: string;
-  /** The scenario that node is in, or null. */
-  scenario: Scenario | null;
-  label: CompareInputLabel;
-}
+/** One input of the node: its circle, the node feeding it, that node's
+ * scenario and the label it gives the input. */
+export type CompareInput = InputScenario;
 
 /** The wired inputs of the Compare Scenarios node *nodeId*, in circle order. */
 export function compareInputs(
@@ -40,26 +34,7 @@ export function compareInputs(
   edges: readonly FlowEdgeLike[],
   scenarios: readonly Scenario[],
 ): CompareInput[] {
-  const byId = new Map(nodes.map((node) => [node.id, node]));
-  const scenarioOf = new Map<string, Scenario>();
-  for (const scenario of liveScenarios(scenarios, nodes)) {
-    for (const id of scenario.nodes) if (!scenarioOf.has(id)) scenarioOf.set(id, scenario);
-  }
-  const sourceOf = new Map<number, string>();
-  for (const edge of edges) {
-    if (edge.target !== nodeId || !isDataEdge(edge)) continue;
-    const slot = inputSlotOf(edge.targetHandle);
-    if (slot >= 0 && !sourceOf.has(slot)) sourceOf.set(slot, edge.source);
-  }
-  return [...sourceOf.entries()]
-    .sort(([a], [b]) => a - b)
-    .map(([slot, source]) => {
-      const scenario = scenarioOf.get(source) ?? null;
-      const label: CompareInputLabel = scenario
-        ? { scenario: scenario.id, name: scenario.name, color: scenario.color }
-        : { name: nodeLabel(byId.get(source), source), color: NO_SCENARIO_COLOR };
-      return { slot, source, scenario, label };
-    });
+  return inputScenarios(nodeId, nodes, edges, scenarios);
 }
 
 /**
