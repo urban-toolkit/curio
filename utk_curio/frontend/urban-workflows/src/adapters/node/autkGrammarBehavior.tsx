@@ -9,6 +9,8 @@ import { useStarterSpec } from '../../hook/useStarterSpec';
 import { opensWithPackageStarter } from '../../registry/packageStarter';
 import { autkStarterText } from '../../utils/autkDefaultSpec';
 import { useFlowContext } from '../../providers/FlowProvider';
+import { useProvenanceContext } from '../../providers/ProvenanceProvider';
+import { formatDate, mapTypes } from '../../utils/formatters';
 import { resolveGrammarEmptyReason, type NodeEmptyReason } from '../../utils/nodeEmptyState';
 import { clearEmptyState, writeEmptyState } from '../../utils/writeEmptyState';
 import { isEmptySpecBuffer } from '../../utils/starterSpec';
@@ -76,12 +78,19 @@ export type AutkBehaviorOptions = {
      * node's run stands as it ran.
      */
     marksNodeErrored?: boolean;
+    /**
+     * Whether each run is listed in the node's Provenance tab, as every node
+     * lists its own (#860). The Interaction node's map draws under that node's
+     * id, and a draw of it is not a run of that node, as a chart drawn the way
+     * the Compare node's Chart tab draws is not (useVega's `recordsProvenance`).
+     */
+    recordsProvenance?: boolean;
 };
 
 export const useAutkGrammarBehavior = (
     data: NodeBehaviorData,
     nodeState: UseNodeStateReturn,
-    { marksNodeErrored = true }: AutkBehaviorOptions = {},
+    { marksNodeErrored = true, recordsProvenance = true }: AutkBehaviorOptions = {},
 ): NodeBehaviorResult => {
     const toasts = useToastContext();
     const wrapperRef = useRef<HTMLDivElement>(null);
@@ -155,6 +164,11 @@ export const useAutkGrammarBehavior = (
     // stale data object (grammar subscriptions outlive individual renders).
     const dataRef = useRef(data);
     useEffect(() => { dataRef.current = data; });
+    // The document as written, its chips unresolved: what a run's record
+    // holds, since the Provenance tab puts a run's code back in the editor.
+    // Read as a run starts, so a run queued behind another reads its own.
+    const writtenRef = useRef('');
+    writtenRef.current = String((isEmptySpecBuffer(nodeState.code) ? data.defaultCode : nodeState.code) ?? '');
 
     // Memoizes the backend data load (a DuckDB artifact reference) keyed on the
     // authored data sources + upstream identity, so re-running the grammar after
@@ -189,10 +203,13 @@ export const useAutkGrammarBehavior = (
     // node asks (hook/useGrammarInputState).
     const { connected, upstreamErrored } = useGrammarInputState(data.nodeId);
     // A failed node says so to the nodes it feeds, as a failed code node does.
-    const { markNodeErrored, scenarios } = useFlowContext() as {
+    const { markNodeErrored, scenarios, workflowNameRef } = useFlowContext() as {
         markNodeErrored?: (nodeId: string) => void;
         scenarios?: Scenario[];
+        workflowNameRef?: React.MutableRefObject<string>;
     };
+    // Where each run is listed, under the node's id, as every node's are (#860).
+    const { nodeExecProv } = useProvenanceContext();
     // Read when a run draws, so a layer that names a scenario wears its color.
     const scenariosRef = useRef<Scenario[]>([]);
     scenariosRef.current = scenarios ?? [];
@@ -983,6 +1000,27 @@ export const useAutkGrammarBehavior = (
     };
 
     /**
+     * List a run in the node's Provenance tab, under its id, as every node
+     * lists its runs (#448, #860) and as the Vega-Lite node files its draws
+     * (hook/useVega): its times and its document as written. A failed run is
+     * listed too, as a code node's is, with "error" as what it made.
+     */
+    const recordRun = (run: { startedAt: Date; code: string }, outcome: string) => {
+        if (!recordsProvenance) return;
+        const type = (data.input as any)?.dataType;
+        const typesIn: string[] = type == null ? [] : Array.isArray(type) ? type : [type];
+        nodeExecProv(
+            formatDate(run.startedAt),
+            formatDate(new Date()),
+            workflowNameRef?.current ?? '',
+            data.nodeId,
+            mapTypes(typesIn),
+            mapTypes(outcome === 'error' ? ['error'] : typesIn),
+            run.code,
+        );
+    };
+
+    /**
      * Run the spec, and always leave the "exec" state (#271).
      *
      * The runner (FlowProvider's Run All) has no promise to await: it waits
@@ -1009,12 +1047,19 @@ export const useAutkGrammarBehavior = (
         runningRef.current = true;
         inputProblemRef.current = null;
         let settled = false;
+        // The run as its Provenance tab lists it, once, as it ends (#860). A
+        // dropped run is not listed.
+        const run = { startedAt: new Date(), code: writtenRef.current, listed: false };
         const emit = (o: { code: string; content: string }) => {
             // A dropped run says nothing (see mountedRef).
             if (leftPage()) return;
             if (o.code === 'success' || o.code === 'error') settled = true;
             if (o.code === 'error' && marksNodeErrored) markNodeErrored?.(data.nodeId);
             nodeState.setOutput(o);
+            if (settled && !run.listed) {
+                run.listed = true;
+                recordRun(run, o.code);
+            }
         };
         // The net itself lives in autkRunSettlement so it can be tested; see the
         // note there for why it is unreachable through this hook.

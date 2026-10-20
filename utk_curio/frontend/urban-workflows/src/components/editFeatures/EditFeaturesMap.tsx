@@ -55,7 +55,11 @@ export default function EditFeaturesMap({
     }) as unknown as UseNodeStateReturn,
     [outcome, docText],
   );
-  const { applyGrammar, contentComponent } = useAutkGrammarBehavior(data, state, { marksNodeErrored: false });
+  // A draw of the map is not a run of the node: its Provenance tab lists the node's own.
+  const { applyGrammar, contentComponent } = useAutkGrammarBehavior(data, state, {
+    marksNodeErrored: false,
+    recordsProvenance: false,
+  });
 
   useEffect(() => {
     requested.current = docText;
