@@ -2035,7 +2035,7 @@ WHATIF_EDIT = "whatif-towers-edit"
 WHATIF_MAPS = ["whatif-baseline-map", "whatif-modified-map", "whatif-towers-map"]
 #: The nodes that compare its scenarios, each with its type: Scout's Bars of the
 #: mean sunlight, and the Python node that takes each road's sunlight change.
-WHATIF_COMPARES = [("whatif-compare-chart", "curio.scout/bars"), ("whatif-compare-difference", "computation-analysis")]
+WHATIF_COMPARES = [("whatif-compare-chart", "bars"), ("whatif-compare-difference", "computation-analysis")]
 WHATIF_BASELINE = "s-baseline"
 WHATIF_BASELINE_NODES = ["whatif-baseline-compute", "whatif-baseline-map"]
 WHATIF_TWICE = "s-twice"
@@ -2061,8 +2061,8 @@ FLOOD_DEPTH = "f4a5b6c7-3d4e-4f5a-9b6c-7d8e9fa0b1c4"
 #: Two of the nodes that compare its scenarios, each with its type: the Raster
 #: Calculator that takes the change in depth, and Scout's Bars of the median depth.
 FLOOD_COMPARES = [
-    ("7a3d9f1c-5b68-4e0a-9d4e-0f1b5a7c3d62", "curio.scout/raster-calculator"),
-    ("9c5f1b3e-7d80-4a2c-8f6a-2b3d7c9e5f84", "curio.scout/bars"),
+    ("7a3d9f1c-5b68-4e0a-9d4e-0f1b5a7c3d62", "raster-calculator"),
+    ("9c5f1b3e-7d80-4a2c-8f6a-2b3d7c9e5f84", "bars"),
 ]
 
 # Example 17: downtown Chicago's ZIP codes from one loader, on an Autark map
