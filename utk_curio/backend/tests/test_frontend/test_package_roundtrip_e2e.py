@@ -56,6 +56,7 @@ from .utils import (
     close_tools_palette,
     connect_nodes,
     drag_to_canvas,
+    drag_builtin_to_canvas,
     open_tools_palette,
     require_project_page,
     require_user_auth,
@@ -342,7 +343,7 @@ def test_save_export_import_and_run_package_nodes(
     # ------------------------------------------------------------------
     dataset_row = _add_dataset_and_get_palette_row(page)
     loader_id = drag_to_canvas(page, dataset_row, at=POS_LOADER)
-    head_id = drag_to_canvas(page, page.locator(TRANSFORM_TILE), at=POS_FIRST)
+    head_id = drag_builtin_to_canvas(page, TRANSFORM_TILE, at=POS_FIRST)
     connect_nodes(page, loader_id, head_id)
     set_node_code(page, head_id, HEAD_CODE)
     _rename_node(page, head_id, HEAD_LABEL)
@@ -578,8 +579,8 @@ def test_two_kinds_saved_into_one_package_keep_their_own_code(
     require_owner_view(page)
     token = session["token"]
 
-    first = drag_to_canvas(page, page.locator(TRANSFORM_TILE), at=POS_FIRST)
-    second = drag_to_canvas(page, page.locator(TRANSFORM_TILE), at=POS_SECOND)
+    first = drag_builtin_to_canvas(page, TRANSFORM_TILE, at=POS_FIRST)
+    second = drag_builtin_to_canvas(page, TRANSFORM_TILE, at=POS_SECOND)
     set_node_code(page, first, "return ['first']\n")
     set_node_code(page, second, "return ['second']\n")
     _rename_node(page, first, "E2E First")

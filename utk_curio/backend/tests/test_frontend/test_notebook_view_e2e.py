@@ -67,7 +67,7 @@ from .utils import (
     assert_vega_canvas_rendered,
     connect_nodes,
     dismiss_toasts,
-    drag_to_canvas,
+    drag_builtin_to_canvas,
     frame_nodes,
     node_locator,
     play_node,
@@ -975,7 +975,7 @@ def test_nodes_are_added_on_the_canvas_only(
 
     # On the canvas the rail adds one.
     _show(page, "canvas")
-    new_id = drag_to_canvas(page, page.locator("#tile-data-transformation"))
+    new_id = drag_builtin_to_canvas(page, "#tile-data-transformation")
     page.wait_for_function(
         "(id) => !!window.__curio_reactFlow.getNodes().find((n) => n.id === id)", arg=new_id, timeout=10000,
     )
@@ -1185,7 +1185,7 @@ def test_the_first_save_keeps_the_view_in_the_address(
 
     # A dataflow nothing has saved yet, with a node added on the canvas, shown
     # in the notebook view.
-    node_id = drag_to_canvas(page, page.locator("#tile-data-transformation"))
+    node_id = drag_builtin_to_canvas(page, "#tile-data-transformation")
     page.wait_for_function(
         "(id) => !!window.__curio_reactFlow.getNodes().find((n) => n.id === id)", arg=node_id, timeout=10000,
     )

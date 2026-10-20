@@ -71,6 +71,7 @@ from .utils import (
     canvas_node_type,
     connect_nodes,
     drag_to_canvas,
+    drag_builtin_to_canvas,
     close_tools_palette,
     open_tools_palette,
     play_node,
@@ -294,7 +295,7 @@ def test_dataset_loads_and_feeds_a_consumer(
     #    doubles as an assertion that the handles the drag hit were the
     #    intended ones.
     reframe()
-    transform_id = drag_to_canvas(page, page.locator(TRANSFORM_TILE), at=positions[1])
+    transform_id = drag_builtin_to_canvas(page, TRANSFORM_TILE, at=positions[1])
     assert _unversioned(canvas_node_type(page, transform_id)) == TRANSFORM_TYPE
     edge_id = connect_nodes(page, loader_id, transform_id)
     assert edge_id == f"reactflow__edge-{loader_id}out-{transform_id}in"
@@ -319,7 +320,7 @@ def test_dataset_loads_and_feeds_a_consumer(
     #    spatial dataset is usable and not merely countable.
     if plan.vega_spec:
         reframe()
-        vega_id = drag_to_canvas(page, page.locator(VEGA_TILE), at=positions[2])
+        vega_id = drag_builtin_to_canvas(page, VEGA_TILE, at=positions[2])
         assert _unversioned(canvas_node_type(page, vega_id)) == VEGA_TYPE
         vega_edge = connect_nodes(page, transform_id, vega_id)
         assert vega_edge == f"reactflow__edge-{transform_id}out-{vega_id}in"

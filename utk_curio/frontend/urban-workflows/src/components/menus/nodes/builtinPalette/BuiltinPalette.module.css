@@ -1,0 +1,65 @@
+/* The BUILT-IN palette shares the tools-palette shell (paletteShell.module.css)
+   for all common chrome, as the MODELS and AGENTS palettes do; only its tiles
+   are its own. */
+
+.root { composes: root from "../paletteShell/paletteShell.module.css"; }
+.column { composes: column from "../paletteShell/paletteShell.module.css"; }
+.trigger { composes: trigger from "../paletteShell/paletteShell.module.css"; }
+.triggerTop { composes: triggerTop from "../paletteShell/paletteShell.module.css"; }
+.triggerOpen { composes: triggerOpen from "../paletteShell/paletteShell.module.css"; }
+.triggerIcon { composes: triggerIcon from "../paletteShell/paletteShell.module.css"; }
+.triggerLabel { composes: triggerLabel from "../paletteShell/paletteShell.module.css"; }
+.triggerCount { composes: triggerCount from "../paletteShell/paletteShell.module.css"; }
+.triggerChevron { composes: triggerChevron from "../paletteShell/paletteShell.module.css"; }
+.panel { composes: panel from "../paletteShell/paletteShell.module.css"; }
+.panelHeader { composes: panelHeader from "../paletteShell/paletteShell.module.css"; }
+.title { composes: title from "../paletteShell/paletteShell.module.css"; }
+.scroll { composes: scroll from "../paletteShell/paletteShell.module.css"; }
+.sectionEmpty { composes: sectionEmpty from "../paletteShell/paletteShell.module.css"; }
+.footer { composes: footer from "../paletteShell/paletteShell.module.css"; }
+
+/* One group of tiles: data and flow, computation, or the views. The tracks are
+   the tiles' own 45px, so a group fills the panel's width row by row instead of
+   spreading two tiles across it. */
+.containerStyle {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 45px);
+    grid-auto-rows: 45px;
+}
+
+.divider {
+    height: 1px;
+    background-color: rgba(255,255,255,0.15);
+    margin: 5px 0;
+}
+
+.optionStyle {
+    width: 45px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 10px;
+    position: relative;
+}
+
+.iconBadge {
+    position: absolute;
+    bottom: 2px;
+    right: 2px;
+    font-size: 7px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    color: #fbfcf6;
+    background-color: #2a6df4;
+    padding: 1px 3px;
+    border-radius: 3px;
+    line-height: 1;
+    pointer-events: none;
+}
+
+.iconStyle {
+    font-size: 1.5em;
+    color: #fbfcf6;
+}

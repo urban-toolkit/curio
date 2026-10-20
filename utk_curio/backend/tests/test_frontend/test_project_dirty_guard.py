@@ -13,7 +13,7 @@ from .utils import (
     _post_json,
     canvas_nodes,
     dismiss_toasts,
-    drag_to_canvas,
+    drag_builtin_to_canvas,
     require_owner_view,
     require_project_page,
     require_user_auth,
@@ -124,6 +124,6 @@ def test_a_freshly_loaded_dataflow_is_not_dirty(
     # the guard is swallowing edits - worse than the phantom flag it replaced,
     # because the user is then told their work is saved when it is not.
     before = len(canvas_nodes(page))
-    drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=(150, 150))
+    drag_builtin_to_canvas(page, ANALYSIS_TILE, at=(150, 150))
     assert len(canvas_nodes(page)) == before + 1
     expect(disk).to_have_attribute("data-curio-save-state", "unsaved", timeout=15000)

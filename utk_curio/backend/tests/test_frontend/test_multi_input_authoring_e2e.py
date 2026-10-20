@@ -34,7 +34,7 @@ from .utils import (
     canvas_node_type,
     connect_nodes,
     dismiss_toasts,
-    drag_to_canvas,
+    drag_builtin_to_canvas,
     node_locator,
     require_owner_view,
     require_project_page,
@@ -103,11 +103,11 @@ def test_palette_dragged_producers_feed_one_node_through_its_circles(
     token = session["token"]
     project_id = session["project"]["id"]
 
-    # 1. Two producers and a consumer, all off the built-in tool rail: the
-    #    creation path that carries the `@1` suffix.
-    up_a = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_UP_A)
-    up_b = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_UP_B)
-    down = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_DOWN)
+    # 1. Two producers and a consumer, all off the rail's Built-in palette:
+    #    the creation path that carries the `@1` suffix.
+    up_a = drag_builtin_to_canvas(page, ANALYSIS_TILE, at=POS_UP_A)
+    up_b = drag_builtin_to_canvas(page, ANALYSIS_TILE, at=POS_UP_B)
+    down = drag_builtin_to_canvas(page, ANALYSIS_TILE, at=POS_DOWN)
 
     down_type = canvas_node_type(page, down)
     assert _unversioned(down_type) == ANALYSIS_TYPE, down_type

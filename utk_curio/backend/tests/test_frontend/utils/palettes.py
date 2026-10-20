@@ -4,6 +4,7 @@ from playwright.sync_api import expect
 
 
 _TOOLS_PALETTES = {
+    "builtin": ("#builtin-palette", "Open built-in palette", "Built-in palette"),
     "packages": ("#packages-palette", "Open node package palette", "Package templates"),
     "datasets": ("#datasets-palette", "Open dataset palette", "Dataset palette"),
     "agents": ("#agents-palette", "Open agent palette", "Agent palette"),
@@ -20,15 +21,16 @@ def open_tools_palette(page, kind: str):
     exclusive (``ToolsMenu`` keeps a single ``activePalette``) and opening one
     closes the other, so coming back to the first one is a normal thing to do.
 
-    No ``force`` (#994). The rail fills in after every load: its built-in tiles
-    come from ``GET /api/packages``, so for a moment the tile block is only its
-    header, and the triggers sit about 240 px higher than they end up. A forced
-    click skips Playwright's stable and hit-target checks, so a press aimed at
-    the trigger just before the tiles landed pressed the Data Pool tile instead,
-    and the palette never opened. Without ``force``, Playwright waits for the
-    trigger to hold still and retries a press that anything else would receive.
-    The dock sits above the canvas pane (``position: fixed``, ``z-index: 100``),
-    so nothing else covers a trigger. ``test_rail_fills_in_e2e`` holds this.
+    No ``force`` (#994). A forced click skips Playwright's stable and hit-target
+    checks, so a press aimed at a trigger that moves before the press lands on
+    whatever took its place. In #994 the built-in tiles still filled in the
+    rail after each load and pushed the triggers about 240 px down, and the
+    press landed on the Data Pool tile. Without ``force``, Playwright waits for
+    the trigger to hold still and retries a press that anything else would
+    receive. The dock sits above the canvas pane (``position: fixed``,
+    ``z-index: 100``), so nothing else covers a trigger.
+    ``test_rail_fills_in_e2e`` holds both: this click under a trigger that
+    moves, and a rail that no answer of the registry moves.
     """
     try:
         root_sel, trigger_title, panel_name = _TOOLS_PALETTES[kind]
@@ -47,6 +49,18 @@ def open_tools_palette(page, kind: str):
         trigger.click()
     panel.wait_for(state="visible", timeout=10000)
     return panel
+
+
+def tools_palette_is_open(page, kind: str) -> bool:
+    """Whether one of the left-rail tool palettes is showing its panel."""
+    try:
+        root_sel, _trigger_title, panel_name = _TOOLS_PALETTES[kind]
+    except KeyError:
+        raise ValueError(
+            f"kind must be one of {sorted(_TOOLS_PALETTES)}, got {kind!r}"
+        ) from None
+    panel = page.locator(root_sel).get_by_role("region", name=panel_name)
+    return panel.count() > 0 and panel.first.is_visible()
 
 
 def click_package_summary_action(page, anchor, title: str):

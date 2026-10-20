@@ -1,102 +1,20 @@
-import React, { Fragment, memo, useCallback, useEffect, useState, useSyncExternalStore } from "react";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { Tooltip, OverlayTrigger } from "react-bootstrap";
+import React, { memo, useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { refreshPackageRegistry } from "../../../registry/packageRegistryBootstrap";
 import { getPaletteNodeTypes, subscribeToRegistry } from "../../../registry";
 import { BUILTIN_PACKAGE_ID } from "../../../registry/packagesClient";
-import { NodeCategory, NodeDescriptor, NodeTemplateId } from "../../../registry/types";
+import { NodeDescriptor } from "../../../registry/types";
 import { useUserContext } from "../../../providers/UserProvider";
 import {
-    OVERLAY_TRIGGER_DELAY_PROPS,
     PackagesPaletteDropdown,
     groupPalettePackages,
     paletteDescriptorBootstrapKey,
-    type ToolsMenuTooltipSide,
 } from "./toolsMenuPackagePalette";
+import { BuiltinPaletteDropdown } from "./builtinPalette";
 import { DatasetsPaletteDropdown } from "./datasetPalette";
 import { AgentsPaletteDropdown } from "./agentsPalette";
 import { ModelsPaletteDropdown } from "./modelsPalette";
 import { RunAllButton } from "./RunAllButton";
 import styles from "./ToolsMenu.module.css";
-
-/** The DOM id of a built-in palette tile: `curio.builtin/data-loading@1` is `tile-data-loading`. */
-export function paletteTileId(nodeType: NodeTemplateId): string {
-    return `tile-${nodeType.replace(/^[^/]*\//, "").replace(/@\d+$/, "")}`;
-}
-
-const DraggableTool = memo(function DraggableTool({
-    nodeType,
-    icon,
-    tooltip,
-    badge,
-    tooltipPlacement = "right",
-}: {
-    nodeType: NodeTemplateId;
-    icon: any;
-    tooltip: string;
-    badge?: string;
-    tooltipPlacement?: ToolsMenuTooltipSide;
-}) {
-    return (
-        <OverlayTrigger
-            placement={tooltipPlacement}
-            delay={OVERLAY_TRIGGER_DELAY_PROPS}
-            overlay={<Tooltip>{tooltip}</Tooltip>}
-        >
-            <div
-                id={paletteTileId(nodeType)}
-                // The tile is an icon and a drag source: nothing in it was text,
-                // so it had no accessible name at all and the hover tooltip was
-                // its only label. `title` matches how the dataset and agent drag
-                // handles are named (DatasetPaletteRows, AgentPaletteRow); the
-                // explicit aria-label wins the accname computation and keeps the
-                // name stable if the tooltip copy ever diverges.
-                aria-label={tooltip}
-                title={tooltip}
-                className={styles.optionStyle}
-                draggable
-                onDragStart={(event) => {
-                    event.dataTransfer.setData("application/reactflow", nodeType);
-                    event.dataTransfer.effectAllowed = "move";
-                }}
-            >
-                <FontAwesomeIcon icon={icon} className={styles.iconStyle} />
-                {badge && <span className={styles.iconBadge}>{badge}</span>}
-            </div>
-        </OverlayTrigger>
-    );
-});
-
-// Groups (top → bottom) for the BUILT-IN section. vis_grammar and vis_simple
-// share one block; flow nodes live in the top data block.
-const PALETTE_GROUPS: NodeCategory[][] = [
-    ["data", "flow"],
-    ["computation"],
-    ["vis_grammar", "vis_simple"],
-];
-
-function groupPaletteTypes(descriptors: NodeDescriptor[]): NodeDescriptor[][] {
-    return PALETTE_GROUPS.map((categories) => descriptors.filter((d) => categories.includes(d.category))).filter(
-        (group) => group.length > 0,
-    );
-}
-
-function renderGroup(group: NodeDescriptor[], key: string, tooltipPlacement: ToolsMenuTooltipSide = "right") {
-    return (
-        <div key={key} className={styles.containerStyle}>
-            {group.map((desc) => (
-                <DraggableTool
-                    key={desc.id}
-                    nodeType={desc.id}
-                    icon={desc.icon}
-                    tooltip={desc.label}
-                    badge={desc.badge}
-                    tooltipPlacement={tooltipPlacement}
-                />
-            ))}
-        </div>
-    );
-}
 
 const NOOP = () => () => {};
 
@@ -119,24 +37,26 @@ const ToolsMenu = memo(function ToolsMenu() {
 
     const paletteTypes = getPaletteNodeTypes();
     // The curio.builtin package is manifest-driven like any other, but the UI
-    // anchors it in the left-side "Built-in" rail. Only third-party packages land
-    // in the right-side Packages dropdown, and never a model package's node: a
-    // model's node is added by dropping its card from the Model Catalog.
+    // gives it the rail's own Built-in palette. Only third-party packages land
+    // in the Node Catalog palette, and never a model package's node: a model's
+    // node is added by dropping its card from the Model Catalog.
     const isBuiltin = (d: NodeDescriptor) => d.package?.packageId === BUILTIN_PACKAGE_ID;
     const isModelNode = (d: NodeDescriptor) => d.package?.kind === "model";
     const coreTypes = paletteTypes.filter(isBuiltin);
     const packageTypes = paletteTypes.filter((d) => !isBuiltin(d) && !isModelNode(d));
-    const coreGroups = groupPaletteTypes(coreTypes);
     const packageGroups = groupPalettePackages(packageTypes);
 
-    // Every catalog trigger lives in the left rail and their panels open into
-    // the same strip to the right of it, so only one may be open at a time. A
-    // palette closes ONLY when its own trigger is clicked again (or another
-    // trigger takes the strip) - outside clicks and Escape deliberately leave
-    // it open.
+    // Every palette trigger lives in the left rail and their panels open into
+    // the same strip to the right of it, so only one may be open at a time,
+    // and the rail starts with all of them closed. A palette closes ONLY when
+    // its own trigger is clicked again (or another trigger takes the strip) -
+    // outside clicks and Escape deliberately leave it open.
     const [activePalette, setActivePalette] = useState<
-        "datasets" | "packages" | "agents" | "models" | null
+        "builtin" | "datasets" | "packages" | "agents" | "models" | null
     >(null);
+    const setBuiltinOpen = useCallback((value: boolean) => {
+        setActivePalette((prev) => (value ? "builtin" : prev === "builtin" ? null : prev));
+    }, []);
     const setDatasetsOpen = useCallback((value: boolean) => {
         setActivePalette((prev) => (value ? "datasets" : prev === "datasets" ? null : prev));
     }, []);
@@ -153,15 +73,11 @@ const ToolsMenu = memo(function ToolsMenu() {
     return (
         <div id="tools-palette-dock" className={styles.paletteDock}>
             <div id="tools-menu" className={styles.builtinStack}>
-                <div className={styles.menuStyle}>
-                    <div className={styles.sectionHeader}>Built-in</div>
-                    {coreGroups.map((group, i) => (
-                        <Fragment key={`core-${i}`}>
-                            {i > 0 && <div className={styles.divider} />}
-                            {renderGroup(group, `core-group-${i}`)}
-                        </Fragment>
-                    ))}
-                </div>
+                <BuiltinPaletteDropdown
+                    nodeTypes={coreTypes}
+                    open={activePalette === "builtin"}
+                    setOpen={setBuiltinOpen}
+                />
                 <PackagesPaletteDropdown
                     groups={packageGroups}
                     open={activePalette === "packages"}

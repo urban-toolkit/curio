@@ -9,6 +9,7 @@ from ..utils import (
     close_tools_palette,
     connect_nodes,
     drag_to_canvas,
+    drag_builtin_to_canvas,
     node_locator,
     open_tools_palette,
     run_node_and_wait,
@@ -79,7 +80,7 @@ def column_filter_reads_a_dataframe(ctx: Ctx) -> None:
     ctx.say("A node that outputs a frame", "Three rows, one numeric column.")
     # A node is 525 px wide at zoom 1: these two drops leave room for the wire
     # between them and keep the filter inside the 1280 px viewport.
-    loading = drag_to_canvas(page, page.locator("#tile-data-loading"), at=(170, 200))
+    loading = drag_builtin_to_canvas(page, "#tile-data-loading", at=(170, 200))
     set_node_code(page, loading, COLUMN_FILTER_CODE)
 
     ctx.say("And the Column Filter beside it")
