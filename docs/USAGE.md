@@ -1329,7 +1329,10 @@ names Scout in `dependencies.packages` (see the
 | `raster_calculate("multiply", [input_0, input_1], output_file=curio_output_file)` | input_0 times input_1 |
 | `raster_calculate("divide", [input_0, input_1], output_file=curio_output_file)` | input_0 over input_1; a cell divided by 0 has no value |
 | `raster_calculate("choose", [input_0, input_1, input_2], codes=[21, 31], output_file=curio_output_file)` | input_1 where input_0's class is one of the codes, input_2 elsewhere |
+| `raster_calculate("subtract", [input_1, input_0], absolute=True, output_file=curio_output_file)` | the size of input_1 minus input_0: how much each cell changed, 0 where it did not |
 
+- `absolute=True` gives the size of any operation's result; a cell with no
+  value keeps none.
 - A cell with no value (the raster's nodata, or a number that is not finite) in
   an input the operation reads there has no value in the result. In `choose`, a
   class with no value is no class, so its cell takes input_2.

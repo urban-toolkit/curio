@@ -5,8 +5,9 @@ raster's statistics, for Scout's Raster Calculator. Its code imports them:
 
 ``raster_calculate(operation, rasters, codes=None, output_file=...)`` writes
 the raster it returns where *output_file(name)* says, which a node's code
-gives as ``curio_output_file``. A node of another package imports them when
-its package names Scout in ``dependencies.packages``.
+gives as ``curio_output_file``; with ``absolute=True`` it gives the size of
+its result. A node of another package imports them when its package names
+Scout in ``dependencies.packages``.
 
 Rasters are combined only on one grid: the same size, origin, cell size and
 CRS. Anything else is refused with a sentence that names both, since putting
@@ -298,15 +299,17 @@ def write_raster(values, like, path, *, descriptions=None):
     return path
 
 
-def raster_calculate(operation, rasters, codes=None, *, output_file=None):
+def raster_calculate(operation, rasters, codes=None, *, absolute=False, output_file=None):
     """*operation* over *rasters* cell by cell: a rasterio dataset.
 
     ``add``, ``subtract``, ``multiply`` and ``divide`` take input_0 and input_1
     (input_0 minus input_1, input_0 over input_1; a cell divided by 0 is
     nodata). ``choose`` takes input_1 where input_0's class is one of *codes*,
     and input_2 elsewhere; a nodata class is no class. Band by band; a class
-    raster of one band applies to every band. *output_file(name)* gives where
-    the result is written.
+    raster of one band applies to every band. With *absolute*, each cell is
+    the size of its result, so a subtraction either way round gives how much a
+    value changed, 0 where it did not; a nodata cell stays nodata.
+    *output_file(name)* gives where the result is written.
     """
     if output_file is None:
         raise RasterAlgebraError(
@@ -344,6 +347,8 @@ def raster_calculate(operation, rasters, codes=None, *, output_file=None):
         result = operate(CHOOSE, [classes, *value_bands], codes)
     else:
         result = operate(operation, value_bands)
+    if absolute:
+        result = np.abs(result)
     values = result.astype(dtype, copy=False)
 
     like = rasters[1] if operation == CHOOSE else rasters[0]
