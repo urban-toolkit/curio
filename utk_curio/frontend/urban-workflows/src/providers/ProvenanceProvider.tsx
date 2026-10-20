@@ -4,6 +4,7 @@ export interface NodeExecRecord {
     id: number;
     parentId: number | null;
     code: string;
+    /** The kinds of data the run read and returned, as `mapTypes` (utils/formatters) names them. */
     inputs: string[];
     outputs: string[];
     startTime: string;
@@ -16,8 +17,8 @@ interface ProvenanceContextProps {
         activityexec_end_time: string,
         workflow_name: string,
         nodeId: string,
-        types_input: any,
-        types_output: any,
+        types_input: string[],
+        types_output: string[],
         activity_source_code: string,
         inputData?: string,
         outputData?: string,
@@ -57,8 +58,8 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
         activityexec_end_time: string,
         _workflow_name: string,
         nodeId: string,
-        types_input: any,
-        types_output: any,
+        types_input: string[],
+        types_output: string[],
         activity_source_code: string,
         _inputData: string = "",
         _outputData: string = "",

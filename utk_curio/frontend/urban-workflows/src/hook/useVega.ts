@@ -513,11 +513,9 @@ export const useVega = ({
     let endTime = formatDate(new Date());
 
     if (how.recordsProvenance ?? recordsProvenance) {
-      let typesInput: string[] = [];
-
-      if (data.input != "") typesInput = data.input.dataType;
-
-      let typesOuput: string[] = [...typesInput];
+      // A chart hands on the table it read, so it returned the kind it read.
+      // The input names that kind by one `dataType`.
+      const typesInput = data.input?.dataType;
 
       nodeExecProv(
         startTime,
@@ -525,7 +523,7 @@ export const useVega = ({
         workflowNameRef.current,
         data.nodeId,
         mapTypes(typesInput),
-        mapTypes(typesOuput),
+        mapTypes(typesInput),
         code
       );
     }
