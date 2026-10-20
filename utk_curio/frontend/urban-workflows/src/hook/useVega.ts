@@ -36,6 +36,9 @@ import { clearEmptyState, writeEmptyState } from "../utils/writeEmptyState";
 const vega = require("vega");
 const lite = require("vega-lite");
 
+/** How vega's error begins for a dataset a view does not hold. */
+const UNRECOGNIZED_DATASET = "Unrecognized data set";
+
 if (typeof window !== 'undefined') {
   (window as any).__curio_vega = vega;
   (window as any).__curio_vegaLite = lite;
@@ -171,14 +174,21 @@ export const useVega = ({
   incomingSelectionRef.current = data.interactions;
 
   /**
-   * Sets the `interacted` flag on the rows the view already holds. The rows
-   * keep their `_vgsid_`, so a selection made in this chart still finds its
-   * marks afterwards.
+   * Sets the `interacted` flag on the rows the view already holds of
+   * *dataset*. The rows keep their `_vgsid_`, so a selection made in this
+   * chart still finds its marks afterwards. vega-lite builds only the datasets
+   * a spec reads, so a view drawing `inputs` alone holds no `input_0`: a
+   * dataset the view lacks is skipped, where vega would throw.
    */
-  const setInteracted = (view: any, flagOf: (t: any) => string, dataset: string = DEFAULT_INPUT_DATASET) =>
-    view
-      .change(dataset, vega.changeset().modify(() => true, "interacted", flagOf))
-      .runAsync();
+  const setInteracted = (view: any, flagOf: (t: any) => string, dataset: string = DEFAULT_INPUT_DATASET) => {
+    try {
+      view.change(dataset, vega.changeset().modify(() => true, "interacted", flagOf));
+    } catch (error: any) {
+      if (String(error?.message ?? "").startsWith(UNRECOGNIZED_DATASET)) return Promise.resolve(view);
+      throw error;
+    }
+    return view.runAsync();
+  };
 
   /**
    * A selection from a chart joined to this one by a direct interaction edge,
@@ -186,13 +196,19 @@ export const useVega = ({
    * `interacted` in the view as it is, so the spec's `datum.interacted`
    * condition highlights them exactly as it does behind a pool. The chart is
    * never rebuilt for it. Also re-applied after new rows arrive, so a selection
-   * that is still active survives an upstream run.
+   * that is still active survives an upstream run. It picks out rows of the
+   * first input, which a spec reading `inputs` draws there too, under
+   * `__input__` 0; the other inputs' rows there keep their flags.
    */
   const applyDirectSelection = (view: any) => {
     const incoming = incomingSelectionRef.current;
     if (!view || !Array.isArray(incoming) || incoming.length === 0) return;
     const picked = new Set(matchSelections(incoming, objectRows(lastValuesRef.current)));
-    setInteracted(view, (t: any) => (picked.has(t.__row_index__) ? "1" : "0"));
+    const flagOf = (t: any) => (picked.has(t.__row_index__) ? "1" : "0");
+    setInteracted(view, flagOf);
+    if (heldDatasetsRef.current.some((d) => d.name === INPUTS_DATASET)) {
+      setInteracted(view, (t: any) => ((t.__input__ ?? 0) === 0 ? flagOf(t) : t.interacted), INPUTS_DATASET);
+    }
   };
 
   // Why the node body is blank, when it is. Persistent, unlike a toast.
