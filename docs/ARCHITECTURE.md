@@ -194,8 +194,10 @@ focus in the URL (`settingsPath`, read back by `focusFromSearch`).
 
 ### The provenance drawer
 
-**View > Provenance** calls `openDataflowProvenance()` from
-`ProvenanceDrawerProvider` (`src/providers/`), which mounts `ProvenanceDrawer`
+**View > Provenance** calls `openDataflowProvenance()`, and a node's Provenance
+button `openNodeProvenance({ nodeId, title, restore })`, from
+`ProvenanceDrawerProvider` (`src/providers/`; menus and nodes import the hooks
+from `provenanceDrawerContext.ts`). It mounts `ProvenanceDrawer`
 (`src/components/provenance/`): a `HeaderDrawer` on the right with the catalog
 drawers' pin (`pinnable`) and width (`wide={false}`), and a List | Graph switch
 in its header. The provider keeps the view picked last while the page is open.
@@ -213,6 +215,17 @@ in its header. The provider keeps the view picked last while the page is open.
   `TrillGenerator.switchProvenanceTrill`, which loads it through
   `useCode().loadTrill(trill, undefined, true)`, keeps the history and marks
   the dataflow unsaved.
+- `NodeRunsProvenance` reads the node's runs from `ProvenanceProvider`
+  (`utils/nodeRuns.ts` names them by the kinds they read and returned). A
+  run's **Put this code back in the node** sets it as the run the next one
+  branches from (`setSelectedExec`) and calls the node's `restore`:
+  `NodeEditor` hands its editors the code as `restoredCode`, which they write
+  in through `useMonacoExternalValue`'s `applyValue`, as a collaborator's
+  applied change, and prime the widgets as a load does. It is not a new
+  default: a default equal to the loaded code is never applied. The drawer
+  closes when its node leaves the flow.
+- The Provenance button is the provenance pill among the node's tab pills, but
+  not a tab: `NodeEditor`'s `handleTabSelect` sends it to the drawer.
 
 ### FlowProvider: Central Workflow State
 
@@ -679,7 +692,7 @@ interface INodeData {
 `NodeContainer` (`src/components/styles.tsx`) draws a node the same way on the canvas and as a notebook cell; only a dashboard tile differs.
 
 - **Surface.** `getNodeContainerStyles` decides the whole border: on the canvas a white card with a `var(--curio-border)` hairline, radius 8, a soft shadow (`--curio-shadow-browse-card-raised`) and the kind's 4px stripe; a notebook cell drops the hairline and the shadow. A selected node gets a 2px ring in its kind's color. A suggestion keeps its dashed border.
-- **Header** (`.curio-node-header`). Play first, then the title (`EditableNodeHeaderLabel`), the package and dataset pills, and the run status; `NodeRunControls` draws Play, the status and the Save output toggle, each in its place. The rest are the tools (`.curio-node-tools`): the editor's tabs, which `NodeEditor` renders through a portal into the slot `nodeHeaderSlot` provides, Save output, the gear, about, pin, save template and, on the canvas, minimize, then delete last (`NodeDeleteTool`, only where `graphEditGates` lets the viewer delete, so not on a read-only canvas). They show only while the node is hovered, selected or focused (`Node.css`). Nothing sits under the body, so the editor's panes fill the node.
+- **Header** (`.curio-node-header`). Play first, then the title (`EditableNodeHeaderLabel`), the package and dataset pills, and the run status; `NodeRunControls` draws Play, the status and the Save output toggle, each in its place. The rest are the tools (`.curio-node-tools`): the editor's tabs, which `NodeEditor` renders through a portal into the slot `nodeHeaderSlot` provides (the provenance pill among them opens the provenance drawer rather than a tab), Save output, the gear, about, pin, save template and, on the canvas, minimize, then delete last (`NodeDeleteTool`, only where `graphEditGates` lets the viewer delete, so not on a read-only canvas). They show only while the node is hovered, selected or focused (`Node.css`). Nothing sits under the body, so the editor's panes fill the node.
 - **Editors.** `nodeEditorLook` gives a code or spec editor its gray input box (`.curio-node-input`) and Monaco options with no line numbers, gutter, folding, line highlight or overview ruler. A code node's output has no rule or fill. A dashboard tile keeps Monaco's own look.
 - **Canvas only.** The resize handle at the bottom-right corner (`NodeResizeHandle`), minimizing to a chip, the node's fixed size and the cardinality markers at its edges. A read-only canvas (`useSharedView`, the rule `MainCanvas` and the top bar read) keeps each node at its size: no handle, nothing listening for a drag, and no browser grip under it. A double-click where a press drags the node (`isNodeDragRegion`: nothing from the target up to the node is `nodrag`) frames it with `frameNodesInView`, the framing a focus uses; editors, outputs, charts, maps and handles keep their own double-click. A read-only canvas does not drag nodes, so React Flow leaves them without its `nopan` class (no pan on a press, no zoom on a double-click); `MainCanvas` gives it to them (`keepPaneOffNodes`), and the same double-click frames the node there.
 
@@ -2305,7 +2318,7 @@ created empty for Solve to write.
 | `src/components/layout/GlobalPageHeader.tsx` | The top bar of every signed-in page; its Monitor and API Settings open a page, or a drawer on the canvas and the dashboard (see [API Settings and the Monitor](#api-settings-and-the-monitor)) |
 | `src/components/layout/HeaderDrawer.tsx` | The drawer shell API Settings, the Monitor and provenance open in on the canvas and the dashboard; with `pinnable`, the catalog drawers' pin |
 | `src/providers/ApiSettingsDrawerProvider.tsx`, `src/providers/MonitorDrawerProvider.tsx`, `src/providers/ProvenanceDrawerProvider.tsx` | Mount those drawers, inside `DataflowProviders` |
-| `src/components/provenance/` | The provenance drawer: `ProvenanceDrawer`, `ProvenanceHistory` (the List and the Graph), `DataflowProvenance`; layout in `src/utils/provenanceTree.ts`, versions in `src/utils/dataflowVersions.ts` |
+| `src/components/provenance/` | The provenance drawer: `ProvenanceDrawer`, `ProvenanceHistory` (the List and the Graph), `DataflowProvenance`, `NodeRunsProvenance`; layout in `src/utils/provenanceTree.ts`, versions in `src/utils/dataflowVersions.ts`, runs in `src/utils/nodeRuns.ts` |
 | `src/components/apiSettings/` | API Settings: `ApiSettingsPanel` (the two tabs), `ApiKeysTab`, `AgentConfigTab`, `SourceKeyForm`, `NodeKeyForm`, `ApiSettingsDrawer`, `ApiSettingsRequestHost` and `apiSettingsRequest.ts` (the `curio:api-settings` request event) |
 | `src/pages/settings/SettingsPage.tsx` | The settings page, `/settings/keys` and `/settings/agents` |
 | `src/pages/monitor/MonitorContent.tsx`, `MonitorDrawer.tsx` | The monitor's content, rendered by the `/monitor` page and by its drawer |

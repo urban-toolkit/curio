@@ -380,8 +380,9 @@ python curio.py start --deploy --guest-llm-provider anthropic --guest-llm-model 
 
 A node's header shows **Play** at its left, the node's name and kind, and its run
 status. Its other buttons show while the pointer is over the node or the node is
-selected: the editor's tabs (code, widgets, spec, provenance, output), the **Save
-output dataset** toggle, settings, about, pin, **Minimize** and delete.
+selected: the editor's tabs (code, widgets, spec, output), **Provenance** (the
+node's runs, see [Provenance](#provenance)), the **Save output dataset** toggle,
+settings, about, pin, **Minimize** and delete.
 Code and specs sit in a gray box, and a code node's output is below its code.
 
 Drag a node's bottom-right corner to resize it. For viewers of a shared dataflow,
@@ -464,6 +465,13 @@ Click a version to open it: its thumbnail, when it was recorded, and its nodes
 and connections. **Put this version on the canvas** goes back to it. The history
 stays, the dataflow reads **Unsaved**, and the next change branches from that
 version.
+
+A node's **Provenance** button, in its header, opens the node's runs in the same
+drawer, as a list or a graph. Each run reads what it took in and gave back
+("In: DATAFRAME | Out: GEODATAFRAME", or ERROR for a run that failed). Click a
+run to open it: when it ran, for how long, and its code. **Put this code back in
+the node** puts that code in the node's editor without running it, and the
+node's next run branches from that run.
 
 ## Widgets
 
