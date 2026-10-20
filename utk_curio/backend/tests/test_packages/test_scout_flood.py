@@ -1067,8 +1067,8 @@ def test_the_changes_and_the_charts_hold_what_they_compare():
     assert (depth_change["type"], depth_change["content"]) == (CALCULATOR, DEPTH_CHANGE_CODE)
     tract_change = found[("tract depth", "difference")]
     assert tract_change["type"] == PYTHON
-    assert 'after = input_1.set_index("FIPS").loc[before["FIPS"]].reset_index()\n' in tract_change["content"]
-    assert "    after[column] = np.abs(now - was)\n" in tract_change["content"]
+    assert 'before, after = input_0.set_index("FIPS"), input_1.set_index("FIPS")\n' in tract_change["content"]
+    assert "\nout[numbers] = (now - was).abs()\n" in tract_change["content"]
     for node in (depth_change, tract_change):
         assert set(node["metadata"]) == {"keywords", "packageTemplateLabel"}, node["metadata"]
     manifest = json.loads((CALCULATOR_STARTER.parent.parent / "manifest.json").read_text(encoding="utf-8"))
@@ -1594,6 +1594,67 @@ def test_the_changes_and_the_charts_give_the_columns_their_maps_and_charts_read(
     ]
     # The grouped bars' mean combines one row per bar.
     assert len({(row["scenario"], row["period"]) for row in rows}) == len(rows) == 2 * len(PERIODS)
+
+
+#: The tract NbS's outputs leave out, and the one No NbS's leave out, in the
+#: next test: the first and the last riverside tract.
+LEFT_OUT, ONLY_WITH_NBS = 0, -1
+
+
+def test_a_tract_one_side_lacks_is_removed_or_added_as_compare_wrote_it(workspace, monkeypatch):
+    """A user's edit can leave a tract out of one scenario. The Depth change
+    per tract then writes what Compare Scenarios' Difference in Absolute
+    keyed on FIPS wrote: a tract only No NbS has is ``removed``, in No NbS's
+    order, its numbers empty and its outline No NbS's; a tract only NbS has
+    is ``added``, after every tract of No NbS's, its numbers empty and its
+    outline NbS's. Every other tract holds the size of its change. The
+    inputs are the riverside tracts as Tract depth hands them on, CDC's
+    columns and outlines, each with a mean depth and its land."""
+    import numpy as np
+    from geopandas.testing import assert_geodataframe_equal
+
+    from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
+
+    monkeypatch.chdir(workspace)
+    tracts, _water = _riverside_by_hand()
+    none = tracts[[*TRACT_COLUMNS, "geometry"]].reset_index(drop=True)
+    rng = np.random.default_rng(RIVERSIDE_TRACTS)
+    none["mean_depth_m"] = np.round(rng.uniform(0, 4, len(none)), 3)
+    none["land_km2"] = np.round(rng.uniform(1, 12, len(none)), 3)
+    nbs = none.copy()
+    nbs["mean_depth_m"] = np.where(np.arange(len(nbs)) % 5 == 0, none["mean_depth_m"],
+                                   np.round(none["mean_depth_m"] * 0.7, 3))
+    fips = list(none["FIPS"])
+    left_out, only_with_nbs = fips[LEFT_OUT], fips[ONLY_WITH_NBS]
+    cases = {
+        "removed": (none, nbs[nbs["FIPS"] != left_out].reset_index(drop=True), left_out),
+        "added": (none[none["FIPS"] != only_with_nbs].reset_index(drop=True), nbs, only_with_nbs),
+    }
+    run = _runner(workspace, _shared())
+    node = _comparisons(_dataflow())[("tract depth", "difference")]
+    numbers = ["E_TOTPOP", "RPL_THEMES", "mean_depth_m", "land_km2"]
+    for change, (before, after, tract) in cases.items():
+        inputs = repr([save_to_duckdb(before, node_id=f"no-nbs-{change}"), save_to_duckdb(after, node_id=f"nbs-{change}")])
+        output, _ = run(node, inputs, "outputs", circles=2)
+        ours = load_from_duckdb(output["path"])
+        output, _ = run(_reference(("tract depth", "difference")), inputs, "outputs", circles=2)
+        compared = load_from_duckdb(output["path"])
+        assert list(ours.columns) == list(compared.columns), change
+        assert ours.dtypes.astype(str).tolist() == compared.dtypes.astype(str).tolist(), change
+        assert_geodataframe_equal(ours, compared)
+        expected_order = fips if change == "removed" else [f for f in fips if f != tract] + [tract]
+        assert list(ours["FIPS"]) == expected_order, change
+        (row,) = ours.index[ours["FIPS"] == tract]
+        assert ours.loc[row, "change"] == change
+        assert ours.loc[row, numbers].isna().all(), change
+        outline = (before if change == "removed" else after).set_index("FIPS").geometry[tract]
+        assert ours.geometry[row].equals_exact(outline, 1e-9), change
+        others = ours[ours["FIPS"] != tract]
+        sizes = np.abs(after.set_index("FIPS").loc[others["FIPS"], "mean_depth_m"].to_numpy()
+                       - before.set_index("FIPS").loc[others["FIPS"], "mean_depth_m"].to_numpy())
+        assert others["mean_depth_m"].to_numpy() == pytest.approx(sizes, abs=1e-12), change
+        assert list(others["change"]) == ["unchanged" if size == 0 else "changed" for size in sizes], change
+        assert 0 < list(others["change"]).count("unchanged") < len(others), change
 
 
 def test_the_median_chart_reads_each_scenarios_statistics_as_compare_stacked_them(workspace, monkeypatch):
