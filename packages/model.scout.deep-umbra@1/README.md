@@ -59,7 +59,9 @@ shadow on its input_0, the heights on its input_1 as the mask, and the ground
 where Deep Umbra reads gray level 0, a height under 1.08 m:
 
 ```python
-return curio_raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)
+from scout_rasters.raster_algebra import raster_statistics
+
+return raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)
 ```
 
 The ground counted is the ground of the tiles with heights only, as in SCOUT's
@@ -96,3 +98,8 @@ shadow: the buildings as they are, and with 15 of them removed.
 Curio installs the package's Python libraries with it: `onnxruntime`,
 `rasterio`, `numpy` and `pyproj`. It is installed for you when Curio starts
 with `--with-examples`.
+
+The package depends on [Scout](../curio.scout@1/README.md) (`curio.scout@1`
+in its `dependencies.packages`): the node places each tile it predicts with
+Scout's `tile_bounds` (`scout_rasters.web_tiles`), so Scout must be installed
+too, and a run of the node is handed both packages' modules.

@@ -32,9 +32,9 @@ Index (SVI), as komar41's FloodRisk example in #914 does: two more Data
 Loading nodes read CDC's census tracts and USGS's waterways, a Data
 Transformation keeps the 28 tracts that NHD's stream and river areas touch, an
 Autark map draws their SVI percentile, and in each scenario one Data
-Transformation averages the depth over each tract's land and another over the
-riverside land in each of SCOUT's three periods, the water left out and dry
-land counted as 0 m. Compare Scenarios takes the size of the change in each
+Transformation averages the depth over each tract's land and a third Raster
+Calculator over the riverside land in each of SCOUT's three periods, the water
+left out and dry land counted as 0 m. Compare Scenarios takes the size of the change in each
 tract's mean depth, which an Autark map draws, and charts vulnerability
 against depth and the mean depth by period. The nodes, run in the sandbox,
 give what this file computes from the datasets on its own.
@@ -67,9 +67,14 @@ CALCULATOR = "curio.scout/raster-calculator"
 #: The Raster Calculator's package, which the dataflow's lockfile names.
 RASTERS_PACKAGE = "curio.scout@1"
 #: What a Raster Calculator's code returns: an operation cell by cell, which
-#: gives a raster, or statistics, which give a table of one row.
-CALCULATE = "curio_raster_calculate"
-STATISTICS = "curio_raster_statistics"
+#: gives a raster, statistics, which give a table of one row, or, in Average
+#: depth by period, its own table of each period's mean depth.
+CALCULATE = "raster_calculate"
+STATISTICS = "raster_statistics"
+BY_PERIOD = "pd.DataFrame"
+#: The modules a run of a package's node is handed: a Raster Calculator's
+#: code imports its operations from Scout's ``scout_rasters``.
+PACKAGE_MODULES = {CALCULATOR: {"root": str(CALCULATOR_STARTER.parent), "names": ["scout_rasters"]}}
 PARAMETER = "curio.builtin/parameter"
 COMPARE = "curio.builtin/compare-scenarios"
 MAP = "curio.builtin/autk-grammar"
@@ -455,21 +460,23 @@ def _parameters() -> dict:
 
 
 def _starters_statistics() -> str:
-    """The statistics a Raster Calculator's code starts by showing: its lines
-    from ``# Statistics:`` to the statistics call, that call uncommented, as a
-    node that takes them holds them."""
+    """The statistics a Raster Calculator's code starts by showing, as a node
+    that takes them holds them: its lines from ``# Statistics:`` to the
+    statistics call, then the starter's import of its operations, and that
+    call uncommented in place of the starter's own return."""
     lines = CALCULATOR_STARTER.read_text(encoding="utf-8").splitlines()
     starts = [i for i, line in enumerate(lines) if line.startswith("# Statistics:")]
-    calls = [i for i, line in enumerate(lines) if line.startswith("#   return curio_raster_statistics(")]
-    assert len(starts) == len(calls) == 1 and starts[0] < calls[0], lines
-    return "\n".join([*lines[starts[0]:calls[0]], lines[calls[0]][len("#   "):], ""])
+    calls = [i for i, line in enumerate(lines) if line.startswith("#   return raster_statistics(")]
+    returns = [i for i, line in enumerate(lines) if line.startswith("return ")]
+    assert len(starts) == len(calls) == len(returns) == 1 and starts[0] < calls[0] < returns[0], lines
+    return "\n".join([*lines[starts[0]:calls[0]], *lines[calls[0] + 1:returns[0]], lines[calls[0]][len("#   "):], ""])
 
 
 def _returns(node: dict) -> str:
-    """The raster algebra call a Raster Calculator's code returns, on its one
-    uncommented ``return`` line: ``CALCULATE`` or ``STATISTICS``."""
-    calls = re.findall(r"^return (curio_raster_\w+)\(", node["content"], re.M)
-    assert len(calls) == 1, node["content"]
+    """What a Raster Calculator's code returns, on its one uncommented
+    ``return`` line: ``CALCULATE``, ``STATISTICS`` or ``BY_PERIOD``."""
+    calls = re.findall(r"^return ([\w.]+)\(", node["content"], re.M)
+    assert len(calls) == 1 and calls[0] in (CALCULATE, STATISTICS, BY_PERIOD), node["content"]
     return calls[0]
 
 
@@ -553,20 +560,22 @@ def _riverside(spec: dict) -> dict:
 
 def _scenario_parts(spec: dict) -> dict:
     """Each scenario's nodes by their part, one node per part: its Raster
-    Calculator that chooses the depth (``choose``), the one of statistics, its
-    depth map, and its Data Transformations, the one with the NbS widget
-    averaging by period and the other per tract (``tract depth``)."""
+    Calculators, the one that chooses the depth (``choose``), the one of
+    statistics and the one with the NbS widget averaging by period (``by
+    period``), its depth map, and its Data Transformation per tract (``tract
+    depth``)."""
     nodes = {n["id"]: n for n in spec["nodes"]}
     parts = {}
     for scenario in spec["scenarios"]:
         found = {}
         for node in (nodes[i] for i in scenario["nodes"]):
             if node["type"] == CALCULATOR:
-                part = "choose" if _returns(node) == CALCULATE else "statistics"
+                part = {CALCULATE: "choose", STATISTICS: "statistics", BY_PERIOD: "by period"}[_returns(node)]
             elif node["type"] == MAP:
                 part = "depth map"
             elif node["type"] == TRANSFORMATION:
-                part = "by period" if node["metadata"].get("widgets") else "tract depth"
+                assert not node["metadata"].get("widgets"), node["id"]
+                part = "tract depth"
             else:
                 raise AssertionError(f"{scenario['id']} holds a {node['type']} node")
             assert part not in found, (scenario["id"], part)
@@ -603,13 +612,13 @@ def test_the_dataflow_is_made_of_curios_own_nodes_and_scouts_raster_calculator()
     """One package, Scout, for the Raster Calculators, and Curio's own
     nodes otherwise: three Parameter nodes; five Data Loading nodes, three for
     the seven rasters and one each for the tracts and the waterways; a Data
-    Transformation keeping the riverside tracts; two Raster Calculators per
-    scenario, one choosing the depth and one taking its statistics, an Autark
-    map of the depth and two Data Transformations, the depth per tract and by
-    period; five Compare Scenarios nodes; Autark maps of the vulnerability, of
-    the change in depth and of the change per tract; and the nine datasets.
-    Nothing is pinned to the dashboard: a difference of SCOUT's whole grid is
-    over a dashboard page's 25 MB."""
+    Transformation keeping the riverside tracts; three Raster Calculators per
+    scenario, one choosing the depth, one taking its statistics and one
+    averaging the depth by period, an Autark map of the depth and a Data
+    Transformation, the depth per tract; five Compare Scenarios nodes; Autark
+    maps of the vulnerability, of the change in depth and of the change per
+    tract; and the nine datasets. Nothing is pinned to the dashboard: a
+    difference of SCOUT's whole grid is over a dashboard page's 25 MB."""
     spec = _dataflow()
     assert spec["packages"] == [RASTERS_PACKAGE]
     assert {n["type"] for n in spec["nodes"] if not n["type"].startswith("curio.builtin/")} == {CALCULATOR}
@@ -617,8 +626,9 @@ def test_the_dataflow_is_made_of_curios_own_nodes_and_scouts_raster_calculator()
     counts = {}
     for n in spec["nodes"]:
         counts[n["type"]] = counts.get(n["type"], 0) + 1
-    assert counts == {PARAMETER: 3, LOADING: 5, CALCULATOR: 4, TRANSFORMATION: 5, MAP: 5, COMPARE: 5}
-    assert sorted(_returns(n) for n in _nodes(CALCULATOR)) == [CALCULATE, CALCULATE, STATISTICS, STATISTICS]
+    assert counts == {PARAMETER: 3, LOADING: 5, CALCULATOR: 6, TRANSFORMATION: 3, MAP: 5, COMPARE: 5}
+    assert sorted(_returns(n) for n in _nodes(CALCULATOR)) == sorted(
+        [CALCULATE, CALCULATE, STATISTICS, STATISTICS, BY_PERIOD, BY_PERIOD])
     assert [n["id"] for n in spec["nodes"] if n.get("dashboardPinned")] == []
 
 
@@ -736,7 +746,7 @@ def test_each_scenario_chooses_by_scouts_classes_takes_the_statistics_and_maps_t
         assert problems == [], (calculator["id"], problems)
         tables[calculator["id"]] = _literal_dict(_function_body(resolved), "NBS_CLASSES")
         assert tables[calculator["id"]] == _curio_classes()
-    assert "return curio_raster_calculate(\"choose\", [input_0, input_1, input_2], codes=codes)" in code
+    assert 'return raster_calculate("choose", [input_0, input_1, input_2], codes=codes, output_file=curio_output_file)' in code
     assert {n["content"] for n in _calculators(STATISTICS)} == {_starters_statistics()}
 
     loaders = {
@@ -750,7 +760,7 @@ def test_each_scenario_chooses_by_scouts_classes_takes_the_statistics_and_maps_t
     chosen, codes = {}, {}
     for scenario in scenarios.values():
         members = [nodes[i] for i in scenario["nodes"]]
-        assert sorted(n["type"] for n in members) == sorted([MAP, CALCULATOR, CALCULATOR, TRANSFORMATION, TRANSFORMATION])
+        assert sorted(n["type"] for n in members) == sorted([MAP, CALCULATOR, CALCULATOR, CALCULATOR, TRANSFORMATION])
         (calculator,) = [n for n in members if n["type"] == CALCULATOR and _returns(n) == CALCULATE]
         (statistics,) = [n for n in members if n["type"] == CALCULATOR and _returns(n) == STATISTICS]
         (depth_map,) = [n for n in members if n["type"] == MAP]
@@ -1001,7 +1011,8 @@ def _shared(region=None, period=None) -> list:
 
 def _runner(workspace, shared, *, fails=False):
     """Runs one node of the dataflow as Run All runs it in the sandbox, its
-    references resolved against *shared*: ``(output, error)``."""
+    references resolved against *shared* and its package's modules handed to
+    it: ``(output, error)``."""
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
     from utk_curio.backend.app.execution.code_references import resolve_references
 
@@ -1010,7 +1021,8 @@ def _runner(workspace, shared, *, fails=False):
         code, problems = resolve_references(node["content"], list(widgets), "python", inputs=inputs, shared=shared)
         assert problems == [], problems
         paths = {i: str(_data_file(i)) for i in dataset_ids_in_code(code)}
-        result = _execute(code, file_path, node["type"], data_type, workspace, dataset_paths=paths)
+        result = _execute(code, file_path, node["type"], data_type, workspace, dataset_paths=paths,
+                          package_modules=PACKAGE_MODULES.get(node["type"]))
         if result["stderr"]:
             if fails:
                 return None, result["stderr"]

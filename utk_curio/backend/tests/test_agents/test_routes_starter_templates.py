@@ -50,7 +50,11 @@ CHART = {"ref": "chart", "nodeType": "test.charts/lines", "title": "Counts by ho
 
 #: What every Solve child writes in these tests.
 WRITTEN = "return input_0"
-OPERATION = 'return curio_raster_calculate("subtract", [input_0, input_1])'
+OPERATION = (
+    "from scout_rasters.raster_algebra import raster_calculate\n"
+    "\n"
+    'return raster_calculate("subtract", [input_0, input_1], output_file=curio_output_file)'
+)
 
 
 def _charts_manifest() -> dict:

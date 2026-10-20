@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "js": {},
-    "packages": {},
+    "packages": {"curio.scout@1": "*"},
     "python": {
       "numpy": "",
       "onnxruntime": ">=1.17",

@@ -12,10 +12,6 @@
     ``curio_load_data("<id>", part="<file>")`` reads the one its
     ``bundle.json`` lists under that file name or label, and ``bounds`` then
     windows it if it is a GeoTIFF.
-``curio_raster_calculate(operation, rasters, codes=None)``,
-``curio_raster_statistics(raster, band=1, mask=None, mask_values=None, where=None)``
-    The Raster Calculator's operations: cell by cell, and statistics
-    (``util/raster_algebra.py``).
 ``curio_data_path("<id>")``
     The dataset's file, for a reader of your own (``pd.read_csv(..., sep=";")``,
     ``netCDF4.Dataset(...)``).
@@ -33,7 +29,10 @@ through :func:`install_catalog_helpers`; only how a path resolves differs
 
 The names these replaced (``curio_dataset_path``, ``curio_collection``,
 ``curio_model``) are not aliases: calling one raises an error that names its
-replacement, so a saved dataflow says what to change.
+replacement, so a saved dataflow says what to change. So do the raster math
+helpers every Python node used to have (``curio_raster_calculate``,
+``curio_raster_statistics``): raster math is the Scout package's, in the
+Raster Calculator's code (``scout_rasters.raster_algebra``).
 """
 
 from __future__ import annotations
@@ -393,8 +392,9 @@ def install_catalog_helpers(
     known_collections = {str(k) for k in (collections or {})}
 
     def raster_output_file(name):
-        """Where a raster this node returns is written: the node's output
-        folder, else, in process with no media folder, beside the artifacts."""
+        """Where a window of a raster ``curio_load_data`` reads is written:
+        the node's output folder, else, in process with no media folder,
+        beside the artifacts."""
         if output_dir or media_dir:
             return collection_helpers["curio_output_file"](name)
         from utk_curio.sandbox.util.rasters import python_raster_dir
@@ -441,28 +441,12 @@ def install_catalog_helpers(
         with rasterio.open(path) as whole:
             return read_window(whole, bounds, raster_output_file, name=dataset_id)
 
-    def curio_raster_calculate(operation, rasters, codes=None):
-        """The Raster Calculator's step: *operation* over *rasters*, cell by cell
-        (``util/raster_algebra.calculate``)."""
-        from utk_curio.sandbox.util.raster_algebra import calculate
-
-        return calculate(operation, rasters, codes=codes, output_file=raster_output_file)
-
-    def curio_raster_statistics(raster, band=1, mask=None, mask_values=None, where=None):
-        """The Raster Calculator's statistics: a raster's mean, median, minimum,
-        maximum and count, nodata left out (``util/raster_algebra.statistics``)."""
-        from utk_curio.sandbox.util.raster_algebra import statistics
-
-        return statistics(raster, band=band, mask=mask, mask_values=mask_values, where=where)
-
     def curio_load_model(model_id):
         model_id = str(model_id)
         return CurioModel(model_id, model_folder(model_id))
 
     namespace["curio_data_path"] = data_path
     namespace["curio_load_data"] = curio_load_data
-    namespace["curio_raster_calculate"] = curio_raster_calculate
-    namespace["curio_raster_statistics"] = curio_raster_statistics
     namespace.update(collection_helpers)
     namespace["curio_load_model"] = curio_load_model
     namespace["curio_segment"] = make_curio_segment(collection_helpers["curio_derived_file"])
@@ -472,3 +456,7 @@ def install_catalog_helpers(
     )
     namespace["curio_collection"] = _renamed("curio_collection", 'curio_load_collection("<id>")')
     namespace["curio_model"] = _renamed("curio_model", 'curio_load_model("<id>")')
+    for old, new in (("curio_raster_calculate", "raster_calculate"), ("curio_raster_statistics", "raster_statistics")):
+        namespace[old] = _renamed(
+            old, f"a Raster Calculator node (Scout), whose code has from scout_rasters.raster_algebra import {new}",
+        )

@@ -201,7 +201,7 @@ def test_the_flood_dataflow_is_tagged_scout_by_its_raster_calculators_alone():
     assert "tags" not in hand_categories(spec)
     nodes = spec["dataflow"]["nodes"]
     calculators = [n for n in nodes if n["type"] == "curio.scout/raster-calculator"]
-    assert len(calculators) == 4
+    assert len(calculators) == 6
     bare = {"dataflow": {
         **{k: v for k, v in spec["dataflow"].items() if k != "datasets"},
         "nodes": [{**n, "content": ""} for n in nodes],

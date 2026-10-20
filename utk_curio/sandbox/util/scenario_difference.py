@@ -22,8 +22,8 @@ whichever input is higher: 0 where nothing changed.
   the geometry, is the comparison's (the reference's for a removed row).
 - Two rasters are loaded as an Autark map loads them, by autk-db's
   ``loadGeoTiff`` in the sandbox's Node process, where Autark data sections
-  run, and Curio's raster algebra (``raster_algebra.subtract_envelopes``)
-  subtracts the band arrays autk-db's ``getRaster`` exports, cell by cell.
+  run, and ``envelope_difference.subtract_envelopes`` subtracts the band
+  arrays autk-db's ``getRaster`` exports, cell by cell.
   Node code may run in an isolated child that cannot start Node, so the step
   returns a request instead (``RASTER_DIFFERENCE``: JSON only, each raster's
   GeoTIFF bytes and its description), and the sandbox completes it once the
@@ -455,11 +455,11 @@ def program_text() -> str:
 
 def subtract_in_autark(request: dict, *, cwd=None, node_type="curio.builtin/compare-scenarios") -> dict:
     """Load both rasters of *request* through Autark in the sandbox's Node
-    process, as a JavaScript node runs, and subtract what autk-db exports with
-    Curio's raster algebra: the envelope of comparison minus reference (its
+    process, as a JavaScript node runs, and subtract what autk-db exports
+    (``envelope_difference``): the envelope of comparison minus reference (its
     size, when the request asks for ``absolute``), or
     :class:`RasterDifferenceFailed` with what refused it."""
-    from utk_curio.sandbox.util.raster_algebra import RasterAlgebraError, subtract_envelopes
+    from utk_curio.sandbox.util.envelope_difference import RasterAlgebraError, subtract_envelopes
 
     envelopes = _load_in_autark(request, cwd=cwd, node_type=node_type)
     try:
