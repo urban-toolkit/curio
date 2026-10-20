@@ -1403,18 +1403,34 @@ node is under **Scout** in the Tools panel's **Node Catalog** dropdown.
 It is a Python node whose code is written for it when it
 is dropped: input_0 minus input_1, with its other operations listed above it,
 statistics among them. Return another call to change what it does. Connect the
-rasters to its input circles, in order.
+rasters to its input circles, in order. The code imports the operations from
+the package:
 
-**Cell by cell**, an operation over rasters on one grid gives a raster:
+```python
+from scout_rasters.raster_algebra import raster_calculate, raster_statistics
+
+return raster_calculate("subtract", [input_0, input_1], output_file=curio_output_file)
+```
+
+A Python node of no package has no raster operations, so a raster step is a
+Raster Calculator node. A node of another package uses them when its package
+names Scout in `dependencies.packages` (see the
+[package's README](../packages/curio.scout@1/README.md#raster-math-in-another-package)).
+
+**Cell by cell**, an operation over rasters on one grid gives a raster, which
+`output_file=curio_output_file` writes where the node writes its files:
 
 | operation | result |
 |---|---|
-| `curio_raster_calculate("add", [input_0, input_1])` | input_0 plus input_1 |
-| `curio_raster_calculate("subtract", [input_0, input_1])` | input_0 minus input_1 |
-| `curio_raster_calculate("multiply", [input_0, input_1])` | input_0 times input_1 |
-| `curio_raster_calculate("divide", [input_0, input_1])` | input_0 over input_1; a cell divided by 0 has no value |
-| `curio_raster_calculate("choose", [input_0, input_1, input_2], codes=[21, 31])` | input_1 where input_0's class is one of the codes, input_2 elsewhere |
+| `raster_calculate("add", [input_0, input_1], output_file=curio_output_file)` | input_0 plus input_1 |
+| `raster_calculate("subtract", [input_0, input_1], output_file=curio_output_file)` | input_0 minus input_1 |
+| `raster_calculate("multiply", [input_0, input_1], output_file=curio_output_file)` | input_0 times input_1 |
+| `raster_calculate("divide", [input_0, input_1], output_file=curio_output_file)` | input_0 over input_1; a cell divided by 0 has no value |
+| `raster_calculate("choose", [input_0, input_1, input_2], codes=[21, 31], output_file=curio_output_file)` | input_1 where input_0's class is one of the codes, input_2 elsewhere |
+| `raster_calculate("subtract", [input_1, input_0], absolute=True, output_file=curio_output_file)` | the size of input_1 minus input_0: how much each cell changed, 0 where it did not |
 
+- `absolute=True` gives the size of any operation's result; a cell with no
+  value keeps none.
 - A cell with no value (the raster's nodata, or a number that is not finite) in
   an input the operation reads there has no value in the result. In `choose`, a
   class with no value is no class, so its cell takes input_2.
@@ -1426,18 +1442,23 @@ rasters to its input circles, in order.
 
 **Statistics** give a raster's `mean`, `median`, `min`, `max` and `count` over
 its cells with a value, as a table of one row, for example for **Compare
-Scenarios** to chart. `curio_raster_statistics(input_0, band=2)` reads another
+Scenarios** to chart. `raster_statistics(input_0, band=2)` reads another
 band. A condition keeps only some cells:
 
 | call | counts |
 |---|---|
-| `curio_raster_statistics(input_0, where=lambda value: value < 1.08)` | the cells whose value is under 1.08 |
-| `curio_raster_statistics(input_0, where=lambda value: (value >= 2) & (value < 5))` | the cells from 2 up to 5 |
-| `curio_raster_statistics(input_0, mask=input_1, mask_values=[0])` | with a second raster on input_1, on the same grid: the cells where its value is 0 |
-| `curio_raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)` | with a second raster on input_1: the cells where its value is under 1.08 |
+| `raster_statistics(input_0, where=lambda value: value < 1.08)` | the cells whose value is under 1.08 |
+| `raster_statistics(input_0, where=lambda value: (value >= 2) & (value < 5))` | the cells from 2 up to 5 |
+| `raster_statistics(input_0, mask=input_1, mask_values=[0])` | with a second raster on input_1, on the same grid: the cells where its value is 0 |
+| `raster_statistics(input_0, mask=input_1, where=lambda height: height < 1.08)` | with a second raster on input_1: the cells where its value is under 1.08 |
 
 `where` receives the values as an array, with NaN for a cell with no value, and
 a cell with no value is never counted.
+
+**A layer** (a GeoDataFrame) on an input circle is no raster: the node's code
+reads it as zones or a mask, for example with `rasterio.features.rasterize` on a
+raster's grid. The Quad Cities flood test dataflow's Average depth by period
+reads the riverside tracts and the waterways that way.
 
 ## Notebook view
 
