@@ -188,6 +188,13 @@ const FlowProvider = ({
     dashboardOn = false,
 }: { children: ReactNode; dashboardOn?: boolean }) => {
     const { showToast } = useToastContext();
+    // A hosted guest cannot save the dataflow (isHostedGuest, the rule the
+    // saves themselves apply as blockGuestSaves). Its runs stay in the browser,
+    // and the saves Curio makes on its own, after an output lands or a pin
+    // changes, are skipped without a word: only a save the guest asks for
+    // (File > Save, Save a copy) says why it cannot.
+    const { user, enableUserAuth, skipProjectPage } = useUserContext();
+    const hostedGuest = isHostedGuest(user, enableUserAuth);
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
     const [outputs, _setOutputs] = useState<IOutput[]>([]);
@@ -327,6 +334,7 @@ const FlowProvider = ({
     const scenariosNowRef = useRef<() => readonly Scenario[]>(() => []);
     const { isDashboardSource, setPinForDashboard } = useDashboardPins({
         reactFlow, setDashboardPins, setNodes, markDirtyRef, savePinChangeRef, showToast, scenariosNowRef,
+        hostedGuest,
     });
 
     const {
@@ -389,26 +397,25 @@ const FlowProvider = ({
     scenariosNowRef.current = () => workflowOps.scenariosRef?.current ?? workflowOps.scenarios ?? [];
 
     useDashboardPinSave({
-        savePinChangeRef, dashboardOn, workflowOps, showToast,
+        savePinChangeRef, dashboardOn, workflowOps, showToast, hostedGuest,
     });
 
     useInstallSave({
         scheduleInstallSyncRef, dashboardOn, reactFlow, defaultSaveOutputDataset,
-        isDashboardSource, workflowOps, flushInstallSyncRef,
+        isDashboardSource, workflowOps, flushInstallSyncRef, hostedGuest,
     });
 
     // Runs go to the server for whoever may save the dataflow, since a run
     // saves it first and records its outputs in it. Hosted guests, viewers of
     // a shared dataflow and `--no-project` keep the run in the browser, and so
     // does a canvas with nobody signed in, which cannot save either.
-    const { user, enableUserAuth, skipProjectPage } = useUserContext();
     const { nodeExecProv } = useProvenanceContext();
     const runsOnServer =
         !dashboardOn &&
         !isStandaloneDashboard() &&
         !skipProjectPage &&
         user != null &&
-        !isHostedGuest(user, enableUserAuth) &&
+        !hostedGuest &&
         workflowOps.viewerMode === "owner";
     const serverRun = useServerRun({
         reactFlow, setNodes, showToast,

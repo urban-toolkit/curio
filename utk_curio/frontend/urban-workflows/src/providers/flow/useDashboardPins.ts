@@ -11,6 +11,7 @@ import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft"
 
 export function useDashboardPins({
     reactFlow, setDashboardPins, setNodes, markDirtyRef, savePinChangeRef, showToast, scenariosNowRef,
+    hostedGuest = false,
 }: {
     reactFlow: ReactFlowInstance;
     setDashboardPins: React.Dispatch<React.SetStateAction<any>>;
@@ -20,6 +21,8 @@ export function useDashboardPins({
     showToast: ReturnType<typeof useToastContext>["showToast"];
     /** The dataflow's scenarios as they are now, whose context and outcomes save too (#662). */
     scenariosNowRef?: React.MutableRefObject<() => readonly Scenario[]>;
+    /** A hosted guest (`isHostedGuest`), who cannot save the dataflow. */
+    hostedGuest?: boolean;
 }) {
     // Which nodes a pinned tile or a scenario (#662) depends on. Derived from
     // the live graph rather than stored: pins and wiring both change, and a
@@ -51,7 +54,9 @@ export function useDashboardPins({
         // as pinning, or the tile stays on a page the user has already removed
         // it from.
         savePinChangeRef.current();
-        if (!value) return;
+        // A hosted guest's pin is not saved, nor the outputs behind it, so
+        // there is nothing to announce.
+        if (!value || hostedGuest) return;
         // Say what pinning does beyond hiding the other nodes: the tile has to
         // be able to draw without a run, which means the outputs behind it get
         // saved to the Data Catalog.
@@ -74,18 +79,20 @@ export function useDashboardPins({
             + `Data Catalog so this tile can render without running the dataflow.`,
             "info",
         );
-    }, [setDashboardPins, setNodes, reactFlow, showToast]);
+    }, [setDashboardPins, setNodes, reactFlow, showToast, hostedGuest]);
 
     return { isDashboardSource, setPinForDashboard };
 }
 
 export function useDashboardPinSave({
-    savePinChangeRef, dashboardOn, workflowOps, showToast,
+    savePinChangeRef, dashboardOn, workflowOps, showToast, hostedGuest = false,
 }: {
     savePinChangeRef: React.MutableRefObject<() => void>;
     dashboardOn: boolean;
     workflowOps: ReturnType<typeof useWorkflowOperations>;
     showToast: ReturnType<typeof useToastContext>["showToast"];
+    /** A hosted guest (`isHostedGuest`), who cannot save the dataflow. */
+    hostedGuest?: boolean;
 }) {
     // Debounced so toggling several pins in a row is one save, and so the save
     // reads the React Flow store after the pin has landed in it rather than the
@@ -97,6 +104,9 @@ export function useDashboardPinSave({
         if (dashboardOn) return;
         if (!workflowOps.projectId) return;
         if (workflowOps.viewerMode === "shared") return;
+        // A hosted guest's saves are refused. This one is Curio's own, so it
+        // is skipped rather than tried and reported as "Could not save the pin".
+        if (hostedGuest) return;
         if (pinSaveTimerRef.current) clearTimeout(pinSaveTimerRef.current);
         pinSaveTimerRef.current = setTimeout(() => {
             // Through the save queue, after any save already out: a Save

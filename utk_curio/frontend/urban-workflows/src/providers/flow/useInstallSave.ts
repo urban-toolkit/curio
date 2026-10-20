@@ -16,7 +16,7 @@ const DATA_POOL_NODE_TYPES: ReadonlySet<string> = new Set([NodeType.DATA_POOL]);
 
 export function useInstallSave({
     scheduleInstallSyncRef, dashboardOn, reactFlow, defaultSaveOutputDataset,
-    isDashboardSource, workflowOps, flushInstallSyncRef,
+    isDashboardSource, workflowOps, flushInstallSyncRef, hostedGuest = false,
 }: {
     scheduleInstallSyncRef: React.MutableRefObject<(nodeId: string) => void>;
     dashboardOn: boolean;
@@ -25,6 +25,8 @@ export function useInstallSave({
     isDashboardSource: (nodeId: string) => boolean;
     workflowOps: ReturnType<typeof useWorkflowOperations>;
     flushInstallSyncRef: React.MutableRefObject<() => void>;
+    /** A hosted guest (`isHostedGuest`), who cannot save the dataflow. */
+    hostedGuest?: boolean;
 }) {
     // ── Auto-surface produced datasets without a manual disk-icon save ─────────
     // A dataset is installed when its producing node's output is persisted: for
@@ -46,6 +48,11 @@ export function useInstallSave({
         // and for a visitor holding a link it would throw and surface as an error
         // toast on a page they only opened to look at.
         if (dashboardOn) return;
+        // Nor for a hosted guest, whose saves are refused: this save is
+        // Curio's own, and trying it showed "Guest users cannot save projects"
+        // after a play or Run All. Before the placeholder, too, since the
+        // dataset would never be added.
+        if (hostedGuest) return;
         const node = reactFlow.getNode(nodeId);
         if (!node) return;
         const canonical = getUnversionedFlowNodeType(node);
