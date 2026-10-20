@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/scenario-comparison-charts.json",
-    "sha256": "1d62e2d17f61905120f0b3df3ccc0e32ffebd7310b9031a67547758d6ec5980a",
+    "sha256": "4112aace83273108f56f2fb9a5ab0d7f3eb1e710d014330f3fe508ecd507c887",
     "walkthrough": null
   },
-  "prompt": "Make a gallery of nine ways to chart a comparison of scenarios, one row per example table from the Data Catalog: pedestrians per hour on four streets, flood damage curves, flooded streets by depth, peak depths of simulated storms, daily trips by mode, building carbon by life-cycle stage, park area in shade, bike route factors and green roof systems. Each table names its scenario in a case column. For every scenario keep its rows in a step of its own, with the case picked by a choice widget, and make that step the scenario; the 10-, 50- and 100-year storms are one scenario each across the two storm tables. Compare each table's scenarios in a Compare Scenarios step. Chart the pedestrians as lines with a band in a panel per street, the damage curves as one curve per damage state, the flooded streets as grouped bars with error bars, the peak depths as a strip of ticks per storm with its median, the building carbon as stacked bars with their totals, the park shade as a donut per design and the bike route factors as a matrix of circles sized by weight, each in a Vega-Lite chart after its comparison. The comparison itself draws the daily trips as grouped bars and the green roof systems as a table. Those seven charts are not part of the standard node set, so whatever provides them needs installing first.",
+  "prompt": "Make a gallery of nine ways to chart a comparison of scenarios, one row per example table from the Data Catalog: pedestrians per hour on four streets, flood damage curves, flooded streets by depth, peak depths of simulated storms, daily trips by mode, building carbon by life-cycle stage, park area in shade, bike route factors and green roof systems. Each table names its scenario in a case column. For every scenario keep its rows in a step of its own, with the case picked by a choice widget, and make that step the scenario; the 10-, 50- and 100-year storms are one scenario each across the two storm tables. Chart each table's scenarios in one Vega-Lite chart that reads each scenario's step directly and draws each scenario in its color: the pedestrians as lines with a band in a panel per street, the damage curves as one curve per damage state, the flooded streets as grouped bars with error bars, the peak depths as a strip of ticks per storm with its median, the daily trips as grouped bars by mode, the building carbon as stacked bars with their totals, the park shade as a donut per design, the bike route factors as a matrix of circles sized by weight and the green roof systems as a table. Those nine charts are not part of the standard node set, so whatever provides them needs installing first.",
   "context": null,
   "required": {
     "datasets": [
@@ -28,69 +28,6 @@
   },
   "expected": {
     "nodes": [
-      {
-        "ref": "visualization1",
-        "type": "curio.builtin/compare-scenarios",
-        "role": "visualization",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "visualization2",
-        "type": "curio.builtin/compare-scenarios",
-        "role": "visualization",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "visualization3",
-        "type": "curio.builtin/compare-scenarios",
-        "role": "visualization",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "visualization4",
-        "type": "curio.builtin/compare-scenarios",
-        "role": "visualization",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "visualization5",
-        "type": "curio.builtin/compare-scenarios",
-        "role": "visualization",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "visualization6",
-        "type": "curio.builtin/compare-scenarios",
-        "role": "visualization",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "visualization7",
-        "type": "curio.builtin/compare-scenarios",
-        "role": "visualization",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "visualization8",
-        "type": "curio.builtin/compare-scenarios",
-        "role": "visualization",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "visualization9",
-        "type": "curio.builtin/compare-scenarios",
-        "role": "visualization",
-        "executable": true,
-        "hasContent": true
-      },
       {
         "ref": "loader1",
         "type": "curio.builtin/data-loading",
@@ -323,49 +260,63 @@
         "hasContent": true
       },
       {
-        "ref": "visualization10",
+        "ref": "visualization1",
         "type": "curio.scout/bars-with-error-bars",
         "role": "visualization",
         "executable": false,
         "hasContent": true
       },
       {
-        "ref": "visualization11",
+        "ref": "visualization2",
         "type": "curio.scout/curves-by-group",
         "role": "visualization",
         "executable": false,
         "hasContent": true
       },
       {
-        "ref": "visualization12",
+        "ref": "visualization3",
         "type": "curio.scout/donuts",
         "role": "visualization",
         "executable": false,
         "hasContent": true
       },
       {
-        "ref": "visualization13",
+        "ref": "visualization4",
         "type": "curio.scout/ensemble-strips",
         "role": "visualization",
         "executable": false,
         "hasContent": true
       },
       {
-        "ref": "visualization14",
+        "ref": "visualization5",
+        "type": "curio.scout/grouped-bars",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization6",
         "type": "curio.scout/lines-with-band",
         "role": "visualization",
         "executable": false,
         "hasContent": true
       },
       {
-        "ref": "visualization15",
+        "ref": "visualization7",
         "type": "curio.scout/stacked-bars-with-totals",
         "role": "visualization",
         "executable": false,
         "hasContent": true
       },
       {
-        "ref": "visualization16",
+        "ref": "visualization8",
+        "type": "curio.scout/table",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization9",
         "type": "curio.scout/weighted-matrix",
         "role": "visualization",
         "executable": false,
@@ -374,118 +325,83 @@
     ],
     "edges": [
       {
-        "from": "visualization1",
-        "to": "visualization11",
-        "kind": "data"
-      },
-      {
-        "from": "visualization2",
-        "to": "visualization12",
-        "kind": "data"
-      },
-      {
-        "from": "visualization3",
-        "to": "visualization14",
-        "kind": "data"
-      },
-      {
-        "from": "visualization4",
-        "to": "visualization15",
-        "kind": "data"
-      },
-      {
-        "from": "visualization6",
-        "to": "visualization10",
-        "kind": "data"
-      },
-      {
-        "from": "visualization7",
-        "to": "visualization13",
-        "kind": "data"
-      },
-      {
-        "from": "visualization8",
-        "to": "visualization16",
-        "kind": "data"
-      },
-      {
         "from": "loader1",
-        "to": "transform1",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "transform10",
-        "kind": "data"
-      },
-      {
-        "from": "loader2",
-        "to": "transform2",
-        "kind": "data"
-      },
-      {
-        "from": "loader2",
-        "to": "transform11",
-        "kind": "data"
-      },
-      {
-        "from": "loader3",
-        "to": "transform3",
-        "kind": "data"
-      },
-      {
-        "from": "loader3",
-        "to": "transform12",
-        "kind": "data"
-      },
-      {
-        "from": "loader4",
         "to": "transform4",
         "kind": "data"
       },
       {
-        "from": "loader4",
-        "to": "transform13",
-        "kind": "data"
-      },
-      {
-        "from": "loader5",
+        "from": "loader1",
         "to": "transform5",
         "kind": "data"
       },
       {
-        "from": "loader5",
-        "to": "transform14",
-        "kind": "data"
-      },
-      {
-        "from": "loader5",
-        "to": "transform19",
-        "kind": "data"
-      },
-      {
-        "from": "loader6",
+        "from": "loader2",
         "to": "transform6",
         "kind": "data"
       },
       {
-        "from": "loader6",
-        "to": "transform15",
-        "kind": "data"
-      },
-      {
-        "from": "loader6",
-        "to": "transform20",
-        "kind": "data"
-      },
-      {
-        "from": "loader7",
+        "from": "loader2",
         "to": "transform7",
         "kind": "data"
       },
       {
-        "from": "loader7",
+        "from": "loader3",
+        "to": "transform15",
+        "kind": "data"
+      },
+      {
+        "from": "loader3",
         "to": "transform16",
+        "kind": "data"
+      },
+      {
+        "from": "loader4",
+        "to": "transform17",
+        "kind": "data"
+      },
+      {
+        "from": "loader4",
+        "to": "transform18",
+        "kind": "data"
+      },
+      {
+        "from": "loader5",
+        "to": "transform1",
+        "kind": "data"
+      },
+      {
+        "from": "loader5",
+        "to": "transform2",
+        "kind": "data"
+      },
+      {
+        "from": "loader5",
+        "to": "transform3",
+        "kind": "data"
+      },
+      {
+        "from": "loader6",
+        "to": "transform8",
+        "kind": "data"
+      },
+      {
+        "from": "loader6",
+        "to": "transform9",
+        "kind": "data"
+      },
+      {
+        "from": "loader6",
+        "to": "transform10",
+        "kind": "data"
+      },
+      {
+        "from": "loader7",
+        "to": "transform19",
+        "kind": "data"
+      },
+      {
+        "from": "loader7",
+        "to": "transform20",
         "kind": "data"
       },
       {
@@ -495,37 +411,37 @@
       },
       {
         "from": "loader8",
-        "to": "transform8",
-        "kind": "data"
-      },
-      {
-        "from": "loader8",
-        "to": "transform17",
-        "kind": "data"
-      },
-      {
-        "from": "loader8",
         "to": "transform22",
         "kind": "data"
       },
       {
-        "from": "loader9",
-        "to": "transform9",
-        "kind": "data"
-      },
-      {
-        "from": "loader9",
-        "to": "transform18",
-        "kind": "data"
-      },
-      {
-        "from": "loader9",
+        "from": "loader8",
         "to": "transform23",
         "kind": "data"
       },
       {
-        "from": "loader9",
+        "from": "loader8",
         "to": "transform24",
+        "kind": "data"
+      },
+      {
+        "from": "loader9",
+        "to": "transform11",
+        "kind": "data"
+      },
+      {
+        "from": "loader9",
+        "to": "transform12",
+        "kind": "data"
+      },
+      {
+        "from": "loader9",
+        "to": "transform13",
+        "kind": "data"
+      },
+      {
+        "from": "loader9",
+        "to": "transform14",
         "kind": "data"
       },
       {
@@ -535,133 +451,133 @@
       },
       {
         "from": "transform2",
-        "to": "visualization2",
-        "kind": "data"
-      },
-      {
-        "from": "transform3",
-        "to": "visualization3",
-        "kind": "data"
-      },
-      {
-        "from": "transform4",
-        "to": "visualization4",
-        "kind": "data"
-      },
-      {
-        "from": "transform5",
-        "to": "visualization5",
-        "kind": "data"
-      },
-      {
-        "from": "transform6",
-        "to": "visualization6",
-        "kind": "data"
-      },
-      {
-        "from": "transform7",
-        "to": "visualization7",
-        "kind": "data"
-      },
-      {
-        "from": "transform8",
-        "to": "visualization8",
-        "kind": "data"
-      },
-      {
-        "from": "transform9",
-        "to": "visualization9",
-        "kind": "data"
-      },
-      {
-        "from": "transform10",
         "to": "visualization1",
         "kind": "data",
         "slot": 1
       },
       {
-        "from": "transform11",
+        "from": "transform3",
+        "to": "visualization1",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "transform4",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "transform5",
         "to": "visualization2",
         "kind": "data",
         "slot": 1
       },
       {
-        "from": "transform12",
+        "from": "transform6",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "transform7",
         "to": "visualization3",
         "kind": "data",
         "slot": 1
       },
       {
-        "from": "transform13",
+        "from": "transform8",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "transform9",
         "to": "visualization4",
         "kind": "data",
         "slot": 1
       },
       {
-        "from": "transform14",
+        "from": "transform10",
+        "to": "visualization4",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "transform11",
+        "to": "visualization5",
+        "kind": "data"
+      },
+      {
+        "from": "transform12",
         "to": "visualization5",
         "kind": "data",
         "slot": 1
       },
       {
+        "from": "transform13",
+        "to": "visualization5",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "transform14",
+        "to": "visualization5",
+        "kind": "data",
+        "slot": 3
+      },
+      {
         "from": "transform15",
         "to": "visualization6",
-        "kind": "data",
-        "slot": 1
+        "kind": "data"
       },
       {
         "from": "transform16",
-        "to": "visualization7",
+        "to": "visualization6",
         "kind": "data",
         "slot": 1
       },
       {
         "from": "transform17",
-        "to": "visualization8",
-        "kind": "data",
-        "slot": 1
+        "to": "visualization7",
+        "kind": "data"
       },
       {
         "from": "transform18",
-        "to": "visualization9",
+        "to": "visualization7",
         "kind": "data",
         "slot": 1
       },
       {
         "from": "transform19",
-        "to": "visualization5",
-        "kind": "data",
-        "slot": 2
+        "to": "visualization8",
+        "kind": "data"
       },
       {
         "from": "transform20",
-        "to": "visualization6",
+        "to": "visualization8",
         "kind": "data",
-        "slot": 2
+        "slot": 1
       },
       {
         "from": "transform21",
-        "to": "visualization7",
-        "kind": "data",
-        "slot": 2
-      },
-      {
-        "from": "transform22",
         "to": "visualization8",
         "kind": "data",
         "slot": 2
       },
       {
+        "from": "transform22",
+        "to": "visualization9",
+        "kind": "data"
+      },
+      {
         "from": "transform23",
         "to": "visualization9",
         "kind": "data",
-        "slot": 2
+        "slot": 1
       },
       {
         "from": "transform24",
         "to": "visualization9",
         "kind": "data",
-        "slot": 3
+        "slot": 2
       }
     ],
     "sources": {
@@ -706,8 +622,10 @@
       "curio.scout/curves-by-group",
       "curio.scout/donuts",
       "curio.scout/ensemble-strips",
+      "curio.scout/grouped-bars",
       "curio.scout/lines-with-band",
       "curio.scout/stacked-bars-with-totals",
+      "curio.scout/table",
       "curio.scout/weighted-matrix"
     ],
     "notes": null
@@ -726,7 +644,7 @@
   "split": "train",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "the scenario comparison charts step (#914's port, step 19), from the example JSON, 2026-10-17; its seven charts the SCOUT Comparison package's nodes (step 28.2), 2026-10-18; those charts the Scout package's (curio.scout@1), 2026-10-20",
+    "draftedBy": "the scenario comparison charts step (#914's port, step 19), from the example JSON, 2026-10-17; its seven charts the SCOUT Comparison package's nodes (step 28.2), 2026-10-18; those charts the Scout package's (curio.scout@1), 2026-10-20; each chart taking its scenarios' nodes directly, with no Compare Scenarios node, and the grouped bars and the table Scout's nodes too (the plan answering komar41's review, step 6.2), 2026-10-20",
     "reviewedBy": null,
     "reviewedAt": null
   },
@@ -773,5 +691,5 @@
     ],
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the export carries the datasets' identifiers only. The nine datasets are Curio's example tables, written by its seeded script and published under MIT."
   },
-  "notes": "Nine rows, one per example table: per scenario a Data Transformation node whose Case widget keeps that scenario's rows, a Compare Scenarios node stacking them, and the chart either the Compare node's own preset or one of the Scout package's seven Vega-Lite charts after it, its columns set in its widgets. Twenty-one scenarios; each storm's holds a node of each of the two storm tables."
+  "notes": "Nine rows, one per example table: per scenario a Data Transformation node whose Case widget keeps that scenario's rows, and one of the Scout package's Vega-Lite charts taking each scenario's node on an input of its own, its columns set in its widgets. Twenty-one scenarios; each storm's holds a node of each of the two storm tables."
 }

@@ -3,10 +3,12 @@ answering komar41's review of his #914, step 10).
 
 SCOUT Rasters (``scout.rasters@1``) and SCOUT Comparison
 (``scout.comparison@1``) became one package, Scout, on the owner's call
-(2026-10-20): the Raster Calculator and Rasterize Buildings, then the seven
-charts, in one manifest published by Curio under MIT. The two old ids are
-retired with no alias (a clean install), so no file Curio ships names either
-of them, as a package or in a node type.
+(2026-10-20): the Raster Calculator and Rasterize Buildings, then the charts,
+in one manifest published by Curio under MIT. The two old ids are retired
+with no alias (a clean install), so no file Curio ships names either of them,
+as a package or in a node type. The seven charts of SCOUT Comparison became
+fifteen when Compare Scenarios' presets and Dots with a range joined them
+(the plan answering komar41's review, step 6.2).
 
 The guides (``docs/*.md``) are not in the CI image this suite runs in;
 ``scoutPackageInGuides.test.ts`` reads them.
@@ -35,7 +37,7 @@ RETIRED = ("scout.rasters", "scout.comparison")
 RETIRED_ID = re.compile(r"(?<![\w.-])scout\.(?:rasters|comparison)(?![\w-])")
 
 #: Scout's templates, in the palette's order: the two raster nodes, then the
-#: seven charts.
+#: fifteen charts.
 TEMPLATES = [
     "raster-calculator",
     "rasterize-buildings",
@@ -46,6 +48,14 @@ TEMPLATES = [
     "stacked-bars-with-totals",
     "donuts",
     "weighted-matrix",
+    "dots-with-a-range",
+    "bars",
+    "grouped-bars",
+    "lines",
+    "points",
+    "pie",
+    "lollipops",
+    "table",
 ]
 
 #: What Curio ships beside its code (``utk_curio/shipped.py``), and the code
@@ -116,9 +126,10 @@ def test_scout_is_one_package_from_curio_under_mit():
     assert _manifest()["version"] == "1.0.0"
 
 
-def test_it_holds_the_nine_templates_of_the_two_packages_it_replaced():
-    """Both raster nodes, then the seven charts, each in its place in the
-    package's palette group."""
+def test_it_holds_the_templates_of_the_two_packages_it_replaced_and_eight_more_charts():
+    """Both raster nodes, then the seven charts, then Dots with a range and
+    Compare Scenarios' seven presets, each in its place in the package's
+    palette group."""
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
     templates = _manifest()["templates"]

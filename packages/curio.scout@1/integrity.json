@@ -1,18 +1,26 @@
 {
   "sha256": {
-    "README.md": "38e2aa29e89bd7fe97ba6d521e99f5736cb82c96168c598edae851f35ebc33b5",
-    "manifest.json": "89a775440694b384704297fdadd92957480d16f92ac0a29196dd8118384027a0",
-    "sources/bars-with-error-bars.vl.json": "bdb49689c81249e7568435bce349cc81f9ba34ec58efecd248a8fd412093dce4",
-    "sources/curves-by-group.vl.json": "485dcf405bfdd7e7dba23dfc0e11fc27ebae42a94e2a2e2161cc9aaec6d88eef",
-    "sources/donuts.vl.json": "efee7abb62efcc8e5a8534a3dd4e2b90f9bcfe27197ea8c5dff688de289808f4",
-    "sources/ensemble-strips.vl.json": "a621302f5fb2203d0324eaeb4ef01a6fcc9d15f0c70373daa732c3950da7623c",
-    "sources/lines-with-band.vl.json": "18fedd2f9795103d5a1bf346d54249c6d2dba8377616f656ebfe18c9f91589f7",
+    "README.md": "a248a5d5c35f0335d59ae41bda8b86d264e1c36adb5f4104809deb65f92d0c9a",
+    "manifest.json": "055192dd26b2499ff6a6d376252d07e8b164fd7b046bcde4f7a94e3811abc2a4",
+    "sources/bars-with-error-bars.vl.json": "dd7ca42ba77257b2cf1c030a9d78ee61416015ff82020aee8d679b3a938f994b",
+    "sources/bars.vl.json": "00343d62960a4b7c97415f43fd6ae64d0c4a93461588bba15ce735f68fd709e4",
+    "sources/curves-by-group.vl.json": "d71614d7c63a72cf206e51b2fb6184303d64312eadf99ee345110819ddc8c4cd",
+    "sources/donuts.vl.json": "f3fa4d281b743076248b29ea8dd5d548a87bd16900845f05e43ba5c3c63719ce",
+    "sources/dots-with-a-range.vl.json": "4b22e4fa2a4a76dec9adfd4c0afe023c8d434b9f8890ecef8a5e1a4aa3d61070",
+    "sources/ensemble-strips.vl.json": "eb3b35c12a354c1613263dd8ef1b3f0ab38bea4fca998e8fdcd62fb52734d745",
+    "sources/grouped-bars.vl.json": "ae54a32311f0db093cbc42920f6dad6032a1e1d04e729323205261e124994913",
+    "sources/lines-with-band.vl.json": "2423bcfeb6a21d3073d8d1e2143805ce8884bf655c54143c2a3f36e600eb39bd",
+    "sources/lines.vl.json": "f2455a22b74febc9f89f260b6eda70da10ee2b15322a6a084ae75d84b3de9dc3",
+    "sources/lollipops.vl.json": "a2da2c37eaa9729c9459e055280b3e562693ea9d4b90bff2d9255d897b6caf9d",
+    "sources/pie.vl.json": "4296008b927804fda597d9a093472e7d73ed381dfc20fc0b3d2123f5c125a9ad",
+    "sources/points.vl.json": "18bb7ad9ff039d8b8e19b9aeeb3ac31f9782905b6d1f46de3e4f326cf6bb09ce",
     "sources/raster-calculator.py": "bad3def3828d9d04bdf14523494dbf52ae1e86123fbe3a0ec06b55db3a2226dc",
     "sources/rasterize-buildings.py": "b0739294eb6951269f77f4adc06abbd6f012c96c365932cfe7a857cac86fecf6",
     "sources/scout_rasters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "sources/scout_rasters/convert_to_raster.py": "62eda82b3d6d12258e9c2d6d173da84b5a8c445e2b31d1fe62eab6587e36d676",
     "sources/scout_rasters/node_outputs.py": "fa576782d64296dcaa2d98b13eb111525faa6dc091d7634f2c956dd059332330",
-    "sources/stacked-bars-with-totals.vl.json": "b09dbea7aab640653f3cd71b4cad9d48990a1ae3fc909a41d12dcd4abbeea3bf",
-    "sources/weighted-matrix.vl.json": "ae46b3997ca43c47ebedbd0b258f6ccce9eedf55e8b8c6de9eccca08e54c5dee"
+    "sources/stacked-bars-with-totals.vl.json": "010d1fc626d0a611d09cf4b0d11e64c05811b81b419f2b56809bbc8bf7d65a52",
+    "sources/table.vl.json": "74f67a049873a621ec4bfce2079dda4a8ad478d602e2f37fa3a9fe8881625168",
+    "sources/weighted-matrix.vl.json": "9b4342113ab3eb5b28103fd8578125e43bc865deb1f7fb086213aa33e57efc2e"
   }
 }

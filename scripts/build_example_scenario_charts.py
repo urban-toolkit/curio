@@ -5,8 +5,9 @@ Each table illustrates one way to chart a comparison of scenarios, and each is
 a CSV dataset of its own in the Data Catalog, ``datasets/data.curio.example-*@1``.
 Every row names its scenario in the ``case`` column. The test dataflow
 ``docs/examples/dataflows/scenario-comparison-charts.json`` keeps each
-scenario's rows in a Data Transformation node, stacks them in a Compare
-Scenarios node, and charts them.
+scenario's rows in a Data Transformation node, and charts each table's
+scenarios with a chart of the Scout package that takes each scenario's node
+on an input of its own.
 
 The values come from the formulas below and a seeded random generator, so a
 run writes the same bytes every time; ``test_scenario_comparison_charts.py``

@@ -65,9 +65,16 @@ VEGA_LITE_TYPES = _vega_lite_types()
 
 
 def _node_specs(flow: dict, where: str):
+    """Each chart's spec, read as a run reads it: its references resolved, so
+    a widget placed as a value, such as a Table's list of columns
+    (``"fold": [!! columns !!]``), is JSON once its value is written."""
+    from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
+
+    spec = parse_workflow_dict({"dataflow": flow})
+    by_id = {node.id: node for node in spec.nodes}
     for node in flow.get("nodes", []):
         if node["type"].split("@", 1)[0] in VEGA_LITE_TYPES:
-            yield f"{where} node {node['id'][:8]}", json.loads(node["content"])
+            yield f"{where} node {node['id'][:8]}", json.loads(spec.node_code(by_id[node["id"]], "json"))
 
 
 def _block_specs(text: str, where: str):

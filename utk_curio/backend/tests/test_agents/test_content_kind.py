@@ -14,11 +14,12 @@ from utk_curio.backend.app.execution import workflow_spec as ws
 from utk_curio.backend.app.packages.application import templates as pkg_services
 
 BUILTIN = "curio.builtin"
-#: Scout's (``curio.scout@1``) two raster nodes and its seven charts.
+#: Scout's (``curio.scout@1``) two raster nodes and its fifteen charts.
 RASTER_NODES = ("raster-calculator", "rasterize-buildings")
 SCOUT_CHARTS = (
     "lines-with-band", "curves-by-group", "bars-with-error-bars", "ensemble-strips",
-    "stacked-bars-with-totals", "donuts", "weighted-matrix",
+    "stacked-bars-with-totals", "donuts", "weighted-matrix", "dots-with-a-range",
+    "bars", "grouped-bars", "lines", "points", "pie", "lollipops", "table",
 )
 
 
@@ -86,11 +87,11 @@ class TestTemplateContentKind:
         manifest = load_package_manifest(root)
         kinds = {t.template_id: pkg_services.template_content_kind(t) for t in manifest.templates}
         assert {key: kinds[key] for key in RASTER_NODES} == {"raster-calculator": "code", "rasterize-buildings": "code"}
-        # The package's other nodes are its seven charts (below).
+        # The package's other nodes are its fifteen charts (below).
         assert sorted(set(kinds) - set(RASTER_NODES)) == sorted(SCOUT_CHARTS)
 
     def test_scouts_comparison_charts_are_vega_lite_documents(self):
-        """Scout's seven charts are Vega-Lite specs, as the Vega-Lite node's
+        """Scout's fifteen charts are Vega-Lite specs, as the Vega-Lite node's
         is: validated as documents, never run in the sandbox."""
         from pathlib import Path
 
