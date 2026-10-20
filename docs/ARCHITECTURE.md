@@ -304,8 +304,7 @@ moves nodes the way the dashboard page does:
   grammar node's output pane visible under its input (`curio-notebook-split` in
   `Node.css`) without moving either pane, so a chart or map never remounts.
   `notebookOutputBox` gives an output the height its kind gets: a definite one for a
-  chart (320px), an Autark map or plot and a Compare Scenarios view (400px), which have
-  none of their own; a table, summary or control its own up to 360px; anything else
+  chart (320px) and an Autark map or plot (400px), which have none of their own; a table, summary or control its own up to 360px; anything else
   360px. `useNotebookEditorHeight` (`components/editing/`) sets a code or spec editor's
   wrapper to Monaco's content height (`onDidContentSizeChange`), at least three lines,
   at most 400px for code and 240px for a spec. The outcome strip sits in the cell's flow
@@ -371,22 +370,31 @@ from the box its input comes from:
   dataset the view lacks: vega-lite builds only the datasets a spec reads, and vega
   throws for any other. Its twins in Python are `stack_inputs` and `input_rows`
   (`inputRows`, one input's own rows) in `utk_curio/sandbox/util/scenario_stack.py`,
-  which share `stack_scenarios`' rules but read a GeoDataFrame without its geometry
-  (`geometry=False`, so Compare Scenarios keeps refusing a GeoDataFrame beside a table
-  and two coordinate systems), and which an exported notebook's chart cell imports
-  (`NotebookConvertor.ts`, with the boxes at `dataflow.scenarios`; the cell writes the
-  spec as a Python literal). `stackedInputs.cases.json` pins both, for Jest and for
-  `test_scenario_inputs.py`.
+  which read a GeoDataFrame without its geometry and which an exported notebook's
+  chart cell imports (`NotebookConvertor.ts`, with the boxes at `dataflow.scenarios`;
+  the cell writes the spec as a Python literal). `stackedInputs.cases.json` pins both,
+  for Jest and for `test_scenario_inputs.py`.
 - `adapters/node/vegaBehavior.ts` fills a spec that reads `inputs` with its own
   inputs' labels (`withScenarioScales`, `utils/scenarios/scenarioScales.ts`), each box
   once in the order `dataflow.scenarios` lists the boxes, then the inputs from no box in
   circle order (`scaleLabelsOf`), but only when an input comes from a box (`boxFill`):
-  with none, the spec's own colors and order stand. Any other spec takes an upstream
-  Compare Scenarios node's labels (`upstreamCompareLabels`). For the first, a change to
-  any label's id, name or color, or to the boxes' order, draws the chart again and
-  stacks its rows again, a box drawn around a feeder among them; for the second, only
-  what the scales draw. Both redraw the way the Compare node's Chart tab draws (below).
-  The exported notebook fills its chart cell the same way.
+  with none, the spec's own colors and order stand. Every color, fill or stroke on
+  `scenario_name` takes `scenarioScale` (on a text mark, the `tableTextColor` shades,
+  both in `scenarioColors.ts`), and every position, offset or facet on it takes the
+  names as its order, over what the spec writes, as `withScenarioColors` does for a map
+  layer. Any other spec draws as written. `scenarioScales.cases.json` pins the fill for
+  Jest and for the Vega-Lite check in `test_scenario_inputs.py`, and the exported
+  notebook fills its chart cell the same way.
+- A change to any label's id, name or color, or to the boxes' order, draws the chart
+  again and stacks its rows again, a box drawn around a feeder among them:
+  `handleCompileGrammar` with `recordsProvenance` and `forwardsInput` off for that
+  draw, so no version and no hand-off. It also sets `keepsSelection`, and `useVega`
+  puts a selection made in the chart back in the new view (`carriedSelections` and
+  `withMovedIds` in `vegaSelects.ts`), leaving what the flow holds as it is. One
+  redraw runs at a time, then the last labels if they moved meanwhile: a color
+  dragged through the picker is written at every step, and each redraw takes the
+  selection from the view the one before it built. It does not redraw during a run,
+  which draws the chart itself.
 - A map: on an Autark node outside every box, `layerScenarios`
   ([`autkScenarioColors.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkScenarioColors.ts))
   finds the box of each layer's table through the circle `autkSourcesFrom` says it came
@@ -401,47 +409,11 @@ from the box its input comes from:
 
 ### Comparing scenarios
 
-The Compare Scenarios node (`curio.builtin/compare-scenarios`) is a Python code
-node whose code it writes itself:
+A dataflow compares its scenarios with ordinary nodes outside the boxes, each
+scenario's outcome on a circle of its own:
 
-- `src/utils/compare/compareInputs.ts` labels each input circle by the scenario its
-  source node is in (`metadata.compareScenarios.inputs`), and `compareCode.ts` writes
-  the code from the labels, one chip per input. `adapters/node/compareScenariosBehavior.tsx`
-  writes both again when the graph's labels differ from the stored ones, never on the
-  dashboard or a shared view, and not while a load has added the nodes but not yet
-  the edges.
-- The code calls `curio_stack_scenarios` (`utk_curio/sandbox/util/scenario_stack.py`),
-  seeded in the in-process namespace (`worker._globals_cache`) and the isolated one
-  (`zygote.build_namespace_template`). A run on the server runs the node as any
-  executable template; `compareCode.cases.json` pins the written code for Jest and
-  for `test_compare_scenarios_node.py`, which resolves it through
-  `WorkflowSpec.node_code` and runs it.
-- `components/compare/CompareChart.tsx` draws the node's own output with `useVega`,
-  with `recordsProvenance` and `forwardsInput` off: the node's provenance is its
-  code, and its run has already handed the table on. The presets are in
-  `comparePresets.ts`, and `comparePresets.cases.json` holds one spec per preset for
-  Jest and for the Vega-Lite check in `test_compare_scenarios_node.py`.
-- A Vega-Lite node after the node draws its scenarios as the node's chart does.
-  `upstreamCompareLabels` (`compareInputs.ts`) finds the Compare Scenarios node the
-  chart reads on input_0, directly or through nodes of one input each, and the
-  labels its chart draws with (`chartLabels`, which `CompareScenariosBody.tsx` uses
-  too). `adapters/node/vegaBehavior.ts` passes the spec through `withScenarioScales`
-  (`src/utils/scenarios/scenarioScales.ts`) before `useVega` compiles it: every color,
-  fill or stroke on `scenario_name` takes `scenarioScale` (on a text mark, the Table
-  preset's `tableTextColor` shades, both in `scenarioColors.ts`), and every position,
-  offset or facet on it takes the names as its order, over what the spec writes, as
-  `withScenarioColors` does for a map layer. When the scenarios' names or colors change (`scenarioScale`), the
-  behavior draws the chart again the way `CompareChart.tsx` draws:
-  `handleCompileGrammar` with `recordsProvenance` and `forwardsInput` off for that
-  draw, so no version and no hand-off. It also sets `keepsSelection`, and `useVega`
-  puts a selection made in the chart back in the new view (`carriedSelections` and
-  `withMovedIds` in `vegaSelects.ts`), leaving what the flow holds as it is. One
-  redraw runs at a time, then the last names and colors if they moved meanwhile: a
-  color dragged through the picker is written at every step, and each redraw takes
-  the selection from the view the one before it built. It does not redraw during a
-  run, which draws the chart itself. `scenarioScales.cases.json`
-  pins the fill for Jest and for the Vega-Lite check in
-  `test_scenario_inputs.py`.
+- A chart is a Vega-Lite node whose spec reads `inputs`
+  ([Scenarios in charts and maps](#scenarios-in-charts-and-maps)).
 - The Scout package (`packages/curio.scout@1`) holds fifteen Vega-Lite templates
   that compare scenarios. Each names `behavior: vega` and `grammarId: vega-lite`,
   takes `[1,n]` on its input port, a circle per scenario, and its `.vl.json` starter
@@ -467,40 +439,11 @@ node whose code it writes itself:
   ([Built-in nodes by their declared behavior](#built-in-nodes-by-their-declared-behavior)).
   The automatic Vega-Lite and Autark tags read a template's grammar from the
   account's store too ([A dataflow's tags and data types](#a-dataflows-tags-and-data-types)).
-- In Difference (`compareMode.ts`: `metadata.compareScenarios.mode`, else Difference
-  for two rasters or two layers by the `dataType` of what the circles hold) the code
-  calls `curio_difference_scenarios` (`utk_curio/sandbox/util/scenario_difference.py`)
-  instead; `compareDifference.cases.json` pins it for Jest and for
-  `test_compare_difference_node.py`. The behavior writes the code again when the
-  wanted view differs from the one the code calls, the key from its `key=`, or
-  `difference.absolute` from its `absolute=True`, and never while an input's kind
-  is unknown, as after a load.
-- Two layers or tables are joined in Python. Two rasters are loaded as an Autark map
-  loads them, and an isolated child may not start Node. So the code returns a JSON
-  request (each raster's GeoTIFF bytes and `raster_meta`), and the sandbox's `/exec`
-  completes it after either path ran the code (`complete_raster_difference`):
-  `util/raster_difference.js` runs through `worker.run_js_script`, the runner
-  `execute_js_code` uses, loads both rasters with `loadGeoTiff` by `rasterLoad.ts`'s
-  `planForMeta` and returns their envelopes (`rasterWire.ts`), whose float32 bands
-  `envelope_difference.subtract_envelopes` subtracts (see [Raster algebra](#raster-algebra)).
-  `rasterLoad.ts` and `rasterWire.ts` have no imports at run time, so Node loads them
-  from `src/` by type stripping. The envelope is stored as the node's output, a JSON
-  artifact.
-- `components/compare/CompareDifference.tsx` shows the difference: a table goes
-  through `CompareChart` with the spec `compareDifference.ts` writes. The node draws
-  no map: a raster's or a layer's difference is drawn by an Autark node after it,
-  which reads the node's output as any Autark node reads its input.
-- `whatDiffers.ts` reads each compared scenario's parts through `scenarioParts`,
-  pairs levers whose ids and `copiedFrom` lists meet, and compares their widget
-  values and code lines, or, for Interaction nodes, their edit logs, an edit
-  switched off marked off; `contextWarnings` compares their fixed context.
-- A pinned Compare Scenarios node draws its own output, so it is its own dashboard
-  source (its `compare-scenarios` behavior: `isSelfDrawnNode` in `dashboardLayout.ts`,
-  `draws_its_own_output` in `projects/dashboard_payload.py`), and its
-  inputs are not walked. Its tile draws no
-  map, so the page carries no `/raster` answer for it; an Autark map pinned after it
-  walks up to it like any producer, and the page carries the difference's raster for
-  that map.
+- The difference of two rasters is a Raster Calculator's,
+  `raster_calculate("subtract", [input_1, input_0], output_file=curio_output_file)`,
+  with `absolute=True` for its size ([Raster algebra](#raster-algebra)), and the
+  difference of two tables or layers a Python node's, which joins their rows on a
+  key column. An Autark node after either draws it on a map.
 
 ### Editing features
 
@@ -510,7 +453,8 @@ whose code is written from its edit log (`metadata.editFeatures`: `key`, `layer`
 
 - `src/utils/editFeatures/editFeatures.ts` normalizes the log and writes the code,
   one call of `curio_edit_features` (`utk_curio/sandbox/util/feature_edits.py`),
-  seeded in both namespaces as the Compare Scenarios steps are.
+  seeded in the in-process namespace (`worker._globals_cache`) and the isolated one
+  (`zygote.build_namespace_template`).
   `adapters/node/editFeaturesBehavior.tsx` writes the log and the code together
   when the body changes the log, and marks the node stale with every node below it
   that ran, the nodes `autoRunTargets` (`providers/flow/useAutoRun.ts`) gives.
@@ -634,7 +578,6 @@ Curio knows what a node is by what its template declares, never by the name of i
 | Rule | Backend | Canvas | What the template declares |
 |---|---|---|---|
 | A dashboard or a scenario walks through the node | `passes_through` in `projects/dashboard_payload.py`, which `parts.is_pass_through` calls | `isPassThroughNode` in `utils/dashboardLayout.ts` | the `vega`, `simple-vis` or `data-pool` behavior, a `grammarId` of `vega-lite`, or the `autk-grammar` behavior with a spec that draws |
-| A pinned node is its own dashboard source | `draws_its_own_output` in `projects/dashboard_payload.py` | `isSelfDrawnNode` in `utils/dashboardLayout.ts` | the `compare-scenarios` behavior |
 | A save keeps no output of the node's own | `_is_sink_node_type` in `projects/services.py` | `isNonProducingNodeType` in `utils/saveOutputDataset.ts` | the `vega` or `simple-vis` behavior, or a `grammarId` of `vega-lite` |
 | A node loads the dataset it names: the nodes after it are the dataset's consumers, and a dataset dropped on it applies to it | `loads_data` in `datasets/application/export.py` | `loadsData`, read by `datasetLineageResolver.ts` and `canApplyDatasetToNode` | the `loadsDataset` flag, which the agents read too (`source_grounding.loads_dataset`); the legacy type `DATA_LOADING` too |
 | A run on the server forwards the node | `node_role` in `execution/run_plan.py` | | a pass-through, or the `data-export`, `parameter` or `note` behavior |
@@ -984,7 +927,6 @@ Between nodes a raster travels as autk-db's `getRaster` collection in an envelop
 Operations over rasters are the Scout package's: [`scout_rasters/raster_algebra.py`](../packages/curio.scout@1/sources/scout_rasters/raster_algebra.py). The Raster Calculator's code imports `raster_calculate` and `raster_statistics` from it, and a node of another package imports them when its package names Scout in `dependencies.packages`, which hands the node Scout's modules too (the package modules paragraph of [Running a node](#step-by-step-running-a-node)). The namespace a Python node runs in holds no raster operations. They run in Python, where a node's rasters are: autk-db reads every band as float32 and loads at most 4096 by 4096 cells, which is what a map draws, not what a computation needs. Rasters are combined only on one grid (`grid_differences`: size, origin, resolution, rotation, CRS, to a relative 1e-9), and a refusal names both grids in words (`describe_grid`, numbers written as JavaScript writes them). A cell is nodata where its raster holds its nodata value or a number that is not finite.
 
 - On rasterio datasets (`raster_calculate`, `raster_statistics`) the module computes at the inputs' own number type, at least float32, takes the size of each cell's result with `absolute=True`, and writes a result as a GeoTIFF with NaN as nodata, named after its content, where the node's code says (`output_file=curio_output_file`). Statistics are numpy's `nanmean`, `nanmedian`, `nanmin` and `nanmax` on the band's own 2-D float64 array, nodata and masked-out cells as NaN.
-- Compare Scenarios' Difference of two rasters subtracts envelopes in core, in [`sandbox/util/envelope_difference.py`](../utk_curio/sandbox/util/envelope_difference.py) (`subtract_envelopes`): float32 bands as autk-db exported them, or, with `absolute`, the size of each cell's difference, stored as the envelope the Autark map after the node, a reopen and a dashboard tile read. That module keeps grid checks of its own, so core and the package import nothing from each other.
 
 `curio_load_data("<id>", bounds=(west, south, east, north))` reads a GeoTIFF's window (`rasters.read_window`): the whole cells whose centres lie inside the bounds, on the raster's own grid, every band at its own type and nodata, written as a GeoTIFF of its own. Bounds that reach past the raster, or hold no cell centre, are refused. The dataset scanners (`DATASET_PATH_CALL_RE` and `COLLECTION_CALL_RE` in `code_refs.py`, the agents' `_CATALOG_CALL_RE`, the frontend's `datasetIdsInCode`) take the id as the call's first argument, so options may follow it, and both loader generators name `bounds=None` on a GeoTIFF's line (`LOADER_OPTIONS`).
 
