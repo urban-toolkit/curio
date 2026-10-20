@@ -25,7 +25,8 @@ import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../ut
 import { autkOneViewProblem } from '../../generated/autkGrammar';
 import {
     autkNeedsInput, autkSourcesFrom, documentTableRefs, inputRow, keyValues, loadableSource, ownTableNames,
-    readAutkInput, selectFieldsOf, selectFieldsProblem, tablePositions, type LoadOrder, type PreparedAutkInput,
+    readAutkInput, selectFieldsOf, selectFieldsProblem, tablePositions, tablesToLoad, type LoadOrder,
+    type PreparedAutkInput,
 } from '../../utils/autkInput';
 import { type GrammarInput } from '../../utils/grammarInput';
 import { featureRows, matchSelections, type IncomingSelection } from '../../utils/selectionMatch';
@@ -601,19 +602,13 @@ export const useAutkGrammarBehavior = (
                         (s: any) => !emptySources.includes(s),
                     );
                 }
-                // autk-db makes the first table it loads the workspace's
-                // extent, and the first polygon table its crop layer, and
-                // clips every later table to both. So of the input's tables
-                // the grammar gets those the document names (its map's layers,
-                // its plot's table and the map that plot links to, its compute
-                // blocks' tables), in the order they arrived, and every table
-                // its own data section loaded (#886). The counts above cover
-                // every table at hand, so the verdict below tells a misnamed
-                // table apart from data the input does not bring.
-                const named = new Set(documentTableRefs(spec));
-                const handed = dataSectionSources.filter(
-                    (s: any) => ownSources.includes(s) || named.has(s?.outputTableName),
-                );
+                // What autk-db loads (utils/autkInput tablesToLoad): of the
+                // input's tables, those the document names, and every table
+                // its own data section loaded; first, the surface of each OSM
+                // load a table it names is a layer of (#886). The counts above
+                // cover every table at hand, so the verdict below tells a
+                // misnamed table apart from data the input does not bring.
+                const handed = tablesToLoad(dataSectionSources, spec, ownSources);
                 // On a 1 cm grid, so autk-db's second clip of these already
                 // clipped layers holds (see utils/geoPrecision).
                 spec = { ...spec, data: handed.map(snapSourceToGrid) };

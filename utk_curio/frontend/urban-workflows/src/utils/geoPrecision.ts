@@ -3,8 +3,9 @@
  *
  * autk-db clips every layer it loads after the first to that first layer's
  * extent and, when the first holds polygons (the workspace's crop layer), to
- * its outline. A grammar node hands it only the tables its document names
- * (adapters/node/autkGrammarBehavior). Those layers were often already clipped
+ * its outline. A grammar node hands it the tables its document names, after
+ * the surface of each OSM load they are layers of (utils/autkInput
+ * tablesToLoad). Those layers were often already clipped
  * once, where they were made (autk-db's `loadOsm` clips its layers to the
  * surface), so a park's edge lies on the surface's boundary to
  * within floating-point noise, and GEOS refuses the second intersection with

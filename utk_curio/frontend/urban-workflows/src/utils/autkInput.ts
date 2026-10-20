@@ -94,6 +94,56 @@ export function documentTableRefs(spec: any): string[] {
   return Array.from(names);
 }
 
+/** The layer type autk-db gives an OSM load's surface, and how its name ends. */
+const OSM_SURFACE = "surface";
+const OSM_SURFACE_SUFFIX = `_${OSM_SURFACE}`;
+
+/**
+ * The tables a node that draws hands autk-db, in the order it loads them, out
+ * of *tables*, those at hand (its input's, then its own data section's,
+ * *own*). autk-db makes the first table it loads the workspace's extent, and
+ * the first polygon table its crop layer, and clips every later table to both
+ * (#886). So of the input's tables only those the document names go: one it
+ * does not draw would cut the ones it does. Every table of its own data
+ * section goes. And a table the document names that is a layer of an OSM load
+ * brings that load's surface, when it is at hand, loaded first, so the map is
+ * cropped to the load's query area and no layer of the load cuts another.
+ *
+ * An OSM load named `X` makes the tables `X_surface`, `X_parks`, `X_water`,
+ * `X_roads` and `X_buildings`, and `X_<set>_<type>` for its tag sets
+ * (autk-db's names, which `requestedLayerTables` writes too), and autk-db
+ * types its surface `surface`. So a table of type `surface` named `X_surface`
+ * is the surface of load `X`, and a table is a layer of the load whose name,
+ * with `_` after it, is the longest one that starts its own.
+ */
+export function tablesToLoad<T extends { outputTableName?: unknown; layerType?: unknown }>(
+  tables: readonly T[],
+  spec: any,
+  own: readonly T[] = [],
+): T[] {
+  const named = new Set(documentTableRefs(spec));
+  const nameOf = (table: T): string => (typeof table?.outputTableName === "string" ? table.outputTableName : "");
+  const isSurfaceTable = (table: T) => table?.layerType === OSM_SURFACE && nameOf(table).endsWith(OSM_SURFACE_SUFFIX);
+  const loads = tables
+    .filter(isSurfaceTable)
+    .map((table) => nameOf(table).slice(0, -OSM_SURFACE_SUFFIX.length))
+    .filter((load) => load !== "");
+  // The surfaces of the loads the document names a layer of.
+  const surfaces = new Set<string>();
+  for (const table of tables) {
+    const name = nameOf(table);
+    if (!named.has(name)) continue;
+    let load: string | null = null;
+    for (const prefix of loads) {
+      if (name.startsWith(`${prefix}_`) && (load === null || prefix.length > load.length)) load = prefix;
+    }
+    if (load !== null) surfaces.add(load + OSM_SURFACE_SUFFIX);
+  }
+  const brought = (table: T) => isSurfaceTable(table) && surfaces.has(nameOf(table));
+  const loaded = tables.filter((table) => own.includes(table) || named.has(nameOf(table)) || brought(table));
+  return [...loaded.filter(brought), ...loaded.filter((table) => !brought(table))];
+}
+
 /** The tables the document's own data section creates. */
 export function ownTableNames(spec: any): string[] {
   const sources: any[] = Array.isArray(spec?.data) ? spec.data : [];
