@@ -20,7 +20,6 @@ import { normalizeWidgets, type WidgetDef } from "../utils/widgets/widgetModel";
 import { runKeyWithShared, sharedWidgetsOfSpec } from "../utils/references/sharedParameters";
 import { normalizeSelections, type SelectionTag } from "../utils/references/selectionTags";
 import { lineageFromSpec } from "../utils/scenarios/duplicateSelection";
-import { normalizeCompareSettings, type CompareSettings } from "../utils/compare/compareSettings";
 import { normalizeEditFeatures, type EditFeaturesSettings } from "../utils/editFeatures/editFeatures";
 
 // Module-level singletons so every node shares the same interpreter
@@ -86,9 +85,6 @@ type CreateCodeNodeOptions = {
     copiedFrom?: string[];
     // #662: the node's selection tags and the ids they hold (metadata.selections).
     selections?: SelectionTag[];
-    // #662: a Compare Scenarios node's input labels and chart
-    // (metadata.compareScenarios).
-    compareScenarios?: CompareSettings;
     // #662: an Edit Features node's edit list (metadata.editFeatures).
     editFeatures?: EditFeaturesSettings;
     // #407: a node whose saved output a project load restored mounts as having
@@ -266,10 +262,6 @@ export function useCode(): IUseCode {
             if(node.metadata != undefined && Array.isArray(node.metadata.selections))
                 nodeMeta.selections = normalizeSelections(node.metadata.selections);
 
-            // #662: and a Compare Scenarios node's input labels and chart.
-            if(node.metadata != undefined && node.metadata.compareScenarios != undefined)
-                nodeMeta.compareScenarios = normalizeCompareSettings(node.metadata.compareScenarios);
-
             // #662: and an Edit Features node's edit list.
             if(node.metadata != undefined && node.metadata.editFeatures != undefined)
                 nodeMeta.editFeatures = normalizeEditFeatures(node.metadata.editFeatures);
@@ -441,7 +433,6 @@ export function useCode(): IUseCode {
             widgets = undefined,
             copiedFrom = undefined,
             selections = undefined,
-            compareScenarios = undefined,
             editFeatures = undefined,
             output = undefined,
             executedCode = undefined,
@@ -494,7 +485,6 @@ export function useCode(): IUseCode {
                 widgets,
                 copiedFrom,
                 selections,
-                compareScenarios,
                 editFeatures,
                 saveOutputDataset:
                     saveOutputDataset !== undefined

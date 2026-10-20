@@ -1,8 +1,8 @@
 /**
  * The scenario box each of a node's inputs comes from (#662): the node feeding
  * each circle, the box it is in, and the label the input's rows are named and
- * drawn by. A chart reading `inputs`, an Autark map and a Compare Scenarios
- * node all find an input's box this way.
+ * drawn by. A chart reading `inputs` and an Autark map both find an input's box
+ * this way.
  */
 import { inputLabelOf, inputScenarios, scaleLabelsOf, scenarioOfNode } from "../../utils/scenarios/inputScenarios";
 import { NO_SCENARIO_COLOR } from "../../utils/scenarios/scenarioColors";

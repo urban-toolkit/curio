@@ -17,11 +17,6 @@ jest.mock("../../../providers/FlowProvider", () => ({
   useFlowContext: () => require("react").useContext(mockFlowContext),
 }));
 
-// Only what a failed run says, from the Compare Scenarios node.
-jest.mock("../../../adapters/node/compareScenariosBehavior", () => ({
-  failureLine: (content: unknown) => String(content ?? ""),
-}));
-
 // The input, as the Autark map reads it: its layers by table name.
 let mockSources: any[] = [];
 jest.mock("../../../utils/autkInput", () => ({

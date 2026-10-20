@@ -3,10 +3,9 @@
  * scenario boxes its inputs come from, stacked in circle order, and draws them
  * in the boxes' colors, in the order the dataflow lists its boxes, whatever the
  * spec writes for `scenario_name`. A box renamed or recolored draws it again,
- * its rows stacked again under the new name, as a recolor draws a chart after
- * a Compare Scenarios node: no version in its provenance, nothing handed
- * downstream. A spec that does not read `inputs` stacks nothing and is drawn as
- * written.
+ * its rows stacked again under the new name, with no version in its provenance
+ * and nothing handed downstream. A spec that does not read `inputs` stacks
+ * nothing and is drawn as written.
  *
  * The behavior and useVega are real here; vega and vega-lite are the mocks
  * below, which keep the spec each view is built from.

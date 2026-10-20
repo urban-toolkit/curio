@@ -18,7 +18,7 @@ import { useFlowContext } from "../../providers/FlowProvider";
 import { autoRunTargets } from "../../providers/flow/useAutoRun";
 import { EditFeaturesBody } from "../../components/editFeatures/EditFeaturesBody";
 import { editFeaturesCode, normalizeEditFeatures, type EditFeaturesSettings } from "../../utils/editFeatures/editFeatures";
-import { failureLine } from "./compareScenariosBehavior";
+import { failureLine } from "../../utils/runFailure";
 
 export const useEditFeaturesBehavior: NodeBehaviorHook = (data, nodeState) => {
   const flow = useFlowContext() as any;

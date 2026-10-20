@@ -88,8 +88,6 @@ export const useVega = ({
   upstreamErrored = false,
   hasSpec = true,
   onRedraw,
-  recordsProvenance = true,
-  forwardsInput = true,
   inputLabels,
 }: {
   data: any;
@@ -107,19 +105,6 @@ export const useVega = ({
    * arrived and it drew them.
    */
   onRedraw?: (counts: RenderCounts) => void;
-  /**
-   * Whether a compile is recorded in the node's provenance, its code being the
-   * spec. A Compare Scenarios node (#662) draws its own output: its provenance
-   * is the code that made that output, and a spec there would be offered as a
-   * version of its Python.
-   */
-  recordsProvenance?: boolean;
-  /**
-   * Whether a compile hands the node's input on as its output, as a chart
-   * does. A Compare Scenarios node's chart reads the node's own output, which
-   * its run has already handed on.
-   */
-  forwardsInput?: boolean;
   /**
    * Each input's label, in circle order: the scenario box its node is in
    * (utils/scenarios/inputScenarios). A spec that reads `inputs` names their
@@ -521,15 +506,14 @@ export const useVega = ({
     return true;
   };
   /**
-   * Compiles *spec* and draws it. Whether the compile is recorded in the
-   * node's provenance and hands the node's input on is the hook's to say,
-   * unless *how* says it for this draw. With `keepsSelection`, a selection made
-   * in the chart is put back in the new view and the flow goes on holding it.
-   * A chart after a Compare Scenarios node is drawn again that way when a
-   * scenario is recolored (adapters/node/vegaBehavior): as the Compare node's
-   * Chart tab draws its own, with no version and no hand-off. Without it, the
-   * selection the chart's selection tags hold is put back, or the tags are
-   * emptied (#884, `tagSelectionOf`).
+   * Compiles *spec* and draws it. The compile is recorded in the node's
+   * provenance, its code being the spec, and hands the node's input on as its
+   * output, unless *how* says otherwise for this draw. With `keepsSelection`, a
+   * selection made in the chart is put back in the new view and the flow goes
+   * on holding it. A chart reading `inputs` is drawn again that way when a
+   * scenario box is renamed or recolored (adapters/node/vegaBehavior), with no
+   * version and no hand-off. Without it, the selection the chart's selection
+   * tags hold is put back, or the tags are emptied (#884, `tagSelectionOf`).
    */
   const handleCompileGrammar = async (
     spec: string,
@@ -538,14 +522,14 @@ export const useVega = ({
     let startTime = formatDate(new Date());
 
     const counts = await compileGrammar(JSON.parse(spec), {
-      forwardsInput: how.forwardsInput ?? forwardsInput,
+      forwardsInput: how.forwardsInput ?? true,
       keepsSelection: how.keepsSelection ?? false,
     });
 
     // END COMPILE GRAMMAR
     let endTime = formatDate(new Date());
 
-    if (how.recordsProvenance ?? recordsProvenance) {
+    if (how.recordsProvenance ?? true) {
       // A chart hands on the table it read, so it returned the kind it read.
       // The input names that kind by one `dataType`.
       const typesInput = data.input?.dataType;
@@ -568,7 +552,7 @@ export const useVega = ({
 
   const compileGrammar = async (
     specObj: any,
-    how: { forwardsInput: boolean; keepsSelection: boolean } = { forwardsInput, keepsSelection: false },
+    how: { forwardsInput: boolean; keepsSelection: boolean } = { forwardsInput: true, keepsSelection: false },
   ) => {
     // Prepare before the spec is handed to vega-lite: resolving geometry can
     // inject `encoding.shape` and `projection` into `specObj`, and coerces the

@@ -285,25 +285,6 @@ export function isPassThroughNode(node: { type?: string | null; data?: any }): b
   return false;
 }
 
-/** The behaviors of the nodes whose tile draws the node's own output. */
-const SELF_DRAWN_BEHAVIORS: ReadonlySet<string> = new Set(['compare-scenarios']);
-
-/**
- * The built-in nodes whose tile draws the node's own output, for a type no
- * template declares a behavior for.
- */
-export const SELF_DRAWN_NODE_TYPES: ReadonlySet<string> = new Set(["curio.builtin/compare-scenarios"]);
-
-/**
- * Whether a node's tile draws the node's own output rather than what reaches
- * it: a node whose template declares Compare Scenarios' behavior (#662), which
- * charts the table its own run stacked, or shows its difference. Mirrors
- * `draws_its_own_output` in `projects/dashboard_payload.py`.
- */
-export function isSelfDrawnNode(node: { type?: string | null; data?: any }): boolean {
-  return declaresBehavior(getFlowNodeCanonicalType(node as any), SELF_DRAWN_BEHAVIORS, SELF_DRAWN_NODE_TYPES);
-}
-
 /**
  * The nodes whose outputs a dashboard needs saved.
  *
@@ -315,23 +296,14 @@ export function isSelfDrawnNode(node: { type?: string | null; data?: any }): boo
  * A pinned node's own output is not in the set. What a tile renders comes from
  * its input; a node that renders its own run output instead (a code node's
  * stdout pane, a Data Summary's table) has nothing a saved dataset could
- * restore, so saving it would add a dataset that nothing reads. The exception
- * is a node whose tile draws its own output (`isSelfDrawnNode`): it is its
- * own source, and its inputs are not walked.
+ * restore, so saving it would add a dataset that nothing reads.
  */
 export function dashboardSourceNodeIds(
   nodes: readonly { id: string; type?: string | null; data?: any }[],
   edges: readonly { source?: unknown; target?: unknown }[],
 ): Set<string> {
   const pinned = nodes.filter((node) => node.data?.dashboardPinned);
-  const drawn = pinned.filter((node) => isSelfDrawnNode(node));
-  const sources = producersFeeding(
-    pinned.filter((node) => !drawn.includes(node)).map((node) => node.id),
-    nodes,
-    edges,
-  );
-  drawn.forEach((node) => sources.add(node.id));
-  return sources;
+  return producersFeeding(pinned.map((node) => node.id), nodes, edges);
 }
 
 /**

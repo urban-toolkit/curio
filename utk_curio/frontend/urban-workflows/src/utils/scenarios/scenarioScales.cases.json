@@ -1,5 +1,5 @@
 {
-  "description": "Vega-Lite specs drawn after a Compare Scenarios node, over a stacked table of three scenarios in input order, and what scenarioScales.ts makes of them: every color, fill and stroke on scenario_name takes the scenarios' colors, a text mark's in the Table preset's shades, and every axis, offset and facet on it takes their names as its order. scenarioScales.test.ts checks that withScenarioScales writes exactly these, and leaves each untouched spec as it is; test_compare_scenarios_node.py checks each against the Vega-Lite schema and the columns it reads.",
+  "description": "Vega-Lite specs drawn over the rows of three scenarios' inputs stacked in input order, and what scenarioScales.ts makes of them: every color, fill and stroke on scenario_name takes the scenarios' colors, a text mark's in the shades a table writes text in, and every axis, offset and facet on it takes their names as its order. scenarioScales.test.ts checks that withScenarioScales writes exactly these, and leaves each untouched spec as it is; test_scenario_inputs.py checks each against the Vega-Lite schema and the columns it reads.",
   "labels": [
     { "scenario": "s-tall", "name": "Twice as tall", "color": "#e76f51" },
     { "scenario": "s-base", "name": "Baseline", "color": "#2a9d8f" },
