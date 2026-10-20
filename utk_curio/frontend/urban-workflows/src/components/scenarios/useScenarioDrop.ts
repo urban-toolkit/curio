@@ -3,6 +3,7 @@ import { useReactFlow } from "reactflow";
 import { v4 as uuid } from "uuid";
 
 import { useCode } from "../../hook/useCode";
+import { hostedGuestSignInNote, useHostedGuest } from "../apiSettings/useHostedGuest";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { useToastContext, type ToastVariant } from "../../providers/ToastProvider";
 import { refreshPackageRegistry } from "../../registry/packageRegistryBootstrap";
@@ -94,12 +95,20 @@ export function useScenarioDrop() {
   const { loadTrill } = useCode();
   const reactFlow = useReactFlow();
   const { showToast } = useToastContext();
+  const hostedGuest = useHostedGuest();
 
   return useCallback(
     async (payload: ScenarioDragPayload, at: { x: number; y: number }): Promise<DroppedScenario | null> => {
       const target = await ensureProjectId();
       if (!target) {
-        showToast("Save this dataflow first, then drag the scenario again.", "warning");
+        // A hosted guest gets no id for a dataflow it never saved, and cannot
+        // save one, so it is told to sign in rather than to save first.
+        showToast(
+          hostedGuest
+            ? hostedGuestSignInNote("add scenarios")
+            : "Save this dataflow first, then drag the scenario again.",
+          "warning",
+        );
         return null;
       }
       try {
@@ -172,7 +181,7 @@ export function useScenarioDrop() {
       }
     },
     [
-      ensureProjectId, showToast, reactFlow, workflowNameRef, workflowGoal, loadTrill,
+      ensureProjectId, showToast, hostedGuest, reactFlow, workflowNameRef, workflowGoal, loadTrill,
       setOutputs, hydrateRestoredOutputs, setScenarios, markDirty,
     ],
   );
