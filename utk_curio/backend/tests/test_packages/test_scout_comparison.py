@@ -91,13 +91,14 @@ WIDGETS = {
 
 #: Widgets that hold a title or a format, not a column: empty by default.
 NOT_A_COLUMN = re.compile(r".*_(title|format)$")
-#: Widgets that pick how a chart draws, not a column: a choice each.
+#: Widgets that pick how a chart draws, not a column: a choice each. Combine
+#: is the measure's Vega-Lite aggregate, and offers Vega-Lite's own.
 CHOICES = {
-    "combine": ["Mean", "Sum", "Median", "Minimum", "Maximum", "Count of rows", "None"],
+    "combine": ["mean", "sum", "median", "min", "max", "count"],
     "x_type": ["quantitative", "temporal", "ordinal", "nominal"],
 }
 #: Each Compare preset's Combine by default (``PRESET_FIELDS``).
-COMBINE_DEFAULTS = {"bars": "Mean", "grouped-bars": "Mean", "lines": "Mean", "pie": "Sum", "lollipops": "Mean"}
+COMBINE_DEFAULTS = {"bars": "mean", "grouped-bars": "mean", "lines": "mean", "pie": "sum", "lollipops": "mean"}
 #: Widgets that name a column but start empty: no facet draws one panel.
 EMPTY_COLUMNS = {"facet"}
 #: The Table's list of columns, which starts with the scenarios' names.
@@ -350,10 +351,31 @@ def test_each_starter_with_its_widget_defaults_is_valid_vega_lite(template_id):
     assert result.get("status") == STATUS_VALID, result
 
 
+@pytest.mark.parametrize("template_id", TEMPLATES)
+def test_no_chart_draws_a_geoshape(template_id):
+    """The rows of ``inputs`` carry no geometry, so no chart draws one."""
+    code, _problems = _resolved(template_id)
+    spec = json.loads(code)
+    marks = []
+
+    def view(node):
+        if isinstance(node, list):
+            for item in node:
+                view(item)
+        elif isinstance(node, dict):
+            if "mark" in node:
+                marks.append(node["mark"]["type"] if isinstance(node["mark"], dict) else node["mark"])
+            for key in ("layer", "concat", "hconcat", "vconcat", "spec"):
+                view(node.get(key))
+
+    view(spec)
+    assert marks and "geoshape" not in marks, marks
+
+
 @pytest.mark.parametrize("template_id", [t for t in TEMPLATES if set(WIDGETS[t]) & set(CHOICES)])
 def test_every_choice_is_valid_vega_lite(template_id):
-    """Each of Combine's choices, None and a count of rows among them, and each
-    X type: a chip writes only text, so each is a spec Vega-Lite reads."""
+    """Each of Combine's choices, a count among them, and each X type, written
+    where its chip stands: each is a spec Vega-Lite reads."""
     from utk_curio.backend.app.agents.domain.document_validation import STATUS_VALID, validate_vega_lite
 
     template = _template(template_id)

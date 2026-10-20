@@ -6,17 +6,17 @@
  *
  * A one-time migration test: each template, with its widgets set as a case of
  * `comparePresets.cases.json` says, resolves to the spec the Compare node's
- * Chart tab wrote for that case, up to three things:
+ * Chart tab wrote for that case, up to its `data` block, which names the
+ * dataset `inputs` where the Chart tab handed the Compare node's stacked table
+ * in as `input_0`, and what `withScenarioScales` fills on `scenario_name`.
  *
- * - its `data` block, which names the dataset `inputs`, where the Chart tab
- *   handed the Compare node's stacked table in as `input_0`;
- * - what `withScenarioScales` fills on `scenario_name`, the boxes' colors and
- *   order, which it fills in both;
- * - how the y values are combined. Vega-Lite's `aggregate` has no "none", and
- *   a chip only writes text, so a template cannot leave the key out for None
- *   or the field out for a count of rows. It combines in its transforms
- *   (`combineBlock`) and plots the combined value, `curio_value`, under the
- *   title the Chart tab gave the aggregate it wrote on the channel.
+ * Combine writes Vega-Lite's own aggregate on the measure, `"aggregate":
+ * "[!! combine !!]"`, so its choices are Vega-Lite's: mean, sum, median, min,
+ * max and count. Two of Compare's cases read differently, and
+ * `expectedFromCompare` says how, in one place: Compare's None has no
+ * aggregate in Vega-Lite, so a case of it sets mean and expects the measure
+ * to write it; and Compare's count of rows named no column, where the chip
+ * writes the y column beside the count, which Vega-Lite's count ignores.
  *
  * Step 6.4 deletes Compare and its cases, and re-pins each template to cases
  * of its own then: `expectedFromCompare` gives way to a cases file of
@@ -29,15 +29,15 @@
 import * as fs from "fs";
 import * as path from "path";
 import cases from "../../utils/compare/comparePresets.cases.json";
-import { AGGREGATE_LABELS, PRESET_FIELDS, PRESET_LABELS } from "../../utils/compare/comparePresets";
+import { PRESET_FIELDS, PRESET_LABELS } from "../../utils/compare/comparePresets";
 import {
   COMPARE_AGGREGATES,
   COMPARE_PRESETS,
   type CompareAggregate,
-  type CompareInputLabel,
   type ComparePreset,
 } from "../../utils/compare/compareSettings";
-import { withScenarioScales } from "../../utils/compare/scenarioScales";
+import type { ScenarioLabel } from "../../utils/scenarios/scenarioColors";
+import { withScenarioScales } from "../../utils/scenarios/scenarioScales";
 import { resolveReferences } from "../../utils/references/codeReferences";
 import { normalizeWidgets, type WidgetDef, type WidgetValue } from "../../utils/widgets/widgetModel";
 
@@ -89,9 +89,8 @@ const MEASURES: Partial<Record<ComparePreset, (string | number)[][]>> = {
   lollipop: [["layer", 0, "encoding", "x"], ["layer", 1, "encoding", "x"]],
 };
 
-/** The presets whose y values are combined by more than one row: grouped bars
- *  and lines combine per category or x value too. */
-const COMBINED_BY: Partial<Record<ComparePreset, "x">> = { "grouped-bar": "x", line: "x" };
+/** Combine's choices: Vega-Lite's aggregates among Compare's, all but None. */
+const COMBINE_CHOICES = COMPARE_AGGREGATES.filter((aggregate) => aggregate !== "none");
 
 interface Case {
   name: string;
@@ -100,7 +99,7 @@ interface Case {
 }
 
 const CASES = cases.cases as unknown as Case[];
-const labels = cases.labels as CompareInputLabel[];
+const labels = cases.labels as ScenarioLabel[];
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 
@@ -108,40 +107,8 @@ function at(spec: Json, where: (string | number)[]): Json {
   return where.reduce((node: any, key) => node[key], spec);
 }
 
-function put(spec: Json, where: (string | number)[], value: Json): void {
-  const parent = at(spec, where.slice(0, -1));
-  parent[where[where.length - 1]] = value;
-}
-
-/**
- * How a template combines its y values, once its chips are written: every
- * aggregate Combine offers, per scenario (and per *groupby*'s other columns),
- * or, for None, per row, then the one Combine picks as `curio_value`.
- */
-function combineBlock(column: string, groupby: string[], label: string): Json[] {
-  return [
-    { window: [{ op: "row_number", as: "curio_row" }] },
-    { calculate: `'${label}' === 'None' ? datum.curio_row : 0`, as: "curio_group" },
-    {
-      aggregate: [
-        { op: "mean", field: column, as: "curio_mean" },
-        { op: "sum", field: column, as: "curio_sum" },
-        { op: "median", field: column, as: "curio_median" },
-        { op: "min", field: column, as: "curio_min" },
-        { op: "max", field: column, as: "curio_max" },
-        { op: "count", as: "curio_count" },
-      ],
-      groupby: [...groupby, "curio_group"],
-    },
-    {
-      calculate:
-        "({'Mean': datum.curio_mean, 'Sum': datum.curio_sum, 'Median': datum.curio_median, " +
-        "'Minimum': datum.curio_min, 'Maximum': datum.curio_max, 'Count of rows': datum.curio_count, " +
-        `'None': datum.curio_max})['${label}']`,
-      as: "curio_value",
-    },
-  ];
-}
+/** Combine as a case sets it: its aggregate, or mean for Compare's None. */
+const combineOf = (aggregate: CompareAggregate | null) => (aggregate === "none" ? "mean" : aggregate);
 
 /** The widgets as *c* says: its columns, its Combine and the titles the Chart
  *  tab wrote. */
@@ -150,7 +117,7 @@ function widgetValues(c: Case): Record<string, WidgetValue> {
   const spec = c.spec;
   const where = MEASURES[preset];
   const measureTitle = where ? at(spec, where[0]).title : undefined;
-  const combine = aggregate ? AGGREGATE_LABELS[aggregate] : undefined;
+  const combine = combineOf(aggregate);
   switch (preset) {
     case "bar":
       return { y: y!, combine: combine!, y_title: measureTitle };
@@ -173,32 +140,25 @@ function widgetValues(c: Case): Record<string, WidgetValue> {
 }
 
 /**
- * The spec Compare's Chart tab wrote for *c*, as the template writes it: a
- * channel that held the aggregate holds `curio_value` under the same title,
- * and the transforms combine the y values. Vega-Lite draws the dots of a plot
- * it does not aggregate see-through, so Lollipops' dots say how see-through
- * they are, as Compare's were drawn: solid when combined, see-through for None.
+ * The spec Compare's Chart tab wrote for *c*, as the template writes it. The
+ * same, but where its measure differs from Vega-Lite's own aggregate: None,
+ * which Vega-Lite has no aggregate for, is written as mean, and a count of
+ * rows names the y column too, which Vega-Lite's count ignores.
  */
 function expectedFromCompare(c: Case): Json {
-  const { preset, x, y, aggregate } = c.resolved;
+  const { preset, y, aggregate } = c.resolved;
   const spec = clone(c.spec);
-  const where = MEASURES[preset];
-  if (!where) return spec;
-  for (const path of where) {
-    const { field, aggregate: written, type, title, ...kept } = at(spec, path);
-    // What Compare wrote there: the y column under the case's aggregate, or
-    // the count of rows, which reads no column.
-    expect([field, written, type]).toEqual([
-      aggregate === "count" ? undefined : y,
-      aggregate === "none" ? undefined : aggregate,
-      "quantitative",
-    ]);
-    put(spec, path, { field: "curio_value", type: "quantitative", title, ...kept });
+  for (const where of MEASURES[preset] ?? []) {
+    const measure = at(spec, where);
+    if (aggregate === "none") {
+      expect(measure.aggregate).toBeUndefined();
+      measure.aggregate = "mean";
+    }
+    if (aggregate === "count") {
+      expect(measure.field).toBeUndefined();
+      measure.field = y;
+    }
   }
-  const label = AGGREGATE_LABELS[aggregate!];
-  const groupby = COMBINED_BY[preset] ? ["scenario_name", x!] : ["scenario_name"];
-  spec.transform = combineBlock(y!, groupby, label);
-  if (preset === "lollipop") spec.layer[1].mark.opacity = { expr: `'${label}' === 'None' ? 0.7 : 1` };
   return spec;
 }
 
@@ -232,8 +192,9 @@ describe("each preset's template draws the spec Compare's Chart tab wrote", () =
 describe("Combine", () => {
   const combining = COMPARE_PRESETS.filter((preset) => PRESET_FIELDS[preset].aggregate !== null);
 
-  test("offers the Chart tab's choices in its order, with each preset's default", () => {
+  test("offers Vega-Lite's own aggregates, with each preset's default", () => {
     expect(combining).toEqual(Object.keys(MEASURES));
+    expect(COMBINE_CHOICES).toEqual(["mean", "sum", "median", "min", "max", "count"]);
     for (const preset of COMPARE_PRESETS) {
       const widget = template(TEMPLATE_OF[preset]).widgets.find((w) => w.name === "combine");
       const fallback = PRESET_FIELDS[preset].aggregate;
@@ -241,25 +202,17 @@ describe("Combine", () => {
         expect(widget).toBeUndefined();
         continue;
       }
-      expect(widget).toMatchObject({ type: "choice", label: "Combine", default: AGGREGATE_LABELS[fallback] });
-      expect(widget?.options?.choices).toEqual(COMPARE_AGGREGATES.map((aggregate) => AGGREGATE_LABELS[aggregate]));
+      expect(widget).toMatchObject({ type: "choice", label: "Combine", default: fallback });
+      expect(widget?.options?.choices).toEqual(COMBINE_CHOICES);
     }
   });
 
-  test("each choice plots the aggregate the Chart tab wrote for it, and None each row as it is", () => {
+  test("each choice is the aggregate written on every channel that draws the measure", () => {
     for (const preset of combining) {
-      for (const aggregate of COMPARE_AGGREGATES) {
-        const label = AGGREGATE_LABELS[aggregate];
-        const [, group, combined, picked] = drawn(TEMPLATE_OF[preset], { combine: label }).transform;
-        const lookup = Object.fromEntries(
-          [...String(picked.calculate).matchAll(/'([^']+)': datum\.(\w+)/g)].map((m) => [m[1], m[2]]),
-        );
-        const ops = Object.fromEntries(combined.aggregate.map((op: Json) => [op.as, op.op]));
-        expect(Object.keys(lookup)).toEqual(COMPARE_AGGREGATES.map((a) => AGGREGATE_LABELS[a]));
-        expect(picked.calculate.endsWith(`['${label}']`)).toBe(true);
-        expect(group.calculate).toBe(`'${label}' === 'None' ? datum.curio_row : 0`);
-        // None makes each row a group of its own, whose maximum is its value.
-        expect(ops[lookup[label]]).toBe(aggregate === "none" ? "max" : aggregate);
+      for (const aggregate of COMBINE_CHOICES) {
+        const spec = drawn(TEMPLATE_OF[preset], { combine: aggregate });
+        for (const where of MEASURES[preset]!) expect(at(spec, where).aggregate).toBe(aggregate);
+        expect(spec.transform).toBeUndefined();
       }
     }
   });
@@ -277,7 +230,7 @@ describe("a chart whose spec its user edited", () => {
     return JSON.stringify(spec, null, 2);
   };
   const PARKS = { category: "park", value: "mean_min", x_title: "Mean shadow (minutes)", y_title: "" };
-  const boxes: CompareInputLabel[] = [
+  const boxes: ScenarioLabel[] = [
     { scenario: "existing", name: "Existing", color: "#2a9d8f" },
     { scenario: "removed", name: "Towers removed", color: "#e76f51" },
     { scenario: "capped", name: "Height cap", color: "#6a4c93" },

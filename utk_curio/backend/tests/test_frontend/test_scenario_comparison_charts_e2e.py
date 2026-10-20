@@ -23,7 +23,8 @@ that would leave the stack is refused, and Run All drives the whole dataflow:
    its own where its scenarios color only its axis labels (the stacked bars
    by stage, the matrix of weights), and the table its text in the shades of
    them that read on white. Dots with a range draws a grey rule per mode and
-   each plan's dots in its color.
+   each plan's dots in its color. Each Compare node's own preset compiles
+   with no problem and, but for a table, draws its scenarios' colors.
 4. What differs on the four street plans lists one lever, its Case widget,
    set to each plan, and no code line; nothing is warned.
 5. A chart draws its scenarios in their boxes' colors: one scenario of each
@@ -51,7 +52,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
-from .test_compare_scenarios_e2e import _COLOR_PIXELS_JS, _OUTPUT_ARTIFACT_JS
+from .test_compare_scenarios_e2e import _CHART_STATE_JS, _COLOR_PIXELS_JS, _OUTPUT_ARTIFACT_JS
 from .utils import (
     REPO_ROOT,
     api_json,
@@ -251,6 +252,19 @@ def _assert_colors_drawn(page, node_id: str, colors: list, what: str) -> None:
     raise AssertionError(f"{what} does not draw its colors {colors}: pixels {counts}")
 
 
+def _assert_preset_drew(page, node_id: str, preset: str, what: str) -> None:
+    deadline = time.time() + 60
+    state = None
+    while time.time() < deadline:
+        state = page.evaluate(_CHART_STATE_JS, [node_id, preset])
+        if state in ("drawn", "problem"):
+            break
+        page.wait_for_timeout(250)
+    problem = node_locator(page, node_id).locator("[data-compare-chart-problem]").all_inner_texts()
+    assert state == "drawn", f"{what}'s {preset} chart ended {state!r}: {problem}"
+    assert_vega_canvas_rendered(page, node_id, timeout=30000)
+
+
 def _assert_text_drawn(page, node_id: str, colors: list, what: str) -> None:
     counts = None
     deadline = time.time() + 15
@@ -401,6 +415,16 @@ def test_the_nine_charts_draw_their_scenarios_with_no_network(
     frame_nodes(page, [DOTS])
     assert_vega_canvas_rendered(page, DOTS, timeout=30000)
     _assert_colors_drawn(page, DOTS, [RULE_GREY, *[label["color"] for label in plan_labels]], "Dots with a range")
+    # Each Compare node draws its own preset, in its scenarios' colors but for
+    # a table.
+    for dataset_id, _chart in rows:
+        compare_id = _compare_id(dataset_id)
+        compare = next(node for node in flow["nodes"] if node["id"] == compare_id)
+        preset = compare["metadata"]["compareScenarios"]["chart"]["preset"]
+        frame_nodes(page, [compare_id])
+        _assert_preset_drew(page, compare_id, preset, compare["title"])
+        if preset != "table":
+            _assert_colors_drawn(page, compare_id, [label["color"] for label in _labels(flow, compare_id)], compare["title"])
 
     # 4. What differs on the street plans: the Case widget, set to each plan.
     frame_nodes(page, [_compare_id(PLANS)])
