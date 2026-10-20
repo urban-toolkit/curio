@@ -43,7 +43,7 @@
  */
 import { detectCrs } from "./geoCrs";
 import { isGeoJsonGeometry, resolveGeometryField } from "./geometryField";
-import { vegaFieldColumn } from "./vegaFieldNames";
+import { vegaFieldColumn, vegaFieldName } from "./vegaFieldNames";
 
 /** Why a grammar node has nothing to draw. Mirrors `NodeEmptyReason`. */
 export type GeoEmptyReason = "geometry-unresolved" | "geometry-ambiguous";
@@ -281,7 +281,9 @@ export function normalizeGeoSpec(
 
     if (isGeoshape && field != null && unit.encoding?.shape == null && !hasOwnData(unit)) {
       unit.encoding = unit.encoding ?? {};
-      unit.encoding.shape = { field, type: "geojson" };
+      // The column's name as a Vega-Lite field: `the.geom` would read `geom`
+      // inside `the` (issue 1042).
+      unit.encoding.shape = { field: vegaFieldName(field), type: "geojson" };
     }
 
     const usesProjection =
