@@ -459,6 +459,7 @@
   "dataflows/chicago-loop-shadow-towers": {
     "tags": [
       "Autark",
+      "Vega-Lite",
       "SCOUT"
     ],
     "data_type": [

@@ -426,7 +426,8 @@ class TestTheShippedCorpus:
         nine charts, all Scout's (the plan for #914, step 28.2, and the plan
         answering komar41's review, step 6.2), ``curio.scout@1`` (that plan,
         step 10). chicago-rain-wind-routing charts its routes with Scout's
-        Bars, and example 06 its scenarios' mean sunlight (that plan, step
+        Bars, example 06 its scenarios' mean sunlight, and
+        chicago-loop-shadow-towers its scenarios' mean shadow (that plan, step
         6.3)."""
         needs_package_templates = {}
         for path in example_paths():
@@ -473,8 +474,15 @@ class TestTheShippedCorpus:
         # SCOUT's raster nodes are curio.scout@1's: the shadow dataflows
         # rasterize their buildings with it, and the two that take the
         # shadow's statistics and the flood dataflow use its Raster Calculator.
-        assert needs_package_templates["24-scout-shadow-model-chicago-loop"] == needs_package_templates[
-            "chicago-loop-shadow-towers"] == [
+        assert needs_package_templates["24-scout-shadow-model-chicago-loop"] == [
+            "curio.scout/raster-calculator",
+            "curio.scout/rasterize-buildings",
+            "model.scout.deep-umbra/accumulated-shadow",
+        ]
+        # chicago-loop-shadow-towers also charts its scenarios with Scout's
+        # Bars, and takes its change in shadow with a Raster Calculator.
+        assert needs_package_templates["chicago-loop-shadow-towers"] == [
+            "curio.scout/bars",
             "curio.scout/raster-calculator",
             "curio.scout/rasterize-buildings",
             "model.scout.deep-umbra/accumulated-shadow",
