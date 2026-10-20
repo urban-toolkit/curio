@@ -37,7 +37,7 @@ dev/134 corrects two things this module could not do, both proven by the owner's
 - a Vega document's **field references** are checked against the columns its
   input actually has (dev/129 **F3**): the same spec encoded
   ``y.field: "neighborhood"`` over a frame whose name column is ``community``,
-  which the schema cannot know and a reader of the columns can. A spec that
+  which the schema cannot know and a reader of the columns can. A view that
   names the dataset ``inputs`` reads its inputs stacked, with the columns the
   stack adds beside theirs (``INPUTS_FIELDS``) and without a GeoDataFrame's
   geometry, so a view of it that draws one is refused.
@@ -198,42 +198,10 @@ def _field_refs(spec: dict, path: str = "") -> list[tuple[str, str, bool]]:
     return refs
 
 
-def _views(spec: object) -> list:
-    """The spec and every view below it: a layer's, a concatenated view's, and
-    a facet's or a repeat's inner spec (``viewsOf`` in ``utils/vegaDatasets.ts``)."""
-    found: list = []
-
-    def visit(node: object) -> None:
-        if isinstance(node, list):
-            for item in node:
-                visit(item)
-        elif isinstance(node, dict):
-            found.append(node)
-            for key in ("layer", "concat", "hconcat", "vconcat", "spec"):
-                visit(node.get(key))
-
-    visit(spec)
-    return found
-
-
 def _names_inputs(data: object) -> bool:
     return (
         isinstance(data, dict) and data.get("name") == INPUTS_DATASET
         and "url" not in data and "values" not in data
-    )
-
-
-def reads_inputs(spec: object) -> bool:
-    """Whether any part of *spec* names the dataset ``inputs``: its own
-    ``data``, a view's, or a lookup's ``from.data`` (``readsInputs`` in
-    ``utils/vegaDatasets.ts``)."""
-    return any(
-        _names_inputs(view.get("data"))
-        or any(
-            isinstance(step, dict) and isinstance(step.get("from"), dict) and _names_inputs(step["from"].get("data"))
-            for step in (view.get("transform") if isinstance(view.get("transform"), list) else [])
-        )
-        for view in _views(spec)
     )
 
 
@@ -250,13 +218,14 @@ def check_vega_fields(
     (``DEC-063``: never refuse a model for ignoring something it was not told),
     so when they are unknown this check does not run at all.
 
-    A view that reads ``inputs`` reads none of *geometry_columns*: the stack
-    leaves a GeoDataFrame's geometry out of its rows, as the preamble says.
+    A view that reads ``inputs`` may read the columns the stack adds
+    (``INPUTS_FIELDS``), and none of *geometry_columns*: the stack leaves a
+    GeoDataFrame's geometry out of its rows, as the preamble says. A view of
+    one input's own dataset has only the inputs' columns.
     """
     if not columns:
         return None
-    added = RUNTIME_FIELDS + (INPUTS_FIELDS if reads_inputs(payload) else ())
-    known = {str(c) for c in columns} | set(added)
+    known = {str(c) for c in columns} | set(RUNTIME_FIELDS)
     produced, opaque = _transform_outputs(payload)
     if opaque:
         return None  # a transform creates names this module cannot enumerate
@@ -273,7 +242,8 @@ def check_vega_fields(
                     f"the first circle, input_1 for the second"
                 ),
             }
-        if field in known:
+        added = RUNTIME_FIELDS + (INPUTS_FIELDS if on_inputs else ())
+        if field in known or field in added:
             continue
         available = ", ".join(sorted(str(c) for c in columns)[:20])
         return {
