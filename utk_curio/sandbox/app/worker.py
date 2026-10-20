@@ -831,7 +831,7 @@ def is_node_internal_stream_crash(exit_code, stdout_lines, stderr_lines) -> bool
 _SANDBOX_BACKEND_URL_TOKEN = '__CURIO_BACKEND_URL__'
 
 
-def run_js_script(code, inputs, *, cwd, node_type, t0=None, node_flags=(), node_modules=None):
+def run_js_script(code, inputs, *, cwd, node_type, t0=None, node_modules=None):
     """Run JavaScript in one Node.js subprocess, the way a JS node runs.
 
     The code is wrapped by ``util/js_wrapper.mjs`` with each of *inputs*,
@@ -839,8 +839,7 @@ def run_js_script(code, inputs, *, cwd, node_type, t0=None, node_flags=(), node_
     code reads and *inputs* lacks is a parameter too, undefined), its bare
     package imports are resolved against *node_modules* (default: the
     sandbox's, ``node_runtime.node_modules_dir``), and it runs under the JS
-    slot, once more if Node died in its own HTTP parser. *node_flags* go to
-    ``node`` before the script.
+    slot, once more if Node died in its own HTTP parser.
 
     :func:`execute_js_code` runs Node through this. Returns
     ``(result_json, user_log_lines, stderr_lines)``: the
@@ -966,7 +965,7 @@ def run_js_script(code, inputs, *, cwd, node_type, t0=None, node_flags=(), node_
         t_start = time.perf_counter()
 
         proc = subprocess.Popen(
-            ['node', '--input-type=commonjs', *node_flags],
+            ['node', '--input-type=commonjs'],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding='utf-8', errors='replace', cwd=cwd,
