@@ -23,7 +23,12 @@
  * it becomes the value's text, escaped for that string, so
  * `"Season: [!! season !!]"` reads `"Season: winter"`. Inside a comment it is
  * the plain text. A column reference is written the same way as a text value:
- * its name. In Python and JavaScript an input reference becomes the name the
+ * its name. In a Vega-Lite chart's spec, a reference where Vega-Lite reads a
+ * field name (`vegaFieldPlaces`) writes each name it holds escaped for
+ * Vega-Lite (`vegaFieldName`), since Vega-Lite reads a `.` or a `[` in a field
+ * as a path into the row: `"field": [!! input_0.rain.mm !!]` reads
+ * `"field": "rain\\.mm"`. Anywhere else in it, a title, a sort or an
+ * expression, the name is written as it is. In Python and JavaScript an input reference becomes the name the
  * code reads that circle's input by, `input_<circle>` (the sandbox binds one
  * variable per wired circle, `util/input_names.py`), and a layer reference the
  * call that picks the layer out of it, `curio_layer(input_1, "roads", 1)` (the
@@ -90,6 +95,18 @@ export const LAYER_HELPER = "curio_layer";
 /** The data types of an input that is one frame: a table, as `curio_layer`
  * counts one. Kept in sync with `ONE_FRAME_TYPES` in `code_references.py`. */
 const ONE_FRAME_TYPES = new Set(["dataframe", "geodataframe"]);
+
+/** The grammar of a Vega-Lite chart's spec, as a template names it
+ * (`grammarId`): a JSON document of it writes a name where Vega-Lite reads a
+ * field escaped. Kept in sync with `VEGA_LITE` in `code_references.py`. */
+export const VEGA_LITE = "vega-lite";
+
+/** *name* as a Vega-Lite field that names that column: each `\`, `.`, `[`
+ * and `]` escaped, which Vega-Lite would otherwise read as a path into the
+ * row. Kept in sync with `vega_field_name` in `code_references.py`. */
+export function vegaFieldName(name: string): string {
+  return name.replace(/[\\.[\]]/g, (ch) => "\\" + ch);
+}
 
 export interface CodeReference {
   /** Offsets of the whole `[!! ... !!]` in the code. */
@@ -357,6 +374,152 @@ function writeText(text: string, context: ReferenceContext, language: CodeLangua
   return context.kind === "code" ? widgetLiteral(text, language) : escapeFor(text, context, language);
 }
 
+/** Where a reference stands in a Vega-Lite spec: whether Vega-Lite reads a
+ * text there as a field name (`text`), and, for a reference that is a whole
+ * value, whether it reads each text of a list there as one (`items`). */
+interface FieldPlace {
+  text: boolean;
+  items: boolean;
+}
+
+/** What an object of a Vega-Lite spec is, where that decides which of its
+ * keys hold fields: a transform (an item of `transform`), a lookup's `from`,
+ * a parameter (an item of `params`) or its `select`, an encoding's
+ * `aggregate`, or a `repeat` mapping. */
+type FieldHolder = "transform" | "lookup" | "param" | "select" | "aggregate" | "repeat" | null;
+
+/** The transforms whose own key holds the field they read. */
+const TRANSFORM_FIELD_KEYS = new Set(["pivot", "lookup", "impute", "stack", "density", "loess", "regression", "quantile"]);
+/** The lists of fields a transform reads. */
+const TRANSFORM_FIELD_LISTS = new Set(["groupby", "fold", "flatten"]);
+
+const hasKey = (holder: Record<string, unknown>, key: string) => Object.prototype.hasOwnProperty.call(holder, key);
+
+/**
+ * Whether Vega-Lite reads a text at *key* of *holder*, an object that is
+ * *kind*, as a field name; *item* for a text that is an item of a list there.
+ * The keys Vega-Lite's schema types as a field name, but an output's `as`,
+ * which names a new column as it is written; and a transform's `lookup` and a
+ * `repeat`'s lists, which Vega-Lite reads as fields too. A key that is a field
+ * only in one transform counts in that one: `extent` beside `param`, `value`
+ * beside `pivot`, `key` beside `impute`, and `on` beside `loess` or
+ * `regression`, where a parameter's `on` is an event. Kept in sync with
+ * `_is_vega_field` in `code_references.py`.
+ */
+function isVegaField(holder: Record<string, unknown>, kind: FieldHolder, key: string, item: boolean): boolean {
+  if (item) {
+    if (kind === "transform") return TRANSFORM_FIELD_LISTS.has(key);
+    if (kind === "lookup" || kind === "select") return key === "fields";
+    if (kind === "repeat") return key === "row" || key === "column" || key === "layer";
+    return key === "repeat";
+  }
+  if (key === "field") return true;
+  if (kind === "transform") {
+    if (TRANSFORM_FIELD_KEYS.has(key)) return true;
+    if (key === "extent") return hasKey(holder, "param");
+    if (key === "value") return hasKey(holder, "pivot");
+    if (key === "key") return hasKey(holder, "impute");
+    if (key === "on") return hasKey(holder, "loess") || hasKey(holder, "regression");
+    return false;
+  }
+  if (kind === "lookup") return key === "key";
+  if (kind === "aggregate") return key === "argmax" || key === "argmin";
+  return false;
+}
+
+/** What the object at *key* of *holder*, an object that is *kind*, is; *item*
+ * for an object that is an item of a list there. */
+function fieldHolderAt(holder: Record<string, unknown>, kind: FieldHolder, key: string, item: boolean): FieldHolder {
+  if (item) {
+    if (key === "transform") return "transform";
+    if (key === "params") return "param";
+    return null;
+  }
+  if (key === "from" && kind === "transform" && hasKey(holder, "lookup")) return "lookup";
+  if (key === "select" && kind === "param") return "select";
+  if (key === "aggregate") return "aggregate";
+  if (key === "repeat") return "repeat";
+  return null;
+}
+
+/** A reference while its spec is read for its places: its number between two
+ * characters of Unicode's private use area, which no spec holds and JSON takes
+ * inside a string as they are. Kept in sync with `_PLACE_MARK_RE` in
+ * `code_references.py`. */
+const MARK_OPEN = String.fromCharCode(0xe000);
+const MARK_CLOSE = String.fromCharCode(0xe001);
+const placeMark = (index: number) => MARK_OPEN + index + MARK_CLOSE;
+const PLACE_MARK_RE = new RegExp(MARK_OPEN + "([0-9]+)" + MARK_CLOSE, "g");
+
+/**
+ * Where each of *refs* (in *contexts*) stands in the Vega-Lite spec *code*.
+ * The spec is read as JSON with each reference replaced by a mark, a text of
+ * its own where the reference is a value and a run of a string where it is
+ * inside one, and each mark is found where the spec holds it. A spec that does
+ * not read as JSON holds no field. Kept in sync with `_vega_field_places` in
+ * `code_references.py`.
+ */
+function vegaFieldPlaces(code: string, refs: CodeReference[], contexts: ReferenceContext[]): FieldPlace[] {
+  const places: FieldPlace[] = refs.map(() => ({ text: false, items: false }));
+  let marked = "";
+  let last = 0;
+  refs.forEach((ref, index) => {
+    const mark = placeMark(index);
+    marked += code.slice(last, ref.start) + (contexts[index].kind === "code" ? `"${mark}"` : mark);
+    last = ref.end;
+  });
+  marked += code.slice(last);
+  let spec: unknown;
+  try {
+    spec = JSON.parse(marked);
+  } catch {
+    return places;
+  }
+  const place = (text: string, field: boolean, items: boolean) => {
+    for (const match of text.matchAll(PLACE_MARK_RE)) {
+      const found = places[Number(match[1])];
+      if (found === undefined) continue;
+      found.text = field;
+      // Only a reference that is the whole value can hold a list.
+      found.items = match[0] === text && items;
+    }
+  };
+  const visit = (node: unknown, kind: FieldHolder) => {
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item, null);
+      return;
+    }
+    if (node === null || typeof node !== "object") return;
+    const holder = node as Record<string, unknown>;
+    for (const [key, value] of Object.entries(holder)) {
+      if (typeof value === "string") {
+        place(value, isVegaField(holder, kind, key, false), isVegaField(holder, kind, key, true));
+      } else if (Array.isArray(value)) {
+        for (const item of value) {
+          if (typeof item === "string") place(item, isVegaField(holder, kind, key, true), false);
+          else if (!Array.isArray(item)) visit(item, fieldHolderAt(holder, kind, key, true));
+          else visit(item, null);
+        }
+      } else {
+        visit(value, fieldHolderAt(holder, kind, key, false));
+      }
+    }
+  };
+  visit(spec, null);
+  return places;
+}
+
+/** *value*, a reference's value standing on its own at *place*, as it is
+ * written there: a text Vega-Lite reads as a field escaped, and each text of a
+ * list whose texts it reads as fields. */
+function fieldValue(value: WidgetValue | undefined, place: FieldPlace): WidgetValue | undefined {
+  if (typeof value === "string") return place.text ? vegaFieldName(value) : value;
+  if (Array.isArray(value) && place.items) {
+    return (value as WidgetValue[]).map((item) => (typeof item === "string" ? vegaFieldName(item) : item)) as WidgetValue;
+  }
+  return value;
+}
+
 /**
  * Whether *input* is one frame that lists no layers, which a layer reference
  * reads whatever it names (#761). In code `curio_layer` looks at the value when
@@ -472,17 +635,25 @@ export function referenceProblem(
   return null;
 }
 
-/** What a reference without a problem writes, standing in *context*. */
-function resolvedText(inner: string, scope: ReferenceScope, context: ReferenceContext, language: CodeLanguage): string {
+/** What a reference without a problem writes, standing in *context*, and at
+ * *place* in a Vega-Lite spec. */
+function resolvedText(
+  inner: string,
+  scope: ReferenceScope,
+  context: ReferenceContext,
+  language: CodeLanguage,
+  place?: FieldPlace,
+): string {
+  const named = (name: string) => (place?.text ? vegaFieldName(name) : name);
   const parsed = parseReference(inner);
   if (parsed.kind === "input") {
-    if (parsed.column !== undefined) return writeText(parsed.column, context, language);
+    if (parsed.column !== undefined) return writeText(named(parsed.column), context, language);
     const position = scope.inputs.findIndex((i) => i.slot === parsed.slot);
     if (language === "json") {
       // A spec reads a layer by its name, and an input, or the one frame it
       // carries, by the name the input is read by.
       const layer = isOneFrameInput(scope.inputs[position]) ? undefined : parsed.layer;
-      return writeText(layer ?? inputTableName(position), context, language);
+      return writeText(named(layer ?? inputTableName(position)), context, language);
     }
     const value = inputName(parsed.slot);
     if (parsed.layer !== undefined) {
@@ -496,20 +667,25 @@ function resolvedText(inner: string, scope: ReferenceScope, context: ReferenceCo
       : effectiveValue(
           (parsed.kind === "shared" ? scope.shared : scope.widgets).find((w) => w.name === parsed.name) as WidgetDef,
         );
-  return context.kind === "code" ? widgetLiteral(value, language) : escapeFor(textOf(value, language), context, language);
+  if (context.kind === "code") return widgetLiteral(place ? fieldValue(value, place) : value, language);
+  return escapeFor(named(textOf(value, language)), context, language);
 }
 
 /** *code* with every reference replaced, and what could not be replaced. A
- * reference with a problem is left as written. */
+ * reference with a problem is left as written. *grammar* is the grammar of a
+ * JSON document: in a Vega-Lite spec (`VEGA_LITE`), a reference where
+ * Vega-Lite reads a field name writes each name escaped (`vegaFieldName`). */
 export function resolveReferences(
   code: string,
   scope: ReferenceScope,
   language: CodeLanguage,
+  grammar?: string | null,
 ): { code: string; problems: ReferenceProblem[] } {
   const refs = findReferences(code);
   if (refs.length === 0) return { code, problems: [] };
   const ordered: ReferenceScope = { ...scope, inputs: [...scope.inputs].sort((a, b) => a.slot - b.slot) };
   const contexts = referenceContexts(code, refs, language);
+  const places = language === "json" && grammar === VEGA_LITE ? vegaFieldPlaces(code, refs, contexts) : null;
   const problems: ReferenceProblem[] = [];
   let out = "";
   let last = 0;
@@ -521,7 +697,7 @@ export function resolveReferences(
       problems.push({ reference: written, message: problem });
       out += written;
     } else {
-      out += resolvedText(ref.inner, ordered, contexts[index], language);
+      out += resolvedText(ref.inner, ordered, contexts[index], language, places?.[index]);
     }
     last = ref.end;
   });

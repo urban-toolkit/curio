@@ -16,7 +16,12 @@ A widget, shared or selection reference standing on its own becomes a literal
 of the language (a selection's ids are a list); inside a string literal it
 becomes the value's text, escaped for that string;
 inside a comment, the plain text. A column reference is written like a text
-value: its name. In Python and JavaScript an input reference becomes the name
+value: its name. In a Vega-Lite chart's spec, a reference where Vega-Lite reads
+a field name (:func:`_vega_field_places`) writes each name it holds escaped for
+Vega-Lite (:func:`vega_field_name`), since Vega-Lite reads a ``.`` or a ``[``
+in a field as a path into the row: ``"field": [!! input_0.rain.mm !!]`` reads
+``"field": "rain\\\\.mm"``. Anywhere else in it, a title, a sort or an
+expression, the name is written as it is. In Python and JavaScript an input reference becomes the name
 the code reads that circle's input by, ``input_<circle>`` (the sandbox binds one
 variable per wired circle, ``util/input_names.py``), and a layer reference the
 call that picks the layer out of it, ``curio_layer(input_1, "roads", 1)`` (the
@@ -84,6 +89,21 @@ LAYER_HELPER = "curio_layer"
 #: The data types of an input that is one frame: a table, as ``curio_layer``
 #: counts one. Kept in sync with ``ONE_FRAME_TYPES`` in ``codeReferences.ts``.
 ONE_FRAME_TYPES = ("dataframe", "geodataframe")
+
+#: The grammar of a Vega-Lite chart's spec, as a template names it
+#: (``grammarId``): a JSON document of it writes a name where Vega-Lite reads a
+#: field escaped. Kept in sync with ``VEGA_LITE`` in ``codeReferences.ts``.
+VEGA_LITE = "vega-lite"
+
+_VEGA_FIELD_SPECIALS_RE = re.compile(r"[\\.\[\]]")
+
+
+def vega_field_name(name: str) -> str:
+    """*name* as a Vega-Lite field that names that column: each ``\\``,
+    ``.``, ``[`` and ``]`` escaped, which Vega-Lite would otherwise read as a
+    path into the row. Kept in sync with ``vegaFieldName`` in
+    ``codeReferences.ts``."""
+    return _VEGA_FIELD_SPECIALS_RE.sub(lambda m: "\\" + m.group(0), name)
 
 #: A widget name. Kept in sync with ``WIDGET_NAME_PATTERN`` in ``widgetModel.ts``
 #: and with the widget name's ``pattern`` in ``docs/schemas/node-package.v4.json``
@@ -361,6 +381,154 @@ def _contexts(code: str, refs: list, language: str) -> list:
 
 def _write_text(text: str, context: tuple, language: str) -> str:
     return widget_literal(text, language) if context[0] == "code" else _escape_for(text, context, language)
+
+
+#: The transforms whose own key holds the field they read.
+_TRANSFORM_FIELD_KEYS = frozenset({"pivot", "lookup", "impute", "stack", "density", "loess", "regression", "quantile"})
+#: The lists of fields a transform reads.
+_TRANSFORM_FIELD_LISTS = frozenset({"groupby", "fold", "flatten"})
+
+
+def _is_vega_field(holder: dict, kind, key: str, item: bool) -> bool:
+    """Whether Vega-Lite reads a text at *key* of *holder*, an object that is
+    *kind* (``"transform"``, ``"lookup"``, ``"param"``, ``"select"``,
+    ``"aggregate"``, ``"repeat"`` or None), as a field name; *item* for a text
+    that is an item of a list there. Kept in sync with ``isVegaField`` in
+    ``codeReferences.ts``, which says which keys and why."""
+    if item:
+        if kind == "transform":
+            return key in _TRANSFORM_FIELD_LISTS
+        if kind in ("lookup", "select"):
+            return key == "fields"
+        if kind == "repeat":
+            return key in ("row", "column", "layer")
+        return key == "repeat"
+    if key == "field":
+        return True
+    if kind == "transform":
+        if key in _TRANSFORM_FIELD_KEYS:
+            return True
+        if key == "extent":
+            return "param" in holder
+        if key == "value":
+            return "pivot" in holder
+        if key == "key":
+            return "impute" in holder
+        if key == "on":
+            return "loess" in holder or "regression" in holder
+        return False
+    if kind == "lookup":
+        return key == "key"
+    if kind == "aggregate":
+        return key in ("argmax", "argmin")
+    return False
+
+
+def _field_holder_at(holder: dict, kind, key: str, item: bool):
+    """What the object at *key* of *holder*, an object that is *kind*, is;
+    *item* for an object that is an item of a list there. Kept in sync with
+    ``fieldHolderAt`` in ``codeReferences.ts``."""
+    if item:
+        if key == "transform":
+            return "transform"
+        if key == "params":
+            return "param"
+        return None
+    if key == "from" and kind == "transform" and "lookup" in holder:
+        return "lookup"
+    if key == "select" and kind == "param":
+        return "select"
+    if key == "aggregate":
+        return "aggregate"
+    if key == "repeat":
+        return "repeat"
+    return None
+
+
+#: A reference while its spec is read for its places: its number between two
+#: characters of Unicode's private use area, which no spec holds and JSON takes
+#: inside a string as they are. Kept in sync with ``PLACE_MARK_RE`` in
+#: ``codeReferences.ts``.
+_MARK_OPEN, _MARK_CLOSE = chr(0xE000), chr(0xE001)
+_PLACE_MARK_RE = re.compile(_MARK_OPEN + "([0-9]+)" + _MARK_CLOSE)
+
+
+def _not_json(name: str):
+    """What ``JSON.parse`` refuses and ``json.loads`` would read: ``NaN`` and
+    the infinities."""
+    raise ValueError(f"{name} is not JSON")
+
+
+def _vega_field_places(code: str, refs: list, contexts: list) -> list:
+    """Where each of *refs* (in *contexts*) stands in the Vega-Lite spec
+    *code*: ``{"text": <whether Vega-Lite reads a text there as a field
+    name>, "items": <whether, for a reference that is a whole value, it reads
+    each text of a list there as one>}``. The spec is read as JSON, as
+    ``JSON.parse`` reads it, with each reference replaced by a mark, and each
+    mark is found where the spec holds it. A spec that does not read as JSON
+    holds no field. Kept in sync with ``vegaFieldPlaces`` in
+    ``codeReferences.ts``."""
+    places = [{"text": False, "items": False} for _ in refs]
+    marked: list = []
+    last = 0
+    for index, (ref, context) in enumerate(zip(refs, contexts)):
+        mark = f"{_MARK_OPEN}{index}{_MARK_CLOSE}"
+        marked.append(code[last:ref.start()])
+        marked.append(f'"{mark}"' if context[0] == "code" else mark)
+        last = ref.end()
+    marked.append(code[last:])
+    try:
+        spec = json.loads("".join(marked), parse_constant=_not_json)
+    except (ValueError, RecursionError):
+        return places
+
+    def place(text: str, field: bool, items: bool) -> None:
+        for match in _PLACE_MARK_RE.finditer(text):
+            index = int(match.group(1))
+            if index >= len(places):
+                continue
+            places[index]["text"] = field
+            # Only a reference that is the whole value can hold a list.
+            places[index]["items"] = match.group(0) == text and items
+
+    def visit(node, kind) -> None:
+        if isinstance(node, list):
+            for item in node:
+                visit(item, None)
+            return
+        if not isinstance(node, dict):
+            return
+        for key, value in node.items():
+            if isinstance(value, str):
+                place(value, _is_vega_field(node, kind, key, False), _is_vega_field(node, kind, key, True))
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, str):
+                        place(item, _is_vega_field(node, kind, key, True), False)
+                    elif not isinstance(item, list):
+                        visit(item, _field_holder_at(node, kind, key, True))
+                    else:
+                        visit(item, None)
+            else:
+                visit(value, _field_holder_at(node, kind, key, False))
+
+    try:
+        visit(spec, None)
+    except RecursionError:
+        return [{"text": False, "items": False} for _ in refs]
+    return places
+
+
+def _field_value(value, place: dict):
+    """*value*, a reference's value standing on its own at *place*, as it is
+    written there: a text Vega-Lite reads as a field escaped, and each text of
+    a list whose texts it reads as fields. ``fieldValue`` in
+    ``codeReferences.ts``."""
+    if isinstance(value, str):
+        return vega_field_name(value) if place["text"] else value
+    if isinstance(value, list) and place["items"]:
+        return [vega_field_name(item) if isinstance(item, str) else item for item in value]
+    return value
 
 
 def _is_one_frame_input(found: dict) -> bool:
@@ -780,7 +948,11 @@ def _resolved_text(
     language: str,
     shared_by_name: dict,
     selections_by_name: dict,
+    place: dict | None = None,
 ) -> str:
+    def named(name: str) -> str:
+        return vega_field_name(name) if place and place["text"] else name
+
     parsed = parse_reference(inner)
     if parsed["kind"] in ("shared", "selection"):
         if parsed["kind"] == "shared":
@@ -788,25 +960,27 @@ def _resolved_text(
         else:
             value = selections_by_name[parsed["name"]]["ids"]
         if context[0] == "code":
-            return widget_literal(value, language)
-        return _escape_for(_text_of(value, language), context, language)
+            return widget_literal(_field_value(value, place) if place else value, language)
+        return _escape_for(named(_text_of(value, language)), context, language)
     if parsed["kind"] == "input":
         if "column" in parsed:
-            return _write_text(parsed["column"], context, language)
+            return _write_text(named(parsed["column"]), context, language)
         index = next(i for i, entry in enumerate(inputs) if entry.get("slot") == parsed["slot"])
         if language == "json":
             # A spec reads a layer by its name, and an input, or the one frame
             # it carries, by the name the input is read by.
             layer = None if _is_one_frame_input(inputs[index]) else parsed.get("layer")
-            return _write_text(layer if layer is not None else f"{INPUT_TABLE_PREFIX}{index}", context, language)
+            return _write_text(
+                named(layer if layer is not None else f"{INPUT_TABLE_PREFIX}{index}"), context, language
+            )
         value = f"input_{parsed['slot']}"
         if "layer" in parsed:
             return f"{LAYER_HELPER}({value}, {widget_literal(parsed['layer'], language)}, {parsed['slot']})"
         return value
     value = effective_value(by_name[inner])
     if context[0] == "code":
-        return widget_literal(value, language)
-    return _escape_for(_text_of(value, language), context, language)
+        return widget_literal(_field_value(value, place) if place else value, language)
+    return _escape_for(named(_text_of(value, language)), context, language)
 
 
 def resolve_references(
@@ -816,6 +990,7 @@ def resolve_references(
     inputs: Iterable = (),
     shared: Iterable = (),
     selections: Iterable = (),
+    grammar: str | None = None,
 ) -> tuple[str, list]:
     """*code* with every reference replaced, and the problems found.
 
@@ -823,6 +998,9 @@ def resolve_references(
     "layerName"?, "columns"?: [...], "layers"?: [{"name", "columns"?}, ...]}``
     each. *shared* are the widgets of the dataflow's Parameter nodes, one per
     node. *selections* are the node's selection tags (``metadata.selections``).
+    *grammar* is the grammar of a JSON document: in a Vega-Lite spec
+    (:data:`VEGA_LITE`), a reference where Vega-Lite reads a field name writes
+    each name escaped (:func:`vega_field_name`).
     A reference with a problem is left as written; each problem is
     ``{"reference": <as written>, "message": <why>}``.
     """
@@ -836,13 +1014,14 @@ def resolve_references(
     if not refs:
         return code, []
     contexts = _contexts(code, refs, language)
+    places = _vega_field_places(code, refs, contexts) if language == "json" and grammar == VEGA_LITE else None
     by_name = {w["name"]: w for w in widgets}
     shared_by_name = {w["name"]: w for w in shared}
     selections_by_name = {t["name"]: t for t in selections}
     problems: list = []
     out: list = []
     last = 0
-    for ref, context in zip(refs, contexts):
+    for index, (ref, context) in enumerate(zip(refs, contexts)):
         out.append(code[last:ref.start()])
         written = ref.group(0)
         problem = reference_problem(
@@ -853,7 +1032,8 @@ def resolve_references(
             out.append(written)
         else:
             out.append(_resolved_text(
-                ref.group(1), by_name, inputs, context, language, shared_by_name, selections_by_name
+                ref.group(1), by_name, inputs, context, language, shared_by_name, selections_by_name,
+                places[index] if places is not None else None,
             ))
         last = ref.end()
     out.append(code[last:])
