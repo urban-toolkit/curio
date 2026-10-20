@@ -1122,7 +1122,9 @@ edges (see [Linking charts](#linking-charts)).
   layers, its plot's table and the map the plot links to, and the tables its
   compute blocks read. A layer of an OpenStreetMap load (`table_osm_roads`)
   brings that load's surface (`table_osm_surface`) when the input has it,
-  loaded first, whether or not the document draws it.
+  loaded first, whether or not the document draws it. The layers of an
+  OpenStreetMap download from the Discovery Catalog, named `parks`, `roads` and
+  so on, bring its `surface` the same way.
 - Autark clips every table after the first to the box around the first, and to
   the first's outline when it holds polygons. So a map of OpenStreetMap layers
   is cut to its load's area, and the tables one document draws lie in one
