@@ -1287,9 +1287,10 @@ layer colored by a number takes `colorMapRange`, `[low, high]`, to color from
 `low` to `high` instead of from its own lowest value to its highest, so maps
 that set the same range color a value alike.
 
-A layer that names a scenario of the dataflow by its id, `"scenario":
-"weather-aware"`, is drawn in that scenario's color, the color of its box.
-`scenario` is Curio's own key, not the Autark grammar's.
+On a map outside every scenario box, a layer whose input comes from a node in a
+box is drawn in that box's color, over a `color` it writes, with no legend; a
+box recolored gives it its new color on the map's next run. A map inside a box
+draws its layers as written.
 
 ### The starter document
 

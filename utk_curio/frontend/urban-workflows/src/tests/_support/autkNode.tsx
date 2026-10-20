@@ -12,7 +12,7 @@
  */
 import React from 'react';
 import { act, render } from '@testing-library/react';
-import { useAutkGrammarBehavior } from '../../adapters/node/autkGrammarBehavior';
+import { useAutkGrammarBehavior, type AutkBehaviorOptions } from '../../adapters/node/autkGrammarBehavior';
 import { __resetWebGpuSupportCache } from '../../utils/webgpuSupport';
 import { nodeInput } from './autkNodeMocks';
 
@@ -26,13 +26,20 @@ export type MountedAutkNode = {
   rerender: () => void;
 };
 
-/** Mount the node *nodeId*, its input reading *features* (one row when none is given). */
-export function mountAutkNode(nodeId: string, features?: unknown): MountedAutkNode {
+/**
+ * Mount the node *nodeId*, its input reading *features* (one row when none is
+ * given). *input* is what reaches it instead of one artifact (several circles,
+ * say), and *options* are the behavior's.
+ */
+export function mountAutkNode(
+  nodeId: string,
+  features?: unknown,
+  { input = { path: 'art-1', dataType: 'geodataframe' }, options }: { input?: unknown; options?: AutkBehaviorOptions } = {},
+): MountedAutkNode {
   if (features !== undefined) nodeInput.current = features;
   let apply: (spec: string) => Promise<void> = async () => { };
   const setOutput = jest.fn();
   const interactions = jest.fn();
-  const input = { path: 'art-1', dataType: 'geodataframe' };
   const Probe: React.FC = () => {
     const behavior = useAutkGrammarBehavior(
       {
@@ -47,6 +54,7 @@ export function mountAutkNode(nodeId: string, features?: unknown): MountedAutkNo
         setCode: jest.fn(),
         templateData: {},
       } as any,
+      options,
     );
     apply = behavior.applyGrammar as (spec: string) => Promise<void>;
     return <>{behavior.contentComponent}</>;

@@ -343,8 +343,8 @@ outcomes produce.
 
 ### Scenarios in charts and maps
 
-A chart outside the scenario boxes names and colors what each box feeds it from the
-box its input comes from:
+A chart or a map outside the scenario boxes names and colors what each box feeds it
+from the box its input comes from:
 
 - `src/utils/scenarios/inputScenarios.ts` is the one lookup: for each wired circle of a
   node, the node feeding it, the box that node is in (`scenarioOfNode`) and the label
@@ -374,6 +374,13 @@ box its input comes from:
   name or color, or to the boxes' order, draws the chart again and stacks its rows
   again; for the second, only what the scales draw. Both redraw the way the Compare
   node's Chart tab draws (below). The exported notebook fills its chart cell the same way.
+- A map: on an Autark node outside every box, `layerScenarios`
+  ([`autkScenarioColors.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkScenarioColors.ts))
+  finds the box of each layer's table through the circle `autkSourcesFrom` says it came
+  in on (`PreparedAutkInput.circles`), and `withScenarioColors` gives the layer the
+  grammar's `color`, the box's, before the run. A map inside a box draws as written, and
+  so does the Interaction node's map (`colorsByScenario: false`).
+  `shippedScenarioLayers.test.ts` lists every shipped layer the rule recolors.
 
 ### Comparing scenarios
 
@@ -883,7 +890,7 @@ The names `input_<k>` are defined once, as `INPUT_TABLE_PREFIX` and `input_table
 
 **Drawing.** Maps draw on demand. autk-grammar starts each map it makes with autk-map's `draw()`, which draws one frame, then only when the map's picture changes. autk-map asks for that frame itself after every change it can observe: its camera (navigation, a resize, a window resize), its layers (loads, updates, highlights), its style and a pick. Curio asks a map for a frame with its `requestRender()` after it changes the map itself: `frameMaps` after it moves the camera, and `bleedRasterEdges` after it writes a raster's cells in place, which autk-map cannot observe. A map that nothing changes draws nothing, whether it shows, sits out of view or is hidden in a collapsed scenario. The node keeps the maps its grammar made (`trackMaps` in [`autkMapDrawing.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkMapDrawing.ts)), and a map nobody will see again is destroyed with autk-map's `destroy()`, which frees its GPU textures, its window listeners and its controls: the node destroys its maps when its next run replaces their canvas and when it leaves the page (a deleted node, a closed dataflow), including maps a run made after it left. The e2e captures and the map framing check read a map's pixels in the animation frame that renders the map: they call `renderMapsForReading` (`window.__curio_renderMapsForReading`), which asks every map the nodes keep for a frame and resolves inside that frame.
 
-**Layer names and colors.** A layerRef's `title` is its layer's id in autk-map, which titles the legend with it. The grammar finds the layer of a table with `mapLayer(dataRef)`, and its highlights take the table's name, so Curio names layers by their `dataRef` everywhere. Before the run, `withScenarioColors` ([`autkScenarioColors.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkScenarioColors.ts)) gives a layerRef that names a scenario of the dataflow (`"scenario": "<id>"`, Curio's own key) the grammar's `color`, the scenario's.
+**Layer names and colors.** A layerRef's `title` is its layer's id in autk-map, which titles the legend with it. The grammar finds the layer of a table with `mapLayer(dataRef)`, and its highlights take the table's name, so Curio names layers by their `dataRef` everywhere. Before the run, `withScenarioColors` ([`autkScenarioColors.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkScenarioColors.ts)) gives a layerRef whose input comes from a scenario's box, on a map outside every box, the grammar's `color`, the box's (see [Scenarios in charts and maps](#scenarios-in-charts-and-maps)).
 
 **Rasters.** A raster on the input is a table under the same names, read through the same path; the Vega-Lite node still refuses it. Its frame says where the raster is and is not fetched as rows: a Python node's `rasterio` dataset by its artifact (`part` for its place in a tuple), or the envelope another node handed on. [`autkRasters.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkRasters.ts) turns each into GeoTIFF bytes and loads it with autk-db's `loadGeoTiff` into the grammar's own database:
 
