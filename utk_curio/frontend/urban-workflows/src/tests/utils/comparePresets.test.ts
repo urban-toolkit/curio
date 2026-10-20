@@ -9,6 +9,7 @@
  * each against the Vega-Lite schema and the columns it reads.
  */
 import cases from "../../utils/compare/comparePresets.cases.json";
+import scalesCases from "../../utils/scenarios/scenarioScales.cases.json";
 import {
   AGGREGATE_LABELS,
   PRESET_FIELDS,
@@ -147,6 +148,18 @@ describe("a table's text reads on white", () => {
       const drawn = compareChartSpec(resolveChart(c.chart as CompareChart, columns), roofs, columns) as { spec: unknown };
       expect(JSON.stringify(drawn.spec)).toContain('"range":["#a1d99b","#41ab5d","#006d2c"]');
     }
+  });
+
+  test("a chart's text mark on scenario_name is filled with the Table preset's text colors", () => {
+    // The fill a chart after the node takes (utils/scenarios/scenarioScales).
+    const scaleLabels = scalesCases.labels as CompareInputLabel[];
+    const scaleColumns = scalesCases.columns as ClassifiedColumn[];
+    const table = compareChartSpec(resolveChart({ preset: "table" }, scaleColumns), scaleLabels, scaleColumns) as { spec: any };
+    const text = (scalesCases.cases.find(
+      (c) => c.name === "a text mark in the shades a table writes, its rows in input order",
+    )!.filled as any).encoding.color.scale;
+    expect(text).toEqual(table.spec.encoding.color.scale);
+    expect(text.range).not.toEqual(scenarioScale(scaleLabels).range);
   });
 });
 

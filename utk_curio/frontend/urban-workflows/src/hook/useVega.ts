@@ -9,6 +9,7 @@ import { applyContainerSizing, createFlipGuard, refitToContainer } from "../util
 import type { RenderCounts } from "../utils/renderOutcome";
 import { injectInputs, prepareVegaInputs, usesNamedDatasets, type VegaDataset } from "../utils/vegaInput";
 import { DEFAULT_INPUT_DATASET } from "../utils/vegaGeoSpec";
+import { INPUTS_DATASET } from "../utils/vegaDatasets";
 import { inputTableName } from "../generated/autkGrammar";
 import { usableCounts } from "../utils/vegaUsableRows";
 import { matchSelections, objectRows, type PointValue } from "../utils/selectionMatch";
@@ -26,6 +27,7 @@ import {
   type SelectType,
 } from "../utils/vegaSelects";
 import { echoedCircle } from "../utils/selectionEcho";
+import type { ScenarioLabel } from "../utils/scenarios/scenarioColors";
 import type { NodeEmptyReason } from "../utils/nodeEmptyState";
 import { resolveGrammarEmptyReason } from "../utils/nodeEmptyState";
 import { clearEmptyState, writeEmptyState } from "../utils/writeEmptyState";
@@ -85,6 +87,7 @@ export const useVega = ({
   onRedraw,
   recordsProvenance = true,
   forwardsInput = true,
+  inputLabels,
 }: {
   data: any;
   code: string;
@@ -114,9 +117,17 @@ export const useVega = ({
    * its run has already handed on.
    */
   forwardsInput?: boolean;
+  /**
+   * Each input's label, in circle order: the scenario box its node is in
+   * (utils/scenarios/inputScenarios). A spec that reads `inputs` names their
+   * rows by these, read as each compile and each new input stacks them.
+   */
+  inputLabels?: readonly ScenarioLabel[];
 }) => {
   const onRedrawRef = React.useRef(onRedraw);
   onRedrawRef.current = onRedraw;
+  const inputLabelsRef = React.useRef<readonly ScenarioLabel[]>(inputLabels ?? []);
+  inputLabelsRef.current = inputLabels ?? [];
   const { showToast } = useToastContext();
   const [interactions, _setInteractions] = useState<any>({}); // {signal: {type: point/interval, data: }} // if type point data contains list of object ids. If type is interval data is an object where each key is an attribute with intervals or lists
 
@@ -267,7 +278,7 @@ export const useVega = ({
     // any other way here would insert bare, un-rewound geometry into an
     // already-compiled view and break the map on the *second* upstream run
     // only -- which is a miserable thing to debug.
-    const prepared = await prepareVegaInputs(data.input, lastSpecRef.current);
+    const prepared = await prepareVegaInputs(data.input, lastSpecRef.current, inputLabelsRef.current);
     const prevView = currentViewRef.current;
     const previousInput = heldInputRef.current;
     heldInputRef.current = data.input;
@@ -283,7 +294,13 @@ export const useVega = ({
     const heldRows = heldDatasetsRef.current.find((d) => d.name === dataset)?.values;
     if (prevView && dataset && Array.isArray(echoRows) && Array.isArray(heldRows) && echoRows.length === heldRows.length) {
       setEmptyState(prepared);
-      setInteracted(prevView, (t: any) => echoRows[t.__row_index__]?.interacted ?? t.interacted, dataset)
+      const flagOf = (t: any) => echoRows[t.__row_index__]?.interacted ?? t.interacted;
+      // A spec reading `inputs` draws that input's rows there too.
+      const stacked = heldDatasetsRef.current.some((d) => d.name === INPUTS_DATASET);
+      setInteracted(prevView, flagOf, dataset)
+        .then(() => stacked
+          ? setInteracted(prevView, (t: any) => (t.__input__ === echoed ? flagOf(t) : t.interacted), INPUTS_DATASET)
+          : undefined)
         .then(() => applyDirectSelection(prevView));
       return;
     }
@@ -542,15 +559,18 @@ export const useVega = ({
     // row values those encodings will read.
     lastSpecRef.current = specObj;
     authoredSpecRef.current = JSON.stringify(specObj);
-    const prepared = await prepareVegaInputs(data.input, specObj);
+    const prepared = await prepareVegaInputs(data.input, specObj, inputLabelsRef.current);
     setEmptyState(prepared);
     const values = prepared.datasets[0]?.values ?? [];
     lastValuesRef.current = values;
     heldDatasetsRef.current = prepared.datasets;
     heldInputRef.current = data.input;
-    const rowsIn = Array.isArray(values) ? values.length : undefined;
+    // A spec that reads `inputs` draws every input's rows, named by their
+    // scenarios: they are what arrived, not the first input's alone.
+    const judged = prepared.stacked ?? values;
+    const rowsIn = Array.isArray(judged) ? judged.length : undefined;
     // dev/137: judged over the fields the input carries; see vegaUsableRows.
-    const { usableRows, usableFields } = usableCounts(values, specObj);
+    const { usableRows, usableFields } = usableCounts(judged, specObj);
 
     if (prepared.emptyReason != null) {
       // Nothing was injected and there is nothing sensible to draw. Compiling

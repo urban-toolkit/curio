@@ -998,6 +998,55 @@ cannot read, such as a raster, stops it with a message naming its position.
 Each input's geometry is handled in the views that draw it. A selection, a Data
 Pool link and a direct link between charts cover the rows of `input_0`.
 
+### Every input in one dataset
+
+A spec that names the dataset `inputs`, in its own `data`, a layer's, a
+concatenated view's or a lookup's, also reads every input's rows in one table,
+in circle order. Each row has three more columns:
+
+- `__input__`, the circle its input came in on;
+- `scenario`, the id of the scenario box the node feeding that input is in,
+  empty for a node in no box;
+- `scenario_name`, that box's name, or the node's name for a node in no box.
+
+```json
+{
+  "data": {"name": "inputs"},
+  "mark": "bar",
+  "encoding": {
+    "x": {"field": "scenario_name", "type": "nominal"},
+    "y": {"field": "sunlight", "type": "quantitative", "aggregate": "mean"},
+    "color": {"field": "scenario_name", "type": "nominal"}
+  }
+}
+```
+
+Over two inputs, one from a box named Baseline and one from a box named Twice
+as tall, the rows read:
+
+| `__input__` | `scenario` | `scenario_name` | `segment` | `sunlight` |
+|---|---|---|---|---|
+| 0 | s-base | Baseline | r1 | 6 |
+| 0 | s-base | Baseline | r2 | 5 |
+| 1 | s-tall | Twice as tall | r1 | 3 |
+
+A color, fill or stroke on `scenario_name` draws each scenario in the color of
+its box, and an axis, offset or facet on it puts them in the order of the
+inputs, over what the spec writes for that column. Renaming or recoloring a
+box draws the chart again, with no run.
+
+The inputs stack as Compare Scenarios stacks them: a table keeps its rows, and
+a column one input lacks is empty in its rows; a value (a number, a text, true
+or false, or a list of them) is one row each under `value`, which only a spec
+that reads `inputs` takes. A table beside a value, an input with no value, and
+an input that already has a `scenario` or `scenario_name` column stop the
+chart, with a message naming the input. A spec that does not name `inputs`
+stacks nothing.
+
+A notebook exported from the dataflow writes the same rows with
+`stack_inputs` and `input_rows` from `utk_curio.sandbox.util.scenario_stack`,
+so it runs where Curio is installed.
+
 ### Drawing a GeoDataFrame
 
 Return a `GeoDataFrame` from a Python node and draw it with `mark: "geoshape"`.
