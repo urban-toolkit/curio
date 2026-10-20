@@ -76,9 +76,12 @@ CLASS_FILE = "NBS_others_5m_4326_cropped_cleaned_resampled.tif"
 #: labels it, which names SCOUT's files.
 PERIODS = {"2020 - 2050": "2020 - 2040", "2050 - 2080": "2050 - 2080", "2080 - 2100": "2080 - 2100"}
 
+#: SCOUT's class codes, by the four kinds the flood example's widgets offer:
+#: SCOUT names 21, 52, 71 and 81 three ways, which komar41, one of SCOUT's
+#: authors, says are one kind.
 CLASS_CODES = (
-    "21 bioswales or infiltration trenches, 31 permeable pavements, 43 retention ponds, "
-    "52 infiltration trench, 71 and 81 bioswales, 90 and 95 constructed wetlands, and 0 none"
+    "21, 52, 71 and 81 bioswales or infiltration trenches, 31 permeable pavements, 43 retention ponds, "
+    "90 and 95 constructed wetlands, and 0 none"
 )
 
 
@@ -211,23 +214,29 @@ def check(scout: Path) -> None:
 
 #: The proof's cases, as ``test_scout_flood.py`` lists them (``CASES``):
 #: SCOUT's function's calls, a region (top, left, bottom, right), SCOUT's
-#: label of the period and SCOUT's names of the chosen NbS.
-ALL_NBS = [
+#: label of the period and SCOUT's names of the chosen NbS. Every NbS is
+#: SCOUT's six names, and ``example-2080-kinds`` names two of the flood
+#: example's four kinds, Bioswales/Infiltration trenches and Constructed
+#: wetlands, as SCOUT names them.
+SCOUT_ALL_NBS = [
     "Bioswales/Infiltration trenches", "Permeable pavements", "Retention ponds",
     "Infiltration trench", "Bioswales", "Constructed wetlands",
 ]
 PROOF_CASES = {
     "scout-2020-none": (SCOUT_REGION, "2020 - 2040", []),
-    "scout-2020-all": (SCOUT_REGION, "2020 - 2040", ALL_NBS),
+    "scout-2020-all": (SCOUT_REGION, "2020 - 2040", SCOUT_ALL_NBS),
     "scout-2050-none": (SCOUT_REGION, "2050 - 2080", []),
-    "scout-2050-all": (SCOUT_REGION, "2050 - 2080", ALL_NBS),
+    "scout-2050-all": (SCOUT_REGION, "2050 - 2080", SCOUT_ALL_NBS),
     "scout-2080-none": (SCOUT_REGION, "2080 - 2100", []),
-    "scout-2080-all": (SCOUT_REGION, "2080 - 2100", ALL_NBS),
-    "example-2020-all": (EXAMPLE_REGION, "2020 - 2040", ALL_NBS),
+    "scout-2080-all": (SCOUT_REGION, "2080 - 2100", SCOUT_ALL_NBS),
+    "example-2020-all": (EXAMPLE_REGION, "2020 - 2040", SCOUT_ALL_NBS),
     "example-2020-none": (EXAMPLE_REGION, "2020 - 2040", []),
     "example-2050-none": (EXAMPLE_REGION, "2050 - 2080", []),
-    "example-2050-all": (EXAMPLE_REGION, "2050 - 2080", ALL_NBS),
+    "example-2050-all": (EXAMPLE_REGION, "2050 - 2080", SCOUT_ALL_NBS),
     "example-2080-some": (EXAMPLE_REGION, "2080 - 2100", ["Bioswales", "Constructed wetlands"]),
+    "example-2080-kinds": (EXAMPLE_REGION, "2080 - 2100", [
+        "Bioswales/Infiltration trenches", "Infiltration trench", "Bioswales", "Constructed wetlands",
+    ]),
     "inner-2020-some": (INNER_REGION, "2020 - 2040", ["Retention ponds", "Permeable pavements"]),
 }
 
