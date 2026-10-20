@@ -14,7 +14,6 @@
 import {
   faChartLine,
   faCity,
-  faCodeCompare,
   faCube,
   faDatabase,
   faDownload,
@@ -62,7 +61,6 @@ registerIcon('fa-solid:table', faTable);
 registerIcon('fa-solid:city', faCity);
 registerIcon('fa-solid:object-group', faObjectGroup);
 registerIcon('fa-solid:sliders', faSliders);
-registerIcon('fa-solid:code-compare', faCodeCompare);
 registerIcon('fa-solid:hand-pointer', faHandPointer);
 registerIcon('fa-solid:note-sticky', faNoteSticky);
 registerIcon('fa-solid:cube', faCube);

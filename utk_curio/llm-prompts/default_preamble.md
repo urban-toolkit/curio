@@ -211,8 +211,7 @@ A node's "type" is the id of the template it was made from. A run that can place
 - Autark: Grammar-driven urban analytics. Write an UrbanSpec (JSON) covering data loading (OSM, CSV, GeoJSON), GPU compute, map rendering of layers and rasters, and/or plot rendering in one declarative spec.
 - Spatial Join: Pairs the rows of two inputs whose shapes meet, such as points and the polygons they fall in. Connect them to the blue circle at the top and the green circle at the bottom, then pick how the shapes meet: intersects, within, contains, touches, overlaps, crosses or nearest. The output is one row per pair, with the bottom input's columns added, or the bottom input's rows with their count of pairs.
 - Parameter: One value any node can use. Give it a name, a type and a default. Its tag then shows under Shared in every node's Widgets tab and above every code editor; drag it into a node's code to use the value there. Changing the value makes the nodes that use it run again, and renaming it updates their code. It has no edges, and it lists the nodes that use it.
-- Compare Scenarios: Compares scenarios. Connect each scenario's outcome to its own input circle: each input is labelled by the scenario its node belongs to, and the node stacks the inputs into one table, with the scenario's id and name on every row. That table is its output. Its Chart tab draws the table in the scenarios' colors, as bars, grouped bars, lines, points, a pie, lollipops or a table. In Difference it takes two inputs and subtracts input_0 from input_1: two rasters cell by cell, two layers or two tables row by row, matched on a stable id (osm_id or building_id, or a key you pick), with rows only one side has marked removed or added. The difference is its output: a table's is shown as a table, and an Autark node after it draws a raster's or a layer's on a map. It shows Difference for two rasters or two layers and a Chart otherwise, and you can switch. Its What differs tab lists what changed between the scenarios: widget values and code lines. It warns when the scenarios read different context.
-- Interaction: Removes features, or changes them, by hand or by a condition. Connect a layer, or the layers an Autark node hands on, and pick the layer to edit and the column that identifies a feature: osm_id or building_id, or another column whose values differ in every feature. A layer with no such column is refused. Double-click features on its map to pick them, then Remove them (Delete), raise or lower a number such as height (the up and down arrows), scale it, Set a column to a value, type a new value into the picked features' table, or Restore them as the input has them. Or pick features by a condition such as height > 100, and do any of these to all of them, including writing a column computed by an expression such as levels * 3.2. Its edits are a log, applied in order by that column, never by a feature's place; each can be switched off, undone or deleted. Its output is the edited layer, with the other layers as they came, and Update results runs the nodes below it again. A building's parts share its building_id, so an edit by building_id applies to the whole building. Compare Scenarios lists the edits in its What differs tab.
+- Interaction: Removes features, or changes them, by hand or by a condition. Connect a layer, or the layers an Autark node hands on, and pick the layer to edit and the column that identifies a feature: osm_id or building_id, or another column whose values differ in every feature. A layer with no such column is refused. Double-click features on its map to pick them, then Remove them (Delete), raise or lower a number such as height (the up and down arrows), scale it, Set a column to a value, type a new value into the picked features' table, or Restore them as the input has them. Or pick features by a condition such as height > 100, and do any of these to all of them, including writing a column computed by an expression such as levels * 3.2. Its edits are a log, applied in order by that column, never by a feature's place; each can be switched off, undone or deleted. Its output is the edited layer, with the other layers as they came, and Update results runs the nodes below it again. A building's parts share its building_id, so an edit by building_id applies to the whole building.
 - Note: A note on the canvas: a title and a short text in simple markdown (headings, lists, bold and https links) on a color of its own. It connects to nothing and runs nothing. The Researcher writes its findings in notes.
 
 A node that accepts more than one connection takes each one on its own input circle, numbered from 0 in the order they were connected. An edge names the circle it connects to in "targetHandle": "in", "in_1", "in_2", ..., circle 0 first.
@@ -237,7 +236,6 @@ Nodes are uncontrollable, controllable through code (python or JavaScript) or co
 - Autark: controllable through grammar.
 - Spatial Join: uncontrollable.
 - Parameter: uncontrollable.
-- Compare Scenarios: controllable through python code.
 - Interaction: controllable through python code.
 - Note: uncontrollable.
 
@@ -345,7 +343,6 @@ Input supported:
 - Autark: LIST, JSON, GEODATAFRAME, DATAFRAME, RASTER
 - Spatial Join: GEODATAFRAME
 - Parameter: no input supported
-- Compare Scenarios: DATAFRAME, GEODATAFRAME, RASTER, VALUE, LIST, JSON
 - Interaction: GEODATAFRAME, DATAFRAME, LIST, JSON
 - Note: no input supported
 
@@ -363,7 +360,6 @@ Output supported:
 - Autark: LIST, JSON, GEODATAFRAME, DATAFRAME, RASTER
 - Spatial Join: GEODATAFRAME
 - Parameter: no output supported
-- Compare Scenarios: DATAFRAME, GEODATAFRAME, RASTER
 - Interaction: GEODATAFRAME, DATAFRAME, JSON
 - Note: no output supported
 
@@ -381,7 +377,6 @@ Number of connections each node accepts into its inputs. A node that accepts mor
 - Simple View: 1
 - Autark: any number
 - Spatial Join: 2
-- Compare Scenarios: any number
 - Interaction: 1
 
 Number of outputs possible for each node (if you want to output more than one data unit you need to use a tuple):
@@ -396,7 +391,6 @@ Number of outputs possible for each node (if you want to output more than one da
 - Simple View: 1
 - Autark: [0,1]
 - Spatial Join: 1
-- Compare Scenarios: [1,n]
 - Interaction: 1
 
 Note that there is no problem connecting the output of a node into the input of multiple nodes.
@@ -527,6 +521,6 @@ Nodes that can have interaction connection edge:
 
 A scenario is a named selection of a dataflow's nodes, in "dataflow"."scenarios", used to compare alternatives: the same analysis with buildings twice as tall, say. Its boundary splits the dataflow into three parts. Its fixed context is the nodes outside it that it reads, through an edge into it or through a Parameter node's reference in its code. Its levers are its own nodes: what an alternative changes, such as a widget value, a line of code or a spec. Its outcomes are the outputs of its last nodes: what gets compared. A node belongs to one scenario at most, so a node two alternatives share sits outside both, as their common context. An alternative is usually a copy of another scenario's nodes that reads the same context, with a lever changed; each copy names the nodes it descends from in "metadata"."copiedFrom", which is how the levers of two scenarios pair.
 
-A Compare Scenarios node stacks its inputs into one table with a "scenario_name" column, and a Vega-Lite node after it draws each scenario in the color of its box, in the order of the node's inputs.
+To compare scenarios, connect each scenario's outcome to an input circle of its own, on a node outside the boxes. A Vega-Lite node whose spec reads the dataset "inputs" charts them: every input's rows stacked, each row with "scenario" and "scenario_name" from the scenario box its input comes from, each scenario drawn in its box's color. A Raster Calculator node takes the difference of two rasters cell by cell, raster_calculate("subtract", [input_1, input_0], output_file=curio_output_file), with absolute=True for its size. A Python Computation node takes the difference of two tables or layers, joining their rows on a column both have, such as osm_id or building_id.
 
 The Scout package (curio.scout@1) has fifteen charts that compare scenarios: Lines with a band, Curves by group, Bars with error bars, Ensemble strips, Stacked bars with totals, Donuts, Weighted matrix, Dots with a range, Bars, Grouped bars, Lines, Points, Pie, Lollipops and Table. Each takes one input per scenario: connect each scenario's outcome to a circle of its own. Its spec reads them all as the dataset "inputs", every input's rows stacked without their geometry, each row with "scenario" and "scenario_name" from the scenario box its input comes from, and it draws each scenario in its box's color, in the order the dataflow lists the boxes. Each is a Vega-Lite node whose spec is its template's: set the columns it plots in its widgets, and its Combine widget, where it has one, to the Vega-Lite aggregate it combines a scenario's rows with (mean, sum, median, min, max or count), and leave its spec as it is.
