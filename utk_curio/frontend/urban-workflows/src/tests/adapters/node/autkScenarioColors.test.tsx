@@ -5,7 +5,10 @@
  * `inputs` draws its rows. The node hands the grammar the layer with
  * autk-grammar's `color` set to it (adapters/node/autkGrammarBehavior), so the
  * map shows no legend for it. A map inside a box draws its layers as written,
- * and so does a layer whose input comes from no box.
+ * and so does a layer whose input comes from no box. The box's color replaces
+ * a layer's one color, written or not; a layer colored by its values keeps
+ * their colors, and so does a raster's. Every layer one wired input carries is
+ * that input's, whatever its place among the layers.
  *
  * The grammar is a stand-in that records what the node hands it
  * (_support/autkNodeMocks), and the flow holds the boxes, the nodes and the
@@ -37,6 +40,7 @@ import {
   resetAutkNodeMocks,
 } from '../../_support/autkNodeMocks';
 import { mountAutkNode, stubWebGpu, unstubWebGpu } from '../../_support/autkNode';
+import { withScenarioColors } from '../../../adapters/node/autkScenarioColors';
 
 const NODE = 'routes-map';
 const FASTEST = { id: 'fastest', name: 'Fastest', color: '#e15759', nodes: ['route-fast'] };
@@ -159,6 +163,81 @@ test("guard: a layer's own scenario key is not read; the box its input comes fro
 
   await map.run({ map: { layerRefs: [{ dataRef: 'input_2', color: '#123456' }] } });
   expect(drawnLayers()).toEqual([{ dataRef: 'input_2', color: '#4e79a7' }]);
+});
+
+describe("a layer that reads its values keeps their colors", () => {
+  test("a layer colored by getFnv keeps its colors; a color it writes over them gives way to the box's", async () => {
+    const map = mountMap();
+
+    await map.run({
+      map: {
+        layerRefs: [
+          { dataRef: 'input_1', getFnv: 'speed', colorMapInterpolator: 'interpolateReds' },
+          { dataRef: 'input_2', getFnv: 'rain', color: '#123456', isColorMap: true },
+          { dataRef: 'input_2', getFnv: 'rain', color: '#123456' },
+        ],
+      },
+    });
+
+    expect(drawnLayers()).toEqual([
+      { dataRef: 'input_1', getFnv: 'speed', colorMapInterpolator: 'interpolateReds' },
+      { dataRef: 'input_2', getFnv: 'rain', color: '#123456', isColorMap: true },
+      // Its own color draws it, not its values: one color, the box's.
+      { dataRef: 'input_2', getFnv: 'rain', color: '#4e79a7' },
+    ]);
+  });
+
+  test("a raster's layer is never recolored: its cells take their values' colors", () => {
+    const fastest = () => FASTEST as any;
+    const spec = { map: { layerRefs: [{ dataRef: 'input_1' }, { dataRef: 'heights', colorMapInterpolator: 'interpolateViridis' }] } };
+
+    expect(withScenarioColors(spec, fastest, new Set(['heights'])).map.layerRefs).toEqual([
+      { dataRef: 'input_1', color: '#e15759' },
+      { dataRef: 'heights', colorMapInterpolator: 'interpolateViridis' },
+    ]);
+  });
+});
+
+describe("the layers one input carries are that input's", () => {
+  /** An upstream node's two layers, handed on together. */
+  const LAYERS = {
+    dataType: 'outputs',
+    data: [
+      { dataType: 'geodataframe', data: ONE_ROW, layerName: 'roads' },
+      { dataType: 'geodataframe', data: ONE_ROW, layerName: 'buildings' },
+    ],
+  };
+
+  test("one wired input from a box: every layer it carries is drawn in the box's color", async () => {
+    mockInputsByPath.current = { 'art-layers': LAYERS };
+    mockEdges.current = [edge('route-fast', 'in')];
+    const map = mountAutkNode(NODE, undefined, { input: { path: 'art-layers', dataType: 'outputs' } });
+
+    await map.run({ map: { layerRefs: [{ dataRef: 'roads' }, { dataRef: 'buildings' }] } });
+
+    expect(drawnLayers()).toEqual([
+      { dataRef: 'roads', color: '#e15759' },
+      { dataRef: 'buildings', color: '#e15759' },
+    ]);
+  });
+
+  test("guard: the layers a node in no box hands on input_0 never take input_1's box color", async () => {
+    mockInputsByPath.current = { 'art-layers': LAYERS };
+    mockEdges.current = [edge('roads', 'in'), edge('route-fast', 'in_1')];
+    const input = {
+      dataType: 'outputs',
+      data: [{ path: 'art-layers', dataType: 'outputs' }, { path: 'art-fast', dataType: 'geodataframe' }],
+    };
+    const map = mountAutkNode(NODE, undefined, { input });
+
+    await map.run({ map: { layerRefs: [{ dataRef: 'roads' }, { dataRef: 'buildings' }, { dataRef: 'input_1' }] } });
+
+    expect(drawnLayers()).toEqual([
+      { dataRef: 'roads' },
+      { dataRef: 'buildings' },
+      { dataRef: 'input_1', color: '#e15759' },
+    ]);
+  });
 });
 
 test("guard: the Interaction node's map draws the features it edits as written", async () => {

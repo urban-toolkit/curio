@@ -14,6 +14,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 
 jest.mock("vega", () => {
+  const { datasetsRead, unrecognizedDataset } = require("../../_support/vegaViewDatasets");
   const views: any[] = [];
   const changeset = () => {
     const cs: any = { remove: () => cs, insert: () => cs, modify: () => cs };
@@ -33,7 +34,11 @@ jest.mock("vega", () => {
     scenegraph() { return { root: { marktype: "rect", items: [{}, {}] } }; }
     getState() { return { signals: {}, data: {} }; }
     addSignalListener() { throw new Error("no signal"); }
-    change() { return this; }
+    // As vega's, a view holds only the datasets its spec reads.
+    change(name: string) {
+      if (!datasetsRead(this.spec).has(name)) throw unrecognizedDataset(name);
+      return this;
+    }
   }
   return { changeset, View, parse: (spec: any) => spec, Warn: 2, __views: views };
 }, { virtual: true });
@@ -212,6 +217,84 @@ describe("a chart reading inputs names its rows by its inputs' boxes", () => {
     await playedChart(plain);
     expect(Object.keys(lastSpec().datasets)).toEqual(["input_0", "input_1"]);
     expect(lastSpec().encoding.color.scale).toEqual({ domain: ["Twice as tall", "Baseline"], range: ["#000000", "#999999"] });
+  });
+});
+
+describe("a chart reading inputs with no box among its inputs", () => {
+  /** The spec's own color scale, which no box replaces. */
+  const OWN_SCALE = { domain: ["Twice as tall", "Baseline"], range: ["#000000", "#999999"] };
+
+  test("keeps the spec's own colors and order: no input comes from a box", async () => {
+    setFlow([]);
+    await playedChart();
+    expect(lastSpec().encoding.color.scale).toEqual(OWN_SCALE);
+    expect(lastSpec().encoding.x.sort).toBeUndefined();
+    // Both feeders are titled Shade: their rows carry one name.
+    expect(stackedRows()).toEqual([
+      [null, "Shade", 5],
+      [null, "Shade", 6],
+      [null, "Shade", 3],
+    ]);
+  });
+
+  test("a box drawn around a feeder afterwards: the chart draws again, in the boxes' colors", async () => {
+    setFlow([]);
+    const played = await playedChart();
+    expect(lastSpec().encoding.color.scale).toEqual(OWN_SCALE);
+
+    await redrawn(played, [BASE]);
+    expect(lastSpec().encoding.color.scale).toEqual({ domain: ["Baseline", "Shade"], range: ["#2a9d8f", "#8a8f98"] });
+    expect(lastSpec().encoding.x.sort).toEqual(["Baseline", "Shade"]);
+    expect(stackedRows().map((row: any[]) => row[1])).toEqual(["Baseline", "Baseline", "Shade"]);
+  });
+
+  test("guard: two boxes of one name draw as one name, in the first box's color", async () => {
+    setFlow([BASE, { ...TALL, name: "Baseline" }]);
+    await playedChart();
+    expect(stackedRows().map((row: any[]) => row[1])).toEqual(["Baseline", "Baseline", "Baseline"]);
+    expect(lastSpec().encoding.color.scale).toEqual({ domain: ["Baseline"], range: ["#2a9d8f"] });
+  });
+
+  test("guard: untitled nodes of one type, in no box, give their rows one name", async () => {
+    setFlow([], {
+      nodes: [
+        node("base", "curio.builtin/computation-analysis@1"),
+        node("tall", "curio.builtin/computation-analysis@1"),
+        node("chart", "curio.builtin/vis-vega@1"),
+      ],
+    });
+    await playedChart();
+    const names = stackedRows().map((row: any[]) => row[1]);
+    expect(new Set(names).size).toBe(1);
+    expect(lastSpec().encoding.color.scale).toEqual(OWN_SCALE);
+  });
+});
+
+describe("a chart reading inputs whose one wired input carries several tables", () => {
+  test("says so and draws nothing, as Python's stack_inputs refuses it", async () => {
+    setFlow([BASE], { edges: [edge("base", "chart", "in")] });
+    const data: any = {
+      nodeId: "chart",
+      // A node returning a tuple of two tables, on the chart's one circle.
+      input: { dataType: "outputs", data: [frame([5, 6]), frame([3])] },
+      outputCallback: jest.fn(),
+      interactionsCallback: jest.fn(),
+    };
+    const nodeState: any = { code: BARS, setOutput: jest.fn(), templateData: { code: BARS } };
+    let hook: any;
+    await act(async () => {
+      hook = renderHook(() => useVegaBehavior(data, nodeState));
+    });
+    await act(async () => {
+      await hook.result.current.applyGrammar(BARS);
+    });
+    expect(views()).toHaveLength(0);
+    const [last] = nodeState.setOutput.mock.calls[nodeState.setOutput.mock.calls.length - 1];
+    expect(last.code).toBe("error");
+    expect(last.content).toContain(
+      'The dataset "inputs": input_0 (Baseline) carries 2 tables. Connect a node that returns one table, '
+        + "or pick the table to compare in a node between them.",
+    );
   });
 });
 

@@ -11,6 +11,7 @@ import { act, renderHook } from "@testing-library/react";
 
 // Only what useVega calls on the library, as in hook/vegaMultiInput.test.tsx.
 jest.mock("vega", () => {
+  const { datasetsRead, unrecognizedDataset } = require("../_support/vegaViewDatasets");
   const views: any[] = [];
   const changeset = () => {
     const cs: any = { remove: () => cs, insert: () => cs, modify: () => cs };
@@ -35,7 +36,11 @@ jest.mock("vega", () => {
       if (!View.signals.includes(name)) throw new Error(`Unrecognized signal name: "${name}"`);
       this.listeners[name] = fn;
     }
-    change() { return this; }
+    // As vega's, a view holds only the datasets its spec reads.
+    change(name: string) {
+      if (!datasetsRead(this.spec).has(name)) throw unrecognizedDataset(name);
+      return this;
+    }
   }
   return { changeset, View, parse: (spec: any) => spec, Warn: 2, __views: views };
 }, { virtual: true });

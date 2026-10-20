@@ -3,13 +3,20 @@
  * stacked, each named by its scenario's box, and judged on them: what arrived
  * is every input's rows, not the first input's alone. A new input stacks them
  * again under the names the chart has then.
+ *
+ * vega-lite builds only the datasets a spec reads, so a view drawing `inputs`
+ * alone holds no `input_0`. A selection that covers the first input's rows, a
+ * Data Pool's echo of one or a direct link's, lands on its rows in `inputs`
+ * (`__input__` 0), and a change to a dataset the view lacks is skipped: vega
+ * throws for one, and so does the stand-in below.
  */
 import { act, renderHook, waitFor } from "@testing-library/react";
 
 // Only what useVega calls on the library: a view keeps the spec it was built
 // from and the changesets it is handed, and its scenegraph is whatever the
-// test sets.
+// test sets. As vega's, it throws for a change to a dataset it does not hold.
 jest.mock("vega", () => {
+  const { datasetsRead, unrecognizedDataset } = require("../_support/vegaViewDatasets");
   const views: any[] = [];
   const changeset = () => {
     const ops: any[] = [];
@@ -37,7 +44,11 @@ jest.mock("vega", () => {
     scenegraph() { return { root: View.scene }; }
     getState() { return { signals: {} }; }
     addSignalListener() { throw new Error("no signal"); }
-    change(name: string, cs: any) { this.changes.push({ name, ops: cs.ops }); return this; }
+    change(name: string, cs: any) {
+      if (!datasetsRead(this.spec).has(name)) throw unrecognizedDataset(name);
+      this.changes.push({ name, ops: cs.ops });
+      return this;
+    }
   }
   return { changeset, View, parse: (spec: any) => spec, Warn: 2, __views: views };
 }, { virtual: true });
@@ -49,8 +60,9 @@ jest.mock("../../providers/FlowProvider", () => ({
 jest.mock("../../providers/ProvenanceProvider", () => ({
   useProvenanceContext: () => ({ nodeExecProv: jest.fn() }),
 }));
+const mockShowToast = jest.fn();
 jest.mock("../../providers/ToastProvider", () => ({
-  useToastContext: () => ({ showToast: jest.fn() }),
+  useToastContext: () => ({ showToast: mockShowToast }),
 }));
 jest.mock("../../services/api", () => ({ fetchData: jest.fn(), fetchPreviewData: jest.fn() }));
 
@@ -74,23 +86,45 @@ const BARS = JSON.stringify({
   },
 });
 
+/** The first input's rows as bars, and every input's stacked rows as points over them. */
+const OVER_THE_FIRST = JSON.stringify({
+  layer: [
+    { mark: "bar", encoding: { x: { field: "segment", type: "nominal" }, y: { field: "sunlight", type: "quantitative" } } },
+    {
+      data: { name: "inputs" },
+      mark: "point",
+      encoding: { x: { field: "segment", type: "nominal" }, y: { field: "sunlight", type: "quantitative" } },
+    },
+  ],
+});
+
+/** A chart joined to this one by a direct interaction edge has picked the first input's row *row*. */
+const picked = (row: number) => [
+  { nodeId: "pick", details: { highlight: { type: "POINT", data: [row], priority: 1 } }, priority: 1 },
+];
+
 const frame = (columns: Record<string, unknown[]>) => ({ dataType: "dataframe", data: columns });
 const both = (first: any, second: any) => ({ dataType: "outputs", data: [first, second] });
 
-async function drawn(input: any, labels: typeof BASE[]) {
+type Props = { input: any; labels: typeof BASE[]; interactions?: unknown };
+
+async function drawn(input: any, labels: typeof BASE[], spec = BARS, interactions?: unknown) {
   document.body.innerHTML = '<div id="vegan1"></div>';
   const base = { nodeId: "n1", interactionsCallback: jest.fn(), outputCallback: jest.fn() };
   const hook = renderHook(
-    ({ input: current, labels: names }: { input: any; labels: typeof BASE[] }) =>
-      useVega({ data: { ...base, input: current }, code: BARS, inputLabels: names }),
-    { initialProps: { input, labels } },
+    ({ input: current, labels: names, interactions: incoming }: Props) =>
+      useVega({ data: { ...base, input: current, interactions: incoming }, code: spec, inputLabels: names }),
+    { initialProps: { input, labels, interactions } as Props },
   );
   let counts: any;
   await act(async () => {
-    counts = await hook.result.current.handleCompileGrammar(BARS);
+    counts = await hook.result.current.handleCompileGrammar(spec);
   });
   return { hook, counts, view: views()[views().length - 1] };
 }
+
+/** The flag each of *rows* gets from the change *change* made. */
+const flagsOf = (change: { ops: any[] }, rows: any[]) => rows.map((row) => change.ops[0].value(row));
 
 beforeAll(() => {
   (globalThis as any).ResizeObserver ??= class { observe() {} disconnect() {} };
@@ -98,6 +132,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   views().length = 0;
+  mockShowToast.mockClear();
   // Three bars drawn.
   vegaMock().View.scene = { marktype: "rect", items: [{}, {}, {}] };
 });
@@ -160,24 +195,89 @@ describe("a chart reading inputs is judged on every input's rows", () => {
 });
 
 describe("a selection coming back from a Data Pool", () => {
-  test("changes the flags of that input's rows in inputs too, not the view (#535)", async () => {
-    const flagged = (flags: string[]) => frame({ sunlight: [5, 6], interacted: flags });
-    const tall = frame({ sunlight: [3] });
+  const flagged = (flags: string[]) => frame({ segment: ["r1", "r2"], sunlight: [5, 6], interacted: flags });
+  const tall = frame({ segment: ["r1"], sunlight: [3] });
+
+  test("on a chart that reads inputs alone: that input's rows in inputs change their flags, not the view (#535)", async () => {
     const { hook, view } = await drawn(both(flagged(["0", "0"]), tall), [BASE, TALL]);
     const count = views().length;
+    // The view holds inputs alone, as vega-lite builds it.
+    expect(() => view.change("input_0", { ops: [] })).toThrow("Unrecognized data set: input_0");
 
     await act(async () => {
       hook.rerender({ input: both(markSelectionEcho(flagged(["0", "1"])), tall), labels: [BASE, TALL] });
     });
-    await waitFor(() => expect(view.changes.map((change: any) => change.name)).toEqual(["input_0", "inputs"]));
+    await waitFor(() => expect(view.changes.map((change: any) => change.name)).toEqual(["inputs"]));
     expect(views()).toHaveLength(count);
+    expect(mockShowToast).not.toHaveBeenCalled();
     // Baseline's second row is picked; Twice as tall's row keeps its flag.
-    const flagOf = view.changes[1].ops[0].value;
-    expect([
-      flagOf({ __input__: 0, __row_index__: 0, interacted: "0" }),
-      flagOf({ __input__: 0, __row_index__: 1, interacted: "0" }),
-      flagOf({ __input__: 1, __row_index__: 0, interacted: "0" }),
-    ]).toEqual(["0", "1", "0"]);
+    expect(flagsOf(view.changes[0], [
+      { __input__: 0, __row_index__: 0, interacted: "0" },
+      { __input__: 0, __row_index__: 1, interacted: "0" },
+      { __input__: 1, __row_index__: 0, interacted: "0" },
+    ])).toEqual(["0", "1", "0"]);
+  });
+
+  test("on a chart that reads the first input and inputs: both change their flags", async () => {
+    const { hook, view } = await drawn(both(flagged(["0", "0"]), tall), [BASE, TALL], OVER_THE_FIRST);
+
+    await act(async () => {
+      hook.rerender({ input: both(markSelectionEcho(flagged(["1", "0"])), tall), labels: [BASE, TALL] });
+    });
+    await waitFor(() => expect(view.changes.map((change: any) => change.name)).toEqual(["input_0", "inputs"]));
+    expect(flagsOf(view.changes[0], [{ __row_index__: 0, interacted: "0" }, { __row_index__: 1, interacted: "0" }]))
+      .toEqual(["1", "0"]);
+    expect(flagsOf(view.changes[1], [
+      { __input__: 0, __row_index__: 0, interacted: "0" },
+      { __input__: 1, __row_index__: 0, interacted: "0" },
+    ])).toEqual(["1", "0"]);
+  });
+});
+
+describe("a selection from a chart joined by a direct interaction edge", () => {
+  const rows = [
+    { __input__: 0, __row_index__: 0, interacted: "0" },
+    { __input__: 0, __row_index__: 1, interacted: "0" },
+    { __input__: 1, __row_index__: 1, interacted: "1" },
+  ];
+  const two = () => both(frame({ segment: ["r1", "r2"], sunlight: [5, 6] }), frame({ segment: ["r1", "r2"], sunlight: [3, 2] }));
+
+  test("lights the first input's rows in inputs on the first draw, and the draw still counts its marks", async () => {
+    const { counts, view } = await drawn(two(), [BASE, TALL], BARS, picked(1));
+    expect(counts.drawn).toBe(3);
+    expect(view.changes.map((change: any) => change.name)).toEqual(["inputs"]);
+    // The first input's second row is picked; another input's row keeps its flag.
+    expect(flagsOf(view.changes[0], rows)).toEqual(["0", "1", "1"]);
+  });
+
+  test("a selection arriving after the draw lights them too, and nothing throws", async () => {
+    // The same input on every render: only the selection changes.
+    const input = two();
+    const { hook, view } = await drawn(input, [BASE, TALL]);
+    expect(view.changes).toEqual([]);
+
+    await act(async () => {
+      hook.rerender({ input, labels: [BASE, TALL], interactions: picked(0) });
+    });
+    await waitFor(() => expect(view.changes.map((change: any) => change.name)).toContain("inputs"));
+    const last = view.changes[view.changes.length - 1];
+    expect(last.name).toBe("inputs");
+    expect(flagsOf(last, rows)).toEqual(["1", "0", "1"]);
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  test("a chart that reads the first input and inputs lights both", async () => {
+    const { view } = await drawn(two(), [BASE, TALL], OVER_THE_FIRST, picked(1));
+    expect(view.changes.map((change: any) => change.name)).toEqual(["input_0", "inputs"]);
+    expect(flagsOf(view.changes[0], [{ __row_index__: 0 }, { __row_index__: 1 }])).toEqual(["0", "1"]);
+    expect(flagsOf(view.changes[1], rows)).toEqual(["0", "1", "1"]);
+  });
+
+  test("a chart that reads only its second input changes nothing it does not hold, and counts its marks", async () => {
+    const second = JSON.stringify({ data: { name: "input_1" }, mark: "bar" });
+    const { counts, view } = await drawn(two(), [BASE, TALL], second, picked(1));
+    expect(counts.drawn).toBe(3);
+    expect(view.changes).toEqual([]);
   });
 });
 
