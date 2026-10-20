@@ -45,8 +45,8 @@ import {
 } from './autkRunDescriptions';
 import { loadSpecLayers, materializeBackendLayers, runDataInBackend, toPoolOutput } from './autkLayerMaterialize';
 import {
-    bleedRasterEdges, isCurioRasterSource, newAutkDb, resolveRasterInputs, withOpaqueRasters, withRasterSources,
-    type CurioRasterSource,
+    bleedRasterEdges, isCurioRasterSource, newAutkDb, rasterTables, resolveRasterInputs, withOpaqueRasters,
+    withRasterSources, type CurioRasterSource,
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
 import { layerScenarios, withScenarioColors } from './autkScenarioColors';
@@ -771,13 +771,14 @@ export const useAutkGrammarBehavior = (
                 }
 
                 // A layer whose input comes from a scenario's box, on a map
-                // outside every box, is drawn in the box's color, and every
-                // raster with each cell that has a value opaque.
+                // outside every box, is drawn in the box's color, unless its
+                // values color it, as a raster's always do; and every raster
+                // with each cell that has a value opaque.
                 if (colorsByScenario) {
                     const graph = scenarioGraphRef.current;
                     spec = withScenarioColors(spec, layerScenarios(
                         data.nodeId, graph.nodes, graph.edges, graph.scenarios, preparedInput?.circles ?? {},
-                    ));
+                    ), rasterTables(spec));
                 }
                 spec = withOpaqueRasters(spec);
 
