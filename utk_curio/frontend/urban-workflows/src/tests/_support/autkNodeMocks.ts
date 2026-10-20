@@ -55,28 +55,41 @@ export const ONE_ROW = {
 /** The FeatureCollection the node's input reads. */
 export const nodeInput: { current: any } = { current: ONE_ROW };
 
+/** What an artifact of the input reads, by its path; any other path reads `nodeInput`. */
+export const inputsByPath: { current: Record<string, any> } = { current: {} };
+
 /** The dataflow's scenarios, as the flow holds them: none unless a test sets some. */
 export const flowScenarios: { current: any[] } = { current: [] };
 
+/** The dataflow's nodes and edges, as the flow holds them: none unless a test sets some. */
+export const flowNodes: { current: any[] } = { current: [] };
+export const flowEdges: { current: any[] } = { current: [] };
+
 export const flowProviderModule = {
   useFlowContext: () => ({
-    edges: [], nodeExecStatus: {}, markNodeErrored, workflowNameRef: { current: 'wf' },
-    scenarios: flowScenarios.current,
+    nodes: flowNodes.current, edges: flowEdges.current, nodeExecStatus: {}, markNodeErrored,
+    workflowNameRef: { current: 'wf' }, scenarios: flowScenarios.current,
   }),
 };
 export const toastProviderModule = { useToastContext: () => ({ showToast }) };
 export const apiModule = {
-  fetchData: jest.fn(async () => ({ dataType: 'geodataframe', data: nodeInput.current })),
+  fetchData: jest.fn(async (path?: string) => (
+    (path !== undefined && inputsByPath.current[path]) || { dataType: 'geodataframe', data: nodeInput.current }
+  )),
   fetchPreviewData: jest.fn(),
 };
 export const autkGrammarModule = { AutkGrammar };
 
-/** Forget the runs and calls of the last test, read ONE_ROW again, and hold no scenario. */
+/** Forget the runs and calls of the last test, read ONE_ROW again, and hold no
+ * scenario, node or edge. */
 export function resetAutkNodeMocks(): void {
   grammarRuns.length = 0;
   AutkGrammar.mockClear();
   markNodeErrored.mockClear();
   showToast.mockClear();
   nodeInput.current = ONE_ROW;
+  inputsByPath.current = {};
   flowScenarios.current = [];
+  flowNodes.current = [];
+  flowEdges.current = [];
 }
