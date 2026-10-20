@@ -1,6 +1,6 @@
 /**
- * #1022: each run's card in a node's Provenance tab reads "In: ... | Out: ...",
- * the kinds of data the run read and returned (NodeProvenance.tsx). Every node
+ * #1022: each of a node's runs in the provenance drawer reads "In: ... | Out: ...",
+ * the kinds of data the run read and returned (utils/nodeRuns.ts). Every node
  * names them through `mapTypes` (utils/formatters), and the provider files a
  * run's kinds only as a list (ProvenanceProvider.tsx).
  *

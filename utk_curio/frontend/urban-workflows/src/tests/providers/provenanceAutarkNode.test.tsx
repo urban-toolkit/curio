@@ -1,8 +1,8 @@
 /**
- * #860: an Autark node's Provenance tab lists its runs. The tab reads
- * `provenanceGraphNodes[data.nodeId]` (NodeProvenance.tsx), as every node's tab
- * does (#448, provenanceNodeKey.test.tsx), so each run has to be filed there,
- * once, with its document as written: a click on a run in the tab puts that
+ * #860: the provenance drawer lists an Autark node's runs. It reads
+ * `provenanceGraphNodes[nodeId]` (NodeRunsProvenance.tsx), as it does for every
+ * node (#448, provenanceNodeKey.test.tsx), so each run has to be filed there,
+ * once, with its document as written: a run's button in the drawer puts that
  * code back in the editor.
  *
  * - A map or a plot draws in the browser, in a run on the server too, which
@@ -95,7 +95,7 @@ const EDIT_MAP = JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0', isPic
 type MountedNode = {
   /** Run *spec* as the editor hands it over, and wait for the run to end. */
   run: (spec: string) => Promise<void>;
-  /** The runs the node's Provenance tab lists. */
+  /** The runs the provenance drawer lists for the node. */
   runs: () => NodeExecRecord[];
   /** Every run filed, by node id. */
   filed: () => Record<string, NodeExecRecord[]>;

@@ -751,7 +751,7 @@
         "id": { "type": "integer", "description": "Monotonic counter within the session, re-derived from the maximum on load." },
         "parentId": { "type": ["integer", "null"], "description": "The execution this one descends from, or null for the first." },
         "code": { "type": "string", "description": "The node's content as executed." },
-        "inputs": { "type": "array", "items": { "type": "string" }, "description": "The kinds of data the run read, each once: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER (mapTypes in utils/formatters.ts). The node's Provenance tab shows them on the run's card. Coerced to an empty array if the stored value is not an array." },
+        "inputs": { "type": "array", "items": { "type": "string" }, "description": "The kinds of data the run read, each once: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER (mapTypes in utils/formatters.ts). The provenance drawer shows them on each of the node's runs. Coerced to an empty array if the stored value is not an array." },
         "outputs": { "type": "array", "items": { "type": "string" }, "description": "The kinds of data the run returned, named like 'inputs', or ERROR for a run that failed. Coerced like 'inputs'." },
         "startTime": {
           "type": "string",

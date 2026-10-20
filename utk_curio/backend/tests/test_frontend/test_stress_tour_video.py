@@ -920,7 +920,9 @@ def chapter_canvas(run: StressRun) -> None:
 
     with run.step("Walk the node editor tabs"):
         center_on(page, transform, zoom=0.9)
-        for tab in ("Code", "Widgets", "Provenance", "Output"):
+        # Provenance is not among them: its pill opens the provenance drawer
+        # (the step "A node's own runs in the provenance drawer").
+        for tab in ("Code", "Widgets", "Output"):
             pill = _editor_tab(page, transform, tab)
             if not pill.count():
                 # NodeEditor gates the Output pane on
@@ -2584,16 +2586,18 @@ def chapter_views(run: StressRun) -> None:
         run.snap("provenance-window")
         _close_modal(page)
 
-    with run.step("A node's own provenance tab", may_fail=True):
+    with run.step("A node's own runs in the provenance drawer", may_fail=True):
         nodes = canvas_nodes(page)
         if nodes:
             node_id = nodes[0]["id"]
             center_on(page, node_id, zoom=1.0)
-            tab = _editor_tab(page, node_id, "Provenance")
-            if tab.count():
-                tab.first.dispatch_event("click")
+            pill = _editor_tab(page, node_id, "Provenance")
+            if pill.count():
+                pill.first.dispatch_event("click")
+                page.get_by_role("dialog", name="Node provenance").wait_for(state="visible", timeout=20000)
                 page.wait_for_timeout(1800)
                 run.snap("node-provenance")
+                _close_modal(page)
 
     with run.step("Share the dataflow read-only", may_fail=True):
         share = page.get_by_test_id("share-menu-btn")

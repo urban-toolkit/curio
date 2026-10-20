@@ -104,7 +104,8 @@ function files(dir: string, endings: string[]): string[] {
   });
 }
 
-/** The panels that scroll with it: the Data Catalog's, then the widget panel. */
+/** The panels that scroll with it: the Data Catalog's, the widget panel, then
+ *  a run's code in the provenance drawer. */
 const USERS: Array<[file: string, selector: string]> = [
   ["components/datasets/catalog/DatasetDetailPanel.module.css", ".centerColumn"],
   ["components/datasets/catalog/DatasetDetailPanel.module.css", ".infoColumn"],
@@ -112,6 +113,7 @@ const USERS: Array<[file: string, selector: string]> = [
   ["components/datasets/catalog/DatasetTablePreview.module.css", ".tableWrap"],
   ["components/datasets/catalog/DatasetBundlePreview.module.css", ".tableWrap"],
   ["components/editing/widgets/WidgetTags.module.css", ".panel"],
+  ["components/provenance/ProvenanceHistory.module.css", ".code"],
 ];
 
 describe("the thin scrollbar of the Data Catalog's panels, the widget panels and the code editors", () => {

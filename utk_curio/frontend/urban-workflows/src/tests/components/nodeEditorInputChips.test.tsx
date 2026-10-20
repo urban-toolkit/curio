@@ -32,11 +32,6 @@ jest.mock("../../components/editing/GrammarEditor", () => ({
   default: ({ replacedCode }: any) => <pre data-testid="replaced">{replacedCode}</pre>,
 }));
 
-jest.mock("../../components/editing/NodeProvenance", () => ({
-  __esModule: true,
-  default: () => null,
-}));
-
 import NodeEditor from "../../components/editing/NodeEditor";
 
 function setFlow() {

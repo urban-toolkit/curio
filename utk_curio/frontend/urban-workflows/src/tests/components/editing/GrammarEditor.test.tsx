@@ -226,6 +226,36 @@ describe("GrammarEditor content sync (dev/70)", () => {
         expect(floatCode).toHaveBeenCalledWith(external);
     });
 
+    test("a spec put back from the provenance drawer goes in each time, the loaded spec included", () => {
+        // A default equal to the loaded spec is never applied (the test
+        // above), and putting back the first run must still replace an edit.
+        const floatCode = jest.fn();
+        const sendCodeToWidgets = jest.fn();
+        const props = {
+            output: { code: "", content: "" },
+            nodeId: "n1",
+            applyGrammar: jest.fn(),
+            replacedCode: "",
+            sendCodeToWidgets,
+            replacedCodeDirty: false,
+            defaultValue: DEFAULT_SPEC,
+            floatCode,
+            readOnly: false,
+        };
+        const view = render(<GrammarEditor {...props} />);
+        const editor = lastEditor();
+
+        act(() => { editor.__type('{"user": "edited"}'); });
+        view.rerender(<GrammarEditor {...props} restoredCode={{ code: DEFAULT_SPEC, nonce: 1 }} />);
+        expect(editor.getValue()).toBe(DEFAULT_SPEC);
+        expect(floatCode).toHaveBeenLastCalledWith(DEFAULT_SPEC);
+        expect(sendCodeToWidgets).toHaveBeenLastCalledWith(DEFAULT_SPEC);
+
+        act(() => { editor.__type('{"user": "again"}'); });
+        view.rerender(<GrammarEditor {...props} restoredCode={{ code: DEFAULT_SPEC, nonce: 2 }} />);
+        expect(editor.getValue()).toBe(DEFAULT_SPEC);
+    });
+
     test("typing floats every keystroke to nodeState.code", () => {
         const { floatCode } = renderGrammarEditor(DEFAULT_SPEC);
         const editor = lastEditor();

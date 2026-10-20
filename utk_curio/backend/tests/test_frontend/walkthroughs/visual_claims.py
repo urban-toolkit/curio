@@ -233,8 +233,8 @@ def spatial_join_explains_itself(ctx: Ctx) -> None:
          "data_export whatever the input was, so three exports from one "
          "dataflow collided under one name. The payload already declares its "
          "shape and the input already has a name, so the node decides both and "
-         "shows the result. The node is that one button: no code, widgets or "
-         "provenance tabs, and no play button.",
+         "shows the result. The node is that one button: no code or widgets "
+         "tabs, no provenance button, and no play button.",
     tests=[
         "src/tests/utils/dataExportTarget.test.ts",
         "src/tests/adapters/node/behaviors.test.tsx",

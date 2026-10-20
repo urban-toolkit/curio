@@ -1,6 +1,6 @@
 /**
- * #448: a node's Provenance tab looks its runs up by node id
- * (`provenanceGraphNodes[data.nodeId]`, NodeProvenance.tsx). The runs have to
+ * #448: the provenance drawer looks a node's runs up by node id
+ * (`provenanceGraphNodes[nodeId]`, NodeRunsProvenance.tsx). The runs have to
  * be filed under that id.
  *
  * The callers used to pass `nodeType + "-" + nodeId` and the provider cut at

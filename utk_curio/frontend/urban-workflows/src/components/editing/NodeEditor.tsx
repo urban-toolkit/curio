@@ -7,7 +7,6 @@ import GrammarEditor from "./GrammarEditor";
 import WidgetsEditor from "./WidgetsEditor";
 import { NodeType } from "../../constants";
 import { NodeTemplateId } from "../../registry/types";
-import NodeProvenance from "./NodeProvenance";
 import Col from "react-bootstrap/Col";
 import Nav from "react-bootstrap/Nav";
 import Row from "react-bootstrap/Row";
@@ -26,7 +25,9 @@ import { OverlayTrigger, Tooltip } from "react-bootstrap";
 import { ICodeData } from "../../types";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { useNotebookViewContext } from "../../providers/flow/notebookViewContext";
+import { useProvenanceDrawerOptional } from "../../providers/provenanceDrawerContext";
 import { resolveInitialEditorTab } from "../../utils/canvasTemplateConfig";
+import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
 import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
 import { notebookOutputBox } from "../../utils/notebookLayout";
 import { useNodeHeaderSlot } from "./nodeHeaderSlot";
@@ -271,12 +272,32 @@ function NodeEditor({
         setDefaultCode(defaultValue);
     }, [defaultValue]);
 
-    const navigateProv = (code: string) => {
-        setDefaultCode(code);
-        sendCodeToWidgets(code);
+    // A run put back from the provenance drawer. The editors write its code in
+    // as content that arrived whole and prime the widgets, as a load does, so
+    // nothing runs, no input error is raised and the node does not jump to its
+    // output; then the editor is shown with that code. Each put-back is a new
+    // one, so the first run's code goes back in even when it is the code the
+    // node loaded with. Read through a ref: the drawer keeps the callback while
+    // the node re-renders.
+    const [restoredCode, setRestoredCode] = useState<{ code: string; nonce: number } | null>(null);
+    const restoreRunRef = useRef<(runCode: string) => void>(() => undefined);
+    restoreRunRef.current = (runCode: string) => {
+        setRestoredCode((prev) => ({ code: runCode, nonce: (prev?.nonce ?? 0) + 1 }));
+        if (code || grammar) setActiveTab(resolveInitialEditorTab({ code, grammar, widgets: false }));
     };
 
+    // The Provenance pill is not a tab: it opens the node's runs in the
+    // provenance drawer, and the node keeps the pane it shows.
+    const provenanceDrawer = useProvenanceDrawerOptional();
     const handleTabSelect = (eventKey: any) => {
+        if (eventKey === "provenance") {
+            provenanceDrawer?.openNodeProvenance({
+                nodeId: data.nodeId,
+                title: resolveNodeDisplayLabel({ nodeType, packageTemplateLabel: data.packageTemplateLabel }),
+                restore: (runCode: string) => restoreRunRef.current(runCode),
+            });
+            return;
+        }
         setActiveTab(eventKey);
     };
 
@@ -292,9 +313,7 @@ function NodeEditor({
             }
             : { height: "100%", backgroundColor: "#ffffff" };
     // A pane fills the node on the canvas; in a cell it takes its own height.
-    // The provenance graph has none of its own, so it gets one.
     const paneStyle: CSS.Properties | undefined = inCell ? undefined : { height: "100%" };
-    const provenancePaneStyle: CSS.Properties = inCell ? { height: "320px" } : { height: "100%" };
     const widgetsPaneStyle: CSS.Properties = inCell ? { maxHeight: "360px", overflowY: "auto" } : { height: "100%" };
     const outputBox = notebookOutputBox(String(nodeType ?? ""));
     const px = (n: number | undefined) => (n === undefined ? undefined : `${n}px`);
@@ -507,6 +526,7 @@ function NodeEditor({
                                             stripInputs={inputs}
                                             onLoadColumns={loadColumns}
                                             widgetLanguage={widgetLanguage}
+                                            restoredCode={restoredCode}
                                         />
                                     </Tab.Pane>
                                 ) : null}
@@ -564,23 +584,11 @@ function NodeEditor({
                                             stripInputs={inputs}
                                             onLoadColumns={loadColumns}
                                             widgetLanguage={widgetLanguage}
+                                            restoredCode={restoredCode}
                                         />
                                     </Tab.Pane>
                                 ) : null}
 
-
-                                {provenance == undefined || provenance ? (
-                                    <Tab.Pane
-                                        eventKey="provenance"
-                                        style={provenancePaneStyle}
-                                    >
-                                        <NodeProvenance
-                                            data={data}
-                                            setCode={navigateProv}
-                                            active={activeTab === "provenance"}
-                                        />
-                                    </Tab.Pane>
-                                ) : null}
 
                                 {(outputId != undefined || contentComponent != undefined) ? (
                                     <Tab.Pane

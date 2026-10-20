@@ -76,11 +76,6 @@ jest.mock('../../components/editing/WidgetsEditor', () => {
   };
 });
 
-jest.mock('../../components/editing/NodeProvenance', () => ({
-  __esModule: true,
-  default: () => null,
-}));
-
 import NodeEditor from '../../components/editing/NodeEditor';
 
 const MARKER = '[!! label$INPUT_TEXT$hello !!]';

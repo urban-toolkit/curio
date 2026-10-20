@@ -40,14 +40,11 @@ const canvases = sources(SRC)
   .map((file) => ({ file: path.relative(SRC, file), tags: reactFlowTags(fs.readFileSync(file, "utf8")) }))
   .filter(({ tags }) => tags.length > 0);
 
-test("finds every canvas: the main one, the dashboard's and a node's runs", () => {
-  // The provenance drawer draws its history without React Flow.
+test("finds every canvas: the main one and the dashboard's", () => {
+  // The provenance drawer draws a dataflow's versions and a node's runs
+  // without React Flow.
   expect(canvases.map(({ file }) => file).sort()).toEqual(
-    [
-      path.join("components", "MainCanvas.tsx"),
-      path.join("components", "editing", "NodeProvenance.tsx"),
-      path.join("pages", "dashboard", "DashboardPage.tsx"),
-    ].sort(),
+    [path.join("components", "MainCanvas.tsx"), path.join("pages", "dashboard", "DashboardPage.tsx")].sort(),
   );
 });
 

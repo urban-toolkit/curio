@@ -1,10 +1,12 @@
 import React from "react";
 import { HeaderDrawer } from "../layout/HeaderDrawer";
 import { useFlowContext } from "../../providers/FlowProvider";
+import type { NodeProvenanceTarget } from "../../providers/provenanceDrawerContext";
 import { DataflowProvenance } from "./DataflowProvenance";
+import { NodeRunsProvenance } from "./NodeRunsProvenance";
 
-/** Whose history the drawer shows. */
-export type ProvenanceTarget = { kind: "dataflow" };
+/** Whose history the drawer shows: the dataflow's versions, or a node's runs. */
+export type ProvenanceTarget = { kind: "dataflow" } | ({ kind: "node" } & NodeProvenanceTarget);
 
 export interface ProvenanceDrawerProps {
   presented: boolean;
@@ -14,24 +16,29 @@ export interface ProvenanceDrawerProps {
 }
 
 /**
- * The provenance drawer: a dataflow's versions, on the right with the catalog
- * drawers' pin and width, listed as Curio's Nest lists work.
+ * The provenance drawer: a dataflow's versions or a node's runs, on the right
+ * with the catalog drawers' pin and width, listed as Curio's Nest lists work.
  */
-export function ProvenanceDrawer({ presented, onRequestClose, onExitComplete }: ProvenanceDrawerProps) {
+export function ProvenanceDrawer({ presented, onRequestClose, onExitComplete, target }: ProvenanceDrawerProps) {
   const { workflowNameRef } = useFlowContext();
+  const node = target.kind === "node" ? target : null;
   return (
     <HeaderDrawer
       presented={presented}
       onRequestClose={onRequestClose}
       onExitComplete={onExitComplete}
-      title="Dataflow provenance"
+      title={node ? "Node provenance" : "Dataflow provenance"}
       titleId="provenance-drawer-title"
       name="provenance"
-      subtitle={`Versions of ${workflowNameRef.current || "Untitled dataflow"}`}
+      subtitle={node ? `Runs of ${node.title}` : `Versions of ${workflowNameRef.current || "Untitled dataflow"}`}
       pinnable
       wide={false}
     >
-      <DataflowProvenance />
+      {node ? (
+        <NodeRunsProvenance key={node.nodeId} nodeId={node.nodeId} restore={node.restore} onNodeGone={onRequestClose} />
+      ) : (
+        <DataflowProvenance key="dataflow" />
+      )}
     </HeaderDrawer>
   );
 }

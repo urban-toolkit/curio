@@ -49,11 +49,6 @@ jest.mock('../../components/editing/WidgetsEditor', () => ({
   default: () => null,
 }));
 
-jest.mock('../../components/editing/NodeProvenance', () => ({
-  __esModule: true,
-  default: () => null,
-}));
-
 import NodeEditor from '../../components/editing/NodeEditor';
 
 const OUTPUT_ID = 'vega-n1';

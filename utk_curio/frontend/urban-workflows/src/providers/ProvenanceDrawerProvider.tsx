@@ -2,13 +2,14 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSlideDrawerPresentation } from "../hook/useSlideDrawerPresentation";
 import { ProvenanceDrawer, type ProvenanceTarget } from "../components/provenance/ProvenanceDrawer";
-import { ProvenanceDrawerContext } from "./provenanceDrawerContext";
+import { type NodeProvenanceTarget, ProvenanceDrawerContext } from "./provenanceDrawerContext";
 
 export { useProvenanceDrawerOptional } from "./provenanceDrawerContext";
 
 /**
  * Mounts the provenance drawer on the canvas, shaped like the catalog drawer
- * providers.
+ * providers: the dataflow's versions from View > Provenance, or a node's runs
+ * from its Provenance pill.
  */
 export function ProvenanceDrawerProvider({ children }: { children: React.ReactNode }) {
   const { mounted, presented, open, close, finishExit } = useSlideDrawerPresentation();
@@ -28,9 +29,17 @@ export function ProvenanceDrawerProvider({ children }: { children: React.ReactNo
     open();
   }, [open]);
 
+  const openNodeProvenance = useCallback(
+    (node: NodeProvenanceTarget) => {
+      setTarget({ kind: "node", ...node });
+      open();
+    },
+    [open],
+  );
+
   const ctx = useMemo(
-    () => ({ openDataflowProvenance, closeProvenance: close, isProvenanceOpen: mounted }),
-    [openDataflowProvenance, close, mounted],
+    () => ({ openDataflowProvenance, openNodeProvenance, closeProvenance: close, isProvenanceOpen: mounted }),
+    [openDataflowProvenance, openNodeProvenance, close, mounted],
   );
 
   const drawer = mounted
