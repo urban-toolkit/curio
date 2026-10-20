@@ -192,7 +192,7 @@ class TestRenderPrompt:
         labels it, as it names a built-in one: Scout's nodes."""
         manifest = json.loads((REPO_ROOT / "packages" / "curio.scout@1" / "manifest.json").read_text(
             encoding="utf-8"))
-        assert len(manifest["templates"]) == 9
+        assert len(manifest["templates"]) == 17
         for template in manifest["templates"]:
             marker = "{{template.label:" + f"curio.scout/{template['id']}" + "}}"
             assert contracts.render_template(marker) == template["label"]
@@ -201,10 +201,11 @@ class TestRenderPrompt:
         with pytest.raises(contracts.PromptTemplateError, match="no.such.package"):
             contracts.render_template("{{template.label:no.such.package/chart}}")
 
-    def test_the_preamble_names_the_charts_that_follow_a_compare_node(self):
-        """Its Scenarios section names Scout's seven charts, the package's
+    def test_the_preamble_names_scouts_charts_and_how_they_read_their_scenarios(self):
+        """Its Scenarios section names Scout's fifteen charts, the package's
         templates that draw with Vega-Lite, by the labels their manifest gives
-        them, and the package that holds them."""
+        them, and the package that holds them, and says that each takes one
+        input per scenario and reads them as the dataset "inputs"."""
         template = (REPO_ROOT / contracts.PROMPTS_DIR / "default_preamble.template.md").read_text(encoding="utf-8")
         section = template.split("## Scenarios", 1)[1]
         manifest = json.loads((REPO_ROOT / "packages" / "curio.scout@1" / "manifest.json").read_text(
@@ -213,11 +214,14 @@ class TestRenderPrompt:
         charts = [t for t in manifest["templates"] if t.get("grammarId") == "vega-lite"]
         assert [chart["id"] for chart in charts] == [
             "lines-with-band", "curves-by-group", "bars-with-error-bars", "ensemble-strips",
-            "stacked-bars-with-totals", "donuts", "weighted-matrix",
+            "stacked-bars-with-totals", "donuts", "weighted-matrix", "dots-with-a-range",
+            "bars", "grouped-bars", "lines", "points", "pie", "lollipops", "table",
         ]
         for chart in charts:
             assert "{{template.label:" + f"curio.scout/{chart['id']}" + "}}" in section, chart["id"]
         assert "curio.scout@1" in section
+        assert "one input per scenario" in section
+        assert '"inputs"' in section
 
 
 class TestThePromptFacts:
