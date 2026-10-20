@@ -973,3 +973,117 @@ class TestTheInputsDatasetHoldsNoGeometry:
         events, outcome, inputs = self._rounds(app, [document], self.UPSTREAM)
         assert "document-invalid" not in [a.get("kind") for a in outcome["attempts"]]
         assert outcome["candidate"] == document
+
+
+def _rain_table(circle: int) -> dict:
+    """A scenario's rain and cost, a table whose rain column's name holds a
+    dot, as Solve hands its preview on."""
+    return {
+        "goal": "Rain and cost", "circle": circle, "outputDataType": "dataframe",
+        "schema": {"kind": "table", "rowCount": 1,
+                   "columns": [{"name": "rain.mm", "dtype": "float"}, {"name": "cost", "dtype": "float"}],
+                   "sampleRows": [{"rain.mm": 45.0, "cost": 90.0}]},
+    }
+
+
+class TestAColumnWhoseNameHoldsADot:
+    """Vega-Lite reads a ``.`` or a ``[`` in a field as a path into the row
+    (issue 1042): ``rain.mm`` is ``mm`` inside ``rain``, and the column
+    ``rain.mm`` is written ``rain\\.mm``. The check reads a field the same
+    way, so it accepts the escaped spelling of a column, refuses the one that
+    reads nothing with the spelling that reads it, and Solve checks a Scout
+    chart's spec with its chips written as the canvas writes them."""
+
+    SCHEMA = "https://vega.github.io/schema/vega-lite/v6.json"
+    COLUMNS = ["rain.mm", "cost", "zone"]
+
+    def _verdict(self, spec: dict, columns=None, geometry=None) -> dict:
+        return dv.validate(VEGA, json.dumps({"$schema": self.SCHEMA, **spec}),
+                           columns=columns or self.COLUMNS, geometry_columns=geometry)
+
+    def _bars(self, field: str) -> dict:
+        return {
+            "transform": [{"aggregate": [{"op": "mean", "field": field, "as": "mean_rain"}], "groupby": ["zone"]}],
+            "mark": "bar",
+            "encoding": {
+                "x": {"field": "zone", "type": "nominal"},
+                "y": {"field": "mean_rain", "type": "quantitative"},
+                "tooltip": [{"field": "zone"}],
+            },
+        }
+
+    def test_an_escaped_field_reads_the_column_it_names(self):
+        spec = {
+            "transform": [{"joinaggregate": [{"op": "max", "field": "rain\\.mm", "as": "top"}],
+                           "groupby": ["zone"]}],
+            "mark": "point",
+            "encoding": {"x": {"field": "rain\\.mm", "type": "quantitative"},
+                         "y": {"field": "top", "type": "quantitative"}},
+        }
+        assert self._verdict(spec) == {"status": dv.STATUS_VALID}
+        assert self._verdict(self._bars("rain\\.mm")) == {"status": dv.STATUS_VALID}
+
+    def test_a_dotted_field_written_as_it_is_reads_a_path_and_is_refused_with_the_spelling_that_reads_it(self):
+        verdict = self._verdict(self._bars("rain.mm"))
+        assert verdict["status"] == dv.STATUS_INVALID
+        assert "transform[0].aggregate[0].field reads 'rain', which is not a column" in verdict["detail"]
+        assert 'the column \'rain.mm\' is written "rain\\\\.mm" in the JSON' in verdict["detail"]
+
+    def test_a_path_into_a_column_reads_that_column(self):
+        spec = {"mark": "point", "encoding": {"x": {"field": "place.name", "type": "nominal"}}}
+        assert self._verdict(spec, columns=["place", "cost"]) == {"status": dv.STATUS_VALID}
+
+    def test_a_dotted_geometry_is_left_out_of_inputs_unless_a_lookup_brings_it_by_its_escaped_name(self):
+        draws = {
+            "data": {"name": "inputs"},
+            "mark": "geoshape",
+            "encoding": {"shape": {"field": "the\\.geom", "type": "geojson"}},
+        }
+        refused = self._verdict(draws, columns=["zone", "the.geom"], geometry=["the.geom"])
+        assert refused["status"] == dv.STATUS_INVALID
+        assert "encoding.shape.field reads 'the.geom', a geometry column" in refused["detail"]
+        looked_up = {
+            **draws,
+            "transform": [{"lookup": "zone", "from": {
+                "data": {"name": "input_0"}, "key": "zone", "fields": ["the\\.geom"],
+            }}],
+        }
+        assert self._verdict(looked_up, columns=["zone", "the.geom"], geometry=["the.geom"]) == {
+            "status": dv.STATUS_VALID}
+
+    def test_solve_checks_a_scout_chart_with_its_widget_naming_a_dotted_column_escaped(
+        self, app, tmp_curio, monkeypatch,
+    ):
+        """Scout's Bars, its Y widget set to ``rain.mm``: Solve resolves its
+        chips as the canvas does for a Vega-Lite chart, the template's grammar,
+        so the document it checks reads ``rain\\.mm``, and it is valid."""
+        from utk_curio.backend.app.packages import service as packages_service
+        from utk_curio.backend.tests.test_agents.test_verified_rounds import _Exec, _rounds
+
+        package = REPO_ROOT / "packages" / "curio.scout@1"
+        manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
+        (template,) = [t for t in manifest["templates"] if t["id"] == "bars"]
+        document = (package / template["source"]).read_text(encoding="utf-8").strip()
+        monkeypatch.setattr(packages_service, "available_templates", lambda *args, **kwargs: [{
+            "id": "curio.scout/bars", "executable": False, "engine": "python",
+            "contentKind": "grammar", "grammar": "vega-lite",
+        }])
+        checked: list = []
+        validate = dv.validate
+
+        def recording(node_type, content, **kwargs):
+            checked.append(content)
+            return validate(node_type, content, **kwargs)
+
+        monkeypatch.setattr(dv, "validate", recording)
+        widgets = [dict(w, value="rain.mm") if w["name"] == "y" else w for w in template["widgets"]]
+        node = {"id": "n1", "type": "curio.scout/bars", "goal": "Rain by scenario", "content": "",
+                "metadata": {"widgets": widgets}}
+        spec = {"dataflow": {"nodes": [node], "edges": [], "name": "wf", "task": "t"}}
+        events, outcome, inputs = _rounds(app, node, replies=[document], exec_fn=_Exec(), spec=spec,
+                                          extra_inputs={"upstreamOutputs": [_rain_table(0), _rain_table(1)]})
+        assert checked, "Solve checked no document"
+        assert '"field": "rain\\\\.mm"' in checked[-1]
+        assert "document-invalid" not in [a.get("kind") for a in outcome["attempts"]]
+        assert (outcome["evidence"] or {}).get("documentValidated") == "bars"
+        assert outcome["candidate"] == document

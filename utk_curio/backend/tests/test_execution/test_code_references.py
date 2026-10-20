@@ -61,10 +61,16 @@ class TestTheSharedCases:
         assert cases
         mismatches = []
         for case in cases:
-            code, problems = resolve_references(
-                case["code"], case["widgets"], case["language"], case.get("inputs", []), case.get("shared", []),
-                case.get("selections", []),
-            )
+            # A JSON case may name its document's grammar, such as vega-lite.
+            grammar = {"grammar": case["grammar"]} if "grammar" in case else {}
+            try:
+                code, problems = resolve_references(
+                    case["code"], case["widgets"], case["language"], case.get("inputs", []), case.get("shared", []),
+                    case.get("selections", []), **grammar,
+                )
+            except Exception as exc:  # one case that raises is a mismatch, the others are still read
+                mismatches.append(f"{case['name']}: raised {exc!r}")
+                continue
             got = (code, [p["message"] for p in problems])
             want = (case["expected"], case.get("problems", []))
             if got != want:
@@ -345,6 +351,21 @@ class TestResolveCodeReferences:
         widgets = [{"name": "on", "type": "checkbox", "default": False, "value": True}]
         assert resolve_code_references("[!! on !!]", widgets, "python") == "True"
         assert resolve_code_references("[!! on !!]", widgets, "javascript") == "true"
+
+    def test_a_vega_lite_spec_of_a_node_writes_a_column_escaped_in_a_field(self):
+        """A node's spec resolved as the canvas resolves a Vega-Lite chart's
+        (issue 1042): its column chip in a field escaped, in its title the
+        name; the same document of no grammar writes the name in both."""
+        spec = parse_workflow_dict({"dataflow": {"nodes": [
+            {"id": "rain", "type": "curio.builtin/data-loading", "content": "return df"},
+            {"id": "chart", "type": "curio.builtin/vis-vega",
+             "content": '{"encoding": {"y": {"field": [!! input_0.rain.mm !!], "title": "[!! input_0.rain.mm !!]"}}}'},
+        ], "edges": [{"id": "e", "source": "rain", "target": "chart"}]}})
+        chart = next(n for n in spec.nodes if n.id == "chart")
+        assert spec.node_code(chart, "json", grammar="vega-lite") == (
+            '{"encoding": {"y": {"field": "rain\\\\.mm", "title": "rain.mm"}}}'
+        )
+        assert spec.node_code(chart, "json") == '{"encoding": {"y": {"field": "rain.mm", "title": "rain.mm"}}}'
 
 
 class TestTheSpecCarriesWidgets:

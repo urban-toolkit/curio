@@ -26,6 +26,8 @@ import type { SelectionTag } from "../../utils/references/selectionTags";
 type Case = {
   name: string;
   language: CodeLanguage;
+  /** A JSON document's grammar, such as vega-lite. */
+  grammar?: string;
   code: string;
   widgets: unknown[];
   inputs?: InputScope[];
@@ -47,6 +49,7 @@ describe("the shared reference cases", () => {
         selections: (c.selections ?? []) as SelectionTag[],
       },
       c.language,
+      c.grammar,
     );
     expect(result.code).toBe(c.expected);
     expect(result.problems.map((p) => p.message)).toEqual(c.problems ?? []);
