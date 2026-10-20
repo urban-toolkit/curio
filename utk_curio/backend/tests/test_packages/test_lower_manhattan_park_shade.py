@@ -480,8 +480,8 @@ def test_the_chart_and_the_changes_hold_what_they_compare():
             _node_id("existing", "shadow"), _node_id(key, "shadow"),
         )
         assert park_change["type"] == PYTHON, scenario
-        assert 'after = input_1.set_index("park").loc[before["park"]].reset_index()\n' in park_change["content"]
-        assert "    after[column] = now - was\n" in park_change["content"]
+        assert 'before, after = input_0.set_index("park"), input_1.set_index("park")\n' in park_change["content"]
+        assert "\nout[numbers] = now - was\n" in park_change["content"]
         assert (into[(park_change["id"], "in")], into[(park_change["id"], "in_1")]) == (
             _node_id("existing", "shade"), _node_id(key, "shade"),
         )
@@ -832,6 +832,60 @@ def test_each_parks_change_is_what_compares_difference_wrote(ran, tmp_path):
         compared, _printed = _run_code(reference, [existing, reversed_parks], [], tmp_path / "media")
         assert_geodataframe_equal(again, compared)
         assert_geodataframe_equal(again, ours)
+
+
+#: The park the what-if leaves out, and the one Existing leaves out, in the
+#: next test.
+LEFT_OUT, ONLY_IN_THE_WHAT_IF = "Coenties Slip", "Bowling Green"
+
+
+def test_a_park_one_side_lacks_is_removed_or_added_as_compare_wrote_it(ran, tmp_path):
+    """A user's edit can leave a park out of one scenario. Each what-if's park
+    change then writes what Compare Scenarios' Difference keyed on the park
+    wrote: a park only Existing has is ``removed``, in Existing's order, its
+    numbers empty and its outline Existing's; a park only the what-if has is
+    ``added``, after every park of Existing's, its numbers empty and its
+    outline the what-if's. Every other park is the what-if's minus
+    Existing's, as before."""
+    import numpy as np
+    from geopandas.testing import assert_geodataframe_equal
+
+    nodes = _nodes(_dataflow())
+    existing = _value(ran, _node_id("existing", "shade"))
+    numbers = ["area_m2", "cells", "mean_min", "median_min", "p90_min", "pct_daylight",
+               "share_sun", "share_partial", "share_deep"]
+    for scenario, name, _color, key in SCENARIOS[1:]:
+        node = nodes[f"park-shade-{key}-park-change"]
+        reference = {"id": f"compare-{key}-one-side", "type": COMPARE,
+                     "content": _difference_code(scenario, name, key="park")}
+        what_if = _value(ran, _node_id(key, "shade"))
+        cases = {
+            "removed": (existing, what_if[what_if["park"] != LEFT_OUT].reset_index(drop=True)),
+            "added": (existing[existing["park"] != ONLY_IN_THE_WHAT_IF].reset_index(drop=True), what_if),
+        }
+        for change, inputs in cases.items():
+            ours, _printed = _run_code(node, list(inputs), [], tmp_path / "media")
+            compared, _printed = _run_code(reference, list(inputs), [], tmp_path / "media")
+            assert list(ours.columns) == list(compared.columns), (scenario, change)
+            assert ours.dtypes.astype(str).tolist() == compared.dtypes.astype(str).tolist(), (scenario, change)
+            assert_geodataframe_equal(ours, compared)
+            park = LEFT_OUT if change == "removed" else ONLY_IN_THE_WHAT_IF
+            expected_order = PARKS if change == "removed" else [p for p in PARKS if p != park] + [park]
+            assert list(ours["park"]) == expected_order, (scenario, change)
+            (row,) = ours.index[ours["park"] == park]
+            assert ours.loc[row, "change"] == change, (scenario, change)
+            assert ours.loc[row, numbers].isna().all(), (scenario, change)
+            outline = inputs[0 if change == "removed" else 1]
+            assert ours.geometry[row].equals_exact(outline.geometry[outline["park"] == park].iloc[0], 1e-9), (
+                scenario, change)
+            others = ours[ours["park"] != park]
+            assert set(others["change"]) == {"changed"}, (scenario, change)
+            assert np.allclose(
+                others["mean_min"].to_numpy(),
+                what_if.set_index("park").loc[others["park"], "mean_min"].to_numpy()
+                - existing.set_index("park").loc[others["park"], "mean_min"].to_numpy(),
+                rtol=0, atol=1e-9,
+            ), (scenario, change)
 
 
 def test_each_what_ifs_change_in_shadow_is_a_raster_on_the_shadows_grid(ran):
