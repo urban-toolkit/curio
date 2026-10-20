@@ -230,7 +230,7 @@ To give it a model of its own:
 
 1. Open the **Discovery Catalog** and choose **Hugging Face models**. It lists image segmentation models Curio can run.
 2. Find a model, for example `openmmlab/upernet-convnext-tiny` (ADE20K's 150 classes, MIT license), and click **Add to Model Catalog**. Curio downloads it, and installs the libraries its runtime needs: `onnxruntime`, or `torch` and `transformers`.
-3. Back on the canvas, open **Model Catalog** in the left Tools panel and drag the model onto this node. Its `curio_load_model(...)` line now names the new model.
+3. Back on the canvas, click **Model Catalog** in the top bar and drag the model's card onto this node. Its `curio_load_model(...)` line now names the new model.
 4. Run the node. The `Simple View`, Spatial Join and bar chart after it show the new model's classes.
 
 The bar chart for this route names no colours, so it draws whatever classes the model reports. A model trained on other scenes labels other things: ADE20K says `tree` and `grass` where Cityscapes says `vegetation`.

@@ -15,5 +15,8 @@
 .title { composes: title from "../paletteShell/paletteShell.module.css"; }
 .scroll { composes: scroll from "../paletteShell/paletteShell.module.css"; }
 .sectionEmpty { composes: sectionEmpty from "../paletteShell/paletteShell.module.css"; }
+/* The empty state above the list is the Data Catalog palette's own box: this
+   palette lists "Models in project" as that one lists "Datasets in project". */
+.empty { composes: empty from "../datasetPalette/DatasetsPaletteDropdown.module.css"; }
 .footer { composes: footer from "../paletteShell/paletteShell.module.css"; }
 .catalogButton { composes: catalogButton from "../paletteShell/paletteShell.module.css"; }

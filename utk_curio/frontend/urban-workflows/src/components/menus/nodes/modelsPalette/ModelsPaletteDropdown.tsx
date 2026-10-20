@@ -1,4 +1,4 @@
-import React, { memo, useState } from "react";
+import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faBrain, faChevronLeft, faChevronRight } from "@fortawesome/free-solid-svg-icons";
 
@@ -15,10 +15,11 @@ import styles from "./ModelsPalette.module.css";
 /**
  * The Model Catalog tools-panel palette. Shares the Datasets, Packages and
  * Agents pattern (dark vertical trigger card, dark dropdown panel, catalog
- * footer), differing only in content: every model package this account can
- * use (the catalog's and its own, read through the packages service), as
- * draggable rows to drop onto a node, and "Browse Model Catalog +" to open the
- * drawer, where a model is added to the dataflow.
+ * footer). Like the Data Catalog palette's "Datasets in project", it lists
+ * what the open dataflow has: the model packages its lockfile names, the set
+ * the Model Catalog drawer's In project tab lists, as draggable rows to drop
+ * onto a node or the canvas. "Browse Model Catalog +" opens the drawer, where
+ * any other model is added to the dataflow.
  */
 export const ModelsPaletteDropdown = memo(function ModelsPaletteDropdown({
   open,
@@ -29,14 +30,33 @@ export const ModelsPaletteDropdown = memo(function ModelsPaletteDropdown({
   open: boolean;
   setOpen: (value: boolean) => void;
 }) {
-  const { projectDirty } = useFlowContext();
+  // `packages` is the dataflow's lockfile, the one the drawer's Add, Remove
+  // and Import write; the drawer's In project tab reads the same list.
+  const { projectDirty, packages: dataflowPackages } = useFlowContext();
   const { openModelCatalogDrawer } = useModelCatalogDrawer();
   // Fetched with the rail, as the other palettes are, so the trigger's count
   // is right before the palette is first opened.
   const catalog = useModelPackages();
-  const models = catalog.models;
-  const total = models.length;
   const [detailModel, setDetailModel] = useState<PackagePayload | null>(null);
+
+  // A model can join the lockfile before this listing holds it: Import
+  // package and Save as package make a new model and add it to the dataflow
+  // at once. So the listing is read again whenever the lockfile changes.
+  const { reload } = catalog;
+  const lockfileKey = dataflowPackages.join("\n");
+  const readForLockfile = useRef(lockfileKey);
+  useEffect(() => {
+    if (readForLockfile.current === lockfileKey) return;
+    readForLockfile.current = lockfileKey;
+    reload();
+  }, [lockfileKey, reload]);
+
+  const models = useMemo(() => {
+    const declared = new Set(dataflowPackages);
+    return catalog.models.filter((model) => declared.has(model.dirName));
+  }, [catalog.models, dataflowPackages]);
+  // The trigger counts what the palette lists.
+  const total = models.length;
 
   // No Escape / outside-click dismissal on purpose: the palette stays open
   // until its own trigger is clicked again (or another palette claims the
@@ -81,12 +101,16 @@ export const ModelsPaletteDropdown = memo(function ModelsPaletteDropdown({
             <div className={styles.title}>Models</div>
           </div>
           <div className={styles.scroll}>
-            <PaletteAccordion title="Models" count={total} selected defaultOpen>
-              {catalog.loading && total === 0 ? (
-                <div className={styles.sectionEmpty}>Loading models…</div>
-              ) : catalog.error && total === 0 ? (
-                <div className={styles.sectionEmpty}>{catalog.error}</div>
-              ) : total > 0 ? (
+            {catalog.loading && catalog.models.length === 0 ? (
+              <div className={styles.empty}>Loading models...</div>
+            ) : null}
+            {!catalog.loading && total === 0 ? (
+              <div className={styles.empty}>
+                {catalog.error ?? "Add or import a model to use it here."}
+              </div>
+            ) : null}
+            <PaletteAccordion title="Models in project" count={total} selected defaultOpen>
+              {total > 0 ? (
                 models.map((model) => (
                   <ModelPaletteRow
                     key={model.dirName}
@@ -95,7 +119,7 @@ export const ModelsPaletteDropdown = memo(function ModelsPaletteDropdown({
                   />
                 ))
               ) : (
-                <div className={styles.sectionEmpty}>No models yet.</div>
+                <div className={styles.sectionEmpty}>No models added yet.</div>
               )}
             </PaletteAccordion>
           </div>

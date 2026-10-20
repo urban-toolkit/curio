@@ -63,10 +63,6 @@ export interface NodeCatalogDrawerProps {
   /** Which catalog this drawer is: the Node Catalog (`node`, the default) or
    *  the Model Catalog (`model`), the same drawer over model packages. */
   packageKind?: PackageKind;
-  /** The Add of the drop that opened this drawer (the Model Catalog's, from
-   *  the Tools panel's Models dropdown): run once the listings have loaded,
-   *  as a drop of one of its own cards runs it. */
-  addRequest?: PackageAddRequest | null;
 }
 
 const BUILTIN_PACKAGE_DIR = `${BUILTIN_PACKAGE_ID}@1`;
@@ -126,7 +122,6 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   onExitComplete,
   initialSearch = "",
   packageKind = "node",
-  addRequest = null,
 }) => {
   const copy = DRAWER_COPY[packageKind];
   const drawerRef = useRef<HTMLElement>(null);
@@ -178,7 +173,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   }, []);
 
   const {
-    installed, catalogByDir, catalog, catalogPublishedDirs, loaded, busy, cardActionDir, actionError, restartNoticeText,
+    installed, catalogByDir, catalog, catalogPublishedDirs, busy, cardActionDir, actionError, restartNoticeText,
     installCandidate, installMode, conflictReport, effectiveProjectId, ensureProjectId, kindOfDir,
     reload, reportActionError, dismissActionError, dismissRestartNotice,
     probeInstall: onInstall,
@@ -280,17 +275,6 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     return true;
   }, [packageKind, catalog, installed, onInstall]);
   usePackageAddRequests(takeAddRequest, presented);
-
-  // The drop that opened this drawer: the same Add, once the listings it is
-  // looked up in have loaded, and once per drop.
-  const takenAddRequest = useRef<PackageAddRequest | null>(null);
-  useEffect(() => {
-    if (!presented || !loaded || !addRequest || takenAddRequest.current === addRequest) return;
-    takenAddRequest.current = addRequest;
-    if (!takeAddRequest(addRequest)) {
-      showToast(`${addRequest.name ?? addRequest.dirName} is not in the ${copy.title}.`, "warning");
-    }
-  }, [presented, loaded, addRequest, takeAddRequest, showToast, copy.title]);
 
   // The shared import pathway the Node Catalog PAGE header calls too, so the
   // two surfaces cannot drift; the drawer alone has a lockfile to land it in.
