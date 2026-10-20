@@ -156,10 +156,13 @@ def test_only_a_test_library_reaches_the_wheelhouse(client):
 
 
 def test_the_e2e_tests_have_a_test_package_each():
-    # The card drop, its menu, the guest refusal, the lockfile, the catalog
+    # The card drop, its menu, the guest refusal, the lockfile, a lockfile
+    # whose package needs another (and the package it needs), the catalog
     # page, and the model card drop (a model package, with its weights).
     assert TEST_PACKAGE_DIRS == [
         "test.wheelhouse-catalog@1",
+        "test.wheelhouse-dependency@1",
+        "test.wheelhouse-dependent@1",
         "test.wheelhouse-guest@1",
         "test.wheelhouse-lockfile@1",
         "test.wheelhouse-model@1",

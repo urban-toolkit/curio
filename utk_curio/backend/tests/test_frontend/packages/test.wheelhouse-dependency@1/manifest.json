@@ -1,0 +1,49 @@
+{
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
+  "compatibility": {
+    "curioRuntime": ">=0.5.0",
+    "major": 1
+  },
+  "createdAt": "2026-10-20T12:00:00Z",
+  "dependencies": {
+    "js": {},
+    "packages": {},
+    "python": {
+      "curio-wheelhouse-dependency": "1.0.0"
+    }
+  },
+  "description": "Test package: wheelhouse_dependency_module, a module the node of test.wheelhouse-dependent@1 imports, and one node. The module imports curio-wheelhouse-dependency, a library that exists only as a wheel in the e2e suite's wheelhouse. Added with the package that names it in dependencies.packages.",
+  "id": "test.wheelhouse-dependency",
+  "license": "MIT",
+  "name": "Wheelhouse Dependency",
+  "permissions": [],
+  "publisher": "Curio tests",
+  "templates": [
+    {
+      "category": "computation",
+      "description": "Import wheelhouse_dependency_module and print the message it holds.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": false,
+      "icon": null,
+      "id": "probe",
+      "inputPorts": [],
+      "label": "Wheelhouse Dependency Probe",
+      "behavior": "code",
+      "outputPorts": [
+        {
+          "cardinality": "[1,n]",
+          "types": [
+            "VALUE",
+            "LIST",
+            "JSON"
+          ]
+        }
+      ],
+      "source": "sources/probe.py"
+    }
+  ],
+  "version": "1.0.0"
+}
