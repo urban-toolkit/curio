@@ -930,7 +930,8 @@ class TestTheInputsDatasetHoldsNoGeometry:
         assert outcome["candidate"] == document
 
     def _table(self, columns: list) -> str:
-        """Scout's Table, listing *columns*."""
+        """Scout's Table, listing *columns*, without the newline its source file
+        ends with, which the loop does not keep in what it writes."""
         from utk_curio.backend.app.execution.code_references import resolve_references
 
         package = REPO_ROOT / "packages" / "curio.scout@1"
@@ -941,7 +942,7 @@ class TestTheInputsDatasetHoldsNoGeometry:
             widgets=[dict(w, value=columns) for w in template["widgets"]], language="json", inputs=[{"slot": 0}],
         )
         assert not problems, problems
-        return spec
+        return spec.strip()
 
     def test_a_table_of_inputs_is_refused_for_the_geometry_it_lists(self, app, tmp_curio):
         """The Table folds the columns it lists, a transform whose outputs this
