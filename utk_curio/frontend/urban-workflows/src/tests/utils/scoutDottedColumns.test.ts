@@ -1,4 +1,7 @@
 /**
+ * @jest-environment node
+ */
+/**
  * Scout's charts over a column whose name holds a dot or a bracket, such as
  * `rain.mm` (issue 1042). Vega-Lite reads a `.` or a `[` in a field as a path
  * into the row, so `rain.mm` is `mm` inside `rain`: a chip where Vega-Lite
@@ -8,7 +11,9 @@
  * Each chart is written as the canvas writes a Vega-Lite node's spec, compiled
  * with the vega-lite the app bundles, and run by vega without a renderer; what
  * it drew is read off its scene graph. Over the same rows, a chart draws the
- * same marks whether its columns' names hold a dot or not.
+ * same marks whether its columns' names hold a dot or not. It runs in Node's
+ * environment, which needs no DOM: vega-lite's build reads `structuredClone`,
+ * which jsdom's window does not have.
  */
 import * as fs from "fs";
 import * as path from "path";
