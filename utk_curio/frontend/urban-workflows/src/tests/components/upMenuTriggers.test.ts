@@ -58,7 +58,7 @@ describe("the top bar's menu buttons", () => {
     expect(UP_MENU).toContain("<CatalogButtons");
     const start = UP_MENU.search(/<HeaderMenu\s+label="View"/);
     const view = UP_MENU.slice(start, UP_MENU.indexOf("</HeaderMenu>", start));
-    expect(view).toMatch(/<HeaderMenuItem[^>]*onClick=\{openTrillProvenanceModal\}[^>]*>\s*Provenance\s*</);
+    expect(view).toMatch(/<HeaderMenuItem[^>]*onClick=\{openProvenanceDrawer\}[^>]*>\s*Provenance\s*</);
     expect(view).toContain('testId="provenance-menu-item"');
     expect(UP_MENU).not.toContain("provenance-btn");
   });

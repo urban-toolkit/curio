@@ -1,0 +1,260 @@
+/**
+ * View > Provenance opens the dataflow's versions in a drawer on the right,
+ * with the catalog drawers' pin and width, as the List or the Graph of Curio's
+ * Nest. A click opens a version and shows it; only its own button puts it on
+ * the canvas.
+ */
+import React from "react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+
+const mockLoadTrill = jest.fn();
+jest.mock("../../hook/useCode", () => ({
+  useCode: () => ({ loadTrill: mockLoadTrill }),
+}));
+jest.mock("../../providers/FlowProvider", () => ({
+  useFlowContext: () => ({ workflowNameRef: { current: "Heat study" } }),
+}));
+
+import { ProvenanceDrawerProvider, useProvenanceDrawerOptional } from "../../providers/ProvenanceDrawerProvider";
+import { TrillGenerator } from "../../TrillGenerator";
+
+function Opener() {
+  const drawer = useProvenanceDrawerOptional()!;
+  return (
+    <button type="button" onClick={drawer.openDataflowProvenance}>
+      View provenance
+    </button>
+  );
+}
+
+const root = () => document.querySelector('[data-curio-provenance-drawer="true"]');
+const item = (id: string) => document.querySelector<HTMLElement>(`[data-provenance-item="${id}"]`);
+const head = (id: string) => item(id)!.querySelector("button")!;
+const shownIds = () =>
+  Array.from(document.querySelectorAll<HTMLElement>("[data-provenance-item]")).map((el) => el.dataset.provenanceItem);
+
+const version = (id: string, nodes: string[]) => ({
+  id,
+  label: id,
+  timestamp: 1_700_000_000_000 + Number(id.slice(1)) * 60_000,
+  preview: { nodes: nodes.map((n, i) => ({ id: n, type: "acme.none/x@1", x: i * 300, y: 0 })), edges: [] },
+});
+
+beforeEach(() => {
+  mockLoadTrill.mockReset();
+  TrillGenerator.reset();
+  // v3 was tried from v2; then the work went back to v2 and on to v4 and v5.
+  TrillGenerator.provenanceJSON = {
+    id: "wf",
+    nodes: [
+      version("v1", []),
+      version("v2", ["a"]),
+      version("v3", ["a", "b"]),
+      version("v4", ["a", "c"]),
+      version("v5", ["a", "c", "d"]),
+    ],
+    edges: [
+      { id: "v1_to_v2", source: "v1", target: "v2", label: "Node added" },
+      { id: "v2_to_v3", source: "v2", target: "v3", label: "Node added" },
+      { id: "v2_to_v4", source: "v2", target: "v4", label: "Node added" },
+      { id: "v4_to_v5", source: "v4", target: "v5", label: "Node added" },
+    ],
+  };
+  for (const id of ["v1", "v2", "v3", "v4", "v5"]) {
+    TrillGenerator.list_of_trills[id] = { dataflow: { name: "Heat study", nodes: [], edges: [] } };
+  }
+  TrillGenerator.latestTrill = "v5";
+});
+
+async function openDrawer() {
+  const utils = render(
+    <ProvenanceDrawerProvider>
+      <Opener />
+    </ProvenanceDrawerProvider>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "View provenance" }));
+  await waitFor(() => expect(root()).toHaveAttribute("aria-hidden", "false"));
+  return utils;
+}
+
+describe("the provenance drawer", () => {
+  test("opens on the right like the catalog drawers: their width, their pin, a title and the dataflow's name", async () => {
+    await openDrawer();
+    const dialog = screen.getByRole("dialog", { name: "Dataflow provenance" });
+    expect(dialog.className).toContain("drawer");
+    expect(dialog.className).not.toContain("drawerWide");
+    expect(within(dialog).getByRole("heading", { name: "Dataflow provenance", level: 2 })).toBeInTheDocument();
+    expect(within(dialog).getByText("Versions of Heat study")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Pin drawer open" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "List" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("lists the line to the newest version, with the version left behind folded under the one it left from", async () => {
+    await openDrawer();
+    expect(shownIds()).toEqual(["v1", "v2", "v4", "v5"]);
+    expect(item("v5")).toHaveAttribute("data-provenance-current", "true");
+    expect(item("v2")).not.toHaveAttribute("data-provenance-current");
+
+    const fold = within(item("v2")!.closest("li")!).getByRole("button", { name: /1 version on another branch/ });
+    expect(fold).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(fold);
+    expect(fold).toHaveAttribute("aria-expanded", "true");
+    expect(shownIds()).toEqual(["v1", "v2", "v3", "v4", "v5"]);
+  });
+
+  test("a click opens a version and puts nothing back", async () => {
+    await openDrawer();
+    fireEvent.click(head("v2"));
+
+    expect(head("v2")).toHaveAttribute("aria-expanded", "true");
+    expect(within(item("v2")!).getByText("1 node, 0 connections")).toBeInTheDocument();
+    expect(within(item("v2")!).getByRole("button", { name: "Put this version on the canvas" })).toBeInTheDocument();
+    expect(mockLoadTrill).not.toHaveBeenCalled();
+    expect(TrillGenerator.latestTrill).toBe("v5");
+  });
+
+  test("the version in use says so instead of offering itself", async () => {
+    await openDrawer();
+    fireEvent.click(head("v5"));
+    expect(within(item("v5")!).getByText("On the canvas now")).toBeInTheDocument();
+    expect(within(item("v5")!).queryByRole("button", { name: "Put this version on the canvas" })).toBeNull();
+  });
+
+  test("its button puts the version on the canvas, keeping the history, and the dot moves to it", async () => {
+    await openDrawer();
+    fireEvent.click(head("v2"));
+    fireEvent.click(within(item("v2")!).getByRole("button", { name: "Put this version on the canvas" }));
+
+    expect(mockLoadTrill).toHaveBeenCalledTimes(1);
+    expect(mockLoadTrill).toHaveBeenCalledWith(TrillGenerator.list_of_trills.v2, undefined, true);
+    expect(TrillGenerator.latestTrill).toBe("v2");
+    expect(item("v2")).toHaveAttribute("data-provenance-current", "true");
+    expect(item("v5")).not.toHaveAttribute("data-provenance-current");
+    expect(within(item("v2")!).getByText("On the canvas now")).toBeInTheDocument();
+    expect(shownIds()).toEqual(["v1", "v2", "v4", "v5"]);
+  });
+
+  test("the Graph: a box per version, the branch in the next column, one line into each version after the first", async () => {
+    await openDrawer();
+    fireEvent.click(screen.getByRole("button", { name: "Graph" }));
+
+    expect(screen.getByRole("button", { name: "Graph" })).toHaveAttribute("aria-pressed", "true");
+    expect(shownIds()).toEqual(["v1", "v2", "v3", "v4", "v5"]);
+    expect(item("v3")!.style.gridColumn).toBe("2");
+    expect(item("v4")!.style.gridColumn).toBe("1");
+    const links = Array.from(document.querySelectorAll("[data-provenance-link]")).map((g) => [
+      g.getAttribute("data-from"),
+      g.getAttribute("data-to"),
+      g.getAttribute("data-provenance-link"),
+    ]);
+    expect(links).toEqual([
+      ["v1", "v2", "next"],
+      ["v2", "v3", "branch"],
+      ["v2", "v4", "next"],
+      ["v4", "v5", "next"],
+    ]);
+    for (const g of Array.from(document.querySelectorAll("[data-provenance-link]"))) {
+      expect(g.querySelector("path")!.getAttribute("d")).toMatch(/^M/);
+      expect(g.querySelectorAll("circle")).toHaveLength(2);
+    }
+  });
+
+  test("versions opened in one view stay open in the other", async () => {
+    await openDrawer();
+    fireEvent.click(head("v4"));
+    fireEvent.click(screen.getByRole("button", { name: "Graph" }));
+    expect(head("v4")).toHaveAttribute("aria-expanded", "true");
+    expect(head("v2")).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(screen.getByRole("button", { name: "List" }));
+    expect(head("v4")).toHaveAttribute("aria-expanded", "true");
+  });
+
+  test("pinned, the scrim and Escape leave it open, and its close button closes it", async () => {
+    await openDrawer();
+    fireEvent.click(screen.getByRole("button", { name: "Pin drawer open" }));
+    expect(screen.getByRole("button", { name: "Unpin drawer" })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss Dataflow provenance" }));
+    expect(root()).toHaveAttribute("aria-hidden", "false");
+
+    fireEvent.click(screen.getByRole("button", { name: "Close Dataflow provenance" }));
+    await waitFor(() => expect(root()).toBeNull());
+  });
+
+  test("unpinned, Escape closes it", async () => {
+    await openDrawer();
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(root()).toBeNull());
+  });
+
+  test("opens again on the view the user picked last", async () => {
+    await openDrawer();
+    fireEvent.click(screen.getByRole("button", { name: "Graph" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close Dataflow provenance" }));
+    await waitFor(() => expect(root()).toBeNull());
+
+    fireEvent.click(screen.getByRole("button", { name: "View provenance" }));
+    await waitFor(() => expect(root()).toHaveAttribute("aria-hidden", "false"));
+    expect(screen.getByRole("button", { name: "Graph" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("says so while the dataflow has no version", async () => {
+    TrillGenerator.reset();
+    await openDrawer();
+    expect(screen.getByText("No versions yet")).toBeInTheDocument();
+  });
+});
+
+describe("the drawer opens on the version in use", () => {
+  // jsdom lays nothing out: give the drawer's body a scrolling box, and the
+  // version in use a place far down it.
+  const realStyle = window.getComputedStyle.bind(window);
+  const isBody = (el: Element) => el.classList?.contains("scrollBody");
+
+  beforeEach(() => {
+    jest.spyOn(window, "getComputedStyle").mockImplementation((el: Element, pseudo?: string | null) => {
+      const style = realStyle(el, pseudo);
+      if (!isBody(el)) return style;
+      return new Proxy(style, {
+        get: (target, prop) => {
+          if (prop === "overflowY") return "auto";
+          const value = Reflect.get(target, prop, target);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+    });
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get() {
+        return isBody(this) ? 2000 : 0;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+      configurable: true,
+      get() {
+        return isBody(this) ? 400 : 0;
+      },
+    });
+    jest.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+      const top = this.getAttribute("data-provenance-current") === "true" ? 1500 : 0;
+      return { top, bottom: top, left: 0, right: 0, width: 0, height: 0, x: 0, y: top, toJSON: () => ({}) } as DOMRect;
+    });
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    delete (HTMLElement.prototype as { scrollHeight?: number }).scrollHeight;
+    delete (HTMLElement.prototype as { clientHeight?: number }).clientHeight;
+  });
+
+  test("scrolled to the middle of its body, and again after a flip", async () => {
+    await openDrawer();
+    const body = root()!.querySelector<HTMLElement>(".scrollBody")!;
+    expect(body.scrollTop).toBe(1300);
+
+    body.scrollTop = 0;
+    fireEvent.click(screen.getByRole("button", { name: "Graph" }));
+    await waitFor(() => expect(body.scrollTop).toBe(1300));
+  });
+});

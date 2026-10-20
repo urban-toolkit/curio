@@ -55,8 +55,7 @@ interface ModalShellProps {
    *  as DrawerHeader's titleId. Prefer this when the modal renders a heading. */
   titleId?: string;
   /** Accessible name for consumers with no usable heading (GenericDialog's
-   *  children are arbitrary; TrillProvenanceWindow titles with a <p>). Ignored
-   *  when titleId is given. */
+   *  children are arbitrary). Ignored when titleId is given. */
   label?: string;
 }
 
