@@ -153,9 +153,13 @@ def test_the_interaction_node_names_no_what_differs(builtin_package_dir: Path):
     for word in ("What differs", "Compare Scenarios"):
         assert word not in template.description, template.description
     preamble = REAL_CATALOG.parent / "utk_curio" / "llm-prompts" / "default_preamble.md"
-    (line,) = [line for line in preamble.read_text(encoding="utf-8").splitlines() if line.startswith("- Interaction:")]
-    for word in ("What differs", "Compare Scenarios"):
-        assert word not in line, line
+    # The node's lines in each of the preamble's lists: its description, its
+    # controls, its input and output types and its circles.
+    lines = [line for line in preamble.read_text(encoding="utf-8").splitlines() if line.startswith("- Interaction:")]
+    assert any("Removes features" in line for line in lines), lines
+    for line in lines:
+        for word in ("What differs", "Compare Scenarios"):
+            assert word not in line, line
 
 
 def test_builtin_package_ships_no_sources(builtin_package_dir: Path):
