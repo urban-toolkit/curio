@@ -13,6 +13,7 @@ import { useStarterContext } from "../../../providers/StarterProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { installDraftToProject } from "../../../providers/packages/installDraftToProject";
+import { hostedGuestSignInNote, useHostedGuest } from "../../apiSettings/useHostedGuest";
 import { PackageTargetPicker, useWritablePackageOptions } from "./PackageTargetPicker";
 import {
   SAVE_AS_NEW_PACK,
@@ -52,6 +53,7 @@ export function NodeSaveAsModal({
   const { getStarters } = useStarterContext();
   const { showToast } = useToastContext();
   const { ensureProjectId } = useFlowContext();
+  const hostedGuest = useHostedGuest();
   const [targetKey, setTargetKey] = useState<string>(SAVE_AS_NEW_PACK);
   const [newPackageName, setNewPackageName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -171,6 +173,13 @@ export function NodeSaveAsModal({
     setBusy(true);
     setBusyKind("save");
     try {
+      // The package goes into this dataflow, which a hosted guest that never
+      // saved it has no id for, and cannot save: it is told to sign in before
+      // anything is made.
+      if (hostedGuest && !(await ensureProjectId())) {
+        showToast(hostedGuestSignInNote("save nodes as packages"), "warning");
+        return;
+      }
       const built = await buildDraft();
       if (!built) return;
       const { draft, replace, replacedExistingKind } = built;
@@ -235,7 +244,7 @@ export function NodeSaveAsModal({
       setBusy(false);
       setBusyKind(null);
     }
-  }, [buildDraft, busy, canvasNode, ensureProjectId, nodeId, nodeLabel, onClose, setNodes, showToast, targetKey]);
+  }, [buildDraft, busy, canvasNode, ensureProjectId, hostedGuest, nodeId, nodeLabel, onClose, setNodes, showToast, targetKey]);
 
   // Export the same draft as a .curio.zip without installing it. Shares the
   // `busy` flag with Save so the two can never run concurrently, and leaves

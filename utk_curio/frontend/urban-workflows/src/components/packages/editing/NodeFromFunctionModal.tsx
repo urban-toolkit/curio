@@ -14,6 +14,7 @@ import { useStarterContext } from "../../../providers/StarterProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { installDraftToProject } from "../../../providers/packages/installDraftToProject";
+import { hostedGuestSignInNote, useHostedGuest } from "../../apiSettings/useHostedGuest";
 import {
   SAVE_AS_NEW_PACK,
   buildFactoryInstallEnvelope,
@@ -93,6 +94,7 @@ export function NodeFromFunctionModal({
   const { getStarters } = useStarterContext();
   const { showToast } = useToastContext();
   const { ensureProjectId } = useFlowContext();
+  const hostedGuest = useHostedGuest();
   const { options: packageOptions } = useWritablePackageOptions();
 
   const [packages, setPackages] = useState<FunctionPackagePayload[] | null>(null);
@@ -177,6 +179,13 @@ export function NodeFromFunctionModal({
     setBusy(true);
     setProblem(null);
     try {
+      // The node's package goes into this dataflow, which a hosted guest that
+      // never saved it has no id for, and cannot save: it is told to sign in
+      // before anything is written.
+      if (hostedGuest && !(await ensureProjectId())) {
+        showToast(hostedGuestSignInNote("make nodes from Python functions"), "warning");
+        return;
+      }
       const bindings: Record<string, FunctionParameterBinding> = {};
       for (const p of choice.fn.parameters) {
         const state = params[p.name]!;
@@ -224,7 +233,7 @@ export function NodeFromFunctionModal({
     } finally {
       setBusy(false);
     }
-  }, [busy, choice, ensureProjectId, getStarters, label, newPackageName, onClose, onSaved, params, showToast, targetKey]);
+  }, [busy, choice, ensureProjectId, getStarters, hostedGuest, label, newPackageName, onClose, onSaved, params, showToast, targetKey]);
 
   if (!show) return null;
 

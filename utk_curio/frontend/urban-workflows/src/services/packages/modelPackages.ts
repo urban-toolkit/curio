@@ -64,8 +64,9 @@ export interface UseModelPackagesResult {
 
 /**
  * The model packages an account can use, for a surface that lists them
- * without acting on a dataflow (the palette): the catalog's and the
- * account's own, once each, as the Model Catalog's Browse all lists them.
+ * without acting on a dataflow: the catalog's and the account's own, once
+ * each, as the Model Catalog's Browse all lists them. The palette shows the
+ * ones the open dataflow's lockfile names.
  */
 export function useModelPackages(): UseModelPackagesResult {
   const [models, setModels] = useState<PackagePayload[]>([]);

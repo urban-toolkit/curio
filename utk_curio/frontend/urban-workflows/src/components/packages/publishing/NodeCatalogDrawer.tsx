@@ -26,8 +26,10 @@ import type {
   PackageAddRequest,
   PackageKind,
   PackagePayload,
+  ProjectSaveAction,
   SortMode,
 } from "../../../services/packages";
+import { hostedGuestSignInNote, useHostedGuest } from "../../apiSettings/useHostedGuest";
 import type { CatalogItemKind } from "../../catalog/CatalogKindVisuals";
 import { InstallPermissionsDialog } from "./InstallPermissionsDialog";
 import { DrawerHeader } from "./DrawerHeader";
@@ -61,10 +63,6 @@ export interface NodeCatalogDrawerProps {
   /** Which catalog this drawer is: the Node Catalog (`node`, the default) or
    *  the Model Catalog (`model`), the same drawer over model packages. */
   packageKind?: PackageKind;
-  /** The Add of the drop that opened this drawer (the Model Catalog's, from
-   *  the Tools panel's Models dropdown): run once the listings have loaded,
-   *  as a drop of one of its own cards runs it. */
-  addRequest?: PackageAddRequest | null;
 }
 
 const BUILTIN_PACKAGE_DIR = `${BUILTIN_PACKAGE_ID}@1`;
@@ -80,6 +78,8 @@ const DRAWER_COPY: Record<PackageKind, {
   sortAriaLabel?: string;
   noneInProject: string;
   noneMatch: string;
+  /** What it lists, as an Add, Remove or Import names it. */
+  items: string;
 }> = {
   node: {
     title: "Node Catalog",
@@ -89,6 +89,7 @@ const DRAWER_COPY: Record<PackageKind, {
     rootAttribute: "data-curio-node-catalog-drawer",
     noneInProject: "No packages added to this project yet.",
     noneMatch: "No packages match the current filters.",
+    items: "packages",
   },
   model: {
     title: "Model Catalog",
@@ -100,6 +101,7 @@ const DRAWER_COPY: Record<PackageKind, {
     sortAriaLabel: "Sort models",
     noneInProject: "No models added to this project yet.",
     noneMatch: "No models match the current filters.",
+    items: "models",
   },
 };
 
@@ -120,7 +122,6 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   onExitComplete,
   initialSearch = "",
   packageKind = "node",
-  addRequest = null,
 }) => {
   const copy = DRAWER_COPY[packageKind];
   const drawerRef = useRef<HTMLElement>(null);
@@ -130,6 +131,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   // project's lockfile (see docs/NODE-CATALOG.md).
   const { projectId, projectName, packages: projectPackages, requestProjectSave, projectDirty, nodes } = useFlowContext();
   const { showToast } = useToastContext();
+  const hostedGuest = useHostedGuest();
 
   const [tab, setTab] = useState<DrawerTab>("browse");
   const [detailPkg, setDetailPkg] = useState<PackagePayload | null>(null);
@@ -150,11 +152,17 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
    * sequencing and reports a refused save. Mirrors ``useDatasetCatalogDrawer``.
    * Through the save queue: this save creates the project, and beside a create
    * already out (an install save after a run) it would make a second dataflow.
+   * A hosted guest cannot save one, so it is told to sign in instead, in the
+   * words of the action that asked.
    */
-  const onEnsureProject = useCallback(async () => {
+  const onEnsureProject = useCallback(async (action: ProjectSaveAction = "add") => {
+    if (hostedGuest) {
+      showToast(hostedGuestSignInNote(`${action} ${copy.items}`), "warning");
+      return null;
+    }
     const detail = await requestProjectSave();
     return (detail as { id?: string } | undefined)?.id ?? null;
-  }, [requestProjectSave]);
+  }, [requestProjectSave, hostedGuest, showToast, copy.items]);
 
   /** memo dev/101: when the backend's lockfile differs from the mirror, the
    *  palette/registry must follow — not only the drawer's pill. */
@@ -165,7 +173,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   }, []);
 
   const {
-    installed, catalogByDir, catalog, catalogPublishedDirs, loaded, busy, cardActionDir, actionError, restartNoticeText,
+    installed, catalogByDir, catalog, catalogPublishedDirs, busy, cardActionDir, actionError, restartNoticeText,
     installCandidate, installMode, conflictReport, effectiveProjectId, ensureProjectId, kindOfDir,
     reload, reportActionError, dismissActionError, dismissRestartNotice,
     probeInstall: onInstall,
@@ -268,17 +276,6 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   }, [packageKind, catalog, installed, onInstall]);
   usePackageAddRequests(takeAddRequest, presented);
 
-  // The drop that opened this drawer: the same Add, once the listings it is
-  // looked up in have loaded, and once per drop.
-  const takenAddRequest = useRef<PackageAddRequest | null>(null);
-  useEffect(() => {
-    if (!presented || !loaded || !addRequest || takenAddRequest.current === addRequest) return;
-    takenAddRequest.current = addRequest;
-    if (!takeAddRequest(addRequest)) {
-      showToast(`${addRequest.name ?? addRequest.dirName} is not in the ${copy.title}.`, "warning");
-    }
-  }, [presented, loaded, addRequest, takeAddRequest, showToast, copy.title]);
-
   // The shared import pathway the Node Catalog PAGE header calls too, so the
   // two surfaces cannot drift; the drawer alone has a lockfile to land it in.
   const [importBusy, setImportBusy] = useState(false);
@@ -299,7 +296,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     async (file: File) => {
       // Save first, so the import lands in THIS dataflow's lockfile and not
       // only in the account store (the "not scoped to a project" half of #220).
-      const intoProjectId = await ensureProjectId("Couldn't save dataflow before importing");
+      const intoProjectId = await ensureProjectId("Couldn't save dataflow before importing", "import");
       if (intoProjectId === null) {
         return;
       }

@@ -13,8 +13,8 @@ which an Autark map after it draws on a sequential scale; the other charts
 each scenario's median flood depth (#720). Run All drives the whole path:
 
 1. The loaders read SCOUT's rasters by id, for the region and the period
-   (2020 - 2040) the Parameter nodes hold, and the four calculators and the
-   three maps run.
+   (2020 - 2050, which SCOUT labels 2020 - 2040) the Parameter nodes hold,
+   and the four calculators and the three maps run.
 2. Each scenario's map draws its depth, its legend titled "Flood depth (m)"
    and labelled 0 to 11, the color range both maps share.
 3. The difference is a 2592 by 2064 cell raster in EPSG:4326 on SCOUT's grid,
@@ -106,7 +106,7 @@ TRACT_CHANGE_TITLE = "Absolute change in mean flood depth (m)"
 #: An SVI percentile's whole range, the vulnerability map's ``colorMapRange``.
 SVI_RANGE = (0, 1)
 RIVERSIDE_TRACTS = 28
-PERIODS = ["2020 - 2040", "2050 - 2080", "2080 - 2100"]
+PERIODS = ["2020 - 2050", "2050 - 2080", "2080 - 2100"]
 #: The mean depth over the riverside tracts' land in each period, in metres
 #: (``PERIOD_DEPTHS`` in ``test_packages/test_scout_flood.py``).
 PERIOD_DEPTHS = {"No NbS": [1.988, 1.923, 2.237], "NbS": [1.337, 1.691, 1.872]}
@@ -118,7 +118,7 @@ CELL = 0.00010133941049058334
 WIDTH, HEIGHT = 2592, 2064
 ORIGIN = (-90.6879323, 41.6242105)
 
-#: SCOUT's median and mean flood depth for its whole grid in 2020 - 2040,
+#: SCOUT's median and mean flood depth for its whole grid in 2020 - 2050,
 #: without NbS and with every NbS, and how many cells hold a depth
 #: (``PINS`` in ``test_packages/test_scout_flood.py``).
 MEDIANS = [7.163970947265625, 4.900075276692708]

@@ -1,4 +1,5 @@
 import type { AgentDropTarget } from "../services/agents";
+import { hostedGuestSignInNote } from "../components/apiSettings/useHostedGuest";
 
 /**
  * Orchestrates a palette-agent drop → attach. A node target is validated by the
@@ -17,6 +18,8 @@ export interface AgentDropAttachDeps {
   /** Persist the current dataflow (create-or-update); resolves to the project detail. */
   saveProject: () => Promise<{ id?: string } | null | undefined>;
   attach: (projectId: string, coord: string, target: AgentDropTarget) => Promise<unknown>;
+  /** A hosted guest (`isHostedGuest`), who cannot save the dataflow. */
+  hostedGuest?: boolean;
 }
 
 /**
@@ -29,7 +32,14 @@ export async function attachAgentOnDrop(deps: AgentDropAttachDeps): Promise<{ ta
   // A connection target is validated against the saved spec's edges exactly
   // the way a node target is validated against its nodes, so a drop onto a
   // freshly drawn edge needs the same flush first.
-  if (deps.target.kind === "node" || deps.target.kind === "connection") {
+  const savesFirst = deps.target.kind === "node" || deps.target.kind === "connection";
+  // A hosted guest cannot make that save, nor attach to a dataflow it never
+  // saved: it is told to sign in, before anything is saved or sent. A note,
+  // shown as a warning like the other sign-in notes, not as a failure.
+  if (deps.hostedGuest && (savesFirst || !projectId)) {
+    throw Object.assign(new Error(hostedGuestSignInNote("attach agents")), { toastVariant: "warning" as const });
+  }
+  if (savesFirst) {
     // Flush the graph so the just-dropped-on element exists in the saved spec
     // backend validates against. Also covers a never-saved project (create).
     const detail = await deps.saveProject();
