@@ -199,17 +199,24 @@ def test_the_park_shade_dataflow_is_tagged_scout_by_its_package_nodes_alone():
 def test_the_flood_dataflow_is_tagged_scout_by_its_raster_calculators_alone():
     """``quad-cities-flood-vulnerability`` reads SCOUT's datasets, and its
     Raster Calculators are Scout's (``curio.scout``) nodes: with no dataset
-    and no code, its nodes alone still tag it, as computed tags are."""
+    and no code, its nodes alone still tag it, as computed tags are. Since
+    its charts became Scout's Bars, Points and Grouped bars (the plan
+    answering komar41's review, step 6.3), they tag it ``Vega-Lite`` too;
+    without them, its Raster Calculators alone still tag it ``SCOUT``."""
     spec = _spec("dataflows/quad-cities-flood-vulnerability")
     assert "tags" not in hand_categories(spec)
     nodes = spec["dataflow"]["nodes"]
     calculators = [n for n in nodes if n["type"] == "curio.scout/raster-calculator"]
-    assert len(calculators) == 6
+    assert len(calculators) == 7
+    charts = {n["id"]: n["type"] for n in nodes if n["type"].startswith("curio.scout/") and n not in calculators}
+    assert sorted(charts.values()) == ["curio.scout/bars", "curio.scout/grouped-bars", "curio.scout/points"]
     bare = {"dataflow": {
         **{k: v for k, v in spec["dataflow"].items() if k != "datasets"},
         "nodes": [{**n, "content": ""} for n in nodes],
     }}
-    assert derive(bare, DatasetKinds(None))["tags"] == ["Autark", "SCOUT"]
+    assert derive(bare, DatasetKinds(None))["tags"] == ["Autark", "Vega-Lite", "SCOUT"]
+    no_charts = {"dataflow": {**bare["dataflow"], "nodes": [n for n in bare["dataflow"]["nodes"] if n["id"] not in charts]}}
+    assert derive(no_charts, DatasetKinds(None))["tags"] == ["Autark", "SCOUT"]
 
 
 def test_the_charts_dataflow_is_tagged_scout_and_vega_lite_by_its_package_nodes_alone():
