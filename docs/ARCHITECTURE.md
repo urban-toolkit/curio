@@ -887,31 +887,42 @@ charts, and the rows are re-shipped through `changeset()` on every brush.
 
 Vega-Lite reads a field as a path into the row: `rain.mm` is `mm` inside `rain`,
 and `a[0]` indexes `a`. So a column whose name holds a `.`, a `[` or a `]` is
-written with a backslash before each, and before a backslash (`rain\.mm`). In
-a Vega-Lite chart's spec, a reference writes its names so where Vega-Lite reads
-a field, and as they are everywhere else: titles, sort values, expressions
-such as `datum['rain.mm']`, and the names a transform writes (`as`).
+written with a backslash before each (`rain\.mm`, `vegaFieldName` in
+`utils/vegaFieldNames.ts`, `vega_field_name` in `code_references.py`). A name
+that already holds a backslash is taken as escaped by hand and written as it
+is. In a Vega-Lite chart's spec, a reference writes its names so where
+Vega-Lite reads a field, and as they are everywhere else: titles, sort values,
+expressions such as `datum['rain.mm']`, and the names a transform writes
+(`as`).
 
 - **Where.** The resolver reads the spec as JSON with each reference replaced by
   a mark, finds where each mark stands, and writes only then
   (`vegaFieldPlaces` in `codeReferences.ts`, `_vega_field_places` in
-  `code_references.py`); a spec that does not read as JSON writes every name as
-  it is. The field positions are the ones Vega-Lite's schema types as a field
-  name, but `as`: `field` anywhere; in a transform, its `groupby`, `fold` and
-  `flatten` lists, the field its own key names (`pivot`, `lookup`, `impute`,
-  `stack`, `density`, `loess`, `regression`, `quantile`, and `extent` beside
-  `param`), `value` beside `pivot`, `key` beside `impute`, `on` beside `loess`
-  or `regression`, and a lookup's `from.key` and `from.fields`; a parameter's
-  `select.fields`; an encoding's `aggregate.argmax` and `argmin`; and a
-  `repeat`'s lists.
+  `code_references.py`). A mark is the reference's number between two
+  characters of Unicode's private use area that the spec's text holds neither
+  as they are nor as a JSON escape, so the spec's own text takes no
+  reference's place. The values of `data`, `datasets` and `usermeta` are rows
+  and notes, never fields. A spec that does not read as JSON, or nests more than
+  100 levels deep, writes every name as it is. The field positions are the
+  ones Vega-Lite's schema types as a field name, but `as`: `field` anywhere;
+  in a transform, its `groupby`, `fold` and `flatten` lists, the field its own
+  key names (`pivot`, `lookup`, `impute`, `stack`, `density`, `loess`,
+  `regression`, `quantile`, and `extent` beside `param`), `value` beside
+  `pivot`, `key` beside `impute`, `on` beside `loess` or `regression`, and a
+  lookup's `from.key` and `from.fields`; a parameter's `select.fields`; an
+  encoding's `aggregate.argmax` and `argmin`; and a `repeat`'s lists.
 - **Who.** The canvas passes the grammar of a Vega-Lite node's spec, the
   built-in node's or a package template's (`isVegaLiteNodeType`), to
   `resolveReferences`, as the notebook export does; Solve resolves a document
-  in the grammar it checks it in (`_resolved_document`). The agents' check
-  reads a field as the column its path starts with (`vega_field_column` in
-  `agents/domain/document_validation.py`, a port of vega-util's
-  `splitAccessPath`), and refuses `rain.mm` over a column `rain.mm` with the
-  spelling that reads it.
+  in the grammar it checks it in (`_resolved_document`).
+- **Reading a field back.** Where Vega-Lite escapes a field itself (an
+  aggregate, a bin transform, a condition's test), `rain.mm` draws the column
+  too. So a field names a column when its text, or its text unescaped, is the
+  column's name: the agents' check reads it so (`_named_column` in
+  `agents/domain/document_validation.py`), and so do the canvas's geometry
+  coercion (`vegaGeoSpec.ts`) and its empty-render count (`vegaUsableRows.ts`),
+  through `vegaFieldColumn`. A path through a column, `zone.id` beside a column
+  `zone`, names none.
 - **Tests.** `codeReferences.cases.json` holds the positions, read by Jest and
   pytest; `scoutDottedColumns.test.ts` draws each Scout chart over columns whose
   names hold a dot or a bracket with the vega-lite the app bundles, and expects
@@ -920,7 +931,8 @@ such as `datum['rain.mm']`, and the names a transform writes (`as`).
   backslash draws nothing, since Vega-Lite drops the backslash when it writes
   the field again (an aggregate's `mean_<field>`). Its error bar names its
   bounds after its Y field as written, so it draws no error bar over a Y column
-  whose name holds a `.` or a `[`.
+  whose name holds a `.` or a `[`. A title Vega-Lite writes itself shows the
+  field as written, `rain\.mm`.
 
 ### Referencing Upstream Data in Autark Nodes
 

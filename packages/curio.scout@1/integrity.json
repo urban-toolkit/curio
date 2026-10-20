@@ -1,6 +1,6 @@
 {
   "sha256": {
-    "README.md": "5ebbfb677fb31881755371dbda44c60aa59b1bb940bbcf9c7597b4c456e485f6",
+    "README.md": "439a188caca7fe6ee6028c159b76c84d49e2ef246ff1862d2df0f06516ad4fc9",
     "manifest.json": "055192dd26b2499ff6a6d376252d07e8b164fd7b046bcde4f7a94e3811abc2a4",
     "sources/bars-with-error-bars.vl.json": "dd7ca42ba77257b2cf1c030a9d78ee61416015ff82020aee8d679b3a938f994b",
     "sources/bars.vl.json": "00343d62960a4b7c97415f43fd6ae64d0c4a93461588bba15ce735f68fd709e4",

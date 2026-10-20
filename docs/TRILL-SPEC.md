@@ -79,7 +79,8 @@ set, else `default`. A reference on its own becomes a literal of the code's
 language (quoted text, a number, a list, a boolean, an object); one inside a string literal
 becomes the value's text, escaped for that string. In a Vega-Lite node's spec,
 a reference where Vega-Lite reads a field name writes each name with a
-backslash before each `\`, `.`, `[` and `]` (`rain.mm` as `rain\.mm`). An old
+backslash before each `.`, `[` and `]` (`rain.mm` as `rain\.mm`), and a name
+that already holds a backslash as it is. An old
 `[!! name$TYPE$default !!]` marker, or a name the node has no widget for, fails
 the run with a message naming it.
 

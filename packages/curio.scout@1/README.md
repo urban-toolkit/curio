@@ -143,9 +143,9 @@ A column name with a `'` in it cannot be read: rename the column first.
 A column whose name holds a `.` or a `[`, such as `rain.mm`, is set in its
 widget as it is. Where Vega-Lite reads a field, the chip writes the name escaped,
 `"field": "rain\\.mm"`, since Vega-Lite reads a `.` or a `[` in a field as a
-path into the row; in a title, a sort or an expression it writes `rain.mm`.
-Bars with error bars draws no error bars for such a Y column: rename it
-upstream.
+path into the row; in a title, a sort or an expression it writes `rain.mm`. A
+widget that holds the escaped name, `rain\.mm`, is written as it is. Bars with
+error bars draws no error bars for such a Y column: rename it upstream.
 
 ### Colors and order
 

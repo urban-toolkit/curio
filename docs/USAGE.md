@@ -1003,8 +1003,9 @@ field as a path into the row, so a column such as `rain.mm` is
 column chip writes a name so where Vega-Lite reads a field: a `field`, a
 `fold`, `groupby` or `flatten` list, the field a transform reads, a lookup's
 `key` and `fields`, a selection's `fields` and a `repeat`'s lists. In a title,
-a sort, an expression such as `datum['rain.mm']`, or a name a transform writes
-(`as`), it writes the name as it is.
+a sort, an expression such as `datum['rain.mm']`, a name a transform writes
+(`as`), or a row of `data` or `datasets`, it writes the name as it is. A
+widget that holds the escaped name, `rain\.mm`, is written as it is.
 
 ### Several inputs
 
