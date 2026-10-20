@@ -272,14 +272,17 @@ function NodeEditor({
         setDefaultCode(defaultValue);
     }, [defaultValue]);
 
-    // A run put back from the provenance drawer. Its code reaches the editor
-    // as loaded code does (the editors take a new default and prime the
-    // widgets), so nothing runs, no input error is raised and the node does not
-    // jump to its output; then the editor is shown with that code. Read
-    // through a ref: the drawer keeps the callback while the node re-renders.
+    // A run put back from the provenance drawer. The editors write its code in
+    // as content that arrived whole and prime the widgets, as a load does, so
+    // nothing runs, no input error is raised and the node does not jump to its
+    // output; then the editor is shown with that code. Each put-back is a new
+    // one, so the first run's code goes back in even when it is the code the
+    // node loaded with. Read through a ref: the drawer keeps the callback while
+    // the node re-renders.
+    const [restoredCode, setRestoredCode] = useState<{ code: string; nonce: number } | null>(null);
     const restoreRunRef = useRef<(runCode: string) => void>(() => undefined);
     restoreRunRef.current = (runCode: string) => {
-        setDefaultCode(runCode);
+        setRestoredCode((prev) => ({ code: runCode, nonce: (prev?.nonce ?? 0) + 1 }));
         if (code || grammar) setActiveTab(resolveInitialEditorTab({ code, grammar, widgets: false }));
     };
 
@@ -523,6 +526,7 @@ function NodeEditor({
                                             stripInputs={inputs}
                                             onLoadColumns={loadColumns}
                                             widgetLanguage={widgetLanguage}
+                                            restoredCode={restoredCode}
                                         />
                                     </Tab.Pane>
                                 ) : null}
@@ -580,6 +584,7 @@ function NodeEditor({
                                             stripInputs={inputs}
                                             onLoadColumns={loadColumns}
                                             widgetLanguage={widgetLanguage}
+                                            restoredCode={restoredCode}
                                         />
                                     </Tab.Pane>
                                 ) : null}

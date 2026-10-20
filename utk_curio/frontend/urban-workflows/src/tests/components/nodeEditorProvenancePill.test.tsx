@@ -33,7 +33,14 @@ jest.mock("../../providers/CollaborationProvider", () => ({
 jest.mock("../../components/editing/WidgetsEditor", () => ({ __esModule: true, default: () => null }));
 jest.mock("../../components/editing/GrammarEditor", () => ({
   __esModule: true,
-  default: ({ defaultValue }: any) => <div data-testid="grammar-editor" data-default={defaultValue} />,
+  default: ({ defaultValue, restoredCode }: any) => (
+    <div
+      data-testid="grammar-editor"
+      data-default={defaultValue}
+      data-restored={restoredCode?.code}
+      data-restore-nonce={restoredCode?.nonce}
+    />
+  ),
 }));
 
 import NodeEditor from "../../components/editing/NodeEditor";
@@ -133,8 +140,31 @@ describe("a node's Provenance pill", () => {
 
     expect(pill("grammar")).toHaveClass("active");
     expect(pill("output")).not.toHaveClass("active");
-    expect(getByTestId("grammar-editor")).toHaveAttribute("data-default", '{"mark": "bar"}');
+    expect(getByTestId("grammar-editor")).toHaveAttribute("data-restored", '{"mark": "bar"}');
     expect(p.setOutputCallback).not.toHaveBeenCalled();
+  });
+
+  test("each put-back reaches the editor, the loaded code included", async () => {
+    // A new default equal to the loaded code is never applied, so the code
+    // goes to the editor as a put-back of its own, every time.
+    const { getByTestId, pill, openNodeProvenance } = mount();
+    await act(async () => {
+      fireEvent.click(pill("provenance")!);
+    });
+    const { restore } = openNodeProvenance.mock.calls[0][0];
+
+    await act(async () => {
+      restore('{"mark": "point"}');
+    });
+    expect(getByTestId("grammar-editor")).toHaveAttribute("data-restored", '{"mark": "point"}');
+    expect(getByTestId("grammar-editor")).toHaveAttribute("data-restore-nonce", "1");
+
+    await act(async () => {
+      restore('{"mark": "point"}');
+    });
+    expect(getByTestId("grammar-editor")).toHaveAttribute("data-restore-nonce", "2");
+    // The node's default is left alone: the editors take the code as content.
+    expect(getByTestId("grammar-editor")).toHaveAttribute("data-default", '{"mark": "point"}');
   });
 
   test("a node whose template turns provenance off has no pill", () => {
