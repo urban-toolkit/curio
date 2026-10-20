@@ -762,3 +762,100 @@ class TestTheColumnsOfTheInputsDataset:
 
         assert dv.INPUTS_DATASET == "inputs"
         assert dv.INPUTS_FIELDS == (stack.INPUT_COLUMN, stack.SCENARIO_COLUMN, stack.NAME_COLUMN, stack.VALUE_COLUMN)
+
+
+def _geotable(goal: str, circle: int) -> dict:
+    """A flood scenario's districts, a GeoDataFrame, as Solve hands its preview on."""
+    return {
+        "goal": goal, "circle": circle, "outputDataType": "geodataframe",
+        "schema": {"kind": "geotable", "rowCount": 3,
+                   "columns": [{"name": "district", "dtype": "str"},
+                               {"name": "flooded_m", "dtype": "float"},
+                               {"name": "geometry", "dtype": "geometry"}],
+                   "sampleRows": [{"district": "Centro", "flooded_m": 0.4, "geometry": "<Polygon>"}]},
+    }
+
+
+class TestTheInputsDatasetHoldsNoGeometry:
+    """``inputs`` stacks a GeoDataFrame's rows without its geometry
+    (``stack_inputs`` in ``utk_curio/sandbox/util/scenario_stack.py``,
+    ``stackInputs`` in ``utils/scenarios/stackedInputs.ts``), so a view that
+    reads ``inputs`` and draws ``geometry`` draws nothing. Solve refuses it as it
+    writes it, from the same input schemas the request was handed, and names the
+    dataset that keeps the geometry. A view that reads one input's own dataset
+    still draws it, and a column one input holds as text is still a column."""
+
+    UPSTREAM = [_geotable("Flooded districts today", 0), _geotable("Flooded districts with levees", 1)]
+
+    SCHEMA = "https://vega.github.io/schema/vega-lite/v6.json"
+    #: Each scenario's mean flood depth, over ``inputs``.
+    BARS = {
+        "data": {"name": "inputs"},
+        "mark": "bar",
+        "encoding": {
+            "x": {"field": "scenario_name", "type": "nominal"},
+            "y": {"field": "flooded_m", "type": "quantitative", "aggregate": "mean"},
+            "color": {"field": "scenario_name", "type": "nominal"},
+        },
+    }
+    #: The districts, colored by scenario, over ``inputs``: nothing to draw.
+    MAP_OF_INPUTS = {
+        "data": {"name": "inputs"},
+        "mark": "geoshape",
+        "encoding": {
+            "shape": {"field": "geometry", "type": "geojson"},
+            "color": {"field": "scenario_name", "type": "nominal"},
+        },
+    }
+
+    def _document(self, spec: dict) -> str:
+        return json.dumps({"$schema": self.SCHEMA, **spec})
+
+    def _rounds(self, app, replies, upstream):
+        from utk_curio.backend.tests.test_agents.test_verified_rounds import _Exec, _rounds
+
+        node = {"id": "n1", "type": VEGA, "goal": "Flooded districts by scenario", "content": ""}
+        spec = {"dataflow": {"nodes": [node], "edges": [], "name": "wf", "task": "t"}}
+        return _rounds(app, node, replies=replies, exec_fn=_Exec(), spec=spec,
+                       extra_inputs={"upstreamOutputs": upstream})
+
+    def test_a_map_of_inputs_is_refused_for_the_geometry_the_stack_leaves_out(self, app, tmp_curio):
+        refused, bars = self._document(self.MAP_OF_INPUTS), self._document(self.BARS)
+        events, outcome, inputs = self._rounds(app, [refused, bars], self.UPSTREAM)
+        kinds = [a.get("kind") for a in outcome["attempts"]]
+        assert kinds[:1] == ["document-invalid"], kinds
+        detail = outcome["attempts"][0]["detail"]
+        assert "encoding.shape.field reads 'geometry'" in detail
+        assert "the dataset 'inputs' stacks its inputs' rows without their geometry" in detail
+        assert "input_0" in detail
+        assert "without their geometry" in inputs[1]["validationError"]
+        assert outcome["candidate"] == bars
+
+    def test_a_view_that_reads_its_own_input_still_draws_its_geometry(self, app, tmp_curio):
+        own = {
+            "data": {"name": "input_0"},
+            "mark": "geoshape",
+            "encoding": {
+                "shape": {"field": "geometry", "type": "geojson"},
+                "color": {"field": "flooded_m", "type": "quantitative"},
+            },
+        }
+        document = self._document({"hconcat": [own, self.BARS]})
+        events, outcome, inputs = self._rounds(app, [document], self.UPSTREAM)
+        assert "document-invalid" not in [a.get("kind") for a in outcome["attempts"]]
+        assert outcome["candidate"] == document
+
+    def test_a_column_named_geometry_one_input_holds_as_text_is_still_read(self, app, tmp_curio):
+        outlines = {
+            "goal": "District outlines as text", "circle": 1, "outputDataType": "dataframe",
+            "schema": {"kind": "table", "rowCount": 3,
+                       "columns": [{"name": "district", "dtype": "str"},
+                                   {"name": "geometry", "dtype": "str"}],
+                       "sampleRows": [{"district": "Centro", "geometry": "POLYGON ((0 0, 1 0, 1 1, 0 0))"}]},
+        }
+        spec = json.loads(json.dumps(self.BARS))
+        spec["encoding"]["tooltip"] = [{"field": "geometry", "type": "nominal"}]
+        document = self._document(spec)
+        events, outcome, inputs = self._rounds(app, [document], [self.UPSTREAM[0], outlines])
+        assert "document-invalid" not in [a.get("kind") for a in outcome["attempts"]]
+        assert outcome["candidate"] == document
