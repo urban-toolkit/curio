@@ -378,6 +378,42 @@ class TestReviewCardAndApply:
         )
 
 
+#: How long the page keeps its Solve request before it sends it (#1024). In
+#: run 8 of build 39320211415 the test reloaded the page 45 ms after the page
+#: made that request. The request was still waiting for its CORS preflight, so
+#: the reload cancelled it, the server never started Solve, and nothing was
+#: there to re-attach to or to write. Holding the request plays that slow start
+#: on every run. A reload replaces the page in tens of milliseconds, so a test
+#: that reloads before the server has answered Solve always loses the request.
+SOLVE_REQUEST_HOLD_MS = 3000
+
+#: Wraps ``window.fetch`` in the current page only, so the reload drops it.
+#: The whole-plan Solve, ``POST .../attachments/<id>/solve/stream``, waits
+#: ``holdMs`` before it is sent; every other request goes straight through.
+#: ``window.__curioSolveHold`` counts the requests it held and sent. It works
+#: in the page rather than through ``page.route``, for the reason
+#: ``utils/run_all.py`` gives: the sync API runs a route handler on the
+#: dispatcher thread.
+_HOLD_THE_SOLVE_REQUEST_JS = r"""(holdMs) => {
+    const real = window.fetch.bind(window);
+    const hold = { held: 0, sent: 0 };
+    window.__curioSolveHold = hold;
+    window.fetch = (input, init) => {
+        const url = typeof input === 'string' ? input : (input && input.url) || '';
+        const method = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+        if (method !== 'POST' || !/\/attachments\/[^/]+\/solve\/stream$/.test(url)) {
+            return real(input, init);
+        }
+        hold.held += 1;
+        return new Promise((resolve) => setTimeout(resolve, holdMs)).then(() => {
+            hold.sent += 1;
+            return real(input, init);
+        });
+    };
+    return true;
+}"""
+
+
 class TestSolveProgressAndReconnection:
     """Solve is a detached job (``DEC-073``). The strip must report it, and a
     reload must re-attach rather than lose it."""
@@ -416,12 +452,18 @@ class TestSolveProgressAndReconnection:
         # would also hit, and those rows may render before this one.
         solve = strip.get_by_role("button", name=re.compile(r"^(Solve|Retry \d+ \w+)$"))
         expect(solve).to_be_visible(timeout=20000)
+        assert page.evaluate(_HOLD_THE_SOLVE_REQUEST_JS, SOLVE_REQUEST_HOLD_MS)
         solve.click()
 
         # The run is reported while it runs: the strip's per-node progress list
         # is the surface a person watches.
         progress = panel.get_by_label("Plan node progress")
         expect(progress).to_be_visible(timeout=30000)
+        hold = page.evaluate("() => window.__curioSolveHold")
+        assert hold and hold["held"] == 1, (
+            f"the Solve request never went through the hold ({hold}), so this "
+            "test raced nothing"
+        )
 
         # A reload must re-attach to the SAME detached job, not start over and
         # not lose it (``GET .../jobs/stream``).
