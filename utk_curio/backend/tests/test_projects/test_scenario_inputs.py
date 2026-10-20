@@ -94,6 +94,106 @@ def test_the_stacked_rows_are_json_a_missing_cell_none():
     assert list(base.columns) == ["segment", "sunlight"]
 
 
+def _gdf(rows: list[dict], crs: str):
+    """A GeoDataFrame of points, one per row, in *crs*."""
+    import geopandas as gpd
+    from shapely.geometry import Point
+
+    return gpd.GeoDataFrame(rows, geometry=[Point(i, i) for i in range(len(rows))], crs=crs)
+
+
+def test_a_list_of_tables_carries_them_and_is_refused_as_the_browser_refuses_it():
+    """A Python node's list of DataFrames, which reaches the browser as a list
+    of frame envelopes (stackedInputs.test.ts holds the same refusal)."""
+    import pandas as pd
+    import pytest
+
+    from utk_curio.sandbox.util.scenario_stack import stack_inputs
+
+    tables = [pd.DataFrame({"pop": [1]}), pd.DataFrame({"pop": [2]})]
+    with pytest.raises(ValueError) as refused:
+        stack_inputs([(None, "Tables", tables)])
+    assert str(refused.value) == (
+        'The dataset "inputs": input_0 (Tables) carries 2 tables. Connect a node that returns one table, '
+        "or pick the table to compare in a node between them."
+    )
+    with pytest.raises(ValueError) as mixed:
+        stack_inputs([(None, "Tables", [pd.DataFrame({"pop": [1]}), {"pop": 2}])])
+    assert "is a list that mixes records and values" in str(mixed.value)
+
+
+def test_a_dataframe_with_no_rows_is_a_table_beside_a_value_as_in_the_browser():
+    import pandas as pd
+    import pytest
+
+    from utk_curio.sandbox.util.scenario_stack import stack_inputs
+
+    with pytest.raises(ValueError) as refused:
+        stack_inputs([("s-base", "Baseline", pd.DataFrame({"pop": []})), ("s-tall", "Twice as tall", 3)])
+    assert str(refused.value) == (
+        'The dataset "inputs" stacks inputs of one kind, and these differ: input_0 (Baseline) is a table, '
+        "input_1 (Twice as tall) is a value. Connect outcomes of the same kind."
+    )
+
+
+def test_a_float_that_is_no_number_is_a_value_row_with_no_value_as_in_the_browser():
+    """What the sandbox writes as null under ``float``: the browser stacks it
+    as a value with none (vegaInput.test.ts holds the same rows)."""
+    import numpy as np
+
+    from utk_curio.sandbox.util.scenario_stack import input_rows, stack_inputs
+
+    assert stack_inputs([("s-base", "Baseline", float("nan"))]) == [
+        {"__input__": 0, "scenario": "s-base", "scenario_name": "Baseline", "value": None},
+    ]
+    assert [row["value"] for row in stack_inputs([("s-base", "Baseline", [1.5, np.nan])])] == [1.5, None]
+    assert input_rows(float("nan")) == [{"value": None}]
+
+
+def test_geodataframes_stack_beside_a_table_and_in_two_coordinate_systems_their_geometry_left_out():
+    """The relaxation is the chart's alone: Compare Scenarios still refuses both."""
+    import pandas as pd
+    import pytest
+
+    from utk_curio.sandbox.util.scenario_stack import stack_inputs, stack_scenarios
+
+    roads = _gdf([{"zip": "a", "pop": 1}], "EPSG:4326")
+    table = pd.DataFrame({"zip": ["b"], "pop": [2]})
+    assert stack_inputs([("s-base", "Baseline", roads), ("s-tall", "Twice as tall", table)]) == [
+        {"__input__": 0, "scenario": "s-base", "scenario_name": "Baseline", "zip": "a", "pop": 1},
+        {"__input__": 1, "scenario": "s-tall", "scenario_name": "Twice as tall", "zip": "b", "pop": 2},
+    ]
+    projected = _gdf([{"zip": "c", "pop": 3}], "EPSG:3857")
+    rows = stack_inputs([("s-base", "Baseline", roads), ("s-tall", "Twice as tall", projected)])
+    assert [(row["scenario_name"], row["pop"]) for row in rows] == [("Baseline", 1), ("Twice as tall", 3)]
+    assert all("geometry" not in row for row in rows)
+
+    with pytest.raises(ValueError, match="stacks inputs of one kind"):
+        stack_scenarios([("s-base", "Baseline", roads), ("s-tall", "Twice as tall", table)])
+    with pytest.raises(ValueError, match="different coordinate systems"):
+        stack_scenarios([("s-base", "Baseline", roads), ("s-tall", "Twice as tall", projected)])
+
+
+def test_the_rows_of_inputs_never_carry_geometry_from_one_input_or_several():
+    """As the browser's: a chart draws a map from ``input_<k>``, never from
+    ``inputs``. Compare Scenarios keeps its stacked GeoDataFrame's geometry."""
+    import geopandas as gpd
+
+    from utk_curio.sandbox.util.scenario_stack import input_rows, stack_inputs, stack_scenarios
+
+    roads = _gdf([{"pop": 1}, {"pop": 2}], "EPSG:4326")
+    assert stack_inputs([("s-base", "Baseline", roads)]) == [
+        {"__input__": 0, "scenario": "s-base", "scenario_name": "Baseline", "pop": 1},
+        {"__input__": 0, "scenario": "s-base", "scenario_name": "Baseline", "pop": 2},
+    ]
+    assert input_rows(roads) == [{"pop": 1}, {"pop": 2}]
+    assert list(roads.columns) == ["pop", "geometry"]
+
+    compared = stack_scenarios([("s-base", "Baseline", roads)])
+    assert isinstance(compared, gpd.GeoDataFrame)
+    assert compared.geometry.name == "geometry"
+
+
 def test_a_chart_with_its_scenarios_filled_in_is_valid_vega_lite():
     """Each chart a Vega-Lite node compiles, its channels on ``scenario_name``
     given the scenarios' names and colors, and each spec the fill leaves as

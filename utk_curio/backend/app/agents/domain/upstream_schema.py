@@ -206,3 +206,22 @@ def columns_of(upstream_outputs: list | None) -> list[str]:
                 if isinstance(name, str) and name and name not in names:
                     names.append(name)
     return names[:MAX_KNOWN_COLUMNS]
+
+
+def geometry_columns_of(upstream_outputs: list | None) -> list[str]:
+    """The columns of this node's inputs that only a GeoDataFrame's geometry
+    fills: of dtype ``geometry`` in the schemas ``columns_of`` reads (the one
+    ``_from_geojson`` lists), and of no other dtype in any input. The ``inputs``
+    dataset stacks the rows without them (``stack_inputs`` in
+    ``utk_curio/sandbox/util/scenario_stack.py``)."""
+    kinds: dict[str, set] = {}
+    for row in upstream_outputs or []:
+        schema = row.get("schema") if isinstance(row, dict) else None
+        if not isinstance(schema, dict):
+            continue
+        for frame in [schema, *(schema.get("parts") or [])]:
+            for column in (frame or {}).get("columns") or []:
+                name = column.get("name") if isinstance(column, dict) else None
+                if isinstance(name, str) and name:
+                    kinds.setdefault(name, set()).add(column.get("dtype") == "geometry")
+    return [name for name, geometry in kinds.items() if geometry == {True}]

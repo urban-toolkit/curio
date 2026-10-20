@@ -52,8 +52,11 @@ export type PreparedAutkInput = {
   rasters: AutkRasterInput[];
   /** The tables the input provides, by name. */
   tables: string[];
-  /** The position of the input each table came in on, by the table's name
-   * (its circle, among the node's inputs). */
+  /** Where each table came in, by the table's name: the place, in the bundle
+   * the input arrived as, of the output that brought it. With several inputs
+   * wired that is its input's circle; with one, a place among the layers that
+   * one input carries (adapters/node/autkScenarioColors reads which input it
+   * is from the wired edges). */
   circles?: Record<string, number>;
   /** Tables the input names but cannot provide, because they cannot be drawn. */
   unusable: string[];

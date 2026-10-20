@@ -17,7 +17,7 @@ import { readGrammarInput, type GrammarInput } from '../../utils/grammarInput';
 import { upstreamCompareLabels } from '../../utils/compare/compareInputs';
 import { scenarioScale, type ScenarioLabel } from '../../utils/scenarios/scenarioColors';
 import { withScenarioScales } from '../../utils/scenarios/scenarioScales';
-import { inputScenarios, scaleLabelsOf } from '../../utils/scenarios/inputScenarios';
+import { boxFill, inputScenarios, scaleLabelsOf } from '../../utils/scenarios/inputScenarios';
 import type { Scenario } from '../../utils/scenarios/scenarioModel';
 import { readsInputs } from '../../utils/vegaDatasets';
 
@@ -39,8 +39,9 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
   // (utils/scenarios/scenarioScales), whatever the spec writes for them. A
   // spec that reads `inputs` takes them from the boxes its own inputs come
   // from, whose names its rows carry too, in the order the dataflow lists its
-  // boxes; any other, from the Compare Scenarios node it reads on its first
-  // input, in that node's order, as its Chart tab draws them.
+  // boxes, and keeps its own colors and order when no input comes from a box;
+  // any other, from the Compare Scenarios node it reads on its first input, in
+  // that node's order, as its Chart tab draws them.
   const nodes = flow.nodes ?? [];
   const edges = flow.edges ?? [];
   const scenarios = flow.scenarios ?? [];
@@ -53,7 +54,7 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
   labelsRef.current = { inputs: inputLabels, scale: scaleLabels, compare: compareLabels };
   /** What a chart reading `inputs` (*stacked*) or not draws its scenarios with. */
   const labelsOf = (stacked: boolean): readonly ScenarioLabel[] | null =>
-    stacked ? labelsRef.current.scale : labelsRef.current.compare;
+    stacked ? boxFill(labelsRef.current.scale) : labelsRef.current.compare;
   /** What a redraw follows: for a chart reading `inputs`, every label's id,
    * name and color, which its rows carry, and the scales' order; else what
    * its scales draw. */

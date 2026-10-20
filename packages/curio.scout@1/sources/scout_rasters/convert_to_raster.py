@@ -9,14 +9,23 @@ layer becomes the tiles SCOUT writes. Changes from SCOUT's file:
   GeoDataFrame's geometries are read with ``np.asarray(...array)``.
 - ``create_image`` writes the PNG with Pillow instead of ``cv2.imwrite``,
   converting to 8 bits the way OpenCV does (round half to even, saturate,
-  NaN and infinities to 0), so the pixels are the same.
+  NaN and infinities to 0), so the pixels are the same. A failed write raises
+  Pillow's error, where SCOUT checked what ``cv2.imwrite`` returned.
 - ``convert_raster`` also takes a GeoDataFrame as ``vector_in``, and takes the
   maximum height (SCOUT's fixed 550) as ``max_height``. An attribute other
   than ``height`` raises SCOUT's message instead of printing it.
 - SCOUT's polygons reducer is set on a Canvas subclass rather than patched
   onto datashader's own Canvas.
-- The unused imports (matplotlib, cv2, pygeos) and SCOUT's commented-out
-  earlier versions of ``create_image`` and ``compute_tile`` are left out.
+- The unused imports (matplotlib, cv2, pygeos, and datashader's second
+  import), the ``USE_PYGEOS`` setting (it told geopandas not to use pygeos),
+  and SCOUT's commented-out code (earlier versions of ``create_image`` and
+  ``compute_tile``, single lines, and the usage example at the end) are left
+  out.
+
+Each line Curio changed ends with a ``# Curio:`` comment that quotes its entry
+above, or sits in a changed block (a new function, a rewritten call) whose
+first line has one. Comment and docstring lines, and lines that differ from
+SCOUT's only in quotes, spacing, line breaks, order or punctuation, have none.
 """
 
 import pandas as pd
@@ -25,11 +34,11 @@ import spatialpandas as sp
 import datashader as ds
 import numpy as np
 import pyarrow as pa
-import shapely
+import shapely  # Curio: pygeos calls are shapely 2 calls
 import math
 import dask
 
-from PIL import Image
+from PIL import Image  # Curio: create_image writes the PNG with Pillow instead of cv2.imwrite
 from shapely.geometry import box
 from pyproj import Transformer
 
@@ -46,17 +55,17 @@ def get_flat_coords_offset_arrays(arr):
     Version for MultiPolygon data
     """
     # explode/flatten the MultiPolygons
-    arr_flat, part_indices = shapely.get_parts(arr, return_index=True)
+    arr_flat, part_indices = shapely.get_parts(arr, return_index=True)  # Curio: pygeos calls are shapely 2 calls
     # the offsets into the multipolygon parts
     offsets1 = np.insert(np.bincount(part_indices).cumsum(), 0, 0)
 
     # explode/flatten the Polygons into Rings
-    arr_flat2, ring_indices = shapely.get_rings(arr_flat, return_index=True)
+    arr_flat2, ring_indices = shapely.get_rings(arr_flat, return_index=True)  # Curio: pygeos calls are shapely 2 calls
     # the offsets into the exterior/interior rings of the multipolygon parts
     offsets2 = np.insert(np.bincount(ring_indices).cumsum(), 0, 0)
 
     # the coords and offsets into the coordinates of the rings
-    coords, indices = shapely.get_coordinates(arr_flat2, return_index=True)
+    coords, indices = shapely.get_coordinates(arr_flat2, return_index=True)  # Curio: pygeos calls are shapely 2 calls
     offsets3 = np.insert(np.bincount(indices).cumsum(), 0, 0)
 
     return coords, offsets1, offsets2, offsets3
@@ -89,7 +98,7 @@ def polygons(self, source, geometry, agg=None):
         y_range = self.y_range if self.y_range is not None else (None, None)
         source = source.cx[slice(*x_range), slice(*y_range)]
         # Convert the subset to ragged array format of spatialpandas
-        geometries = spatialpandas_from_pygeos(np.asarray(source.geometry.array))
+        geometries = spatialpandas_from_pygeos(np.asarray(source.geometry.array))  # Curio: a GeoDataFrame's geometries are read with np.asarray(...array)
         source = pd.DataFrame(source)
         source["geometry"] = geometries
     elif not isinstance(source, GeoDataFrame):
@@ -103,10 +112,10 @@ def polygons(self, source, geometry, agg=None):
     glyph = PolygonGeom(geometry)
     return bypixel(source, self, glyph, agg)
 
-class Canvas(ds.Canvas):
+class Canvas(ds.Canvas):  # Curio: SCOUT's polygons reducer is set on a Canvas subclass
     polygons = polygons
 
-cvs = Canvas(plot_width=256, plot_height=256)
+cvs = Canvas(plot_width=256, plot_height=256)  # Curio: SCOUT's polygons reducer is set on a Canvas subclass
 
 def deg2num(lat_deg, lon_deg, zoom):
     lat_rad = math.radians(lat_deg)
@@ -160,7 +169,7 @@ def elevation(filtered, bbox):
     values = np.flipud(values)
     return values
 
-def to_uint8(values):
+def to_uint8(values):  # Curio: converting to 8 bits the way OpenCV does
     """``cv2.imwrite``'s conversion of a float image to 8 bits: round half
     to even, saturate to 0..255, NaN and infinities to 0."""
     values = np.asarray(values, dtype=np.float64)
@@ -171,7 +180,7 @@ def create_image(values, i, j, zoom, max_height, outputfolder):
     filename_ = '%s/%d_%d_%d.png'%(outputfolder,zoom,i,j)
 
     values = 255.0 * (values / max_height)
-    Image.fromarray(to_uint8(values)).save(filename_)
+    Image.fromarray(to_uint8(values)).save(filename_)  # Curio: create_image writes the PNG with Pillow instead of cv2.imwrite
 
 def compute_tile(gdf, i, j, zoom, max_height, outputfolder):
     bb0 = num2deg(i,j,zoom)
@@ -188,10 +197,10 @@ def compute_tile(gdf, i, j, zoom, max_height, outputfolder):
     else:
         print(f"No data for tile {zoom}/{i}/{j}")
 
-def convert_raster(vector_in: str, attribute: str, zoom: int, raster_out: str, max_height: float = 550):
+def convert_raster(vector_in: str, attribute: str, zoom: int, raster_out: str, max_height: float = 550):  # Curio: takes the maximum height (SCOUT's fixed 550) as max_height
     raster_out = Path(raster_out)
 
-    gdf = vector_in if isinstance(vector_in, gpd.GeoDataFrame) else gpd.read_file(vector_in)
+    gdf = vector_in if isinstance(vector_in, gpd.GeoDataFrame) else gpd.read_file(vector_in)  # Curio: convert_raster also takes a GeoDataFrame as vector_in
     gdf = gdf.to_crs(epsg=3395)
 
     bounds = gdf.total_bounds
@@ -213,12 +222,12 @@ def convert_raster(vector_in: str, attribute: str, zoom: int, raster_out: str, m
         delayed = []
         for i in range(math.floor(bottomleft[0]),math.ceil(topright[0])):
             for j in range(math.floor(bottomleft[1]),math.ceil(topright[1])):
-                ddelayed = compute_tile(gdf, i, j, zoom, max_height, raster_out)
+                ddelayed = compute_tile(gdf, i, j, zoom, max_height, raster_out)  # Curio: takes the maximum height (SCOUT's fixed 550) as max_height
                 delayed.append(ddelayed)
         dask.compute(*delayed)
 
         print(f"Raster tiles for buildings height created at zoom level {zoom} in {raster_out}")
     else:
-        raise ValueError(f"Feature '{attribute}' not supported for layer")
+        raise ValueError(f"Feature '{attribute}' not supported for layer")  # Curio: An attribute other than height raises SCOUT's message instead of printing it
 
     return

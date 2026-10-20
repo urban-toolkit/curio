@@ -44,6 +44,38 @@ describe("stackInputs leaves its inputs as they were", () => {
     const out = stackInputs([{ scenario: "s-base", name: "Baseline", value: [{ sunlight: Number.NaN }] }]);
     expect(out).toEqual({ rows: [{ sunlight: null, __input__: 0, scenario: "s-base", scenario_name: "Baseline" }] });
   });
+
+  test("a frame's rows are its own: the frame it reads them from is not written to", () => {
+    const frame = { dataType: "dataframe", data: { segment: ["r1"], sunlight: [5] } };
+    const out = stackInputs([{ scenario: "s-base", name: "Baseline", value: frame }]) as { rows: any[] };
+    expect(frame).toEqual({ dataType: "dataframe", data: { segment: ["r1"], sunlight: [5] } });
+    expect(out.rows).toEqual([{ segment: "r1", sunlight: 5, __input__: 0, scenario: "s-base", scenario_name: "Baseline" }]);
+  });
+});
+
+// What JSON cannot give Python as the browser holds it, each beside the test
+// of test_scenario_inputs.py that gives Python's own the same answer.
+describe("stackInputs and Python's stack_inputs agree beyond the cases", () => {
+  const table = (pop: number[]) => ({ dataType: "dataframe", data: { pop } });
+
+  test("a Python node's list of tables, as the browser holds it, carries them, and is refused", () => {
+    expect(stackInputs([{ scenario: null, name: "Tables", value: [table([1]), table([2])] }])).toEqual({
+      refusal: 'The dataset "inputs": input_0 (Tables) carries 2 tables. Connect a node that returns one table, '
+        + "or pick the table to compare in a node between them.",
+    });
+    // A list of tables and records is no list of records: Python reads its tables as frames.
+    expect(stackInputs([{ scenario: null, name: "Tables", value: [table([1]), { pop: 2 }] }])).toEqual({
+      refusal: 'The dataset "inputs": input_0 (Tables) is a list that mixes records and values. '
+        + "Return records (one dict per row) or values.",
+    });
+  });
+
+  test("a float that is no number is a value row with no value", () => {
+    expect(stackInputs([{ scenario: "s-base", name: "Baseline", value: Number.NaN }])).toEqual({
+      rows: [{ value: null, __input__: 0, scenario: "s-base", scenario_name: "Baseline" }],
+    });
+    expect(inputRows(Number.NaN)).toEqual([{ value: null }]);
+  });
 });
 
 describe("inputRows: one input's own rows, against the cases Python's input_rows reads too", () => {

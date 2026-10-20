@@ -1,11 +1,12 @@
 /**
  * Every shipped map layer drawn in a scenario box's color (#662): on a map
  * outside every box, a layer whose input comes from a node in a box takes the
- * box's color (adapters/node/autkScenarioColors). Over every dataflow in
- * docs/examples, that rule recolors exactly the routing example's two routes,
- * each in the box its retired `scenario` key named, so no other shipped map
- * changes color. A layer on such a map whose input cannot be told from its
- * document counts as recolored, so a new one is looked at here.
+ * box's color (adapters/node/autkScenarioColors), unless it is colored by its
+ * values. Over every dataflow in docs/examples, that rule recolors exactly the
+ * routing example's two routes, each in the box its retired `scenario` key
+ * named, so no other shipped map changes color, and no shipped layer from a
+ * box keeps its values' colors. A layer on such a map whose input cannot be
+ * told from its document counts as recolored, so a new one is looked at here.
  *
  * Curio's `scenario` layer key is gone: no shipped document, dataflow or
  * package file, writes it.
@@ -88,8 +89,9 @@ function slotOf(edge: any): number {
   return match ? Number(match[1]) : -1;
 }
 
-/** The layers the rule recolors in one dataflow, with the box each takes. */
-function recoloredIn(file: string, flow: any, autark: Set<string>): Recolored[] {
+/** The layers the rule recolors in one dataflow, with the box each takes; and,
+ * in *kept*, those whose input comes from a box that keep their own colors. */
+function recoloredIn(file: string, flow: any, autark: Set<string>, kept: Recolored[] = []): Recolored[] {
   const nodes = flow.nodes.map((node: any) => ({ id: node.id, type: node.type, data: { nodeType: node.type, title: node.title } }));
   const edges = (flow.edges ?? [])
     .filter((edge: any) => edge.type !== "Interaction")
@@ -126,9 +128,11 @@ function recoloredIn(file: string, flow: any, autark: Set<string>): Recolored[] 
     const fedByBox = !inBox && wired.some((edge: any) => scenarios.some((scenario) => scenario.nodes.includes(edge.source)));
     resolved.forEach((layer: any, i: number) => {
       const box = scenarioOf(layer.dataRef);
-      if (box) {
-        expect(colored[i].color).toBe(box.color);
+      if (box && colored[i] !== layer) {
+        expect(colored[i]).toEqual({ ...layer, color: box.color });
         found.push({ file: relative(file), node: node.id, layer: layers[i].dataRef, box: box.id });
+      } else if (box) {
+        kept.push({ file: relative(file), node: node.id, layer: layers[i].dataRef, box: box.id });
       } else if (fedByBox && !(layer.dataRef in circles)) {
         found.push({ file: relative(file), node: node.id, layer: layers[i].dataRef, box: null });
       }
@@ -143,11 +147,14 @@ const ROUTES_MAP = "6c0e8a4d-3b9f-4d21-a7e5-9f2b6d1c8e40";
 test("the rule recolors exactly the routing example's two routes, each in the box its old key named", () => {
   const autark = autarkTypes();
   expect(autark.has("curio.builtin/autk-grammar")).toBe(true);
-  const found = dataflows().flatMap(({ file, flow }) => recoloredIn(file, flow, autark));
+  const kept: Recolored[] = [];
+  const found = dataflows().flatMap(({ file, flow }) => recoloredIn(file, flow, autark, kept));
   expect(found).toEqual([
     { file: ROUTING, node: ROUTES_MAP, layer: "[!! input_1 !!]", box: "fastest" },
     { file: ROUTING, node: ROUTES_MAP, layer: "[!! input_2 !!]", box: "weather-aware" },
   ]);
+  // No shipped layer from a box is colored by its values.
+  expect(kept).toEqual([]);
 });
 
 test("no shipped layer writes Curio's old scenario key", () => {

@@ -96,7 +96,12 @@ jest.mock("vega", () => {
       if (!(name in this.signals)) throw new Error(`Unrecognized signal name: "${name}"`);
       this.listeners[name] = listener;
     }
-    change() { return this; }
+    // As vega's, a view holds only the datasets its spec reads.
+    change(name: string) {
+      const { datasetsRead, unrecognizedDataset } = require("../_support/vegaViewDatasets");
+      if (!datasetsRead(this.spec).has(name)) throw unrecognizedDataset(name);
+      return this;
+    }
   }
   return { changeset, View, parse: (spec: any) => spec, Warn: 2, __views: views };
 }, { virtual: true });
