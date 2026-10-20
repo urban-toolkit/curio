@@ -762,7 +762,7 @@
         "x": 3225,
         "y": 2480,
         "title": "Grouped bars: daily trips by mode",
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"inputs\"\n  },\n  \"transform\": [\n    {\n      \"window\": [\n        {\n          \"op\": \"row_number\",\n          \"as\": \"curio_row\"\n        }\n      ]\n    },\n    {\n      \"calculate\": \"'[!! combine !!]' === 'None' ? datum.curio_row : 0\",\n      \"as\": \"curio_group\"\n    },\n    {\n      \"aggregate\": [\n        {\n          \"op\": \"mean\",\n          \"field\": \"[!! y !!]\",\n          \"as\": \"curio_mean\"\n        },\n        {\n          \"op\": \"sum\",\n          \"field\": \"[!! y !!]\",\n          \"as\": \"curio_sum\"\n        },\n        {\n          \"op\": \"median\",\n          \"field\": \"[!! y !!]\",\n          \"as\": \"curio_median\"\n        },\n        {\n          \"op\": \"min\",\n          \"field\": \"[!! y !!]\",\n          \"as\": \"curio_min\"\n        },\n        {\n          \"op\": \"max\",\n          \"field\": \"[!! y !!]\",\n          \"as\": \"curio_max\"\n        },\n        {\n          \"op\": \"count\",\n          \"as\": \"curio_count\"\n        }\n      ],\n      \"groupby\": [\n        \"scenario_name\",\n        \"[!! x !!]\",\n        \"curio_group\"\n      ]\n    },\n    {\n      \"calculate\": \"({'Mean': datum.curio_mean, 'Sum': datum.curio_sum, 'Median': datum.curio_median, 'Minimum': datum.curio_min, 'Maximum': datum.curio_max, 'Count of rows': datum.curio_count, 'None': datum.curio_max})['[!! combine !!]']\",\n      \"as\": \"curio_value\"\n    }\n  ],\n  \"mark\": {\n    \"type\": \"bar\",\n    \"tooltip\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"[!! x !!]\",\n      \"type\": \"nominal\",\n      \"title\": \"[!! x_title !!]\"\n    },\n    \"xOffset\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\"\n    },\n    \"y\": {\n      \"field\": \"curio_value\",\n      \"type\": \"quantitative\",\n      \"title\": \"[!! y_title !!]\"\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\"\n    }\n  }\n}\n",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"inputs\"\n  },\n  \"mark\": {\n    \"type\": \"bar\",\n    \"tooltip\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"[!! x !!]\",\n      \"type\": \"nominal\",\n      \"title\": \"[!! x_title !!]\"\n    },\n    \"xOffset\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\"\n    },\n    \"y\": {\n      \"field\": \"[!! y !!]\",\n      \"type\": \"quantitative\",\n      \"aggregate\": \"[!! combine !!]\",\n      \"title\": \"[!! y_title !!]\"\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\"\n    }\n  }\n}\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Chart daily trips by mode as grouped bars, each scenario in its color.",
@@ -787,19 +787,17 @@
               "name": "combine",
               "type": "choice",
               "label": "Combine",
-              "default": "Mean",
+              "default": "mean",
               "options": {
                 "choices": [
-                  "Mean",
-                  "Sum",
-                  "Median",
-                  "Minimum",
-                  "Maximum",
-                  "Count of rows",
-                  "None"
+                  "mean",
+                  "sum",
+                  "median",
+                  "min",
+                  "max",
+                  "count"
                 ]
-              },
-              "value": "None"
+              }
             },
             {
               "name": "x_title",
