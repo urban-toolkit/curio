@@ -118,22 +118,35 @@ SCENARIO_KIND_FG = "rgb(46, 104, 34)"
 
 #: Each card's name, its strip and border, and the swatches in its title, as
 #: drawn. The strip is the card's first child.
-_CARD_PAINT = """() => Array.from(
-  document.querySelectorAll('main article[data-scenario-key]')
-).map((card) => {
-  const heading = card.querySelector('h2');
-  const swatches = heading
-    ? Array.from(heading.querySelectorAll('[data-curio-scenario-swatch]'))
-    : [];
-  return {
-    name: heading ? heading.innerText.trim() : '',
-    strip: card.firstElementChild
-      ? getComputedStyle(card.firstElementChild).backgroundColor
-      : '',
-    border: getComputedStyle(card).borderTopColor,
-    swatches: swatches.map((s) => getComputedStyle(s).backgroundColor),
-  };
-})"""
+#:
+#: A selected card's border fades in from transparent over 0.15 s (``.card`` in
+#: CatalogBrowseLayout.module.css), and a fade moves only when a frame is
+#: drawn, which a busy runner can hold back (#1041). So every fade still
+#: running is ended first, in the same evaluate: the read is the style each
+#: card settles on, what the page shows 0.15 s later, without waiting for a
+#: frame. Only transitions are ended, since each one has an end.
+_CARD_PAINT = """() => {
+  const cards = Array.from(document.querySelectorAll('main article[data-scenario-key]'));
+  for (const card of cards) {
+    for (const fade of card.getAnimations({ subtree: true })) {
+      if (fade instanceof CSSTransition) fade.finish();
+    }
+  }
+  return cards.map((card) => {
+    const heading = card.querySelector('h2');
+    const swatches = heading
+      ? Array.from(heading.querySelectorAll('[data-curio-scenario-swatch]'))
+      : [];
+    return {
+      name: heading ? heading.innerText.trim() : '',
+      strip: card.firstElementChild
+        ? getComputedStyle(card.firstElementChild).backgroundColor
+        : '',
+      border: getComputedStyle(card).borderTopColor,
+      swatches: swatches.map((s) => getComputedStyle(s).backgroundColor),
+    };
+  });
+}"""
 
 
 def _rgb(hex_color: str) -> str:
