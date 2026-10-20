@@ -290,6 +290,13 @@ describe("trillToNotebook with a chart that reads its inputs stacked", () => {
   const chartCell = (nb: ReturnType<typeof trillToNotebook>) =>
     codeCells(nb).find((c) => c.source.includes("_spec = {"))!.source;
 
+  it("draws scenario_name in the boxes' colors and order, then an input from no box, as the canvas does", () => {
+    const chart = '{"data": {"name": "inputs"}, "mark": "bar", "encoding": {"color": {"field": "scenario_name", "type": "nominal"}}}';
+    const source = chartCell(trillToNotebook(stackedChart(chart)));
+    const embedded = JSON.parse(source.split("_spec = ")[1].split("\n\n")[0]);
+    expect(embedded.encoding.color.scale).toEqual({ domain: ["Baseline", "Free node"], range: ["#2a9d8f", "#8a8f98"] });
+  });
+
   it("stacks its inputs with utk_curio's stack_inputs, each under its box, as the canvas does", () => {
     const source = chartCell(trillToNotebook(stackedChart('{"data": {"name": "inputs"}, "mark": "bar"}')));
     expect(source).toContain("from utk_curio.sandbox.util.scenario_stack import input_rows, stack_inputs");

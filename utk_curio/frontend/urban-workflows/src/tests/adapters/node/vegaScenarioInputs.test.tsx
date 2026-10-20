@@ -1,11 +1,12 @@
 /**
  * A Vega-Lite chart whose spec reads `inputs` (#662) names its rows by the
- * scenario boxes its inputs come from and draws them in the boxes' colors, in
- * the order of its circles, whatever the spec writes for `scenario_name`. A box
- * renamed or recolored draws it again, its rows stacked again under the new
- * name, as a recolor draws a chart after a Compare Scenarios node: no version
- * in its provenance, nothing handed downstream. A spec that does not read
- * `inputs` stacks nothing and is drawn as written.
+ * scenario boxes its inputs come from, stacked in circle order, and draws them
+ * in the boxes' colors, in the order the dataflow lists its boxes, whatever the
+ * spec writes for `scenario_name`. A box renamed or recolored draws it again,
+ * its rows stacked again under the new name, as a recolor draws a chart after
+ * a Compare Scenarios node: no version in its provenance, nothing handed
+ * downstream. A spec that does not read `inputs` stacks nothing and is drawn as
+ * written.
  *
  * The behavior and useVega are real here; vega and vega-lite are the mocks
  * below, which keep the spec each view is built from.
@@ -49,6 +50,7 @@ jest.mock("../../../providers/ToastProvider", () => ({ useToastContext: () => ({
 jest.mock("../../../services/api", () => ({ fetchData: jest.fn(), fetchPreviewData: jest.fn() }));
 
 import { useVegaBehavior } from "../../../adapters/node/vegaBehavior";
+import { resolveReferences } from "../../../utils/references/codeReferences";
 
 const views = (): any[] => (jest.requireMock("vega") as any).__views;
 
@@ -169,10 +171,30 @@ describe("a chart reading inputs names its rows by its inputs' boxes", () => {
     expect(nodeState.setOutput).toHaveBeenLastCalledWith({ code: "success", content: "", outputType: "" });
   });
 
-  test("the circles set the order, not the order the dataflow lists its boxes in", async () => {
+  test("the scales take the order the dataflow lists its boxes in; the rows stay in circle order", async () => {
+    // Listed Twice as tall first, wired Baseline first.
     setFlow([TALL, BASE]);
     await playedChart();
-    expect(lastSpec().encoding.color.scale.domain).toEqual(["Baseline", "Twice as tall"]);
+    expect(lastSpec().encoding.color.scale).toEqual({ domain: ["Twice as tall", "Baseline"], range: ["#e76f51", "#2a9d8f"] });
+    expect(lastSpec().encoding.x.sort).toEqual(["Twice as tall", "Baseline"]);
+    expect(stackedRows().map((row: any[]) => row[1])).toEqual(["Baseline", "Baseline", "Twice as tall"]);
+  });
+
+  test("a spec whose text holds a bare chip reads inputs once its chips are resolved, as the editor hands it on", async () => {
+    // The y field is a column chip, written bare: the text is no JSON until it resolves.
+    const raw = '{"data": {"name": "inputs"}, "mark": "bar", "encoding": {'
+      + '"x": {"field": "scenario_name", "type": "nominal"}, "y": {"field": [!! input_0.sunlight !!], "type": "quantitative"}}}';
+    expect(() => JSON.parse(raw)).toThrow();
+    const scope = { widgets: [], shared: [], inputs: [0, 1].map((slot) => ({ slot, columns: ["segment", "sunlight"] })) };
+    const { code, problems } = resolveReferences(raw, scope, "json");
+    expect(problems).toEqual([]);
+    await playedChart(code);
+    expect(lastSpec().encoding.y.field).toBe("sunlight");
+    expect(stackedRows()).toEqual([
+      ["s-base", "Baseline", 5],
+      ["s-base", "Baseline", 6],
+      ["s-tall", "Twice as tall", 3],
+    ]);
   });
 
   test("an input whose node is in no box is named by its node, in a neutral color", async () => {

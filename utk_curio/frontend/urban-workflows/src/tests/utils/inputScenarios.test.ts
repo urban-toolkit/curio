@@ -4,7 +4,7 @@
  * drawn by. A chart reading `inputs`, an Autark map and a Compare Scenarios
  * node all find an input's box this way.
  */
-import { inputLabelOf, inputScenarios, scenarioOfNode } from "../../utils/scenarios/inputScenarios";
+import { inputLabelOf, inputScenarios, scaleLabelsOf, scenarioOfNode } from "../../utils/scenarios/inputScenarios";
 import { NO_SCENARIO_COLOR } from "../../utils/scenarios/scenarioColors";
 import type { Scenario } from "../../utils/scenarios/scenarioModel";
 
@@ -52,7 +52,7 @@ describe("inputScenarios", () => {
     ]);
   });
 
-  test("the circles' order is the boxes' order on the chart, whatever order the dataflow lists the boxes in", () => {
+  test("each input is labelled in circle order, whatever order the dataflow lists the boxes in", () => {
     const { nodes, edges, scenarios } = twoBoxes();
     const inputs = inputScenarios(CHART, nodes, edges, [...scenarios].reverse());
     expect(inputs.map((input) => input.label.name)).toEqual(["Baseline", "Twice as tall"]);
@@ -89,6 +89,32 @@ describe("inputScenarios", () => {
   test("no edge into the node, no input", () => {
     const { nodes, edges, scenarios } = twoBoxes();
     expect(inputScenarios("load", nodes, edges, scenarios)).toEqual([]);
+  });
+});
+
+describe("scaleLabelsOf: the order a chart's scales draw its inputs' boxes in", () => {
+  test("the order the dataflow lists its boxes in, not the circles'", () => {
+    const { nodes, edges, scenarios } = twoBoxes();
+    const listed = [...scenarios].reverse();
+    const labels = scaleLabelsOf(inputScenarios(CHART, nodes, edges, listed), listed);
+    expect(labels.map((label) => label.name)).toEqual(["Twice as tall", "Baseline"]);
+  });
+
+  test("each box once, then each input from no box in circle order, in a neutral color", () => {
+    const { nodes, edges, scenarios } = twoBoxes();
+    const more = [
+      ...edges,
+      edge("load", CHART, "in_2"),
+      edge("base", CHART, "in_3"),
+      edge("plain", CHART, "in_4"),
+    ];
+    const labels = scaleLabelsOf(inputScenarios(CHART, [...nodes, node("plain", { title: "Plain" })], more, scenarios), scenarios);
+    expect(labels).toEqual([
+      { scenario: "s-base", name: "Baseline", color: "#2a9d8f" },
+      { scenario: "s-tall", name: "Twice as tall", color: "#e76f51" },
+      { name: "Loader", color: NO_SCENARIO_COLOR },
+      { name: "Plain", color: NO_SCENARIO_COLOR },
+    ]);
   });
 });
 
