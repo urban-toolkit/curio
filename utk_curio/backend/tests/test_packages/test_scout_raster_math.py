@@ -56,11 +56,14 @@ MOVED = (
     "operate", "in_codes", "masked_bands", "dataset_grid", "write_raster", "_content_name",
     "tile_corner", "tile_bounds", "mosaic_web_tiles",
 )
-#: What core kept for Compare Scenarios' raster Difference, gone with it: the
-#: envelope subtraction and the grid checks it called, which only the
-#: package's raster algebra defines.
+#: What the sandbox kept for Compare Scenarios' raster Difference, gone with
+#: it: the envelope subtraction, the grid checks it called and their error,
+#: which only the package's raster algebra defines. (The backend's own
+#: ``js_number``, in ``execution/code_references.py``, writes a widget's
+#: number into a JavaScript node's code, and was never this one.)
 ENVELOPES = REPO / "utk_curio" / "sandbox" / "util" / "envelope_difference.py"
-ENVELOPE_NAMES = ("subtract_envelopes", "js_number", "grid_differences", "describe_grid")
+ENVELOPE_NAMES = ("RasterAlgebraError", "subtract_envelopes", "js_number", "grid_differences", "describe_grid")
+SANDBOX = "utk_curio/sandbox/"
 #: Folders of ``utk_curio/`` that hold no app code.
 NOT_APP = {"tests", "node_modules", "dist", "__pycache__", "_shipped"}
 
@@ -246,10 +249,11 @@ def test_no_core_module_defines_the_moved_functions():
     found = []
     for path, relative in _app_modules():
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=relative)
+        names = (*MOVED, *ENVELOPE_NAMES) if relative.startswith(SANDBOX) else MOVED
         found += [
             f"{relative}:{node.lineno} {node.name}"
             for node in ast.walk(tree)
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in (*MOVED, *ENVELOPE_NAMES)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name in names
         ]
     assert found == [], found
     assert not (REPO / "utk_curio" / "sandbox" / "util" / "raster_algebra.py").exists()
@@ -257,6 +261,6 @@ def test_no_core_module_defines_the_moved_functions():
     defined = set()
     for module in ("raster_algebra.py", "web_tiles.py"):
         tree = ast.parse((SOURCES / MODULE / module).read_text(encoding="utf-8"))
-        defined |= {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}
+        defined |= {node.name for node in tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef))}
     assert set(MOVED) - {"curio_raster_calculate", "curio_raster_statistics"} <= defined, defined
-    assert {"js_number", "grid_differences", "describe_grid"} <= defined, defined
+    assert {"RasterAlgebraError", "js_number", "grid_differences", "describe_grid"} <= defined, defined
