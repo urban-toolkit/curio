@@ -14,6 +14,15 @@ export function isHostedGuest(user: UserData | null, enableUserAuth: boolean): b
 /** What a hosted guest is told where a key would be saved. */
 export const HOSTED_GUEST_KEYS_NOTE = "Personal keys cannot be saved on a shared guest account.";
 
+/**
+ * What a hosted guest is told when it does something that needs a saved
+ * dataflow, on one it never saved: such a guest cannot save it, so only an
+ * account can. *action* names what it did, as in "add datasets".
+ */
+export function hostedGuestSignInNote(action: string): string {
+  return `Sign in to ${action}.`;
+}
+
 /** `isHostedGuest` for the signed-in user. */
 export function useHostedGuest(): boolean {
   const { user, enableUserAuth } = useUserContext();

@@ -14,7 +14,7 @@ import { clearCategoryDescriptors, registerCategoryDescriptor } from "../_suppor
 beforeAll(() => {
   registerCategoryDescriptor("acme.hydro/gauge@1", "data");
   registerCategoryDescriptor("acme.hydro/gauge@2", "vis_simple");
-  registerCategoryDescriptor("scout.comparison/donuts@1", "vis_grammar");
+  registerCategoryDescriptor("curio.scout/donuts@1", "vis_grammar");
   registerCategoryDescriptor("acme.tools/route@1", "flow");
 });
 
@@ -35,7 +35,7 @@ const CANVAS = [
   canvasNode("gauge", "acme.hydro/gauge@1"),
   // No major: the highest one registered, as the canvas resolves the node.
   canvasNode("latest", "acme.hydro/gauge", 300),
-  canvasNode("donuts", "scout.comparison/donuts@1", 600),
+  canvasNode("donuts", "curio.scout/donuts@1", 600),
   canvasNode("route", "acme.tools/route@1", 900),
   canvasNode("gone", "acme.gone/gauge@1", 1200),
   canvasNode("legacy", "VIS_VEGA", 1500),

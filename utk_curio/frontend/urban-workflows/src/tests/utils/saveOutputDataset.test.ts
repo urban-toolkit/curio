@@ -135,7 +135,7 @@ describe('isNonProducingNodeType', () => {
 });
 
 describe('a package chart that draws with Vega-Lite saves nothing of its own', () => {
-  // SCOUT Comparison's charts draw with the Vega-Lite node's behavior, which
+  // Scout's charts draw with the Vega-Lite node's behavior, which
   // hands the node's input on as its output: saving it would install a copy of
   // the Compare node's table under the chart's id.
   const { isNonProducingNodeType, showsSaveOutputToggle } = require('../../utils/saveOutputDataset');
@@ -146,7 +146,7 @@ describe('a package chart that draws with Vega-Lite saves nothing of its own', (
 
   test('it is a sink, as the Vega-Lite node is, versioned or not', () => {
     expect(isNonProducingNodeType(VEGA_LITE_TEMPLATE)).toBe(true);
-    expect(isNonProducingNodeType('scout.comparison/donuts')).toBe(true);
+    expect(isNonProducingNodeType('curio.scout/donuts')).toBe(true);
   });
 
   test('its footer has no save toggle', () => {

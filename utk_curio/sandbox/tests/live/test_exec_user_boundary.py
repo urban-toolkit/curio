@@ -497,10 +497,10 @@ def test_utci_computes_as_the_exec_user():
     assert warm < warmer < warmest, "UTCI does not rise with radiant heat: %r" % (grid,)
 
 
-#: ``scout.rasters@1``'s modules, in the image. The stack's
+#: ``curio.scout@1``'s modules, in the image. The stack's
 #: ``--with-examples`` boot installs its libraries: shipped dataflows (example
 #: 24 among them) declare it.
-SCOUT_RASTERS_SOURCES = LAUNCH_DIR + "/packages/scout.rasters@1/sources"
+SCOUT_RASTERS_SOURCES = LAUNCH_DIR + "/packages/curio.scout@1/sources"
 SCOUT_RASTERS_MODULE = "scout_rasters"
 
 
@@ -540,7 +540,7 @@ def test_scouts_rasterizer_runs_as_the_exec_user():
     result = assert_ran(_request("/exec", {
         "code": body + "\n",
         "file_path": "",
-        "nodeType": "scout.rasters/rasterize-buildings",
+        "nodeType": "curio.scout/rasterize-buildings",
         "dataType": "",
         "user_key": USER_KEY,
         "save_dataset": False,
@@ -681,7 +681,7 @@ def test_scouts_shadow_model_runs_as_the_exec_user(model_folder):
     produced = assert_ran(_request("/exec", {
         "code": heights + "\n",
         "file_path": "",
-        "nodeType": "scout.rasters/rasterize-buildings",
+        "nodeType": "curio.scout/rasterize-buildings",
         "dataType": "",
         "user_key": USER_KEY,
         "save_dataset": False,

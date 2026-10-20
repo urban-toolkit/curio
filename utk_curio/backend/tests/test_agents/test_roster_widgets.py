@@ -5,8 +5,8 @@ with (#662), and a plan sets their values by name. The Node Builder and the
 Dataflow Builder read the templates they may use as one line each
 (``turns/roster.py``), its description cut at 140 characters: the line ends
 with the template's widgets, so an agent knows what to set without guessing
-from the description. SCOUT Comparison's charts read their columns through
-them (the plan for #914, step 28.2).
+from the description. Scout's charts read their columns through them (the
+plan for #914, step 28.2).
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[4]
 
 
-@pytest.mark.parametrize("folder", ["scout.comparison@1", "scout.rasters@1", "model.scout.deep-umbra@1"])
+@pytest.mark.parametrize("folder", ["curio.scout@1", "model.scout.deep-umbra@1"])
 def test_each_package_templates_line_names_its_widgets(folder):
     from utk_curio.backend.app.agents.application.turns.roster import _template_line
     from utk_curio.backend.app.packages.application.templates import _template_entry

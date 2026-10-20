@@ -60,7 +60,7 @@ OWN_DATASET_CODE = (
 #: 00:00 UTC, 15 days and 6 hours before the calendar date: "15d ago" there,
 #: "16d ago" by noon of that day on the real clock, and more every day after.
 SHIPPED_DATASET = "data.scout.loop-buildings"
-SHIPPED_PACKAGE = "scout.rasters@1"
+SHIPPED_PACKAGE = "curio.scout@1"
 SHIPPED_AGE = "15d ago"
 
 #: The text the catalogs give an age (``catalogTimeFormat.ts``).

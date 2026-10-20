@@ -32,6 +32,9 @@ export type PackageCatalogScope =
   | { kind: "project"; projectId: string | null }
   | { kind: "defaults" };
 
+/** What a lockfile write that saves the dataflow first is doing: Add, Remove or Import. */
+export type ProjectSaveAction = "add" | "remove" | "import";
+
 export interface UsePackageCatalogOptions {
   scope: PackageCatalogScope;
   /** Which packages the surface lists: `node` (the Node Catalog, the
@@ -43,9 +46,10 @@ export interface UsePackageCatalogOptions {
    * Project scope: saves a dataflow that has never been saved (a dataflow is
    * created on its FIRST SAVE) and answers its id, or `null` when the save was
    * refused; a throw is reported as the action's failure banner, labelled with
-   * what the save was for ("Couldn't save dataflow before adding").
+   * what the save was for ("Couldn't save dataflow before adding"). *action*
+   * says which write asked, so a surface that answers `null` itself can say why.
    */
-  onEnsureProject?: () => Promise<string | null>;
+  onEnsureProject?: (action?: ProjectSaveAction) => Promise<string | null>;
   /** Project scope: captured BEFORE the listing is fetched (the lockfile store's
    *  revision), handed back to `onProjectLockfile` so a local write that landed
    *  during the fetch is never undone by an older lockfile. */
@@ -94,7 +98,7 @@ export interface PackageCatalogState {
   /** Project scope: the dataflow's id, or the one an auto-save just minted before the prop caught up. */
   effectiveProjectId: string | null;
   /** Project scope: the dataflow's id, saving it first if it has none; `null` (already reported) when the save is refused. */
-  ensureProjectId: (failureLabel: string) => Promise<string | null>;
+  ensureProjectId: (failureLabel: string, action?: ProjectSaveAction) => Promise<string | null>;
   reload: () => Promise<void>;
   reportActionError: (label: string, err: unknown) => void;
   dismissActionError: () => void;
@@ -267,14 +271,14 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
 
   /** Project scope: the dataflow's id, saving it first if it does not have one yet. */
   const ensureSavedProjectId = useCallback(
-    async (failureLabel: string): Promise<string | null> => {
+    async (failureLabel: string, action?: ProjectSaveAction): Promise<string | null> => {
       if (projectId) {
         savedProjectIdRef.current = projectId;
         return projectId;
       }
       if (!onEnsureProject) return null;
       try {
-        const id = await onEnsureProject();
+        const id = await onEnsureProject(action);
         savedProjectIdRef.current = id;
         return id;
       } catch (err) {
@@ -288,7 +292,7 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
   const openReview = useCallback(
     async (pkg: PackagePayload, mode: "add" | "update") => {
       if (scope.kind === "project" && mode === "add") {
-        if ((await ensureSavedProjectId("Couldn't save dataflow before adding")) === null) {
+        if ((await ensureSavedProjectId("Couldn't save dataflow before adding", "add")) === null) {
           onAddedRef.current = null;
           return;
         }
@@ -442,7 +446,7 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
     // a no-op: the package is in the palette because the account defaults put it
     // there, and taking it out has to be recorded somewhere. Save first, exactly
     // as adding does.
-    const id = await ensureSavedProjectId("Couldn't save dataflow before removing");
+    const id = await ensureSavedProjectId("Couldn't save dataflow before removing", "remove");
     if (!id) return;
     setCardActionDir(pkg.dirName);
     setActionError(null);

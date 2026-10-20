@@ -2,7 +2,7 @@
 
 Example 24's chain from SCOUT's buildings to the map of their heights: Data
 Loading reads SCOUT's 123 Chicago Loop buildings (the Data Catalog dataset
-``data.scout.loop-buildings``), the ``scout.rasters@1`` package's
+``data.scout.loop-buildings``), the ``curio.scout@1`` package's
 Rasterize Buildings node runs with the widgets its template declares, and an
 Autark map whose document draws ``input_0``, band ``band_1``. The map is wired
 straight to the package node, so it reads the node's one raster through the
@@ -50,9 +50,9 @@ if TYPE_CHECKING:
     from .utils import FrontendPage
 
 EXAMPLE = Path(REPO_ROOT) / "docs" / "examples" / "24-scout-shadow-model-chicago-loop.json"
-PACKAGE_DIR = "scout.rasters@1"
+PACKAGE_DIR = "curio.scout@1"
 LOADER_TYPE = "curio.builtin/data-loading"
-RASTER_TYPE = "scout.rasters/rasterize-buildings"
+RASTER_TYPE = "curio.scout/rasterize-buildings"
 MAP_TYPE = "curio.builtin/autk-grammar"
 #: The height tiles SCOUT committed for its example's buildings, which the
 #: Data Catalog ships as data.scout.loop-buildings (test_scout_shadow.py).

@@ -228,7 +228,7 @@ describe("trillToNotebook", () => {
   });
 
   it("embeds a package chart that draws with Vega-Lite as the Vega-Lite node's spec is, its widgets read", () => {
-    // A SCOUT Comparison chart draws with the Vega-Lite node's behavior; its
+    // A Scout chart draws with the Vega-Lite node's behavior; its
     // spec reads the columns its widgets name.
     const { VEGA_LITE_TEMPLATE, registerVegaLiteTemplate, clearVegaLiteTemplate } = require("./_support/vegaLiteTemplate");
     registerVegaLiteTemplate();

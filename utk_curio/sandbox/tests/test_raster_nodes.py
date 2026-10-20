@@ -1,4 +1,4 @@
-"""The Raster Calculator node (``scout.rasters@1``, SCOUT Rasters) runs the
+"""The Raster Calculator node (``curio.scout@1``, Scout) runs the
 code it starts with, the starter its package ships (the template's ``source``,
 ``sources/raster-calculator.py``, which the starters feed sends as it is), in
 process and in an isolated child: its cell operations give a raster on the
@@ -19,9 +19,9 @@ import numpy as np
 import pytest
 
 REPO = Path(__file__).resolve().parents[3]
-CALCULATOR = "scout.rasters/raster-calculator"
+CALCULATOR = "curio.scout/raster-calculator"
 #: The package that ships the node.
-PACKAGE_MANIFEST = REPO / "packages" / "scout.rasters@1" / "manifest.json"
+PACKAGE_MANIFEST = REPO / "packages" / "curio.scout@1" / "manifest.json"
 #: The call a dropped Raster Calculator's code returns.
 SUBTRACT = 'return curio_raster_calculate("subtract", [input_0, input_1])'
 #: The statistics call its code shows, commented, beside its cell operations.
@@ -114,7 +114,7 @@ def run_in_process(code, inputs, node_type, workspace):
 
 
 def test_the_node_is_scout_rasters_and_its_package_ships_the_starter():
-    """The type these tests run is a template of SCOUT Rasters, a Python code
+    """The type these tests run is a template of Scout, a Python code
     node whose starter is its package's ``sources/raster-calculator.py``, as
     Rasterize Buildings' is its own source. The starter is a starting point,
     not the node's whole content (no ``starterIsContent``)."""

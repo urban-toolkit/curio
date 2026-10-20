@@ -1,8 +1,9 @@
-"""``scout.comparison@1``: SCOUT Comparison, seven Vega-Lite charts to connect
-after a Compare Scenarios node (the plan for #914, step 28.2; re-made from
-komar41's ScenarioCharts in #914).
+"""Seven Vega-Lite charts to connect after a Compare Scenarios node (the plan
+for #914, step 28.2; re-made from komar41's ScenarioCharts in #914), nodes of
+Scout (``curio.scout@1``) beside its two raster nodes (the plan answering
+komar41's review of his #914, step 10).
 
-The package: seven templates that draw with the Vega-Lite node's own behavior,
+The charts: seven templates that draw with the Vega-Lite node's own behavior,
 each with a ``.vl.json`` starter that is a node's whole content. The columns a
 chart plots are text widgets, which the starter reads through chips such as
 ``"field": "[!! y !!]"``; a column widget defaults to its role's name, and the
@@ -26,11 +27,14 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[4]
-PACKAGE_ID = "scout.comparison"
+PACKAGE_ID = "curio.scout"
 PACKAGE = REPO / "packages" / f"{PACKAGE_ID}@1"
 BUILTIN = REPO / "packages" / "curio.builtin@1" / "manifest.json"
 
-#: The seven templates, in the palette's order.
+#: The package's two raster nodes (``test_scout_rasters.py``), first in its
+#: palette group.
+RASTER_TEMPLATES = ["raster-calculator", "rasterize-buildings"]
+#: The seven charts, in the palette's order, after the raster nodes.
 TEMPLATES = [
     "lines-with-band",
     "curves-by-group",
@@ -129,25 +133,36 @@ def _channels(spec) -> list:
 # --- the package -------------------------------------------------------------
 
 
-def test_the_package_is_scout_comparison_from_curio_under_mit_with_no_libraries():
+def test_the_package_is_scout_from_curio_under_mit_with_only_the_raster_nodes_libraries():
+    """The charts need no Python library: the package's are the ones its raster
+    nodes import, and no chart's starter imports anything."""
     from utk_curio.backend.app.packages.service import load_package_manifest
 
     manifest = _manifest()
-    assert (manifest["id"], manifest["name"]) == (PACKAGE_ID, "SCOUT Comparison")
+    assert (manifest["id"], manifest["name"]) == (PACKAGE_ID, "Scout")
     assert (manifest["publisher"], manifest["license"], manifest["version"]) == ("Curio", "MIT", "1.0.0")
-    assert manifest["dependencies"] == {"js": {}, "packages": {}, "python": {}}
+    assert manifest["dependencies"] == {"js": {}, "packages": {}, "python": {
+        "dask": ">=2026.8.0", "datashader": ">=0.19.1", "geopandas": ">=1.1.3", "numpy": "",
+        "pandas": ">=3.0.2", "pillow": ">=12.2.0", "pyarrow": ">=24.0.0", "pyproj": ">=3.7.2",
+        "rasterio": ">=1.4", "shapely": ">=2.0", "spatialpandas": ">=0.5.0",
+    }}
     assert manifest["readOnly"] is True and manifest["permissions"] == []
     assert manifest.get("kind", "node") == "node"
     assert (PACKAGE / "README.md").is_file()
     loaded = load_package_manifest(PACKAGE)
-    assert [t.template_id for t in loaded.templates] == TEMPLATES
+    assert [t.template_id for t in loaded.templates] == RASTER_TEMPLATES + TEMPLATES
+    for template_id in TEMPLATES:
+        assert _template(template_id)["source"].endswith(".vl.json"), template_id
 
 
 def test_it_holds_the_seven_charts_in_the_palettes_order():
     templates = _manifest()["templates"]
-    assert [t["id"] for t in templates] == TEMPLATES
-    assert [t["paletteOrder"] for t in templates] == list(range(len(TEMPLATES)))
-    assert [t["label"] for t in templates] == [
+    assert [t["id"] for t in templates] == RASTER_TEMPLATES + TEMPLATES
+    charts = templates[len(RASTER_TEMPLATES):]
+    assert [t["paletteOrder"] for t in charts] == list(
+        range(len(RASTER_TEMPLATES), len(RASTER_TEMPLATES) + len(TEMPLATES))
+    )
+    assert [t["label"] for t in charts] == [
         "Lines with a band", "Curves by group", "Bars with error bars", "Ensemble strips",
         "Stacked bars with totals", "Donuts", "Weighted matrix",
     ]
@@ -248,13 +263,19 @@ def test_each_starter_with_its_widget_defaults_is_valid_vega_lite(template_id):
 
 
 def test_the_readme_names_each_chart_and_its_widgets():
+    """Each of the package's nodes, the raster ones too: its id, its label
+    and each widget it has."""
     readme = (PACKAGE / "README.md").read_text(encoding="utf-8")
-    assert readme.startswith(f"# `{PACKAGE_ID}@1`: SCOUT Comparison\n")
-    for template in _manifest()["templates"]:
+    assert readme.startswith(f"# `{PACKAGE_ID}@1`: Scout\n")
+    templates = _manifest()["templates"]
+    assert [t["id"] for t in templates] == RASTER_TEMPLATES + TEMPLATES
+    for template in templates:
         assert f"`{PACKAGE_ID}/{template['id']}`" in readme, template["id"]
         assert template["label"] in readme, template["label"]
-        for widget in template["widgets"]:
+        for widget in template.get("widgets") or []:
             assert f"`{widget['name']}`" in readme, (template["id"], widget["name"])
+    for template_id in TEMPLATES:
+        assert _template(template_id)["widgets"], template_id
 
 
 def test_the_integrity_file_holds_every_file_and_its_hash():

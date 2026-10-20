@@ -38,8 +38,10 @@ SHIPPED = {
     ("curio.media@1", "video-frames"): {"dataTypes": ["Imagery", "Video"]},
     ("curio.media@1", "split-audio"): {"dataTypes": ["Audio"]},
     ("curio.media@1", "mosaic-rasters"): {"dataTypes": ["Rasters"]},
-    ("scout.rasters@1", None): {"tags": ["SCOUT"], "dataTypes": ["Rasters"]},
-    ("scout.comparison@1", None): {"tags": ["SCOUT"]},
+    # Scout: SCOUT on every node, Rasters on its two raster nodes alone.
+    ("curio.scout@1", None): {"tags": ["SCOUT"]},
+    ("curio.scout@1", "raster-calculator"): {"dataTypes": ["Rasters"]},
+    ("curio.scout@1", "rasterize-buildings"): {"dataTypes": ["Rasters"]},
     ("model.scout.deep-umbra@1", None): {"tags": ["SCOUT"]},
     ("model.scout.weather-gnn@1", None): {"tags": ["SCOUT"]},
 }

@@ -935,16 +935,16 @@ These replace any colors or order the spec writes for that column. When a scenar
 renamed or recolored, the chart is drawn again with no run, and a selection made in
 it stays.
 
-For a comparison the **Chart** tab does not draw, the SCOUT Comparison package
-(`scout.comparison@1`) has seven charts to connect after a Compare Scenarios node:
+For a comparison the **Chart** tab does not draw, the Scout package
+(`curio.scout@1`) has seven charts to connect after a Compare Scenarios node:
 **Lines with a band**, **Curves by group**, **Bars with error bars**, **Ensemble
 strips**, **Stacked bars with totals**, **Donuts** and **Weighted matrix**. Each is a
 Vega-Lite node with a spec of its own, and draws its scenarios by the rule above. Set
 the columns it plots in its **Widgets** tab: a new node's widgets hold their own names
 (`y`, `part`), so the chart says which column the table lacks until you set them. The
-[package's README](../packages/scout.comparison@1/README.md) lists each chart's
+[package's README](../packages/curio.scout@1/README.md) lists each chart's
 widgets. Add the package to a dataflow from the Node Catalog drawer; the charts are
-then under **SCOUT Comparison** in the Tools panel's **Node Catalog** dropdown.
+then under **Scout** in the Tools panel's **Node Catalog** dropdown.
 
 The **Scenario Catalog** lists the scenarios of all your projects, each with its
 fixed context, levers and outcomes and the results its project saved. Open it from
@@ -1365,9 +1365,9 @@ dashboard the node shows the output saved with the dataflow and never joins.
 
 The **Raster Calculator** works on rasters: a `rasterio` dataset from a Python
 node or the Data Catalog, or a raster an Autark node hands on. It is a node of
-SCOUT Rasters (`scout.rasters@1`), a package that ships with Curio: once the
+Scout (`curio.scout@1`), a package that ships with Curio: once the
 package is in the dataflow (**Add to project** in the Node Catalog drawer), the
-node is under **SCOUT Rasters** in the Tools panel's **Node Catalog** dropdown.
+node is under **Scout** in the Tools panel's **Node Catalog** dropdown.
 It is a Python node whose code is written for it when it
 is dropped: input_0 minus input_1, with its other operations listed above it,
 statistics among them. Return another call to change what it does. Connect the
@@ -1531,7 +1531,7 @@ For the full guide, covering searching, downloading, storage sources, collection
 
 ## Model Catalog
 
-The **Model Catalog** holds the trained models your nodes can run. A model is a package: its weights and the node that runs it. DDRNet23-Slim, which labels street photos with the 19 Cityscapes classes, ships with Curio, with an **Image Segmentation** node; models you add from the Discovery Catalog's **Hugging Face models** land here too, each with an Image Segmentation node of its own. A node runs the model its code names with `curio_load_model("<id>")`. Drag a model's card from the Model Catalog drawer, or from **Model Catalog** in the left Tools panel, onto the canvas to add its node, or onto a node to change the node's model for another of the same type. **Save as package node…** on a node that loads a model makes a model package of your own, a copy of the model.
+The **Model Catalog** holds the trained models your nodes can run. A model is a package: its weights and the node that runs it. DDRNet23-Slim, which labels street photos with the 19 Cityscapes classes, ships with Curio, with an **Image Segmentation** node; models you add from the Discovery Catalog's **Hugging Face models** land here too, each with an Image Segmentation node of its own. A node runs the model its code names with `curio_load_model("<id>")`. Drag a model's card from the Model Catalog drawer onto the canvas to add its node, or onto a node to change the node's model for another of the same type. **Model Catalog** in the left Tools panel lists the models added to this dataflow, to drag the same way. **Save as package node…** on a node that loads a model makes a model package of your own, a copy of the model.
 
 A node runs a model once the model's package is in your account: added from the Model Catalog (**Add to project** in its canvas drawer, **Add to all projects** on its page), or brought by a dataflow that names it, such as example 10. Shipped models are packages under `<repo_root>/packages/`, relocated with **`--packages-root`**; models you add from the Discovery Catalog are yours, in your package store.
 

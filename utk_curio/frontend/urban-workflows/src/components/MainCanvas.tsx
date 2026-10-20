@@ -68,8 +68,6 @@ import {
     readPackageCardDragPayload,
     type PackageCardNode,
 } from "../services/packages/packageCardDrag";
-import type { PackageAddRequest } from "../services/packages/packageAddRequests";
-import { useModelCatalogDrawer } from "../providers/modelCatalog";
 import { usePackageCardDrop } from "./packages/usePackageCardDrop";
 import { useHostedGuest } from "./apiSettings/useHostedGuest";
 import { endScenarioDrag, hasScenarioDrag, readScenarioDragPayload } from "../services/scenarioCatalog/scenarioDrag";
@@ -452,14 +450,9 @@ export function MainCanvas() {
     // one node runs the model, opening with its template's code, which names
     // the model. A package the dataflow has not added goes through the
     // drawer's own Add first (the review, then the install of its libraries),
-    // and the node is made once it is added; a model dropped from the Models
-    // palette with the Model Catalog drawer closed opens that drawer on its
-    // Add. A hosted guest's drop is refused, since guests never install.
-    const { openModelCatalogDrawer } = useModelCatalogDrawer();
-    const openModelCatalogOnAdd = useCallback(
-        (addRequest: PackageAddRequest) => openModelCatalogDrawer({ addRequest }),
-        [openModelCatalogDrawer],
-    );
+    // and the node is made once it is added; the Models palette lists only
+    // the dataflow's models, so its rows make their nodes at once. A hosted
+    // guest's drop is refused, since guests never install.
     const createPackageNode = useCallback((node: PackageCardNode, position: XYPosition) => {
         const starter = node.model
             ? packageStarterCode(tryGetNodeDescriptor(node.nodeType as NodeType), getStarters)
@@ -479,7 +472,6 @@ export function MainCanvas() {
         hostedGuest,
         createNode: createPackageNode,
         showToast,
-        openModelCatalog: openModelCatalogOnAdd,
     });
     const handlePackageCardCanvasDrop = useCallback((event: React.DragEvent) => {
         event.preventDefault();
@@ -566,13 +558,16 @@ export function MainCanvas() {
                 agentCoord,
                 saveProject: requestProjectSave,
                 attach: (pid, coord, t) => agentsApi.attach(pid, coord, t),
+                // A hosted guest's drop that would save says to sign in.
+                hostedGuest,
             })
                 .then(() => {
                     notifyAgentDockRefresh();
                     markDirty();
                     showToast(`Agent attached to ${where}.`, "success");
                 })
-                .catch((e: any) => showToast(e?.message || "Attach failed.", "error"));
+                // A refusal says how to show itself (the sign-in note is a warning).
+                .catch((e: any) => showToast(e?.message || "Attach failed.", e?.toastVariant ?? "error"));
             return;
         }
         event.preventDefault();
@@ -581,7 +576,7 @@ export function MainCanvas() {
         const position = dropPosition(event);
         revealCreated(createCodeNode(type, { position }));
         markDirty();
-    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, requestProjectSave, reactFlow]);
+    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleModelCanvasDrop, handlePackageCardCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, requestProjectSave, reactFlow, hostedGuest]);
 
     // The Delete key reaches these through React Flow, which sends the
     // selected edges plus every edge attached to a deleted node first, then
