@@ -12,6 +12,7 @@ from .steps import (
     load_example_spec,
     open_provenance,
     open_version,
+    park_pointer_off_drawer,
     put_version_on_canvas,
     version_graph,
 )
@@ -145,6 +146,7 @@ def provenance_graph_navigation(ctx: Ctx) -> None:
     assert newest.locator("button").first.get_attribute("aria-expanded") == "true", (
         "scrolling away closed the version opened at the bottom"
     )
+    park_pointer_off_drawer(page)
     ctx.beat(600)
 
 
