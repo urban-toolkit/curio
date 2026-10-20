@@ -174,15 +174,22 @@ export function useDatasetCatalogDrawer(presented: boolean) {
   const tabComputedCount =
     catalogItems.length > 0 ? computedCount : (catalog.facets.origin.computed ?? 0);
 
+  // The dataflow an action writes to, saved first if it never was. A hosted
+  // guest gets no id for a dataflow it never saved, since it cannot save one,
+  // so it is told to sign in rather than the action doing nothing.
+  const dataflowIdFor = useCallback(
+    async (action: string): Promise<string | null> => {
+      const id = await ensureProjectId();
+      if (!id && hostedGuest) showToast(hostedGuestSignInNote(action), "warning");
+      return id;
+    },
+    [ensureProjectId, hostedGuest, showToast],
+  );
+
   const performInstall = useCallback(
     async (dataset: DatasetCatalogItem) => {
-      const id = await ensureProjectId();
-      if (!id) {
-        // A hosted guest gets no id for a dataflow it never saved, since it
-        // cannot save one: tell it to sign in rather than adding nothing.
-        if (hostedGuest) showToast(hostedGuestSignInNote("add datasets"), "warning");
-        return;
-      }
+      const id = await dataflowIdFor("add datasets");
+      if (!id) return;
       setBusyId(dataset.id);
       beginPendingInstall({
         key: dataset.id,
@@ -233,7 +240,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         setBusyId(null);
       }
     },
-    [ensureProjectId, hostedGuest, setDataflowDatasets, showToast, beginPendingInstall, endPendingInstall, openDetails],
+    [dataflowIdFor, setDataflowDatasets, showToast, beginPendingInstall, endPendingInstall, openDetails],
   );
 
   // #196: the Data catalog confirms an add too, so all three catalogs agree.
@@ -259,7 +266,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
 
   const performUninstall = useCallback(
     async (dataset: DatasetCatalogItem) => {
-      const id = await ensureProjectId();
+      const id = await dataflowIdFor("remove datasets");
       if (!id) return;
       setBusyId(dataset.id);
       try {
@@ -293,7 +300,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         setBusyId(null);
       }
     },
-    [ensureProjectId, setDataflowDatasets, showToast, openDetails],
+    [dataflowIdFor, setDataflowDatasets, showToast, openDetails],
   );
 
   /** Would removing this from the dataflow also delete it from the account?
@@ -387,7 +394,7 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`) +
 
   const onPublish = useCallback(
     async (datasetId: string) => {
-      const id = await ensureProjectId();
+      const id = await dataflowIdFor("publish datasets");
       if (!id) return;
       setPublishingId(datasetId);
       try {
@@ -424,7 +431,7 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`) +
         setPublishingId(null);
       }
     },
-    [ensureProjectId, liveOutputs, setDataflowDatasets, showToast, openDetails],
+    [dataflowIdFor, liveOutputs, setDataflowDatasets, showToast, openDetails],
   );
 
   const performUnpublish = useCallback(

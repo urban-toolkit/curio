@@ -34,9 +34,10 @@ export async function attachAgentOnDrop(deps: AgentDropAttachDeps): Promise<{ ta
   // freshly drawn edge needs the same flush first.
   const savesFirst = deps.target.kind === "node" || deps.target.kind === "connection";
   // A hosted guest cannot make that save, nor attach to a dataflow it never
-  // saved: it is told to sign in, before anything is saved or sent.
+  // saved: it is told to sign in, before anything is saved or sent. A note,
+  // shown as a warning like the other sign-in notes, not as a failure.
   if (deps.hostedGuest && (savesFirst || !projectId)) {
-    throw new Error(hostedGuestSignInNote("attach agents"));
+    throw Object.assign(new Error(hostedGuestSignInNote("attach agents")), { toastVariant: "warning" as const });
   }
   if (savesFirst) {
     // Flush the graph so the just-dropped-on element exists in the saved spec

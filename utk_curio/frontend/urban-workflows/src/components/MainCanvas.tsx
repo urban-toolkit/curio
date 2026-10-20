@@ -574,7 +574,8 @@ export function MainCanvas() {
                     markDirty();
                     showToast(`Agent attached to ${where}.`, "success");
                 })
-                .catch((e: any) => showToast(e?.message || "Attach failed.", "error"));
+                // A refusal says how to show itself (the sign-in note is a warning).
+                .catch((e: any) => showToast(e?.message || "Attach failed.", e?.toastVariant ?? "error"));
             return;
         }
         event.preventDefault();
