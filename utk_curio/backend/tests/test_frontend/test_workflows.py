@@ -187,68 +187,16 @@ EXAMPLE_08_MAP = "niteroi-map"
 EXAMPLE_11_HISTOGRAM = "pbf-plot"
 EXAMPLE_11_MAP = "pbf-map"
 
-#: Compare Scenarios (#662) runs its inputs through Python behind its own play
-#: button, but it has no legacy category, so ``NodeSpec.has_play_button`` is
-#: False for it. The canvas tests play it and check it by its type.
-COMPARE_SCENARIOS = "curio.builtin/compare-scenarios"
-
 #: Edit Features (#662) runs the code its edit list writes behind its own play
-#: button too: example 06's is played and must end Done like any other.
+#: button, but ``NodeSpec.has_play_button`` is False for it, so the canvas
+#: tests play it by its type: example 06's is played and must end Done like
+#: any other.
 EDIT_FEATURES = "curio.builtin/edit-features"
 
 
 def _plays(node: NodeSpec) -> bool:
     """Whether the canvas gives *node* a play button that the run clicks."""
-    return node.has_play_button or node.type == COMPARE_SCENARIOS or node.type == EDIT_FEATURES
-
-
-#: What a Compare Scenarios node shows (components/compare/): its view, the
-#: kind of difference it holds in Difference, where its chart or its table
-#: stands and why it could not draw, whether it says an Autark node after it
-#: draws the difference's map, and how many maps it holds itself.
-_COMPARE_VIEW_JS = """(id) => {
-    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
-    const body = node && node.querySelector("[data-compare-mode]");
-    if (!body) return null;
-    const difference = node.querySelector("[data-compare-difference]");
-    const chart = node.querySelector("[data-compare-chart-state]");
-    const problem = node.querySelector("[data-compare-chart-problem]");
-    return {
-        mode: body.getAttribute("data-compare-mode"),
-        kind: difference ? difference.getAttribute("data-compare-difference") : null,
-        chart: chart ? chart.getAttribute("data-compare-chart-state") : null,
-        problem: problem ? problem.textContent : "",
-        note: !!node.querySelector('[data-compare-difference-map="autark"]'),
-        maps: node.querySelectorAll('canvas[id^="autk-grammar-map-"], [data-compare-map-state]').length,
-    };
-}"""
-
-
-def _assert_compare_view_drew(page, node_id: str) -> None:
-    """A Compare Scenarios node that ran shows its view: its chart, or a
-    table's difference, compiled with no problem and painted; a raster's or a
-    layer's difference is left to an Autark node after it, which the node
-    says, and the node holds no map."""
-    try:
-        page.wait_for_function(
-            "(id) => { const view = (" + _COMPARE_VIEW_JS + ")(id);"
-            " if (!view) return false;"
-            " if (view.mode === 'difference' && (view.kind === 'raster' || view.kind === 'layer')) return view.note;"
-            " return !!view.chart && view.chart !== 'drawing'; }",
-            arg=node_id,
-            timeout=90000,
-        )
-    except PlaywrightTimeoutError:
-        pass
-    view = page.evaluate(_COMPARE_VIEW_JS, node_id)
-    assert view, f"Compare Scenarios node {node_id} shows no view"
-    if view["mode"] == "difference" and view["kind"] in ("raster", "layer"):
-        assert view["note"], f"Compare Scenarios node {node_id}: its difference ended {view!r}"
-        assert view["maps"] == 0, f"Compare Scenarios node {node_id} draws a map of its own: {view!r}"
-        return
-    assert view["chart"] == "drawn", f"Compare Scenarios node {node_id}: its view ended {view!r}"
-    assert view["maps"] == 0, f"Compare Scenarios node {node_id} draws a map of its own: {view!r}"
-    assert_vega_canvas_rendered(page, node_id)
+    return node.has_play_button or node.type == EDIT_FEATURES
 
 
 #: Where an Edit Features node's map stands: "drawing", "drawn" or "problem".
@@ -1289,10 +1237,6 @@ class TestWorkflowCanvas:
                 )
             # text mode: no output tab → nothing further to assert.
 
-        # A Compare Scenarios node shows the view it drew from its inputs.
-        for node in self.spec.nodes:
-            if node.type == COMPARE_SCENARIOS:
-                _assert_compare_view_drew(self.page, node.id)
         # An Edit Features node shows its input drawn on its own map.
         for node in self.spec.nodes:
             if node.type == EDIT_FEATURES:
