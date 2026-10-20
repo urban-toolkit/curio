@@ -43,6 +43,7 @@
  */
 import { detectCrs } from "./geoCrs";
 import { isGeoJsonGeometry, resolveGeometryField } from "./geometryField";
+import { vegaFieldColumn } from "./vegaFieldNames";
 
 /** Why a grammar node has nothing to draw. Mirrors `NodeEmptyReason`. */
 export type GeoEmptyReason = "geometry-unresolved" | "geometry-ambiguous";
@@ -295,11 +296,13 @@ export function normalizeGeoSpec(
   }
 
   // --- Pass 3: coerce the values the geojson fields will read -----------
+  // A field names its column as it is written, or escaped for Vega-Lite
+  // (`the\.geom` for the column `the.geom`, issue 1042).
   const geoFields = new Set<string>();
   for (const { unit } of units) {
     const shape = unit?.encoding?.shape;
     if (isObject(shape) && shape.type === "geojson" && typeof shape.field === "string") {
-      geoFields.add(shape.field);
+      geoFields.add(Array.isArray(values) ? vegaFieldColumn(values, shape.field) ?? shape.field : shape.field);
     }
   }
 
