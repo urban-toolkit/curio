@@ -321,3 +321,17 @@
     border: 1px solid var(--curio-border);
     border-radius: var(--curio-radius-sm);
 }
+
+/* A run's code, as it ran: lines scroll sideways, never wrap. */
+.code {
+    composes: thinScrollbar from "../../styles/scrollbars.module.css";
+    max-height: 220px;
+    margin: 0;
+    padding: 8px 10px;
+    overflow: auto;
+    border-radius: var(--curio-radius-sm);
+    background: var(--curio-surface-muted);
+    color: var(--curio-text-primary);
+    font: 11.5px/1.45 var(--curio-font-mono);
+    white-space: pre;
+}
