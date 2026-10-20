@@ -1118,6 +1118,11 @@ edges (see [Linking charts](#linking-charts)).
   of one name, the name means the first input's layer. The second input's layer
   is still its `input_<k>` when it is the only layer that input brings, and is
   left out otherwise; the node's message says which.
+- Of its input, the node loads only the tables its document names: its map's
+  layers, its plot's table and the map the plot links to, and the tables its
+  compute blocks read. Autark clips every table after the first to the box
+  around the first, and to the first's outline when it holds polygons, so the
+  tables one document draws lie in one area. Draw another area in its own node.
 - A map draws only tables with geometry. A `DataFrame` is read through the one
   column that holds geometries; with none, or with several, the node draws
   nothing and says which. Return a `GeoDataFrame` with its active geometry set.

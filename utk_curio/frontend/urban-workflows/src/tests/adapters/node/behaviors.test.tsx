@@ -1302,6 +1302,35 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
           );
           expect(handed()).toEqual(['b']);
         });
+
+        test('a layer that names no table of the input blames the document, listing every table it brings', async () => {
+          const setOutput = jest.fn();
+          const result = await callBehavior(
+            useAutkGrammarBehavior,
+            { outputCallback: jest.fn(), input: { dataType: 'dict', data: { a: cells(0, 0), b: cells(1, 1) } } as any },
+            { setOutput },
+          );
+          await act(async () => {
+            await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'c' }] } }));
+          });
+          const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+          expect(errCall![0].kind).toBe('empty-render:no-layers');
+          expect(errCall![0].content).toContain('(asked for: c; available: a, b)');
+        });
+
+        test('a compute step hands on every layer it gets, named or not', async () => {
+          const outputCallback = jest.fn();
+          const result = await callBehavior(useAutkGrammarBehavior, {
+            outputCallback,
+            input: { dataType: 'dict', data: { a: cells(0, 0), b: cells(1, 1) } } as any,
+          });
+          await act(async () => {
+            await result.current.applyGrammar!(JSON.stringify({ compute: [] }));
+          });
+          const passedOn = outputCallback.mock.calls[0]?.[1];
+          expect(passedOn?.dataType).toBe('outputs');
+          expect(passedOn.data.map((layer: any) => layer.layerName)).toEqual(['a', 'b']);
+        });
       });
 
       test('a compute step reads its input once', async () => {

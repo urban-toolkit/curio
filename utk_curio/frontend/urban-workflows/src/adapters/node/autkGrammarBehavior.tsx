@@ -601,9 +601,22 @@ export const useAutkGrammarBehavior = (
                         (s: any) => !emptySources.includes(s),
                     );
                 }
+                // autk-db makes the first table it loads the workspace's
+                // extent, and the first polygon table its crop layer, and
+                // clips every later table to both. So of the input's tables
+                // the grammar gets those the document names (its map's layers,
+                // its plot's table and the map that plot links to, its compute
+                // blocks' tables), in the order they arrived, and every table
+                // its own data section loaded (#886). The counts above cover
+                // every table at hand, so the verdict below tells a misnamed
+                // table apart from data the input does not bring.
+                const named = new Set(documentTableRefs(spec));
+                const handed = dataSectionSources.filter(
+                    (s: any) => ownSources.includes(s) || named.has(s?.outputTableName),
+                );
                 // On a 1 cm grid, so autk-db's second clip of these already
                 // clipped layers holds (see utils/geoPrecision).
-                spec = { ...spec, data: dataSectionSources.map(snapSourceToGrid) };
+                spec = { ...spec, data: handed.map(snapSourceToGrid) };
                 if (dataSectionSources.length === 0 && (hasMaps || hasPlot)) {
                     console.warn(
                         '[autk-grammar] render node has no data sources left — the '

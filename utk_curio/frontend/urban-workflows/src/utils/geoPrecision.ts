@@ -1,10 +1,12 @@
 /**
  * Snap a grammar source's coordinates to a 1 cm grid before autk-db loads it.
  *
- * autk-db clips every layer it loads after the first to that first polygon
- * layer, the workspace's crop layer. The layers a grammar node is handed were
- * already clipped once, where they were made (autk-db's `loadOsm` clips its
- * layers to the surface), so a park's edge lies on the surface's boundary to
+ * autk-db clips every layer it loads after the first to that first layer's
+ * extent and, when the first holds polygons (the workspace's crop layer), to
+ * its outline. A grammar node hands it only the tables its document names
+ * (adapters/node/autkGrammarBehavior). Those layers were often already clipped
+ * once, where they were made (autk-db's `loadOsm` clips its layers to the
+ * surface), so a park's edge lies on the surface's boundary to
  * within floating-point noise, and GEOS refuses the second intersection with
  * "TopologyException: found non-noded intersection". The node then fails.
  * Rounding to a 1 cm grid, in the layer's own units, takes that noise out:
