@@ -419,28 +419,45 @@ def _python_output(target: str):
 
 
 @pytest.mark.parametrize("dataset_id", DATASETS)
-def test_each_scenarios_rows_reach_its_chart_and_the_chart_reads_columns_they_have(dataset_id):
-    """Each scenario's node keeps its case's rows, without the case column;
-    the chart reads them all as ``inputs``, each row named by its box, and its
-    spec, its chips given its widgets' values, reads only columns they have."""
+def test_the_rows_stack_under_their_boxes_and_the_chart_reads_columns_they_have(dataset_id):
+    """Each scenario's node keeps its case's rows, without the case column.
+    The chart reads them all as ``inputs``, stacked as ``stack_inputs`` stacks a
+    chart's inputs, each under the box of the node it came from: the boxes' ids
+    and names in the order of the circles, each scenario with its case's rows,
+    and the stack's columns. Its spec, its chips given its widgets' values,
+    reads only columns of that stack."""
     from utk_curio.backend.app.agents.domain.document_validation import STATUS_VALID, validate_vega_lite
     from utk_curio.backend.app.execution.code_references import resolve_references
+    from utk_curio.sandbox.util.scenario_stack import stack_inputs
 
-    row = _row(_flow(), dataset_id)
+    flow = _flow()
+    row = _row(flow, dataset_id)
     names, _template_id = CHARTS[dataset_id]
-    table = _table(dataset_id)
-    counts = Counter(r["case"] for r in table)
-    for name, keep in zip(names, row["keeps"]):
+    box_of = {node_id: box for box in flow["scenarios"] for node_id in box["nodes"]}
+    boxes = [box_of[keep["id"]] for keep in row["keeps"]]
+    assert [box["name"] for box in boxes] == names
+    counts = Counter(r["case"] for r in _table(dataset_id))
+    entries = []
+    for box, keep in zip(boxes, row["keeps"]):
         kept = _python_output(keep["id"])
         assert list(kept.columns) == _table_columns(dataset_id), keep["title"]
-        assert len(kept) == counts[name], keep["title"]
+        assert len(kept) == counts[box["name"]], keep["title"]
+        entries.append((box["id"], box["name"], kept))
+    stacked = stack_inputs(entries)
+    assert list(dict.fromkeys((r["__input__"], r["scenario"], r["scenario_name"]) for r in stacked)) == [
+        (circle, box["id"], box["name"]) for circle, box in enumerate(boxes)
+    ]
+    assert Counter(r["scenario_name"] for r in stacked) == counts
+    columns = list(stacked[0])
+    assert columns == [*INPUT_COLUMNS, *_table_columns(dataset_id)]
+    assert all(list(r) == columns for r in stacked)
     spec, problems = resolve_references(
         row["chart"]["content"], widgets=row["chart"]["metadata"]["widgets"], language="json",
         inputs=[{"slot": circle} for circle in range(len(names))],
     )
     assert not problems and not CHIP.search(spec), problems
     assert json.loads(spec)["data"] == {"name": "inputs"}
-    result = validate_vega_lite(spec, columns=INPUT_COLUMNS + _table_columns(dataset_id))
+    result = validate_vega_lite(spec, columns=columns)
     assert result.get("status") == STATUS_VALID, result
 
 
