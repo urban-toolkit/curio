@@ -1666,12 +1666,18 @@ def test_the_median_chart_reads_each_scenarios_statistics_as_compare_stacked_the
     from utk_curio.sandbox.util.parsers import load_from_duckdb
     from utk_curio.sandbox.util.scenario_stack import stack_inputs
 
+    spec = _dataflow()
+    chart = _comparisons(spec)[("statistics", "chart")]
+    parts_of = _scenario_parts(spec)
+    assert chart["type"] == BARS, chart["type"]
+    assert _feeds(spec, chart["id"]) == {"in": parts_of["no-nbs"]["statistics"]["id"],
+                                         "in_1": parts_of["nbs"]["statistics"]["id"]}
     monkeypatch.chdir(workspace)
     run = _runner(workspace, _shared())
     loaded, error = _run_loaders(run)
     assert error is None, error
     statistics = {}
-    for scenario, parts in _scenario_parts(_dataflow()).items():
+    for scenario, parts in parts_of.items():
         _depth, table, error = _run_scenario(run, loaded, parts["choose"], parts["statistics"])
         assert error is None, error
         statistics[scenario] = table["path"]

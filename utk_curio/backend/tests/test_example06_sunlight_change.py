@@ -165,11 +165,14 @@ def _the_nodes_change(workspace, baseline: dict, twice: dict):
     """The shipped Sunlight change node's output on what Baseline's map and
     Twice as tall's hand on, the node run as the sandbox runs one with two
     circles, its code resolved as a run resolves it, the output as the store
-    gives it back."""
+    gives it back. The node is a Python node: Compare Scenarios is gone from
+    the example."""
     from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
     from utk_curio.sandbox.app.worker import _worker_init, execute_code
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
+    (shipped,) = [n for n in _dataflow()["nodes"] if n["id"] == CHANGE]
+    assert shipped["type"] == PYTHON_TYPE, f"the Sunlight change is a {shipped['type']} node, not a Python node"
     spec = parse_workflow_dict({"dataflow": _dataflow()})
     (node,) = [n for n in spec.nodes if n.id == CHANGE]
     code = spec.node_code(node, "python")

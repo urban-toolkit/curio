@@ -777,6 +777,7 @@ def test_the_chart_stacks_the_three_scenarios_parks(ran):
     from utk_curio.sandbox.util.scenario_stack import stack_inputs
 
     spec = _dataflow()
+    assert _nodes(spec)[CHART]["type"] == DOTS, _nodes(spec)[CHART]["type"]
     into = _into(spec)
     box = {node_id: (s["id"], s["name"]) for s in spec["scenarios"] for node_id in s["nodes"]}
     entries = [(*box[into[(CHART, circle)]], _value(ran, into[(CHART, circle)])) for circle in ("in", "in_1", "in_2")]
@@ -816,6 +817,7 @@ def test_each_parks_change_is_what_compares_difference_wrote(ran, tmp_path):
     nodes = _nodes(_dataflow())
     existing = _value(ran, _node_id("existing", "shade"))
     for scenario, name, _color, key in SCENARIOS[1:]:
+        assert nodes[f"park-shade-{key}-park-change"]["type"] == PYTHON, scenario
         ours = _value(ran, f"park-shade-{key}-park-change")
         compares = _value(ran, f"compare-{key}-park-change")
         assert list(ours.columns)[:2] == ["park", "change"], list(ours.columns)
@@ -856,6 +858,7 @@ def test_a_park_one_side_lacks_is_removed_or_added_as_compare_wrote_it(ran, tmp_
                "share_sun", "share_partial", "share_deep"]
     for scenario, name, _color, key in SCENARIOS[1:]:
         node = nodes[f"park-shade-{key}-park-change"]
+        assert node["type"] == PYTHON, scenario
         reference = {"id": f"compare-{key}-one-side", "type": COMPARE,
                      "content": _difference_code(scenario, name, key="park")}
         what_if = _value(ran, _node_id(key, "shade"))
@@ -898,9 +901,11 @@ def test_each_what_ifs_change_in_shadow_is_a_raster_on_the_shadows_grid(ran):
 
     import numpy as np
 
+    nodes = _nodes(_dataflow())
     shadow = _value(ran, _node_id("existing", "shadow"))
     a, _b, c, _d, e, f = tuple(shadow.transform)[:6]
     for scenario, _name, _color, key in SCENARIOS[1:]:
+        assert nodes[f"park-shade-{key}-change"]["type"] == CALCULATOR, scenario
         change = _value(ran, f"park-shade-{key}-change")
         assert (change.crs.to_epsg(), change.width, change.height) == (3395, *GRID), scenario
         assert tuple(change.transform)[:6] == tuple(shadow.transform)[:6], scenario
