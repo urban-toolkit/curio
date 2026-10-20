@@ -30,8 +30,9 @@ export function shippedManifests(): Record<string, ReturnType<typeof shippedMani
   return out;
 }
 
-/** Registers a descriptor of *id* (`<packageId>/<templateId>@<major>`) in *category*. */
-export function registerCategoryDescriptor(id: string, category: NodeCategory): void {
+/** Registers a descriptor of *id* (`<packageId>/<templateId>@<major>`) in
+ *  *category*, named *label* (its id unless given). */
+export function registerCategoryDescriptor(id: string, category: NodeCategory, label: string = id): void {
   const [unversioned, major] = id.split("@");
   const packageId = unversioned.split("/")[0];
   registerNode({
@@ -39,7 +40,7 @@ export function registerCategoryDescriptor(id: string, category: NodeCategory): 
     source: "package",
     package: { packageId, major: Number(major), version: "1.0.0", name: packageId, publisher: "Test" },
     category,
-    label: id,
+    label,
     icon: {},
     inputPorts: [],
     outputPorts: [],
