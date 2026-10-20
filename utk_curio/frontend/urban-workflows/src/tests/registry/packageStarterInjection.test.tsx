@@ -262,8 +262,8 @@ describe('Scout\'s Raster Calculator, as the repository ships it', () => {
 
   test('the starter returns a subtraction and lists the other operations, statistics among them', () => {
     const starter = readCalculatorStarter();
-    expect(starter.endsWith('\nreturn curio_raster_calculate("subtract", [input_0, input_1])\n')).toBe(true);
-    expect(starter).toContain('\n#   return curio_raster_statistics(input_0, mask=input_1)\n');
+    expect(starter.endsWith('\nreturn raster_calculate("subtract", [input_0, input_1], output_file=curio_output_file)\n')).toBe(true);
+    expect(starter).toContain('\n#   return raster_statistics(input_0, mask=input_1)\n');
     expect(starter).toContain('as a table of one row');
     expect(starter).toContain('where=lambda value: value < 1.08');
     expect(starter).toContain('mask_values=[0]');
@@ -271,7 +271,7 @@ describe('Scout\'s Raster Calculator, as the repository ships it', () => {
 
   test('a restored node keeps the code a dataflow carries, and one saved with no code opens empty', () => {
     const starter = readCalculatorStarter();
-    expect(runBehavior(calculatorPack(), 'return curio_raster_calculate("add", [input_0, input_1])')).not.toContain(starter);
+    expect(runBehavior(calculatorPack(), 'return raster_calculate("add", [input_0, input_1], output_file=curio_output_file)')).not.toContain(starter);
     expect(runBehavior(calculatorPack(), '').filter((code) => code !== undefined)).toEqual([]);
   });
 

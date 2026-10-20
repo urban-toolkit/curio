@@ -79,7 +79,7 @@ NODE_TYPE = "model.scout.deep-umbra/accumulated-shadow"
 CALCULATOR_TYPE = "curio.scout/raster-calculator"
 RASTERIZE_TYPE = "curio.scout/rasterize-buildings"
 #: The line a Raster Calculator's code takes statistics with.
-STATISTICS_CALL = re.compile(r"^return curio_raster_statistics\(", re.M)
+STATISTICS_CALL = re.compile(r"^return raster_statistics\(", re.M)
 MODEL = PACKAGE / "models" / "deep_umbra.onnx"
 #: The node's cell, as a drop writes it: the module's call, the model by its id,
 #: and the call on the input with the Season widget.
@@ -113,6 +113,11 @@ SHADOW_RANGE = [0, 720]
 EXAMPLE = REPO / "docs" / "examples" / "24-scout-shadow-model-chicago-loop.json"
 RASTER_PACKAGE = REPO / "packages" / "curio.scout@1"
 RASTER_MODULE = "scout_rasters"
+#: The modules a run of Scout's Raster Calculator is handed, and those a run
+#: of Accumulated Shadow is: its own, then Scout's, which its package names in
+#: ``dependencies.packages`` (``python_modules.modules_for_node``).
+RASTER_MODULES = {"root": str(RASTER_PACKAGE / "sources"), "names": [RASTER_MODULE]}
+SHADOW_MODULES = [{"root": str(SOURCES), "names": [MODULE]}, RASTER_MODULES]
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scout"
 TILE_NAMES = [
@@ -234,23 +239,26 @@ def _resolved_models(code: str) -> dict:
 
 
 @contextlib.contextmanager
-def staged(tmp_path, sources: Path, module: str, *names: str):
+def staged(tmp_path, sources: Path, module: str, *names: str, also=()):
     """*module*'s submodules *names*, importable the way a run of the package's
-    node imports them: staged into a folder of the run's own."""
+    node imports them: staged into a folder of the run's own, with the modules
+    *also* names (``{"root", "names"}`` each) staged beside it."""
     from utk_curio.sandbox.util.package_modules import importable
     from utk_curio.sandbox.util.staging import stage_package_modules
 
     run = tmp_path / f"run-{module}"
     run.mkdir()
-    staged_modules = stage_package_modules({"root": str(sources), "names": [module]}, str(run))
-    assert staged_modules == {"root": "package_modules", "names": [module]}, staged_modules
+    staged_modules = stage_package_modules([{"root": str(sources), "names": [module]}, *also], str(run))
+    wanted = [module, *(name for source in also for name in source["names"])]
+    assert staged_modules == {"root": "package_modules", "names": wanted}, staged_modules
     with importable(str(run / staged_modules["root"]), staged_modules["names"]):
         yield tuple(importlib.import_module(f"{module}.{name}") for name in names)
 
 
 def shadow_modules(tmp_path):
-    """``(deep_umbra, node_outputs)``, as the node imports them."""
-    return staged(tmp_path, SOURCES, MODULE, "deep_umbra", "node_outputs")
+    """``(deep_umbra, node_outputs)``, as the node imports them, beside the
+    Scout modules its node is handed."""
+    return staged(tmp_path, SOURCES, MODULE, "deep_umbra", "node_outputs", also=[RASTER_MODULES])
 
 
 def _mosaic(tmp_path, scenario: str = "A", *, zoom: int = 16, max_height: float = 550) -> Path:
@@ -409,7 +417,7 @@ def run_node(value, workspace, *, data_type="raster", model=True, models=None, f
         models = _resolved_models(source) if model else {}
     result = _execute(
         code, value, NODE_TYPE, workspace, data_type=data_type,
-        package_modules={"root": str(SOURCES), "names": [MODULE]},
+        package_modules=SHADOW_MODULES,
         models=models,
     )
     if fails:
@@ -458,7 +466,8 @@ def statistics_table(shadow, heights, workspace):
     *shadow* (input_0) and *heights* (input_1, the mask): its one-row table."""
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
-    result = _execute(_statistics_code(), (shadow, heights), CALCULATOR_TYPE, workspace, data_type="outputs")
+    result = _execute(_statistics_code(), (shadow, heights), CALCULATOR_TYPE, workspace, data_type="outputs",
+                      package_modules=RASTER_MODULES)
     assert result["stderr"] == "", result["stderr"]
     assert result["output"]["dataType"] == "dataframe", result["output"]
     table = load_from_duckdb(result["output"]["path"])
@@ -484,7 +493,10 @@ def test_the_mosaic_gives_back_scouts_tiles_and_inputs(tmp_path, scenario):
     bit, in each season."""
     import numpy as np
 
-    with shadow_modules(tmp_path) as (deep_umbra, outputs), _open(_mosaic(tmp_path, scenario)) as mosaic:
+    # The mosaic first: its writer stages Scout's modules, which Deep Umbra's
+    # staged modules import too, and one name loads from one place at a time.
+    mosaic_path = _mosaic(tmp_path, scenario)
+    with shadow_modules(tmp_path) as (deep_umbra, outputs), _open(mosaic_path) as mosaic:
         grid = outputs.tile_grid(mosaic)
         assert grid == GRID, grid
         levels = outputs.gray_levels(mosaic)
@@ -766,18 +778,21 @@ def test_its_module_is_deep_umbra_and_exports_the_cells_call(tmp_path):
     assert sorted(path.name for path in (SOURCES / MODULE).glob("*.py")) == [
         "__init__.py", "deep_umbra.py", "node_outputs.py",
     ]
-    with staged(tmp_path, SOURCES, MODULE, "node_outputs") as (outputs,):
+    with staged(tmp_path, SOURCES, MODULE, "node_outputs", also=[RASTER_MODULES]) as (outputs,):
         package = importlib.import_module(MODULE)
         assert package.accumulated_shadow is outputs.accumulated_shadow
         assert not hasattr(outputs, "open_model") and not hasattr(outputs, "MISSING_MODEL")
 
 
 def test_the_package_writes_its_raster_with_curios_mosaic_helper():
-    """The shadow raster is written by Curio's raster helpers, not a copy of
-    them in the package."""
+    """The shadow raster is written by Curio's mosaic helper, and its tiles
+    placed by Scout's tile bounds, which the package names in
+    ``dependencies.packages``: not a copy of either in the package."""
     modules = (SOURCES / MODULE).glob("*.py")
     text = "\n".join(path.read_text(encoding="utf-8") for path in modules)
-    assert "from utk_curio.sandbox.util.rasters import mosaic_rasters, tile_bounds" in text
+    assert "from utk_curio.sandbox.util.rasters import mosaic_rasters\n" in text
+    assert "from scout_rasters.web_tiles import tile_bounds\n" in text
+    assert _manifest()["dependencies"]["packages"] == {RASTER_PACKAGE.name: "*"}
     assert "rasterio.open(path, \"w\"" not in text and "Window(" not in text
     assert "def write_mosaic" not in text and "def tile_bounds" not in text
 
@@ -842,14 +857,16 @@ def test_the_season_reaches_the_call(workspace, tmp_path):
     in shadow, spring 540, summer 720."""
     import numpy as np
 
-    from utk_curio.sandbox.util.raster_algebra import statistics
-
     path = _mosaic(tmp_path, "A")
     results = {}
     for season in ("winter", "spring", "summer"):
         _art_id, shadow = run_node(_open(path), workspace, season=season)
         try:
-            with _open(path) as heights:
+            # Scout's statistics, staged after the node's run, which stages its own.
+            (tmp_path / season).mkdir()
+            with staged(tmp_path / season, RASTER_PACKAGE / "sources", RASTER_MODULE, "raster_algebra") as (algebra,), \
+                    _open(path) as heights:
+                statistics = algebra.raster_statistics
                 mean = float(statistics((shadow, heights), where=lambda height: height < 1.08)["mean"].iloc[0])
             results[season] = (float(np.nanmax(shadow.read(1))), mean, shadow.tags()["season"], shadow.tags()["minutes"])
         finally:
@@ -869,15 +886,18 @@ def test_the_node_reads_the_rasterizers_one_raster_and_checks_its_height_scale(t
     the 550 m Deep Umbra needs is refused in a sentence."""
     import pandas as pd
 
+    # The mosaics first: their writer stages Scout's modules, which Deep
+    # Umbra's staged modules import too, and one name loads from one place at a time.
+    mosaic_path, too_low_path = _mosaic(tmp_path, "A"), _mosaic(tmp_path, "A", max_height=275)
     with shadow_modules(tmp_path) as (_deep_umbra, outputs):
-        with _open(_mosaic(tmp_path, "A")) as mosaic:
+        with _open(mosaic_path) as mosaic:
             assert outputs.height_raster(mosaic) is mosaic
             assert outputs.gray_levels(mosaic).max() > 0
             table = pd.DataFrame({"zoom": [16], "x": [16814], "y": [24355]})
             for value in ((mosaic, table), [mosaic, table], table):
                 with pytest.raises(ValueError, match="Accumulated Shadow reads a raster of building heights"):
                     outputs.height_raster(value)
-        with _open(_mosaic(tmp_path, "A", max_height=275)) as mosaic:
+        with _open(too_low_path) as mosaic:
             with pytest.raises(ValueError, match="Set Rasterize Buildings' Maximum height to 550"):
                 outputs.gray_levels(mosaic)
 

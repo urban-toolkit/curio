@@ -165,7 +165,7 @@ def test_the_season_and_an_added_widget_reach_deep_umbra_and_survive_a_reopen(
     assert shadow_node["metadata"]["widgets"] == template["widgets"]
     shadow = shadow_node["id"]
     (statistics_node,) = [node for node in nodes if node["type"] == STATISTICS_TYPE]
-    assert "\nreturn curio_raster_statistics(" in statistics_node["content"], statistics_node["content"]
+    assert "\nreturn raster_statistics(" in statistics_node["content"], statistics_node["content"]
     statistics = statistics_node["id"]
 
     require_project_page()

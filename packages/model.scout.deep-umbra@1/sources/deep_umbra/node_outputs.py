@@ -33,9 +33,10 @@ import numpy as np
 import rasterio
 from pyproj import Transformer
 
-# Curio's raster helpers: a web map tile's bounds, and tiles side by side in
-# one GeoTIFF.
-from utk_curio.sandbox.util.rasters import mosaic_rasters, tile_bounds
+# A web map tile's bounds, Scout's (curio.scout@1, which the package names in
+# dependencies.packages), and Curio's tiles side by side in one GeoTIFF.
+from scout_rasters.web_tiles import tile_bounds
+from utk_curio.sandbox.util.rasters import mosaic_rasters
 
 from .deep_umbra import TILE, predict_shadow, season_factor, shadow_fraction
 

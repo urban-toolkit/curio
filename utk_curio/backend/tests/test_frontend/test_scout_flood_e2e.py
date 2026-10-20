@@ -14,7 +14,7 @@ each scenario's median flood depth (#720). Run All drives the whole path:
 
 1. The loaders read SCOUT's rasters by id, for the region and the period
    (2020 - 2050, which SCOUT labels 2020 - 2040) the Parameter nodes hold,
-   and the four calculators and the three maps run.
+   and the six calculators and the three maps run.
 2. Each scenario's map draws its depth, its legend titled "Flood depth (m)"
    and labelled 0 to 11, the color range both maps share.
 3. The difference is a 2592 by 2064 cell raster in EPSG:4326 on SCOUT's grid,
@@ -132,12 +132,15 @@ def _nodes_of(spec: dict, node_type: str) -> list[str]:
 
 def _part(node: dict) -> str:
     """What a scenario's node is: the Raster Calculator that chooses the depth,
-    the one of statistics, Tract depth or Average depth by period (the Data
-    Transformation with the NbS widget)."""
+    the one of statistics, the one averaging the depth by period (its code
+    returns its own table), or Tract depth (the Data Transformation)."""
     if node["type"] == CALCULATOR_TYPE:
-        return "statistics" if "\nreturn curio_raster_statistics(" in node["content"] else "depth"
+        if "\nreturn raster_statistics(" in node["content"]:
+            return "statistics"
+        return "by period" if "\nreturn pd.DataFrame(" in node["content"] else "depth"
     assert node["type"] == TRANSFORMATION_TYPE, node["type"]
-    return "by period" if node["metadata"].get("widgets") else "tract depth"
+    assert not node["metadata"].get("widgets"), node["id"]
+    return "tract depth"
 
 
 def _scenario_parts(spec: dict) -> dict:
@@ -287,9 +290,9 @@ def test_two_flood_scenarios_are_mapped_and_charted(
     steps = [(node["id"], node["type"]) for node in spec["dataflow"]["nodes"]
              if node["type"] in (CALCULATOR_TYPE, MAP_TYPE, TRANSFORMATION_TYPE)]
     assert len(steps) == 14, steps
-    # Two of the four Raster Calculators take the depth's statistics.
+    # Two of the six Raster Calculators take the depth's statistics.
     statistics = [node["id"] for node in spec["dataflow"]["nodes"] if node["type"] == CALCULATOR_TYPE
-                  and "\nreturn curio_raster_statistics(" in node["content"]]
+                  and "\nreturn raster_statistics(" in node["content"]]
     assert len(statistics) == 2, statistics
 
     # 1. Run All: both scenarios read SCOUT's rasters for the shared region and period.
