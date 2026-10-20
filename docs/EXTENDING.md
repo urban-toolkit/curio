@@ -244,6 +244,25 @@ A model in the Model Catalog is a model package, so it declares its runtime's li
 - **Removing a package** (when its user-store copy is being pruned) walks every other still-installed package's manifest, finds the python deps the pruned package declared that **no other package needs**, and pip-uninstalls those. Shared deps stay.
 - A failed pip install rolls back the package's user-store copy so the user can retry cleanly. The Flask response carries the tail of pip's stderr so the user knows what failed (network error, version conflict, missing wheel, etc.).
 
+#### Packages a package needs
+
+A package whose code imports another package's modules names that package in `dependencies.packages`, as `"<packageId>@<major>": "<version range>"`, or a bare `"<packageId>"` for any major:
+
+```json
+"dependencies": {
+  "js": {},
+  "packages": { "ai.example.shared@1": "*" },
+  "python": {}
+}
+```
+
+Its nodes can import the modules the named package ships in `sources/`, and those of the packages that one names in turn ([`packages/application/python_modules.py`](../utk_curio/backend/app/packages/application/python_modules.py)). Adding the package adds them all, the same way on every path: **Add to project** and a card dropped on the canvas, **Add to all projects**, opening a dataflow whose lockfile names the package, and the examples' seeding at launch (`--with-examples`).
+
+- One function resolves what an add brings: `required_packages` in [`packages/domain/package_closure.py`](../utk_curio/backend/app/packages/domain/package_closure.py), the package and every package it needs, transitively, each once, a cycle included. An entry takes the account's copy when its range allows that copy's version, and an add never replaces a copy in the account. Otherwise it takes the shared catalog's copy at the highest major the range allows.
+- Everything is resolved before anything is copied. A package that neither the account nor the catalog holds at an allowed version refuses the add and names that package and the one that needs it. The packages it needs are copied first, each with its Python libraries, and a failure part way takes back every copy the add made.
+- The dataflow's lockfile records each package. A bare `<packageId>` entry with several majors in the account takes the major the lockfile names, as a node's own package does.
+- The review before an add lists them under **Dependencies**, and its conflict probe (`POST /api/packages/resolve`) resolves them from the catalog with the package, their libraries included.
+
 #### When to still lazy-import
 
 Even though deps are installed up front, lazy-import expensive libraries inside the code that needs them so a broken install fails per-request with a clean 503 instead of crashing the backend on startup. The Spatial Join's helper in [`common/spatial.py`](../utk_curio/backend/app/common/spatial.py) imports geopandas inside its functions, and the route turns the `ImportError` into a 503:

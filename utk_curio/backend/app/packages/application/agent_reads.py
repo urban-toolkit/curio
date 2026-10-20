@@ -8,13 +8,12 @@ every caller, and import order between siblings cannot matter.
 
 from __future__ import annotations
 
-from utk_curio.backend.app.packages.domain.manifest import ManifestError
-from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
+from utk_curio.backend.app.packages.domain.package_closure import required_packages
 from utk_curio.backend.app.packages.domain.versions import ResolverError
 from utk_curio.backend.app.packages.repositories import catalog_dir as packages_catalog_dir
-from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
 from utk_curio.backend.app.packages.application import (
+    package_dependencies as packages_dependencies,
     project_packages as packages_project_packages,
     store_reads as packages_store_reads,
     templates as packages_templates,
@@ -25,20 +24,9 @@ from utk_curio.backend.app.packages.application.seeding import BUILTIN_PACKAGE_I
 
 
 def _catalog_manifests() -> dict[str, "PackageManifest"]:
-    """``dirName -> manifest`` for every well-formed committed catalog package."""
-
-    root = packages_catalog_dir.catalog_root()
-    out: dict[str, PackageManifest] = {}
-    if not root.is_dir():
-        return out
-    for entry in sorted(root.iterdir()):
-        if not entry.is_dir() or not PACKAGE_DIR_RE.match(entry.name):
-            continue
-        try:
-            out[entry.name] = load_package_manifest(entry)
-        except ManifestError:
-            continue  # malformed fixtures are skipped, matching the catalog route
-    return out
+    """``dirName -> manifest`` for every well-formed committed catalog package;
+    a malformed one is skipped, matching the catalog route."""
+    return packages_dependencies.catalog().snapshot()
 
 
 def agent_catalog_overview(user_key: str, project_id: str | None) -> list[dict]:
@@ -140,9 +128,11 @@ def agent_resolve_report(user_key: str, dir_names: list[str]) -> dict:
     """Deps/permissions per requested package + a conflict probe (dev/84).
 
     Mirrors the catalog UI's pre-install probe: the requested packages resolve
-    together with everything already in the user's store, with not-yet-installed
-    catalog packages overridden to their committed manifests. Raises
-    :class:`PackageServiceError` for an unknown/unresolvable package.
+    together with every package they need (``dependencies.packages``, the
+    closure an add installs) and everything already in the user's store, with
+    not-yet-installed catalog packages overridden to their committed manifests.
+    Raises :class:`PackageServiceError` for an unknown/unresolvable package, a
+    needed one that cannot be had included.
     """
     # The committed catalog is not package-store data: read it before the
     # lock (memo dev/99 §3.3). Then ONE acquisition covers the installed set,
@@ -157,11 +147,12 @@ def agent_resolve_report(user_key: str, dir_names: list[str]) -> dict:
             raise PackageServiceError(
                 f"unknown package(s): {', '.join(sorted(unknown))}", 404,
             )
-        probe = sorted(set(dir_names) | installed)
-        overrides = {
-            dn: packages_catalog_dir.catalog_root() / dn for dn in probe if dn not in installed and dn in catalog
-        }
         try:
+            needed = required_packages(dir_names, packages_dependencies.readable(store), catalog)
+            probe = sorted(set(needed) | installed)
+            overrides = {
+                dn: packages_catalog_dir.catalog_root() / dn for dn in probe if dn not in installed and dn in catalog
+            }
             result = resolve_for_project_unlocked(user_key, probe, overrides=overrides)
         except ResolverError as exc:
             raise PackageServiceError(str(exc), 400) from exc

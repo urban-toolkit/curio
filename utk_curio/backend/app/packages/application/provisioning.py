@@ -44,7 +44,12 @@ class InstallOutcome:
                         pip counts as satisfied and that cannot in fact be
                         imported.
 
-    The last one exists because pip exiting 0 is not the library working. A
+    ``packages`` is the package and every package it needs
+    (``dependencies.packages``), those it needs first: what a dataflow that
+    adds it records in its lockfile. It is empty when the step did not resolve
+    them.
+
+    ``import_errors`` exists because pip exiting 0 is not the library working. A
     wheel whose native extension cannot load records a perfectly good version,
     so ``_is_satisfied`` says yes, pip reports "already satisfied" and changes
     nothing, and every layer above reads that as success — until a node runs
@@ -55,6 +60,7 @@ class InstallOutcome:
     copied: bool = False
     installed: list[str] = field(default_factory=list)
     import_errors: dict[str, str] = field(default_factory=dict)
+    packages: tuple[str, ...] = ()
 
 
 def _import_failures_or_silence(deps, overlay_dir=None) -> dict[str, str]:
