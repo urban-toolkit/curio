@@ -24,8 +24,6 @@ import { featureRows } from "../selectionMatch";
 import { idColumns, selectedIds, STABLE_ID_COLUMNS, type SelectionId } from "../references/selectionTags";
 import { widgetLiteral } from "../references/codeReferences";
 
-export const EDIT_FEATURES_NODE_TYPE = "curio.builtin/edit-features";
-
 /** What the node's code calls (`utk_curio/sandbox/util/feature_edits.py`). */
 export const EDIT_HELPER = "curio_edit_features";
 
