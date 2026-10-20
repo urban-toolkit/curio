@@ -179,7 +179,9 @@ def _field_refs(spec: dict, path: str = "") -> list[tuple[str, str, bool]]:
     in.
 
     Only string fields: ``{"repeat": "column"}`` and a bare ``count`` aggregate
-    name no column, and inventing one would produce a false refusal.
+    name no column, and inventing one would produce a false refusal. Nor does
+    an encoding whose aggregate is ``count`` read its field: Vega-Lite's count
+    draws ``__count`` whatever the field names.
     """
     refs: list[tuple[str, str, bool]] = []
 
@@ -189,7 +191,8 @@ def _field_refs(spec: dict, path: str = "") -> list[tuple[str, str, bool]]:
                 on_inputs = _names_inputs(node["data"])
             for key, value in node.items():
                 if key == "field" and isinstance(value, str):
-                    refs.append((f"{where}.field", value, on_inputs))
+                    if node.get("aggregate") != "count":
+                        refs.append((f"{where}.field", value, on_inputs))
                 elif key in ("groupby", "fold") and isinstance(value, list):
                     for i, name in enumerate(value):
                         if isinstance(name, str):
