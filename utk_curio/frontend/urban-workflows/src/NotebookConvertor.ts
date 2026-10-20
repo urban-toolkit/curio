@@ -4,7 +4,7 @@ import { isVegaLiteNodeType } from "./registry/vegaLiteNodes";
 import { dataflowOrder } from "./utils/dataflowOrder";
 import { unversionedNodeType } from "./utils/flowNodeCanonicalType";
 import { inputSlotOf, slotHandleId } from "./utils/inputSlots";
-import { inputNamesIn, resolveReferences, widgetLiteral } from "./utils/references/codeReferences";
+import { VEGA_LITE, inputNamesIn, resolveReferences, widgetLiteral } from "./utils/references/codeReferences";
 import { PARAMETER_NODE_TYPE, sharedWidgetsOfSpec } from "./utils/references/sharedParameters";
 import { normalizeSelections } from "./utils/references/selectionTags";
 import { normalizeWidgets, type WidgetDef, type WidgetValue } from "./utils/widgets/widgetModel";
@@ -512,6 +512,7 @@ function generateCells(
       selections: normalizeSelections(node.metadata?.selections),
     },
     language,
+    vegaChart ? VEGA_LITE : undefined,
   ).code;
   const outVar = outputVarName(node);
   const heading = markdownCell(nodeHeading(node, inputNodes));

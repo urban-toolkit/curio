@@ -10,6 +10,7 @@
  * will hold a value: that field is left out, and with nothing left no claim is
  * made (dev/137 R6).
  */
+import { vegaFieldColumn } from "./vegaFieldNames";
 
 /** Every `encoding.<channel>.field` in the spec, in first-seen order. */
 export function encodedFields(spec: any): string[] {
@@ -33,12 +34,17 @@ export function encodedFields(spec: any): string[] {
   return out;
 }
 
-/** The fields at least one input row carries as a key. */
+/** The columns of *fields* at least one input row carries as a key: a field
+ * names its column as it is written, or escaped for Vega-Lite (`rain\.mm` for
+ * the column `rain.mm`, issue 1042). */
 export function deliveredFields(values: any[], fields: string[]): string[] {
   if (!Array.isArray(values)) return [];
-  return fields.filter((field) =>
-    values.some((row) => row != null && typeof row === "object" && field in row),
-  );
+  const columns: string[] = [];
+  for (const field of fields) {
+    const column = vegaFieldColumn(values, field);
+    if (column !== null && !columns.includes(column)) columns.push(column);
+  }
+  return columns;
 }
 
 /** Rows holding a usable value in at least one of `fields`; undefined = no claim. */

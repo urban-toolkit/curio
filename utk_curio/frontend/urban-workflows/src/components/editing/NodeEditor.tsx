@@ -32,7 +32,9 @@ import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
 import { notebookOutputBox } from "../../utils/notebookLayout";
 import { useNodeHeaderSlot } from "./nodeHeaderSlot";
 import { normalizeWidgets, type WidgetDef } from "../../utils/widgets/widgetModel";
+import { isVegaLiteNodeType } from "../../registry/vegaLiteNodes";
 import {
+    VEGA_LITE,
     describeEmptyInputs,
     describeReferenceProblems,
     resolveReferences,
@@ -143,6 +145,10 @@ function NodeEditor({
         : unversionedNodeType(nodeType) === NodeType.JS_COMPUTATION
             ? "javascript"
             : "python";
+    // A Vega-Lite chart's spec, the built-in node's or a package template's
+    // (registry/vegaLiteNodes): its references write a column's name escaped
+    // where Vega-Lite reads a field.
+    const referenceGrammar = grammar && isVegaLiteNodeType(nodeType) ? VEGA_LITE : undefined;
 
     // #662: what the node's references name: its widgets, its wired inputs,
     // the Parameter nodes' shared tags and its selection tags. Input, layer,
@@ -160,8 +166,8 @@ function NodeEditor({
     );
     // The play callback is registered once, so a run without a Widgets tab
     // reads the scope from here.
-    const runScopeRef = useRef({ scope, emptyInputs });
-    runScopeRef.current = { scope, emptyInputs };
+    const runScopeRef = useRef({ scope, emptyInputs, referenceGrammar });
+    runScopeRef.current = { scope, emptyInputs, referenceGrammar };
     // A dashboard tile shows its output, not its editor. Only when it HAS an
     // output pane: a code node's result is the text box under its editor, so
     // forcing the pane unconditionally rendered a pinned code node as an empty
@@ -222,8 +228,8 @@ function NodeEditor({
             // has no listener and CodeEditor's interpretCode is never reached
             // — the play spinner spins forever. Resolve here instead, with the
             // same table, so input chips work in those nodes too.
-            const { scope: runScope, emptyInputs: waiting } = runScopeRef.current;
-            const resolved = resolveReferences(String(code ?? ""), runScope, widgetLanguage);
+            const { scope: runScope, emptyInputs: waiting, referenceGrammar: runGrammar } = runScopeRef.current;
+            const resolved = resolveReferences(String(code ?? ""), runScope, widgetLanguage, runGrammar);
             if (waiting.length > 0) resolveError(describeEmptyInputs(waiting, runScope.inputs));
             else if (resolved.problems.length > 0) resolveError(describeReferenceProblems(resolved.problems));
             else sendReplacedCode(resolved.code);
@@ -550,6 +556,7 @@ function NodeEditor({
                                             onWidgetsChange={updateWidgets}
                                             onValueChange={() => requestAutoRun?.([data.nodeId])}
                                             language={widgetLanguage}
+                                            grammar={referenceGrammar}
                                             onResolveError={resolveError}
                                             inputs={inputs}
                                             emptyInputs={emptyInputs}
