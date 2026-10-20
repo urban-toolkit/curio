@@ -423,8 +423,9 @@ class TestTheShippedCorpus:
         quad-cities-flood-vulnerability's only package nodes are its Raster
         Calculators, which left the built-in nodes for SCOUT's package (the
         owner's call, 2026-10-18), and scenario-comparison-charts' are its
-        seven SCOUT charts (the plan for #914, step 28.2), both now Scout's,
-        ``curio.scout@1`` (the plan answering komar41's review, step 10)."""
+        nine charts, all Scout's (the plan for #914, step 28.2, and the plan
+        answering komar41's review, step 6.2), ``curio.scout@1`` (that plan,
+        step 10)."""
         needs_package_templates = {}
         for path in example_paths():
             spec = json.loads(path.read_text(encoding="utf-8"))
@@ -446,14 +447,16 @@ class TestTheShippedCorpus:
             "quad-cities-flood-vulnerability",
             "scenario-comparison-charts",
         ]
-        # The charts no Compare preset draws are Scout's.
+        # Its nine charts are Scout's, the grouped bars and the table among them.
         assert needs_package_templates["scenario-comparison-charts"] == [
             "curio.scout/bars-with-error-bars",
             "curio.scout/curves-by-group",
             "curio.scout/donuts",
             "curio.scout/ensemble-strips",
+            "curio.scout/grouped-bars",
             "curio.scout/lines-with-band",
             "curio.scout/stacked-bars-with-totals",
+            "curio.scout/table",
             "curio.scout/weighted-matrix",
         ]
         # SCOUT's two models are packages with nodes of their own.
