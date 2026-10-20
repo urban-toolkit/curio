@@ -346,11 +346,13 @@ class WorkflowSpec:
             for widget in n.widgets
         ]
 
-    def node_code(self, node, language: str, content: str | None = None) -> str:
+    def node_code(self, node, language: str, content: str | None = None, grammar: str | None = None) -> str:
         """*node*'s code (or *content* in its place) with its references
         resolved as the canvas resolves them before a run: its widgets, its
-        wired circles, the shared tags and its selection tags. Raises
-        ``CodeReferenceError``."""
+        wired circles, the shared tags and its selection tags. *grammar* is the
+        grammar its JSON document is written in, which a Vega-Lite chart's
+        spec names to write a column's name escaped where Vega-Lite reads a
+        field. Raises ``CodeReferenceError``."""
         return resolve_code_references(
             node.content if content is None else content,
             node.widgets,
@@ -358,6 +360,7 @@ class WorkflowSpec:
             self.input_slots(node.id),
             self.shared_widgets(),
             node.selections,
+            grammar,
         )
 
     def topo_sorted_nodes(self) -> list:
@@ -598,14 +601,16 @@ def seed_node_code(code: str, seed: int = 42) -> str:
 
 
 def resolve_code_references(
-    code: str, widgets=(), language: str = "python", input_slots=(), shared=(), selections=()
+    code: str, widgets=(), language: str = "python", input_slots=(), shared=(), selections=(), grammar=None
 ) -> str:
     """Replace a node's references with code, exactly as the frontend does
     before posting to the sandbox (#662): widget references with their values,
     input and column references by *input_slots*, the circles that have an
     edge, shared references with the values of the *shared* widgets
     (``WorkflowSpec.shared_widgets``), and selection references with the ids
-    the node's *selections* hold (``metadata.selections``).
+    the node's *selections* hold (``metadata.selections``). In a JSON document
+    of the *grammar* ``vega-lite``, a name where Vega-Lite reads a field is
+    written escaped (``code_references.resolve_references``).
 
     Raises ``CodeReferenceError`` naming every reference that cannot be
     resolved: an old ``[!! name$TYPE$default !!]`` marker, a name the node has
@@ -614,7 +619,7 @@ def resolve_code_references(
     takes.
     """
     inputs = [{"slot": slot} for slot in input_slots]
-    resolved, problems = resolve_references(code, widgets, language, inputs, shared, selections)
+    resolved, problems = resolve_references(code, widgets, language, inputs, shared, selections, grammar)
     if problems:
         raise CodeReferenceError("\n".join(p["message"] for p in problems))
     return resolved

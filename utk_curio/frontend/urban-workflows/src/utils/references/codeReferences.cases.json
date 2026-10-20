@@ -1,5 +1,5 @@
 {
-  "about": "Code reference cases: widget, input, column, shared and selection references. Read by src/tests/utils/codeReferences.test.ts and by utk_curio/backend/tests/test_execution/test_code_references.py: the browser and the headless runner must write the same code. A case's inputs are the node's wired circles, with their data type, the layer name their value gives, columns and layers when known; its selections are the node's selection tags, with the ids each holds.",
+  "about": "Code reference cases: widget, input, column, shared and selection references. Read by src/tests/utils/codeReferences.test.ts and by utk_curio/backend/tests/test_execution/test_code_references.py: the browser and the headless runner must write the same code. A case's inputs are the node's wired circles, with their data type, the layer name their value gives, columns and layers when known; its selections are the node's selection tags, with the ids each holds. A JSON case may name its document's grammar: in a Vega-Lite spec (vega-lite), a reference where Vega-Lite reads a field name writes each name escaped for Vega-Lite.",
   "cases": [
     {
       "name": "a number on its own",
@@ -832,6 +832,210 @@
       "inputs": [{"slot": 0}, {"slot": 1}],
       "expected": "{\"data\": {\"name\": [!! input 1 !!]}}",
       "problems": ["[!! input 1 !!] names an input the old way, which Curio no longer reads. Write [!! input_1 !!]: each input circle is its own variable, input_0, input_1, and so on."]
+    },
+    {
+      "name": "a column in a Vega-Lite field is its name escaped, and the plain name in its title",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"encoding\": {\"y\": {\"field\": \"[!! input_0.rain.mm !!]\", \"title\": \"Mean [!! input_0.rain.mm !!]\"}}}",
+      "widgets": [],
+      "inputs": [{"slot": 0, "columns": ["rain.mm", "cost"]}],
+      "expected": "{\"encoding\": {\"y\": {\"field\": \"rain\\\\.mm\", \"title\": \"Mean rain.mm\"}}}"
+    },
+    {
+      "name": "a column chip on its own in a Vega-Lite field: a bracket in its name escaped, a backslash taken as an escape and kept",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"encoding\": {\"x\": {\"field\": [!! input_0.a[1] !!]}, \"y\": {\"field\": [!! input_0.back\\slash !!]}}}",
+      "widgets": [],
+      "inputs": [{"slot": 0, "columns": ["a[1]", "back\\slash"]}],
+      "expected": "{\"encoding\": {\"x\": {\"field\": \"a\\\\[1\\\\]\"}, \"y\": {\"field\": \"back\\\\slash\"}}}"
+    },
+    {
+      "name": "a widget's text in a Vega-Lite field, on its own and inside the field's own text",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"encoding\": {\"y\": {\"field\": [!! y !!], \"title\": \"[!! y !!]\"}, \"x\": {\"field\": \"total_[!! y !!]\"}}}",
+      "widgets": [{"name": "y", "type": "text", "default": "rain.mm"}],
+      "expected": "{\"encoding\": {\"y\": {\"field\": \"rain\\\\.mm\", \"title\": \"rain.mm\"}, \"x\": {\"field\": \"total_rain\\\\.mm\"}}}"
+    },
+    {
+      "name": "a shared tag in a Vega-Lite field is escaped as a widget is",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"encoding\": {\"y\": {\"field\": \"[!! @measure !!]\", \"title\": \"[!! @measure !!]\"}}}",
+      "widgets": [],
+      "shared": [{"name": "measure", "type": "text", "default": "rain.mm"}],
+      "expected": "{\"encoding\": {\"y\": {\"field\": \"rain\\\\.mm\", \"title\": \"rain.mm\"}}}"
+    },
+    {
+      "name": "a list of texts in a fold is escaped name by name, and written as it is in a sort",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"transform\": [{\"fold\": [!! columns !!], \"as\": [\"curio_column\", \"curio_cell\"]}], \"encoding\": {\"x\": {\"field\": \"curio_column\", \"sort\": [!! columns !!]}}}",
+      "widgets": [{"name": "columns", "type": "text-list", "default": ["scenario_name", "rain.mm", "a[1]"]}],
+      "expected": "{\"transform\": [{\"fold\": [\"scenario_name\", \"rain\\\\.mm\", \"a\\\\[1\\\\]\"], \"as\": [\"curio_column\", \"curio_cell\"]}], \"encoding\": {\"x\": {\"field\": \"curio_column\", \"sort\": [\"scenario_name\", \"rain.mm\", \"a[1]\"]}}}"
+    },
+    {
+      "name": "a chip that is one item of a fold, on its own or in a string, beside the spec's own names",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"transform\": [{\"fold\": [\"scenario_name\", [!! y !!], \"[!! y !!]\"]}]}",
+      "widgets": [{"name": "y", "type": "text", "default": "rain.mm"}],
+      "expected": "{\"transform\": [{\"fold\": [\"scenario_name\", \"rain\\\\.mm\", \"rain\\\\.mm\"]}]}"
+    },
+    {
+      "name": "the fields of an aggregate's, a join aggregate's and a window's operations, their sorts and groupby lists, but not the names they write",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"transform\": [{\"aggregate\": [{\"op\": \"mean\", \"field\": \"[!! value !!]\", \"as\": \"[!! value !!] mean\"}], \"groupby\": [[!! group !!]]}, {\"joinaggregate\": [{\"op\": \"max\", \"field\": \"[!! value !!]\", \"as\": \"top\"}], \"groupby\": [\"[!! group !!]\"]}, {\"window\": [{\"op\": \"sum\", \"field\": \"[!! value !!]\", \"as\": \"run\"}], \"sort\": [{\"field\": \"[!! value !!]\", \"order\": \"descending\"}], \"groupby\": [\"[!! group !!]\"]}]}",
+      "widgets": [
+        {"name": "value", "type": "text", "default": "rain.mm"},
+        {"name": "group", "type": "text", "default": "zone.id"}
+      ],
+      "expected": "{\"transform\": [{\"aggregate\": [{\"op\": \"mean\", \"field\": \"rain\\\\.mm\", \"as\": \"rain.mm mean\"}], \"groupby\": [\"zone\\\\.id\"]}, {\"joinaggregate\": [{\"op\": \"max\", \"field\": \"rain\\\\.mm\", \"as\": \"top\"}], \"groupby\": [\"zone\\\\.id\"]}, {\"window\": [{\"op\": \"sum\", \"field\": \"rain\\\\.mm\", \"as\": \"run\"}], \"sort\": [{\"field\": \"rain\\\\.mm\", \"order\": \"descending\"}], \"groupby\": [\"zone\\\\.id\"]}]}"
+    },
+    {
+      "name": "the field each transform reads under its own key, a lookup's key and fields, and an extent's",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"transform\": [{\"pivot\": \"[!! k !!]\", \"value\": \"[!! v !!]\", \"groupby\": [\"[!! g !!]\"]}, {\"lookup\": \"[!! k !!]\", \"from\": {\"data\": {\"name\": \"input_1\"}, \"key\": \"[!! k !!]\", \"fields\": [\"[!! v !!]\"]}}, {\"impute\": \"[!! v !!]\", \"key\": \"[!! k !!]\", \"value\": 0}, {\"stack\": \"[!! v !!]\", \"groupby\": [\"[!! g !!]\"], \"as\": [\"lo\", \"hi\"]}, {\"density\": \"[!! v !!]\", \"groupby\": [\"[!! g !!]\"]}, {\"extent\": \"[!! v !!]\", \"param\": \"range\"}, {\"loess\": \"[!! v !!]\", \"on\": \"[!! k !!]\", \"as\": [\"[!! k !!]\", \"fit\"]}, {\"regression\": \"[!! v !!]\", \"on\": \"[!! k !!]\"}, {\"quantile\": \"[!! v !!]\", \"groupby\": [\"[!! g !!]\"]}, {\"flatten\": [\"[!! v !!]\"]}]}",
+      "widgets": [
+        {"name": "k", "type": "text", "default": "day.n"},
+        {"name": "v", "type": "text", "default": "rain.mm"},
+        {"name": "g", "type": "text", "default": "zone.id"}
+      ],
+      "expected": "{\"transform\": [{\"pivot\": \"day\\\\.n\", \"value\": \"rain\\\\.mm\", \"groupby\": [\"zone\\\\.id\"]}, {\"lookup\": \"day\\\\.n\", \"from\": {\"data\": {\"name\": \"input_1\"}, \"key\": \"day\\\\.n\", \"fields\": [\"rain\\\\.mm\"]}}, {\"impute\": \"rain\\\\.mm\", \"key\": \"day\\\\.n\", \"value\": 0}, {\"stack\": \"rain\\\\.mm\", \"groupby\": [\"zone\\\\.id\"], \"as\": [\"lo\", \"hi\"]}, {\"density\": \"rain\\\\.mm\", \"groupby\": [\"zone\\\\.id\"]}, {\"extent\": \"rain\\\\.mm\", \"param\": \"range\"}, {\"loess\": \"rain\\\\.mm\", \"on\": \"day\\\\.n\", \"as\": [\"day.n\", \"fit\"]}, {\"regression\": \"rain\\\\.mm\", \"on\": \"day\\\\.n\"}, {\"quantile\": \"rain\\\\.mm\", \"groupby\": [\"zone\\\\.id\"]}, {\"flatten\": [\"rain\\\\.mm\"]}]}"
+    },
+    {
+      "name": "a parameter's fields are escaped, and its event, an encoding's stack and impute, and values are written as they are",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"params\": [{\"name\": \"pick\", \"select\": {\"type\": \"point\", \"on\": \"[!! word !!]\", \"fields\": [\"[!! v !!]\"]}}], \"transform\": [{\"density\": \"[!! v !!]\", \"extent\": [0, 1], \"as\": [\"[!! v !!]\", \"density\"]}], \"encoding\": {\"y\": {\"field\": \"[!! v !!]\", \"stack\": \"[!! word !!]\", \"impute\": {\"value\": \"[!! word !!]\"}}, \"color\": {\"condition\": {\"param\": \"pick\", \"value\": \"[!! word !!]\"}, \"value\": \"[!! word !!]\"}}}",
+      "widgets": [
+        {"name": "v", "type": "text", "default": "rain.mm"},
+        {"name": "word", "type": "text", "default": "a.b"}
+      ],
+      "expected": "{\"params\": [{\"name\": \"pick\", \"select\": {\"type\": \"point\", \"on\": \"a.b\", \"fields\": [\"rain\\\\.mm\"]}}], \"transform\": [{\"density\": \"rain\\\\.mm\", \"extent\": [0, 1], \"as\": [\"rain.mm\", \"density\"]}], \"encoding\": {\"y\": {\"field\": \"rain\\\\.mm\", \"stack\": \"a.b\", \"impute\": {\"value\": \"a.b\"}}, \"color\": {\"condition\": {\"param\": \"pick\", \"value\": \"a.b\"}, \"value\": \"a.b\"}}}"
+    },
+    {
+      "name": "a Vega-Lite spec's expressions, titles and the names it writes keep the plain name",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"transform\": [{\"calculate\": \"datum['[!! v !!]'] * 2\", \"as\": \"[!! v !!] doubled\"}, {\"filter\": \"datum['[!! v !!]'] > 0\"}, {\"filter\": {\"field\": \"[!! v !!]\", \"gt\": 0}}], \"encoding\": {\"y\": {\"field\": \"[!! v !!] doubled\", \"title\": \"[!! v !!]\", \"axis\": {\"labelExpr\": \"'[!! v !!]' === '' ? datum.label : datum.value\"}}, \"tooltip\": [{\"field\": \"[!! v !!]\", \"title\": \"[!! v !!]\"}]}}",
+      "widgets": [{"name": "v", "type": "text", "default": "rain.mm"}],
+      "expected": "{\"transform\": [{\"calculate\": \"datum['rain.mm'] * 2\", \"as\": \"rain.mm doubled\"}, {\"filter\": \"datum['rain.mm'] > 0\"}, {\"filter\": {\"field\": \"rain\\\\.mm\", \"gt\": 0}}], \"encoding\": {\"y\": {\"field\": \"rain\\\\.mm doubled\", \"title\": \"rain.mm\", \"axis\": {\"labelExpr\": \"'rain.mm' === '' ? datum.label : datum.value\"}}, \"tooltip\": [{\"field\": \"rain\\\\.mm\", \"title\": \"rain.mm\"}]}}"
+    },
+    {
+      "name": "a repeat's lists of columns and an argmax's field",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"repeat\": {\"row\": [!! columns !!], \"column\": [\"[!! v !!]\"]}, \"spec\": {\"encoding\": {\"x\": {\"field\": {\"repeat\": \"row\"}}, \"y\": {\"aggregate\": {\"argmax\": \"[!! v !!]\"}, \"field\": \"[!! v !!]\"}}}}",
+      "widgets": [
+        {"name": "columns", "type": "text-list", "default": ["rain.mm", "cost"]},
+        {"name": "v", "type": "text", "default": "rain.mm"}
+      ],
+      "expected": "{\"repeat\": {\"row\": [\"rain\\\\.mm\", \"cost\"], \"column\": [\"rain\\\\.mm\"]}, \"spec\": {\"encoding\": {\"x\": {\"field\": {\"repeat\": \"row\"}}, \"y\": {\"aggregate\": {\"argmax\": \"rain\\\\.mm\"}, \"field\": \"rain\\\\.mm\"}}}}"
+    },
+    {
+      "name": "a repeat's list of columns",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"repeat\": [!! columns !!], \"spec\": {\"mark\": \"bar\", \"encoding\": {\"x\": {\"field\": {\"repeat\": \"repeat\"}}}}}",
+      "widgets": [{"name": "columns", "type": "text-list", "default": ["rain.mm", "cost"]}],
+      "expected": "{\"repeat\": [\"rain\\\\.mm\", \"cost\"], \"spec\": {\"mark\": \"bar\", \"encoding\": {\"x\": {\"field\": {\"repeat\": \"repeat\"}}}}}"
+    },
+    {
+      "name": "a chip in a key of a Vega-Lite spec is the plain name",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"datasets\": {\"[!! y !!]\": []}, \"encoding\": {\"y\": {\"field\": \"[!! y !!]\"}}}",
+      "widgets": [{"name": "y", "type": "text", "default": "rain.mm"}],
+      "expected": "{\"datasets\": {\"rain.mm\": []}, \"encoding\": {\"y\": {\"field\": \"rain\\\\.mm\"}}}"
+    },
+    {
+      "name": "an Autark document writes a column's name as it is, whatever its key",
+      "language": "json",
+      "grammar": "autk-grammar",
+      "code": "{\"field\": \"[!! input_0.rain.mm !!]\", \"groupby\": [[!! input_0.rain.mm !!]]}",
+      "widgets": [],
+      "inputs": [{"slot": 0}],
+      "expected": "{\"field\": \"rain.mm\", \"groupby\": [\"rain.mm\"]}"
+    },
+    {
+      "name": "a JSON document of no grammar writes a column's name as it is",
+      "language": "json",
+      "code": "{\"field\": [!! input_0.rain.mm !!]}",
+      "widgets": [],
+      "inputs": [{"slot": 0}],
+      "expected": "{\"field\": \"rain.mm\"}"
+    },
+    {
+      "name": "a Vega-Lite spec that does not read as JSON writes the names as they are",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"encoding\": {\"y\": {\"field\": \"[!! y !!]\"}}",
+      "widgets": [{"name": "y", "type": "text", "default": "rain.mm"}],
+      "expected": "{\"encoding\": {\"y\": {\"field\": \"rain.mm\"}}"
+    },
+    {
+      "name": "NaN is not JSON, so a Vega-Lite spec holding it writes the names as they are",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"opacity\": NaN, \"encoding\": {\"y\": {\"field\": \"[!! y !!]\"}}}",
+      "widgets": [{"name": "y", "type": "text", "default": "rain.mm"}],
+      "expected": "{\"opacity\": NaN, \"encoding\": {\"y\": {\"field\": \"rain.mm\"}}}"
+    },
+    {
+      "name": "a name that already holds a backslash is taken as escaped by hand, and written as it is",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"encoding\": {\"y\": {\"field\": \"[!! y !!]\"}, \"x\": {\"field\": [!! y !!]}}, \"transform\": [{\"fold\": [!! columns !!]}]}",
+      "widgets": [
+        {"name": "y", "type": "text", "default": "rain\\.mm"},
+        {"name": "columns", "type": "text-list", "default": ["rain\\.mm", "c.d"]}
+      ],
+      "expected": "{\"encoding\": {\"y\": {\"field\": \"rain\\\\.mm\"}, \"x\": {\"field\": \"rain\\\\.mm\"}}, \"transform\": [{\"fold\": [\"rain\\\\.mm\", \"c\\\\.d\"]}]}"
+    },
+    {
+      "name": "a key named field inside data, datasets or usermeta is no field",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"data\": {\"values\": [{\"field\": \"[!! y !!]\"}]}, \"datasets\": {\"rows\": [{\"field\": \"[!! y !!]\"}]}, \"usermeta\": {\"field\": \"[!! y !!]\"}, \"encoding\": {\"y\": {\"field\": \"[!! y !!]\"}}}",
+      "widgets": [{"name": "y", "type": "text", "default": "rain.mm"}],
+      "expected": "{\"data\": {\"values\": [{\"field\": \"rain.mm\"}]}, \"datasets\": {\"rows\": [{\"field\": \"rain.mm\"}]}, \"usermeta\": {\"field\": \"rain.mm\"}, \"encoding\": {\"y\": {\"field\": \"rain\\\\.mm\"}}}"
+    },
+    {
+      "name": "a Vega-Lite spec nested deeper than its places are read writes the names as they are",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"encoding\": {\"y\": {\"field\": \"[!! y !!]\"}}, \"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}",
+      "widgets": [{"name": "y", "type": "text", "default": "rain.mm"}],
+      "expected": "{\"encoding\": {\"y\": {\"field\": \"rain.mm\"}}, \"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {\"deep\": {}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}"
+    },
+    {
+      "name": "characters of a placeholder in a spec's own text take no chip's place",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"title\": \"[!! y !!]\", \"encoding\": {\"y\": {\"field\": \"\ue0000\ue001\"}}}",
+      "widgets": [{"name": "y", "type": "text", "default": "rain.mm"}],
+      "expected": "{\"title\": \"rain.mm\", \"encoding\": {\"y\": {\"field\": \"\ue0000\ue001\"}}}"
+    },
+    {
+      "name": "a spec's JSON escapes of a placeholder's characters take no chip's place",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"title\": \"[!! y !!]\", \"encoding\": {\"y\": {\"field\": \"\\ue0000\\ue001\"}}}",
+      "widgets": [{"name": "y", "type": "text", "default": "rain.mm"}],
+      "expected": "{\"title\": \"rain.mm\", \"encoding\": {\"y\": {\"field\": \"\\ue0000\\ue001\"}}}"
+    },
+    {
+      "name": "a Vega-Lite spec whose rows nest deeper than its places are read writes the names as they are",
+      "language": "json",
+      "grammar": "vega-lite",
+      "code": "{\"encoding\": {\"y\": {\"field\": \"[!! y !!]\"}}, \"data\": {\"values\": [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}}",
+      "widgets": [{"name": "y", "type": "text", "default": "rain.mm"}],
+      "expected": "{\"encoding\": {\"y\": {\"field\": \"rain.mm\"}}, \"data\": {\"values\": [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}}"
     }
   ]
 }

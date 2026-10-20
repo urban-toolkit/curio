@@ -656,7 +656,10 @@ When the node runs:
   whatever the chip names.
 - A column chip becomes the column's name: `df[[!! input_0.population !!]]` runs
   as `df["population"]`, `"field": [!! input_0.population !!]` as
-  `"field": "population"`, and inside a quoted text it is the plain name.
+  `"field": "population"`, and inside a quoted text it is the plain name. In a
+  Vega-Lite spec, a name with a `.` or a `[` in it is escaped where Vega-Lite
+  reads a field: `"field": [!! input_0.rain.mm !!]` runs as
+  `"field": "rain\\.mm"` (see [Vega-Lite node](#vega-lite-node)).
 - In Python and JavaScript you can also type an input's name instead of
   dragging its chip: `input_0`, `input_1`, and so on, the names a Vega-Lite or
   Autark spec reads its inputs by too. `roads = input_1.to_crs(3857)` reads
@@ -994,7 +997,15 @@ For the full guide, covering the storage layers, the action matrix, **Save as pa
 
 The `Vega-Lite` node takes the rows of an upstream `DataFrame` or `GeoDataFrame`
 and renders a spec against them. Columns are addressed by their bare pandas
-names: a column `pop` is `{"field": "pop"}`.
+names: a column `pop` is `{"field": "pop"}`. Vega-Lite reads a `.` or a `[` in a
+field as a path into the row, so a column such as `rain.mm` is
+`{"field": "rain\\.mm"}`, a backslash before each `.`, `[` and `]`. A widget or
+column chip writes a name so where Vega-Lite reads a field: a `field`, a
+`fold`, `groupby` or `flatten` list, the field a transform reads, a lookup's
+`key` and `fields`, a selection's `fields` and a `repeat`'s lists. In a title,
+a sort, an expression such as `datum['rain.mm']`, a name a transform writes
+(`as`), or a row of `data` or `datasets`, it writes the name as it is. A
+widget that holds the escaped name, `rain\.mm`, is written as it is.
 
 ### Several inputs
 

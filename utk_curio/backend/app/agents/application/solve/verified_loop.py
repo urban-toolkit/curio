@@ -582,9 +582,12 @@ class VerifiedRounds:
         (DEC-063). The roster's own row only: an unknown kind is not passive."""
         if self.verdict_result.get("verdict") != "not-executable" or not str(self.candidate or "").strip():
             return None
+        grammar_id = workflow_spec.grammar_id_of(self.node_type, self.loop_templates)
         # #662: checked as it runs, its references resolved the way the canvas
-        # resolves them before it draws: widgets, input chips, shared tags.
-        resolved, unresolved = self._resolved_document()
+        # resolves them before it draws: widgets, input chips, shared tags, and
+        # in a Vega-Lite spec a column's name escaped where it reads a field,
+        # by the grammar the document is checked in.
+        resolved, unresolved = self._resolved_document(document_validation.grammar_of(self.node_type, grammar_id))
         if unresolved:
             yield from self._record_failed_round("document-invalid", unresolved)
             self._carry(unresolved)
@@ -593,7 +596,7 @@ class VerifiedRounds:
         upstream = (self.extra_inputs or {}).get("upstreamOutputs")
         document = document_validation.validate(
             self.node_type, resolved,
-            grammar_id=workflow_spec.grammar_id_of(self.node_type, self.loop_templates),
+            grammar_id=grammar_id,
             content_kind=roster_row.get("contentKind"),
             columns=upstream_schema.columns_of(upstream),
             geometry_columns=upstream_schema.geometry_columns_of(upstream),
@@ -601,7 +604,7 @@ class VerifiedRounds:
         if document["status"] == document_validation.STATUS_INVALID:
             refusal = document_validation.refusal_text(
                 self.node_type, document,
-                grammar_id=workflow_spec.grammar_id_of(self.node_type, self.loop_templates),
+                grammar_id=grammar_id,
             )
             yield from self._record_failed_round("document-invalid", refusal)
             self._carry(refusal)
@@ -617,10 +620,10 @@ class VerifiedRounds:
             evidence["documentPassive"] = bool(document.get("passive"))
         return None
 
-    def _resolved_document(self) -> tuple[str, str | None]:
-        """The candidate document with its references resolved against this
-        node in the saved spec, and why one cannot be, or None. A document with
-        no references is itself."""
+    def _resolved_document(self, grammar: str | None = None) -> tuple[str, str | None]:
+        """The candidate document, written in *grammar*, with its references
+        resolved against this node in the saved spec, and why one cannot be, or
+        None. A document with no references is itself."""
         candidate = str(self.candidate or "")
         if "[!!" not in candidate:
             return candidate, None
@@ -629,7 +632,7 @@ class VerifiedRounds:
         if node is None:
             return candidate, None
         try:
-            return spec.node_code(node, "json", candidate), None
+            return spec.node_code(node, "json", candidate, grammar), None
         except workflow_spec.CodeReferenceError as exc:
             return candidate, f"the document's references cannot be resolved: {exc}"
 

@@ -89,6 +89,14 @@ describe("usable rows are counted over the fields the input carries", () => {
     expect(onlyNulls.message).toContain("every value of population is null");
   });
 
+  test("a field escaped for Vega-Lite is judged by the column it names (issue 1042)", () => {
+    // A chip writes the column `rain.mm` as the field `rain\.mm`.
+    const values = [{ "rain.mm": null }, { "rain.mm": null }];
+    const outcome = verdict(values, { mark: "bar", encoding: { y: { field: "rain\\.mm" } } }, 2);
+    expect(outcome.empty).toBe(true);
+    expect(outcome.message).toContain("every value of rain.mm is null");
+  });
+
   test("a derived field beside an all-null delivered one still reports the delivered one", async () => {
     const { values } = await rowsViaArrow({ v: Float64Array.from([NaN, NaN]) });
     const outcome = verdict(values, {

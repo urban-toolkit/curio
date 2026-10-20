@@ -26,6 +26,8 @@ import type { SelectionTag } from "../../utils/references/selectionTags";
 type Case = {
   name: string;
   language: CodeLanguage;
+  /** A JSON document's grammar, such as vega-lite. */
+  grammar?: string;
   code: string;
   widgets: unknown[];
   inputs?: InputScope[];
@@ -47,6 +49,7 @@ describe("the shared reference cases", () => {
         selections: (c.selections ?? []) as SelectionTag[],
       },
       c.language,
+      c.grammar,
     );
     expect(result.code).toBe(c.expected);
     expect(result.problems.map((p) => p.message)).toEqual(c.problems ?? []);
@@ -304,6 +307,18 @@ describe("closing up circles, with names inside f-strings", () => {
     expect(renumberInputReferences(code, 1, "javascript")).toBe(
       "const s = `input_2 has ${input_1.length} rows, ${`${input_2}`}`;\nconst t = 'input_2';",
     );
+  });
+});
+
+describe("a Vega-Lite spec nested 5,000 deep", () => {
+  // The browser reads a spec's places walking it, and a walk that deep
+  // overflowed the stack, in the Widgets tab's render too.
+  test("writes its names as they are, and does not overflow the stack", () => {
+    const deep = '{"a": '.repeat(5000) + '{"field": "[!! y !!]"}' + "}".repeat(5000);
+    const scope = { widgets: normalizeWidgets([{ name: "y", type: "text", default: "rain.mm" }]), inputs: [], shared: [] };
+    const result = resolveReferences(deep, scope, "json", "vega-lite");
+    expect(result.problems).toEqual([]);
+    expect(result.code).toBe(deep.replace("[!! y !!]", "rain.mm"));
   });
 });
 
