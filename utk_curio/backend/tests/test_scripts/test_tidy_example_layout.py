@@ -170,6 +170,76 @@ def test_every_committed_example_clears_the_gutter():
         assert _min_separation(boxes) >= 60, f"{os.path.basename(path)} crowds"
 
 
+def _tidy_module():
+    """The script, imported, for the node sizes it lays nodes out by."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("tidy_example_layout", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _frame_room() -> tuple[int, int]:
+    """The room the app's scenario frame leaves around its members, and the
+    room above its top member that the frame and its header take
+    (``FRAME_PAD`` and ``FRAME_PAD + FRAME_HEADER_OFFSET`` in
+    ``components/scenarios/ScenarioLayers.tsx``), read from the source."""
+    import re
+
+    source_path = os.path.join(
+        REPO_ROOT, "utk_curio", "frontend", "urban-workflows", "src", "components", "scenarios",
+        "ScenarioLayers.tsx",
+    )
+    with open(source_path, encoding="utf-8") as fh:
+        source = fh.read()
+    pad = int(re.search(r"const FRAME_PAD = (\d+);", source).group(1))
+    offset = int(re.search(r"const FRAME_HEADER_OFFSET = (\d+);", source).group(1))
+    return pad, pad + offset
+
+
+def test_no_two_scenario_boxes_of_a_numbered_example_overlap():
+    """Each scenario box of a numbered example, drawn as the app draws it
+    around its members (the frame's room on every side and its header above),
+    with the tidy script's own node sizes, leaves every other box clear: a
+    node that sits in two boxes' frames reads as part of both scenarios.
+    Example 06 is the numbered example with scenario boxes."""
+    import glob
+    from itertools import combinations
+
+    tidy = _tidy_module()
+    templates = tidy._template_index()
+    pad, header_room = _frame_room()
+    with_boxes = []
+    for path in sorted(glob.glob(os.path.join(EXAMPLES, "[0-9][0-9]-*.json"))):
+        with open(path, encoding="utf-8") as fh:
+            dataflow = json.load(fh)["dataflow"]
+        nodes = {node["id"]: node for node in dataflow["nodes"]}
+        frames = {}
+        for scenario in dataflow.get("scenarios") or []:
+            members = [nodes[node_id] for node_id in scenario.get("nodes") or [] if node_id in nodes]
+            if not members:
+                continue
+            sizes = [tidy.resolve_size(node, templates) for node in members]
+            frames[scenario["name"]] = (
+                min(node["x"] for node in members) - pad,
+                min(node["y"] for node in members) - header_room,
+                max(node["x"] + w for node, (w, _h) in zip(members, sizes)) + pad,
+                max(node["y"] + h for node, (_w, h) in zip(members, sizes)) + pad,
+            )
+        if not frames:
+            continue
+        with_boxes.append(os.path.basename(path))
+        for (a, box_a), (b, box_b) in combinations(frames.items(), 2):
+            width = min(box_a[2], box_b[2]) - max(box_a[0], box_b[0])
+            height = min(box_a[3], box_b[3]) - max(box_a[1], box_b[1])
+            assert width <= 0 or height <= 0, (
+                f"{os.path.basename(path)}: the {a} and {b} boxes overlap by "
+                f"{max(width, 0):.0f} by {max(height, 0):.0f} px"
+            )
+    assert with_boxes == ["06-back-bay-road-sunlight.json"], with_boxes
+
+
 # ---------------------------------------------------------------------------
 # Check vs write
 # ---------------------------------------------------------------------------

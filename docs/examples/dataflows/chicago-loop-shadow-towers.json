@@ -241,63 +241,62 @@
       },
       {
         "id": "d0e547ba-e7d6-52e1-9c0e-f047443b715c",
-        "type": "curio.builtin/compare-scenarios",
+        "type": "curio.scout/bars",
         "x": 3225,
         "y": 0,
-        "content": "# Compare Scenarios writes this code from its inputs: each input, under the\n# id and the name of its scenario. It is written again when they change.\nreturn curio_stack_scenarios([\n    (\"existing\", \"Existing\", [!! input_0 !!]),\n    (\"towers-removed\", \"Towers removed\", [!! input_1 !!]),\n])\n",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"inputs\"\n  },\n  \"mark\": {\n    \"type\": \"bar\",\n    \"tooltip\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    },\n    \"y\": {\n      \"field\": \"[!! y !!]\",\n      \"type\": \"quantitative\",\n      \"aggregate\": \"[!! combine !!]\",\n      \"title\": \"[!! y_title !!]\"\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\"\n    }\n  }\n}\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Chart the mean accumulated shadow of both scenarios.",
+        "goal": "Chart the mean accumulated shadow of both scenarios, a bar per scenario.",
         "metadata": {
           "keywords": [],
-          "compareScenarios": {
-            "inputs": [
-              {
-                "scenario": "existing",
-                "name": "Existing",
-                "color": "#2a9d8f"
-              },
-              {
-                "scenario": "towers-removed",
-                "name": "Towers removed",
-                "color": "#e76f51"
-              }
-            ],
-            "chart": {
-              "preset": "bar",
-              "y": "mean"
+          "widgets": [
+            {
+              "name": "y",
+              "type": "text",
+              "label": "Y column",
+              "default": "y",
+              "value": "mean"
             },
-            "mode": "chart"
-          }
+            {
+              "name": "combine",
+              "type": "choice",
+              "label": "Combine",
+              "default": "mean",
+              "options": {
+                "choices": [
+                  "mean",
+                  "sum",
+                  "median",
+                  "min",
+                  "max",
+                  "count"
+                ]
+              },
+              "value": "mean"
+            },
+            {
+              "name": "y_title",
+              "type": "text",
+              "label": "Y axis title",
+              "default": "",
+              "value": "mean of mean"
+            }
+          ]
         },
         "title": "Mean accumulated shadow"
       },
       {
         "id": "608c35fc-5b51-546f-8305-7612a680f16a",
-        "type": "curio.builtin/compare-scenarios",
+        "type": "curio.scout/raster-calculator",
         "x": 3225,
         "y": 450,
-        "content": "# Compare Scenarios writes this code from its inputs: input_1 minus input_0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"existing\", \"Existing\", [!! input_0 !!]),\n    (\"towers-removed\", \"Towers removed\", [!! input_1 !!]),\n])\n",
+        "content": "# Towers removed's accumulated shadow, on input_1, minus Existing's, on\n# input_0, cell by cell, in minutes: below zero where removing the towers\n# takes shadow away, 0 where nothing changes.\nfrom scout_rasters.raster_algebra import raster_calculate\n\nreturn raster_calculate(\"subtract\", [input_1, input_0], output_file=curio_output_file)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Map where the accumulated shadow changes when the towers are removed.",
+        "goal": "Take, cell by cell, the change in accumulated shadow when the towers are removed.",
         "metadata": {
-          "keywords": [],
-          "compareScenarios": {
-            "inputs": [
-              {
-                "scenario": "existing",
-                "name": "Existing",
-                "color": "#2a9d8f"
-              },
-              {
-                "scenario": "towers-removed",
-                "name": "Towers removed",
-                "color": "#e76f51"
-              }
-            ],
-            "mode": "difference"
-          }
+          "keywords": []
         },
         "title": "Change in shadow"
       },

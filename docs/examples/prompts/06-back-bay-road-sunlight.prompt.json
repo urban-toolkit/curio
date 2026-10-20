@@ -4,14 +4,16 @@
   "version": 1,
   "source": {
     "path": "docs/examples/06-back-bay-road-sunlight.json",
-    "sha256": "571db6ac69f960acce112260c7313d6ba8c11366ddba67d7b7dbed42703dfb4e",
+    "sha256": "07da1420895ae35b97797e70aea0fc24f913ea43ae5c75c208f9f81998666966",
     "walkthrough": "docs/examples/06-back-bay-road-sunlight.md"
   },
   "prompt": "I want a what-if shadow study for the Back Bay area of Boston, set up as three scenarios I can compare. The OSM extract is a file in this checkout at docs/examples/data/back_bay.osm.pbf. Load its layers in the browser with Autark once, and hand them to every scenario through a shared fan-out. In each scenario a GPU shader adds up every road segment's minutes of sunlight over the June solstice, with the building heights scaled by a height factor I set in a widget: 1 in a scenario called Baseline, 2 in a copy of it called Twice as tall, and 1 in a third copy called Two towers removed, where the buildings first lose two towers, 200 Clarendon and Raffles (building_id 29623484 and 29628154), every part of each. Show each scenario's roads on its own 3D map coloured by sunlight. Then compare the scenarios' roads: a bar chart of the three scenarios' mean road sunlight, and a map of how much sunlight each road loses in Twice as tall, on a red, yellow and blue scale from -360 to 360 minutes with no change in its middle.",
   "context": null,
   "required": {
     "datasets": [],
-    "packages": [],
+    "packages": [
+      "curio.scout@1"
+    ],
     "paths": [
       "docs/examples/data/back_bay.osm.pbf"
     ]
@@ -47,13 +49,6 @@
         "hasContent": true
       },
       {
-        "ref": "visualization10",
-        "type": "curio.builtin/autk-grammar",
-        "role": "visualization",
-        "executable": false,
-        "hasContent": true
-      },
-      {
         "ref": "visualization5",
         "type": "curio.builtin/autk-grammar",
         "role": "visualization",
@@ -76,15 +71,36 @@
       },
       {
         "ref": "visualization8",
-        "type": "curio.builtin/compare-scenarios",
+        "type": "curio.builtin/autk-grammar",
         "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
-        "ref": "visualization9",
-        "type": "curio.builtin/compare-scenarios",
-        "role": "visualization",
+        "ref": "analysis2",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis3",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis4",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
         "executable": true,
         "hasContent": true
       },
@@ -101,6 +117,13 @@
         "role": "transform",
         "executable": true,
         "hasContent": true
+      },
+      {
+        "ref": "visualization9",
+        "type": "curio.scout/bars",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
       }
     ],
     "edges": [
@@ -110,55 +133,65 @@
         "kind": "data"
       },
       {
-        "from": "visualization2",
-        "to": "visualization9",
-        "kind": "data",
-        "slot": 2
-      },
-      {
         "from": "visualization3",
-        "to": "visualization8",
-        "kind": "data"
-      },
-      {
-        "from": "visualization3",
-        "to": "visualization9",
+        "to": "analysis4",
         "kind": "data"
       },
       {
         "from": "visualization4",
-        "to": "visualization8",
+        "to": "analysis4",
         "kind": "data",
         "slot": 1
       },
       {
-        "from": "visualization4",
-        "to": "visualization9",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "visualization5",
+        "from": "visualization6",
         "to": "visualization3",
         "kind": "data"
       },
       {
         "from": "visualization6",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "visualization7",
         "to": "visualization4",
         "kind": "data"
       },
       {
         "from": "visualization7",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "visualization8",
         "to": "visualization2",
         "kind": "data"
       },
       {
         "from": "visualization8",
-        "to": "visualization10",
+        "to": "analysis3",
         "kind": "data"
       },
       {
-        "from": "pool1",
+        "from": "analysis1",
+        "to": "visualization9",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization9",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis3",
+        "to": "visualization9",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "analysis4",
         "to": "visualization5",
         "kind": "data"
       },
@@ -169,12 +202,17 @@
       },
       {
         "from": "pool1",
+        "to": "visualization7",
+        "kind": "data"
+      },
+      {
+        "from": "pool1",
         "to": "transform1",
         "kind": "data"
       },
       {
         "from": "transform1",
-        "to": "visualization7",
+        "to": "visualization8",
         "kind": "data"
       }
     ],
@@ -191,7 +229,8 @@
     "mode": "browser",
     "browserOnlyKinds": [
       "curio.builtin/autk-grammar",
-      "curio.builtin/data-pool"
+      "curio.builtin/data-pool",
+      "curio.scout/bars"
     ],
     "notes": null
   },
@@ -218,7 +257,7 @@
   "split": "validation",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "the example 06 scenario study (#662), from the example JSON and its walkthrough, 2026-10-05; its third scenario from the Edit Features step, 2026-10-06; its difference map on an Autark node after the Compare Scenarios node, 2026-10-17; that map on a scale centered on no change, 2026-10-17",
+    "draftedBy": "the example 06 scenario study (#662), from the example JSON and its walkthrough, 2026-10-05; its third scenario from the Edit Features step, 2026-10-06; its difference map on an Autark node after the Compare Scenarios node, 2026-10-17; that map on a scale centered on no change, 2026-10-17; its comparisons without Compare Scenarios, a Roads step per scenario charted by Scout's Bars and a Python step taking the sunlight change, in the plan answering komar41's review (step 6.3), 2026-10-20",
     "reviewedBy": null,
     "reviewedAt": null
   },
@@ -227,5 +266,5 @@
     "licence": "MIT (this repository)",
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
   },
-  "notes": "The Autark steps run in the browser, and the Python steps in the sandbox: the Edit Features step between the pool and a shadow step, and the Compare Scenarios steps after the maps. An Autark map after the Difference draws each road's sunlight change on a diverging scale centered on no change. GPU shader work, so execution is opt-in."
+  "notes": "The Autark steps run in the browser, and the Python steps in the sandbox: the Edit Features step between the pool and a shadow step, a Roads step after each shadow step, which Scout's Bars charts, and the Sunlight change step after Baseline's and Twice as tall's maps. An Autark map after the Sunlight change step draws each road's sunlight change on a diverging scale centered on no change. GPU shader work, so execution is opt-in."
 }
