@@ -7,7 +7,7 @@ import { inputSlotOf, slotHandleId } from "./utils/inputSlots";
 import { inputNamesIn, resolveReferences, widgetLiteral } from "./utils/references/codeReferences";
 import { PARAMETER_NODE_TYPE, sharedWidgetsOfSpec } from "./utils/references/sharedParameters";
 import { normalizeSelections } from "./utils/references/selectionTags";
-import { normalizeWidgets, type WidgetDef } from "./utils/widgets/widgetModel";
+import { normalizeWidgets, type WidgetDef, type WidgetValue } from "./utils/widgets/widgetModel";
 import { INPUTS_DATASET, namesDataset, readsInputs, usesNamedDatasets } from "./utils/vegaDatasets";
 import { inputTableName } from "./generated/autkGrammar";
 import { normalizeScenarios, type Scenario } from "./utils/scenarios/scenarioModel";
@@ -446,6 +446,27 @@ function indent(text: string): string {
     .join("\n");
 }
 
+/**
+ * *value*, JSON data, as a Python literal laid out as `JSON.stringify(value,
+ * null, 2)` lays it out: True, False and None where JSON writes true, false
+ * and null, and None for a number JSON cannot write. A key or an item JSON
+ * leaves out (an undefined one) is left out here too.
+ */
+function pythonLiteral(value: unknown, margin = ""): string {
+  const inner = `${margin}  `;
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "[]";
+    return `[\n${value.map((item) => inner + pythonLiteral(item ?? null, inner)).join(",\n")}\n${margin}]`;
+  }
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value).filter(([, item]) => item !== undefined);
+    if (entries.length === 0) return "{}";
+    const lines = entries.map(([key, item]) => `${inner}${JSON.stringify(key)}: ${pythonLiteral(item, inner)}`);
+    return `{\n${lines.join(",\n")}\n${margin}}`;
+  }
+  return widgetLiteral(value as WidgetValue, "python");
+}
+
 /** A heading a reader can use to line the notebook up against the canvas. */
 function nodeHeading(node: TrillNode, inputNodes: TrillNode[]): string {
   const inputs = inputNodes.length
@@ -550,12 +571,13 @@ function generateCells(
     if (fill) spec = withScenarioScales(spec, fill);
     // json.loads of a JSON *string* would yield a Python str rather than a
     // dict, which is not a usable mimebundle - so the spec is embedded as a
-    // literal object instead.
+    // literal object instead, written as Python writes one: JSON's true,
+    // false and null are names a kernel does not know.
     const lines = [
       "from IPython.display import display",
       ...(stacked ? ["from utk_curio.sandbox.util.scenario_stack import input_rows, stack_inputs"] : []),
       "",
-      `_spec = ${JSON.stringify(spec, null, 2)}`,
+      `_spec = ${pythonLiteral(spec)}`,
     ];
     if (inputNodes.length && !usesNamedDatasets(spec, inputNodes.length)) {
       lines.push(
