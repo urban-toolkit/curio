@@ -165,16 +165,16 @@ export function importedModelPackage(over: Record<string, unknown> = {}): Packag
 }
 
 /** A node package that ships a module of its own. */
-export function scoutRastersPackage(over: Record<string, unknown> = {}): PackagePayload {
+export function scoutPackage(over: Record<string, unknown> = {}): PackagePayload {
   return row({
-    packageId: "scout.rasters",
-    dirName: "scout.rasters@1",
-    name: "SCOUT Rasters",
+    packageId: "curio.scout",
+    dirName: "curio.scout@1",
+    name: "Scout",
     kind: "node",
     modules: ["scout_rasters"],
     templates: [
       template({
-        id: "scout.rasters/rasterize-buildings@1",
+        id: "curio.scout/rasterize-buildings@1",
         templateId: "rasterize-buildings",
         label: "Rasterize Buildings",
       }),

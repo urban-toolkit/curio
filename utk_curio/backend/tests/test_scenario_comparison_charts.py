@@ -6,8 +6,8 @@ ScenarioCharts in #914 on main's nodes).
 table from the Data Catalog, keeps each scenario's rows in a Data
 Transformation node whose Case widget picks them, and stacks them in a Compare
 Scenarios node. The chart is the Compare node's own preset where one draws it
-(grouped bars, a table), else a node of the SCOUT Comparison package
-(``scout.comparison@1``) after it: a Vega-Lite chart whose spec is its
+(grouped bars, a table), else a node of the Scout package
+(``curio.scout@1``) after it: a Vega-Lite chart whose spec is its
 template's, unchanged, and whose widgets name the columns it plots. No chart
 names a scenario or a color: it draws them as its Compare node labels them.
 The tables are ``datasets/data.curio.example-*@1``, which the seeded script
@@ -37,7 +37,7 @@ SCRIPT = REPO_ROOT / "scripts" / "build_example_scenario_charts.py"
 COMPARE_DIR = REPO_ROOT / "utk_curio" / "frontend" / "urban-workflows" / "src" / "utils" / "compare"
 BUILTIN_MANIFEST = REPO_ROOT / "packages" / "curio.builtin@1" / "manifest.json"
 #: The package whose templates draw the charts no preset draws.
-COMPARISON_DIR = "scout.comparison@1"
+COMPARISON_DIR = "curio.scout@1"
 COMPARISON = REPO_ROOT / "packages" / COMPARISON_DIR
 
 LOAD = "curio.builtin/data-loading"
@@ -47,7 +47,7 @@ COMPARE = "curio.builtin/compare-scenarios"
 STORMS = ["10-year storm", "50-year storm", "100-year storm"]
 
 #: Each example table's chart: its scenarios in the Compare node's circle
-#: order, the Compare node's preset, and the SCOUT Comparison template whose
+#: order, the Compare node's preset, and the Scout template whose
 #: node after it draws the chart, for a form no preset draws (None: the preset
 #: is the chart).
 CHARTS = {
@@ -64,7 +64,7 @@ CHARTS = {
 DATASETS = list(CHARTS)
 CHARTED = [dataset_id for dataset_id, (_names, _preset, template) in CHARTS.items() if template]
 #: The seven chart nodes' types, one per template.
-CHART_TYPES = {f"scout.comparison/{CHARTS[dataset_id][2]}" for dataset_id in CHARTED}
+CHART_TYPES = {f"curio.scout/{CHARTS[dataset_id][2]}" for dataset_id in CHARTED}
 
 #: What a reference chip looks like (``[!! y !!]``).
 CHIP = re.compile(r"\[!!\s*(.*?)\s*!!\]")
@@ -198,7 +198,7 @@ def test_the_nine_tables_and_their_manifests_fit_their_budget():
 def test_each_table_has_a_row_that_loads_keeps_compares_and_charts_it():
     flow = _flow()
     assert flow["name"] == "Nine ways to chart scenario comparisons"
-    # Each chart no preset draws is one of the seven SCOUT Comparison nodes.
+    # Each chart no preset draws is one of Scout's seven charts.
     assert len(CHART_TYPES) == 7
     assert Counter(node["type"] for node in flow["nodes"]) == {
         LOAD: 9, KEEP: 24, COMPARE: 9, **{chart_type: 1 for chart_type in CHART_TYPES},
@@ -325,7 +325,7 @@ def test_each_compare_node_is_labelled_and_coded_for_its_inputs():
 
 
 def test_every_chart_is_drawn_from_a_compare_node():
-    """Nine charts: seven SCOUT Comparison nodes, each fed by one Compare node
+    """Nine charts: Scout's seven charts, each fed by one Compare node
     and nothing else, and two Compare nodes whose own preset is the chart."""
     flow = _flow()
     by_id = {node["id"]: node for node in flow["nodes"]}
@@ -339,12 +339,12 @@ def test_every_chart_is_drawn_from_a_compare_node():
         row = _row(flow, dataset_id)
         _names, preset, template = CHARTS[dataset_id]
         if template:
-            assert row["chart"]["type"] == f"scout.comparison/{template}", dataset_id
-            drawn_by[dataset_id] = "SCOUT Comparison"
+            assert row["chart"]["type"] == f"curio.scout/{template}", dataset_id
+            drawn_by[dataset_id] = "Scout"
         else:
             assert row["chart"] is None, dataset_id
             drawn_by[dataset_id] = preset
-    assert Counter(drawn_by.values()) == {"SCOUT Comparison": 7, "grouped-bar": 1, "table": 1}
+    assert Counter(drawn_by.values()) == {"Scout": 7, "grouped-bar": 1, "table": 1}
 
 
 def _template(template_id: str) -> dict:

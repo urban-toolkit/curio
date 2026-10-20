@@ -18,7 +18,7 @@ context:
 Three scenarios: Existing; Towers removed, whose Interaction node removes the
 marked parts; and Height cap, whose Interaction node cuts them down to the
 Tall building height. Each rasterizes its buildings
-(``scout.rasters@1``), runs Deep Umbra on them
+(``curio.scout@1``), runs Deep Umbra on them
 (``model.scout.deep-umbra@1``), measures the shade in each park, and draws its
 buildings in 3D and its shadow on Autark maps. Compare Scenarios nodes chart
 each park's mean minutes of shadow in the three scenarios and take, for each
@@ -52,7 +52,7 @@ REPO = Path(__file__).resolve().parents[4]
 DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "lower-manhattan-park-shade.json"
 NAME = "Lower Manhattan park shade with towers removed or capped"
 EXTRACT = "docs/examples/data/lower_mnt.osm.pbf"
-RASTER_PACKAGE = REPO / "packages" / "scout.rasters@1"
+RASTER_PACKAGE = REPO / "packages" / "curio.scout@1"
 RASTER_MODULE = "scout_rasters"
 MODEL_PACKAGE = REPO / "packages" / "model.scout.deep-umbra@1"
 MODEL_ID = "model.scout.deep-umbra"
@@ -62,7 +62,7 @@ PYTHON = "curio.builtin/computation-analysis"
 PARAMETER = "curio.builtin/parameter"
 INTERACTION = "curio.builtin/edit-features"
 COMPARE = "curio.builtin/compare-scenarios"
-RASTERIZE = "scout.rasters/rasterize-buildings"
+RASTERIZE = "curio.scout/rasterize-buildings"
 SHADOW = "model.scout.deep-umbra/accumulated-shadow"
 
 #: The scenarios, in the order every Compare Scenarios node reads them, and the
@@ -268,7 +268,7 @@ def test_it_is_three_scenarios_over_one_context_from_the_extract():
     from the extract. The lockfile names both packages."""
     spec = _dataflow()
     assert spec["name"] == NAME
-    assert spec["packages"] == ["model.scout.deep-umbra@1", "scout.rasters@1"]
+    assert spec["packages"] == ["curio.scout@1", "model.scout.deep-umbra@1"]
     assert not spec.get("datasets"), spec.get("datasets")
     assert spec["categories"] == {"city": ["New York"], "topic": ["Heat and climate", "Greenery"],
                                   "complexity": ["Beginner"]}

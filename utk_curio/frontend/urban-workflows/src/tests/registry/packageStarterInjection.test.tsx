@@ -31,7 +31,7 @@ jest.mock('../../providers/StarterProvider', () => ({
       if (type === 'model.example.tiny/image-segmentation@1') {
         return [{ id: 's2', type, name: 'image-segmentation', description: '', accessLevel: 'ANY', code: DEFAULT_CELL, custom: false }];
       }
-      if (type === 'scout.rasters/raster-calculator@1') return mockCalculatorStarters(type);
+      if (type === 'curio.scout/raster-calculator@1') return mockCalculatorStarters(type);
       return [];
     },
   }),
@@ -51,12 +51,12 @@ import { behaviorDataView } from '../../utils/behaviorDataView';
 import type { NodeBehaviorData, UseNodeStateReturn } from '../../registry/types';
 
 const REPO_ROOT = path.resolve(__dirname, '../../../../../..');
-/** SCOUT Rasters, as the repository ships it. */
-const SCOUT_RASTERS = path.join(REPO_ROOT, 'packages', 'scout.rasters@1');
+/** Scout, as the repository ships it. */
+const SCOUT = path.join(REPO_ROOT, 'packages', 'curio.scout@1');
 
-/** The starter SCOUT Rasters ships for its Raster Calculator. */
+/** The starter Scout ships for its Raster Calculator. */
 function readCalculatorStarter(): string {
-  return fs.readFileSync(path.join(SCOUT_RASTERS, 'sources', 'raster-calculator.py'), 'utf-8');
+  return fs.readFileSync(path.join(SCOUT, 'sources', 'raster-calculator.py'), 'utf-8');
 }
 
 /** What the starters feed (`application/starters.py`) lists for the Raster
@@ -193,9 +193,9 @@ describe('a model package\'s template without a source', () => {
   });
 });
 
-/** SCOUT Rasters with its Raster Calculator's template, read from its manifest. */
+/** Scout with its Raster Calculator's template, read from its manifest. */
 function calculatorPack(): StarterPack {
-  const manifest = JSON.parse(fs.readFileSync(path.join(SCOUT_RASTERS, 'manifest.json'), 'utf-8'));
+  const manifest = JSON.parse(fs.readFileSync(path.join(SCOUT, 'manifest.json'), 'utf-8'));
   const template = manifest.templates.find((t: { id: string }) => t.id === 'raster-calculator');
   return {
     packageId: manifest.id,
@@ -234,7 +234,7 @@ function calculatorPack(): StarterPack {
   };
 }
 
-describe('SCOUT Rasters\' Raster Calculator, as the repository ships it', () => {
+describe('Scout\'s Raster Calculator, as the repository ships it', () => {
   beforeEach(() => clearPackageNodes());
   const { getStarters } = useStarterContext();
 
@@ -263,7 +263,7 @@ describe('SCOUT Rasters\' Raster Calculator, as the repository ships it', () => 
   test('is a package node with its icon and the PACKAGE pill, and core holds no node or behavior of its own', async () => {
     const read = (dir: string) =>
       JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'packages', dir, 'manifest.json'), 'utf-8'));
-    const templates = read('scout.rasters@1').templates;
+    const templates = read('curio.scout@1').templates;
     const template = templates.find((t: { id: string }) => t.id === 'raster-calculator');
     expect([template.behavior, template.source]).toEqual(['code', 'sources/raster-calculator.py']);
     expect(read(`${BUILTIN_PACKAGE_ID}@1`).templates.map((t: { id: string }) => t.id)).not.toContain('raster-calculator');
@@ -275,8 +275,8 @@ describe('SCOUT Rasters\' Raster Calculator, as the repository ships it', () => 
     // Its icon is loaded on demand, as the app loads it before building descriptors.
     await loadIconRefs([template.iconRef]);
     const [descriptor] = registerPackageTemplates([calculatorPack()]);
-    expect(descriptor.package?.packageId).toBe('scout.rasters');
-    expect(descriptor.package?.name).toBe('SCOUT Rasters');
+    expect(descriptor.package?.packageId).toBe('curio.scout');
+    expect(descriptor.package?.name).toBe('Scout');
     expect(descriptor.package?.source).toBe('sources/raster-calculator.py');
     expect(descriptor.icon).toBe(faCalculator);
     expect(descriptor.badge).toBe('PACKAGE');

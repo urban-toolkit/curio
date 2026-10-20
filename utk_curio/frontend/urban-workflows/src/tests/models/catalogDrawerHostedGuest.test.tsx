@@ -23,7 +23,7 @@ import {
   ddrnetPackage,
   deepUmbraPackage,
   importedModelPackage,
-  scoutRastersPackage,
+  scoutPackage,
 } from "../_support/modelPackages";
 
 // The drawer reaches the node registry, whose built-in behaviors load Vega's
@@ -55,7 +55,7 @@ const mockShowToast = jest.fn();
 jest.mock("../../providers/ToastProvider", () => ({
   useToastContext: () => ({ showToast: mockShowToast }),
 }));
-const mockLockfile = ["model.curio.ddrnet23-slim@1", "scout.rasters@1"];
+const mockLockfile = ["curio.scout@1", "model.curio.ddrnet23-slim@1"];
 // The save every Add, Remove and Import makes first on a dataflow with no id.
 const mockRequestProjectSave = jest.fn();
 jest.mock("../../providers/FlowProvider", () => ({
@@ -203,19 +203,19 @@ function signInToasts(): string[] {
 beforeEach(() => {
   jest.clearAllMocks();
   mockApi.catalog.mockResolvedValue({
-    packages: [ddrnetPackage(), deepUmbraPackage(), builtinPackage(), scoutRastersPackage()],
+    packages: [ddrnetPackage(), deepUmbraPackage(), builtinPackage(), scoutPackage()],
     families: [],
     catalogCollisions: [],
   });
   mockApi.listInstalled.mockResolvedValue({
-    packages: [ddrnetPackage(), builtinPackage(), scoutRastersPackage(), importedModelPackage()],
+    packages: [ddrnetPackage(), builtinPackage(), scoutPackage(), importedModelPackage()],
   });
   mockApi.factoryCapabilities.mockResolvedValue({ catalogPublish: true });
   mockApi.getProjectPackages.mockResolvedValue({ packages: mockLockfile });
   mockApi.getDefaults.mockResolvedValue({ packages: [] });
   mockApi.resolve.mockResolvedValue({ lockfile: [], conflicts: [] });
   mockApi.installToProject.mockResolvedValue({ packages: [...mockLockfile, "model.scout.deep-umbra@1"] });
-  mockApi.uninstallFromProject.mockResolvedValue({ packages: ["scout.rasters@1"] });
+  mockApi.uninstallFromProject.mockResolvedValue({ packages: ["curio.scout@1"] });
   mockApi.uploadArchive.mockResolvedValue({ package: importedModelPackage() });
   mockApi.weightsLicense.mockResolvedValue("MIT License");
   mockApi.usage.mockResolvedValue([]);
@@ -265,7 +265,7 @@ describe("a hosted guest, on a dataflow it never saved", () => {
 
   test("is told in the Node Catalog's words when it imports a node package", async () => {
     renderNodeDrawerAs(HOSTED_GUEST);
-    await waitFor(() => expect(card(NODE_DRAWER, "scout.rasters@1")).not.toBeNull());
+    await waitFor(() => expect(card(NODE_DRAWER, "curio.scout@1")).not.toBeNull());
 
     await importArchive(NODE_DRAWER);
     await settle();

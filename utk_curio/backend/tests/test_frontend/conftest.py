@@ -135,7 +135,7 @@ WORKFLOW_FILES = [
     "docs/examples/21-storage-photos-and-videos.json",
     "docs/examples/22-storage-audio-recordings.json",
     "docs/examples/23-storage-folder-of-different-files.json",
-    # Package nodes: the stack installs scout.rasters@1 and the
+    # Package nodes: the stack installs curio.scout@1 and the
     # model package model.scout.deep-umbra@1 because the dataflow declares
     # them (--with-examples).
     "docs/examples/24-scout-shadow-model-chicago-loop.json",

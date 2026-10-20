@@ -1,11 +1,11 @@
-"""SCOUT's flood example on SCOUT's whole grid, in two scenarios from Curio's own nodes and SCOUT Rasters' Raster Calculator, each on an Autark map, compared on an absolute difference and a chart, and weighed against CDC's Social Vulnerability Index on the riverside tracts (#662, step 18; #819; #914).
+"""SCOUT's flood example on SCOUT's whole grid, in two scenarios from Curio's own nodes and Scout's Raster Calculator, each on an Autark map, compared on an absolute difference and a chart, and weighed against CDC's Social Vulnerability Index on the riverside tracts (#662, step 18; #819; #914).
 
 The shipped test dataflow ``quad-cities-flood-vulnerability.json``: Parameter nodes for the
 period and the region's corners, at SCOUT's flood example's, which take every
 cell of SCOUT's 2592 by 2064 cell grid; three Data Loading nodes reading the
 region's window of SCOUT's rasters, which the Data Catalog holds whole; and two
 scenarios, "No NbS" and "NbS" (its copy), each holding a Raster Calculator
-(``scout.rasters@1``) that
+(``curio.scout@1``) that
 chooses the depth by nature-based solution (NbS) class, with its choice of NbS,
 a second that takes the depth's statistics, and an Autark map of the depth.
 One Compare Scenarios node, in Difference, takes the size of NbS minus No NbS,
@@ -91,8 +91,8 @@ if TYPE_CHECKING:
 
 DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "quad-cities-flood-vulnerability.json"
 TEST_NAME = "test_two_flood_scenarios_are_mapped_and_charted"
-CALCULATOR_TYPE = "scout.rasters/raster-calculator"
-RASTERS_PACKAGE = "scout.rasters@1"
+CALCULATOR_TYPE = "curio.scout/raster-calculator"
+RASTERS_PACKAGE = "curio.scout@1"
 MAP_TYPE = "curio.builtin/autk-grammar"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
 TRANSFORMATION_TYPE = "curio.builtin/data-transformation"
@@ -272,7 +272,7 @@ def test_two_flood_scenarios_are_mapped_and_charted(
         project_spec=spec,
     )
     require_owner_view(page)
-    # The Raster Calculators are SCOUT Rasters' nodes: the account has the
+    # The Raster Calculators are Scout's nodes: the account has the
     # package because the stack starts --with-examples and the dataflow
     # declares it.
     store = [p.get("dirName") for p in api_json(f"{current_server}/api/packages", session["token"])["packages"]]

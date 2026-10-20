@@ -950,16 +950,16 @@ These replace any colors or order the spec writes for that column. When a scenar
 renamed or recolored, the chart is drawn again with no run, and a selection made in
 it stays.
 
-For a comparison the **Chart** tab does not draw, the SCOUT Comparison package
-(`scout.comparison@1`) has seven charts to connect after a Compare Scenarios node:
+For a comparison the **Chart** tab does not draw, the Scout package
+(`curio.scout@1`) has seven charts to connect after a Compare Scenarios node:
 **Lines with a band**, **Curves by group**, **Bars with error bars**, **Ensemble
 strips**, **Stacked bars with totals**, **Donuts** and **Weighted matrix**. Each is a
 Vega-Lite node with a spec of its own, and draws its scenarios by the rule above. Set
 the columns it plots in its **Widgets** tab: a new node's widgets hold their own names
 (`y`, `part`), so the chart says which column the table lacks until you set them. The
-[package's README](../packages/scout.comparison@1/README.md) lists each chart's
+[package's README](../packages/curio.scout@1/README.md) lists each chart's
 widgets. Add the package to a dataflow from the Node Catalog drawer; the charts are
-then under **SCOUT Comparison** in the Tools panel's **Node Catalog** dropdown.
+then under **Scout** in the Tools panel's **Node Catalog** dropdown.
 
 The **Scenario Catalog** lists the scenarios of all your projects, each with its
 fixed context, levers and outcomes and the results its project saved. Open it from
@@ -1314,9 +1314,9 @@ dashboard the node shows the output saved with the dataflow and never joins.
 
 The **Raster Calculator** works on rasters: a `rasterio` dataset from a Python
 node or the Data Catalog, or a raster an Autark node hands on. It is a node of
-SCOUT Rasters (`scout.rasters@1`), a package that ships with Curio: once the
+Scout (`curio.scout@1`), a package that ships with Curio: once the
 package is in the dataflow (**Add to project** in the Node Catalog drawer), the
-node is under **SCOUT Rasters** in the Tools panel's **Node Catalog** dropdown.
+node is under **Scout** in the Tools panel's **Node Catalog** dropdown.
 It is a Python node whose code is written for it when it
 is dropped: input_0 minus input_1, with its other operations listed above it,
 statistics among them. Return another call to change what it does. Connect the

@@ -29,8 +29,8 @@ jest.mock("../../registry", () => ({
         [
             { id: "curio.builtin/data-loading@1", label: "Data Loading", category: "data",
               package: { packageId: "curio.builtin", major: 1, version: "1.0.0" } },
-            { id: "scout.rasters/rasterize-buildings@1", label: "Rasterize Buildings", category: "computation",
-              package: { packageId: "scout.rasters", major: 1, version: "1.0.0" } },
+            { id: "curio.scout/rasterize-buildings@1", label: "Rasterize Buildings", category: "computation",
+              package: { packageId: "curio.scout", major: 1, version: "1.0.0" } },
             { id: "model.curio.ddrnet23-slim/image-segmentation@1", label: "Image Segmentation", category: "computation",
               package: { packageId: "model.curio.ddrnet23-slim", major: 1, version: "1.0.0",
                          kind: "model", modelType: "semantic-segmentation" } },
@@ -57,7 +57,7 @@ describe("the tool rail's Node Catalog palette", () => {
         render(<ToolsMenu />);
         expect(mockPaletteTypes.length).toBeGreaterThan(0);
         for (const listed of mockPaletteTypes) {
-            expect(listed).toEqual(["scout.rasters/rasterize-buildings@1"]);
+            expect(listed).toEqual(["curio.scout/rasterize-buildings@1"]);
         }
     });
 });

@@ -14,6 +14,12 @@ from utk_curio.backend.app.execution import workflow_spec as ws
 from utk_curio.backend.app.packages.application import templates as pkg_services
 
 BUILTIN = "curio.builtin"
+#: Scout's (``curio.scout@1``) two raster nodes and its seven charts.
+RASTER_NODES = ("raster-calculator", "rasterize-buildings")
+SCOUT_CHARTS = (
+    "lines-with-band", "curves-by-group", "bars-with-error-bars", "ensemble-strips",
+    "stacked-bars-with-totals", "donuts", "weighted-matrix",
+)
 
 
 def _templates() -> dict:
@@ -58,8 +64,8 @@ class TestTemplateContentKind:
         assert kinds["note"] == "note"
         # Every shipped template is routed above, and no other ships: the
         # Merge Flow left the manifest (#662), its fan-in now lands on the
-        # input circles of the node it fed, and the Raster Calculator is
-        # SCOUT's scout.rasters@1 node (below).
+        # input circles of the node it fed, and the Raster Calculator is a
+        # node of Scout, curio.scout@1 (below).
         assert set(kinds) == {
             "data-loading", "data-export", "data-transformation", "data-pool",
             "computation-analysis", "data-summary", "js-computation",
@@ -76,22 +82,24 @@ class TestTemplateContentKind:
 
         from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
-        root = Path(__file__).resolve().parents[4] / "packages" / "scout.rasters@1"
+        root = Path(__file__).resolve().parents[4] / "packages" / "curio.scout@1"
         manifest = load_package_manifest(root)
         kinds = {t.template_id: pkg_services.template_content_kind(t) for t in manifest.templates}
-        assert kinds == {"raster-calculator": "code", "rasterize-buildings": "code"}
+        assert {key: kinds[key] for key in RASTER_NODES} == {"raster-calculator": "code", "rasterize-buildings": "code"}
+        # The package's other nodes are its seven charts (below).
+        assert sorted(set(kinds) - set(RASTER_NODES)) == sorted(SCOUT_CHARTS)
 
     def test_scouts_comparison_charts_are_vega_lite_documents(self):
-        """SCOUT Comparison's seven charts are Vega-Lite specs, as the Vega-Lite
-        node's is: validated as documents, never run in the sandbox."""
+        """Scout's seven charts are Vega-Lite specs, as the Vega-Lite node's
+        is: validated as documents, never run in the sandbox."""
         from pathlib import Path
 
         from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
-        root = Path(__file__).resolve().parents[4] / "packages" / "scout.comparison@1"
+        root = Path(__file__).resolve().parents[4] / "packages" / "curio.scout@1"
         manifest = load_package_manifest(root)
-        templates = {t.template_id: t for t in manifest.templates}
-        assert len(templates) == 7
+        templates = {t.template_id: t for t in manifest.templates if t.template_id not in RASTER_NODES}
+        assert sorted(templates) == sorted(SCOUT_CHARTS)
         for template_id, template in templates.items():
             assert pkg_services.template_content_kind(template) == "grammar", template_id
             assert template.grammar_id == "vega-lite", template_id

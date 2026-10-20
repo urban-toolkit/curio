@@ -6,10 +6,10 @@ module ``deep_umbra``. The package's license is its code's, MIT; the model
 block holds the weights' license, SCOUT's permission.
 
 The node reads a height raster, the one raster of Rasterize Buildings
-(``scout.rasters@1``), runs Deep Umbra on every zoom-16 tile of it
+(``curio.scout@1``), runs Deep Umbra on every zoom-16 tile of it
 that holds heights and returns the accumulated shadow as a raster on the same
 grid. SCOUT's metrics, the mean and median over the ground, are the
-statistics of a Raster Calculator (``scout.rasters@1`` too) with the heights as
+statistics of a Raster Calculator (``curio.scout@1`` too) with the heights as
 its mask, as the shipped dataflow ``chicago-loop-shadow-towers.json`` wires it.
 
 The proof starts from SCOUT's own files, copied unchanged into
@@ -76,8 +76,8 @@ PACKAGE = REPO / "packages" / f"{MODEL_ID}@1"
 SOURCES = PACKAGE / "sources"
 MODULE = "deep_umbra"
 NODE_TYPE = "model.scout.deep-umbra/accumulated-shadow"
-CALCULATOR_TYPE = "scout.rasters/raster-calculator"
-RASTERIZE_TYPE = "scout.rasters/rasterize-buildings"
+CALCULATOR_TYPE = "curio.scout/raster-calculator"
+RASTERIZE_TYPE = "curio.scout/rasterize-buildings"
 #: The line a Raster Calculator's code takes statistics with.
 STATISTICS_CALL = re.compile(r"^return curio_raster_statistics\(", re.M)
 MODEL = PACKAGE / "models" / "deep_umbra.onnx"
@@ -111,7 +111,7 @@ DIFFERENCE_MAP_DOCUMENT = {"map": {"layerRefs": [{
 #: season.
 SHADOW_RANGE = [0, 720]
 EXAMPLE = REPO / "docs" / "examples" / "24-scout-shadow-model-chicago-loop.json"
-RASTER_PACKAGE = REPO / "packages" / "scout.rasters@1"
+RASTER_PACKAGE = REPO / "packages" / "curio.scout@1"
 RASTER_MODULE = "scout_rasters"
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scout"
@@ -976,7 +976,7 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code, model_ids_in_code
 
     spec = _dataflow()
-    assert spec["packages"] == [f"{MODEL_ID}@1", "scout.rasters@1"]
+    assert spec["packages"] == ["curio.scout@1", f"{MODEL_ID}@1"]
     assert [ref["datasetId"] for ref in spec["datasets"]] == ["data.scout.loop-buildings"]
     nodes = {node["id"]: node for node in spec["nodes"]}
     by_type: dict[str, list] = {}
@@ -1090,7 +1090,7 @@ def test_example_24_holds_the_node_as_the_palette_drops_it_and_its_code_runs(wor
     from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
 
     spec = json.loads(EXAMPLE.read_text(encoding="utf-8"))["dataflow"]
-    assert spec["packages"] == [f"{MODEL_ID}@1", "scout.rasters@1"]
+    assert spec["packages"] == ["curio.scout@1", f"{MODEL_ID}@1"]
     (node,) = [node for node in spec["nodes"] if node["type"] == NODE_TYPE]
     assert node["content"] == _source() == CELL
     assert node["metadata"]["widgets"] == _template()["widgets"]

@@ -27,7 +27,7 @@ import {
   ddrnetPackage,
   deepUmbraPackage,
   importedModelPackage,
-  scoutRastersPackage,
+  scoutPackage,
 } from "../_support/modelPackages";
 
 // The drawer reaches the node registry, whose built-in behaviors load Vega's
@@ -128,25 +128,25 @@ function tab(name: "Browse all" | "In project"): HTMLElement {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockLockfile = ["model.curio.ddrnet23-slim@1", "scout.rasters@1"];
+  mockLockfile = ["curio.scout@1", "model.curio.ddrnet23-slim@1"];
   mockNodes = [];
   // The shared catalog: two model packages and two node packages.
   mockApi.catalog.mockResolvedValue({
-    packages: [ddrnetPackage(), deepUmbraPackage(), builtinPackage(), scoutRastersPackage()],
+    packages: [ddrnetPackage(), deepUmbraPackage(), builtinPackage(), scoutPackage()],
     families: [],
     catalogCollisions: [],
   });
   // The account's store: copies of what the dataflow uses, and a model
   // downloaded from the Discovery Catalog that is in the store only.
   mockApi.listInstalled.mockResolvedValue({
-    packages: [ddrnetPackage(), builtinPackage(), scoutRastersPackage(), importedModelPackage()],
+    packages: [ddrnetPackage(), builtinPackage(), scoutPackage(), importedModelPackage()],
   });
   mockApi.factoryCapabilities.mockResolvedValue({ catalogPublish: true });
   mockApi.getProjectPackages.mockResolvedValue({ packages: mockLockfile });
   mockApi.getDefaults.mockResolvedValue({ packages: [] });
   mockApi.resolve.mockResolvedValue({ lockfile: [], conflicts: [] });
   mockApi.installToProject.mockResolvedValue({ packages: [...mockLockfile, "model.scout.deep-umbra@1"] });
-  mockApi.uninstallFromProject.mockResolvedValue({ packages: ["scout.rasters@1"] });
+  mockApi.uninstallFromProject.mockResolvedValue({ packages: ["curio.scout@1"] });
   mockApi.uploadArchive.mockResolvedValue({ package: importedModelPackage() });
   mockApi.weightsLicense.mockResolvedValue("MIT License\n\nCityscapes terms.");
   mockApi.usage.mockResolvedValue([]);
@@ -169,7 +169,7 @@ describe("the canvas Model Catalog drawer", () => {
     // Downloaded from the Discovery Catalog: in the store, not the catalog.
     expect(card(MODEL_DRAWER, "imported.xabc123def456@1")).not.toBeNull();
     expect(card(MODEL_DRAWER, "curio.builtin@1")).toBeNull();
-    expect(card(MODEL_DRAWER, "scout.rasters@1")).toBeNull();
+    expect(card(MODEL_DRAWER, "curio.scout@1")).toBeNull();
     // Through the packages service, filtered to kind model: never /api/models.
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { apiFetch } = require("../../utils/authApi");
@@ -196,7 +196,7 @@ describe("the canvas Model Catalog drawer", () => {
     fireEvent.click(tab("In project"));
     await waitFor(() => expect(card(MODEL_DRAWER, "model.scout.deep-umbra@1")).toBeNull());
     expect(card(MODEL_DRAWER, "model.curio.ddrnet23-slim@1")).not.toBeNull();
-    expect(card(MODEL_DRAWER, "scout.rasters@1")).toBeNull();
+    expect(card(MODEL_DRAWER, "curio.scout@1")).toBeNull();
     expect(card(MODEL_DRAWER, "imported.xabc123def456@1")).toBeNull();
   });
 
@@ -208,10 +208,10 @@ describe("the canvas Model Catalog drawer", () => {
     await waitFor(() => expect(mockApi.resolve).toHaveBeenCalled());
     expect([...mockApi.resolve.mock.calls[0][0]].sort()).toEqual([
       "curio.builtin@1",
+      "curio.scout@1",
       "imported.xabc123def456@1",
       "model.curio.ddrnet23-slim@1",
       "model.scout.deep-umbra@1",
-      "scout.rasters@1",
     ]);
     const review = await screen.findByRole("dialog", { name: "" });
     expect(review).toHaveTextContent('Add "Deep Umbra (accumulated shadows)"');
@@ -420,7 +420,7 @@ describe("the canvas Node Catalog drawer", () => {
         <NodeCatalogDrawer presented onRequestClose={jest.fn()} onExitComplete={jest.fn()} />
       </MemoryRouter>,
     );
-    await waitFor(() => expect(card(NODE_DRAWER, "scout.rasters@1")).not.toBeNull());
+    await waitFor(() => expect(card(NODE_DRAWER, "curio.scout@1")).not.toBeNull());
     expect(card(NODE_DRAWER, "curio.builtin@1")).not.toBeNull();
     for (const dirName of [
       "model.curio.ddrnet23-slim@1",
@@ -433,7 +433,7 @@ describe("the canvas Node Catalog drawer", () => {
     expect(tab("In project")).toHaveTextContent(/^In project2$/);
     fireEvent.click(tab("In project"));
     await waitFor(() => expect(card(NODE_DRAWER, "model.curio.ddrnet23-slim@1")).toBeNull());
-    expect(card(NODE_DRAWER, "scout.rasters@1")).not.toBeNull();
+    expect(card(NODE_DRAWER, "curio.scout@1")).not.toBeNull();
   });
 });
 
