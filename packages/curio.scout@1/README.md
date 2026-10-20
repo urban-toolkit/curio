@@ -1,18 +1,18 @@
 # `curio.scout@1`: Scout
 
-SCOUT's nodes in Curio: two raster nodes and seven charts that compare
+SCOUT's nodes in Curio: two raster nodes and fifteen charts that compare
 scenarios. The **Raster Calculator** runs one operation over rasters on one
 grid, cell by cell or a raster's statistics. **Rasterize Buildings** is SCOUT's
 building rasterizer ("OSM vector to raster"), ported from
 [SCOUT](https://github.com/urban-toolkit/scout) (`backend/compute/raster_conversion`):
 it draws each building's height into map tiles and joins the tiles into one
 raster, which an Autark map draws and SCOUT's Deep Umbra shadow model reads.
-The seven Vega-Lite charts connect after a **Compare Scenarios** node, for the
-comparisons its **Chart** tab does not draw. They are re-made from komar41's
-ScenarioCharts.
+The fifteen Vega-Lite charts take one input per scenario and draw each scenario
+in its box's color. Seven are re-made from komar41's ScenarioCharts, and Dots
+with a range is the first view of his "Minutes of shadow per park" chart.
 
 Once the package is in a dataflow (**Add to project** in the Node Catalog
-drawer), its nine nodes are under **Scout** in the Tools panel's **Node
+drawer), its seventeen nodes are under **Scout** in the Tools panel's **Node
 Catalog** dropdown.
 
 ## Nodes
@@ -35,6 +35,14 @@ Catalog** dropdown.
 | `curio.scout/stacked-bars-with-totals` | Stacked bars with totals | One bar per scenario, stacked by `part` in the table's row order, its total on top | `y`, `part`, `y_title`, `y_format`, `part_title` |
 | `curio.scout/donuts` | Donuts | One donut per scenario: the `highlight` part in the scenario's color, the rest grey, each slice's share of the `value` total in percent | `part`, `value`, `highlight` |
 | `curio.scout/weighted-matrix` | Weighted matrix | One ring per `factor` and scenario, sized by its `weight` from -1 to 1, green for and red against; a weight of 0 draws no ring | `factor`, `weight` |
+| `curio.scout/dots-with-a-range` | Dots with a range | For each `category`, a grey rule from its lowest `value` to its highest and a dot per scenario, the categories the scenarios differ most on first | `category`, `value`, `x_title`, `y_title` |
+| `curio.scout/bars` | Bars | One bar per scenario, its `y` values combined | `y`, `combine`, `y_title` |
+| `curio.scout/grouped-bars` | Grouped bars | Bars per category of `x`, the scenarios side by side, `y` combined per category | `x`, `y`, `combine`, `x_title`, `y_title` |
+| `curio.scout/lines` | Lines | One line per scenario over `x`, a point at each value, `y` combined per value of `x` | `x`, `x_type`, `y`, `combine`, `x_title`, `y_title` |
+| `curio.scout/points` | Points | One point per row, `x` against `y` | `x`, `y`, `x_title`, `y_title` |
+| `curio.scout/pie` | Pie | One slice per scenario, its `value` combined and written on it | `value`, `combine`, `value_title` |
+| `curio.scout/lollipops` | Lollipops | One stem from 0 and one dot per scenario, at its `value` combined | `value`, `combine`, `x_title` |
+| `curio.scout/table` | Table | The inputs' rows, up to 40, in the `columns` it lists | `columns` |
 
 ## Raster Calculator
 
@@ -89,22 +97,40 @@ nothing, and a building taller than the maximum height is drawn at the maximum.
 
 ## Charts
 
-Each chart is a Vega-Lite node with a spec of its own: it reads the Compare
-node's stacked table, with its `scenario_name` column, and draws each scenario
-in the color of its box, in the order of the Compare node's inputs. The columns
-it plots are text widgets in its **Widgets** tab.
+Each chart is a Vega-Lite node with a spec of its own. Connect each scenario's
+outcome to one of its input circles: each edge takes the next circle, and the
+chart draws the scenarios in the order of its circles. Its spec reads all its
+inputs as the dataset `inputs` (`"data": {"name": "inputs"}`): every input's
+rows, stacked, each with `__input__` (its circle), `scenario` (the id of the
+scenario box its input comes from) and `scenario_name` (that box's name) beside
+its own columns. A column one input lacks is empty in its rows, and an input
+that is a single value is one row with a `value` column. The columns a chart
+plots are widgets in its **Widgets** tab.
+
+A new chart opens with its template's spec in its grammar editor. The spec is
+yours to edit: its widgets' chips are filled in each time it draws, and the
+dataflow keeps the spec as you leave it.
 
 ### Widgets
 
-Each widget is a text widget:
-
 - A column widget (`x`, `y`, `low`, `high`, `facet`, `group`, `error`, `part`,
-  `value`, `factor`, `weight`) names a column of the stacked table. A new node's
-  widgets hold their own names, so the chart says which column the table lacks
-  until you set them. With `facet` empty, Lines with a band draws one panel.
+  `value`, `factor`, `weight`, `category`) is a text widget that names a column
+  of the inputs. A new node's widgets hold their own names, so the chart says
+  which column the inputs lack until you set them. With `facet` empty, Lines
+  with a band draws one panel.
+- `columns`, the Table's, is a list of texts that names the columns it shows,
+  in order, such as `["scenario_name", "cost_per_m2"]`. A new Table lists
+  `scenario_name`.
+- `combine` picks how the values of a scenario's rows are combined: **Mean**,
+  **Sum**, **Median**, **Minimum**, **Maximum**, **Count of rows**, or **None**,
+  which plots each row's value as it is, so a scenario with several rows stacks
+  them in its bar. It starts at **Sum** in Pie and at **Mean** elsewhere. Grouped
+  bars combine per category, and Lines per value of `x`.
+- `x_type`, the Lines', is the kind of the X column: `quantitative`, `temporal`,
+  `ordinal` or `nominal`.
 - `highlight` is the value of the `part` column that Donuts colors.
-- `x_title`, `y_title`, `group_title` and `part_title` are titles; empty, the
-  axis or legend has none.
+- `x_title`, `y_title`, `value_title`, `group_title` and `part_title` are
+  titles; empty, the axis, the legend or Pie's values have none.
 - `y_format` formats the Y axis labels with a
   [d3 format](https://d3js.org/d3-format), such as `.0%` for percents or `,.1f`
   for one decimal; empty, Vega-Lite writes them. Stacked bars with totals writes
@@ -114,13 +140,14 @@ A column name with a `'` in it cannot be read: rename the column first.
 
 ### Colors and order
 
-The charts follow the rule of every Vega-Lite node after a Compare Scenarios
-node ([Comparing scenarios](../../docs/USAGE.md#comparing-scenarios)): a color,
-fill or stroke by `scenario_name` takes the scenarios' colors, and an axis, an
-offset or a facet by it takes the order of the Compare node's inputs. A chart is
-drawn again when a scenario is renamed or recolored. Stacked bars with totals and
-Weighted matrix write each scenario's name in its color under its bar or beside
-its row; their bars and rings keep colors of their own.
+A color, fill or stroke by `scenario_name` takes the colors of the scenarios'
+boxes, and an axis, an offset or a facet by it takes the order of the chart's
+circles ([Comparing scenarios](../../docs/USAGE.md#comparing-scenarios)). A
+chart is drawn again when a scenario is renamed or recolored. Stacked bars with
+totals and Weighted matrix write each scenario's name in its color under its
+bar or beside its row; their bars and rings keep colors of their own. The Table
+writes each row in its scenario's color, in a darker shade of it where the
+color is too light to read on white.
 
 ## Dataflows
 
@@ -141,14 +168,14 @@ Calculator and takes its statistics with another.
 
 ```
 [ Scenario A's rows ] ──┐
-                        ├──► [ Compare Scenarios ] ──► [ Lines with a band ]
+                        ├──► [ Lines with a band ]
 [ Scenario B's rows ] ──┘
 ```
 
 The test dataflow
 [Nine ways to chart scenario comparisons](../../docs/examples/dataflows/scenario-comparison-charts.json)
-draws seven example tables with the seven charts, each after a Compare
-Scenarios node of its own.
+draws nine example tables with nine of the charts, each taking its scenarios'
+nodes on its circles.
 
 ## Setup
 

@@ -1,0 +1,116 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "data": {
+    "name": "inputs"
+  },
+  "transform": [
+    {
+      "window": [
+        {
+          "op": "row_number",
+          "as": "curio_row"
+        }
+      ]
+    },
+    {
+      "calculate": "'[!! combine !!]' === 'None' ? datum.curio_row : 0",
+      "as": "curio_group"
+    },
+    {
+      "aggregate": [
+        {
+          "op": "mean",
+          "field": "[!! value !!]",
+          "as": "curio_mean"
+        },
+        {
+          "op": "sum",
+          "field": "[!! value !!]",
+          "as": "curio_sum"
+        },
+        {
+          "op": "median",
+          "field": "[!! value !!]",
+          "as": "curio_median"
+        },
+        {
+          "op": "min",
+          "field": "[!! value !!]",
+          "as": "curio_min"
+        },
+        {
+          "op": "max",
+          "field": "[!! value !!]",
+          "as": "curio_max"
+        },
+        {
+          "op": "count",
+          "as": "curio_count"
+        }
+      ],
+      "groupby": [
+        "scenario_name",
+        "curio_group"
+      ]
+    },
+    {
+      "calculate": "({'Mean': datum.curio_mean, 'Sum': datum.curio_sum, 'Median': datum.curio_median, 'Minimum': datum.curio_min, 'Maximum': datum.curio_max, 'Count of rows': datum.curio_count, 'None': datum.curio_max})['[!! combine !!]']",
+      "as": "curio_value"
+    }
+  ],
+  "layer": [
+    {
+      "mark": {
+        "type": "rule"
+      },
+      "encoding": {
+        "y": {
+          "field": "scenario_name",
+          "type": "nominal",
+          "title": "Scenario"
+        },
+        "x": {
+          "field": "curio_value",
+          "type": "quantitative",
+          "title": "[!! x_title !!]"
+        },
+        "x2": {
+          "datum": 0
+        },
+        "color": {
+          "field": "scenario_name",
+          "type": "nominal",
+          "title": "Scenario"
+        }
+      }
+    },
+    {
+      "mark": {
+        "type": "point",
+        "filled": true,
+        "size": 120,
+        "tooltip": true,
+        "opacity": {
+          "expr": "'[!! combine !!]' === 'None' ? 0.7 : 1"
+        }
+      },
+      "encoding": {
+        "y": {
+          "field": "scenario_name",
+          "type": "nominal",
+          "title": "Scenario"
+        },
+        "x": {
+          "field": "curio_value",
+          "type": "quantitative",
+          "title": "[!! x_title !!]"
+        },
+        "color": {
+          "field": "scenario_name",
+          "type": "nominal",
+          "title": "Scenario"
+        }
+      }
+    }
+  ]
+}

@@ -1,5 +1,8 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "data": {
+    "name": "inputs"
+  },
   "title": {
     "text": "Colored: [!! highlight !!]. Grey: the rest.",
     "fontWeight": "normal",
