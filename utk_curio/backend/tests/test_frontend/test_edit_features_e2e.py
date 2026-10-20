@@ -14,14 +14,15 @@ map code, and removed:
 3. Remove makes an edit, written into the node's code.
 4. Run, the node's output has lost the building with every part, so the count
    downstream drops.
-5. A Compare Scenarios node over both counts lists the edit in its What differs
-   tab, against no edits in Every building.
-6. The edit list is saved with the dataflow.
+5. The edit list is saved with the dataflow.
 
 A second test sums the buildings' heights instead, and edits by condition: a
 scale on the features ``height >= 50`` picks, a removal by condition switched
-off, then Update results, which runs the node and every node after it. What
-differs lists the entry switched off as off.
+off, then Update results, which runs the node and every node after it. The
+saved log keeps the entry switched off, as off.
+
+The Compare Scenarios node whose What differs tab listed the edits went in
+step 6.4 of the plan answering komar41's review.
 
 It runs an Autark map, which needs WebGPU: without an adapter it skips, unless
 ``CURIO_REQUIRE_HARDWARE_WEBGPU=1`` (CI's GPU job), where it fails.
@@ -40,10 +41,10 @@ from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
 
-from .test_compare_scenarios_e2e import _OUTPUT_ARTIFACT_JS
 from .test_scenario_drop_e2e import _saved_spec
 from .test_widget_tags_e2e import _open_tab
 from .utils import (
+    _OUTPUT_ARTIFACT_JS,
     assert_in_view,
     dismiss_toasts,
     frame_nodes,
@@ -73,7 +74,6 @@ EDIT_TYPE = "curio.builtin/edit-features"
 LOAD = "ef-load"
 EDIT, EDIT_2 = "ef-edit", "ef-edit-2"
 COUNT, COUNT_2 = "ef-count", "ef-count-2"
-COMPARE = "ef-compare"
 EVERY, LESS = "s-every", "s-less"
 
 # Building 1 in two parts, side by side on the left; building 2, one part as
@@ -126,12 +126,8 @@ def _spec() -> dict:
                 node(COUNT, "curio.builtin/computation-analysis", 1400, 0, COUNT_CODE, "Count"),
                 node(EDIT_2, EDIT_TYPE, 700, 600, EMPTY_LIST, "Edit Features", {**key_only, "copiedFrom": [EDIT]}),
                 node(COUNT_2, "curio.builtin/computation-analysis", 1400, 600, COUNT_CODE, "Count", {"copiedFrom": [COUNT]}),
-                node(COMPARE, "curio.builtin/compare-scenarios", 2100, 300, "", "Compare"),
             ],
-            "edges": [
-                edge(LOAD, EDIT), edge(EDIT, COUNT), edge(LOAD, EDIT_2), edge(EDIT_2, COUNT_2),
-                edge(COUNT, COMPARE, "in"), edge(COUNT_2, COMPARE, "in_1"),
-            ],
+            "edges": [edge(LOAD, EDIT), edge(EDIT, COUNT), edge(LOAD, EDIT_2), edge(EDIT_2, COUNT_2)],
             "scenarios": [
                 {"id": EVERY, "name": "Every building", "color": "#3567c7", "nodes": [EDIT, COUNT]},
                 {"id": LESS, "name": "One removed", "color": "#2f8f4a", "nodes": [EDIT_2, COUNT_2]},
@@ -193,7 +189,7 @@ def _pick_a_building(page) -> int:
     raise AssertionError(f"no double-click on the Edit Features map picked a building: {tried}")
 
 
-def test_a_building_picked_and_removed_drops_the_count_and_is_listed_as_what_differs(
+def test_a_building_picked_and_removed_drops_the_count_and_the_edit_is_saved(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     require_project_page()
@@ -210,7 +206,7 @@ def test_a_building_picked_and_removed_drops_the_count_and_is_listed_as_what_dif
     )
     require_owner_view(page)
     token, project_id = session["token"], session["project"]["id"]
-    for node_id in (LOAD, EDIT, EDIT_2, COUNT, COUNT_2, COMPARE):
+    for node_id in (LOAD, EDIT, EDIT_2, COUNT, COUNT_2):
         node_locator(page, node_id).wait_for(state="visible", timeout=45000)
     require_webgpu(page)
 
@@ -238,7 +234,7 @@ def test_a_building_picked_and_removed_drops_the_count_and_is_listed_as_what_dif
     assert edit.locator("[data-edit-refusal]").count() == 0
     save_node_closeup(
         page, "edit-features", EDIT_2,
-        test_name="test_a_building_picked_and_removed_drops_the_count_and_is_listed_as_what_differs",
+        test_name="test_a_building_picked_and_removed_drops_the_count_and_the_edit_is_saved",
         sweep_toasts=True,
     )
 
@@ -270,21 +266,7 @@ def test_a_building_picked_and_removed_drops_the_count_and_is_listed_as_what_dif
     )
     assert _count(page, COUNT) == 3, "the other scenario's count changed"
 
-    # 5. What differs lists the edit, against no edits in Every building.
-    compare = node_locator(page, COMPARE)
-    frame_nodes(page, [COMPARE])
-    _open_tab(page, COMPARE, "output")
-    compare.get_by_role("tab", name="What differs", exact=True).click()
-    lever = compare.locator(f'[data-compare-lever="{EDIT}"]')
-    lever.wait_for(state="visible", timeout=15000)
-    edits = lever.locator(f'[data-compare-edits="{LESS}"]').inner_text()
-    assert "One removed:" in edits and f"Remove building_id {picked}" in edits, edits
-    assert "no edits" in lever.locator(f'[data-compare-edits="{EVERY}"]').inner_text()
-    assert lever.locator("[data-compare-code]").count() == 0, "What differs lists the code lines the edit list wrote"
-    levers = compare.locator("[data-compare-lever]").evaluate_all("els => els.map((el) => el.getAttribute('data-compare-lever'))")
-    assert levers == [EDIT], f"What differs lists {levers}, not only the Edit Features node"
-
-    # 6. The edit list is saved with the dataflow.
+    # 5. The edit list is saved with the dataflow.
     save_dataflow(page)
     saved = {node["id"]: node for node in _saved_spec(current_server, token, project_id)["dataflow"]["nodes"]}
     assert saved[EDIT_2]["metadata"]["editFeatures"] == {
@@ -329,8 +311,8 @@ def test_the_interaction_node_edits_by_condition_switches_an_entry_off_and_updat
     """A condition picks building 2 (``height >= 50``) and halves its height; a
     removal of building 1 by condition is switched off; Update results runs the
     node and every node after it, so the total height drops by 25 m, the
-    switched-off removal skipped. What differs lists both entries, the second
-    as off, and the log is saved with the dataflow."""
+    switched-off removal skipped, and the log is saved with the dataflow, both
+    entries in it, the second as off."""
     require_project_page()
     require_user_auth()
     page.emulate_media(reduced_motion="reduce")
@@ -349,7 +331,7 @@ def test_the_interaction_node_edits_by_condition_switches_an_entry_off_and_updat
     )
     require_owner_view(page)
     token, project_id = session["token"], session["project"]["id"]
-    for node_id in (LOAD, EDIT, EDIT_2, COUNT, COUNT_2, COMPARE):
+    for node_id in (LOAD, EDIT, EDIT_2, COUNT, COUNT_2):
         node_locator(page, node_id).wait_for(state="visible", timeout=45000)
     require_webgpu(page)
 
@@ -410,19 +392,7 @@ def test_the_interaction_node_edits_by_condition_switches_an_entry_off_and_updat
     )
     assert _total(page, COUNT) == TOTAL, "the other scenario's total changed"
 
-    # 4. What differs lists both entries, the one switched off as off.
-    compare = node_locator(page, COMPARE)
-    frame_nodes(page, [COMPARE])
-    _open_tab(page, COMPARE, "output")
-    compare.get_by_role("tab", name="What differs", exact=True).click()
-    lever = compare.locator(f'[data-compare-lever="{EDIT}"]')
-    lever.wait_for(state="visible", timeout=15000)
-    edits = lever.locator(f'[data-compare-edits="{LESS}"]').inner_text()
-    assert "Scale height by 0.5 where height >= 50" in edits, edits
-    assert "Remove where building_id == 1 (off)" in edits, edits
-    assert "no edits" in lever.locator(f'[data-compare-edits="{EVERY}"]').inner_text()
-
-    # 5. The log is saved with the dataflow.
+    # 4. The log is saved with the dataflow, the entry switched off as off.
     save_dataflow(page)
     saved = {node["id"]: node for node in _saved_spec(current_server, token, project_id)["dataflow"]["nodes"]}
     assert saved[EDIT_2]["metadata"]["editFeatures"] == {

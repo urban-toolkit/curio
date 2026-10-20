@@ -232,7 +232,7 @@
  "tests.test_frontend.test_drawer_mouse_drags_e2e::test_a_layer_group_card_dragged_from_the_data_catalog_drawer_becomes_a_loader_that_runs[chromium]": 7.6,
  "tests.test_frontend.test_drawer_mouse_drags_e2e::test_a_model_card_dragged_from_the_model_catalog_drawer_becomes_a_node_that_runs_it[chromium]": 13.6,
  "tests.test_frontend.test_drawer_mouse_drags_e2e::test_a_saved_output_dragged_from_the_data_palette_becomes_a_data_loading_node[chromium]": 7.3,
- "tests.test_frontend.test_edit_features_e2e::test_a_building_picked_and_removed_drops_the_count_and_is_listed_as_what_differs[chromium]": 16.2,
+ "tests.test_frontend.test_edit_features_e2e::test_a_building_picked_and_removed_drops_the_count_and_the_edit_is_saved[chromium]": 16.2,
  "tests.test_frontend.test_edit_features_e2e::test_the_interaction_node_edits_by_condition_switches_an_entry_off_and_updates_the_results[chromium]": 14.3,
  "tests.test_frontend.test_example06_scenarios_e2e::test_both_scenarios_dragged_into_an_empty_project_read_one_context[chromium]": 42.8,
  "tests.test_frontend.test_example06_scenarios_e2e::test_example_06_compares_its_three_scenarios_in_the_canvas[chromium]": 34.8,
