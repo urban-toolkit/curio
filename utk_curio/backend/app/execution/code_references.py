@@ -455,17 +455,32 @@ def _field_holder_at(holder: dict, kind, key: str, item: bool):
 #: ``codeReferences.ts``.
 _NOT_SPEC_KEYS = frozenset({"data", "datasets", "usermeta"})
 
-#: How deep a Vega-Lite spec's objects and lists may nest for its places to be
-#: read; a deeper spec writes its names as they are. Kept in sync with
-#: ``MAX_SPEC_DEPTH`` in ``codeReferences.ts``.
+#: How deep a Vega-Lite spec's objects and lists may nest, its rows and notes
+#: included, for its places to be read; a deeper spec writes its names as they
+#: are. Kept in sync with ``MAX_SPEC_DEPTH`` in ``codeReferences.ts``.
 _MAX_SPEC_DEPTH = 100
 
 #: The first and last code points of Unicode's private use area.
 _PRIVATE_USE_FIRST, _PRIVATE_USE_LAST = 0xE000, 0xF8FF
 
 
-class _TooDeep(Exception):
-    """A spec nests deeper than :data:`_MAX_SPEC_DEPTH`."""
+def _spec_depth(spec, limit: int) -> int:
+    """How many objects and lists *spec* nests, itself counted as one,
+    measured without recursion and no further than past *limit*. Kept in sync
+    with ``specDepth`` in ``codeReferences.ts``."""
+    deepest = 0
+    stack = [(spec, 1)]
+    while stack:
+        node, depth = stack.pop()
+        if not isinstance(node, (dict, list)):
+            continue
+        deepest = max(deepest, depth)
+        if deepest > limit:
+            break
+        for child in node if isinstance(node, list) else node.values():
+            if isinstance(child, (dict, list)):
+                stack.append((child, depth + 1))
+    return deepest
 
 
 def _place_marks(code: str) -> tuple[str, str] | None:
@@ -523,6 +538,8 @@ def _vega_field_places(code: str, refs: list, contexts: list) -> list:
         spec = json.loads("".join(marked), parse_constant=_not_json)
     except (ValueError, RecursionError):
         return unplaced()
+    if _spec_depth(spec, _MAX_SPEC_DEPTH) > _MAX_SPEC_DEPTH:
+        return unplaced()
     places = unplaced()
 
     def place(text: str, field: bool, items: bool) -> None:
@@ -534,12 +551,11 @@ def _vega_field_places(code: str, refs: list, contexts: list) -> list:
             # Only a reference that is the whole value can hold a list.
             places[index]["items"] = match.group(0) == text and items
 
-    def visit(node, kind, depth: int) -> None:
-        if depth > _MAX_SPEC_DEPTH:
-            raise _TooDeep
+    # The spec nests no deeper than _MAX_SPEC_DEPTH, so neither does this walk.
+    def visit(node, kind) -> None:
         if isinstance(node, list):
             for item in node:
-                visit(item, None, depth + 1)
+                visit(item, None)
             return
         if not isinstance(node, dict):
             return
@@ -553,16 +569,13 @@ def _vega_field_places(code: str, refs: list, contexts: list) -> list:
                     if isinstance(item, str):
                         place(item, _is_vega_field(node, kind, key, True), False)
                     elif not isinstance(item, list):
-                        visit(item, _field_holder_at(node, kind, key, True), depth + 1)
+                        visit(item, _field_holder_at(node, kind, key, True))
                     else:
-                        visit(item, None, depth + 1)
+                        visit(item, None)
             else:
-                visit(value, _field_holder_at(node, kind, key, False), depth + 1)
+                visit(value, _field_holder_at(node, kind, key, False))
 
-    try:
-        visit(spec, None, 0)
-    except (_TooDeep, RecursionError):
-        return unplaced()
+    visit(spec, None)
     return places
 
 

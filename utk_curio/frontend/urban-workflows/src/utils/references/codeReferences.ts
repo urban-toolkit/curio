@@ -441,13 +441,29 @@ function fieldHolderAt(holder: Record<string, unknown>, kind: FieldHolder, key: 
  * `code_references.py`. */
 const NOT_SPEC_KEYS = new Set(["data", "datasets", "usermeta"]);
 
-/** How deep a Vega-Lite spec's objects and lists may nest for its places to
- * be read; a deeper spec writes its names as they are. Kept in sync with
- * `_MAX_SPEC_DEPTH` in `code_references.py`. */
+/** How deep a Vega-Lite spec's objects and lists may nest, its rows and notes
+ * included, for its places to be read; a deeper spec writes its names as they
+ * are. Kept in sync with `_MAX_SPEC_DEPTH` in `code_references.py`. */
 const MAX_SPEC_DEPTH = 100;
 
-/** Thrown, and caught, when a spec nests deeper than `MAX_SPEC_DEPTH`. */
-const TOO_DEEP = new Error("the spec nests too deep for its places to be read");
+/** How many objects and lists *spec* nests, itself counted as one, measured
+ * without recursion and no further than past *limit*. Kept in sync with
+ * `_spec_depth` in `code_references.py`. */
+function specDepth(spec: unknown, limit: number): number {
+  let deepest = 0;
+  const stack: [unknown, number][] = [[spec, 1]];
+  while (stack.length > 0) {
+    const [node, depth] = stack.pop() as [unknown, number];
+    if (node === null || typeof node !== "object") continue;
+    if (depth > deepest) deepest = depth;
+    if (deepest > limit) break;
+    const children = Array.isArray(node) ? node : Object.values(node as Record<string, unknown>);
+    for (const child of children) {
+      if (child !== null && typeof child === "object") stack.push([child, depth + 1]);
+    }
+  }
+  return deepest;
+}
 
 /** The first and last code points of Unicode's private use area. */
 const PRIVATE_USE_FIRST = 0xe000;
@@ -500,6 +516,7 @@ function vegaFieldPlaces(code: string, refs: CodeReference[], contexts: Referenc
   } catch {
     return unplaced();
   }
+  if (specDepth(spec, MAX_SPEC_DEPTH) > MAX_SPEC_DEPTH) return unplaced();
   const places = unplaced();
   const place = (text: string, field: boolean, items: boolean) => {
     for (const match of text.matchAll(markRe)) {
@@ -510,10 +527,10 @@ function vegaFieldPlaces(code: string, refs: CodeReference[], contexts: Referenc
       found.items = match[0] === text && items;
     }
   };
-  const visit = (node: unknown, kind: FieldHolder, depth: number) => {
-    if (depth > MAX_SPEC_DEPTH) throw TOO_DEEP;
+  // The spec nests no deeper than MAX_SPEC_DEPTH, so neither does this walk.
+  const visit = (node: unknown, kind: FieldHolder) => {
     if (Array.isArray(node)) {
-      for (const item of node) visit(item, null, depth + 1);
+      for (const item of node) visit(item, null);
       return;
     }
     if (node === null || typeof node !== "object") return;
@@ -525,21 +542,15 @@ function vegaFieldPlaces(code: string, refs: CodeReference[], contexts: Referenc
       } else if (Array.isArray(value)) {
         for (const item of value) {
           if (typeof item === "string") place(item, isVegaField(holder, kind, key, true), false);
-          else if (!Array.isArray(item)) visit(item, fieldHolderAt(holder, kind, key, true), depth + 1);
-          else visit(item, null, depth + 1);
+          else if (!Array.isArray(item)) visit(item, fieldHolderAt(holder, kind, key, true));
+          else visit(item, null);
         }
       } else {
-        visit(value, fieldHolderAt(holder, kind, key, false), depth + 1);
+        visit(value, fieldHolderAt(holder, kind, key, false));
       }
     }
   };
-  try {
-    visit(spec, null, 0);
-  } catch {
-    // Too deep, or deeper than the stack the walk has: its names are written
-    // as they are.
-    return unplaced();
-  }
+  visit(spec, null);
   return places;
 }
 
