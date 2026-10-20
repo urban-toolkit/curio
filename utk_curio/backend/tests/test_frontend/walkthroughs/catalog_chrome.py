@@ -3,6 +3,7 @@ and the scenario cards' kind color."""
 from __future__ import annotations
 
 import re
+from contextlib import contextmanager
 
 from playwright.sync_api import expect
 
@@ -141,6 +142,22 @@ def _rgb(hex_color: str) -> str:
     return f"rgb({red}, {green}, {blue})"
 
 
+@contextmanager
+def _animations_held(page):
+    """The page's animations held still until the block ends, as on a runner
+    that draws no frame: a transition only moves when a frame is drawn, so one
+    that starts inside stays at its first value. Chromium's DevTools protocol,
+    the one browser the scenes run in."""
+    cdp = page.context.new_cdp_session(page)
+    try:
+        cdp.send("Animation.enable")
+        cdp.send("Animation.setPlaybackRate", {"playbackRate": 0})
+        yield
+    finally:
+        cdp.send("Animation.setPlaybackRate", {"playbackRate": 1})
+        cdp.detach()
+
+
 def _save_riverside_projects(page, backend: str) -> None:
     """Both projects, each a chain of code nodes with one scenario per node."""
     token = next(
@@ -197,30 +214,34 @@ def scenario_cards_wear_one_kind_color(ctx: Ctx) -> None:
         timeout=30000
     )
     ctx.narrator.type_into(page.get_by_role("searchbox", name="Search scenarios"), "Riverside")
-    page.get_by_role("combobox", name="Sort scenarios").select_option("name")
 
     cards = page.locator("main article[data-scenario-key]")
-    expect(cards).to_have_count(5, timeout=30000)
-    expect(cards.locator("h2")).to_have_text(
-        ["Cool roofs", "Levee raised", "Marsh restored", "Pumps added", "Street trees"],
-        timeout=30000,
-    )
+    # Held from the sort, which moves the selection onto Cool roofs, through the
+    # read: every run meets what a busy runner meets now and then, no frame
+    # between the selected card's style changing and the read (#1041).
+    with _animations_held(page):
+        page.get_by_role("combobox", name="Sort scenarios").select_option("name")
+        expect(cards).to_have_count(5, timeout=30000)
+        expect(cards.locator("h2")).to_have_text(
+            ["Cool roofs", "Levee raised", "Marsh restored", "Pumps added", "Street trees"],
+            timeout=30000,
+        )
 
-    # The drawer follows the first card. Its graph marks the scenario, and its
-    # info rows grow, once the scenario's details answer.
-    drawer = page.locator('[data-curio-browse-drawer="true"]')
-    expect(drawer.get_by_role("heading", name="Cool roofs", level=2)).to_be_visible(
-        timeout=30000
-    )
-    expect(drawer.get_by_text("Fixed context", exact=True)).to_be_visible(timeout=30000)
-    page.wait_for_load_state("networkidle")
+        # The drawer follows the first card. Its graph marks the scenario, and
+        # its info rows grow, once the scenario's details answer.
+        drawer = page.locator('[data-curio-browse-drawer="true"]')
+        expect(drawer.get_by_role("heading", name="Cool roofs", level=2)).to_be_visible(
+            timeout=30000
+        )
+        expect(drawer.get_by_text("Fixed context", exact=True)).to_be_visible(timeout=30000)
+        page.wait_for_load_state("networkidle")
+        painted = page.evaluate(_CARD_PAINT)
 
     own = {
         scenario: _rgb(color)
         for scenarios in RIVERSIDE_PROJECTS.values()
         for scenario, color in scenarios
     }
-    painted = page.evaluate(_CARD_PAINT)
     problems = [
         f"{card['name']}: the strip is {card['strip']}, not the scenario kind "
         f"color {SCENARIO_KIND_FG}"
