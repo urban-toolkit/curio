@@ -40,7 +40,12 @@ dev/134 corrects two things this module could not do, both proven by the owner's
   which the schema cannot know and a reader of the columns can. A view that
   names the dataset ``inputs`` reads its inputs stacked, with the columns the
   stack adds beside theirs (``INPUTS_FIELDS``) and without a GeoDataFrame's
-  geometry, so a view of it that draws one is refused.
+  geometry, so a view of it that draws one is refused. A field names a column
+  when its text, or its text unescaped (:func:`unescaped_field`), is the
+  column's name: ``rain\\.mm`` and ``rain.mm`` both name the column
+  ``rain.mm``, since Vega-Lite escapes a field itself in some places (an
+  aggregate, a bin transform, a condition's test). A path through a column,
+  ``zone.id`` beside a column ``zone``, names none.
 """
 
 from __future__ import annotations
@@ -136,6 +141,32 @@ _OPAQUE_TRANSFORMS = ("pivot", "fold", "flatten", "sample", "lookup", "density",
 _SPEC_CONTAINERS = ("layer", "hconcat", "vconcat", "concat", "spec", "facet", "repeat")
 
 
+def unescaped_field(field: str) -> str:
+    """The text *field* spells, each backslash keeping the character after it
+    as it is, as Vega reads a field: ``rain\\.mm`` is ``rain.mm``. Kept in sync
+    with ``unescapedVegaField`` in ``utils/vegaFieldNames.ts``."""
+    out: list[str] = []
+    i = 0
+    while i < len(field):
+        if field[i] == "\\":
+            i += 1
+            if i < len(field):
+                out.append(field[i])
+        else:
+            out.append(field[i])
+        i += 1
+    return "".join(out)
+
+
+def _named_column(field: str, names) -> str | None:
+    """The one of *names* that *field* names: its text, or its text unescaped;
+    None when it names neither."""
+    if field in names:
+        return field
+    plain = unescaped_field(field)
+    return plain if plain in names else None
+
+
 def _transform_outputs(spec: dict) -> tuple[set, bool]:
     """``(names a transform creates, whether any transform is opaque)``."""
     produced: set = set()
@@ -161,7 +192,7 @@ def _transform_outputs(spec: dict) -> tuple[set, bool]:
         # own names, unless an ``as`` renames them (counted above).
         source = entry.get("from")
         if "lookup" in entry and "as" not in entry and isinstance(source, dict):
-            produced.update(name for name in source.get("fields") or [] if isinstance(name, str))
+            produced.update(unescaped_field(name) for name in source.get("fields") or [] if isinstance(name, str))
     for key in _SPEC_CONTAINERS:
         child = spec.get(key)
         for sub in (child if isinstance(child, list) else [child]):
@@ -231,6 +262,11 @@ def check_vega_fields(
     (``INPUTS_FIELDS``), and none of *geometry_columns*: the stack leaves a
     GeoDataFrame's geometry out of its rows, as the preamble says. A view of
     one input's own dataset has only the inputs' columns.
+
+    A field names a column when its text, or its text unescaped, is the
+    column's name (:func:`_named_column`): ``rain\\.mm`` and ``rain.mm`` both
+    name the column ``rain.mm``, and ``zone.id`` beside a column ``zone``
+    names none.
     """
     if not columns:
         return None
@@ -242,11 +278,12 @@ def check_vega_fields(
     # so this runs before an opaque transform leaves the other fields alone.
     left_out = {str(c) for c in geometry_columns or ()} - produced
     for where, field, on_inputs in refs:
-        if on_inputs and field in left_out:
+        column = _named_column(field, left_out)
+        if on_inputs and column is not None:
             return {
                 "status": STATUS_INVALID,
                 "detail": _detail(
-                    f"{where} reads {field!r}, a geometry column, but the dataset "
+                    f"{where} reads {column!r}, a geometry column, but the dataset "
                     f"{INPUTS_DATASET!r} stacks its inputs' rows without their geometry; "
                     f"a view that draws it reads one input's own dataset, input_0 for "
                     f"the first circle, input_1 for the second"
@@ -257,14 +294,14 @@ def check_vega_fields(
     known |= produced
     for where, field, on_inputs in refs:
         added = RUNTIME_FIELDS + (INPUTS_FIELDS if on_inputs else ())
-        if field in known or field in added:
+        if _named_column(field, known | set(added)) is not None:
             continue
         available = ", ".join(sorted(str(c) for c in columns)[:20])
         return {
             "status": STATUS_INVALID,
             "detail": _detail(
-                f"{where} reads {field!r}, which is not a column of this node's "
-                f"input — available columns: {available}"
+                f"{where} reads {unescaped_field(field)!r}, which is not a column of this node's "
+                f"input; available columns: {available}"
                 + (f" (plus {', '.join(added)}, added by Curio)")
             ),
         }
