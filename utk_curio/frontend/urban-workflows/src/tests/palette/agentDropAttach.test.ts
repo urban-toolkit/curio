@@ -168,4 +168,20 @@ describe("attachAgentOnDrop for a hosted guest", () => {
     const src = fs.readFileSync(path.resolve(__dirname, "../../components/MainCanvas.tsx"), "utf8");
     expect(src).toMatch(/attachAgentOnDrop\(\{[^}]*\bhostedGuest\b[^}]*\}\)/);
   });
+
+  it("is a note, shown with the toast kind the other sign-in notes use", async () => {
+    const deps = {
+      projectId: "proj-1",
+      target: { kind: "node", targetId: "n1" } as never,
+      agentCoord: "agent.x@1.0.0",
+      saveProject: jest.fn(async () => ({ id: "proj-1" })),
+      attach: jest.fn(async () => undefined),
+      hostedGuest: true,
+    };
+
+    await expect(attachAgentOnDrop(deps)).rejects.toMatchObject({ message: SIGN_IN, toastVariant: "warning" });
+    // The canvas shows a drop's failure with the kind the failure carries.
+    const src = fs.readFileSync(path.resolve(__dirname, "../../components/MainCanvas.tsx"), "utf8");
+    expect(src).toMatch(/"Attach failed\."\s*,\s*e\?\.toastVariant\s*\?\?\s*"error"/);
+  });
 });
