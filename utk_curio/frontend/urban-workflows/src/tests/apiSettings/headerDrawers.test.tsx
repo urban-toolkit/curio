@@ -160,13 +160,12 @@ describe("a header drawer with the catalog drawers' pin", () => {
     expect(close).toHaveBeenCalledTimes(2);
   });
 
-  it("is the catalog drawers' width unless wide, and shows its subtitle and actions", () => {
-    render(pinnable(jest.fn(), { wide: false, subtitle: "Versions of Heat study", actions: <button type="button">Graph</button> }));
+  it("is the catalog drawers' width unless wide, and shows its subtitle", () => {
+    render(pinnable(jest.fn(), { wide: false, subtitle: "Versions of Heat study" }));
     const dialog = screen.getByRole("dialog", { name: "Dataflow provenance" });
     expect(dialog.className).toContain("drawer");
     expect(dialog.className).not.toContain("drawerWide");
     expect(screen.getByText("Versions of Heat study")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Graph" })).toBeInTheDocument();
   });
 
   it("API Settings and Monitor keep no pin and their width", () => {

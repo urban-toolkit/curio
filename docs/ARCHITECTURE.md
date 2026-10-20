@@ -197,16 +197,13 @@ focus in the URL (`settingsPath`, read back by `focusFromSearch`).
 **View > Provenance** calls `openDataflowProvenance()` from
 `ProvenanceDrawerProvider` (`src/providers/`), which mounts `ProvenanceDrawer`
 (`src/components/provenance/`): a `HeaderDrawer` on the right with the catalog
-drawers' pin (`pinnable`) and width (`wide={false}`), and a List | Graph switch
-in its header. The provider keeps the view picked last while the page is open.
+drawers' pin (`pinnable`) and width (`wide={false}`).
 
-- `ProvenanceHistory` draws a history as the List or the Graph of Curio's
-  Nest, from items that each name the item they were made from.
-  `utils/provenanceTree.ts` lays it out: the line through the newest item is
-  the main one, a branch hangs from the item it left from (folded in the
-  List), and in the Graph a branch runs down the next column, starting beside
-  that item. The Graph's lines are drawn from where its boxes landed and are
-  measured again when a box opens or the drawer resizes.
+- `ProvenanceHistory` lists a history as Curio's Nest lists work, from items
+  that each name the item they were made from. `utils/provenanceTree.ts` lays
+  it out: the line through the newest item is the main one, and each branch is
+  folded under the item it left from, nested to any depth. Every item has one
+  parent, so a history is a tree, and the list shows all of it.
 - `DataflowProvenance` reads the versions `TrillGenerator.provenanceJSON`
   holds (`utils/dataflowVersions.ts` numbers and names them) when the drawer
   opens. A click opens a version; its **Put this version on the canvas** calls
@@ -2305,7 +2302,7 @@ created empty for Solve to write.
 | `src/components/layout/GlobalPageHeader.tsx` | The top bar of every signed-in page; its Monitor and API Settings open a page, or a drawer on the canvas and the dashboard (see [API Settings and the Monitor](#api-settings-and-the-monitor)) |
 | `src/components/layout/HeaderDrawer.tsx` | The drawer shell API Settings, the Monitor and provenance open in on the canvas and the dashboard; with `pinnable`, the catalog drawers' pin |
 | `src/providers/ApiSettingsDrawerProvider.tsx`, `src/providers/MonitorDrawerProvider.tsx`, `src/providers/ProvenanceDrawerProvider.tsx` | Mount those drawers, inside `DataflowProviders` |
-| `src/components/provenance/` | The provenance drawer: `ProvenanceDrawer`, `ProvenanceHistory` (the List and the Graph), `DataflowProvenance`; layout in `src/utils/provenanceTree.ts`, versions in `src/utils/dataflowVersions.ts` |
+| `src/components/provenance/` | The provenance drawer: `ProvenanceDrawer`, `ProvenanceHistory` (the list), `DataflowProvenance`; layout in `src/utils/provenanceTree.ts`, versions in `src/utils/dataflowVersions.ts` |
 | `src/components/apiSettings/` | API Settings: `ApiSettingsPanel` (the two tabs), `ApiKeysTab`, `AgentConfigTab`, `SourceKeyForm`, `NodeKeyForm`, `ApiSettingsDrawer`, `ApiSettingsRequestHost` and `apiSettingsRequest.ts` (the `curio:api-settings` request event) |
 | `src/pages/settings/SettingsPage.tsx` | The settings page, `/settings/keys` and `/settings/agents` |
 | `src/pages/monitor/MonitorContent.tsx`, `MonitorDrawer.tsx` | The monitor's content, rendered by the `/monitor` page and by its drawer |

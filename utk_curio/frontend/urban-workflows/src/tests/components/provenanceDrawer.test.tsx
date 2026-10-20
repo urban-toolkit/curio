@@ -1,8 +1,8 @@
 /**
  * View > Provenance opens the dataflow's versions in a drawer on the right,
- * with the catalog drawers' pin and width, as the List or the Graph of Curio's
- * Nest. A click opens a version and shows it; only its own button puts it on
- * the canvas.
+ * with the catalog drawers' pin and width, listed as Curio's Nest lists work.
+ * A click opens a version and shows it; only its own button puts it on the
+ * canvas.
  */
 import React from "react";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -86,7 +86,6 @@ describe("the provenance drawer", () => {
     expect(within(dialog).getByRole("heading", { name: "Dataflow provenance", level: 2 })).toBeInTheDocument();
     expect(within(dialog).getByText("Versions of Heat study")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Pin drawer open" })).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "List" })).toHaveAttribute("aria-pressed", "true");
   });
 
   test("lists the line to the newest version, with the version left behind folded under the one it left from", async () => {
@@ -134,41 +133,6 @@ describe("the provenance drawer", () => {
     expect(shownIds()).toEqual(["v1", "v2", "v4", "v5"]);
   });
 
-  test("the Graph: a box per version, the branch in the next column, one line into each version after the first", async () => {
-    await openDrawer();
-    fireEvent.click(screen.getByRole("button", { name: "Graph" }));
-
-    expect(screen.getByRole("button", { name: "Graph" })).toHaveAttribute("aria-pressed", "true");
-    expect(shownIds()).toEqual(["v1", "v2", "v3", "v4", "v5"]);
-    expect(item("v3")!.style.gridColumn).toBe("2");
-    expect(item("v4")!.style.gridColumn).toBe("1");
-    const links = Array.from(document.querySelectorAll("[data-provenance-link]")).map((g) => [
-      g.getAttribute("data-from"),
-      g.getAttribute("data-to"),
-      g.getAttribute("data-provenance-link"),
-    ]);
-    expect(links).toEqual([
-      ["v1", "v2", "next"],
-      ["v2", "v3", "branch"],
-      ["v2", "v4", "next"],
-      ["v4", "v5", "next"],
-    ]);
-    for (const g of Array.from(document.querySelectorAll("[data-provenance-link]"))) {
-      expect(g.querySelector("path")!.getAttribute("d")).toMatch(/^M/);
-      expect(g.querySelectorAll("circle")).toHaveLength(2);
-    }
-  });
-
-  test("versions opened in one view stay open in the other", async () => {
-    await openDrawer();
-    fireEvent.click(head("v4"));
-    fireEvent.click(screen.getByRole("button", { name: "Graph" }));
-    expect(head("v4")).toHaveAttribute("aria-expanded", "true");
-    expect(head("v2")).toHaveAttribute("aria-expanded", "false");
-    fireEvent.click(screen.getByRole("button", { name: "List" }));
-    expect(head("v4")).toHaveAttribute("aria-expanded", "true");
-  });
-
   test("pinned, the scrim and Escape leave it open, and its close button closes it", async () => {
     await openDrawer();
     fireEvent.click(screen.getByRole("button", { name: "Pin drawer open" }));
@@ -186,17 +150,6 @@ describe("the provenance drawer", () => {
     await openDrawer();
     fireEvent.keyDown(window, { key: "Escape" });
     await waitFor(() => expect(root()).toBeNull());
-  });
-
-  test("opens again on the view the user picked last", async () => {
-    await openDrawer();
-    fireEvent.click(screen.getByRole("button", { name: "Graph" }));
-    fireEvent.click(screen.getByRole("button", { name: "Close Dataflow provenance" }));
-    await waitFor(() => expect(root()).toBeNull());
-
-    fireEvent.click(screen.getByRole("button", { name: "View provenance" }));
-    await waitFor(() => expect(root()).toHaveAttribute("aria-hidden", "false"));
-    expect(screen.getByRole("button", { name: "Graph" })).toHaveAttribute("aria-pressed", "true");
   });
 
   test("says so while the dataflow has no version", async () => {
@@ -248,13 +201,15 @@ describe("the drawer opens on the version in use", () => {
     delete (HTMLElement.prototype as { clientHeight?: number }).clientHeight;
   });
 
-  test("scrolled to the middle of its body, and again after a flip", async () => {
+  test("scrolled to the middle of its body, each time it opens", async () => {
+    const body = () => root()!.querySelector<HTMLElement>(".scrollBody")!;
     await openDrawer();
-    const body = root()!.querySelector<HTMLElement>(".scrollBody")!;
-    expect(body.scrollTop).toBe(1300);
+    expect(body().scrollTop).toBe(1300);
 
-    body.scrollTop = 0;
-    fireEvent.click(screen.getByRole("button", { name: "Graph" }));
-    await waitFor(() => expect(body.scrollTop).toBe(1300));
+    fireEvent.click(screen.getByRole("button", { name: "Close Dataflow provenance" }));
+    await waitFor(() => expect(root()).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "View provenance" }));
+    await waitFor(() => expect(root()).toHaveAttribute("aria-hidden", "false"));
+    await waitFor(() => expect(body().scrollTop).toBe(1300));
   });
 });

@@ -16,16 +16,12 @@ export interface HeaderDrawerProps {
   name: string;
   /** One line under the heading; none when left out. */
   subtitle?: string | null;
-  /** Controls between the heading and the close button. */
-  actions?: React.ReactNode;
   /** The catalog drawers' pin: pinned, a scrim click or Escape leaves the
    *  drawer open, and only its close button closes it. */
   pinnable?: boolean;
   /** The 720 px of API Settings and Monitor; false gives the catalog
    *  drawers' 520 px. */
   wide?: boolean;
-  /** Added to the scrolling body, for content that paints all of it. */
-  bodyClassName?: string;
   children: React.ReactNode;
 }
 
@@ -47,10 +43,8 @@ export const HeaderDrawer: React.FC<HeaderDrawerProps> = ({
   titleId,
   name,
   subtitle = null,
-  actions,
   pinnable = false,
   wide = true,
-  bodyClassName,
   children,
 }) => {
   const drawerRef = useRef<HTMLElement>(null);
@@ -109,11 +103,10 @@ export const HeaderDrawer: React.FC<HeaderDrawerProps> = ({
           subtitle={subtitle}
           closeAriaLabel={`Close ${title}`}
           onClose={onRequestClose}
-          actions={actions}
           pinned={pinned}
           onPinToggle={pinnable ? () => setPinned((v) => !v) : undefined}
         />
-        <div className={bodyClassName ? `${shell.scrollBody} ${bodyClassName}` : shell.scrollBody}>{children}</div>
+        <div className={shell.scrollBody}>{children}</div>
       </aside>
     </div>
   );

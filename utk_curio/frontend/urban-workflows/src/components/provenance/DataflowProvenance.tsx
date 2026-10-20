@@ -9,7 +9,7 @@ import {
   versionCounts,
   versionItems,
 } from "../../utils/dataflowVersions";
-import { type HistoryView, ProvenanceHistory } from "./ProvenanceHistory";
+import { ProvenanceHistory } from "./ProvenanceHistory";
 import styles from "./ProvenanceHistory.module.css";
 
 const VERSION_NOUN = ["version", "versions"] as const;
@@ -30,7 +30,7 @@ function readHistory() {
  * canvas only from its own button: the restore keeps the history, marks the
  * dataflow unsaved, and the next edit branches from the version put back.
  */
-export function DataflowProvenance({ view }: { view: HistoryView }) {
+export function DataflowProvenance() {
   const { loadTrill } = useCode();
   const [history, setHistory] = useState(readHistory);
   const [currentId, setCurrentId] = useState<string | null>(() => TrillGenerator.latestTrill || null);
@@ -69,7 +69,6 @@ export function DataflowProvenance({ view }: { view: HistoryView }) {
     <ProvenanceHistory
       items={history.items}
       currentId={currentId}
-      view={view}
       noun={VERSION_NOUN}
       details={details}
       emptyText="No versions yet"
