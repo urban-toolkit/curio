@@ -156,10 +156,13 @@ dataflow keeps the spec as you leave it.
   of rows. It starts at `sum` in Pie and at `mean` elsewhere. Grouped bars
   combine per category, and Lines per value of `x`.
 - `x_type`, the Lines', is the kind of the X column: `quantitative`, `temporal`,
-  `ordinal` or `nominal`.
+  `ordinal` or `nominal`. Pick the one that matches the X column: `temporal` for
+  dates, `quantitative` for numbers, `ordinal` or `nominal` for names.
 - `highlight` is the value of the `part` column that Donuts colors.
-- `x_title`, `y_title`, `value_title`, `group_title` and `part_title` are
-  titles; empty, the axis, the legend or Pie's values have none.
+- `x_title`, `y_title`, `group_title` and `part_title` are titles; empty, the
+  axis or the legend has none.
+- `value_title`, Pie's, names the value in the arcs' tooltips; empty, Vega-Lite's
+  own title stands there. The white labels on the arcs show the values alone.
 - `y_format` formats the Y axis labels with a
   [d3 format](https://d3js.org/d3-format), such as `.0%` for percents or `,.1f`
   for one decimal; empty, Vega-Lite writes them. Stacked bars with totals writes
@@ -167,12 +170,18 @@ dataflow keeps the spec as you leave it.
 
 A column name with a `'` in it cannot be read: rename the column first.
 
+Vega-Lite reads a `.` or a `[` in a field as a path into the row, and the chips
+write a column's name as it is, so a column such as `rain.mm` is read as `mm`
+inside `rain`. Rename it upstream, or edit the spec to escape it as `rain\.mm`
+(`"field": "rain\\.mm"` in the JSON).
+
 ### Colors and order
 
 A color, fill or stroke by `scenario_name` takes the colors of the scenarios'
 boxes, and an axis, an offset or a facet by it puts the scenarios in the order
-the dataflow lists the boxes, then each input from no box in the order of the
-circles, in grey
+the dataflow lists the boxes. When at least one input comes from a box, each
+input from no box comes after them in the order of the circles, in grey. With
+no input from a box, the spec's own colors and order stand
 ([Every input in one dataset](../../docs/USAGE.md#every-input-in-one-dataset)).
 A chart is drawn again when a scenario is renamed or recolored. Stacked bars with
 totals and Weighted matrix write each scenario's name in its color under its

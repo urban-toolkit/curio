@@ -706,9 +706,12 @@ class TestTheColumnsOfTheInputsDataset:
     """A spec that names the dataset ``inputs`` reads every input's rows,
     stacked (``stack_inputs`` in ``utk_curio/sandbox/util/scenario_stack.py``):
     beside the inputs' own columns, each row carries ``__input__``,
-    ``scenario`` and ``scenario_name``, and a value input's rows hold its value
-    under ``value``. A chart an agent writes over them, as Scout's charts are
-    written, reads those columns and is not refused for it."""
+    ``scenario`` and ``scenario_name``. A chart an agent writes over them, as
+    Scout's charts are written, reads those columns in its views of ``inputs``
+    and is not refused for it; a view of one input's own dataset has only that
+    input's columns. A value input's rows hold its value under ``value``, but
+    the stack refuses a value beside a table, and the check knows only tables'
+    columns: so ``value`` is a column only when a table has one."""
 
     #: The street plans' columns, as their outputs' schemas list them.
     COLUMNS = ["mode", "daily_trips"]
@@ -740,10 +743,20 @@ class TestTheColumnsOfTheInputsDataset:
         }
         assert self._verdict(spec) == {"status": dv.STATUS_VALID}
 
-    def test_and_one_that_reads_a_value_inputs_value(self):
+    def test_a_value_no_table_has_is_refused(self):
+        """Two tables stacked hold no ``value``: a chart of it draws nothing."""
         spec = self._spec(data={"name": "inputs"})
         spec["encoding"]["y"] = {"field": "value", "type": "quantitative"}
-        assert self._verdict(spec) == {"status": dv.STATUS_VALID}
+        verdict = self._verdict(spec)
+        assert verdict["status"] == dv.STATUS_INVALID
+        assert "encoding.y.field reads 'value'" in verdict["detail"]
+
+    def test_a_tables_own_value_column_is_read(self):
+        spec = self._spec(data={"name": "inputs"})
+        spec["encoding"]["y"] = {"field": "value", "type": "quantitative"}
+        verdict = dv.validate("curio.scout/bars", json.dumps(spec), grammar_id="vega-lite",
+                              columns=[*self.COLUMNS, "value"])
+        assert verdict == {"status": dv.STATUS_VALID}
 
     def test_a_column_no_input_has_is_still_refused(self):
         spec = self._spec(data={"name": "inputs"})
@@ -757,11 +770,65 @@ class TestTheColumnsOfTheInputsDataset:
         assert verdict["status"] == dv.STATUS_INVALID
         assert "reads 'scenario_name'" in verdict["detail"]
 
+    def test_a_view_of_one_inputs_own_dataset_has_only_its_columns(self):
+        """Beside a view of ``inputs``, a view of ``input_0`` that encodes
+        ``scenario_name`` reads a column its rows lack."""
+        stacked = {k: v for k, v in self._spec(data={"name": "inputs"}).items() if k != "$schema"}
+        own = {
+            "data": {"name": "input_0"},
+            "mark": "bar",
+            "encoding": {
+                "x": {"field": "scenario_name", "type": "nominal"},
+                "y": {"field": "daily_trips", "type": "quantitative"},
+            },
+        }
+        verdict = self._verdict({"$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+                                 "hconcat": [stacked, own]})
+        assert verdict["status"] == dv.STATUS_INVALID
+        assert "hconcat[1].encoding.x.field reads 'scenario_name'" in verdict["detail"]
+
+    #: Each chart whose Combine is a widget, and its other column widgets set to
+    #: columns the street plans have.
+    COUNTED = {
+        "bars": {},
+        "grouped-bars": {"x": "mode"},
+        "lines": {"x": "mode", "x_type": "nominal"},
+        "pie": {},
+        "lollipops": {},
+    }
+
+    @pytest.mark.parametrize("template_id", sorted(COUNTED))
+    def test_a_count_reads_no_column(self, template_id):
+        """Combine's count counts each scenario's rows. An encoding whose
+        aggregate is ``count`` reads no field, since Vega-Lite's count draws
+        ``__count`` whatever the field names, so a chart whose measure is left
+        at its widget's default name is not refused for it."""
+        from utk_curio.backend.app.execution.code_references import resolve_references
+
+        package = REPO_ROOT / "packages" / "curio.scout@1"
+        manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
+        (template,) = [t for t in manifest["templates"] if t["id"] == template_id]
+        values = {**self.COUNTED[template_id], "combine": "count"}
+        widgets = [dict(w, value=values[w["name"]]) if w["name"] in values else w for w in template["widgets"]]
+        spec, problems = resolve_references(
+            (package / template["source"]).read_text(encoding="utf-8"),
+            widgets=widgets, language="json", inputs=[{"slot": 0}],
+        )
+        assert not problems, problems
+        measure = "value" if template_id in ("pie", "lollipops") else "y"
+        # The measure left at its default name, a column the plans lack.
+        assert f'"field": "{measure}"' in spec and '"aggregate": "count"' in spec
+        verdict = dv.validate(f"curio.scout/{template_id}", spec, grammar_id="vega-lite", columns=self.COLUMNS)
+        assert verdict == {"status": dv.STATUS_VALID}
+
     def test_the_columns_are_the_ones_the_stack_writes(self):
+        """The stack writes ``value`` too, for an input that is a value, which
+        no table the check knows stands beside."""
         from utk_curio.sandbox.util import scenario_stack as stack
 
         assert dv.INPUTS_DATASET == "inputs"
-        assert dv.INPUTS_FIELDS == (stack.INPUT_COLUMN, stack.SCENARIO_COLUMN, stack.NAME_COLUMN, stack.VALUE_COLUMN)
+        assert dv.INPUTS_FIELDS == (stack.INPUT_COLUMN, stack.SCENARIO_COLUMN, stack.NAME_COLUMN)
+        assert stack.VALUE_COLUMN not in dv.INPUTS_FIELDS
 
 
 def _geotable(goal: str, circle: int) -> dict:
@@ -782,7 +849,9 @@ class TestTheInputsDatasetHoldsNoGeometry:
     ``stackInputs`` in ``utils/scenarios/stackedInputs.ts``), so a view that
     reads ``inputs`` and draws ``geometry`` draws nothing. Solve refuses it as it
     writes it, from the same input schemas the request was handed, and names the
-    dataset that keeps the geometry. A view that reads one input's own dataset
+    dataset that keeps the geometry. It does so whatever transforms the view
+    runs, the Table's fold among them, unless one of them makes that column, as
+    a lookup from ``input_0`` does. A view that reads one input's own dataset
     still draws it, and a column one input holds as text is still a column."""
 
     UPSTREAM = [_geotable("Flooded districts today", 0), _geotable("Flooded districts with levees", 1)]
@@ -857,5 +926,50 @@ class TestTheInputsDatasetHoldsNoGeometry:
         spec["encoding"]["tooltip"] = [{"field": "geometry", "type": "nominal"}]
         document = self._document(spec)
         events, outcome, inputs = self._rounds(app, [document], [self.UPSTREAM[0], outlines])
+        assert "document-invalid" not in [a.get("kind") for a in outcome["attempts"]]
+        assert outcome["candidate"] == document
+
+    def _table(self, columns: list) -> str:
+        """Scout's Table, listing *columns*, without the newline its source file
+        ends with, which the loop does not keep in what it writes."""
+        from utk_curio.backend.app.execution.code_references import resolve_references
+
+        package = REPO_ROOT / "packages" / "curio.scout@1"
+        manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
+        (template,) = [t for t in manifest["templates"] if t["id"] == "table"]
+        spec, problems = resolve_references(
+            (package / template["source"]).read_text(encoding="utf-8"),
+            widgets=[dict(w, value=columns) for w in template["widgets"]], language="json", inputs=[{"slot": 0}],
+        )
+        assert not problems, problems
+        return spec.strip()
+
+    def test_a_table_of_inputs_is_refused_for_the_geometry_it_lists(self, app, tmp_curio):
+        """The Table folds the columns it lists, a transform whose outputs this
+        module cannot name, but a geometry among them is still one ``inputs``
+        lacks, and its cells would be empty."""
+        refused = self._table(["scenario_name", "district", "geometry"])
+        listed = self._table(["scenario_name", "district", "flooded_m"])
+        events, outcome, inputs = self._rounds(app, [refused, listed], self.UPSTREAM)
+        kinds = [a.get("kind") for a in outcome["attempts"]]
+        assert kinds[:1] == ["document-invalid"], kinds
+        assert "transform[2].fold[2] reads 'geometry'" in outcome["attempts"][0]["detail"]
+        assert outcome["candidate"] == listed
+
+    def test_a_view_of_inputs_that_looks_up_an_inputs_geometry_draws_it(self, app, tmp_curio):
+        """A lookup from ``input_0`` brings its geometry to each row of
+        ``inputs``, so that view has it."""
+        document = self._document({
+            "data": {"name": "inputs"},
+            "transform": [{"lookup": "district", "from": {
+                "data": {"name": "input_0"}, "key": "district", "fields": ["geometry"],
+            }}],
+            "mark": "geoshape",
+            "encoding": {
+                "shape": {"field": "geometry", "type": "geojson"},
+                "color": {"field": "scenario_name", "type": "nominal"},
+            },
+        })
+        events, outcome, inputs = self._rounds(app, [document], self.UPSTREAM)
         assert "document-invalid" not in [a.get("kind") for a in outcome["attempts"]]
         assert outcome["candidate"] == document

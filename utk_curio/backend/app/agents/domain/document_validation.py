@@ -37,7 +37,7 @@ dev/134 corrects two things this module could not do, both proven by the owner's
 - a Vega document's **field references** are checked against the columns its
   input actually has (dev/129 **F3**): the same spec encoded
   ``y.field: "neighborhood"`` over a frame whose name column is ``community``,
-  which the schema cannot know and a reader of the columns can. A spec that
+  which the schema cannot know and a reader of the columns can. A view that
   names the dataset ``inputs`` reads its inputs stacked, with the columns the
   stack adds beside theirs (``INPUTS_FIELDS``) and without a GeoDataFrame's
   geometry, so a view of it that draws one is refused.
@@ -119,11 +119,13 @@ RUNTIME_FIELDS = ("interacted", "__row_index__")
 #: The dataset a Vega-Lite spec names to read every input's rows stacked
 #: (``INPUTS_DATASET`` in ``utils/vegaDatasets.ts``).
 INPUTS_DATASET = "inputs"
-#: The columns each of its rows carries beside its input's own: its circle,
-#: its scenario box's id and name, and, from an input that is a value, that
-#: value. ``stack_inputs`` in ``utk_curio/sandbox/util/scenario_stack.py``
-#: writes them, under these names.
-INPUTS_FIELDS = ("__input__", "scenario", "scenario_name", "value")
+#: The columns each of its rows carries beside its input's own: its circle and
+#: its scenario box's id and name. ``stack_inputs`` in
+#: ``utk_curio/sandbox/util/scenario_stack.py`` writes them, under these names.
+#: It also writes ``value`` for an input that is a value, but it refuses a
+#: value beside a table, and the check knows only tables' columns: there,
+#: ``value`` is a column only when a table has one.
+INPUTS_FIELDS = ("__input__", "scenario", "scenario_name")
 
 #: Transforms whose output column names cannot be known from the document
 #: alone. A spec that uses one is schema-checked and its FIELDS are left alone —
@@ -155,6 +157,11 @@ def _transform_outputs(spec: dict) -> tuple[set, bool]:
                     produced.add(item["as"])
         if isinstance(entry.get("calculate"), str) and isinstance(entry.get("as"), str):
             produced.add(entry["as"])
+        # A lookup brings the fields it names from another dataset under their
+        # own names, unless an ``as`` renames them (counted above).
+        source = entry.get("from")
+        if "lookup" in entry and "as" not in entry and isinstance(source, dict):
+            produced.update(name for name in source.get("fields") or [] if isinstance(name, str))
     for key in _SPEC_CONTAINERS:
         child = spec.get(key)
         for sub in (child if isinstance(child, list) else [child]):
@@ -167,11 +174,14 @@ def _transform_outputs(spec: dict) -> tuple[set, bool]:
 
 def _field_refs(spec: dict, path: str = "") -> list[tuple[str, str, bool]]:
     """Every ``(json path, field name, whether its view reads inputs)`` an
-    encoding or a transform reads. A view reads the dataset its own ``data``
-    names, else the one of the view it sits in.
+    encoding or a transform reads, a fold's listed columns among them. A view
+    reads the dataset its own ``data`` names, else the one of the view it sits
+    in.
 
     Only string fields: ``{"repeat": "column"}`` and a bare ``count`` aggregate
-    name no column, and inventing one would produce a false refusal.
+    name no column, and inventing one would produce a false refusal. Nor does
+    an encoding whose aggregate is ``count`` read its field: Vega-Lite's count
+    draws ``__count`` whatever the field names.
     """
     refs: list[tuple[str, str, bool]] = []
 
@@ -181,11 +191,12 @@ def _field_refs(spec: dict, path: str = "") -> list[tuple[str, str, bool]]:
                 on_inputs = _names_inputs(node["data"])
             for key, value in node.items():
                 if key == "field" and isinstance(value, str):
-                    refs.append((f"{where}.field", value, on_inputs))
-                elif key == "groupby" and isinstance(value, list):
+                    if node.get("aggregate") != "count":
+                        refs.append((f"{where}.field", value, on_inputs))
+                elif key in ("groupby", "fold") and isinstance(value, list):
                     for i, name in enumerate(value):
                         if isinstance(name, str):
-                            refs.append((f"{where}.groupby[{i}]", name, on_inputs))
+                            refs.append((f"{where}.{key}[{i}]", name, on_inputs))
                 else:
                     _walk(value, f"{where}.{key}" if where else key, on_inputs)
         elif isinstance(node, list):
@@ -196,42 +207,10 @@ def _field_refs(spec: dict, path: str = "") -> list[tuple[str, str, bool]]:
     return refs
 
 
-def _views(spec: object) -> list:
-    """The spec and every view below it: a layer's, a concatenated view's, and
-    a facet's or a repeat's inner spec (``viewsOf`` in ``utils/vegaDatasets.ts``)."""
-    found: list = []
-
-    def visit(node: object) -> None:
-        if isinstance(node, list):
-            for item in node:
-                visit(item)
-        elif isinstance(node, dict):
-            found.append(node)
-            for key in ("layer", "concat", "hconcat", "vconcat", "spec"):
-                visit(node.get(key))
-
-    visit(spec)
-    return found
-
-
 def _names_inputs(data: object) -> bool:
     return (
         isinstance(data, dict) and data.get("name") == INPUTS_DATASET
         and "url" not in data and "values" not in data
-    )
-
-
-def reads_inputs(spec: object) -> bool:
-    """Whether any part of *spec* names the dataset ``inputs``: its own
-    ``data``, a view's, or a lookup's ``from.data`` (``readsInputs`` in
-    ``utils/vegaDatasets.ts``)."""
-    return any(
-        _names_inputs(view.get("data"))
-        or any(
-            isinstance(step, dict) and isinstance(step.get("from"), dict) and _names_inputs(step["from"].get("data"))
-            for step in (view.get("transform") if isinstance(view.get("transform"), list) else [])
-        )
-        for view in _views(spec)
     )
 
 
@@ -248,19 +227,21 @@ def check_vega_fields(
     (``DEC-063``: never refuse a model for ignoring something it was not told),
     so when they are unknown this check does not run at all.
 
-    A view that reads ``inputs`` reads none of *geometry_columns*: the stack
-    leaves a GeoDataFrame's geometry out of its rows, as the preamble says.
+    A view that reads ``inputs`` may read the columns the stack adds
+    (``INPUTS_FIELDS``), and none of *geometry_columns*: the stack leaves a
+    GeoDataFrame's geometry out of its rows, as the preamble says. A view of
+    one input's own dataset has only the inputs' columns.
     """
     if not columns:
         return None
-    added = RUNTIME_FIELDS + (INPUTS_FIELDS if reads_inputs(payload) else ())
-    known = {str(c) for c in columns} | set(added)
+    known = {str(c) for c in columns} | set(RUNTIME_FIELDS)
     produced, opaque = _transform_outputs(payload)
-    if opaque:
-        return None  # a transform creates names this module cannot enumerate
-    known |= produced
+    refs = _field_refs(payload)
+    # The geometry the stack leaves out is missing whatever else a view's
+    # transforms do, unless one of them makes that column (a lookup's fields),
+    # so this runs before an opaque transform leaves the other fields alone.
     left_out = {str(c) for c in geometry_columns or ()} - produced
-    for where, field, on_inputs in _field_refs(payload):
+    for where, field, on_inputs in refs:
         if on_inputs and field in left_out:
             return {
                 "status": STATUS_INVALID,
@@ -271,7 +252,12 @@ def check_vega_fields(
                     f"the first circle, input_1 for the second"
                 ),
             }
-        if field in known:
+    if opaque:
+        return None  # a transform creates names this module cannot enumerate
+    known |= produced
+    for where, field, on_inputs in refs:
+        added = RUNTIME_FIELDS + (INPUTS_FIELDS if on_inputs else ())
+        if field in known or field in added:
             continue
         available = ", ".join(sorted(str(c) for c in columns)[:20])
         return {
