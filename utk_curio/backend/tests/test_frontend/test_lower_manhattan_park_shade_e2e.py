@@ -11,7 +11,7 @@ parks are the context, with the Season, Distance from a park and Tall
 building height Parameters. In
 Existing, Towers removed and Height cap (whose Interaction nodes remove or cut
 down the building parts Buildings around parks marks), Rasterize Buildings
-(``scout.rasters@1``) and Accumulated Shadow
+(``curio.scout@1``) and Accumulated Shadow
 (``model.scout.deep-umbra@1``) give the shadow, Shade per park measures it in
 each park, and Autark maps draw the buildings in 3D and the shadow. Compare
 Scenarios nodes chart each park's minutes of shadow in the three scenarios and
@@ -82,7 +82,7 @@ if TYPE_CHECKING:
 
 DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "lower-manhattan-park-shade.json"
 TEST_NAME = "test_three_scenarios_of_lower_manhattans_park_shade_are_charted_and_mapped"
-PACKAGES = ("model.scout.deep-umbra@1", "scout.rasters@1")
+PACKAGES = ("curio.scout@1", "model.scout.deep-umbra@1")
 #: The scenarios, in the order the chart reads them, and the key of their nodes.
 SCENARIOS = (("existing", "Existing", "existing"), ("towers-removed", "Towers removed", "removed"),
              ("height-cap", "Height cap", "capped"))

@@ -14,7 +14,7 @@ The specs are read from the example dataflows, their walkthroughs, the default
 preamble, and the worked examples the builder agents are shown
 (``llm-prompts/examples.md``), which include example 09's scatter. A
 dataflow's chart is a Vega-Lite node, or a node of a shipped template that
-draws with the Vega-Lite grammar, as SCOUT Comparison's charts do.
+draws with the Vega-Lite grammar, as Scout's charts do.
 """
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def _flow(path: Path) -> dict:
 
 def _vega_lite_types() -> set:
     """The node types that draw a Vega-Lite spec: every shipped template whose
-    grammar is ``vega-lite``, the Vega-Lite node's and SCOUT Comparison's
+    grammar is ``vega-lite``, the Vega-Lite node's and Scout's
     charts, read off the manifests."""
     types = {VEGA}
     for path in sorted((REPO_ROOT / "packages").glob("*/manifest.json")):

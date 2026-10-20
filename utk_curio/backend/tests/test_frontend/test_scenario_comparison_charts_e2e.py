@@ -6,7 +6,7 @@ komar41's ScenarioCharts in #914).
 tables from the Data Catalog. In each row a Data Transformation node per
 scenario keeps that scenario's rows, a Compare Scenarios node stacks them, and
 the chart is the Compare node's own preset (grouped bars, a table) or a node
-of the SCOUT Comparison package after it (``scout.comparison@1``), a Vega-Lite
+of the Scout package after it (``curio.scout@1``), a Vega-Lite
 chart whose spec names no scenario and no color. The account's store holds
 that package, which the dataflow declares. Every request that would leave the
 stack is refused, and Run All drives the whole dataflow:
@@ -14,7 +14,7 @@ stack is refused, and Run All drives the whole dataflow:
 1. Every node runs to Done.
 2. Each Compare node's output is its scenarios' rows, under their ids and
    names, in the order of its circles.
-3. Each chart draws. A SCOUT Comparison chart draws its marks in its
+3. Each chart draws. A Scout chart draws its marks in its
    scenarios' colors, or in its own where its scenarios color only its axis
    labels (the stacked bars by stage, the matrix of weights); a preset
    compiles with no problem.

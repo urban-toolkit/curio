@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/24-scout-shadow-model-chicago-loop.json",
-    "sha256": "44c171cb56687b0e7289bac979b47998da0c0a6951a52953cd210b4277445204",
+    "sha256": "a1d300da153e07bff00e7765b4addf69eaff9acae382f8cbc15563d79e22742e",
     "walkthrough": "docs/examples/24-scout-shadow-model-chicago-loop.md"
   },
   "prompt": "Load SCOUT's Chicago Loop buildings, with their heights in metres, from the Data Catalog, and mark them as buildings so a map can raise each footprint to its height. Draw them in 3D on an Autark map coloured by height. Then turn their heights into zoom 16 map tiles, side by side in one height raster, with SCOUT's building rasterizer, leaving its settings at their defaults, and draw the raster on a second Autark map. Run SCOUT's Deep Umbra shadow model on the height raster for a summer day, and draw the minutes of shadow on a third Autark map. Finally take the shadow's mean and median over the ground, where the height raster is under 1.08 m. The rasterizer, the raster statistics and the shadow model are not part of the standard node set, so whatever provides them needs installing first.",
@@ -14,8 +14,8 @@
       "data.scout.loop-buildings"
     ],
     "packages": [
-      "model.scout.deep-umbra@1",
-      "scout.rasters@1"
+      "curio.scout@1",
+      "model.scout.deep-umbra@1"
     ],
     "paths": []
   },
@@ -29,14 +29,14 @@
         "hasContent": true
       },
       {
-        "ref": "visualization2",
+        "ref": "visualization3",
         "type": "curio.builtin/autk-grammar",
         "role": "visualization",
         "executable": false,
         "hasContent": true
       },
       {
-        "ref": "visualization3",
+        "ref": "visualization2",
         "type": "curio.builtin/autk-grammar",
         "role": "visualization",
         "executable": false,
@@ -50,22 +50,22 @@
         "hasContent": true
       },
       {
-        "ref": "analysis2",
-        "type": "model.scout.deep-umbra/accumulated-shadow",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
         "ref": "analysis1",
-        "type": "scout.rasters/raster-calculator",
+        "type": "curio.scout/raster-calculator",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis3",
-        "type": "scout.rasters/rasterize-buildings",
+        "type": "curio.scout/rasterize-buildings",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "model.scout.deep-umbra/accumulated-shadow",
         "role": "analysis",
         "executable": true,
         "hasContent": true
@@ -83,6 +83,22 @@
         "kind": "data"
       },
       {
+        "from": "analysis3",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis3",
+        "to": "analysis1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis3",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
         "from": "analysis2",
         "to": "visualization2",
         "kind": "data"
@@ -91,22 +107,6 @@
         "from": "analysis2",
         "to": "analysis1",
         "kind": "data"
-      },
-      {
-        "from": "analysis3",
-        "to": "visualization3",
-        "kind": "data"
-      },
-      {
-        "from": "analysis3",
-        "to": "analysis2",
-        "kind": "data"
-      },
-      {
-        "from": "analysis3",
-        "to": "analysis1",
-        "kind": "data",
-        "slot": 1
       }
     ],
     "sources": {
@@ -179,7 +179,7 @@
   "split": "validation",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "adapted from #739's fixture (komar41) to the SCOUT shadow step's nodes (#662), 2026-10-05; its rasterizer and Raster Calculator the nodes of the SCOUT Rasters package, 2026-10-18",
+    "draftedBy": "adapted from #739's fixture (komar41) to the SCOUT shadow step's nodes (#662), 2026-10-05; its rasterizer and Raster Calculator the nodes of the SCOUT Rasters package, 2026-10-18; those nodes the Scout package's (curio.scout@1), 2026-10-20",
     "reviewedBy": null,
     "reviewedAt": null
   },

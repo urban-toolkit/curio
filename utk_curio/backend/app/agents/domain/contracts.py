@@ -795,8 +795,8 @@ def _agent_name(_src: _Sources, agent_id: str) -> str:
 
 def _template_label(src: _Sources, coord: str) -> str:
     """A template's label, by ``<package id>/<template id>``: a built-in
-    one's, or one's of a package Curio ships, such as SCOUT Comparison's
-    charts (``packages/scout.comparison@1``)."""
+    one's, or one's of a package Curio ships, such as Scout's charts
+    (``packages/curio.scout@1``)."""
     package_id = coord.rpartition("/")[0]
     where = BUILTIN_MANIFEST if package_id == BUILTIN_PACKAGE else f"packages/{package_id}"
     try:

@@ -117,7 +117,7 @@
       "name": "a package chart that draws with Vega-Lite stands for the nodes feeding it, as a Vega-Lite chart does",
       "nodes": [
         {"id": "calc", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"},
-        {"id": "donuts", "type": "scout.comparison/donuts@1", "content": "{}"}
+        {"id": "donuts", "type": "curio.scout/donuts@1", "content": "{}"}
       ],
       "edges": [{"source": "calc", "target": "donuts"}],
       "scenario": ["calc", "donuts"],

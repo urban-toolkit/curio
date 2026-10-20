@@ -114,7 +114,7 @@
       },
       {
         "id": "0a41219e-76c1-5e6c-bf83-a3b1c6a5b62f",
-        "type": "scout.comparison/lines-with-band",
+        "type": "curio.scout/lines-with-band",
         "x": 3905,
         "y": 0,
         "title": "Lines with a band: pedestrians per hour on four streets",
@@ -293,7 +293,7 @@
       },
       {
         "id": "551a2c72-12f1-5d1f-9fa0-3d23d49c0e9d",
-        "type": "scout.comparison/curves-by-group",
+        "type": "curio.scout/curves-by-group",
         "x": 3905,
         "y": 680,
         "title": "Curves by state: the chance of flood damage by water depth",
@@ -506,7 +506,7 @@
       },
       {
         "id": "63edc3b0-fe44-5cc7-88d0-614a9949d706",
-        "type": "scout.comparison/bars-with-error-bars",
+        "type": "curio.scout/bars-with-error-bars",
         "x": 3905,
         "y": 1280,
         "title": "Bars with error bars: flooded street length by depth",
@@ -712,7 +712,7 @@
       },
       {
         "id": "2fbccfb0-f2cd-5547-b32c-07aa0df4e1ea",
-        "type": "scout.comparison/ensemble-strips",
+        "type": "curio.scout/ensemble-strips",
         "x": 3905,
         "y": 1880,
         "title": "Ensemble strips: the peak depth of 50 simulated storms",
@@ -1047,7 +1047,7 @@
       },
       {
         "id": "e4752aac-78c0-59c5-b95f-2f350fdc06dc",
-        "type": "scout.comparison/stacked-bars-with-totals",
+        "type": "curio.scout/stacked-bars-with-totals",
         "x": 3905,
         "y": 3060,
         "title": "Stacked bars with totals: a building's carbon by life-cycle stage",
@@ -1205,7 +1205,7 @@
       },
       {
         "id": "dda36433-f7da-516a-86b0-f4ed6c3a224c",
-        "type": "scout.comparison/donuts",
+        "type": "curio.scout/donuts",
         "x": 3905,
         "y": 3660,
         "title": "Donuts: park area in shade",
@@ -1390,7 +1390,7 @@
       },
       {
         "id": "65eaf95d-46aa-50e8-af79-741d17e9d35c",
-        "type": "scout.comparison/weighted-matrix",
+        "type": "curio.scout/weighted-matrix",
         "x": 3905,
         "y": 4260,
         "title": "Weighted matrix: what counts for or against three bike routes",
@@ -2149,7 +2149,7 @@
       }
     ],
     "packages": [
-      "scout.comparison@1"
+      "curio.scout@1"
     ],
     "datasets": [
       {

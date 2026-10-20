@@ -36,8 +36,8 @@ def test_a_worker_run_names_the_group_after_the_at_sign():
     ) == "tests.test_frontend.test_examples::test_each_example_has_markdown_walkthrough"
     # An ``@`` inside the parameters is the test's own.
     assert durations.case_key(
-        "tests.test_frontend.test_m", "test_drop[scout.rasters@1-chromium]@test_m",
-    ) == "tests.test_frontend.test_m::test_drop[scout.rasters@1-chromium]"
+        "tests.test_frontend.test_m", "test_drop[curio.scout@1-chromium]@test_m",
+    ) == "tests.test_frontend.test_m::test_drop[curio.scout@1-chromium]"
 
 
 def test_a_run_without_workers_rebuilds_the_group():
@@ -82,7 +82,7 @@ def test_a_group_keeps_its_longest_time_across_files(tmp_path, monkeypatch):
 SUITE = '''
 import pytest
 
-@pytest.mark.parametrize("dataset", ["scout.rasters@1", "plain"])
+@pytest.mark.parametrize("dataset", ["curio.scout@1", "plain"])
 def test_alone(dataset):
     pass
 
@@ -144,5 +144,5 @@ def test_a_collected_test_and_its_junit_case_get_one_key(tmp_path, monkeypatch):
         recorded = set(json.loads(out.read_text(encoding="utf-8")))
         assert len(recorded) == 5
         assert recorded == collected
-        assert "test_mod::test_alone[scout.rasters@1]" in recorded
+        assert "test_mod::test_alone[curio.scout@1]" in recorded
         assert all(key == parts.case_key(*key.split("::", 1)) for key in recorded)

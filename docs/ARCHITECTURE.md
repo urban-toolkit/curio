@@ -384,7 +384,7 @@ node whose code it writes itself:
   run, which draws the chart itself. `scenarioScales.cases.json`
   pins the fill for Jest and for the Vega-Lite check in
   `test_compare_scenarios_node.py`.
-- The SCOUT Comparison package (`packages/scout.comparison@1`) holds seven Vega-Lite
+- The Scout package (`packages/curio.scout@1`) holds seven Vega-Lite
   templates for comparisons no preset draws. Each names `behavior: vega` and
   `grammarId: vega-lite`, and its `.vl.json` starter is the node's whole content
   (`starterIsContent`). The starter writes no scale and no order for `scenario_name`,
@@ -872,7 +872,7 @@ Between nodes a raster travels as autk-db's `getRaster` collection in an envelop
 
 `curio_load_data("<id>", part="<file>")` reads one file of a bundle (`catalog_helpers.bundle_part`): the dataset's path comes from the same dataset-path map, and the part must be one `listed_bundle_parts` gives, the `bundle.json` entries that are regular files inside the dataset's folder. Staging stages the same list under isolation, so both modes and the headless runner read the same files; any other name is refused with the dataset's files. The agents' source scanner treats a `part=` value of a `curio_load_data` call, literal or f-string, as a file of the dataset, not a path on disk.
 
-`rasters.mosaic_rasters` lays rasters that lie on one grid side by side (`mosaic_grid`: the tiles' north-west corner, the first tile's cell size or a given one, each tile at the nearest cell): a GDAL VRT that points at their files, or a GeoTIFF of their cells. `curio.media@1`'s Mosaic Rasters calls it through `mosaic_collection` (a raster collection's rows); `mosaic_web_tiles` places web map tiles on their own grid (`tile_bounds`), a tile it lacks holding `fill` and the file naming `nodata`, for `scout.rasters@1`'s Rasterize Buildings, whose missing tiles are no data. Package modules import them from `utk_curio.sandbox.util.rasters`.
+`rasters.mosaic_rasters` lays rasters that lie on one grid side by side (`mosaic_grid`: the tiles' north-west corner, the first tile's cell size or a given one, each tile at the nearest cell): a GDAL VRT that points at their files, or a GeoTIFF of their cells. `curio.media@1`'s Mosaic Rasters calls it through `mosaic_collection` (a raster collection's rows); `mosaic_web_tiles` places web map tiles on their own grid (`tile_bounds`), a tile it lacks holding `fill` and the file naming `nodata`, for `curio.scout@1`'s Rasterize Buildings, whose missing tiles are no data. Package modules import them from `utk_curio.sandbox.util.rasters`.
 
 A `dataRef` that names an unavailable table, whether an empty layer, a layer that was never loaded, or one dropped by an upstream node, is dropped before the grammar executes: the behavior removes the `map.layerRefs` entry or `plot` block and logs a console warning, which for a missing table lists the non-empty table names that *are* available; a `compute` block whose `dataRef` matches no layer is skipped. A map that keeps some of its layers renders them, and its success output notes the ones it lost, naming an empty table apart from one the dataflow does not produce. One left with nothing to draw is reported as an empty render (see [Render Outcomes](#render-outcomes)), and a reference to a table that exists but holds no rows is blamed on that table's source rather than on the reference.
 

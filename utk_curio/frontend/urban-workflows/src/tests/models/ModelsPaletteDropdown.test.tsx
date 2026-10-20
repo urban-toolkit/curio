@@ -24,7 +24,7 @@ const DDRNET = "model.curio.ddrnet23-slim@1";
 const DEEP_UMBRA = "model.scout.deep-umbra@1";
 const SEGFORMER = "imported.xabc123def456@1";
 /** Node packages a lockfile names beside its models. */
-const NODE_PACKAGES = ["curio.builtin@1", "scout.rasters@1"];
+const NODE_PACKAGES = ["curio.builtin@1", "curio.scout@1"];
 
 const mockOpenDrawer = jest.fn();
 const mockShowToast = jest.fn();

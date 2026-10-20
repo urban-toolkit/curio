@@ -1,10 +1,10 @@
-"""SCOUT's flood example in Curio, made of Curio's own nodes and SCOUT Rasters'
+"""SCOUT's flood example in Curio, made of Curio's own nodes and Scout's
 Raster Calculator, on SCOUT's whole grid (#662, step 18; #819).
 
 The shipped test dataflow ``quad-cities-flood-vulnerability.json`` does what SCOUT's
 ``simulate_flood_projection`` does with no SCOUT code: three Data Loading nodes
 read the region's window of SCOUT's rasters, which the Data Catalog holds whole
-(``curio_load_data(..., bounds=...)``), a Raster Calculator (``scout.rasters@1``)
+(``curio_load_data(..., bounds=...)``), a Raster Calculator (``curio.scout@1``)
 per scenario takes
 the depth with nature-based solutions (NbS) where the class is a chosen one and
 the depth without elsewhere (``choose``), a second takes the depth's
@@ -60,12 +60,12 @@ REPO = Path(__file__).resolve().parents[4]
 DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "quad-cities-flood-vulnerability.json"
 SCOUT_FUNCTION = Path(__file__).resolve().parent / "fixtures" / "scout_flood" / "flood_simulation.py"
 #: The starter a Raster Calculator opens with, which its package ships.
-CALCULATOR_STARTER = REPO / "packages" / "scout.rasters@1" / "sources" / "raster-calculator.py"
+CALCULATOR_STARTER = REPO / "packages" / "curio.scout@1" / "sources" / "raster-calculator.py"
 COMPARE_CODE_TS = REPO / "utk_curio" / "frontend" / "urban-workflows" / "src" / "utils" / "compare" / "compareCode.ts"
 LOADING = "curio.builtin/data-loading"
-CALCULATOR = "scout.rasters/raster-calculator"
+CALCULATOR = "curio.scout/raster-calculator"
 #: The Raster Calculator's package, which the dataflow's lockfile names.
-RASTERS_PACKAGE = "scout.rasters@1"
+RASTERS_PACKAGE = "curio.scout@1"
 #: What a Raster Calculator's code returns: an operation cell by cell, which
 #: gives a raster, or statistics, which give a table of one row.
 CALCULATE = "curio_raster_calculate"
@@ -600,7 +600,7 @@ def _map_after(spec: dict, node_id: str) -> dict:
 
 
 def test_the_dataflow_is_made_of_curios_own_nodes_and_scouts_raster_calculator():
-    """One package, SCOUT Rasters, for the Raster Calculators, and Curio's own
+    """One package, Scout, for the Raster Calculators, and Curio's own
     nodes otherwise: three Parameter nodes; five Data Loading nodes, three for
     the seven rasters and one each for the tracts and the waterways; a Data
     Transformation keeping the riverside tracts; two Raster Calculators per
