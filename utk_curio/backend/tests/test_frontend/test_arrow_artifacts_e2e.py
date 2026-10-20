@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 
 from .utils import (
     connect_nodes,
-    drag_to_canvas,
+    drag_builtin_to_canvas,
     node_locator,
     require_owner_view,
     require_project_page,
@@ -107,8 +107,8 @@ def _run_and_open_pool(page, code: str):
     claiming no fetch happened. Reopening the dataflow is the ordinary way a
     user reaches saved outputs, and it is the path that resolves them by id.
     """
-    loading = drag_to_canvas(page, page.locator(LOADING_TILE), at=POS_UP)
-    pool = drag_to_canvas(page, page.locator(POOL_TILE), at=POS_DOWN)
+    loading = drag_builtin_to_canvas(page, LOADING_TILE, at=POS_UP)
+    pool = drag_builtin_to_canvas(page, POOL_TILE, at=POS_DOWN)
     connect_nodes(page, loading, pool)
     set_node_code(page, loading, code)
     run_node_and_wait(page, loading, node_type=LOADING_TYPE)

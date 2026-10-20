@@ -89,7 +89,7 @@ from .utils import (
     close_scenario_drawer,
     connect_nodes,
     dismiss_toasts,
-    drag_to_canvas,
+    drag_builtin_to_canvas,
     frame_nodes,
     in_project_card,
     load_artifact_as_dict,
@@ -901,7 +901,7 @@ def test_both_scenarios_dragged_into_an_empty_project_read_one_context(
     )
 
     # A Compare Scenarios node over both dropped maps.
-    compare = drag_to_canvas(page, page.locator("#tile-compare-scenarios"), at=(900.0, 260.0))
+    compare = drag_builtin_to_canvas(page, "#tile-compare-scenarios", at=(900.0, 260.0))
     for name in ("Baseline", "Twice as tall"):
         scenario = dropped[name]
         box = _frame_box(page, scenario["id"], scenario["nodes"])

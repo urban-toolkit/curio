@@ -208,7 +208,7 @@ The DB stub is strictly additive - Strategy A still works against the same test 
 |---|---|
 | `api_json(url, token, *, method="GET", payload=None, timeout=10.0, raw=False)` | Authenticated JSON request, stdlib only. The escape hatch for asserting backend state from a browser test: a seeding or persistence problem then fails in about a second with the offending payload, instead of as a 15-second locator timeout that says nothing about which side broke. `raw=True` returns bytes, for binary endpoints such as a `.curio.zip`. |
 | `require_owner_view(page, *, timeout=4000)` | **Fails** when the dataflow opened read-only as the shared guest. A guest cannot see another user's installed packages, datasets or agents, so every catalog fetch comes back empty and the test asserts nothing. That is a setup bug: boot the stack with `--deploy`. |
-| `open_tools_palette(page, kind)` | Opens the left-rail `"packages"` or `"datasets"` palette and returns its panel locator. Re-callable: it matches either the `Open …` or the `Close …` title and clicks only when the panel is not already showing, so a test that needs both palettes can come back to the first one. They are still mutually exclusive (`ToolsMenu` keeps a single `activePalette`), so opening one closes the other. |
+| `open_tools_palette(page, kind)` | Opens one left-rail palette, `"builtin"`, `"packages"`, `"datasets"`, `"agents"` or `"models"`, and returns its panel locator. Re-callable: it matches either the `Open …` or the `Close …` title and clicks only when the panel is not already showing, so a test that needs two palettes can come back to the first one. They are mutually exclusive (`ToolsMenu` keeps a single `activePalette`), so opening one closes the other. `close_tools_palette(page, kind)` closes one, and `tools_palette_is_open(page, kind)` says whether it shows. |
 
 ### Canvas authoring helpers
 
@@ -219,6 +219,7 @@ palette drag and the edge drag.
 | Helper | What it does |
 |---|---|
 | `drag_to_canvas(page, source, *, at=None)` | One synthetic HTML5 drag from any draggable palette source onto `.curio-canvas-drop-target`; returns the new node's id, diffed from the canvas because ids are `uuid4`. |
+| `drag_builtin_to_canvas(page, tile, *, at=None)` | That drag for a built-in node's tile (`#tile-<template>`): opens the rail's Built-in palette, drags the tile, and closes the palette again unless it was open, so its panel covers none of the canvas afterwards. |
 | `drag_to_canvas_with_the_mouse(page, grip, *, at)` | The same drag with `page.mouse`: press on *grip* (a card's title, a palette row's grip), move in steps, release over the canvas. The browser routes every event, so it is the only one that meets what lies over the canvas, such as an open drawer's scrim. Fails with the element that took the drop, or none. |
 | `drag_with_the_mouse_onto_canvas(page, grip, *, at)` | That mouse drag without waiting for a node, for a drop that opens a dialog first or is refused. Answers what the drop did: the element that took it, whether it is the canvas, and the drop effect. |
 | `offline_catalog_package(backend_url, dir_name, libraries)` | A context manager: a test package from `packages/` in the backend's catalog, and its libraries as wheels in a wheelhouse the backend's pip reads instead of an index (`PIP_NO_INDEX` with `PIP_FIND_LINKS`). Undone afterwards. `library_installed(backend_url, library)` says whether pip installed one. `offline_package(dir_name)` reads a test package's manifest: its name, its one library and its nodes. Each test of an install path has a package and a library of its own. |
@@ -509,7 +510,7 @@ test_frontend/
     servers.py                # ports, e2e_existing_servers
     auth.py                   # signup helpers, require_owner_view
     db_stubs.py               # stub_* helpers, api_json
-    palettes.py               # open_tools_palette, close_tools_palette
+    palettes.py               # open_tools_palette, close_tools_palette, tools_palette_is_open
     upload.py                 # upload_workflow
     canvas_authoring.py       # drag_to_canvas, connect_nodes, set_node_code, play_node
     run_all.py                # Run All state, holding a run open

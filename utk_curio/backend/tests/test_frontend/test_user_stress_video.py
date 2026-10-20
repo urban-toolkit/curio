@@ -436,9 +436,13 @@ def drop_node(session: UserSession, template_id: str, at: tuple[float, float],
         set_canvas_zoom(page, zoom)
     else:
         _reset_zoom(page)
+    # The tiles are drawn only while the rail's Built-in palette is open; closed
+    # again after the drop, so its panel covers none of the canvas.
+    open_tools_palette(page, "builtin")
     tile = palette_tile(page, template_id)
     tour.focus(tile, hold=420)
     node_id = drag_to_canvas(page, tile, at=at)
+    close_tools_palette(page, "builtin")
     tour.beat(500)
     return node_id
 
@@ -673,6 +677,8 @@ class TestSessionFirstHour:
                     "Eleven built-in tiles, grouped data / computation / views."):
             wrong_tile: list[str] = []
             nameless: list[str] = []
+            # The tiles are drawn only while the Built-in palette is open.
+            open_tools_palette(page, "builtin")
             for template_id in PALETTE_ICON_CLASS:
                 info = palette_tile_identity(page, template_id)
                 if not info.get("found"):
@@ -690,6 +696,7 @@ class TestSessionFirstHour:
                         f"{template_id} (id={info.get('id')!r}, "
                         f"role={info.get('role')!r})"
                     )
+            close_tools_palette(page, "builtin")
             # A mismatch here means the tile lookup is wrong, which would
             # misattribute every later finding - so it fails the step rather than
             # being filed as an application defect.

@@ -95,6 +95,7 @@ from .utils import (
     connect_nodes,
     dismiss_toasts,
     drag_to_canvas,
+    drag_builtin_to_canvas,
     frame_node,
     in_project_card,
     lit_marks,
@@ -980,10 +981,12 @@ def scene_canvas(ctx: Ctx) -> None:
     )
     tour.focus(page.locator("#tools-menu"), hold=1600)
     tour.say(
-        "The built-in node rail",
+        "The built-in nodes, under Built-in on the rail",
         "Loading, transformation, computation, pooling, maps, charts.",
         hold=2600,
     )
+    # The tiles are drawn only while the Built-in palette is open.
+    open_tools_palette(page, "builtin")
     for tile, label in (
         ("#tile-data-loading", "Data Loading"),
         ("#tile-computation-analysis", "Python Computation"),
@@ -996,11 +999,11 @@ def scene_canvas(ctx: Ctx) -> None:
         if not locator.count():
             continue
         tour.say(label, hold=200)
-        # The rail's tile block scrolls when the window is short, as the
-        # 1280x800 take is: the map and chart tiles start below its fold.
+        # Into view first, in case the palette's tile area scrolls.
         locator.scroll_into_view_if_needed()
         tour.focus(locator, hold=800)
     tour.hush()
+    close_tools_palette(page, "builtin")
     tour.say(
         "The top bar for the rest",
         "File, View and Share, then the six catalogs.",
@@ -1115,7 +1118,7 @@ def scene_build(ctx: Ctx) -> None:
         hold=2200,
     )
     _reset_zoom(page)
-    transform_id = drag_to_canvas(page, page.locator(TRANSFORM_TILE), at=POS_TRANSFORM)
+    transform_id = drag_builtin_to_canvas(page, TRANSFORM_TILE, at=POS_TRANSFORM)
     tour.beat(900)
     _fit_view(page)
 
@@ -2419,7 +2422,7 @@ def scene_selection_tag(ctx: Ctx) -> None:
         [at[0], at[1]],
     )
     page.wait_for_timeout(800)
-    reader = drag_to_canvas(page, page.locator("#tile-computation-analysis"), at=(300 + 645, 650 - 415))
+    reader = drag_builtin_to_canvas(page, "#tile-computation-analysis", at=(300 + 645, 650 - 415))
     _fit_nodes(page, [ZIPS_LOADER, reader])
     dismiss_toasts(page)
     # The edge is drawn from the loader, below and left of the map, to the
@@ -2644,15 +2647,18 @@ def scene_quickstart(ctx: Ctx) -> None:
     tour.still("quickstart-blank-canvas")
     tour.say(
         "Start from a blank canvas",
-        "The built-in node types are on the left rail: drag one out.",
+        "Click Built-in on the left rail and drag a node out.",
         hold=2400,
     )
     _reset_zoom(page)
+    open_tools_palette(page, "builtin")
     loader_tile = page.locator(LOADING_TILE)
-    # Into the rail's view first: its tile block scrolls in a short window.
+    # Into view first, in case the palette's tile area scrolls.
     loader_tile.scroll_into_view_if_needed()
     tour.focus(loader_tile, hold=600)
     loader_id = drag_to_canvas(page, loader_tile, at=POS_LOADER)
+    # Closed again, so its panel covers none of the canvas the scene works on.
+    close_tools_palette(page, "builtin")
     tour.beat(900)
     tour.say("Write a few lines of pandas", "Whatever the code returns flows to the next node.", hold=2200)
     set_node_code(page, loader_id, QUICKSTART_CODE)
@@ -2669,10 +2675,12 @@ def scene_quickstart(ctx: Ctx) -> None:
         hold=2400,
     )
     _reset_zoom(page)
+    open_tools_palette(page, "builtin")
     vega_tile = page.locator(VEGA_TILE)
     vega_tile.scroll_into_view_if_needed()
     tour.focus(vega_tile, hold=600)
     vega_id = drag_to_canvas(page, vega_tile, at=POS_TRANSFORM)
+    close_tools_palette(page, "builtin")
     tour.beat(900)
     _fit_view(page)
     connect_nodes(page, loader_id, vega_id)
@@ -2710,7 +2718,7 @@ def scene_collaboration(ctx: Ctx) -> None:
     tour.beat(900)
     _rename_dataflow(ctx, "Shared dataflow")
     _reset_zoom(page)
-    loader_id = drag_to_canvas(page, page.locator(LOADING_TILE), at=POS_LOADER)
+    loader_id = drag_builtin_to_canvas(page, LOADING_TILE, at=POS_LOADER)
     set_node_code(page, loader_id, QUICKSTART_CODE)
     tour.beat(700)
     with page.expect_response(
@@ -2750,7 +2758,7 @@ def scene_collaboration(ctx: Ctx) -> None:
 
         # Ben adds a node, and it appears on this canvas.
         _reset_zoom(page2)
-        drag_to_canvas(page2, page2.locator(VEGA_TILE), at=POS_TRANSFORM)
+        drag_builtin_to_canvas(page2, VEGA_TILE, at=POS_TRANSFORM)
         page.wait_for_function(
             "() => document.querySelectorAll('.react-flow__node').length >= 2", timeout=30000,
         )
