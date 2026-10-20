@@ -4,12 +4,16 @@ import { isVegaLiteNodeType } from "./registry/vegaLiteNodes";
 import { dataflowOrder } from "./utils/dataflowOrder";
 import { unversionedNodeType } from "./utils/flowNodeCanonicalType";
 import { inputSlotOf, slotHandleId } from "./utils/inputSlots";
-import { inputNamesIn, resolveReferences } from "./utils/references/codeReferences";
+import { inputNamesIn, resolveReferences, widgetLiteral } from "./utils/references/codeReferences";
 import { PARAMETER_NODE_TYPE, sharedWidgetsOfSpec } from "./utils/references/sharedParameters";
 import { normalizeSelections } from "./utils/references/selectionTags";
-import { normalizeWidgets, type WidgetDef } from "./utils/widgets/widgetModel";
-import { namesDataset, usesNamedDatasets } from "./utils/vegaDatasets";
+import { normalizeWidgets, type WidgetDef, type WidgetValue } from "./utils/widgets/widgetModel";
+import { INPUTS_DATASET, namesDataset, readsInputs, usesNamedDatasets } from "./utils/vegaDatasets";
 import { inputTableName } from "./generated/autkGrammar";
+import { normalizeScenarios, type Scenario } from "./utils/scenarios/scenarioModel";
+import { boxFill, inputLabelOf, scaleLabelsOf, scenarioOfNode, type InputScenario } from "./utils/scenarios/inputScenarios";
+import { NO_SCENARIO_COLOR, type ScenarioLabel } from "./utils/scenarios/scenarioColors";
+import { withScenarioScales } from "./utils/scenarios/scenarioScales";
 
 // ── Trill types ──────────────────────────────────────────────────────────────
 
@@ -24,7 +28,7 @@ interface TrillNode {
   title?: string;
   in?: unknown;
   out?: unknown;
-  metadata?: { widgets?: unknown; selections?: unknown };
+  metadata?: { widgets?: unknown; selections?: unknown; packageTemplateLabel?: unknown };
 }
 
 interface TrillEdge {
@@ -50,6 +54,8 @@ interface TrillDataflow {
   timestamp: number;
   provenance_id: string;
   packages?: string[];
+  /** The dataflow's scenario boxes (#662), as a save writes them. */
+  scenarios?: unknown;
 }
 
 export interface TrillSpec {
@@ -440,6 +446,27 @@ function indent(text: string): string {
     .join("\n");
 }
 
+/**
+ * *value*, JSON data, as a Python literal laid out as `JSON.stringify(value,
+ * null, 2)` lays it out: True, False and None where JSON writes true, false
+ * and null, and None for a number JSON cannot write. A key or an item JSON
+ * leaves out (an undefined one) is left out here too.
+ */
+function pythonLiteral(value: unknown, margin = ""): string {
+  const inner = `${margin}  `;
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "[]";
+    return `[\n${value.map((item) => inner + pythonLiteral(item ?? null, inner)).join(",\n")}\n${margin}]`;
+  }
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value).filter(([, item]) => item !== undefined);
+    if (entries.length === 0) return "{}";
+    const lines = entries.map(([key, item]) => `${inner}${JSON.stringify(key)}: ${pythonLiteral(item, inner)}`);
+    return `{\n${lines.join(",\n")}\n${margin}}`;
+  }
+  return widgetLiteral(value as WidgetValue, "python");
+}
+
 /** A heading a reader can use to line the notebook up against the canvas. */
 function nodeHeading(node: TrillNode, inputNodes: TrillNode[]): string {
   const inputs = inputNodes.length
@@ -461,6 +488,8 @@ function generateCells(
   inputNodes: TrillNode[],
   inputSlots: number[] = [],
   shared: WidgetDef[] = [],
+  inputLabels: ScenarioLabel[] = [],
+  scaleLabels: ScenarioLabel[] = [],
 ): NotebookCell[] {
   // Specs saved since the curio.builtin@1 pack carry versioned ids (dev/64),
   // and third-party package ids never match a NodeType at all - so this
@@ -532,13 +561,23 @@ function generateCells(
         ),
       ];
     }
+    // A spec that reads `inputs` stacks every input's rows, each under the
+    // scenario box its node is in, as the canvas does: by the same Python the
+    // browser's twin is pinned to (utk_curio.sandbox.util.scenario_stack). Its
+    // channels on scenario_name draw the boxes' colors and order, as there,
+    // and its own when no input comes from a box.
+    const stacked = readsInputs(spec);
+    const fill = stacked ? boxFill(scaleLabels) : null;
+    if (fill) spec = withScenarioScales(spec, fill);
     // json.loads of a JSON *string* would yield a Python str rather than a
     // dict, which is not a usable mimebundle - so the spec is embedded as a
-    // literal object instead.
+    // literal object instead, written as Python writes one: JSON's true,
+    // false and null are names a kernel does not know.
     const lines = [
       "from IPython.display import display",
+      ...(stacked ? ["from utk_curio.sandbox.util.scenario_stack import input_rows, stack_inputs"] : []),
       "",
-      `_spec = ${JSON.stringify(spec, null, 2)}`,
+      `_spec = ${pythonLiteral(spec)}`,
     ];
     if (inputNodes.length && !usesNamedDatasets(spec, inputNodes.length)) {
       lines.push(
@@ -552,8 +591,23 @@ function generateCells(
       lines.push("", "# Attach the upstream rows the canvas would have supplied, one dataset per input.");
       lines.push('_spec.setdefault("datasets", {})');
       inputNodes.forEach((input, position) => {
-        lines.push(`_spec["datasets"]["${inputTableName(position)}"] = ${outputVarName(input)}.to_dict(orient="records")`);
+        // A spec that stacks its inputs takes values too, read as rows the way
+        // the stacking reads them.
+        const rows = stacked ? `input_rows(${outputVarName(input)})` : `${outputVarName(input)}.to_dict(orient="records")`;
+        lines.push(`_spec["datasets"]["${inputTableName(position)}"] = ${rows}`);
       });
+      if (stacked) {
+        lines.push(
+          "# Every input's rows stacked in circle order, each under the id and the name of its scenario's box.",
+          `_spec["datasets"]["${INPUTS_DATASET}"] = stack_inputs([`,
+          ...inputNodes.map((input, position) => {
+            const label = inputLabels[position] ?? { name: inputTableName(position), color: NO_SCENARIO_COLOR };
+            const scenario = widgetLiteral(label.scenario ?? null, "python");
+            return `    (${scenario}, ${widgetLiteral(label.name, "python")}, ${outputVarName(input)}),`;
+          }),
+          "])",
+        );
+      }
       if (!namesDataset((spec as any)?.data)) lines.push(`_spec["data"] = {"name": "${inputTableName(0)}"}`);
     }
     lines.push(
@@ -585,6 +639,29 @@ function generateCells(
   return [markdownCell(`${nodeHeading(node, inputNodes)}\n\n${why}${fenced}`)];
 }
 
+/** A TRILL node in the shape the canvas gives a node's data, which names it. */
+function canvasNodeOf(node: TrillNode): { id: string; type: string; data: Record<string, unknown> } {
+  return {
+    id: node.id,
+    type: node.type,
+    data: { title: node.title, nodeType: node.type, packageTemplateLabel: node.metadata?.packageTemplateLabel },
+  };
+}
+
+/** Each input in circle order with the box its node is in and the label its
+ * rows carry: the box's, else its node's name (utils/scenarios/inputScenarios). */
+function inputScenariosOf(
+  inputNodes: TrillNode[],
+  canvasNodes: ReturnType<typeof canvasNodeOf>[],
+  scenarios: readonly Scenario[],
+): InputScenario[] {
+  return inputNodes.map((input, position) => {
+    const scenario = scenarioOfNode(input.id, canvasNodes, scenarios);
+    const source = canvasNodes.find((n) => n.id === input.id);
+    return { slot: position, source: input.id, scenario, label: inputLabelOf(scenario, source, input.id) };
+  });
+}
+
 export function trillToNotebook(spec: TrillSpec): Notebook {
   const nodes = spec.dataflow?.nodes ?? [];
   const edges = spec.dataflow?.edges ?? [];
@@ -601,6 +678,10 @@ export function trillToNotebook(spec: TrillSpec): Notebook {
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
   const ordered = dataflowOrder(nodes, edges.filter((edge) => edge.type !== "Interaction"));
   const shared = sharedWidgetsOfSpec(nodes);
+  // Each node as the canvas holds it, and the boxes as the canvas reads them,
+  // so an input is labelled here as the chart labels it there.
+  const canvasNodes = nodes.map(canvasNodeOf);
+  const scenarios = normalizeScenarios(spec.dataflow?.scenarios, nodes.map((n) => n.id));
 
   const cells: NotebookCell[] = [];
   for (const node of ordered) {
@@ -608,7 +689,11 @@ export function trillToNotebook(spec: TrillSpec): Notebook {
     const inputNodes = wired
       .map((input) => nodeById.get(input.source))
       .filter((n): n is TrillNode => n !== undefined);
-    cells.push(...generateCells(node, inputNodes, wired.map((input) => input.slot), shared));
+    const inputs = inputScenariosOf(inputNodes, canvasNodes, scenarios);
+    cells.push(...generateCells(
+      node, inputNodes, wired.map((input) => input.slot), shared,
+      inputs.map((input) => input.label), scaleLabelsOf(inputs, scenarios),
+    ));
   }
 
   return {

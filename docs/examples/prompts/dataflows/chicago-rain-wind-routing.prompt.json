@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/chicago-rain-wind-routing.json",
-    "sha256": "d1b0efe56d40bbea28464ef489aecde8e47e69cda3abbd0d38603466e49d1c33",
+    "sha256": "686542c83abe7445533550b25fa76ffe40b88be5c81a086af473ba3c09b1507a",
     "walkthrough": null
   },
   "prompt": "Reproduce SCOUT's weather routing example in downtown Chicago, using SCOUT's routing model and its forecast. Load the roads of SCOUT's routing box from the OpenStreetMap extract the examples ship, and route between SCOUT's two points with its default weights, starting at the hour of the forecast SCOUT's own run read. Make two scenarios: one keeps the fastest route, the other the route the weather weights favor, and each takes its route and its metrics apart. Draw both routes over the roads on one map, each in its scenario's color, and chart the two routes' duration, distance, rain exposure and wind exposure in the same colors. The routing model is not part of the standard node set, so whatever provides it needs installing first.",

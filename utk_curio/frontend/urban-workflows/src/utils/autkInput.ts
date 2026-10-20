@@ -52,6 +52,12 @@ export type PreparedAutkInput = {
   rasters: AutkRasterInput[];
   /** The tables the input provides, by name. */
   tables: string[];
+  /** Where each table came in, by the table's name: the place, in the bundle
+   * the input arrived as, of the output that brought it. With several inputs
+   * wired that is its input's circle; with one, a place among the layers that
+   * one input carries (adapters/node/autkScenarioColors reads which input it
+   * is from the wired edges). */
+  circles?: Record<string, number>;
   /** Tables the input names but cannot provide, because they cannot be drawn. */
   unusable: string[];
   /** Features that can be drawn. `undefined` when nothing arrived. */
@@ -514,12 +520,16 @@ export function autkSourcesFrom(
         : `the one from input_${frame.circle} is left out. Rename one of them.`);
   }
 
+  // The circle each table came in on: a name two inputs bring is the first's.
+  const circles: Record<string, number> = Object.fromEntries(broughtBy);
+
   // The alias is added only when the document reads it, as the Vega-Lite node
   // attaches geometry only when the spec draws it.
   const refs = new Set(documentTableRefs(spec));
   byCircle.forEach((frames, circle) => {
     const alias = aliasOf(circle);
     if (!alias || !refs.has(alias)) return;
+    circles[alias] = circle;
     const { table, taken } = became.get(frames[0])!;
     if ("source" in table) {
       sources.unshift({ ...table.source, outputTableName: alias });
@@ -539,6 +549,7 @@ export function autkSourcesFrom(
     sources,
     rasters,
     tables: [...sources.map((s) => s.outputTableName), ...rasters.map((r) => r.outputTableName)],
+    circles,
     unusable,
     rowsIn,
     ...(problems.length ? { inputProblem: problems.join(" ") } : {}),

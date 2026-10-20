@@ -185,7 +185,7 @@
         "type": "curio.builtin/autk-grammar",
         "x": 2150,
         "y": 0,
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"title\": \"Roads\"\n      },\n      {\n        \"dataRef\": \"[!! input_1 !!]\",\n        \"scenario\": \"fastest\",\n        \"width\": 80,\n        \"title\": \"Fastest route\"\n      },\n      {\n        \"dataRef\": \"[!! input_2 !!]\",\n        \"scenario\": \"weather-aware\",\n        \"width\": 40,\n        \"title\": \"Weather-aware route\"\n      }\n    ]\n  }\n}",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"title\": \"Roads\"\n      },\n      {\n        \"dataRef\": \"[!! input_1 !!]\",\n        \"width\": 80,\n        \"title\": \"Fastest route\"\n      },\n      {\n        \"dataRef\": \"[!! input_2 !!]\",\n        \"width\": 40,\n        \"title\": \"Weather-aware route\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Draw both scenarios' routes over the roads, each in its scenario's color.",
