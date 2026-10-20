@@ -3,10 +3,8 @@
 - Its chart presets are valid Vega-Lite, and read only columns the stacked
   table has: each spec in ``comparePresets.cases.json``, which the frontend's
   Jest test pins its presets to, goes through the validator agents' documents
-  go through.
-- So is a Vega-Lite chart after it once its scenario channels are filled in
-  (``scenarioScales.cases.json``, which the frontend's Jest test pins
-  ``scenarioScales.ts`` to).
+  go through. A Vega-Lite chart after it, its scenario channels filled in, is
+  checked the same way by ``test_scenario_inputs.py``.
 - ``metadata.compareScenarios`` in the trill schema lists exactly the presets
   and aggregates the frontend offers.
 - The code the node writes, ``compareCode.cases.json``, which the frontend's
@@ -70,22 +68,6 @@ def test_a_preset_reading_a_column_the_table_lacks_is_refused():
     result = validate_vega_lite(json.dumps(bar["spec"]), columns=columns)
     assert result["status"] == STATUS_INVALID
     assert repr(plotted) in result["detail"]
-
-
-def test_a_chart_after_the_node_is_valid_vega_lite_with_its_scenarios_filled_in():
-    """Each chart a Vega-Lite node after the node compiles, its channels on
-    ``scenario_name`` given the scenarios' names and colors, and each spec
-    the fill leaves as written, goes through the same validator."""
-    from utk_curio.backend.app.agents.domain.document_validation import STATUS_VALID, validate_vega_lite
-
-    doc = _read_json("scenarioScales.cases.json")
-    columns = ["scenario", "scenario_name"] + [column["name"] for column in doc["columns"]]
-    specs = {case["name"]: case["filled"] for case in doc["cases"]}
-    specs.update({case["name"]: case["spec"] for case in doc["untouched"]})
-    assert len(specs) == len(doc["cases"]) + len(doc["untouched"]), "two cases share a name"
-    results = {name: validate_vega_lite(json.dumps(spec), columns=columns) for name, spec in specs.items()}
-    # "unchecked" (the schema could not be read) is not a pass.
-    assert {name: r for name, r in results.items() if r.get("status") != STATUS_VALID} == {}
 
 
 def test_the_schema_lists_the_presets_and_aggregates_the_frontend_offers():
