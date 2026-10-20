@@ -16,8 +16,8 @@ Umbra does for ``tile_bounds``. A plain Python node no longer has them:
 ``curio_raster_calculate`` and ``curio_raster_statistics`` refuse, naming the
 Raster Calculator. So the flood dataflow's two Average depth by period nodes,
 which choose each period's depth, are Raster Calculators, whose input circles
-take the layers they read beside rasters. Core keeps only what Compare
-Scenarios' raster Difference subtracts with, until Compare is removed.
+take the layers they read beside rasters. Core keeps no raster math: what
+Compare Scenarios' raster Difference subtracted with went with it.
 
 Package code is imported inside each test, through a run's staged copy of the
 package's modules, so a checkout without it fails each test on its own and no
@@ -56,10 +56,11 @@ MOVED = (
     "operate", "in_codes", "masked_bands", "dataset_grid", "write_raster", "_content_name",
     "tile_corner", "tile_bounds", "mosaic_web_tiles",
 )
-#: What core keeps for Compare Scenarios' raster Difference until Compare is
-#: removed: the envelope subtraction and the grid checks it calls.
+#: What core kept for Compare Scenarios' raster Difference, gone with it: the
+#: envelope subtraction and the grid checks it called, which only the
+#: package's raster algebra defines.
 ENVELOPES = REPO / "utk_curio" / "sandbox" / "util" / "envelope_difference.py"
-ENVELOPE_NAMES = {"RasterAlgebraError", "js_number", "grid_differences", "describe_grid", "subtract_envelopes"}
+ENVELOPE_NAMES = ("subtract_envelopes", "js_number", "grid_differences", "describe_grid")
 #: Folders of ``utk_curio/`` that hold no app code.
 NOT_APP = {"tests", "node_modules", "dist", "__pycache__", "_shipped"}
 
@@ -238,27 +239,24 @@ def _app_modules():
 
 def test_no_core_module_defines_the_moved_functions():
     """None of the moved functions is defined in Curio's own code, the old
-    module is gone, and the package defines each of them. Core keeps only
-    Compare Scenarios' raster Difference: the envelope subtraction and the
-    grid checks it calls, in a module of their own."""
+    module is gone, and the package defines each of them. Nor does core keep
+    the envelope subtraction and the grid checks Compare Scenarios' raster
+    Difference called: their module went with it, and the package's raster
+    algebra alone defines the grid checks."""
     found = []
     for path, relative in _app_modules():
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=relative)
         found += [
             f"{relative}:{node.lineno} {node.name}"
             for node in ast.walk(tree)
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in MOVED
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in (*MOVED, *ENVELOPE_NAMES)
         ]
     assert found == [], found
     assert not (REPO / "utk_curio" / "sandbox" / "util" / "raster_algebra.py").exists()
+    assert not ENVELOPES.exists(), ENVELOPES
     defined = set()
     for module in ("raster_algebra.py", "web_tiles.py"):
         tree = ast.parse((SOURCES / MODULE / module).read_text(encoding="utf-8"))
         defined |= {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}
     assert set(MOVED) - {"curio_raster_calculate", "curio_raster_statistics"} <= defined, defined
-    kept = ast.parse(ENVELOPES.read_text(encoding="utf-8"))
-    public = {
-        node.name for node in kept.body
-        if isinstance(node, (ast.FunctionDef, ast.ClassDef)) and not node.name.startswith("_")
-    }
-    assert public == ENVELOPE_NAMES, public
+    assert {"js_number", "grid_differences", "describe_grid"} <= defined, defined

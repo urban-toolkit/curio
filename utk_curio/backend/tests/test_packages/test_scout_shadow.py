@@ -825,7 +825,7 @@ def test_the_node_returns_the_shadow_raster_on_its_inputs_grid(workspace, tmp_pa
         assert (shadow.count, shadow.dtypes[0]) == (1, "float32")
         # NaN names the nodata, as Curio's raster tools write it: a GeoTIFF that
         # names none is read by autk-db with 0 as its nodata, and every cell in
-        # the sun would drop out of an Autark map and a Compare Scenarios Difference.
+        # the sun would drop out of an Autark map.
         assert shadow.nodata is not None and np.isnan(shadow.nodata), shadow.nodata
         assert shadow.tags()["season"] == "summer" and shadow.tags()["minutes"] == "720"
         cells = shadow.read(1)
@@ -1146,42 +1146,16 @@ def _minutes_raster(path, minutes):
     return rasterio.open(path)
 
 
-def _as_autark_exports_it(dataset) -> dict:
-    """*dataset* as the envelope autk-db's ``getRaster`` exports for an Autark
-    map and Compare Scenarios' Difference (``utils/raster/rasterWire.ts``):
-    its first band as float32, rows from south to north, NaN for nodata."""
-    import base64
-
-    import numpy as np
-
-    t = dataset.transform
-    cells = dataset.read(1, masked=True).astype("float32").filled(np.nan)[::-1]
-    grid = {"crs": "EPSG:3395", "width": dataset.width, "height": dataset.height,
-            "originX": t.c, "originY": t.f, "resX": t.a, "resY": t.e}
-    west, south, east, north = dataset.bounds
-    return {"dataType": "raster", "data": {
-        "type": "FeatureCollection", "bbox": [west, south, east, north], "grid": grid,
-        "features": [{"type": "Feature", "geometry": None, "properties": {
-            "bands": [{"id": "band_1"}],
-            "band_1": {"float32le": base64.b64encode(cells.astype("<f4").tobytes()).decode("ascii")},
-        }}],
-    }}
-
-
 def test_the_change_in_shadow_is_towers_removed_minus_existing_as_compare_took_it(workspace, tmp_path):
     """The dataflow's change in shadow is a Raster Calculator, run as the
     sandbox runs one, with Scout's modules: Towers removed's shadow, on input_1,
-    minus Existing's, on input_0, cell by cell, its sign kept. It is what
-    Compare Scenarios' Difference took from the same two shadows, as autk-db
-    exports them (``envelope_difference.subtract_envelopes``), cell for cell:
-    below zero where removing the towers takes shadow away, above where it
-    adds some, 0 where nothing changed, and no value where either shadow has
-    none, on the shadows' grid."""
-    import base64
-
+    minus Existing's, on input_0, cell by cell, its sign kept, on the shadows'
+    grid: below zero where removing the towers takes shadow away, above where
+    it adds some, 0 where nothing changed, and no value where either shadow
+    has none. These are the cells Compare Scenarios' Difference took from the
+    same two shadows, pinned when Compare Scenarios went."""
     import numpy as np
 
-    from utk_curio.sandbox.util.envelope_difference import subtract_envelopes
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
     (node,) = [n for n in _dataflow()["nodes"] if n["type"] == CALCULATOR_TYPE and not _takes_statistics(n)]
@@ -1206,11 +1180,6 @@ def test_the_change_in_shadow_is_towers_removed_minus_existing_as_compare_took_i
         [0.0, -480.0, 30.0, -30.0], [0.0, np.nan, -360.0, np.nan], [-540.0, 0.0, 44.75, -360.0],
     ], dtype="float32")
     assert np.array_equal(cells, expected, equal_nan=True), cells
-    compared = subtract_envelopes(("Existing", _as_autark_exports_it(existing)),
-                                  ("Towers removed", _as_autark_exports_it(removed)))
-    wire = compared["data"]["features"][0]["properties"]["band_1"]["float32le"]
-    took = np.frombuffer(base64.b64decode(wire), dtype="<f4").reshape(3, 4)[::-1]
-    assert np.array_equal(cells, took, equal_nan=True), (cells, took)
 
 
 def test_example_24_holds_the_node_as_the_palette_drops_it_and_its_code_runs(workspace, tmp_path):

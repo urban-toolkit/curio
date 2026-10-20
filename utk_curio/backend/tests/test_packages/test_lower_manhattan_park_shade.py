@@ -31,10 +31,10 @@ The first tests read the file. The others run it as written, once for the
 module, on the extract and with no socket: the data node compiled and run as
 a run on the server runs it (``test_autk_server_data_load.py``), and every
 code node in the sandbox with its package's modules and the model's weights.
-The Compare Scenarios nodes the dataflow held run beside them, their raster
-differences completed in Node, as the reference the chart's rows and the
-changes are held to; step 6.4 of that plan removes them with the node. What
-does not depend on the model is pinned exactly: the layers, the parks, the
+The chart's rows and the changes are held to what the Compare Scenarios nodes
+the dataflow held wrote from the same values (``_support/scenario_changes.py``
+and the shadows' own cells). What does not depend on the model is pinned
+exactly: the layers, the parks, the
 rule, the levers and the rasters' grid. Deep Umbra's minutes are pinned within 1 minute a park:
 onnxruntime's output moves with its thread count past 16
 (``test_scout_shadow.py``), and at 32 and 64 threads a park's mean moved by at
@@ -198,35 +198,6 @@ LEVERS = {
     ),
 }
 
-#: The code a Compare Scenarios node writes for its inputs (compareCode): the
-#: dataflow's until step 6.3, and its reference since.
-STACK_NOTE = (
-    "# Compare Scenarios writes this code from its inputs: each input, under the\n"
-    "# id and the name of its scenario. It is written again when they change.\n"
-)
-DIFFERENCE_NOTE = (
-    "# Compare Scenarios writes this code from its inputs: input_1 minus input_0,\n"
-    "# each under the id and the name of its scenario. It is written again when\n"
-    "# they change.\n"
-)
-CHART_CODE = STACK_NOTE + (
-    "return curio_stack_scenarios([\n"
-    '    ("existing", "Existing", [!! input_0 !!]),\n'
-    '    ("towers-removed", "Towers removed", [!! input_1 !!]),\n'
-    '    ("height-cap", "Height cap", [!! input_2 !!]),\n'
-    "])\n"
-)
-
-
-def _difference_code(scenario: str, name: str, key: str = "") -> str:
-    return DIFFERENCE_NOTE + (
-        "return curio_difference_scenarios([\n"
-        '    ("existing", "Existing", [!! input_0 !!]),\n'
-        f'    ("{scenario}", "{name}", [!! input_1 !!]),\n'
-        f"]{f', key={json.dumps(key)}' if key else ''})\n"
-    )
-
-
 def _change_code(scenario: str, name: str) -> str:
     """A what-if's change in shadow: its Raster Calculator's code."""
     return (
@@ -237,21 +208,6 @@ def _change_code(scenario: str, name: str) -> str:
         "\n"
         'return raster_calculate("subtract", [input_1, input_0], output_file=curio_output_file)\n'
     )
-
-
-def _compare_references() -> dict:
-    """The Compare Scenarios nodes the dataflow held until step 6.3, as the
-    reference its chart's rows and its changes are held to: ``{reference id:
-    (its code, the ids of the nodes on its circles, in order)}``."""
-    references = {"compare-chart": (CHART_CODE, [_node_id(key, "shade") for _s, _n, _c, key in SCENARIOS])}
-    for scenario, name, _color, key in SCENARIOS[1:]:
-        references[f"compare-{key}-change"] = (
-            _difference_code(scenario, name), [_node_id("existing", "shadow"), _node_id(key, "shadow")],
-        )
-        references[f"compare-{key}-park-change"] = (
-            _difference_code(scenario, name, key="park"), [_node_id("existing", "shade"), _node_id(key, "shade")],
-        )
-    return references
 
 
 #: Color ranges the maps shown side by side share, so a color is the same value
@@ -585,13 +541,10 @@ def _load_layers(content: str) -> list:
 def _run_code(node: dict, inputs: list, shared: list, media: Path):
     """*node*'s code, its references resolved as a run resolves them, run in
     the sandbox on *inputs* (one value per circle, each saved as its own
-    upstream output): ``(the value it hands on, what it printed)``. A Compare
-    Scenarios node's raster difference is completed as the sandbox completes
-    it."""
+    upstream output): ``(the value it hands on, what it printed)``."""
     from utk_curio.backend.app.execution.code_references import resolve_references
     from utk_curio.sandbox.app.worker import execute_code
     from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
-    from utk_curio.sandbox.util.scenario_difference import complete_raster_difference
 
     widgets = (node.get("metadata") or {}).get("widgets") or []
     code, problems = resolve_references(
@@ -609,8 +562,6 @@ def _run_code(node: dict, inputs: list, shared: list, media: Path):
         save_dataset=False, media_dir=str(media), package_modules=_PACKAGE_MODULES.get(node["type"]),
         models={MODEL_ID: str(MODEL_PACKAGE)}, input_slots=list(range(len(inputs))),
     )
-    if node["type"] == COMPARE:
-        result = complete_raster_difference(result, node_type=node["type"], launch_dir=str(REPO))
     assert result["stderr"] == "", f"{node['id']}: {result['stderr']}"
     return load_from_duckdb(result["output"]["path"]), result["stdout"]
 
@@ -618,9 +569,8 @@ def _run_code(node: dict, inputs: list, shared: list, media: Path):
 @pytest.fixture(scope="module")
 def ran(tmp_path_factory):
     """Every node of the dataflow run as written, once for the module, but the
-    chart, which draws in the browser, then the Compare Scenarios references
-    (:func:`_compare_references`) on the same values: ``{node id: (value,
-    printed)}``, the data node's value its layers."""
+    chart, which draws in the browser: ``{node id: (value, printed)}``, the
+    data node's value its layers."""
     from utk_curio.cli import dependencies
     from utk_curio.sandbox.app.worker import _worker_init
     from utk_curio.sandbox.util.db import init_db, release_connection
@@ -657,15 +607,20 @@ def ran(tmp_path_factory):
             order += [f"park-shade-{key}-change", f"park-shade-{key}-park-change"]
         for node_id in order:
             values[node_id] = _run_code(nodes[node_id], inputs_of(node_id), shared, root / "media")
-        for reference, (code, sources) in _compare_references().items():
-            node = {"id": reference, "type": COMPARE, "content": code}
-            values[reference] = _run_code(node, [values[source][0] for source in sources], shared, root / "media")
         yield values
         release_connection()
 
 
 def _value(ran, node_id):
     return ran[node_id][0]
+
+
+def _through_the_store(value):
+    """*value* as a node reads it on a circle: saved as an upstream output,
+    and read back."""
+    from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
+
+    return load_from_duckdb(save_to_duckdb(value, node_id="park-shade-input"))
 
 
 def test_the_loader_hands_on_the_parks_and_every_building_part(ran):
@@ -773,7 +728,9 @@ def test_the_chart_stacks_the_three_scenarios_parks(ran):
     """The rows the chart reads, its ``inputs`` dataset as a chart stacks it
     (``stack_inputs``, the twin of the browser's): each scenario's parks in
     circle order, under its box's id and name, each row what Compare
-    Scenarios' stacked table held for it, its outline left out."""
+    Scenarios' stacked table held for it (``stacked_rows``), its outline left
+    out."""
+    from utk_curio.backend.tests._support.scenario_changes import stacked_rows
     from utk_curio.sandbox.util.scenario_stack import stack_inputs
 
     spec = _dataflow()
@@ -782,15 +739,14 @@ def test_the_chart_stacks_the_three_scenarios_parks(ran):
     box = {node_id: (s["id"], s["name"]) for s in spec["scenarios"] for node_id in s["nodes"]}
     entries = [(*box[into[(CHART, circle)]], _value(ran, into[(CHART, circle)])) for circle in ("in", "in_1", "in_2")]
     rows = stack_inputs(entries)
-    stacked = _value(ran, "compare-chart")
-    assert list(stacked.columns[:2]) == ["scenario", "scenario_name"]
+    stacked = stacked_rows(entries)
+    assert all(list(row)[:2] == ["scenario", "scenario_name"] for row in stacked)
     assert len(stacked) == len(rows) == 3 * len(PARKS)
     for scenario, name, _color, _key in SCENARIOS:
-        held = stacked[stacked["scenario"] == scenario]
-        assert set(held["scenario_name"]) == {name} and list(held["park"]) == PARKS
+        held = [row for row in stacked if row["scenario"] == scenario]
+        assert {row["scenario_name"] for row in held} == {name} and [row["park"] for row in held] == PARKS
     assert [row["__input__"] for row in rows] == [circle for circle in range(3) for _park in PARKS]
-    table = stacked.drop(columns=[stacked.geometry.name]).to_dict("records")
-    assert [{k: v for k, v in row.items() if k != "__input__"} for row in rows] == table
+    assert [{k: v for k, v in row.items() if k != "__input__"} for row in rows] == stacked
 
 
 def test_each_parks_change_in_shade_is_the_what_if_minus_existing(ran):
@@ -807,32 +763,35 @@ def test_each_parks_change_in_shade_is_the_what_if_minus_existing(ran):
 
 def test_each_parks_change_is_what_compares_difference_wrote(ran, tmp_path):
     """Each what-if's park change, run as written, is what Compare Scenarios'
-    Difference keyed on the park wrote for the same two inputs: the same
-    columns in the same order, ``park`` first and ``change`` second, each of
-    their types, every value and outline, and the coordinate system. With the
-    what-if's parks in the opposite order each park is still matched by its
-    name, as Compare matched it, and the change is the same."""
+    Difference keyed on the park wrote for the same two inputs
+    (``keyed_change``): the same columns in the same order, ``park`` first and
+    ``change`` second, each of their types, every value and outline, and the
+    coordinate system. With the what-if's parks in the opposite order each
+    park is still matched by its name, as Compare matched it, and the change
+    is the same."""
     from geopandas.testing import assert_geodataframe_equal
+
+    from utk_curio.backend.tests._support.scenario_changes import keyed_change
 
     nodes = _nodes(_dataflow())
     existing = _value(ran, _node_id("existing", "shade"))
-    for scenario, name, _color, key in SCENARIOS[1:]:
+    for scenario, _name, _color, key in SCENARIOS[1:]:
         assert nodes[f"park-shade-{key}-park-change"]["type"] == PYTHON, scenario
+        what_if = _value(ran, _node_id(key, "shade"))
         ours = _value(ran, f"park-shade-{key}-park-change")
-        compares = _value(ran, f"compare-{key}-park-change")
+        compares = keyed_change(_through_the_store(existing), _through_the_store(what_if), "park")
         assert list(ours.columns)[:2] == ["park", "change"], list(ours.columns)
         assert list(ours.columns) == list(compares.columns)
         assert ours.dtypes.astype(str).tolist() == compares.dtypes.astype(str).tolist()
         assert_geodataframe_equal(ours, compares)
         assert ours.crs.to_epsg() == 4326
-        reversed_parks = _value(ran, _node_id(key, "shade")).iloc[::-1].reset_index(drop=True)
+        reversed_parks = what_if.iloc[::-1].reset_index(drop=True)
         assert list(reversed_parks["park"]) == PARKS[::-1]
         again, _printed = _run_code(nodes[f"park-shade-{key}-park-change"], [existing, reversed_parks], [],
                                     tmp_path / "media")
-        reference = {"id": f"compare-{key}-reversed", "type": COMPARE,
-                     "content": _difference_code(scenario, name, key="park")}
-        compared, _printed = _run_code(reference, [existing, reversed_parks], [], tmp_path / "media")
-        assert_geodataframe_equal(again, compared)
+        assert_geodataframe_equal(
+            again, keyed_change(_through_the_store(existing), _through_the_store(reversed_parks), "park"),
+        )
         assert_geodataframe_equal(again, ours)
 
 
@@ -844,23 +803,23 @@ LEFT_OUT, ONLY_IN_THE_WHAT_IF = "Coenties Slip", "Bowling Green"
 def test_a_park_one_side_lacks_is_removed_or_added_as_compare_wrote_it(ran, tmp_path):
     """A user's edit can leave a park out of one scenario. Each what-if's park
     change then writes what Compare Scenarios' Difference keyed on the park
-    wrote: a park only Existing has is ``removed``, in Existing's order, its
-    numbers empty and its outline Existing's; a park only the what-if has is
-    ``added``, after every park of Existing's, its numbers empty and its
-    outline the what-if's. Every other park is the what-if's minus
-    Existing's, as before."""
+    wrote (``keyed_change``): a park only Existing has is ``removed``, in
+    Existing's order, its numbers empty and its outline Existing's; a park
+    only the what-if has is ``added``, after every park of Existing's, its
+    numbers empty and its outline the what-if's. Every other park is the
+    what-if's minus Existing's, as before."""
     import numpy as np
     from geopandas.testing import assert_geodataframe_equal
+
+    from utk_curio.backend.tests._support.scenario_changes import keyed_change
 
     nodes = _nodes(_dataflow())
     existing = _value(ran, _node_id("existing", "shade"))
     numbers = ["area_m2", "cells", "mean_min", "median_min", "p90_min", "pct_daylight",
                "share_sun", "share_partial", "share_deep"]
-    for scenario, name, _color, key in SCENARIOS[1:]:
+    for scenario, _name, _color, key in SCENARIOS[1:]:
         node = nodes[f"park-shade-{key}-park-change"]
         assert node["type"] == PYTHON, scenario
-        reference = {"id": f"compare-{key}-one-side", "type": COMPARE,
-                     "content": _difference_code(scenario, name, key="park")}
         what_if = _value(ran, _node_id(key, "shade"))
         cases = {
             "removed": (existing, what_if[what_if["park"] != LEFT_OUT].reset_index(drop=True)),
@@ -868,7 +827,7 @@ def test_a_park_one_side_lacks_is_removed_or_added_as_compare_wrote_it(ran, tmp_
         }
         for change, inputs in cases.items():
             ours, _printed = _run_code(node, list(inputs), [], tmp_path / "media")
-            compared, _printed = _run_code(reference, list(inputs), [], tmp_path / "media")
+            compared = keyed_change(*(_through_the_store(value) for value in inputs), "park")
             assert list(ours.columns) == list(compared.columns), (scenario, change)
             assert ours.dtypes.astype(str).tolist() == compared.dtypes.astype(str).tolist(), (scenario, change)
             assert_geodataframe_equal(ours, compared)
@@ -895,15 +854,15 @@ def test_each_what_ifs_change_in_shadow_is_a_raster_on_the_shadows_grid(ran):
     """Each what-if's Raster Calculator subtracts the shadows cell by cell on
     their own grid, the what-if's minus Existing's: each takes shadow away on
     the whole, by at most a day's minutes. It is, cell for cell, what Compare
-    Scenarios' Difference took from the same shadows, as autk-db exports them
-    (rows from south to north), to within float32's last places."""
-    import base64
-
+    Scenarios' Difference took from the same shadows, to within float32's last
+    places: each shadow's float32 cells, the what-if's minus Existing's, the
+    difference written as float32, and no value where either shadow has
+    none."""
     import numpy as np
 
     nodes = _nodes(_dataflow())
     shadow = _value(ran, _node_id("existing", "shadow"))
-    a, _b, c, _d, e, f = tuple(shadow.transform)[:6]
+    before = shadow.read(1, masked=True).astype("float32").filled(np.nan).astype("float64")
     for scenario, _name, _color, key in SCENARIOS[1:]:
         assert nodes[f"park-shade-{key}-change"]["type"] == CALCULATOR, scenario
         change = _value(ran, f"park-shade-{key}-change")
@@ -914,13 +873,10 @@ def test_each_what_ifs_change_in_shadow_is_a_raster_on_the_shadows_grid(ran):
         assert finite.min() < -100 and finite.mean() < 0, (scenario, finite.min(), finite.mean())
         assert -720 <= finite.min() and finite.max() <= 720, (scenario, finite.min(), finite.max())
 
-        envelope = _value(ran, f"compare-{key}-change")
-        assert envelope["dataType"] == "raster", (scenario, envelope.get("dataType"))
-        grid = envelope["data"]["grid"]
-        assert (grid["crs"], grid["width"], grid["height"]) == ("EPSG:3395", *GRID)
-        assert (grid["originX"], grid["originY"], grid["resX"], grid["resY"]) == (c, f, a, e)
-        raw = base64.b64decode(envelope["data"]["features"][0]["properties"]["band_1"]["float32le"])
-        took = np.frombuffer(raw, dtype="<f4").reshape(GRID[1], GRID[0])[::-1]
+        what_if = _value(ran, _node_id(key, "shadow"))
+        assert tuple(what_if.transform)[:6] == tuple(shadow.transform)[:6], scenario
+        after = what_if.read(1, masked=True).astype("float32").filled(np.nan).astype("float64")
+        took = (after - before).astype("float32")
         compared = took[~np.isnan(took)]
         assert compared.min() < -100 and compared.mean() < 0, (scenario, compared.min(), compared.mean())
         assert -720 <= compared.min() and compared.max() <= 720, (scenario, compared.min(), compared.max())

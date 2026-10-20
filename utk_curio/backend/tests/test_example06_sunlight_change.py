@@ -1,13 +1,12 @@
 """Example 06's Sunlight change node writes what Compare Scenarios wrote (the
 plan answering komar41's review, step 6.3).
 
-Until Compare Scenarios went, example 06 took each road's sunlight change with
-a Compare node in Difference over Baseline's map and Twice as tall's:
-``curio_difference_scenarios`` on their roads layer, the roads matched by their
-shapes, since they carry no id (``utk_curio/sandbox/util/scenario_difference.py``).
-A Python node over the same two maps takes it now, and what it writes must be
-what Compare wrote, column for column and value for value, so the Autark map
-after it draws the same roads in the same colors and the numbers
+Until the plan's step 6.3, example 06 took each road's sunlight change with a
+Compare Scenarios node in Difference over Baseline's map and Twice as tall's,
+on their roads layer, the roads matched by their shapes, since they carry no
+id. A Python node over the same two maps takes it now, and what it writes must
+be what Compare wrote, column for column and value for value, so the Autark
+map after it draws the same roads in the same colors and the numbers
 ``test_example06_scenarios_e2e.py`` pins stay.
 
 Each test runs the node's shipped code as the sandbox runs a node with two
@@ -19,9 +18,9 @@ them on, each road with its minutes of sunlight in a column and in the
 ``compute`` values the step writes its outputs under. The shader runs only on
 a browser's GPU, so the minutes are made here: whole hours from none to
 thirteen in Baseline, and up to three hours fewer on three roads of every four
-in Twice as tall. The reference is Compare's own function on the same inputs.
-Step 6.4 of that plan removes it with the node, and pins these cases to the
-values they hold then.
+in Twice as tall. The reference is the rule Compare's own function wrote by
+(:func:`_compares_difference`), stated from the same inputs since step 6.4 of
+that plan removed the node.
 
 Imports are inside each test or helper, so a checkout without the sandbox's
 pieces fails test by test.
@@ -188,17 +187,115 @@ def _the_nodes_change(workspace, baseline: dict, twice: dict):
     return load_from_duckdb(result["output"]["path"])
 
 
-def _compares_difference(baseline: dict, twice: dict):
-    """What Compare Scenarios' Difference wrote for the same two inputs, read
-    back from the store as the node's are, as the store gives it back."""
-    from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
-    from utk_curio.sandbox.util.scenario_difference import difference_scenarios
+def _is_number(series) -> bool:
+    import pandas as pd
 
-    values = [load_from_duckdb(art_id) for art_id in _stored((baseline, twice))]
-    written = difference_scenarios(
-        [(scenario, name, value) for (scenario, name), value in zip(SCENARIOS, values)], layer=ROADS,
-    )
-    return load_from_duckdb(save_to_duckdb(written, node_id="compare-scenarios"))
+    return pd.api.types.is_numeric_dtype(series) and not pd.api.types.is_bool_dtype(series)
+
+
+def _is_number_value(value) -> bool:
+    import numpy as np
+
+    return isinstance(value, (int, float, np.integer, np.floating)) and not isinstance(value, (bool, np.bool_))
+
+
+def _no_value(value) -> bool:
+    import pandas as pd
+
+    if value is None:
+        return True
+    try:
+        return pd.api.types.is_scalar(value) and bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def _holds_dicts(*columns) -> bool:
+    held = [value for column in columns for value in column if not _no_value(value)]
+    return bool(held) and all(isinstance(value, dict) for value in held)
+
+
+def _without_numbers(value):
+    if isinstance(value, dict):
+        return {key: _without_numbers(inner) for key, inner in value.items()}
+    return None if _is_number_value(value) else value
+
+
+def _cell_change(before, after):
+    """``(cell, differs)`` for one road's cell of a column of dicts, as Compare
+    Scenarios' Difference read one: *after*'s dict, then the keys only
+    *before*'s holds, each number both hold *after*'s minus *before*'s."""
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        if _no_value(before) and _no_value(after):
+            return None, False
+        return _without_numbers(before if _no_value(after) else after), True
+    cell, differs = {}, False
+    for key in [*after, *(key for key in before if key not in after)]:
+        if key not in before or key not in after:
+            cell[key] = after[key] if key in after else before[key]
+            differs = True
+            continue
+        old, new = before[key], after[key]
+        if isinstance(old, dict) and isinstance(new, dict):
+            cell[key], inner = _cell_change(old, new)
+        elif _is_number_value(old) and _is_number_value(new):
+            old_empty, new_empty = _no_value(old), _no_value(new)
+            cell[key] = None if old_empty or new_empty else float(new) - float(old)
+            inner = old_empty != new_empty or (not old_empty and not new_empty and float(new) != float(old))
+        else:
+            cell[key] = new
+            inner = not (_no_value(old) and _no_value(new)) and old != new
+        differs = differs or bool(inner)
+    return cell, differs
+
+
+def _compares_difference(baseline: dict, twice: dict):
+    """What Compare Scenarios' Difference wrote for Baseline's roads and Twice
+    as tall's, each road matched by its shape, as the store gives it back: the
+    roads in Baseline's order, geometry first and ``change`` second, then the
+    roads layer's other columns in their order. Each number column, and each
+    number in a column of dicts (the ``compute`` values a shadow step writes),
+    is Twice as tall's value minus Baseline's; ``change`` says ``changed``
+    where any value differs; every other value, and the shape, is Twice as
+    tall's. This rule was checked against Compare Scenarios' own function on
+    roads of this shape before it was removed. The two maps here hand on their
+    roads in one order and with the same shapes, so each road's match is the
+    road in its place."""
+    from utk_curio.sandbox.util.input_layers import curio_layer
+    from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
+
+    before, after = (curio_layer(load_from_duckdb(art_id), ROADS) for art_id in _stored((baseline, twice)))
+    return load_from_duckdb(save_to_duckdb(_roads_change(before, after), node_id="compare-scenarios"))
+
+
+def _roads_change(before, after):
+    """The rule :func:`_compares_difference` states, on two roads layers in one
+    order with the same shapes."""
+    import geopandas as gpd
+    import numpy as np
+    import pandas as pd
+
+    assert list(before.columns) == list(after.columns), (list(before.columns), list(after.columns))
+    assert before.geometry.to_wkb().tolist() == after.geometry.to_wkb().tolist(), "the roads are not in one order"
+    geometry = after.geometry.name
+    was, now = before.reset_index(drop=True), after.reset_index(drop=True)
+    columns = {}
+    differs = np.zeros(len(now), dtype=bool)
+    for column in [c for c in was.columns if c != geometry]:
+        if _is_number(was[column]) and _is_number(now[column]):
+            old, new = was[column].astype("float64"), now[column].astype("float64")
+            columns[column] = new - old
+            differs |= ((old.isna() != new.isna()) | (old.notna() & new.notna() & (new != old))).to_numpy()
+        elif _holds_dicts(was[column], now[column]):
+            pairs = [_cell_change(old, new) for old, new in zip(was[column], now[column])]
+            columns[column] = pd.Series([cell for cell, _ in pairs], dtype=object)
+            differs |= np.asarray([flag for _, flag in pairs], dtype=bool)
+        else:
+            columns[column] = now[column]
+            same = (was[column] == now[column]).fillna(False).astype(bool) | (was[column].isna() & now[column].isna())
+            differs |= ~same.to_numpy()
+    written = pd.DataFrame({geometry: now[geometry], "change": np.where(differs, "changed", "unchanged"), **columns})
+    return gpd.GeoDataFrame(written, geometry=geometry, crs=after.crs if after.crs is not None else before.crs)
 
 
 def test_the_change_is_what_compares_difference_wrote_on_back_bays_roads(workspace, back_bay_layers):
@@ -237,8 +334,9 @@ def test_a_road_is_matched_by_its_shape_not_by_its_place(workspace, back_bay_lay
     """Twice as tall's roads in another order, its shapes reversed and a shape
     that repeats keeping its roads' order, as two layers read from one source
     repeat it: each road is still matched to itself by its shape, as Compare
-    matched it, so the change is what Compare wrote and what the roads in
-    their own order give, road for road in Baseline's order."""
+    matched it, so the change is what Compare wrote, which the order of the
+    roads never moved, and what the roads in their own order give, road for
+    road in Baseline's order."""
     from geopandas.testing import assert_geodataframe_equal
 
     baseline = _handed_on(back_bay_layers, "s-baseline")
@@ -251,6 +349,7 @@ def test_a_road_is_matched_by_its_shape_not_by_its_place(workspace, back_bay_lay
     assert order != list(range(len(shapes)))
     reordered = _handed_on(back_bay_layers, "s-twice", order=order)
     ours = _the_nodes_change(workspace, baseline, reordered)
-    assert_geodataframe_equal(ours, _compares_difference(baseline, reordered))
-    in_place = _the_nodes_change(workspace, baseline, _handed_on(back_bay_layers, "s-twice"))
+    twice = _handed_on(back_bay_layers, "s-twice")
+    assert_geodataframe_equal(ours, _compares_difference(baseline, twice))
+    in_place = _the_nodes_change(workspace, baseline, twice)
     assert_geodataframe_equal(ours, in_place)
