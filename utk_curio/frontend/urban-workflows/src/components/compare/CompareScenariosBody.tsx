@@ -211,7 +211,7 @@ export function CompareScenariosBody({
   const read = useStackedRead(mode === "chart" ? stacked : null);
   const columns = read?.columns ?? [];
   const chart = resolveChart(settings?.chart, columns);
-  // The labels a Vega-Lite chart after the node draws with too (utils/compare/scenarioScales).
+  // The labels a Vega-Lite chart after the node draws with too (utils/scenarios/scenarioScales).
   const labels = chartLabels(settings?.inputs, inputs);
   const drawn = compareChartSpec(chart, labels, columns);
   const specText = "spec" in drawn ? JSON.stringify(drawn.spec) : "";

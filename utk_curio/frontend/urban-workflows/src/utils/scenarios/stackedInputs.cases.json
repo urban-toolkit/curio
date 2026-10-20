@@ -1,0 +1,261 @@
+{
+  "description": "A Vega-Lite chart's inputs stacked as the dataset inputs: each case lists the inputs in circle order, each with the id and the name of the scenario box its node is in (a node in no box: no id, the node's name), and either the exact rows or the refusal. inputRows lists one input's own rows, its input_<k>. stackedInputs.ts (Jest) and stack_inputs and input_rows in scenario_stack.py (pytest) must both give exactly these. A value is plain JSON, a frame as the sandbox writes it ({dataType: dataframe or geodataframe, data}), or the several outputs of one input ({dataType: outputs, data}), which Python reads with the sandbox's parseInput.",
+  "cases": [
+    {
+      "name": "two tables, each row under its box, in circle order",
+      "inputs": [
+        {"scenario": "s-base", "name": "Baseline", "value": [{"segment": "r1", "sunlight": 5}, {"segment": "r2", "sunlight": 6}]},
+        {"scenario": "s-tall", "name": "Twice as tall", "value": [{"segment": "r1", "sunlight": 3}]}
+      ],
+      "rows": [
+        {"__input__": 0, "scenario": "s-base", "scenario_name": "Baseline", "segment": "r1", "sunlight": 5},
+        {"__input__": 0, "scenario": "s-base", "scenario_name": "Baseline", "segment": "r2", "sunlight": 6},
+        {"__input__": 1, "scenario": "s-tall", "scenario_name": "Twice as tall", "segment": "r1", "sunlight": 3}
+      ]
+    },
+    {
+      "name": "an input whose node is in no box is named by its node, with no scenario",
+      "inputs": [
+        {"scenario": "s-base", "name": "Baseline", "value": [{"sunlight": 5}]},
+        {"scenario": null, "name": "Python Computation", "value": [{"sunlight": 2}]}
+      ],
+      "rows": [
+        {"__input__": 0, "scenario": "s-base", "scenario_name": "Baseline", "sunlight": 5},
+        {"__input__": 1, "scenario": null, "scenario_name": "Python Computation", "sunlight": 2}
+      ]
+    },
+    {
+      "name": "a column one input lacks is empty in its rows",
+      "inputs": [
+        {"scenario": "s-base", "name": "Baseline", "value": [{"segment": "r1", "sunlight": 5}]},
+        {"scenario": "s-tall", "name": "Twice as tall", "value": [{"segment": "r1", "sunlight": 3, "shade": 0.5}]}
+      ],
+      "rows": [
+        {"__input__": 0, "scenario": "s-base", "scenario_name": "Baseline", "segment": "r1", "sunlight": 5, "shade": null},
+        {"__input__": 1, "scenario": "s-tall", "scenario_name": "Twice as tall", "segment": "r1", "sunlight": 3, "shade": 0.5}
+      ]
+    },
+    {
+      "name": "records that differ in their columns are one table, empty where a record lacks one",
+      "inputs": [
+        {"scenario": "s-base", "name": "Baseline", "value": [{"x": 1}, {"y": 2}]}
+      ],
+      "rows": [
+        {"__input__": 0, "scenario": "s-base", "scenario_name": "Baseline", "x": 1, "y": null},
+        {"__input__": 0, "scenario": "s-base", "scenario_name": "Baseline", "x": null, "y": 2}
+      ]
+    },
+    {
+      "name": "a plain value is one row under value",
+      "inputs": [
+        {"scenario": "s-base", "name": "Baseline", "value": 5},
+        {"scenario": "s-tall", "name": "Twice as tall", "value": 3.5}
+      ],
+      "rows": [
+        {"__input__": 0, "scenario": "s-base", "scenario_name": "Baseline", "value": 5},
+        {"__input__": 1, "scenario": "s-tall", "scenario_name": "Twice as tall", "value": 3.5}
+      ]
+    },
+    {
+      "name": "a list of values is a row per value, texts as they are",
+      "inputs": [
+        {"scenario": "s-base", "name": "Baseline", "value": ["low", "high"]},
+        {"scenario": "s-tall", "name": "Twice as tall", "value": ["mid"]}
+      ],
+      "rows": [
+        {"__input__": 0, "scenario": "s-base", "scenario_name": "Baseline", "value": "low"},
+        {"__input__": 0, "scenario": "s-base", "scenario_name": "Baseline", "value": "high"},
+        {"__input__": 1, "scenario": "s-tall", "scenario_name": "Twice as tall", "value": "mid"}
+      ]
+    },
+    {
+      "name": "a dict of values is one row",
+      "inputs": [
+        {"scenario": "s-base", "name": "Baseline", "value": {"mean": 1.5, "max": 3}},
+        {"scenario": "s-tall", "name": "Twice as tall", "value": {"mean": 1.25, "max": 2}}
+      ],
+      "rows": [
+        {"__input__": 0, "scenario": "s-base", "scenario_name": "Baseline", "mean": 1.5, "max": 3},
+        {"__input__": 1, "scenario": "s-tall", "scenario_name": "Twice as tall", "mean": 1.25, "max": 2}
+      ]
+    },
+    {
+      "name": "a dict of columns of one length is a row per position",
+      "inputs": [
+        {"scenario": "s-base", "name": "Baseline", "value": {"x": [1, 2], "y": [3, 4]}}
+      ],
+      "rows": [
+        {"__input__": 0, "scenario": "s-base", "scenario_name": "Baseline", "x": 1, "y": 3},
+        {"__input__": 0, "scenario": "s-base", "scenario_name": "Baseline", "x": 2, "y": 4}
+      ]
+    },
+    {
+      "name": "an empty input adds no rows and stacks beside any kind",
+      "inputs": [
+        {"scenario": "s-base", "name": "Baseline", "value": []},
+        {"scenario": "s-tall", "name": "Twice as tall", "value": 4}
+      ],
+      "rows": [
+        {"__input__": 1, "scenario": "s-tall", "scenario_name": "Twice as tall", "value": 4}
+      ]
+    },
+    {
+      "name": "an input's own __input__ column gives way to its circle",
+      "inputs": [
+        {"scenario": "s-base", "name": "Baseline", "value": [{"v": 1}]},
+        {"scenario": "s-tall", "name": "Twice as tall", "value": [{"__input__": 9, "v": 2}]}
+      ],
+      "rows": [
+        {"__input__": 0, "scenario": "s-base", "scenario_name": "Baseline", "v": 1},
+        {"__input__": 1, "scenario": "s-tall", "scenario_name": "Twice as tall", "v": 2}
+      ]
+    },
+    {
+      "name": "no inputs make no rows",
+      "inputs": [],
+      "rows": []
+    },
+    {
+      "name": "a table beside a value is refused, naming both",
+      "inputs": [
+        {"scenario": "s-base", "name": "Baseline", "value": [{"sunlight": 1}]},
+        {"scenario": "s-tall", "name": "Twice as tall", "value": 3.5}
+      ],
+      "refusal": "The dataset \"inputs\" stacks inputs of one kind, and these differ: input_0 (Baseline) is a table, input_1 (Twice as tall) is a value. Connect outcomes of the same kind."
+    },
+    {
+      "name": "an input with no value is refused",
+      "inputs": [
+        {"scenario": "s-base", "name": "Baseline", "value": 1},
+        {"scenario": "s-tall", "name": "Twice as tall", "value": null}
+      ],
+      "refusal": "The dataset \"inputs\": input_1 (Twice as tall) has no value. Run the node that feeds it, and check that its code returns its result."
+    },
+    {
+      "name": "an input with no name is named by its circle",
+      "inputs": [
+        {"scenario": null, "name": "", "value": null}
+      ],
+      "refusal": "The dataset \"inputs\": input_0 has no value. Run the node that feeds it, and check that its code returns its result."
+    },
+    {
+      "name": "an input that already has a scenario column is refused",
+      "inputs": [
+        {"scenario": "s-base", "name": "Baseline", "value": [{"segment": "r1", "scenario": "mine"}]}
+      ],
+      "refusal": "The dataset \"inputs\": input_0 (Baseline) already has a column named scenario. Rename it in the node that feeds it: the stacked table adds its own."
+    },
+    {
+      "name": "an input that already has a scenario_name column is refused",
+      "inputs": [
+        {"scenario": "s-base", "name": "Baseline", "value": [{"sunlight": 1}]},
+        {"scenario": "s-tall", "name": "Twice as tall", "value": {"scenario_name": ["x"], "sunlight": [2]}}
+      ],
+      "refusal": "The dataset \"inputs\": input_1 (Twice as tall) already has a column named scenario_name. Rename it in the node that feeds it: the stacked table adds its own."
+    },
+    {
+      "name": "an input that cannot stack is named before the kinds are compared",
+      "inputs": [
+        {"scenario": "s-base", "name": "Baseline", "value": 3.5},
+        {"scenario": "s-tall", "name": "Twice as tall", "value": [{"scenario": "mine"}]}
+      ],
+      "refusal": "The dataset \"inputs\": input_1 (Twice as tall) already has a column named scenario. Rename it in the node that feeds it: the stacked table adds its own."
+    },
+    {
+      "name": "a list that mixes records and values is refused",
+      "inputs": [
+        {"scenario": "s-base", "name": "Baseline", "value": [{"a": 1}, 2]}
+      ],
+      "refusal": "The dataset \"inputs\": input_0 (Baseline) is a list that mixes records and values. Return records (one dict per row) or values."
+    },
+    {
+      "name": "a dict whose columns differ in length is refused",
+      "inputs": [
+        {"scenario": "s-base", "name": "Baseline", "value": {"a": [1, 2], "b": [3]}}
+      ],
+      "refusal": "The dataset \"inputs\": input_0 (Baseline) is a dict it cannot read as rows. Return one value per key (one row), or lists of one length per key (one column each)."
+    },
+    {
+      "name": "a DataFrame as the sandbox writes it is its rows",
+      "inputs": [
+        {"scenario": "s-base", "name": "Baseline", "value": {"dataType": "dataframe", "data": {"segment": ["r1", "r2"], "sunlight": [5, null]}}}
+      ],
+      "rows": [
+        {"__input__": 0, "scenario": "s-base", "scenario_name": "Baseline", "segment": "r1", "sunlight": 5},
+        {"__input__": 0, "scenario": "s-base", "scenario_name": "Baseline", "segment": "r2", "sunlight": null}
+      ]
+    },
+    {
+      "name": "a DataFrame with no rows is a table, so beside a value it is refused",
+      "inputs": [
+        {"scenario": "s-base", "name": "Baseline", "value": {"dataType": "dataframe", "data": {"sunlight": []}}},
+        {"scenario": "s-tall", "name": "Twice as tall", "value": 3}
+      ],
+      "refusal": "The dataset \"inputs\" stacks inputs of one kind, and these differ: input_0 (Baseline) is a table, input_1 (Twice as tall) is a value. Connect outcomes of the same kind."
+    },
+    {
+      "name": "a GeoDataFrame beside a DataFrame stacks, its geometry left out",
+      "inputs": [
+        {"scenario": "s-base", "name": "Baseline", "value": {"dataType": "geodataframe", "data": {"type": "FeatureCollection", "crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::4326"}}, "features": [{"type": "Feature", "properties": {"zip": "a", "pop": 1}, "geometry": {"type": "Point", "coordinates": [0, 0]}}]}}},
+        {"scenario": "s-tall", "name": "Twice as tall", "value": {"dataType": "dataframe", "data": {"zip": ["b"], "pop": [2]}}}
+      ],
+      "rows": [
+        {"__input__": 0, "scenario": "s-base", "scenario_name": "Baseline", "zip": "a", "pop": 1},
+        {"__input__": 1, "scenario": "s-tall", "scenario_name": "Twice as tall", "zip": "b", "pop": 2}
+      ]
+    },
+    {
+      "name": "GeoDataFrames in two coordinate systems stack, their geometry left out",
+      "inputs": [
+        {"scenario": "s-base", "name": "Baseline", "value": {"dataType": "geodataframe", "data": {"type": "FeatureCollection", "crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::4326"}}, "features": [{"type": "Feature", "properties": {"pop": 1}, "geometry": {"type": "Point", "coordinates": [0, 0]}}]}}},
+        {"scenario": "s-tall", "name": "Twice as tall", "value": {"dataType": "geodataframe", "data": {"type": "FeatureCollection", "crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::3857"}}, "features": [{"type": "Feature", "properties": {"pop": 2}, "geometry": {"type": "Point", "coordinates": [10, 10]}}]}}}
+      ],
+      "rows": [
+        {"__input__": 0, "scenario": "s-base", "scenario_name": "Baseline", "pop": 1},
+        {"__input__": 1, "scenario": "s-tall", "scenario_name": "Twice as tall", "pop": 2}
+      ]
+    },
+    {
+      "name": "one input that carries a tuple of tables is refused",
+      "inputs": [
+        {"scenario": "s-base", "name": "Baseline", "value": {"dataType": "outputs", "data": [{"dataType": "dataframe", "data": {"pop": [1]}}, {"dataType": "dataframe", "data": {"pop": [2]}}]}}
+      ],
+      "refusal": "The dataset \"inputs\": input_0 (Baseline) carries 2 tables. Connect a node that returns one table, or pick the table to compare in a node between them."
+    },
+    {
+      "name": "one input that carries an Autark node's several layers is refused by their names",
+      "inputs": [
+        {"scenario": "s-base", "name": "Baseline", "value": {"dataType": "outputs", "data": [
+          {"dataType": "geodataframe", "layerName": "roads", "data": {"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"pop": 1}, "geometry": {"type": "Point", "coordinates": [0, 0]}}]}},
+          {"dataType": "geodataframe", "layerName": "buildings", "data": {"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"pop": 2}, "geometry": {"type": "Point", "coordinates": [1, 1]}}]}}
+        ]}}
+      ],
+      "refusal": "The dataset \"inputs\": input_0 (Baseline) carries 2 layers (roads, buildings). Connect a node that hands on one layer."
+    },
+    {
+      "name": "one input that carries an Autark node's one layer is that layer's rows",
+      "inputs": [
+        {"scenario": "s-base", "name": "Baseline", "value": {"dataType": "outputs", "data": [
+          {"dataType": "geodataframe", "layerName": "roads", "data": {"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"pop": 1}, "geometry": {"type": "Point", "coordinates": [0, 0]}}]}}
+        ]}}
+      ],
+      "rows": [
+        {"__input__": 0, "scenario": "s-base", "scenario_name": "Baseline", "pop": 1}
+      ]
+    }
+  ],
+  "inputRows": [
+    {"name": "a value is a row under value", "value": 5, "rows": [{"value": 5}]},
+    {"name": "a list of values is a row per value", "value": ["low", "high"], "rows": [{"value": "low"}, {"value": "high"}]},
+    {"name": "records keep their rows, empty where a record lacks a column", "value": [{"x": 1}, {"y": 2}], "rows": [{"x": 1, "y": null}, {"x": null, "y": 2}]},
+    {"name": "a dict of values is one row", "value": {"mean": 1.5, "max": 3}, "rows": [{"mean": 1.5, "max": 3}]},
+    {"name": "a dict of columns is a row per position", "value": {"x": [1, 2], "y": [3, 4]}, "rows": [{"x": 1, "y": 3}, {"x": 2, "y": 4}]},
+    {"name": "an empty input is no rows", "value": [], "rows": []},
+    {"name": "an input with no value is no rows", "value": null, "rows": []},
+    {"name": "a list that mixes records and values is no rows", "value": [{"a": 1}, 2], "rows": []},
+    {"name": "a DataFrame as the sandbox writes it is its rows", "value": {"dataType": "dataframe", "data": {"x": [1, 2]}}, "rows": [{"x": 1}, {"x": 2}]},
+    {"name": "a DataFrame with no rows is no rows", "value": {"dataType": "dataframe", "data": {"x": []}}, "rows": []},
+    {"name": "a GeoDataFrame is its rows, its geometry left out", "value": {"dataType": "geodataframe", "data": {"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"pop": 1}, "geometry": {"type": "Point", "coordinates": [0, 0]}}]}}, "rows": [{"pop": 1}]},
+    {"name": "a tuple of tables is no rows", "value": {"dataType": "outputs", "data": [{"dataType": "dataframe", "data": {"x": [1]}}, {"dataType": "dataframe", "data": {"x": [2]}}]}, "rows": []}
+  ]
+}

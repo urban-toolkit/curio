@@ -996,7 +996,69 @@ A Python tuple arrives the same way, one dataset per frame. An input the chart
 cannot read, such as a raster, stops it with a message naming its position.
 
 Each input's geometry is handled in the views that draw it. A selection, a Data
-Pool link and a direct link between charts cover the rows of `input_0`.
+Pool link and a direct link between charts cover the rows of `input_0`, and, in
+a spec that reads `inputs`, that input's rows there, also when the spec reads
+nothing else.
+
+### Every input in one dataset
+
+A spec that names the dataset `inputs`, in its own `data`, a layer's, a
+concatenated view's or a lookup's, also reads every input's rows in one table,
+in circle order. Each row has three more columns:
+
+- `__input__`, the circle its input came in on;
+- `scenario`, the id of the scenario box the node feeding that input is in,
+  empty for a node in no box;
+- `scenario_name`, that box's name, or the node's name for a node in no box.
+
+```json
+{
+  "data": {"name": "inputs"},
+  "mark": "bar",
+  "encoding": {
+    "x": {"field": "scenario_name", "type": "nominal"},
+    "y": {"field": "sunlight", "type": "quantitative", "aggregate": "mean"},
+    "color": {"field": "scenario_name", "type": "nominal"}
+  }
+}
+```
+
+Over two inputs, one from a box named Baseline and one from a box named Twice
+as tall, the rows read:
+
+| `__input__` | `scenario` | `scenario_name` | `segment` | `sunlight` |
+|---|---|---|---|---|
+| 0 | s-base | Baseline | r1 | 6 |
+| 0 | s-base | Baseline | r2 | 5 |
+| 1 | s-tall | Twice as tall | r1 | 3 |
+
+A color, fill or stroke on `scenario_name` draws each scenario in the color of
+its box, and an axis, offset or facet on it puts the scenarios in the order the
+dataflow lists its boxes, over what the spec writes for that column. An input
+from no box comes after them, in gray. When no input comes from a box, the
+spec's own colors and order stand, until a box is drawn around a node that
+feeds the chart. Renaming or recoloring a box, or drawing one, draws the chart
+again, with no run. Inputs of one name are drawn as one: two boxes named alike,
+or untitled nodes of one kind in no box, give their rows the same
+`scenario_name`.
+
+The inputs stack as Compare Scenarios stacks them: a table keeps its rows, and
+a column one input lacks is empty in its rows; a table with no rows is still a
+table; a value (a number, a text, true or false, or a list of them) is one row
+each under `value`, which only a spec that reads `inputs` takes, and a number
+that is none (NaN) is a row with no value. The rows never carry geometry: a
+GeoDataFrame's rows are its other columns, so it stacks beside a plain table
+and in any coordinate system. Draw a map from the input's own dataset,
+`input_<k>`. A table beside a value, an input with no value, an input that
+already has a `scenario` or `scenario_name` column, and one input that carries
+several tables (a tuple, or a list of DataFrames) or an Autark node's several
+layers stop the chart, with a message naming the input: with one input wired,
+everything that input carries is its own. A spec that does not name `inputs`
+stacks nothing, and reads a tuple as before, one dataset per frame.
+
+A notebook exported from the dataflow writes the same rows with
+`stack_inputs` and `input_rows` from `utk_curio.sandbox.util.scenario_stack`,
+so it runs where Curio is installed.
 
 ### Drawing a GeoDataFrame
 
@@ -1237,9 +1299,13 @@ layer colored by a number takes `colorMapRange`, `[low, high]`, to color from
 `low` to `high` instead of from its own lowest value to its highest, so maps
 that set the same range color a value alike.
 
-A layer that names a scenario of the dataflow by its id, `"scenario":
-"weather-aware"`, is drawn in that scenario's color, the color of its box.
-`scenario` is Curio's own key, not the Autark grammar's.
+On a map outside every scenario box, a layer whose input comes from a node in a
+box is drawn in that box's color, over a `color` it writes, with no legend; a
+box recolored gives it its new color on the map's next run. Every layer one
+input carries takes that input's box's color. A layer colored by its values, one
+with a `getFnv` and no `color` of its own (or with `"isColorMap": true`), keeps
+its values' colors, and so does a raster's. A map inside a box draws its layers
+as written.
 
 ### The starter document
 

@@ -11,7 +11,7 @@ titles and the Y label format to nothing.
 
 No starter names a scenario, a scenario color or an order for the scenario
 column: a chart after a Compare node takes those from the node's labels
-(``utils/compare/scenarioScales.ts``), so a scenario renamed or recolored is
+(``utils/scenarios/scenarioScales.ts``), so a scenario renamed or recolored is
 drawn as its box is.
 
 Every file is read inside its test, so a checkout without the package fails

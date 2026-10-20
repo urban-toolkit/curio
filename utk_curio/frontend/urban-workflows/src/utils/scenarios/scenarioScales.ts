@@ -1,15 +1,16 @@
 /**
- * A Vega-Lite chart after a Compare Scenarios node draws the node's scenarios
- * as the node's own chart presets do (`comparePresets.ts`), from the labels its
- * Chart tab draws with:
+ * A Vega-Lite chart draws its scenarios from their labels (`scenarioColors.ts`):
+ * those of its own inputs' boxes when its spec reads the stacked dataset
+ * `inputs`, else those of the Compare Scenarios node it reads on its first
+ * input, as that node's Chart tab draws them.
  *
- * - color, fill and stroke on the stacked table's `scenario_name` get the
+ * - color, fill and stroke on the stacked rows' `scenario_name` get the
  *   scenarios' names as the scale's domain and the colors of their boxes as
- *   its range (`scenarioScale`), a text mark's in the shade the Table preset
- *   writes text in (`tableTextColor`);
+ *   its range (`scenarioScale`), a text mark's in the shade a table writes
+ *   text in (`tableTextColor`);
  * - x, y, xOffset, yOffset, row, column and facet on it get the names, in the
- *   order of the node's inputs, as their order: as their scale's domain when
- *   the spec writes one, else as their sort.
+ *   order of the inputs, as their order: as their scale's domain when the spec
+ *   writes one, else as their sort.
  *
  * They replace what the spec writes for that column, as a map layer's scenario
  * color replaces a color its layerRef writes (`adapters/node/autkScenarioColors.ts`).
@@ -17,13 +18,12 @@
  * written.
  *
  * `scenarioScales.cases.json` holds specs and what they become: Jest checks
- * that this writes exactly that, and `test_compare_scenarios_node.py` checks
- * each against the Vega-Lite schema and the columns it reads.
+ * that this writes exactly that, and `test_scenario_inputs.py` checks each
+ * against the Vega-Lite schema and the columns it reads.
  *
  * Pure, with no `vega` / `vega-lite` import, so it is testable under jest.
  */
-import { SCENARIO_NAME_FIELD, scenarioScale, tableTextColor } from "./comparePresets";
-import type { CompareInputLabel } from "./compareSettings";
+import { SCENARIO_NAME_FIELD, scenarioScale, tableTextColor, type ScenarioLabel } from "./scenarioColors";
 
 /** The channels that draw the scenarios in their colors. */
 const COLOR_CHANNELS: ReadonlySet<string> = new Set(["color", "fill", "stroke"]);
@@ -48,7 +48,7 @@ function mapSame(list: readonly unknown[], fn: (item: unknown) => unknown): read
  * itself, unchanged, when there are no labels or no channel it fills reads
  * that column.
  */
-export function withScenarioScales(spec: unknown, labels: readonly CompareInputLabel[]): unknown {
+export function withScenarioScales(spec: unknown, labels: readonly ScenarioLabel[]): unknown {
   if (labels.length === 0) return spec;
   const { domain, range } = scenarioScale(labels);
   const shades = range.map(tableTextColor);

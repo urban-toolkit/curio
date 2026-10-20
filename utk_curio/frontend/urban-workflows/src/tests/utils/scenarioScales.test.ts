@@ -1,24 +1,20 @@
 /**
- * A Vega-Lite chart after a Compare Scenarios node draws the node's scenarios
- * as the node's own chart presets do: every color, fill and stroke on
- * `scenario_name` in the scenarios' colors (a text mark's in the Table preset's
- * shades), every axis, offset and facet on it in the order of the node's
- * inputs, over whatever the spec writes for that column.
+ * A Vega-Lite chart draws its scenarios from their labels: every color, fill
+ * and stroke on `scenario_name` in the scenarios' colors (a text mark's in the
+ * shades a table writes text in), every axis, offset and facet on it in the
+ * order of the inputs, over whatever the spec writes for that column.
  *
  * `scenarioScales.cases.json` holds the specs and what they become. This checks
- * that `withScenarioScales` writes exactly those; `test_compare_scenarios_node.py`
+ * that `withScenarioScales` writes exactly those; `test_scenario_inputs.py`
  * checks each against the Vega-Lite schema and the columns it reads.
  */
-import cases from "../../utils/compare/scenarioScales.cases.json";
-import { compareChartSpec, resolveChart, scenarioScale } from "../../utils/compare/comparePresets";
-import type { CompareInputLabel } from "../../utils/compare/compareSettings";
-import { withScenarioScales } from "../../utils/compare/scenarioScales";
-import type { ClassifiedColumn } from "../../utils/starterSpec";
+import cases from "../../utils/scenarios/scenarioScales.cases.json";
+import { scenarioScale, tableTextColor, type ScenarioLabel } from "../../utils/scenarios/scenarioColors";
+import { withScenarioScales } from "../../utils/scenarios/scenarioScales";
 
-const labels = cases.labels as CompareInputLabel[];
-const columns = cases.columns as ClassifiedColumn[];
+const labels = cases.labels as ScenarioLabel[];
 
-describe("a chart after a Compare Scenarios node", () => {
+describe("a chart's scenarios drawn from their labels", () => {
   test.each(cases.cases.map((c) => [c.name, c] as const))("%s", (_name, c) => {
     const written = JSON.parse(JSON.stringify(c.spec));
     expect(withScenarioScales(c.spec, labels)).toEqual(c.filled);
@@ -30,7 +26,7 @@ describe("a chart after a Compare Scenarios node", () => {
     expect(withScenarioScales(c.spec, labels)).toBe(c.spec);
   });
 
-  test("no labels, no Compare node to read: every spec as written", () => {
+  test("no labels, no scenarios to draw: every spec as written", () => {
     for (const c of [...cases.cases, ...cases.untouched]) expect(withScenarioScales(c.spec, [])).toBe(c.spec);
   });
 
@@ -51,13 +47,13 @@ describe("the colors are the presets' own", () => {
     expect(drawn.encoding.color.scale).toEqual(scenarioScale(labels));
   });
 
-  test("a text mark's are the Table preset's text colors: a light one in its shade that reads on white", () => {
-    const table = compareChartSpec(resolveChart({ preset: "table" }, columns), labels, columns) as { spec: any };
+  test("a text mark's are a table's text colors: a light one in its shade that reads on white", () => {
+    const { domain, range } = scenarioScale(labels);
     const text = filledScale(
       "a text mark in the shades a table writes, its rows in input order",
       (spec) => spec.encoding.color,
     );
-    expect(text).toEqual(table.spec.encoding.color.scale);
+    expect(text).toEqual({ domain, range: range.map(tableTextColor) });
     expect(text.range).not.toEqual(scenarioScale(labels).range);
   });
 });

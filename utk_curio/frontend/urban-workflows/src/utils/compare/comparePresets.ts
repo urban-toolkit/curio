@@ -13,7 +13,12 @@
  * Pure, with no `vega` / `vega-lite` import, so it is testable under jest.
  */
 import { VEGA_SCHEMA_URL } from "../../generated/visDefaults";
-import { SCENARIO_COLOR_RE } from "../scenarios/scenarioModel";
+import {
+  SCENARIO_FIELD,
+  SCENARIO_NAME_FIELD,
+  scenarioScale,
+  tableTextColor,
+} from "../scenarios/scenarioColors";
 import { classifyColumns, type ClassifiedColumn } from "../starterSpec";
 import {
   COMPARE_PRESETS,
@@ -23,9 +28,9 @@ import {
   type ComparePreset,
 } from "./compareSettings";
 
-/** The stacked table's two leading columns (`scenario_stack.py`). */
-export const SCENARIO_FIELD = "scenario";
-export const SCENARIO_NAME_FIELD = "scenario_name";
+/** The stacked table's two leading columns, its scale and its text shade
+ * (utils/scenarios/scenarioColors), as the presets draw them. */
+export { SCENARIO_FIELD, SCENARIO_NAME_FIELD, scenarioScale, tableTextColor };
 
 export const PRESET_LABELS: Record<ComparePreset, string> = {
   bar: "Bars",
@@ -127,49 +132,6 @@ export function resolveChart(chart: CompareChart | undefined, columns: readonly 
  * column's own, not a path into it. */
 export function vegaField(name: string): string {
   return name.replace(/\\/g, "\\\\").replace(/\./g, "\\.").replace(/\[/g, "\\[").replace(/\]/g, "\\]");
-}
-
-/** The scenarios' names and colors, each name once, in input order. */
-export function scenarioScale(labels: readonly CompareInputLabel[]): { domain: string[]; range: string[] } {
-  const domain: string[] = [];
-  const range: string[] = [];
-  for (const label of labels) {
-    if (domain.includes(label.name)) continue;
-    domain.push(label.name);
-    range.push(label.color);
-  }
-  return { domain, range };
-}
-
-/**
- * A table writes its text in the scenarios' colors, and a light one reads pale
- * on white (#a1d99b is 1.6:1). So a color under TABLE_TEXT_CONTRAST, WCAG's
- * 3:1 for large text, is drawn in its lightest shade that reaches it, taking
- * TABLE_TEXT_SHADE_STEP percent toward black at a time: the text keeps its
- * scenario's hue, and the scenario keeps its color everywhere else. Curio's
- * own scenario colors all reach 3:1.
- */
-const TABLE_TEXT_CONTRAST = 3;
-const TABLE_TEXT_SHADE_STEP = 1;
-
-function contrastOnWhite(channels: readonly number[]): number {
-  const [r, g, b] = channels.map((channel) => {
-    const value = channel / 255;
-    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-  });
-  return 1.05 / (0.2126 * r + 0.7152 * g + 0.0722 * b + 0.05);
-}
-
-/** *color* as a table's text draws it: itself when it reads on white, else its lightest shade that does. */
-export function tableTextColor(color: string): string {
-  if (!SCENARIO_COLOR_RE.test(color)) return color;
-  const channels = [1, 3, 5].map((at) => parseInt(color.slice(at, at + 2), 16));
-  for (let left = 100; left > 0; left -= TABLE_TEXT_SHADE_STEP) {
-    const shade = channels.map((channel) => Math.round((channel * left) / 100));
-    if (contrastOnWhite(shade) < TABLE_TEXT_CONTRAST) continue;
-    return left === 100 ? color : `#${shade.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
-  }
-  return "#000000";
 }
 
 function measure(y: string, aggregate: CompareAggregate | null, type = "quantitative"): Record<string, unknown> {
