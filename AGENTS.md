@@ -100,7 +100,7 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
   - `scripted_llm.py`: scripted agent turns.
 - Walkthroughs, `test_frontend/walkthroughs/`: importing a scene module registers its scenes in `WALKTHROUGHS`, and `__init__.py` imports them in registry order:
   - `framework.py`: `Narrator`, `SilentNarrator`, `Ctx`, `Walkthrough`, `FULL_PAGE_DIFF_FLOOR`, `WALKTHROUGHS` and the `@walkthrough` decorator.
-  - `steps.py`: shared steps: `load_example_spec`, `first_node_of_type`, `frame_until_on_top`, the Provenance window, canvas counts.
+  - `steps.py`: shared steps: `load_example_spec`, `first_node_of_type`, `frame_until_on_top`, the provenance drawer, canvas counts.
   - Scenes, one module per surface: `provenance.py`, `agent_catalog.py`, `cross_catalog.py`, `account_examples.py`, `robustness.py` (dashboard page, Autark without WebGPU, Run All after a failed node), `layout.py`, `visual_claims.py` (#218 to #227), `dataflow_identity.py`, `catalog_chrome.py`, `column_filter.py`, `agent_chat.py`, `simple_view.py`.
 - Sandbox: `utk_curio/sandbox/tests/` (`conftest.py`).
 - Frontend Jest: `src/tests/` (guide in `src/tests/README.md`); `npm test` and `npm run typecheck` in `utk_curio/frontend/urban-workflows/`.

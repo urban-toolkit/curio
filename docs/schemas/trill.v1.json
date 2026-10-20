@@ -804,8 +804,8 @@
       "additionalProperties": true,
       "properties": {
         "id": { "type": "string", "description": "'<name>_<timestamp>', or '<name>_<timestamp>_<n>' when that base was already taken, matching a key in dataflowProvenance.versions. Unique within one graph: ids collided before the suffix existed, so files written by older builds may repeat one." },
-        "label": { "type": "string", "description": "'<name> (<timestamp>)', for display in the provenance window." },
-        "timestamp": { "type": "integer", "minimum": 0, "description": "Epoch milliseconds, rendered as a date in the provenance window." },
+        "label": { "type": "string", "description": "'<name> (<timestamp>)'." },
+        "timestamp": { "type": "integer", "minimum": 0, "description": "Epoch milliseconds, shown as the version's date and time in the provenance drawer." },
         "preview": { "$ref": "#/$defs/graphPreview" }
       }
     },
@@ -837,8 +837,8 @@
       "additionalProperties": true,
       "properties": {
         "id": { "type": "string" },
-        "type": { "type": "string", "description": "The node type. The provenance window draws the node's box in the category of the type's registered descriptor. Not validated against the node.type grammar: a thumbnail should still draw for a spec this schema would reject." },
-        "category": { "type": ["string", "null"], "description": "The category of the node's registered descriptor when the version was recorded ('data', 'computation', 'vis_grammar', 'vis_simple' or 'flow'), or null when none was registered. The provenance window draws the box in it when no registered package provides the node's type." },
+        "type": { "type": "string", "description": "The node type. The provenance drawer draws the node's box in the category of the type's registered descriptor, and names the kind of node a version added or removed by it. Not validated against the node.type grammar: a thumbnail should still draw for a spec this schema would reject." },
+        "category": { "type": ["string", "null"], "description": "The category of the node's registered descriptor when the version was recorded ('data', 'computation', 'vis_grammar', 'vis_simple' or 'flow'), or null when none was registered. The provenance drawer draws the box in it when no registered package provides the node's type." },
         "x": { "type": "number" },
         "y": { "type": "number" },
         "w": { "type": ["number", "null"], "description": "Width, or null when the node has no explicit size." },
