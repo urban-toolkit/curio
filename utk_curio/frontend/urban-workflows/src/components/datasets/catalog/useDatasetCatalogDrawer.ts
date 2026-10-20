@@ -9,6 +9,7 @@ import {
   type DragEvent,
 } from "react";
 import { useFlowContext } from "../../../providers/FlowProvider";
+import { hostedGuestSignInNote, useHostedGuest } from "../../apiSettings/useHostedGuest";
 import { useDatasetDetails, viewDatasetDetailsToast } from "./datasetDetailsContext";
 import { useToastContext } from "../../../providers/ToastProvider";
 import {
@@ -49,6 +50,7 @@ export interface DatasetConfirmAction {
 export function useDatasetCatalogDrawer(presented: boolean) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { projectId, projectName, ensureProjectId, setDataflowDatasets, outputs, nodes, defaultSaveOutputDataset, pendingInstalls, beginPendingInstall, endPendingInstall } = useFlowContext();
+  const hostedGuest = useHostedGuest();
   // The canvas's one dataset details modal, the same one the palettes and the
   // Dataset Finder open (`CanvasDatasetDetailsProvider`), and the one this
   // drawer's toasts offer.
@@ -175,7 +177,12 @@ export function useDatasetCatalogDrawer(presented: boolean) {
   const performInstall = useCallback(
     async (dataset: DatasetCatalogItem) => {
       const id = await ensureProjectId();
-      if (!id) return;
+      if (!id) {
+        // A hosted guest gets no id for a dataflow it never saved, since it
+        // cannot save one: tell it to sign in rather than adding nothing.
+        if (hostedGuest) showToast(hostedGuestSignInNote("add datasets"), "warning");
+        return;
+      }
       setBusyId(dataset.id);
       beginPendingInstall({
         key: dataset.id,
@@ -226,7 +233,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         setBusyId(null);
       }
     },
-    [ensureProjectId, setDataflowDatasets, showToast, beginPendingInstall, endPendingInstall, openDetails],
+    [ensureProjectId, hostedGuest, setDataflowDatasets, showToast, beginPendingInstall, endPendingInstall, openDetails],
   );
 
   // #196: the Data catalog confirms an add too, so all three catalogs agree.

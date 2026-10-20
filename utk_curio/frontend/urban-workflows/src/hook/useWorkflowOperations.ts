@@ -1178,10 +1178,10 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     const ensureProjectInFlightRef = useRef<Promise<string | null> | null>(null);
     const ensureProjectId = useCallback(async (): Promise<string | null> => {
         if (projectIdRef.current) return projectIdRef.current;
-        // A hosted guest's saves are refused. This one is Curio's own, made
-        // before an install, so it is skipped without a word, as the install
-        // save after a run and the pin's save are: only a save the guest asks
-        // for (File > Save, Save a copy) says why it cannot.
+        // A hosted guest's saves are refused, so a dataflow it never saved
+        // gets no id, and no toast from here: the action that asked tells it
+        // to sign in (hostedGuestSignInNote). Only a save the guest asks for
+        // (File > Save, Save a copy) answers "Guest users cannot save projects".
         if (blockGuestSaves) return null;
         if (ensureProjectInFlightRef.current) return ensureProjectInFlightRef.current;
         const inFlight = (async () => {
