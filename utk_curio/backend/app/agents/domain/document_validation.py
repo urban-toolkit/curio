@@ -37,7 +37,9 @@ dev/134 corrects two things this module could not do, both proven by the owner's
 - a Vega document's **field references** are checked against the columns its
   input actually has (dev/129 **F3**): the same spec encoded
   ``y.field: "neighborhood"`` over a frame whose name column is ``community``,
-  which the schema cannot know and a reader of the columns can.
+  which the schema cannot know and a reader of the columns can. A spec that
+  names the dataset ``inputs`` reads its inputs stacked, with the columns the
+  stack adds beside theirs (``INPUTS_FIELDS``).
 """
 
 from __future__ import annotations
@@ -110,6 +112,15 @@ def validate_vega_lite(content: str, *, columns: list | None = None) -> dict:
 #: (``useTableData``) or after a direct selection (``useVega``'s ``setInteracted``).
 RUNTIME_FIELDS = ("interacted", "__row_index__")
 
+#: The dataset a Vega-Lite spec names to read every input's rows stacked
+#: (``INPUTS_DATASET`` in ``utils/vegaDatasets.ts``).
+INPUTS_DATASET = "inputs"
+#: The columns each of its rows carries beside its input's own: its circle,
+#: its scenario box's id and name, and, from an input that is a value, that
+#: value. ``stack_inputs`` in ``utk_curio/sandbox/util/scenario_stack.py``
+#: writes them, under these names.
+INPUTS_FIELDS = ("__input__", "scenario", "scenario_name", "value")
+
 #: Transforms whose output column names cannot be known from the document
 #: alone. A spec that uses one is schema-checked and its FIELDS are left alone —
 #: refusing a field this module cannot enumerate would be a guess.
@@ -177,6 +188,45 @@ def _field_refs(spec: dict, path: str = "") -> list[tuple[str, str]]:
     return refs
 
 
+def _views(spec: object) -> list:
+    """The spec and every view below it: a layer's, a concatenated view's, and
+    a facet's or a repeat's inner spec (``viewsOf`` in ``utils/vegaDatasets.ts``)."""
+    found: list = []
+
+    def visit(node: object) -> None:
+        if isinstance(node, list):
+            for item in node:
+                visit(item)
+        elif isinstance(node, dict):
+            found.append(node)
+            for key in ("layer", "concat", "hconcat", "vconcat", "spec"):
+                visit(node.get(key))
+
+    visit(spec)
+    return found
+
+
+def _names_inputs(data: object) -> bool:
+    return (
+        isinstance(data, dict) and data.get("name") == INPUTS_DATASET
+        and "url" not in data and "values" not in data
+    )
+
+
+def reads_inputs(spec: object) -> bool:
+    """Whether any part of *spec* names the dataset ``inputs``: its own
+    ``data``, a view's, or a lookup's ``from.data`` (``readsInputs`` in
+    ``utils/vegaDatasets.ts``)."""
+    return any(
+        _names_inputs(view.get("data"))
+        or any(
+            isinstance(step, dict) and isinstance(step.get("from"), dict) and _names_inputs(step["from"].get("data"))
+            for step in (view.get("transform") if isinstance(view.get("transform"), list) else [])
+        )
+        for view in _views(spec)
+    )
+
+
 def check_vega_fields(payload: dict, columns: list | None) -> dict | None:
     """dev/134 (closes dev/129 **F3**): does this document read columns that
     exist?
@@ -190,7 +240,8 @@ def check_vega_fields(payload: dict, columns: list | None) -> dict | None:
     """
     if not columns:
         return None
-    known = {str(c) for c in columns} | set(RUNTIME_FIELDS)
+    added = RUNTIME_FIELDS + (INPUTS_FIELDS if reads_inputs(payload) else ())
+    known = {str(c) for c in columns} | set(added)
     produced, opaque = _transform_outputs(payload)
     if opaque:
         return None  # a transform creates names this module cannot enumerate
@@ -204,7 +255,7 @@ def check_vega_fields(payload: dict, columns: list | None) -> dict | None:
             "detail": _detail(
                 f"{where} reads {field!r}, which is not a column of this node's "
                 f"input — available columns: {available}"
-                + (f" (plus {', '.join(RUNTIME_FIELDS)}, added by Curio)")
+                + (f" (plus {', '.join(added)}, added by Curio)")
             ),
         }
     return None
