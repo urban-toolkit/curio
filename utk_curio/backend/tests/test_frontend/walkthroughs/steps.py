@@ -118,6 +118,13 @@ def await_drawer_at_rest(page, *, timeout: float = 20000) -> None:
     page.wait_for_function(_DRAWER_AT_REST_JS, arg=PROVENANCE_DRAWER, timeout=timeout)
 
 
+def park_pointer_off_drawer(page) -> None:
+    """Move the pointer to the left edge, over the drawer's scrim, so the row
+    the last click opened shows no hover shade in a capture."""
+    viewport = page.viewport_size or {"width": 1280, "height": 720}
+    page.mouse.move(10, viewport["height"] / 2)
+
+
 def provenance_counts(page) -> dict:
     """``{items}``: how many versions the provenance drawer lists now, those on
     folded branches left out."""

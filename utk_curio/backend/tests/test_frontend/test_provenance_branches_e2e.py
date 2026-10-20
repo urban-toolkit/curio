@@ -42,6 +42,7 @@ from .walkthroughs.steps import (
     await_provenance_history,
     canvas_graph,
     open_version,
+    park_pointer_off_drawer,
 )
 
 if TYPE_CHECKING:
@@ -169,6 +170,7 @@ def test_a_provenance_branch_folds_under_the_version_it_left_from(
     assert _ids(branch.locator("[data-provenance-item]")) == left_behind
 
     item.evaluate(_BODY_TO_END_JS)
+    park_pointer_off_drawer(page)
     save_workflow_test_screenshot(
         page, "provenance-branch",
         test_name=TEST_NAME,
