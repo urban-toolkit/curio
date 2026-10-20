@@ -5,9 +5,10 @@
  * row under `value`.
  *
  * `stackedInputs.cases.json` holds inputs and exactly the rows or the refusal
- * they give. This checks the browser's `stackInputs` against it;
- * `test_scenario_inputs.py` checks Python's `stack_inputs`, which an exported
- * notebook calls, against the same file.
+ * they give, and one input's own rows. This checks the browser's `stackInputs`
+ * and `inputRows` against it; `test_scenario_inputs.py` checks Python's
+ * `stack_inputs` and `input_rows`, which an exported notebook calls, against
+ * the same file.
  */
 import cases from "../../utils/scenarios/stackedInputs.cases.json";
 import { inputRows, stackInputs, type StackEntry } from "../../utils/scenarios/stackedInputs";
@@ -45,15 +46,9 @@ describe("stackInputs leaves its inputs as they were", () => {
   });
 });
 
-describe("inputRows: one input's rows, before a scenario names them", () => {
-  test("a value is a row under value, and a list of values a row each", () => {
-    expect(inputRows(5)).toEqual([{ value: 5 }]);
-    expect(inputRows(["low", "high"])).toEqual([{ value: "low" }, { value: "high" }]);
-  });
-
-  test("a dict of columns is a row per position, and what cannot be read is no rows", () => {
-    expect(inputRows({ x: [1, 2], y: [3, 4] })).toEqual([{ x: 1, y: 3 }, { x: 2, y: 4 }]);
-    expect(inputRows([{ a: 1 }, 2])).toEqual([]);
-    expect(inputRows(null)).toEqual([]);
+describe("inputRows: one input's own rows, against the cases Python's input_rows reads too", () => {
+  type RowsCase = { name: string; value: unknown; rows: unknown[] };
+  test.each((cases.inputRows as RowsCase[]).map((c) => [c.name, c] as const))("%s", (_name, c) => {
+    expect(inputRows(c.value)).toEqual(c.rows);
   });
 });

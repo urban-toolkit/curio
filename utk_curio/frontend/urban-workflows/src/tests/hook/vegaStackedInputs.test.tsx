@@ -7,15 +7,23 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 
 // Only what useVega calls on the library: a view keeps the spec it was built
-// from, and its scenegraph is whatever the test sets.
+// from and the changesets it is handed, and its scenegraph is whatever the
+// test sets.
 jest.mock("vega", () => {
   const views: any[] = [];
   const changeset = () => {
-    const cs: any = { remove: () => cs, insert: () => cs, modify: () => cs };
+    const ops: any[] = [];
+    const cs: any = {
+      ops,
+      remove: () => cs,
+      insert: () => cs,
+      modify: (test: any, field: string, value: any) => { ops.push({ op: "modify", test, field, value }); return cs; },
+    };
     return cs;
   };
   class View {
     spec: any;
+    changes: Array<{ name: string; ops: any[] }> = [];
     static scene: any = { items: [] };
     constructor(spec: any) { this.spec = spec; views.push(this); }
     logLevel() { return this; }
@@ -29,7 +37,7 @@ jest.mock("vega", () => {
     scenegraph() { return { root: View.scene }; }
     getState() { return { signals: {} }; }
     addSignalListener() { throw new Error("no signal"); }
-    change() { return this; }
+    change(name: string, cs: any) { this.changes.push({ name, ops: cs.ops }); return this; }
   }
   return { changeset, View, parse: (spec: any) => spec, Warn: 2, __views: views };
 }, { virtual: true });
@@ -48,6 +56,7 @@ jest.mock("../../services/api", () => ({ fetchData: jest.fn(), fetchPreviewData:
 
 import { useVega } from "../../hook/useVega";
 import { renderOutcome } from "../../utils/renderOutcome";
+import { markSelectionEcho } from "../../utils/selectionEcho";
 
 const vegaMock = () => jest.requireMock("vega") as any;
 const views = (): any[] => vegaMock().__views;
@@ -122,10 +131,14 @@ describe("a chart reading inputs is judged on every input's rows", () => {
       encoding: { x: { field: "scenario_name", type: "nominal" }, color: { field: "__input__", type: "nominal" } },
     });
     document.body.innerHTML = '<div id="vegan1"></div>';
-    const base = { nodeId: "n1", interactionsCallback: jest.fn(), outputCallback: jest.fn() };
-    const hook = renderHook(() =>
-      useVega({ data: { ...base, input: both(frame({ a: [1] }), frame({ a: [2] })) }, code: spec, inputLabels: [BASE, TALL] }),
-    );
+    // One input object for every render, as a node's data holds it.
+    const data = {
+      nodeId: "n1",
+      interactionsCallback: jest.fn(),
+      outputCallback: jest.fn(),
+      input: both(frame({ a: [1] }), frame({ a: [2] })),
+    };
+    const hook = renderHook(() => useVega({ data, code: spec, inputLabels: [BASE, TALL] }));
     let counts: any;
     await act(async () => {
       counts = await hook.result.current.handleCompileGrammar(spec);
@@ -143,6 +156,28 @@ describe("a chart reading inputs is judged on every input's rows", () => {
     expect(outcome.message).toContain('The dataset "inputs": input_1 (Twice as tall) already has a column named scenario_name.');
     expect(outcome.message).toContain("The upstream node that feeds it is what must change");
     expect(document.getElementById("vegan1")!.textContent).toContain("already has a column named scenario_name");
+  });
+});
+
+describe("a selection coming back from a Data Pool", () => {
+  test("changes the flags of that input's rows in inputs too, not the view (#535)", async () => {
+    const flagged = (flags: string[]) => frame({ sunlight: [5, 6], interacted: flags });
+    const tall = frame({ sunlight: [3] });
+    const { hook, view } = await drawn(both(flagged(["0", "0"]), tall), [BASE, TALL]);
+    const count = views().length;
+
+    await act(async () => {
+      hook.rerender({ input: both(markSelectionEcho(flagged(["0", "1"])), tall), labels: [BASE, TALL] });
+    });
+    await waitFor(() => expect(view.changes.map((change: any) => change.name)).toEqual(["input_0", "inputs"]));
+    expect(views()).toHaveLength(count);
+    // Baseline's second row is picked; Twice as tall's row keeps its flag.
+    const flagOf = view.changes[1].ops[0].value;
+    expect([
+      flagOf({ __input__: 0, __row_index__: 0, interacted: "0" }),
+      flagOf({ __input__: 0, __row_index__: 1, interacted: "0" }),
+      flagOf({ __input__: 1, __row_index__: 0, interacted: "0" }),
+    ]).toEqual(["0", "1", "0"]);
   });
 });
 

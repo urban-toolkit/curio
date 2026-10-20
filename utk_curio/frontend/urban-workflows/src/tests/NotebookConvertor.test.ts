@@ -292,7 +292,7 @@ describe("trillToNotebook with a chart that reads its inputs stacked", () => {
 
   it("stacks its inputs with utk_curio's stack_inputs, each under its box, as the canvas does", () => {
     const source = chartCell(trillToNotebook(stackedChart('{"data": {"name": "inputs"}, "mark": "bar"}')));
-    expect(source).toContain("from utk_curio.sandbox.util.scenario_stack import stack_inputs");
+    expect(source).toContain("from utk_curio.sandbox.util.scenario_stack import input_rows, stack_inputs");
     expect(source).toContain(
       [
         '_spec["datasets"]["inputs"] = stack_inputs([',
@@ -301,8 +301,11 @@ describe("trillToNotebook with a chart that reads its inputs stacked", () => {
         "])",
       ].join("\n"),
     );
-    // Each input is its own dataset too, and the spec keeps reading inputs.
-    expect(source).toContain('_spec["datasets"]["input_1"] = result_free.to_dict(orient="records")');
+    // Each input is its own dataset too, a value as rows as the stacking reads
+    // it, and the spec keeps reading inputs.
+    expect(source).toContain('_spec["datasets"]["input_0"] = input_rows(result_base)');
+    expect(source).toContain('_spec["datasets"]["input_1"] = input_rows(result_free)');
+    expect(source).not.toContain("to_dict(");
     expect(source).not.toContain('_spec["data"] =');
   });
 
@@ -310,6 +313,7 @@ describe("trillToNotebook with a chart that reads its inputs stacked", () => {
     const source = chartCell(trillToNotebook(stackedChart('{"mark": "bar"}')));
     expect(source).not.toContain("utk_curio");
     expect(source).not.toContain("stack_inputs");
+    expect(source).toContain('_spec["datasets"]["input_1"] = result_free.to_dict(orient="records")');
     expect(source).toContain('_spec["data"] = {"name": "input_0"}');
     // The same dataflow's chart that reads inputs does.
     expect(chartCell(trillToNotebook(stackedChart('{"data": {"name": "inputs"}, "mark": "bar"}')))).toContain("stack_inputs(");
