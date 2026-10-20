@@ -346,10 +346,11 @@ def test_the_grouped_bars_and_the_table_draw_what_their_compare_presets_drew():
     """The Compare node that drew the daily trips charted grouped bars of
     ``daily_trips`` by ``mode``, combining nothing, and titled its axes by
     those columns; the one that drew the green roofs, a table of the scenario
-    names and the table's three columns. Their Scout nodes keep their ids and
-    titles, and set their widgets so. Combine offers Vega-Lite's aggregates,
-    which have no "none": the trips' bars take the mean, and each bar is one
-    row, whose mean is its value."""
+    names and then the table's three columns by name, as its close-up on main
+    shows them (``screenshot_scenario-charts-green-roofs_...``). Their Scout
+    nodes keep their ids and titles, and set their widgets so. Combine offers
+    Vega-Lite's aggregates, which have no "none": the trips' bars take the
+    mean, and each bar is one row, whose mean is its value."""
     flow = _flow()
     trips = _row(flow, "data.curio.example-trips-by-mode")["chart"]
     assert (trips["id"], trips["title"]) == ("1e10a2ff-779d-52ef-844c-32ceef88d028", "Grouped bars: daily trips by mode")
@@ -361,7 +362,8 @@ def test_the_grouped_bars_and_the_table_draw_what_their_compare_presets_drew():
     roofs = _row(flow, "data.curio.example-green-roofs")["chart"]
     assert (roofs["id"], roofs["title"]) == ("c985c9fd-221b-55c1-8199-7284de02d2d8", "Table: three green roof systems")
     [columns] = roofs["metadata"]["widgets"]
-    assert columns["value"] == ["scenario_name", *_table_columns("data.curio.example-green-roofs")]
+    assert columns["value"] == ["scenario_name", *sorted(_table_columns("data.curio.example-green-roofs"))]
+    assert columns["value"] == ["scenario_name", "cost_per_m2", "rain_held_pct", "roof_cooling_c"]
 
 
 @pytest.mark.parametrize("dataset_id", DATASETS)
