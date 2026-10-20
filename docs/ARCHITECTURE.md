@@ -883,6 +883,45 @@ never has geometry attached, so it carries exactly the columns it always did.
 That matters because shipped dataflows chart multi-megabyte GeoJSON as bar
 charts, and the rows are re-shipped through `changeset()` on every brush.
 
+### Field Names in Vega-Lite Specs
+
+Vega-Lite reads a field as a path into the row: `rain.mm` is `mm` inside `rain`,
+and `a[0]` indexes `a`. So a column whose name holds a `.`, a `[` or a `]` is
+written with a backslash before each, and before a backslash (`rain\.mm`). In
+a Vega-Lite chart's spec, a reference writes its names so where Vega-Lite reads
+a field, and as they are everywhere else: titles, sort values, expressions
+such as `datum['rain.mm']`, and the names a transform writes (`as`).
+
+- **Where.** The resolver reads the spec as JSON with each reference replaced by
+  a mark, finds where each mark stands, and writes only then
+  (`vegaFieldPlaces` in `codeReferences.ts`, `_vega_field_places` in
+  `code_references.py`); a spec that does not read as JSON writes every name as
+  it is. The field positions are the ones Vega-Lite's schema types as a field
+  name, but `as`: `field` anywhere; in a transform, its `groupby`, `fold` and
+  `flatten` lists, the field its own key names (`pivot`, `lookup`, `impute`,
+  `stack`, `density`, `loess`, `regression`, `quantile`, and `extent` beside
+  `param`), `value` beside `pivot`, `key` beside `impute`, `on` beside `loess`
+  or `regression`, and a lookup's `from.key` and `from.fields`; a parameter's
+  `select.fields`; an encoding's `aggregate.argmax` and `argmin`; and a
+  `repeat`'s lists.
+- **Who.** The canvas passes the grammar of a Vega-Lite node's spec, the
+  built-in node's or a package template's (`isVegaLiteNodeType`), to
+  `resolveReferences`, as the notebook export does; Solve resolves a document
+  in the grammar it checks it in (`_resolved_document`). The agents' check
+  reads a field as the column its path starts with (`vega_field_column` in
+  `agents/domain/document_validation.py`, a port of vega-util's
+  `splitAccessPath`), and refuses `rain.mm` over a column `rain.mm` with the
+  spelling that reads it.
+- **Tests.** `codeReferences.cases.json` holds the positions, read by Jest and
+  pytest; `scoutDottedColumns.test.ts` draws each Scout chart over columns whose
+  names hold a dot or a bracket with the vega-lite the app bundles, and expects
+  the marks it draws over the same columns without one.
+- **Vega-Lite's own limits.** An encoding over a column whose name holds a
+  backslash draws nothing, since Vega-Lite drops the backslash when it writes
+  the field again (an aggregate's `mean_<field>`). Its error bar names its
+  bounds after its Y field as written, so it draws no error bar over a Y column
+  whose name holds a `.` or a `[`.
+
 ### Referencing Upstream Data in Autark Nodes
 
 The `autk-grammar` node consumes upstream data differently from Python nodes: its UrbanSpec refers to data **by name**, through `dataRef` strings in `map.layerRefs[]`, `plot.dataRef` (and `plot.mapRef`), `compute[].dataRef`, and `fromFeature.layer` inside compute uniforms. Before the grammar runs, the behavior hook ([`autkGrammarBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkGrammarBehavior.tsx)) reads the input once, through the path shared with the Vega-Lite node (see [Reading a Grammar Node's Input](#reading-a-grammar-nodes-input)), and hands the grammar, as named sources, the tables `tablesToLoad` in [`autkInput.ts`](../utk_curio/frontend/urban-workflows/src/utils/autkInput.ts) picks: the input's tables the document names (`documentTableRefs`), every table the document's own `data` section loads, and the surface of each OSM load a table it names is a layer of. Those surfaces come first; then the input's rasters (see **Rasters** below), its other tables as `geojson` sources in the order they arrive, and the document's own. An OSM load named `X` makes the tables `X_surface`, `X_parks`, `X_water`, `X_roads` and `X_buildings`, and `X_<set>_<type>` for its tag sets, and autk-db types its surface `surface`. So a table of type `surface` named `X_surface` is the surface of load `X`, and a table is a layer of the load whose name, with `_` after it, is the longest one that starts its own. A Discovery Catalog OpenStreetMap download's group loader keys its layers by layer (`surface`, `parks`, `water`, `roads`, `buildings`), each typed as it is named by its frame's `metadata`: a table `surface` of type `surface` is that download's surface, and its layers are the tables named and typed alike. autk-db makes the first table it loads the workspace's extent, and the first polygon table its crop layer, and clips every later table to both. A table the document does not name is not loaded, so it cuts none of the tables it draws, and a map of OSM layers is cropped to its load's query area, so no layer of the load cuts another. The empty-render verdict counts every table the input brings, so a `dataRef` that names none of them blames the document. A document that only loads data of its own does not read its input. Upstream geojson is data the browser already holds, so it stays client-side; only the spec's own authored `data` sources (OSM / PBF / CSV and the like) run in the backend sandbox. There are two cases:
