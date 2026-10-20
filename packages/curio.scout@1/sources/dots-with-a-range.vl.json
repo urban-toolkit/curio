@@ -1,0 +1,104 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "data": {
+    "name": "inputs"
+  },
+  "transform": [
+    {
+      "joinaggregate": [
+        {
+          "op": "min",
+          "field": "[!! value !!]",
+          "as": "curio_lowest"
+        },
+        {
+          "op": "max",
+          "field": "[!! value !!]",
+          "as": "curio_highest"
+        }
+      ],
+      "groupby": [
+        "[!! category !!]"
+      ]
+    },
+    {
+      "calculate": "datum.curio_highest - datum.curio_lowest",
+      "as": "curio_range"
+    },
+    {
+      "window": [
+        {
+          "op": "row_number",
+          "as": "curio_rank"
+        }
+      ],
+      "groupby": [
+        "[!! category !!]"
+      ]
+    }
+  ],
+  "width": 300,
+  "height": {
+    "step": 13
+  },
+  "encoding": {
+    "y": {
+      "field": "[!! category !!]",
+      "type": "nominal",
+      "title": "[!! y_title !!]",
+      "sort": {
+        "field": "curio_range",
+        "op": "max",
+        "order": "descending"
+      }
+    }
+  },
+  "layer": [
+    {
+      "transform": [
+        {
+          "filter": "datum.curio_rank === 1"
+        }
+      ],
+      "mark": {
+        "type": "rule",
+        "color": "#9ca3af",
+        "strokeWidth": 2
+      },
+      "encoding": {
+        "x": {
+          "field": "curio_lowest",
+          "type": "quantitative",
+          "title": "[!! x_title !!]"
+        },
+        "x2": {
+          "field": "curio_highest"
+        }
+      }
+    },
+    {
+      "mark": {
+        "type": "point",
+        "filled": true,
+        "size": 60,
+        "opacity": 1,
+        "tooltip": true
+      },
+      "encoding": {
+        "x": {
+          "field": "[!! value !!]",
+          "type": "quantitative",
+          "title": "[!! x_title !!]"
+        },
+        "color": {
+          "field": "scenario_name",
+          "type": "nominal",
+          "title": "Scenario",
+          "legend": {
+            "orient": "bottom"
+          }
+        }
+      }
+    }
+  ]
+}

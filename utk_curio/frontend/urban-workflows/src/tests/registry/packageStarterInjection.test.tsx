@@ -32,6 +32,7 @@ jest.mock('../../providers/StarterProvider', () => ({
         return [{ id: 's2', type, name: 'image-segmentation', description: '', accessLevel: 'ANY', code: DEFAULT_CELL, custom: false }];
       }
       if (type === 'curio.scout/raster-calculator@1') return mockCalculatorStarters(type);
+      if (type === 'curio.scout/dots-with-a-range@1') return mockChartStarters(type);
       return [];
     },
   }),
@@ -45,7 +46,7 @@ import { loadIconRefs } from '../../registry/iconRegistry';
 import { BUILTIN_PACKAGE_ID, registerPackageTemplates } from '../../registry/packagesClient';
 import { clearPackageNodes } from '../../registry/nodeRegistry';
 import { getBehavior } from '../../registry/behaviorRegistry';
-import { packageStarterCode } from '../../adapters/node/packageNodeBehavior';
+import { packageStarterCode, usePackageNodeBehavior } from '../../adapters/node/packageNodeBehavior';
 import { useStarterContext } from '../../providers/StarterProvider';
 import { behaviorDataView } from '../../utils/behaviorDataView';
 import type { NodeBehaviorData, UseNodeStateReturn } from '../../registry/types';
@@ -66,6 +67,20 @@ function mockCalculatorStarters(type: string) {
   return [{
     id: 's3', type, name: 'raster-calculator', description: '', accessLevel: 'ANY',
     code: readCalculatorStarter(), custom: false,
+  }];
+}
+
+/** The spec Scout ships for its Dots with a range. */
+function readChartStarter(): string {
+  return fs.readFileSync(path.join(SCOUT, 'sources', 'dots-with-a-range.vl.json'), 'utf-8');
+}
+
+/** What the starters feed lists for Dots with a range: its package's
+ *  `sources/dots-with-a-range.vl.json`, under that file's name. */
+function mockChartStarters(type: string) {
+  return [{
+    id: 's4', type, name: 'dots-with-a-range.vl', description: '', accessLevel: 'ANY',
+    code: readChartStarter(), custom: false,
   }];
 }
 
@@ -281,6 +296,89 @@ describe('Scout\'s Raster Calculator, as the repository ships it', () => {
     expect(descriptor.icon).toBe(faCalculator);
     expect(descriptor.badge).toBe('PACKAGE');
     expect(descriptor.category).toBe('computation');
+  });
+});
+
+type ShippedPack = Parameters<typeof registerPackageTemplates>[0][number];
+
+/** Scout with its Dots with a range's template, read from its manifest. */
+function chartPack(): ShippedPack {
+  const manifest = JSON.parse(fs.readFileSync(path.join(SCOUT, 'manifest.json'), 'utf-8'));
+  const template = manifest.templates.find((t: { id: string }) => t.id === 'dots-with-a-range');
+  return {
+    packageId: manifest.id,
+    major: 1,
+    version: manifest.version,
+    name: manifest.name,
+    publisher: manifest.publisher,
+    description: manifest.description,
+    license: manifest.license,
+    permissions: [],
+    lineage: null,
+    templates: [{
+      id: `${manifest.id}/dots-with-a-range@1`,
+      templateId: template.id,
+      label: template.label,
+      category: template.category,
+      engine: template.engine,
+      description: template.description,
+      icon: null,
+      iconRef: template.iconRef,
+      behavior: template.behavior,
+      paletteOrder: template.paletteOrder,
+      editor: template.editor,
+      hasCode: template.hasCode,
+      hasWidgets: template.hasWidgets,
+      hasGrammar: template.hasGrammar,
+      grammarId: template.grammarId,
+      badge: template.badge,
+      inputPorts: template.inputPorts,
+      outputPorts: template.outputPorts,
+      source: template.source,
+      widgets: template.widgets,
+      bidirectional: false,
+      containerStyle: null,
+      hasProvenance: null,
+    }],
+  };
+}
+
+/** The starter injection on a node of Dots with a range with *data*: every
+ *  spec it offers the editor, and the node's data after. Run alone, as the
+ *  chart's own behavior (`vegaBehavior`) draws on a canvas this suite does not
+ *  hold. */
+function dropChart(data: Record<string, unknown>) {
+  const [desc] = registerPackageTemplates([chartPack()]);
+  const node: Record<string, unknown> = { nodeType: desc.id, ...data };
+  const nodeState = { code: typeof data.code === 'string' ? data.code : '' } as unknown as UseNodeStateReturn;
+  const offered: Array<string | undefined> = [];
+  renderHook(() => {
+    const result = usePackageNodeBehavior(node as unknown as NodeBehaviorData, nodeState);
+    offered.push(result.defaultValueOverride);
+    return result;
+  });
+  return { offered, node };
+}
+
+describe('Scout\'s charts, as the repository ships them (the plan answering komar41\'s review, step 6.2)', () => {
+  beforeEach(() => clearPackageNodes());
+
+  test('a fresh drop opens with its template\'s spec, which reads its inputs, and its widgets', () => {
+    const { offered, node } = dropChart({});
+    const starter = readChartStarter();
+    expect(offered).toContain(starter);
+    expect(JSON.parse(starter).data).toEqual({ name: 'inputs' });
+    expect(node.widgets).toEqual(chartPack().templates[0].widgets);
+  });
+
+  test('a node saved with its spec edited reloads with the edit, and with its widgets as saved', () => {
+    const edited = readChartStarter().replace('"size": 60', '"size": 140');
+    expect(edited).not.toBe(readChartStarter());
+    const widgets = [{ name: 'category', type: 'text', label: 'Category column', default: 'category', value: 'park' }];
+    const { offered, node } = dropChart({ code: edited, widgets });
+    expect(offered.filter((code) => code !== undefined)).toEqual([]);
+    expect(node.code).toBe(edited);
+    expect(node.widgets).toBe(widgets);
   });
 });
 

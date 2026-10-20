@@ -178,7 +178,7 @@ def run_node(buildings, workspace, *, fails=False, **values):
 def test_the_package_holds_the_raster_calculator_and_rasterize_buildings():
     """Scout: one read-only package of the two raster nodes, each a
     computation node with its own icon and place in the package's palette
-    group, then the seven charts (``test_scout_comparison.py``), and the
+    group, then the fifteen charts (``test_scout_comparison.py``), and the
     module Rasterize Buildings' code imports."""
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
@@ -198,6 +198,14 @@ def test_the_package_holds_the_raster_calculator_and_rasterize_buildings():
         ("stacked-bars-with-totals", "Stacked bars with totals", *chart),
         ("donuts", "Donuts", *chart),
         ("weighted-matrix", "Weighted matrix", *chart),
+        ("dots-with-a-range", "Dots with a range", *chart),
+        ("bars", "Bars", *chart),
+        ("grouped-bars", "Grouped bars", *chart),
+        ("lines", "Lines", *chart),
+        ("points", "Points", *chart),
+        ("pie", "Pie", *chart),
+        ("lollipops", "Lollipops", *chart),
+        ("table", "Table", *chart),
     ]
     orders = [t.palette_order for t in manifest.templates]
     assert all(isinstance(order, int) for order in orders) and orders == sorted(set(orders)), orders

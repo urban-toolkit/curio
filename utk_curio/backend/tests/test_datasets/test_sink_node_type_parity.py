@@ -53,12 +53,14 @@ def test_non_sink_types_pass(node_type):
     "curio.scout/donuts",
     "curio.scout/lines-with-band@1",
     "curio.scout/weighted-matrix@1",
+    "curio.scout/dots-with-a-range@1",
+    "curio.scout/table",
 ])
 def test_a_package_chart_that_draws_with_vega_lite_is_a_sink(node_type):
     """Scout's charts draw with the Vega-Lite node's behavior
     (``grammarId: vega-lite`` in the shipped manifest), which hands the
     node's input on as its output: a computed dataset under one of them would
-    copy the Compare node's table, as one under a Vega-Lite node would. The
+    copy the table it was handed, as one under a Vega-Lite node would. The
     TS side asks the same question (``isNonProducingNodeType``); the sets
     above stay the two built-in views."""
     assert _is_sink_node_type(node_type) is True

@@ -442,12 +442,18 @@ node whose code it writes itself:
   run, which draws the chart itself. `scenarioScales.cases.json`
   pins the fill for Jest and for the Vega-Lite check in
   `test_scenario_inputs.py`.
-- The Scout package (`packages/curio.scout@1`) holds seven Vega-Lite
-  templates for comparisons no preset draws. Each names `behavior: vega` and
-  `grammarId: vega-lite`, and its `.vl.json` starter is the node's whole content
-  (`starterIsContent`). The starter writes no scale and no order for `scenario_name`,
-  which the fill above supplies, and reads the columns it plots from text widgets
-  through chips (`"field": "[!! y !!]"`).
+- The Scout package (`packages/curio.scout@1`) holds fifteen Vega-Lite templates
+  that compare scenarios. Each names `behavior: vega` and `grammarId: vega-lite`,
+  takes `[1,n]` on its input port, a circle per scenario, and its `.vl.json` starter
+  is the node's whole content (`starterIsContent`). The starter reads
+  `"data": {"name": "inputs"}`, so the node gets its inputs stacked
+  ([Scenarios in charts and maps](#scenarios-in-charts-and-maps)), writes no scale
+  and no order for `scenario_name`, which the fill supplies, and reads the columns
+  it plots from widgets through chips (`"field": "[!! y !!]"`). Bars, Grouped bars,
+  Lines, Pie and Lollipops write Combine as the measure's Vega-Lite aggregate
+  (`"aggregate": "[!! combine !!]"`), and the Table writes its list of columns where
+  a list stands (`"fold": [!! columns !!]`), so that starter is JSON once its chips
+  are written.
 - A template that names `grammarId: vega-lite` is a Vega-Lite node for every rule
   keyed on the node's kind. On the canvas, `isVegaLiteNodeType`
   (`registry/vegaLiteNodes.ts`) decides drawing from a restored input

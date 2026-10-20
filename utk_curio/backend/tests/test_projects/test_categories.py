@@ -209,13 +209,13 @@ def test_the_flood_dataflow_is_tagged_scout_by_its_raster_calculators_alone():
 
 def test_the_charts_dataflow_is_tagged_scout_and_vega_lite_by_its_package_nodes_alone():
     """``scenario-comparison-charts`` reads no SCOUT dataset and has no
-    ``curio.builtin/vis-vega`` node: Scout's seven charts give it both tags,
-    by their package's ``dataflowCategories`` and by their template's
+    ``curio.builtin/vis-vega`` node: its nine charts, all Scout's, give it both
+    tags, by their package's ``dataflowCategories`` and by their template's
     grammar."""
     spec = _spec("dataflows/scenario-comparison-charts")
     nodes = spec["dataflow"]["nodes"]
     charts = [n for n in nodes if n["type"].startswith("curio.scout/")]
-    assert len(charts) == 7
+    assert len(charts) == 9
     assert not any(n["type"].startswith("curio.builtin/vis-vega") for n in nodes)
     assert derive(spec, DatasetKinds(None))["tags"] == ["Vega-Lite", "SCOUT"]
     without = {"dataflow": {**spec["dataflow"], "nodes": [n for n in nodes if n not in charts]}}
@@ -228,7 +228,8 @@ def test_the_charts_dataflow_is_tagged_scout_and_vega_lite_by_its_package_nodes_
 
 @pytest.mark.parametrize("template_id", [
     "lines-with-band", "curves-by-group", "bars-with-error-bars", "ensemble-strips",
-    "stacked-bars-with-totals", "donuts", "weighted-matrix",
+    "stacked-bars-with-totals", "donuts", "weighted-matrix", "dots-with-a-range",
+    "bars", "grouped-bars", "lines", "points", "pie", "lollipops", "table",
 ])
 def test_a_scout_comparison_chart_is_a_vega_lite_node(template_id):
     """Its template names the ``vega-lite`` grammar in the shipped manifest,
