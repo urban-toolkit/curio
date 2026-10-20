@@ -1118,6 +1118,17 @@ edges (see [Linking charts](#linking-charts)).
   of one name, the name means the first input's layer. The second input's layer
   is still its `input_<k>` when it is the only layer that input brings, and is
   left out otherwise; the node's message says which.
+- Of its input, the node loads only the tables its document names: its map's
+  layers, its plot's table and the map the plot links to, and the tables its
+  compute blocks read. A layer of an OpenStreetMap load (`table_osm_roads`)
+  brings that load's surface (`table_osm_surface`) when the input has it,
+  loaded first, whether or not the document draws it. The layers of an
+  OpenStreetMap download from the Discovery Catalog, named `parks`, `roads` and
+  so on, bring its `surface` the same way.
+- Autark clips every table after the first to the box around the first, and to
+  the first's outline when it holds polygons. So a map of OpenStreetMap layers
+  is cut to its load's area, and the tables one document draws lie in one
+  area. Draw another area in its own node.
 - A map draws only tables with geometry. A `DataFrame` is read through the one
   column that holds geometries; with none, or with several, the node draws
   nothing and says which. Return a `GeoDataFrame` with its active geometry set.

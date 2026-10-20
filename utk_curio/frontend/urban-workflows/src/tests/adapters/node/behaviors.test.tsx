@@ -1225,7 +1225,177 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         await act(async () => {
           await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'table_osm_roads' }] } }));
         });
-        expect(lastRunSpec()?.data.map((s: any) => s.outputTableName)).toEqual(['table_osm_roads', 'table_osm_water']);
+        expect(lastRunSpec()?.data.map((s: any) => s.outputTableName)).toEqual(['table_osm_roads']);
+      });
+
+      // autk-db makes the first table it loads the workspace's extent, and the
+      // first polygon table its crop layer, and clips every later table to
+      // both. So the grammar gets only the input's tables the document names,
+      // in the order they arrived: its map's layers, its plot's table and the
+      // map that plot links to, and its compute blocks' tables (#886). An OSM
+      // load's surface goes too, first, when the document names a layer of it.
+      describe('only the tables the document names reach autk-db', () => {
+        const square = (x: number, y: number) => ({
+          type: 'Polygon',
+          coordinates: [[[x, y], [x + 0.01, y], [x + 0.01, y + 0.01], [x, y + 0.01], [x, y]]],
+        });
+        // One polygon at (x, y), as a Python node's GeoDataFrame arrives.
+        const cells = (x: number, y: number, layerName?: string) => ({
+          dataType: 'geodataframe',
+          ...(layerName ? { layerName } : {}),
+          data: { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: square(x, y), properties: { pop: 1 } }] },
+        });
+        const run = async (input: any, spec: object) => {
+          const result = await callBehavior(useAutkGrammarBehavior, { outputCallback: jest.fn(), input });
+          await act(async () => {
+            await result.current.applyGrammar!(JSON.stringify(spec));
+          });
+        };
+        const handed = () => lastRunSpec()?.data.map((s: any) => s.outputTableName);
+
+        test("Renzo's repro: a Python node returns two cities, a first, and a map of b gets b alone", async () => {
+          await run(
+            { dataType: 'dict', data: { a: cells(-46.63, -23.55), b: cells(-87.63, 41.88) } },
+            { map: { layerRefs: [{ dataRef: 'b' }] } },
+          );
+          expect(handed()).toEqual(['b']);
+        });
+
+        test('a plot gets its table and the table of the map it links to', async () => {
+          await run(
+            { dataType: 'outputs', data: [cells(0, 0, 'a'), cells(1, 1, 'b'), cells(2, 2, 'c')] },
+            { plot: { dataRef: 'b', mapRef: 'c', mark: 'bar', axis: ['pop', '@transform'], transform: { preset: 'binning-1d' } } },
+          );
+          expect(handed()).toEqual(['b', 'c']);
+        });
+
+        test('a compute block gets its table and the layer a uniform reads from', async () => {
+          await run(
+            { dataType: 'outputs', data: [cells(0, 0, 'a'), cells(1, 1, 'b'), cells(2, 2, 'c')] },
+            {
+              compute: [{ dataRef: 'b', wglsFunction: '', uniforms: { near: { fromFeature: { layer: 'c', path: 'pop' } } } }],
+              map: { layerRefs: [{ dataRef: 'b' }] },
+            },
+          );
+          expect(handed()).toEqual(['b', 'c']);
+        });
+
+        test('a raster the document does not draw is left out too', async () => {
+          const { fetchRaster } = jest.requireMock('../../../services/api') as { fetchRaster: jest.Mock };
+          fetchRaster.mockResolvedValueOnce({
+            ok: true,
+            bytes: new ArrayBuffer(16),
+            meta: {
+              width: 40, height: 30, count: 1, crs: 'EPSG:32616', crsWkt: null,
+              transform: [30, 0, 447000, 0, -30, 4637000], nodata: -9999,
+            },
+          });
+          // The grammar as autk-grammar builds it: a raster loads through its data adapter.
+          const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+          AutkGrammar.mockImplementationOnce(() => ({
+            data: {},
+            dataAdapter: { resolveSource: jest.fn(async (db: any) => db) },
+            run: jest.fn().mockResolvedValue(undefined),
+          }));
+          await run(
+            { dataType: 'outputs', data: [{ path: 'art-r', dataType: 'raster' }, cells(1, 1, 'b')] },
+            { map: { layerRefs: [{ dataRef: 'b' }] } },
+          );
+          expect(handed()).toEqual(['b']);
+        });
+
+        // A map of OSM layers is cropped to their load's query area: the
+        // load's surface goes first, so parks never cut the roads.
+        describe('with the surface of each OSM load they are layers of, first', () => {
+          // An Autark data node's tables, as /get answers them: `{name, type,
+          // geojson}` records, an OSM load's layers named `<load>_<layer>`.
+          const osmTables = (...tables: Array<[string, string]>) => ({
+            dataType: 'list',
+            data: tables.map(([name, type], i) => ({
+              dataType: 'dict',
+              data: {
+                name, type,
+                geojson: { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: square(i, i), properties: {} }] },
+              },
+            })),
+          });
+          const PARKS_AND_ROADS = { map: { layerRefs: [{ dataRef: 'table_osm_parks' }, { dataRef: 'table_osm_roads' }] } };
+
+          test("a map of parks and roads gets the load's surface first, though it does not draw it", async () => {
+            await run(
+              osmTables(['table_osm_surface', 'surface'], ['table_osm_parks', 'parks'], ['table_osm_roads', 'roads']),
+              PARKS_AND_ROADS,
+            );
+            expect(handed()).toEqual(['table_osm_surface', 'table_osm_parks', 'table_osm_roads']);
+          });
+
+          test('the surface goes first when the load lists it last', async () => {
+            await run(
+              osmTables(['table_osm_parks', 'parks'], ['table_osm_roads', 'roads'], ['table_osm_surface', 'surface']),
+              PARKS_AND_ROADS,
+            );
+            expect(handed()).toEqual(['table_osm_surface', 'table_osm_parks', 'table_osm_roads']);
+          });
+
+          test("a layer brings its own load's surface, not another load's", async () => {
+            // Two OSM loads, the second named with the first's name at its start.
+            await run(
+              osmTables(
+                ['table_osm_surface', 'surface'], ['table_osm_parks', 'parks'],
+                ['table_osm_chicago_surface', 'surface'], ['table_osm_chicago_parks', 'parks'],
+              ),
+              { map: { layerRefs: [{ dataRef: 'table_osm_chicago_parks' }] } },
+            );
+            expect(handed()).toEqual(['table_osm_chicago_surface', 'table_osm_chicago_parks']);
+          });
+
+          test("a Discovery download's layers, keyed by layer, bring its surface first too", async () => {
+            // An OpenStreetMap download's group loader returns its layers in a
+            // dict keyed by layer, each frame typed by its own metadata.
+            const layer = (kind: string, i: number) => ({
+              dataType: 'geodataframe',
+              data: {
+                type: 'FeatureCollection',
+                metadata: { layerType: kind },
+                features: [{ type: 'Feature', geometry: square(i, i), properties: {} }],
+              },
+            });
+            await run(
+              { dataType: 'dict', data: { surface: layer('surface', 0), parks: layer('parks', 1), roads: layer('roads', 2) } },
+              { map: { layerRefs: [{ dataRef: 'parks' }, { dataRef: 'roads' }] } },
+            );
+            expect(handed()).toEqual(['surface', 'parks', 'roads']);
+          });
+        });
+
+        test('a layer that names no table of the input blames the document, listing every table it brings', async () => {
+          const setOutput = jest.fn();
+          const result = await callBehavior(
+            useAutkGrammarBehavior,
+            { outputCallback: jest.fn(), input: { dataType: 'dict', data: { a: cells(0, 0), b: cells(1, 1) } } as any },
+            { setOutput },
+          );
+          await act(async () => {
+            await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'c' }] } }));
+          });
+          const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+          expect(errCall![0].kind).toBe('empty-render:no-layers');
+          expect(errCall![0].content).toContain('(asked for: c; available: a, b)');
+        });
+
+        test('a compute step hands on every layer it gets, named or not', async () => {
+          const outputCallback = jest.fn();
+          const result = await callBehavior(useAutkGrammarBehavior, {
+            outputCallback,
+            input: { dataType: 'dict', data: { a: cells(0, 0), b: cells(1, 1) } } as any,
+          });
+          await act(async () => {
+            await result.current.applyGrammar!(JSON.stringify({ compute: [] }));
+          });
+          const passedOn = outputCallback.mock.calls[0]?.[1];
+          expect(passedOn?.dataType).toBe('outputs');
+          expect(passedOn.data.map((layer: any) => layer.layerName)).toEqual(['a', 'b']);
+        });
       });
 
       test('a compute step reads its input once', async () => {

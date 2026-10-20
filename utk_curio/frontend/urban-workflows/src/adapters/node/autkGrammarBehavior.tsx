@@ -25,7 +25,8 @@ import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../ut
 import { autkOneViewProblem } from '../../generated/autkGrammar';
 import {
     autkNeedsInput, autkSourcesFrom, documentTableRefs, inputRow, keyValues, loadableSource, ownTableNames,
-    readAutkInput, selectFieldsOf, selectFieldsProblem, tablePositions, type LoadOrder, type PreparedAutkInput,
+    readAutkInput, selectFieldsOf, selectFieldsProblem, tablePositions, tablesToLoad, type LoadOrder,
+    type PreparedAutkInput,
 } from '../../utils/autkInput';
 import { type GrammarInput } from '../../utils/grammarInput';
 import { featureRows, matchSelections, type IncomingSelection } from '../../utils/selectionMatch';
@@ -601,9 +602,16 @@ export const useAutkGrammarBehavior = (
                         (s: any) => !emptySources.includes(s),
                     );
                 }
+                // What autk-db loads (utils/autkInput tablesToLoad): of the
+                // input's tables, those the document names, and every table
+                // its own data section loaded; first, the surface of each OSM
+                // load a table it names is a layer of (#886). The counts above
+                // cover every table at hand, so the verdict below tells a
+                // misnamed table apart from data the input does not bring.
+                const handed = tablesToLoad(dataSectionSources, spec, ownSources);
                 // On a 1 cm grid, so autk-db's second clip of these already
                 // clipped layers holds (see utils/geoPrecision).
-                spec = { ...spec, data: dataSectionSources.map(snapSourceToGrid) };
+                spec = { ...spec, data: handed.map(snapSourceToGrid) };
                 if (dataSectionSources.length === 0 && (hasMaps || hasPlot)) {
                     console.warn(
                         '[autk-grammar] render node has no data sources left — the '
