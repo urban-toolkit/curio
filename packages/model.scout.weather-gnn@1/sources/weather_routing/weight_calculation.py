@@ -12,16 +12,27 @@ backend/models/routing/scripts/weight_calculation.py. What changed:
   float32 values in float32.
 - A trip's 15-minute zones read the weather's hourly step each zone starts in
   (``stitchDataset``), where SCOUT read one step further per zone.
+- ``GNN_weight_calculations`` returns the GNN's input and output (``x``,
+  ``edge_index`` and ``prediction``), where SCOUT's returned nothing.
+- ``create_zone_polygons`` calls geopandas' ``union_all()`` where SCOUT read
+  ``unary_union``, which geopandas 1 deprecates; both make the same geometry.
 - ``GNN_weight_calculations`` takes the weather files only: SCOUT also passed
   it its loader's masked slices and grid, which only ``train_GNN_model`` read.
   ``train_GNN_model`` (which SCOUT runs only when rain_model.pth is missing),
   ``classic_weight_calculations`` and ``get_element_at_point`` (which nothing
-  calls) are left out.
+  calls) are left out, as are SCOUT's print lines, its first computation of
+  the edge indices and lengths (its second one replaces it), its unused
+  ``u_idx`` and its repeated numpy imports.
 
 The weather at each node is the value of the WRF cell nearest to it
 (``build_grid_kdtree``): the WRF grid is a Lambert conformal one, given cell
 by cell in XLAT and XLONG, which Curio's raster readers (north-up grids) do not
 sample.
+
+Each line Curio changed ends with a ``# Curio:`` comment that quotes its entry
+above, or sits in a changed block (a new function, a rewritten call) whose
+first line has one. Comment and docstring lines, and lines that differ from
+SCOUT's only in quotes, spacing, line breaks, order or punctuation, have none.
 """
 
 import numpy as np
@@ -32,10 +43,10 @@ from shapely.geometry import Point
 from scipy.spatial import cKDTree
 
 #: The minutes each zone of a trip covers (calculate_isochrones).
-ZONE_MINUTES = 15
+ZONE_MINUTES = 15  # Curio: A trip's 15-minute zones read the weather's hourly step each zone starts in
 
 
-def gnn_predict(model, x, edge_index):
+def gnn_predict(model, x, edge_index):  # Curio: The graph network runs as an ONNX model through onnxruntime
     """The graph network's five weather values at each node: this package's
     model, model.scout.weather-gnn, as ``curio_load_model`` returns it, run
     on SCOUT's node features and edges. Its one output is ``prediction``."""
@@ -56,7 +67,7 @@ def get_values_at_points_kdtree(grid_vals, kdtree, points_latlon):
     return flat_vals[indices]
 
 
-def GNN_weight_calculations(G,
+def GNN_weight_calculations(G,  # Curio: GNN_weight_calculations takes the weather files only
                             rain_ds,
                             time,
                             heat_ds,
@@ -67,10 +78,10 @@ def GNN_weight_calculations(G,
                             rain_weight=0.85834,
                             heat_weight=0.02850,
                             wind_weight=0.09648,
-                            humidity_weight=0.01668,
+                            humidity_weight=0.01668,  # Curio: GNN_weight_calculations returns the GNN's input and output
                             *,
-                            model,
-                            minutes_into_step=0):
+                            model,  # Curio: The graph network runs as an ONNX model through onnxruntime
+                            minutes_into_step=0):  # Curio: A trip's 15-minute zones read the weather's hourly step each zone starts in
     """
     Use a GNN to predict rain in any given node and use that vector to apply weights to the graph edges as a matrix operation.
 
@@ -97,7 +108,7 @@ def GNN_weight_calculations(G,
     Returns the GNN's input and output: ``{"x", "edge_index", "prediction"}``.
     """
 
-    stitch = dict(starting_time=time, trip_time_seconds=trip_time_seconds, minutes_into_step=minutes_into_step)
+    stitch = dict(starting_time=time, trip_time_seconds=trip_time_seconds, minutes_into_step=minutes_into_step)  # Curio: A trip's 15-minute zones read the weather's hourly step each zone starts in
     rain_stitched = stitchDataset(G, rain_ds, variable_name='RAIN', **stitch)
     heat_stitched = stitchDataset(G, heat_ds, variable_name='T2', **stitch)
     wind_speed_stitched = stitchDataset(G, wind_speed_ds, variable_name='WSPD10', **stitch)
@@ -123,8 +134,8 @@ def GNN_weight_calculations(G,
     )
 
     # Model makes predictions
-    preds = gnn_predict(model, x, edge_index)
-    prediction = preds
+    preds = gnn_predict(model, x, edge_index)  # Curio: The graph network runs as an ONNX model through onnxruntime
+    prediction = preds  # Curio: GNN_weight_calculations returns the GNN's input and output
     preds = np.nan_to_num(preds, nan=0.0)
 
     rain_pred_node = np.clip(preds[:, 0], 0, None)
@@ -164,11 +175,11 @@ def GNN_weight_calculations(G,
 
     # Perform bulk assignment of the new weights to the graph edges, as the
     # Python floats SCOUT's routing summed them as.
-    for name, weights in (("rain_weight", rain_w), ("heat_weight", heat_w), ("humidity_weight", humidity_w),
+    for name, weights in (("rain_weight", rain_w), ("heat_weight", heat_w), ("humidity_weight", humidity_w),  # Curio: The edge weights are stored as Python floats
                           ("wind_weight", wind_w), ("wind_dir_weight", wind_dir_w), ("total_weight", total_w)):
         nx.set_edge_attributes(G, dict(zip(edges_list, (float(w) for w in weights))), name)
 
-    return {"x": x, "edge_index": edge_index, "prediction": prediction}
+    return {"x": x, "edge_index": edge_index, "prediction": prediction}  # Curio: GNN_weight_calculations returns the GNN's input and output
 
 
 def prepare_node_features_and_edges(G, rain_grid, heat_grid, wind_speed_grid, wind_dir_grid, humidity_grid, lats, lons, coords):
@@ -221,21 +232,21 @@ def prepare_node_features_and_edges(G, rain_grid, heat_grid, wind_speed_grid, wi
         wind_dir_nodes,
         humidity_nodes,
     ])
-    x = np.ascontiguousarray(x_np.astype(np.float32))
+    x = np.ascontiguousarray(x_np.astype(np.float32))  # Curio: Its inputs are the arrays SCOUT hands torch, as numpy arrays
 
     # Build edge_index
     id_to_idx = {nid: i for i, nid in enumerate(node_ids)}
     edges = []
     for u_n, v_n, data in G.edges(data=True):
         edges.append([id_to_idx[u_n], id_to_idx[v_n]])
-    edge_index = np.ascontiguousarray(np.array(edges, dtype=np.int64).reshape(-1, 2).T)
-    if edge_index.size == 0:
+    edge_index = np.ascontiguousarray(np.array(edges, dtype=np.int64).reshape(-1, 2).T)  # Curio: Its inputs are the arrays SCOUT hands torch, as numpy arrays
+    if edge_index.size == 0:  # Curio: Its inputs are the arrays SCOUT hands torch, as numpy arrays
         raise RuntimeError("Edge index is empty!")
 
     return x, edge_index, node_ids
 
 
-def stitchDataset(G, dataset, trip_time_seconds, variable_name, starting_time=17, minutes_into_step=0, step_minutes=60):
+def stitchDataset(G, dataset, trip_time_seconds, variable_name, starting_time=17, minutes_into_step=0, step_minutes=60):  # Curio: A trip's 15-minute zones read the weather's hourly step each zone starts in
     """Stitch together time slices from a dataset based on zones in the graph G.
 
     Zone ``t + 1`` covers the trip's minutes ``15 t`` to ``15 (t + 1)`` and takes
@@ -254,7 +265,7 @@ def stitchDataset(G, dataset, trip_time_seconds, variable_name, starting_time=17
     tdim = dataset.variables[variable_name].shape[0]
     loaded_data = []
     for t in range(len(trip_time_seconds)):
-        idx = min(starting_time + (minutes_into_step + ZONE_MINUTES * t) // step_minutes, tdim - 1)
+        idx = min(starting_time + (minutes_into_step + ZONE_MINUTES * t) // step_minutes, tdim - 1)  # Curio: A trip's 15-minute zones read the weather's hourly step each zone starts in
         slice_data = np.array(dataset.variables[variable_name][idx, :, :])
         loaded_data.append(slice_data)
 
@@ -304,9 +315,9 @@ def create_zone_polygons(G):
     for zone, points in zones.items():
         unique_pts = list({(p.x, p.y): p for p in points}.values())
         if len(unique_pts) >= 3:
-            zone_polygons[zone] = gpd.GeoSeries(unique_pts).union_all().convex_hull
+            zone_polygons[zone] = gpd.GeoSeries(unique_pts).union_all().convex_hull  # Curio: create_zone_polygons calls geopandas' union_all() where SCOUT read unary_union
         elif len(unique_pts) == 2:
-            zone_polygons[zone] = gpd.GeoSeries(unique_pts).union_all().buffer(0.001)
+            zone_polygons[zone] = gpd.GeoSeries(unique_pts).union_all().buffer(0.001)  # Curio: create_zone_polygons calls geopandas' union_all() where SCOUT read unary_union
         elif len(unique_pts) == 1:
             zone_polygons[zone] = unique_pts[0].buffer(0.001)
     return zone_polygons
