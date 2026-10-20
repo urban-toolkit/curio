@@ -262,12 +262,13 @@ describe("a node's runs in the drawer, from its Provenance pill", () => {
     expect(item("4")!.textContent).toMatch(/In: DATAFRAME \| Out: ERROR/);
   });
 
-  test("the Graph puts the run left behind in the next column", async () => {
+  test("opened, the fold lists the run left behind under the run it left from, on a line of its own", async () => {
     await openRuns();
-    fireEvent.click(screen.getByRole("button", { name: "Graph" }));
+    fireEvent.click(fold());
+    expect(fold()).toHaveAttribute("aria-expanded", "true");
     expect(shownIds()).toEqual(["1", "2", "3"]);
-    expect(item("2")!.style.gridColumn).toBe("2");
-    expect(item("3")!.style.gridColumn).toBe("1");
+    expect(item("2")!.closest("ol")).toHaveAttribute("data-provenance-line", "1");
+    expect(item("3")!.closest("ol")).toHaveAttribute("data-provenance-line", "0");
   });
 
   test("says so while the node has no run", async () => {

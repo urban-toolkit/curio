@@ -464,8 +464,8 @@ and connections. **Put this version on the canvas** goes back to it. The history
 stays, the dataflow reads **Unsaved**, and the next change branches from that
 version.
 
-A node's **Provenance** button, in its header, opens the node's runs in the same
-drawer, as a list or a graph. Each run reads what it took in and gave back
+A node's **Provenance** button, in its header, lists the node's runs in the same
+drawer, with the same folds. Each run reads what it took in and gave back
 ("In: DATAFRAME | Out: GEODATAFRAME", or ERROR for a run that failed). Click a
 run to open it: when it ran, for how long, and its code. **Put this code back in
 the node** puts that code in the node's editor without running it, and the

@@ -3,15 +3,12 @@
 A Python node runs twice. Its first run's code is put back from the drawer,
 without a run, though it is the code the node loaded with; a third run then
 branches from that first run. The drawer lists the line to the newest run, with
-the run left behind folded under the run it left from, or draws the same runs
-as the Graph, the branch in a column of its own. A click opens a run: what it
-read and returned, when it ran and its code. A notebook cell's button opens the
-same drawer.
+the run left behind folded under the run it left from; opened, the fold shows
+it on a line of its own. A click opens a run: what it read and returned, when
+it ran and its code. A notebook cell's button opens the same drawer.
 
 A run's times come from the server's clock, not the browser's, so no fixed date
-reaches them. A frame shows them only in the List, on one line the screenshot
-masks; the Graph frame shows the runs closed, since an opened box wraps its
-times over lines that change with the date and the hour.
+reaches them. The frame shows them on one line, which the screenshot masks.
 
 Run::
 
@@ -39,12 +36,7 @@ from .utils import (
     stub_login_and_enter_workflow,
     wait_for_drawer_closed,
 )
-from .walkthroughs.steps import (
-    PROVENANCE_DRAWER,
-    PROVENANCE_PANEL,
-    await_drawer_at_rest,
-    await_provenance_history,
-)
+from .walkthroughs.steps import PROVENANCE_DRAWER, PROVENANCE_PANEL, await_drawer_at_rest
 
 if TYPE_CHECKING:
     from .utils import FrontendPage
@@ -166,35 +158,27 @@ def test_a_nodes_runs_open_in_the_provenance_drawer(
         "the first run's code did not go back in the node"
     )
 
-    # A third run branches from the first: the List keeps the line to it, with
-    # the second run folded under the first.
+    # A third run branches from the first: the list keeps the line to it, with
+    # the second run folded under the first. Opened, the fold shows the second
+    # run on a line of its own.
     _run(page, THIRD)
     panel = _open_runs(page)
     runs = _shown(panel)
     assert len(runs) == 2 and runs[0] == first_run and runs[1] not in (first_run, second_run), (
-        f"the List should show the first run then the third, the second folded: {runs}"
+        f"the list should show the first run then the third, the second folded: {runs}"
     )
     third_run = runs[1]
     fold = panel.get_by_role("button", name=re.compile(r"^1 run on another branch$"))
     expect(fold).to_have_attribute("aria-expanded", "false")
     fold.click()
     assert _shown(panel) == [first_run, second_run, third_run]
+    lines = {
+        run_id: _run_item(panel, run_id).evaluate("el => el.closest('ol').dataset.provenanceLine")
+        for run_id in (first_run, second_run, third_run)
+    }
+    assert lines == {first_run: "0", second_run: "1", third_run: "0"}, lines
 
-    # The Graph: the second run in a column of its own, beside the first.
-    panel.get_by_role("button", name="Graph", exact=True).click()
-    counts = await_provenance_history(page)
-    assert counts["items"] == 3 and counts["links"] == 2 == counts["drawn"], counts
-    columns = {run_id: _run_item(panel, run_id).evaluate("el => el.style.gridColumn") for run_id in runs + [second_run]}
-    assert columns == {first_run: "1", second_run: "2", third_run: "1"}, columns
-    save_workflow_test_screenshot(
-        page, "node-provenance-graph", test_name=TEST_NAME, fit_reactflow=False, clip_selector=PROVENANCE_PANEL,
-    )
-
-    # A run opened in the Graph is still open in the List, where its times
-    # fit one line.
     _open_run(panel, third_run)
-    panel.get_by_role("button", name="List", exact=True).click()
-    expect(_run_item(panel, third_run).locator("button").first).to_have_attribute("aria-expanded", "true")
     save_workflow_test_screenshot(
         page, "node-provenance-list", test_name=TEST_NAME, fit_reactflow=False, clip_selector=PROVENANCE_PANEL,
     )
