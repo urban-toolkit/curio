@@ -453,10 +453,26 @@ class TestSolveProgressAndReconnection:
         solve = strip.get_by_role("button", name=re.compile(r"^(Solve|Retry \d+ \w+)$"))
         expect(solve).to_be_visible(timeout=20000)
         assert page.evaluate(_HOLD_THE_SOLVE_REQUEST_JS, SOLVE_REQUEST_HOLD_MS)
-        solve.click()
+        # Solve has started once the server answers its request: the handler
+        # starts the detached job before it streams anything back. A reload
+        # before that answer cancels the request with the page, and then no
+        # job exists for the reload to find (#1024).
+        with page.expect_response(
+            lambda r: r.request.method == "POST" and r.url.endswith("/solve/stream"),
+            timeout=60000,
+        ) as solve_answer:
+            solve.click()
+        answer = solve_answer.value
+        # An OK answer is the job's event stream, open until the job ends, so
+        # only a refusal is read.
+        assert answer.ok, (
+            f"the server refused Solve: HTTP {answer.status} {answer.text()[:300]}"
+        )
 
         # The run is reported while it runs: the strip's per-node progress list
-        # is the surface a person watches.
+        # is the surface a person watches. The list is on screen from the moment
+        # the plan is applied, with every node pending, so it is no sign that
+        # Solve started; the answer above is.
         progress = panel.get_by_label("Plan node progress")
         expect(progress).to_be_visible(timeout=30000)
         hold = page.evaluate("() => window.__curioSolveHold")
