@@ -1,6 +1,6 @@
 """Smoke tests for the committed ``packages/curio.builtin@1`` catalog entry.
 
-The built-in package is auto-installed for every user and provides the 15
+The built-in package is auto-installed for every user and provides the 14
 default node templates. A regression in its manifest would silently strand
 users with an empty palette, so we exercise the load + payload-serialize
 paths against the on-disk artefact. The Raster Calculator is not one of them:
@@ -36,7 +36,6 @@ EXPECTED_TEMPLATE_IDS: frozenset[str] = frozenset({
     "autk-grammar",
     "spatial-join",
     "parameter",
-    "compare-scenarios",
     "edit-features",
     "note",
 })
@@ -44,7 +43,6 @@ EXPECTED_TEMPLATE_IDS: frozenset[str] = frozenset({
 EXPECTED_BEHAVIORS: frozenset[str] = frozenset({
     "code", "data-export", "data-pool", "data-summary", "vega",
     "simple-vis", "autk-grammar", "spatial-join", "parameter",
-    "compare-scenarios",
     "edit-features", "note",
 })
 
